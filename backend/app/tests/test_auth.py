@@ -1,44 +1,25 @@
-"""Auth dependency unit tests."""
+"""Auth dependency unit tests.
+
+Exercises the real `current_user_id` decoder path. The autouse
+`_stub_jwks` fixture (in conftest) replaces the JWKS client with a
+stub that returns the test ES256 public key, so signature verification
+runs end-to-end against tokens minted by the `make_token` fixture.
+"""
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from typing import Callable
 from uuid import UUID, uuid4
 
-import jwt
 import pytest
 from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 
 from app.auth import current_user_id
 
-SECRET = "test-secret-do-not-use-in-prod"
-
-
-def _make_token(
-    *,
-    sub: str | None = None,
-    aud: str = "authenticated",
-    expired: bool = False,
-    extra: dict | None = None,
-) -> str:
-    now = datetime.now(tz=timezone.utc)
-    exp = now - timedelta(minutes=5) if expired else now + timedelta(minutes=10)
-    payload: dict = {
-        "sub": sub or str(uuid4()),
-        "aud": aud,
-        "iat": int(now.timestamp()),
-        "exp": int(exp.timestamp()),
-        "email": "user@example.com",
-    }
-    if extra:
-        payload.update(extra)
-    return jwt.encode(payload, SECRET, algorithm="HS256")
-
 
 @pytest.fixture()
 def client() -> TestClient:
-    """Mini app that exposes only the auth dep, so we can probe it directly."""
     app = FastAPI()
 
     @app.get("/whoami")
@@ -58,27 +39,43 @@ def test_invalid_token_returns_401(client: TestClient) -> None:
     assert res.status_code == 401
 
 
-def test_expired_token_returns_401(client: TestClient) -> None:
-    token = _make_token(expired=True)
+def test_expired_token_returns_401(
+    client: TestClient, make_token: Callable[..., str]
+) -> None:
+    token = make_token(expired=True)
     res = client.get("/whoami", headers={"Authorization": f"Bearer {token}"})
     assert res.status_code == 401
 
 
-def test_wrong_audience_returns_401(client: TestClient) -> None:
-    token = _make_token(aud="wrong-audience")
+def test_wrong_audience_returns_401(
+    client: TestClient, make_token: Callable[..., str]
+) -> None:
+    token = make_token(aud="wrong-audience")
     res = client.get("/whoami", headers={"Authorization": f"Bearer {token}"})
     assert res.status_code == 401
 
 
-def test_non_uuid_sub_returns_401(client: TestClient) -> None:
-    token = _make_token(sub="not-a-uuid")
+def test_non_uuid_sub_returns_401(
+    client: TestClient, make_token: Callable[..., str]
+) -> None:
+    token = make_token(sub="not-a-uuid")
     res = client.get("/whoami", headers={"Authorization": f"Bearer {token}"})
     assert res.status_code == 401
 
 
-def test_valid_token_returns_user_id(client: TestClient) -> None:
+def test_signature_from_wrong_key_returns_401(
+    client: TestClient, bad_token: str
+) -> None:
+    """A token signed by a different ES256 key must be rejected."""
+    res = client.get("/whoami", headers={"Authorization": f"Bearer {bad_token}"})
+    assert res.status_code == 401
+
+
+def test_valid_token_returns_user_id(
+    client: TestClient, make_token: Callable[..., str]
+) -> None:
     user_id = uuid4()
-    token = _make_token(sub=str(user_id))
+    token = make_token(sub=user_id)
     res = client.get("/whoami", headers={"Authorization": f"Bearer {token}"})
     assert res.status_code == 200
     assert res.json() == {"user_id": str(user_id)}

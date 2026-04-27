@@ -1,33 +1,23 @@
-"""Tests for GET /v1/me with mocked Supabase service-role client."""
+"""Tests for GET /v1/me with mocked Supabase service-role client.
+
+The autouse `_stub_jwks` fixture (in conftest) makes the production
+auth decoder accept tokens minted by `make_token`. We additionally
+mock `get_service_client` so the handler's DB calls run against an
+in-memory mock instead of touching Supabase.
+"""
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import Any, Callable
 from unittest.mock import MagicMock
-from uuid import UUID, uuid4
+from uuid import uuid4
 
-import jwt
 import pytest
 from fastapi.testclient import TestClient
 
 from app import db as db_module
 from app.main import app
 from app.routers import me as me_module
-
-SECRET = "test-secret-do-not-use-in-prod"
-
-
-def _token(sub: UUID, email: str = "user@example.com") -> str:
-    now = datetime.now(tz=timezone.utc)
-    payload = {
-        "sub": str(sub),
-        "aud": "authenticated",
-        "iat": int(now.timestamp()),
-        "exp": int((now + timedelta(minutes=10)).timestamp()),
-        "email": email,
-    }
-    return jwt.encode(payload, SECRET, algorithm="HS256")
 
 
 @pytest.fixture()
@@ -36,7 +26,6 @@ def client() -> TestClient:
 
 
 def _build_supabase_mock(*, existing_row: dict[str, Any] | None) -> MagicMock:
-    """Mock the chained `client.table('users').select(...)` calls."""
     mock_client = MagicMock()
     table = mock_client.table.return_value
     select = table.select.return_value
@@ -64,7 +53,11 @@ def test_unauthenticated_returns_401(client: TestClient) -> None:
     assert res.status_code == 401
 
 
-def test_existing_user_returns_row(monkeypatch: pytest.MonkeyPatch, client: TestClient) -> None:
+def test_existing_user_returns_row(
+    monkeypatch: pytest.MonkeyPatch,
+    client: TestClient,
+    make_token: Callable[..., str],
+) -> None:
     user_id = uuid4()
     studio_id = uuid4()
     row = {
@@ -78,21 +71,26 @@ def test_existing_user_returns_row(monkeypatch: pytest.MonkeyPatch, client: Test
     monkeypatch.setattr(me_module, "get_service_client", lambda: mock_client)
     monkeypatch.setattr(db_module, "get_service_client", lambda: mock_client)
 
-    res = client.get("/v1/me", headers={"Authorization": f"Bearer {_token(user_id, row['email'])}"})
-    assert res.status_code == 200
-    body = res.json()
-    assert body == {
+    res = client.get(
+        "/v1/me",
+        headers={"Authorization": f"Bearer {make_token(sub=user_id, email=row['email'])}"},
+    )
+    assert res.status_code == 200, res.text
+    assert res.json() == {
         "id": str(user_id),
         "email": row["email"],
         "tier": "pro",
         "role": "student",
         "studio_id": str(studio_id),
     }
-    # The select happened — provisioning insert did not.
     mock_client.table.return_value.insert.assert_not_called()
 
 
-def test_first_touch_provisioning(monkeypatch: pytest.MonkeyPatch, client: TestClient) -> None:
+def test_first_touch_provisioning(
+    monkeypatch: pytest.MonkeyPatch,
+    client: TestClient,
+    make_token: Callable[..., str],
+) -> None:
     user_id = uuid4()
     new_row = {
         "id": str(user_id),
@@ -110,9 +108,11 @@ def test_first_touch_provisioning(monkeypatch: pytest.MonkeyPatch, client: TestC
 
     res = client.get(
         "/v1/me",
-        headers={"Authorization": f"Bearer {_token(user_id, new_row['email'])}"},
+        headers={
+            "Authorization": f"Bearer {make_token(sub=user_id, email=new_row['email'])}"
+        },
     )
-    assert res.status_code == 200
+    assert res.status_code == 200, res.text
     assert res.json() == {
         "id": str(user_id),
         "email": new_row["email"],
@@ -120,7 +120,6 @@ def test_first_touch_provisioning(monkeypatch: pytest.MonkeyPatch, client: TestC
         "role": "student",
         "studio_id": None,
     }
-    # The provisioning insert happened.
     table.insert.assert_called_once()
     inserted = table.insert.call_args.args[0]
     assert inserted["id"] == str(user_id)

@@ -1,8 +1,10 @@
 """Supabase JWT verification.
 
-The frontend sends the user's Supabase access token in `Authorization:
-Bearer <jwt>`. We decode it locally with `SUPABASE_JWT_SECRET` so that
-auth happens without a round-trip to Supabase on every request.
+Verifies user access tokens using the project's JWKS endpoint
+(`/auth/v1/.well-known/jwks.json`). Modern Supabase projects sign
+user tokens with an asymmetric ES256 key — there is no shared secret
+to load from env. The JWKS client fetches the public key once and
+caches it in-process.
 
 The single most common silent-failure mode is omitting
 `audience="authenticated"` — Supabase tokens carry that audience, and
@@ -12,34 +14,64 @@ token. Spec §11 / Batch 1 calls this out explicitly.
 
 from __future__ import annotations
 
+from functools import lru_cache
 from typing import Any
 from uuid import UUID
 
 import jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from jwt import PyJWKClient
 
 from app.config import settings
 from app.db import get_service_client
 
 bearer = HTTPBearer(auto_error=False)
 
+# Algorithms allowed for user-token verification. Supabase uses ES256
+# on the new asymmetric system; RS256 is included so a project that
+# upgrades to RS-class keys keeps working without a code change.
+_ALLOWED_ALGORITHMS = ["ES256", "RS256"]
 
-def _decode_token(token: str) -> dict[str, Any]:
-    if not settings.SUPABASE_JWT_SECRET:
+
+@lru_cache
+def _get_jwks_client() -> PyJWKClient:
+    """Module-level JWKS client. PyJWKClient caches keys internally."""
+    if not settings.SUPABASE_URL:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="SUPABASE_JWT_SECRET is not configured",
+            detail="SUPABASE_URL is not configured",
         )
+    jwks_url = f"{settings.SUPABASE_URL.rstrip('/')}/auth/v1/.well-known/jwks.json"
+    return PyJWKClient(jwks_url, cache_keys=True)
+
+
+# Test-suite hook: tests monkeypatch `_jwks` to a stub that returns
+# their generated public key without making a network call. Production
+# code paths read it lazily via `_get_active_jwks()`.
+_jwks: PyJWKClient | None = None
+
+
+def _get_active_jwks() -> PyJWKClient:
+    return _jwks if _jwks is not None else _get_jwks_client()
+
+
+def _decode_token(token: str) -> dict[str, Any]:
     try:
+        signing_key = _get_active_jwks().get_signing_key_from_jwt(token).key
         return jwt.decode(
             token,
-            settings.SUPABASE_JWT_SECRET,
-            algorithms=["HS256"],
+            signing_key,
+            algorithms=_ALLOWED_ALGORITHMS,
             audience="authenticated",
         )
     except jwt.PyJWTError as exc:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001 — JWKS fetch failures, etc.
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"Token validation failed: {exc}",
+        ) from exc
 
 
 async def current_user_id(
