@@ -4,6 +4,47 @@ Newest entries at the top. Format spec: see "Build-time activity logging"
 in intempo-combined.md. Every meaningful change goes here — see that
 section for what counts as "meaningful."
 
+## 2026-04-26 21:30 — Batch 2 — provider abstraction + Gemini + bake-off harness
+
+**Batch:** Batch 2
+**Branch:** feat/batch-2-ocr-pipeline
+**Commit (after this edit):** to be filled in after the commit lands.
+
+**What changed:**
+- `backend/app/services/ocr.py`: **deleted** — replaced with the `ocr/` package.
+- `backend/app/services/ocr/__init__.py`: re-exports public API (`parse_sheet_music`, `OCRError`, all four built-in providers, `PROVIDER_REGISTRY`, `get_provider`, `OCRResponse`, `OCRProvider`, `OCRProviderError`).
+- `backend/app/services/ocr/base.py`: `OCRResponse` Pydantic model (score + raw_text + model + token counts + cost_usd + latency_ms), `OCRProvider` Protocol, `OCRProviderError` exception, shared `PROMPT` loaded from `prompts/ocr_prompt.txt`.
+- `backend/app/services/ocr/claude_provider.py`: `ClaudeProvider` class (one Anthropic call per `parse`, returns `OCRResponse`). Markdown-fence stripping kept defensively. Two registered instances: `claude_sonnet_provider` ($3/$15 per 1M tok), `claude_opus_provider` ($15/$75 per 1M tok). Pricing constants verified against Anthropic public pricing 2026-04.
+- `backend/app/services/ocr/gemini_provider.py`: `GeminiProvider` class using `google.genai`. Uses native JSON mode (`response_mime_type="application/json"`) so no fence-stripping needed in steady state. Two registered instances: `gemini_flash_provider` ($0.30/$2.50 per 1M tok), `gemini_pro_provider` ($1.25/$10.00 per 1M tok ≤200k context). Pricing verified live against `https://ai.google.dev/gemini-api/docs/pricing` via WebFetch on 2026-04-26. Counts `thoughts_token_count` toward output tokens (Gemini 2.5 thinking tokens are billed as output).
+- `backend/app/services/ocr/pipeline.py`: `parse_sheet_music(image_bytes, *, media_type, providers) -> ScoreJson`. Tries providers in order; first one to return a high-confidence (≥0.7) parse wins; first parseable low-confidence result is the fallback (matches old "low conf > nothing" carve-out per spec §6); only when nothing is parseable does it raise `OCRError`. Default chain reads `settings.OCR_PROVIDER_CHAIN` (env, comma-separated). `PROVIDER_REGISTRY` + `get_provider(name)` for the bake-off CLI.
+- `backend/app/routers/scores.py`: updated for the new pipeline return type — was `ocr.score.model_dump()`, now `score.model_dump()` (pipeline returns `ScoreJson` directly, not the wrapper).
+- `backend/app/config.py`: added `GEMINI_API_KEY` + `OCR_PROVIDER_CHAIN` (default `"claude-sonnet-4-6,claude-opus-4-7"` to preserve current behavior pre-bake-off).
+- `backend/.env.example` + `backend/.env`: same two new env slots, with a comment pointing at `bakeoff/` for context on `OCR_PROVIDER_CHAIN`.
+- `backend/pyproject.toml` + `uv.lock`: added `google-genai==1.73.1` (pulls `google-auth`, `pyasn1`, `pyasn1-modules`).
+- `backend/app/tests/test_ocr.py`: **deleted** — superseded by the three new test files.
+- `backend/app/tests/test_claude_provider.py`: new. 8 cases covering `_strip_markdown_fences` (3), `ClaudeProvider.parse` happy path with token-cost math, fence stripping, invalid JSON, no-content-parts error, no-text error, pricing-constants assertion.
+- `backend/app/tests/test_gemini_provider.py`: new. 5 cases — happy path with JSON-mode config verified, thoughts tokens billed as output, invalid JSON raises ValueError, empty response raises OCRProviderError, missing API key raises before SDK call. Also asserts Pro pricing constants.
+- `backend/app/tests/test_pipeline.py`: new. 9 cases — first high-conf wins (second never called), first fails validation → second succeeds, provider error → next, low-conf then high-conf returns high, all-low-conf returns first low-conf, low-conf then invalid returns low-conf, all-fail raises `OCRError` with all names in message, empty chain raises, env-driven default chain, unknown provider in env chain raises.
+- `backend/app/tests/test_scores_router.py`: updated to drop the `from app.services.ocr import OCRResult` import and inline a plain `ScoreJson` in the OCR stub.
+- `bakeoff/__init__.py` + `bakeoff/run_bakeoff.py` + `bakeoff/README.md`: new top-level `bakeoff/` package. CLI: `cd backend && uv run ../bakeoff/run_bakeoff.py [--fixtures-dir … --output … --include-premium --providers a,b,c]`. Discovers all images in `fixtures/scores/`, runs each through the configured provider list, writes a markdown report to `docs/ocr-bakeoff/<date>-bakeoff.md` (per-fixture detail tables + summary table with pass-rate, avg confidence, avg latency, total cost, total measures). Errors per provider don't abort the bake-off — every cell either passes or surfaces its error, so one provider going down doesn't kill the run.
+- `docs/ocr-bakeoff/.gitkeep`: tracked dir for generated reports.
+
+**Why:**
+The user wants to bake off Gemini Flash vs Claude Sonnet on real fixtures before locking the OCR provider. Spec §11 already calls for "abstraction layer in the OCR module so we can swap to GPT-4V or a fine-tuned model later" — now is the right time to build it. The provider abstraction also gives us the toggle infrastructure (env-driven `OCR_PROVIDER_CHAIN`) for free, so post-bake-off the swap is a one-line `.env` edit, no code change. Refactor was contained: `parse_sheet_music` + `OCRError` keep their public names so the `/v1/scores` router barely changed (one `.score` → bare reference).
+
+**Tests run:**
+- `cd backend && uv run pytest -q` → **88 passed in 1.83s**, 0 warnings. Was 72 at end of the prior commit; +16 from the test split (8 Claude + 5 Gemini + 9 pipeline = 22 new — 6 from the deleted `test_ocr.py` since some cases moved to pipeline rather than provider).
+- `cd backend && uv run ../bakeoff/run_bakeoff.py --help` → CLI imports cleanly, surfaces all four built-in providers in the `--providers` choices line.
+
+**Known side effects / things to watch:**
+- Gemini's `thoughts_token_count` may not be present on every response — handled with `getattr(..., 0) or 0`. If a future Gemini model emits this field with a different name, output-token billing will under-count. Tests pin the current behavior.
+- The bake-off script lives at the repo root (not inside `backend/`) so it's clearly project-wide tooling. It works from `backend/` via `sys.path.insert(0, str(BACKEND_DIR))` plus an explicit `load_dotenv(BACKEND_DIR / ".env")`. Running it from anywhere else also works because all paths resolve from `Path(__file__).resolve().parent`.
+- The bake-off doesn't hit any provider's `_client` directly — it just calls `provider.parse(...)`, so when API keys are missing the failure surfaces as a clean per-cell error in the report, not a crash.
+- Pricing constants are hardcoded in the provider modules. If Anthropic or Google change prices, update the constants — the tests pin the current values to surface drift.
+- `OCR_PROVIDER_CHAIN` default is unchanged (`claude-sonnet-4-6,claude-opus-4-7`) so production behavior is identical until the user picks a winner from the bake-off and edits `.env`.
+
+**Rollback:** `git revert <SHA>` rolls back the package, the providers, the bake-off, and the env additions in one shot. Anything still importing `from app.services.ocr import parse_sheet_music, OCRError` (i.e. `routers/scores.py`) keeps working since the public API names are preserved.
+
 ## 2026-04-26 20:40 — Batch 2 — /v1/scores router (POST/GET/PATCH/DELETE)
 
 **Batch:** Batch 2

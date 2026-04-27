@@ -162,7 +162,7 @@ async def create_score(
     media_type = _media_type_for(body.image_url)
 
     try:
-        ocr = parse_sheet_music(image_bytes, media_type=media_type)
+        score = parse_sheet_music(image_bytes, media_type=media_type)
     except OCRError as exc:
         raise HTTPException(
             status_code=422,
@@ -174,8 +174,8 @@ async def create_score(
         "title": body.title,
         "composer": body.composer,
         "source_image_url": body.image_url,
-        "score_json": ocr.score.model_dump(mode="json"),
-        "ocr_confidence": ocr.score.ocr_confidence,
+        "score_json": score.model_dump(mode="json"),
+        "ocr_confidence": score.ocr_confidence,
     }
     inserted = (
         _service_client().table("scores").insert(insert_payload).execute()

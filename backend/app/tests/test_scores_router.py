@@ -18,7 +18,6 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 from app.routers import scores as scores_module
-from app.services.ocr import OCRResult
 from app.services.score_schema import ScoreJson
 
 
@@ -120,8 +119,7 @@ def _install_supabase(monkeypatch: pytest.MonkeyPatch, *, returning_row: dict | 
 def _stub_ocr(monkeypatch: pytest.MonkeyPatch, *, score: ScoreJson | None = None) -> None:
     if score is None:
         score = ScoreJson.model_validate(GOOD_PAYLOAD)
-    result = OCRResult(score=score, model_used="claude-sonnet-4-6", raw_response="{}")
-    monkeypatch.setattr(scores_module, "parse_sheet_music", lambda *a, **k: result)
+    monkeypatch.setattr(scores_module, "parse_sheet_music", lambda *a, **k: score)
 
 
 def _stub_download(monkeypatch: pytest.MonkeyPatch, body: bytes = b"<jpeg>") -> None:
