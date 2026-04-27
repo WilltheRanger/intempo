@@ -33,6 +33,7 @@ You are reading a single line of sheet music for a string instrument. Output a J
 Rules:
 - If you can't read a measure clearly, include it but set ocr_confidence to <0.7 and explain in notes_to_human.
 - Do NOT invent notes. If part of the image is illegible, leave that measure empty and flag it.
+- If the time_signature or key_signature is illegible (cropped off, handwritten unclear, missing from this excerpt), use the literal string "unknown" for that field rather than guessing. Do NOT use "unknown" for any other field — those two are the only ones with this escape hatch.
 - Tempo marking: if the score says "Allegro" without a BPM, infer the conventional range and put it in bpm_hint (Allegro ~120, Andante ~76, etc.)
 - Slurs: indicate by note index within the measure, 0-indexed.
 - Output ONLY the JSON object, no preamble or markdown fences.

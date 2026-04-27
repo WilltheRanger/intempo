@@ -83,9 +83,17 @@ class Repeat(_Strict):
     type: RepeatType
 
 
+_TIME_SIG_PATTERN = re.compile(r"^\d+/\d+$")
+
+
 class ScoreJson(_Strict):
-    time_signature: str = Field(pattern=r"^\d+/\d+$")
-    key_signature: str = Field(min_length=1, max_length=40)
+    # `time_signature` and `key_signature` accept the literal string
+    # "unknown" (or null) when the score's metadata header is illegible
+    # — handwritten manuscripts and tightly-cropped phone photos often
+    # cut off the time/key marking. The OCR prompt explicitly authorizes
+    # the model to use "unknown" rather than guess.
+    time_signature: str | None = Field(default=None, max_length=20)
+    key_signature: str | None = Field(default=None, max_length=40)
     tempo_marking: str | None = None
     bpm_hint: int | None = Field(default=None, ge=20, le=300)
     clef: Clef
@@ -93,3 +101,24 @@ class ScoreJson(_Strict):
     repeats: list[Repeat] = Field(default_factory=list)
     ocr_confidence: float = Field(ge=0.0, le=1.0)
     notes_to_human: str = ""
+
+    @field_validator("time_signature")
+    @classmethod
+    def _validate_time_signature(cls, value: str | None) -> str | None:
+        if value is None or value.strip().lower() == "unknown":
+            return value
+        if not _TIME_SIG_PATTERN.match(value):
+            raise ValueError(
+                f"time_signature must be 'N/N' (e.g. '4/4'), 'unknown', or null; got {value!r}"
+            )
+        return value
+
+    @field_validator("key_signature")
+    @classmethod
+    def _validate_key_signature(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("key_signature must be non-empty when provided")
+        return value

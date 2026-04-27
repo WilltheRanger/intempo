@@ -39,7 +39,9 @@ sys.path.insert(0, str(BACKEND_DIR))
 # Load `.env` from backend so GEMINI_API_KEY / ANTHROPIC_API_KEY land in env.
 from dotenv import load_dotenv  # noqa: E402
 
-load_dotenv(BACKEND_DIR / ".env")
+# override=True so a stale empty `ANTHROPIC_API_KEY=""` in the user's
+# shell environment doesn't shadow the value from `backend/.env`.
+load_dotenv(BACKEND_DIR / ".env", override=True)
 
 from pydantic import ValidationError  # noqa: E402
 
@@ -87,6 +89,25 @@ def _format_notes(text: str | None, *, max_len: int = 100) -> str:
     return cleaned[: max_len - 1] + "…" if len(cleaned) > max_len else cleaned
 
 
+def _parse_with_retry(provider, image_bytes: bytes, mime_type: str) -> OCRResponse:
+    """One retry with backoff on transient throttling (HTTP 429 / 503)."""
+    import time as _t
+
+    last_exc: Exception | None = None
+    for attempt in range(2):
+        try:
+            return provider.parse(image_bytes, mime_type=mime_type)
+        except Exception as exc:  # noqa: BLE001 — provider-agnostic catch
+            text = f"{type(exc).__name__}: {exc}"
+            transient = any(token in text for token in ("503", "429", "UNAVAILABLE", "RESOURCE_EXHAUSTED"))
+            if not transient or attempt == 1:
+                raise
+            print("(503 — backing off 8s)", end=" ", flush=True)
+            _t.sleep(8)
+            last_exc = exc
+    raise last_exc  # unreachable, satisfies type checker
+
+
 def _run_providers_on_image(
     image_path: Path, providers: list
 ) -> dict[str, dict[str, Any]]:
@@ -97,7 +118,7 @@ def _run_providers_on_image(
         print(f"  -> {provider.name}", end=" ", flush=True)
         entry: dict[str, Any] = {"schema_valid": False, "error": None}
         try:
-            response: OCRResponse = provider.parse(image_bytes, mime_type=mime_type)
+            response: OCRResponse = _parse_with_retry(provider, image_bytes, mime_type)
         except ValidationError as exc:
             err = f"ValidationError: {exc.error_count()} error(s)"
             print(f"FAIL {err}")

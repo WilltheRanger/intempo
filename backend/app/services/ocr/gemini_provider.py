@@ -19,7 +19,11 @@ from app.services.ocr.base import (
 )
 from app.services.score_schema import ScoreJson
 
-MAX_OUTPUT_TOKENS = 4000
+# Gemini 2.5 has thinking mode on by default and bills thinking tokens
+# against `max_output_tokens`. Even with thinking disabled (we set
+# `thinking_budget=0` below), the OCR JSON for a dense single-staff line
+# can run 2-3k visible tokens. 16000 leaves comfortable headroom.
+MAX_OUTPUT_TOKENS = 16000
 
 
 class GeminiProvider:
@@ -64,6 +68,12 @@ class GeminiProvider:
             config=types.GenerateContentConfig(
                 response_mime_type="application/json",
                 max_output_tokens=MAX_OUTPUT_TOKENS,
+                # Gemini 2.5 enables thinking by default; thinking tokens
+                # are billed and counted against max_output_tokens. For
+                # OCR we don't need internal reasoning, so disable it.
+                # Per Google docs: thinking_budget=0 turns thinking off
+                # for 2.5 Flash. Pro has a non-zero minimum but accepts 0.
+                thinking_config=types.ThinkingConfig(thinking_budget=0),
             ),
         )
         latency_ms = int((time.monotonic() - start) * 1000)

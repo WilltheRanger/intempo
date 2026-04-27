@@ -101,10 +101,14 @@ def test_parse_clean_json_response(install_fake) -> None:
     # Flash pricing: $0.30 / $2.50 per 1M tokens.
     expected_cost = (2000 * 0.30 + 400 * 2.50) / 1_000_000
     assert result.cost_usd == pytest.approx(expected_cost, rel=1e-9)
-    # Verify the call shape: response_mime_type=application/json forces JSON mode.
+    # Verify the call shape: response_mime_type=application/json forces JSON mode,
+    # max_output_tokens is sized for Gemini 2.5 (well above Claude's 4000), and
+    # thinking is disabled so internal reasoning tokens don't eat the budget.
     sent = fake.models.calls[0]["config"]
     assert sent.response_mime_type == "application/json"
-    assert sent.max_output_tokens == 4000
+    assert sent.max_output_tokens == 16000
+    assert sent.thinking_config is not None
+    assert sent.thinking_config.thinking_budget == 0
 
 
 def test_thoughts_tokens_count_as_output(install_fake) -> None:

@@ -103,6 +103,33 @@ def test_invalid_time_signature_rejected() -> None:
         ScoreJson.model_validate({**MINIMAL_PAYLOAD, "time_signature": "common"})
 
 
+@pytest.mark.parametrize("value", ["unknown", "UNKNOWN", "Unknown", None])
+def test_unknown_or_null_time_signature_accepted(value) -> None:
+    """When the metadata header is illegible (handwritten / cropped photo)
+    the model must be able to say 'unknown' or null rather than guess."""
+    payload = {**MINIMAL_PAYLOAD, "time_signature": value}
+    if value is None:
+        # Pydantic dropping default — confirm it parses with the field omitted.
+        payload.pop("time_signature")
+    parsed = ScoreJson.model_validate(payload)
+    assert parsed.time_signature == value
+
+
+@pytest.mark.parametrize("value", ["unknown", None])
+def test_unknown_or_null_key_signature_accepted(value) -> None:
+    payload = {**MINIMAL_PAYLOAD, "key_signature": value}
+    if value is None:
+        payload.pop("key_signature")
+    parsed = ScoreJson.model_validate(payload)
+    assert parsed.key_signature == value
+
+
+def test_empty_string_key_signature_rejected() -> None:
+    """Empty string is different from None / 'unknown' — it's a model glitch."""
+    with pytest.raises(ValidationError):
+        ScoreJson.model_validate({**MINIMAL_PAYLOAD, "key_signature": "   "})
+
+
 def test_invalid_clef_rejected() -> None:
     with pytest.raises(ValidationError):
         ScoreJson.model_validate({**MINIMAL_PAYLOAD, "clef": "guitar"})
