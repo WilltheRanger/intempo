@@ -4,6 +4,31 @@ Newest entries at the top. Format spec: see "Build-time activity logging"
 in intempo-combined.md. Every meaningful change goes here — see that
 section for what counts as "meaningful."
 
+## 2026-04-26 19:15 — Batch 1 — 003_users_auth_fk migration
+
+**Batch:** Batch 1
+**Branch:** feat/batch-1-backend-infra
+**Commit (after this edit):** to be filled in after the commit lands.
+
+**What changed:**
+- `backend/app/migrations/003_users_auth_fk.sql`: new. Drops `public.users.id`'s `gen_random_uuid()` default and adds `users_auth_fk: FOREIGN KEY (id) REFERENCES auth.users(id) ON DELETE CASCADE`. Includes a leading `DELETE FROM public.users` guard — safe in dev (table is empty), destructive in production (requires backfill step instead).
+- `DECISIONS.md`: new entry at top documenting the spec gap and the fix.
+
+**Why:**
+Live verification of /v1/me round-trip uncovered that deleting a Supabase auth user orphans the matching row in `public.users` (and would orphan everything that CASCADEs off it: scores, analyses, assignments). Spec §2 canonical DDL doesn't include the FK that would prevent this; Supabase's standard pattern is to reference `auth.users(id)` with CASCADE. Adding it now in Batch 1 keeps every downstream batch from inheriting the hazard.
+
+**Tests run:**
+- Migration applied via the Supabase MCP `execute_sql` (service-role authenticated). No errors.
+- `pg_constraint` query confirms the FK is live: `users_auth_fk: FOREIGN KEY (id) REFERENCES auth.users(id) ON DELETE CASCADE` (confdeltype='c').
+- `information_schema.columns` confirms `public.users.id` no longer has a default.
+- Full re-run of the live `/v1/me` flow with CASCADE confirmation logged in the next entry.
+
+**Known side effects / things to watch:**
+- The leading `DELETE FROM public.users` in the migration body would wipe production data if blindly re-applied. Anyone running migrations end-to-end in prod must skip 003 and instead add the FK without the DELETE (after validating no orphan ids exist).
+- `public.users.id` is now a hard pointer to `auth.users.id`. Our `/v1/me` provisioning insert sets `id=str(user_id)` (the JWT's `sub`), which is the auth UUID — already correct, no code change needed.
+
+**Rollback:** `git revert <SHA>` removes the file; SQL rollback is `ALTER TABLE public.users DROP CONSTRAINT users_auth_fk; ALTER TABLE public.users ALTER COLUMN id SET DEFAULT gen_random_uuid();`. The orphan-row hazard returns.
+
 ## 2026-04-26 18:50 — Batch 1 — switch auth from HS256 shared-secret to JWKS/ES256
 
 **Batch:** Batch 1
