@@ -8,7 +8,7 @@ section for what counts as "meaningful."
 
 **Batch:** Batch 1
 **Branch:** feat/batch-1-backend-infra
-**Commit (after this edit):** to be filled in after the commit lands.
+**Commit (after this edit):** `ba96e55` — `feat(batch-1): 003_users_auth_fk — link public.users.id to auth.users(id) ON DELETE CASCADE`.
 
 **What changed:**
 - `backend/app/migrations/003_users_auth_fk.sql`: new. Drops `public.users.id`'s `gen_random_uuid()` default and adds `users_auth_fk: FOREIGN KEY (id) REFERENCES auth.users(id) ON DELETE CASCADE`. Includes a leading `DELETE FROM public.users` guard — safe in dev (table is empty), destructive in production (requires backfill step instead).
