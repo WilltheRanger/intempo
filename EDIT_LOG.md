@@ -8,7 +8,7 @@ section for what counts as "meaningful."
 
 **Batch:** Batch 1
 **Branch:** feat/batch-1-backend-infra
-**Commit (after this edit):** to be filled in after commit lands.
+**Commit (after this edit):** `3fb8f40` — `test(batch-1): cover auth, /v1/me first-touch, /v1/upload presign`.
 
 **What changed:**
 - `backend/app/tests/conftest.py`: new. Sets `SUPABASE_*` env vars before any test runs so `app.config.Settings` (lru_cached) picks up the test secret. Module-import-side-effect on purpose.
