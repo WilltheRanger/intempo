@@ -1,0 +1,1456 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>InTempo — Design Preview</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-page: #F2EFE8;
+      --bg-phone: #FAFAF7;
+      --bg-card: #FFFFFF;
+      --border: #E8E6E0;
+      --border-strong: #D6D3CB;
+      --text-primary: #0F0E0C;
+      --text-secondary: #6B6862;
+      --text-tertiary: #A8A39B;
+      --accent: #B8651A;
+      --accent-soft: #FAEEDA;
+      --verdict-green: #1F8A4C;
+      --verdict-amber: #D69E2E;
+      --verdict-red: #C53B3B;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      background: var(--bg-page);
+      color: var(--text-primary);
+      font-family: 'Geist', -apple-system, BlinkMacSystemFont, 'Inter', system-ui, sans-serif;
+      font-feature-settings: 'cv11', 'ss03';
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+
+    .mono { font-family: 'Geist Mono', 'JetBrains Mono', ui-monospace, monospace; }
+
+    .page {
+      max-width: 1240px;
+      margin: 0 auto;
+      padding: 56px 32px 80px;
+    }
+
+    .page-header {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      margin-bottom: 12px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 17px;
+      font-weight: 500;
+      letter-spacing: -0.01em;
+    }
+
+    .brand-mark {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 28px;
+      height: 28px;
+      border-radius: 7px;
+      background: var(--accent);
+      color: #FFFFFF;
+      font-size: 14px;
+      font-weight: 500;
+      letter-spacing: -0.02em;
+    }
+
+    .meta {
+      font-size: 13px;
+      color: var(--text-secondary);
+    }
+
+    .meta .mono { font-size: 12px; }
+
+    .intro {
+      max-width: 640px;
+      font-size: 15px;
+      line-height: 1.55;
+      color: var(--text-secondary);
+      margin-bottom: 56px;
+    }
+
+    .intro strong {
+      color: var(--text-primary);
+      font-weight: 500;
+    }
+
+    .section-eyebrow {
+      font-size: 11px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--text-tertiary);
+      font-weight: 500;
+      margin-bottom: 24px;
+    }
+
+    .screens {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
+      gap: 28px;
+      margin-bottom: 80px;
+    }
+
+    .phone {
+      background: var(--bg-phone);
+      border: 1px solid var(--border);
+      border-radius: 28px;
+      padding: 24px 22px;
+      min-height: 640px;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+    }
+
+    .phone::before {
+      content: '';
+      position: absolute;
+      top: 14px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 80px;
+      height: 24px;
+      background: var(--text-primary);
+      border-radius: 16px;
+      opacity: 0.92;
+    }
+
+    .status-bar {
+      display: flex;
+      justify-content: space-between;
+      font-size: 13px;
+      font-weight: 500;
+      margin-bottom: 28px;
+      margin-top: 6px;
+    }
+
+    .status-bar .right {
+      display: inline-flex;
+      gap: 6px;
+      align-items: center;
+      color: var(--text-primary);
+    }
+
+    .status-icon {
+      display: inline-block;
+      width: 16px;
+      height: 10px;
+      border: 1px solid var(--text-primary);
+      border-radius: 2px;
+      position: relative;
+    }
+    .status-icon::after {
+      content: '';
+      position: absolute;
+      inset: 1px;
+      width: 10px;
+      background: var(--text-primary);
+      border-radius: 1px;
+    }
+    .status-icon::before {
+      content: '';
+      position: absolute;
+      right: -3px;
+      top: 3px;
+      width: 1px;
+      height: 4px;
+      background: var(--text-primary);
+    }
+
+    .nav {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 28px;
+      font-size: 14px;
+    }
+
+    .nav-back {
+      color: var(--accent);
+      font-weight: 500;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .nav-title {
+      color: var(--text-secondary);
+      font-weight: 500;
+    }
+
+    .nav-action {
+      color: var(--text-secondary);
+      font-size: 14px;
+    }
+
+    .label {
+      font-size: 11px;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+      color: var(--text-secondary);
+      font-weight: 500;
+    }
+
+    .eyebrow-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+
+    .live-dot {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--verdict-red);
+      box-shadow: 0 0 0 3px rgba(197, 59, 59, 0.18);
+    }
+
+    .display-number {
+      font-size: 48px;
+      font-weight: 500;
+      letter-spacing: -0.025em;
+      line-height: 1;
+      font-variant-numeric: tabular-nums;
+      margin-bottom: 6px;
+    }
+
+    .display-headline {
+      font-size: 34px;
+      font-weight: 500;
+      letter-spacing: -0.02em;
+      line-height: 1.05;
+      margin-bottom: 6px;
+    }
+
+    .display-sub {
+      font-size: 14px;
+      color: var(--text-secondary);
+      line-height: 1.45;
+      margin-bottom: 24px;
+    }
+
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px 18px;
+      margin-bottom: 12px;
+    }
+
+    .card-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .card-title {
+      font-size: 14px;
+      color: var(--text-primary);
+    }
+
+    .metronome-square {
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      border: 2px solid var(--accent);
+    }
+
+    .waveform {
+      display: flex;
+      align-items: center;
+      gap: 2px;
+      height: 42px;
+    }
+
+    .wave {
+      width: 3px;
+      background: var(--text-secondary);
+      border-radius: 1px;
+    }
+    .wave.peak { background: var(--accent); }
+
+    .measures {
+      display: grid;
+      grid-template-columns: repeat(8, 1fr);
+      gap: 4px;
+    }
+
+    .measure {
+      height: 24px;
+      border-radius: 4px;
+    }
+    .m-on { background: var(--verdict-green); }
+    .m-mid { background: var(--verdict-amber); }
+    .m-bad { background: var(--verdict-red); }
+
+    .measure-axis {
+      display: flex;
+      justify-content: space-between;
+      font-size: 11px;
+      color: var(--text-secondary);
+      margin-top: 8px;
+    }
+
+    .trend {
+      width: 100%;
+      height: 64px;
+      display: block;
+    }
+
+    .spacer { flex: 1; min-height: 8px; }
+
+    .btn {
+      width: 100%;
+      height: 48px;
+      border-radius: 10px;
+      border: none;
+      font-size: 14px;
+      font-weight: 500;
+      font-family: inherit;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      letter-spacing: -0.005em;
+    }
+
+    .btn-primary { background: var(--accent); color: #FFFFFF; }
+    .btn-stop { background: var(--text-primary); color: #FFFFFF; }
+    .btn-stop .stop-square { width: 11px; height: 11px; background: #FFFFFF; border-radius: 1px; }
+    .btn-ghost { background: transparent; color: var(--text-primary); border: 1px solid var(--border); }
+
+    .btn + .btn { margin-top: 8px; }
+
+    .measure-list { display: flex; flex-direction: column; gap: 1px; }
+
+    .measure-row {
+      display: grid;
+      grid-template-columns: 32px 1fr auto;
+      gap: 14px;
+      align-items: center;
+      padding: 12px 4px;
+      border-bottom: 1px solid var(--border);
+    }
+    .measure-row:last-child { border-bottom: none; }
+
+    .measure-num {
+      font-size: 13px;
+      color: var(--text-secondary);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .measure-bar {
+      height: 6px;
+      background: var(--border);
+      border-radius: 3px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .measure-bar-fill {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      border-radius: 3px;
+    }
+    .mb-on { background: var(--verdict-green); left: 50%; width: 4%; }
+    .mb-rush-mid { background: var(--verdict-amber); right: 50%; width: 18%; }
+    .mb-rush-bad { background: var(--verdict-red); right: 50%; width: 32%; }
+    .mb-rush-worse { background: var(--verdict-red); right: 50%; width: 38%; }
+
+    .measure-pct {
+      font-size: 13px;
+      font-weight: 500;
+      min-width: 88px;
+      text-align: right;
+      white-space: nowrap;
+    }
+    .pct-on { color: var(--verdict-green); }
+    .pct-mid { color: var(--verdict-amber); }
+    .pct-bad { color: var(--verdict-red); }
+
+    .scroll-area {
+      flex: 1;
+      overflow: hidden;
+      margin-bottom: 14px;
+    }
+
+    /* design system reference */
+    .system-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 28px 36px;
+      margin-bottom: 56px;
+    }
+
+    .system-block h3 {
+      font-size: 13px;
+      font-weight: 500;
+      letter-spacing: -0.005em;
+      margin-bottom: 14px;
+      color: var(--text-primary);
+    }
+
+    .swatch-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .swatch {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      color: var(--text-secondary);
+    }
+
+    .swatch-color {
+      width: 22px;
+      height: 22px;
+      border-radius: 5px;
+      border: 1px solid rgba(0,0,0,0.06);
+    }
+
+    .swatch .mono { font-size: 11px; color: var(--text-tertiary); }
+
+    .type-row {
+      display: grid;
+      grid-template-columns: 56px 1fr auto;
+      gap: 12px;
+      align-items: baseline;
+      padding: 10px 0;
+      border-bottom: 1px solid var(--border);
+      color: var(--text-primary);
+    }
+    .type-row:last-child { border-bottom: none; }
+
+    .type-row .size {
+      color: var(--text-tertiary);
+      font-size: 11px;
+    }
+
+    .type-display { font-size: 28px; font-weight: 500; letter-spacing: -0.02em; line-height: 1.1; }
+    .type-headline { font-size: 20px; font-weight: 500; letter-spacing: -0.01em; }
+    .type-title { font-size: 16px; font-weight: 500; }
+    .type-body { font-size: 14px; font-weight: 400; }
+    .type-label { font-size: 11px; font-weight: 500; letter-spacing: 0.07em; text-transform: uppercase; }
+
+    .principles {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px 36px;
+    }
+
+    .principles ul {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+
+    .principles li {
+      font-size: 13px;
+      color: var(--text-secondary);
+      padding: 6px 0;
+      display: flex;
+      gap: 10px;
+      line-height: 1.5;
+    }
+
+    .principles li::before {
+      content: '';
+      flex-shrink: 0;
+      display: inline-block;
+      width: 14px;
+      height: 14px;
+      margin-top: 3px;
+    }
+
+    .do li::before {
+      background: var(--verdict-green);
+      mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 14'><path fill='black' d='M11.5 4 6 9.5 3.5 7l-1 1L6 11.5 12.5 5z'/></svg>") center / contain no-repeat;
+      -webkit-mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 14'><path fill='black' d='M11.5 4 6 9.5 3.5 7l-1 1L6 11.5 12.5 5z'/></svg>") center / contain no-repeat;
+    }
+
+    .dont li::before {
+      background: var(--verdict-red);
+      mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 14'><path fill='black' d='m4 3-1 1 3 3-3 3 1 1 3-3 3 3 1-1-3-3 3-3-1-1-3 3z'/></svg>") center / contain no-repeat;
+      -webkit-mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 14'><path fill='black' d='m4 3-1 1 3 3-3 3 1 1 3-3 3 3 1-1-3-3 3-3-1-1-3 3z'/></svg>") center / contain no-repeat;
+    }
+
+    .principle-title {
+      font-size: 11px;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+      color: var(--text-tertiary);
+      font-weight: 500;
+      margin-bottom: 10px;
+    }
+
+    .footer {
+      margin-top: 64px;
+      padding-top: 24px;
+      border-top: 1px solid var(--border);
+      font-size: 12px;
+      color: var(--text-tertiary);
+      display: flex;
+      justify-content: space-between;
+    }
+
+    /* Splash screen — shown only when app load takes longer than ~300ms */
+    .phone-splash { justify-content: space-between; }
+    .splash-center {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 24px;
+    }
+    .splash-wordmark {
+      font-size: 32px;
+      font-weight: 500;
+      letter-spacing: -0.025em;
+      color: var(--text-primary);
+      line-height: 1;
+    }
+    .splash-pendulum { display: block; margin: 0 auto; }
+    .pendulum-swing {
+      transform-origin: 70px 16px;
+      transform-box: view-box;
+      animation: pendulum-swing 1.1s cubic-bezier(0.42, 0, 0.58, 1) infinite alternate;
+    }
+    .pendulum-trail {
+      animation: pendulum-trail 1.1s cubic-bezier(0.42, 0, 0.58, 1) infinite alternate;
+    }
+    .pendulum-trail-left  { animation-delay: -1.1s; }
+    @keyframes pendulum-swing {
+      from { transform: rotate(-17deg); }
+      to   { transform: rotate(17deg); }
+    }
+    @keyframes pendulum-trail {
+      0%   { opacity: 0; }
+      85%  { opacity: 0; }
+      100% { opacity: 0.18; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .pendulum-swing { animation: none; transform: rotate(0); }
+      .pendulum-trail { animation: none; opacity: 0; }
+    }
+    .splash-context {
+      font-size: 13px;
+      color: var(--text-secondary);
+      text-align: center;
+      letter-spacing: -0.005em;
+      line-height: 1.4;
+      max-width: 220px;
+    }
+    .splash-progress {
+      height: 2px;
+      background: var(--border);
+      border-radius: 1px;
+      overflow: hidden;
+      margin-top: 24px;
+      width: 100%;
+    }
+    .splash-progress-fill {
+      height: 100%;
+      width: 64%;
+      background: var(--accent);
+      border-radius: 1px;
+    }
+
+    /* Home / library */
+    .home-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 4px;
+    }
+    .home-title {
+      font-size: 28px;
+      font-weight: 500;
+      letter-spacing: -0.02em;
+      line-height: 1;
+    }
+    .icon-btn {
+      width: 36px;
+      height: 36px;
+      border-radius: 8px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      color: var(--text-primary);
+      font-size: 20px;
+      font-weight: 400;
+      cursor: pointer;
+      font-family: inherit;
+      line-height: 1;
+    }
+    .home-sub {
+      font-size: 12px;
+      color: var(--text-secondary);
+      margin-bottom: 20px;
+    }
+    .piece-list { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
+    .piece {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 12px 0;
+      border-bottom: 1px solid var(--border);
+      gap: 12px;
+    }
+    .piece:first-child { padding-top: 0; }
+    .piece:last-child { border-bottom: none; padding-bottom: 0; }
+    .piece-meta { flex: 1; min-width: 0; }
+    .piece-title {
+      font-size: 14px;
+      font-weight: 500;
+      margin-bottom: 2px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .piece-sub { font-size: 11px; color: var(--text-secondary); }
+    .piece-verdict {
+      font-size: 11px;
+      font-weight: 500;
+      padding: 4px 8px;
+      border-radius: 6px;
+      letter-spacing: -0.005em;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .pv-on { background: rgba(31, 138, 76, 0.13); color: #146636; }
+    .pv-mid { background: rgba(214, 158, 46, 0.16); color: #8E6815; }
+    .pv-bad { background: rgba(197, 59, 59, 0.13); color: #952B2B; }
+
+    /* Score capture (camera) */
+    .phone-camera {
+      background: #181614;
+      color: #FFFFFF;
+    }
+    .phone-camera::before { background: #0A0908; }
+    .phone-camera .status-bar { color: #FFFFFF; }
+    .phone-camera .status-icon { border-color: #FFFFFF; }
+    .phone-camera .status-icon::after { background: #FFFFFF; }
+    .phone-camera .status-icon::before { background: #FFFFFF; }
+    .capture-cancel {
+      font-size: 14px;
+      color: #FFFFFF;
+      margin-bottom: 24px;
+      font-weight: 500;
+    }
+    .capture-frame {
+      flex: 1;
+      position: relative;
+      background: #2A2622;
+      border-radius: 12px;
+      margin-bottom: 28px;
+      overflow: hidden;
+    }
+    .capture-staff {
+      position: absolute;
+      top: 35%;
+      left: 12%;
+      right: 12%;
+      height: 30%;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 6px 0;
+    }
+    .capture-staff span {
+      display: block;
+      height: 1px;
+      background: rgba(255, 255, 255, 0.18);
+    }
+    .corner {
+      position: absolute;
+      width: 20px;
+      height: 20px;
+      border-color: var(--accent);
+      border-style: solid;
+      border-width: 0;
+    }
+    .corner.tl { top: 8%; left: 6%; border-top-width: 2px; border-left-width: 2px; }
+    .corner.tr { top: 8%; right: 6%; border-top-width: 2px; border-right-width: 2px; }
+    .corner.bl { bottom: 8%; left: 6%; border-bottom-width: 2px; border-left-width: 2px; }
+    .corner.br { bottom: 8%; right: 6%; border-bottom-width: 2px; border-right-width: 2px; }
+    .capture-hint {
+      position: absolute;
+      bottom: 14px;
+      left: 0;
+      right: 0;
+      text-align: center;
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.65);
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      font-weight: 500;
+    }
+    .capture-shutter {
+      width: 64px;
+      height: 64px;
+      border-radius: 50%;
+      background: #FFFFFF;
+      border: 4px solid rgba(255, 255, 255, 0.22);
+      margin: 0 auto;
+      cursor: pointer;
+      padding: 0;
+    }
+
+    /* Tempo selector dial */
+    .tempo-dial {
+      position: relative;
+      width: 180px;
+      height: 180px;
+      margin: 12px auto 18px;
+    }
+    .tempo-dial svg { display: block; width: 100%; height: 100%; }
+    .tempo-bpm {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+    .tempo-bpm-num {
+      font-size: 48px;
+      font-weight: 500;
+      letter-spacing: -0.03em;
+      line-height: 1;
+      font-variant-numeric: tabular-nums;
+      margin-bottom: 4px;
+    }
+    .tempo-bpm-unit {
+      font-size: 11px;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+      color: var(--text-secondary);
+      font-weight: 500;
+    }
+    .tempo-controls {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+    .tempo-step {
+      flex: 1;
+      height: 40px;
+      border-radius: 8px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      font-size: 18px;
+      font-weight: 500;
+      color: var(--text-primary);
+      cursor: pointer;
+      font-family: inherit;
+    }
+
+    /* Analyzing screen step list */
+    .step-list-analyze { display: flex; flex-direction: column; gap: 14px; }
+    .step-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 14px;
+    }
+    .step-icon {
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .step-icon.done { background: var(--verdict-green); }
+    .step-icon.active {
+      background: transparent;
+      border: 2px solid var(--accent);
+      box-sizing: border-box;
+      position: relative;
+    }
+    .step-icon.active::after {
+      content: '';
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--accent);
+    }
+    .step-icon.pending { border: 2px solid var(--border); background: transparent; box-sizing: border-box; }
+    .step-text { color: var(--text-primary); }
+    .step-row.pending .step-text { color: var(--text-tertiary); }
+
+    /* Paywall */
+    .tier-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 11px 0;
+      font-size: 14px;
+      color: var(--text-primary);
+    }
+    .tier-row + .tier-row { border-top: 1px solid var(--border); }
+    .tier-check {
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background: var(--accent);
+      color: #FFFFFF;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .paywall-price {
+      text-align: center;
+      font-size: 12px;
+      color: var(--text-secondary);
+      margin: 10px 0 8px;
+    }
+    .paywall-fineprint {
+      text-align: center;
+      font-size: 11px;
+      color: var(--text-tertiary);
+      margin-top: 12px;
+    }
+
+    @media (max-width: 720px) {
+      .page { padding: 32px 20px 56px; }
+      .page-header { flex-direction: column; align-items: flex-start; gap: 8px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <header class="page-header">
+      <div class="brand">
+        <span class="brand-mark">i</span>
+        <span>InTempo · Design preview</span>
+      </div>
+      <div class="meta">
+        <span class="mono">v0.7</span> · 2026-04-25 · refined pendulum
+      </div>
+    </header>
+
+    <p class="intro">
+      Linear-leaning aesthetic with warmth. Charcoal text on a near-white warm background, generous whitespace, subtle borders instead of shadows, and a single deep-amber accent that does the brand work.
+      <strong>Verdict colors (green / amber / red) are quarantined</strong> to the verdict UI only — they never appear in chrome, navigation, or buttons elsewhere.
+      <strong>Verdicts are words, not numbers</strong> — "Slight rush" and "Rushing" tell a musician what happened; the bar visualization shows how much.
+      Below: nine reference screens covering the full app flow — splash, library, score capture, tempo selector, recording, analyzing, verdict, per-measure drill-down, and paywall.
+    </p>
+
+    <div class="section-eyebrow">Reference screens · full app flow</div>
+
+    <section class="screens">
+
+      <article class="phone phone-splash" aria-label="App load screen — shown only when load takes longer than 300ms">
+        <div class="status-bar">
+          <span>11:40</span>
+          <span class="right"><span class="status-icon"></span></span>
+        </div>
+        <div class="splash-center">
+          <div class="splash-wordmark">InTempo</div>
+          <svg class="splash-pendulum" width="140" height="180" viewBox="0 0 140 180" aria-hidden="true">
+            <line x1="36" y1="4" x2="104" y2="4" stroke="#0F0E0C" stroke-width="2" stroke-linecap="round"/>
+            <path d="M 62 4 L 78 4 L 70 14 Z" fill="#0F0E0C"/>
+            <path d="M 30 162 Q 70 176 110 162" fill="none" stroke="#E8E6E0" stroke-width="1" stroke-dasharray="1 4"/>
+            <line x1="30" y1="161" x2="30" y2="166" stroke="#D6D3CB" stroke-width="1.2" stroke-linecap="round"/>
+            <line x1="70" y1="173" x2="70" y2="178" stroke="#D6D3CB" stroke-width="1.2" stroke-linecap="round"/>
+            <line x1="110" y1="161" x2="110" y2="166" stroke="#D6D3CB" stroke-width="1.2" stroke-linecap="round"/>
+            <circle class="pendulum-trail pendulum-trail-left" cx="35.8" cy="135" r="13" fill="#B8651A"/>
+            <circle class="pendulum-trail" cx="104.2" cy="135" r="13" fill="#B8651A"/>
+            <circle cx="70" cy="16" r="4" fill="#FAFAF7" stroke="#0F0E0C" stroke-width="1.5"/>
+            <g class="pendulum-swing">
+              <line x1="70" y1="20" x2="70" y2="124" stroke="#0F0E0C" stroke-width="2" stroke-linecap="round"/>
+              <rect x="68" y="123" width="4" height="6" rx="0.5" fill="#0F0E0C"/>
+              <circle cx="70" cy="142" r="13" fill="#B8651A"/>
+              <ellipse cx="65.5" cy="137.5" rx="3.5" ry="2.5" fill="#FAEEDA" opacity="0.55"/>
+            </g>
+          </svg>
+          <div class="splash-context">Picking up Bach, Cello Suite I</div>
+        </div>
+        <div class="splash-progress">
+          <div class="splash-progress-fill"></div>
+        </div>
+      </article>
+
+      <article class="phone" aria-label="Library / home screen">
+        <div class="status-bar">
+          <span>11:41</span>
+          <span class="right"><span class="status-icon"></span></span>
+        </div>
+
+        <div class="home-header">
+          <span class="home-title">Library</span>
+          <button class="icon-btn" aria-label="Add new score">+</button>
+        </div>
+        <div class="home-sub">12 pieces · 47 attempts this month</div>
+
+        <div class="piece-list">
+          <div class="piece">
+            <div class="piece-meta">
+              <div class="piece-title">Bach, Cello Suite I</div>
+              <div class="piece-sub">Prelude · 4 attempts · 2d ago</div>
+            </div>
+            <div class="piece-verdict pv-on">On tempo</div>
+          </div>
+          <div class="piece">
+            <div class="piece-meta">
+              <div class="piece-title">Beethoven, Sonata No. 5</div>
+              <div class="piece-sub">Allegro · 7 attempts · yesterday</div>
+            </div>
+            <div class="piece-verdict pv-mid">Slight rush</div>
+          </div>
+          <div class="piece">
+            <div class="piece-meta">
+              <div class="piece-title">Bach, Cello Suite III</div>
+              <div class="piece-sub">Bourrée · 12 attempts · today</div>
+            </div>
+            <div class="piece-verdict pv-bad">Rushing</div>
+          </div>
+          <div class="piece">
+            <div class="piece-meta">
+              <div class="piece-title">Vivaldi, La primavera</div>
+              <div class="piece-sub">3 attempts · 5d ago</div>
+            </div>
+            <div class="piece-verdict pv-on">On tempo</div>
+          </div>
+          <div class="piece">
+            <div class="piece-meta">
+              <div class="piece-title">Saint-Saëns, The Swan</div>
+              <div class="piece-sub">9 attempts · last week</div>
+            </div>
+            <div class="piece-verdict pv-mid">Slight rush</div>
+          </div>
+        </div>
+
+        <button class="btn btn-primary" style="margin-top: 16px;">Capture new score</button>
+      </article>
+
+      <article class="phone phone-camera" aria-label="Score capture screen">
+        <div class="status-bar">
+          <span>11:42</span>
+          <span class="right"><span class="status-icon"></span></span>
+        </div>
+
+        <div class="capture-cancel">Cancel</div>
+
+        <div class="capture-frame">
+          <div class="capture-staff">
+            <span></span><span></span><span></span><span></span><span></span>
+          </div>
+          <div class="corner tl"></div>
+          <div class="corner tr"></div>
+          <div class="corner bl"></div>
+          <div class="corner br"></div>
+          <div class="capture-hint">Hold steady · auto-detecting score</div>
+        </div>
+
+        <div style="display: flex; align-items: center; justify-content: center; padding: 8px 0 16px;">
+          <button class="capture-shutter" aria-label="Capture"></button>
+        </div>
+      </article>
+
+      <article class="phone" aria-label="Tempo selector screen">
+        <div class="status-bar">
+          <span>11:43</span>
+          <span class="right"><span class="status-icon"></span></span>
+        </div>
+
+        <div class="nav">
+          <span class="nav-back">‹ Back</span>
+          <span class="nav-title">Set tempo</span>
+          <span style="width: 32px"></span>
+        </div>
+
+        <div class="label" style="margin-bottom: 6px;">Target tempo</div>
+        <div style="font-size: 22px; font-weight: 500; letter-spacing: -0.015em; line-height: 1.05; margin-bottom: 4px;">Bach, Cello Suite I</div>
+        <div class="display-sub">Adjust to your target, or play 2 seconds in your tempo and we'll detect it.</div>
+
+        <div class="tempo-dial">
+          <svg viewBox="0 0 180 180" aria-hidden="true">
+            <circle cx="90" cy="90" r="72" fill="none" stroke="#E8E6E0" stroke-width="6"/>
+            <circle cx="90" cy="90" r="72" fill="none" stroke="#B8651A" stroke-width="6" stroke-linecap="round" stroke-dasharray="226 452" transform="rotate(-90 90 90)"/>
+            <circle cx="90" cy="18" r="5" fill="#B8651A"/>
+          </svg>
+          <div class="tempo-bpm">
+            <div class="tempo-bpm-num">60</div>
+            <div class="tempo-bpm-unit">BPM · ♩</div>
+          </div>
+        </div>
+
+        <div class="tempo-controls">
+          <button class="tempo-step" aria-label="Decrease">−</button>
+          <button class="tempo-step" aria-label="Increase">+</button>
+        </div>
+
+        <div class="spacer"></div>
+
+        <button class="btn btn-primary">Use 60 BPM</button>
+        <button class="btn btn-ghost">Calibrate by playing</button>
+      </article>
+
+      <article class="phone" aria-label="Recording screen">
+        <div class="status-bar">
+          <span>11:41</span>
+          <span class="right">
+            <span class="status-icon"></span>
+          </span>
+        </div>
+
+        <div class="nav">
+          <span class="nav-back">‹ Back</span>
+          <span class="nav-title">Bach, Suite I</span>
+          <span class="nav-action">Cancel</span>
+        </div>
+
+        <div class="eyebrow-row">
+          <span class="live-dot"></span>
+          <span class="label">Recording</span>
+        </div>
+
+        <div class="display-number">00:43</div>
+        <div class="display-sub">Target ♩ = 60 BPM</div>
+
+        <div class="card card-row">
+          <div>
+            <div class="label" style="margin-bottom: 4px;">Visual metronome</div>
+            <div class="card-title">Border flashes on each beat</div>
+          </div>
+          <div class="metronome-square"></div>
+        </div>
+
+        <div class="card">
+          <div class="label" style="margin-bottom: 12px;">Live signal</div>
+          <div class="waveform">
+            <span class="wave" style="height: 8px"></span>
+            <span class="wave" style="height: 14px"></span>
+            <span class="wave" style="height: 22px"></span>
+            <span class="wave" style="height: 30px"></span>
+            <span class="wave peak" style="height: 38px"></span>
+            <span class="wave peak" style="height: 32px"></span>
+            <span class="wave" style="height: 24px"></span>
+            <span class="wave" style="height: 18px"></span>
+            <span class="wave" style="height: 22px"></span>
+            <span class="wave" style="height: 28px"></span>
+            <span class="wave" style="height: 34px"></span>
+            <span class="wave" style="height: 30px"></span>
+            <span class="wave" style="height: 22px"></span>
+            <span class="wave" style="height: 16px"></span>
+            <span class="wave" style="height: 14px"></span>
+            <span class="wave" style="height: 18px"></span>
+            <span class="wave" style="height: 24px"></span>
+            <span class="wave" style="height: 30px"></span>
+            <span class="wave peak" style="height: 36px"></span>
+            <span class="wave" style="height: 30px"></span>
+            <span class="wave" style="height: 22px"></span>
+            <span class="wave" style="height: 14px"></span>
+            <span class="wave" style="height: 10px"></span>
+            <span class="wave" style="height: 8px"></span>
+          </div>
+        </div>
+
+        <div class="spacer"></div>
+
+        <button class="btn btn-stop">
+          <span class="stop-square"></span>
+          Stop and analyze
+        </button>
+      </article>
+
+      <article class="phone" aria-label="Analyzing screen">
+        <div class="status-bar">
+          <span>11:45</span>
+          <span class="right"><span class="status-icon"></span></span>
+        </div>
+
+        <div class="nav">
+          <span style="width: 32px"></span>
+          <span class="nav-title">Analyzing</span>
+          <span style="width: 32px"></span>
+        </div>
+
+        <div class="label" style="margin-bottom: 6px;">Verdict in a moment</div>
+        <div class="display-headline" style="font-size: 26px; margin-bottom: 6px;">Listening to your timing</div>
+        <div class="display-sub">This usually takes 10–20 seconds.</div>
+
+        <div class="card">
+          <div class="step-list-analyze">
+            <div class="step-row">
+              <span class="step-icon done">
+                <svg width="10" height="10" viewBox="0 0 14 14"><path fill="white" d="M11.5 4 6 9.5 3.5 7l-1 1L6 11.5 12.5 5z"/></svg>
+              </span>
+              <span class="step-text">Detected 142 notes</span>
+            </div>
+            <div class="step-row">
+              <span class="step-icon done">
+                <svg width="10" height="10" viewBox="0 0 14 14"><path fill="white" d="M11.5 4 6 9.5 3.5 7l-1 1L6 11.5 12.5 5z"/></svg>
+              </span>
+              <span class="step-text">Aligned to score</span>
+            </div>
+            <div class="step-row">
+              <span class="step-icon active"></span>
+              <span class="step-text">Computing per-measure verdicts</span>
+            </div>
+            <div class="step-row pending">
+              <span class="step-icon pending"></span>
+              <span class="step-text">Generating verdict</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="spacer"></div>
+
+        <button class="btn btn-ghost">Cancel</button>
+      </article>
+
+      <article class="phone" aria-label="Verdict screen">
+        <div class="status-bar">
+          <span>11:42</span>
+          <span class="right">
+            <span class="status-icon"></span>
+          </span>
+        </div>
+
+        <div class="nav">
+          <span class="nav-back">‹ Back</span>
+          <span class="nav-title">Result</span>
+          <span style="width: 32px"></span>
+        </div>
+
+        <div class="label" style="margin-bottom: 6px;">Tempo verdict</div>
+        <div class="display-headline">Slight rush</div>
+        <div class="display-sub">Rushing in measures 8–12. Otherwise on tempo.</div>
+
+        <div class="card">
+          <div class="label" style="margin-bottom: 12px;">Annotated score</div>
+          <div class="measures">
+            <div class="measure m-on"></div>
+            <div class="measure m-on"></div>
+            <div class="measure m-on"></div>
+            <div class="measure m-on"></div>
+            <div class="measure m-on"></div>
+            <div class="measure m-on"></div>
+            <div class="measure m-on"></div>
+            <div class="measure m-mid"></div>
+            <div class="measure m-mid"></div>
+            <div class="measure m-bad"></div>
+            <div class="measure m-bad"></div>
+            <div class="measure m-mid"></div>
+            <div class="measure m-on"></div>
+            <div class="measure m-on"></div>
+            <div class="measure m-on"></div>
+            <div class="measure m-on"></div>
+          </div>
+          <div class="measure-axis">
+            <span>m. 1</span>
+            <span>m. 16</span>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="label" style="margin-bottom: 6px;">Tempo drift</div>
+          <svg class="trend" viewBox="0 0 240 64" preserveAspectRatio="none">
+            <line x1="0" y1="32" x2="240" y2="32" stroke="#E8E6E0" stroke-width="1" stroke-dasharray="2 4"/>
+            <polyline points="0,32 30,31 60,29 90,32 120,18 150,10 180,14 210,28 240,32" fill="none" stroke="#0F0E0C" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle cx="150" cy="10" r="3.5" fill="#B8651A"/>
+          </svg>
+        </div>
+
+        <div class="spacer"></div>
+
+        <button class="btn btn-primary">View per-measure detail</button>
+        <button class="btn btn-ghost">Re-record</button>
+      </article>
+
+      <article class="phone" aria-label="Per-measure detail screen">
+        <div class="status-bar">
+          <span>11:42</span>
+          <span class="right">
+            <span class="status-icon"></span>
+          </span>
+        </div>
+
+        <div class="nav">
+          <span class="nav-back">‹ Result</span>
+          <span class="nav-title">Per-measure</span>
+          <span style="width: 32px"></span>
+        </div>
+
+        <div class="label" style="margin-bottom: 6px;">Detail</div>
+        <div class="display-headline" style="font-size: 26px; margin-bottom: 4px;">Measures 1–16</div>
+        <div class="display-sub">Each bar shows how far each measure drifted from the target tempo. Center is on tempo, left is ahead of the beat (rushing), right is behind (dragging). Tap a measure to hear it back with the click.</div>
+
+        <div class="card" style="padding: 8px 14px; flex: 1; overflow: hidden;">
+          <div class="measure-list">
+            <div class="measure-row">
+              <span class="measure-num">m. 1</span>
+              <div class="measure-bar"><div class="measure-bar-fill mb-on"></div></div>
+              <span class="measure-pct pct-on">On tempo</span>
+            </div>
+            <div class="measure-row">
+              <span class="measure-num">m. 2</span>
+              <div class="measure-bar"><div class="measure-bar-fill mb-on"></div></div>
+              <span class="measure-pct pct-on">On tempo</span>
+            </div>
+            <div class="measure-row">
+              <span class="measure-num">m. 3</span>
+              <div class="measure-bar"><div class="measure-bar-fill mb-on"></div></div>
+              <span class="measure-pct pct-on">On tempo</span>
+            </div>
+            <div class="measure-row">
+              <span class="measure-num">m. 7</span>
+              <div class="measure-bar"><div class="measure-bar-fill mb-on" style="width: 8%"></div></div>
+              <span class="measure-pct pct-on">On tempo</span>
+            </div>
+            <div class="measure-row">
+              <span class="measure-num">m. 8</span>
+              <div class="measure-bar"><div class="measure-bar-fill mb-rush-mid"></div></div>
+              <span class="measure-pct pct-mid">Slight rush</span>
+            </div>
+            <div class="measure-row">
+              <span class="measure-num">m. 9</span>
+              <div class="measure-bar"><div class="measure-bar-fill mb-rush-mid" style="width: 22%;"></div></div>
+              <span class="measure-pct pct-mid">Slight rush</span>
+            </div>
+            <div class="measure-row">
+              <span class="measure-num">m. 10</span>
+              <div class="measure-bar"><div class="measure-bar-fill mb-rush-bad"></div></div>
+              <span class="measure-pct pct-bad">Rushing</span>
+            </div>
+            <div class="measure-row">
+              <span class="measure-num">m. 11</span>
+              <div class="measure-bar"><div class="measure-bar-fill mb-rush-worse"></div></div>
+              <span class="measure-pct pct-bad">Rushing</span>
+            </div>
+            <div class="measure-row">
+              <span class="measure-num">m. 12</span>
+              <div class="measure-bar"><div class="measure-bar-fill mb-rush-mid"></div></div>
+              <span class="measure-pct pct-mid">Slight rush</span>
+            </div>
+            <div class="measure-row">
+              <span class="measure-num">m. 13</span>
+              <div class="measure-bar"><div class="measure-bar-fill mb-on"></div></div>
+              <span class="measure-pct pct-on">On tempo</span>
+            </div>
+          </div>
+        </div>
+
+        <button class="btn btn-ghost" style="margin-top: 8px;">Compare to last attempt</button>
+      </article>
+
+      <article class="phone" aria-label="Paywall screen">
+        <div class="status-bar">
+          <span>11:50</span>
+          <span class="right"><span class="status-icon"></span></span>
+        </div>
+
+        <div class="nav">
+          <span style="width: 32px"></span>
+          <span class="nav-title">InTempo Pro</span>
+          <span class="nav-action" style="color: var(--accent); font-weight: 500;">Close</span>
+        </div>
+
+        <div class="label" style="margin-bottom: 6px;">Pro</div>
+        <div class="display-headline">Unlimited analyses</div>
+        <div class="display-sub">Three free analyses a month is enough to taste the product. Pro removes the cap and saves your library forever.</div>
+
+        <div class="card">
+          <div class="tier-row">
+            <span class="tier-check">
+              <svg width="11" height="11" viewBox="0 0 14 14"><path fill="white" d="M11.5 4 6 9.5 3.5 7l-1 1L6 11.5 12.5 5z"/></svg>
+            </span>
+            <span>Unlimited recordings</span>
+          </div>
+          <div class="tier-row">
+            <span class="tier-check">
+              <svg width="11" height="11" viewBox="0 0 14 14"><path fill="white" d="M11.5 4 6 9.5 3.5 7l-1 1L6 11.5 12.5 5z"/></svg>
+            </span>
+            <span>Saved library and history</span>
+          </div>
+          <div class="tier-row">
+            <span class="tier-check">
+              <svg width="11" height="11" viewBox="0 0 14 14"><path fill="white" d="M11.5 4 6 9.5 3.5 7l-1 1L6 11.5 12.5 5z"/></svg>
+            </span>
+            <span>Cloud sync across devices</span>
+          </div>
+          <div class="tier-row">
+            <span class="tier-check">
+              <svg width="11" height="11" viewBox="0 0 14 14"><path fill="white" d="M11.5 4 6 9.5 3.5 7l-1 1L6 11.5 12.5 5z"/></svg>
+            </span>
+            <span>Compare attempts side by side</span>
+          </div>
+        </div>
+
+        <div class="spacer"></div>
+
+        <button class="btn btn-primary">Try free for 7 days</button>
+        <div class="paywall-price">Then $7.99/month or $59/year</div>
+        <button class="btn btn-ghost">Restore purchase</button>
+        <div class="paywall-fineprint">Cancel anytime in Settings</div>
+      </article>
+
+    </section>
+
+    <div class="section-eyebrow">Design system</div>
+
+    <section class="system-grid">
+
+      <div class="system-block">
+        <h3>Palette</h3>
+        <div class="swatch-row" style="flex-direction: column; align-items: stretch; gap: 10px;">
+          <div class="swatch">
+            <span class="swatch-color" style="background: #FAFAF7"></span>
+            <span>Background <span class="mono">#FAFAF7</span></span>
+          </div>
+          <div class="swatch">
+            <span class="swatch-color" style="background: #FFFFFF"></span>
+            <span>Surface <span class="mono">#FFFFFF</span></span>
+          </div>
+          <div class="swatch">
+            <span class="swatch-color" style="background: #E8E6E0"></span>
+            <span>Border <span class="mono">#E8E6E0</span></span>
+          </div>
+          <div class="swatch">
+            <span class="swatch-color" style="background: #0F0E0C"></span>
+            <span>Text primary <span class="mono">#0F0E0C</span></span>
+          </div>
+          <div class="swatch">
+            <span class="swatch-color" style="background: #6B6862"></span>
+            <span>Text secondary <span class="mono">#6B6862</span></span>
+          </div>
+          <div class="swatch">
+            <span class="swatch-color" style="background: #B8651A"></span>
+            <span>Brand accent <span class="mono">#B8651A</span></span>
+          </div>
+          <div class="swatch">
+            <span class="swatch-color" style="background: #1F8A4C"></span>
+            <span>Verdict on <span class="mono">#1F8A4C</span></span>
+          </div>
+          <div class="swatch">
+            <span class="swatch-color" style="background: #D69E2E"></span>
+            <span>Verdict mid <span class="mono">#D69E2E</span></span>
+          </div>
+          <div class="swatch">
+            <span class="swatch-color" style="background: #C53B3B"></span>
+            <span>Verdict bad <span class="mono">#C53B3B</span></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="system-block">
+        <h3>Typography · Geist Sans</h3>
+        <div class="type-row"><span class="size mono">40</span><span class="type-display">Slight rush</span><span class="size mono">500</span></div>
+        <div class="type-row"><span class="size mono">28</span><span class="type-headline">Tempo verdict</span><span class="size mono">500</span></div>
+        <div class="type-row"><span class="size mono">16</span><span class="type-title">View per-measure detail</span><span class="size mono">500</span></div>
+        <div class="type-row"><span class="size mono">14</span><span class="type-body">Across measures eight to twelve, you sped up by an average of four BPM.</span><span class="size mono">400</span></div>
+        <div class="type-row"><span class="size mono">11</span><span class="type-label">Tempo verdict</span><span class="size mono">500</span></div>
+      </div>
+
+      <div class="system-block">
+        <h3>Shape & spacing</h3>
+        <div style="display: flex; flex-direction: column; gap: 12px;">
+          <div style="display: flex; align-items: center; gap: 12px;">
+            <div style="width: 32px; height: 32px; border-radius: 6px; background: var(--accent);"></div>
+            <span style="font-size: 13px; color: var(--text-secondary);">Button radius <span class="mono">6px</span></span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 12px;">
+            <div style="width: 32px; height: 32px; border-radius: 8px; background: #FFFFFF; border: 1px solid var(--border);"></div>
+            <span style="font-size: 13px; color: var(--text-secondary);">Input radius <span class="mono">8px</span></span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 12px;">
+            <div style="width: 32px; height: 32px; border-radius: 12px; background: #FFFFFF; border: 1px solid var(--border);"></div>
+            <span style="font-size: 13px; color: var(--text-secondary);">Card radius <span class="mono">12px</span></span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 12px;">
+            <div style="width: 32px; height: 32px; border-radius: 16px; background: #FFFFFF; border: 1px solid var(--border);"></div>
+            <span style="font-size: 13px; color: var(--text-secondary);">Modal radius <span class="mono">16px</span></span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 12px; margin-top: 8px;">
+            <div style="display: flex; gap: 4px;">
+              <div style="width: 4px; height: 32px; background: var(--border);"></div>
+              <div style="width: 8px; height: 32px; background: var(--border);"></div>
+              <div style="width: 16px; height: 32px; background: var(--border);"></div>
+              <div style="width: 24px; height: 32px; background: var(--border);"></div>
+              <div style="width: 32px; height: 32px; background: var(--border);"></div>
+            </div>
+            <span style="font-size: 13px; color: var(--text-secondary);">8pt grid · 4 / 8 / 16 / 24 / 32</span>
+          </div>
+          <div style="font-size: 13px; color: var(--text-secondary); margin-top: 4px;">Borders only — no drop shadows.</div>
+        </div>
+      </div>
+
+      <div class="system-block">
+        <h3>Motion</h3>
+        <div style="display: flex; flex-direction: column; gap: 10px; font-size: 13px; color: var(--text-secondary); line-height: 1.55;">
+          <div><span style="color: var(--text-primary); font-weight: 500;">Default:</span> 200ms ease-out · for hovers, taps, layout shifts.</div>
+          <div><span style="color: var(--text-primary); font-weight: 500;">Verdict reveal:</span> 400ms spring (stiffness 220, damping 26).</div>
+          <div><span style="color: var(--text-primary); font-weight: 500;">Stagger:</span> 40ms between sibling reveals (per-measure verdicts).</div>
+          <div><span style="color: var(--text-primary); font-weight: 500;">Reduced motion:</span> all animations become instant; opacity only.</div>
+        </div>
+      </div>
+
+    </section>
+
+    <div class="section-eyebrow">Principles</div>
+
+    <section class="principles">
+      <div>
+        <div class="principle-title">Do</div>
+        <ul class="do">
+          <li>Solid amber accent for primary CTAs, focused inputs, and brand moments.</li>
+          <li>Borders at 1px, near-white background <span class="mono">#FAFAF7</span> not pure white.</li>
+          <li>Verdicts as words: "On tempo" / "Slight rush" / "Rushing" / "Slight drag" / "Dragging".</li>
+          <li>Bars and colors show magnitude. The word tells you what; the visual tells you how much.</li>
+          <li>Numbers (BPM offsets, milliseconds) are dev-mode only. Never in the production UI.</li>
+          <li>Tabular numerals on the few numbers that do appear (timer, target BPM).</li>
+          <li>Generous padding inside cards (16–20px) and between sections (24–32px).</li>
+          <li>Verdict color + icon + text label every time the colors appear.</li>
+          <li>One typeface (Geist Sans) at 4–5 sizes max.</li>
+        </ul>
+      </div>
+      <div>
+        <div class="principle-title">Don't</div>
+        <ul class="dont">
+          <li>No gradients anywhere except the verdict reveal background.</li>
+          <li>No drop shadows on any UI element.</li>
+          <li>No emoji as UI icons — Lucide or Phosphor only.</li>
+          <li>No glassmorphism, blur effects, or animated backgrounds.</li>
+          <li>No verdict colors outside the verdict UI.</li>
+          <li>No more than one accent color visible per screen.</li>
+        </ul>
+      </div>
+    </section>
+
+    <footer class="footer">
+      <span>InTempo · v0.1 design preview</span>
+      <span class="mono">made for vibe-coding</span>
+    </footer>
+  </div>
+</body>
+</html>
