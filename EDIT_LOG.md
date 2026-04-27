@@ -8,7 +8,7 @@ section for what counts as "meaningful."
 
 **Batch:** Batch 2
 **Branch:** feat/batch-2-ocr-pipeline
-**Commit (after this edit):** to be filled in after the commit lands.
+**Commit (after this edit):** `92a085d` — `refactor(ocr): provider abstraction + Gemini provider + bake-off harness`.
 
 **What changed:**
 - `backend/app/services/ocr.py`: **deleted** — replaced with the `ocr/` package.
