@@ -4,6 +4,35 @@ Newest entries at the top. Format spec: see "Build-time activity logging"
 in intempo-combined.md. Every meaningful change goes here — see that
 section for what counts as "meaningful."
 
+## 2026-04-27 11:35 — Batch 2 — 5 OCR fixture images (PD-only, sourced from IMSLP + Wikimedia)
+
+**Batch:** Batch 2
+**Branch:** feat/batch-2-ocr-pipeline
+**Commit (after this edit):** to be filled in after the commit lands.
+
+**What changed:**
+- `fixtures/scores/01_simple_printed.jpg` — Wohlfahrt Op. 45 Étude No. 1, first line. From IMSLP `IMSLP19882-PMLP46562` (1880 publication; PD).
+- `fixtures/scores/02_medium_printed.jpg` — Wohlfahrt Op. 45 mid-book (around #22–24), single system with slurred sixteenths, accidentals, fingerings.
+- `fixtures/scores/03_complex_printed.jpg` — Kreutzer 42 Études No. 2 opening line. From IMSLP `IMSLP01503` (1796 work, early-20th-century PD edition — explicitly NOT the copyrighted Galamian edition).
+- `fixtures/scores/04_handwritten_clean.jpg` — Anna Magdalena Bach's manuscript copy of Bach's Cello Suites. From Wikimedia Commons (PD-Old).
+- `fixtures/scores/05_handwritten_messy.jpg` — Beethoven sketches for String Quartet Op. 131 (BL Add MS 38070 f.51r). From Wikimedia Commons (PD-Old).
+- `fixtures/scores/SOURCES.md` — table of file → composer → work → source URL → license, plus a "substitutions / known imperfections" section and a reproducibility table with exact PDF page indices, render DPI, and crop fractions.
+
+All five JPEGs are 1200 px wide, 85 % quality, between 35 KB and 62 KB each (combined: 244 KB — well under the 500 KB-per-file ceiling).
+
+**Why:**
+The OCR bake-off and the Batch 2 regression suite both need a fixed test set. Building the fixtures as a numbered, PD-sourced, document-tracked set means: (a) the bake-off is reproducible against the same images forever, (b) the regression suite for §6 (5 fixture scores parse correctly per Batch 2 DoD) lands with the spec's "3 printed + 2 handwritten" split satisfied, (c) anyone who picks up the project can verify the licenses without spelunking through the git history.
+
+**Tests run:**
+- Visual inspection of each cropped JPEG via `Read` tool — confirmed each shows real music notation (not blank pages, covers, or TOC), single staff with at most a small bleed of the next system at the edge (realistic for phone-photo simulation).
+
+**Known side effects / things to watch:**
+- Two of the cropped images (#02, #03) include a partial second staff at the bottom edge; #04 shows ink bleed-through from the previous system at the top edge. Tightening the crops further started clipping slurs from the target staff. The OCR prompt asks for "a single line of sheet music" so the model should focus on the dominant staff.
+- #05 (Beethoven sketches) is intentionally the worst-case fixture: sparse staves with crossings-out and fragmentary motifs. Both OCR providers may legitimately come back with low confidence and a `notes_to_human` flagging the page as illegible — that's the correct behavior for that input.
+- The throwaway `_fetch_fixtures.py` script that produced these files was deleted after generating the images. The reproducibility table in SOURCES.md captures the exact crops so the script can be re-derived if needed.
+
+**Rollback:** `git revert <SHA>` removes all six files. The bake-off CLI will then exit with "no images found in fixtures/scores/" until fixtures are restored.
+
 ## 2026-04-26 21:30 — Batch 2 — provider abstraction + Gemini + bake-off harness
 
 **Batch:** Batch 2
