@@ -4,11 +4,36 @@ Newest entries at the top. Format spec: see "Build-time activity logging"
 in intempo-combined.md. Every meaningful change goes here — see that
 section for what counts as "meaningful."
 
-## 2026-04-26 20:35 — Batch 2 — OCR service (Anthropic wrapper + Sonnet→Opus retry)
+## 2026-04-26 20:40 — Batch 2 — /v1/scores router (POST/GET/PATCH/DELETE)
 
 **Batch:** Batch 2
 **Branch:** feat/batch-2-ocr-pipeline
 **Commit (after this edit):** to be filled in after the commit lands.
+
+**What changed:**
+- `backend/app/routers/scores.py`: new. Five endpoints — `POST /v1/scores` (URL-safety check → download image → OCR → persist), `GET /v1/scores` (list, paginated `?limit&offset`, ordered by `created_at DESC`), `GET /v1/scores/:id` (owner-scoped read), `PATCH /v1/scores/:id` (whole-document `score_json` replacement + optional title/composer rename, per spec MVP), `DELETE /v1/scores/:id` (returns 204; FK violation from `analyses.score_id ON DELETE RESTRICT` surfaces as 409 with a clear message). Service-role client used for all DB ops with explicit `WHERE user_id = <jwt sub>` for parity with RLS. URL-safety check (`_assert_image_url_owned_by`) accepts only Supabase URLs whose path starts with `/storage/v1/object/{sign,authenticated,public}/score-images/<user_id>/` — anything else returns 403 *before* downloading. Image download capped at 12 MB / 6s timeout via `httpx`.
+- `backend/app/main.py`: added `scores` to the import and `app.include_router` list.
+- `backend/app/tests/test_scores_router.py`: new. 13 cases — POST: unauth 401, happy path 201 with insert payload verified, URL-prefix from another user 403, arbitrary external URL 403, OCR failure 422; GET list: returns owner rows; GET one: own 200, unknown 404, "other user's id" 404 (service-role read filters by user_id so RLS-parity holds); PATCH: replaces score_json + ocr_confidence, empty body 400, unknown 404; DELETE: owner 204, unknown 404, FK-violation 409.
+- `fixtures/ocr_responses/.gitkeep`: directory tracked. Cached Claude responses keyed by image hash will live here once we have real fixture images + an API key.
+
+**Why:**
+The router glues every other Batch 2 piece together. Deliberate design choices: image URLs must be Supabase signed URLs under the user's own folder (so the backend can never be tricked into downloading and OCR-charging on arbitrary URLs); all DB ops use service-role + explicit user_id filter (faster than re-deriving an anon-key client per request, equivalent access semantics); `PATCH score_json` always re-derives `ocr_confidence` from the new payload (so user corrections that bring the score back to high confidence reflect in the row).
+
+**Tests run:**
+- `cd backend && uv run pytest -q` → **72 passed in 1.38s**, 0 warnings (one prior `HTTP_422_UNPROCESSABLE_ENTITY` deprecation warning fixed by inlining 422). Was 20 at end of Batch 1 → +52 from Batch 2 (19 schema + 9 ocr + 13 router + 11 from earlier suites still green).
+
+**Known side effects / things to watch:**
+- The 12 MB image download cap matches the 10 MB bucket limit with headroom. If we ever raise the bucket limit, raise this too.
+- The DELETE → 409 path string-matches Postgres's "violates foreign key constraint" error message. If supabase-py wraps the error differently in a future SDK version, the catch may miss and surface 500 instead. Acceptable risk; the test enforces the current behavior.
+- `_assert_image_url_owned_by` enumerates three Supabase storage URL shapes (`/sign/`, `/authenticated/`, `/public/`). Public buckets aren't in our setup but the prefix is allowed for consistency. If Supabase introduces a new URL form (e.g. `/private/`), uploads will fail this check until we add it.
+
+**Rollback:** `git revert <SHA>` removes the router + tests + the main.py wiring. The OCR service and schema (prior commits) remain functional — they're just no longer reachable via HTTP.
+
+## 2026-04-26 20:35 — Batch 2 — OCR service (Anthropic wrapper + Sonnet→Opus retry)
+
+**Batch:** Batch 2
+**Branch:** feat/batch-2-ocr-pipeline
+**Commit (after this edit):** `84d9386` — `feat(batch-2): OCR service — Claude Vision wrapper + Sonnet→Opus retry`.
 
 **What changed:**
 - `backend/app/services/ocr.py`: new. `parse_sheet_music(image_bytes, *, media_type, primary_model, fallback_model) -> OCRResult`. Per spec §6 + Batch 2: try `claude-sonnet-4-6` first, retry with `claude-opus-4-7` on validation failure or `ocr_confidence < 0.7` (passing the failure reason as feedback in the retry prompt). After 2 failures, raise `OCRError`. Markdown fences stripped defensively (the spec calls this out as a known Claude quirk). Module-level lazy `_client` so unit tests monkeypatch without going through the real SDK constructor and CI never needs `ANTHROPIC_API_KEY`.
