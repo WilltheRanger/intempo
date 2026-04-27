@@ -8,7 +8,7 @@ section for what counts as "meaningful."
 
 **Batch:** Batch 2
 **Branch:** feat/batch-2-ocr-pipeline
-**Commit (after this edit):** to be filled in after the commit lands.
+**Commit (after this edit):** `2eb7dde` — `chore(fixtures): add 5 OCR test images sourced from IMSLP + Wikimedia (PD)`.
 
 **What changed:**
 - `fixtures/scores/01_simple_printed.jpg` — Wohlfahrt Op. 45 Étude No. 1, first line. From IMSLP `IMSLP19882-PMLP46562` (1880 publication; PD).
