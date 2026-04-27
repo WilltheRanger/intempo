@@ -1,0 +1,14 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: intempo
+      POSTGRES_PASSWORD: intempo_dev
+      POSTGRES_DB: intempo
+    ports:
+      - "5432:5432"
+    volumes:
+      - intempo_pg:/var/lib/postgresql/data
+
+volumes:
+  intempo_pg:
