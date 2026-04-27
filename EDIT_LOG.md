@@ -8,7 +8,7 @@ section for what counts as "meaningful."
 
 **Batch:** Batch 2
 **Branch:** feat/batch-2-ocr-pipeline
-**Commit (after this edit):** to be filled in after the commit lands.
+**Commit (after this edit):** `0346574` — `fix(ocr): allow "unknown" signatures + raise Gemini token cap, disable thinking` (preceded by `c13943c` — `chore(fixtures): swap to user-curated PD images (Bach BWV 1001 + Petter Sketchbook)`).
 
 **What changed:**
 - `backend/app/services/score_schema.py`: `time_signature` and `key_signature` now accept `"unknown"` (any case) or `null`/missing. Strict regex (`^\d+/\d+$`) still applies when the model returns a real value. Two new `field_validator`s enforce this. No other field was relaxed.
