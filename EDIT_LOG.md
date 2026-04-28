@@ -8,7 +8,7 @@ section for what counts as "meaningful."
 
 **Batch:** Batch 3
 **Branch:** feat/batch-3-audio-pipeline
-**Commit (after this edit):** to be filled in after the commit lands.
+**Commit (after this edit):** `db670bf` — `feat(batch-3): local tuning dashboard at :8001 (Plotly + FastAPI)`.
 
 **What changed:**
 - `backend/tuning_dashboard/__init__.py`, `app.py`: new local-only FastAPI app. Three routes — `GET /` returns a single HTML page with Plotly via CDN, `GET /api/clips` lists fixtures from `fixtures/audio/`, `GET /api/diagnostics?clip=X&target_bpm=Y&highpass=0|1` returns the JSON payload (downsampled waveform, detected onsets, expected onsets, deltas, bands, rolling trend, alignment quality, verdict, full config snapshot). Calls `analyze_with_diagnostics` from `app.services.analysis`.
