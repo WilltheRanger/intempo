@@ -8,7 +8,7 @@ section for what counts as "meaningful."
 
 **Batch:** Batch 2
 **Branch:** feat/batch-2-ocr-pipeline
-**Commit (after this edit):** to be filled in after the commit lands.
+**Commit (after this edit):** `d22c163` — `feat(batch-2): lock OCR_PROVIDER_CHAIN to Gemini Flash primary, cache real responses, add fixture-drift test`.
 
 **What changed:**
 - `backend/.env.example`: `OCR_PROVIDER_CHAIN` set to `gemini-2.5-flash,claude-sonnet-4-6,claude-opus-4-7`. Comment above documents why this order: Gemini Flash primary (10× cheaper, 2× faster from bake-off v2); Claude Sonnet fallback when Gemini errors or confidence<0.7; Opus last resort. Reference to `docs/ocr-bakeoff/2026-04-27-bakeoff-v2.md` included.
