@@ -1,0 +1,24 @@
+{
+  "fixture_filename": "05_handwritten_messy.jpg",
+  "fixture_sha256": "96197472c434b54ec71f5d4f0628dadc443b8ea29d48d66bae924d1e67f83d0b",
+  "cached_at": "2026-04-28T05:33:09Z",
+  "ocr_response": {
+    "score": {
+      "time_signature": "unknown",
+      "key_signature": "unknown",
+      "tempo_marking": null,
+      "bpm_hint": null,
+      "clef": "treble",
+      "measures": [],
+      "repeats": [],
+      "ocr_confidence": 0.5,
+      "notes_to_human": "The provided image displays a musical score, but it is highly stylized and not easily readable as conventional sheet music. The lines and symbols present are more decorative or calligraphic in nature rather than standard musical notation. There are no identifiable notes, rests, clefs, time signatures, or key signatures in a standard format. The five horizontal lines could suggest a staff, but the symbols on and around them do not conform to any recognized musical notation system. Therefore, I cannot extract specific musical data like pitches, durations, or dynamics. I have marked this as an empty set of measures."
+    },
+    "raw_text": "{\n  \"time_signature\": \"unknown\",\n  \"key_signature\": \"unknown\",\n  \"tempo_marking\": null,\n  \"bpm_hint\": null,\n  \"clef\": \"treble\",\n  \"measures\": [],\n  \"repeats\": [],\n  \"ocr_confidence\": 0.5,\n  \"notes_to_human\": \"The provided image displays a musical score, but it is highly stylized and not easily readable as conventional sheet music. The lines and symbols present are more decorative or calligraphic in nature rather than standard musical notation. There are no identifiable notes, rests, clefs, time signatures, or key signatures in a standard format. The five horizontal lines could suggest a staff, but the symbols on and around them do not conform to any recognized musical notation system. Therefore, I cannot extract specific musical data like pitches, durations, or dynamics. I have marked this as an empty set of measures.\"\n}",
+    "model": "gemini-2.5-flash",
+    "input_tokens": 813,
+    "output_tokens": 202,
+    "cost_usd": 0.0007488999999999999,
+    "latency_ms": 3093
+  }
+}

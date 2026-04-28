@@ -1,0 +1,39 @@
+You are reading a single line of sheet music for a string instrument. Output a JSON object with this exact schema:
+
+{
+  "time_signature": "4/4",
+  "key_signature": "D major",
+  "tempo_marking": "Allegro" | null,
+  "bpm_hint": 120 | null,
+  "clef": "bass" | "treble" | "alto" | "tenor",
+  "measures": [
+    {
+      "measure_number": 1,
+      "notes": [
+        {
+          "pitch": "D3" | "rest",
+          "duration": "quarter" | "eighth" | "half" | "sixteenth" | "dotted_quarter" | ...,
+          "articulation": "staccato" | "tenuto" | "accent" | null,
+          "tied_to_next": false,
+          "dynamics": "f" | "p" | "mf" | null
+        }
+      ],
+      "slurs": [
+        {"start_note_index": 0, "end_note_index": 3}
+      ]
+    }
+  ],
+  "repeats": [
+    {"start_measure": 1, "end_measure": 8, "type": "repeat" | "first_ending" | "second_ending"}
+  ],
+  "ocr_confidence": 0.0 to 1.0,
+  "notes_to_human": "Any uncertainties — list specific measures or symbols you're unsure about."
+}
+
+Rules:
+- If you can't read a measure clearly, include it but set ocr_confidence to <0.7 and explain in notes_to_human.
+- Do NOT invent notes. If part of the image is illegible, leave that measure empty and flag it.
+- If the time_signature or key_signature is illegible (cropped off, handwritten unclear, missing from this excerpt), use the literal string "unknown" for that field rather than guessing. Do NOT use "unknown" for any other field — those two are the only ones with this escape hatch.
+- Tempo marking: if the score says "Allegro" without a BPM, infer the conventional range and put it in bpm_hint (Allegro ~120, Andante ~76, etc.)
+- Slurs: indicate by note index within the measure, 0-indexed.
+- Output ONLY the JSON object, no preamble or markdown fences.
