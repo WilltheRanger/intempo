@@ -4,6 +4,30 @@ Newest entries at the top. Format spec: see "Build-time activity logging"
 in intempo-combined.md. Every meaningful change goes here — see that
 section for what counts as "meaningful."
 
+## 2026-04-28 06:30 — Batch 3 — externalize all audio thresholds to config.toml + add deps
+
+**Batch:** Batch 3
+**Branch:** feat/batch-3-audio-pipeline
+**Commit (after this edit):** to be filled in after the commit lands.
+
+**What changed:**
+- `backend/app/config.toml`: new. Every tunable knob in the audio pipeline lives here — onset detection (`delta`, `pre_max`, `post_max`, `wait`, `hop_length`, `min_inter_onset_ms`), alignment (Sakoe-Chiba band radius, quality warn/refuse thresholds, max-silence-gap), classification (tolerance bands as `on_pct`/`slight_pct`/`heavy_pct`, rolling-window size), calibration (Batch 4's full edge-case threshold table from spec §4 — landed here so all audio knobs are in one place). Inline comments call out which spec section each value comes from and remind anyone editing to update `TUNING_LOG.md`.
+- `backend/app/config.py`: extended `Settings` with `AUDIO: dict[str, Any]` loaded from the TOML file via `tomllib`. Strict separation: secrets stay in `.env`/`os.environ`, audio knobs live in the committed TOML so every change is a tracked diff.
+- `backend/pyproject.toml`, `backend/uv.lock`: added `librosa==0.11.0` (+ transitive: `numba`, `numpy 2.4.4`, `scipy 1.17.1`, `pandas 3.0.2`, `scikit-learn`, `soundfile`, `soxr`, etc.).
+
+**Why:**
+The spec's Batch 3 DoD requires every threshold to be externalized — the tuning loop touches these dozens of times and editing code each round is friction the spec's "Tuning Appendix" explicitly warns against. Doing it from the start (rather than hardcoding then refactoring) means every test runs against the same config the dashboard does, no drift between paths.
+
+**Tests run:**
+- Smoke import: `uv run python -c "from app.config import settings; print(list(settings.AUDIO.keys()))"` → `['audio', 'onset', 'alignment', 'classification', 'calibration']`. Config loads cleanly.
+- Full pytest suite (will run after the next commit lands the services that read the TOML).
+
+**Known side effects / things to watch:**
+- `numpy 2.4.4` is the latest 2.x. librosa 0.11 supports numpy 2; older librosa builds didn't. If anything pinning to numpy<2 lands in a future dep, expect a resolver fight.
+- `numba` (a librosa dep) is a heavy compile-time JIT and adds ~15s to cold imports. Acceptable for the analysis pipeline; bake-off CLI doesn't import it.
+
+**Rollback:** `git revert <SHA>` removes the TOML, the loader extension, and the deps in one shot. Anything that imports `settings.AUDIO[...]` would break — currently nothing does, since this commit predates the services.
+
 ## 2026-04-27 22:40 — Batch 2 — lock provider chain, cache real responses, e2e verification
 
 **Batch:** Batch 2

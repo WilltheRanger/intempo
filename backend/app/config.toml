@@ -1,0 +1,65 @@
+# InTempo audio-pipeline thresholds.
+#
+# Every tunable knob lives here so the Batch 3 tuning loop never touches code.
+# Production deployments override these via Supabase remote config (post-MVP).
+#
+# Changing any value: log it in TUNING_LOG.md per the format in the
+# spec's "Batch 3 Tuning Appendix" — old value, new value, fixture-by-fixture
+# regression results, rationale. Don't tune in circles.
+
+[audio]
+# Target sample rate for librosa.load. Spec §4 / Batch 3 step 1.
+sample_rate = 22050
+# Pre-emphasis coefficient applied before onset detection (boosts highs).
+# 0.97 is the classic value from speech / MIR tradition.
+pre_emphasis_coef = 0.97
+# High-pass filter cutoff (Hz) for double-bass mode. Off by default; the
+# orchestrator passes apply_highpass=True for low-register instruments.
+highpass_cutoff_hz = 60.0
+
+[onset]
+# librosa.onset.onset_detect parameters. Spec §4 starting values.
+delta = 0.07
+pre_max = 20
+post_max = 20
+wait = 10
+hop_length = 512
+# Reject onsets closer together than this — guards against vibrato wobble
+# and pizzicato string ring (spec §5).
+min_inter_onset_ms = 60
+
+[alignment]
+# Sakoe-Chiba band radius for librosa.sequence.dtw — fraction of path length.
+# Spec §7.5 problem 3 mitigation (a). Wider = more drift tolerance.
+sakoe_chiba_band_rad = 0.20
+# alignment_quality (0-1) gates: spec §7.
+quality_warn_below = 0.70    # show "results may be inaccurate" warning
+quality_refuse_below = 0.40  # don't show analysis at all
+# Maximum gap (seconds) between detected onsets that we treat as a "lost
+# alignment" point, per spec §7 "When alignment breaks down" #2.
+max_silence_gap_s = 2.0
+
+[classification]
+# Tolerance bands as percent of beat duration at target BPM. Spec §4.
+# These are the spec's symmetric defaults; the tuning appendix says real
+# values are usually asymmetric — adjust here after listening tests.
+on_pct = 5.0      # within ±this = "on"
+slight_pct = 10.0 # ±slight = "slight rush/drag"
+heavy_pct = 20.0  # ±heavy = "rushing/dragging"; beyond = "severe"
+# Rolling-window size (notes) for trend computation. Spec §4.
+rolling_window_notes = 8
+
+[calibration]
+# 2-second calibration clip thresholds (spec §4 calibration edge-cases table).
+# Used in Batch 4's /v1/calibration endpoint; landed here so all audio knobs
+# live in one place.
+min_duration_s = 1.0
+max_duration_s = 5.0
+min_peak_dbfs = -24.0
+min_rms_dbfs = -36.0
+min_onsets = 2
+max_onsets = 8
+ioi_cv_max = 0.30
+bpm_min = 40
+bpm_max = 240
+octave_ambiguity_threshold = 0.20
