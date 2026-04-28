@@ -4,11 +4,37 @@ Newest entries at the top. Format spec: see "Build-time activity logging"
 in intempo-combined.md. Every meaningful change goes here — see that
 section for what counts as "meaningful."
 
-## 2026-04-28 06:40 — Batch 3 — audio + alignment + classification + analysis services with synthetic-fixture tests
+## 2026-04-28 06:50 — Batch 3 — local tuning dashboard at :8001 (Plotly + FastAPI)
 
 **Batch:** Batch 3
 **Branch:** feat/batch-3-audio-pipeline
 **Commit (after this edit):** to be filled in after the commit lands.
+
+**What changed:**
+- `backend/tuning_dashboard/__init__.py`, `app.py`: new local-only FastAPI app. Three routes — `GET /` returns a single HTML page with Plotly via CDN, `GET /api/clips` lists fixtures from `fixtures/audio/`, `GET /api/diagnostics?clip=X&target_bpm=Y&highpass=0|1` returns the JSON payload (downsampled waveform, detected onsets, expected onsets, deltas, bands, rolling trend, alignment quality, verdict, full config snapshot). Calls `analyze_with_diagnostics` from `app.services.analysis`.
+- The HTML page renders three Plotly charts (waveform with onset markers, per-note deviation bar chart colour-coded by band, rolling-trend line) plus a sidebar with the live config dump and onset-count summary. Auto-loads the first fixture on page load; clip selector + BPM input + high-pass toggle re-fetch on change. Single self-contained file, no build step.
+- `fixtures/audio_scores/README.md`: explains the per-recording score-JSON pairing convention (`fixtures/audio/01_detache_clean.wav` → `fixtures/audio_scores/01_detache_clean.json`) plus the `default.json` fallback.
+
+**Why:**
+The spec's "Batch 3 Tuning Appendix" is emphatic that tuning blind is impossible: "Without the dashboard, the tuning feedback loop is: (1) edit a parameter, (2) re-run the test, (3) read JSON output, (4) try to mentally reconstruct what went wrong, (5) guess a new value. That loop is ~10 minutes per iteration." With the dashboard, ~10 seconds. Built-before-tuning is the spec's order; we follow it literally.
+
+**Tests run:**
+- `cd backend && uv run uvicorn tuning_dashboard.app:app --port 8001 --host 127.0.0.1 &` then `curl /api/clips` → `{"clips":[],"fixture_dir":"…\\fixtures\\audio"}` — boots cleanly with no fixtures and surfaces the empty state in the HTML page.
+- Charts and config-snapshot rendering will be exercised against real audio in Phase 4 (post-recording).
+
+**Known side effects / things to watch:**
+- Dashboard runs on `:8001`, separate from the production API on `:8000`. Not wired into `app/main.py` and not packaged for prod — it's a developer tool.
+- The dashboard imports `app.services.analysis`, so `numba` JIT compile fires on first request (~15 s cold start). Subsequent requests are fast.
+- No live reload of `config.toml`: edits require a `uvicorn --reload` flag or a manual server restart. `--reload` works because Uvicorn watches the package directory; the TOML lives inside `app/` so it's caught.
+- The HTML is inline in `app.py` (not Jinja2). Plotly comes from a CDN — assumes network access during tuning sessions. Acceptable trade-off for a local dev tool.
+
+**Rollback:** `git revert <SHA>` removes the dashboard package + the audio-scores README. Production API unaffected.
+
+## 2026-04-28 06:40 — Batch 3 — audio + alignment + classification + analysis services with synthetic-fixture tests
+
+**Batch:** Batch 3
+**Branch:** feat/batch-3-audio-pipeline
+**Commit (after this edit):** `eb6cfb6` — `feat(batch-3): audio + alignment + classification + analysis services with synthetic-fixture tests`.
 
 **What changed:**
 - `backend/app/services/audio.py`: new. `load_audio` (librosa.load at the configured sample rate), `pre_emphasis` (first-order high-pass for high-frequency boost before onset detection), `highpass_filter` (Butterworth via scipy.signal for double-bass mode), `detect_onsets` (librosa.onset.onset_detect with all parameters reading from `config.toml`, plus a post-filter that drops onsets closer together than `min_inter_onset_ms` to suppress vibrato wobble + pizzicato string-ring per spec §5).
