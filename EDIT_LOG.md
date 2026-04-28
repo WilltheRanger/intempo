@@ -4,6 +4,218 @@ Newest entries at the top. Format spec: see "Build-time activity logging"
 in intempo-combined.md. Every meaningful change goes here — see that
 section for what counts as "meaningful."
 
+## 2026-04-27 22:40 — Batch 2 — lock provider chain, cache real responses, e2e verification
+
+**Batch:** Batch 2
+**Branch:** feat/batch-2-ocr-pipeline
+**Commit (after this edit):** `d22c163` — `feat(batch-2): lock OCR_PROVIDER_CHAIN to Gemini Flash primary, cache real responses, add fixture-drift test`.
+
+**What changed:**
+- `backend/.env.example`: `OCR_PROVIDER_CHAIN` set to `gemini-2.5-flash,claude-sonnet-4-6,claude-opus-4-7`. Comment above documents why this order: Gemini Flash primary (10× cheaper, 2× faster from bake-off v2); Claude Sonnet fallback when Gemini errors or confidence<0.7; Opus last resort. Reference to `docs/ocr-bakeoff/2026-04-27-bakeoff-v2.md` included.
+- `backend/.env` (local-only, gitignored): same value applied locally.
+- `fixtures/ocr_responses/c786b0e0…json` etc. (5 files): cached real `OCRResponse` JSON for each fixture, keyed by SHA-256 of the image bytes. All 5 produced by `gemini-2.5-flash` on first try (no Claude fallback needed). Each cache file: `{fixture_filename, fixture_sha256, cached_at, ocr_response}`.
+- `fixtures/ocr_responses/SOURCES.md`: per-cache provenance table — fixture → sha256 → provider → confidence → measure/note count → cost → latency.
+- `backend/app/tests/test_ocr_fixtures.py`: new. 12 cases (2 fixed + 5×2 parametrized over each cache file). Validates each cached response round-trips through current `OCRResponse` + `ScoreJson` schema (catches schema drift), and smoke-checks the parse is real (non-empty measures with notes, OR honest empty-with-low-confidence-and-explanation for the worst-case Beethoven sketches fixture which Gemini correctly returned `measures: []` for).
+
+**Why:**
+The bake-off justified swapping the primary from Claude (the spec's default) to Gemini Flash. Caching real responses + a regression test that exercises the current schema against them means future schema changes can't silently break what the providers actually emit — drift gets caught at PR time, not in production. The cache is also a token-cost guard: CI runs Pydantic validation, never calls a real LLM.
+
+**Tests run:**
+- `cd backend && uv run pytest -q` → **107 passed in 5.86s** (was 95; +12 new fixture tests).
+- Live e2e against the local backend on http://127.0.0.1:8000 (3 runs to characterize Gemini latency variance):
+  - All 4 CRUD ops succeeded: POST 201 → GET 200 → PATCH 200 → DELETE 204
+  - End-to-end POST `/v1/scores` latency: **10.2s, 11.8s, 13.9s** across three runs
+  - **DoD <10s misses on all three runs.** Gemini Flash OCR alone runs 7-14s in real traffic (matches the bake-off variance: 6.7-12.4s); image-download from the signed URL adds ~700ms; DB insert adds ~100ms. Total budget for everything-but-OCR is <500ms; the OCR call is the load-bearing piece.
+  - All test data cleaned up (auth user deleted, storage object deleted, public.users CASCADEd via the FK from migration 003).
+- Fixture cache costs: $0.0050 + $0.0056 + $0.0054 + $0.0039 + $0.0007 = **$0.0206 total** to populate the 5-file cache. Per fixture: 802-2040 output tokens, 3-12s latency.
+
+**Known side effects / things to watch:**
+- **`/v1/scores` POST exceeds the spec's <10s DoD.** Three consecutive runs hit 10.2s / 11.8s / 13.9s. The bottleneck is Gemini Flash OCR latency (7-14s), which is external and unpredictable. Switching primary back to Claude doesn't fix it — Claude Sonnet was 17-29s in the bake-off, much worse. Real fix is moving OCR to a background task (FastAPI `BackgroundTasks` per spec §11) and returning 202 + a polling endpoint instead of 201 + the full result. That work is scoped for Batch 4; surfacing here so it doesn't get forgotten.
+- The first e2e run hit a 500 with `scores_user_id_fkey` violation because the test created a Supabase auth user but never called `/v1/me` to provision the `public.users` row. Real clients call `/v1/me` on app open before any other request, so this isn't a code bug — but the e2e script now mirrors that flow with a `/v1/me` call between auth and `/v1/scores`. Worth documenting in client-facing docs eventually.
+- All 5 fixtures cached on Gemini's first try — no Claude fallback was exercised. The fallback path is unit-tested in `test_pipeline.py`; the cache is just a real-data sanity check.
+- Fixture #05 (Beethoven sketches) cached as `measures: []` with confidence 0.5 and a long `notes_to_human` saying the image is "highly stylized and not easily readable as conventional sheet music." This is a legitimate honest "I can't read this" — the test allows it (smoke check carved out for empty-with-low-confidence-and-explanation).
+
+**Rollback:** `git revert <SHA>` removes the cache + fixture test + env update in one shot. The OCR pipeline keeps working with whatever `OCR_PROVIDER_CHAIN` is set in `.env` (or the default in `app/config.py`).
+
+## 2026-04-27 11:50 — Batch 2 — schema escape hatch + Gemini token cap, disable thinking
+
+**Batch:** Batch 2
+**Branch:** feat/batch-2-ocr-pipeline
+**Commit (after this edit):** `0346574` — `fix(ocr): allow "unknown" signatures + raise Gemini token cap, disable thinking` (preceded by `c13943c` — `chore(fixtures): swap to user-curated PD images (Bach BWV 1001 + Petter Sketchbook)`).
+
+**What changed:**
+- `backend/app/services/score_schema.py`: `time_signature` and `key_signature` now accept `"unknown"` (any case) or `null`/missing. Strict regex (`^\d+/\d+$`) still applies when the model returns a real value. Two new `field_validator`s enforce this. No other field was relaxed.
+- `backend/app/prompts/ocr_prompt.txt`: added one Rules line authorizing the model to return `"unknown"` for the time and key signatures specifically when illegible (cropped, handwritten unclear). Explicitly forbids `"unknown"` for other fields so this isn't read as a general escape hatch.
+- `backend/app/services/ocr/gemini_provider.py`: bumped `MAX_OUTPUT_TOKENS` from 4000 → 16000 and added `thinking_config=types.ThinkingConfig(thinking_budget=0)` to `GenerateContentConfig`. Verified `ThinkingConfig` API surface against the installed `google-genai 1.73.1` SDK before the change.
+- `backend/app/tests/test_score_schema.py`: 7 new cases covering the escape hatch — `"unknown"` (any case) and `null`/missing accepted for both fields, whitespace-only key_signature still rejected (model glitch vs. honest "I can't read this").
+- `backend/app/tests/test_gemini_provider.py`: existing happy-path test updated to assert the new `max_output_tokens=16000` and `thinking_config.thinking_budget==0`.
+- `docs/ocr-bakeoff/2026-04-27-bakeoff-v1-baseline.md`: prior bake-off renamed from `2026-04-27-bakeoff.md` to preserve the broken-baseline record.
+- `docs/ocr-bakeoff/2026-04-27-bakeoff-v2.md`: new report after the fixes.
+
+**Why:**
+The first bake-off scored 0/5 for Gemini and 3/5 for Claude. Both failures were infrastructure / schema bugs, not model quality:
+- Every Gemini failure inspected was response truncation — Gemini 2.5's thinking tokens count toward `max_output_tokens`, and 4000 ran out before the JSON closed. Disabling thinking + bumping the cap fixes it.
+- Both Claude handwritten failures were valid `"time_signature": "unknown"` responses being rejected by our strict regex. The model was being honest about not being able to read the metadata header; the schema lacked the escape hatch. Adding it is the right model — we want to capture "couldn't see" as data, not as a parse error.
+
+**Tests run:**
+- `cd backend && uv run pytest -q` → **95 passed in 2.47s** (was 88; +7 schema escape-hatch cases).
+- Bake-off v2 results (5 fixtures × 2 providers; details in `docs/ocr-bakeoff/2026-04-27-bakeoff-v2.md`):
+  - Claude Sonnet: **5/5 schema pass**, avg conf 0.37, avg latency 18.8s, total cost $0.1432
+  - Gemini Flash: **3/5 schema pass**, avg conf 0.92, avg latency 8.8s, total cost $0.0145
+  - Gemini's two failures: one HTTP 503 (transient throttling), one `RemoteProtocolError` (server disconnect). Both are independent infrastructure failures, not model behavior.
+
+**Known side effects / things to watch:**
+- Schema loosening means `time_signature` / `key_signature` can now legitimately be `null` in stored score JSON. Any downstream code that assumed they're always present (Batch 3 audio analysis would care: target BPM derivation may need a fallback) needs to handle that explicitly. Currently nothing else reads them.
+- Gemini's `thinking_budget=0` works on Flash. Pro accepts 0 too per Google docs. If a future Gemini model rejects `thinking_budget=0`, the call will fail — the test pins this contract so the failure surfaces loudly.
+- The two Gemini bake-off failures are transient (503 / disconnect). Re-running may produce 5/5. The bake-off retry-with-backoff helps but doesn't eliminate them; preview API capacity for `gemini-2.5-flash` is uneven.
+- Confidence comparison is interesting: Gemini reports much higher confidence (0.90-0.95) than Claude (0.05-0.62) on the same fixtures. This may be calibration drift — a Gemini "0.90" might not mean the same thing as a Claude "0.62" — or it may reflect Gemini's actually-better OCR. We'd need a separate ground-truth review of the parsed scores to know.
+
+**Rollback:** `git revert <SHA>` rolls back the schema loosening, the prompt change, and the Gemini config bump in one shot. The v1 baseline report stays as a record either way.
+
+## 2026-04-27 11:35 — Batch 2 — 5 OCR fixture images (PD-only, sourced from IMSLP + Wikimedia)
+
+**Batch:** Batch 2
+**Branch:** feat/batch-2-ocr-pipeline
+**Commit (after this edit):** `2eb7dde` — `chore(fixtures): add 5 OCR test images sourced from IMSLP + Wikimedia (PD)`.
+
+**What changed:**
+- `fixtures/scores/01_simple_printed.jpg` — Wohlfahrt Op. 45 Étude No. 1, first line. From IMSLP `IMSLP19882-PMLP46562` (1880 publication; PD).
+- `fixtures/scores/02_medium_printed.jpg` — Wohlfahrt Op. 45 mid-book (around #22–24), single system with slurred sixteenths, accidentals, fingerings.
+- `fixtures/scores/03_complex_printed.jpg` — Kreutzer 42 Études No. 2 opening line. From IMSLP `IMSLP01503` (1796 work, early-20th-century PD edition — explicitly NOT the copyrighted Galamian edition).
+- `fixtures/scores/04_handwritten_clean.jpg` — Anna Magdalena Bach's manuscript copy of Bach's Cello Suites. From Wikimedia Commons (PD-Old).
+- `fixtures/scores/05_handwritten_messy.jpg` — Beethoven sketches for String Quartet Op. 131 (BL Add MS 38070 f.51r). From Wikimedia Commons (PD-Old).
+- `fixtures/scores/SOURCES.md` — table of file → composer → work → source URL → license, plus a "substitutions / known imperfections" section and a reproducibility table with exact PDF page indices, render DPI, and crop fractions.
+
+All five JPEGs are 1200 px wide, 85 % quality, between 35 KB and 62 KB each (combined: 244 KB — well under the 500 KB-per-file ceiling).
+
+**Why:**
+The OCR bake-off and the Batch 2 regression suite both need a fixed test set. Building the fixtures as a numbered, PD-sourced, document-tracked set means: (a) the bake-off is reproducible against the same images forever, (b) the regression suite for §6 (5 fixture scores parse correctly per Batch 2 DoD) lands with the spec's "3 printed + 2 handwritten" split satisfied, (c) anyone who picks up the project can verify the licenses without spelunking through the git history.
+
+**Tests run:**
+- Visual inspection of each cropped JPEG via `Read` tool — confirmed each shows real music notation (not blank pages, covers, or TOC), single staff with at most a small bleed of the next system at the edge (realistic for phone-photo simulation).
+
+**Known side effects / things to watch:**
+- Two of the cropped images (#02, #03) include a partial second staff at the bottom edge; #04 shows ink bleed-through from the previous system at the top edge. Tightening the crops further started clipping slurs from the target staff. The OCR prompt asks for "a single line of sheet music" so the model should focus on the dominant staff.
+- #05 (Beethoven sketches) is intentionally the worst-case fixture: sparse staves with crossings-out and fragmentary motifs. Both OCR providers may legitimately come back with low confidence and a `notes_to_human` flagging the page as illegible — that's the correct behavior for that input.
+- The throwaway `_fetch_fixtures.py` script that produced these files was deleted after generating the images. The reproducibility table in SOURCES.md captures the exact crops so the script can be re-derived if needed.
+
+**Rollback:** `git revert <SHA>` removes all six files. The bake-off CLI will then exit with "no images found in fixtures/scores/" until fixtures are restored.
+
+## 2026-04-26 21:30 — Batch 2 — provider abstraction + Gemini + bake-off harness
+
+**Batch:** Batch 2
+**Branch:** feat/batch-2-ocr-pipeline
+**Commit (after this edit):** `92a085d` — `refactor(ocr): provider abstraction + Gemini provider + bake-off harness`.
+
+**What changed:**
+- `backend/app/services/ocr.py`: **deleted** — replaced with the `ocr/` package.
+- `backend/app/services/ocr/__init__.py`: re-exports public API (`parse_sheet_music`, `OCRError`, all four built-in providers, `PROVIDER_REGISTRY`, `get_provider`, `OCRResponse`, `OCRProvider`, `OCRProviderError`).
+- `backend/app/services/ocr/base.py`: `OCRResponse` Pydantic model (score + raw_text + model + token counts + cost_usd + latency_ms), `OCRProvider` Protocol, `OCRProviderError` exception, shared `PROMPT` loaded from `prompts/ocr_prompt.txt`.
+- `backend/app/services/ocr/claude_provider.py`: `ClaudeProvider` class (one Anthropic call per `parse`, returns `OCRResponse`). Markdown-fence stripping kept defensively. Two registered instances: `claude_sonnet_provider` ($3/$15 per 1M tok), `claude_opus_provider` ($15/$75 per 1M tok). Pricing constants verified against Anthropic public pricing 2026-04.
+- `backend/app/services/ocr/gemini_provider.py`: `GeminiProvider` class using `google.genai`. Uses native JSON mode (`response_mime_type="application/json"`) so no fence-stripping needed in steady state. Two registered instances: `gemini_flash_provider` ($0.30/$2.50 per 1M tok), `gemini_pro_provider` ($1.25/$10.00 per 1M tok ≤200k context). Pricing verified live against `https://ai.google.dev/gemini-api/docs/pricing` via WebFetch on 2026-04-26. Counts `thoughts_token_count` toward output tokens (Gemini 2.5 thinking tokens are billed as output).
+- `backend/app/services/ocr/pipeline.py`: `parse_sheet_music(image_bytes, *, media_type, providers) -> ScoreJson`. Tries providers in order; first one to return a high-confidence (≥0.7) parse wins; first parseable low-confidence result is the fallback (matches old "low conf > nothing" carve-out per spec §6); only when nothing is parseable does it raise `OCRError`. Default chain reads `settings.OCR_PROVIDER_CHAIN` (env, comma-separated). `PROVIDER_REGISTRY` + `get_provider(name)` for the bake-off CLI.
+- `backend/app/routers/scores.py`: updated for the new pipeline return type — was `ocr.score.model_dump()`, now `score.model_dump()` (pipeline returns `ScoreJson` directly, not the wrapper).
+- `backend/app/config.py`: added `GEMINI_API_KEY` + `OCR_PROVIDER_CHAIN` (default `"claude-sonnet-4-6,claude-opus-4-7"` to preserve current behavior pre-bake-off).
+- `backend/.env.example` + `backend/.env`: same two new env slots, with a comment pointing at `bakeoff/` for context on `OCR_PROVIDER_CHAIN`.
+- `backend/pyproject.toml` + `uv.lock`: added `google-genai==1.73.1` (pulls `google-auth`, `pyasn1`, `pyasn1-modules`).
+- `backend/app/tests/test_ocr.py`: **deleted** — superseded by the three new test files.
+- `backend/app/tests/test_claude_provider.py`: new. 8 cases covering `_strip_markdown_fences` (3), `ClaudeProvider.parse` happy path with token-cost math, fence stripping, invalid JSON, no-content-parts error, no-text error, pricing-constants assertion.
+- `backend/app/tests/test_gemini_provider.py`: new. 5 cases — happy path with JSON-mode config verified, thoughts tokens billed as output, invalid JSON raises ValueError, empty response raises OCRProviderError, missing API key raises before SDK call. Also asserts Pro pricing constants.
+- `backend/app/tests/test_pipeline.py`: new. 9 cases — first high-conf wins (second never called), first fails validation → second succeeds, provider error → next, low-conf then high-conf returns high, all-low-conf returns first low-conf, low-conf then invalid returns low-conf, all-fail raises `OCRError` with all names in message, empty chain raises, env-driven default chain, unknown provider in env chain raises.
+- `backend/app/tests/test_scores_router.py`: updated to drop the `from app.services.ocr import OCRResult` import and inline a plain `ScoreJson` in the OCR stub.
+- `bakeoff/__init__.py` + `bakeoff/run_bakeoff.py` + `bakeoff/README.md`: new top-level `bakeoff/` package. CLI: `cd backend && uv run ../bakeoff/run_bakeoff.py [--fixtures-dir … --output … --include-premium --providers a,b,c]`. Discovers all images in `fixtures/scores/`, runs each through the configured provider list, writes a markdown report to `docs/ocr-bakeoff/<date>-bakeoff.md` (per-fixture detail tables + summary table with pass-rate, avg confidence, avg latency, total cost, total measures). Errors per provider don't abort the bake-off — every cell either passes or surfaces its error, so one provider going down doesn't kill the run.
+- `docs/ocr-bakeoff/.gitkeep`: tracked dir for generated reports.
+
+**Why:**
+The user wants to bake off Gemini Flash vs Claude Sonnet on real fixtures before locking the OCR provider. Spec §11 already calls for "abstraction layer in the OCR module so we can swap to GPT-4V or a fine-tuned model later" — now is the right time to build it. The provider abstraction also gives us the toggle infrastructure (env-driven `OCR_PROVIDER_CHAIN`) for free, so post-bake-off the swap is a one-line `.env` edit, no code change. Refactor was contained: `parse_sheet_music` + `OCRError` keep their public names so the `/v1/scores` router barely changed (one `.score` → bare reference).
+
+**Tests run:**
+- `cd backend && uv run pytest -q` → **88 passed in 1.83s**, 0 warnings. Was 72 at end of the prior commit; +16 from the test split (8 Claude + 5 Gemini + 9 pipeline = 22 new — 6 from the deleted `test_ocr.py` since some cases moved to pipeline rather than provider).
+- `cd backend && uv run ../bakeoff/run_bakeoff.py --help` → CLI imports cleanly, surfaces all four built-in providers in the `--providers` choices line.
+
+**Known side effects / things to watch:**
+- Gemini's `thoughts_token_count` may not be present on every response — handled with `getattr(..., 0) or 0`. If a future Gemini model emits this field with a different name, output-token billing will under-count. Tests pin the current behavior.
+- The bake-off script lives at the repo root (not inside `backend/`) so it's clearly project-wide tooling. It works from `backend/` via `sys.path.insert(0, str(BACKEND_DIR))` plus an explicit `load_dotenv(BACKEND_DIR / ".env")`. Running it from anywhere else also works because all paths resolve from `Path(__file__).resolve().parent`.
+- The bake-off doesn't hit any provider's `_client` directly — it just calls `provider.parse(...)`, so when API keys are missing the failure surfaces as a clean per-cell error in the report, not a crash.
+- Pricing constants are hardcoded in the provider modules. If Anthropic or Google change prices, update the constants — the tests pin the current values to surface drift.
+- `OCR_PROVIDER_CHAIN` default is unchanged (`claude-sonnet-4-6,claude-opus-4-7`) so production behavior is identical until the user picks a winner from the bake-off and edits `.env`.
+
+**Rollback:** `git revert <SHA>` rolls back the package, the providers, the bake-off, and the env additions in one shot. Anything still importing `from app.services.ocr import parse_sheet_music, OCRError` (i.e. `routers/scores.py`) keeps working since the public API names are preserved.
+
+## 2026-04-26 20:40 — Batch 2 — /v1/scores router (POST/GET/PATCH/DELETE)
+
+**Batch:** Batch 2
+**Branch:** feat/batch-2-ocr-pipeline
+**Commit (after this edit):** `e6f6660` — `feat(batch-2): /v1/scores router (POST/GET/PATCH/DELETE) + URL safety + tests`.
+
+**What changed:**
+- `backend/app/routers/scores.py`: new. Five endpoints — `POST /v1/scores` (URL-safety check → download image → OCR → persist), `GET /v1/scores` (list, paginated `?limit&offset`, ordered by `created_at DESC`), `GET /v1/scores/:id` (owner-scoped read), `PATCH /v1/scores/:id` (whole-document `score_json` replacement + optional title/composer rename, per spec MVP), `DELETE /v1/scores/:id` (returns 204; FK violation from `analyses.score_id ON DELETE RESTRICT` surfaces as 409 with a clear message). Service-role client used for all DB ops with explicit `WHERE user_id = <jwt sub>` for parity with RLS. URL-safety check (`_assert_image_url_owned_by`) accepts only Supabase URLs whose path starts with `/storage/v1/object/{sign,authenticated,public}/score-images/<user_id>/` — anything else returns 403 *before* downloading. Image download capped at 12 MB / 6s timeout via `httpx`.
+- `backend/app/main.py`: added `scores` to the import and `app.include_router` list.
+- `backend/app/tests/test_scores_router.py`: new. 13 cases — POST: unauth 401, happy path 201 with insert payload verified, URL-prefix from another user 403, arbitrary external URL 403, OCR failure 422; GET list: returns owner rows; GET one: own 200, unknown 404, "other user's id" 404 (service-role read filters by user_id so RLS-parity holds); PATCH: replaces score_json + ocr_confidence, empty body 400, unknown 404; DELETE: owner 204, unknown 404, FK-violation 409.
+- `fixtures/ocr_responses/.gitkeep`: directory tracked. Cached Claude responses keyed by image hash will live here once we have real fixture images + an API key.
+
+**Why:**
+The router glues every other Batch 2 piece together. Deliberate design choices: image URLs must be Supabase signed URLs under the user's own folder (so the backend can never be tricked into downloading and OCR-charging on arbitrary URLs); all DB ops use service-role + explicit user_id filter (faster than re-deriving an anon-key client per request, equivalent access semantics); `PATCH score_json` always re-derives `ocr_confidence` from the new payload (so user corrections that bring the score back to high confidence reflect in the row).
+
+**Tests run:**
+- `cd backend && uv run pytest -q` → **72 passed in 1.38s**, 0 warnings (one prior `HTTP_422_UNPROCESSABLE_ENTITY` deprecation warning fixed by inlining 422). Was 20 at end of Batch 1 → +52 from Batch 2 (19 schema + 9 ocr + 13 router + 11 from earlier suites still green).
+
+**Known side effects / things to watch:**
+- The 12 MB image download cap matches the 10 MB bucket limit with headroom. If we ever raise the bucket limit, raise this too.
+- The DELETE → 409 path string-matches Postgres's "violates foreign key constraint" error message. If supabase-py wraps the error differently in a future SDK version, the catch may miss and surface 500 instead. Acceptable risk; the test enforces the current behavior.
+- `_assert_image_url_owned_by` enumerates three Supabase storage URL shapes (`/sign/`, `/authenticated/`, `/public/`). Public buckets aren't in our setup but the prefix is allowed for consistency. If Supabase introduces a new URL form (e.g. `/private/`), uploads will fail this check until we add it.
+
+**Rollback:** `git revert <SHA>` removes the router + tests + the main.py wiring. The OCR service and schema (prior commits) remain functional — they're just no longer reachable via HTTP.
+
+## 2026-04-26 20:35 — Batch 2 — OCR service (Anthropic wrapper + Sonnet→Opus retry)
+
+**Batch:** Batch 2
+**Branch:** feat/batch-2-ocr-pipeline
+**Commit (after this edit):** `84d9386` — `feat(batch-2): OCR service — Claude Vision wrapper + Sonnet→Opus retry`.
+
+**What changed:**
+- `backend/app/services/ocr.py`: new. `parse_sheet_music(image_bytes, *, media_type, primary_model, fallback_model) -> OCRResult`. Per spec §6 + Batch 2: try `claude-sonnet-4-6` first, retry with `claude-opus-4-7` on validation failure or `ocr_confidence < 0.7` (passing the failure reason as feedback in the retry prompt). After 2 failures, raise `OCRError`. Markdown fences stripped defensively (the spec calls this out as a known Claude quirk). Module-level lazy `_client` so unit tests monkeypatch without going through the real SDK constructor and CI never needs `ANTHROPIC_API_KEY`.
+- `backend/app/tests/test_ocr.py`: new. 9 cases — `_strip_markdown_fences` covers fenced/un-fenced/json-labelled cases; clean Sonnet response → returns ScoreJson with one Claude call; markdown-fenced response → fences stripped; invalid Sonnet JSON → retry to Opus → success (verifies the second call carries "previous attempt failed" feedback in the prompt); low-confidence Sonnet → retry to Opus; both invalid → `OCRError` with both model names in the message; **edge case** — low-confidence Sonnet + invalid Opus → returns the low-confidence Sonnet result rather than raising (per spec's "surface to the user" intent — a parseable parse-with-low-confidence is still better than nothing for the human-correction flow).
+
+**Why:**
+The retry-to-Opus path exists because Sonnet is ~3× cheaper and handles printed music well, but handwritten scores need Opus's stronger vision. Trying Sonnet first preserves cost; retrying with explicit feedback gives Opus a hint about what went wrong (much cheaper than re-running blind). The "low-confidence Sonnet beats nothing" carve-out is a deliberate divergence from a strict "both must succeed" reading — see `OCRResult` semantics.
+
+**Tests run:**
+- `cd backend && uv run pytest app/tests/test_ocr.py -q` → 9 passed.
+- Full suite green at this point too.
+
+**Known side effects / things to watch:**
+- The `_client` lazy-init means anything that touches `_get_client()` without monkeypatching it will instantiate a real `Anthropic()` and try to read `ANTHROPIC_API_KEY` from env. Tests stub the module attribute directly to avoid this.
+- The retry includes the failure message verbatim in the prompt. If a future failure message contains JSON-like text (e.g. "expected `{'foo': ...}`") Claude may get confused. Acceptable risk for now; revisit if real-world failures surface that pattern.
+- `parse_sheet_music` returns `OCRResult` (with model_used + raw_response), not just `ScoreJson`. Callers that only need the score read `result.score`. The extra fields exist for the fixture-caching workflow + future telemetry.
+
+**Rollback:** `git revert <SHA>` removes the OCR service and tests; the score schema (prior commit) keeps working independently.
+
+## 2026-04-26 20:30 — Batch 2 — score JSON schema + externalized OCR prompt
+
+**Batch:** Batch 2
+**Branch:** feat/batch-2-ocr-pipeline
+**Commit (after this edit):** `22c0678` — `feat(batch-2): score_schema (Pydantic v2) + verbatim ocr_prompt.txt`.
+
+**What changed:**
+- `backend/app/services/__init__.py`: new (empty package marker).
+- `backend/app/services/score_schema.py`: new. Pydantic v2 models for the score JSON shape from spec §6: `Note`, `Slur`, `Measure`, `Repeat`, `ScoreJson`. All use `model_config = ConfigDict(extra="forbid")` so a Claude response with hallucinated extra keys fails validation and triggers retry. Closed `Literal` enums for `clef`, `articulation`, `dynamics`, `repeat type`, and `duration` (the spec's "..." in duration is enumerated as the standard set: whole/half/quarter/eighth/sixteenth/thirty_second + dotted variants). Pitch validated by regex (`rest` or scientific-pitch like `D3`/`F#4`/`Bb2`). `ocr_confidence` clamped 0–1, `bpm_hint` clamped 20–300, `time_signature` regex-matched to `\d+/\d+`. `Slur.end_note_index >= start_note_index` enforced.
+- `backend/app/prompts/ocr_prompt.txt`: new. **Verbatim copy** of spec §6's OCR prompt block (schema + Rules section). Externalized so we can iterate the prompt without redeploying.
+- `backend/app/tests/test_score_schema.py`: new. 19 cases — minimal payload accepts; full payload round-trips through `model_dump_json`; `ocr_confidence` boundaries (0, 0.5, 1) accepted; out-of-range rejected; extra fields at every level rejected; pitch regex covers valid (`D3`, `F#4`, `Bb2`, `C-1`, `rest`) and invalid (`H4`, `D#bb4`, `rest!`, whitespace-padded) forms; invalid duration / clef / repeat-type rejected; slur end-before-start rejected; bpm_hint range enforced; measure defaults work.
+
+**Why:**
+The schema is the contract every later piece depends on — Claude's output is validated against it, the DB jsonb is shaped like it, and Batch 3's audio pipeline reads from it. Locking it down with strict validation now means Claude hallucinations get rejected at the boundary instead of corrupting downstream code.
+
+**Tests run:**
+- `cd backend && uv run pytest app/tests/test_score_schema.py -q` → 19 passed.
+- Full suite re-run after later commits.
+
+**Known side effects / things to watch:**
+- The `Duration` literal hardcodes the standard set. If a future score uses something exotic (e.g. tuplets, double-dotted), Claude's output will fail validation and retry. Acceptable for MVP — exotic notation is also where Claude struggles most, so failing fast surfaces the issue.
+- The pitch regex doesn't cap octave count — `C100` would parse. Postgres-side accent notation (`C##` / `Cbb`) isn't supported (single accidental only); spec §6 doesn't mention double-accidentals so we're fine.
+
+**Rollback:** `git revert <SHA>` removes the schema + prompt + tests. Anything that imports from `app.services.score_schema` (just OCR + scores router after the next commits) goes red.
+
 ## 2026-04-26 19:15 — Batch 1 — 003_users_auth_fk migration
 
 **Batch:** Batch 1

@@ -1,0 +1,291 @@
+{
+  "fixture_filename": "03_complex_printed.jpg",
+  "fixture_sha256": "bcf3ac293fc388d689c3658d69b2ed9c88ef613b4959f86ac61be8ff0277539b",
+  "cached_at": "2026-04-28T05:32:59Z",
+  "ocr_response": {
+    "score": {
+      "time_signature": "4/4",
+      "key_signature": "unknown",
+      "tempo_marking": null,
+      "bpm_hint": null,
+      "clef": "treble",
+      "measures": [
+        {
+          "measure_number": 1,
+          "notes": [
+            {
+              "pitch": "G4",
+              "duration": "eighth",
+              "articulation": "accent",
+              "tied_to_next": false,
+              "dynamics": null
+            },
+            {
+              "pitch": "G4",
+              "duration": "eighth",
+              "articulation": "accent",
+              "tied_to_next": false,
+              "dynamics": null
+            },
+            {
+              "pitch": "G4",
+              "duration": "eighth",
+              "articulation": "accent",
+              "tied_to_next": false,
+              "dynamics": null
+            },
+            {
+              "pitch": "G4",
+              "duration": "eighth",
+              "articulation": "accent",
+              "tied_to_next": false,
+              "dynamics": null
+            },
+            {
+              "pitch": "G4",
+              "duration": "eighth",
+              "articulation": "accent",
+              "tied_to_next": false,
+              "dynamics": null
+            },
+            {
+              "pitch": "G4",
+              "duration": "eighth",
+              "articulation": "accent",
+              "tied_to_next": false,
+              "dynamics": null
+            },
+            {
+              "pitch": "G4",
+              "duration": "eighth",
+              "articulation": "accent",
+              "tied_to_next": false,
+              "dynamics": null
+            },
+            {
+              "pitch": "G4",
+              "duration": "eighth",
+              "articulation": "accent",
+              "tied_to_next": false,
+              "dynamics": null
+            }
+          ],
+          "slurs": []
+        },
+        {
+          "measure_number": 2,
+          "notes": [
+            {
+              "pitch": "G4",
+              "duration": "eighth",
+              "articulation": "accent",
+              "tied_to_next": false,
+              "dynamics": null
+            },
+            {
+              "pitch": "G4",
+              "duration": "eighth",
+              "articulation": "accent",
+              "tied_to_next": false,
+              "dynamics": null
+            },
+            {
+              "pitch": "G4",
+              "duration": "eighth",
+              "articulation": "accent",
+              "tied_to_next": false,
+              "dynamics": null
+            },
+            {
+              "pitch": "G4",
+              "duration": "eighth",
+              "articulation": "accent",
+              "tied_to_next": false,
+              "dynamics": null
+            },
+            {
+              "pitch": "G4",
+              "duration": "eighth",
+              "articulation": "accent",
+              "tied_to_next": false,
+              "dynamics": null
+            },
+            {
+              "pitch": "G4",
+              "duration": "eighth",
+              "articulation": "accent",
+              "tied_to_next": false,
+              "dynamics": null
+            },
+            {
+              "pitch": "G4",
+              "duration": "eighth",
+              "articulation": "accent",
+              "tied_to_next": false,
+              "dynamics": null
+            },
+            {
+              "pitch": "G4",
+              "duration": "eighth",
+              "articulation": "accent",
+              "tied_to_next": false,
+              "dynamics": null
+            }
+          ],
+          "slurs": []
+        },
+        {
+          "measure_number": 3,
+          "notes": [
+            {
+              "pitch": "G4",
+              "duration": "eighth",
+              "articulation": "staccato",
+              "tied_to_next": false,
+              "dynamics": null
+            },
+            {
+              "pitch": "A4",
+              "duration": "eighth",
+              "articulation": "staccato",
+              "tied_to_next": false,
+              "dynamics": null
+            },
+            {
+              "pitch": "B4",
+              "duration": "eighth",
+              "articulation": "staccato",
+              "tied_to_next": false,
+              "dynamics": null
+            },
+            {
+              "pitch": "C5",
+              "duration": "eighth",
+              "articulation": "staccato",
+              "tied_to_next": false,
+              "dynamics": null
+            },
+            {
+              "pitch": "G4",
+              "duration": "eighth",
+              "articulation": "staccato",
+              "tied_to_next": false,
+              "dynamics": null
+            },
+            {
+              "pitch": "A4",
+              "duration": "eighth",
+              "articulation": "staccato",
+              "tied_to_next": false,
+              "dynamics": null
+            },
+            {
+              "pitch": "B4",
+              "duration": "eighth",
+              "articulation": "staccato",
+              "tied_to_next": false,
+              "dynamics": null
+            },
+            {
+              "pitch": "C5",
+              "duration": "eighth",
+              "articulation": "staccato",
+              "tied_to_next": false,
+              "dynamics": null
+            }
+          ],
+          "slurs": [
+            {
+              "start_note_index": 0,
+              "end_note_index": 3
+            },
+            {
+              "start_note_index": 4,
+              "end_note_index": 7
+            }
+          ]
+        },
+        {
+          "measure_number": 4,
+          "notes": [
+            {
+              "pitch": "G4",
+              "duration": "eighth",
+              "articulation": "staccato",
+              "tied_to_next": false,
+              "dynamics": null
+            },
+            {
+              "pitch": "A4",
+              "duration": "eighth",
+              "articulation": "staccato",
+              "tied_to_next": false,
+              "dynamics": null
+            },
+            {
+              "pitch": "B4",
+              "duration": "eighth",
+              "articulation": "staccato",
+              "tied_to_next": false,
+              "dynamics": null
+            },
+            {
+              "pitch": "C5",
+              "duration": "eighth",
+              "articulation": "staccato",
+              "tied_to_next": false,
+              "dynamics": null
+            },
+            {
+              "pitch": "G4",
+              "duration": "eighth",
+              "articulation": "staccato",
+              "tied_to_next": false,
+              "dynamics": null
+            },
+            {
+              "pitch": "A4",
+              "duration": "eighth",
+              "articulation": "staccato",
+              "tied_to_next": false,
+              "dynamics": null
+            },
+            {
+              "pitch": "B4",
+              "duration": "eighth",
+              "articulation": "staccato",
+              "tied_to_next": false,
+              "dynamics": null
+            },
+            {
+              "pitch": "C5",
+              "duration": "eighth",
+              "articulation": "staccato",
+              "tied_to_next": false,
+              "dynamics": null
+            }
+          ],
+          "slurs": [
+            {
+              "start_note_index": 0,
+              "end_note_index": 3
+            },
+            {
+              "start_note_index": 4,
+              "end_note_index": 7
+            }
+          ]
+        }
+      ],
+      "repeats": [],
+      "ocr_confidence": 0.9,
+      "notes_to_human": "The key signature is missing from the image. Bowing marks are included as slurs in measures 3 and 4, though not explicitly standard slurs. The first measure has the number 2. written largely to the left of the clef, possibly indicating an exercise number or an overall section. The text 'Pt., firm staccato.' refers to the playing style for the first two measures, while '2. Middle, springing bow.' and '4. Nut.', '5. Point.' refer to sections or changes in bowing technique but don't translate directly into standard musical notation symbols."
+    },
+    "raw_text": "{\n  \"time_signature\": \"4/4\",\n  \"key_signature\": \"unknown\",\n  \"tempo_marking\": null,\n  \"bpm_hint\": null,\n  \"clef\": \"treble\",\n  \"measures\": [\n    {\n      \"measure_number\": 1,\n      \"notes\": [\n        {\n          \"pitch\": \"G4\",\n          \"duration\": \"eighth\",\n          \"articulation\": \"accent\",\n          \"tied_to_next\": false,\n          \"dynamics\": null\n        },\n        {\n          \"pitch\": \"G4\",\n          \"duration\": \"eighth\",\n          \"articulation\": \"accent\",\n          \"tied_to_next\": false,\n          \"dynamics\": null\n        },\n        {\n          \"pitch\": \"G4\",\n          \"duration\": \"eighth\",\n          \"articulation\": \"accent\",\n          \"tied_to_next\": false,\n          \"dynamics\": null\n        },\n        {\n          \"pitch\": \"G4\",\n          \"duration\": \"eighth\",\n          \"articulation\": \"accent\",\n          \"tied_to_next\": false,\n          \"dynamics\": null\n        },\n        {\n          \"pitch\": \"G4\",\n          \"duration\": \"eighth\",\n          \"articulation\": \"accent\",\n          \"tied_to_next\": false,\n          \"dynamics\": null\n        },\n        {\n          \"pitch\": \"G4\",\n          \"duration\": \"eighth\",\n          \"articulation\": \"accent\",\n          \"tied_to_next\": false,\n          \"dynamics\": null\n        },\n        {\n          \"pitch\": \"G4\",\n          \"duration\": \"eighth\",\n          \"articulation\": \"accent\",\n          \"tied_to_next\": false,\n          \"dynamics\": null\n        },\n        {\n          \"pitch\": \"G4\",\n          \"duration\": \"eighth\",\n          \"articulation\": \"accent\",\n          \"tied_to_next\": false,\n          \"dynamics\": null\n        }\n      ],\n      \"slurs\": []\n    },\n    {\n      \"measure_number\": 2,\n      \"notes\": [\n        {\n          \"pitch\": \"G4\",\n          \"duration\": \"eighth\",\n          \"articulation\": \"accent\",\n          \"tied_to_next\": false,\n          \"dynamics\": null\n        },\n        {\n          \"pitch\": \"G4\",\n          \"duration\": \"eighth\",\n          \"articulation\": \"accent\",\n          \"tied_to_next\": false,\n          \"dynamics\": null\n        },\n        {\n          \"pitch\": \"G4\",\n          \"duration\": \"eighth\",\n          \"articulation\": \"accent\",\n          \"tied_to_next\": false,\n          \"dynamics\": null\n        },\n        {\n          \"pitch\": \"G4\",\n          \"duration\": \"eighth\",\n          \"articulation\": \"accent\",\n          \"tied_to_next\": false,\n          \"dynamics\": null\n        },\n        {\n          \"pitch\": \"G4\",\n          \"duration\": \"eighth\",\n          \"articulation\": \"accent\",\n          \"tied_to_next\": false,\n          \"dynamics\": null\n        },\n        {\n          \"pitch\": \"G4\",\n          \"duration\": \"eighth\",\n          \"articulation\": \"accent\",\n          \"tied_to_next\": false,\n          \"dynamics\": null\n        },\n        {\n          \"pitch\": \"G4\",\n          \"duration\": \"eighth\",\n          \"articulation\": \"accent\",\n          \"tied_to_next\": false,\n          \"dynamics\": null\n        },\n        {\n          \"pitch\": \"G4\",\n          \"duration\": \"eighth\",\n          \"articulation\": \"accent\",\n          \"tied_to_next\": false,\n          \"dynamics\": null\n        }\n      ],\n      \"slurs\": []\n    },\n    {\n      \"measure_number\": 3,\n      \"notes\": [\n        {\n          \"pitch\": \"G4\",\n          \"duration\": \"eighth\",\n          \"articulation\": \"staccato\",\n          \"tied_to_next\": false,\n          \"dynamics\": null\n        },\n        {\n          \"pitch\": \"A4\",\n          \"duration\": \"eighth\",\n          \"articulation\": \"staccato\",\n          \"tied_to_next\": false,\n          \"dynamics\": null\n        },\n        {\n          \"pitch\": \"B4\",\n          \"duration\": \"eighth\",\n          \"articulation\": \"staccato\",\n          \"tied_to_next\": false,\n          \"dynamics\": null\n        },\n        {\n          \"pitch\": \"C5\",\n          \"duration\": \"eighth\",\n          \"articulation\": \"staccato\",\n          \"tied_to_next\": false,\n          \"dynamics\": null\n        },\n        {\n          \"pitch\": \"G4\",\n          \"duration\": \"eighth\",\n          \"articulation\": \"staccato\",\n          \"tied_to_next\": false,\n          \"dynamics\": null\n        },\n        {\n          \"pitch\": \"A4\",\n          \"duration\": \"eighth\",\n          \"articulation\": \"staccato\",\n          \"tied_to_next\": false,\n          \"dynamics\": null\n        },\n        {\n          \"pitch\": \"B4\",\n          \"duration\": \"eighth\",\n          \"articulation\": \"staccato\",\n          \"tied_to_next\": false,\n          \"dynamics\": null\n        },\n        {\n          \"pitch\": \"C5\",\n          \"duration\": \"eighth\",\n          \"articulation\": \"staccato\",\n          \"tied_to_next\": false,\n          \"dynamics\": null\n        }\n      ],\n      \"slurs\": [\n        {\n          \"start_note_index\": 0,\n          \"end_note_index\": 3\n        },\n        {\n          \"start_note_index\": 4,\n          \"end_note_index\": 7\n        }\n      ]\n    },\n    {\n      \"measure_number\": 4,\n      \"notes\": [\n        {\n          \"pitch\": \"G4\",\n          \"duration\": \"eighth\",\n          \"articulation\": \"staccato\",\n          \"tied_to_next\": false,\n          \"dynamics\": null\n        },\n        {\n          \"pitch\": \"A4\",\n          \"duration\": \"eighth\",\n          \"articulation\": \"staccato\",\n          \"tied_to_next\": false,\n          \"dynamics\": null\n        },\n        {\n          \"pitch\": \"B4\",\n          \"duration\": \"eighth\",\n          \"articulation\": \"staccato\",\n          \"tied_to_next\": false,\n          \"dynamics\": null\n        },\n        {\n          \"pitch\": \"C5\",\n          \"duration\": \"eighth\",\n          \"articulation\": \"staccato\",\n          \"tied_to_next\": false,\n          \"dynamics\": null\n        },\n        {\n          \"pitch\": \"G4\",\n          \"duration\": \"eighth\",\n          \"articulation\": \"staccato\",\n          \"tied_to_next\": false,\n          \"dynamics\": null\n        },\n        {\n          \"pitch\": \"A4\",\n          \"duration\": \"eighth\",\n          \"articulation\": \"staccato\",\n          \"tied_to_next\": false,\n          \"dynamics\": null\n        },\n        {\n          \"pitch\": \"B4\",\n          \"duration\": \"eighth\",\n          \"articulation\": \"staccato\",\n          \"tied_to_next\": false,\n          \"dynamics\": null\n        },\n        {\n          \"pitch\": \"C5\",\n          \"duration\": \"eighth\",\n          \"articulation\": \"staccato\",\n          \"tied_to_next\": false,\n          \"dynamics\": null\n        }\n      ],\n      \"slurs\": [\n        {\n          \"start_note_index\": 0,\n          \"end_note_index\": 3\n        },\n        {\n          \"start_note_index\": 4,\n          \"end_note_index\": 7\n        }\n      ]\n    }\n  ],\n  \"repeats\": [],\n  \"ocr_confidence\": 0.9,\n  \"notes_to_human\": \"The key signature is missing from the image. Bowing marks are included as slurs in measures 3 and 4, though not explicitly standard slurs. The first measure has the number 2. written largely to the left of the clef, possibly indicating an exercise number or an overall section. The text 'Pt., firm staccato.' refers to the playing style for the first two measures, while '2. Middle, springing bow.' and '4. Nut.', '5. Point.' refer to sections or changes in bowing technique but don't translate directly into standard musical notation symbols.\"\n}",
+    "model": "gemini-2.5-flash",
+    "input_tokens": 813,
+    "output_tokens": 2063,
+    "cost_usd": 0.0054014,
+    "latency_ms": 9125
+  }
+}

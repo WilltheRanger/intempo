@@ -1,0 +1,195 @@
+"""Tests for the pipeline orchestration in `app.services.ocr.pipeline`.
+
+Each provider is replaced with a `_FakeProvider` whose `parse` either
+returns a canned `OCRResponse` or raises a chosen exception. This
+exercises the chain logic without going through any real SDK.
+"""
+
+from __future__ import annotations
+
+from typing import Any, Callable
+
+import pytest
+from pydantic import ValidationError
+
+from app.services.ocr import pipeline as pipeline_module
+from app.services.ocr.base import OCRProviderError, OCRResponse
+from app.services.ocr.pipeline import (
+    CONFIDENCE_THRESHOLD,
+    OCRError,
+    parse_sheet_music,
+)
+from app.services.score_schema import ScoreJson
+
+
+GOOD_PAYLOAD = {
+    "time_signature": "4/4",
+    "key_signature": "D major",
+    "tempo_marking": None,
+    "bpm_hint": None,
+    "clef": "treble",
+    "measures": [
+        {
+            "measure_number": 1,
+            "notes": [
+                {
+                    "pitch": "D3",
+                    "duration": "quarter",
+                    "articulation": None,
+                    "tied_to_next": False,
+                    "dynamics": None,
+                }
+            ],
+            "slurs": [],
+        }
+    ],
+    "repeats": [],
+    "ocr_confidence": 0.92,
+    "notes_to_human": "",
+}
+
+
+def _score(conf: float = 0.92) -> ScoreJson:
+    return ScoreJson.model_validate({**GOOD_PAYLOAD, "ocr_confidence": conf})
+
+
+def _response(name: str, conf: float = 0.92) -> OCRResponse:
+    return OCRResponse(
+        score=_score(conf),
+        raw_text="{}",
+        model=name,
+        input_tokens=10,
+        output_tokens=10,
+        cost_usd=0.0001,
+        latency_ms=42,
+    )
+
+
+class _FakeProvider:
+    def __init__(
+        self,
+        name: str,
+        *,
+        outcome: Callable[[], OCRResponse | None] | None = None,
+        response: OCRResponse | None = None,
+        raises: BaseException | None = None,
+    ) -> None:
+        self.name = name
+        self._outcome = outcome
+        self._response = response
+        self._raises = raises
+        self.calls = 0
+
+    def parse(self, image_bytes: bytes, mime_type: str = "image/jpeg") -> OCRResponse:
+        self.calls += 1
+        if self._raises is not None:
+            raise self._raises
+        if self._outcome is not None:
+            res = self._outcome()
+            if res is None:
+                raise RuntimeError("fake outcome returned None")
+            return res
+        assert self._response is not None
+        return self._response
+
+
+# ---- chain semantics ------------------------------------------------------
+
+
+def test_first_provider_high_confidence_returns_immediately() -> None:
+    p1 = _FakeProvider("p1", response=_response("p1", conf=0.92))
+    p2 = _FakeProvider("p2", response=_response("p2", conf=0.92))
+    score = parse_sheet_music(b"<jpeg>", providers=[p1, p2])
+    assert score.ocr_confidence == 0.92
+    assert p1.calls == 1
+    assert p2.calls == 0  # never tried
+
+
+def test_first_fails_validation_second_succeeds() -> None:
+    bad = _FakeProvider("p1", raises=ValidationError.from_exception_data("x", []))
+    good = _FakeProvider("p2", response=_response("p2", conf=0.9))
+    score = parse_sheet_music(b"<jpeg>", providers=[bad, good])
+    assert score.ocr_confidence == 0.9
+    assert bad.calls == 1
+    assert good.calls == 1
+
+
+def test_first_provider_error_second_succeeds() -> None:
+    bad = _FakeProvider("p1", raises=OCRProviderError("boom"))
+    good = _FakeProvider("p2", response=_response("p2", conf=0.95))
+    score = parse_sheet_music(b"<jpeg>", providers=[bad, good])
+    assert score.ocr_confidence == 0.95
+    assert bad.calls == 1
+    assert good.calls == 1
+
+
+def test_first_low_confidence_second_high_returns_second() -> None:
+    low = CONFIDENCE_THRESHOLD - 0.2
+    p1 = _FakeProvider("p1", response=_response("p1", conf=low))
+    p2 = _FakeProvider("p2", response=_response("p2", conf=0.95))
+    score = parse_sheet_music(b"<jpeg>", providers=[p1, p2])
+    assert score.ocr_confidence == 0.95
+
+
+def test_all_low_confidence_returns_first_low_confidence() -> None:
+    """Spec carve-out: low-confidence parse beats no parse for the human-correction flow."""
+    p1 = _FakeProvider("p1", response=_response("p1", conf=0.4))
+    p2 = _FakeProvider("p2", response=_response("p2", conf=0.5))
+    score = parse_sheet_music(b"<jpeg>", providers=[p1, p2])
+    # First-encountered low-confidence wins (matches `best_low_confidence is None` check).
+    assert score.ocr_confidence == 0.4
+    assert p1.calls == 1
+    assert p2.calls == 1
+
+
+def test_low_confidence_then_invalid_returns_low_confidence() -> None:
+    p1 = _FakeProvider("p1", response=_response("p1", conf=0.3))
+    p2 = _FakeProvider("p2", raises=ValueError("malformed"))
+    score = parse_sheet_music(b"<jpeg>", providers=[p1, p2])
+    assert score.ocr_confidence == 0.3
+
+
+def test_all_fail_raises_ocr_error() -> None:
+    p1 = _FakeProvider("p1", raises=OCRProviderError("a"))
+    p2 = _FakeProvider("p2", raises=ValueError("b"))
+    with pytest.raises(OCRError) as exc_info:
+        parse_sheet_music(b"<jpeg>", providers=[p1, p2])
+    msg = str(exc_info.value)
+    assert "p1" in msg and "p2" in msg
+
+
+def test_empty_chain_raises() -> None:
+    with pytest.raises(OCRError, match="empty"):
+        parse_sheet_music(b"<jpeg>", providers=[])
+
+
+# ---- default chain (env-driven) -------------------------------------------
+
+
+def test_default_chain_uses_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`parse_sheet_music` with providers=None reads `settings.OCR_PROVIDER_CHAIN`."""
+    captured: list[str] = []
+
+    class _Sentinel:
+        def __init__(self, name: str) -> None:
+            self.name = name
+
+        def parse(self, image_bytes: bytes, mime_type: str = "image/jpeg") -> OCRResponse:
+            captured.append(self.name)
+            return _response(self.name, conf=0.95)
+
+    fake_registry = {
+        "alpha": _Sentinel("alpha"),
+        "beta": _Sentinel("beta"),
+    }
+    monkeypatch.setattr(pipeline_module, "PROVIDER_REGISTRY", fake_registry)
+    monkeypatch.setattr(pipeline_module.settings, "OCR_PROVIDER_CHAIN", "beta,alpha")
+
+    parse_sheet_music(b"<jpeg>")
+    assert captured == ["beta"]  # first one wins; alpha never tried
+
+
+def test_unknown_provider_in_chain_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(pipeline_module.settings, "OCR_PROVIDER_CHAIN", "claude-sonnet-4-6,bogus")
+    with pytest.raises(OCRError, match="unknown provider"):
+        parse_sheet_music(b"<jpeg>")
