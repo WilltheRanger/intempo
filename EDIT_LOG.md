@@ -4,6 +4,58 @@ Newest entries at the top. Format spec: see "Build-time activity logging"
 in intempo-combined.md. Every meaningful change goes here — see that
 section for what counts as "meaningful."
 
+## 2026-04-28 07:30 — Batch 3 — synthetic audio fixtures (numpy ADSR + 6 harmonics)
+
+**Batch:** Batch 3
+**Branch:** feat/batch-3-audio-pipeline
+**Commit (after this edit):** `a0fbd22` — `feat(batch-3): synthesize 6 audio fixtures for initial tuning (numpy ADSR + harmonics)`.
+
+**What changed:**
+- `fixtures/audio/{01_detache_clean,02_detache_rushing,03_detache_dragging,04_slurred,05_open_e_long,06_pizzicato}.wav`: 6 mono 22050 Hz 16-bit WAVs matching the Batch 3 Tuning Appendix §3 corpus spec. Sizes 150–392 KB, durations 3.5–9.1 s.
+- `fixtures/audio_scores/<stem>.json`: 6 corresponding `ScoreJson` files describing the expected rhythm at the target 60 BPM. Slurred clip carries explicit slur annotations; pizzicato carries `articulation: "staccato"`; open-E is a half note + half rest.
+- `backend/scripts/synth_audio_fixtures.py`: the synthesis script itself, preserved so anyone can regenerate the WAVs deterministically. Re-runnable from `backend/` via `uv run python scripts/synth_audio_fixtures.py`. Uses `app.services.analysis.analyze` for the post-synthesis sanity pass.
+
+**Why these are SYNTHETIC, not real:**
+The spec-preferred path was FluidSynth + a free GM SoundFont (most realistic). FluidSynth isn't published to winget on Windows (`winget search fluidsynth` → "No package found matching input criteria") and the native-DLL install on Windows is unpredictable enough that the time cost wasn't justified for initial sanity testing. Spec explicitly authorized the numpy fallback: additive synthesis with ADSR envelopes + 6 harmonic partials per note. Realistic enough for librosa's onset detector to behave the same way it will on real recordings — sharp attack transients, multi-partial spectral content, slight inharmonic detuning per partial, low-amplitude noise floor.
+
+**This unblocks Batch 3 commit-and-merge but DOES NOT substitute for real recordings.** The synthesis assumes:
+- Perfect onset timing (no human jitter ±5–20 ms even on "clean" takes)
+- No room reverberation (real recordings smear onsets, especially low notes)
+- No phone-mic frequency rolloff (the 05_open_e_long clip's 41 Hz fundamental is fully present synthetically; on a real phone mic, it'd be sub-rolloff)
+- Identical envelope per note (real bowing varies)
+
+When the user records the same 6 clips on real instrument-in-room, we overwrite the WAVs with the recordings (same filenames, same score JSONs) and re-run the tuning loop. The filenames are stable so the dashboard / regression tests Just Work after swap.
+
+**Tests run:**
+- All 6 WAVs produced cleanly, durations match spec (8.5 / 8.0 / 9.1 / 4.5 / 3.5 / 7.9 s).
+- All 6 score JSONs round-trip through `ScoreJson.model_validate_json` (proves they're schema-clean).
+- Sanity pass via `analyze(audio, score, target_bpm=60.0)` per clip:
+
+  | Clip | status | quality | matched | missed | extra | verdict |
+  |---|---|---:|---|---|---|---|
+  | 01 clean | ok | 0.81 | 8/8 | 0 | 1 | "dragged by 5.0 BPM (8.4 %)" |
+  | 02 rushing | ok | 0.78 | 7/8 | 1 | 0 | "dragged by 4.2 BPM (7.0 %)" |
+  | 03 dragging | ok | 0.77 | 8/8 | 0 | 0 | "dragged by 15.3 BPM (25.6 %)" |
+  | 04 slurred | alignment_failed | 0.33 | 0/16 | 0 | 0 | (no verdict — refuse threshold = 0.40) |
+  | 05 open-E long | alignment_failed | 0.02 | 0/1 | 0 | 0 | (no verdict — 41 Hz fundamental likely below HPF cutoff) |
+  | 06 pizzicato | ok | 0.97 | 8/8 | 0 | 0 | "dragged by 4.2 BPM (7.0 %)" |
+
+**What the sanity pass tells us:**
+- ✅ Pipeline runs end-to-end on real-spectral audio without crashing — the primary goal of this round.
+- ✅ Alignment-broken path returns gracefully (`alignment_failed` on clips 04 + 05 with `verdict=None`), as spec'd.
+- ⚠ **Systematic ~30 ms detection latency** appears as "dragged by ~4 BPM" on every clip with otherwise-clean alignment. This is the librosa frame-quantization effect (`hop_length=512 / sr=22050 = 23 ms` per frame) compounded with the synth's t=0 onset placement. Real tuning will need to either (a) pad audio with leading silence in `load_audio`, (b) shift `compute_expected_onsets` by a calibration offset, or (c) lower `hop_length` for tighter timing — TBD.
+- ⚠ **Clip 02 (rushing) gets reported as "dragged"** with 1 missed note. The first onset gets dropped by librosa's peak-pick (no pre-context), so the second detected onset @0.985s aligns to expected[1] @1.000s — appearing 15 ms early at most, but the systematic ~30 ms post-quantize latency masks the direction entirely. Real bow attacks on real audio have different onset envelopes and may avoid this — to be verified after recordings arrive.
+- ⚠ **Clip 04 (slurred) low quality** is expected per spec ("expected to fail in v1"); the algorithm correctly identifies low alignment quality (0.33 < 0.40 refuse threshold) and aborts with no garbage output.
+- ⚠ **Clip 05 (open-E) quality=0.02** is because `apply_highpass=True` killed the 41 Hz fundamental + its first partial. Tuning will need the HPF cutoff revisited for low-E support, or alternative onset detection (harmonic tracking on the 2nd/3rd partial per spec §5 mitigation).
+
+**Known side effects / things to watch:**
+- The synth's leading silence is zero; librosa drops the t=0 onset for lack of pre-context. This affects every clip's first note count.
+- `np.random.RandomState(42)` is hard-coded in the noise floor — deterministic re-runs produce byte-identical WAVs, which is what we want for git diff-ability.
+- The synthesis script lives at `backend/scripts/` (new dir). Anyone running it should `cd backend && uv run python scripts/synth_audio_fixtures.py`.
+- **WAV files are committed to git** (~1.8 MB total). When real recordings replace them, the diff is binary — git will track the swap but won't show useful diffs. The synthesis script remains as the regeneration recipe.
+
+**Rollback:** `git revert a0fbd22` removes all 6 WAVs + 6 JSONs + the script. The tuning dashboard (already on the branch) will go back to its "no clips found" empty state.
+
 ## 2026-04-28 06:50 — Batch 3 — local tuning dashboard at :8001 (Plotly + FastAPI)
 
 **Batch:** Batch 3
