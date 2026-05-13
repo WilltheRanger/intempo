@@ -1,0 +1,32 @@
+{
+  "time_signature": "4/4",
+  "key_signature": "E minor",
+  "tempo_marking": null,
+  "bpm_hint": 60,
+  "clef": "bass",
+  "measures": [
+    {
+      "measure_number": 1,
+      "notes": [
+        {
+          "pitch": "E1",
+          "duration": "half",
+          "articulation": null,
+          "tied_to_next": false,
+          "dynamics": null
+        },
+        {
+          "pitch": "rest",
+          "duration": "half",
+          "articulation": null,
+          "tied_to_next": false,
+          "dynamics": null
+        }
+      ],
+      "slurs": []
+    }
+  ],
+  "repeats": [],
+  "ocr_confidence": 1.0,
+  "notes_to_human": "Synthetic open-E low note — tests low-register detection (below 80Hz mic rolloff)"
+}

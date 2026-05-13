@@ -1,0 +1,168 @@
+{
+  "time_signature": "4/4",
+  "key_signature": "E minor",
+  "tempo_marking": null,
+  "bpm_hint": 60,
+  "clef": "bass",
+  "measures": [
+    {
+      "measure_number": 1,
+      "notes": [
+        {
+          "pitch": "E2",
+          "duration": "sixteenth",
+          "articulation": null,
+          "tied_to_next": false,
+          "dynamics": null
+        },
+        {
+          "pitch": "F#2",
+          "duration": "sixteenth",
+          "articulation": null,
+          "tied_to_next": false,
+          "dynamics": null
+        },
+        {
+          "pitch": "G2",
+          "duration": "sixteenth",
+          "articulation": null,
+          "tied_to_next": false,
+          "dynamics": null
+        },
+        {
+          "pitch": "F#2",
+          "duration": "sixteenth",
+          "articulation": null,
+          "tied_to_next": false,
+          "dynamics": null
+        }
+      ],
+      "slurs": [
+        {
+          "start_note_index": 0,
+          "end_note_index": 3
+        }
+      ]
+    },
+    {
+      "measure_number": 2,
+      "notes": [
+        {
+          "pitch": "E2",
+          "duration": "sixteenth",
+          "articulation": null,
+          "tied_to_next": false,
+          "dynamics": null
+        },
+        {
+          "pitch": "F#2",
+          "duration": "sixteenth",
+          "articulation": null,
+          "tied_to_next": false,
+          "dynamics": null
+        },
+        {
+          "pitch": "G2",
+          "duration": "sixteenth",
+          "articulation": null,
+          "tied_to_next": false,
+          "dynamics": null
+        },
+        {
+          "pitch": "F#2",
+          "duration": "sixteenth",
+          "articulation": null,
+          "tied_to_next": false,
+          "dynamics": null
+        }
+      ],
+      "slurs": [
+        {
+          "start_note_index": 0,
+          "end_note_index": 3
+        }
+      ]
+    },
+    {
+      "measure_number": 3,
+      "notes": [
+        {
+          "pitch": "E2",
+          "duration": "sixteenth",
+          "articulation": null,
+          "tied_to_next": false,
+          "dynamics": null
+        },
+        {
+          "pitch": "F#2",
+          "duration": "sixteenth",
+          "articulation": null,
+          "tied_to_next": false,
+          "dynamics": null
+        },
+        {
+          "pitch": "G2",
+          "duration": "sixteenth",
+          "articulation": null,
+          "tied_to_next": false,
+          "dynamics": null
+        },
+        {
+          "pitch": "F#2",
+          "duration": "sixteenth",
+          "articulation": null,
+          "tied_to_next": false,
+          "dynamics": null
+        }
+      ],
+      "slurs": [
+        {
+          "start_note_index": 0,
+          "end_note_index": 3
+        }
+      ]
+    },
+    {
+      "measure_number": 4,
+      "notes": [
+        {
+          "pitch": "E2",
+          "duration": "sixteenth",
+          "articulation": null,
+          "tied_to_next": false,
+          "dynamics": null
+        },
+        {
+          "pitch": "F#2",
+          "duration": "sixteenth",
+          "articulation": null,
+          "tied_to_next": false,
+          "dynamics": null
+        },
+        {
+          "pitch": "G2",
+          "duration": "sixteenth",
+          "articulation": null,
+          "tied_to_next": false,
+          "dynamics": null
+        },
+        {
+          "pitch": "F#2",
+          "duration": "sixteenth",
+          "articulation": null,
+          "tied_to_next": false,
+          "dynamics": null
+        }
+      ],
+      "slurs": [
+        {
+          "start_note_index": 0,
+          "end_note_index": 3
+        }
+      ]
+    }
+  ],
+  "repeats": [],
+  "ocr_confidence": 1.0,
+  "notes_to_human": "Synthetic slurred — 4 sixteenths per slur, 4 slurs total"
+}

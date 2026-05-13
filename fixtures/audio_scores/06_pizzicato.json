@@ -1,0 +1,80 @@
+{
+  "time_signature": "4/4",
+  "key_signature": "E minor",
+  "tempo_marking": null,
+  "bpm_hint": 60,
+  "clef": "bass",
+  "measures": [
+    {
+      "measure_number": 1,
+      "notes": [
+        {
+          "pitch": "E2",
+          "duration": "quarter",
+          "articulation": "staccato",
+          "tied_to_next": false,
+          "dynamics": null
+        },
+        {
+          "pitch": "F#2",
+          "duration": "quarter",
+          "articulation": "staccato",
+          "tied_to_next": false,
+          "dynamics": null
+        },
+        {
+          "pitch": "G2",
+          "duration": "quarter",
+          "articulation": "staccato",
+          "tied_to_next": false,
+          "dynamics": null
+        },
+        {
+          "pitch": "A2",
+          "duration": "quarter",
+          "articulation": "staccato",
+          "tied_to_next": false,
+          "dynamics": null
+        }
+      ],
+      "slurs": []
+    },
+    {
+      "measure_number": 2,
+      "notes": [
+        {
+          "pitch": "B2",
+          "duration": "quarter",
+          "articulation": "staccato",
+          "tied_to_next": false,
+          "dynamics": null
+        },
+        {
+          "pitch": "A2",
+          "duration": "quarter",
+          "articulation": "staccato",
+          "tied_to_next": false,
+          "dynamics": null
+        },
+        {
+          "pitch": "G2",
+          "duration": "quarter",
+          "articulation": "staccato",
+          "tied_to_next": false,
+          "dynamics": null
+        },
+        {
+          "pitch": "E2",
+          "duration": "quarter",
+          "articulation": "staccato",
+          "tied_to_next": false,
+          "dynamics": null
+        }
+      ],
+      "slurs": []
+    }
+  ],
+  "repeats": [],
+  "ocr_confidence": 1.0,
+  "notes_to_human": "Synthetic pizzicato — sharp transients, fast decay, no sustain"
+}
