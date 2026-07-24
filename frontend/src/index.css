@@ -2,12 +2,57 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Design tokens — mirrored from src/styles/tokens.ts. The manuscript
+   direction commits to one warm, light world (like Things 3); we do not
+   invert for OS dark mode. */
 :root {
-  font-family: system-ui, "Segoe UI", Roboto, sans-serif;
-  color-scheme: light dark;
+  --paper: #ede8da;
+  --paper-raised: #fbf9f2;
+  --paper-warm: #f2ecdd;
+  --paper-deep: #e6dfcd;
+  --ink: #211f1b;
+  --ink-soft: #5f5c53;
+  --ink-mute: #948f82;
+  --ink-faint: #989387;
+  --amber: #c78a3a;
+  --amber-deep: #a06e22;
+  --amber-soft: #f0e4cd;
+  --spruce: #1e3d34;
+  --spruce-lo: #173029;
+  --verdict-on: #2f6e4e;
+  --verdict-mid: #b47a2c;
+  --verdict-bad: #7b2e2f;
+  --line: rgba(33, 31, 27, 0.1);
+  --line-2: rgba(33, 31, 27, 0.18);
+  color-scheme: light;
 }
 
-body {
-  margin: 0;
-  min-height: 100vh;
+@layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+  }
+  body {
+    margin: 0;
+    min-height: 100dvh;
+    background: var(--paper);
+    color: var(--ink);
+    font-family:
+      -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+    font-variant-numeric: tabular-nums;
+  }
+  :focus-visible {
+    outline: none;
+    box-shadow:
+      0 0 0 2px var(--paper-raised),
+      0 0 0 4px var(--amber);
+    border-radius: 12px;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
 }

@@ -61,5 +61,5 @@ If in doubt whether something is "UI/UX," ask.
 - Batch 2 — Sheet music OCR pipeline ✅
 - Batch 3 — Audio analysis core ✅ (pipeline done; threshold tuning against real recordings still pending — see `TUNING_LOG.md`)
 - Batch 4 — Async analysis API + calibration ✅ (BackgroundTasks; Celery migration deferred to §11 triggers)
-- Batch 5 — Web frontend foundation ⏳ (next) → **UI/UX — STOP and ask before starting (see §2)**
-- Batch 6+ — mostly UI/UX → see §2 gate
+- Batch 5 — Web frontend foundation ⏳ (shell done: design tokens locked, primitives, routing, auth/data plumbing; build + lint green. Live magic-link auth + E2E test pending Supabase keys — see `EDIT_LOG.md`. Not tagged `batch-5-done` yet.)
+- Batch 6+ — mostly UI/UX → see §2 gate. **Design tokens are locked in `frontend/src/styles/tokens.ts` (manuscript direction) — build to them; see `DECISIONS.md`.**
