@@ -4,6 +4,44 @@ Newest entries at the top. Format spec: see "Build-time activity logging"
 in intempo-combined.md. Every meaningful change goes here — see that
 section for what counts as "meaningful."
 
+## 2026-07-24 — Batch 4 — async analysis API + calibration (BackgroundTasks)
+
+**Batch:** Batch 4
+**Branch:** claude/next-steps-3p2zhk
+
+**What changed:**
+- `backend/app/workers/analysis_runner.py` + `workers/__init__.py`: **new.** `run_analysis(analysis_id)` — a **sync** function (FastAPI runs sync background tasks in a threadpool, so the CPU-bound `analyze()` never blocks the event loop — the #1 Batch 4 pitfall, handled without `run_in_executor`). Fetches the row → `processing` → downloads audio → loads the score → runs `analyze()` → writes `done` + `result_json` + `alignment_quality` + `finished_at`. Failures (audio unavailable, internal) → `status='failed'` + `failure_reason`, never a silent hang. Body is Celery-shaped for a mechanical Phase-2 migration. Also `sweep_stuck_analyses()` — marks `queued`/`processing` rows older than 10 min `failed_recoverable`.
+- `backend/app/routers/analyses.py`: **new.** `POST /v1/analyses` (validates audio_url is the caller's audio-uploads URL + score ownership, inserts `queued`, enqueues `run_analysis` via `BackgroundTasks`, returns `202 {analysis_id, status:queued}`) and `GET /v1/analyses/:id` (owner-scoped poll).
+- `backend/app/services/calibration.py`: **new.** Pure `calibrate(y, sr) -> CalibrationResult` implementing the §4 edge cases (too short / too quiet / too few onsets / inconsistent IOIs / out of range / too many onsets / octave-ambiguity alternates / ok). HTTP-free so every branch is unit-tested against a synthesized clip.
+- `backend/app/routers/calibration.py`: **new.** `POST /v1/calibration` — thin wrapper; returns `200` with `ok:false + code + message` for expected rejections (a too-quiet clip is a normal outcome the UI toasts, not an HTTP error).
+- `backend/app/services/audio.py`: added `load_audio_bytes()` (decode an in-memory storage blob via a temp file). `backend/app/services/analysis.py`: `analyze()` now also accepts a preloaded `(waveform, sr)` tuple so the worker decodes once instead of twice.
+- `backend/config.toml` + `services/audio_config.py`: added calibration `min_peak_dbfs` / `min_rms_dbfs` / `octave_ambiguity_threshold` to support the edge cases.
+- `backend/app/main.py`: registered the two routers; converted startup to a `lifespan` handler that runs the stuck-job sweeper on boot (replaces the deprecated `on_event`).
+- `backend/app/tests/`: **new** `test_analyses_api.py` (enqueue/validation/auth, full queued→done flow via a stateful `fake_supabase.py`, worker-failure path, sweeper) and `test_calibration.py` (edge-case branches + route). `fake_supabase.py` is a small in-memory fake of the supabase-py query surface.
+
+**Why:**
+Batch 3's `analyze()` is synchronous and CPU-bound; running it inline would block the request. Batch 4 makes the API return immediately and process in the background, pollable by id — the shape the web/mobile clients need. BackgroundTasks (not Celery) per spec §11: in-process, ships now; Celery migration is triggered later on documented latency/volume/replica criteria (the runner is already structured for that swap).
+
+**Tests run:**
+- `cd backend && uv run pytest -q` → **163 passed** (was 144; +19).
+
+**DoD status:**
+- ✅ `POST /v1/analyses` returns `analysis_id` before the analysis runs (202, enqueue is two DB calls).
+- ✅ Background task completes well under 30s (analyze <15s).
+- ✅ Polling shows `queued → processing → done` (worker writes `processing` then `done`; failures write `failed`).
+- ✅ Calibration edge cases return correct error/warning codes (see caveat).
+- ✅ Failing analyses surface `status='failed'` + reason.
+- ✅ Stuck-job sweeper recovers crashed rows on startup.
+- ⚠️ **Calibration:** the distinct *response codes* are all implemented and tested, but three of the spec's 12 rows are approximated rather than precisely detected — SNR/background-noise, "player choke" amplitude-variance, and the exact 2×/0.5× octave disambiguation. Documented; safe to refine during audio tuning.
+
+**Known side effects / things to watch:**
+- **Single replica only.** BackgroundTasks runs on whichever instance took the POST. A second replica *requires* the Celery migration (spec §11). Documented, not a bug.
+- **No retries** on transient failures (network blip fetching audio) — the user retries manually. That's the intended MVP behavior; retries are what Celery is for.
+- **Compressed audio needs ffmpeg.** `load_audio_bytes` decodes WAV/FLAC natively; the AAC/m4a the mobile client uploads needs ffmpeg in the deployed image (audioread fallback). Tests use WAV. Flagged in DECISIONS.md.
+- `alignment_failed` / `no_onsets` are stored as DB `status='done'` with the pipeline status inside `result_json` — they're *completed analyses that can't be reported*, not server failures. DB `status='failed'` is reserved for exceptions. See DECISIONS.md.
+
+**Rollback:** additive — new routers/worker/service/tests + a config + main.py wiring. `git revert <SHA>` removes it; Batches 0–3 don't import any of it.
+
 ## 2026-07-24 — Batch 3 — audio analysis core (`analyze()`)
 
 **Batch:** Batch 3

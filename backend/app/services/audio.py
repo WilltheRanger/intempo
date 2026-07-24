@@ -11,6 +11,7 @@ clarity), §4 calibration-clip flow.
 
 from __future__ import annotations
 
+import tempfile
 from pathlib import Path
 
 import librosa
@@ -31,6 +32,23 @@ def load_audio(path: str | Path, *, sr: int | None = None) -> tuple[np.ndarray, 
     target_sr = sr if sr is not None else cfg.onset.sr
     y, out_sr = librosa.load(str(path), sr=target_sr, mono=True)
     return y, int(out_sr)
+
+
+def load_audio_bytes(
+    data: bytes, *, sr: int | None = None, suffix: str = ".audio"
+) -> tuple[np.ndarray, int]:
+    """Load audio from an in-memory blob (as fetched from storage).
+
+    librosa reads WAV/FLAC/OGG straight from a buffer, but the AAC/m4a
+    the mobile client uploads needs a real file on disk for the
+    audioread/ffmpeg fallback — so we spill to a temp file and load that.
+    (ffmpeg must be present in the deployed image for compressed formats;
+    documented in DECISIONS.md.)
+    """
+    with tempfile.NamedTemporaryFile(suffix=suffix) as fh:
+        fh.write(data)
+        fh.flush()
+        return load_audio(fh.name, sr=sr)
 
 
 def pre_emphasis(y: np.ndarray, *, config: AudioConfig | None = None) -> np.ndarray:

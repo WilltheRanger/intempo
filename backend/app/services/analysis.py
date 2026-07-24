@@ -107,7 +107,7 @@ def _summarize_measures(deltas: list[Delta]) -> list[PerMeasure]:
 
 
 def analyze(
-    audio_path: str | Path,
+    audio: str | Path | tuple[np.ndarray, int],
     score: ScoreJson,
     target_bpm: float,
     *,
@@ -116,13 +116,20 @@ def analyze(
 ) -> AnalysisResult:
     """Analyze a recording against a score at a target tempo.
 
+    `audio` is either a path to load, or an already-decoded `(waveform,
+    sample_rate)` tuple — the Batch 4 worker decodes storage bytes once
+    and passes the waveform straight through, avoiding a second decode.
+
     Returns a graceful `alignment_failed` / `no_onsets` result rather than
-    raising when the input can't be trusted — the caller (Batch 4 worker)
-    turns status into the right user-facing state.
+    raising when the input can't be trusted — the caller turns status into
+    the right user-facing state.
     """
     cfg = config or load_audio_config()
 
-    y, sr = audio_svc.load_audio(audio_path, sr=cfg.onset.sr)
+    if isinstance(audio, tuple):
+        y, sr = audio
+    else:
+        y, sr = audio_svc.load_audio(audio, sr=cfg.onset.sr)
     if double_bass:
         y = audio_svc.high_pass(y, sr, cfg.onset.double_bass_highpass_hz)
     onsets = audio_svc.detect_onsets(
