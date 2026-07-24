@@ -62,9 +62,12 @@ class AlignmentConfig:
 class CalibrationConfig:
     min_duration_s: float
     max_duration_s: float
+    min_peak_dbfs: float
+    min_rms_dbfs: float
     min_onsets: int
     max_onsets: int
     ioi_cv_max: float
+    octave_ambiguity_threshold: float
     bpm_min: float
     bpm_max: float
 
@@ -114,9 +117,12 @@ def _parse(raw: dict) -> AudioConfig:
         calibration=CalibrationConfig(
             min_duration_s=float(cal["min_duration_s"]),
             max_duration_s=float(cal["max_duration_s"]),
+            min_peak_dbfs=float(cal["min_peak_dbfs"]),
+            min_rms_dbfs=float(cal["min_rms_dbfs"]),
             min_onsets=int(cal["min_onsets"]),
             max_onsets=int(cal["max_onsets"]),
             ioi_cv_max=float(cal["ioi_cv_max"]),
+            octave_ambiguity_threshold=float(cal["octave_ambiguity_threshold"]),
             bpm_min=float(cal["bpm_min"]),
             bpm_max=float(cal["bpm_max"]),
         ),

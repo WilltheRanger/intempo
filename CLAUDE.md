@@ -60,5 +60,6 @@ If in doubt whether something is "UI/UX," ask.
 - Batch 1 — Backend infra (auth, DB, storage) ✅
 - Batch 2 — Sheet music OCR pipeline ✅
 - Batch 3 — Audio analysis core ✅ (pipeline done; threshold tuning against real recordings still pending — see `TUNING_LOG.md`)
-- Batch 4 — Async analysis API ⏳ (in progress / next)
-- Batch 5+ — mostly UI/UX → see §2 gate
+- Batch 4 — Async analysis API + calibration ✅ (BackgroundTasks; Celery migration deferred to §11 triggers)
+- Batch 5 — Web frontend foundation ⏳ (next) → **UI/UX — STOP and ask before starting (see §2)**
+- Batch 6+ — mostly UI/UX → see §2 gate

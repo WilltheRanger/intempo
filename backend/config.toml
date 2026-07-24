@@ -49,8 +49,11 @@ slur_tolerance_pct = 15.0  # whole-slur duration tolerance; interior notes not t
 # 2-second BPM calibration clip (§4). Values belong in remote config.
 min_duration_s = 1.0
 max_duration_s = 5.0
+min_peak_dbfs = -24.0      # below → "too quiet, move closer"
+min_rms_dbfs = -36.0       # below → "too quiet"
 min_onsets = 2
 max_onsets = 8
 ioi_cv_max = 0.30          # inter-onset-interval coefficient-of-variation reject threshold
+octave_ambiguity_threshold = 0.20  # IOI spread below this → offer 2×/0.5× tempo
 bpm_min = 40
 bpm_max = 240
