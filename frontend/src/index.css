@@ -69,4 +69,15 @@
   .animate-progress {
     animation: intempo-progress 1.4s ease-in-out infinite;
   }
+  @keyframes intempo-beatflash {
+    from {
+      opacity: 0.9;
+    }
+    to {
+      opacity: 0;
+    }
+  }
+  .animate-beatflash {
+    animation: intempo-beatflash 0.24s ease-out forwards;
+  }
 }
