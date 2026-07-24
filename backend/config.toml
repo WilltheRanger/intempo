@@ -1,0 +1,56 @@
+# InTempo audio-analysis tuning config.
+#
+# These are the Batch 3 STARTING values from spec §4. They are not
+# final — the real numbers come from the six-clip corpus + your ear
+# (see the "Batch 3 Tuning Appendix" in intempo-combined.md). Every
+# change to a value in this file MUST be logged in TUNING_LOG.md with
+# clip-by-clip regression results.
+#
+# In production these live in remote config (a Supabase row fetched on
+# app start) so we can A/B test thresholds without redeploying. This
+# file is the checked-in default the backend falls back to.
+
+[onset]
+sr = 22050                 # librosa.load sample rate — mono, 22.05 kHz (§4)
+delta = 0.07               # onset_detect peak-pick threshold (§4 default)
+pre_max = 20               # onset_detect peak-pick pre window
+post_max = 20              # onset_detect peak-pick post window
+wait_ms = 60               # minimum inter-onset gap; suppresses pizzicato string ring (§7)
+pre_emphasis_coef = 0.97   # librosa.effects.preemphasis coefficient
+
+[onset.double_bass]
+# Low register: slow attack envelopes, broad onset peaks. Lower delta +
+# a high-pass before detection catches soft bass attacks (§7.5 problem 1).
+delta = 0.05
+highpass_hz = 80.0
+
+[tolerance]
+# Bands as a % of one beat's duration at the target BPM. Asymmetric:
+# humans tolerate dragging better than rushing, so the dragging bands
+# sit slightly wider (§4 tuning appendix step 6). Defaults here are the
+# symmetric spec starting values; tune per instrument/room.
+rushing_inner_pct = 5.0    # |delta| below this = on (green)
+rushing_mid_pct = 10.0     # inner..mid = slight (yellow)
+rushing_outer_pct = 20.0   # mid..outer = rush (orange); beyond = severe (red)
+dragging_inner_pct = 5.0
+dragging_mid_pct = 10.0
+dragging_outer_pct = 20.0
+
+[trend]
+window = 8                 # rolling-average window in notes (§4)
+
+[alignment]
+warn_quality = 0.7         # below → show "results may be inaccurate" warning (§7)
+broken_quality = 0.4       # below → refuse to report, ask for a re-record (§7)
+sakoe_chiba_band = 0.2     # DTW Sakoe-Chiba band radius, ±20% of path length (§7.5a)
+slur_tolerance_pct = 15.0  # whole-slur duration tolerance; interior notes not timed (§4)
+
+[calibration]
+# 2-second BPM calibration clip (§4). Values belong in remote config.
+min_duration_s = 1.0
+max_duration_s = 5.0
+min_onsets = 2
+max_onsets = 8
+ioi_cv_max = 0.30          # inter-onset-interval coefficient-of-variation reject threshold
+bpm_min = 40
+bpm_max = 240

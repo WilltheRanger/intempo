@@ -4,6 +4,41 @@ Newest entries at the top. Format spec: see "Build-time activity logging"
 in intempo-combined.md. Every meaningful change goes here — see that
 section for what counts as "meaningful."
 
+## 2026-07-24 — Batch 3 — audio analysis core (`analyze()`)
+
+**Batch:** Batch 3
+**Branch:** claude/next-steps-3p2zhk
+
+**What changed:**
+- `backend/config.toml`: **new.** All tunable audio thresholds — onset `delta`/`pre_max`/`post_max`/`wait_ms`, double-bass overrides, the tolerance bands (rushing/dragging inner/mid/outer %), rolling-trend window, alignment quality cutoffs (`warn_quality` 0.7, `broken_quality` 0.4), Sakoe-Chiba band radius, and calibration limits. Values are the spec §4 STARTING points, not tuned. Every future change to a number here is logged in `TUNING_LOG.md`.
+- `backend/app/services/audio_config.py`: **new.** `tomllib` loader → frozen dataclasses (`AudioConfig` and friends). `load_audio_config()` is `lru_cache`d; `load_audio_config_from(path)` lets tests load alternate files. Nothing in the services hard-codes a threshold — they all read config.
+- `backend/app/services/audio.py`: **new.** librosa wrapper (layer 1). `load_audio` (22.05 kHz mono, no normalization), `pre_emphasis`, `high_pass` (scipy Butterworth, double-bass mode), `detect_onsets` (`onset_detect` with config peak-pick params; `wait_ms`→frames converts the pizzicato-ring guard), `estimate_bpm` (beat_track → median-IOI fallback → None) for the §4 calibration flow.
+- `backend/app/services/alignment.py`: **new.** (layer 2) `build_timeline`/`compute_expected_onsets` walk the score into expected onset times — honoring rests (advance clock, no onset), ties (`tied_to_next` → no re-attack), and slur interior/boundary flags. `align_dtw` runs a Sakoe-Chiba-constrained `librosa.sequence.dtw` and returns a monotonic detected→expected mapping + a 0..1 quality. `apply_fuzzy_match` resolves many-to-one (extra/false-trigger) and one-to-many (missed) count mismatches. `is_alignment_broken` gates on `broken_quality`.
+- `backend/app/services/classification.py`: **new.** (layer 3) `classify_band` (asymmetric rushing/dragging bands → `on`/`slight`/`rush_drag`/`severe`), `compute_deltas` (per-note ms + %-of-beat, origin anchored on first matched note), `rolling_trend` (rush-positive rolling mean, slur interiors excluded), `generate_verdict` (longest same-direction run → BPM-phrased one-liner, never %).
+- `backend/app/services/analysis.py`: **new.** `analyze(audio_path, score, target_bpm, *, double_bass=False)` orchestrator returning a Pydantic `AnalysisResult` (`status`, `quality`, `low_confidence`, `verdict`, `per_note`, `per_measure`, `trend`, onset/miss/extra counts). Graceful `no_onsets` / `alignment_failed` statuses instead of exceptions.
+- `backend/app/tests/audio_helpers.py` + `test_audio.py` / `test_alignment.py` / `test_classification.py` / `test_analysis.py`: **new.** 37 tests. Synthetic click-track fixtures (deterministic, no WAVs in the repo) exercise onset counts (±2 DoD), expected-onset math incl. rests/ties/slurs, DTW identity + fuzzy match, band boundaries, sign convention, verdict runs, and the full pipeline (ok / no_onsets / alignment_failed, JSON serialization, <15s DoD).
+- `backend/pyproject.toml` + `uv.lock`: added `librosa>=0.11.0`, `numpy>=2.4.6`, `scipy>=1.18.0` (pulls numba, soundfile, scikit-learn).
+
+**Why:**
+Batch 3 is the app's core — turning a recording + a score into "did you rush or drag?" It's synchronous now; Batch 4 wraps it in `BackgroundTasks`. Every threshold is externalized to `config.toml` precisely because these numbers are wrong until tuned against real recordings — see the DoD note below.
+
+**Tests run:**
+- `cd backend && uv run pytest -q` → **144 passed** (was 107; +37).
+
+**DoD status — honest accounting:**
+- ✅ `analyze()` runs end-to-end on a fixture pair, well under 15s (test asserts it).
+- ✅ Output serializes cleanly (`AnalysisResult.model_dump_json()`, tested).
+- ✅ Alignment-broken path returns gracefully (`alignment_failed` / `no_onsets`, no crash).
+- ✅ All thresholds externalized to `config.toml`.
+- ⚠️ **"All 10 real fixture recordings produce reasonable verdicts (subjective ear check)" is NOT done.** That requires the six-clip corpus + a human ear (see the Batch 3 Tuning Appendix) and is deliberately deferred to the tuning loop. The current config values are the spec's untuned defaults. `TUNING_LOG.md` records this as the starting baseline. The synthetic-fixture tests prove the pipeline is *correct*, not that the *thresholds* are right.
+
+**Known side effects / things to watch:**
+- `pre_max`/`post_max=20` (~0.46s peak-pick window) merges onsets closer than ~0.46s — fine at real tempos but it means the pipeline can't resolve very fast passages until those are tuned. Surfaced here so a fast-passage bug isn't a surprise.
+- Beat math assumes `target_bpm` is quarter-notes-per-minute and a quarter = 1 beat regardless of the notated denominator; compound meters (6/8) are a documented V2 gap.
+- CI now installs librosa + numba; first `uv sync` on CI is heavier. Wheels ship native libs on linux so no apt packages needed.
+
+**Rollback:** the whole batch is additive (six new service/test files + config.toml + a dep bump). `git revert <SHA>` removes it cleanly; nothing in Batches 0–2 imports these modules yet.
+
 ## 2026-04-27 22:40 — Batch 2 — lock provider chain, cache real responses, e2e verification
 
 **Batch:** Batch 2
