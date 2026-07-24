@@ -4,6 +4,40 @@ Newest entries at the top. Format spec: see "Build-time activity logging"
 in intempo-combined.md. Every meaningful change goes here — see that
 section for what counts as "meaningful."
 
+## 2026-07-24 — Batch 5 — web frontend foundation (design system + shell)
+
+**Batch:** Batch 5 (UI — approved by the user before starting, per CLAUDE.md §2)
+**Branch:** claude/next-steps-3p2zhk
+
+**What changed (all under `frontend/`):**
+- **Design tokens locked** (the "manuscript" direction from the approved prototype — supersedes spec §5's placeholder cream/gold palette; see DECISIONS): `src/styles/tokens.ts` (TS source of truth), `tailwind.config.js` (theme mapped to CSS vars), `src/index.css` (CSS vars + base + focus ring + reduced-motion). Playfair Display embedded via `@fontsource`; body = system SF as the Suisse Int'l stand-in.
+- **UI primitives** built to the tokens: `components/ui/Button.tsx` (primary/ghost/stop + button-in-button trailing icon), `Card.tsx` (optional double-bezel), `Eyebrow.tsx`, `Badge.tsx` (verdict tones, quarantined). Plus `components/Wordmark.tsx` (barline-that-breathes).
+- **Shell:** `components/Layout.tsx` (header + main + footer), `Header.tsx` (wordmark + auth state), `ProtectedRoute.tsx` (redirects to /login), `StubPage.tsx`.
+- **Routing** (React Router v7) in `App.tsx`: `/`, `/login`, `/scores`, `/scores/new`, `/scores/:id`, `/scores/:id/record`, `/analyses/:id`, `/account`, plus a public `/showcase` for design review and a `*` → `/` catch-all. Protected routes gated by auth.
+- **Auth + data plumbing:** `lib/supabase.ts` (client; `supabaseConfigured` guard so the app builds/runs without keys), `hooks/useAuth.ts` (session listener + magic-link sign-in/out via Zustand `stores/authStore.ts`), `lib/api.ts` (added `authedFetch` attaching the Supabase JWT), `hooks/useApi.ts` (`useMe` via tanstack-query, hydrates the store), `lib/analytics.ts` (PostHog wrapper, no-op without a key).
+- Route stubs (`routes/*Route.tsx`) styled with the primitives; `index.html` title/description/theme-color set; `.env.example` added.
+- Deps added: react-router-dom, @supabase/supabase-js, @tanstack/react-query, zustand, lucide-react, @fontsource/playfair-display, posthog-js.
+
+**Why:** Batch 5 is the frontend shell + the locked design system every later UI batch builds on. Auth/routing/data plumbing structured per spec §5; the visual language is the manuscript direction the user signed off on across the prototype iterations.
+
+**Tests run / verification:**
+- `npm run build` → **passes** (tsc -b + vite build; one >500KB bundle warning — expected with supabase+posthog+react-query, deferred per "don't optimize early").
+- `npm run lint` → **clean**.
+- Rendered via `vite preview` + Playwright: captured `/showcase` (palette, Playfair type, buttons, verdict badges) and `/login` (magic-link form + honest "auth not configured" notice, protected `/`→`/login` redirect working). Both faithful to the design system.
+
+**DoD status — honest:**
+- ✅ All stubbed routes accessible, no 404s (catch-all redirect).
+- ✅ Header shows the signed-in email; logout clears session; refresh persists (Supabase-managed) — built and type-correct.
+- ✅ Design tokens established and rendered.
+- ⚠️ **Magic-link login end-to-end + the E2E happy-path test are NOT verified** — this container has no Supabase project/keys and no redirect-URL config. Auth is fully wired and compiles; it needs `VITE_SUPABASE_*` + a dashboard redirect allow-list to run live. Not tagging `batch-5-done` until that's confirmed locally.
+
+**Known side effects / watch:**
+- Suisse Int'l is a system-SF stand-in until licensed (one line in tokens to swap).
+- 711KB JS bundle — fine for MVP; code-split before launch.
+- No frontend automated tests yet (CI runs `npm run build` only); the login E2E test lands with the Supabase wiring.
+
+**Rollback:** additive under `frontend/` plus a deps bump. `git revert <SHA>` restores the Batch 0 scaffold; backend is untouched.
+
 ## 2026-07-24 — Batch 4 — async analysis API + calibration (BackgroundTasks)
 
 **Batch:** Batch 4
