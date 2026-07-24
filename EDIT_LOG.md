@@ -4,6 +4,39 @@ Newest entries at the top. Format spec: see "Build-time activity logging"
 in intempo-combined.md. Every meaningful change goes here — see that
 section for what counts as "meaningful."
 
+## 2026-07-24 — Batch 6 — score capture flow (web)
+
+**Batch:** Batch 6 (UI — approved by the user before starting, per CLAUDE.md §2; "upload-first, camera light")
+**Branch:** claude/next-steps-3p2zhk
+
+**What changed (all under `frontend/`):**
+- `routes/ScoreCaptureRoute.tsx`: rewritten as the capture state machine — `capture → processing → edit → saved` (+ `error`). Orchestrates upload, the low-confidence banner, the editor, and save.
+- `components/score/ImageUploader.tsx`: primary input — file picker with `capture="environment"` (rear camera on mobile, dialog on desktop) + drag-and-drop.
+- `components/score/CameraCapture.tsx`: light `getUserMedia({facingMode:"environment"})` live camera with a 4-corner guide, mounted only on a user tap (iOS gesture rule); falls back to the uploader on denial/unavailability.
+- `components/score/ScoreEditor.tsx`: editable measures/notes — tap a note to fix pitch (validated against the backend pitch regex) or duration, toggle rest/tie, add/delete notes.
+- `components/score/ScorePreview.tsx`: compact read-only render (MVP list view; Verovio engraving stays V2 per spec).
+- `components/score/ScoreSaveBar.tsx`: sticky title + Save.
+- `components/ui/ProgressBar.tsx` (+ `intempo-progress` keyframe in `index.css`): indeterminate bar for the long OCR request.
+- `hooks/useScoreUpload.ts`: `useScoreUpload` (normalize image → presigned PUT → signed read URL → POST /v1/scores) and `useScoreSave` (PATCH /v1/scores/:id). `lib/image.ts`: `toUploadBlob` — `createImageBitmap({imageOrientation:"from-image"})` → canvas re-encode, which bakes in EXIF rotation and strips the tag (the iOS pitfall) and downscales the long edge to 2000px. `lib/score.ts`: TS mirror of `ScoreJson` + duration/pitch helpers.
+
+**Why:** Batch 6 turns a photo into an editable, saved score — the front half of the product loop. Our `POST /v1/scores` is synchronous (OCR returns inline), so there's no polling: the UI shows a "reading your score" state on one long request.
+
+**Tests run / verification:**
+- `npm run build` → **passes**; `npm run lint` → **clean**.
+- Rendered the full capture + editor UI via a throwaway public `/demo-capture` route (mock parsed score) + Playwright: the dropzone, low-confidence banner, note chips with the inline pitch/duration editor, and the save bar all render on-brand. Demo route removed before commit.
+
+**DoD status — honest:**
+- ✅ Capture UI, parsed-score editor, note editing, low-confidence banner, and save flow built + rendered.
+- ✅ EXIF orientation stripped client-side; image downscaled before upload.
+- ✅ `<input capture="environment">` fallback + a light getUserMedia camera.
+- ⚠️ **True end-to-end (real upload → OCR → edit → save → reload) is NOT verified** — needs live Supabase keys + storage RLS, absent here. Also flagged: the upload→/v1/scores handshake assumes the frontend can mint a signed *read* URL (`supabase.storage…createSignedUrl`) the backend can fetch; if the score-images bucket/RLS doesn't allow that, either the bucket policy or /v1/scores (accept object_key + sign server-side) needs a small adjustment. Verify when wiring real keys.
+- ⚠️ iPhone Safari camera test needs a real device.
+- Not tagging `batch-6-done` until the live path is confirmed.
+
+**Deferred (per §1.3):** crop / brightness-contrast sliders → V1.1; Verovio notation → V2; Cypress E2E → with live Supabase.
+
+**Rollback:** additive under `frontend/`. `git revert <SHA>` restores the Batch 5 stub `ScoreCaptureRoute`; nothing else depends on the new files.
+
 ## 2026-07-24 — Batch 5 — web frontend foundation (design system + shell)
 
 **Batch:** Batch 5 (UI — approved by the user before starting, per CLAUDE.md §2)
