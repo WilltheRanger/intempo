@@ -63,4 +63,5 @@ If in doubt whether something is "UI/UX," ask.
 - Batch 4 — Async analysis API + calibration ✅ (BackgroundTasks; Celery migration deferred to §11 triggers)
 - Batch 5 — Web frontend foundation ⏳ (shell done: design tokens locked, primitives, routing, auth/data plumbing; build + lint green. Live magic-link auth + E2E test pending Supabase keys — see `EDIT_LOG.md`. Not tagged `batch-5-done` yet.)
 - Batch 6 — Score capture flow (web) ⏳ (capture + OCR-review editor + save built; build + lint green. Live upload→OCR→save + iPhone camera pending Supabase keys/device — see `EDIT_LOG.md`. Not tagged `batch-6-done`.)
-- Batch 7+ — mostly UI/UX → see §2 gate. **Design tokens are locked in `frontend/src/styles/tokens.ts` (manuscript direction) — build to them; see `DECISIONS.md`.**
+- Batch 7 — Recording + analysis/verdict flow (web) ⏳ (tempo/calibration/metronome, MediaRecorder panel, polling result screen with verdict/annotated-score/trend/per-note built; build + lint green. Live mic→analysis loop pending mic/Supabase/backend + device — see `EDIT_LOG.md`. Not tagged `batch-7-done`.)
+- Batch 8+ — mostly UI/UX → see §2 gate. **Design tokens are locked in `frontend/src/styles/tokens.ts` (manuscript direction) — build to them; see `DECISIONS.md`.**

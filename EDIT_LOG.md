@@ -4,6 +4,42 @@ Newest entries at the top. Format spec: see "Build-time activity logging"
 in intempo-combined.md. Every meaningful change goes here — see that
 section for what counts as "meaningful."
 
+## 2026-07-24 — Batch 7 — recording + analysis/verdict flow (web)
+
+**Batch:** Batch 7 (UI — approved by the user before starting, per CLAUDE.md §2)
+**Branch:** claude/next-steps-3p2zhk
+
+**What changed (all under `frontend/`):**
+- **Record side** (`routes/RecordRoute.tsx`): loads the score, seeds tempo from `bpm_hint`, orchestrates tempo/calibration/metronome + the recording panel, submits, and navigates to `/analyses/:id`.
+  - `components/record/TempoSelector.tsx` — BPM input, ± steppers, tap-tempo, "play it instead" (calibrate).
+  - `components/record/CalibrationFlow.tsx` — 2-sec clip → `POST /v1/calibration`; renders the backend's message + octave alternates + retry (all 12 edge-case codes come from the server).
+  - `components/record/RecordingPanel.tsx` — MediaRecorder record → live waveform → 5-min cap + 4:30 warning → playback → redo/Analyze, in the spruce environment surface.
+  - `components/record/MetronomeToggle.tsx` (off/visual; haptic hidden on web) + `VisualMetronome.tsx` — full-screen amber border flash driven by `useVisualMetronome` (`audioContext.currentTime` lookahead scheduler, **plays no sound**, so it adds nothing to the recording).
+  - `components/ui/WaveformPreview.tsx` — canvas waveform from the recorder's AnalyserNode.
+- **Result side** (`routes/ResultRoute.tsx`): `useAnalysisPolling` (2s interval, pauses on tab blur, stops at terminal status) → "Analyzing… ~12s" → the payoff.
+  - `components/result/VerdictCard.tsx` — the headline verdict (largest text, coloured by direction).
+  - `components/result/AnnotatedScore.tsx` — per-measure colour boxes (green/amber/orange/oxblood) + legend, horizontally scrollable.
+  - `components/result/TrendChart.tsx` — **on-brand inline SVG** (no chart lib): amber line, dashed zero, faint grid, emphasised peak.
+  - `components/result/PerNoteDetail.tsx` — collapsible per-onset ms deltas.
+- **Hooks/lib:** `useRecorder.ts` (MediaRecorder + timer + analyser + 5-min cap), `useVisualMetronome.ts`, `hooks/useRecordingApi.ts` (`useScore`, `useAnalysisPolling`, `useCalibration`, `useAnalysisSubmit`), `lib/upload.ts` (`uploadAudioClip`), `lib/analysis.ts` (AnalysisResult mirror + band colours/labels).
+
+**Why:** Batch 7 is the core loop and the app's signature moment — record against a score, get the tempo verdict. `/v1/analyses` is async, so this batch uses the polling loop (unlike the synchronous score OCR in Batch 6).
+
+**Tests run / verification:**
+- `npm run build` → **passes**; `npm run lint` → **clean** (fixed two `set-state-in-effect` findings: metronome flash now re-triggers via a `key`-ed CSS animation; tempo seeds during render).
+- Rendered the full record setup + verdict screen via a throwaway `/demo-rr` route (mock AnalysisResult) + Playwright: tempo/metronome card, spruce record panel, verdict headline, annotated per-measure boxes, drift trend chart, and per-note detail all render on-brand. Demo removed before commit.
+
+**DoD status — honest:**
+- ✅ Record + calibration + visual metronome + submit + result screen (VerdictCard/AnnotatedScore/TrendChart/PerNoteDetail) built and rendered.
+- ✅ Polling pauses on tab blur; graceful `alignment_failed`/`no_onsets` and `failed`/`failed_recoverable` states.
+- ✅ Calibration surfaces the server's edge-case messages + octave picker (well over 5 of the 12).
+- ⚠️ **True end-to-end (real mic → MediaRecorder → upload → analysis → poll → render) is NOT verified** — no mic/Supabase/backend here. Same storage-handshake caveat as Batch 6 (signed read URL for the audio). iOS Safari MediaRecorder (14.3+) needs a device.
+- Not tagging `batch-7-done` until the live loop is confirmed.
+
+**Known side effects / watch:** MediaRecorder emits `audio/webm`; the backend decodes via librosa→ffmpeg (needs ffmpeg in the deploy image — already flagged in DECISIONS from Batch 4). Bundle is ~740KB (unchanged concern).
+
+**Rollback:** additive under `frontend/`. `git revert <SHA>` restores the Batch 5 stub Record/Result routes.
+
 ## 2026-07-24 — Batch 6 — score capture flow (web)
 
 **Batch:** Batch 6 (UI — approved by the user before starting, per CLAUDE.md §2; "upload-first, camera light")
