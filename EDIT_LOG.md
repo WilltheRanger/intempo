@@ -4,6 +4,38 @@ Newest entries at the top. Format spec: see "Build-time activity logging"
 in intempo-combined.md. Every meaningful change goes here — see that
 section for what counts as "meaningful."
 
+## 2026-07-28 — Home screen — code aligned to its Figma mockup (design→code)
+
+**Branch:** claude/next-steps-3p2zhk
+**Tooling:** Figma file `k5IB3714DiusqnAwzkY7pz` as source of truth; Playwright
+(global Chromium) via a temp public `/preview-home` route to verify the running
+build, then reverted.
+
+Rewrote `frontend/src/routes/HomeRoute.tsx` from the old list-based layout to
+match the Figma Home:
+- **Greeting** — amber uppercase eyebrow now driven by the live date
+  (`weekday + time-of-day`, e.g. "TUESDAY EVENING") over a serif
+  "Ready to practice?".
+- **Primary CTA** — amber card (Camera icon + "New piece" kicker,
+  "Photograph sheet music", subline) linking to `/scores/new`.
+- **Resume card** — paper-warm row with a manuscript strip thumb +
+  "Pick up where you left off", built from `RECENT_SESSIONS[0]`.
+- **Library** — serif section header + "See all", and a 2-up grid of cards
+  (manuscript strip art + composer eyebrow + serif title), parsed from the
+  "Composer — Title" demo data.
+- Added a local `SheetStrip` (CSS repeating-gradient staff lines) that scales
+  to any box, replacing per-row `ScoreThumb` on this screen.
+
+Dropped the local-only favorite-star toggle (it wasn't persisted or wired to
+anything and isn't in the design). `ScoreThumb` / `Eyebrow` remain for other
+screens; only Home stopped importing them.
+
+**Verified:** lint + build green; screenshot of the running page matches the
+Figma (and is richer — live eyebrow, 4 cards, the real icon tab bar).
+**Known gaps:** all links point at existing routes; the resume/library still
+read from `lib/demo.ts` seed data (live `/v1/sessions` + `/v1/library` not
+wired yet — pending Supabase keys). **Rollback:** revert this commit.
+
 ## 2026-07-28 — Figma mockups — three screens built into a new Figma file
 
 **Branch:** claude/next-steps-3p2zhk (design artifact only — no code changed)
