@@ -6,24 +6,24 @@
    direction commits to one warm, light world (like Things 3); we do not
    invert for OS dark mode. */
 :root {
-  --paper: #ede8da;
+  --paper: #f6f4ec; /* Paper Ivory — locked (DESIGN_SYSTEM.md) */
   --paper-raised: #fbf9f2;
-  --paper-warm: #f2ecdd;
-  --paper-deep: #e6dfcd;
-  --ink: #211f1b;
+  --paper-warm: #f0ecdf;
+  --paper-deep: #e7e1d1;
+  --ink: #1c1c1a; /* Graphite Ink — locked */
   --ink-soft: #5f5c53;
   --ink-mute: #948f82;
-  --ink-faint: #989387;
-  --amber: #c78a3a;
+  --ink-faint: #a49f93;
+  --amber: #c78a3a; /* Rosined Amber — the one accent */
   --amber-deep: #a06e22;
-  --amber-soft: #f0e4cd;
-  --spruce: #1e3d34;
+  --amber-soft: #f2e6cf;
+  --spruce: #1e3d34; /* Deep Spruce — recording surface only */
   --spruce-lo: #173029;
   --verdict-on: #2f6e4e;
   --verdict-mid: #b47a2c;
-  --verdict-bad: #7b2e2f;
-  --line: rgba(33, 31, 27, 0.1);
-  --line-2: rgba(33, 31, 27, 0.18);
+  --verdict-bad: #7b2e2f; /* Cupro Oxblood */
+  --line: rgba(28, 28, 26, 0.1);
+  --line-2: rgba(28, 28, 26, 0.17);
   color-scheme: light;
 }
 
@@ -79,5 +79,16 @@
   }
   .animate-beatflash {
     animation: intempo-beatflash 0.24s ease-out forwards;
+  }
+  @keyframes intempo-bow {
+    from {
+      offset-distance: 0%;
+    }
+    to {
+      offset-distance: 100%;
+    }
+  }
+  .animate-bow {
+    animation: intempo-bow 2.6s cubic-bezier(0.45, 0.05, 0.55, 0.95) infinite alternate;
   }
 }
