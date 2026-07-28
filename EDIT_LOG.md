@@ -4,6 +4,51 @@ Newest entries at the top. Format spec: see "Build-time activity logging"
 in intempo-combined.md. Every meaningful change goes here — see that
 section for what counts as "meaningful."
 
+## 2026-07-28 — Verdict / Result screen — rebuilt to the locked design system
+
+**Branch:** claude/next-steps-3p2zhk
+**Toolchain (per user request):** `design-taste-frontend` (taste) for the pre-flight
+discipline, `animate` (Emil Kowalski) for motion, `frontend-design` principles for
+polish, and Playwright (global Chromium) for the screenshot-critique loop. Figma MCP
+is connected but not used — there's no InTempo Figma file; the moodboard image is the
+visual truth. No "impeccable" skill exists by that name; used `frontend-design`.
+
+**What changed (all under `frontend/`):**
+- Added **Framer Motion** (`motion` `^12`) — the app's first motion library, for the
+  verdict reveal + shared-layout tab indicator (animate skill's recommended tools).
+- `components/result/VerdictView.tsx`: **new.** The moodboard verdict composition —
+  eyebrow, two-tone serif headline (amber phrase + graphite location, spring reveal),
+  encouraging subhead, and tab-switched content, with staggered entrance (Kowalski:
+  ease-out 0.42s enters, spring hero, `useReducedMotion` gate).
+- `components/result/AnnotatedScorePanel.tsx`: **new.** Manuscript with the off-tempo
+  region washed amber + hand-written margin notes ("a touch ahead" / "breathe here")
+  on a faint paper backing so they read as pencil, not clash.
+- `components/result/StatChips.tsx`, `TipBox.tsx`: **new.** Three stat chips + the
+  pencil-tip box.
+- `components/result/ResultTabs.tsx`: **new.** Listen / Score / Details / Next steps
+  with a `layoutId` spring indicator (animate skill's shared-layout pattern), Phosphor.
+- `lib/analysis.ts`: added `verdictHeadline` (amber phrase + location from the longest
+  off-tempo run) and `deriveStats` (tempo range / steadiest bars / longest drift).
+- `routes/ResultRoute.tsx`: **rebuilt** — thin polling shell (queued/processing →
+  animated "Reading your tempo…"; failed/no-onsets → graceful message + record-again;
+  ok → `VerdictView`), full-bleed with its own X-close chrome.
+- `App.tsx`: `/analyses/:id` moved **out of `Layout`** (full-bleed). Deleted the
+  superseded Batch-7 `VerdictCard.tsx` and `AnnotatedScore.tsx`.
+
+**Critique-loop fix (screenshot vs. moodboard):** the "breathe here" margin note was
+overlapping noteheads and reading as a bug — gave both annotations a faint paper
+backing and repositioned into the right margin.
+
+**Also:** aligned the copy to the em-dash ban ("You're musical. Let's refine the flow.",
+"you're close, trust the pulse.").
+
+**Tests run:** `npm run build` → passes; `npm run lint` → clean. Rendered at 440px via
+a throwaway `/demo-verdict` route + Playwright, verified against the moodboard, temp
+route removed.
+
+**Rebuild status:** Home ✅, Recording ✅, Verdict ✅. Still old Batch-7 UI:
+Score-capture (`/scores/new`) and the Score-list. Those are next.
+
 ## 2026-07-28 — Recording screen — rebuilt to the locked design system
 
 **Branch:** claude/next-steps-3p2zhk
