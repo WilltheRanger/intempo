@@ -4,6 +4,42 @@ Newest entries at the top. Format spec: see "Build-time activity logging"
 in intempo-combined.md. Every meaningful change goes here — see that
 section for what counts as "meaningful."
 
+## 2026-07-28 — Figma mockups — three screens built into a new Figma file
+
+**Branch:** claude/next-steps-3p2zhk (design artifact only — no code changed)
+**Tooling:** Figma MCP (`use_figma` via the JS Plugin API), `figma-use` skill,
+`get_screenshot` for the verify-after-each-step loop.
+
+Created a new Figma file **"InTempo — App Screens"**
+(`https://www.figma.com/design/k5IB3714DiusqnAwzkY7pz`) and built the three
+core screens as 390×844 iPhone frames on one board, matching the locked
+manuscript design system:
+
+- **Home** — "Saturday evening / Ready to practice?" greeting, amber
+  "Photograph sheet music" CTA, a resume card, and a 2-up library grid of
+  score cards with mini-staves, over the paper tab bar.
+- **Recording** — paper top bar (close / title+movement / menu), a manuscript
+  score panel with the now-playing system washed amber, and the Deep Spruce
+  recording surface: "Listening…" serif state line, 72 BPM readout with ±
+  steppers, amber-tipped waveform, and the oxblood record button flanked by
+  metronome / bookmark.
+- **Verdict** — two-tone serif headline ("You *rushed a little* through the
+  middle."), annotated score with two off-tempo systems washed amber and
+  handwritten margin notes ("a touch ahead" / "breathe here"), three stat
+  chips, and the result tab bar with Score active.
+
+Palette locked to Paper Ivory / Graphite Ink / Rosined Amber (single accent) /
+Deep Spruce (recording surface only) / Cupro Oxblood; type is Playfair Display
++ Inter (grotesque stand-in). Each screen was screenshot-verified in Figma;
+the Home grid was trimmed from 4→2 cards so the tab bar sits in-frame.
+
+**Known side effects / honesty note:** this is a static design mockup, not
+running code — it's a reference to build the frontend rebuild against, not a
+substitute for it. Score/Details/Next-steps tab states on Verdict, and the
+calibration + metronome sub-states on Recording, are represented by their
+default view only. **Rollback:** delete the Figma file; nothing in the repo
+depends on it.
+
 ## 2026-07-28 — Verdict / Result screen — rebuilt to the locked design system
 
 **Branch:** claude/next-steps-3p2zhk
