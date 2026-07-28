@@ -1,14 +1,10 @@
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
+import { motion, useReducedMotion } from "motion/react";
+import { X } from "@phosphor-icons/react";
+import type { ReactNode } from "react";
 
 import { useAnalysisPolling } from "../hooks/useRecordingApi";
-import { Button } from "../components/ui/Button";
-import { Card } from "../components/ui/Card";
-import { Eyebrow } from "../components/ui/Eyebrow";
-import { ProgressBar } from "../components/ui/ProgressBar";
-import { VerdictCard } from "../components/result/VerdictCard";
-import { AnnotatedScore } from "../components/result/AnnotatedScore";
-import { TrendChart } from "../components/result/TrendChart";
-import { PerNoteDetail } from "../components/result/PerNoteDetail";
+import { VerdictView } from "../components/result/VerdictView";
 
 export function ResultRoute() {
   const { id } = useParams();
@@ -16,89 +12,103 @@ export function ResultRoute() {
 
   if (isError) {
     return (
-      <Message title="Something went wrong">
-        We couldn&rsquo;t load this analysis. Please try again.
-      </Message>
+      <FullScreen>
+        <Message title="Something went wrong">
+          We couldn&rsquo;t load this analysis. Please try again.
+        </Message>
+      </FullScreen>
     );
   }
 
   if (!row || row.status === "queued" || row.status === "processing") {
     return (
-      <Card className="flex flex-col gap-4">
-        <Eyebrow>Analyzing</Eyebrow>
-        <p className="text-[15px] text-ink-soft">
-          Listening measure by measure — this usually takes about 12 seconds.
-        </p>
-        <ProgressBar label="Reading your tempo…" />
-      </Card>
+      <FullScreen>
+        <Analyzing />
+      </FullScreen>
     );
   }
 
   if (row.status === "failed" || row.status === "failed_recoverable") {
     return (
-      <Message title="We couldn’t finish that one">
-        {row.failure_reason === "server restarted while analyzing — please retry"
-          ? "The server restarted mid-analysis. Please record and submit again."
-          : "The analysis didn’t complete. Please try recording again."}
-        <div className="pt-3">
-          <Link to={`/scores/${row.score_id}/record`}>
-            <Button variant="ghost">Record again</Button>
-          </Link>
-        </div>
-      </Message>
+      <FullScreen>
+        <Message title="We couldn't finish that one">
+          The analysis didn&rsquo;t complete. Try recording again.
+          <RecordAgain scoreId={row.score_id} />
+        </Message>
+      </FullScreen>
     );
   }
 
   const result = row.result_json;
-  if (!result) {
-    return <Message title="No results">This analysis has no data.</Message>;
-  }
-
-  // Graceful pipeline outcomes: the verdict text is a re-record prompt.
-  if (result.status !== "ok") {
+  if (!result || result.status !== "ok") {
     return (
-      <div className="flex flex-col gap-5">
-        <VerdictCard result={result} />
-        <Link to={`/scores/${row.score_id}/record`}>
-          <Button>Record again</Button>
-        </Link>
-      </div>
+      <FullScreen>
+        <Message title="We couldn't quite hear it">
+          {result?.verdict ??
+            "We had trouble matching this take to the score. Give it another go."}
+          <RecordAgain scoreId={row.score_id} />
+        </Message>
+      </FullScreen>
     );
   }
 
+  return <VerdictView result={result} scoreId={row.score_id} />;
+}
+
+function FullScreen({ children }: { children: ReactNode }) {
+  const navigate = useNavigate();
   return (
-    <div className="flex flex-col gap-6">
-      <VerdictCard result={result} />
+    <div className="flex min-h-[100dvh] flex-col bg-paper">
+      <div className="px-5 pt-4">
+        <button
+          onClick={() => navigate("/")}
+          aria-label="Close"
+          className="grid size-9 place-items-center rounded-full text-ink transition-colors duration-200 hover:bg-paper-warm active:scale-90"
+        >
+          <X size={20} />
+        </button>
+      </div>
+      <div className="flex flex-1 items-center justify-center px-6">{children}</div>
+    </div>
+  );
+}
 
-      <Card bezel>
-        <AnnotatedScore measures={result.per_measure} />
-      </Card>
-
-      {result.trend.length >= 2 && (
-        <Card>
-          <TrendChart trend={result.trend} />
-        </Card>
-      )}
-
-      <PerNoteDetail notes={result.per_note} />
-
-      <div className="flex flex-wrap gap-3">
-        <Link to={`/scores/${row.score_id}/record`}>
-          <Button>Practice again</Button>
-        </Link>
-        <Link to="/scores">
-          <Button variant="ghost">Done</Button>
-        </Link>
+function Analyzing() {
+  const reduce = useReducedMotion();
+  return (
+    <div className="flex flex-col items-center gap-5 text-center">
+      <motion.span
+        className="size-3 rounded-full bg-amber"
+        animate={reduce ? undefined : { scale: [1, 0.7, 1], opacity: [1, 0.5, 1] }}
+        transition={{ duration: 1.6, repeat: Infinity, ease: "easeInOut" }}
+      />
+      <div className="flex flex-col gap-1">
+        <p className="font-serif text-2xl italic text-ink">Reading your tempo…</p>
+        <p className="text-[13px] text-ink-soft">
+          Listening measure by measure. This usually takes about 12 seconds.
+        </p>
       </div>
     </div>
   );
 }
 
-function Message({ title, children }: { title: string; children: React.ReactNode }) {
+function Message({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <Card className="flex flex-col gap-2">
+    <div className="flex max-w-[320px] flex-col items-center gap-2 text-center">
       <h1 className="font-serif text-xl text-ink">{title}</h1>
-      <div className="text-sm text-ink-soft">{children}</div>
-    </Card>
+      <div className="text-[14px] text-ink-soft">{children}</div>
+    </div>
+  );
+}
+
+function RecordAgain({ scoreId }: { scoreId: string }) {
+  return (
+    <div className="pt-4">
+      <Link to={`/scores/${scoreId}/record`}>
+        <button className="rounded-full border border-line-2 px-5 py-2.5 text-sm text-ink transition-colors duration-200 hover:bg-paper-warm active:scale-[0.98]">
+          Record again
+        </button>
+      </Link>
+    </div>
   );
 }
