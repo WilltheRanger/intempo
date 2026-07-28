@@ -4,6 +4,40 @@ Newest entries at the top. Format spec: see "Build-time activity logging"
 in intempo-combined.md. Every meaningful change goes here — see that
 section for what counts as "meaningful."
 
+## 2026-07-28 — Home / Library screen — built to the locked design system
+
+**Batch:** UI (Home / Library) — approved by the user before starting, per CLAUDE.md §2. User chose the **phone-frame + bottom-tab** framing over adapting the existing web chrome.
+**Branch:** claude/next-steps-3p2zhk
+
+**What changed (all under `frontend/`):**
+- **`routes/HomeRoute.tsx`** — rewritten from the two-card placeholder into the moodboard's Home/Library screen:
+  - Serif italic greeting (time-of-day aware, name from the signed-in email, "Maia" fallback) with the "barline that breathes" mark + a round monogram avatar linking to `/account`.
+  - **Recent Sessions** card — piece title (serif), timestamp, one-line teacher's-margin verdict (amber when there's something to refine, ink when steady), chevron. "See all" → `/scores`.
+  - A **manuscript rule** (hairline + centered diamond) separating the two sections — the "barline" motif from the moodboard.
+  - **Your Library** rows — manuscript thumbnail, title (sans), movement, "Last practiced …", and an interactive favorite star (Bruch pre-favorited; tapping toggles local state).
+- **`components/TabBar.tsx`** (new) — bottom tab bar (Library · Record · Insights · Profile), Phosphor icons, `NavLink` active state in amber (filled icon).
+- **`components/AppShell.tsx`** (new) — phone-width (`max-w-[440px]`) column framed against the page ground with the tab bar pinned (`sticky bottom-0`); calls `useMe()` like `Layout`. The tabbed surfaces (Home, Scores list, Insights, Account) now render inside this shell.
+- **`components/ui/ScoreThumb.tsx`** (new) — self-contained engraved-paper thumbnail (staff + abstracted clef + deterministic noteheads) in the locked palette, standing in until real OCR page-crops are wired.
+- **`lib/demo.ts`** (new) — built-in demo repertoire (Dvořák, Bach, Bruch, Saint-Saëns, Mozart) for Recent Sessions + Library, per the "demo-mode" note in `DESIGN_SYSTEM.md`. Isolated so it swaps cleanly for the real `GET /v1/sessions` + `/v1/library` queries.
+- **`App.tsx`** — split routing: tabbed surfaces under `AppShell`, full-viewport flow screens (capture, record, result, showcase) keep the plain `Layout`. Added an `/insights` stub.
+- **`package.json`** — added `@phosphor-icons/react` (DESIGN_SYSTEM mandates Phosphor, "never Lucide"; existing screens still use Lucide and will migrate as they're rebuilt).
+
+**Why:** First screen of the fresh UI rebuild against the locked "engraver's manuscript" system. Home is the anchor screen and sets the tab-nav + phone-frame pattern the Recording/Verdict screens will inherit.
+
+**Tests run / verification:**
+- `npm run build` → **passes**; `npm run lint` → **clean**.
+- Screenshotted the running Home via a throwaway `/preview/home` route (auth-free) + Playwright (playwright-core against the repo's chromium) at 430×932, and ran the DESIGN_SYSTEM critique loop vs. the reference image. Two rounds: added the manuscript rule and tuned the greeting scale. Temp route, screenshot script, and playwright-core all removed before commit (only the Phosphor dep remains in the diff).
+
+**DoD status — honest:**
+- ✅ Home/Library visual matches the moodboard (greeting+avatar, Recent Sessions with amber verdicts, Your Library with thumbnails + favorite, bottom tab bar).
+- ✅ Favorite star is interactive; tab bar active state works on real routes.
+- ⚠️ **Data is demo/seed, not live** — no `GET /v1/sessions`/`/v1/library` endpoints yet, and Home is auth-gated (Supabase keys still pending, same caveat as Batches 5–7), so the signed-in screen isn't exercised end-to-end here.
+- ⚠️ Avatar is a monogram, not a photo (no user-photo source yet). Library thumbnails are stylized placeholders, not real score crops.
+
+**Known side effects / watch:** Moving `/account` + `/scores` under `AppShell` removes their top web header in favor of the tab bar — intended. Existing flow screens still use Lucide icons; the app now ships both icon sets until they're migrated (minor bundle cost).
+
+**Rollback:** additive + isolated. `git revert <SHA>` restores the placeholder Home and the all-`Layout` routing; new files (`TabBar`, `AppShell`, `ScoreThumb`, `demo.ts`) are unreferenced after that.
+
 ## 2026-07-24 — Batch 7 — recording + analysis/verdict flow (web)
 
 **Batch:** Batch 7 (UI — approved by the user before starting, per CLAUDE.md §2)

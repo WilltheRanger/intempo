@@ -6,6 +6,8 @@ import type { ReactNode } from "react";
 import { useAuthListener } from "./hooks/useAuth";
 import { initAnalytics } from "./lib/analytics";
 import { Layout } from "./components/Layout";
+import { AppShell } from "./components/AppShell";
+import { StubPage } from "./components/StubPage";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import { HomeRoute } from "./routes/HomeRoute";
 import { LoginRoute } from "./routes/LoginRoute";
@@ -34,14 +36,31 @@ function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/login" element={<LoginRoute />} />
-          <Route element={<Layout />}>
+          {/* Tabbed surfaces — phone-frame shell with the bottom tab bar. */}
+          <Route element={<AppShell />}>
             <Route path="/" element={<Protected element={<HomeRoute />} />} />
             <Route path="/scores" element={<Protected element={<ScoreListRoute />} />} />
-            <Route path="/scores/new" element={<Protected element={<ScoreCaptureRoute />} />} />
             <Route path="/scores/:id" element={<Protected element={<ScoreListRoute />} />} />
+            <Route
+              path="/insights"
+              element={
+                <Protected
+                  element={
+                    <StubPage eyebrow="Insights" title="Your progress">
+                      Tempo trends and per-piece steadiness will live here.
+                      Coming in a later batch.
+                    </StubPage>
+                  }
+                />
+              }
+            />
+            <Route path="/account" element={<Protected element={<AccountRoute />} />} />
+          </Route>
+          {/* Full-viewport flow screens keep the plain header/footer chrome. */}
+          <Route element={<Layout />}>
+            <Route path="/scores/new" element={<Protected element={<ScoreCaptureRoute />} />} />
             <Route path="/scores/:id/record" element={<Protected element={<RecordRoute />} />} />
             <Route path="/analyses/:id" element={<Protected element={<ResultRoute />} />} />
-            <Route path="/account" element={<Protected element={<AccountRoute />} />} />
             {/* Public so the design system is reviewable without auth. */}
             <Route path="/showcase" element={<ShowcaseRoute />} />
           </Route>
