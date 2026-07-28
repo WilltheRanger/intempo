@@ -12,24 +12,24 @@
  */
 
 export const colors = {
-  paper: "#EDE8DA", // page ground
+  paper: "#F6F4EC", // Paper Ivory — page ground (locked)
   paperRaised: "#FBF9F2", // cards / screen surfaces
-  paperWarm: "#F2ECDD", // insets, manuscript panels
-  paperDeep: "#E6DFCD", // machined "tray" behind bezelled surfaces
-  ink: "#211F1B", // primary text
+  paperWarm: "#F0ECDF", // insets, manuscript panels
+  paperDeep: "#E7E1D1", // machined "tray" behind bezelled surfaces
+  ink: "#1C1C1A", // Graphite Ink — primary text (locked)
   inkSoft: "#5F5C53", // secondary text
   inkMute: "#948F82", // metadata
-  inkFaint: "#989387", // hints / disabled
-  amber: "#C78A3A", // brand accent
+  inkFaint: "#A49F93", // hints / disabled
+  amber: "#C78A3A", // Rosined Amber — the one accent
   amberDeep: "#A06E22", // accent text / pressed
-  amberSoft: "#F0E4CD", // tinted accent background
+  amberSoft: "#F2E6CF", // tinted accent background
   spruce: "#1E3D34", // recording environment surface
   spruceLo: "#173029",
   verdictOn: "#2F6E4E", // on tempo (verdict UI only)
   verdictMid: "#B47A2C", // slight rush/drag (verdict UI only)
   verdictBad: "#7B2E2F", // rushing/dragging (verdict UI only)
-  line: "rgba(33,31,27,0.10)",
-  line2: "rgba(33,31,27,0.18)",
+  line: "rgba(28,28,26,0.10)",
+  line2: "rgba(28,28,26,0.17)",
 } as const;
 
 export const radii = { sm: "10px", md: "14px", lg: "20px", xl: "26px" } as const;

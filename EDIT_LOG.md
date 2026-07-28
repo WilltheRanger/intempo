@@ -4,6 +4,44 @@ Newest entries at the top. Format spec: see "Build-time activity logging"
 in intempo-combined.md. Every meaningful change goes here — see that
 section for what counts as "meaningful."
 
+## 2026-07-28 — Recording screen — rebuilt to the locked design system
+
+**Branch:** claude/next-steps-3p2zhk
+**Continues the UI rebuild** (after Home) following `frontend/DESIGN_SYSTEM.md`,
+one screen at a time with a screenshot-critique loop.
+
+**What changed (all under `frontend/`):**
+- **Palette aligned to the locked hexes** in `src/index.css` + `src/styles/tokens.ts`:
+  Paper Ivory `#F6F4EC` and Graphite Ink `#1C1C1A` (were `#EDE8DA`/`#211F1B`).
+  This is the DESIGN_SYSTEM.md-locked palette; affects all screens consistently.
+- `components/record/ScorePanel.tsx`: **new.** Manuscript notation panel (staff +
+  clef + noteheads in the locked palette) with the "now playing" system washed
+  in amber. Placeholder until real OCR page crops.
+- `components/record/RecordingPanel.tsx`: **rebuilt** to the moodboard Deep-Spruce
+  surface — bow/tempo arc (amber dot, animates while listening), serif state line
+  ("Ready when you are" / "Listening…" / "Take a listen"), tempo readout with ±
+  steppers + a needle dial + meter readout, controls row (metronome toggle / red
+  mic record / bookmark), a "set tempo by ear" calibrate link, and the "we'll let
+  you know" footer. Phosphor icons throughout. Keeps the working `useRecorder`,
+  `VisualMetronome`, `WaveformPreview`, playback + Redo/Analyze.
+- `routes/RecordRoute.tsx`: **rebuilt** — full-bleed screen with its own top bar
+  (X close / title + movement / more), the ScorePanel, and the RecordingPanel.
+  Keeps `useScore`, tempo seeding from `bpm_hint`, calibration flow, submit→poll.
+- `App.tsx`: `/scores/:id/record` moved **out of `Layout`** so it's full-bleed
+  (no wordmark header/footer) with its own chrome.
+- `index.css`: added the `animate-bow` keyframe (offset-path arc travel).
+
+**Critique-loop fixes applied** (screenshot vs. moodboard): removed the redundant
+Layout wordmark header/footer (full-bleed now); removed an em-dash from the "Play
+at ♩=100" copy (locked-system em-dash ban); back icon → X (close), per moodboard.
+
+**Tests run:** `npm run build` → passes; `npm run lint` → clean. Rendered at
+440px via a throwaway `/demo-record` route + Playwright; verified against the
+moodboard, then the temp route was removed.
+
+**Still the old Batch-7 UI (not yet rebuilt):** the Verdict/Result screen,
+Score-capture screen. Those are the next screens in the locked sequence.
+
 ## 2026-07-28 — Home / Library screen — built to the locked design system
 
 **Batch:** UI (Home / Library) — approved by the user before starting, per CLAUDE.md §2. User chose the **phone-frame + bottom-tab** framing over adapting the existing web chrome.
