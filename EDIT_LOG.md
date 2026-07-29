@@ -4,6 +4,29 @@ Newest entries at the top. Format spec: see "Build-time activity logging"
 in intempo-combined.md. Every meaningful change goes here — see that
 section for what counts as "meaningful."
 
+## 2026-07-28 — Verdict screen — verified against Figma + data-driven tip fix
+
+**Branch:** claude/next-steps-3p2zhk
+**Tooling:** Figma file `k5IB3714DiusqnAwzkY7pz` as source of truth; Playwright
+(global Chromium) via a temp `_PreviewVerdict` harness + `/preview-verdict`
+route (rendered `VerdictView` with a mock `AnalysisResult`), then removed.
+
+The Verdict screen was already the closest match to the Figma (the Figma was
+built from this component), so this was mostly a verification pass:
+- `VerdictView.tsx`: headline bumped **30px → 32px** with `leading-[1.15]` to
+  match the Figma type spec exactly.
+- **Bug fix (found while verifying the Next-steps tab):** the tip was
+  hard-coded to "measure 8" and would contradict the actual verdict. It now
+  reads from the data — anchored to the real off-tempo region (`location`)
+  and phrased for the drift direction (rush → "ease back", drag → "ease
+  toward"; on-tempo gets its own encouraging line).
+- Confirmed the annotated score (two systems washed amber + "a touch ahead" /
+  "breathe here" margin notes), stat chips, two-tone headline, and the
+  spring tab indicator all render as designed.
+
+**Verified:** lint + build green; Score and Next-steps tabs screenshotted
+against the Figma. **Rollback:** revert this commit.
+
 ## 2026-07-28 — Recording screen — code aligned to its Figma mockup (design→code)
 
 **Branch:** claude/next-steps-3p2zhk

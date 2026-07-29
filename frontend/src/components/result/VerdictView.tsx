@@ -42,6 +42,13 @@ export function VerdictView({
   const stats = deriveStats(result);
   const onTempo = result.verdict_direction === "on";
 
+  // A next-step tip anchored to the actual off-tempo region (not a fixed
+  // placeholder measure), phrased for the direction the player drifted.
+  const where = location.replace(/\.$/, "");
+  const tip = onTempo
+    ? "Beautifully steady. Keep this pulse and let the phrasing breathe a little more."
+    : `You were ${result.verdict_direction === "rush" ? "pushing ahead" : "settling behind"} through ${where}. Ease ${result.verdict_direction === "rush" ? "back into" : "toward"} the beat there — you're close.`;
+
   return (
     <div className="flex min-h-[100dvh] flex-col bg-paper">
       <div className="mx-auto w-full max-w-[440px] flex-1 px-5 pb-8 pt-4">
@@ -72,7 +79,7 @@ export function VerdictView({
             <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.15em] text-amber-deep">
               Tempo verdict
             </p>
-            <h1 className="font-serif text-[30px] leading-[1.12] tracking-[-0.01em]">
+            <h1 className="font-serif text-[32px] leading-[1.15] tracking-[-0.01em]">
               <span className="italic" style={{ color: onTempo ? "var(--verdict-on)" : "var(--amber)" }}>
                 {phrase}
               </span>{" "}
@@ -110,10 +117,7 @@ export function VerdictView({
             )}
             {tab === "next" && (
               <>
-                <TipBox>
-                  Try feeling the downbeat a fraction earlier in measure 8. You&rsquo;re
-                  close, trust the pulse.
-                </TipBox>
+                <TipBox>{tip}</TipBox>
                 <Link to={`/scores/${scoreId}/record`}>
                   <button className="w-full rounded-xl bg-amber py-3.5 text-[15px] font-medium text-white shadow-[0_8px_18px_-8px_rgba(199,138,58,0.8)] transition-transform duration-200 active:scale-[0.98]">
                     Practice again
