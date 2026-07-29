@@ -4,6 +4,39 @@ Newest entries at the top. Format spec: see "Build-time activity logging"
 in intempo-combined.md. Every meaningful change goes here — see that
 section for what counts as "meaningful."
 
+## 2026-07-28 — Score-capture / OCR flow — rebuilt to the locked design system
+
+**Branch:** claude/next-steps-3p2zhk
+**Tooling:** locked manuscript system (no Figma mockup — designed straight to
+code per the user's choice); Playwright (global Chromium) via temp
+`/preview-capture` (real route) + `/preview-capture-edit` (mock-OCR harness),
+then removed.
+
+Brought the last screen still on the old Batch-7 UI onto the rebuilt system:
+- **Full-bleed chrome** — moved `/scores/new` out of `<Layout>` (dropping the
+  redundant wordmark header/footer) to a 440px column with its own X-close +
+  step title, matching the Recording/Verdict flow screens.
+- **Capture state** — amber eyebrow + serif lead-in, restyled dashed drop-zone
+  (`ImageUploader`) and "Use the camera instead".
+- **Processing state** — replaced the progress bar with the manuscript amber
+  pulse + "Reading your score…", consistent with the analysis screen.
+- **OCR-review (edit) state** — amber low-confidence banner, measure cards, and
+  the inline note editor; the invalid-pitch affordance now reads in oxblood.
+- **Saved / error states** — restyled with CheckCircle / Warning and the
+  rebuilt Button.
+- **Icon migration** — `ScoreCaptureRoute`, `ImageUploader`, `CameraCapture`,
+  `ScoreEditor` moved from `lucide-react` to Phosphor (matching the rest of the
+  app); dropped the invalid `strokeWidth` props. (`TempoSelector`,
+  `PerNoteDetail`, `ShowcaseRoute` still import Lucide — out of scope here.)
+
+The OCR plumbing (`useScoreUpload` / `useScoreSave`, upload → parse → save
+mutations, validation) is unchanged — this was a presentation pass.
+
+**Verified:** lint + build green; capture and OCR-review states screenshotted
+(the review harness used an intentionally-invalid "H5" pitch, confirming the
+validation styling). **Known gaps:** live upload → OCR → save still pending
+Supabase keys + backend. **Rollback:** revert this commit.
+
 ## 2026-07-28 — Verdict screen — verified against Figma + data-driven tip fix
 
 **Branch:** claude/next-steps-3p2zhk

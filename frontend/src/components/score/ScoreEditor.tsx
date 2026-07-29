@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Trash2, Plus } from "lucide-react";
+import { Trash, Plus } from "@phosphor-icons/react";
 
 import { cn } from "../../lib/cn";
 import type { Duration, Note, ScoreJson } from "../../lib/score";
@@ -69,7 +69,7 @@ export function ScoreEditor({
               onClick={() => addNote(mi)}
               className="flex items-center gap-1 rounded-sm px-1.5 py-0.5 text-xs text-amber-deep transition-colors duration-200 ease-ios hover:bg-paper-warm"
             >
-              <Plus size={13} strokeWidth={1.5} /> note
+              <Plus size={13} /> note
             </button>
           </div>
 
@@ -169,7 +169,7 @@ function NoteEditor({
           aria-label="Delete note"
           className="flex h-9 items-center gap-1.5 rounded-md border border-line px-2.5 text-sm text-verdict-bad transition-colors duration-200 ease-ios hover:bg-paper-raised"
         >
-          <Trash2 size={15} strokeWidth={1.5} />
+          <Trash size={15} />
         </button>
       </div>
 
