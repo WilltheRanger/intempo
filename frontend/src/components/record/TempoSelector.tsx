@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { Minus, Plus } from "lucide-react";
+import { Minus, Plus } from "@phosphor-icons/react";
 
 const MIN_BPM = 40;
 const MAX_BPM = 240;
@@ -42,7 +42,7 @@ export function TempoSelector({
           aria-label="Slower"
           className="grid size-10 place-items-center rounded-full border border-line-2 text-ink active:scale-90"
         >
-          <Minus size={16} strokeWidth={1.5} />
+          <Minus size={16} weight="bold" />
         </button>
         <div className="flex flex-col items-center">
           <span className="font-serif text-4xl tabular-nums text-ink">{bpm}</span>
@@ -55,7 +55,7 @@ export function TempoSelector({
           aria-label="Faster"
           className="grid size-10 place-items-center rounded-full border border-line-2 text-ink active:scale-90"
         >
-          <Plus size={16} strokeWidth={1.5} />
+          <Plus size={16} weight="bold" />
         </button>
       </div>
       <div className="flex items-center justify-center gap-4 text-sm">
