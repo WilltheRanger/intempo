@@ -6,6 +6,23 @@ Operating Principle #5.
 
 ---
 
+## 2026-07-28 — Badge: adopt the kit-style `variant`/`appearance`/`shape` API, but resolve it to the locked palette with non-generic defaults
+
+**Context:** the user flagged that the verdict badges "look ai" — correctly. The old `Badge` was a pastel-tinted pill with a small coloured status dot: the single most templated status affordance on the web (GitHub labels, Linear, every Tailwind kit), a `bg-*-100/text-*-800` reflex, with a dot that only repeated the text colour. The user then supplied a shadcn-style badge API as the target shape: `variant` (primary/success/warning/info/destructive) × `appearance` (solid/light/outline) × `shape` (circle/square).
+
+**Decision:** implement that full API surface, but (a) resolve every variant to the locked manuscript tokens rather than a generic status ramp, (b) default to `appearance="outline"` + `shape="square"` — an engraved chip on paper-warm with a hairline edge, the hue carried by text and border rather than a colour fill — and (c) drop the decorative status dot entirely. `tone` ("on"/"mid"/"bad") is kept as a verdict-UI shorthand that maps onto `success`/`warning`/`destructive`, so verdict screens stay in domain language.
+
+**`info` resolves to neutral graphite `ink`, never `spruce`.** Spruce is the recording *environment* surface only and must never encode a status (the rule in `tokens.ts`); a green-blue "info" badge would quietly break that quarantine. Future sessions: do not "fix" this by reaching for spruce.
+
+**Alternatives considered:**
+- *Keep the pill + dot and just recolour it.* Rejected: recolouring doesn't remove the tell — the shape and the redundant dot *are* the tell.
+- *Replace badges with pencil margin-marks or Italian tempo terms* (`stringendo` / `a tempo`), which is more distinctive and more musician-native. Not taken now: the user asked for the kit API, and these would fight it. Still the better long-term direction for verdict UI specifically — revisit when verdict badges actually ship on a screen.
+- *Ship only the outline appearance.* Rejected: `solid`/`light` are legitimately useful (a solid amber badge reads well on the spruce surface), and the user explicitly asked for the appearance axis.
+
+**Trade-off accepted:** the API can still express the generic look — `appearance="light" shape="circle"` reproduces close to the pastel pill we just removed. That's deliberate: the defaults guide toward the manuscript direction without forbidding the escape hatch. The guard is the default, not a restriction. Also, `Badge` is currently used *only* on `/showcase` — no live screen consumes it yet, so this was a free rework.
+
+---
+
 ## 2026-07-24 — Frontend design tokens: adopt the "manuscript" direction, superseding spec §5's placeholder palette
 
 **Context:** spec §5 (Batch 5) specifies design tokens as "Cream `#fbf4de`, ink `#1a140a`, gold `#8a6212` … same theme as the AP Euro work." That was a placeholder to get the dev moving. Over this session the user explored the visual direction in depth (a ChatGPT moodboard, several interactive prototypes, two design-taste skills), and converged on a distinct "engraver's manuscript" identity.

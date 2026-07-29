@@ -4,6 +4,44 @@ Newest entries at the top. Format spec: see "Build-time activity logging"
 in intempo-combined.md. Every meaningful change goes here — see that
 section for what counts as "meaningful."
 
+## 2026-07-28 — Badge rebuilt: kit-style API on the locked palette (de-slopped)
+
+**Branch:** claude/next-steps-3p2zhk
+
+**Why:** the user flagged the verdict badges as reading "ai" — correct. The old
+`Badge` was a pastel-tinted pill with a redundant coloured status dot: the most
+templated status affordance on the web, and foreign to a paper-and-ink world.
+
+`components/ui/Badge.tsx` rewritten to the `variant` × `appearance` × `shape`
+API the user supplied, resolved to the manuscript tokens:
+- **`variant`** — primary (amber, the one accent), success / warning /
+  destructive (the verdict triad), info (**neutral graphite `ink`, never
+  `spruce`** — spruce is the recording surface and must not encode a status).
+- **`appearance`** — solid / light / **outline (default)**. Outline is the
+  manuscript-native one: paper-warm ground, hairline edge, hue in the text and
+  border rather than a fill.
+- **`shape`** — **square (default, 10px engraved chip)** / circle (pill).
+- **Removed the status dot** entirely — it repeated the text colour and carried
+  no information.
+- Colours come from `styles/tokens.ts`, not re-typed hexes.
+- `tone` ("on"/"mid"/"bad") kept as a verdict-UI shorthand → success / warning /
+  destructive, so verdict screens stay in domain language.
+
+`ShowcaseRoute` now documents the full matrix (3 appearances × 5 variants, plus
+the circle shape) and keeps a separate "Verdict tones" card for the `tone` API.
+
+**Honest note:** the API can still express the generic look
+(`appearance="light" shape="circle"`) — that's a deliberate escape hatch, with
+the defaults doing the guiding. I also proposed two more distinctive directions
+(pencil margin-marks; Italian tempo terms like *stringendo* / *a tempo*) which
+the user didn't take this round; logged in `DECISIONS.md` as the better
+long-term direction for verdict UI specifically.
+
+**Blast radius:** none — `Badge` is used only on `/showcase`; no live screen
+consumes it yet.
+**Verified:** lint + build green; `/showcase` screenshotted, no console errors.
+**Rollback:** revert this commit.
+
 ## 2026-07-28 — Finish the Phosphor migration; drop Lucide; refresh CLAUDE.md §3
 
 **Branch:** claude/next-steps-3p2zhk
