@@ -4,6 +4,33 @@ Newest entries at the top. Format spec: see "Build-time activity logging"
 in intempo-combined.md. Every meaningful change goes here — see that
 section for what counts as "meaningful."
 
+## 2026-07-28 — Recording screen — code aligned to its Figma mockup (design→code)
+
+**Branch:** claude/next-steps-3p2zhk
+**Tooling:** Figma file `k5IB3714DiusqnAwzkY7pz` as source of truth; Playwright
+(global Chromium) via a temp public `/preview-record` route, then reverted.
+
+Restructured `frontend/src/components/record/RecordingPanel.tsx` to the Figma's
+hero-tempo composition:
+- **Promoted the tempo readout to the hero** — a 64px serif BPM number flanked
+  by round ± steppers, with a "BPM · {meter}" caption (meter now shown here).
+- **Removed the needle dial and the bow arc** — the Figma surface is cleaner and
+  leads with the number; the dial/meter-readout/arc were competing for the eye.
+- **Amber-tipped waveform** — new static `IdleWave` bar strip before recording
+  (center bars amber), with the live `WaveformPreview` + timer kept for the
+  listening state.
+- State line is now upright serif (was italic); controls (metronome / red mic /
+  bookmark) enlarged to match the mockup's proportions.
+- **Kept all functionality:** calibration link, done-state playback + Redo/Analyze,
+  5-minute warning, VisualMetronome pulse, mic error surface.
+
+`RecordRoute` and `ScorePanel` unchanged — the top bar + manuscript score panel
+(now-playing system washed amber) already matched the Figma.
+
+**Verified:** lint + build green; screenshot of the running page matches the
+Figma. **Known gaps:** live mic → analysis loop still pending mic permission +
+Supabase/backend on a real device. **Rollback:** revert this commit.
+
 ## 2026-07-28 — Home screen — code aligned to its Figma mockup (design→code)
 
 **Branch:** claude/next-steps-3p2zhk

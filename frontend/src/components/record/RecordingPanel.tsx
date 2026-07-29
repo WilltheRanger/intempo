@@ -22,7 +22,9 @@ function fmt(sec: number): string {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
-/** The Deep Spruce recording surface — the one dark, front-lit panel. */
+/** The Deep Spruce recording surface — the one dark, front-lit panel.
+ *  Composition follows the locked Figma: the tempo readout is the hero,
+ *  over an amber-tipped waveform and the record controls. */
 export function RecordingPanel({
   bpm,
   meter,
@@ -57,48 +59,24 @@ export function RecordingPanel({
     [playbackUrl],
   );
 
-  // Needle angle: 40 BPM → -110°, 240 BPM → 110°.
-  const angle = -110 + ((Math.min(240, Math.max(40, bpm)) - 40) / 200) * 220;
-
   return (
     <div
-      className="flex flex-col items-center gap-5 rounded-2xl bg-spruce px-6 pb-6 pt-7 text-[#EDE4CE] shadow-[inset_0_1px_0_rgba(237,228,206,0.13),0_18px_40px_-24px_rgba(23,48,41,0.95)]"
+      className="flex flex-col items-center gap-6 rounded-[28px] bg-spruce px-6 pb-9 pt-8 text-[#EDE4CE] shadow-[inset_0_1px_0_rgba(237,228,206,0.13),0_18px_40px_-24px_rgba(23,48,41,0.95)]"
       style={{ background: "linear-gradient(168deg, var(--spruce), var(--spruce-lo))" }}
     >
       <VisualMetronome bpm={bpm} active={listening && metronomeMode === "visual"} />
 
-      {/* bow / tempo arc */}
-      <div className="relative h-14 w-full max-w-[260px]">
-        <svg viewBox="0 0 260 56" className="absolute inset-0 overflow-visible">
-          <path
-            d="M 10 44 Q 130 4 250 44"
-            fill="none"
-            stroke="rgba(199,138,58,0.5)"
-            strokeWidth="1.4"
-            strokeDasharray="2 5"
-            strokeLinecap="round"
-          />
-        </svg>
-        <span
-          className={cn(
-            "absolute left-0 top-0 -ml-[6px] -mt-[6px] size-3 rounded-full bg-amber shadow-[0_0_12px_3px_rgba(199,138,58,0.55)]",
-            listening && "animate-bow",
-          )}
-          style={{ offsetPath: 'path("M 10 44 Q 130 4 250 44")' } as React.CSSProperties}
-        />
-      </div>
-
       {/* state line */}
-      <div className="flex flex-col items-center gap-0.5 text-center">
-        <p className="font-serif text-2xl italic">
+      <div className="flex flex-col items-center gap-1 text-center">
+        <p className="font-serif text-[26px] leading-tight">
           {done ? "Take a listen" : listening ? "Listening…" : "Ready when you are"}
         </p>
         <p className="text-[13px]" style={{ color: "rgba(237,228,206,0.6)" }}>
           {done
             ? "Send it over when it feels right."
             : listening
-              ? "Keep playing"
-              : `Play at ♩=${bpm}, we'll follow along`}
+              ? "Keep playing — we're following along."
+              : `Play at ♩=${bpm}, we'll follow along.`}
         </p>
       </div>
 
@@ -123,66 +101,67 @@ export function RecordingPanel({
         </div>
       ) : (
         <>
-          {/* readouts */}
-          <div className="flex w-full max-w-[280px] items-center justify-between">
-            <Readout
-              value={String(bpm)}
-              label="Tempo"
-              steppers={
-                !listening
-                  ? {
-                      onDown: () => onBpmChange(Math.max(40, bpm - 1)),
-                      onUp: () => onBpmChange(Math.min(240, bpm + 1)),
-                    }
-                  : undefined
-              }
+          {/* hero tempo readout */}
+          <div className="flex items-center gap-6">
+            <Stepper
+              icon={<Minus size={18} weight="bold" />}
+              label="Slower"
+              disabled={listening}
+              onClick={() => onBpmChange(Math.max(40, bpm - 1))}
             />
-            <svg viewBox="0 0 60 60" className="size-14 shrink-0">
-              <circle cx="30" cy="30" r="25" fill="none" stroke="rgba(237,228,206,0.28)" />
-              <line
-                x1="30"
-                y1="30"
-                x2="30"
-                y2="9"
-                stroke="var(--amber)"
-                strokeWidth="2"
-                strokeLinecap="round"
-                transform={`rotate(${angle} 30 30)`}
-              />
-              <circle cx="30" cy="30" r="2.6" fill="var(--amber)" />
-            </svg>
-            <Readout value={meter} label="Meter" />
+            <div className="flex flex-col items-center">
+              <span className="font-serif text-[64px] leading-none tabular-nums text-white">
+                {bpm}
+              </span>
+              <span
+                className="mt-1 text-[11px] font-medium uppercase tracking-[0.14em]"
+                style={{ color: "rgba(237,228,206,0.6)" }}
+              >
+                BPM · {meter}
+              </span>
+            </div>
+            <Stepper
+              icon={<Plus size={18} weight="bold" />}
+              label="Faster"
+              disabled={listening}
+              onClick={() => onBpmChange(Math.min(240, bpm + 1))}
+            />
           </div>
 
-          {listening ? (
-            <div className="flex w-full max-w-[280px] flex-col items-center gap-3">
-              <WaveformPreview analyser={rec.analyser} active />
-              <span className="font-serif text-3xl tabular-nums">{fmt(rec.seconds)}</span>
-              {rec.seconds >= WARN_SECONDS && (
-                <p className="text-xs" style={{ color: "#E8C98A" }}>
-                  Approaching the 5-minute limit.
-                </p>
-              )}
-            </div>
-          ) : null}
+          {/* waveform — live while listening, idle bars otherwise */}
+          <div className="flex w-full max-w-[280px] flex-col items-center gap-3">
+            {listening ? (
+              <>
+                <WaveformPreview analyser={rec.analyser} active />
+                <span className="font-serif text-3xl tabular-nums">{fmt(rec.seconds)}</span>
+                {rec.seconds >= WARN_SECONDS && (
+                  <p className="text-xs" style={{ color: "#E8C98A" }}>
+                    Approaching the 5-minute limit.
+                  </p>
+                )}
+              </>
+            ) : (
+              <IdleWave />
+            )}
+          </div>
 
           {rec.error && <p className="text-sm" style={{ color: "#E8A0A0" }}>{rec.error}</p>}
 
           {/* controls */}
-          <div className="flex w-full max-w-[280px] items-center justify-between">
+          <div className="flex w-full max-w-[260px] items-center justify-between">
             <IconButton
               label={`Metronome ${metronomeMode === "visual" ? "on" : "off"}`}
               active={metronomeMode === "visual"}
               onClick={onToggleMetronome}
             >
-              <Metronome size={19} weight={metronomeMode === "visual" ? "fill" : "regular"} />
+              <Metronome size={20} weight={metronomeMode === "visual" ? "fill" : "regular"} />
             </IconButton>
 
             {listening ? (
               <button
                 onClick={rec.stop}
                 aria-label="Stop recording"
-                className="grid size-[68px] place-items-center rounded-full border-4 border-[#EDE4CE]/85 transition-transform duration-200 ease-ios active:scale-95"
+                className="grid size-[76px] place-items-center rounded-full border-4 border-[#EDE4CE]/85 transition-transform duration-200 ease-ios active:scale-95"
               >
                 <span className="size-6 rounded-md" style={{ background: CREAM }} />
               </button>
@@ -190,23 +169,23 @@ export function RecordingPanel({
               <button
                 onClick={rec.start}
                 aria-label="Start recording"
-                className="grid size-[68px] place-items-center rounded-full border-4 border-[#EDE4CE]/85 transition-transform duration-200 ease-ios active:scale-95"
+                className="grid size-[76px] place-items-center rounded-full border-4 border-[#EDE4CE]/85 transition-transform duration-200 ease-ios active:scale-95"
               >
-                <span className="grid size-[52px] place-items-center rounded-full bg-[#C4453C]">
+                <span className="grid size-[54px] place-items-center rounded-full bg-[#C4453C]">
                   <Microphone size={24} weight="fill" className="text-white" />
                 </span>
               </button>
             )}
 
             <IconButton label="Bookmark">
-              <BookmarkSimple size={19} />
+              <BookmarkSimple size={20} />
             </IconButton>
           </div>
 
           {!listening && (
             <button
               onClick={onCalibrate}
-              className="text-[13px] underline decoration-[rgba(237,228,206,0.35)] underline-offset-4 transition-colors duration-200 ease-ios hover:text-amber"
+              className="-mt-1 text-[13px] underline decoration-[rgba(237,228,206,0.35)] underline-offset-4 transition-colors duration-200 ease-ios hover:text-amber"
               style={{ color: "rgba(237,228,206,0.75)" }}
             >
               Set the tempo by ear instead
@@ -226,47 +205,52 @@ export function RecordingPanel({
   );
 }
 
-function Readout({
-  value,
+/** A static amber-tipped waveform strip shown before recording starts. */
+function IdleWave() {
+  const amps = [
+    8, 16, 26, 14, 34, 22, 40, 18, 30, 12, 24, 38, 16, 28, 10, 20, 32, 14, 22,
+    36, 18, 26, 12, 30, 16, 24, 34, 14, 20, 28,
+  ];
+  return (
+    <div className="flex h-12 w-full items-center justify-center gap-[3px]" aria-hidden>
+      {amps.map((a, i) => {
+        const near = Math.abs(i - 15) < 4;
+        return (
+          <span
+            key={i}
+            className={cn("w-1 rounded-full", near ? "bg-amber" : "bg-[#EDE4CE]")}
+            style={{ height: `${a}px`, opacity: near ? 1 : 0.4 }}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
+function Stepper({
+  icon,
   label,
-  steppers,
+  disabled,
+  onClick,
 }: {
-  value: string;
+  icon: React.ReactNode;
   label: string;
-  steppers?: { onDown: () => void; onUp: () => void };
+  disabled?: boolean;
+  onClick: () => void;
 }) {
   return (
-    <div className="flex flex-col items-center gap-1">
-      <div className="flex items-center gap-2">
-        {steppers && (
-          <button
-            onClick={steppers.onDown}
-            aria-label="Slower"
-            className="grid size-6 place-items-center rounded-full border border-[#EDE4CE]/30 active:scale-90"
-          >
-            <Minus size={12} />
-          </button>
-        )}
-        <span className="min-w-[2ch] text-center font-serif text-[26px] tabular-nums leading-none">
-          {value}
-        </span>
-        {steppers && (
-          <button
-            onClick={steppers.onUp}
-            aria-label="Faster"
-            className="grid size-6 place-items-center rounded-full border border-[#EDE4CE]/30 active:scale-90"
-          >
-            <Plus size={12} />
-          </button>
-        )}
-      </div>
-      <span
-        className="text-[9px] uppercase tracking-[0.18em]"
-        style={{ color: "rgba(237,228,206,0.55)" }}
-      >
-        {label}
-      </span>
-    </div>
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      aria-label={label}
+      className={cn(
+        "grid size-10 place-items-center rounded-full bg-white/[0.07] text-[#EDE4CE] transition-all duration-200 ease-ios",
+        "hover:bg-white/[0.12] active:scale-90",
+        disabled && "pointer-events-none opacity-0",
+      )}
+    >
+      {icon}
+    </button>
   );
 }
 
@@ -287,7 +271,7 @@ function IconButton({
       aria-label={label}
       aria-pressed={active}
       className={cn(
-        "grid size-11 place-items-center rounded-full border transition-colors duration-200 ease-ios active:scale-90",
+        "grid size-12 place-items-center rounded-full border transition-colors duration-200 ease-ios active:scale-90",
         active
           ? "border-amber/60 bg-amber/15 text-amber"
           : "border-[#EDE4CE]/25 text-[#EDE4CE] hover:bg-white/5",
