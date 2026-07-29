@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Camera, X } from "lucide-react";
+import { Camera, X } from "@phosphor-icons/react";
 
 /**
  * Light live-camera capture. Mounted only after a user tap (iOS requires a
@@ -73,7 +73,7 @@ export function CameraCapture({
           aria-label="Close camera"
           className="absolute right-3 top-3 grid size-9 place-items-center rounded-full bg-black/40 text-white backdrop-blur-sm active:scale-90"
         >
-          <X size={18} strokeWidth={1.5} />
+          <X size={18} />
         </button>
         {/* 4-corner framing guide */}
         <div className="pointer-events-none absolute inset-6 rounded-md border-2 border-white/40" />
@@ -87,7 +87,7 @@ export function CameraCapture({
           className="mx-auto grid size-16 place-items-center rounded-full border-4 border-ink/80 bg-paper-raised active:scale-95"
         >
           <span className="grid size-11 place-items-center rounded-full bg-amber text-white">
-            <Camera size={20} strokeWidth={1.5} />
+            <Camera size={20} />
           </span>
         </button>
       )}

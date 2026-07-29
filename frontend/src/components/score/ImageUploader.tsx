@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { ImagePlus } from "lucide-react";
+import { ImageSquare } from "@phosphor-icons/react";
 
 import { cn } from "../../lib/cn";
 
@@ -36,14 +36,14 @@ export function ImageUploader({
         pick(e.dataTransfer.files);
       }}
       className={cn(
-        "flex w-full flex-col items-center justify-center gap-3 rounded-lg border border-dashed px-6 py-12 text-center transition-colors duration-200 ease-ios",
+        "flex w-full flex-col items-center justify-center gap-3 rounded-2xl border border-dashed px-6 py-14 text-center transition-colors duration-200 ease-ios",
         dragging
           ? "border-amber bg-amber-soft"
           : "border-line-2 bg-paper-raised hover:bg-paper-warm",
       )}
     >
-      <span className="grid size-12 place-items-center rounded-full bg-amber-soft text-amber-deep">
-        <ImagePlus size={22} strokeWidth={1.5} />
+      <span className="grid size-14 place-items-center rounded-full bg-amber-soft text-amber-deep">
+        <ImageSquare size={24} />
       </span>
       <span className="flex flex-col gap-0.5">
         <span className="text-[15px] font-medium text-ink">

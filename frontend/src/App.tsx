@@ -58,11 +58,11 @@ function App() {
           </Route>
           {/* Flow screens that still use the plain header/footer chrome. */}
           <Route element={<Layout />}>
-            <Route path="/scores/new" element={<Protected element={<ScoreCaptureRoute />} />} />
             {/* Public so the design system is reviewable without auth. */}
             <Route path="/showcase" element={<ShowcaseRoute />} />
           </Route>
           {/* Full-bleed flow screens with their own chrome. */}
+          <Route path="/scores/new" element={<Protected element={<ScoreCaptureRoute />} />} />
           <Route path="/scores/:id/record" element={<Protected element={<RecordRoute />} />} />
           <Route path="/analyses/:id" element={<Protected element={<ResultRoute />} />} />
           <Route path="*" element={<Navigate to="/" replace />} />
