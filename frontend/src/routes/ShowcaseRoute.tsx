@@ -6,6 +6,15 @@ import { Button } from "../components/ui/Button";
 import { Card } from "../components/ui/Card";
 import { Eyebrow } from "../components/ui/Eyebrow";
 import { Badge } from "../components/ui/Badge";
+import type { BadgeVariant } from "../components/ui/Badge";
+
+const BADGE_VARIANTS: BadgeVariant[] = [
+  "primary",
+  "success",
+  "warning",
+  "info",
+  "destructive",
+];
 
 // Sourced from the locked tokens rather than re-typed, so this reference
 // page can never drift out of sync with the palette it documents.
@@ -66,8 +75,45 @@ export function ShowcaseRoute() {
         </div>
       </Card>
 
+      <Card className="flex flex-col gap-4">
+        <Eyebrow>Badges</Eyebrow>
+        <div className="flex flex-col gap-3">
+          {(["outline", "light", "solid"] as const).map((appearance) => (
+            <div key={appearance} className="flex flex-col gap-1.5">
+              <span className="text-[10px] uppercase tracking-[0.14em] text-ink-faint">
+                {appearance}
+                {appearance === "outline" && " · default"}
+              </span>
+              <div className="flex flex-wrap items-center gap-2">
+                {BADGE_VARIANTS.map((variant) => (
+                  <Badge key={variant} variant={variant} appearance={appearance}>
+                    {variant}
+                  </Badge>
+                ))}
+              </div>
+            </div>
+          ))}
+          <div className="flex flex-col gap-1.5">
+            <span className="text-[10px] uppercase tracking-[0.14em] text-ink-faint">
+              shape=&ldquo;circle&rdquo;
+            </span>
+            <div className="flex flex-wrap items-center gap-2">
+              {BADGE_VARIANTS.map((variant) => (
+                <Badge key={variant} variant={variant} shape="circle">
+                  {variant}
+                </Badge>
+              ))}
+            </div>
+          </div>
+        </div>
+      </Card>
+
       <Card className="flex flex-col gap-3">
-        <Eyebrow>Verdict badges</Eyebrow>
+        <Eyebrow>Verdict tones</Eyebrow>
+        <p className="text-[13px] text-ink-soft">
+          Verdict UI passes <code className="text-ink">tone</code> so it stays in
+          domain language — these colours appear only here.
+        </p>
         <div className="flex flex-wrap gap-2">
           <Badge tone="on">On tempo</Badge>
           <Badge tone="mid">Slight rush</Badge>
