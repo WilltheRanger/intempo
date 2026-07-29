@@ -4,6 +4,39 @@ Newest entries at the top. Format spec: see "Build-time activity logging"
 in intempo-combined.md. Every meaningful change goes here — see that
 section for what counts as "meaningful."
 
+## 2026-07-28 — Finish the Phosphor migration; drop Lucide; refresh CLAUDE.md §3
+
+**Branch:** claude/next-steps-3p2zhk
+
+Closes the loose ends called out at the end of the UI rebuild.
+
+**Icon migration finished (`lucide-react` → Phosphor):**
+- `components/record/TempoSelector.tsx` — `Minus`/`Plus` (now `weight="bold"`).
+- `components/result/PerNoteDetail.tsx` — `ChevronDown` → `CaretDown` (Phosphor's
+  equivalent, already used in the record top bar), 18→16px to match.
+- `routes/ShowcaseRoute.tsx` — `Plus` in the Button `trailingIcon` demo.
+- Dropped the invalid `strokeWidth` props (a Lucide-ism Phosphor ignores).
+- **Removed `lucide-react` from `package.json`** — zero references remain in
+  `src/` or the lockfile. The app is now single-icon-library.
+
+**Fixed a stale design-system reference:** `/showcase` hard-coded the *pre-lock*
+palette (`paper: #EDE8DA`, `ink: #211F1B`) — wrong since the tokens were locked,
+and actively misleading on the page whose whole job is documenting the palette.
+It now imports `colors` from `styles/tokens.ts`, so it can't drift again.
+Verified in-browser: swatches read `#F6F4EC` / `#1C1C1A`, no console errors.
+
+**`CLAUDE.md` §3 rewritten** to reflect reality after the rebuild: a per-screen
+status table (4 rebuilt, 3 still pre-rebuild), the Figma mockup link, the five
+conventions the rebuild established (Phosphor-only, full-bleed flow screens
+outside `<Layout>`, Framer Motion + `useReducedMotion`, `/showcase` sources
+tokens, `lib/demo.ts` seed data is deliberate), and a blunt DoD note that no
+batch is tagged and every remaining gate needs Supabase keys + a device.
+
+**Verified:** lint + build green; `/showcase` screenshotted with no console
+errors. **Known side effects:** none expected — icon swaps are like-for-like and
+`CaretDown` is the same glyph family already used elsewhere. **Rollback:**
+revert this commit (and `npm i lucide-react` if anything unexpected depended on it).
+
 ## 2026-07-28 — Score-capture / OCR flow — rebuilt to the locked design system
 
 **Branch:** claude/next-steps-3p2zhk

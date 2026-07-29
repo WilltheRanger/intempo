@@ -1,19 +1,23 @@
-import { Plus } from "lucide-react";
+import { Plus } from "@phosphor-icons/react";
+
+import { colors } from "../styles/tokens";
 
 import { Button } from "../components/ui/Button";
 import { Card } from "../components/ui/Card";
 import { Eyebrow } from "../components/ui/Eyebrow";
 import { Badge } from "../components/ui/Badge";
 
+// Sourced from the locked tokens rather than re-typed, so this reference
+// page can never drift out of sync with the palette it documents.
 const SWATCHES: Array<[string, string]> = [
-  ["paper", "#EDE8DA"],
-  ["paper-raised", "#FBF9F2"],
-  ["ink", "#211F1B"],
-  ["amber", "#C78A3A"],
-  ["spruce", "#1E3D34"],
-  ["verdict-on", "#2F6E4E"],
-  ["verdict-mid", "#B47A2C"],
-  ["verdict-bad", "#7B2E2F"],
+  ["paper", colors.paper],
+  ["paper-raised", colors.paperRaised],
+  ["ink", colors.ink],
+  ["amber", colors.amber],
+  ["spruce", colors.spruce],
+  ["verdict-on", colors.verdictOn],
+  ["verdict-mid", colors.verdictMid],
+  ["verdict-bad", colors.verdictBad],
 ];
 
 export function ShowcaseRoute() {
@@ -54,7 +58,7 @@ export function ShowcaseRoute() {
       <Card className="flex flex-col gap-3">
         <Eyebrow>Buttons</Eyebrow>
         <div className="flex flex-wrap items-center gap-3">
-          <Button trailingIcon={<Plus size={15} strokeWidth={1.5} />}>
+          <Button trailingIcon={<Plus size={15} weight="bold" />}>
             Primary
           </Button>
           <Button variant="ghost">Ghost</Button>

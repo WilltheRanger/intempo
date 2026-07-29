@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ChevronDown } from "lucide-react";
+import { CaretDown } from "@phosphor-icons/react";
 
 import type { PerNote } from "../../lib/analysis";
 import { BAND_COLOR } from "../../lib/analysis";
@@ -19,9 +19,8 @@ export function PerNoteDetail({ notes }: { notes: PerNote[] }) {
         <span className="text-sm font-medium text-ink">
           Every note ({timed.length})
         </span>
-        <ChevronDown
-          size={18}
-          strokeWidth={1.5}
+        <CaretDown
+          size={16}
           className={cn(
             "text-ink-mute transition-transform duration-200 ease-ios",
             open && "rotate-180",

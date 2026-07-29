@@ -62,6 +62,40 @@ If in doubt whether something is "UI/UX," ask.
 - Batch 3 — Audio analysis core ✅ (pipeline done; threshold tuning against real recordings still pending — see `TUNING_LOG.md`)
 - Batch 4 — Async analysis API + calibration ✅ (BackgroundTasks; Celery migration deferred to §11 triggers)
 - Batch 5 — Web frontend foundation ⏳ (shell done: design tokens locked, primitives, routing, auth/data plumbing; build + lint green. Live magic-link auth + E2E test pending Supabase keys — see `EDIT_LOG.md`. Not tagged `batch-5-done` yet.)
-- Batch 6 — Score capture flow (web) ⏳ (capture + OCR-review editor + save built; build + lint green. Live upload→OCR→save + iPhone camera pending Supabase keys/device — see `EDIT_LOG.md`. Not tagged `batch-6-done`.)
-- Batch 7 — Recording + analysis/verdict flow (web) ⏳ (tempo/calibration/metronome, MediaRecorder panel, polling result screen with verdict/annotated-score/trend/per-note built; build + lint green. Live mic→analysis loop pending mic/Supabase/backend + device — see `EDIT_LOG.md`. Not tagged `batch-7-done`.)
+- Batch 6 — Score capture flow (web) ⏳ (capture + OCR-review editor + save built, **rebuilt to the locked design system** 2026-07-28; build + lint green. Live upload→OCR→save + iPhone camera pending Supabase keys/device — see `EDIT_LOG.md`. Not tagged `batch-6-done`.)
+- Batch 7 — Recording + analysis/verdict flow (web) ⏳ (tempo/calibration/metronome, MediaRecorder panel, polling result screen with verdict/annotated-score/trend/per-note built, **rebuilt to the locked design system** 2026-07-28; build + lint green. Live mic→analysis loop pending mic/Supabase/backend + device — see `EDIT_LOG.md`. Not tagged `batch-7-done`.)
 - Batch 8+ — mostly UI/UX → see §2 gate. **Design tokens are locked in `frontend/src/styles/tokens.ts` (manuscript direction) — build to them; see `DECISIONS.md`.**
+
+### Frontend UI rebuild (2026-07-28) — where the screens actually stand
+
+The Batch 5–7 UI was scrapped and rebuilt against `frontend/DESIGN_SYSTEM.md`,
+one screen at a time, each verified with a Playwright screenshot of the running
+build. Reference mockups live in Figma:
+`https://www.figma.com/design/k5IB3714DiusqnAwzkY7pz` (Home / Recording / Verdict).
+
+| Screen | Route | State |
+|---|---|---|
+| Home | `/` | ✅ rebuilt (greeting, amber CTA, resume card, 2-up library grid) |
+| Recording | `/scores/:id/record` | ✅ rebuilt (hero BPM, amber waveform, Deep Spruce surface) |
+| Verdict | `/analyses/:id` | ✅ rebuilt (two-tone headline, annotated score, stat chips, tabs) |
+| Score capture / OCR | `/scores/new` | ✅ rebuilt (full-bleed, amber pulse, OCR review) |
+| Score list, Insights, Account | — | ⏳ still pre-rebuild / stubs |
+
+Conventions the rebuild established — **follow these, don't re-litigate them:**
+
+1. **Icons are Phosphor** (`@phosphor-icons/react`). `lucide-react` was removed
+   from `package.json` on 2026-07-28 — do not reintroduce it.
+2. **Flow screens are full-bleed** with their own `X`-close chrome, routed
+   *outside* `<Layout>`. Only tabbed surfaces use `AppShell`. `<Layout>` now
+   serves `/showcase` alone.
+3. **Motion is Framer Motion** (`motion` package, import from `motion/react`),
+   always gated on `useReducedMotion()`.
+4. **`/showcase` is the living design-system page** and sources its swatches
+   from `styles/tokens.ts` — never re-type hexes into it.
+5. Screens still read seed data from `lib/demo.ts` where the live API isn't
+   wired. That's deliberate, not a bug — swap it when the endpoints land.
+
+**Honest DoD status:** no batch is tagged `batch-N-done`. Every remaining gate
+(live magic-link auth, upload→OCR→save, mic→analysis) is blocked on Supabase
+keys and a real device — none of it can be closed in-session, and the screens
+are verified *visually*, not end-to-end.
