@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useParams } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 
@@ -25,6 +25,16 @@ function Protected({ element }: { element: ReactNode }) {
   return <ProtectedRoute>{element}</ProtectedRoute>;
 }
 
+/**
+ * There's no score-detail screen yet, and `/scores/:id` used to render the
+ * whole library — confusing. Send it to the thing you'd want anyway until a
+ * detail screen exists.
+ */
+function ScoreDetailRedirect() {
+  const { id } = useParams();
+  return <Navigate to={id ? `/scores/${id}/record` : "/scores"} replace />;
+}
+
 function App() {
   useAuthListener();
   useEffect(() => {
@@ -40,7 +50,7 @@ function App() {
           <Route element={<AppShell />}>
             <Route path="/" element={<Protected element={<HomeRoute />} />} />
             <Route path="/scores" element={<Protected element={<ScoreListRoute />} />} />
-            <Route path="/scores/:id" element={<Protected element={<ScoreListRoute />} />} />
+            <Route path="/scores/:id" element={<Protected element={<ScoreDetailRedirect />} />} />
             <Route
               path="/insights"
               element={
