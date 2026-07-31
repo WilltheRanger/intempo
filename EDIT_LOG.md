@@ -4,6 +4,40 @@ Newest entries at the top. Format spec: see "Build-time activity logging"
 in intempo-combined.md. Every meaningful change goes here — see that
 section for what counts as "meaningful."
 
+## 2026-07-28 — Score list built (`/scores`) — the last dead end on main nav
+
+**Branch:** claude/next-steps-3p2zhk
+**Tooling:** locked manuscript system; Playwright via a temp `/preview-scores`
+route, then removed. Layout (rows vs grid vs composer-grouped) was the user's
+call — rows chosen.
+
+`routes/ScoreListRoute.tsx` was still `<StubPage>`, so Home's "See all" *and*
+the Library tab both dead-ended. Replaced with the real screen:
+- **Rows** — staff-line `ScoreThumb`, amber composer eyebrow, serif title,
+  `movement · date` meta, favourite star; hairline dividers between rows.
+- **Header** — serif "Your library" + a piece count.
+- **Favourite toggle reinstated here.** I removed it from Home during the
+  rebuild because it didn't belong on a landing screen; managing the library is
+  where it does. **Local-only** — there's no favourites endpoint, so it resets
+  on reload. Wire alongside `GET /v1/library`.
+- **Empty state** — a real one (MusicNotes mark, explanation, "Add your first
+  piece" CTA) rather than bare text, since it's the first thing a new user sees
+  on this tab.
+- Rows link to `/scores/:id/record`, so the list leads somewhere.
+
+**Also fixed:** `/scores/:id` rendered the *entire library* (both routes pointed
+at the same stub). It now redirects to that piece's record screen via a small
+`ScoreDetailRedirect` — interim until a score-detail screen exists.
+
+**Small refactor:** `splitPiece` ("Composer — Title") was duplicated in
+`HomeRoute`; moved to `lib/demo.ts` and both screens now import it.
+
+**Verified:** lint + build green; populated list *and* empty state both
+screenshotted, no console errors; star toggle exercised in-browser.
+**Known gaps:** reads `lib/demo.ts` seed data; `lastPracticed` is a display
+string so there's nothing to sort on — the seed array is already newest-first
+and order is preserved rather than faked. **Rollback:** revert this commit.
+
 ## 2026-07-28 — Badge rebuilt: kit-style API on the locked palette (de-slopped)
 
 **Branch:** claude/next-steps-3p2zhk

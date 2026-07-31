@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { Camera } from "@phosphor-icons/react";
 
 import { cn } from "../lib/cn";
-import { LIBRARY, RECENT_SESSIONS, type LibraryPiece } from "../lib/demo";
+import { LIBRARY, RECENT_SESSIONS, splitPiece, type LibraryPiece } from "../lib/demo";
 
 /** Weekday + time-of-day for the amber eyebrow, e.g. "SATURDAY EVENING". */
 function greeting(): string {
@@ -12,12 +12,6 @@ function greeting(): string {
   const h = now.getHours();
   const period = h < 12 ? "morning" : h < 18 ? "afternoon" : "evening";
   return `${weekday} ${period}`.toUpperCase();
-}
-
-/** Demo data is stored "Composer — Title"; split for the two-tone card. */
-function splitPiece(piece: string): { composer: string; title: string } {
-  const [composer, title] = piece.split(" — ");
-  return title ? { composer, title } : { composer: "", title: piece };
 }
 
 export function HomeRoute() {

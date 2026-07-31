@@ -32,6 +32,15 @@ export type LibraryPiece = {
   favorite: boolean;
 };
 
+/**
+ * Demo pieces are stored as "Composer — Title". Screens that show the
+ * composer as its own line split it here rather than each re-parsing.
+ */
+export function splitPiece(piece: string): { composer: string; title: string } {
+  const [composer, title] = piece.split(" — ");
+  return title ? { composer, title } : { composer: "", title: piece };
+}
+
 export const RECENT_SESSIONS: RecentSession[] = [
   {
     id: "s-dvorak-1",

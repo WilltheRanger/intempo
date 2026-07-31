@@ -79,7 +79,8 @@ build. Reference mockups live in Figma:
 | Recording | `/scores/:id/record` | ✅ rebuilt (hero BPM, amber waveform, Deep Spruce surface) |
 | Verdict | `/analyses/:id` | ✅ rebuilt (two-tone headline, annotated score, stat chips, tabs) |
 | Score capture / OCR | `/scores/new` | ✅ rebuilt (full-bleed, amber pulse, OCR review) |
-| Score list, Insights, Account | — | ⏳ still pre-rebuild / stubs |
+| Score list | `/scores` | ✅ built (rows, favourite star, empty state) |
+| Insights, Account | `/insights`, `/account` | ⏳ still stubs |
 
 Conventions the rebuild established — **follow these, don't re-litigate them:**
 
