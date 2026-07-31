@@ -80,7 +80,8 @@ build. Reference mockups live in Figma:
 | Verdict | `/analyses/:id` | ✅ rebuilt (two-tone headline, annotated score, stat chips, tabs) |
 | Score capture / OCR | `/scores/new` | ✅ rebuilt (full-bleed, amber pulse, OCR review) |
 | Score list | `/scores` | ✅ built (rows, favourite star, empty state) |
-| Insights, Account | `/insights`, `/account` | ⏳ still stubs |
+| Account | `/account` | ✅ built (identity, plan badge, sign out) |
+| Insights | `/insights` | ⏳ still a stub — deliberately held until real analyses exist to design against |
 
 Conventions the rebuild established — **follow these, don't re-litigate them:**
 

@@ -4,6 +4,36 @@ Newest entries at the top. Format spec: see "Build-time activity logging"
 in intempo-combined.md. Every meaningful change goes here — see that
 section for what counts as "meaningful."
 
+## 2026-07-28 — Account screen rebuilt to the manuscript system
+
+**Branch:** claude/next-steps-3p2zhk
+**Tooling:** locked manuscript system; Playwright via a temp `/preview-account`
+route, then removed.
+
+`routes/AccountRoute.tsx` was real but plain (Eyebrow + generic Card + two
+labelled strings). Rebuilt:
+- **Identity block** — monogram circle from the email's first letter, falling
+  back to a Phosphor `User` mark when there's no email; email + plan line.
+- **Details rows** — Email / Plan / Version, hairline-separated, matching the
+  score-list row language. Plan renders through the **rebuilt `Badge`** (its
+  first real usage outside `/showcase`): `primary` for Pro, `info` for Free.
+- **Version moved here** from the `Layout` footer, which since the rebuild only
+  renders on `/showcase` — Account is the conventional home for it.
+- **Sign out** — full-width bordered button with a `SignOut` glyph.
+- **Unconfigured-auth notice** — when `supabaseConfigured` is false, says so
+  plainly instead of silently rendering em-dashes.
+
+**Deliberately NOT added:** notification toggles, theme pickers, an "Upgrade to
+Pro" CTA. None of them have anything behind them — Stripe is Batch 8, and `Me`
+only carries `{ id, email, tier }`. A settings screen full of dead controls is
+exactly the kind of fake UI we've been removing elsewhere. Add each when its
+backing exists.
+
+**Verified:** lint + build green; screenshotted, no console errors. The shot
+shows the *unconfigured* state (no Supabase keys in this environment) — the
+signed-in state can't be verified in-session.
+**Rollback:** revert this commit.
+
 ## 2026-07-28 — Score list built (`/scores`) — the last dead end on main nav
 
 **Branch:** claude/next-steps-3p2zhk
