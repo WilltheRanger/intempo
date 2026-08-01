@@ -6,6 +6,30 @@ Operating Principle #5.
 
 ---
 
+## 2026-07-28 — Stay on Supabase; keep object storage swappable so audio can move to R2 later
+
+**Context:** the user asked whether Supabase is the right backend before investing further. Worth noting the framing: Supabase is *not* "the backend" — it supplies auth, Postgres, and object storage. The analysis engine (librosa + DTW, Batch 3) is a separate Python/FastAPI service that no BaaS can host, and that split is unchanged by any vendor choice.
+
+**Decision:** stay on Supabase for auth + Postgres + storage. It fits this workload specifically: the data is relational (users → scores → analyses → per-measure/per-note), RLS enforces per-user isolation at the database for what is genuinely private data (people's practice recordings), and JWKS/ES256 auth + presigned uploads are already built and tested (Batch 1).
+
+Separately, and per the user's own instinct: **plan for audio blobs to move off Supabase Storage** (most likely Cloudflare R2, zero egress) if bandwidth costs bite. Audio files are large and re-fetched on every analysis, so egress is the realistic cost pressure — not storage volume.
+
+**The seam already exists — preserve it, don't pave over it:**
+- `workers/analysis_runner.download_audio(url)` is a plain `httpx.get`. It is provider-agnostic *today*. **Do not** replace it with a Supabase SDK call; that would be the single most damaging change to future portability.
+- All storage signing goes through one function, `routers/upload._sign_upload(bucket, object_key)`. Keep new signing logic there rather than inlining SDK calls at call sites.
+- Known friction if/when the move happens: bucket names `"audio-uploads"` / `"score-images"` are string literals in a couple of modules, and `routers/scores.py` validates score-image URLs against a Supabase-shaped URL pattern.
+
+**Alternatives considered:**
+- *Firebase.* Rejected: Firestore's document model fits this relational data badly, and the Python analysis service would still be separate.
+- *Clerk + Neon + R2 ("best of breed").* Rejected for now: genuinely good, and Clerk's auth UX beats Supabase's, but it's three vendors and three integration surfaces for a pre-launch solo build.
+- *Convex.* Rejected: TypeScript-first and wants application logic in its own functions; awkward against a Python DSP pipeline.
+- *Hand-rolled auth on plain Postgres.* Rejected: weeks rebuilding magic links, sessions, and token refresh — the canonical thing not to hand-roll.
+- *Refactor storage behind an abstraction layer now.* Rejected: speculative work for a swap that hasn't happened, and it contradicts operating principle "don't optimize early." The natural seam above is sufficient; revisit when there's a real bill to look at.
+
+**Trade-off accepted:** we're carrying a known future migration rather than pre-solving it. That's deliberate — the app has not yet run end-to-end even once, so egress cost is a projection, not an observation. Re-architecting ahead of that evidence would trade working, tested code for a hypothesis.
+
+---
+
 ## 2026-07-28 — Badge: adopt the kit-style `variant`/`appearance`/`shape` API, but resolve it to the locked palette with non-generic defaults
 
 **Context:** the user flagged that the verdict badges "look ai" — correctly. The old `Badge` was a pastel-tinted pill with a small coloured status dot: the single most templated status affordance on the web (GitHub labels, Linear, every Tailwind kit), a `bg-*-100/text-*-800` reflex, with a dot that only repeated the text colour. The user then supplied a shadcn-style badge API as the target shape: `variant` (primary/success/warning/info/destructive) × `appearance` (solid/light/outline) × `shape` (circle/square).
