@@ -4,6 +4,45 @@ Newest entries at the top. Format spec: see "Build-time activity logging"
 in intempo-combined.md. Every meaningful change goes here — see that
 section for what counts as "meaningful."
 
+## 2026-07-28 — GitHub Pages preview deploy (UI-only, no backend)
+
+**Branch:** claude/next-steps-3p2zhk
+**Why:** the user wanted to see the screens in a browser without setting up
+Supabase or running anything locally.
+
+- **`.github/workflows/pages.yml`** — builds `frontend/` and publishes to Pages
+  on push to this branch (plus `workflow_dispatch`). No secrets used or needed.
+- **`vite.config.ts`** — `base` now reads `VITE_BASE_PATH` (unset → `/`), since
+  Pages serves from the `/intempo/` subpath. Local dev is unaffected.
+- **`App.tsx`** — `BrowserRouter basename={import.meta.env.BASE_URL}` so routes
+  resolve under that subpath.
+- **SPA fallback** — the workflow copies `index.html` → `404.html`; Pages has no
+  rewrite rules, so a refresh on `/scores` would otherwise 404.
+- **`ProtectedRoute`** — **now passes through when Supabase isn't configured.**
+  This was the actual blocker: with no keys, `status` is `signedOut`, so every
+  screen redirected to `/login` and the preview would have shown nothing else.
+  When unconfigured there is no session to check and no backend to reach, so
+  there's nothing to protect; with keys present the gate is unchanged. A
+  production deploy that forgot its keys now fails *visibly* (demo data + badge)
+  rather than looping on a redirect.
+- **`components/PreviewBadge.tsx`** — new. Renders only in a production build
+  with no keys: "Preview — demo data, no backend". Without it, Record and
+  Photograph-sheet-music look broken rather than absent.
+
+**Verified:** lint + build green; built with `VITE_BASE_PATH=/intempo/`, served
+under that subpath and loaded in Chromium — no `/login` redirect, no console
+errors, deep link to `/intempo/scores` resolves. Checked at 1200px and 400px.
+**Caught in review:** the badge initially covered the tab bar (hiding Record and
+Insights) — repositioned to the desktop gutter, lifting above the tab bar on
+narrow screens.
+
+**Honest scope:** this is the UI only. No auth, no upload/OCR, no
+mic→analysis — Pages is static hosting and the FastAPI service isn't deployed.
+Screens render `lib/demo.ts` seed data.
+**Requires one manual step:** repo Settings → Pages → Source = "GitHub Actions".
+The workflow fails until that's set. Public repo (or GitHub Pro) also required.
+**Rollback:** delete the workflow; the other changes are inert without it.
+
 ## 2026-07-28 — Account screen rebuilt to the manuscript system
 
 **Branch:** claude/next-steps-3p2zhk
