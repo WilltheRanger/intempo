@@ -17,6 +17,7 @@ import { RecordRoute } from "./routes/RecordRoute";
 import { ResultRoute } from "./routes/ResultRoute";
 import { AccountRoute } from "./routes/AccountRoute";
 import { ShowcaseRoute } from "./routes/ShowcaseRoute";
+import { PreviewBadge } from "./components/PreviewBadge";
 
 const queryClient = new QueryClient();
 
@@ -43,7 +44,7 @@ function App() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
+      <BrowserRouter basename={import.meta.env.BASE_URL}>
         <Routes>
           <Route path="/login" element={<LoginRoute />} />
           {/* Tabbed surfaces — phone-frame shell with the bottom tab bar. */}
@@ -77,6 +78,7 @@ function App() {
           <Route path="/analyses/:id" element={<Protected element={<ResultRoute />} />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
+        <PreviewBadge />
       </BrowserRouter>
     </QueryClientProvider>
   );
