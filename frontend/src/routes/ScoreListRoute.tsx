@@ -49,9 +49,9 @@ export function ScoreListRoute() {
   );
 
   return (
-    <div className="flex flex-col gap-7">
+    <div className="flex flex-col gap-6">
       <header className="flex flex-wrap items-baseline justify-between gap-3">
-        <h1 className="font-serif text-[30px] leading-tight text-ink lg:text-[36px]">
+        <h1 className="font-serif text-[24px] leading-tight text-ink lg:text-[27px]">
           Your library
         </h1>
         <Link
@@ -78,7 +78,7 @@ export function ScoreListRoute() {
             >
               {f.label}
               {active && (
-                <span className="absolute -bottom-[13px] left-0 right-0 h-[1.5px] bg-ink" />
+                <span className="absolute -bottom-[13px] left-0 right-0 h-[1.5px] bg-amber" />
               )}
             </button>
           );

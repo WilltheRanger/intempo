@@ -23,7 +23,6 @@ import { RecordRoute } from "./routes/RecordRoute";
 import { ResultRoute } from "./routes/ResultRoute";
 import { AccountRoute } from "./routes/AccountRoute";
 import { ShowcaseRoute } from "./routes/ShowcaseRoute";
-import { PreviewBadge } from "./components/PreviewBadge";
 import { SheetScreen } from "./components/SheetScreen";
 
 const queryClient = new QueryClient();
@@ -91,9 +90,6 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <BrowserRouter basename={import.meta.env.BASE_URL}>
         <AppRoutes />
-        {/* Outside AnimatedRoutes: it's `fixed`, and a transformed ancestor
-            would re-anchor it to the page wrapper instead of the viewport. */}
-        <PreviewBadge />
       </BrowserRouter>
     </QueryClientProvider>
   );
