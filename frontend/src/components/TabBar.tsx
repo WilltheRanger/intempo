@@ -44,7 +44,7 @@ export function TabBar() {
             <NavLink
               to={to}
               end={end}
-              className="press group flex flex-col items-center gap-1 py-2.5 outline-none"
+              className="press group flex min-h-[58px] flex-col items-center justify-center gap-1 py-3 outline-none"
             >
               {({ isActive }) => (
                 <>
@@ -56,7 +56,7 @@ export function TabBar() {
                     className="block"
                   >
                     <Icon
-                      size={22}
+                      size={25}
                       weight={isActive ? "fill" : "regular"}
                       className={cn(
                         "transition-colors duration-200 ease-ios",
