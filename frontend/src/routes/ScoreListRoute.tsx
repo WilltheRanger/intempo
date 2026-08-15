@@ -1,10 +1,12 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { Star, Plus, MusicNotes } from "@phosphor-icons/react";
+import { motion, useReducedMotion } from "motion/react";
 
 import { cn } from "../lib/cn";
 import { ScoreThumb } from "../components/ui/ScoreThumb";
 import { LIBRARY, splitPiece, type LibraryPiece } from "../lib/demo";
+import { listContainer, listItem } from "../lib/motion";
 
 export function ScoreListRoute() {
   // Seed data is already ordered most-recently-practiced first; `lastPracticed`
@@ -45,13 +47,21 @@ function PieceList({ pieces }: { pieces: LibraryPiece[] }) {
       return next;
     });
 
+  const reduce = useReducedMotion();
+
   return (
-    <ul className="flex flex-col">
+    <motion.ul
+      className="flex flex-col"
+      variants={reduce ? undefined : listContainer}
+      initial="hidden"
+      animate="visible"
+    >
       {pieces.map((p, i) => {
         const { composer, title } = splitPiece(p.piece);
         const fav = favorites.has(p.id);
         return (
-          <li
+          <motion.li
+            variants={reduce ? undefined : listItem}
             key={p.id}
             className={cn(
               "flex items-center gap-3.5 py-3.5",
@@ -60,7 +70,7 @@ function PieceList({ pieces }: { pieces: LibraryPiece[] }) {
           >
             <Link
               to={`/scores/${p.id}/record`}
-              className="flex min-w-0 flex-1 items-center gap-3.5"
+              className="press flex min-w-0 flex-1 items-center gap-3.5"
             >
               <ScoreThumb seed={p.id} className="size-12 shrink-0 rounded-md" />
               <div className="min-w-0 flex-1">
@@ -86,7 +96,7 @@ function PieceList({ pieces }: { pieces: LibraryPiece[] }) {
                   ? `Remove ${title} from favourites`
                   : `Add ${title} to favourites`
               }
-              className="grid size-9 shrink-0 place-items-center rounded-full transition-colors duration-200 ease-ios hover:bg-paper-warm active:scale-90"
+              className="press grid size-9 shrink-0 place-items-center rounded-full transition-colors duration-200 ease-ios hover:bg-paper-warm"
             >
               <Star
                 size={19}
@@ -97,10 +107,10 @@ function PieceList({ pieces }: { pieces: LibraryPiece[] }) {
                 )}
               />
             </button>
-          </li>
+          </motion.li>
         );
       })}
-    </ul>
+    </motion.ul>
   );
 }
 
@@ -119,7 +129,7 @@ function EmptyLibrary() {
         </p>
       </div>
       <Link to="/scores/new">
-        <button className="mt-1 inline-flex items-center gap-1.5 rounded-full bg-amber px-5 py-2.5 text-[14px] font-medium text-white shadow-[0_8px_18px_-8px_rgba(199,138,58,0.8)] transition-transform duration-200 ease-ios active:scale-[0.98]">
+        <button className="press mt-1 inline-flex items-center gap-1.5 rounded-full bg-amber px-5 py-2.5 text-[14px] font-medium text-white shadow-[0_8px_18px_-8px_rgba(199,138,58,0.8)]">
           <Plus size={15} weight="bold" />
           Add your first piece
         </button>

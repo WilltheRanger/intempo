@@ -15,7 +15,7 @@ type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
 const BASE =
   "inline-flex items-center justify-center gap-2 h-11 px-4 rounded-md font-medium text-[15px] " +
   "transition-[color,background-color,transform] duration-200 ease-ios select-none " +
-  "active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none";
+  "active:scale-[0.975] disabled:opacity-50 disabled:pointer-events-none";
 
 const VARIANTS: Record<Variant, string> = {
   primary:

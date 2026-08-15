@@ -64,7 +64,7 @@ export function AccountRoute() {
 
       <button
         onClick={() => void signOut()}
-        className="flex items-center justify-center gap-2 rounded-xl border border-line-2 py-3 text-[15px] text-ink transition-colors duration-200 ease-ios hover:bg-paper-warm active:scale-[0.99]"
+        className="press flex items-center justify-center gap-2 rounded-md border border-line-2 py-3 text-[15px] text-ink transition-colors duration-200 ease-ios hover:bg-paper-warm"
       >
         <SignOut size={18} />
         Sign out

@@ -24,7 +24,9 @@ export default {
         "line-2": "var(--line-2)",
       },
       borderColor: { DEFAULT: "var(--line)" },
-      borderRadius: { sm: "10px", md: "14px", lg: "20px", xl: "26px" },
+      // Softened one step across the scale — the manuscript surfaces read
+      // gentler at these radii without tipping into "bubbly".
+      borderRadius: { sm: "12px", md: "18px", lg: "24px", xl: "30px" },
       fontFamily: {
         serif: ['"Playfair Display"', "Georgia", "serif"],
         sans: [
@@ -37,7 +39,10 @@ export default {
       },
       boxShadow: {
         hair: "inset 0 1px 0 rgba(255,255,255,0.55)",
-        card: "0 1px 2px rgba(74,45,12,0.05), 0 10px 24px -16px rgba(74,45,12,0.34)",
+        // Wider, lower-contrast falloff — light through paper rather than a
+        // hard drop. Three stops so the gradient reads soft instead of banded.
+        card: "0 1px 2px rgba(74,45,12,0.035), 0 6px 16px -10px rgba(74,45,12,0.16), 0 18px 40px -24px rgba(74,45,12,0.22)",
+        lift: "0 2px 6px rgba(74,45,12,0.05), 0 12px 28px -14px rgba(74,45,12,0.2), 0 28px 60px -32px rgba(74,45,12,0.26)",
         ring: "0 0 0 2px var(--paper-raised), 0 0 0 4px var(--amber)",
       },
       transitionTimingFunction: { ios: "cubic-bezier(0.32,0.72,0,1)" },

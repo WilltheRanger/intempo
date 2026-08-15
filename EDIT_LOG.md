@@ -4,6 +4,54 @@ Newest entries at the top. Format spec: see "Build-time activity logging"
 in intempo-combined.md. Every meaningful change goes here — see that
 section for what counts as "meaningful."
 
+## 2026-07-28 — Motion + softness pass ("smooth, iOS-style, softer feel")
+
+**Branch:** claude/next-steps-3p2zhk
+**Tooling:** `animate` skill (Emil Kowalski) for the easing/spring discipline;
+Playwright, capturing **mid-transition frames** rather than settled stills —
+a still can't show whether motion works.
+
+**New — `lib/motion.ts`.** Single source for springs, easings and variants, so
+timing isn't re-decided per component. Encodes: enters ease-out 200–300ms,
+exits ~75% of that, springs where interruptible, transform/opacity only.
+
+**Motion**
+- **`AppShell`** now animates its `<Outlet />` — tabbed screens crossfade with
+  an 8px rise while the frame and tab bar stay mounted.
+- **`SheetScreen`** (new) — capture / record / verdict rise from below on a
+  spring, like an iOS modal presentation.
+- **Staggered lists** — Home blocks and score-list rows cascade 40ms apart.
+- **`.press` / `.press-lg` utilities** in `index.css` — universal press
+  feedback. CSS rather than motion components so `Link`s get it too without
+  rewriting markup; larger surfaces compress less so the scale isn't a lurch.
+- **TabBar** icons spring on select (`springSnappy`).
+- All gated on `useReducedMotion()`, plus a `prefers-reduced-motion` block
+  neutralising `.press`.
+
+**Softness**
+- Radii up one step: `sm 10→12, md 14→18, lg 20→24, xl 26→30`.
+- `shadow-card` rebuilt with three stops and lower alpha — light through paper
+  rather than a hard drop. Added `shadow-lift` for raised surfaces.
+
+**Caught in review — the whole approach had to be rebuilt.** My first pass put
+`AnimatePresence mode="wait"` around `<Routes>`. A mid-transition screenshot
+showed a **completely blank frame**: `mode="wait"` unmounts the entire tree,
+including `AppShell`, so the tab bar blinked out on every switch. Moving the
+transition inside `AppShell` (around the outlet only) keeps the chrome mounted.
+Verified by re-capturing the same frame — tab bar solid, rows visibly cascading.
+
+**Trade-off accepted:** flow screens animate in but not out. An exit animation
+needs `AnimatePresence` around the router, which reintroduces the unmount
+problem. Entrance is the half users notice; documented in `SheetScreen`.
+**Known subtlety:** an animated ancestor holds a transform at rest, which
+re-anchors `position: fixed` descendants. `PreviewBadge` is deliberately
+rendered outside the animated tree. `VisualMetronome` (`fixed inset-0`) sits
+inside a full-height route, so its flash is visually identical either way.
+
+**Verified:** lint + build green; mid-transition and settled frames captured for
+tab switches and sheet presentation; no console errors.
+**Rollback:** revert this commit.
+
 ## 2026-07-28 — Switch the preview deploy to Cloudflare Pages (supersedes GitHub Pages)
 
 **Branch:** claude/next-steps-3p2zhk

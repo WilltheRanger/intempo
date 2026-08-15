@@ -1,5 +1,11 @@
 import { useEffect } from "react";
-import { BrowserRouter, Routes, Route, Navigate, useParams } from "react-router-dom";
+import {
+  BrowserRouter,
+  Routes,
+  Route,
+  Navigate,
+  useParams,
+} from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 
@@ -18,6 +24,7 @@ import { ResultRoute } from "./routes/ResultRoute";
 import { AccountRoute } from "./routes/AccountRoute";
 import { ShowcaseRoute } from "./routes/ShowcaseRoute";
 import { PreviewBadge } from "./components/PreviewBadge";
+import { SheetScreen } from "./components/SheetScreen";
 
 const queryClient = new QueryClient();
 
@@ -36,16 +43,9 @@ function ScoreDetailRedirect() {
   return <Navigate to={id ? `/scores/${id}/record` : "/scores"} replace />;
 }
 
-function App() {
-  useAuthListener();
-  useEffect(() => {
-    initAnalytics();
-  }, []);
-
+function AppRoutes() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <BrowserRouter basename={import.meta.env.BASE_URL}>
-        <Routes>
+    <Routes>
           <Route path="/login" element={<LoginRoute />} />
           {/* Tabbed surfaces — phone-frame shell with the bottom tab bar. */}
           <Route element={<AppShell />}>
@@ -73,11 +73,26 @@ function App() {
             <Route path="/showcase" element={<ShowcaseRoute />} />
           </Route>
           {/* Full-bleed flow screens with their own chrome. */}
-          <Route path="/scores/new" element={<Protected element={<ScoreCaptureRoute />} />} />
-          <Route path="/scores/:id/record" element={<Protected element={<RecordRoute />} />} />
-          <Route path="/analyses/:id" element={<Protected element={<ResultRoute />} />} />
+          <Route path="/scores/new" element={<Protected element={<SheetScreen><ScoreCaptureRoute /></SheetScreen>} />} />
+          <Route path="/scores/:id/record" element={<Protected element={<SheetScreen><RecordRoute /></SheetScreen>} />} />
+          <Route path="/analyses/:id" element={<Protected element={<SheetScreen><ResultRoute /></SheetScreen>} />} />
           <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
+    </Routes>
+  );
+}
+
+function App() {
+  useAuthListener();
+  useEffect(() => {
+    initAnalytics();
+  }, []);
+
+  return (
+    <QueryClientProvider client={queryClient}>
+      <BrowserRouter basename={import.meta.env.BASE_URL}>
+        <AppRoutes />
+        {/* Outside AnimatedRoutes: it's `fixed`, and a transformed ancestor
+            would re-anchor it to the page wrapper instead of the viewport. */}
         <PreviewBadge />
       </BrowserRouter>
     </QueryClientProvider>
