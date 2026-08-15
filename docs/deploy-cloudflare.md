@@ -17,9 +17,13 @@ isn't deployed and no Supabase keys are set. So:
 | Navigation, tabs, empty states | Photograph a score → OCR (no API) |
 | `/showcase` design system | Record → analysis (no API, no mic permission over some hosts) |
 
-Screens read seed data from `frontend/src/lib/demo.ts`, and a
-**"Preview — demo data, no backend"** badge renders so absent features don't
-read as broken. Both disappear automatically once real keys are supplied.
+Screens read seed data from `frontend/src/lib/demo.ts`, which is why the
+library looks populated. That seed data is swapped for the live query once the
+endpoints land; nothing else about the build changes.
+
+There is no on-screen marker distinguishing this from a working build, so if
+you share the link, say what it is. (An earlier `PreviewBadge` did that job and
+was removed: developer state doesn't belong in the product interface.)
 
 ## One-time setup
 
@@ -71,9 +75,9 @@ VITE_API_BASE_URL      = https://<your-deployed-api>
 
 Three things follow from that, so do them deliberately:
 
-1. **The preview badge disappears and the auth gate engages.** `ProtectedRoute`
-   passes through only while Supabase is unconfigured; once keys exist, every
-   screen requires a real sign-in.
+1. **The auth gate engages.** `ProtectedRoute` passes through only while
+   Supabase is unconfigured; once keys exist, every screen requires a real
+   sign-in. Expect the deployed link to stop being publicly viewable.
 2. **Add the Cloudflare URL to Supabase's redirect allow-list**
    (Authentication → URL Configuration), or magic links will send fine and then
    fail on the way back.

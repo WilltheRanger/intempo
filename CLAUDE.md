@@ -68,34 +68,58 @@ If in doubt whether something is "UI/UX," ask.
 
 ### Frontend UI rebuild (2026-07-28) — where the screens actually stand
 
-The Batch 5–7 UI was scrapped and rebuilt against `frontend/DESIGN_SYSTEM.md`,
-one screen at a time, each verified with a Playwright screenshot of the running
-build. Reference mockups live in Figma:
-`https://www.figma.com/design/k5IB3714DiusqnAwzkY7pz` (Home / Recording / Verdict).
+The Batch 5–7 UI was rebuilt, then **redesigned from the ground up on
+2026-07-28** after the rebuilt version still read as AI-generated (excessive
+rounded cards, oversized gold surfaces, serif everywhere, a 440px phone column
+on desktop). Every screen is verified with a Playwright screenshot of the
+running build.
+
+> ⚠️ The Figma file `k5IB3714DiusqnAwzkY7pz` **predates the redesign** and no
+> longer matches the app. Treat it as history, not as a spec.
 
 | Screen | Route | State |
 |---|---|---|
-| Home | `/` | ✅ rebuilt (greeting, amber CTA, resume card, 2-up library grid) |
-| Recording | `/scores/:id/record` | ✅ rebuilt (hero BPM, amber waveform, Deep Spruce surface) |
-| Verdict | `/analyses/:id` | ✅ rebuilt (two-tone headline, annotated score, stat chips, tabs) |
-| Score capture / OCR | `/scores/new` | ✅ rebuilt (full-bleed, amber pulse, OCR review) |
-| Score list | `/scores` | ✅ built (rows, favourite star, empty state) |
+| Today | `/` | ✅ redesigned (compact prompt, Continue-practicing row, library grid) |
+| Library | `/scores` | ✅ redesigned (sheet-crop grid, kind + favourite filters, count) |
 | Account | `/account` | ✅ built (identity, plan badge, sign out) |
-| Insights | `/insights` | ⏳ still a stub — deliberately held until real analyses exist to design against |
+| Score capture / OCR | `/scores/new` | ⚠️ tokens updated, **layout still the old phone-column composition** |
+| Recording | `/scores/:id/record` | ⚠️ same — needs real audio to redesign properly |
+| Verdict | `/analyses/:id` | ⚠️ same — needs a real analysis to redesign properly |
+| Insights | `/insights` | ⏳ stub, held until real analyses exist to design against |
 
-Conventions the rebuild established — **follow these, don't re-litigate them:**
+Conventions the redesign established — **follow these, don't re-litigate them:**
 
 1. **Icons are Phosphor** (`@phosphor-icons/react`). `lucide-react` was removed
-   from `package.json` on 2026-07-28 — do not reintroduce it.
-2. **Flow screens are full-bleed** with their own `X`-close chrome, routed
-   *outside* `<Layout>`. Only tabbed surfaces use `AppShell`. `<Layout>` now
+   from `package.json` — do not reintroduce it.
+2. **Layout is responsive by breakpoint, not one column.** `AppShell` renders
+   `layout/TopNav` at `lg`+ over a 1240px container, and `TabBar` below it.
+   Never reintroduce a fixed narrow column on desktop. Flow screens stay
+   full-bleed with their own `X`-close chrome, outside `AppShell`; `<Layout>`
    serves `/showcase` alone.
-3. **Motion is Framer Motion** (`motion` package, import from `motion/react`),
-   always gated on `useReducedMotion()`.
-4. **`/showcase` is the living design-system page** and sources its swatches
-   from `styles/tokens.ts` — never re-type hexes into it.
-5. Screens still read seed data from `lib/demo.ts` where the live API isn't
-   wired. That's deliberate, not a bug — swap it when the endpoints land.
+3. **Bottom navigation carries destinations only** (Today · Library · Insights ·
+   Profile). Actions like "Add piece" live as labelled controls in screen
+   headers and the top bar — never as a tab.
+4. **Serif is selective**: piece titles and the practice prompt. Section
+   headings are small sans labels (`ui/SectionHeading`). Not every heading.
+5. **Ochre is an accent, never a surface.** Active states, progress and
+   favourites only. Primary actions are ink. No large gold panels.
+6. **Structure comes from hairline borders**, not elevation. Radii 8–14px;
+   `shadow-card` is nearly invisible and `shadow-lift` is for genuinely
+   floating things only.
+7. **Sheet music is the visual identity.** Use `sheet/SheetCrop` (deterministic
+   SVG engraving) — never abstract placeholder rectangles. Swap for real page
+   crops when OCR uploads land.
+8. **No developer or demo UI in the product.** The `PreviewBadge` was removed
+   for this reason; don't add environment banners to shipped screens.
+9. **Motion is Framer Motion** (`motion` package, import from `motion/react`),
+   from `lib/motion.ts`, always gated on `useReducedMotion()`. The page
+   transition lives inside `AppShell` around the outlet — wrapping `<Routes>`
+   unmounts the shell and makes the tab bar blink.
+10. **`/showcase` sources its swatches from `styles/tokens.ts`** — never
+    re-type hexes into it.
+11. Screens read seed data from `lib/demo.ts` where the live API isn't wired.
+    Deliberate, not a bug. `title` and `composer` are separate fields; title
+    outranks composer in every listing.
 
 **Honest DoD status:** no batch is tagged `batch-N-done`. Every remaining gate
 (live magic-link auth, upload→OCR→save, mic→analysis) is blocked on Supabase
