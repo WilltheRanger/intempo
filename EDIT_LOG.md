@@ -4,6 +4,50 @@ Newest entries at the top. Format spec: see "Build-time activity logging"
 in intempo-combined.md. Every meaningful change goes here — see that
 section for what counts as "meaningful."
 
+## 2026-07-28 — Today refined: hero card with an integrated action
+
+**Branch:** claude/next-steps-3p2zhk
+Refinement, not a redesign. Visual language (warm ivory, charcoal, muted ochre,
+serif/sans pairing, sheet crops) deliberately unchanged.
+
+**Reversed yesterday's `PracticeBar`.** It solved thumb reach but created a
+worse problem: the action was detached from the piece it acted on, so the user
+had to connect a title at the top with a button at the bottom. My own
+three-foot test had already flagged it out-shouting the content. Deleted; the
+bottom is navigation only again.
+
+- **Hero card.** `Continue practicing` is now a real card — title (26/28px
+  serif), composer · movement (16px sans), progress with a serif percentage,
+  last-practiced, and a **"Continue practice →"** action *inside* it. This is
+  the one place law 3 justifies a card: the focal point plus its own action.
+- **Header compressed and softened**: small sans greeting over the serif screen
+  title, "Add" reduced to a compact control.
+- **Typography restricted** per the brief. Serif now only for screen titles,
+  composition names and the progress figure. Section headings became sentence
+  case sans 14px (`CONTINUE PRACTICING` / `YOUR LIBRARY` were shouty); composer,
+  metadata, buttons and navigation are all sans.
+- **Library simplified**: dropped the date from every card (secondary — belongs
+  on the piece screen), leaving title · composer · percent. Added `shortTitle`
+  to the data model and used it in the grid.
+- `All 6 →` became `See all`.
+
+**Deviation from the brief, deliberate.** The spec asked for 20–22px library
+titles, but at two columns on a 390px screen that forces exactly the awkward
+wrapping the brief complains about — the first attempt broke "Cello Concerto
+No. 1" as "No." / "1". Settled on 17px with `text-wrap: balance` and shorter
+grid titles, which keeps the serif prominent and sets these on one line. Flagged
+rather than silently ignored.
+
+**Three-foot test:** *first* the hero card, *second* the Continue action inside
+it (reads as one object, not a competitor), *third* the library grid. Correct.
+
+**Known trade-off:** "Continue practice" now sits ~36% down the phone rather
+than in the thumb zone (law 7). That is the brief's explicit choice — proximity
+to the piece over reach — and worth revisiting if it annoys in real use.
+**Verified:** lint + build green; mobile 390×844 and desktop 1440px
+screenshotted; no console errors.
+**Rollback:** revert this commit.
+
 ## 2026-07-28 — Fix the thumb zone on Today (design law 7)
 
 **Branch:** claude/next-steps-3p2zhk

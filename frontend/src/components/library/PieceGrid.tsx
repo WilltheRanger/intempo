@@ -26,7 +26,7 @@ export function PieceGrid({
   return (
     <ul
       className={cn(
-        "grid grid-cols-2 gap-x-5 gap-y-6 md:grid-cols-3 lg:grid-cols-4 lg:gap-x-6",
+        "grid grid-cols-2 gap-x-5 gap-y-8 md:grid-cols-3 lg:grid-cols-4 lg:gap-x-6",
         limitOnMobile && "max-md:[&>li:nth-child(n+5)]:hidden",
       )}
     >
@@ -62,17 +62,17 @@ function PieceCard({
         </div>
       </Link>
 
-      <div className="mt-2 flex items-start gap-2">
+      <div className="mt-3 flex items-start gap-2">
         <div className="min-w-0 flex-1">
-          <h3 className="font-serif text-[15px] leading-[1.3] text-ink">
+          <h3 className="font-serif text-[17px] leading-[1.25] text-ink [text-wrap:balance]">
             <Link to={`/scores/${piece.id}/record`} className="hover:underline">
-              {piece.title}
+              {piece.shortTitle ?? piece.title}
             </Link>
           </h3>
-          <p className="mt-0.5 text-[12.5px] text-ink-soft">{piece.composer}</p>
-          <p className="mt-1 text-[12px] text-ink-mute">
+          <p className="mt-1 text-[14px] text-ink-soft">{piece.composer}</p>
+          <p className="mt-1 text-[13px] tabular-nums text-ink-mute">
             {piece.progress != null
-              ? `${Math.round(piece.progress * 100)}% · ${piece.lastPracticed}`
+              ? `${Math.round(piece.progress * 100)}%`
               : "Not started"}
           </p>
         </div>
