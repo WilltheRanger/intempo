@@ -38,7 +38,7 @@ export function CalibrationFlow({
       <div className="flex flex-col gap-1">
         <Eyebrow>Set your tempo</Eyebrow>
         <p className="text-[15px] text-ink-soft">
-          Play about two seconds at the tempo you want — three or four steady
+          Play about two seconds at the tempo you want. Three or four steady
           notes is plenty.
         </p>
       </div>

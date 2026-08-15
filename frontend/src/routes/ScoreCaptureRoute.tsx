@@ -106,14 +106,14 @@ export function ScoreCaptureRoute() {
                 Photograph sheet music
               </p>
               <h1 className="font-serif text-[28px] leading-tight text-ink">
-                Point at the page — we&rsquo;ll read the notes.
+                Point at the page. We&rsquo;ll read the notes.
               </h1>
             </div>
 
             {!supabaseConfigured && (
               <p className="rounded-lg border border-line bg-paper-warm px-3.5 py-2.5 text-[13px] text-ink-mute">
-                Storage isn&rsquo;t configured in this environment — set the
-                Supabase keys to upload and parse a real score.
+                Storage isn&rsquo;t configured here. Add the Supabase keys to
+                upload a real score.
               </p>
             )}
 
@@ -160,7 +160,7 @@ export function ScoreCaptureRoute() {
               <div className="flex gap-3 rounded-lg border border-[rgba(180,122,44,0.35)] bg-amber-soft px-3.5 py-3">
                 <Warning size={18} className="mt-0.5 shrink-0 text-amber-deep" weight="fill" />
                 <p className="text-[13px] text-ink">
-                  Some measures looked uncertain — please review before saving.
+                  Some measures looked uncertain. Please review before saving.
                   {edited.notes_to_human ? ` ${edited.notes_to_human}` : ""}
                 </p>
               </div>

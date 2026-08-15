@@ -38,7 +38,7 @@ export function LoginRoute() {
           <Eyebrow>Sign in</Eyebrow>
           <h1 className="font-serif text-2xl text-ink">Welcome back</h1>
           <p className="text-sm text-ink-soft">
-            We&rsquo;ll email you a magic link — no password to remember.
+            We&rsquo;ll email you a magic link. No password to remember.
           </p>
         </div>
 
@@ -53,7 +53,7 @@ export function LoginRoute() {
 
         {sent ? (
           <p className="text-sm text-ink">
-            Check your inbox — we sent a link to{" "}
+            Check your inbox. We sent a link to{" "}
             <span className="font-medium">{email}</span>.
           </p>
         ) : (

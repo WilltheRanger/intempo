@@ -59,8 +59,8 @@ const PALETTE: Record<BadgeVariant, Ink> = {
   info: {
     hue: colors.ink,
     deep: colors.ink,
-    tint: "rgba(28,28,26,0.07)",
-    edge: "rgba(28,28,26,0.20)",
+    tint: "rgba(35,32,26,0.07)",
+    edge: "rgba(35,32,26,0.20)",
   },
   destructive: {
     hue: colors.verdictBad,

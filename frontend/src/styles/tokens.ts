@@ -12,14 +12,14 @@
  */
 
 export const colors = {
-  paper: "#F6F4EC", // Paper Ivory — page ground (locked)
-  paperRaised: "#FBF9F2", // cards / screen surfaces
-  paperWarm: "#F0ECDF", // insets, manuscript panels
-  paperDeep: "#E7E1D1", // machined "tray" behind bezelled surfaces
-  ink: "#1C1C1A", // Graphite Ink — primary text (locked)
-  inkSoft: "#5F5C53", // secondary text
-  inkMute: "#948F82", // metadata
-  inkFaint: "#A49F93", // hints / disabled
+  paper: "#F7F2E4", // Paper Ivory — page ground (locked)
+  paperRaised: "#FDFAF0", // cards / screen surfaces
+  paperWarm: "#F1EAD8", // insets, manuscript panels
+  paperDeep: "#E8DFC9", // machined "tray" behind bezelled surfaces
+  ink: "#23201A", // Graphite Ink — primary text (locked)
+  inkSoft: "#63594A", // secondary text
+  inkMute: "#978974", // metadata
+  inkFaint: "#A89A83", // hints / disabled
   amber: "#C78A3A", // Rosined Amber — the one accent
   amberDeep: "#A06E22", // accent text / pressed
   amberSoft: "#F2E6CF", // tinted accent background
@@ -28,8 +28,8 @@ export const colors = {
   verdictOn: "#2F6E4E", // on tempo (verdict UI only)
   verdictMid: "#B47A2C", // slight rush/drag (verdict UI only)
   verdictBad: "#7B2E2F", // rushing/dragging (verdict UI only)
-  line: "rgba(28,28,26,0.10)",
-  line2: "rgba(28,28,26,0.17)",
+  line: "rgba(35,32,26,0.09)",
+  line2: "rgba(35,32,26,0.15)",
 } as const;
 
 export const radii = { sm: "10px", md: "14px", lg: "20px", xl: "26px" } as const;
@@ -50,5 +50,6 @@ export const motion = {
 export const type = {
   serif: '"Playfair Display", Georgia, serif',
   // Suisse Int'l in production; SF via system-ui as the licensed stand-in.
-  sans: '-apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif',
+  // Suisse Int'l when licensed; Inter ships as the free stand-in.
+  sans: 'SuisseIntl, "Inter Variable", Inter, system-ui, sans-serif',
 } as const;

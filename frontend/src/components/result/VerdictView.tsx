@@ -47,7 +47,7 @@ export function VerdictView({
   const where = location.replace(/\.$/, "");
   const tip = onTempo
     ? "Beautifully steady. Keep this pulse and let the phrasing breathe a little more."
-    : `You were ${result.verdict_direction === "rush" ? "pushing ahead" : "settling behind"} through ${where}. Ease ${result.verdict_direction === "rush" ? "back into" : "toward"} the beat there — you're close.`;
+    : `You were ${result.verdict_direction === "rush" ? "pushing ahead" : "settling behind"} through ${where}. Ease ${result.verdict_direction === "rush" ? "back into" : "toward"} the beat there. You're close.`;
 
   return (
     <div className="flex min-h-[100dvh] flex-col bg-paper">

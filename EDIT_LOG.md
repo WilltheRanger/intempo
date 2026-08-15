@@ -4,6 +4,48 @@ Newest entries at the top. Format spec: see "Build-time activity logging"
 in intempo-combined.md. Every meaningful change goes here — see that
 section for what counts as "meaningful."
 
+## 2026-07-28 — Cozier palette, real webfont, tighter copy, no em dashes
+
+**Branch:** claude/next-steps-3p2zhk
+User feedback: warmer "paper ivory", less verbose copy, the Playfair + Suisse
+pairing, no em dashes, homier feel.
+
+**Typography — this was a real bug, not just taste.** The sans stack was
+`-apple-system, "SF Pro Text", system-ui`, which on the user's **Windows**
+machine resolved to Segoe UI. They had never seen the intended type.
+- Shipped `@fontsource-variable/inter` so the face is consistent everywhere.
+- **Suisse Int'l is commercial** (Swiss Typefaces) and can't be bundled. The
+  stack is `SuisseIntl, "Inter Variable", Inter, …` — self-host a licensed copy
+  declaring `font-family: SuisseIntl` and it takes over with no code change.
+- Used `SuisseIntl` without the apostrophe deliberately: `"Suisse Int'l"` is
+  valid CSS but **lightningcss fails to parse it** and broke the build. A
+  self-hosted face names itself in `@font-face`, so this costs nothing.
+
+**Warmer palette** (index.css + tokens.ts, kept in sync): paper `#F6F4EC →
+#F7F2E4`, raised `#FBF9F2 → #FDFAF0`, warm `#F0ECDF → #F1EAD8`, deep `#E7E1D1 →
+#E8DFC9`. Ink warmed off pure graphite: `#1C1C1A → #23201A`, with the soft/mute/
+faint ramp and hairlines shifted to match. Also swept out stale hardcoded
+values still using the old palette (`Badge` info tint, `AnnotatedScorePanel`
+note backing, `HomeRoute` staff lines).
+
+**Copy**
+- **Home CTA lost its subtext** ("Point your camera at the page…") — now just
+  "Photograph sheet music". Rebalanced the card's padding afterwards, since
+  removing the line left it visibly bottom-heavy.
+- Trimmed the capture headline, storage notice, login, calibration and
+  OCR-confidence strings.
+- **Removed every em dash from user-facing prose** across 10 files, replacing
+  with full stops or `·`. Left them in code comments, and left the `—`
+  empty-value placeholders (`Email —`), which are a "no value" glyph rather
+  than punctuation.
+
+**Verified:** lint + build green; computed `font-family` confirmed in-browser;
+Home and score list screenshotted; no console errors.
+**Note:** `DECISIONS.md` records the palette as locked. This supersedes those
+specific hex values at the user's direction; the *rules* (amber the only
+accent, spruce recording-only, verdict colours quarantined) are unchanged.
+**Rollback:** revert this commit.
+
 ## 2026-07-28 — Motion + softness pass ("smooth, iOS-style, softer feel")
 
 **Branch:** claude/next-steps-3p2zhk

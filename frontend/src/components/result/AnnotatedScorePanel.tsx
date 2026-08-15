@@ -81,7 +81,7 @@ export function AnnotatedScorePanel({
         style={{
           top: `${((padY + highlight[0] * rowH) / height) * 100 - 5}%`,
           transform: "rotate(-5deg)",
-          background: "rgba(246,244,236,0.82)",
+          background: "rgba(247,242,228,0.85)",
         }}
       >
         a touch ahead
@@ -91,7 +91,7 @@ export function AnnotatedScorePanel({
         style={{
           top: `${((padY + (highlight[highlight.length - 1] + 1) * rowH) / height) * 100 + 1}%`,
           transform: "rotate(-3deg)",
-          background: "rgba(246,244,236,0.82)",
+          background: "rgba(247,242,228,0.85)",
         }}
       >
         breathe here

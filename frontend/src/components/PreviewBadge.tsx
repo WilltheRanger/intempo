@@ -16,7 +16,7 @@ export function PreviewBadge() {
     // lifts above the tab bar so it never covers navigation.
     <div className="pointer-events-none fixed bottom-[96px] left-3 z-50 md:bottom-4 md:left-4">
       <span className="pointer-events-auto rounded-full border border-line-2 bg-paper-raised/95 px-3 py-1.5 text-[11px] text-ink-mute shadow-card backdrop-blur-sm">
-        Preview — demo data, no backend
+        Preview · demo data, no backend
       </span>
     </div>
   );
