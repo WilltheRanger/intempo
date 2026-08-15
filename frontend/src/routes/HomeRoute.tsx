@@ -48,13 +48,13 @@ export function HomeRoute() {
         <div className="flex max-w-[820px] items-center gap-4 border-t border-line pt-4 sm:gap-5">
           <Link
             to={`/scores/${current.id}/record`}
-            className="press hidden h-[58px] w-[88px] shrink-0 overflow-hidden rounded-sm border border-line sm:block"
+            className="press h-[56px] w-[84px] shrink-0 overflow-hidden rounded-sm ring-1 ring-line"
           >
             <SheetCrop seed={current.id} dense />
           </Link>
 
           <div className="min-w-0 flex-1">
-            <h2 className="font-serif text-[18px] leading-snug text-ink">
+            <h2 className="font-serif text-[21px] leading-snug text-ink">
               <Link to={`/scores/${current.id}/record`} className="hover:underline">
                 {current.title}
               </Link>
@@ -82,9 +82,10 @@ export function HomeRoute() {
             )}
           </div>
 
+          {/* Mobile puts this in `PracticeBar`, within thumb reach. */}
           <Link
             to={`/scores/${current.id}/record`}
-            className="press shrink-0 rounded-sm bg-ink px-4 py-2.5 text-[13.5px] font-medium text-paper transition-colors duration-150 hover:bg-black"
+            className="press hidden shrink-0 rounded-sm bg-ink px-4 py-2.5 text-[13.5px] font-medium text-paper transition-colors duration-150 hover:bg-black lg:inline-flex"
           >
             Practice
           </Link>
