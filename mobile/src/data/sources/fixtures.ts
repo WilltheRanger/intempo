@@ -1,0 +1,83 @@
+import type { Piece } from '../types';
+import type { PieceSource } from './types';
+
+/**
+ * Development fixtures.
+ *
+ * These exist because the backend has no concept of practice progress, a
+ * last-practiced timestamp, a "current" piece, or a readable score image (see
+ * the Phase 1 audit). The UI is built against the shape those fields will
+ * eventually have so that no screen changes when the endpoints land.
+ *
+ * The artwork is the repo's own public-domain fixture set from
+ * `fixtures/scores/` — each thumbnail is genuinely the piece it claims to be.
+ * Provenance and licensing: `fixtures/scores/SOURCES.md`.
+ */
+interface FixturePiece extends Omit<Piece, 'lastPracticedAt'> {
+  /** Resolved to an ISO timestamp at read time so it never goes stale. */
+  practicedDaysAgo: number | null;
+}
+
+const FIXTURE_PIECES: FixturePiece[] = [
+  {
+    id: 'fixture-bach-bwv1001',
+    title: 'Sonata No. 1 in G minor, BWV 1001',
+    composer: 'J. S. Bach',
+    movement: 'I. Adagio',
+    progress: 0.62,
+    practicedDaysAgo: 2,
+    thumbnail: require('../../../assets/fixtures/04_handwritten_clean.jpg'),
+  },
+  {
+    id: 'fixture-kreutzer-02',
+    title: '42 Études ou Caprices, No. 2',
+    composer: 'Rodolphe Kreutzer',
+    movement: null,
+    progress: 0.34,
+    practicedDaysAgo: 5,
+    thumbnail: require('../../../assets/fixtures/03_complex_printed.jpg'),
+  },
+  {
+    id: 'fixture-wohlfahrt-28',
+    title: '60 Studies for the Violin, Op. 45',
+    composer: 'Franz Wohlfahrt',
+    movement: 'No. 28 — Allegretto',
+    progress: 0.81,
+    practicedDaysAgo: 12,
+    thumbnail: require('../../../assets/fixtures/02_medium_printed.jpg'),
+  },
+  {
+    id: 'fixture-wohlfahrt-01',
+    title: '60 Studies for the Violin, Op. 45',
+    composer: 'Franz Wohlfahrt',
+    movement: 'No. 1 — Allegro moderato',
+    progress: 1,
+    practicedDaysAgo: 26,
+    thumbnail: require('../../../assets/fixtures/01_simple_printed.jpg'),
+  },
+];
+
+function toPiece({ practicedDaysAgo, ...piece }: FixturePiece): Piece {
+  if (practicedDaysAgo === null) {
+    return { ...piece, lastPracticedAt: null };
+  }
+  const practicedAt = new Date();
+  practicedAt.setDate(practicedAt.getDate() - practicedDaysAgo);
+  return { ...piece, lastPracticedAt: practicedAt.toISOString() };
+}
+
+export const fixturePieceSource: PieceSource = {
+  async listPieces() {
+    return FIXTURE_PIECES.map(toPiece);
+  },
+
+  async getCurrentPiece() {
+    const [mostRecent] = FIXTURE_PIECES;
+    return mostRecent ? toPiece(mostRecent) : null;
+  },
+
+  async getPiece(id) {
+    const match = FIXTURE_PIECES.find((piece) => piece.id === id);
+    return match ? toPiece(match) : null;
+  },
+};
