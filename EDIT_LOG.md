@@ -4,6 +4,40 @@ Newest entries at the top. Format spec: see "Build-time activity logging"
 in intempo-combined.md. Every meaningful change goes here — see that
 section for what counts as "meaningful."
 
+## 2026-07-28 — Tap-target and header fixes (measured, not eyeballed)
+
+**Branch:** claude/next-steps-3p2zhk
+User reported controls felt unclickable and the top looked unorganised. Both
+correct. I had been judging touch targets by eye; measured them instead against
+the 44×44 minimum.
+
+**Measured before → after** (390×844):
+
+| Control | Before | After |
+|---|---|---|
+| "Add" in header | 70×**34** ❌ | removed |
+| "See all" | 44×**21** ❌ | 60×**44** ✅ |
+| Piece title link | 114×**22** ❌ | merged into 165×**185** card ✅ |
+| Favourite star | ~23px ❌ | 44×**44** ✅ |
+| Tab items | 98×63 ✅ | 98×**70** ✅ |
+
+- **Header reorganised.** "Add" floated beside a two-line text block, aligned to
+  neither line — that was the disorganisation. Removed from Today entirely: it
+  belongs with the library, and the Library screen already has it one tap away
+  via the tab bar. The header is now a clean two-line block.
+- **Whole card is one link.** The crop and the title were separate targets, the
+  text one only 22px tall. The favourite button moved to an absolute overlay on
+  the crop, since a `<button>` nested in an `<a>` is invalid and the clicks
+  would fight. Verified the star toggles without navigating.
+- **Tab bar given weight**: icons 22→25px, min-height 58px, target 63→70px.
+  It measured acceptable before but read thin.
+
+**Verified:** lint + build green; every visible control on Today now passes
+44×44; favourite works without navigation; no console errors.
+**Process note:** the design laws mandate a three-foot test but nothing forced
+measuring ergonomics. Worth adding a tap-target check to the UI routine.
+**Rollback:** revert this commit.
+
 ## 2026-07-28 — Today refined: hero card with an integrated action
 
 **Branch:** claude/next-steps-3p2zhk

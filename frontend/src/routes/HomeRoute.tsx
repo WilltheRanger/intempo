@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { ArrowRight, Plus } from "@phosphor-icons/react";
+import { ArrowRight } from "@phosphor-icons/react";
 
 import { useAuth } from "../hooks/useAuth";
 import { PieceGrid } from "../components/library/PieceGrid";
@@ -36,23 +36,14 @@ export function HomeRoute() {
 
   return (
     <div className="flex flex-col gap-9">
-      <header className="flex items-start justify-between gap-4">
-        <div>
-          <p className="text-[15px] text-ink-mute">
-            {greeting()}
-            {name ? `, ${name}` : ""}
-          </p>
-          <h1 className="mt-0.5 font-serif text-[30px] leading-[1.1] text-ink lg:text-[36px]">
-            Ready to practice?
-          </h1>
-        </div>
-        <Link
-          to="/scores/new"
-          className="press mt-1 inline-flex shrink-0 items-center gap-1.5 rounded-sm border border-line-2 px-3 py-1.5 text-[13px] text-ink transition-colors duration-150 hover:bg-paper-warm lg:hidden"
-        >
-          <Plus size={13} weight="bold" />
-          Add
-        </Link>
+      <header>
+        <p className="text-[15px] text-ink-mute">
+          {greeting()}
+          {name ? `, ${name}` : ""}
+        </p>
+        <h1 className="mt-1 font-serif text-[30px] leading-[1.1] text-ink lg:text-[36px]">
+          Ready to practice?
+        </h1>
       </header>
 
       {/* The one place a card is justified (law 3): the focal point plus the
@@ -102,7 +93,7 @@ export function HomeRoute() {
           action={
             <Link
               to="/scores"
-              className="text-[14px] text-ink-mute transition-colors duration-150 hover:text-ink"
+              className="press -mr-2 flex min-h-[44px] items-center px-2 text-[14px] text-ink-mute transition-colors duration-150 hover:text-ink"
             >
               See all
             </Link>

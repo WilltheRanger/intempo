@@ -52,51 +52,45 @@ function PieceCard({
   onToggleFavorite?: (id: string) => void;
 }) {
   return (
-    <li className="group flex flex-col">
-      <Link
-        to={`/scores/${piece.id}/record`}
-        className="press block overflow-hidden rounded-sm bg-paper-raised ring-1 ring-line transition-shadow duration-200 ease-ios hover:ring-line-2"
-      >
-        <div className="aspect-[16/10]">
+    <li className="relative">
+      {/* One link for the whole card. The crop and the text used to be two
+          separate targets and the text one measured 22px tall. */}
+      <Link to={`/scores/${piece.id}/record`} className="press group/card block">
+        <div className="aspect-[16/10] overflow-hidden rounded-sm bg-paper-raised ring-1 ring-line transition-shadow duration-200 ease-ios group-hover/card:ring-line-2">
           <SheetCrop seed={piece.id} title={piece.title} composer={piece.composer} />
         </div>
+        <h3 className="mt-3 font-serif text-[17px] leading-[1.25] text-ink [text-wrap:balance] group-hover/card:underline">
+          {piece.shortTitle ?? piece.title}
+        </h3>
+        <p className="mt-1 text-[14px] text-ink-soft">{piece.composer}</p>
+        <p className="mt-1 text-[13px] tabular-nums text-ink-mute">
+          {piece.progress != null
+            ? `${Math.round(piece.progress * 100)}%`
+            : "Not started"}
+        </p>
       </Link>
 
-      <div className="mt-3 flex items-start gap-2">
-        <div className="min-w-0 flex-1">
-          <h3 className="font-serif text-[17px] leading-[1.25] text-ink [text-wrap:balance]">
-            <Link to={`/scores/${piece.id}/record`} className="hover:underline">
-              {piece.shortTitle ?? piece.title}
-            </Link>
-          </h3>
-          <p className="mt-1 text-[14px] text-ink-soft">{piece.composer}</p>
-          <p className="mt-1 text-[13px] tabular-nums text-ink-mute">
-            {piece.progress != null
-              ? `${Math.round(piece.progress * 100)}%`
-              : "Not started"}
-          </p>
-        </div>
-
-        {onToggleFavorite && (
-          <button
-            type="button"
-            onClick={() => onToggleFavorite(piece.id)}
-            aria-pressed={favorite}
-            aria-label={
-              favorite
-                ? `Remove ${piece.title} from favourites`
-                : `Add ${piece.title} to favourites`
-            }
-            className="press -mr-1 -mt-0.5 shrink-0 p-1 text-ink-faint transition-colors duration-150 hover:text-ink"
-          >
-            <Star
-              size={15}
-              weight={favorite ? "fill" : "regular"}
-              className={cn(favorite && "text-amber")}
-            />
-          </button>
-        )}
-      </div>
+      {/* Sits over the crop rather than nested in the link — a button inside
+          an anchor is invalid and the clicks would fight. */}
+      {onToggleFavorite && (
+        <button
+          type="button"
+          onClick={() => onToggleFavorite(piece.id)}
+          aria-pressed={favorite}
+          aria-label={
+            favorite
+              ? `Remove ${piece.title} from favourites`
+              : `Add ${piece.title} to favourites`
+          }
+          className="press absolute right-0 top-0 grid size-11 place-items-center text-ink-faint transition-colors duration-150 hover:text-ink"
+        >
+          <Star
+            size={17}
+            weight={favorite ? "fill" : "regular"}
+            className={cn(favorite ? "text-amber" : "text-ink-mute")}
+          />
+        </button>
+      )}
     </li>
   );
 }
