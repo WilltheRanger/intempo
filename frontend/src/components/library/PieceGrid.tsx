@@ -55,7 +55,7 @@ function PieceCard({
     <li className="group flex flex-col">
       <Link
         to={`/scores/${piece.id}/record`}
-        className="press block overflow-hidden rounded-sm border border-line bg-paper-raised transition-colors duration-200 ease-ios hover:border-line-2"
+        className="press block overflow-hidden rounded-sm bg-paper-raised ring-1 ring-line transition-shadow duration-200 ease-ios hover:ring-line-2"
       >
         <div className="aspect-[16/10]">
           <SheetCrop seed={piece.id} title={piece.title} composer={piece.composer} />

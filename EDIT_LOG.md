@@ -4,6 +4,48 @@ Newest entries at the top. Format spec: see "Build-time activity logging"
 in intempo-combined.md. Every meaningful change goes here — see that
 section for what counts as "meaningful."
 
+## 2026-07-28 — Fix the thumb zone on Today (design law 7)
+
+**Branch:** claude/next-steps-3p2zhk
+
+**The violation:** "Practice" is the primary action but sat ~33% down the phone
+screen, furthest from the thumb, while the reachable bottom held only
+navigation. Backwards for a mobile-first practice app.
+
+**Fix — new `layout/PracticeBar.tsx`, rendered by `AppShell`, not by the page.**
+Law 9 says a persistent action is app furniture, so it belongs in the frame:
+flush above the tab bar, same opaque surface and hairline, no floating card.
+This also sidesteps a trap logged earlier — `fixed` inside the animated outlet
+re-anchors to the transformed wrapper rather than the viewport.
+- Mobile only (`lg:hidden`); a pointer reaches anywhere, so desktop keeps the
+  action inline in the Continue row where its context is.
+- Only on `/`; it is Today's action, not global chrome.
+- Carries no piece metadata (law 10) — the screen above already says what
+  you're practising, so repeating it would be decoration.
+
+**Measured:** primary action moved from ~33% to **86% down** a 390×844 viewport.
+
+**Three-foot test, and the second problem it caught.** After the first pass the
+answer was: *first* the black Practice slab, *second* the piece title. That
+inverts the intended hierarchy (what am I practising → practise it) and breaks
+law 4. Rebalanced rather than shipped:
+- Strengthened the focal point — the sheet crop now shows on mobile too
+  (was `hidden sm:block`), and the title went 18px → 21px.
+- Lightened the action — bar padding and button height reduced.
+- **Now reads:** first the piece (crop + serif title), second Practice, third
+  the library grid. Correct.
+
+**Other law work in this pass:** `PieceGrid` cards swapped `border` for `ring-1`
+so the crop's own white edge does the separating (laws 3/6 — less container,
+more content).
+
+**Verified:** lint + build green; confirmed the last visible card clears the bar
+when scrolled to the bottom (650 vs 725), the bar is absent on Library, and
+desktop shows no bottom bar; no console errors.
+**Still open:** law 1 (native-first rather than responsive-web-adapted-down)
+and the three ⚠️ flow screens, which remain unassessed against the laws.
+**Rollback:** revert this commit.
+
 ## 2026-07-28 — Adopt binding design laws; audit current screens against them
 
 **Branch:** claude/next-steps-3p2zhk
