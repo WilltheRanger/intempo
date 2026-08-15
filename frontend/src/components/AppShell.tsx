@@ -4,7 +4,6 @@ import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useMe } from "../hooks/useApi";
 import { TabBar } from "./TabBar";
 import { TopNav } from "./layout/TopNav";
-import { PracticeBar } from "./layout/PracticeBar";
 import { pageVariants } from "../lib/motion";
 
 /**
@@ -44,11 +43,9 @@ export function AppShell() {
         </div>
       </main>
 
-      {/* Persistent bottom furniture. The practice action sits directly above
-          the tab bar so it lands in the thumb zone; both are opaque and flush,
-          not floating over the content. */}
+      {/* Persistent navigation only. The primary action belongs to the hero
+          card, connected to the piece it acts on. */}
       <div className="sticky bottom-0 z-20 lg:hidden">
-        {location.pathname === "/" && <PracticeBar />}
         <TabBar />
       </div>
     </div>

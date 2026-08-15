@@ -1,9 +1,8 @@
 import type { ReactNode } from "react";
 
 /**
- * Section label. Sans, small, quiet — a wayfinding device, not a headline.
- * The serif is reserved for the things a musician actually reads: piece
- * titles and the practice prompt.
+ * Section label. Sans, sentence case, quiet. Serif is reserved for screen
+ * titles and composition names, so a section heading never uses it.
  */
 export function SectionHeading({
   children,
@@ -14,7 +13,7 @@ export function SectionHeading({
 }) {
   return (
     <div className="flex items-baseline justify-between gap-4">
-      <h2 className="text-[12px] font-medium uppercase tracking-[0.11em] text-ink-mute">
+      <h2 className="text-[14px] font-medium text-ink">
         {children}
       </h2>
       {action}

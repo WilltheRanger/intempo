@@ -20,6 +20,8 @@ export type LibraryPiece = {
   id: string;
   /** Primary line. */
   title: string;
+  /** Grid display name. Long classical titles wrap badly in two columns. */
+  shortTitle?: string;
   composer: string;
   /** The movement currently being worked on. */
   movement: string;
@@ -44,6 +46,7 @@ export const LIBRARY: LibraryPiece[] = [
   {
     id: "p-dvorak-vc",
     title: "Cello Concerto in B Minor",
+    shortTitle: "Cello Concerto",
     composer: "Dvořák",
     movement: "I. Allegro",
     kind: "concerto",
@@ -54,6 +57,7 @@ export const LIBRARY: LibraryPiece[] = [
   {
     id: "p-saint-saens-vc1",
     title: "Cello Concerto No. 1 in A Minor",
+    shortTitle: "Concerto No. 1",
     composer: "Saint-Saëns",
     movement: "I. Allegro non troppo",
     kind: "concerto",
@@ -64,6 +68,7 @@ export const LIBRARY: LibraryPiece[] = [
   {
     id: "p-bach-suite-1",
     title: "Suite No. 1 in G Major",
+    shortTitle: "Suite No. 1",
     composer: "J. S. Bach",
     movement: "Prélude",
     kind: "suite",
@@ -74,6 +79,7 @@ export const LIBRARY: LibraryPiece[] = [
   {
     id: "p-elgar-vc",
     title: "Cello Concerto in E Minor",
+    shortTitle: "Cello Concerto",
     composer: "Elgar",
     movement: "I. Adagio",
     kind: "concerto",
@@ -84,6 +90,7 @@ export const LIBRARY: LibraryPiece[] = [
   {
     id: "p-popper-40",
     title: "High School of Cello Playing, Op. 73",
+    shortTitle: "High School",
     composer: "Popper",
     movement: "No. 4",
     kind: "etude",
@@ -94,6 +101,7 @@ export const LIBRARY: LibraryPiece[] = [
   {
     id: "p-bruch-kol",
     title: "Kol Nidrei, Op. 47",
+    shortTitle: "Kol Nidrei",
     composer: "Bruch",
     movement: "Adagio",
     kind: "repertoire",
