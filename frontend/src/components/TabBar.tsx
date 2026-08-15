@@ -22,7 +22,7 @@ type Tab = {
 
 const TABS: Tab[] = [
   { to: "/", label: "Library", Icon: BookOpen, end: true },
-  { to: "/scores/new", label: "Record", Icon: Microphone },
+  { to: "/scores/new", label: "Add", Icon: Microphone },
   { to: "/insights", label: "Insights", Icon: ChartLineUp },
   { to: "/account", label: "Profile", Icon: User },
 ];
@@ -33,7 +33,7 @@ export function TabBar() {
   return (
     <nav
       aria-label="Primary"
-      className="border-t border-line bg-paper-raised/95 backdrop-blur-sm"
+      className="border-t border-line bg-paper/95 backdrop-blur-md"
       style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
     >
       <ul className="mx-auto flex max-w-[440px] items-stretch">

@@ -17,14 +17,14 @@ export function AccountRoute() {
   const isPro = tier.toLowerCase() === "pro";
 
   return (
-    <div className="flex flex-col gap-6">
-      <h1 className="font-serif text-[26px] leading-tight text-ink">Account</h1>
+    <div className="flex max-w-[560px] flex-col gap-7">
+      <h1 className="font-serif text-[30px] leading-tight text-ink lg:text-[36px]">Account</h1>
 
       {/* identity */}
       <div className="flex items-center gap-4">
         <span
           aria-hidden
-          className="grid size-14 shrink-0 place-items-center rounded-full border border-line-2 bg-paper-warm font-serif text-[22px] text-ink-soft shadow-hair"
+          className="grid size-12 shrink-0 place-items-center rounded-full border border-line bg-paper-warm font-serif text-[19px] text-ink-soft"
         >
           {monogram(email) ?? <User size={24} className="text-ink-faint" />}
         </span>
@@ -39,7 +39,7 @@ export function AccountRoute() {
       </div>
 
       {!configured && (
-        <div className="flex gap-3 rounded-lg border border-line bg-paper-warm px-3.5 py-3">
+        <div className="flex gap-3 rounded-sm border border-line bg-paper-warm px-3.5 py-3">
           <Warning size={17} className="mt-0.5 shrink-0 text-ink-mute" />
           <p className="text-[13px] text-ink-soft">
             Auth isn&rsquo;t configured in this environment, so account details
@@ -49,7 +49,7 @@ export function AccountRoute() {
       )}
 
       {/* details */}
-      <section className="overflow-hidden rounded-lg border border-line bg-paper-raised shadow-hair">
+      <section className="overflow-hidden rounded-sm border border-line bg-paper-raised">
         <Row label="Email" value={email ?? "—"} />
         <Row
           label="Plan"

@@ -4,6 +4,57 @@ Newest entries at the top. Format spec: see "Build-time activity logging"
 in intempo-combined.md. Every meaningful change goes here — see that
 section for what counts as "meaningful."
 
+## 2026-07-28 — Ground-up UI redesign: editorial workspace, real desktop layout
+
+**Branch:** claude/next-steps-3p2zhk
+User brief: the UI read as an AI-generated "premium app". Rethink hierarchy,
+layout, navigation and component structure; keep functionality.
+
+**Information architecture**
+- **Desktop is now a real workspace.** New `layout/TopNav.tsx` (sticky, 1240px
+  container) replaces the 440px phone column stranded on a desktop canvas.
+  `AppShell` is responsive: top nav at `lg`+, bottom `TabBar` below it.
+  Chose a top bar over a sidebar because there are three destinations — a
+  sidebar would spend 240px of width on three words.
+- Home reduced to the three areas asked for: prompt, Continue practicing,
+  library. Removed the "Saturday morning" contextual eyebrow (decoration).
+- Library gained working filters (kind + favourites) with a live count.
+  Filters hide themselves when they'd return nothing.
+
+**Visual system** (`index.css`, `tokens.ts`, `tailwind.config.js`)
+- Paper pulled off beige toward warm off-white (`#F7F2E4 → #FAF8F3`); surfaces
+  are now true white. Ink to near-black `#171614`.
+- **Gold demoted to an accent.** Muted `#C78A3A → #9C7A3C`, and every large gold
+  surface is gone — primary actions are ink, not gold slabs.
+- Radii `12/18/24/30 → 8/10/12/14`. `shadow-card` reduced to almost nothing;
+  structure now comes from hairline borders.
+- **Serif is now selective**: piece titles and the practice prompt only.
+  Section headings became small sans labels (`ui/SectionHeading.tsx`).
+
+**Sheet music is the visual identity.** New `sheet/SheetCrop.tsx` draws
+plausible engraving in SVG — bass clef (it's a cello app), time signature,
+barlines, beamed groups, deterministic per seed — replacing beige rectangles
+with horizontal lines. Used in the library grid and the continue row.
+
+**Data model.** `demo.ts` now stores `title` and `composer` as separate fields
+with `kind` and `progress`, instead of one `"Composer — Title"` string parsed
+by each screen. Deleted `splitPiece`. Title outranks composer everywhere.
+
+**Caught in review:** composer names were clipped in every thumbnail (the
+`slice` crop cuts ~15 viewBox units per side); the Practice action was stranded
+across a 1240px row (capped at 860px); "Add piece" appeared twice on desktop
+(page-header copy is now `lg:hidden`).
+
+**Functionality preserved:** all routes, auth gate, OCR upload/review/save,
+recording, verdict polling, favourites toggle, reduced-motion gating. Verified
+the library filters still work end-to-end in-browser (6 → Favourites 2 →
+Etudes 1).
+**Verified:** lint + build green; Home / Library / Account / Capture
+screenshotted at 1440px and 400px; no console errors.
+**Known gaps:** `ScoreThumb`, `Card`, `StubPage` and the record/verdict interior
+panels still carry older styling — they're behind flows that need real data to
+review properly. **Rollback:** revert this commit.
+
 ## 2026-07-28 — Cozier palette, real webfont, tighter copy, no em dashes
 
 **Branch:** claude/next-steps-3p2zhk
