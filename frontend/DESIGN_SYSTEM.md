@@ -1,4 +1,19 @@
-# InTempo — Locked Design System & Build Prompts
+# InTempo — Design System & Build Prompts
+
+> ## ⚠️ Superseded in part (2026-07-28)
+>
+> The UI was **redesigned from the ground up** after the version built from
+> this file still read as AI-generated. The "engraver's manuscript" direction
+> below — heavy cream, gold surfaces, serif everywhere, rounded cards, a
+> phone-width column on desktop — was **deliberately removed**.
+>
+> **Authoritative now:** the design laws in `CLAUDE.md` §3 and the conventions
+> in its "Frontend UI rebuild" section. Tokens live in
+> `frontend/src/styles/tokens.ts`.
+>
+> What still holds from this file: build one screen at a time, run the
+> screenshot critique loop, and pre-fill decisions so a build session invents
+> nothing. Treat the specific visual prescriptions as history.
 
 This is the **locked** visual system for InTempo's UI. It exists so a build
 session executes a decided design and **invents nothing** — the slop comes from

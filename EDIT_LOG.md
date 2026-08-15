@@ -4,6 +4,49 @@ Newest entries at the top. Format spec: see "Build-time activity logging"
 in intempo-combined.md. Every meaningful change goes here — see that
 section for what counts as "meaningful."
 
+## 2026-07-28 — Adopt binding design laws; audit current screens against them
+
+**Branch:** claude/next-steps-3p2zhk
+
+Added the user's ten design laws to **`CLAUDE.md` §3** (binding, above the
+component conventions), plus the mandated **three-foot test** with a standing
+requirement to record its answer here for any screen built or changed.
+Renumbered Batch status to §4.
+
+**Flagged `frontend/DESIGN_SYSTEM.md` as partly superseded.** It still
+prescribed the pre-redesign "engraver's manuscript" look — heavy cream, gold
+surfaces, serif everywhere, rounded cards, a phone-width column on desktop —
+which was deliberately removed. Same failure mode as the stale Figma file: a
+future session would have executed it faithfully and undone the redesign. Its
+*process* guidance (one screen at a time, screenshot critique loop) still holds.
+
+### Three-foot test on the current screens
+
+**Today** — first: the piece title *Cello Concerto in B Minor*. Second: the
+black **Practice** button. Third: the library grid. That reads correctly for
+the intended hierarchy (what am I practising → practise it → my pieces).
+
+**Library** — first: the grid of sheet crops. Second: the filter row. Third:
+the page title. Also correct; the music dominates.
+
+### Violations found, not yet fixed
+
+- **Law 7 (thumb zone) fails on mobile.** "Practice" is the primary action but
+  sits in the upper third of the phone screen, furthest from the thumb, while
+  the reachable bottom area holds only navigation. This is the most substantive
+  gap and needs a composition change, not a style tweak.
+- **Law 1 (native-first)** is partly unmet: the layout is still a responsive
+  web page that adapts down, rather than a phone design that adapts up.
+- **Law 3/6** mostly holds now, but `PieceGrid` cards still carry a border +
+  rounded corner that the crop itself could imply.
+- The three ⚠️ flow screens (capture / recording / verdict) have not been
+  assessed against the laws at all; they retain phone-column compositions,
+  bordered panels and a large Deep Spruce surface.
+
+No UI code changed in this entry: recording the laws and the audit first, per
+the §2 gate.
+**Rollback:** revert this commit.
+
 ## 2026-07-28 — Composition refinements: density, navigation, hierarchy
 
 **Branch:** claude/next-steps-3p2zhk
