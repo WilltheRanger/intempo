@@ -4,7 +4,47 @@ Newest entries at the top. Format spec: see "Build-time activity logging"
 in intempo-combined.md. Every meaningful change goes here — see that
 section for what counts as "meaningful."
 
-## 2026-07-28 — GitHub Pages preview deploy (UI-only, no backend)
+## 2026-07-28 — Switch the preview deploy to Cloudflare Pages (supersedes GitHub Pages)
+
+**Branch:** claude/next-steps-3p2zhk
+**Why:** GitHub Pages would have required making the repo public (private repos
+need GitHub Pro). Cloudflare Pages builds private repos on its free tier.
+
+Before recommending either, I scanned the repo for exposure: **27 commits, all
+refs — no `.env` ever committed, no key-shaped string in any diff.** (Only
+`.env.example` files are tracked and their non-blank values are a localhost URL,
+PostHog's public host, and a model-name list.) So going public would in fact
+have been safe; the user preferred private, which Cloudflare supports for free.
+
+- **Removed `.github/workflows/pages.yml`.** Left in place it would have run and
+  *failed* on every push, since Pages was never enabled — red X's on every
+  commit for a path we're not using. Recoverable from git history.
+- **`frontend/public/_redirects`** — new. `/* /index.html 200`, the SPA fallback.
+  Cloudflare only knows about files on disk while React Router owns the routes,
+  so a refresh on `/scores` or a shared deep link would 404 without it. Vite
+  copies `public/` to the dist root, so it ships automatically.
+- **`docs/deploy-cloudflare.md`** — new. The dashboard settings, which can't be
+  committed as config: root directory `frontend`, build `npm run build`, output
+  `dist`, and `NODE_VERSION=22` (Cloudflare's default Node is the usual cause of
+  a failed first build). Also flags that the production branch must be set to
+  this branch — `main` is back at Batch 2 and has none of these screens.
+
+**Kept from the GitHub Pages work** (all still useful, and inert here):
+`VITE_BASE_PATH` in `vite.config.ts` (unset → `/`, which is what Cloudflare
+wants), the router `basename`, the `ProtectedRoute` pass-through when Supabase
+is unconfigured, and `PreviewBadge`. Cloudflare serves from the domain root, so
+no base-path juggling is needed.
+
+**Verified:** lint + build green; default build emits root-relative asset paths;
+`_redirects` confirmed present in `dist/`; served and loaded in Chromium with no
+console errors.
+**Not verified:** the `_redirects` rule itself — that's Cloudflare-side
+behaviour and can't be exercised locally (`vite preview` has its own SPA
+fallback, so a passing deep-link test here proves nothing about production).
+Worth a refresh on `/scores` once it's deployed.
+**Rollback:** delete `_redirects` and the doc; nothing else depends on them.
+
+## 2026-07-28 — GitHub Pages preview deploy (superseded — see the entry above)
 
 **Branch:** claude/next-steps-3p2zhk
 **Why:** the user wanted to see the screens in a browser without setting up
