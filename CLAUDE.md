@@ -54,7 +54,41 @@ proceed on those following the procedures in §1.
 
 If in doubt whether something is "UI/UX," ask.
 
-## 3. Batch status (keep this current)
+## 3. Design laws — binding for every UI change
+
+These govern all UI work and outrank any component convention below. They are
+the user's rules, not suggestions to weigh against convenience.
+
+1. **Design a native mobile product, not a responsive website shrunk onto a
+   phone.** Mobile is the primary target; desktop is an adaptation of it, not
+   the other way round.
+2. **Prioritise hierarchy, spatial rhythm, thumb reach and content flow** over
+   decorative components.
+3. **Do not turn every section into a card.** The background is a compositional
+   surface. Cards are reserved for information that genuinely needs grouping.
+4. **One dominant focal point per screen.** Secondary information must visually
+   recede. Two competing focal points means the hierarchy is wrong.
+5. **Consistent horizontal margins and a deliberate vertical spacing system.**
+   Spacing is a system, not a per-component guess.
+6. **Rounded containers, pills, gradients, shadows, borders and floating
+   elements are exceptions, not the default styling language.** Reach for
+   typography and spacing first.
+7. **Design around the thumb zone.** Primary actions sit comfortably reachable
+   near the bottom; secondary actions can sit higher.
+8. **Use typography to create hierarchy instead of relying on containers.**
+   If a box is doing the work a type scale should do, remove the box.
+9. **Bottom navigation is persistent app furniture, not a floating card.**
+   Opaque, anchored, unrounded, part of the frame.
+10. **Every element must justify its presence.** If removing it makes the
+    interface clearer, remove it.
+
+**The three-foot test — run it before writing any UI code, and again on the
+screenshot afterwards.** Look at the screen from across the room and name what
+you notice first, second and third. If everything competes, the hierarchy is
+wrong and the fix is composition, not more styling. Record the answer in
+`EDIT_LOG.md` for any screen you build or change.
+
+## 4. Batch status (keep this current)
 
 - Batch 0 — Foundations ✅
 - Batch 1 — Backend infra (auth, DB, storage) ✅
@@ -64,7 +98,7 @@ If in doubt whether something is "UI/UX," ask.
 - Batch 5 — Web frontend foundation ⏳ (shell done: design tokens locked, primitives, routing, auth/data plumbing; build + lint green. Live magic-link auth + E2E test pending Supabase keys — see `EDIT_LOG.md`. Not tagged `batch-5-done` yet.)
 - Batch 6 — Score capture flow (web) ⏳ (capture + OCR-review editor + save built, **rebuilt to the locked design system** 2026-07-28; build + lint green. Live upload→OCR→save + iPhone camera pending Supabase keys/device — see `EDIT_LOG.md`. Not tagged `batch-6-done`.)
 - Batch 7 — Recording + analysis/verdict flow (web) ⏳ (tempo/calibration/metronome, MediaRecorder panel, polling result screen with verdict/annotated-score/trend/per-note built, **rebuilt to the locked design system** 2026-07-28; build + lint green. Live mic→analysis loop pending mic/Supabase/backend + device — see `EDIT_LOG.md`. Not tagged `batch-7-done`.)
-- Batch 8+ — mostly UI/UX → see §2 gate. **Design tokens are locked in `frontend/src/styles/tokens.ts` (manuscript direction) — build to them; see `DECISIONS.md`.**
+- Batch 8+ — mostly UI/UX → see the §2 gate and the §3 design laws. **Tokens live in `frontend/src/styles/tokens.ts`; build to them and never re-type hexes.**
 
 ### Frontend UI rebuild (2026-07-28) — where the screens actually stand
 
