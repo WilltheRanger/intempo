@@ -91,4 +91,29 @@
   .animate-bow {
     animation: intempo-bow 2.6s cubic-bezier(0.45, 0.05, 0.55, 0.95) infinite alternate;
   }
+
+  /* Universal press feedback. CSS rather than a motion component so every
+     tappable surface — Links included — gets the same response without
+     rewriting markup. Transform-only, so it composites on the GPU. */
+  .press {
+    transition: transform 140ms cubic-bezier(0.32, 0.72, 0, 1);
+  }
+  .press:active {
+    transform: scale(0.975);
+  }
+  /* Larger surfaces should compress less, or the scale reads as a lurch. */
+  .press-lg:active {
+    transform: scale(0.99);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .press,
+    .press-lg {
+      transition: none;
+    }
+    .press:active,
+    .press-lg:active {
+      transform: none;
+    }
+  }
 }

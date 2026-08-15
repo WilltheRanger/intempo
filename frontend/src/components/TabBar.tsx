@@ -7,7 +7,10 @@ import {
   type Icon,
 } from "@phosphor-icons/react";
 
+import { motion, useReducedMotion } from "motion/react";
+
 import { cn } from "../lib/cn";
+import { springSnappy } from "../lib/motion";
 
 type Tab = {
   to: string;
@@ -25,6 +28,8 @@ const TABS: Tab[] = [
 ];
 
 export function TabBar() {
+  const reduce = useReducedMotion();
+
   return (
     <nav
       aria-label="Primary"
@@ -37,19 +42,27 @@ export function TabBar() {
             <NavLink
               to={to}
               end={end}
-              className="group flex flex-col items-center gap-1 py-2.5 outline-none"
+              className="press group flex flex-col items-center gap-1 py-2.5 outline-none"
             >
               {({ isActive }) => (
                 <>
-                  <Icon
-                    size={22}
-                    weight={isActive ? "fill" : "regular"}
-                    className={cn(
-                      "transition-colors duration-200 ease-ios",
-                      isActive ? "text-amber-deep" : "text-ink-mute",
-                      "group-focus-visible:text-amber-deep",
-                    )}
-                  />
+                  {/* Spring pop on select — the one place a little overshoot
+                      earns its keep, since it confirms the tap. */}
+                  <motion.span
+                    animate={reduce ? undefined : { scale: isActive ? 1 : 0.92 }}
+                    transition={springSnappy}
+                    className="block"
+                  >
+                    <Icon
+                      size={22}
+                      weight={isActive ? "fill" : "regular"}
+                      className={cn(
+                        "transition-colors duration-200 ease-ios",
+                        isActive ? "text-amber-deep" : "text-ink-mute",
+                        "group-focus-visible:text-amber-deep",
+                      )}
+                    />
+                  </motion.span>
                   <span
                     className={cn(
                       "text-[11px] tracking-tight transition-colors duration-200 ease-ios",

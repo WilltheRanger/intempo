@@ -1,8 +1,10 @@
 import { useMemo } from "react";
 import { Link } from "react-router-dom";
 import { Camera } from "@phosphor-icons/react";
+import { motion, useReducedMotion } from "motion/react";
 
 import { cn } from "../lib/cn";
+import { listContainer, listItem } from "../lib/motion";
 import { LIBRARY, RECENT_SESSIONS, splitPiece, type LibraryPiece } from "../lib/demo";
 
 /** Weekday + time-of-day for the amber eyebrow, e.g. "SATURDAY EVENING". */
@@ -18,23 +20,30 @@ export function HomeRoute() {
   const eyebrow = useMemo(() => greeting(), []);
   const resume = RECENT_SESSIONS[0];
   const library = LIBRARY.slice(0, 4);
+  const reduce = useReducedMotion();
 
   return (
-    <div className="flex flex-col gap-6">
+    <motion.div
+      className="flex flex-col gap-6"
+      variants={reduce ? undefined : listContainer}
+      initial="hidden"
+      animate="visible"
+    >
       {/* Greeting */}
-      <header className="flex flex-col gap-1">
+      <motion.header variants={reduce ? undefined : listItem} className="flex flex-col gap-1">
         <span className="text-[12px] font-medium uppercase tracking-[0.12em] text-amber-deep">
           {eyebrow}
         </span>
         <h1 className="font-serif text-[34px] leading-[1.05] text-ink">
           Ready to practice?
         </h1>
-      </header>
+      </motion.header>
 
       {/* Primary CTA — photograph sheet music */}
+      <motion.div variants={reduce ? undefined : listItem}>
       <Link
         to="/scores/new"
-        className="group flex flex-col gap-1 rounded-[22px] bg-amber px-5 py-5 shadow-card transition-transform duration-200 ease-ios active:scale-[0.99]"
+        className="press-lg group flex flex-col gap-1 rounded-xl bg-amber px-5 py-5 shadow-card"
       >
         <div className="flex items-center gap-1.5 text-[12px] font-semibold uppercase tracking-[0.1em] text-white/80">
           <Camera size={14} weight="bold" />
@@ -47,11 +56,13 @@ export function HomeRoute() {
           Point your camera at the page — we&rsquo;ll read it.
         </p>
       </Link>
+      </motion.div>
 
       {/* Resume — pick up where you left off */}
+      <motion.div variants={reduce ? undefined : listItem}>
       <Link
         to="/scores"
-        className="group flex items-center gap-3.5 rounded-[18px] border border-line-2 bg-paper-warm p-3.5 pr-4 shadow-hair transition-colors duration-200 ease-ios hover:bg-paper-deep"
+        className="press group flex items-center gap-3.5 rounded-md border border-line-2 bg-paper-warm p-3.5 pr-4 shadow-hair transition-colors duration-200 ease-ios hover:bg-paper-deep"
       >
         <SheetStrip className="h-16 w-[52px] shrink-0 rounded-lg border border-line-2" />
         <div className="min-w-0 flex-1">
@@ -66,9 +77,10 @@ export function HomeRoute() {
           </p>
         </div>
       </Link>
+      </motion.div>
 
       {/* Library */}
-      <section className="flex flex-col gap-3.5">
+      <motion.section variants={reduce ? undefined : listItem} className="flex flex-col gap-3.5">
         <div className="flex items-baseline justify-between">
           <h3 className="font-serif text-[20px] text-ink">Your library</h3>
           <Link
@@ -84,8 +96,8 @@ export function HomeRoute() {
             <LibraryCard key={p.id} piece={p} />
           ))}
         </ul>
-      </section>
-    </div>
+      </motion.section>
+    </motion.div>
   );
 }
 
@@ -95,7 +107,7 @@ function LibraryCard({ piece }: { piece: LibraryPiece }) {
     <li>
       <Link
         to="/scores"
-        className="group flex h-full flex-col overflow-hidden rounded-2xl border border-line-2 bg-paper-raised shadow-hair transition-transform duration-200 ease-ios active:scale-[0.99]"
+        className="press group flex h-full flex-col overflow-hidden rounded-lg border border-line-2 bg-paper-raised shadow-hair"
       >
         <SheetStrip className="h-24 w-full" />
         <div className="flex flex-col gap-0.5 px-3.5 pb-3.5 pt-3">
