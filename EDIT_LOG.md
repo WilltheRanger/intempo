@@ -4,6 +4,44 @@ Newest entries at the top. Format spec: see "Build-time activity logging"
 in intempo-combined.md. Every meaningful change goes here — see that
 section for what counts as "meaningful."
 
+---
+
+## 2026-08-15 06:27 — Mobile frontend rebuild — design system, primitives, Today screen
+
+**Batch:** Frontend rebuild, phases 2–3 (supersedes the Batch 9 RN scaffold plan).
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`
+**Commit (after this edit):** `feat(mobile): design system, shared primitives, and Today screen` — hash resolvable from branch history.
+
+**What changed:**
+- `mobile/` scaffolded from `create-expo-app` (Expo SDK 57, RN 0.86.2, React 19.2.3, TS 6.0). Previously an empty placeholder README.
+- `mobile/src/design/` — colour, spacing, radius, typography, and motion tokens. Newsreader (serif) + Inter (sans), two weights each, imported per weight rather than from the package root.
+- `mobile/src/components/primitives/` — Text, ScreenContainer, PageHeader, SectionHeader, Card, PrimaryButton, SecondaryButton, ProgressBar, MetadataRow, EmptyState, LoadingState.
+- `mobile/src/components/pieces/` — ScoreThumbnail (with a ruled-staff fallback), FeaturedPieceCard, PieceCard.
+- `mobile/src/data/` — wire types mirroring `backend/app/models/` and `score_schema.py`; API modules for `/v1/me`, `/v1/scores`, `/v1/upload/*`; Supabase session helper; a `PieceSource` seam with fixture and API implementations; TanStack Query hooks.
+- `mobile/src/navigation/` — bottom tabs (Today, Library, Insights, Profile) with a custom tab bar, plus a root stack for full-screen flows.
+- `mobile/src/screens/` — Today built in full; Library, Insights, Profile, Practice are explicit placeholders.
+- `mobile/assets/fixtures/` — four public-domain score crops copied from `fixtures/scores/` for use as fixture thumbnails.
+
+**Why:**
+The design direction in spec §3.5 was retired by the project owner and replaced with a new brief (serif/sans pairing, warm ivory and antique gold, editorial rather than Linear-leaning). The rebuild targets React Native rather than the web frontend. Phases 2–3 only: the Today screen is the golden screen and the rest of the app waits on its approval, so no other screen inherits an unapproved visual system.
+
+**The data problem this works around:**
+Today's hierarchy needs progress, a last-practiced line, a "current" piece, and score thumbnails. None exist behind the API — `scores` has no progress or movement column, `/v1/analyses` is unbuilt, and score images sit in a private bucket with no read endpoint. Every screen therefore reads through `data/sources/PieceSource`; `sources/api.ts` implements the real mapping and returns `null` for each unbacked field, and `sources/index.ts` selects fixtures for now. Flipping one boolean moves the app onto live data without touching a component.
+
+**Tests run:**
+- `npx tsc --noEmit` → clean.
+- `npx expo export --platform ios` → bundles successfully; four font files (919 KB total) and four fixture images included.
+- Not run on a simulator or device — no macOS or Android emulator in this environment, so nothing here is visually verified.
+
+**Known side effects / things to watch:**
+- **`scores.source_image_url` is unusable for display.** `POST /v1/scores` only accepts the signed *upload* URL for `image_url` (the `public_url` the upload endpoint returns is a bare bucket path with no scheme, which `_assert_image_url_owned_by` rejects with a 400), and that signed URL expires after `SIGNED_URL_TTL_SECONDS` = 5 minutes. Displaying a score image needs a signed-download endpoint that does not exist. Flagged, not fixed — backend work is outside this rebuild's scope.
+- Tab bar labels use the 13pt `sectionLabel` step because the brief's type scale has nothing smaller. A dedicated ~11pt step would suit better; that is a design-system change and needs the owner's sign-off.
+- `Input`, `SearchField`, `Modal`, and `BottomSheet` are named in the brief but deliberately unbuilt — nothing calls them yet.
+- Dark mode is not implemented; `app.json` pins `userInterfaceStyle: light`. Never specified either way.
+- `npx expo install` cannot reach `api.expo.dev` through this environment's proxy, so dependencies were installed with plain `npm install`. Versions were not checked against Expo's SDK-compatibility table.
+
+**Rollback:** the whole change is additive under `mobile/` plus this log entry. Reverting the commit restores the empty placeholder; nothing in `backend/` or `frontend/` was touched.
+
 ## 2026-04-27 22:40 — Batch 2 — lock provider chain, cache real responses, e2e verification
 
 **Batch:** Batch 2
