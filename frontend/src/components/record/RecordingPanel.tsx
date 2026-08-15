@@ -75,7 +75,7 @@ export function RecordingPanel({
           {done
             ? "Send it over when it feels right."
             : listening
-              ? "Keep playing — we're following along."
+              ? "Keep playing, we're following along."
               : `Play at ♩=${bpm}, we'll follow along.`}
         </p>
       </div>
@@ -128,7 +128,7 @@ export function RecordingPanel({
             />
           </div>
 
-          {/* waveform — live while listening, idle bars otherwise */}
+          {/* waveform: live while listening, idle bars otherwise */}
           <div className="flex w-full max-w-[280px] flex-col items-center gap-3">
             {listening ? (
               <>

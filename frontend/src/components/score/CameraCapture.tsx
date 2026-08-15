@@ -32,7 +32,7 @@ export function CameraCapture({
       })
       .catch(() => {
         if (!cancelled)
-          setError("Couldn't open the camera — use “choose a photo” instead.");
+          setError("Couldn't open the camera. Use “choose a photo” instead.");
       });
     return () => {
       cancelled = true;

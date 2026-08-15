@@ -27,7 +27,7 @@ export function RecordRoute() {
     if (hint) setBpm(hint);
   }
 
-  const title = scoreQuery.data?.title ?? "Dvořák — Cello Concerto";
+  const title = scoreQuery.data?.title ?? "Dvořák · Cello Concerto";
   const movement = scoreQuery.data?.score_json.tempo_marking ?? "I. Allegro";
   const meter = scoreQuery.data?.score_json.time_signature ?? "4/4";
 

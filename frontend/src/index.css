@@ -6,14 +6,14 @@
    direction commits to one warm, light world (like Things 3); we do not
    invert for OS dark mode. */
 :root {
-  --paper: #f6f4ec; /* Paper Ivory — locked (DESIGN_SYSTEM.md) */
-  --paper-raised: #fbf9f2;
-  --paper-warm: #f0ecdf;
-  --paper-deep: #e7e1d1;
-  --ink: #1c1c1a; /* Graphite Ink — locked */
-  --ink-soft: #5f5c53;
-  --ink-mute: #948f82;
-  --ink-faint: #a49f93;
+  --paper: #f7f2e4; /* Paper Ivory — locked (DESIGN_SYSTEM.md) */
+  --paper-raised: #fdfaf0;
+  --paper-warm: #f1ead8;
+  --paper-deep: #e8dfc9;
+  --ink: #23201a; /* Graphite Ink — locked */
+  --ink-soft: #63594a;
+  --ink-mute: #978974;
+  --ink-faint: #a89a83;
   --amber: #c78a3a; /* Rosined Amber — the one accent */
   --amber-deep: #a06e22;
   --amber-soft: #f2e6cf;
@@ -22,8 +22,8 @@
   --verdict-on: #2f6e4e;
   --verdict-mid: #b47a2c;
   --verdict-bad: #7b2e2f; /* Cupro Oxblood */
-  --line: rgba(28, 28, 26, 0.1);
-  --line-2: rgba(28, 28, 26, 0.17);
+  --line: rgba(35, 32, 26, 0.09);
+  --line-2: rgba(35, 32, 26, 0.15);
   color-scheme: light;
 }
 
@@ -37,7 +37,8 @@
     background: var(--paper);
     color: var(--ink);
     font-family:
-      -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+      SuisseIntl, "Inter Variable", Inter, -apple-system, BlinkMacSystemFont,
+      system-ui, sans-serif;
     font-variant-numeric: tabular-nums;
   }
   :focus-visible {

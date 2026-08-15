@@ -112,7 +112,7 @@ export function ShowcaseRoute() {
         <Eyebrow>Verdict tones</Eyebrow>
         <p className="text-[13px] text-ink-soft">
           Verdict UI passes <code className="text-ink">tone</code> so it stays in
-          domain language — these colours appear only here.
+          domain language. These colours appear only here.
         </p>
         <div className="flex flex-wrap gap-2">
           <Badge tone="on">On tempo</Badge>

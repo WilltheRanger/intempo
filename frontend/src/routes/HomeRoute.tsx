@@ -39,26 +39,23 @@ export function HomeRoute() {
         </h1>
       </motion.header>
 
-      {/* Primary CTA — photograph sheet music */}
+      {/* Primary CTA: photograph sheet music */}
       <motion.div variants={reduce ? undefined : listItem}>
       <Link
         to="/scores/new"
-        className="press-lg group flex flex-col gap-1 rounded-xl bg-amber px-5 py-5 shadow-card"
+        className="press-lg group flex flex-col gap-2 rounded-xl bg-amber px-5 py-[18px] shadow-card"
       >
         <div className="flex items-center gap-1.5 text-[12px] font-semibold uppercase tracking-[0.1em] text-white/80">
           <Camera size={14} weight="bold" />
           New piece
         </div>
-        <h2 className="font-serif text-[24px] leading-tight text-white">
+        <h2 className="font-serif text-[25px] leading-none text-white">
           Photograph sheet music
         </h2>
-        <p className="text-[14px] text-white/85">
-          Point your camera at the page — we&rsquo;ll read it.
-        </p>
       </Link>
       </motion.div>
 
-      {/* Resume — pick up where you left off */}
+      {/* Resume: pick up where you left off */}
       <motion.div variants={reduce ? undefined : listItem}>
       <Link
         to="/scores"
@@ -73,7 +70,7 @@ export function HomeRoute() {
             {resume.piece.replace(" — ", " · ")}
           </p>
           <p className="truncate text-[13px] text-ink-soft">
-            {resume.movement} — last take {resume.when.toLowerCase()}
+            {resume.movement} · last take {resume.when.toLowerCase()}
           </p>
         </div>
       </Link>
@@ -137,7 +134,7 @@ function SheetStrip({ className }: { className?: string }) {
       className={cn("bg-paper-warm", className)}
       style={{
         backgroundImage:
-          "repeating-linear-gradient(to bottom, transparent 0 7px, rgba(28,28,26,0.28) 7px 8px)",
+          "repeating-linear-gradient(to bottom, transparent 0 7px, rgba(35,32,26,0.26) 7px 8px)",
         backgroundSize: "72% 40px",
         backgroundPosition: "center",
         backgroundRepeat: "no-repeat",

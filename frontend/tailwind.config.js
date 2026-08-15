@@ -29,10 +29,15 @@ export default {
       borderRadius: { sm: "12px", md: "18px", lg: "24px", xl: "30px" },
       fontFamily: {
         serif: ['"Playfair Display"', "Georgia", "serif"],
+        // Suisse Int'l is commercial. Self-host a licensed copy declaring
+        // `font-family: SuisseIntl` in its @font-face and it wins automatically.
+        // Inter ships as the free neo-grotesque stand-in.
         sans: [
+          "SuisseIntl",
+          '"Inter Variable"',
+          "Inter",
           "-apple-system",
           "BlinkMacSystemFont",
-          '"SF Pro Text"',
           "system-ui",
           "sans-serif",
         ],
