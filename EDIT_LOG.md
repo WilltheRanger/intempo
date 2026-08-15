@@ -4,6 +4,43 @@ Newest entries at the top. Format spec: see "Build-time activity logging"
 in intempo-combined.md. Every meaningful change goes here — see that
 section for what counts as "meaningful."
 
+## 2026-07-28 — Composition refinements: density, navigation, hierarchy
+
+**Branch:** claude/next-steps-3p2zhk
+Refining the redesign rather than replacing it. Direction (palette, serif,
+sheet crops, minimal borders) kept as-is.
+
+1. **Compressed the top.** `h1` 34/42px → 24/27px and the sub-paragraph is gone
+   (decorative). Section gaps 12/14 → 8. The current piece is now above the
+   fold instead of below a display headline.
+2. **Continue practicing is one block** — thumb, title, composer/movement,
+   progress and action on a single row at 58px tall, gaps tightened.
+3. **Removed "+ Add" from that row** so nothing competes with Practice.
+4. **Navigation is destinations only.** "Add" was an action masquerading as a
+   tab. Now: **Today · Library · Insights · Profile**, matching the intended
+   hierarchy (what am I practising → practise it → my pieces → my progress).
+   Desktop `TopNav` mirrors it. Adding a piece is an explicit "+ Add piece"
+   control in the screen header (mobile) and the top bar (desktop).
+5. **Library density** — crops `aspect-4/3 → 16/10` (~17% shorter), row gap
+   tightened. Two columns on mobile kept; Home now renders 8 pieces so desktop
+   fills two rows, with `limitOnMobile` hiding the overflow below `md` so a
+   phone isn't a long scroll.
+6. **Bottom nav is opaque** (`bg-paper`, no translucency) — sheet music no
+   longer reads through it.
+7. **Removed `PreviewBadge`** and its mount. No developer UI in the product.
+8. **Piece titles down a step** — grid 16→15px, continue row 21→18px, page
+   headings 30/36 → 24/27px. Functional rather than magazine.
+9. **Ochre confined to active states, progress and favourites.** Removed the
+   amber composer eyebrow (decoration); active nav and filter underlines now
+   carry it, which is a meaningful state.
+
+**Verified:** lint + build green; desktop 1440px and mobile 400px screenshotted;
+confirmed the mobile grid renders exactly 4 cards while desktop shows 8; no
+console errors.
+**Note:** `docs/deploy-cloudflare.md` still describes the preview badge, which
+no longer exists. Left for a follow-up rather than expanding this diff.
+**Rollback:** revert this commit.
+
 ## 2026-07-28 — Ground-up UI redesign: editorial workspace, real desktop layout
 
 **Branch:** claude/next-steps-3p2zhk

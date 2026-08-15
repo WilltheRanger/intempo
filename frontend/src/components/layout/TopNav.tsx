@@ -4,7 +4,8 @@ import { Plus } from "@phosphor-icons/react";
 import { cn } from "../../lib/cn";
 
 const NAV = [
-  { to: "/", label: "Library", end: true },
+  { to: "/", label: "Today", end: true },
+  { to: "/scores", label: "Library" },
   { to: "/insights", label: "Insights" },
   { to: "/account", label: "Account" },
 ];
@@ -43,7 +44,7 @@ export function TopNav() {
                 <span className="relative">
                   {label}
                   {isActive && (
-                    <span className="absolute -bottom-[7px] left-0 right-0 h-[1.5px] bg-ink" />
+                    <span className="absolute -bottom-[7px] left-0 right-0 h-[1.5px] bg-amber" />
                   )}
                 </span>
               )}

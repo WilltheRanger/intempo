@@ -15,13 +15,21 @@ export function PieceGrid({
   pieces,
   favorites,
   onToggleFavorite,
+  limitOnMobile,
 }: {
   pieces: LibraryPiece[];
   favorites?: Set<string>;
   onToggleFavorite?: (id: string) => void;
+  /** Show only the first four below `md`, so a phone isn't a long scroll. */
+  limitOnMobile?: boolean;
 }) {
   return (
-    <ul className="grid grid-cols-2 gap-x-5 gap-y-8 md:grid-cols-3 lg:grid-cols-4 lg:gap-x-6">
+    <ul
+      className={cn(
+        "grid grid-cols-2 gap-x-5 gap-y-6 md:grid-cols-3 lg:grid-cols-4 lg:gap-x-6",
+        limitOnMobile && "max-md:[&>li:nth-child(n+5)]:hidden",
+      )}
+    >
       {pieces.map((p) => (
         <PieceCard
           key={p.id}
@@ -49,20 +57,20 @@ function PieceCard({
         to={`/scores/${piece.id}/record`}
         className="press block overflow-hidden rounded-sm border border-line bg-paper-raised transition-colors duration-200 ease-ios hover:border-line-2"
       >
-        <div className="aspect-[4/3]">
+        <div className="aspect-[16/10]">
           <SheetCrop seed={piece.id} title={piece.title} composer={piece.composer} />
         </div>
       </Link>
 
-      <div className="mt-2.5 flex items-start gap-2">
+      <div className="mt-2 flex items-start gap-2">
         <div className="min-w-0 flex-1">
-          <h3 className="font-serif text-[16px] leading-[1.25] text-ink">
+          <h3 className="font-serif text-[15px] leading-[1.3] text-ink">
             <Link to={`/scores/${piece.id}/record`} className="hover:underline">
               {piece.title}
             </Link>
           </h3>
-          <p className="mt-0.5 text-[13px] text-ink-soft">{piece.composer}</p>
-          <p className="mt-1.5 text-[12px] text-ink-mute">
+          <p className="mt-0.5 text-[12.5px] text-ink-soft">{piece.composer}</p>
+          <p className="mt-1 text-[12px] text-ink-mute">
             {piece.progress != null
               ? `${Math.round(piece.progress * 100)}% · ${piece.lastPracticed}`
               : "Not started"}

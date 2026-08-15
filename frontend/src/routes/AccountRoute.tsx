@@ -18,7 +18,7 @@ export function AccountRoute() {
 
   return (
     <div className="flex max-w-[560px] flex-col gap-7">
-      <h1 className="font-serif text-[30px] leading-tight text-ink lg:text-[36px]">Account</h1>
+      <h1 className="font-serif text-[24px] leading-tight text-ink lg:text-[27px]">Account</h1>
 
       {/* identity */}
       <div className="flex items-center gap-4">
