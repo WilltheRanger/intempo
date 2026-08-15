@@ -1,92 +1,129 @@
 /**
- * Demo repertoire + session data for the Home / Library screen.
+ * Demo repertoire for the library and practice screens.
  *
- * Why this exists: the Home screen is designed to feel lived-in (the
- * moodboard shows a full library and recent sessions), but the live
- * "recent sessions" API and Supabase keys aren't wired yet. Seeding a
- * small built-in library of real repertoire — the "demo-mode" idea from
- * DESIGN_SYSTEM.md — lets the screen render its intended state without
- * depending on a live backend. Swap `useHomeData` for the real query
- * once `GET /v1/sessions` + `/v1/library` land.
+ * Why this exists: the live `GET /v1/library` and `/v1/sessions` endpoints
+ * aren't wired yet (pending Supabase keys), but the screens are designed to
+ * feel lived-in. Seeding real repertoire lets them render their intended
+ * state without a backend. Swap for the real query when the endpoints land.
+ *
+ * Title and composer are separate fields, not one string: the title is the
+ * primary line in every listing and the composer is secondary, so the UI
+ * should never have to parse them apart.
  */
 
 export type Verdict = "on" | "mid" | "bad";
 
-export type RecentSession = {
-  id: string;
-  piece: string;
-  movement: string;
-  /** Human "when", already formatted — demo data, no live clock. */
-  when: string;
-  /** One-line teacher's-margin verdict shown under the title. */
-  note: string;
-  /** Amber note = there's something to refine; ink note = steady. */
-  tone: Verdict;
-};
+/** Broad grouping, used by the library filter. */
+export type PieceKind = "concerto" | "suite" | "etude" | "repertoire";
 
 export type LibraryPiece = {
   id: string;
-  piece: string;
+  /** Primary line. */
+  title: string;
+  composer: string;
+  /** The movement currently being worked on. */
   movement: string;
+  kind: PieceKind;
+  /** Pre-formatted; demo data has no live clock. */
   lastPracticed: string;
   favorite: boolean;
+  /** 0–1 through the piece, or undefined if never practiced. */
+  progress?: number;
 };
 
-/**
- * Demo pieces are stored as "Composer — Title". Screens that show the
- * composer as its own line split it here rather than each re-parsing.
- */
-export function splitPiece(piece: string): { composer: string; title: string } {
-  const [composer, title] = piece.split(" — ");
-  return title ? { composer, title } : { composer: "", title: piece };
-}
+export type RecentSession = {
+  id: string;
+  pieceId: string;
+  when: string;
+  /** One-line verdict, in the teacher's-margin voice. */
+  note: string;
+  tone: Verdict;
+};
+
+export const LIBRARY: LibraryPiece[] = [
+  {
+    id: "p-dvorak-vc",
+    title: "Cello Concerto in B Minor",
+    composer: "Dvořák",
+    movement: "I. Allegro",
+    kind: "concerto",
+    lastPracticed: "Today",
+    favorite: true,
+    progress: 0.68,
+  },
+  {
+    id: "p-saint-saens-vc1",
+    title: "Cello Concerto No. 1 in A Minor",
+    composer: "Saint-Saëns",
+    movement: "I. Allegro non troppo",
+    kind: "concerto",
+    lastPracticed: "2 days ago",
+    favorite: false,
+    progress: 0.41,
+  },
+  {
+    id: "p-bach-suite-1",
+    title: "Suite No. 1 in G Major",
+    composer: "J. S. Bach",
+    movement: "Prélude",
+    kind: "suite",
+    lastPracticed: "5 days ago",
+    favorite: true,
+    progress: 0.86,
+  },
+  {
+    id: "p-elgar-vc",
+    title: "Cello Concerto in E Minor",
+    composer: "Elgar",
+    movement: "I. Adagio",
+    kind: "concerto",
+    lastPracticed: "1 week ago",
+    favorite: false,
+    progress: 0.22,
+  },
+  {
+    id: "p-popper-40",
+    title: "High School of Cello Playing, Op. 73",
+    composer: "Popper",
+    movement: "No. 4",
+    kind: "etude",
+    lastPracticed: "2 weeks ago",
+    favorite: false,
+    progress: 0.55,
+  },
+  {
+    id: "p-bruch-kol",
+    title: "Kol Nidrei, Op. 47",
+    composer: "Bruch",
+    movement: "Adagio",
+    kind: "repertoire",
+    lastPracticed: "3 weeks ago",
+    favorite: false,
+  },
+];
 
 export const RECENT_SESSIONS: RecentSession[] = [
   {
-    id: "s-dvorak-1",
-    piece: "Dvořák — Cello Concerto",
-    movement: "I. Allegro",
+    id: "s-1",
+    pieceId: "p-dvorak-vc",
     when: "Today, 4:32 PM",
     note: "Slight rush, m. 8–12",
     tone: "mid",
   },
   {
-    id: "s-bach-suite-1",
-    piece: "Bach — Cello Suite No. 1",
-    movement: "Prélude",
-    when: "May 3, 2024",
+    id: "s-2",
+    pieceId: "p-bach-suite-1",
+    when: "5 days ago",
     note: "Steady and expressive",
     tone: "on",
   },
 ];
 
-export const LIBRARY: LibraryPiece[] = [
-  {
-    id: "p-bruch-vc1",
-    piece: "Bruch — Violin Concerto No. 1",
-    movement: "I. Vorspiel",
-    lastPracticed: "Last practiced May 2",
-    favorite: true,
-  },
-  {
-    id: "p-saint-saens-vc1",
-    piece: "Saint-Saëns — Cello Concerto No. 1",
-    movement: "I. Allegro non troppo",
-    lastPracticed: "Last practiced Apr 30",
-    favorite: false,
-  },
-  {
-    id: "p-mozart-sinfonia",
-    piece: "Mozart — Sinfonia Concertante",
-    movement: "I. Allegro maestoso",
-    lastPracticed: "Last practiced Apr 28",
-    favorite: false,
-  },
-  {
-    id: "p-bach-suite-1-g",
-    piece: "Bach — Suite No. 1 in G Major",
-    movement: "Prélude",
-    lastPracticed: "Last practiced Apr 25",
-    favorite: false,
-  },
-];
+export function pieceById(id: string): LibraryPiece | undefined {
+  return LIBRARY.find((p) => p.id === id);
+}
+
+/** The piece surfaced by "Continue practicing". */
+export function continuePiece(): LibraryPiece {
+  return pieceById(RECENT_SESSIONS[0].pieceId) ?? LIBRARY[0];
+}

@@ -24,9 +24,9 @@ export default {
         "line-2": "var(--line-2)",
       },
       borderColor: { DEFAULT: "var(--line)" },
-      // Softened one step across the scale — the manuscript surfaces read
-      // gentler at these radii without tipping into "bubbly".
-      borderRadius: { sm: "12px", md: "18px", lg: "24px", xl: "30px" },
+      // Restrained. Nothing in the UI should read as a pill except genuinely
+      // pill-shaped controls, which opt in with `rounded-full` explicitly.
+      borderRadius: { sm: "8px", md: "10px", lg: "12px", xl: "14px" },
       fontFamily: {
         serif: ['"Playfair Display"', "Georgia", "serif"],
         // Suisse Int'l is commercial. Self-host a licensed copy declaring
@@ -44,10 +44,11 @@ export default {
       },
       boxShadow: {
         hair: "inset 0 1px 0 rgba(255,255,255,0.55)",
-        // Wider, lower-contrast falloff — light through paper rather than a
-        // hard drop. Three stops so the gradient reads soft instead of banded.
-        card: "0 1px 2px rgba(74,45,12,0.035), 0 6px 16px -10px rgba(74,45,12,0.16), 0 18px 40px -24px rgba(74,45,12,0.22)",
-        lift: "0 2px 6px rgba(74,45,12,0.05), 0 12px 28px -14px rgba(74,45,12,0.2), 0 28px 60px -32px rgba(74,45,12,0.26)",
+        // Structure comes from hairline borders, not elevation. `card` is
+        // barely-there; `lift` exists only for things that genuinely float
+        // above the page (menus, sheets).
+        card: "0 1px 1px rgba(23,22,20,0.03)",
+        lift: "0 8px 24px -12px rgba(23,22,20,0.18), 0 2px 6px rgba(23,22,20,0.04)",
         ring: "0 0 0 2px var(--paper-raised), 0 0 0 4px var(--amber)",
       },
       transitionTimingFunction: { ios: "cubic-bezier(0.32,0.72,0,1)" },

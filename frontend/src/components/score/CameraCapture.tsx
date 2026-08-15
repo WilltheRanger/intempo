@@ -86,7 +86,7 @@ export function CameraCapture({
           aria-label="Capture photo"
           className="mx-auto grid size-16 place-items-center rounded-full border-4 border-ink/80 bg-paper-raised active:scale-95"
         >
-          <span className="grid size-11 place-items-center rounded-full bg-amber text-white">
+          <span className="grid size-11 place-items-center rounded-full bg-ink text-paper">
             <Camera size={20} />
           </span>
         </button>

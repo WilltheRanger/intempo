@@ -61,7 +61,7 @@ export function RecordingPanel({
 
   return (
     <div
-      className="flex flex-col items-center gap-6 rounded-[28px] bg-spruce px-6 pb-9 pt-8 text-[#EDE4CE] shadow-[inset_0_1px_0_rgba(237,228,206,0.13),0_18px_40px_-24px_rgba(23,48,41,0.95)]"
+      className="flex flex-col items-center gap-6 rounded-lg bg-spruce px-6 pb-9 pt-8 text-[#EDE4CE] shadow-[inset_0_1px_0_rgba(237,228,206,0.13),0_18px_40px_-24px_rgba(23,48,41,0.95)]"
       style={{ background: "linear-gradient(168deg, var(--spruce), var(--spruce-lo))" }}
     >
       <VisualMetronome bpm={bpm} active={listening && metronomeMode === "visual"} />
@@ -86,14 +86,14 @@ export function RecordingPanel({
           <div className="flex gap-3">
             <button
               onClick={rec.reset}
-              className="rounded-full border border-[#EDE4CE]/30 px-5 py-2.5 text-sm transition-colors duration-200 ease-ios hover:bg-white/5 active:scale-[0.98]"
+              className="press rounded-sm border border-[#EDE4CE]/30 px-5 py-2.5 text-sm transition-colors duration-200 ease-ios hover:bg-white/5"
             >
               Redo
             </button>
             <button
               onClick={() => rec.blob && onSubmit(rec.blob)}
               disabled={submitting}
-              className="rounded-full bg-amber px-6 py-2.5 text-sm font-medium text-white shadow-[0_8px_18px_-8px_rgba(199,138,58,0.8)] transition-transform duration-200 ease-ios active:scale-[0.98] disabled:opacity-60"
+              className="press rounded-sm bg-paper px-6 py-2.5 text-sm font-medium text-ink transition-colors duration-200 ease-ios disabled:opacity-60"
             >
               {submitting ? "Sending…" : "Analyze"}
             </button>

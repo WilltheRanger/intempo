@@ -119,7 +119,7 @@ export function VerdictView({
               <>
                 <TipBox>{tip}</TipBox>
                 <Link to={`/scores/${scoreId}/record`}>
-                  <button className="w-full rounded-xl bg-amber py-3.5 text-[15px] font-medium text-white shadow-[0_8px_18px_-8px_rgba(199,138,58,0.8)] transition-transform duration-200 active:scale-[0.98]">
+                  <button className="press w-full rounded-sm bg-ink py-3.5 text-[15px] font-medium text-paper transition-colors duration-200 hover:bg-black">
                     Practice again
                   </button>
                 </Link>

@@ -2,28 +2,28 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Design tokens — mirrored from src/styles/tokens.ts. The manuscript
-   direction commits to one warm, light world (like Things 3); we do not
-   invert for OS dark mode. */
+/* Design tokens, mirrored in src/styles/tokens.ts.
+   Warm off-white ground, near-black text, muted ochre used only as an accent.
+   Deliberately less cream than before: paper is a warm white, not a beige. */
 :root {
-  --paper: #f7f2e4; /* Paper Ivory — locked (DESIGN_SYSTEM.md) */
-  --paper-raised: #fdfaf0;
-  --paper-warm: #f1ead8;
-  --paper-deep: #e8dfc9;
-  --ink: #23201a; /* Graphite Ink — locked */
-  --ink-soft: #63594a;
-  --ink-mute: #978974;
-  --ink-faint: #a89a83;
-  --amber: #c78a3a; /* Rosined Amber — the one accent */
-  --amber-deep: #a06e22;
-  --amber-soft: #f2e6cf;
-  --spruce: #1e3d34; /* Deep Spruce — recording surface only */
-  --spruce-lo: #173029;
+  --paper: #faf8f3;        /* page ground */
+  --paper-raised: #ffffff; /* cards, sheet crops */
+  --paper-warm: #f3f0e8;   /* insets, hover */
+  --paper-deep: #eae5da;   /* wells, dividers on tinted ground */
+  --ink: #171614;          /* primary text */
+  --ink-soft: #55514a;     /* secondary */
+  --ink-mute: #88837a;     /* metadata */
+  --ink-faint: #a9a49a;    /* hints, disabled */
+  --amber: #9c7a3c;        /* muted ochre, accent only */
+  --amber-deep: #7d6130;
+  --amber-soft: #efe8d8;
+  --spruce: #1e3d34;       /* recording environment surface only */
+  --spruce-lo: #17302a;
   --verdict-on: #2f6e4e;
-  --verdict-mid: #b47a2c;
-  --verdict-bad: #7b2e2f; /* Cupro Oxblood */
-  --line: rgba(35, 32, 26, 0.09);
-  --line-2: rgba(35, 32, 26, 0.15);
+  --verdict-mid: #a8762e;
+  --verdict-bad: #7b2e2f;
+  --line: rgba(23, 22, 20, 0.09);
+  --line-2: rgba(23, 22, 20, 0.16);
   color-scheme: light;
 }
 

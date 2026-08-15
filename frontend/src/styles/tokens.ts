@@ -12,27 +12,27 @@
  */
 
 export const colors = {
-  paper: "#F7F2E4", // Paper Ivory — page ground (locked)
-  paperRaised: "#FDFAF0", // cards / screen surfaces
-  paperWarm: "#F1EAD8", // insets, manuscript panels
-  paperDeep: "#E8DFC9", // machined "tray" behind bezelled surfaces
-  ink: "#23201A", // Graphite Ink — primary text (locked)
-  inkSoft: "#63594A", // secondary text
-  inkMute: "#978974", // metadata
-  inkFaint: "#A89A83", // hints / disabled
-  amber: "#C78A3A", // Rosined Amber — the one accent
-  amberDeep: "#A06E22", // accent text / pressed
-  amberSoft: "#F2E6CF", // tinted accent background
+  paper: "#FAF8F3", // Paper Ivory — page ground (locked)
+  paperRaised: "#FFFFFF", // cards / screen surfaces
+  paperWarm: "#F3F0E8", // insets, manuscript panels
+  paperDeep: "#EAE5DA", // machined "tray" behind bezelled surfaces
+  ink: "#171614", // Graphite Ink — primary text (locked)
+  inkSoft: "#55514A", // secondary text
+  inkMute: "#88837A", // metadata
+  inkFaint: "#A9A49A", // hints / disabled
+  amber: "#9C7A3C", // Rosined Amber — the one accent
+  amberDeep: "#7D6130", // accent text / pressed
+  amberSoft: "#EFE8D8", // tinted accent background
   spruce: "#1E3D34", // recording environment surface
   spruceLo: "#173029",
   verdictOn: "#2F6E4E", // on tempo (verdict UI only)
-  verdictMid: "#B47A2C", // slight rush/drag (verdict UI only)
+  verdictMid: "#A8762E", // slight rush/drag (verdict UI only)
   verdictBad: "#7B2E2F", // rushing/dragging (verdict UI only)
-  line: "rgba(35,32,26,0.09)",
-  line2: "rgba(35,32,26,0.15)",
+  line: "rgba(23,22,20,0.09)",
+  line2: "rgba(23,22,20,0.16)",
 } as const;
 
-export const radii = { sm: "10px", md: "14px", lg: "20px", xl: "26px" } as const;
+export const radii = { sm: "8px", md: "10px", lg: "12px", xl: "14px" } as const;
 
 export const shadow = {
   hair: "inset 0 1px 0 rgba(255,255,255,0.55)", // lit top edge
