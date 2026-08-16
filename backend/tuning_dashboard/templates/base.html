@@ -1,0 +1,54 @@
+{# Local dev tool. Deliberately plain: this is a readout, not a product screen,
+   and it must not drift into looking like one. #}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Tuning{% endblock %} · InTempo</title>
+  <style>
+    :root { --ink:#14110E; --mute:#5C564D; --faint:#7A7367; --line:#E6E2DA; --bg:#FBFAF7; }
+    * { box-sizing: border-box; }
+    body { margin:0; background:var(--bg); color:var(--ink);
+           font:14px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
+    header { display:flex; gap:24px; align-items:baseline;
+             padding:16px 24px; border-bottom:1px solid var(--line); }
+    header h1 { font-size:15px; margin:0; font-weight:600; }
+    header nav a { color:var(--mute); text-decoration:none; margin-right:16px; }
+    header nav a.on { color:var(--ink); text-decoration:underline; }
+    main { display:grid; grid-template-columns: 1fr 280px; gap:32px; padding:24px; align-items:start; }
+    @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+    .plot { width:100%; height:auto; background:#fff; border:1px solid var(--line); display:block; }
+    h2 { font-size:13px; text-transform:uppercase; letter-spacing:.08em;
+         color:var(--faint); margin:28px 0 8px; font-weight:600; }
+    h2:first-child { margin-top:0; }
+    table { border-collapse:collapse; width:100%; font-size:13px; }
+    th, td { text-align:left; padding:6px 10px; border-bottom:1px solid var(--line); }
+    th { color:var(--faint); font-weight:600; }
+    td.num { text-align:right; font-variant-numeric:tabular-nums; }
+    aside dl { display:grid; grid-template-columns:1fr auto; gap:2px 12px; margin:0; font-size:12px; }
+    aside dt { color:var(--faint); }
+    aside dd { margin:0; text-align:right; font-variant-numeric:tabular-nums; }
+    aside .over dt, aside .over dd { color:#8F681C; font-weight:600; }
+    pre { background:#fff; border:1px solid var(--line); padding:12px;
+          overflow-x:auto; font-size:12px; margin:0; }
+    .note { color:var(--mute); max-width:70ch; }
+    .warn { color:#8F681C; }
+    .bad  { color:#C53B3B; }
+    .empty { color:var(--faint); }
+    .tag { font-size:11px; border:1px solid var(--line); padding:1px 6px; color:var(--faint); }
+    .legend span { margin-right:16px; font-size:12px; color:var(--mute); }
+    .swatch { display:inline-block; width:9px; height:9px; margin-right:4px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Batch 3 tuning</h1>
+    <nav>
+      <a href="/{% if query %}?{{ query|urlencode }}{% endif %}" class="{% block navclip %}{% endblock %}">clip</a>
+      <a href="/overview{% if query %}?{{ query|urlencode }}{% endif %}" class="{% block navover %}{% endblock %}">all six</a>
+    </nav>
+  </header>
+  {% block body %}{% endblock %}
+</body>
+</html>
