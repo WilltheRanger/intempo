@@ -6,6 +6,80 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-16 22:30 — Score images are displayable; last-practiced is real
+
+**Batch:** backend gap-closing, toward `USE_FIXTURES = false`.
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`
+
+Two of the four null fields in `sources/api.ts` are now backed. `upload.py`'s
+own docstring has always said "reads happen later through `/v1/scores/:id`
+… which sign download URLs" — that was the contract; nothing implemented it.
+
+**Backend — `scores.py`:**
+
+- `ScoreResponse` gains `image_url` and `image_url_expires_at`: a download URL
+  signed at read time, good for an hour. `source_image_url` stays and is
+  documented for what it is — the signed *upload* URL, expired minutes after
+  the upload, never usable for display.
+- `_object_key_from()` recovers `<user>/<uuid>.<ext>` from the stored URL,
+  since signing needs the key and only the URL was kept. The four storage URL
+  shapes now live in one tuple that both this and `_assert_image_url_owned_by`
+  read, so a new shape is added once. Deriving is safe because the assertion
+  has already refused anything else; storing the key on the row would be
+  tidier and is the right follow-up, but it needs a migration and a backfill.
+- Signing is **batched** — a library of forty scores is one storage call, not
+  forty — and **degrades to no image** on failure. A list of scores with no
+  thumbnails is a usable screen; a 500 is not.
+
+**Client — `sources/api.ts`:**
+
+- `thumbnail` is the signed URL. Still nullable: signing can fail, and
+  `ScoreThumbnail` already falls back to its ruled-staff drawing.
+- `lastPracticedAt` needed **no backend change at all** — `/v1/analyses` has
+  existed since the vocabulary fix. One extra request for the whole library
+  rather than one per piece: the list is newest-first, so the first row naming
+  a score is that score's most recent take.
+- `getCurrentPiece` now means "most recently *played*", from the newest
+  analysis, rather than "most recently added". It falls back to the newest
+  score for someone who has never recorded, which is the only sensible thing to
+  offer them.
+
+**Tests run:** `192 passed` (was 185; +7 covering key extraction from all four
+URL shapes, a foreign URL, the batched call count, the degrade path, the
+bucket-prefixed echo, and an error entry).
+
+Then the part that actually proves it. `mobile/scripts/stub-api.py` serves the
+real response shapes over HTTP; with `USE_FIXTURES` flipped to false and
+`EXPO_PUBLIC_API_BASE_URL` pointed at it, the app was driven in Chromium:
+
+- Four real score images loaded from signed URLs — all eight `<img>` elements
+  reported `naturalWidth: 1200`, so they decoded, they didn't just get a src.
+- Today's featured card is the Bach Sonata with "Practiced today", not the
+  newest-added score — `getCurrentPiece` reading the analyses list.
+- Library shows "Practiced 3 days ago" on the Wohlfahrt, and nothing on the
+  Suite, which has no analysis. The null case renders as absence.
+- Request log exactly as designed: `/v1/analyses?limit=1`, `/v1/scores/:id`,
+  `/v1/scores`, `/v1/analyses?limit=200`, `/v1/me`, then the four images.
+- No failed requests, no page errors.
+
+`USE_FIXTURES` is back to `true` and the fixture build re-exported — the real
+backend isn't deployed and there are no Supabase keys.
+
+**Known side effects / things to watch:**
+
+- **Two fields are still null: `movement` and `progress`.** `movement` has no
+  column and no `score_json` field. `progress` has neither, and it also has no
+  definition — what counts as progress on a piece is a product decision, not a
+  schema one. Both need answering before `USE_FIXTURES` can flip for real.
+- Signing adds one storage round trip to every `/v1/scores` read, including
+  callers that never render an image. Worth measuring against a real project
+  before optimising; the alternative (a separate endpoint) costs the client N
+  requests instead.
+- The stub validates nothing and enforces no auth. It is a fixture with an HTTP
+  interface, not a mock of the backend's behaviour.
+
+---
+
 ## 2026-08-16 21:40 — Batch 3 tuning dashboard
 
 **Batch:** 3 (audio analysis core) — the tuning appendix's step 2.
