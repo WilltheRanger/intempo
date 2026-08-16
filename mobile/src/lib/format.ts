@@ -1,3 +1,5 @@
+import type { UserRole, UserTier } from '../data/types';
+
 /** Whole calendar days between two dates, ignoring time of day. */
 function calendarDaysBetween(from: Date, to: Date): number {
   const startOfFrom = new Date(
@@ -54,6 +56,33 @@ export function formatProgressPercent(progress: number | null): string | null {
   }
   const clamped = Math.min(Math.max(progress, 0), 1);
   return `${Math.round(clamped * 100)}%`;
+}
+
+const TIER_LABELS: Record<UserTier, string> = {
+  free: 'Free',
+  pro: 'Pro',
+  teacher: 'Teacher',
+  student_via_teacher: 'Student, via teacher',
+};
+
+const ROLE_LABELS: Record<UserRole, string> = {
+  student: 'Student',
+  teacher: 'Teacher',
+};
+
+/**
+ * Account tier and role, as a person reads them.
+ *
+ * Both fall back to the raw value rather than a guess: if the backend adds a
+ * tier these will show `enterprise` until it's given a label here, which is
+ * visible, where silently printing "Free" would not be.
+ */
+export function formatTier(tier: UserTier): string {
+  return TIER_LABELS[tier] ?? tier;
+}
+
+export function formatRole(role: UserRole): string {
+  return ROLE_LABELS[role] ?? role;
 }
 
 /** Joins metadata fragments, dropping the ones that had no value. */

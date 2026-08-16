@@ -1,5 +1,5 @@
-import type { Piece } from '../types';
-import type { PieceSource } from './types';
+import type { Musician, Piece } from '../types';
+import type { MusicianSource, PieceSource } from './types';
 
 /**
  * Development fixtures.
@@ -111,5 +111,26 @@ export const fixturePieceSource: PieceSource = {
   async getPiece(id) {
     const match = FIXTURE_PIECES.find((piece) => piece.id === id);
     return match ? toPiece(match) : null;
+  },
+};
+
+/**
+ * A freshly provisioned account — free tier, student role, no studio.
+ *
+ * That is exactly what `/v1/me` writes on first touch
+ * (`backend/app/routers/me.py`), so the Profile screen is developed against
+ * the state most accounts are actually in rather than a flattering one.
+ */
+const FIXTURE_MUSICIAN: Musician = {
+  id: 'fixture-musician',
+  email: 'you@example.com',
+  tier: 'free',
+  role: 'student',
+  studioId: null,
+};
+
+export const fixtureMusicianSource: MusicianSource = {
+  async getMusician() {
+    return FIXTURE_MUSICIAN;
   },
 };

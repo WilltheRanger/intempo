@@ -1,6 +1,7 @@
+import { getMe } from '../api/me';
 import { getScore, listScores } from '../api/scores';
-import type { Piece, ScoreResponse } from '../types';
-import type { PieceSource } from './types';
+import type { Musician, Piece, ScoreResponse } from '../types';
+import type { MusicianSource, PieceSource } from './types';
 
 /**
  * The real backend, mapped into the shape the UI renders.
@@ -45,5 +46,27 @@ export const apiPieceSource: PieceSource = {
 
   async getPiece(id) {
     return toPiece(await getScore(id));
+  },
+};
+
+/**
+ * The account, straight from `/v1/me`.
+ *
+ * Unlike the pieces above, nothing here is invented — the endpoint returns
+ * every field the Profile screen renders.
+ */
+function toMusician(me: Awaited<ReturnType<typeof getMe>>): Musician {
+  return {
+    id: me.id,
+    email: me.email,
+    tier: me.tier,
+    role: me.role,
+    studioId: me.studio_id,
+  };
+}
+
+export const apiMusicianSource: MusicianSource = {
+  async getMusician() {
+    return toMusician(await getMe());
   },
 };
