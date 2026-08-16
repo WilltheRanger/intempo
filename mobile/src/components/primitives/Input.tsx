@@ -1,0 +1,153 @@
+import { useState, type ReactNode } from 'react';
+import {
+  Platform,
+  StyleSheet,
+  TextInput,
+  View,
+  type StyleProp,
+  type TextInputProps,
+  type TextStyle,
+  type ViewStyle,
+} from 'react-native';
+
+import {
+  BORDER_WIDTH,
+  colors,
+  MIN_TOUCH_TARGET,
+  radii,
+  spacing,
+  typography,
+} from '../../design';
+import { Text } from './Text';
+
+/**
+ * react-native-web renders TextInput as a DOM input, which draws the browser's
+ * own focus ring inside our border. The field carries the focus treatment, so
+ * suppress the inner one. No-op on native.
+ */
+const NO_INNER_OUTLINE = Platform.select({
+  web: { outlineStyle: 'none', outlineWidth: 0 },
+  default: {},
+}) as TextStyle;
+
+export interface InputProps {
+  label: string;
+  value: string;
+  onChangeText: (value: string) => void;
+  placeholder?: string;
+  /** Serif, for a composition title. Sans for everything else. */
+  serif?: boolean;
+  /**
+   * Small control on the label's right — a "Show" for a password, say. Keep it
+   * to a word; the label leads.
+   */
+  action?: ReactNode;
+  /**
+   * Keyboard and autofill behaviour. Passed straight through, because an email
+   * field that autocapitalises or a password field the keychain can't see is
+   * broken in a way no amount of styling fixes.
+   */
+  secureTextEntry?: boolean;
+  keyboardType?: TextInputProps['keyboardType'];
+  autoCapitalize?: TextInputProps['autoCapitalize'];
+  autoComplete?: TextInputProps['autoComplete'];
+  textContentType?: TextInputProps['textContentType'];
+  returnKeyType?: TextInputProps['returnKeyType'];
+  onSubmitEditing?: TextInputProps['onSubmitEditing'];
+  editable?: boolean;
+  style?: StyleProp<ViewStyle>;
+}
+
+/**
+ * A labelled single-line text field.
+ *
+ * Same surface, border, and radius as a card, and it takes the accent on focus
+ * — the same treatment as search, so a field reads as a field wherever it is.
+ */
+export function Input({
+  label,
+  value,
+  onChangeText,
+  placeholder,
+  serif = false,
+  action,
+  secureTextEntry = false,
+  keyboardType,
+  autoCapitalize,
+  autoComplete,
+  textContentType,
+  returnKeyType,
+  onSubmitEditing,
+  editable = true,
+  style,
+}: InputProps) {
+  const [focused, setFocused] = useState(false);
+
+  return (
+    <View style={style}>
+      <View style={styles.labelRow}>
+        <Text variant="sectionLabel" color="textSecondary">
+          {label}
+        </Text>
+        {action}
+      </View>
+
+      <TextInput
+        value={value}
+        onChangeText={onChangeText}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
+        placeholder={placeholder}
+        placeholderTextColor={colors.textTertiary}
+        underlineColorAndroid="transparent"
+        accessibilityLabel={label}
+        secureTextEntry={secureTextEntry}
+        keyboardType={keyboardType}
+        autoCapitalize={autoCapitalize}
+        autoComplete={autoComplete}
+        textContentType={textContentType}
+        returnKeyType={returnKeyType}
+        onSubmitEditing={onSubmitEditing}
+        editable={editable}
+        style={[
+          styles.field,
+          serif ? styles.serifText : styles.sansText,
+          focused && styles.focused,
+          !editable && styles.disabled,
+          NO_INNER_OUTLINE,
+        ]}
+      />
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  labelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: spacing.sm,
+  },
+  field: {
+    minHeight: MIN_TOUCH_TARGET,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    backgroundColor: colors.surface,
+    borderRadius: radii.md,
+    borderWidth: BORDER_WIDTH,
+    borderColor: colors.border,
+    color: colors.textPrimary,
+  },
+  sansText: {
+    ...typography.body,
+  },
+  serifText: {
+    ...typography.pieceTitle,
+  },
+  focused: {
+    borderColor: colors.accent,
+  },
+  disabled: {
+    color: colors.textTertiary,
+  },
+});

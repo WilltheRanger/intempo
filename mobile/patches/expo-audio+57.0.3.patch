@@ -1,0 +1,123 @@
+diff --git a/node_modules/expo-audio/android/src/main/java/expo/modules/audio/AudioStream.kt b/node_modules/expo-audio/android/src/main/java/expo/modules/audio/AudioStream.kt
+index 8ecdcc1..9ea53e2 100644
+--- a/node_modules/expo-audio/android/src/main/java/expo/modules/audio/AudioStream.kt
++++ b/node_modules/expo-audio/android/src/main/java/expo/modules/audio/AudioStream.kt
+@@ -1,9 +1,15 @@
+ package expo.modules.audio
+ 
+ import android.Manifest
++import android.content.Context
+ import android.media.AudioFormat
++import android.media.AudioManager
+ import android.media.AudioRecord
+ import android.media.MediaRecorder
++import android.media.audiofx.AcousticEchoCanceler
++import android.media.audiofx.AudioEffect
++import android.media.audiofx.AutomaticGainControl
++import android.media.audiofx.NoiseSuppressor
+ import androidx.annotation.RequiresPermission
+ import expo.modules.kotlin.AppContext
+ import expo.modules.kotlin.jni.NativeArrayBuffer
+@@ -40,6 +46,9 @@ class AudioStream(
+ 
+   private var audioRecord: AudioRecord? = null
+   private var captureJob: Job? = null
++  // Held for the life of the stream: an AudioEffect that is garbage collected
++  // takes its setting with it, and the processing comes back mid-take.
++  private val disabledEffects = mutableListOf<AudioEffect>()
+   private val coroutineScope = CoroutineScope(Dispatchers.IO)
+ 
+   var sampleRate: Int = 0
+@@ -87,6 +96,7 @@ class AudioStream(
+     audioRecord?.stop()
+     audioRecord?.release()
+     audioRecord = null
++    releaseEffects()
+     emitStatus()
+   }
+ 
+@@ -139,7 +149,7 @@ class AudioStream(
+   @RequiresPermission(Manifest.permission.RECORD_AUDIO)
+   private fun createAudioRecord(config: ResolvedAudioConfig): AudioRecord {
+     val recorder = AudioRecord(
+-      MediaRecorder.AudioSource.MIC,
++      resolveAudioSource(),
+       config.sampleRate,
+       config.channelConfig,
+       config.audioEncoding,
+@@ -155,9 +165,75 @@ class AudioStream(
+       )
+     }
+ 
++    disableInputProcessing(recorder.audioSessionId)
++
+     return recorder
+   }
+ 
++  /**
++   * The least-processed input the device offers.
++   *
++   * `MIC` is the platform's general-purpose source and runs through whatever
++   * the OEM's input chain applies — automatic gain in particular, which
++   * reshapes note attacks and is exactly what a measurement app must not have.
++   * `UNPROCESSED` is the source Android defines for this, where supported;
++   * `VOICE_RECOGNITION` is the documented fallback that OEMs are expected to
++   * leave clean. `MIC` is not used at all.
++   */
++  private fun resolveAudioSource(): Int {
++    val audioManager = appContext?.reactContext
++      ?.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
++    val supportsUnprocessed = audioManager
++      ?.getProperty(AudioManager.PROPERTY_SUPPORT_AUDIO_SOURCE_UNPROCESSED) == "true"
++
++    return if (supportsUnprocessed) {
++      MediaRecorder.AudioSource.UNPROCESSED
++    } else {
++      MediaRecorder.AudioSource.VOICE_RECOGNITION
++    }
++  }
++
++  /**
++   * Belt and braces on top of the source choice: some devices attach these
++   * effects to a capture session regardless of which source was asked for.
++   * Each one is optional on any given device, so every step is guarded.
++   */
++  private fun disableInputProcessing(sessionId: Int) {
++    if (sessionId == AudioRecord.ERROR || sessionId == AudioRecord.ERROR_BAD_VALUE) {
++      return
++    }
++
++    runCatching {
++      if (AutomaticGainControl.isAvailable()) {
++        AutomaticGainControl.create(sessionId)?.let { effect ->
++          effect.enabled = false
++          disabledEffects.add(effect)
++        }
++      }
++    }
++    runCatching {
++      if (NoiseSuppressor.isAvailable()) {
++        NoiseSuppressor.create(sessionId)?.let { effect ->
++          effect.enabled = false
++          disabledEffects.add(effect)
++        }
++      }
++    }
++    runCatching {
++      if (AcousticEchoCanceler.isAvailable()) {
++        AcousticEchoCanceler.create(sessionId)?.let { effect ->
++          effect.enabled = false
++          disabledEffects.add(effect)
++        }
++      }
++    }
++  }
++
++  private fun releaseEffects() {
++    disabledEffects.forEach { effect -> runCatching { effect.release() } }
++    disabledEffects.clear()
++  }
++
+   private fun startCaptureLoop(recorder: AudioRecord, config: ResolvedAudioConfig) {
+     captureJob = coroutineScope.launch {
+       val readSizeBytes = config.readSize

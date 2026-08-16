@@ -1,0 +1,8 @@
+{
+  "name": "intempo",
+  "private": true,
+  "description": "Repository root. Not a Node project — this exists so a CI or hosting build that starts at the repo root can reach the app in mobile/.",
+  "scripts": {
+    "build": "cd mobile && npm ci && npx expo export --platform web"
+  }
+}
