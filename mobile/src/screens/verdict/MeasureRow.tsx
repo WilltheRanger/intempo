@@ -6,6 +6,17 @@ import { BORDER_WIDTH, colors, spacing } from '../../design';
 import { formatVerdict, verdictColorFor } from '../../lib/tempo';
 import { DeviationBar } from '../insights/DeviationBar';
 
+/**
+ * The fixed columns either side of the bar, exported so the legend above the
+ * list can sit over the bar itself rather than over the middle of the card.
+ */
+export const MEASURE_COLUMNS = {
+  number: 24,
+  verdict: 78,
+  gap: spacing.md,
+  gutter: spacing.lg,
+} as const;
+
 export interface MeasureRowProps {
   measure: MeasureVerdict;
   revealed: boolean;
@@ -75,7 +86,7 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.md,
+    gap: MEASURE_COLUMNS.gap,
     paddingVertical: spacing.md,
   },
   divided: {
@@ -86,7 +97,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfacePressed,
   },
   number: {
-    width: 24,
+    width: MEASURE_COLUMNS.number,
     textAlign: 'right',
     fontVariant: ['tabular-nums'],
   },
@@ -94,7 +105,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   verdict: {
-    width: 78,
+    width: MEASURE_COLUMNS.verdict,
     textAlign: 'right',
     fontVariant: ['tabular-nums'],
   },

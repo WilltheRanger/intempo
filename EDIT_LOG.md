@@ -6,6 +6,75 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-16 18:02 — Verdict screen — practice-feedback refinement pass
+
+**Batch:** Frontend rebuild — Record + Verdict flow.
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`
+
+**What changed** (refinement only — no redesign, no new visual patterns, no
+token changes):
+
+- **Headline back to charcoal.** It was taking `verdictColorFor(worstBand)`, so
+  a take with one severe measure put a red sentence on the screen at 36pt,
+  which reads as an error rather than as feedback. `PageHeader`'s `titleColor`
+  prop is gone with it — nothing else ever set it, and a coloured screen title
+  everywhere else would be decoration.
+- **Take-specific wording.** `formatTakeVerdict(measures)` in `lib/tempo.ts`
+  replaces `formatTendency(verdict)` on this screen. One recording can't see a
+  habit, so "You tend to rush" is now reserved for Insights, where there are
+  sessions to average. A take says where it went wrong instead — "You rushed in
+  the middle", "You dragged towards the end" — from the midpoint of the
+  off-tempo measures, with drift that never left the slight band getting the
+  gentler "Tempo drifted ahead".
+- **The trend chart explains itself.** `TrendLine` now carries its own axes: a
+  54pt gutter naming Ahead / Target / Behind against the rule, and measure
+  numbers at each end of the plot so a bump on the line can be found in the
+  list below. The absolutely-positioned Ahead/Behind labels and the sentence
+  "The rule is the target tempo. The take starts on the left." are deleted —
+  they were saying what the chart now says.
+- **Legend above the measure list**: `Behind ← Target → Ahead`. Laid out on the
+  row's own columns (exported as `MEASURE_COLUMNS` from `MeasureRow`) so the
+  arrows sit over the bar, not over the middle of the card — measured at
+  x 72–267, which is the bar exactly.
+
+Kept as they were: the measure words, the verdict colours on bars and words,
+`Record again` primary over `Back to the piece` secondary, spacing, type, card
+style, navigation.
+
+**Three-foot test (Verdict):** first "You rushed in the middle" — charcoal, the
+only serif on the screen; second the red run of measures 5–8 in the list, which
+is the same fact as the headline, in the same place the headline points to;
+third the black `Record again`. Before this pass the red headline and the red
+rows competed for first, which is the hierarchy fault §3 law 4 describes.
+
+**Tests run:** `npx tsc --noEmit` clean. `npx expo export --platform web` and
+the flow driven in Chromium at 393×852:
+
+- Headline `rgb(20, 17, 14)` = `textPrimary`, 36pt.
+- Legend 13pt `textTertiary`, box x 72→267 against a bar column of 72→267.
+- Prose line gone; axis labels present once each.
+- Safe areas, simulated with a 34pt home indicator by overriding the inset
+  probe's `env()` padding: footer `padding-bottom` tracks it at 34px (16pt
+  floor without one), secondary button ends 34pt above the screen edge, and
+  with all twelve measure rows expanded the last row clears the footer by 24pt
+  and "Tap a measure for its timing" by 55pt. Nothing hides under the actions.
+- `formatTakeVerdict` checked against nine hand-built takes (empty, all on
+  tempo, slight-only both directions, rush/drag at start, middle, end,
+  throughout, and a single-measure take).
+
+**Known side effects / things to watch:**
+
+- A one-measure take reports "throughout", since one measure is its whole
+  extent. Correct but blunt; worth revisiting if very short takes are common.
+- The wording still comes from the client. The pipeline's own sentence
+  (`take.headline`) sits under it and is the better source once it covers every
+  case — two sentences describing the same take is one more than the screen
+  needs.
+- Verified in a browser, not on a device. No mic, so the take is still the
+  fixture.
+
+---
+
 ## 2026-08-16 00:31 — Today screen — final refinement pass (golden screen)
 
 **Batch:** Frontend rebuild, phase 3 sign-off.

@@ -16,11 +16,11 @@ import {
   Text,
 } from '../../components/primitives';
 import { takeSource } from '../../data/sources';
-import type { Band, TakeResult } from '../../data/types';
+import type { TakeResult } from '../../data/types';
 import { spacing } from '../../design';
-import { formatTendency, verdictColorFor } from '../../lib/tempo';
+import { formatTakeVerdict } from '../../lib/tempo';
 import type { RootNavigation, RootStackParamList } from '../../navigation/types';
-import { MeasureRow } from './MeasureRow';
+import { MEASURE_COLUMNS, MeasureRow } from './MeasureRow';
 import { TrendLine } from './TrendLine';
 
 /**
@@ -34,7 +34,8 @@ import { TrendLine } from './TrendLine';
  * This is the one screen the verdict colours are allowed on. They repeat what
  * the words already say and are never the only signal — every coloured thing
  * here sits beside its own label, because red-green deficiency maps almost
- * exactly onto this trio.
+ * exactly onto this trio. The headline stays charcoal: a take that drifted is
+ * feedback, and a red sentence at screen-title size reads as an error.
  */
 export function VerdictScreen() {
   const navigation = useNavigation<RootNavigation>();
@@ -98,6 +99,12 @@ export function VerdictScreen() {
     );
   }
 
+  // The chart's x axis, so the ends of the line name measures that can be
+  // found in the list below it.
+  const firstMeasure = take.measures[0]?.measure ?? 1;
+  const lastMeasure =
+    take.measures[take.measures.length - 1]?.measure ?? take.measures.length;
+
   return (
     <ScreenContainer
       footer={
@@ -120,8 +127,7 @@ export function VerdictScreen() {
     >
       <PageHeader
         eyebrow={take.pieceTitle}
-        title={formatTendency(take.verdict)}
-        titleColor={verdictColorFor(worstBand(take))}
+        title={formatTakeVerdict(take.measures)}
         onBack={() => navigation.goBack()}
         backLabel="Back to the piece"
       />
@@ -154,41 +160,29 @@ export function VerdictScreen() {
 
       <SectionHeader label="Across the take" style={styles.section} />
       {/*
-        The axis here is vertical, unlike the bars elsewhere: the rule is the
-        target tempo and the line rides above or below it. Labelling it left
-        and right would describe a chart this isn't.
+        No sentence under this one. The chart names its own axes — Target on
+        the rule, ahead and behind either side of it, measure numbers at each
+        end — so prose explaining it would only repeat what it already says.
       */}
       <Card>
-        <View>
-          <TrendLine
-            trend={take.trend}
-            accessibilityLabel={`Tempo drift across ${take.measures.length} measures`}
-          />
-          <Text
-            variant="metadataSmall"
-            color="textTertiary"
-            style={styles.axisTop}
-          >
-            Ahead
-          </Text>
-          <Text
-            variant="metadataSmall"
-            color="textTertiary"
-            style={styles.axisBottom}
-          >
-            Behind
-          </Text>
-        </View>
-        <Text
-          variant="metadataSmall"
-          color="textTertiary"
-          style={styles.axisNote}
-        >
-          The rule is the target tempo. The take starts on the left.
-        </Text>
+        <TrendLine
+          trend={take.trend}
+          firstMeasure={firstMeasure}
+          lastMeasure={lastMeasure}
+          accessibilityLabel={`Tempo drift across ${take.measures.length} measures`}
+        />
       </Card>
 
       <SectionHeader label="Measure by measure" style={styles.section} />
+      {/*
+        Which way the bars point. Laid out on the row's own columns so the
+        arrows sit over the bar rather than over the middle of the card.
+      */}
+      <View style={styles.legend}>
+        <Text variant="metadataSmall" color="textTertiary" style={styles.legendLabel}>
+          Behind ← Target → Ahead
+        </Text>
+      </View>
       <Card padded={false}>
         <View style={styles.rows}>
           {take.measures.map((measure, index) => (
@@ -214,27 +208,6 @@ export function VerdictScreen() {
   );
 }
 
-/**
- * The take's own band, for the headline's colour.
- *
- * The worst measure rather than the average: a take that was steady for eleven
- * measures and severe for one is not a steady take, and the headline sentence
- * beneath already says which measures went wrong.
- */
-function worstBand(take: TakeResult): Band {
-  return take.measures.reduce<Band>(
-    (worst, m) => (SEVERITY[m.band] > SEVERITY[worst] ? m.band : worst),
-    'on',
-  );
-}
-
-const SEVERITY: Record<Band, number> = {
-  on: 0,
-  slight: 1,
-  rush_drag: 2,
-  severe: 3,
-};
-
 function measureLabel(count: number): string {
   return count === 1 ? '1 measure' : `${count} measures`;
 }
@@ -256,18 +229,17 @@ const styles = StyleSheet.create({
   section: {
     marginTop: spacing['2xl'],
   },
-  axisTop: {
-    position: 'absolute',
-    top: 0,
-    right: 0,
+  legend: {
+    // The row's own geometry: number column, gap, bar, gap, verdict column.
+    // Padding rather than spacer views, so the legend stays one line of text.
+    paddingLeft:
+      MEASURE_COLUMNS.gutter + MEASURE_COLUMNS.number + MEASURE_COLUMNS.gap,
+    paddingRight:
+      MEASURE_COLUMNS.gutter + MEASURE_COLUMNS.verdict + MEASURE_COLUMNS.gap,
+    paddingBottom: spacing.sm,
   },
-  axisBottom: {
-    position: 'absolute',
-    bottom: 0,
-    right: 0,
-  },
-  axisNote: {
-    marginTop: spacing.md,
+  legendLabel: {
+    textAlign: 'center',
   },
   rows: {
     paddingHorizontal: spacing.lg,
