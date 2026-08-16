@@ -14,11 +14,13 @@ import { InsightsScreen } from '../screens/insights/InsightsScreen';
 import { LibraryScreen } from '../screens/library/LibraryScreen';
 import { PieceDetailScreen } from '../screens/pieceDetail/PieceDetailScreen';
 import { PracticeScreen } from '../screens/practice/PracticeScreen';
+import { RecordScreen } from '../screens/record/RecordScreen';
 import { ProfileScreen } from '../screens/profile/ProfileScreen';
 import { ScannerScreen } from '../screens/scanner/ScannerScreen';
 import { TodayScreen } from '../screens/today/TodayScreen';
 import { TranscribeScreen } from '../screens/transcribe/TranscribeScreen';
 import { TranscriptionReviewScreen } from '../screens/transcriptionReview/TranscriptionReviewScreen';
+import { VerdictScreen } from '../screens/verdict/VerdictScreen';
 import { BottomTabBar } from './BottomTabBar';
 import type { RootStackParamList, TabParamList } from './types';
 
@@ -87,6 +89,8 @@ export function RootNavigator() {
         name="Acknowledgements"
         component={AcknowledgementsScreen}
       />
+      <Stack.Screen name="Record" component={RecordScreen} />
+      <Stack.Screen name="Verdict" component={VerdictScreen} />
     </Stack.Navigator>
   );
 }

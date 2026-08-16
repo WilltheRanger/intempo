@@ -1,6 +1,18 @@
 import { verdictFor } from '../../lib/tempo';
-import type { Band, Direction, Musician, Piece, PieceInsight } from '../types';
-import type { InsightsSource, MusicianSource, PieceSource } from './types';
+import type {
+  Band,
+  Direction,
+  MeasureVerdict,
+  Musician,
+  Piece,
+  PieceInsight,
+} from '../types';
+import type {
+  InsightsSource,
+  MusicianSource,
+  PieceSource,
+  TakeSource,
+} from './types';
 
 /**
  * Development fixtures.
@@ -236,3 +248,80 @@ export const fixtureInsightsSource: InsightsSource = {
     };
   },
 };
+
+/**
+ * One analysed take, shaped exactly as `result_json` would arrive.
+ *
+ * Measures are stated drag-positive, the pipeline's own convention, and
+ * flipped here the same way the API adapter flips them — so a sign error in
+ * the app shows up against the fixture rather than only against a live take.
+ *
+ * The shape it describes: steady at the top of the page, rushing through the
+ * middle, recovering at the end. That is the commonest real fault and the one
+ * the trend line exists to show.
+ */
+const FIXTURE_MEASURES: { measure: number; notes: number; dragPct: number; band: Band }[] = [
+  { measure: 1, notes: 4, dragPct: -1.2, band: 'on' },
+  { measure: 2, notes: 4, dragPct: -2.8, band: 'on' },
+  { measure: 3, notes: 4, dragPct: -4.4, band: 'on' },
+  { measure: 4, notes: 4, dragPct: -7.9, band: 'slight' },
+  { measure: 5, notes: 4, dragPct: -11.6, band: 'rush_drag' },
+  { measure: 6, notes: 4, dragPct: -14.8, band: 'rush_drag' },
+  { measure: 7, notes: 4, dragPct: -16.2, band: 'rush_drag' },
+  { measure: 8, notes: 4, dragPct: -12.1, band: 'rush_drag' },
+  { measure: 9, notes: 4, dragPct: -8.4, band: 'slight' },
+  { measure: 10, notes: 4, dragPct: -5.1, band: 'slight' },
+  { measure: 11, notes: 4, dragPct: -2.2, band: 'on' },
+  { measure: 12, notes: 4, dragPct: 1.6, band: 'on' },
+];
+
+const FIXTURE_TAKE_ID = 'fixture-take-1';
+
+export const fixtureTakeSource: TakeSource = {
+  async getTake(analysisId) {
+    if (analysisId !== FIXTURE_TAKE_ID) {
+      return null;
+    }
+    const piece = FIXTURE_PIECES.find(
+      ({ id }) => id === 'fixture-wohlfahrt-28',
+    );
+    const measures: MeasureVerdict[] = FIXTURE_MEASURES.map((m) => {
+      const direction: Direction =
+        m.band === 'on' ? 'on' : m.dragPct < 0 ? 'rush' : 'drag';
+      return {
+        measure: m.measure,
+        noteCount: m.notes,
+        // Negated, exactly as the API adapter negates the wire value.
+        deviationPct: -m.dragPct,
+        band: m.band,
+        direction,
+        verdict: verdictFor(m.band, direction),
+      };
+    });
+
+    const recordedAt = new Date();
+    recordedAt.setMinutes(recordedAt.getMinutes() - 4);
+
+    return {
+      id: FIXTURE_TAKE_ID,
+      pieceId: 'fixture-wohlfahrt-28',
+      pieceTitle: piece?.title ?? 'Unknown piece',
+      composer: piece?.composer ?? null,
+      recordedAt: recordedAt.toISOString(),
+      targetBpm: 96,
+      status: 'ok',
+      // The pipeline writes this sentence; the screen shows it verbatim.
+      headline: 'You rushed across measures 5 to 8, then pulled it back.',
+      direction: 'rush',
+      verdict: verdictFor('rush_drag', 'rush'),
+      lowConfidence: false,
+      measures,
+      trend: measures.map((m) => m.deviationPct),
+      missedNotes: 1,
+      extraNotes: 0,
+    };
+  },
+};
+
+/** The take the practice flow lands on until real audio is captured. */
+export const FIXTURE_TAKE_ID_FOR_FLOW = FIXTURE_TAKE_ID;

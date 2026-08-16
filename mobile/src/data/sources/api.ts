@@ -1,19 +1,27 @@
-import { listAnalyses } from '../api/analyses';
+import { getAnalysis, listAnalyses } from '../api/analyses';
 import { getMe } from '../api/me';
 import { getScore, listScores } from '../api/scores';
 import { getAuthAvatarUrl } from '../auth/session';
 import { verdictFor } from '../../lib/tempo';
 import type {
   AnalysisResponse,
+  AnalysisResultJson,
   Band,
   Direction,
+  MeasureVerdict,
   Musician,
   Piece,
   PieceInsight,
   PracticeInsights,
   ScoreResponse,
+  TakeResult,
 } from '../types';
-import type { InsightsSource, MusicianSource, PieceSource } from './types';
+import type {
+  InsightsSource,
+  MusicianSource,
+  PieceSource,
+  TakeSource,
+} from './types';
 
 /**
  * The real backend, mapped into the shape the UI renders.
@@ -96,38 +104,59 @@ export const apiMusicianSource: MusicianSource = {
 const INSIGHTS_WINDOW_DAYS = 30;
 
 /**
- * What the adapter reads out of `result_json`.
+ * `result_json`, checked rather than trusted.
  *
- * The pipeline's own shape, narrowed to the two things Insights needs. Read
- * defensively: `result_json` is untyped on the wire and still being tuned, so
- * a take that predates a field is skipped rather than allowed to poison an
- * average.
+ * It is `Record<string, unknown>` on the wire because the pipeline's schema is
+ * still being tuned. This is the one place it becomes typed, and a payload
+ * missing what a screen needs is rejected here rather than being allowed
+ * halfway in.
  */
-function readVerdict(
-  analysis: AnalysisResponse,
-): { deviationPct: number; band: Band; direction: Direction } | null {
-  const result = analysis.result_json;
-  if (!result) {
+function asResult(analysis: AnalysisResponse): AnalysisResultJson | null {
+  const raw = analysis.result_json;
+  if (!raw || typeof raw.verdict !== 'string' || typeof raw.status !== 'string') {
     return null;
   }
-  const verdict = result.verdict as Record<string, unknown> | undefined;
-  const deviationPct = verdict?.avg_delta_pct ?? result.avg_delta_pct;
-  const band = verdict?.band ?? result.band;
-  const direction = verdict?.direction ?? result.direction;
+  return raw as unknown as AnalysisResultJson;
+}
 
-  if (
-    typeof deviationPct !== 'number' ||
-    !Number.isFinite(deviationPct) ||
-    typeof band !== 'string' ||
-    typeof direction !== 'string'
-  ) {
+/**
+ * The pipeline's drag-positive deltas, flipped to the app's rush-positive
+ * convention.
+ *
+ * The only sign flip in the client. `per_note` and `per_measure` are
+ * `actual - expected` so early reads negative; `trend` is already flipped by
+ * the pipeline. Getting this wrong would show every take on the wrong side of
+ * the beat, which is the one mistake this app cannot make.
+ */
+function toRushPositive(dragPositivePct: number): number {
+  return -dragPositivePct;
+}
+
+/** The mean deviation of a finished take, rush-positive, or null. */
+function meanDeviationOf(result: AnalysisResultJson): number | null {
+  const measures = result.per_measure ?? [];
+  if (measures.length === 0) {
     return null;
   }
-  return {
-    deviationPct,
-    band: band as Band,
-    direction: direction as Direction,
-  };
+  const mean =
+    measures.reduce((total, m) => total + m.avg_delta_pct, 0) / measures.length;
+  return toRushPositive(mean);
+}
+
+/** The worst band in the take, which is what a summary should lead with. */
+const BAND_SEVERITY: Record<Band, number> = {
+  on: 0,
+  slight: 1,
+  rush_drag: 2,
+  severe: 3,
+};
+
+function worstBandOf(result: AnalysisResultJson): Band {
+  return (result.per_measure ?? []).reduce<Band>(
+    (worst, m) =>
+      BAND_SEVERITY[m.worst_band] > BAND_SEVERITY[worst] ? m.worst_band : worst,
+    'on',
+  );
 }
 
 /**
@@ -151,8 +180,22 @@ export const apiInsightsSource: InsightsSource = {
     const readings = analyses
       .filter((analysis) => Date.parse(analysis.created_at) >= since)
       .flatMap((analysis) => {
-        const verdict = readVerdict(analysis);
-        return verdict ? [{ scoreId: analysis.score_id, ...verdict }] : [];
+        const result = asResult(analysis);
+        if (!result || result.status !== 'ok') {
+          return [];
+        }
+        const deviationPct = meanDeviationOf(result);
+        if (deviationPct === null) {
+          return [];
+        }
+        return [
+          {
+            scoreId: analysis.score_id,
+            deviationPct,
+            band: worstBandOf(result),
+            direction: result.verdict_direction,
+          },
+        ];
       });
 
     if (readings.length === 0) {
@@ -210,5 +253,61 @@ export const apiInsightsSource: InsightsSource = {
       verdict: verdictFor(headline.band, headline.direction),
       pieces,
     };
+  },
+};
+
+/**
+ * One analysed take.
+ *
+ * `alignment_failed` and `no_onsets` are outcomes, not errors: the pipeline
+ * ran, heard something it couldn't use, and wrote a sentence saying so. They
+ * come through with that sentence and no measures, and the screen renders the
+ * sentence rather than an empty chart.
+ */
+function toTake(
+  analysis: AnalysisResponse,
+  result: AnalysisResultJson,
+  score: ScoreResponse | null,
+): TakeResult {
+  const measures: MeasureVerdict[] = (result.per_measure ?? []).map((m) => ({
+    measure: m.measure_number,
+    noteCount: m.note_count,
+    deviationPct: toRushPositive(m.avg_delta_pct),
+    band: m.worst_band,
+    direction: m.direction,
+    verdict: verdictFor(m.worst_band, m.direction),
+  }));
+
+  return {
+    id: analysis.id,
+    pieceId: analysis.score_id,
+    pieceTitle: score?.title ?? 'Unknown piece',
+    composer: score?.composer ?? null,
+    recordedAt: analysis.created_at,
+    targetBpm: analysis.target_bpm,
+    status: result.status,
+    headline: result.verdict,
+    direction: result.verdict_direction,
+    verdict: verdictFor(worstBandOf(result), result.verdict_direction),
+    lowConfidence: result.low_confidence,
+    measures,
+    // Already rush-positive from the pipeline — the one field that isn't flipped.
+    trend: result.trend ?? [],
+    missedNotes: result.n_missed_notes ?? 0,
+    extraNotes: result.n_extra_notes ?? 0,
+  };
+}
+
+export const apiTakeSource: TakeSource = {
+  async getTake(analysisId) {
+    const analysis = await getAnalysis(analysisId);
+    const result = asResult(analysis);
+    if (!result) {
+      return null;
+    }
+    // A deleted score would 404 the whole screen over a title, so a missing
+    // one degrades to "Unknown piece" instead.
+    const score = await getScore(analysis.score_id).catch(() => null);
+    return toTake(analysis, result, score);
   },
 };
