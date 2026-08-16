@@ -14,6 +14,13 @@
 export type UserTier = 'free' | 'pro' | 'teacher' | 'student_via_teacher';
 export type UserRole = 'student' | 'teacher';
 
+/** `metronome_mode` on `analyses`. */
+export type MetronomeMode =
+  | 'off'
+  | 'visual'
+  | 'haptic'
+  | 'audio_with_headphones';
+
 /** GET /v1/me */
 export interface MeResponse {
   id: string;

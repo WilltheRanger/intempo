@@ -1,4 +1,3 @@
-import * as Haptics from 'expo-haptics';
 import type { LucideIcon } from 'lucide-react-native';
 import {
   ActivityIndicator,
@@ -19,6 +18,7 @@ import {
   radii,
   spacing,
 } from '../../design';
+import { impact, ImpactFeedbackStyle } from '../../lib/haptics';
 import { Text } from './Text';
 
 export interface PrimaryButtonProps {
@@ -58,7 +58,7 @@ export function PrimaryButton({
 
   function handlePress() {
     if (haptic) {
-      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      impact(ImpactFeedbackStyle.Light);
     }
     onPress();
   }

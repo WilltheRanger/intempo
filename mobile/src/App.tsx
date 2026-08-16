@@ -5,10 +5,12 @@ import {
 } from '@react-navigation/native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useFonts } from 'expo-font';
+import { useEffect } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
+import { hydratePreferences } from './data/preferences';
 import { colors, fontsToLoad } from './design';
 import { RootNavigator } from './navigation/RootNavigator';
 
@@ -40,6 +42,13 @@ const navigationTheme: Theme = {
 
 export default function App() {
   const [fontsLoaded] = useFonts(fontsToLoad);
+
+  // Settings are read synchronously from press handlers, so the saved values
+  // have to be in memory before anything can consult them. Fonts gate the
+  // first frame anyway, which is more than enough time for one storage read.
+  useEffect(() => {
+    void hydratePreferences();
+  }, []);
 
   return (
     <SafeAreaProvider>

@@ -21,7 +21,7 @@ import type { TabScreenNavigation } from '../../navigation/types';
 /** How many pieces the library preview shows before "See all". */
 const PREVIEW_LIMIT = 3;
 
-const AVATAR_SIZE = 42;
+const AVATAR_SIZE = 36;
 
 /**
  * Tappable box around the mark.

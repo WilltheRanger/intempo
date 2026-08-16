@@ -1,14 +1,21 @@
 import { useEffect, useState } from 'react';
 import { AccessibilityInfo } from 'react-native';
 
+import { usePreferences } from '../data/preferences';
+
 /**
- * Whether the OS "reduce motion" setting is on.
+ * Whether animation should be held back — because the OS says so, or because
+ * the musician asked for it in the app.
  *
  * React Native has no `prefers-reduced-motion` media query — it's an async
  * accessibility read plus a change listener, so every animated component needs
  * this rather than a CSS-style guard.
+ *
+ * The two sources are OR'd, never overridden: the in-app switch can add
+ * restraint but can't take it away from someone whose device already asked.
  */
 export function useReducedMotion(): boolean {
+  const preferred = usePreferences().reduceMotion;
   const [reduceMotion, setReduceMotion] = useState(false);
 
   useEffect(() => {
@@ -31,5 +38,5 @@ export function useReducedMotion(): boolean {
     };
   }, []);
 
-  return reduceMotion;
+  return reduceMotion || preferred;
 }
