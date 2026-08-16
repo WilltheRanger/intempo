@@ -1,3 +1,4 @@
+import type { ColorToken } from '../design';
 import type { Band, Direction, Verdict } from '../data/types';
 
 /**
@@ -77,4 +78,22 @@ export function formatTendencyDetail(
   const count = sessions === 1 ? '1 session' : `${sessions} sessions`;
   const detail = TENDENCY_DETAIL[verdict] ?? TENDENCY_DETAIL.on_tempo;
   return `Across ${count}, ${detail}.`;
+}
+
+/**
+ * The colour for a band, on the verdict screen only.
+ *
+ * Keyed off the pipeline's band rather than the display verdict, because the
+ * band is what the tolerance maths produced — `severe` and `rush_drag` share a
+ * colour for the same reason they share a word: the vocabulary the musician
+ * reads has three levels, not four.
+ *
+ * Always paired with that word. Colour alone would put the whole verdict
+ * behind a hue that ~8% of men can't separate.
+ */
+export function verdictColorFor(band: Band): ColorToken {
+  if (band === 'on') {
+    return 'verdictOn';
+  }
+  return band === 'slight' ? 'verdictMid' : 'verdictBad';
 }

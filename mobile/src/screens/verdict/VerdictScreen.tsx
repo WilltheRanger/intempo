@@ -16,9 +16,9 @@ import {
   Text,
 } from '../../components/primitives';
 import { takeSource } from '../../data/sources';
-import type { TakeResult } from '../../data/types';
+import type { Band, TakeResult } from '../../data/types';
 import { spacing } from '../../design';
-import { formatTendency } from '../../lib/tempo';
+import { formatTendency, verdictColorFor } from '../../lib/tempo';
 import type { RootNavigation, RootStackParamList } from '../../navigation/types';
 import { MeasureRow } from './MeasureRow';
 import { TrendLine } from './TrendLine';
@@ -31,10 +31,10 @@ import { TrendLine } from './TrendLine';
  * it. Someone who reads only the top of this screen should already know what
  * happened.
  *
- * Nothing is encoded in colour. The spec reserves green, amber and red for
- * verdict UI, and they are not in the palette yet — the word and the bar carry
- * it, which is also what keeps the screen readable to the ~8% of men with a
- * red-green deficiency the verdict hues map almost exactly onto.
+ * This is the one screen the verdict colours are allowed on. They repeat what
+ * the words already say and are never the only signal — every coloured thing
+ * here sits beside its own label, because red-green deficiency maps almost
+ * exactly onto this trio.
  */
 export function VerdictScreen() {
   const navigation = useNavigation<RootNavigation>();
@@ -121,6 +121,7 @@ export function VerdictScreen() {
       <PageHeader
         eyebrow={take.pieceTitle}
         title={formatTendency(take.verdict)}
+        titleColor={verdictColorFor(worstBand(take))}
         onBack={() => navigation.goBack()}
         backLabel="Back to the piece"
       />
@@ -212,6 +213,27 @@ export function VerdictScreen() {
     </ScreenContainer>
   );
 }
+
+/**
+ * The take's own band, for the headline's colour.
+ *
+ * The worst measure rather than the average: a take that was steady for eleven
+ * measures and severe for one is not a steady take, and the headline sentence
+ * beneath already says which measures went wrong.
+ */
+function worstBand(take: TakeResult): Band {
+  return take.measures.reduce<Band>(
+    (worst, m) => (SEVERITY[m.band] > SEVERITY[worst] ? m.band : worst),
+    'on',
+  );
+}
+
+const SEVERITY: Record<Band, number> = {
+  on: 0,
+  slight: 1,
+  rush_drag: 2,
+  severe: 3,
+};
 
 function measureLabel(count: number): string {
   return count === 1 ? '1 measure' : `${count} measures`;

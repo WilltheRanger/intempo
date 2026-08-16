@@ -3,7 +3,7 @@ import { Pressable, StyleSheet } from 'react-native';
 import { Text } from '../../components/primitives/Text';
 import type { MeasureVerdict } from '../../data/types';
 import { BORDER_WIDTH, colors, spacing } from '../../design';
-import { formatVerdict } from '../../lib/tempo';
+import { formatVerdict, verdictColorFor } from '../../lib/tempo';
 import { DeviationBar } from '../insights/DeviationBar';
 
 export interface MeasureRowProps {
@@ -29,6 +29,7 @@ export function MeasureRow({
   divided = true,
 }: MeasureRowProps) {
   const verdict = formatVerdict(measure.verdict);
+  const tone = verdictColorFor(measure.band);
 
   return (
     <Pressable
@@ -48,11 +49,16 @@ export function MeasureRow({
 
       <DeviationBar
         deviationPct={measure.deviationPct}
+        fill={tone}
         accessibilityLabel={verdict}
         style={styles.bar}
       />
 
-      <Text variant="metadataSmall" color="textSecondary" style={styles.verdict}>
+      {/*
+        The word carries the verdict; the colour repeats it. Revealing the
+        figure keeps the colour, so the row doesn't change meaning on tap.
+      */}
+      <Text variant="metadataSmall" color={tone} style={styles.verdict}>
         {revealed ? formatOffset(measure.deviationPct) : verdict}
       </Text>
     </Pressable>

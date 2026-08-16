@@ -1,6 +1,6 @@
 import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 
-import { BORDER_WIDTH, colors, radii } from '../../design';
+import { BORDER_WIDTH, colors, radii, type ColorToken } from '../../design';
 
 /**
  * Deviation at which the bar reaches full deflection, as a percentage of one
@@ -21,6 +21,11 @@ const CENTRE_HEIGHT = 12;
 export interface DeviationBarProps {
   /** Percentage of one beat. Positive is ahead of the beat. */
   deviationPct: number;
+  /**
+   * Fill colour. Defaults to the accent; the verdict screen passes a verdict
+   * colour, which is the only place those are allowed.
+   */
+  fill?: ColorToken;
   accessibilityLabel: string;
   style?: StyleProp<ViewStyle>;
 }
@@ -31,11 +36,15 @@ export interface DeviationBarProps {
  * The fill grows from a centre line rather than from the left edge, because
  * the quantity is signed — a left-anchored bar can show that a musician
  * drifted but not whether they drifted ahead or behind, which is the whole
- * question. Nothing is encoded in colour: the verdict word beside the bar
- * carries the judgement, so the bar only has to carry the magnitude.
+ * question.
+ *
+ * The fill is the accent everywhere except the verdict screen, which passes a
+ * verdict colour. Either way the word beside it carries the judgement — the
+ * bar only ever has to carry the magnitude.
  */
 export function DeviationBar({
   deviationPct,
+  fill = 'accent',
   accessibilityLabel,
   style,
 }: DeviationBarProps) {
@@ -56,7 +65,7 @@ export function DeviationBar({
       <View
         style={[
           styles.fill,
-          { width },
+          { width, backgroundColor: colors[fill] },
           ahead ? styles.fillAhead : styles.fillBehind,
         ]}
       />
@@ -80,7 +89,6 @@ const styles = StyleSheet.create({
   fill: {
     position: 'absolute',
     height: TRACK_HEIGHT,
-    backgroundColor: colors.accent,
     borderRadius: radii.pill,
   },
   fillAhead: {
