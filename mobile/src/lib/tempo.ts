@@ -1,5 +1,10 @@
 import type { ColorToken } from '../design';
-import type { Band, Direction, Verdict } from '../data/types';
+import type {
+  Band,
+  Direction,
+  MeasureVerdict,
+  Verdict,
+} from '../data/types';
 
 /**
  * The pipeline's band and direction, in the words the UI shows.
@@ -46,7 +51,10 @@ const TENDENCY_HEADLINES: Record<Verdict, string> = {
 };
 
 /**
- * The headline for a whole window of practice.
+ * The headline for a whole window of practice — Insights, not one take.
+ *
+ * "You tend to..." is a claim about a habit, and a habit needs more than one
+ * recording to observe. A single take gets `formatTakeVerdict` instead.
  *
  * A description of what happened, not encouragement about it — the spec is
  * explicit that words carry the verdict, and a musician can tell the
@@ -96,4 +104,76 @@ export function verdictColorFor(band: Band): ColorToken {
     return 'verdictOn';
   }
   return band === 'slight' ? 'verdictMid' : 'verdictBad';
+}
+
+/** Where in the take the drift sat. */
+type Span = 'start' | 'middle' | 'end' | 'throughout';
+
+const RUSH_HEADLINES: Record<Span, string> = {
+  start: 'You rushed at the start',
+  middle: 'You rushed in the middle',
+  end: 'You rushed towards the end',
+  throughout: 'You rushed throughout',
+};
+
+const DRAG_HEADLINES: Record<Span, string> = {
+  start: 'You dragged at the start',
+  middle: 'You dragged in the middle',
+  end: 'You dragged towards the end',
+  throughout: 'You dragged throughout',
+};
+
+/**
+ * The headline for one recording.
+ *
+ * Says what happened in this take and where, never what the musician tends to
+ * do — one recording can't see a habit. Insights is where a pattern across
+ * sessions gets to make that claim.
+ *
+ * Slight drift gets the gentler "Tempo drifted ahead": at that band the
+ * pipeline is inside the tolerance where the spec says not to claim certainty,
+ * so naming the player would be more confident than the measurement.
+ */
+export function formatTakeVerdict(measures: MeasureVerdict[]): string {
+  const off = measures.filter((m) => m.band !== 'on');
+  if (measures.length === 0 || off.length === 0) {
+    return 'You held the tempo';
+  }
+
+  const ahead = off.filter((m) => m.direction === 'rush').length;
+  const behind = off.length - ahead;
+  const drifting = ahead >= behind ? 'ahead' : 'behind';
+
+  const worst = off.some((m) => m.band === 'rush_drag' || m.band === 'severe');
+  if (!worst) {
+    return drifting === 'ahead' ? 'Tempo drifted ahead' : 'Tempo drifted behind';
+  }
+
+  const headlines = drifting === 'ahead' ? RUSH_HEADLINES : DRAG_HEADLINES;
+  return headlines[spanOf(off, measures)];
+}
+
+/**
+ * Which third of the take the drift fell in.
+ *
+ * By the midpoint of the affected measures rather than their extent, so one
+ * stray measure at the end doesn't relabel a take that went wrong in the
+ * middle. A run covering more than two thirds is called throughout.
+ */
+function spanOf(off: MeasureVerdict[], all: MeasureVerdict[]): Span {
+  const positions = off.map((m) =>
+    all.findIndex((candidate) => candidate.measure === m.measure),
+  );
+  const first = Math.min(...positions);
+  const last = Math.max(...positions);
+  const length = all.length;
+
+  if ((last - first + 1) / length > 2 / 3) {
+    return 'throughout';
+  }
+  const midpoint = (first + last) / 2 / Math.max(1, length - 1);
+  if (midpoint < 1 / 3) {
+    return 'start';
+  }
+  return midpoint > 2 / 3 ? 'end' : 'middle';
 }
