@@ -103,6 +103,9 @@ export function LibraryScreen() {
         results={results}
         query={query}
         onClearSearch={() => setQuery('')}
+        onOpenPiece={(piece) =>
+          navigation.navigate('PieceDetail', { pieceId: piece.id })
+        }
       />
 
       <AddPieceSheet
@@ -121,6 +124,7 @@ interface LibraryContentProps {
   results: Piece[];
   query: string;
   onClearSearch: () => void;
+  onOpenPiece: (piece: Piece) => void;
 }
 
 function LibraryContent({
@@ -130,6 +134,7 @@ function LibraryContent({
   results,
   query,
   onClearSearch,
+  onOpenPiece,
 }: LibraryContentProps) {
   if (isPending) {
     return <LoadingState />;
@@ -178,7 +183,13 @@ function LibraryContent({
       </Text>
       <View style={styles.list}>
         {results.map((piece) => (
-          <PieceCard key={piece.id} piece={piece} showPracticeDetail dense />
+          <PieceCard
+            key={piece.id}
+            piece={piece}
+            showPracticeDetail
+            dense
+            onPress={() => onOpenPiece(piece)}
+          />
         ))}
       </View>
     </View>

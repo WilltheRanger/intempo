@@ -1,20 +1,14 @@
 import { useNavigation } from '@react-navigation/native';
-import {
-  ChevronLeft,
-  ChevronRight,
-  Pause,
-  Play,
-  SkipBack,
-  SkipForward,
-  type LucideIcon,
-} from 'lucide-react-native';
+import { ChevronLeft, ChevronRight } from 'lucide-react-native';
 import { useEffect, useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
+import { TransportControls } from '../../components/playback/TransportControls';
 import { ScoreThumbnail } from '../../components/pieces/ScoreThumbnail';
 import {
   Card,
   EmptyState,
+  IconButton,
   PageHeader,
   PrimaryButton,
   ScreenContainer,
@@ -22,20 +16,19 @@ import {
 } from '../../components/primitives';
 import { useCapturedPages } from '../../data/captureSession';
 import { buildDraft } from '../../data/sources/transcriptionDraft';
-import {
-  colors,
-  disabledOpacity,
-  ICON_SIZE,
-  ICON_STROKE_WIDTH,
-  MIN_TOUCH_TARGET,
-  radii,
-  spacing,
-} from '../../design';
+import { spacing } from '../../design';
 import type { RootNavigation } from '../../navigation/types';
 import { NotationPlaceholder } from './NotationPlaceholder';
 
 /** Mock playback pace: one measure per beat-ish interval. */
 const MOCK_MS_PER_MEASURE = 550;
+
+/**
+ * Saving isn't wired to storage, so the flow lands on the library fixture the
+ * draft describes — same title, composer, and movement — rather than inventing
+ * a piece that doesn't exist anywhere.
+ */
+const SAVED_PIECE_ID = 'fixture-wohlfahrt-28';
 
 /**
  * Frontend-only review of a transcription.
@@ -103,7 +96,7 @@ export function TranscriptionReviewScreen() {
       ) : null}
 
       <View style={styles.pageNav}>
-        <NavButton
+        <IconButton
           icon={ChevronLeft}
           label="Previous page"
           onPress={() => goToPage(pageIndex - 1)}
@@ -112,7 +105,7 @@ export function TranscriptionReviewScreen() {
         <Text variant="sectionLabel" color="textSecondary">
           Page {pageIndex + 1} of {pages.length}
         </Text>
-        <NavButton
+        <IconButton
           icon={ChevronRight}
           label="Next page"
           onPress={() => goToPage(pageIndex + 1)}
@@ -138,41 +131,13 @@ export function TranscriptionReviewScreen() {
         </Text>
 
         <View style={styles.transport}>
-          <NavButton
-            icon={SkipBack}
-            label="Previous measure"
-            onPress={() => setMeasure((m) => Math.max(1, m - 1))}
-            disabled={measure === 1}
-          />
-          <Pressable
-            onPress={() => setIsPlaying((playing) => !playing)}
-            accessibilityRole="button"
-            accessibilityLabel={isPlaying ? 'Pause' : 'Play'}
-            accessibilityState={{ selected: isPlaying }}
-            style={({ pressed }) => [
-              styles.playButton,
-              pressed && styles.playPressed,
-            ]}
-          >
-            {isPlaying ? (
-              <Pause
-                size={ICON_SIZE.md}
-                strokeWidth={ICON_STROKE_WIDTH}
-                color={colors.actionText}
-              />
-            ) : (
-              <Play
-                size={ICON_SIZE.md}
-                strokeWidth={ICON_STROKE_WIDTH}
-                color={colors.actionText}
-              />
-            )}
-          </Pressable>
-          <NavButton
-            icon={SkipForward}
-            label="Next measure"
-            onPress={() => setMeasure((m) => Math.min(measures, m + 1))}
-            disabled={measure >= measures}
+          <TransportControls
+            isPlaying={isPlaying}
+            onTogglePlay={() => setIsPlaying((playing) => !playing)}
+            onPrevious={() => setMeasure((m) => Math.max(1, m - 1))}
+            onNext={() => setMeasure((m) => Math.min(measures, m + 1))}
+            previousDisabled={measure === 1}
+            nextDisabled={measure >= measures}
           />
         </View>
       </Card>
@@ -189,40 +154,12 @@ export function TranscriptionReviewScreen() {
 
       <PrimaryButton
         label="Save piece"
-        onPress={() => navigation.navigate('PieceDetail')}
+        onPress={() =>
+          navigation.navigate('PieceDetail', { pieceId: SAVED_PIECE_ID })
+        }
         style={styles.save}
       />
     </ScreenContainer>
-  );
-}
-
-interface NavButtonProps {
-  icon: LucideIcon;
-  label: string;
-  onPress: () => void;
-  disabled?: boolean;
-}
-
-function NavButton({ icon: Icon, label, onPress, disabled }: NavButtonProps) {
-  return (
-    <Pressable
-      onPress={onPress}
-      disabled={disabled}
-      accessibilityRole="button"
-      accessibilityLabel={label}
-      accessibilityState={{ disabled: Boolean(disabled) }}
-      style={({ pressed }) => [
-        styles.navButton,
-        pressed && !disabled && styles.navPressed,
-        disabled && styles.navDisabled,
-      ]}
-    >
-      <Icon
-        size={ICON_SIZE.md}
-        strokeWidth={ICON_STROKE_WIDTH}
-        color={disabled ? colors.textTertiary : colors.textPrimary}
-      />
-    </Pressable>
   );
 }
 
@@ -244,35 +181,7 @@ const styles = StyleSheet.create({
     marginTop: spacing.lg,
   },
   transport: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.xl,
     marginTop: spacing.md,
-  },
-  navButton: {
-    width: MIN_TOUCH_TARGET,
-    height: MIN_TOUCH_TARGET,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: radii.sm,
-  },
-  navPressed: {
-    backgroundColor: colors.surfacePressed,
-  },
-  navDisabled: {
-    opacity: disabledOpacity,
-  },
-  playButton: {
-    width: MIN_TOUCH_TARGET,
-    height: MIN_TOUCH_TARGET,
-    borderRadius: MIN_TOUCH_TARGET / 2,
-    backgroundColor: colors.actionBg,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  playPressed: {
-    backgroundColor: colors.actionBgPressed,
   },
   sourceCard: {
     marginTop: spacing.md,

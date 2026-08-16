@@ -9,6 +9,7 @@ export { SectionHeader, type SectionHeaderProps } from './SectionHeader';
 export { Card, type CardProps } from './Card';
 export { PrimaryButton, type PrimaryButtonProps } from './PrimaryButton';
 export { SecondaryButton, type SecondaryButtonProps } from './SecondaryButton';
+export { IconButton, type IconButtonProps } from './IconButton';
 export { ProgressBar, type ProgressBarProps } from './ProgressBar';
 export { MetadataRow, type MetadataRowProps } from './MetadataRow';
 export { SearchField, type SearchFieldProps } from './SearchField';
