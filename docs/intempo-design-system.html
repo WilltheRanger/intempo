@@ -187,7 +187,7 @@
 
   .grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(401px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(min(401px, 100%), 1fr));
     border-top: 1px solid var(--border);
     border-left: 1px solid var(--border);
   }
@@ -387,7 +387,7 @@
 
   /* ---------- foundations ---------- */
 
-  .swatches { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); border-top: 1px solid var(--border); border-left: 1px solid var(--border); }
+  .swatches { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(210px, 100%), 1fr)); border-top: 1px solid var(--border); border-left: 1px solid var(--border); }
   .sw { background: var(--bg); padding: 0; border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); }
   .sw .chip { height: 84px; border-bottom: 1px solid var(--border); outline: 1px solid var(--border); outline-offset: -1px; }
   .sw .meta { padding: 12px 14px 16px; }
@@ -407,13 +407,13 @@
   .spacing-row span { width: 3em; font-size: 13px; color: var(--text-tertiary); font-variant-numeric: tabular-nums; }
   .spacing-row i { display: block; height: 14px; background: var(--accent); opacity: 0.85; }
 
-  .screens { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); border-top: 1px solid var(--border); border-left: 1px solid var(--border); }
+  .screens { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr)); border-top: 1px solid var(--border); border-left: 1px solid var(--border); }
   .screen { background: var(--bg); padding: 22px 20px 26px; border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); }
   .screen h4 { margin: 0 0 6px; font-family: var(--serif); font-weight: 500; font-size: 18px; }
   .screen p { margin: 0; font-size: 13px; line-height: 1.55; color: var(--text-secondary); }
   .screen .flow { display: block; font-size: 11.5px; font-weight: 500; color: var(--accent); margin-bottom: 8px; }
 
-  .rules { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 28px 40px; }
+  .rules { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(320px, 100%), 1fr)); gap: 28px 40px; }
   .rule h4 { margin: 0 0 8px; font-size: 15px; font-weight: 500; }
   .rule p { margin: 0; font-size: 14px; line-height: 1.6; color: var(--text-secondary); max-width: 48ch; }
 
@@ -444,9 +444,9 @@
       own sizes.
     </p>
     <ul class="facts">
-      <li><b>33</b> components</li>
-      <li><b>15</b> screens</li>
-      <li><b>14</b> colour tokens</li>
+      <li><b>35</b> components</li>
+      <li><b>17</b> screens</li>
+      <li><b>17</b> colour tokens</li>
       <li><b>10</b> type styles</li>
       <li><b>8</b> spacing steps</li>
     </ul>
@@ -492,6 +492,22 @@
       <div class="sw"><div class="chip" style="background:#332E28"></div><div class="meta"><span class="nm">actionBgPressed</span><code>#332E28</code><span class="use">A primary button under a thumb.</span></div></div>
       <div class="sw"><div class="chip" style="background:rgba(20,17,14,0.32)"></div><div class="meta"><span class="nm">scrim</span><code>rgba(20,17,14,.32)</code><span class="use">Behind a sheet or a dialog.</span></div></div>
       <div class="sw"><div class="chip" style="background:rgba(251,250,247,0.55)"></div><div class="meta"><span class="nm">onDarkMuted</span><code>rgba(251,250,247,.55)</code><span class="use">Secondary type on the camera surface.</span></div></div>
+    </div>
+
+    <h3 style="margin:56px 0 8px">Verdict colour</h3>
+    <p class="muted" style="max-width:62ch;margin:0 0 24px;font-size:14px">
+      Quarantined to the verdict screen, and the restriction is the point: they
+      never appear in chrome, navigation, buttons, tabs, or any surface that
+      isn&rsquo;t reporting how a take went. They are also never load-bearing &mdash;
+      every coloured thing sits beside its own word, because red-green
+      deficiency maps almost exactly onto this trio. Hues are the spec&rsquo;s,
+      darkened only as far as WCAG AA needed on this ground: the spec&rsquo;s own
+      amber measured 2.14:1 here, which its accessibility section forbids.
+    </p>
+    <div class="swatches">
+      <div class="sw"><div class="chip" style="background:#1D7F46"></div><div class="meta"><span class="nm">verdictOn</span><code>#1D7F46</code><span class="use">On tempo. 4.50:1 &mdash; was #1F8A4C at 3.93.</span></div></div>
+      <div class="sw"><div class="chip" style="background:#8F681C"></div><div class="meta"><span class="nm">verdictMid</span><code>#8F681C</code><span class="use">Slight rush or drag. 4.50:1 &mdash; was #D69E2E at 2.14.</span></div></div>
+      <div class="sw"><div class="chip" style="background:#C53B3B"></div><div class="meta"><span class="nm">verdictBad</span><code>#C53B3B</code><span class="use">Rushing or dragging. 4.64:1, unchanged from the spec.</span></div></div>
     </div>
 
     <h3 style="margin:56px 0 8px">Type</h3>
@@ -1026,7 +1042,9 @@
       <div class="screen"><span class="flow">Capture</span><h4>Review transcription</h4><p>Detected title and composer, page navigation, and the notation against the original.</p></div>
 
       <div class="screen"><span class="flow">Practice</span><h4>Piece detail</h4><p>Progress, playback position, and the way back to the digital score or the original pages.</p></div>
-      <div class="screen"><span class="flow">Practice</span><h4>Practice</h4><p>A shell today: it moves a position marker and makes no sound.</p></div>
+      <div class="screen"><span class="flow">Practice</span><h4>Record</h4><p>Target tempo and elapsed timer &mdash; the two places the spec allows a number. The tempo locks once recording starts.</p></div>
+      <div class="screen"><span class="flow">Practice</span><h4>Verdict</h4><p>The verdict word, the pipeline&rsquo;s sentence, the shape of the take, then measure by measure. Tap a measure for its timing.</p></div>
+      <div class="screen"><span class="flow">Practice</span><h4>Practice</h4><p>The score-reading shell. Recording a take now goes to Record instead.</p></div>
 
       <div class="screen"><span class="flow">Account</span><h4>Sign in / Sign up / Reset</h4><p>One screen, three modes. They differ by a verb and a line of copy.</p></div>
       <div class="screen"><span class="flow">Account</span><h4>Change email</h4><p>Says mail is on its way rather than reporting it done &mdash; the address doesn't move until the link is followed.</p></div>
@@ -1052,7 +1070,7 @@
       <div class="rule"><h4>Borders, not shadows</h4><p>There is no elevation in the app. A card that needs to lift firms its border. This alone keeps it from reading as a generic SaaS surface.</p></div>
       <div class="rule"><h4>The serif is reserved</h4><p>Newsreader appears on works and screen titles only. Seeing it means you are looking at music, not at the app.</p></div>
       <div class="rule"><h4>Numbers are dev-mode only</h4><p>BPM offsets, percentages and millisecond deviations stay out of production copy. Words tell the musician what happened; the bar tells them how much. Session counts stay &mdash; a count of takes isn't a timing measurement.</p></div>
-      <div class="rule"><h4>Verdict colour is quarantined</h4><p>The spec defines green, amber and red for verdict UI only. They are <b>not</b> in this palette yet &mdash; Insights encodes nothing in colour, and the decision waits for the per-analysis verdict screen.</p></div>
+      <div class="rule"><h4>Verdict colour is quarantined</h4><p>Green, amber and red exist, and appear on the verdict screen and nowhere else. Insights still encodes nothing in colour: it summarises, it doesn&rsquo;t judge a take. Verified by sweeping every other screen for the three values.</p></div>
       <div class="rule"><h4>Never colour alone</h4><p>Any verdict carries a word and, where it exists, an icon. Red&ndash;green deficiency maps almost exactly onto the verdict hues.</p></div>
       <div class="rule"><h4>Musical language</h4><p>"Ahead of the beat", not "early". "Behind the beat", not "late". "Rushing", not "positive tempo deviation". Sentence case throughout.</p></div>
       <div class="rule"><h4>Nothing invented to fill a screen</h4><p>No control ships without something behind it. Fields with no backing column are typed nullable so every component is forced to handle their absence.</p></div>

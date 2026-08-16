@@ -62,6 +62,26 @@ export const colors = {
    * needs something behind it, and pure black reads cold against ivory.
    */
   scrim: 'rgba(20, 17, 14, 0.32)',
+
+  // -------------------------------------------------------------------------
+  // Verdict colours — the verdict screen and nothing else.
+  //
+  // Quarantined by the spec, and the restriction is the point: they never
+  // appear in chrome, navigation, buttons, tabs, or any surface that isn't
+  // reporting how a take went. Reach for `accent` everywhere else.
+  //
+  // They are also never load-bearing. Every verdict carries its word — "On
+  // tempo", "Slight rush", "Rushing" — and the colour only reinforces it,
+  // because red-green deficiency maps almost exactly onto this trio.
+  //
+  // Hues are the spec's, darkened only as far as WCAG AA needed on the ivory
+  // ground: the spec's own amber measured 2.14:1 there, which its accessibility
+  // section forbids. On and mid now sit at 4.50:1, bad at 4.64:1, and all three
+  // stay separable under simulated deuteranopia and protanopia.
+  // -------------------------------------------------------------------------
+  verdictOn: '#1D7F46',
+  verdictMid: '#8F681C',
+  verdictBad: '#C53B3B',
 } as const;
 
 export type ColorToken = keyof typeof colors;

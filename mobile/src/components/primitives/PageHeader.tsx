@@ -2,7 +2,7 @@ import { ChevronLeft } from 'lucide-react-native';
 import type { ReactNode } from 'react';
 import { StyleSheet, View } from 'react-native';
 
-import { spacing } from '../../design';
+import { spacing, type ColorToken } from '../../design';
 import { IconButton } from './IconButton';
 import { Text } from './Text';
 
@@ -26,6 +26,11 @@ export interface PageHeaderProps {
   onBack?: () => void;
   /** Announced by screen readers, e.g. "Back to library". */
   backLabel?: string;
+  /**
+   * Title colour. Only the verdict screen sets this — everywhere else a
+   * coloured screen title would be decoration.
+   */
+  titleColor?: ColorToken;
 }
 
 /** The serif screen title, with an optional line of context above it. */
@@ -35,6 +40,7 @@ export function PageHeader({
   action,
   onBack,
   backLabel = 'Back',
+  titleColor = 'textPrimary',
 }: PageHeaderProps) {
   return (
     <View style={styles.container}>
@@ -59,7 +65,7 @@ export function PageHeader({
 
       <View style={styles.titleRow}>
         {/* flex so a long title wraps instead of shoving the action off-screen. */}
-        <Text variant="screenTitle" style={styles.title}>
+        <Text variant="screenTitle" color={titleColor} style={styles.title}>
           {title}
         </Text>
         {action}
