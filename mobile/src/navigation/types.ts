@@ -14,6 +14,7 @@ export type RootStackParamList = {
   /** Pages live in the shared capture session, not in params. */
   CapturedPages: undefined;
   Transcribe: undefined;
+  TranscriptionReview: undefined;
 };
 
 export type TabParamList = {

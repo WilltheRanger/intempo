@@ -10,6 +10,7 @@ import { ProfileScreen } from '../screens/profile/ProfileScreen';
 import { ScannerScreen } from '../screens/scanner/ScannerScreen';
 import { TodayScreen } from '../screens/today/TodayScreen';
 import { TranscribeScreen } from '../screens/transcribe/TranscribeScreen';
+import { TranscriptionReviewScreen } from '../screens/transcriptionReview/TranscriptionReviewScreen';
 import { BottomTabBar } from './BottomTabBar';
 import type { RootStackParamList, TabParamList } from './types';
 
@@ -51,6 +52,10 @@ export function RootNavigator() {
       />
       <Stack.Screen name="CapturedPages" component={CapturedPagesScreen} />
       <Stack.Screen name="Transcribe" component={TranscribeScreen} />
+      <Stack.Screen
+        name="TranscriptionReview"
+        component={TranscriptionReviewScreen}
+      />
     </Stack.Navigator>
   );
 }
