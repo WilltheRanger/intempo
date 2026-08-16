@@ -20,6 +20,13 @@ export interface PieceCardProps {
    * on next, and "practiced three weeks ago" is the deciding signal.
    */
   showPracticeDetail?: boolean;
+  /**
+   * Trims vertical padding for screens that show many rows at once.
+   *
+   * Off by default so Today's preview keeps its approved proportions; the
+   * Library turns it on, where density matters more than air.
+   */
+  dense?: boolean;
 }
 
 /**
@@ -43,9 +50,10 @@ export function PieceCard({
   piece,
   onPress,
   showPracticeDetail = false,
+  dense = false,
 }: PieceCardProps) {
   const content = (
-    <View style={styles.row}>
+    <View style={[styles.row, dense && styles.rowDense]}>
       <ScoreThumbnail source={piece.thumbnail} style={styles.thumbnail} />
 
       <View style={styles.details}>
@@ -115,6 +123,9 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     padding: spacing.sm,
     gap: spacing.lg,
+  },
+  rowDense: {
+    paddingVertical: spacing.xs,
   },
   thumbnail: {
     width: THUMBNAIL_WIDTH,

@@ -57,13 +57,17 @@ export function LibraryScreen() {
 
   return (
     <ScreenContainer>
-      <PageHeader title="Library" />
-
-      <PrimaryButton
-        label="Add piece"
-        icon={Plus}
-        onPress={handleAddPiece}
-        haptic={false}
+      <PageHeader
+        title="Library"
+        action={
+          <PrimaryButton
+            label="Add piece"
+            icon={Plus}
+            onPress={handleAddPiece}
+            haptic={false}
+            size="compact"
+          />
+        }
       />
 
       {/* Nothing to search through until there's a repertoire. */}
@@ -72,7 +76,6 @@ export function LibraryScreen() {
           value={query}
           onChangeText={setQuery}
           placeholder="Search your library"
-          style={styles.search}
         />
       ) : null}
 
@@ -146,7 +149,7 @@ function LibraryContent({
       <SectionHeader label={countLabel(results.length, Boolean(query.trim()))} />
       <View style={styles.list}>
         {results.map((piece) => (
-          <PieceCard key={piece.id} piece={piece} showPracticeDetail />
+          <PieceCard key={piece.id} piece={piece} showPracticeDetail dense />
         ))}
       </View>
     </View>
@@ -159,9 +162,6 @@ function countLabel(count: number, searching: boolean): string {
 }
 
 const styles = StyleSheet.create({
-  search: {
-    marginTop: spacing.md,
-  },
   section: {
     marginTop: spacing['2xl'],
   },
