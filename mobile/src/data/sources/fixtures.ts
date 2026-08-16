@@ -12,6 +12,7 @@ import type {
   MusicianSource,
   PieceSource,
   TakeSource,
+  TakeSubmissionSource,
 } from './types';
 
 /**
@@ -323,5 +324,25 @@ export const fixtureTakeSource: TakeSource = {
   },
 };
 
-/** The take the practice flow lands on until real audio is captured. */
+/** The take the practice flow lands on while the app runs on fixtures. */
 export const FIXTURE_TAKE_ID_FOR_FLOW = FIXTURE_TAKE_ID;
+
+/** How long the fixture pretends the pipeline took. */
+const MOCK_ANALYSIS_MS = 2200;
+
+/**
+ * The fixture submission: throws the audio away and returns the sample take.
+ *
+ * The recording itself was real — the microphone, the WAV, the duration are
+ * all genuine, which is what makes the permission and capture paths testable
+ * without a backend. Only the destination is fake.
+ *
+ * It waits, because a result that lands instantly would hide the one bit of
+ * the flow that has to feel considered.
+ */
+export const fixtureTakeSubmissionSource: TakeSubmissionSource = {
+  async submit() {
+    await new Promise((resolve) => setTimeout(resolve, MOCK_ANALYSIS_MS));
+    return FIXTURE_TAKE_ID_FOR_FLOW;
+  },
+};

@@ -3,18 +3,21 @@ import {
   apiMusicianSource,
   apiPieceSource,
   apiTakeSource,
+  apiTakeSubmissionSource,
 } from './api';
 import {
   fixtureInsightsSource,
   fixtureMusicianSource,
   fixturePieceSource,
   fixtureTakeSource,
+  fixtureTakeSubmissionSource,
 } from './fixtures';
 import type {
   InsightsSource,
   MusicianSource,
   PieceSource,
   TakeSource,
+  TakeSubmissionSource,
 } from './types';
 
 /**
@@ -50,13 +53,32 @@ export const takeSource: TakeSource = USE_FIXTURES
   ? fixtureTakeSource
   : apiTakeSource;
 
+/**
+ * Where a finished recording goes.
+ *
+ * Capture is real on both sides of this flag — the microphone, the WAV and the
+ * duration are genuine either way. Only the destination changes: storage and
+ * the pipeline, or the sample take.
+ */
+export const takeSubmissionSource: TakeSubmissionSource = USE_FIXTURES
+  ? fixtureTakeSubmissionSource
+  : apiTakeSubmissionSource;
+
 export {
   apiInsightsSource,
   apiMusicianSource,
   apiPieceSource,
+  apiTakeSubmissionSource,
   fixtureInsightsSource,
   fixtureMusicianSource,
   fixturePieceSource,
   fixtureTakeSource,
+  fixtureTakeSubmissionSource,
 };
-export type { InsightsSource, MusicianSource, PieceSource, TakeSource };
+export type {
+  InsightsSource,
+  MusicianSource,
+  PieceSource,
+  TakeSource,
+  TakeSubmissionSource,
+};

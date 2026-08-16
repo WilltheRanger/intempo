@@ -13,8 +13,16 @@ import {
 } from '../../components/primitives';
 import { usePiece } from '../../data/hooks/usePieces';
 import { preferences, usePreferences } from '../../data/preferences';
+import { takeSubmissionSource } from '../../data/sources';
 import type { MetronomeMode } from '../../data/types';
-import { FIXTURE_TAKE_ID_FOR_FLOW } from '../../data/sources/fixtures';
+import {
+  EmptyRecordingError,
+  MAX_TAKE_SECONDS,
+  MicrophonePermissionError,
+  MicrophoneUnavailableError,
+  type Recorder,
+} from '../../lib/audio/types';
+import { startRecording } from '../../lib/audioRecorder';
 import {
   colors,
   ICON_SIZE,
@@ -32,9 +40,6 @@ const BPM_STEP = 2;
 
 /** Where the tempo starts when the piece has no marking to go on. */
 const DEFAULT_BPM = 96;
-
-/** How long the mocked analysis appears to take. */
-const MOCK_ANALYSIS_MS = 2200;
 
 const METRONOME_LABELS = {
   off: 'Metronome off',
@@ -60,11 +65,11 @@ type Phase = 'ready' | 'recording' | 'analysing';
  * tempo, which the musician set and needs to see, and the elapsed timer, which
  * they are watching. Everywhere else words do the work.
  *
- * The state machine, the timer and the tempo are real. Capturing audio is not
- * — see `lib/audioRecorder` for what it needs and why it isn't faked. Stopping
- * therefore lands on a fixture take rather than analysing silence. That gap
- * stays out of the interface: what's missing here is a dependency, which is a
- * note for whoever installs it and not something to tell a musician about.
+ * Capture is real: `lib/audioRecorder` records mono 16-bit PCM into a WAV on
+ * both platforms. Where the file goes afterwards is `takeSubmissionSource`'s
+ * question, and it follows the same fixture flag as every read in the app —
+ * so the microphone, the permission prompt and the timer can all be exercised
+ * before there is a backend to send anything to.
  */
 export function RecordScreen() {
   const navigation = useNavigation<RootNavigation>();
@@ -75,7 +80,25 @@ export function RecordScreen() {
   const [targetBpm, setTargetBpm] = useState(DEFAULT_BPM);
   const [phase, setPhase] = useState<Phase>('ready');
   const [elapsedMs, setElapsedMs] = useState(0);
+  const [problem, setProblem] = useState<string | null>(null);
+  const [truncated, setTruncated] = useState(false);
   const startedAt = useRef(0);
+
+  // The live recorder, held outside state: nothing renders from it, and a
+  // re-render between starting and stopping must not lose the handle to a
+  // microphone that is currently open.
+  const recorder = useRef<Recorder | null>(null);
+  const starting = useRef(false);
+
+  // Leaving mid-take — back gesture, a deep link, anything — has to release
+  // the microphone. Nothing else will.
+  useEffect(
+    () => () => {
+      recorder.current?.cancel();
+      recorder.current = null;
+    },
+    [],
+  );
 
   // Turning the metronome back on restores the mode it was on, rather than
   // silently demoting someone's haptic or headphone choice to the default.
@@ -102,29 +125,66 @@ export function RecordScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase]);
 
-  useEffect(() => {
-    if (phase !== 'analysing') {
-      return;
-    }
-    const timer = setTimeout(() => {
-      navigation.replace('Verdict', { analysisId: FIXTURE_TAKE_ID_FOR_FLOW });
-    }, MOCK_ANALYSIS_MS);
-    return () => clearTimeout(timer);
-  }, [navigation, phase]);
-
   function adjustTempo(by: number) {
     setTargetBpm((bpm) => Math.min(MAX_BPM, Math.max(MIN_BPM, bpm + by)));
   }
 
-  function start() {
+  async function start() {
+    // `startRecording` awaits a permission prompt, which is long enough for a
+    // second tap to open a second microphone nobody would ever close.
+    if (starting.current || recorder.current) {
+      return;
+    }
+    starting.current = true;
     impact(ImpactFeedbackStyle.Medium);
+    setProblem(null);
+    setTruncated(false);
+
+    try {
+      recorder.current = await startRecording();
+    } catch (error) {
+      setProblem(messageFor(error));
+      return;
+    } finally {
+      starting.current = false;
+    }
+
+    // Only now: the timer has to agree with the file, and the file starts when
+    // the hardware does, not when the button was pressed.
     setElapsedMs(0);
     setPhase('recording');
   }
 
-  function stop() {
+  async function stop() {
+    const active = recorder.current;
+    recorder.current = null;
+    if (!active) {
+      setPhase('ready');
+      return;
+    }
+
     impact(ImpactFeedbackStyle.Medium);
     setPhase('analysing');
+
+    try {
+      const recording = await active.stop();
+      setTruncated(recording.truncated);
+      const analysisId = await takeSubmissionSource.submit({
+        // A piece is a score; the id is the same row.
+        scoreId: params.pieceId,
+        targetBpm,
+        metronomeMode,
+        audio: recording.audio,
+        filename: recording.filename,
+      });
+      navigation.replace('Verdict', { analysisId });
+    } catch (error) {
+      // Back to the top of the screen with the tempo still set, so the reply
+      // to a failed take is one tap rather than a re-setup.
+      setProblem(messageFor(error));
+      setElapsedMs(0);
+      setPhase('ready');
+    }
   }
 
   function toggleMetronome() {
@@ -161,7 +221,9 @@ export function RecordScreen() {
         <View>
           <Text variant="heroTitle">Listening back</Text>
           <Text variant="body" color="textSecondary" style={styles.subtitle}>
-            Matching what you played against the score.
+            {truncated
+              ? `Only the first ${MAX_TAKE_SECONDS / 60} minutes were kept. Matching them against the score.`
+              : 'Matching what you played against the score.'}
           </Text>
         </View>
       </ScreenContainer>
@@ -175,7 +237,21 @@ export function RecordScreen() {
       scrollable={false}
       contentStyle={styles.screen}
       footer={
-        <RecordButton recording={recording} onPress={recording ? stop : start} />
+        <View style={styles.footer}>
+          {problem ? (
+            <Text
+              variant="metadataSmall"
+              color="textSecondary"
+              style={styles.problem}
+            >
+              {problem}
+            </Text>
+          ) : null}
+          <RecordButton
+            recording={recording}
+            onPress={() => void (recording ? stop() : start())}
+          />
+        </View>
       }
     >
       <PageHeader
@@ -259,6 +335,26 @@ export function RecordScreen() {
       </View>
     </ScreenContainer>
   );
+}
+
+/**
+ * What went wrong, in a sentence a musician can act on.
+ *
+ * Never the underlying error: "NotAllowedError" and "Failed to fetch" tell
+ * someone holding a violin nothing they can do anything about. Each of these
+ * names the next move instead.
+ */
+function messageFor(error: unknown): string {
+  if (error instanceof MicrophonePermissionError) {
+    return 'InTempo needs the microphone to hear you play. Allow it for InTempo, then start again.';
+  }
+  if (error instanceof MicrophoneUnavailableError) {
+    return error.message;
+  }
+  if (error instanceof EmptyRecordingError) {
+    return 'That take came back silent. Check the microphone isn\u2019t muted or covered, then try again.';
+  }
+  return 'The take couldn\u2019t be sent for analysis. Check your connection and try again \u2014 the tempo is still set.';
 }
 
 /** `03:07`. Minutes and seconds only — a take is not an hour long. */
@@ -378,6 +474,13 @@ const styles = StyleSheet.create({
   },
   metronomePressed: {
     backgroundColor: colors.surfacePressed,
+  },
+  footer: {
+    alignItems: 'center',
+  },
+  problem: {
+    textAlign: 'center',
+    marginBottom: spacing.xl,
   },
   control: {
     alignItems: 'center',

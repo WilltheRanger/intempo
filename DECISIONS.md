@@ -6,6 +6,26 @@ Operating Principle #5.
 
 ---
 
+## 2026-08-16 — Capture takes as raw PCM through `AudioStream` and a web `AudioWorklet`, not through either platform's recorder
+
+**Context:** the mobile app needed real audio capture. The analysis pipeline measures note onsets — where an attack begins, to within milliseconds — and every decision below follows from that one requirement.
+
+**Decision:** record raw PCM on every platform and write the WAV in the client.
+
+- **Native:** `expo-audio`'s `AudioStream`, not its `AudioRecorder`. The stream delivers untouched int16 buffers on both platforms and reports the rate the hardware actually gave.
+- **Web:** an `AudioWorklet` over `getUserMedia`, not `MediaRecorder`, with `echoCancellation`, `autoGainControl` and `noiseSuppression` all explicitly false.
+- **Both:** one shared encoder, `lib/audio/wav.ts`, so the file the backend receives is byte-identical in structure whichever platform produced it.
+
+**Alternatives considered:**
+
+- *`expo-audio`'s `AudioRecorder`.* Rejected. It wraps `AVAudioRecorder` on iOS and `MediaRecorder` on Android, and Android's has no raw-PCM output at all — the best available is AAC. Lossy codecs smear exactly the transient the onset detector reads, so Android would have been the quietly-degraded platform with nothing in the interface to say so.
+- *`MediaRecorder` on web.* Rejected for the same reason: Opus in WebM on Chrome, AAC in MP4 on Safari, both lossy, neither optional.
+- *Resampling to 22.05 kHz in the client,* which is the rate the pipeline loads at. Rejected. It would roughly halve upload size, but it moves an irreversible step onto a browser resampler of unknown quality when the server already does it with soxr. The WAV header carries the true rate, so the server gets it right from any device. We pay bandwidth to keep the one lossy step on the machine we control.
+
+**Trade-off accepted — and one gap that is not closed:** on web the three voice-processing constraints are enforced. **On native they are not.** Turning off system AGC on iOS needs `AVAudioSession` in `.measurement` mode, which `expo-audio` does not expose; reaching it means a config plugin or a patched module. Auto gain reshapes attack envelopes, which is the shape being measured, so this is a real risk to native accuracy — not a cosmetic gap. It is recorded here rather than absorbed silently, and it should be closed before any threshold tuning is done against native recordings (see `TUNING_LOG.md`).
+
+Uncompressed audio also costs upload: mono 16-bit at 48 kHz is 96 KB a second, so a three-minute take is about 17 MB. Accepted as the price of a measurable signal. A 15-minute cap (`MAX_TAKE_SECONDS`) bounds memory; when it bites, the "Listening back" screen says so rather than truncating quietly.
+
 ## 2026-07-28 — Stay on Supabase; keep object storage swappable so audio can move to R2 later
 
 **Context:** the user asked whether Supabase is the right backend before investing further. Worth noting the framing: Supabase is *not* "the backend" — it supplies auth, Postgres, and object storage. The analysis engine (librosa + DTW, Batch 3) is a separate Python/FastAPI service that no BaaS can host, and that split is unchanged by any vendor choice.

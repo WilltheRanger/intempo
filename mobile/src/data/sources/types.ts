@@ -1,3 +1,4 @@
+import type { SubmitTakeInput } from '../practice/submitTake';
 import type {
   Musician,
   Piece,
@@ -42,4 +43,22 @@ export interface InsightsSource {
 export interface TakeSource {
   /** Null when the id doesn't exist or isn't the caller's. */
   getTake(analysisId: string): Promise<TakeResult | null>;
+}
+
+/**
+ * Sending a take away to be analysed.
+ *
+ * A write rather than a read, but it belongs to the same seam for the same
+ * reason: the recording screen shouldn't know whether a take is going to
+ * storage or to a fixture, and one flag should decide it for the whole app.
+ *
+ * Capture is real either way — a microphone needs no backend. This seam only
+ * governs what happens to the audio afterwards.
+ */
+export interface TakeSubmissionSource {
+  /**
+   * Uploads the take, waits for the pipeline, and returns the analysis id to
+   * show. Rejects if the upload fails or the analysis never finishes.
+   */
+  submit(input: SubmitTakeInput): Promise<string>;
 }
