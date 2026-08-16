@@ -7,14 +7,11 @@ import {
   type ViewStyle,
 } from 'react-native';
 
-import { BORDER_WIDTH, colors, motion, radii, typography } from '../../design';
-import { Text } from './Text';
+import { colors, motion, radii } from '../../design';
 
 export interface AvatarProps {
-  /** Profile photo. Null falls back to a monogram — the usual case. */
+  /** Profile photo. Null falls back to the placeholder mark — the usual case. */
   source: string | null;
-  /** The monogram is taken from this. */
-  email: string;
   size?: number;
   /** Screen readers announce this; omit inside an already-labelled control. */
   accessibilityLabel?: string;
@@ -22,18 +19,16 @@ export interface AvatarProps {
 }
 
 /**
- * The musician, as a photo or as a letter.
+ * The musician, as a photo or as the placeholder mark.
  *
  * Most accounts have no photo — nothing in the schema stores one, and only an
- * OAuth sign-up brings one along — so the fallback is the state that matters.
- * It's a monogram in the serif rather than a silhouette icon: a letter is
- * specific to the person, reads at any size, and keeps the app's typography
- * doing the work instead of adding a piece of stock art.
+ * OAuth sign-up brings one along — so the placeholder is the state that
+ * matters. A photo replaces it outright rather than sitting behind or beneath
+ * it: once there's a real face, the mark has nothing left to say.
  */
 export function Avatar({
   source,
-  email,
-  size = 40,
+  size = 42,
   accessibilityLabel,
   style,
 }: AvatarProps) {
@@ -57,51 +52,48 @@ export function Avatar({
 
   return (
     <View
-      style={[styles.monogram, shape, style]}
+      style={[styles.mark, shape, style]}
       accessible={Boolean(accessibilityLabel)}
       accessibilityLabel={accessibilityLabel}
     >
-      <Text
-        variant="pieceTitle"
-        color="textSecondary"
-        // Scaled off the box so one component covers a 40pt header avatar and
-        // a 64pt one on Profile without a second set of type tokens.
-        style={{
-          fontSize: size * MONOGRAM_RATIO,
-          lineHeight: size * MONOGRAM_RATIO * LINE_HEIGHT_RATIO,
-        }}
-      >
-        {monogram(email)}
-      </Text>
+      {/* The gold half is the container's own fill; this is the charcoal one. */}
+      <View style={styles.half} />
+      <View style={styles.core} />
     </View>
   );
-}
-
-/** Cap height that fills the circle without crowding it. */
-const MONOGRAM_RATIO = 0.42;
-const LINE_HEIGHT_RATIO =
-  typography.pieceTitle.lineHeight / typography.pieceTitle.fontSize;
-
-/**
- * First letter of the address. Falls back to a bullet rather than an empty
- * circle, since an address with no letter in it at all is possible.
- */
-function monogram(email: string): string {
-  const letter = email.match(/[a-z0-9]/i);
-  return letter ? letter[0].toUpperCase() : '•';
 }
 
 const styles = StyleSheet.create({
   photo: {
     backgroundColor: colors.surfacePressed,
   },
-  monogram: {
-    backgroundColor: colors.surface,
-    borderWidth: BORDER_WIDTH,
-    borderColor: colors.border,
-    alignItems: 'center',
-    justifyContent: 'center',
-    // A circle, so the token scale doesn't apply — but named for the reader.
+  /**
+   * Charcoal and gold split down the middle around a light core — the app's
+   * two brand colours and nothing else, so it reads as InTempo's mark rather
+   * than as a missing image.
+   *
+   * Proportions are fractions of the box, so one component serves the 42pt
+   * header avatar and the 76pt one on Profile without a second set of values.
+   */
+  mark: {
+    backgroundColor: colors.accent,
+    overflow: 'hidden',
+  },
+  half: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: '50%',
+    backgroundColor: colors.actionBg,
+  },
+  core: {
+    position: 'absolute',
+    left: '25%',
+    top: '25%',
+    width: '50%',
+    height: '50%',
     borderRadius: radii.pill,
+    backgroundColor: colors.actionText,
   },
 });

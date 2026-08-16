@@ -1,6 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
 import {
   Avatar,
@@ -32,6 +32,9 @@ export function ProfileScreen() {
   const queryClient = useQueryClient();
   const [signingOut, setSigningOut] = useState(false);
   const [signOutError, setSignOutError] = useState<string | null>(null);
+  // Tapping the photo is the affordance; the camera or pencil badge over it
+  // waits until there's an upload behind it to justify the decoration.
+  const [photoNote, setPhotoNote] = useState(false);
 
   async function handleSignOut() {
     setSigningOut(true);
@@ -79,11 +82,29 @@ export function ProfileScreen() {
         whose account this is. Everything below is what kind of account it is.
       */}
       <View style={styles.identity}>
-        <Avatar source={musician.avatarUrl} email={musician.email} size={64} />
+        <Pressable
+          onPress={() => setPhotoNote(true)}
+          accessibilityRole="button"
+          accessibilityLabel="Edit photo"
+          style={({ pressed }) => (pressed ? styles.pressed : undefined)}
+        >
+          <Avatar source={musician.avatarUrl} size={AVATAR_SIZE} />
+        </Pressable>
+
         <Text variant="body" style={styles.identityEmail} numberOfLines={2}>
           {musician.email}
         </Text>
       </View>
+
+      {photoNote ? (
+        <Text
+          variant="metadataSmall"
+          color="textTertiary"
+          style={styles.photoNote}
+        >
+          Changing your photo isn&apos;t available yet.
+        </Text>
+      ) : null}
 
       <Card padded={false} style={styles.account}>
         <View style={styles.rows}>
@@ -124,7 +145,16 @@ export function ProfileScreen() {
   );
 }
 
+/** Large enough to carry a face, short of a hero portrait. */
+const AVATAR_SIZE = 76;
+
 const styles = StyleSheet.create({
+  pressed: {
+    opacity: 0.6,
+  },
+  photoNote: {
+    marginTop: spacing.md,
+  },
   identity: {
     flexDirection: 'row',
     alignItems: 'center',
