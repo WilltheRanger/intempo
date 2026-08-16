@@ -1,0 +1,23 @@
+# Cloudflare Pages headers. Copied into the export by Expo, same as _redirects.
+#
+# Everything Expo emits under these two paths carries a content hash in its
+# filename — `index-161a7c95….js`, `Inter_400Regular.6d0f00….ttf` — so the URL
+# changes whenever the bytes do. That makes them safe to cache forever, and
+# worth caching forever: the JS bundle alone is 3.3 MB, and without this every
+# visit re-downloads it.
+
+/_expo/static/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# The entry point is the one file whose name never changes, so it is the one
+# that must always be revalidated. A stale index.html pins a browser to a
+# deleted bundle and the app fails to boot on a URL that looks fine.
+
+/
+  Cache-Control: public, max-age=0, must-revalidate
+
+/index.html
+  Cache-Control: public, max-age=0, must-revalidate
