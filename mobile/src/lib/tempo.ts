@@ -1,25 +1,26 @@
-import type { Verdict } from '../data/types';
+import type { Band, Direction, Verdict } from '../data/types';
 
 /**
- * Tempo verdict thresholds, in BPM either side of the target.
+ * The pipeline's band and direction, in the words the UI shows.
  *
- * From the product spec's five-state vocabulary: on tempo within ±2, slight
- * rush or drag out to ±5, rushing or dragging beyond that. The backend's
- * analysis pipeline will classify against the same numbers; this is here so
- * the UI and its fixtures can't drift from them independently.
+ * Two vocabularies meet here, and both are the spec's. The analysis pipeline
+ * classifies into four bands with a separate direction, because that is what
+ * the tolerance maths produces. The interface shows five states, because that
+ * is what a musician can act on. This is the only place they are joined.
+ *
+ * `severe` folds into plain rushing or dragging: the display vocabulary has no
+ * fifth level of alarm, and the spec's own table stops at three. Severity is
+ * still in `result_json` for anyone who needs it — it just isn't a word this
+ * screen says.
  */
-const ON_TEMPO_BPM = 2;
-const SLIGHT_BPM = 5;
-
-/** Classifies a BPM deviation. Positive is ahead of the beat. */
-export function verdictForDeviation(bpmDeviation: number): Verdict {
-  if (Math.abs(bpmDeviation) <= ON_TEMPO_BPM) {
+export function verdictFor(band: Band, direction: Direction): Verdict {
+  if (band === 'on' || direction === 'on') {
     return 'on_tempo';
   }
-  if (bpmDeviation > 0) {
-    return bpmDeviation <= SLIGHT_BPM ? 'slight_rush' : 'rushing';
+  if (band === 'slight') {
+    return direction === 'rush' ? 'slight_rush' : 'slight_drag';
   }
-  return bpmDeviation >= -SLIGHT_BPM ? 'slight_drag' : 'dragging';
+  return direction === 'rush' ? 'rushing' : 'dragging';
 }
 
 const VERDICT_LABELS: Record<Verdict, string> = {
@@ -65,9 +66,9 @@ const TENDENCY_DETAIL: Record<Verdict, string> = {
 /**
  * "Across 34 sessions, you were usually ahead of the beat."
  *
- * No BPM figure: the spec keeps timing deviations out of production copy and
- * leaves the magnitude to the bar. Session counts aren't a timing measurement,
- * so they stay.
+ * No timing figure: the spec keeps deviations out of production copy and
+ * leaves the magnitude to the bar. Session counts aren't a timing
+ * measurement, so they stay.
  */
 export function formatTendencyDetail(
   verdict: Verdict,

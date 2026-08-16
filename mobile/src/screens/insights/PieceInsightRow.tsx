@@ -33,7 +33,7 @@ export function PieceInsightRow({ insight }: PieceInsightRowProps) {
       ) : null}
 
       <DeviationBar
-        bpmDeviation={insight.meanBpmDeviation}
+        deviationPct={insight.meanDeviationPct}
         accessibilityLabel={`${verdict} across ${insight.title}`}
         style={styles.bar}
       />

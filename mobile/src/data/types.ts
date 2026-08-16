@@ -105,6 +105,37 @@ export interface ScoreResponse {
   updated_at: string;
 }
 
+export type AnalysisStatus =
+  | 'queued'
+  | 'processing'
+  | 'done'
+  | 'failed'
+  | 'failed_recoverable';
+
+/**
+ * GET /v1/analyses and /v1/analyses/:id.
+ *
+ * `result_json` is deliberately loose. Its schema lives in the pipeline
+ * (`backend/app/services/classification.py`) and is still being tuned; typing
+ * it here would be a second copy that goes stale silently. The adapter reads
+ * the few fields it needs and tolerates the rest.
+ */
+export interface AnalysisResponse {
+  id: string;
+  user_id: string;
+  score_id: string;
+  status: AnalysisStatus;
+  target_bpm: number;
+  bpm_source: string;
+  metronome_mode: MetronomeMode;
+  result_json: Record<string, unknown> | null;
+  failure_reason: string | null;
+  alignment_quality: number | null;
+  created_at: string;
+  updated_at: string;
+  finished_at: string | null;
+}
+
 /** POST /v1/upload/score-image and /v1/upload/audio */
 export interface UploadResponse {
   upload_url: string;
@@ -147,11 +178,28 @@ export interface Piece {
 }
 
 /**
- * The five-state verdict vocabulary, defined by the product spec in BPM terms:
- * on tempo within ±2, slight rush/drag out to ±5, rushing/dragging beyond.
+ * How the analysis pipeline classifies one deviation, from `result_json`.
  *
- * `verdictForDeviation` in `lib/tempo.ts` is the single implementation of
- * those thresholds.
+ * Bands are a percentage of one beat, with independent cutoffs for rushing
+ * and dragging — humans tolerate dragging more — and the thresholds live in
+ * the backend's remote config so they can be tuned without a client release.
+ * That is why nothing on this side classifies: it would be a second copy of
+ * numbers designed to move.
+ */
+export type Band = 'on' | 'slight' | 'rush_drag' | 'severe';
+
+/**
+ * Which side of the beat. Note the raw deltas in `result_json` are
+ * drag-positive (`actual - expected`), while the trend and verdict flip to
+ * rush-positive so "ahead" reads as a positive number. Everything in this
+ * file follows the verdict convention: **positive is ahead of the beat.**
+ */
+export type Direction = 'rush' | 'drag' | 'on';
+
+/**
+ * The five-state vocabulary the interface shows, from the spec's design
+ * section. Derived from `Band` and `Direction` by `verdictFor` in
+ * `lib/tempo.ts`, which is the only place the two vocabularies meet.
  */
 export type Verdict =
   | 'on_tempo'
@@ -168,29 +216,32 @@ export interface PieceInsight {
   /** Completed analyses of this piece in the window. */
   sessions: number;
   /**
-   * Mean deviation from the target tempo, in BPM. Positive is ahead of the
-   * beat. Derived from `analyses.result_json`, which the spec describes as
-   * per-note deltas, verdict, and trend.
+   * Mean deviation across those takes, as a percentage of one beat.
+   * Positive is ahead of the beat. The same unit the pipeline classifies in,
+   * so the bar and the verdict can't disagree.
    */
-  meanBpmDeviation: number;
+  meanDeviationPct: number;
+  band: Band;
+  direction: Direction;
   verdict: Verdict;
 }
 
 /**
  * What the Insights tab renders.
  *
- * Every field maps to something the backend will genuinely be able to produce:
- * counts and timestamps come from `analyses`, deviations and verdicts from
- * `analyses.result_json`, and titles from the joined `scores` row. Nothing
- * here is a metric invented to fill the screen.
+ * Every field maps to something the backend produces: counts and timestamps
+ * from `analyses`, deviations and bands from `analyses.result_json`, titles
+ * from the joined `scores` row.
  */
 export interface PracticeInsights {
   /** Days the window covers. */
   windowDays: number;
   /** Completed analyses in the window, across every piece. */
   sessions: number;
-  /** Mean BPM deviation across every session. Positive is ahead of the beat. */
-  meanBpmDeviation: number;
+  /** Mean deviation across every session, as a percentage of one beat. */
+  meanDeviationPct: number;
+  band: Band;
+  direction: Direction;
   verdict: Verdict;
   /** Most drift first — the pieces worth attention lead. */
   pieces: PieceInsight[];
