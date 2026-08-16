@@ -1,5 +1,4 @@
 import { useNavigation } from '@react-navigation/native';
-import * as Haptics from 'expo-haptics';
 import { StatusBar } from 'expo-status-bar';
 import { Images, X, Zap, ZapOff } from 'lucide-react-native';
 import { useEffect, useState } from 'react';
@@ -8,6 +7,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ScoreThumbnail } from '../../components/pieces/ScoreThumbnail';
 import { Text } from '../../components/primitives/Text';
+import { impact, ImpactFeedbackStyle } from '../../lib/haptics';
 import { captureSession, useCapturedPages } from '../../data/captureSession';
 import type { ThumbnailSource } from '../../data/types';
 import {
@@ -67,7 +67,7 @@ export function ScannerScreen() {
   const nextCapture = MOCK_CAPTURES[pages.length % MOCK_CAPTURES.length];
 
   function handleCapture() {
-    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    impact(ImpactFeedbackStyle.Medium);
     captureSession.add(nextCapture);
   }
 
