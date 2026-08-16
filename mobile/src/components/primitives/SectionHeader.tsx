@@ -1,4 +1,10 @@
-import { Pressable, StyleSheet, View } from 'react-native';
+import {
+  Pressable,
+  StyleSheet,
+  View,
+  type StyleProp,
+  type ViewStyle,
+} from 'react-native';
 
 import { MIN_TOUCH_TARGET, spacing } from '../../design';
 import { Text } from './Text';
@@ -8,6 +14,7 @@ export interface SectionHeaderProps {
   /** Optional trailing action, e.g. "See all". */
   actionLabel?: string;
   onActionPress?: () => void;
+  style?: StyleProp<ViewStyle>;
 }
 
 /**
@@ -19,9 +26,10 @@ export function SectionHeader({
   label,
   actionLabel,
   onActionPress,
+  style,
 }: SectionHeaderProps) {
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, style]}>
       <Text variant="sectionLabel" color="textSecondary">
         {label}
       </Text>

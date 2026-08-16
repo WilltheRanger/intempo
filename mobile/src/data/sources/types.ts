@@ -1,4 +1,4 @@
-import type { Musician, Piece } from '../types';
+import type { Musician, Piece, PracticeInsights } from '../types';
 
 /**
  * The seam between the UI and the backend.
@@ -25,4 +25,10 @@ export interface MusicianSource {
    * has run. Keep it the first authenticated request after sign-in.
    */
   getMusician(): Promise<Musician>;
+}
+
+/** Aggregate practice history, for the Insights tab. */
+export interface InsightsSource {
+  /** Null when the musician has no completed analyses in the window. */
+  getInsights(): Promise<PracticeInsights | null>;
 }
