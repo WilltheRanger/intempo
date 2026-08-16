@@ -1,7 +1,7 @@
 import { useNavigation } from '@react-navigation/native';
 import { ChevronLeft, ChevronRight } from 'lucide-react-native';
 import { useEffect, useMemo, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
 import { NotationPlaceholder } from '../../components/pieces/NotationPlaceholder';
 import { ScoreThumbnail } from '../../components/pieces/ScoreThumbnail';
@@ -11,9 +11,11 @@ import {
   EmptyState,
   IconButton,
   Input,
+  MetadataRow,
   PageHeader,
   PrimaryButton,
   ScreenContainer,
+  SecondaryButton,
   SegmentedControl,
   Text,
 } from '../../components/primitives';
@@ -65,6 +67,7 @@ export function TranscriptionReviewScreen() {
   const [composer, setComposer] = useState(draft.composer);
   const [movement, setMovement] = useState(draft.movement ?? '');
 
+  const [editingDetails, setEditingDetails] = useState(false);
   const [view, setView] = useState<ScoreView>('notation');
   const [pageIndex, setPageIndex] = useState(0);
   const [measure, setMeasure] = useState(1);
@@ -103,31 +106,66 @@ export function TranscriptionReviewScreen() {
 
   return (
     <ScreenContainer>
-      <PageHeader eyebrow="Transcription" title={title || 'Untitled piece'} />
+      <PageHeader title="Review transcription" />
 
-      <Card style={styles.details}>
-        <Input
-          label="Title"
-          value={title}
-          onChangeText={setTitle}
-          placeholder="Composition title"
-          serif
-        />
-        <Input
-          label="Composer"
-          value={composer}
-          onChangeText={setComposer}
-          placeholder="Composer"
-          style={styles.field}
-        />
-        <Input
-          label="Movement"
-          value={movement}
-          onChangeText={setMovement}
-          placeholder="Optional"
-          style={styles.field}
-        />
-      </Card>
+      {editingDetails ? (
+        <Card style={styles.details}>
+          <Input
+            label="Title"
+            value={title}
+            onChangeText={setTitle}
+            placeholder="Composition title"
+            serif
+          />
+          <Input
+            label="Composer"
+            value={composer}
+            onChangeText={setComposer}
+            placeholder="Composer"
+            style={styles.field}
+          />
+          <Input
+            label="Movement"
+            value={movement}
+            onChangeText={setMovement}
+            placeholder="Optional"
+            style={styles.field}
+          />
+          <SecondaryButton
+            label="Done"
+            onPress={() => setEditingDetails(false)}
+            style={styles.field}
+          />
+        </Card>
+      ) : (
+        // Detected metadata reads as a summary, not a form. The fields are one
+        // tap away for the cases OCR gets wrong, which is what this screen is
+        // for — but they don't dominate it until they're needed.
+        <View style={styles.summary}>
+          <View style={styles.summaryText}>
+            <Text variant="pieceTitle" numberOfLines={2}>
+              {title || 'Untitled piece'}
+            </Text>
+            <MetadataRow
+              variant="metadataSmall"
+              items={[composer, movement]}
+              style={styles.summaryMeta}
+            />
+          </View>
+
+          <Pressable
+            onPress={() => setEditingDetails(true)}
+            accessibilityRole="button"
+            accessibilityLabel="Edit detected details"
+            hitSlop={spacing.md}
+            style={({ pressed }) => (pressed ? styles.editPressed : undefined)}
+          >
+            <Text variant="sectionAction" color="accent">
+              Edit
+            </Text>
+          </Pressable>
+        </View>
+      )}
 
       <View style={styles.pageNav}>
         <IconButton
@@ -200,6 +238,22 @@ export function TranscriptionReviewScreen() {
 const styles = StyleSheet.create({
   details: {
     marginTop: spacing.md,
+  },
+  summary: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: spacing.lg,
+    marginTop: spacing.xs,
+  },
+  summaryText: {
+    flexShrink: 1,
+  },
+  summaryMeta: {
+    marginTop: spacing.xs,
+  },
+  editPressed: {
+    opacity: 0.6,
   },
   field: {
     marginTop: spacing.lg,

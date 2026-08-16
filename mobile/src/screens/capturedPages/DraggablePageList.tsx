@@ -175,10 +175,18 @@ function DraggableRow({
 
   useEffect(() => {
     const toValue = displacement * pitch.current;
-    if (reduceMotion) {
+
+    // No drag in progress means the list has just settled into its real
+    // order, and this row is already laid out in its final slot. Animating a
+    // leftover offset back to zero would slide it across the neighbour now
+    // occupying that space — the rows visibly overlap for the duration.
+    // Drop the offset instantly instead; the layout already moved.
+    if (reduceMotion || activeIndex === null) {
+      shiftY.stopAnimation();
       shiftY.setValue(toValue);
       return;
     }
+
     const animation = Animated.timing(shiftY, {
       toValue,
       duration: motion.fast,
@@ -186,7 +194,7 @@ function DraggableRow({
     });
     animation.start();
     return () => animation.stop();
-  }, [displacement, pitch, reduceMotion, shiftY]);
+  }, [activeIndex, displacement, pitch, reduceMotion, shiftY]);
 
   return (
     <Animated.View
