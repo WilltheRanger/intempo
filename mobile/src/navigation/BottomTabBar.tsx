@@ -47,6 +47,11 @@ export function BottomTabBar({
 
   return (
     <View
+      // Bottom padding is the device's own inset, so the home indicator is
+      // cleared on modern iPhones and the bar stays at its approved height on
+      // phones without one. The floor only applies when the inset is 0 — it is
+      // never added on top of it. `styles.bar` carries the background, so the
+      // ivory extends through the safe-area region rather than stopping short.
       style={[
         styles.bar,
         { paddingBottom: Math.max(insets.bottom, TAB_BAR_MIN_PADDING_BOTTOM) },
