@@ -40,6 +40,14 @@ const THUMBNAIL_WIDTH = 56;
 const THUMBNAIL_HEIGHT = 40;
 
 /**
+ * The Library trades 4pt of thumbnail width for 4pt of gutter, so the text
+ * column keeps the width it has in Today's preview. Without this the wider
+ * gutter alone wraps "60 Studies for the Violin, Op. 45", orphaning "45" on
+ * a second line.
+ */
+const THUMBNAIL_WIDTH_DENSE = 52;
+
+/**
  * A piece in a list. Compact enough to browse.
  *
  * Score, title, composer, progress — in that order of priority, and nothing
@@ -54,7 +62,10 @@ export function PieceCard({
 }: PieceCardProps) {
   const content = (
     <View style={[styles.row, dense && styles.rowDense]}>
-      <ScoreThumbnail source={piece.thumbnail} style={styles.thumbnail} />
+      <ScoreThumbnail
+        source={piece.thumbnail}
+        style={[styles.thumbnail, dense && styles.thumbnailDense]}
+      />
 
       <View style={styles.details}>
         <Text variant="pieceTitle" numberOfLines={2}>
@@ -138,6 +149,9 @@ const styles = StyleSheet.create({
     height: THUMBNAIL_HEIGHT,
     // Centred against the text block so one- and two-line rows both align.
     alignSelf: 'center',
+  },
+  thumbnailDense: {
+    width: THUMBNAIL_WIDTH_DENSE,
   },
   details: {
     flex: 1,
