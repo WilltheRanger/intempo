@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />
+    <title>InTempo</title>
+
+    <!--
+      Expo generates this file by default. It is checked in so it can carry the
+      boot watchdog below; everything above and inside <body> matches what Expo
+      would have emitted, and Expo still injects the hashed <script> and the
+      favicon link at export time.
+    -->
+    <style id="expo-reset">
+      /* These styles make the body full-height */
+      html,
+      body {
+        height: 100%;
+      }
+      /* These styles disable body scrolling if you are using <ScrollView> */
+      body {
+        overflow: hidden;
+      }
+      /* These styles make the root element full-height */
+      #root {
+        display: flex;
+        height: 100%;
+        flex: 1;
+      }
+    </style>
+  </head>
+
+  <body>
+    <noscript>You need to enable JavaScript to run this app.</noscript>
+    <div id="root"></div>
+
+    <script>
+      /*
+       * Boot watchdog.
+       *
+       * A React app that dies before it mounts renders nothing at all — the
+       * page is white, the tab title is right, and there is no way to tell a
+       * missing bundle from a crashed one without opening devtools. That cost
+       * a real debugging session on the first Cloudflare deploy.
+       *
+       * This runs before the bundle, watches for the three ways it can fail,
+       * and puts the reason on screen. If the app mounts, none of it fires and
+       * nothing is shown.
+       *
+       * Deliberately plain: no fonts, no design tokens, no framework. It has
+       * to work in exactly the conditions where everything else didn't.
+       */
+      (function () {
+        var reported = false;
+
+        function report(title, detail) {
+          if (reported) return;
+          reported = true;
+          var root = document.getElementById('root');
+          if (!root) return;
+          root.style.cssText =
+            'display:block;padding:24px;background:#FBFAF7;color:#14110E;' +
+            'font:13px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace;' +
+            'overflow:auto;-webkit-text-size-adjust:100%';
+          var h = document.createElement('p');
+          h.style.cssText = 'margin:0 0 12px;font-weight:600';
+          h.textContent = title;
+          var p = document.createElement('pre');
+          p.style.cssText =
+            'margin:0;white-space:pre-wrap;word-break:break-word;color:#5C564D';
+          p.textContent = detail;
+          root.appendChild(h);
+          root.appendChild(p);
+        }
+
+        // A <script> that 404s fires an error event that doesn't bubble, so
+        // this listens in the capture phase.
+        window.addEventListener(
+          'error',
+          function (event) {
+            if (event.target && event.target.tagName === 'SCRIPT') {
+              report('The app bundle failed to load.', String(event.target.src));
+              return;
+            }
+            var error = event.error;
+            report(
+              'The app crashed while starting.',
+              (error && (error.stack || error.message)) || event.message || 'unknown error',
+            );
+          },
+          true,
+        );
+
+        window.addEventListener('unhandledrejection', function (event) {
+          var reason = event.reason;
+          report(
+            'The app crashed while starting.',
+            (reason && (reason.stack || reason.message)) || String(reason),
+          );
+        });
+
+        // Nothing threw, nothing mounted. Usually means the server answered
+        // the bundle request with something that isn't JavaScript — an SPA
+        // fallback handing back index.html is the classic — so ask it what it
+        // actually returned rather than making the reader guess.
+        setTimeout(function () {
+          var root = document.getElementById('root');
+          if (!root || root.childElementCount > 0 || reported) return;
+
+          var tag = document.querySelector('script[src*="_expo"]');
+          var src = tag ? tag.src : '(no bundle script in the page)';
+          if (!tag || !window.fetch) {
+            report('The app did not start.', src);
+            return;
+          }
+
+          fetch(tag.src, { method: 'GET' })
+            .then(function (response) {
+              report(
+                'The app did not start.',
+                src +
+                  '\n\nHTTP ' +
+                  response.status +
+                  '\nContent-Type: ' +
+                  (response.headers.get('content-type') || '(none)'),
+              );
+            })
+            .catch(function (error) {
+              report('The app did not start.', src + '\n\n' + error);
+            });
+        }, 8000);
+      })();
+    </script>
+  </body>
+</html>
