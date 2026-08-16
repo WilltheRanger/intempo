@@ -7,9 +7,9 @@ import {
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { colors, spacing } from '../../design';
+import { BORDER_WIDTH, colors, spacing } from '../../design';
 import { useTabBarHeight } from '../../navigation/tabBarMetrics';
 
 export interface ScreenContainerProps {
@@ -18,6 +18,14 @@ export interface ScreenContainerProps {
   scrollable?: boolean;
   /** Extra padding at the bottom so content clears the tab bar. */
   contentStyle?: StyleProp<ViewStyle>;
+  /**
+   * Action pinned below the scroll area.
+   *
+   * For screens whose content grows without bound — a scan can be four pages
+   * or thirty — so the action that ends the screen stays one tap away instead
+   * of one long scroll away.
+   */
+  footer?: ReactNode;
 }
 
 /**
@@ -31,6 +39,7 @@ export function ScreenContainer({
   children,
   scrollable = true,
   contentStyle,
+  footer,
 }: ScreenContainerProps) {
   // The context tells us *whether* a tab bar is below us — it's absent on
   // screens pushed above the tabs, like Practice. It does not tell us how
@@ -39,9 +48,39 @@ export function ScreenContainer({
   // the context and the height from the bar's own tokens.
   const hasTabBar = useContext(BottomTabBarHeightContext) != null;
   const tabBarHeight = useTabBarHeight();
+  const insets = useSafeAreaInsets();
+  const barHeight = hasTabBar ? tabBarHeight : 0;
+
+  // A footer ends the scroll area early, so content scrolls clear of it on its
+  // own — no measuring, and no padding that has to be kept in sync with
+  // whatever the footer holds. Without one the content still has to clear the
+  // tab bar itself, since that bar overlays the screen.
   const bottomInset = {
-    paddingBottom: spacing['2xl'] + (hasTabBar ? tabBarHeight : 0),
+    paddingBottom: spacing['2xl'] + (footer ? 0 : barHeight),
   };
+
+  // The footer takes over the bottom edge: the home indicator on a phone that
+  // has one, the tab bar on the rare screen that has both.
+  const footerInset = {
+    paddingBottom: hasTabBar
+      ? tabBarHeight
+      : Math.max(insets.bottom, spacing.lg),
+  };
+
+  const scrollArea = scrollable ? (
+    <ScrollView
+      style={styles.flex}
+      contentContainerStyle={[styles.content, bottomInset, contentStyle]}
+      showsVerticalScrollIndicator={false}
+      keyboardShouldPersistTaps="handled"
+    >
+      {children}
+    </ScrollView>
+  ) : (
+    <View style={[styles.flex, styles.content, bottomInset, contentStyle]}>
+      {children}
+    </View>
+  );
 
   return (
     // `edges={['top']}` pads by the inset the device actually reports, so a
@@ -49,20 +88,13 @@ export function ScreenContainer({
     // (20pt) each get the right gap with no per-device branching. The bar
     // below owns the bottom inset; claiming it here too would double it.
     <SafeAreaView style={styles.safeArea} edges={['top']}>
-      {scrollable ? (
-        <ScrollView
-          style={styles.flex}
-          contentContainerStyle={[styles.content, bottomInset, contentStyle]}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-        >
-          {children}
-        </ScrollView>
-      ) : (
-        <View style={[styles.flex, styles.content, bottomInset, contentStyle]}>
-          {children}
-        </View>
-      )}
+      {scrollArea}
+
+      {footer ? (
+        // Same construction as the tab bar: page background behind a hairline
+        // rule, not a raised surface. Content passes above the rule and stops.
+        <View style={[styles.footer, footerInset]}>{footer}</View>
+      ) : null}
     </SafeAreaView>
   );
 }
@@ -80,5 +112,12 @@ const styles = StyleSheet.create({
   },
   content: {
     paddingHorizontal: SCREEN_GUTTER,
+  },
+  footer: {
+    backgroundColor: colors.bg,
+    borderTopWidth: BORDER_WIDTH,
+    borderTopColor: colors.border,
+    paddingHorizontal: SCREEN_GUTTER,
+    paddingTop: spacing.lg,
   },
 });
