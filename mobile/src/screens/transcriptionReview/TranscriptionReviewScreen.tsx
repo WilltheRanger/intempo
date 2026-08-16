@@ -3,6 +3,7 @@ import { ChevronLeft, ChevronRight } from 'lucide-react-native';
 import { useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
+import { NotationPlaceholder } from '../../components/pieces/NotationPlaceholder';
 import { TransportControls } from '../../components/playback/TransportControls';
 import { ScoreThumbnail } from '../../components/pieces/ScoreThumbnail';
 import {
@@ -18,7 +19,7 @@ import { useCapturedPages } from '../../data/captureSession';
 import { buildDraft } from '../../data/sources/transcriptionDraft';
 import { spacing } from '../../design';
 import type { RootNavigation } from '../../navigation/types';
-import { NotationPlaceholder } from './NotationPlaceholder';
+
 
 /** Mock playback pace: one measure per beat-ish interval. */
 const MOCK_MS_PER_MEASURE = 550;

@@ -18,18 +18,13 @@ import {
   Text,
 } from '../../components/primitives';
 import { usePiece } from '../../data/hooks/usePieces';
+import { MOCK_MEASURE_COUNT } from '../../data/sources/pieceMock';
 import { spacing } from '../../design';
 import { formatLastPracticed, formatProgressPercent } from '../../lib/format';
 import type { RootNavigation, RootStackParamList } from '../../navigation/types';
 
 /** Height of the score strip across the top of the score card. */
 const BANNER_HEIGHT = 88;
-
-/**
- * Placeholder measure count. Real counts come from the score JSON once
- * transcription is wired up; nothing derives this from the piece today.
- */
-const MOCK_MEASURES = 24;
 
 const MOCK_MS_PER_MEASURE = 550;
 
@@ -53,7 +48,7 @@ export function PieceDetailScreen() {
       return;
     }
     const timer = setTimeout(() => {
-      setMeasure((current) => (current >= MOCK_MEASURES ? 1 : current + 1));
+      setMeasure((current) => (current >= MOCK_MEASURE_COUNT ? 1 : current + 1));
     }, MOCK_MS_PER_MEASURE);
     return () => clearTimeout(timer);
   }, [isPlaying, measure]);
@@ -141,7 +136,7 @@ export function PieceDetailScreen() {
           color="textTertiary"
           style={styles.position}
         >
-          Measure {measure} of {MOCK_MEASURES}
+          Measure {measure} of {MOCK_MEASURE_COUNT}
         </Text>
 
         <View style={styles.transport}>
@@ -149,9 +144,9 @@ export function PieceDetailScreen() {
             isPlaying={isPlaying}
             onTogglePlay={() => setIsPlaying((playing) => !playing)}
             onPrevious={() => setMeasure((m) => Math.max(1, m - 1))}
-            onNext={() => setMeasure((m) => Math.min(MOCK_MEASURES, m + 1))}
+            onNext={() => setMeasure((m) => Math.min(MOCK_MEASURE_COUNT, m + 1))}
             previousDisabled={measure === 1}
-            nextDisabled={measure >= MOCK_MEASURES}
+            nextDisabled={measure >= MOCK_MEASURE_COUNT}
           />
         </View>
       </Card>
