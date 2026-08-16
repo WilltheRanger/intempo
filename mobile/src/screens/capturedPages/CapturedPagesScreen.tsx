@@ -14,7 +14,7 @@ import { captureSession, useCapturedPages } from '../../data/captureSession';
 import { spacing } from '../../design';
 import type { RootNavigation } from '../../navigation/types';
 import { MOCK_CAPTURES } from '../scanner/ScannerScreen';
-import { PageRow } from './PageRow';
+import { DraggablePageList } from './DraggablePageList';
 
 /**
  * Review of the pages just captured, before transcription.
@@ -22,9 +22,8 @@ import { PageRow } from './PageRow';
  * Reorder, retake, and delete all act on the shared capture session, so going
  * back to add another page keeps whatever order was set here.
  *
- * Reordering is by explicit up/down controls rather than drag: it needs no
- * gesture dependency, it works with a screen reader, and on a list this short
- * it's faster than dragging.
+ * Reordering is by drag. Dragging is not an accessible gesture, so each row
+ * also carries move-up and move-down accessibility actions.
  */
 export function CapturedPagesScreen() {
   const navigation = useNavigation<RootNavigation>();
@@ -56,24 +55,16 @@ export function CapturedPagesScreen() {
       <PageHeader eyebrow={pageCountLabel(pages.length)} title="Review pages" />
 
       <Text variant="metadataSmall" color="textTertiary" style={styles.hint}>
-        Pages transcribe in this order.
+        Drag a page by its handle to reorder. Pages transcribe in this order.
       </Text>
 
-      <View style={styles.list}>
-        {pages.map((page, index) => (
-          <PageRow
-            key={page.id}
-            page={page}
-            position={index + 1}
-            isFirst={index === 0}
-            isLast={index === pages.length - 1}
-            onMoveUp={() => captureSession.move(page.id, -1)}
-            onMoveDown={() => captureSession.move(page.id, 1)}
-            onRetake={() => handleRetake(page.id, index)}
-            onDelete={() => captureSession.remove(page.id)}
-          />
-        ))}
-      </View>
+      <DraggablePageList
+        pages={pages}
+        onReorder={(id, toIndex) => captureSession.moveTo(id, toIndex)}
+        onRetake={(page, index) => handleRetake(page.id, index)}
+        onDelete={(id) => captureSession.remove(id)}
+        onNudge={(id, direction) => captureSession.move(id, direction)}
+      />
 
       <View style={styles.actions}>
         <SecondaryButton
@@ -98,9 +89,6 @@ function pageCountLabel(count: number): string {
 const styles = StyleSheet.create({
   hint: {
     marginBottom: spacing.md,
-  },
-  list: {
-    gap: spacing.md,
   },
   actions: {
     marginTop: spacing['2xl'],

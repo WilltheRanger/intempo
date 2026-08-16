@@ -1,18 +1,20 @@
 import { useNavigation } from '@react-navigation/native';
 import { ChevronLeft, ChevronRight } from 'lucide-react-native';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { NotationPlaceholder } from '../../components/pieces/NotationPlaceholder';
-import { TransportControls } from '../../components/playback/TransportControls';
 import { ScoreThumbnail } from '../../components/pieces/ScoreThumbnail';
+import { TransportControls } from '../../components/playback/TransportControls';
 import {
   Card,
   EmptyState,
   IconButton,
+  Input,
   PageHeader,
   PrimaryButton,
   ScreenContainer,
+  SegmentedControl,
   Text,
 } from '../../components/primitives';
 import { useCapturedPages } from '../../data/captureSession';
@@ -20,30 +22,50 @@ import { buildDraft } from '../../data/sources/transcriptionDraft';
 import { spacing } from '../../design';
 import type { RootNavigation } from '../../navigation/types';
 
-
 /** Mock playback pace: one measure per beat-ish interval. */
 const MOCK_MS_PER_MEASURE = 550;
 
 /**
+ * Fixed height for the comparison frame.
+ *
+ * Both views occupy exactly this box so switching between them changes the
+ * content and nothing else — a frame that resizes defeats the comparison.
+ */
+const COMPARE_HEIGHT = 220;
+
+/**
  * Saving isn't wired to storage, so the flow lands on the library fixture the
- * draft describes — same title, composer, and movement — rather than inventing
- * a piece that doesn't exist anywhere.
+ * draft describes rather than inventing a piece that exists nowhere.
  */
 const SAVED_PIECE_ID = 'fixture-wohlfahrt-28';
+
+type ScoreView = 'notation' | 'original';
+
+const VIEW_OPTIONS = [
+  { value: 'notation' as const, label: 'Notation' },
+  { value: 'original' as const, label: 'Original' },
+];
 
 /**
  * Frontend-only review of a transcription.
  *
  * Everything here is scaffolding: the notation is structural, playback moves a
- * marker rather than making sound, and the metadata comes from a fixture. The
- * point is to judge the shape of the screen — how page and measure navigation
- * sit next to playback, and how the original page stays reachable.
+ * marker rather than making sound, and the detected details come from a
+ * fixture. What it establishes is the shape of the screen — correcting what
+ * was detected, and checking the result against the page it came from.
  */
 export function TranscriptionReviewScreen() {
   const navigation = useNavigation<RootNavigation>();
   const pages = useCapturedPages();
-  const draft = buildDraft(pages.length);
+  const draft = useMemo(() => buildDraft(pages.length), [pages.length]);
 
+  // Detected values are a starting point, not a result — every one of them is
+  // editable, because OCR gets composer names and movement titles wrong.
+  const [title, setTitle] = useState(draft.title);
+  const [composer, setComposer] = useState(draft.composer);
+  const [movement, setMovement] = useState(draft.movement ?? '');
+
+  const [view, setView] = useState<ScoreView>('notation');
   const [pageIndex, setPageIndex] = useState(0);
   const [measure, setMeasure] = useState(1);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -81,20 +103,31 @@ export function TranscriptionReviewScreen() {
 
   return (
     <ScreenContainer>
-      <PageHeader eyebrow="Transcription" title={draft.title} />
+      <PageHeader eyebrow="Transcription" title={title || 'Untitled piece'} />
 
-      <Text variant="composer" color="textSecondary">
-        {draft.composer}
-      </Text>
-      {draft.movement ? (
-        <Text
-          variant="metadataSmall"
-          color="textTertiary"
-          style={styles.movement}
-        >
-          {draft.movement}
-        </Text>
-      ) : null}
+      <Card style={styles.details}>
+        <Input
+          label="Title"
+          value={title}
+          onChangeText={setTitle}
+          placeholder="Composition title"
+          serif
+        />
+        <Input
+          label="Composer"
+          value={composer}
+          onChangeText={setComposer}
+          placeholder="Composer"
+          style={styles.field}
+        />
+        <Input
+          label="Movement"
+          value={movement}
+          onChangeText={setMovement}
+          placeholder="Optional"
+          style={styles.field}
+        />
+      </Card>
 
       <View style={styles.pageNav}>
         <IconButton
@@ -115,12 +148,22 @@ export function TranscriptionReviewScreen() {
       </View>
 
       <Card>
-        <Text variant="sectionLabel" color="textSecondary">
-          Notation
-        </Text>
+        <SegmentedControl
+          label="Score view"
+          options={VIEW_OPTIONS}
+          value={view}
+          onChange={setView}
+        />
 
-        <View style={styles.notation}>
-          <NotationPlaceholder measures={measures} currentMeasure={measure} />
+        <View style={styles.compare}>
+          {view === 'notation' ? (
+            <NotationPlaceholder measures={measures} currentMeasure={measure} />
+          ) : (
+            <ScoreThumbnail
+              source={pages[pageIndex]?.source ?? null}
+              style={styles.original}
+            />
+          )}
         </View>
 
         <Text
@@ -143,16 +186,6 @@ export function TranscriptionReviewScreen() {
         </View>
       </Card>
 
-      <Card style={styles.sourceCard}>
-        <Text variant="sectionLabel" color="textSecondary">
-          Original page
-        </Text>
-        <ScoreThumbnail
-          source={pages[pageIndex]?.source ?? null}
-          style={styles.source}
-        />
-      </Card>
-
       <PrimaryButton
         label="Save piece"
         onPress={() =>
@@ -165,8 +198,11 @@ export function TranscriptionReviewScreen() {
 }
 
 const styles = StyleSheet.create({
-  movement: {
-    marginTop: spacing.xs,
+  details: {
+    marginTop: spacing.md,
+  },
+  field: {
+    marginTop: spacing.lg,
   },
   pageNav: {
     flexDirection: 'row',
@@ -175,21 +211,19 @@ const styles = StyleSheet.create({
     marginTop: spacing.xl,
     marginBottom: spacing.md,
   },
-  notation: {
+  compare: {
+    height: COMPARE_HEIGHT,
     marginTop: spacing.lg,
+    justifyContent: 'center',
+  },
+  original: {
+    width: '100%',
+    height: '100%',
   },
   measureReadout: {
     marginTop: spacing.lg,
   },
   transport: {
-    marginTop: spacing.md,
-  },
-  sourceCard: {
-    marginTop: spacing.md,
-  },
-  source: {
-    width: '100%',
-    aspectRatio: 1.5,
     marginTop: spacing.md,
   },
   save: {
