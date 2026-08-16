@@ -1,4 +1,5 @@
 import { getAnalysis, listAnalyses } from '../api/analyses';
+import { submitTake, waitForAnalysis } from '../practice/submitTake';
 import { getMe } from '../api/me';
 import { getScore, listScores } from '../api/scores';
 import { getAuthAvatarUrl } from '../auth/session';
@@ -21,6 +22,7 @@ import type {
   MusicianSource,
   PieceSource,
   TakeSource,
+  TakeSubmissionSource,
 } from './types';
 
 /**
@@ -309,5 +311,20 @@ export const apiTakeSource: TakeSource = {
     // one degrades to "Unknown piece" instead.
     const score = await getScore(analysis.score_id).catch(() => null);
     return toTake(analysis, result, score);
+  },
+};
+
+/**
+ * The real submission: upload, enqueue, wait.
+ *
+ * Waiting here rather than on the verdict screen keeps the "Listening back"
+ * state honest — it ends when the pipeline ends, not on a timer, and the
+ * screen it hands over to always has a finished analysis to read.
+ */
+export const apiTakeSubmissionSource: TakeSubmissionSource = {
+  async submit(input) {
+    const analysisId = await submitTake(input);
+    await waitForAnalysis(analysisId);
+    return analysisId;
   },
 };

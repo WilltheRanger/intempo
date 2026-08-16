@@ -6,6 +6,82 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-16 20:05 — Audio capture — the record button is real
+
+**Batch:** Frontend rebuild — Record + Verdict flow.
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`
+
+The last stubbed feature. `lib/audioRecorder.startRecording()` threw; it now
+records. See `DECISIONS.md` for why raw PCM rather than either platform's
+recorder — the short version is that Android's `MediaRecorder` cannot emit PCM
+at all, and a lossy codec smears the transient this pipeline measures.
+
+**What changed:**
+
+- `lib/audio/wav.ts` — the shared encoder. Int16 chunks → a canonical 44-byte
+  PCM WAV. Little-endian written explicitly through `DataView` rather than by
+  overlaying an `Int16Array`, which would take the platform's endianness and
+  produce noise on a big-endian device.
+- `lib/audio/types.ts` — `Recorder`, `Recording`, three typed errors, and
+  `MAX_TAKE_SECONDS`.
+- `lib/audioRecorder.ts` (native) — `expo-audio`'s `AudioStream` at int16/48k
+  mono, believing `stream.sampleRate` back from the hardware. Buffers are
+  copied on arrival because the native side may reuse them. Releases the audio
+  session on stop.
+- `lib/audioRecorder.web.ts` — `AudioWorklet` over `getUserMedia` with the
+  three voice-processing constraints off. The processor batches 32 quanta
+  (~85 ms) before posting, instead of 375 messages a second, and transfers
+  the buffer rather than copying it. `stop()` asks the worklet to flush before
+  disconnecting, so the end of the last note isn't lost.
+- `data/sources` — a `TakeSubmissionSource` seam beside the read sources.
+  Capture is real on both sides of `USE_FIXTURES`; only the destination
+  changes. The screen no longer imports a fixture id.
+- `RecordScreen` — awaits the recorder before starting the timer, so the clock
+  agrees with the file; guards a double-tap from opening a second microphone;
+  cancels on unmount so leaving mid-take releases the mic; and on failure
+  returns to the top with the tempo still set.
+- `app.json` — the `expo-audio` config plugin, with a microphone usage string
+  and background modes off.
+
+**New user-facing copy** (for review — four sentences, all failure states):
+permission refused, no microphone/API, a silent take, and a failed upload. Plus
+one line on "Listening back" when a take hits the 15-minute cap.
+
+**Tests run:** `npx tsc --noEmit` clean. `npx expo export` for both web and
+iOS. Then the real thing, in Chromium with `--use-fake-device-for-media-stream`
+— a genuine `getUserMedia` capture through the worklet, with the resulting WAV
+read back byte by byte:
+
+| field | value |
+|---|---|
+| RIFF / WAVE / `fmt ` / data | all present |
+| audioFormat | 1 (PCM) |
+| channels / bits | 1 / 16 |
+| sampleRate / byteRate / blockAlign | 44100 / 88200 / 2 |
+| riffSize, dataSize | 263972 and 263936 against a 263980-byte file — both exact |
+| duration from the header | 2.99 s for a 3.0 s take |
+| signal | peak 32767, non-silent — real samples, not a zeroed buffer |
+
+Permission refusal tested separately with `--deny-permission-prompts`: the
+screen returns to ready, keeps the tempo, and shows the sentence. No page
+errors in either run.
+
+**Known side effects / things to watch:**
+
+- **The native voice-processing gap is real and open.** On web the three
+  constraints are enforced; on native `expo-audio` gives no way to reach
+  `AVAudioSession`'s `.measurement` mode, so iOS may apply auto gain — which
+  reshapes attack envelopes. This must be closed before thresholds are tuned
+  against native recordings.
+- Verified on web only. The native path is written against `expo-audio`'s
+  documented `AudioStream` API and bundles for iOS, but no simulator or device
+  exists in this environment — it has never actually run.
+- Uncompressed audio is ~96 KB a second. A three-minute take is about 17 MB.
+- No unit-test harness exists in `mobile/`, so `wav.ts` is covered by the
+  byte-level browser assertion above rather than by a test that runs in CI.
+
+---
+
 ## 2026-08-16 19:15 — Record — an even vertical rhythm
 
 **Batch:** Frontend rebuild — Record + Verdict flow.
