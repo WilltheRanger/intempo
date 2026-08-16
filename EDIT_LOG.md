@@ -6,6 +6,57 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-17 01:10 — The blank page: Cloudflare skips `node_modules`
+
+**Branch:** `main`.
+
+**Found it, and the evidence was arithmetic.** `dist` holds 27 assets. The
+build log said `Uploaded 12 files`. Exactly 15 files sit under a directory
+called `node_modules`. 27 − 15 = 12.
+
+Cloudflare Pages silently skips anything under `node_modules` in the build
+output. Metro names an exported asset after the path of the module that
+imported it, so all four typefaces were at
+`dist/assets/node_modules/@expo-google-fonts/…` and all four 404'd. `useFonts`
+never resolved. `App.tsx` gated the whole app on `fontsLoaded` behind a plain
+ivory `<View>` — **the blank page was the app**, sitting in its loading state
+forever.
+
+It is also why the boot watchdog stayed silent: React had mounted, `#root` had
+a child, and by every check the watchdog makes nothing was wrong.
+
+**Two fixes, because one of them should exist regardless.**
+
+1. `mobile/scripts/flatten-vendor-assets.mjs` renames `dist/assets/node_modules`
+   to `dist/assets/vendor` and rewrites the references in the bundle. Wired
+   into `npm run build:web`, which the root build script now calls, so local
+   and CI can't drift. It exits non-zero if it moves files but rewrites nothing
+   — a rename without a rewrite is the same failure, wearing a success message.
+2. `App.tsx` stops waiting forever. `useFonts`'s error is honoured and a
+   5-second timeout backs it up. A font that 404s or hangs now costs the
+   typeface, not the interface. Wrong typeface beats no interface, and an app
+   should never be blank because of a decorative resource.
+
+**Tests run:** built and served locally.
+
+- All four fonts 200 from `/assets/vendor/…`, `Newsreader_400Regular` computed
+  on the greeting. Zero files under `node_modules` in `dist`; 27 assets for
+  Cloudflare to upload rather than 12.
+- Every `.ttf` forced to 404: the app renders — "Good evening / Continue
+  practicing / Sonata No. 1 in G minor…" — where it previously showed nothing.
+
+**Known side effects / things to watch:**
+
+- We now string-rewrite a built artifact, which breaks quietly if Expo changes
+  the export layout. The non-zero exit is the guard.
+- `assets/vendor` is a made-up path. Nothing else depends on it, but a future
+  Expo version that emits its own `assets/vendor` would collide.
+- The 5-second font timeout will fire on a genuinely slow connection and render
+  a frame in fallback faces before the real ones swap in. That is a flash of
+  wrong typography on a bad network, in exchange for never being blank.
+
+---
+
 ## 2026-08-17 00:30 — A boot watchdog, because a white page says nothing
 
 **Branch:** `main`.
