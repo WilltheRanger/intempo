@@ -25,8 +25,8 @@ export function PageHeader({ title, eyebrow }: PageHeaderProps) {
 
 const styles = StyleSheet.create({
   container: {
-    paddingTop: spacing.md,
-    paddingBottom: spacing['2xl'],
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.lg,
   },
   eyebrow: {
     marginBottom: spacing.sm,

@@ -16,8 +16,13 @@ export interface FeaturedPieceCardProps {
   onContinue: () => void;
 }
 
-/** Height of the score strip across the top of the card. */
-const BANNER_HEIGHT = 88;
+/**
+ * Height of the score strip across the top of the card.
+ *
+ * A shorter strip also shows more of the score: the source images are roughly
+ * 8:1, so with `cover` a shallower box crops less off the sides.
+ */
+const BANNER_HEIGHT = 56;
 
 /**
  * The piece to pick back up. The dominant element on the Today screen.
@@ -89,7 +94,7 @@ const styles = StyleSheet.create({
     height: BANNER_HEIGHT,
   },
   body: {
-    padding: spacing.xl,
+    padding: spacing.lg,
   },
   composer: {
     marginTop: spacing.xs,
@@ -98,12 +103,12 @@ const styles = StyleSheet.create({
     marginTop: spacing.xs,
   },
   progress: {
-    marginTop: spacing.xl,
+    marginTop: spacing.lg,
   },
   metadata: {
-    marginTop: spacing.md,
+    marginTop: spacing.sm,
   },
   action: {
-    marginTop: spacing.xl,
+    marginTop: spacing.lg,
   },
 });

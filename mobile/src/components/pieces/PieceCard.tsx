@@ -12,7 +12,7 @@ export interface PieceCardProps {
   onPress?: () => void;
 }
 
-const THUMBNAIL_SIZE = 64;
+const THUMBNAIL_SIZE = 56;
 
 /**
  * A piece in a list. Compact enough to browse.
@@ -81,7 +81,7 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    padding: spacing.md,
+    padding: spacing.sm,
     gap: spacing.lg,
   },
   thumbnail: {
@@ -98,6 +98,6 @@ const styles = StyleSheet.create({
     marginTop: spacing.xs,
   },
   progress: {
-    marginTop: spacing.md,
+    marginTop: spacing.sm,
   },
 });
