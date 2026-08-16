@@ -23,12 +23,17 @@ import { durationOf, encodeWav } from './audio/wav';
  * reports back: `stream.sampleRate` goes into the WAV header, so a device that
  * insists on 44.1 produces a correct file rather than one that plays 9% sharp.
  *
- * **Known gap.** The brief calls for the system's voice processing off —
- * echo cancellation, auto gain, noise suppression — because auto gain in
- * particular reshapes attack envelopes. On web that is three constraints on
- * `getUserMedia`. On native it needs `AVAudioSession` in `.measurement` mode,
- * which `expo-audio` does not expose; reaching it means a config plugin or a
- * patched module. Documented in `DECISIONS.md` rather than silently accepted.
+ * **Voice processing is off on both platforms**, which matters because auto
+ * gain reshapes attack envelopes — the shape this app measures. iOS gets it
+ * from `expo-audio` itself: `AudioStream.start()` sets the session to
+ * `.record` with mode `.measurement`, which is precisely the mode that asks
+ * for no system processing. Android does not: upstream opens `AudioRecord` on
+ * `AudioSource.MIC`, which runs through the OEM's input chain. That one line
+ * is patched — see `patches/expo-audio+57.0.3.patch` and `DECISIONS.md`.
+ *
+ * The session is `AudioStream`'s to configure, so nothing here calls
+ * `setAudioModeAsync`: `start()` sets the category and mode itself and `stop()`
+ * deactivates it, and a second opinion from this file would only race it.
  */
 
 const REQUESTED_SAMPLE_RATE = 48000;
@@ -48,15 +53,6 @@ export async function startRecording(): Promise<Recorder> {
   if (!permission.granted) {
     throw new MicrophonePermissionError();
   }
-
-  // iOS routes recording through the audio session, and it will not hand over
-  // input at all unless the category allows it. `doNotMix` because a take with
-  // another app's audio in it is not a take.
-  await AudioModule.setAudioModeAsync({
-    allowsRecording: true,
-    playsInSilentMode: true,
-    interruptionMode: 'doNotMix',
-  });
 
   const stream = new AudioModule.AudioStream({
     sampleRate: REQUESTED_SAMPLE_RATE,
@@ -106,10 +102,10 @@ export async function startRecording(): Promise<Recorder> {
     }
     finished = true;
     subscription.remove();
+    // Releases the microphone and, on iOS, deactivates the audio session with
+    // `notifyOthersOnDeactivation` — so whatever was playing before the take
+    // gets its session back.
     stream.stop();
-    // Hand the session back, so the next sound the phone makes isn't routed
-    // through a recording category.
-    void AudioModule.setAudioModeAsync({ allowsRecording: false });
   }
 
   return {
