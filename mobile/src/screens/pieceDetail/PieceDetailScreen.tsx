@@ -122,9 +122,7 @@ export function PieceDetailScreen() {
 
           <PrimaryButton
             label={started ? 'Continue practice' : 'Start practice'}
-            onPress={() =>
-              navigation.navigate('Practice', { pieceId: piece.id })
-            }
+            onPress={() => navigation.navigate('Record', { pieceId: piece.id })}
             style={styles.practice}
           />
         </View>

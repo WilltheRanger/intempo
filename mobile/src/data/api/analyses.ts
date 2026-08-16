@@ -1,4 +1,4 @@
-import type { AnalysisResponse } from '../types';
+import type { AnalysisResponse, MetronomeMode } from '../types';
 import { apiFetch } from './client';
 
 export interface ListAnalysesParams {
@@ -32,4 +32,27 @@ export function listAnalyses({
 /** GET /v1/analyses/:id — poll one take while it runs. */
 export function getAnalysis(id: string): Promise<AnalysisResponse> {
   return apiFetch<AnalysisResponse>(`/v1/analyses/${id}`);
+}
+
+export interface CreateAnalysisInput {
+  score_id: string;
+  audio_url: string;
+  target_bpm: number;
+  bpm_source: 'manual' | 'calibration_clip';
+  metronome_mode: MetronomeMode;
+}
+
+/**
+ * POST /v1/analyses — 202 Accepted.
+ *
+ * Returns as soon as the row exists; the pipeline runs behind it. Poll
+ * `getAnalysis` until `status` leaves `queued`/`processing`.
+ */
+export function createAnalysis(
+  input: CreateAnalysisInput,
+): Promise<{ analysis_id: string; status: string }> {
+  return apiFetch<{ analysis_id: string; status: string }>('/v1/analyses', {
+    method: 'POST',
+    body: input,
+  });
 }

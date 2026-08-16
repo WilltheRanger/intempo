@@ -2,13 +2,20 @@ import {
   apiInsightsSource,
   apiMusicianSource,
   apiPieceSource,
+  apiTakeSource,
 } from './api';
 import {
   fixtureInsightsSource,
   fixtureMusicianSource,
   fixturePieceSource,
+  fixtureTakeSource,
 } from './fixtures';
-import type { InsightsSource, MusicianSource, PieceSource } from './types';
+import type {
+  InsightsSource,
+  MusicianSource,
+  PieceSource,
+  TakeSource,
+} from './types';
 
 /**
  * Flip to `false` once the backend can serve progress, last-practiced, and
@@ -39,6 +46,10 @@ export const insightsSource: InsightsSource = USE_FIXTURES
   ? fixtureInsightsSource
   : apiInsightsSource;
 
+export const takeSource: TakeSource = USE_FIXTURES
+  ? fixtureTakeSource
+  : apiTakeSource;
+
 export {
   apiInsightsSource,
   apiMusicianSource,
@@ -46,5 +57,6 @@ export {
   fixtureInsightsSource,
   fixtureMusicianSource,
   fixturePieceSource,
+  fixtureTakeSource,
 };
-export type { InsightsSource, MusicianSource, PieceSource };
+export type { InsightsSource, MusicianSource, PieceSource, TakeSource };

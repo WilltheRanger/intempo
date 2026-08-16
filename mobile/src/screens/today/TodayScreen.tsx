@@ -48,7 +48,9 @@ export function TodayScreen() {
   }
 
   function openPractice(piece: Piece) {
-    navigation.navigate('Practice', { pieceId: piece.id });
+    // Straight to a take. `Practice` remains the score-reading shell; the
+    // thing someone means by "continue practicing" is recording one.
+    navigation.navigate('Record', { pieceId: piece.id });
   }
 
   // The featured piece leads the screen; repeating it in the preview below

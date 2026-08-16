@@ -19,6 +19,9 @@ export type RootStackParamList = {
   ChangeEmail: undefined;
   ChangePassword: undefined;
   Acknowledgements: undefined;
+  Record: { pieceId: string };
+  /** The analysis to show. Everything else comes from the API. */
+  Verdict: { analysisId: string };
 };
 
 export type TabParamList = {

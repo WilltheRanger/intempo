@@ -136,6 +136,58 @@ export interface AnalysisResponse {
   finished_at: string | null;
 }
 
+/**
+ * `result_json` when an analysis finishes. Mirrors `AnalysisResult` in
+ * `backend/app/services/analysis.py`.
+ *
+ * **Sign convention, and it is not uniform.** `delta_pct` on a note or a
+ * measure is `actual - expected`, so it is drag-positive: negative means the
+ * note landed early, which is rushing. `trend` is flipped to rush-positive by
+ * the pipeline so "ahead" reads as a positive number. Anything read out of
+ * here is normalised to rush-positive in one place — `toTake` in
+ * `data/sources/api.ts` — and nowhere else.
+ */
+export type ResultStatus = 'ok' | 'alignment_failed' | 'no_onsets';
+
+export interface PerNoteResult {
+  global_index: number;
+  measure_number: number;
+  delta_ms: number;
+  /** Drag-positive. */
+  delta_pct: number;
+  band: Band;
+  direction: Direction;
+  /** Interior slur notes aren't timed individually — musicianship, not drift. */
+  is_slur_interior: boolean;
+}
+
+export interface PerMeasureResult {
+  measure_number: number;
+  note_count: number;
+  /** Drag-positive. */
+  avg_delta_pct: number;
+  worst_band: Band;
+  direction: Direction;
+}
+
+export interface AnalysisResultJson {
+  status: ResultStatus;
+  quality: number;
+  /** Alignment quality below the warn threshold — the screen says so. */
+  low_confidence: boolean;
+  /** The pipeline's own sentence, already in plain English. */
+  verdict: string;
+  verdict_direction: Direction;
+  per_note: PerNoteResult[];
+  per_measure: PerMeasureResult[];
+  /** Rolling mean, rush-positive. */
+  trend: number[];
+  n_detected_onsets: number;
+  n_expected_onsets: number;
+  n_missed_notes: number;
+  n_extra_notes: number;
+}
+
 /** POST /v1/upload/score-image and /v1/upload/audio */
 export interface UploadResponse {
   upload_url: string;
@@ -245,6 +297,46 @@ export interface PracticeInsights {
   verdict: Verdict;
   /** Most drift first — the pieces worth attention lead. */
   pieces: PieceInsight[];
+}
+
+/** One measure's timing, as the verdict screen shows it. */
+export interface MeasureVerdict {
+  measure: number;
+  noteCount: number;
+  /** Percentage of one beat, normalised to **rush-positive**: ahead is up. */
+  deviationPct: number;
+  band: Band;
+  direction: Direction;
+  verdict: Verdict;
+}
+
+/**
+ * One recorded take, analysed.
+ *
+ * `status` is not decoration: the pipeline can finish having heard no notes,
+ * or having failed to match the recording to the score. Both come back with a
+ * sentence explaining it and no measures, and the screen has to say so rather
+ * than render an empty chart.
+ */
+export interface TakeResult {
+  id: string;
+  pieceId: string;
+  pieceTitle: string;
+  composer: string | null;
+  recordedAt: string;
+  targetBpm: number;
+  status: ResultStatus;
+  /** The pipeline's sentence, shown verbatim. */
+  headline: string;
+  direction: Direction;
+  verdict: Verdict;
+  /** Alignment was poor enough that the numbers deserve a caveat. */
+  lowConfidence: boolean;
+  measures: MeasureVerdict[];
+  /** Rolling trend across the take, rush-positive. */
+  trend: number[];
+  missedNotes: number;
+  extraNotes: number;
 }
 
 /** The signed-in musician, as the UI needs them. */

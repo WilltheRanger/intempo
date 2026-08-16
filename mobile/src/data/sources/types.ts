@@ -1,4 +1,9 @@
-import type { Musician, Piece, PracticeInsights } from '../types';
+import type {
+  Musician,
+  Piece,
+  PracticeInsights,
+  TakeResult,
+} from '../types';
 
 /**
  * The seam between the UI and the backend.
@@ -31,4 +36,10 @@ export interface MusicianSource {
 export interface InsightsSource {
   /** Null when the musician has no completed analyses in the window. */
   getInsights(): Promise<PracticeInsights | null>;
+}
+
+/** One analysed take, for the verdict screen. */
+export interface TakeSource {
+  /** Null when the id doesn't exist or isn't the caller's. */
+  getTake(analysisId: string): Promise<TakeResult | null>;
 }
