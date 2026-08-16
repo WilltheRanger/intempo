@@ -48,6 +48,36 @@ Two ways round it, either is fine:
 
 Cloudflare also builds a preview URL for every other branch and PR either way.
 
+### If the build fails on a missing package.json
+
+```
+Executing user command: npx expo export --platform web
+ConfigError: The expected package.json path: /opt/buildhome/repo/package.json does not exist
+```
+
+The root directory isn't set — the command ran at the repo root, where there
+is no Node project. The second tell is in the line above it: `npm warn exec
+The following package was not found and will be installed: expo@57.0.13`. With
+the root directory set, Cloudflare installs `mobile/`'s dependencies first and
+`expo` is already local, so npx never fetches it.
+
+Set **Root directory** to `mobile` and retry the deployment; nothing in the
+repo needs to change. Note that under the v2 root directory strategy the
+**output path is relative to the root directory** — with root `mobile` the
+output is `dist`, and writing `mobile/dist` there sends it looking for
+`mobile/mobile/dist`.
+
+If the field is unavailable, put the path in the command instead:
+
+| Setting | Value |
+|---|---|
+| Root directory | *(empty)* |
+| Build command | `cd mobile && npm ci && npx expo export --platform web` |
+| Build output directory | `mobile/dist` |
+
+`npm ci` is required in that form: with no `package.json` at the repo root,
+Cloudflare's automatic install step never runs.
+
 ### Auth is off unless you add the keys
 
 With no Supabase variables set, the app runs on fixtures and opens straight
