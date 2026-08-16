@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+{% block title %}{{ clip.label }}{% endblock %}
+{% block navclip %}on{% endblock %}
+{% block body %}
+<main>
+  <div>
+    <h2>Clip</h2>
+    <p>
+      {% for c in clips %}
+        <a href="/?clip={{ c.id }}{% for k, v in query.items() %}&{{ k }}={{ v }}{% endfor %}"
+           style="margin-right:14px;{% if c.id == clip.id %}font-weight:600{% else %}color:var(--mute){% endif %}">
+          {{ c.label }}</a>{% if not c.available %}<span class="tag">not recorded</span>{% elif c.synthetic %}<span class="tag">synthetic</span>{% endif %}
+      {% endfor %}
+    </p>
+
+    {% if clip.synthetic %}
+      <p class="warn">
+        This is a synthetic click track, not a recording. It exercises the
+        dashboard; it cannot tell you whether a threshold is right. See
+        <code>fixtures/audio/README.md</code>.
+      </p>
+    {% endif %}
+    {% if clip.expect %}<p class="note">Expected: {{ clip.expect }}</p>{% endif %}
+
+    {% if error %}
+      <h2>No output</h2>
+      <p class="bad">{{ error }}</p>
+      {% if not clip.available %}
+      <p class="note">Record <code>{{ clip.id }}.wav</code> into <code>fixtures/audio/</code>,
+        or run <code>python fixtures/audio/make_synthetic.py</code> for a stand-in.</p>
+      {% endif %}
+    {% else %}
+      <h2>Waveform · detected (red, above) · expected (blue, below)</h2>
+      {{ waveform|safe }}
+      <p class="legend">
+        <span><i class="swatch" style="background:#C53B3B"></i>detected onset</span>
+        <span><i class="swatch" style="background:#2B5CA8"></i>expected onset</span>
+        <span>{{ '%.1f'|format(diag.envelope.duration_s) }}s at {{ diag.envelope.sample_rate }} Hz</span>
+      </p>
+
+      <h2>Deviation per note — up is late (dragging), down is early (rushing)</h2>
+      {{ deviations|safe }}
+      <p class="note" style="font-size:12px">
+        Deltas are anchored on the first matched onset, so lead-in latency is
+        removed and note 1 reads 0 by construction. That is why the red marks
+        above sit at a constant offset from the blue ones while these bars start
+        at zero — the plot shows clock time, the bars show drift.
+      </p>
+      <p class="legend">
+        <span><i class="swatch" style="background:#1D7F46"></i>on</span>
+        <span><i class="swatch" style="background:#8F681C"></i>slight</span>
+        <span><i class="swatch" style="background:#C53B3B"></i>rush/drag</span>
+        <span><i class="swatch" style="background:#8C1F1F"></i>severe</span>
+        <span>dashed lines: half and full scale</span>
+      </p>
+
+      <h2>Counts</h2>
+      <table>
+        <tr><th>status</th><td>{{ diag.status }}{% if diag.low_confidence %} <span class="warn">(low confidence)</span>{% endif %}</td>
+            <th>quality</th><td class="num">{{ '%.3f'|format(diag.quality) }}</td></tr>
+        <tr><th>detected</th><td class="num">{{ diag.n_detected }}</td>
+            <th>expected</th><td class="num">{{ diag.n_expected }}</td></tr>
+        <tr><th>matched</th><td class="num">{{ diag.matched|length }}</td>
+            <th>missed / extra</th><td class="num">{{ diag.missed_expected|length }} / {{ diag.extra_detected|length }}</td></tr>
+        <tr><th>worst |dev|</th><td class="num">{{ '%.0f'|format(diag.worst_ms) }} ms</td>
+            <th>mean |dev|</th><td class="num">{{ '%.0f'|format(diag.mean_abs_ms) }} ms</td></tr>
+      </table>
+
+      <h2>Paste this into the tuning prompt</h2>
+      <p class="note">The appendix's §4 rule is that every tuning round quotes real
+        numbers from a named clip. These are those numbers, already formatted.</p>
+      <pre>{{ prompt }}</pre>
+    {% endif %}
+  </div>
+
+  <aside>
+    <h2>Parameters</h2>
+    {% if applied %}
+      <p class="warn" style="font-size:12px">
+        Overridden for this request only — nothing is written to
+        <code>config.toml</code>.
+      </p>
+    {% endif %}
+    <dl>
+      {% for key, value in params.items() %}
+        <div class="{% if key in applied %}over{% endif %}" style="display:contents">
+          <dt>{{ key.split('.')[1] }}</dt><dd>{{ value }}</dd>
+        </div>
+      {% endfor %}
+    </dl>
+    <p class="note" style="font-size:12px;margin-top:16px">
+      Compare candidates without editing files:<br>
+      <code>?onset.delta=0.05</code>
+    </p>
+    <p class="note" style="font-size:12px">
+      Section prefixes: <code>onset</code>, <code>tolerance</code>,
+      <code>trend</code>, <code>alignment</code>.
+    </p>
+  </aside>
+</main>
+{% endblock %}
