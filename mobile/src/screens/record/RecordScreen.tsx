@@ -1,5 +1,5 @@
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
-import { Minus, Plus, Square } from 'lucide-react-native';
+import { Mic, Minus, Plus, Square } from 'lucide-react-native';
 import { useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
@@ -12,11 +12,10 @@ import {
   Text,
 } from '../../components/primitives';
 import { usePiece } from '../../data/hooks/usePieces';
-import { usePreferences } from '../../data/preferences';
+import { preferences, usePreferences } from '../../data/preferences';
+import type { MetronomeMode } from '../../data/types';
 import { FIXTURE_TAKE_ID_FOR_FLOW } from '../../data/sources/fixtures';
-import { CAN_RECORD } from '../../lib/audioRecorder';
 import {
-  BORDER_WIDTH,
   colors,
   ICON_SIZE,
   ICON_STROKE_WIDTH,
@@ -44,6 +43,14 @@ const METRONOME_LABELS = {
   audio_with_headphones: 'Audio metronome — headphones',
 } as const;
 
+/**
+ * What the toggle turns on when there's no earlier choice to restore.
+ *
+ * Visual rather than audio: a click through the phone's speaker is the one
+ * mode that would end up inside the recording it's supposed to be timing.
+ */
+const DEFAULT_ON_MODE: MetronomeMode = 'visual';
+
 type Phase = 'ready' | 'recording' | 'analysing';
 
 /**
@@ -55,7 +62,9 @@ type Phase = 'ready' | 'recording' | 'analysing';
  *
  * The state machine, the timer and the tempo are real. Capturing audio is not
  * — see `lib/audioRecorder` for what it needs and why it isn't faked. Stopping
- * therefore lands on a fixture take rather than analysing silence.
+ * therefore lands on a fixture take rather than analysing silence. That gap
+ * stays out of the interface: what's missing here is a dependency, which is a
+ * note for whoever installs it and not something to tell a musician about.
  */
 export function RecordScreen() {
   const navigation = useNavigation<RootNavigation>();
@@ -67,6 +76,15 @@ export function RecordScreen() {
   const [phase, setPhase] = useState<Phase>('ready');
   const [elapsedMs, setElapsedMs] = useState(0);
   const startedAt = useRef(0);
+
+  // Turning the metronome back on restores the mode it was on, rather than
+  // silently demoting someone's haptic or headphone choice to the default.
+  const lastOnMode = useRef<MetronomeMode>(
+    metronomeMode === 'off' ? DEFAULT_ON_MODE : metronomeMode,
+  );
+  if (metronomeMode !== 'off') {
+    lastOnMode.current = metronomeMode;
+  }
 
   // Wall-clock, not a tick count: a dropped frame would otherwise make the
   // timer disagree with the recording it's timing.
@@ -107,6 +125,13 @@ export function RecordScreen() {
   function stop() {
     impact(ImpactFeedbackStyle.Medium);
     setPhase('analysing');
+  }
+
+  function toggleMetronome() {
+    impact(ImpactFeedbackStyle.Light);
+    preferences.setMetronomeMode(
+      metronomeMode === 'off' ? lastOnMode.current : 'off',
+    );
   }
 
   if (isPending) {
@@ -150,16 +175,7 @@ export function RecordScreen() {
       scrollable={false}
       contentStyle={styles.screen}
       footer={
-        <View style={styles.footer}>
-          <RecordButton recording={recording} onPress={recording ? stop : start} />
-          <Text variant="metadataSmall" color="textTertiary" style={styles.hint}>
-            {recording
-              ? 'Play from the top. Stop when you reach the end.'
-              : CAN_RECORD
-                ? 'Tap to start. The metronome follows your setting.'
-                : 'Recording needs an audio module that isn’t installed yet — stopping shows a sample take.'}
-          </Text>
-        </View>
+        <RecordButton recording={recording} onPress={recording ? stop : start} />
       }
     >
       <PageHeader
@@ -203,9 +219,38 @@ export function RecordScreen() {
             />
           </View>
 
-          <Text variant="metadataSmall" color="textTertiary">
-            {METRONOME_LABELS[metronomeMode]}
-          </Text>
+          {/*
+            Locked with the tempo once recording starts: the mode is written
+            onto the take, so changing it mid-way would mislabel what was
+            actually playing.
+          */}
+          <Pressable
+            onPress={toggleMetronome}
+            disabled={recording}
+            accessibilityRole="switch"
+            // The ARIA props rather than `accessibilityState`: react-native-web
+            // maps these through to the DOM, and drops `accessibilityState`'s
+            // `checked` entirely, so the web build would announce a switch with
+            // no on or off. On native both spellings land in the same place.
+            aria-checked={metronomeMode !== 'off'}
+            aria-disabled={recording}
+            accessibilityLabel="Metronome"
+            style={({ pressed }) => [
+              styles.metronome,
+              pressed && styles.metronomePressed,
+            ]}
+          >
+            <Text
+              variant="metadataSmall"
+              // Gold in both states, because gold is what a tappable label
+              // looks like everywhere else in the app. The word carries on or
+              // off; the colour only says this line does something. Locked
+              // during a take, it drops back to metadata.
+              color={recording ? 'textTertiary' : 'accent'}
+            >
+              {METRONOME_LABELS[metronomeMode]}
+            </Text>
+          </Pressable>
         </View>
 
         <Text variant="screenTitle" style={styles.timer}>
@@ -227,6 +272,12 @@ function formatElapsed(ms: number): string {
 /**
  * The one control on the screen, sized to be found without looking — a
  * musician reaching for it has an instrument in their hands.
+ *
+ * Named as well as drawn. A bare circle has to be guessed at, and the guess
+ * that costs a take is guessing that the idle control is a stop button. So
+ * idle is a microphone over the word Start, and recording is a filled square
+ * over the word Stop — a shape people already read as stop, and a word to
+ * settle it either way. The label is part of the tap target, not a caption.
  */
 function RecordButton({
   recording,
@@ -240,17 +291,30 @@ function RecordButton({
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={recording ? 'Stop recording' : 'Start recording'}
-      style={({ pressed }) => [styles.record, pressed && styles.recordPressed]}
+      style={styles.control}
     >
-      {recording ? (
-        <Square
-          size={ICON_SIZE.lg}
-          strokeWidth={ICON_STROKE_WIDTH}
-          color={colors.actionText}
-          fill={colors.actionText}
-        />
-      ) : (
-        <View style={styles.dot} />
+      {({ pressed }) => (
+        <>
+          <View style={[styles.record, pressed && styles.recordPressed]}>
+            {recording ? (
+              <Square
+                size={ICON_SIZE.lg}
+                strokeWidth={ICON_STROKE_WIDTH}
+                color={colors.actionText}
+                fill={colors.actionText}
+              />
+            ) : (
+              <Mic
+                size={ICON_SIZE.lg}
+                strokeWidth={ICON_STROKE_WIDTH}
+                color={colors.actionText}
+              />
+            )}
+          </View>
+          <Text variant="metadata">
+            {recording ? 'Stop recording' : 'Start recording'}
+          </Text>
+        </>
       )}
     </Pressable>
   );
@@ -294,12 +358,21 @@ const styles = StyleSheet.create({
   subtitle: {
     marginTop: spacing.md,
   },
-  footer: {
-    alignItems: 'center',
-    gap: spacing.lg,
+  metronome: {
+    // A 44pt row rather than a line of text, negative-margined back so the
+    // stack above doesn't move to accommodate the touch target.
+    minHeight: 44,
+    justifyContent: 'center',
+    paddingHorizontal: spacing.md,
+    marginVertical: -spacing.md,
+    borderRadius: radii.sm,
   },
-  hint: {
-    textAlign: 'center',
+  metronomePressed: {
+    backgroundColor: colors.surfacePressed,
+  },
+  control: {
+    alignItems: 'center',
+    gap: spacing.md,
   },
   record: {
     width: RECORD_SIZE,
@@ -311,13 +384,5 @@ const styles = StyleSheet.create({
   },
   recordPressed: {
     backgroundColor: colors.actionBgPressed,
-  },
-  dot: {
-    width: 32,
-    height: 32,
-    borderRadius: radii.pill,
-    backgroundColor: colors.actionText,
-    borderWidth: BORDER_WIDTH,
-    borderColor: colors.actionText,
   },
 });

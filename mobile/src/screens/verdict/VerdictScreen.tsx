@@ -183,22 +183,22 @@ export function VerdictScreen() {
           Behind ← Target → Ahead
         </Text>
       </View>
+      {/* No wrapper padding: each row owns its gutter so the selected one can
+          tint edge to edge. */}
       <Card padded={false}>
-        <View style={styles.rows}>
-          {take.measures.map((measure, index) => (
-            <MeasureRow
-              key={measure.measure}
-              measure={measure}
-              revealed={revealed === measure.measure}
-              onToggle={() =>
-                setRevealed((current) =>
-                  current === measure.measure ? null : measure.measure,
-                )
-              }
-              divided={index > 0}
-            />
-          ))}
-        </View>
+        {take.measures.map((measure, index) => (
+          <MeasureRow
+            key={measure.measure}
+            measure={measure}
+            revealed={revealed === measure.measure}
+            onToggle={() =>
+              setRevealed((current) =>
+                current === measure.measure ? null : measure.measure,
+              )
+            }
+            divided={index > 0}
+          />
+        ))}
       </Card>
 
       <Text variant="metadataSmall" color="textTertiary" style={styles.tip}>
@@ -240,9 +240,6 @@ const styles = StyleSheet.create({
   },
   legendLabel: {
     textAlign: 'center',
-  },
-  rows: {
-    paddingHorizontal: spacing.lg,
   },
   tip: {
     marginTop: spacing.md,
