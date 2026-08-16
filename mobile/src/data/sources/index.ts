@@ -1,4 +1,8 @@
-import { apiMusicianSource, apiPieceSource } from './api';
+import {
+  apiInsightsSource,
+  apiMusicianSource,
+  apiPieceSource,
+} from './api';
 import {
   fixtureInsightsSource,
   fixtureMusicianSource,
@@ -27,17 +31,16 @@ export const musicianSource: MusicianSource = USE_FIXTURES
   : apiMusicianSource;
 
 /**
- * Insights has no API implementation, and deliberately ignores the flag above.
- *
- * It would read `/v1/analyses`, which is unbuilt (Batch 4). Unlike the piece
- * adapter there is no partial answer to give: with no analyses there is
- * nothing to aggregate, and an empty result would tell a musician who has
- * practised plenty that they haven't. Better to stay on fixtures until the
- * endpoint exists than to ship a screen that lies when the flag flips.
+ * Insights now follows the flag like everything else: `GET /v1/analyses`
+ * exists, and the adapter aggregates the caller's finished takes over the
+ * same window the fixture describes.
  */
-export const insightsSource: InsightsSource = fixtureInsightsSource;
+export const insightsSource: InsightsSource = USE_FIXTURES
+  ? fixtureInsightsSource
+  : apiInsightsSource;
 
 export {
+  apiInsightsSource,
   apiMusicianSource,
   apiPieceSource,
   fixtureInsightsSource,

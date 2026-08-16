@@ -1,5 +1,5 @@
-import { verdictForDeviation } from '../../lib/tempo';
-import type { Musician, Piece, PieceInsight } from '../types';
+import { verdictFor } from '../../lib/tempo';
+import type { Band, Direction, Musician, Piece, PieceInsight } from '../types';
 import type { InsightsSource, MusicianSource, PieceSource } from './types';
 
 /**
@@ -146,10 +146,14 @@ const INSIGHTS_WINDOW_DAYS = 30;
 /**
  * Practice history for four of the pieces above.
  *
- * Only the two measured quantities are stated — how many sessions, and the
- * mean deviation in BPM. Every verdict, including the headline, is classified
- * from those by `verdictForDeviation`, so the fixture cannot claim a verdict
- * its own numbers don't support.
+ * Each entry states what an analysis would actually return: a deviation as a
+ * percentage of one beat, and the band the pipeline put it in. The display
+ * verdict is derived by `verdictFor`, the same function the API adapter uses,
+ * so the fixture cannot claim a verdict the real classifier wouldn't.
+ *
+ * Bands here follow the checked-in defaults in `backend/config.toml` — on to
+ * 5%, slight to 10%, clear rush or drag to 20%. Those are server-tunable, so
+ * they are stated per entry rather than recomputed here.
  *
  * The deviations are unflattering on purpose. A fixture where everything is on
  * tempo would exercise none of the vocabulary and would design the screen for
@@ -158,31 +162,42 @@ const INSIGHTS_WINDOW_DAYS = 30;
 const FIXTURE_SESSIONS: {
   pieceId: string;
   sessions: number;
-  meanBpmDeviation: number;
+  /** Positive is ahead of the beat, matching the verdict convention. */
+  meanDeviationPct: number;
+  band: Band;
 }[] = [
-  { pieceId: 'fixture-wohlfahrt-28', sessions: 12, meanBpmDeviation: 6.2 },
-  { pieceId: 'fixture-bach-bwv1001', sessions: 9, meanBpmDeviation: -3.8 },
-  { pieceId: 'fixture-mozart-k216', sessions: 5, meanBpmDeviation: 3.6 },
-  { pieceId: 'fixture-kreutzer-02', sessions: 8, meanBpmDeviation: 1.4 },
+  { pieceId: 'fixture-wohlfahrt-28', sessions: 12, meanDeviationPct: 12.4, band: 'rush_drag' },
+  { pieceId: 'fixture-bach-bwv1001', sessions: 9, meanDeviationPct: -7.6, band: 'slight' },
+  { pieceId: 'fixture-mozart-k216', sessions: 5, meanDeviationPct: 7.2, band: 'slight' },
+  { pieceId: 'fixture-kreutzer-02', sessions: 8, meanDeviationPct: 2.8, band: 'on' },
 ];
+
+function directionFor(deviationPct: number, band: Band): Direction {
+  if (band === 'on') {
+    return 'on';
+  }
+  return deviationPct > 0 ? 'rush' : 'drag';
+}
 
 function toPieceInsight(entry: (typeof FIXTURE_SESSIONS)[number]): PieceInsight {
   const piece = FIXTURE_PIECES.find(({ id }) => id === entry.pieceId);
+  const direction = directionFor(entry.meanDeviationPct, entry.band);
   return {
     pieceId: entry.pieceId,
     title: piece?.title ?? 'Unknown piece',
     composer: piece?.composer ?? null,
     sessions: entry.sessions,
-    meanBpmDeviation: entry.meanBpmDeviation,
-    verdict: verdictForDeviation(entry.meanBpmDeviation),
+    meanDeviationPct: entry.meanDeviationPct,
+    band: entry.band,
+    direction,
+    verdict: verdictFor(entry.band, direction),
   };
 }
 
 export const fixtureInsightsSource: InsightsSource = {
   async getInsights() {
     const pieces = FIXTURE_SESSIONS.map(toPieceInsight).sort(
-      (a, b) =>
-        Math.abs(b.meanBpmDeviation) - Math.abs(a.meanBpmDeviation),
+      (a, b) => Math.abs(b.meanDeviationPct) - Math.abs(a.meanDeviationPct),
     );
 
     const sessions = pieces.reduce((total, piece) => total + piece.sessions, 0);
@@ -192,17 +207,31 @@ export const fixtureInsightsSource: InsightsSource = {
 
     // Session-weighted, so a piece practised twice doesn't sway the headline
     // as much as one practised a dozen times.
-    const meanBpmDeviation =
+    const meanDeviationPct =
       pieces.reduce(
-        (total, piece) => total + piece.meanBpmDeviation * piece.sessions,
+        (total, piece) => total + piece.meanDeviationPct * piece.sessions,
         0,
       ) / sessions;
+
+    // The headline band comes from the config defaults, stated once here.
+    // When this source is replaced the backend supplies it directly.
+    const band: Band =
+      Math.abs(meanDeviationPct) <= 5
+        ? 'on'
+        : Math.abs(meanDeviationPct) <= 10
+          ? 'slight'
+          : Math.abs(meanDeviationPct) <= 20
+            ? 'rush_drag'
+            : 'severe';
+    const direction = directionFor(meanDeviationPct, band);
 
     return {
       windowDays: INSIGHTS_WINDOW_DAYS,
       sessions,
-      meanBpmDeviation,
-      verdict: verdictForDeviation(meanBpmDeviation),
+      meanDeviationPct,
+      band,
+      direction,
+      verdict: verdictFor(band, direction),
       pieces,
     };
   },

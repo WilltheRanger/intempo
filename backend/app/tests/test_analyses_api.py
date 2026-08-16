@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
-from typing import Callable
+from typing import Any, Callable
 from uuid import UUID, uuid4
 
 import pytest
@@ -212,6 +212,86 @@ def test_get_unknown_analysis_returns_404(
         headers={"Authorization": f"Bearer {make_token(sub=user_id)}"},
     )
     assert res.status_code == 404
+
+
+# ---- list ------------------------------------------------------------------
+
+
+def _analysis_row(user_id: UUID, score_id: UUID, **over: Any) -> dict:
+    now = datetime.now(tz=timezone.utc).isoformat()
+    row = {
+        "id": str(uuid4()),
+        "user_id": str(user_id),
+        "score_id": str(score_id),
+        "audio_url": _audio_url(user_id),
+        "status": "done",
+        "target_bpm": 96.0,
+        "bpm_source": "manual",
+        "metronome_mode": "off",
+        "result_json": {"verdict": {"text": "Steady"}},
+        "alignment_quality": 0.9,
+        "created_at": now,
+        "updated_at": now,
+        "finished_at": now,
+    }
+    row.update(over)
+    return row
+
+
+def test_list_returns_only_the_callers_analyses(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """The owner filter is the whole point — Insights reads this endpoint."""
+    mine, theirs = uuid4(), uuid4()
+    score = uuid4()
+    fake = FakeSupabase()
+    fake.seed(
+        "analyses",
+        [
+            _analysis_row(mine, score),
+            _analysis_row(mine, score),
+            _analysis_row(theirs, uuid4()),
+        ],
+    )
+    _install(monkeypatch, fake)
+
+    res = client.get(
+        "/v1/analyses", headers={"Authorization": f"Bearer {make_token(sub=mine)}"}
+    )
+    assert res.status_code == 200
+    body = res.json()
+    assert len(body) == 2
+    assert {row["user_id"] for row in body} == {str(mine)}
+
+
+def test_list_filters_by_score_and_status(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    user_id = uuid4()
+    wanted, other = uuid4(), uuid4()
+    fake = FakeSupabase()
+    fake.seed(
+        "analyses",
+        [
+            _analysis_row(user_id, wanted, status="done"),
+            _analysis_row(user_id, wanted, status="queued"),
+            _analysis_row(user_id, other, status="done"),
+        ],
+    )
+    _install(monkeypatch, fake)
+    headers = {"Authorization": f"Bearer {make_token(sub=user_id)}"}
+
+    by_score = client.get(f"/v1/analyses?score_id={wanted}", headers=headers)
+    assert by_score.status_code == 200
+    assert len(by_score.json()) == 2
+
+    done_only = client.get(f"/v1/analyses?score_id={wanted}&status=done", headers=headers)
+    assert done_only.status_code == 200
+    assert [row["status"] for row in done_only.json()] == ["done"]
+
+
+def test_list_unauthenticated_returns_401(client: TestClient) -> None:
+    assert client.get("/v1/analyses").status_code == 401
 
 
 # ---- crash-recovery sweeper ----------------------------------------------

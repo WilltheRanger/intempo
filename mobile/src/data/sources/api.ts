@@ -1,8 +1,19 @@
+import { listAnalyses } from '../api/analyses';
 import { getMe } from '../api/me';
 import { getScore, listScores } from '../api/scores';
 import { getAuthAvatarUrl } from '../auth/session';
-import type { Musician, Piece, ScoreResponse } from '../types';
-import type { MusicianSource, PieceSource } from './types';
+import { verdictFor } from '../../lib/tempo';
+import type {
+  AnalysisResponse,
+  Band,
+  Direction,
+  Musician,
+  Piece,
+  PieceInsight,
+  PracticeInsights,
+  ScoreResponse,
+} from '../types';
+import type { InsightsSource, MusicianSource, PieceSource } from './types';
 
 /**
  * The real backend, mapped into the shape the UI renders.
@@ -78,5 +89,126 @@ export const apiMusicianSource: MusicianSource = {
     // other, so there's no reason to wait on them in turn.
     const [me, avatarUrl] = await Promise.all([getMe(), getAuthAvatarUrl()]);
     return toMusician(me, avatarUrl);
+  },
+};
+
+/** The window Insights reports on. */
+const INSIGHTS_WINDOW_DAYS = 30;
+
+/**
+ * What the adapter reads out of `result_json`.
+ *
+ * The pipeline's own shape, narrowed to the two things Insights needs. Read
+ * defensively: `result_json` is untyped on the wire and still being tuned, so
+ * a take that predates a field is skipped rather than allowed to poison an
+ * average.
+ */
+function readVerdict(
+  analysis: AnalysisResponse,
+): { deviationPct: number; band: Band; direction: Direction } | null {
+  const result = analysis.result_json;
+  if (!result) {
+    return null;
+  }
+  const verdict = result.verdict as Record<string, unknown> | undefined;
+  const deviationPct = verdict?.avg_delta_pct ?? result.avg_delta_pct;
+  const band = verdict?.band ?? result.band;
+  const direction = verdict?.direction ?? result.direction;
+
+  if (
+    typeof deviationPct !== 'number' ||
+    !Number.isFinite(deviationPct) ||
+    typeof band !== 'string' ||
+    typeof direction !== 'string'
+  ) {
+    return null;
+  }
+  return {
+    deviationPct,
+    band: band as Band,
+    direction: direction as Direction,
+  };
+}
+
+/**
+ * Insights, aggregated from the caller's finished analyses.
+ *
+ * The grouping happens here rather than on the server because the endpoint
+ * returns takes, not summaries — a deliberate choice, since one list is
+ * useful to several screens and a bespoke summary endpoint is useful to one.
+ * With the 200-take page cap that is a page of JSON, not a scan.
+ */
+export const apiInsightsSource: InsightsSource = {
+  async getInsights(): Promise<PracticeInsights | null> {
+    const [analyses, scores] = await Promise.all([
+      listAnalyses({ status: 'done' }),
+      listScores({ limit: 200 }),
+    ]);
+
+    const since = Date.now() - INSIGHTS_WINDOW_DAYS * 24 * 60 * 60 * 1000;
+    const titles = new Map(scores.map((score) => [score.id, score]));
+
+    const readings = analyses
+      .filter((analysis) => Date.parse(analysis.created_at) >= since)
+      .flatMap((analysis) => {
+        const verdict = readVerdict(analysis);
+        return verdict ? [{ scoreId: analysis.score_id, ...verdict }] : [];
+      });
+
+    if (readings.length === 0) {
+      return null;
+    }
+
+    const byScore = new Map<string, typeof readings>();
+    for (const reading of readings) {
+      const group = byScore.get(reading.scoreId) ?? [];
+      group.push(reading);
+      byScore.set(reading.scoreId, group);
+    }
+
+    const pieces: PieceInsight[] = [...byScore.entries()]
+      .map(([scoreId, group]) => {
+        const score = titles.get(scoreId);
+        const mean =
+          group.reduce((total, r) => total + r.deviationPct, 0) / group.length;
+        // The band of the take nearest the mean, rather than a band computed
+        // here: the thresholds are the server's and they move.
+        const nearest = group.reduce((best, r) =>
+          Math.abs(r.deviationPct - mean) < Math.abs(best.deviationPct - mean)
+            ? r
+            : best,
+        );
+        return {
+          pieceId: scoreId,
+          title: score?.title ?? 'Unknown piece',
+          composer: score?.composer ?? null,
+          sessions: group.length,
+          meanDeviationPct: mean,
+          band: nearest.band,
+          direction: nearest.direction,
+          verdict: verdictFor(nearest.band, nearest.direction),
+        };
+      })
+      .sort((a, b) => Math.abs(b.meanDeviationPct) - Math.abs(a.meanDeviationPct));
+
+    const sessions = readings.length;
+    const meanDeviationPct =
+      readings.reduce((total, r) => total + r.deviationPct, 0) / sessions;
+    const headline = readings.reduce((best, r) =>
+      Math.abs(r.deviationPct - meanDeviationPct) <
+      Math.abs(best.deviationPct - meanDeviationPct)
+        ? r
+        : best,
+    );
+
+    return {
+      windowDays: INSIGHTS_WINDOW_DAYS,
+      sessions,
+      meanDeviationPct,
+      band: headline.band,
+      direction: headline.direction,
+      verdict: verdictFor(headline.band, headline.direction),
+      pieces,
+    };
   },
 };

@@ -87,7 +87,7 @@ export function InsightsScreen() {
         </Text>
 
         <DeviationBar
-          bpmDeviation={insights.meanBpmDeviation}
+          deviationPct={insights.meanDeviationPct}
           accessibilityLabel={`${formatTendency(insights.verdict)} across your recent practice`}
           style={styles.bar}
         />

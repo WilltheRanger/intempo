@@ -3,19 +3,24 @@ import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import { BORDER_WIDTH, colors, radii } from '../../design';
 
 /**
- * Deviation at which the bar reaches full deflection, in BPM.
+ * Deviation at which the bar reaches full deflection, as a percentage of one
+ * beat.
  *
- * Twice the threshold where the spec starts calling a take "rushing", so a bar
- * that pins is genuinely off rather than merely outside the tolerance band.
+ * The outer tolerance threshold from `backend/config.toml`: beyond it the
+ * pipeline calls a take severe. So a pinned bar means exactly that, rather
+ * than a number chosen to make the bar look right.
+ *
+ * Server-tunable, which this copy is not. When the API exposes the thresholds
+ * it should come from there.
  */
-const FULL_SCALE_BPM = 10;
+const FULL_SCALE_PCT = 20;
 
 const TRACK_HEIGHT = 4;
 const CENTRE_HEIGHT = 12;
 
 export interface DeviationBarProps {
-  /** Positive is ahead of the beat. */
-  bpmDeviation: number;
+  /** Percentage of one beat. Positive is ahead of the beat. */
+  deviationPct: number;
   accessibilityLabel: string;
   style?: StyleProp<ViewStyle>;
 }
@@ -30,11 +35,11 @@ export interface DeviationBarProps {
  * carries the judgement, so the bar only has to carry the magnitude.
  */
 export function DeviationBar({
-  bpmDeviation,
+  deviationPct,
   accessibilityLabel,
   style,
 }: DeviationBarProps) {
-  const clamped = Math.max(-1, Math.min(1, bpmDeviation / FULL_SCALE_BPM));
+  const clamped = Math.max(-1, Math.min(1, deviationPct / FULL_SCALE_PCT));
   // Half the track is one full deflection, so a fraction of it is that
   // fraction of 50%.
   const width = `${Math.abs(clamped) * 50}%` as const;

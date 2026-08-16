@@ -1,4 +1,4 @@
-"""POST /v1/analyses (enqueue) + GET /v1/analyses/:id (poll).
+"""POST /v1/analyses (enqueue), GET /v1/analyses (list), GET /v1/analyses/:id (poll).
 
 Owner-scoped like /v1/scores: service-role client for writes, explicit
 `user_id` filter on every read. The POST returns immediately with
@@ -13,7 +13,7 @@ from typing import Any
 from urllib.parse import urlparse
 from uuid import UUID
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.auth import current_user_id
@@ -148,6 +148,45 @@ async def create_analysis(
     # blocks the event loop.
     background_tasks.add_task(run_analysis, str(analysis_id))
     return CreateAnalysisResponse(analysis_id=analysis_id, status="queued")
+
+
+@router.get("", response_model=list[AnalysisResponse])
+async def list_analyses(
+    user_id: UUID = Depends(current_user_id),
+    score_id: UUID | None = Query(
+        default=None, description="Only analyses of this score."
+    ),
+    status_filter: str | None = Query(
+        default=None,
+        alias="status",
+        description="Only analyses in this state, e.g. `done`.",
+    ),
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+) -> list[AnalysisResponse]:
+    """The caller's analyses, newest first.
+
+    Insights aggregates across takes — how often a piece was played and
+    which way it drifted — which a per-id endpoint can't answer without
+    the client already knowing every id. Ordering and paging match
+    /v1/scores so the two lists behave the same way.
+
+    `analyses(user_id, created_at DESC)` is indexed, so the default page
+    is an index scan.
+    """
+    query = (
+        _service_client()
+        .table("analyses")
+        .select("*")
+        .eq("user_id", str(user_id))
+    )
+    if score_id is not None:
+        query = query.eq("score_id", str(score_id))
+    if status_filter is not None:
+        query = query.eq("status", status_filter)
+
+    res = query.order("created_at", desc=True).range(offset, offset + limit - 1).execute()
+    return [_row_to_response(row) for row in (res.data or [])]
 
 
 @router.get("/{analysis_id}", response_model=AnalysisResponse)
