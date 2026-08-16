@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from app.routers import analyses, calibration, health, me, scores, upload
+from app.routers import analyses, calibration, corrections, health, me, scores, upload
 from app.workers.analysis_runner import sweep_stuck_analyses
 
 log = logging.getLogger("intempo")
@@ -26,6 +26,9 @@ app.include_router(me.router, prefix="/v1")
 app.include_router(upload.router, prefix="/v1")
 app.include_router(scores.router, prefix="/v1")
 app.include_router(analyses.router, prefix="/v1")
+# Shares the /analyses prefix; registered after so the more specific
+# /analyses/{id}/corrections routes don't shadow /analyses/{id}.
+app.include_router(corrections.router, prefix="/v1")
 app.include_router(calibration.router, prefix="/v1")
 
 
