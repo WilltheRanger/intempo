@@ -1,0 +1,42 @@
+{
+  "expo": {
+    "name": "InTempo",
+    "slug": "intempo",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "backgroundColor": "#FBFAF7",
+    "plugins": [
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "InTempo uses the microphone to record your practice and time it against the score.",
+          "enableBackgroundPlayback": false,
+          "enableBackgroundRecording": false
+        }
+      ]
+    ],
+    "ios": {
+      "supportsTablet": false
+    },
+    "androidStatusBar": {
+      "barStyle": "dark-content"
+    },
+    "androidNavigationBar": {
+      "barStyle": "dark-content"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#FBFAF7",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    }
+  }
+}

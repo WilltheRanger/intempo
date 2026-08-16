@@ -4,6 +4,1407 @@ Newest entries at the top. Format spec: see "Build-time activity logging"
 in intempo-combined.md. Every meaningful change goes here — see that
 section for what counts as "meaningful."
 
+---
+
+## 2026-08-16 20:45 — Unprocessed input — and a correction to the entry below
+
+**Batch:** Frontend rebuild — Record + Verdict flow.
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`
+
+**The correction first.** The entry below reported an open gap: that iOS auto
+gain could not be turned off because `expo-audio` exposes no way to reach
+`AVAudioSession`'s `.measurement` mode. That is wrong. `AudioStream.start()` in
+`node_modules/expo-audio/ios/AudioStream.swift` opens every stream with
+`session.setCategory(.record, mode: .measurement)` — the exact mode that asks
+the system for no input processing. **iOS was already correct.** I inferred the
+gap from the JavaScript type surface, where `AudioMode` has no mode field,
+instead of reading the native source that was sitting in `node_modules`.
+
+**The gap that does exist is on Android.** Reading `AudioStream.kt` in the same
+pass: it opens `AudioRecord` on `MediaRecorder.AudioSource.MIC`, the platform's
+general-purpose source, which runs through whatever input chain the OEM
+applies. Automatic gain reshapes attack envelopes, and attack envelopes are
+what the onset detector measures — so Android takes would have been quietly
+less accurate than iOS ones, with nothing anywhere saying so.
+
+**What changed:**
+
+- `patches/expo-audio+57.0.3.patch` — `resolveAudioSource()` picks
+  `UNPROCESSED` where the device reports
+  `PROPERTY_SUPPORT_AUDIO_SOURCE_UNPROCESSED` and `VOICE_RECOGNITION` where it
+  doesn't; `MIC` is no longer used. On top of that,
+  `AutomaticGainControl`, `NoiseSuppressor` and `AcousticEchoCanceler` are
+  explicitly disabled on the capture session, since some devices attach them
+  regardless of the source. The effect objects are held for the life of the
+  stream and released in `stop()` — a garbage-collected `AudioEffect` takes its
+  setting with it and the processing returns mid-take.
+- `patch-package` added, wired to `postinstall`.
+- `lib/audioRecorder.ts` — dropped both `setAudioModeAsync` calls. Now that the
+  Swift has been read it's clear `AudioStream` owns the session end to end:
+  `start()` sets category and mode, `stop()` deactivates with
+  `notifyOthersOnDeactivation`. A second opinion from the JS side could only
+  race it. The module doc now states the real position on each platform.
+- `DECISIONS.md` — the old entry carries the correction rather than being
+  edited to look right, and a new entry covers patching over forking.
+
+**Tests run:** `npx tsc --noEmit` clean. Patch verified by deleting
+`node_modules/expo-audio` and reinstalling: `expo-audio@57.0.3 ✔`, and the
+patched source is present afterwards. `npx expo export` for iOS and web. The
+web capture re-run against a fake device after removing the session calls —
+still a clean WAV (PCM, mono, 16-bit, 44100/88200/2, riffSize 262180 and
+dataSize 262144 exact against 262188 bytes, 2.97 s, peak 32767).
+
+**Known side effects / things to watch:**
+
+- **The Kotlin has never been compiled.** There is no Android toolchain here.
+  What is verified is that the patch applies to a clean install; the first
+  Android build is the real test and should be run as a build before it is run
+  as a take.
+- The patch must be re-made on every `expo-audio` upgrade. `patch-package`
+  fails the install loudly when upstream moves, which is the behaviour worth
+  having here — a silent revert would mean thresholds tuned against processed
+  audio.
+- Worth sending upstream; a measurement-grade source is the right default for
+  a raw-PCM stream API.
+
+---
+
+## 2026-08-16 20:05 — Audio capture — the record button is real
+
+**Batch:** Frontend rebuild — Record + Verdict flow.
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`
+
+The last stubbed feature. `lib/audioRecorder.startRecording()` threw; it now
+records. See `DECISIONS.md` for why raw PCM rather than either platform's
+recorder — the short version is that Android's `MediaRecorder` cannot emit PCM
+at all, and a lossy codec smears the transient this pipeline measures.
+
+**What changed:**
+
+- `lib/audio/wav.ts` — the shared encoder. Int16 chunks → a canonical 44-byte
+  PCM WAV. Little-endian written explicitly through `DataView` rather than by
+  overlaying an `Int16Array`, which would take the platform's endianness and
+  produce noise on a big-endian device.
+- `lib/audio/types.ts` — `Recorder`, `Recording`, three typed errors, and
+  `MAX_TAKE_SECONDS`.
+- `lib/audioRecorder.ts` (native) — `expo-audio`'s `AudioStream` at int16/48k
+  mono, believing `stream.sampleRate` back from the hardware. Buffers are
+  copied on arrival because the native side may reuse them. Releases the audio
+  session on stop.
+- `lib/audioRecorder.web.ts` — `AudioWorklet` over `getUserMedia` with the
+  three voice-processing constraints off. The processor batches 32 quanta
+  (~85 ms) before posting, instead of 375 messages a second, and transfers
+  the buffer rather than copying it. `stop()` asks the worklet to flush before
+  disconnecting, so the end of the last note isn't lost.
+- `data/sources` — a `TakeSubmissionSource` seam beside the read sources.
+  Capture is real on both sides of `USE_FIXTURES`; only the destination
+  changes. The screen no longer imports a fixture id.
+- `RecordScreen` — awaits the recorder before starting the timer, so the clock
+  agrees with the file; guards a double-tap from opening a second microphone;
+  cancels on unmount so leaving mid-take releases the mic; and on failure
+  returns to the top with the tempo still set.
+- `app.json` — the `expo-audio` config plugin, with a microphone usage string
+  and background modes off.
+
+**New user-facing copy** (for review — four sentences, all failure states):
+permission refused, no microphone/API, a silent take, and a failed upload. Plus
+one line on "Listening back" when a take hits the 15-minute cap.
+
+**Tests run:** `npx tsc --noEmit` clean. `npx expo export` for both web and
+iOS. Then the real thing, in Chromium with `--use-fake-device-for-media-stream`
+— a genuine `getUserMedia` capture through the worklet, with the resulting WAV
+read back byte by byte:
+
+| field | value |
+|---|---|
+| RIFF / WAVE / `fmt ` / data | all present |
+| audioFormat | 1 (PCM) |
+| channels / bits | 1 / 16 |
+| sampleRate / byteRate / blockAlign | 44100 / 88200 / 2 |
+| riffSize, dataSize | 263972 and 263936 against a 263980-byte file — both exact |
+| duration from the header | 2.99 s for a 3.0 s take |
+| signal | peak 32767, non-silent — real samples, not a zeroed buffer |
+
+Permission refusal tested separately with `--deny-permission-prompts`: the
+screen returns to ready, keeps the tempo, and shows the sentence. No page
+errors in either run.
+
+**Known side effects / things to watch:**
+
+- **The native voice-processing gap is real and open.** On web the three
+  constraints are enforced; on native `expo-audio` gives no way to reach
+  `AVAudioSession`'s `.measurement` mode, so iOS may apply auto gain — which
+  reshapes attack envelopes. This must be closed before thresholds are tuned
+  against native recordings.
+- Verified on web only. The native path is written against `expo-audio`'s
+  documented `AudioStream` API and bundles for iOS, but no simulator or device
+  exists in this environment — it has never actually run.
+- Uncompressed audio is ~96 KB a second. A three-minute take is about 17 MB.
+- No unit-test harness exists in `mobile/`, so `wav.ts` is covered by the
+  byte-level browser assertion above rather than by a test that runs in CI.
+
+---
+
+## 2026-08-16 19:15 — Record — an even vertical rhythm
+
+**Batch:** Frontend rebuild — Record + Verdict flow.
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`
+
+Lifting the control exposed how lumpy the spacing under it already was. Two
+causes, both structural:
+
+1. **`body` was `justifyContent: 'center'` with a fixed 40pt gap.** Centring one
+   block in leftover space means the two voids around it are whatever is left
+   over — they aren't chosen, they're a remainder. Now `space-evenly`, so the
+   interval above the tempo group, between it and the timer, and below the timer
+   are one measure that scales with the screen.
+2. **The container's standard 24pt bottom padding was landing under the timer.**
+   That padding exists for content ending above a tab bar; here the footer owns
+   the bottom edge, so it was pure extra air in exactly the gap that had to
+   match the others. Cancelled on this screen with `paddingBottom: 0` in
+   `contentStyle`.
+
+Measured gaps between the four blocks, 393×852 with a 34pt indicator:
+
+| | before | after |
+|---|---|---|
+| Title → Target tempo | 100 | **92** |
+| Metronome → timer | 41 | **80** |
+| Timer → control | 121 | **97** |
+
+Spread went from 80pt to 17pt. The residual 17 is the two paddings that belong
+to their own components — `PageHeader`'s 12pt below the title and the footer's
+16pt above the action — and cancelling those would mean negative margins
+fighting two shared primitives, which is worse than a gap that is 20% larger
+before the action zone.
+
+Checked at four sizes; the rhythm compresses proportionally and nothing
+collides:
+
+| | title→tempo | metronome→timer | timer→control | circle centre from bottom |
+|---|---|---|---|---|
+| 393×852, 34pt indicator | 92 | 80 | 97 | 150 |
+| 393×852, flat top | 112 | 102 | 117 | 132 |
+| 375×667 (SE) | 51 | 39 | 56 | 132 |
+| 430×932 (Max) | 118 | 108 | 123 | 150 |
+
+**Tests run:** `npx tsc --noEmit` clean, web export rebuilt, all four sizes
+driven in Chromium and screenshotted.
+
+---
+
+## 2026-08-16 18:55 — Record — the control lifted into the thumb zone
+
+**Batch:** Frontend rebuild — Record + Verdict flow.
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`
+
+Owner: the record control sat too low for a phone. It did — the safe-area inset
+below it only guarantees clearance of the home indicator, which is a different
+question from where a thumb rests. One `marginBottom: spacing['4xl']` on the
+control, no other change.
+
+Measured at 393×852, before → after:
+
+| | web (no indicator) | device (34pt indicator) |
+|---|---|---|
+| Circle centre from bottom | 90 → **132** | 108 → **150** |
+| As a fraction of screen height | 0.106 → **0.155** | 0.127 → **0.176** |
+| Label bottom from edge | 16 → **56** | 34 → **74** |
+
+Both land at roughly a sixth of the screen up, which is where a thumb sits on a
+phone this size. The block above it (tempo, metronome, timer) is centred in the
+remaining space, so it rises with the control rather than opening a gap.
+
+**Tests run:** `npx tsc --noEmit` clean, web export rebuilt, both insets driven
+in Chromium and both states screenshotted.
+
+---
+
+## 2026-08-16 18:40 — Record + Verdict — sign-off fixes
+
+**Batch:** Frontend rebuild — Record + Verdict flow.
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`
+
+Four owner-requested fixes before locking both screens. No redesign: the
+composition, tokens, type and navigation are as approved.
+
+- **One information system per state on the measure list.** Words by default on
+  every row; tapping selects a row, which warms to the page colour edge to edge,
+  firms its number from tertiary to primary ink, and swaps the word for the
+  figure. Only one row at a time, and tapping another moves the selection. To
+  let the tint reach the card edges, the row now owns its own horizontal gutter
+  (the wrapper's `paddingHorizontal` is gone) and the hairline moved onto an
+  inner view, so dividers stay inset while the selection runs full width.
+- **Start versus stop is now unmistakable.** The idle control was a black disc
+  with a white dot, which reads as a stop button before anything has started.
+  Idle is a microphone glyph over the words "Start recording"; recording is a
+  filled square over "Stop recording". The label is inside the `Pressable`, so
+  it's part of the target rather than a caption under it.
+- **The dev message is gone.** "Recording needs an audio module that isn't
+  installed yet…" was development information on a shipped screen. Removed; the
+  control now behaves as though recording works and lands on the fixture take.
+  `CAN_RECORD` stays in `lib/audioRecorder` for code that has to branch on it,
+  with a comment saying it is not for the interface.
+- **The metronome line toggles.** Tapping switches between off and the last
+  mode that was on (`visual` when there's no earlier choice — an audio click
+  through the speaker is the one mode that would end up inside the recording).
+  It writes the same device preference the Settings screen does. Locked during
+  a take alongside the tempo, since the mode is recorded onto the take.
+
+**Three-foot test (Record):** first the piece title, second the black control
+with its label, third the 96 BPM reading. The empty middle is doing the work —
+nothing was added to it.
+
+**Tests run:** `npx tsc --noEmit` clean; web export rebuilt and both flows
+driven in Chromium at 393×852.
+
+- Measure rows: zero figures visible on arrival; after tapping 6 exactly one
+  row shows a figure, its background is `rgb(247,242,233)` = `colors.bg`, and
+  the tint spans 351 of the card's 351px. Tapping 9 moves it.
+- Record: no dev copy anywhere in the rendered text. Metronome toggles
+  `Metronome off` → `Visual metronome`, and is `pointer-events: none` with
+  `aria-disabled` while recording.
+- Verdict-colour quarantine re-swept after the row refactor: Today, Library,
+  Insights and Profile all report 0 elements carrying the three values.
+- Today re-measured and unchanged: scroll height 812, content padding 94px
+  against the 71pt bar.
+
+**Known side effects / things to watch:**
+
+- The metronome label uses ARIA props (`aria-checked`, `aria-disabled`) rather
+  than `accessibilityState`. react-native-web maps `accessibilityState.disabled`
+  but silently drops `checked`, so the web build was announcing a switch with no
+  state. Both spellings land in the same place on native.
+- When on, the label reads the mode name ("Visual metronome") rather than
+  "Metronome on", because Settings already names four modes and one word of
+  state would lose which. Flagged for the owner.
+- The label is gold in both states. Gold is the app's tappable-text language
+  (links, "See all"), so it signals the line does something; the word carries on
+  or off. This is the one place gold isn't an active-state marker.
+
+---
+
+## 2026-08-16 18:02 — Verdict screen — practice-feedback refinement pass
+
+**Batch:** Frontend rebuild — Record + Verdict flow.
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`
+
+**What changed** (refinement only — no redesign, no new visual patterns, no
+token changes):
+
+- **Headline back to charcoal.** It was taking `verdictColorFor(worstBand)`, so
+  a take with one severe measure put a red sentence on the screen at 36pt,
+  which reads as an error rather than as feedback. `PageHeader`'s `titleColor`
+  prop is gone with it — nothing else ever set it, and a coloured screen title
+  everywhere else would be decoration.
+- **Take-specific wording.** `formatTakeVerdict(measures)` in `lib/tempo.ts`
+  replaces `formatTendency(verdict)` on this screen. One recording can't see a
+  habit, so "You tend to rush" is now reserved for Insights, where there are
+  sessions to average. A take says where it went wrong instead — "You rushed in
+  the middle", "You dragged towards the end" — from the midpoint of the
+  off-tempo measures, with drift that never left the slight band getting the
+  gentler "Tempo drifted ahead".
+- **The trend chart explains itself.** `TrendLine` now carries its own axes: a
+  54pt gutter naming Ahead / Target / Behind against the rule, and measure
+  numbers at each end of the plot so a bump on the line can be found in the
+  list below. The absolutely-positioned Ahead/Behind labels and the sentence
+  "The rule is the target tempo. The take starts on the left." are deleted —
+  they were saying what the chart now says.
+- **Legend above the measure list**: `Behind ← Target → Ahead`. Laid out on the
+  row's own columns (exported as `MEASURE_COLUMNS` from `MeasureRow`) so the
+  arrows sit over the bar, not over the middle of the card — measured at
+  x 72–267, which is the bar exactly.
+
+Kept as they were: the measure words, the verdict colours on bars and words,
+`Record again` primary over `Back to the piece` secondary, spacing, type, card
+style, navigation.
+
+**Three-foot test (Verdict):** first "You rushed in the middle" — charcoal, the
+only serif on the screen; second the red run of measures 5–8 in the list, which
+is the same fact as the headline, in the same place the headline points to;
+third the black `Record again`. Before this pass the red headline and the red
+rows competed for first, which is the hierarchy fault §3 law 4 describes.
+
+**Tests run:** `npx tsc --noEmit` clean. `npx expo export --platform web` and
+the flow driven in Chromium at 393×852:
+
+- Headline `rgb(20, 17, 14)` = `textPrimary`, 36pt.
+- Legend 13pt `textTertiary`, box x 72→267 against a bar column of 72→267.
+- Prose line gone; axis labels present once each.
+- Safe areas, simulated with a 34pt home indicator by overriding the inset
+  probe's `env()` padding: footer `padding-bottom` tracks it at 34px (16pt
+  floor without one), secondary button ends 34pt above the screen edge, and
+  with all twelve measure rows expanded the last row clears the footer by 24pt
+  and "Tap a measure for its timing" by 55pt. Nothing hides under the actions.
+- `formatTakeVerdict` checked against nine hand-built takes (empty, all on
+  tempo, slight-only both directions, rush/drag at start, middle, end,
+  throughout, and a single-measure take).
+
+**Known side effects / things to watch:**
+
+- A one-measure take reports "throughout", since one measure is its whole
+  extent. Correct but blunt; worth revisiting if very short takes are common.
+- The wording still comes from the client. The pipeline's own sentence
+  (`take.headline`) sits under it and is the better source once it covers every
+  case — two sentences describing the same take is one more than the screen
+  needs.
+- Verified in a browser, not on a device. No mic, so the take is still the
+  fixture.
+
+---
+
+## 2026-08-16 00:31 — Today screen — final refinement pass (golden screen)
+
+**Batch:** Frontend rebuild, phase 3 sign-off.
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`
+
+**What changed:** polish only — no new visual patterns, no redesign. Date eyebrow removed from Today; top spacing rebalanced. Featured card 318→298pt (6.3%) via tighter internal vertical spacing (horizontal gutters left alone so the title doesn't crowd the border). Library titles 20→19pt, which lets "60 Studies for the Violin, Op. 45" set on one line. Library thumbnails standardised to a fixed 56×40 box, `cover` + `contentPosition: center`, centred against the text block. `textSecondary` and `textTertiary` darkened centrally. New `sectionAction` type token (13pt sans regular) so "See all" keeps the gold but stops competing with the section heading.
+
+**Real bug fixed:** Today's scroll content sat behind the tab bar. `ScreenContainer` had a flat 40pt bottom padding against a bar that is 71pt before the home-indicator inset. First fix used `BottomTabBarHeightContext`, which turned out to report React Navigation's 49pt default rather than measuring our custom `tabBar` — still 22pt short. Now `navigation/tabBarMetrics.ts` derives the height from the same tokens `BottomTabBar` lays out with, and both consume it; the context is used only to detect whether a bar is present (absent on Practice, pushed above the tabs).
+
+**Tests run:** `npx tsc --noEmit` clean. Browser render measuring computed boxes: card 298pt, all library rows 78pt, all three thumbnails exactly 56×40, scroll content padding 94pt against a 71pt bar, last card clears by 94px, no console errors.
+
+**Known side effects / things to watch:**
+- `textTertiary` moved from ~2.6:1 to ~4.6:1 on the page background. It now clears WCAG AA for the 14pt metadata step; it previously did not.
+- `pieceTitle` at 19pt sits just below the 20–22pt the owner named, and inside the 19–22 band in their original brief. Called out for sign-off.
+- Still not run on a simulator or device — no macOS or Android emulator here.
+
+---
+
+## 2026-08-15 06:27 — Mobile frontend rebuild — design system, primitives, Today screen
+
+**Batch:** Frontend rebuild, phases 2–3 (supersedes the Batch 9 RN scaffold plan).
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`
+**Commit (after this edit):** `feat(mobile): design system, shared primitives, and Today screen` — hash resolvable from branch history.
+
+**What changed:**
+- `mobile/` scaffolded from `create-expo-app` (Expo SDK 57, RN 0.86.2, React 19.2.3, TS 6.0). Previously an empty placeholder README.
+- `mobile/src/design/` — colour, spacing, radius, typography, and motion tokens. Newsreader (serif) + Inter (sans), two weights each, imported per weight rather than from the package root.
+- `mobile/src/components/primitives/` — Text, ScreenContainer, PageHeader, SectionHeader, Card, PrimaryButton, SecondaryButton, ProgressBar, MetadataRow, EmptyState, LoadingState.
+- `mobile/src/components/pieces/` — ScoreThumbnail (with a ruled-staff fallback), FeaturedPieceCard, PieceCard.
+- `mobile/src/data/` — wire types mirroring `backend/app/models/` and `score_schema.py`; API modules for `/v1/me`, `/v1/scores`, `/v1/upload/*`; Supabase session helper; a `PieceSource` seam with fixture and API implementations; TanStack Query hooks.
+- `mobile/src/navigation/` — bottom tabs (Today, Library, Insights, Profile) with a custom tab bar, plus a root stack for full-screen flows.
+- `mobile/src/screens/` — Today built in full; Library, Insights, Profile, Practice are explicit placeholders.
+- `mobile/assets/fixtures/` — four public-domain score crops copied from `fixtures/scores/` for use as fixture thumbnails.
+
+**Why:**
+The design direction in spec §3.5 was retired by the project owner and replaced with a new brief (serif/sans pairing, warm ivory and antique gold, editorial rather than Linear-leaning). The rebuild targets React Native rather than the web frontend. Phases 2–3 only: the Today screen is the golden screen and the rest of the app waits on its approval, so no other screen inherits an unapproved visual system.
+
+**The data problem this works around:**
+Today's hierarchy needs progress, a last-practiced line, a "current" piece, and score thumbnails. None exist behind the API — `scores` has no progress or movement column, `/v1/analyses` is unbuilt, and score images sit in a private bucket with no read endpoint. Every screen therefore reads through `data/sources/PieceSource`; `sources/api.ts` implements the real mapping and returns `null` for each unbacked field, and `sources/index.ts` selects fixtures for now. Flipping one boolean moves the app onto live data without touching a component.
+
+**Tests run:**
+- `npx tsc --noEmit` → clean.
+- `npx expo export --platform ios` → bundles successfully; four font files (919 KB total) and four fixture images included.
+- Not run on a simulator or device — no macOS or Android emulator in this environment, so nothing here is visually verified.
+
+**Known side effects / things to watch:**
+- **`scores.source_image_url` is unusable for display.** `POST /v1/scores` only accepts the signed *upload* URL for `image_url` (the `public_url` the upload endpoint returns is a bare bucket path with no scheme, which `_assert_image_url_owned_by` rejects with a 400), and that signed URL expires after `SIGNED_URL_TTL_SECONDS` = 5 minutes. Displaying a score image needs a signed-download endpoint that does not exist. Flagged, not fixed — backend work is outside this rebuild's scope.
+- Tab bar labels use the 13pt `sectionLabel` step because the brief's type scale has nothing smaller. A dedicated ~11pt step would suit better; that is a design-system change and needs the owner's sign-off.
+- `Input`, `SearchField`, `Modal`, and `BottomSheet` are named in the brief but deliberately unbuilt — nothing calls them yet.
+- Dark mode is not implemented; `app.json` pins `userInterfaceStyle: light`. Never specified either way.
+- `npx expo install` cannot reach `api.expo.dev` through this environment's proxy, so dependencies were installed with plain `npm install`. Versions were not checked against Expo's SDK-compatibility table.
+
+**Rollback:** the whole change is additive under `mobile/` plus this log entry. Reverting the commit restores the empty placeholder; nothing in `backend/` or `frontend/` was touched.
+## 2026-07-28 — Tap-target and header fixes (measured, not eyeballed)
+
+**Branch:** claude/next-steps-3p2zhk
+User reported controls felt unclickable and the top looked unorganised. Both
+correct. I had been judging touch targets by eye; measured them instead against
+the 44×44 minimum.
+
+**Measured before → after** (390×844):
+
+| Control | Before | After |
+|---|---|---|
+| "Add" in header | 70×**34** ❌ | removed |
+| "See all" | 44×**21** ❌ | 60×**44** ✅ |
+| Piece title link | 114×**22** ❌ | merged into 165×**185** card ✅ |
+| Favourite star | ~23px ❌ | 44×**44** ✅ |
+| Tab items | 98×63 ✅ | 98×**70** ✅ |
+
+- **Header reorganised.** "Add" floated beside a two-line text block, aligned to
+  neither line — that was the disorganisation. Removed from Today entirely: it
+  belongs with the library, and the Library screen already has it one tap away
+  via the tab bar. The header is now a clean two-line block.
+- **Whole card is one link.** The crop and the title were separate targets, the
+  text one only 22px tall. The favourite button moved to an absolute overlay on
+  the crop, since a `<button>` nested in an `<a>` is invalid and the clicks
+  would fight. Verified the star toggles without navigating.
+- **Tab bar given weight**: icons 22→25px, min-height 58px, target 63→70px.
+  It measured acceptable before but read thin.
+
+**Verified:** lint + build green; every visible control on Today now passes
+44×44; favourite works without navigation; no console errors.
+**Process note:** the design laws mandate a three-foot test but nothing forced
+measuring ergonomics. Worth adding a tap-target check to the UI routine.
+**Rollback:** revert this commit.
+
+## 2026-07-28 — Today refined: hero card with an integrated action
+
+**Branch:** claude/next-steps-3p2zhk
+Refinement, not a redesign. Visual language (warm ivory, charcoal, muted ochre,
+serif/sans pairing, sheet crops) deliberately unchanged.
+
+**Reversed yesterday's `PracticeBar`.** It solved thumb reach but created a
+worse problem: the action was detached from the piece it acted on, so the user
+had to connect a title at the top with a button at the bottom. My own
+three-foot test had already flagged it out-shouting the content. Deleted; the
+bottom is navigation only again.
+
+- **Hero card.** `Continue practicing` is now a real card — title (26/28px
+  serif), composer · movement (16px sans), progress with a serif percentage,
+  last-practiced, and a **"Continue practice →"** action *inside* it. This is
+  the one place law 3 justifies a card: the focal point plus its own action.
+- **Header compressed and softened**: small sans greeting over the serif screen
+  title, "Add" reduced to a compact control.
+- **Typography restricted** per the brief. Serif now only for screen titles,
+  composition names and the progress figure. Section headings became sentence
+  case sans 14px (`CONTINUE PRACTICING` / `YOUR LIBRARY` were shouty); composer,
+  metadata, buttons and navigation are all sans.
+- **Library simplified**: dropped the date from every card (secondary — belongs
+  on the piece screen), leaving title · composer · percent. Added `shortTitle`
+  to the data model and used it in the grid.
+- `All 6 →` became `See all`.
+
+**Deviation from the brief, deliberate.** The spec asked for 20–22px library
+titles, but at two columns on a 390px screen that forces exactly the awkward
+wrapping the brief complains about — the first attempt broke "Cello Concerto
+No. 1" as "No." / "1". Settled on 17px with `text-wrap: balance` and shorter
+grid titles, which keeps the serif prominent and sets these on one line. Flagged
+rather than silently ignored.
+
+**Three-foot test:** *first* the hero card, *second* the Continue action inside
+it (reads as one object, not a competitor), *third* the library grid. Correct.
+
+**Known trade-off:** "Continue practice" now sits ~36% down the phone rather
+than in the thumb zone (law 7). That is the brief's explicit choice — proximity
+to the piece over reach — and worth revisiting if it annoys in real use.
+**Verified:** lint + build green; mobile 390×844 and desktop 1440px
+screenshotted; no console errors.
+**Rollback:** revert this commit.
+
+## 2026-07-28 — Fix the thumb zone on Today (design law 7)
+
+**Branch:** claude/next-steps-3p2zhk
+
+**The violation:** "Practice" is the primary action but sat ~33% down the phone
+screen, furthest from the thumb, while the reachable bottom held only
+navigation. Backwards for a mobile-first practice app.
+
+**Fix — new `layout/PracticeBar.tsx`, rendered by `AppShell`, not by the page.**
+Law 9 says a persistent action is app furniture, so it belongs in the frame:
+flush above the tab bar, same opaque surface and hairline, no floating card.
+This also sidesteps a trap logged earlier — `fixed` inside the animated outlet
+re-anchors to the transformed wrapper rather than the viewport.
+- Mobile only (`lg:hidden`); a pointer reaches anywhere, so desktop keeps the
+  action inline in the Continue row where its context is.
+- Only on `/`; it is Today's action, not global chrome.
+- Carries no piece metadata (law 10) — the screen above already says what
+  you're practising, so repeating it would be decoration.
+
+**Measured:** primary action moved from ~33% to **86% down** a 390×844 viewport.
+
+**Three-foot test, and the second problem it caught.** After the first pass the
+answer was: *first* the black Practice slab, *second* the piece title. That
+inverts the intended hierarchy (what am I practising → practise it) and breaks
+law 4. Rebalanced rather than shipped:
+- Strengthened the focal point — the sheet crop now shows on mobile too
+  (was `hidden sm:block`), and the title went 18px → 21px.
+- Lightened the action — bar padding and button height reduced.
+- **Now reads:** first the piece (crop + serif title), second Practice, third
+  the library grid. Correct.
+
+**Other law work in this pass:** `PieceGrid` cards swapped `border` for `ring-1`
+so the crop's own white edge does the separating (laws 3/6 — less container,
+more content).
+
+**Verified:** lint + build green; confirmed the last visible card clears the bar
+when scrolled to the bottom (650 vs 725), the bar is absent on Library, and
+desktop shows no bottom bar; no console errors.
+**Still open:** law 1 (native-first rather than responsive-web-adapted-down)
+and the three ⚠️ flow screens, which remain unassessed against the laws.
+**Rollback:** revert this commit.
+
+## 2026-07-28 — Adopt binding design laws; audit current screens against them
+
+**Branch:** claude/next-steps-3p2zhk
+
+Added the user's ten design laws to **`CLAUDE.md` §3** (binding, above the
+component conventions), plus the mandated **three-foot test** with a standing
+requirement to record its answer here for any screen built or changed.
+Renumbered Batch status to §4.
+
+**Flagged `frontend/DESIGN_SYSTEM.md` as partly superseded.** It still
+prescribed the pre-redesign "engraver's manuscript" look — heavy cream, gold
+surfaces, serif everywhere, rounded cards, a phone-width column on desktop —
+which was deliberately removed. Same failure mode as the stale Figma file: a
+future session would have executed it faithfully and undone the redesign. Its
+*process* guidance (one screen at a time, screenshot critique loop) still holds.
+
+### Three-foot test on the current screens
+
+**Today** — first: the piece title *Cello Concerto in B Minor*. Second: the
+black **Practice** button. Third: the library grid. That reads correctly for
+the intended hierarchy (what am I practising → practise it → my pieces).
+
+**Library** — first: the grid of sheet crops. Second: the filter row. Third:
+the page title. Also correct; the music dominates.
+
+### Violations found, not yet fixed
+
+- **Law 7 (thumb zone) fails on mobile.** "Practice" is the primary action but
+  sits in the upper third of the phone screen, furthest from the thumb, while
+  the reachable bottom area holds only navigation. This is the most substantive
+  gap and needs a composition change, not a style tweak.
+- **Law 1 (native-first)** is partly unmet: the layout is still a responsive
+  web page that adapts down, rather than a phone design that adapts up.
+- **Law 3/6** mostly holds now, but `PieceGrid` cards still carry a border +
+  rounded corner that the crop itself could imply.
+- The three ⚠️ flow screens (capture / recording / verdict) have not been
+  assessed against the laws at all; they retain phone-column compositions,
+  bordered panels and a large Deep Spruce surface.
+
+No UI code changed in this entry: recording the laws and the audit first, per
+the §2 gate.
+**Rollback:** revert this commit.
+
+## 2026-07-28 — Composition refinements: density, navigation, hierarchy
+
+**Branch:** claude/next-steps-3p2zhk
+Refining the redesign rather than replacing it. Direction (palette, serif,
+sheet crops, minimal borders) kept as-is.
+
+1. **Compressed the top.** `h1` 34/42px → 24/27px and the sub-paragraph is gone
+   (decorative). Section gaps 12/14 → 8. The current piece is now above the
+   fold instead of below a display headline.
+2. **Continue practicing is one block** — thumb, title, composer/movement,
+   progress and action on a single row at 58px tall, gaps tightened.
+3. **Removed "+ Add" from that row** so nothing competes with Practice.
+4. **Navigation is destinations only.** "Add" was an action masquerading as a
+   tab. Now: **Today · Library · Insights · Profile**, matching the intended
+   hierarchy (what am I practising → practise it → my pieces → my progress).
+   Desktop `TopNav` mirrors it. Adding a piece is an explicit "+ Add piece"
+   control in the screen header (mobile) and the top bar (desktop).
+5. **Library density** — crops `aspect-4/3 → 16/10` (~17% shorter), row gap
+   tightened. Two columns on mobile kept; Home now renders 8 pieces so desktop
+   fills two rows, with `limitOnMobile` hiding the overflow below `md` so a
+   phone isn't a long scroll.
+6. **Bottom nav is opaque** (`bg-paper`, no translucency) — sheet music no
+   longer reads through it.
+7. **Removed `PreviewBadge`** and its mount. No developer UI in the product.
+8. **Piece titles down a step** — grid 16→15px, continue row 21→18px, page
+   headings 30/36 → 24/27px. Functional rather than magazine.
+9. **Ochre confined to active states, progress and favourites.** Removed the
+   amber composer eyebrow (decoration); active nav and filter underlines now
+   carry it, which is a meaningful state.
+
+**Verified:** lint + build green; desktop 1440px and mobile 400px screenshotted;
+confirmed the mobile grid renders exactly 4 cards while desktop shows 8; no
+console errors.
+**Note:** `docs/deploy-cloudflare.md` still describes the preview badge, which
+no longer exists. Left for a follow-up rather than expanding this diff.
+**Rollback:** revert this commit.
+
+## 2026-07-28 — Ground-up UI redesign: editorial workspace, real desktop layout
+
+**Branch:** claude/next-steps-3p2zhk
+User brief: the UI read as an AI-generated "premium app". Rethink hierarchy,
+layout, navigation and component structure; keep functionality.
+
+**Information architecture**
+- **Desktop is now a real workspace.** New `layout/TopNav.tsx` (sticky, 1240px
+  container) replaces the 440px phone column stranded on a desktop canvas.
+  `AppShell` is responsive: top nav at `lg`+, bottom `TabBar` below it.
+  Chose a top bar over a sidebar because there are three destinations — a
+  sidebar would spend 240px of width on three words.
+- Home reduced to the three areas asked for: prompt, Continue practicing,
+  library. Removed the "Saturday morning" contextual eyebrow (decoration).
+- Library gained working filters (kind + favourites) with a live count.
+  Filters hide themselves when they'd return nothing.
+
+**Visual system** (`index.css`, `tokens.ts`, `tailwind.config.js`)
+- Paper pulled off beige toward warm off-white (`#F7F2E4 → #FAF8F3`); surfaces
+  are now true white. Ink to near-black `#171614`.
+- **Gold demoted to an accent.** Muted `#C78A3A → #9C7A3C`, and every large gold
+  surface is gone — primary actions are ink, not gold slabs.
+- Radii `12/18/24/30 → 8/10/12/14`. `shadow-card` reduced to almost nothing;
+  structure now comes from hairline borders.
+- **Serif is now selective**: piece titles and the practice prompt only.
+  Section headings became small sans labels (`ui/SectionHeading.tsx`).
+
+**Sheet music is the visual identity.** New `sheet/SheetCrop.tsx` draws
+plausible engraving in SVG — bass clef (it's a cello app), time signature,
+barlines, beamed groups, deterministic per seed — replacing beige rectangles
+with horizontal lines. Used in the library grid and the continue row.
+
+**Data model.** `demo.ts` now stores `title` and `composer` as separate fields
+with `kind` and `progress`, instead of one `"Composer — Title"` string parsed
+by each screen. Deleted `splitPiece`. Title outranks composer everywhere.
+
+**Caught in review:** composer names were clipped in every thumbnail (the
+`slice` crop cuts ~15 viewBox units per side); the Practice action was stranded
+across a 1240px row (capped at 860px); "Add piece" appeared twice on desktop
+(page-header copy is now `lg:hidden`).
+
+**Functionality preserved:** all routes, auth gate, OCR upload/review/save,
+recording, verdict polling, favourites toggle, reduced-motion gating. Verified
+the library filters still work end-to-end in-browser (6 → Favourites 2 →
+Etudes 1).
+**Verified:** lint + build green; Home / Library / Account / Capture
+screenshotted at 1440px and 400px; no console errors.
+**Known gaps:** `ScoreThumb`, `Card`, `StubPage` and the record/verdict interior
+panels still carry older styling — they're behind flows that need real data to
+review properly. **Rollback:** revert this commit.
+
+## 2026-07-28 — Cozier palette, real webfont, tighter copy, no em dashes
+
+**Branch:** claude/next-steps-3p2zhk
+User feedback: warmer "paper ivory", less verbose copy, the Playfair + Suisse
+pairing, no em dashes, homier feel.
+
+**Typography — this was a real bug, not just taste.** The sans stack was
+`-apple-system, "SF Pro Text", system-ui`, which on the user's **Windows**
+machine resolved to Segoe UI. They had never seen the intended type.
+- Shipped `@fontsource-variable/inter` so the face is consistent everywhere.
+- **Suisse Int'l is commercial** (Swiss Typefaces) and can't be bundled. The
+  stack is `SuisseIntl, "Inter Variable", Inter, …` — self-host a licensed copy
+  declaring `font-family: SuisseIntl` and it takes over with no code change.
+- Used `SuisseIntl` without the apostrophe deliberately: `"Suisse Int'l"` is
+  valid CSS but **lightningcss fails to parse it** and broke the build. A
+  self-hosted face names itself in `@font-face`, so this costs nothing.
+
+**Warmer palette** (index.css + tokens.ts, kept in sync): paper `#F6F4EC →
+#F7F2E4`, raised `#FBF9F2 → #FDFAF0`, warm `#F0ECDF → #F1EAD8`, deep `#E7E1D1 →
+#E8DFC9`. Ink warmed off pure graphite: `#1C1C1A → #23201A`, with the soft/mute/
+faint ramp and hairlines shifted to match. Also swept out stale hardcoded
+values still using the old palette (`Badge` info tint, `AnnotatedScorePanel`
+note backing, `HomeRoute` staff lines).
+
+**Copy**
+- **Home CTA lost its subtext** ("Point your camera at the page…") — now just
+  "Photograph sheet music". Rebalanced the card's padding afterwards, since
+  removing the line left it visibly bottom-heavy.
+- Trimmed the capture headline, storage notice, login, calibration and
+  OCR-confidence strings.
+- **Removed every em dash from user-facing prose** across 10 files, replacing
+  with full stops or `·`. Left them in code comments, and left the `—`
+  empty-value placeholders (`Email —`), which are a "no value" glyph rather
+  than punctuation.
+
+**Verified:** lint + build green; computed `font-family` confirmed in-browser;
+Home and score list screenshotted; no console errors.
+**Note:** `DECISIONS.md` records the palette as locked. This supersedes those
+specific hex values at the user's direction; the *rules* (amber the only
+accent, spruce recording-only, verdict colours quarantined) are unchanged.
+**Rollback:** revert this commit.
+
+## 2026-07-28 — Motion + softness pass ("smooth, iOS-style, softer feel")
+
+**Branch:** claude/next-steps-3p2zhk
+**Tooling:** `animate` skill (Emil Kowalski) for the easing/spring discipline;
+Playwright, capturing **mid-transition frames** rather than settled stills —
+a still can't show whether motion works.
+
+**New — `lib/motion.ts`.** Single source for springs, easings and variants, so
+timing isn't re-decided per component. Encodes: enters ease-out 200–300ms,
+exits ~75% of that, springs where interruptible, transform/opacity only.
+
+**Motion**
+- **`AppShell`** now animates its `<Outlet />` — tabbed screens crossfade with
+  an 8px rise while the frame and tab bar stay mounted.
+- **`SheetScreen`** (new) — capture / record / verdict rise from below on a
+  spring, like an iOS modal presentation.
+- **Staggered lists** — Home blocks and score-list rows cascade 40ms apart.
+- **`.press` / `.press-lg` utilities** in `index.css` — universal press
+  feedback. CSS rather than motion components so `Link`s get it too without
+  rewriting markup; larger surfaces compress less so the scale isn't a lurch.
+- **TabBar** icons spring on select (`springSnappy`).
+- All gated on `useReducedMotion()`, plus a `prefers-reduced-motion` block
+  neutralising `.press`.
+
+**Softness**
+- Radii up one step: `sm 10→12, md 14→18, lg 20→24, xl 26→30`.
+- `shadow-card` rebuilt with three stops and lower alpha — light through paper
+  rather than a hard drop. Added `shadow-lift` for raised surfaces.
+
+**Caught in review — the whole approach had to be rebuilt.** My first pass put
+`AnimatePresence mode="wait"` around `<Routes>`. A mid-transition screenshot
+showed a **completely blank frame**: `mode="wait"` unmounts the entire tree,
+including `AppShell`, so the tab bar blinked out on every switch. Moving the
+transition inside `AppShell` (around the outlet only) keeps the chrome mounted.
+Verified by re-capturing the same frame — tab bar solid, rows visibly cascading.
+
+**Trade-off accepted:** flow screens animate in but not out. An exit animation
+needs `AnimatePresence` around the router, which reintroduces the unmount
+problem. Entrance is the half users notice; documented in `SheetScreen`.
+**Known subtlety:** an animated ancestor holds a transform at rest, which
+re-anchors `position: fixed` descendants. `PreviewBadge` is deliberately
+rendered outside the animated tree. `VisualMetronome` (`fixed inset-0`) sits
+inside a full-height route, so its flash is visually identical either way.
+
+**Verified:** lint + build green; mid-transition and settled frames captured for
+tab switches and sheet presentation; no console errors.
+**Rollback:** revert this commit.
+
+## 2026-07-28 — Switch the preview deploy to Cloudflare Pages (supersedes GitHub Pages)
+
+**Branch:** claude/next-steps-3p2zhk
+**Why:** GitHub Pages would have required making the repo public (private repos
+need GitHub Pro). Cloudflare Pages builds private repos on its free tier.
+
+Before recommending either, I scanned the repo for exposure: **27 commits, all
+refs — no `.env` ever committed, no key-shaped string in any diff.** (Only
+`.env.example` files are tracked and their non-blank values are a localhost URL,
+PostHog's public host, and a model-name list.) So going public would in fact
+have been safe; the user preferred private, which Cloudflare supports for free.
+
+- **Removed `.github/workflows/pages.yml`.** Left in place it would have run and
+  *failed* on every push, since Pages was never enabled — red X's on every
+  commit for a path we're not using. Recoverable from git history.
+- **`frontend/public/_redirects`** — new. `/* /index.html 200`, the SPA fallback.
+  Cloudflare only knows about files on disk while React Router owns the routes,
+  so a refresh on `/scores` or a shared deep link would 404 without it. Vite
+  copies `public/` to the dist root, so it ships automatically.
+- **`docs/deploy-cloudflare.md`** — new. The dashboard settings, which can't be
+  committed as config: root directory `frontend`, build `npm run build`, output
+  `dist`, and `NODE_VERSION=22` (Cloudflare's default Node is the usual cause of
+  a failed first build). Also flags that the production branch must be set to
+  this branch — `main` is back at Batch 2 and has none of these screens.
+
+**Kept from the GitHub Pages work** (all still useful, and inert here):
+`VITE_BASE_PATH` in `vite.config.ts` (unset → `/`, which is what Cloudflare
+wants), the router `basename`, the `ProtectedRoute` pass-through when Supabase
+is unconfigured, and `PreviewBadge`. Cloudflare serves from the domain root, so
+no base-path juggling is needed.
+
+**Verified:** lint + build green; default build emits root-relative asset paths;
+`_redirects` confirmed present in `dist/`; served and loaded in Chromium with no
+console errors.
+**Not verified:** the `_redirects` rule itself — that's Cloudflare-side
+behaviour and can't be exercised locally (`vite preview` has its own SPA
+fallback, so a passing deep-link test here proves nothing about production).
+Worth a refresh on `/scores` once it's deployed.
+**Rollback:** delete `_redirects` and the doc; nothing else depends on them.
+
+## 2026-07-28 — GitHub Pages preview deploy (superseded — see the entry above)
+
+**Branch:** claude/next-steps-3p2zhk
+**Why:** the user wanted to see the screens in a browser without setting up
+Supabase or running anything locally.
+
+- **`.github/workflows/pages.yml`** — builds `frontend/` and publishes to Pages
+  on push to this branch (plus `workflow_dispatch`). No secrets used or needed.
+- **`vite.config.ts`** — `base` now reads `VITE_BASE_PATH` (unset → `/`), since
+  Pages serves from the `/intempo/` subpath. Local dev is unaffected.
+- **`App.tsx`** — `BrowserRouter basename={import.meta.env.BASE_URL}` so routes
+  resolve under that subpath.
+- **SPA fallback** — the workflow copies `index.html` → `404.html`; Pages has no
+  rewrite rules, so a refresh on `/scores` would otherwise 404.
+- **`ProtectedRoute`** — **now passes through when Supabase isn't configured.**
+  This was the actual blocker: with no keys, `status` is `signedOut`, so every
+  screen redirected to `/login` and the preview would have shown nothing else.
+  When unconfigured there is no session to check and no backend to reach, so
+  there's nothing to protect; with keys present the gate is unchanged. A
+  production deploy that forgot its keys now fails *visibly* (demo data + badge)
+  rather than looping on a redirect.
+- **`components/PreviewBadge.tsx`** — new. Renders only in a production build
+  with no keys: "Preview — demo data, no backend". Without it, Record and
+  Photograph-sheet-music look broken rather than absent.
+
+**Verified:** lint + build green; built with `VITE_BASE_PATH=/intempo/`, served
+under that subpath and loaded in Chromium — no `/login` redirect, no console
+errors, deep link to `/intempo/scores` resolves. Checked at 1200px and 400px.
+**Caught in review:** the badge initially covered the tab bar (hiding Record and
+Insights) — repositioned to the desktop gutter, lifting above the tab bar on
+narrow screens.
+
+**Honest scope:** this is the UI only. No auth, no upload/OCR, no
+mic→analysis — Pages is static hosting and the FastAPI service isn't deployed.
+Screens render `lib/demo.ts` seed data.
+**Requires one manual step:** repo Settings → Pages → Source = "GitHub Actions".
+The workflow fails until that's set. Public repo (or GitHub Pro) also required.
+**Rollback:** delete the workflow; the other changes are inert without it.
+
+## 2026-07-28 — Account screen rebuilt to the manuscript system
+
+**Branch:** claude/next-steps-3p2zhk
+**Tooling:** locked manuscript system; Playwright via a temp `/preview-account`
+route, then removed.
+
+`routes/AccountRoute.tsx` was real but plain (Eyebrow + generic Card + two
+labelled strings). Rebuilt:
+- **Identity block** — monogram circle from the email's first letter, falling
+  back to a Phosphor `User` mark when there's no email; email + plan line.
+- **Details rows** — Email / Plan / Version, hairline-separated, matching the
+  score-list row language. Plan renders through the **rebuilt `Badge`** (its
+  first real usage outside `/showcase`): `primary` for Pro, `info` for Free.
+- **Version moved here** from the `Layout` footer, which since the rebuild only
+  renders on `/showcase` — Account is the conventional home for it.
+- **Sign out** — full-width bordered button with a `SignOut` glyph.
+- **Unconfigured-auth notice** — when `supabaseConfigured` is false, says so
+  plainly instead of silently rendering em-dashes.
+
+**Deliberately NOT added:** notification toggles, theme pickers, an "Upgrade to
+Pro" CTA. None of them have anything behind them — Stripe is Batch 8, and `Me`
+only carries `{ id, email, tier }`. A settings screen full of dead controls is
+exactly the kind of fake UI we've been removing elsewhere. Add each when its
+backing exists.
+
+**Verified:** lint + build green; screenshotted, no console errors. The shot
+shows the *unconfigured* state (no Supabase keys in this environment) — the
+signed-in state can't be verified in-session.
+**Rollback:** revert this commit.
+
+## 2026-07-28 — Score list built (`/scores`) — the last dead end on main nav
+
+**Branch:** claude/next-steps-3p2zhk
+**Tooling:** locked manuscript system; Playwright via a temp `/preview-scores`
+route, then removed. Layout (rows vs grid vs composer-grouped) was the user's
+call — rows chosen.
+
+`routes/ScoreListRoute.tsx` was still `<StubPage>`, so Home's "See all" *and*
+the Library tab both dead-ended. Replaced with the real screen:
+- **Rows** — staff-line `ScoreThumb`, amber composer eyebrow, serif title,
+  `movement · date` meta, favourite star; hairline dividers between rows.
+- **Header** — serif "Your library" + a piece count.
+- **Favourite toggle reinstated here.** I removed it from Home during the
+  rebuild because it didn't belong on a landing screen; managing the library is
+  where it does. **Local-only** — there's no favourites endpoint, so it resets
+  on reload. Wire alongside `GET /v1/library`.
+- **Empty state** — a real one (MusicNotes mark, explanation, "Add your first
+  piece" CTA) rather than bare text, since it's the first thing a new user sees
+  on this tab.
+- Rows link to `/scores/:id/record`, so the list leads somewhere.
+
+**Also fixed:** `/scores/:id` rendered the *entire library* (both routes pointed
+at the same stub). It now redirects to that piece's record screen via a small
+`ScoreDetailRedirect` — interim until a score-detail screen exists.
+
+**Small refactor:** `splitPiece` ("Composer — Title") was duplicated in
+`HomeRoute`; moved to `lib/demo.ts` and both screens now import it.
+
+**Verified:** lint + build green; populated list *and* empty state both
+screenshotted, no console errors; star toggle exercised in-browser.
+**Known gaps:** reads `lib/demo.ts` seed data; `lastPracticed` is a display
+string so there's nothing to sort on — the seed array is already newest-first
+and order is preserved rather than faked. **Rollback:** revert this commit.
+
+## 2026-07-28 — Badge rebuilt: kit-style API on the locked palette (de-slopped)
+
+**Branch:** claude/next-steps-3p2zhk
+
+**Why:** the user flagged the verdict badges as reading "ai" — correct. The old
+`Badge` was a pastel-tinted pill with a redundant coloured status dot: the most
+templated status affordance on the web, and foreign to a paper-and-ink world.
+
+`components/ui/Badge.tsx` rewritten to the `variant` × `appearance` × `shape`
+API the user supplied, resolved to the manuscript tokens:
+- **`variant`** — primary (amber, the one accent), success / warning /
+  destructive (the verdict triad), info (**neutral graphite `ink`, never
+  `spruce`** — spruce is the recording surface and must not encode a status).
+- **`appearance`** — solid / light / **outline (default)**. Outline is the
+  manuscript-native one: paper-warm ground, hairline edge, hue in the text and
+  border rather than a fill.
+- **`shape`** — **square (default, 10px engraved chip)** / circle (pill).
+- **Removed the status dot** entirely — it repeated the text colour and carried
+  no information.
+- Colours come from `styles/tokens.ts`, not re-typed hexes.
+- `tone` ("on"/"mid"/"bad") kept as a verdict-UI shorthand → success / warning /
+  destructive, so verdict screens stay in domain language.
+
+`ShowcaseRoute` now documents the full matrix (3 appearances × 5 variants, plus
+the circle shape) and keeps a separate "Verdict tones" card for the `tone` API.
+
+**Honest note:** the API can still express the generic look
+(`appearance="light" shape="circle"`) — that's a deliberate escape hatch, with
+the defaults doing the guiding. I also proposed two more distinctive directions
+(pencil margin-marks; Italian tempo terms like *stringendo* / *a tempo*) which
+the user didn't take this round; logged in `DECISIONS.md` as the better
+long-term direction for verdict UI specifically.
+
+**Blast radius:** none — `Badge` is used only on `/showcase`; no live screen
+consumes it yet.
+**Verified:** lint + build green; `/showcase` screenshotted, no console errors.
+**Rollback:** revert this commit.
+
+## 2026-07-28 — Finish the Phosphor migration; drop Lucide; refresh CLAUDE.md §3
+
+**Branch:** claude/next-steps-3p2zhk
+
+Closes the loose ends called out at the end of the UI rebuild.
+
+**Icon migration finished (`lucide-react` → Phosphor):**
+- `components/record/TempoSelector.tsx` — `Minus`/`Plus` (now `weight="bold"`).
+- `components/result/PerNoteDetail.tsx` — `ChevronDown` → `CaretDown` (Phosphor's
+  equivalent, already used in the record top bar), 18→16px to match.
+- `routes/ShowcaseRoute.tsx` — `Plus` in the Button `trailingIcon` demo.
+- Dropped the invalid `strokeWidth` props (a Lucide-ism Phosphor ignores).
+- **Removed `lucide-react` from `package.json`** — zero references remain in
+  `src/` or the lockfile. The app is now single-icon-library.
+
+**Fixed a stale design-system reference:** `/showcase` hard-coded the *pre-lock*
+palette (`paper: #EDE8DA`, `ink: #211F1B`) — wrong since the tokens were locked,
+and actively misleading on the page whose whole job is documenting the palette.
+It now imports `colors` from `styles/tokens.ts`, so it can't drift again.
+Verified in-browser: swatches read `#F6F4EC` / `#1C1C1A`, no console errors.
+
+**`CLAUDE.md` §3 rewritten** to reflect reality after the rebuild: a per-screen
+status table (4 rebuilt, 3 still pre-rebuild), the Figma mockup link, the five
+conventions the rebuild established (Phosphor-only, full-bleed flow screens
+outside `<Layout>`, Framer Motion + `useReducedMotion`, `/showcase` sources
+tokens, `lib/demo.ts` seed data is deliberate), and a blunt DoD note that no
+batch is tagged and every remaining gate needs Supabase keys + a device.
+
+**Verified:** lint + build green; `/showcase` screenshotted with no console
+errors. **Known side effects:** none expected — icon swaps are like-for-like and
+`CaretDown` is the same glyph family already used elsewhere. **Rollback:**
+revert this commit (and `npm i lucide-react` if anything unexpected depended on it).
+
+## 2026-07-28 — Score-capture / OCR flow — rebuilt to the locked design system
+
+**Branch:** claude/next-steps-3p2zhk
+**Tooling:** locked manuscript system (no Figma mockup — designed straight to
+code per the user's choice); Playwright (global Chromium) via temp
+`/preview-capture` (real route) + `/preview-capture-edit` (mock-OCR harness),
+then removed.
+
+Brought the last screen still on the old Batch-7 UI onto the rebuilt system:
+- **Full-bleed chrome** — moved `/scores/new` out of `<Layout>` (dropping the
+  redundant wordmark header/footer) to a 440px column with its own X-close +
+  step title, matching the Recording/Verdict flow screens.
+- **Capture state** — amber eyebrow + serif lead-in, restyled dashed drop-zone
+  (`ImageUploader`) and "Use the camera instead".
+- **Processing state** — replaced the progress bar with the manuscript amber
+  pulse + "Reading your score…", consistent with the analysis screen.
+- **OCR-review (edit) state** — amber low-confidence banner, measure cards, and
+  the inline note editor; the invalid-pitch affordance now reads in oxblood.
+- **Saved / error states** — restyled with CheckCircle / Warning and the
+  rebuilt Button.
+- **Icon migration** — `ScoreCaptureRoute`, `ImageUploader`, `CameraCapture`,
+  `ScoreEditor` moved from `lucide-react` to Phosphor (matching the rest of the
+  app); dropped the invalid `strokeWidth` props. (`TempoSelector`,
+  `PerNoteDetail`, `ShowcaseRoute` still import Lucide — out of scope here.)
+
+The OCR plumbing (`useScoreUpload` / `useScoreSave`, upload → parse → save
+mutations, validation) is unchanged — this was a presentation pass.
+
+**Verified:** lint + build green; capture and OCR-review states screenshotted
+(the review harness used an intentionally-invalid "H5" pitch, confirming the
+validation styling). **Known gaps:** live upload → OCR → save still pending
+Supabase keys + backend. **Rollback:** revert this commit.
+
+## 2026-07-28 — Verdict screen — verified against Figma + data-driven tip fix
+
+**Branch:** claude/next-steps-3p2zhk
+**Tooling:** Figma file `k5IB3714DiusqnAwzkY7pz` as source of truth; Playwright
+(global Chromium) via a temp `_PreviewVerdict` harness + `/preview-verdict`
+route (rendered `VerdictView` with a mock `AnalysisResult`), then removed.
+
+The Verdict screen was already the closest match to the Figma (the Figma was
+built from this component), so this was mostly a verification pass:
+- `VerdictView.tsx`: headline bumped **30px → 32px** with `leading-[1.15]` to
+  match the Figma type spec exactly.
+- **Bug fix (found while verifying the Next-steps tab):** the tip was
+  hard-coded to "measure 8" and would contradict the actual verdict. It now
+  reads from the data — anchored to the real off-tempo region (`location`)
+  and phrased for the drift direction (rush → "ease back", drag → "ease
+  toward"; on-tempo gets its own encouraging line).
+- Confirmed the annotated score (two systems washed amber + "a touch ahead" /
+  "breathe here" margin notes), stat chips, two-tone headline, and the
+  spring tab indicator all render as designed.
+
+**Verified:** lint + build green; Score and Next-steps tabs screenshotted
+against the Figma. **Rollback:** revert this commit.
+
+## 2026-07-28 — Recording screen — code aligned to its Figma mockup (design→code)
+
+**Branch:** claude/next-steps-3p2zhk
+**Tooling:** Figma file `k5IB3714DiusqnAwzkY7pz` as source of truth; Playwright
+(global Chromium) via a temp public `/preview-record` route, then reverted.
+
+Restructured `frontend/src/components/record/RecordingPanel.tsx` to the Figma's
+hero-tempo composition:
+- **Promoted the tempo readout to the hero** — a 64px serif BPM number flanked
+  by round ± steppers, with a "BPM · {meter}" caption (meter now shown here).
+- **Removed the needle dial and the bow arc** — the Figma surface is cleaner and
+  leads with the number; the dial/meter-readout/arc were competing for the eye.
+- **Amber-tipped waveform** — new static `IdleWave` bar strip before recording
+  (center bars amber), with the live `WaveformPreview` + timer kept for the
+  listening state.
+- State line is now upright serif (was italic); controls (metronome / red mic /
+  bookmark) enlarged to match the mockup's proportions.
+- **Kept all functionality:** calibration link, done-state playback + Redo/Analyze,
+  5-minute warning, VisualMetronome pulse, mic error surface.
+
+`RecordRoute` and `ScorePanel` unchanged — the top bar + manuscript score panel
+(now-playing system washed amber) already matched the Figma.
+
+**Verified:** lint + build green; screenshot of the running page matches the
+Figma. **Known gaps:** live mic → analysis loop still pending mic permission +
+Supabase/backend on a real device. **Rollback:** revert this commit.
+
+## 2026-07-28 — Home screen — code aligned to its Figma mockup (design→code)
+
+**Branch:** claude/next-steps-3p2zhk
+**Tooling:** Figma file `k5IB3714DiusqnAwzkY7pz` as source of truth; Playwright
+(global Chromium) via a temp public `/preview-home` route to verify the running
+build, then reverted.
+
+Rewrote `frontend/src/routes/HomeRoute.tsx` from the old list-based layout to
+match the Figma Home:
+- **Greeting** — amber uppercase eyebrow now driven by the live date
+  (`weekday + time-of-day`, e.g. "TUESDAY EVENING") over a serif
+  "Ready to practice?".
+- **Primary CTA** — amber card (Camera icon + "New piece" kicker,
+  "Photograph sheet music", subline) linking to `/scores/new`.
+- **Resume card** — paper-warm row with a manuscript strip thumb +
+  "Pick up where you left off", built from `RECENT_SESSIONS[0]`.
+- **Library** — serif section header + "See all", and a 2-up grid of cards
+  (manuscript strip art + composer eyebrow + serif title), parsed from the
+  "Composer — Title" demo data.
+- Added a local `SheetStrip` (CSS repeating-gradient staff lines) that scales
+  to any box, replacing per-row `ScoreThumb` on this screen.
+
+Dropped the local-only favorite-star toggle (it wasn't persisted or wired to
+anything and isn't in the design). `ScoreThumb` / `Eyebrow` remain for other
+screens; only Home stopped importing them.
+
+**Verified:** lint + build green; screenshot of the running page matches the
+Figma (and is richer — live eyebrow, 4 cards, the real icon tab bar).
+**Known gaps:** all links point at existing routes; the resume/library still
+read from `lib/demo.ts` seed data (live `/v1/sessions` + `/v1/library` not
+wired yet — pending Supabase keys). **Rollback:** revert this commit.
+
+## 2026-07-28 — Figma mockups — three screens built into a new Figma file
+
+**Branch:** claude/next-steps-3p2zhk (design artifact only — no code changed)
+**Tooling:** Figma MCP (`use_figma` via the JS Plugin API), `figma-use` skill,
+`get_screenshot` for the verify-after-each-step loop.
+
+Created a new Figma file **"InTempo — App Screens"**
+(`https://www.figma.com/design/k5IB3714DiusqnAwzkY7pz`) and built the three
+core screens as 390×844 iPhone frames on one board, matching the locked
+manuscript design system:
+
+- **Home** — "Saturday evening / Ready to practice?" greeting, amber
+  "Photograph sheet music" CTA, a resume card, and a 2-up library grid of
+  score cards with mini-staves, over the paper tab bar.
+- **Recording** — paper top bar (close / title+movement / menu), a manuscript
+  score panel with the now-playing system washed amber, and the Deep Spruce
+  recording surface: "Listening…" serif state line, 72 BPM readout with ±
+  steppers, amber-tipped waveform, and the oxblood record button flanked by
+  metronome / bookmark.
+- **Verdict** — two-tone serif headline ("You *rushed a little* through the
+  middle."), annotated score with two off-tempo systems washed amber and
+  handwritten margin notes ("a touch ahead" / "breathe here"), three stat
+  chips, and the result tab bar with Score active.
+
+Palette locked to Paper Ivory / Graphite Ink / Rosined Amber (single accent) /
+Deep Spruce (recording surface only) / Cupro Oxblood; type is Playfair Display
++ Inter (grotesque stand-in). Each screen was screenshot-verified in Figma;
+the Home grid was trimmed from 4→2 cards so the tab bar sits in-frame.
+
+**Known side effects / honesty note:** this is a static design mockup, not
+running code — it's a reference to build the frontend rebuild against, not a
+substitute for it. Score/Details/Next-steps tab states on Verdict, and the
+calibration + metronome sub-states on Recording, are represented by their
+default view only. **Rollback:** delete the Figma file; nothing in the repo
+depends on it.
+
+## 2026-07-28 — Verdict / Result screen — rebuilt to the locked design system
+
+**Branch:** claude/next-steps-3p2zhk
+**Toolchain (per user request):** `design-taste-frontend` (taste) for the pre-flight
+discipline, `animate` (Emil Kowalski) for motion, `frontend-design` principles for
+polish, and Playwright (global Chromium) for the screenshot-critique loop. Figma MCP
+is connected but not used — there's no InTempo Figma file; the moodboard image is the
+visual truth. No "impeccable" skill exists by that name; used `frontend-design`.
+
+**What changed (all under `frontend/`):**
+- Added **Framer Motion** (`motion` `^12`) — the app's first motion library, for the
+  verdict reveal + shared-layout tab indicator (animate skill's recommended tools).
+- `components/result/VerdictView.tsx`: **new.** The moodboard verdict composition —
+  eyebrow, two-tone serif headline (amber phrase + graphite location, spring reveal),
+  encouraging subhead, and tab-switched content, with staggered entrance (Kowalski:
+  ease-out 0.42s enters, spring hero, `useReducedMotion` gate).
+- `components/result/AnnotatedScorePanel.tsx`: **new.** Manuscript with the off-tempo
+  region washed amber + hand-written margin notes ("a touch ahead" / "breathe here")
+  on a faint paper backing so they read as pencil, not clash.
+- `components/result/StatChips.tsx`, `TipBox.tsx`: **new.** Three stat chips + the
+  pencil-tip box.
+- `components/result/ResultTabs.tsx`: **new.** Listen / Score / Details / Next steps
+  with a `layoutId` spring indicator (animate skill's shared-layout pattern), Phosphor.
+- `lib/analysis.ts`: added `verdictHeadline` (amber phrase + location from the longest
+  off-tempo run) and `deriveStats` (tempo range / steadiest bars / longest drift).
+- `routes/ResultRoute.tsx`: **rebuilt** — thin polling shell (queued/processing →
+  animated "Reading your tempo…"; failed/no-onsets → graceful message + record-again;
+  ok → `VerdictView`), full-bleed with its own X-close chrome.
+- `App.tsx`: `/analyses/:id` moved **out of `Layout`** (full-bleed). Deleted the
+  superseded Batch-7 `VerdictCard.tsx` and `AnnotatedScore.tsx`.
+
+**Critique-loop fix (screenshot vs. moodboard):** the "breathe here" margin note was
+overlapping noteheads and reading as a bug — gave both annotations a faint paper
+backing and repositioned into the right margin.
+
+**Also:** aligned the copy to the em-dash ban ("You're musical. Let's refine the flow.",
+"you're close, trust the pulse.").
+
+**Tests run:** `npm run build` → passes; `npm run lint` → clean. Rendered at 440px via
+a throwaway `/demo-verdict` route + Playwright, verified against the moodboard, temp
+route removed.
+
+**Rebuild status:** Home ✅, Recording ✅, Verdict ✅. Still old Batch-7 UI:
+Score-capture (`/scores/new`) and the Score-list. Those are next.
+
+## 2026-07-28 — Recording screen — rebuilt to the locked design system
+
+**Branch:** claude/next-steps-3p2zhk
+**Continues the UI rebuild** (after Home) following `frontend/DESIGN_SYSTEM.md`,
+one screen at a time with a screenshot-critique loop.
+
+**What changed (all under `frontend/`):**
+- **Palette aligned to the locked hexes** in `src/index.css` + `src/styles/tokens.ts`:
+  Paper Ivory `#F6F4EC` and Graphite Ink `#1C1C1A` (were `#EDE8DA`/`#211F1B`).
+  This is the DESIGN_SYSTEM.md-locked palette; affects all screens consistently.
+- `components/record/ScorePanel.tsx`: **new.** Manuscript notation panel (staff +
+  clef + noteheads in the locked palette) with the "now playing" system washed
+  in amber. Placeholder until real OCR page crops.
+- `components/record/RecordingPanel.tsx`: **rebuilt** to the moodboard Deep-Spruce
+  surface — bow/tempo arc (amber dot, animates while listening), serif state line
+  ("Ready when you are" / "Listening…" / "Take a listen"), tempo readout with ±
+  steppers + a needle dial + meter readout, controls row (metronome toggle / red
+  mic record / bookmark), a "set tempo by ear" calibrate link, and the "we'll let
+  you know" footer. Phosphor icons throughout. Keeps the working `useRecorder`,
+  `VisualMetronome`, `WaveformPreview`, playback + Redo/Analyze.
+- `routes/RecordRoute.tsx`: **rebuilt** — full-bleed screen with its own top bar
+  (X close / title + movement / more), the ScorePanel, and the RecordingPanel.
+  Keeps `useScore`, tempo seeding from `bpm_hint`, calibration flow, submit→poll.
+- `App.tsx`: `/scores/:id/record` moved **out of `Layout`** so it's full-bleed
+  (no wordmark header/footer) with its own chrome.
+- `index.css`: added the `animate-bow` keyframe (offset-path arc travel).
+
+**Critique-loop fixes applied** (screenshot vs. moodboard): removed the redundant
+Layout wordmark header/footer (full-bleed now); removed an em-dash from the "Play
+at ♩=100" copy (locked-system em-dash ban); back icon → X (close), per moodboard.
+
+**Tests run:** `npm run build` → passes; `npm run lint` → clean. Rendered at
+440px via a throwaway `/demo-record` route + Playwright; verified against the
+moodboard, then the temp route was removed.
+
+**Still the old Batch-7 UI (not yet rebuilt):** the Verdict/Result screen,
+Score-capture screen. Those are the next screens in the locked sequence.
+
+## 2026-07-28 — Home / Library screen — built to the locked design system
+
+**Batch:** UI (Home / Library) — approved by the user before starting, per CLAUDE.md §2. User chose the **phone-frame + bottom-tab** framing over adapting the existing web chrome.
+**Branch:** claude/next-steps-3p2zhk
+
+**What changed (all under `frontend/`):**
+- **`routes/HomeRoute.tsx`** — rewritten from the two-card placeholder into the moodboard's Home/Library screen:
+  - Serif italic greeting (time-of-day aware, name from the signed-in email, "Maia" fallback) with the "barline that breathes" mark + a round monogram avatar linking to `/account`.
+  - **Recent Sessions** card — piece title (serif), timestamp, one-line teacher's-margin verdict (amber when there's something to refine, ink when steady), chevron. "See all" → `/scores`.
+  - A **manuscript rule** (hairline + centered diamond) separating the two sections — the "barline" motif from the moodboard.
+  - **Your Library** rows — manuscript thumbnail, title (sans), movement, "Last practiced …", and an interactive favorite star (Bruch pre-favorited; tapping toggles local state).
+- **`components/TabBar.tsx`** (new) — bottom tab bar (Library · Record · Insights · Profile), Phosphor icons, `NavLink` active state in amber (filled icon).
+- **`components/AppShell.tsx`** (new) — phone-width (`max-w-[440px]`) column framed against the page ground with the tab bar pinned (`sticky bottom-0`); calls `useMe()` like `Layout`. The tabbed surfaces (Home, Scores list, Insights, Account) now render inside this shell.
+- **`components/ui/ScoreThumb.tsx`** (new) — self-contained engraved-paper thumbnail (staff + abstracted clef + deterministic noteheads) in the locked palette, standing in until real OCR page-crops are wired.
+- **`lib/demo.ts`** (new) — built-in demo repertoire (Dvořák, Bach, Bruch, Saint-Saëns, Mozart) for Recent Sessions + Library, per the "demo-mode" note in `DESIGN_SYSTEM.md`. Isolated so it swaps cleanly for the real `GET /v1/sessions` + `/v1/library` queries.
+- **`App.tsx`** — split routing: tabbed surfaces under `AppShell`, full-viewport flow screens (capture, record, result, showcase) keep the plain `Layout`. Added an `/insights` stub.
+- **`package.json`** — added `@phosphor-icons/react` (DESIGN_SYSTEM mandates Phosphor, "never Lucide"; existing screens still use Lucide and will migrate as they're rebuilt).
+
+**Why:** First screen of the fresh UI rebuild against the locked "engraver's manuscript" system. Home is the anchor screen and sets the tab-nav + phone-frame pattern the Recording/Verdict screens will inherit.
+
+**Tests run / verification:**
+- `npm run build` → **passes**; `npm run lint` → **clean**.
+- Screenshotted the running Home via a throwaway `/preview/home` route (auth-free) + Playwright (playwright-core against the repo's chromium) at 430×932, and ran the DESIGN_SYSTEM critique loop vs. the reference image. Two rounds: added the manuscript rule and tuned the greeting scale. Temp route, screenshot script, and playwright-core all removed before commit (only the Phosphor dep remains in the diff).
+
+**DoD status — honest:**
+- ✅ Home/Library visual matches the moodboard (greeting+avatar, Recent Sessions with amber verdicts, Your Library with thumbnails + favorite, bottom tab bar).
+- ✅ Favorite star is interactive; tab bar active state works on real routes.
+- ⚠️ **Data is demo/seed, not live** — no `GET /v1/sessions`/`/v1/library` endpoints yet, and Home is auth-gated (Supabase keys still pending, same caveat as Batches 5–7), so the signed-in screen isn't exercised end-to-end here.
+- ⚠️ Avatar is a monogram, not a photo (no user-photo source yet). Library thumbnails are stylized placeholders, not real score crops.
+
+**Known side effects / watch:** Moving `/account` + `/scores` under `AppShell` removes their top web header in favor of the tab bar — intended. Existing flow screens still use Lucide icons; the app now ships both icon sets until they're migrated (minor bundle cost).
+
+**Rollback:** additive + isolated. `git revert <SHA>` restores the placeholder Home and the all-`Layout` routing; new files (`TabBar`, `AppShell`, `ScoreThumb`, `demo.ts`) are unreferenced after that.
+
+## 2026-07-24 — Batch 7 — recording + analysis/verdict flow (web)
+
+**Batch:** Batch 7 (UI — approved by the user before starting, per CLAUDE.md §2)
+**Branch:** claude/next-steps-3p2zhk
+
+**What changed (all under `frontend/`):**
+- **Record side** (`routes/RecordRoute.tsx`): loads the score, seeds tempo from `bpm_hint`, orchestrates tempo/calibration/metronome + the recording panel, submits, and navigates to `/analyses/:id`.
+  - `components/record/TempoSelector.tsx` — BPM input, ± steppers, tap-tempo, "play it instead" (calibrate).
+  - `components/record/CalibrationFlow.tsx` — 2-sec clip → `POST /v1/calibration`; renders the backend's message + octave alternates + retry (all 12 edge-case codes come from the server).
+  - `components/record/RecordingPanel.tsx` — MediaRecorder record → live waveform → 5-min cap + 4:30 warning → playback → redo/Analyze, in the spruce environment surface.
+  - `components/record/MetronomeToggle.tsx` (off/visual; haptic hidden on web) + `VisualMetronome.tsx` — full-screen amber border flash driven by `useVisualMetronome` (`audioContext.currentTime` lookahead scheduler, **plays no sound**, so it adds nothing to the recording).
+  - `components/ui/WaveformPreview.tsx` — canvas waveform from the recorder's AnalyserNode.
+- **Result side** (`routes/ResultRoute.tsx`): `useAnalysisPolling` (2s interval, pauses on tab blur, stops at terminal status) → "Analyzing… ~12s" → the payoff.
+  - `components/result/VerdictCard.tsx` — the headline verdict (largest text, coloured by direction).
+  - `components/result/AnnotatedScore.tsx` — per-measure colour boxes (green/amber/orange/oxblood) + legend, horizontally scrollable.
+  - `components/result/TrendChart.tsx` — **on-brand inline SVG** (no chart lib): amber line, dashed zero, faint grid, emphasised peak.
+  - `components/result/PerNoteDetail.tsx` — collapsible per-onset ms deltas.
+- **Hooks/lib:** `useRecorder.ts` (MediaRecorder + timer + analyser + 5-min cap), `useVisualMetronome.ts`, `hooks/useRecordingApi.ts` (`useScore`, `useAnalysisPolling`, `useCalibration`, `useAnalysisSubmit`), `lib/upload.ts` (`uploadAudioClip`), `lib/analysis.ts` (AnalysisResult mirror + band colours/labels).
+
+**Why:** Batch 7 is the core loop and the app's signature moment — record against a score, get the tempo verdict. `/v1/analyses` is async, so this batch uses the polling loop (unlike the synchronous score OCR in Batch 6).
+
+**Tests run / verification:**
+- `npm run build` → **passes**; `npm run lint` → **clean** (fixed two `set-state-in-effect` findings: metronome flash now re-triggers via a `key`-ed CSS animation; tempo seeds during render).
+- Rendered the full record setup + verdict screen via a throwaway `/demo-rr` route (mock AnalysisResult) + Playwright: tempo/metronome card, spruce record panel, verdict headline, annotated per-measure boxes, drift trend chart, and per-note detail all render on-brand. Demo removed before commit.
+
+**DoD status — honest:**
+- ✅ Record + calibration + visual metronome + submit + result screen (VerdictCard/AnnotatedScore/TrendChart/PerNoteDetail) built and rendered.
+- ✅ Polling pauses on tab blur; graceful `alignment_failed`/`no_onsets` and `failed`/`failed_recoverable` states.
+- ✅ Calibration surfaces the server's edge-case messages + octave picker (well over 5 of the 12).
+- ⚠️ **True end-to-end (real mic → MediaRecorder → upload → analysis → poll → render) is NOT verified** — no mic/Supabase/backend here. Same storage-handshake caveat as Batch 6 (signed read URL for the audio). iOS Safari MediaRecorder (14.3+) needs a device.
+- Not tagging `batch-7-done` until the live loop is confirmed.
+
+**Known side effects / watch:** MediaRecorder emits `audio/webm`; the backend decodes via librosa→ffmpeg (needs ffmpeg in the deploy image — already flagged in DECISIONS from Batch 4). Bundle is ~740KB (unchanged concern).
+
+**Rollback:** additive under `frontend/`. `git revert <SHA>` restores the Batch 5 stub Record/Result routes.
+
+## 2026-07-24 — Batch 6 — score capture flow (web)
+
+**Batch:** Batch 6 (UI — approved by the user before starting, per CLAUDE.md §2; "upload-first, camera light")
+**Branch:** claude/next-steps-3p2zhk
+
+**What changed (all under `frontend/`):**
+- `routes/ScoreCaptureRoute.tsx`: rewritten as the capture state machine — `capture → processing → edit → saved` (+ `error`). Orchestrates upload, the low-confidence banner, the editor, and save.
+- `components/score/ImageUploader.tsx`: primary input — file picker with `capture="environment"` (rear camera on mobile, dialog on desktop) + drag-and-drop.
+- `components/score/CameraCapture.tsx`: light `getUserMedia({facingMode:"environment"})` live camera with a 4-corner guide, mounted only on a user tap (iOS gesture rule); falls back to the uploader on denial/unavailability.
+- `components/score/ScoreEditor.tsx`: editable measures/notes — tap a note to fix pitch (validated against the backend pitch regex) or duration, toggle rest/tie, add/delete notes.
+- `components/score/ScorePreview.tsx`: compact read-only render (MVP list view; Verovio engraving stays V2 per spec).
+- `components/score/ScoreSaveBar.tsx`: sticky title + Save.
+- `components/ui/ProgressBar.tsx` (+ `intempo-progress` keyframe in `index.css`): indeterminate bar for the long OCR request.
+- `hooks/useScoreUpload.ts`: `useScoreUpload` (normalize image → presigned PUT → signed read URL → POST /v1/scores) and `useScoreSave` (PATCH /v1/scores/:id). `lib/image.ts`: `toUploadBlob` — `createImageBitmap({imageOrientation:"from-image"})` → canvas re-encode, which bakes in EXIF rotation and strips the tag (the iOS pitfall) and downscales the long edge to 2000px. `lib/score.ts`: TS mirror of `ScoreJson` + duration/pitch helpers.
+
+**Why:** Batch 6 turns a photo into an editable, saved score — the front half of the product loop. Our `POST /v1/scores` is synchronous (OCR returns inline), so there's no polling: the UI shows a "reading your score" state on one long request.
+
+**Tests run / verification:**
+- `npm run build` → **passes**; `npm run lint` → **clean**.
+- Rendered the full capture + editor UI via a throwaway public `/demo-capture` route (mock parsed score) + Playwright: the dropzone, low-confidence banner, note chips with the inline pitch/duration editor, and the save bar all render on-brand. Demo route removed before commit.
+
+**DoD status — honest:**
+- ✅ Capture UI, parsed-score editor, note editing, low-confidence banner, and save flow built + rendered.
+- ✅ EXIF orientation stripped client-side; image downscaled before upload.
+- ✅ `<input capture="environment">` fallback + a light getUserMedia camera.
+- ⚠️ **True end-to-end (real upload → OCR → edit → save → reload) is NOT verified** — needs live Supabase keys + storage RLS, absent here. Also flagged: the upload→/v1/scores handshake assumes the frontend can mint a signed *read* URL (`supabase.storage…createSignedUrl`) the backend can fetch; if the score-images bucket/RLS doesn't allow that, either the bucket policy or /v1/scores (accept object_key + sign server-side) needs a small adjustment. Verify when wiring real keys.
+- ⚠️ iPhone Safari camera test needs a real device.
+- Not tagging `batch-6-done` until the live path is confirmed.
+
+**Deferred (per §1.3):** crop / brightness-contrast sliders → V1.1; Verovio notation → V2; Cypress E2E → with live Supabase.
+
+**Rollback:** additive under `frontend/`. `git revert <SHA>` restores the Batch 5 stub `ScoreCaptureRoute`; nothing else depends on the new files.
+
+## 2026-07-24 — Batch 5 — web frontend foundation (design system + shell)
+
+**Batch:** Batch 5 (UI — approved by the user before starting, per CLAUDE.md §2)
+**Branch:** claude/next-steps-3p2zhk
+
+**What changed (all under `frontend/`):**
+- **Design tokens locked** (the "manuscript" direction from the approved prototype — supersedes spec §5's placeholder cream/gold palette; see DECISIONS): `src/styles/tokens.ts` (TS source of truth), `tailwind.config.js` (theme mapped to CSS vars), `src/index.css` (CSS vars + base + focus ring + reduced-motion). Playfair Display embedded via `@fontsource`; body = system SF as the Suisse Int'l stand-in.
+- **UI primitives** built to the tokens: `components/ui/Button.tsx` (primary/ghost/stop + button-in-button trailing icon), `Card.tsx` (optional double-bezel), `Eyebrow.tsx`, `Badge.tsx` (verdict tones, quarantined). Plus `components/Wordmark.tsx` (barline-that-breathes).
+- **Shell:** `components/Layout.tsx` (header + main + footer), `Header.tsx` (wordmark + auth state), `ProtectedRoute.tsx` (redirects to /login), `StubPage.tsx`.
+- **Routing** (React Router v7) in `App.tsx`: `/`, `/login`, `/scores`, `/scores/new`, `/scores/:id`, `/scores/:id/record`, `/analyses/:id`, `/account`, plus a public `/showcase` for design review and a `*` → `/` catch-all. Protected routes gated by auth.
+- **Auth + data plumbing:** `lib/supabase.ts` (client; `supabaseConfigured` guard so the app builds/runs without keys), `hooks/useAuth.ts` (session listener + magic-link sign-in/out via Zustand `stores/authStore.ts`), `lib/api.ts` (added `authedFetch` attaching the Supabase JWT), `hooks/useApi.ts` (`useMe` via tanstack-query, hydrates the store), `lib/analytics.ts` (PostHog wrapper, no-op without a key).
+- Route stubs (`routes/*Route.tsx`) styled with the primitives; `index.html` title/description/theme-color set; `.env.example` added.
+- Deps added: react-router-dom, @supabase/supabase-js, @tanstack/react-query, zustand, lucide-react, @fontsource/playfair-display, posthog-js.
+
+**Why:** Batch 5 is the frontend shell + the locked design system every later UI batch builds on. Auth/routing/data plumbing structured per spec §5; the visual language is the manuscript direction the user signed off on across the prototype iterations.
+
+**Tests run / verification:**
+- `npm run build` → **passes** (tsc -b + vite build; one >500KB bundle warning — expected with supabase+posthog+react-query, deferred per "don't optimize early").
+- `npm run lint` → **clean**.
+- Rendered via `vite preview` + Playwright: captured `/showcase` (palette, Playfair type, buttons, verdict badges) and `/login` (magic-link form + honest "auth not configured" notice, protected `/`→`/login` redirect working). Both faithful to the design system.
+
+**DoD status — honest:**
+- ✅ All stubbed routes accessible, no 404s (catch-all redirect).
+- ✅ Header shows the signed-in email; logout clears session; refresh persists (Supabase-managed) — built and type-correct.
+- ✅ Design tokens established and rendered.
+- ⚠️ **Magic-link login end-to-end + the E2E happy-path test are NOT verified** — this container has no Supabase project/keys and no redirect-URL config. Auth is fully wired and compiles; it needs `VITE_SUPABASE_*` + a dashboard redirect allow-list to run live. Not tagging `batch-5-done` until that's confirmed locally.
+
+**Known side effects / watch:**
+- Suisse Int'l is a system-SF stand-in until licensed (one line in tokens to swap).
+- 711KB JS bundle — fine for MVP; code-split before launch.
+- No frontend automated tests yet (CI runs `npm run build` only); the login E2E test lands with the Supabase wiring.
+
+**Rollback:** additive under `frontend/` plus a deps bump. `git revert <SHA>` restores the Batch 0 scaffold; backend is untouched.
+
+## 2026-07-24 — Batch 4 — async analysis API + calibration (BackgroundTasks)
+
+**Batch:** Batch 4
+**Branch:** claude/next-steps-3p2zhk
+
+**What changed:**
+- `backend/app/workers/analysis_runner.py` + `workers/__init__.py`: **new.** `run_analysis(analysis_id)` — a **sync** function (FastAPI runs sync background tasks in a threadpool, so the CPU-bound `analyze()` never blocks the event loop — the #1 Batch 4 pitfall, handled without `run_in_executor`). Fetches the row → `processing` → downloads audio → loads the score → runs `analyze()` → writes `done` + `result_json` + `alignment_quality` + `finished_at`. Failures (audio unavailable, internal) → `status='failed'` + `failure_reason`, never a silent hang. Body is Celery-shaped for a mechanical Phase-2 migration. Also `sweep_stuck_analyses()` — marks `queued`/`processing` rows older than 10 min `failed_recoverable`.
+- `backend/app/routers/analyses.py`: **new.** `POST /v1/analyses` (validates audio_url is the caller's audio-uploads URL + score ownership, inserts `queued`, enqueues `run_analysis` via `BackgroundTasks`, returns `202 {analysis_id, status:queued}`) and `GET /v1/analyses/:id` (owner-scoped poll).
+- `backend/app/services/calibration.py`: **new.** Pure `calibrate(y, sr) -> CalibrationResult` implementing the §4 edge cases (too short / too quiet / too few onsets / inconsistent IOIs / out of range / too many onsets / octave-ambiguity alternates / ok). HTTP-free so every branch is unit-tested against a synthesized clip.
+- `backend/app/routers/calibration.py`: **new.** `POST /v1/calibration` — thin wrapper; returns `200` with `ok:false + code + message` for expected rejections (a too-quiet clip is a normal outcome the UI toasts, not an HTTP error).
+- `backend/app/services/audio.py`: added `load_audio_bytes()` (decode an in-memory storage blob via a temp file). `backend/app/services/analysis.py`: `analyze()` now also accepts a preloaded `(waveform, sr)` tuple so the worker decodes once instead of twice.
+- `backend/config.toml` + `services/audio_config.py`: added calibration `min_peak_dbfs` / `min_rms_dbfs` / `octave_ambiguity_threshold` to support the edge cases.
+- `backend/app/main.py`: registered the two routers; converted startup to a `lifespan` handler that runs the stuck-job sweeper on boot (replaces the deprecated `on_event`).
+- `backend/app/tests/`: **new** `test_analyses_api.py` (enqueue/validation/auth, full queued→done flow via a stateful `fake_supabase.py`, worker-failure path, sweeper) and `test_calibration.py` (edge-case branches + route). `fake_supabase.py` is a small in-memory fake of the supabase-py query surface.
+
+**Why:**
+Batch 3's `analyze()` is synchronous and CPU-bound; running it inline would block the request. Batch 4 makes the API return immediately and process in the background, pollable by id — the shape the web/mobile clients need. BackgroundTasks (not Celery) per spec §11: in-process, ships now; Celery migration is triggered later on documented latency/volume/replica criteria (the runner is already structured for that swap).
+
+**Tests run:**
+- `cd backend && uv run pytest -q` → **163 passed** (was 144; +19).
+
+**DoD status:**
+- ✅ `POST /v1/analyses` returns `analysis_id` before the analysis runs (202, enqueue is two DB calls).
+- ✅ Background task completes well under 30s (analyze <15s).
+- ✅ Polling shows `queued → processing → done` (worker writes `processing` then `done`; failures write `failed`).
+- ✅ Calibration edge cases return correct error/warning codes (see caveat).
+- ✅ Failing analyses surface `status='failed'` + reason.
+- ✅ Stuck-job sweeper recovers crashed rows on startup.
+- ⚠️ **Calibration:** the distinct *response codes* are all implemented and tested, but three of the spec's 12 rows are approximated rather than precisely detected — SNR/background-noise, "player choke" amplitude-variance, and the exact 2×/0.5× octave disambiguation. Documented; safe to refine during audio tuning.
+
+**Known side effects / things to watch:**
+- **Single replica only.** BackgroundTasks runs on whichever instance took the POST. A second replica *requires* the Celery migration (spec §11). Documented, not a bug.
+- **No retries** on transient failures (network blip fetching audio) — the user retries manually. That's the intended MVP behavior; retries are what Celery is for.
+- **Compressed audio needs ffmpeg.** `load_audio_bytes` decodes WAV/FLAC natively; the AAC/m4a the mobile client uploads needs ffmpeg in the deployed image (audioread fallback). Tests use WAV. Flagged in DECISIONS.md.
+- `alignment_failed` / `no_onsets` are stored as DB `status='done'` with the pipeline status inside `result_json` — they're *completed analyses that can't be reported*, not server failures. DB `status='failed'` is reserved for exceptions. See DECISIONS.md.
+
+**Rollback:** additive — new routers/worker/service/tests + a config + main.py wiring. `git revert <SHA>` removes it; Batches 0–3 don't import any of it.
+
+## 2026-07-24 — Batch 3 — audio analysis core (`analyze()`)
+
+**Batch:** Batch 3
+**Branch:** claude/next-steps-3p2zhk
+
+**What changed:**
+- `backend/config.toml`: **new.** All tunable audio thresholds — onset `delta`/`pre_max`/`post_max`/`wait_ms`, double-bass overrides, the tolerance bands (rushing/dragging inner/mid/outer %), rolling-trend window, alignment quality cutoffs (`warn_quality` 0.7, `broken_quality` 0.4), Sakoe-Chiba band radius, and calibration limits. Values are the spec §4 STARTING points, not tuned. Every future change to a number here is logged in `TUNING_LOG.md`.
+- `backend/app/services/audio_config.py`: **new.** `tomllib` loader → frozen dataclasses (`AudioConfig` and friends). `load_audio_config()` is `lru_cache`d; `load_audio_config_from(path)` lets tests load alternate files. Nothing in the services hard-codes a threshold — they all read config.
+- `backend/app/services/audio.py`: **new.** librosa wrapper (layer 1). `load_audio` (22.05 kHz mono, no normalization), `pre_emphasis`, `high_pass` (scipy Butterworth, double-bass mode), `detect_onsets` (`onset_detect` with config peak-pick params; `wait_ms`→frames converts the pizzicato-ring guard), `estimate_bpm` (beat_track → median-IOI fallback → None) for the §4 calibration flow.
+- `backend/app/services/alignment.py`: **new.** (layer 2) `build_timeline`/`compute_expected_onsets` walk the score into expected onset times — honoring rests (advance clock, no onset), ties (`tied_to_next` → no re-attack), and slur interior/boundary flags. `align_dtw` runs a Sakoe-Chiba-constrained `librosa.sequence.dtw` and returns a monotonic detected→expected mapping + a 0..1 quality. `apply_fuzzy_match` resolves many-to-one (extra/false-trigger) and one-to-many (missed) count mismatches. `is_alignment_broken` gates on `broken_quality`.
+- `backend/app/services/classification.py`: **new.** (layer 3) `classify_band` (asymmetric rushing/dragging bands → `on`/`slight`/`rush_drag`/`severe`), `compute_deltas` (per-note ms + %-of-beat, origin anchored on first matched note), `rolling_trend` (rush-positive rolling mean, slur interiors excluded), `generate_verdict` (longest same-direction run → BPM-phrased one-liner, never %).
+- `backend/app/services/analysis.py`: **new.** `analyze(audio_path, score, target_bpm, *, double_bass=False)` orchestrator returning a Pydantic `AnalysisResult` (`status`, `quality`, `low_confidence`, `verdict`, `per_note`, `per_measure`, `trend`, onset/miss/extra counts). Graceful `no_onsets` / `alignment_failed` statuses instead of exceptions.
+- `backend/app/tests/audio_helpers.py` + `test_audio.py` / `test_alignment.py` / `test_classification.py` / `test_analysis.py`: **new.** 37 tests. Synthetic click-track fixtures (deterministic, no WAVs in the repo) exercise onset counts (±2 DoD), expected-onset math incl. rests/ties/slurs, DTW identity + fuzzy match, band boundaries, sign convention, verdict runs, and the full pipeline (ok / no_onsets / alignment_failed, JSON serialization, <15s DoD).
+- `backend/pyproject.toml` + `uv.lock`: added `librosa>=0.11.0`, `numpy>=2.4.6`, `scipy>=1.18.0` (pulls numba, soundfile, scikit-learn).
+
+**Why:**
+Batch 3 is the app's core — turning a recording + a score into "did you rush or drag?" It's synchronous now; Batch 4 wraps it in `BackgroundTasks`. Every threshold is externalized to `config.toml` precisely because these numbers are wrong until tuned against real recordings — see the DoD note below.
+
+**Tests run:**
+- `cd backend && uv run pytest -q` → **144 passed** (was 107; +37).
+
+**DoD status — honest accounting:**
+- ✅ `analyze()` runs end-to-end on a fixture pair, well under 15s (test asserts it).
+- ✅ Output serializes cleanly (`AnalysisResult.model_dump_json()`, tested).
+- ✅ Alignment-broken path returns gracefully (`alignment_failed` / `no_onsets`, no crash).
+- ✅ All thresholds externalized to `config.toml`.
+- ⚠️ **"All 10 real fixture recordings produce reasonable verdicts (subjective ear check)" is NOT done.** That requires the six-clip corpus + a human ear (see the Batch 3 Tuning Appendix) and is deliberately deferred to the tuning loop. The current config values are the spec's untuned defaults. `TUNING_LOG.md` records this as the starting baseline. The synthetic-fixture tests prove the pipeline is *correct*, not that the *thresholds* are right.
+
+**Known side effects / things to watch:**
+- `pre_max`/`post_max=20` (~0.46s peak-pick window) merges onsets closer than ~0.46s — fine at real tempos but it means the pipeline can't resolve very fast passages until those are tuned. Surfaced here so a fast-passage bug isn't a surprise.
+- Beat math assumes `target_bpm` is quarter-notes-per-minute and a quarter = 1 beat regardless of the notated denominator; compound meters (6/8) are a documented V2 gap.
+- CI now installs librosa + numba; first `uv sync` on CI is heavier. Wheels ship native libs on linux so no apt packages needed.
+
+**Rollback:** the whole batch is additive (six new service/test files + config.toml + a dep bump). `git revert <SHA>` removes it cleanly; nothing in Batches 0–2 imports these modules yet.
+
 ## 2026-04-27 22:40 — Batch 2 — lock provider chain, cache real responses, e2e verification
 
 **Batch:** Batch 2

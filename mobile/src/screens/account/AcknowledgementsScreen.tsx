@@ -1,0 +1,79 @@
+import { useNavigation } from '@react-navigation/native';
+import { StyleSheet, View } from 'react-native';
+
+import {
+  Card,
+  MetadataRow,
+  PageHeader,
+  ScreenContainer,
+  Text,
+} from '../../components/primitives';
+import { LICENCES } from '../../data/licences';
+import { BORDER_WIDTH, colors, spacing } from '../../design';
+
+/**
+ * The open-source work InTempo is built on.
+ *
+ * Generated from the installed tree by `scripts/generate-licences.mjs`, not
+ * typed out — a hand-kept list is wrong within a release, and a wrong
+ * attribution list is worse than none.
+ *
+ * Direct dependencies only. The transitive tree is several hundred packages,
+ * and a list nobody can read attributes nothing to anyone.
+ */
+export function AcknowledgementsScreen() {
+  const navigation = useNavigation();
+
+  return (
+    <ScreenContainer>
+      <PageHeader
+        eyebrow={`${LICENCES.length} packages`}
+        title="Acknowledgements"
+        onBack={() => navigation.goBack()}
+        backLabel="Back to profile"
+      />
+
+      <Text variant="body" color="textSecondary" style={styles.lede}>
+        InTempo is built on open-source work. The score fixtures are
+        public-domain editions; their provenance is recorded in the repository.
+      </Text>
+
+      <Card padded={false}>
+        <View style={styles.rows}>
+          {LICENCES.map((entry, index) => (
+            <View
+              key={entry.name}
+              style={[styles.row, index > 0 && styles.divided]}
+            >
+              <Text variant="button">{entry.name}</Text>
+              <MetadataRow
+                variant="metadataSmall"
+                items={[entry.version, entry.licence]}
+                style={styles.meta}
+              />
+            </View>
+          ))}
+        </View>
+      </Card>
+    </ScreenContainer>
+  );
+}
+
+const styles = StyleSheet.create({
+  lede: {
+    marginBottom: spacing.xl,
+  },
+  rows: {
+    paddingHorizontal: spacing.lg,
+  },
+  row: {
+    paddingVertical: spacing.lg,
+  },
+  divided: {
+    borderTopWidth: BORDER_WIDTH,
+    borderTopColor: colors.border,
+  },
+  meta: {
+    marginTop: spacing.xs,
+  },
+});
