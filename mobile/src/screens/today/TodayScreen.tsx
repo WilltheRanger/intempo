@@ -13,7 +13,7 @@ import {
 import { useCurrentPiece, useLibrary } from '../../data/hooks/usePieces';
 import type { Piece } from '../../data/types';
 import { spacing } from '../../design';
-import { formatTodayDate, getGreeting } from '../../lib/greeting';
+import { getGreeting } from '../../lib/greeting';
 import type { TabScreenNavigation } from '../../navigation/types';
 
 /** How many pieces the library preview shows before "See all". */
@@ -36,7 +36,7 @@ export function TodayScreen() {
 
   return (
     <ScreenContainer>
-      <PageHeader eyebrow={formatTodayDate()} title={getGreeting()} />
+      <PageHeader title={getGreeting()} />
 
       <ContinueSection
         piece={currentPiece.data ?? null}

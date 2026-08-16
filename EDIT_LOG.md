@@ -6,6 +6,24 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-16 00:31 — Today screen — final refinement pass (golden screen)
+
+**Batch:** Frontend rebuild, phase 3 sign-off.
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`
+
+**What changed:** polish only — no new visual patterns, no redesign. Date eyebrow removed from Today; top spacing rebalanced. Featured card 318→298pt (6.3%) via tighter internal vertical spacing (horizontal gutters left alone so the title doesn't crowd the border). Library titles 20→19pt, which lets "60 Studies for the Violin, Op. 45" set on one line. Library thumbnails standardised to a fixed 56×40 box, `cover` + `contentPosition: center`, centred against the text block. `textSecondary` and `textTertiary` darkened centrally. New `sectionAction` type token (13pt sans regular) so "See all" keeps the gold but stops competing with the section heading.
+
+**Real bug fixed:** Today's scroll content sat behind the tab bar. `ScreenContainer` had a flat 40pt bottom padding against a bar that is 71pt before the home-indicator inset. First fix used `BottomTabBarHeightContext`, which turned out to report React Navigation's 49pt default rather than measuring our custom `tabBar` — still 22pt short. Now `navigation/tabBarMetrics.ts` derives the height from the same tokens `BottomTabBar` lays out with, and both consume it; the context is used only to detect whether a bar is present (absent on Practice, pushed above the tabs).
+
+**Tests run:** `npx tsc --noEmit` clean. Browser render measuring computed boxes: card 298pt, all library rows 78pt, all three thumbnails exactly 56×40, scroll content padding 94pt against a 71pt bar, last card clears by 94px, no console errors.
+
+**Known side effects / things to watch:**
+- `textTertiary` moved from ~2.6:1 to ~4.6:1 on the page background. It now clears WCAG AA for the 14pt metadata step; it previously did not.
+- `pieceTitle` at 19pt sits just below the 20–22pt the owner named, and inside the 19–22 band in their original brief. Called out for sign-off.
+- Still not run on a simulator or device — no macOS or Android emulator here.
+
+---
+
 ## 2026-08-15 06:27 — Mobile frontend rebuild — design system, primitives, Today screen
 
 **Batch:** Frontend rebuild, phases 2–3 (supersedes the Batch 9 RN scaffold plan).

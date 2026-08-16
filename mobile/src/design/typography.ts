@@ -54,13 +54,16 @@ export const typography = {
   },
   /**
    * Composition titles in lists. Medium, for presence against sans metadata.
-   * Leading is tight relative to the size so a two-line title doesn't stretch
-   * the row.
+   *
+   * 19pt rather than 20: long classical titles ("60 Studies for the Violin,
+   * Op. 45") dominated the row at 20. Still outranks the 16pt sans composer
+   * by both size and serif weight. Leading is tight relative to the size so a
+   * two-line title doesn't stretch the row.
    */
   pieceTitle: {
     fontFamily: fontFamily.serifMedium,
-    fontSize: 20,
-    lineHeight: 24,
+    fontSize: 19,
+    lineHeight: 23,
     letterSpacing: -0.2,
   },
   /** Composer names. */
@@ -84,6 +87,19 @@ export const typography = {
   /** Section labels. Sentence case — the brief rules out decorative uppercase. */
   sectionLabel: {
     fontFamily: fontFamily.sansMedium,
+    fontSize: 13,
+    lineHeight: 18,
+    letterSpacing: 0.1,
+  },
+  /**
+   * The optional action in a section header ("See all").
+   *
+   * Same size as `sectionLabel` at regular weight, so it stays legible and
+   * tappable without competing with the heading beside it or with the
+   * featured card below.
+   */
+  sectionAction: {
+    fontFamily: fontFamily.sansRegular,
     fontSize: 13,
     lineHeight: 18,
     letterSpacing: 0.1,

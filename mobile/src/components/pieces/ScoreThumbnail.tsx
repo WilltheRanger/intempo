@@ -46,6 +46,9 @@ export function ScoreThumbnail({
         style as StyleProp<ImageStyle>,
       ]}
       contentFit="cover"
+      // Pinned explicitly so every row crops from the same place regardless of
+      // the source image's aspect ratio. `cover` never distorts the notation.
+      contentPosition="center"
       transition={motion.fast}
       accessible={false}
     />

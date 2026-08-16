@@ -15,9 +15,13 @@ import {
   colors,
   ICON_SIZE,
   ICON_STROKE_WIDTH,
-  MIN_TOUCH_TARGET,
   spacing,
 } from '../design';
+import {
+  TAB_BAR_MIN_PADDING_BOTTOM,
+  TAB_BAR_PADDING_TOP,
+  TAB_BAR_ROW_HEIGHT,
+} from './tabBarMetrics';
 import type { TabParamList } from './types';
 
 const TAB_ICONS: Record<keyof TabParamList, LucideIcon> = {
@@ -45,7 +49,7 @@ export function BottomTabBar({
     <View
       style={[
         styles.bar,
-        { paddingBottom: Math.max(insets.bottom, spacing.md) },
+        { paddingBottom: Math.max(insets.bottom, TAB_BAR_MIN_PADDING_BOTTOM) },
       ]}
     >
       {state.routes.map((route, index) => {
@@ -99,13 +103,13 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bg,
     borderTopWidth: BORDER_WIDTH,
     borderTopColor: colors.border,
-    paddingTop: spacing.md,
+    paddingTop: TAB_BAR_PADDING_TOP,
   },
   tab: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    minHeight: MIN_TOUCH_TARGET,
+    height: TAB_BAR_ROW_HEIGHT,
     gap: spacing.xs,
   },
   label: {

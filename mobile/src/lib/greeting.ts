@@ -14,12 +14,3 @@ export function getGreeting(now: Date = new Date()): string {
   }
   return 'Good evening';
 }
-
-/** "Saturday, 15 August" — the eyebrow above the greeting. */
-export function formatTodayDate(now: Date = new Date()): string {
-  return now.toLocaleDateString(undefined, {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-  });
-}
