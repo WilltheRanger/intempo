@@ -94,7 +94,10 @@ const styles = StyleSheet.create({
     height: BANNER_HEIGHT,
   },
   body: {
-    padding: spacing.lg,
+    // Vertical is tighter than horizontal: the card needed height back, but
+    // narrowing the side gutters would crowd the title against the border.
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
   },
   composer: {
     marginTop: spacing.xs,
@@ -103,12 +106,12 @@ const styles = StyleSheet.create({
     marginTop: spacing.xs,
   },
   progress: {
-    marginTop: spacing.lg,
+    marginTop: spacing.md,
   },
   metadata: {
-    marginTop: spacing.sm,
+    marginTop: spacing.xs,
   },
   action: {
-    marginTop: spacing.lg,
+    marginTop: spacing.md,
   },
 });

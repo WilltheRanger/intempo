@@ -1,4 +1,5 @@
-import type { ReactNode } from 'react';
+import { BottomTabBarHeightContext } from '@react-navigation/bottom-tabs';
+import { useContext, type ReactNode } from 'react';
 import {
   ScrollView,
   StyleSheet,
@@ -9,6 +10,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { colors, spacing } from '../../design';
+import { useTabBarHeight } from '../../navigation/tabBarMetrics';
 
 export interface ScreenContainerProps {
   children: ReactNode;
@@ -30,19 +32,30 @@ export function ScreenContainer({
   scrollable = true,
   contentStyle,
 }: ScreenContainerProps) {
+  // The context tells us *whether* a tab bar is below us — it's absent on
+  // screens pushed above the tabs, like Practice. It does not tell us how
+  // tall ours is: with a custom `tabBar` React Navigation publishes its own
+  // 49pt default rather than measuring what we render. So take presence from
+  // the context and the height from the bar's own tokens.
+  const hasTabBar = useContext(BottomTabBarHeightContext) != null;
+  const tabBarHeight = useTabBarHeight();
+  const bottomInset = {
+    paddingBottom: spacing['2xl'] + (hasTabBar ? tabBarHeight : 0),
+  };
+
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       {scrollable ? (
         <ScrollView
           style={styles.flex}
-          contentContainerStyle={[styles.content, contentStyle]}
+          contentContainerStyle={[styles.content, bottomInset, contentStyle]}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
           {children}
         </ScrollView>
       ) : (
-        <View style={[styles.flex, styles.content, contentStyle]}>
+        <View style={[styles.flex, styles.content, bottomInset, contentStyle]}>
           {children}
         </View>
       )}
@@ -63,6 +76,5 @@ const styles = StyleSheet.create({
   },
   content: {
     paddingHorizontal: SCREEN_GUTTER,
-    paddingBottom: spacing['4xl'],
   },
 });

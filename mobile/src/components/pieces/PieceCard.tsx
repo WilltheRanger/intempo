@@ -12,7 +12,15 @@ export interface PieceCardProps {
   onPress?: () => void;
 }
 
-const THUMBNAIL_SIZE = 56;
+/**
+ * Every row uses this exact box, whatever the source image's proportions.
+ *
+ * Slightly landscape rather than square: the score images are single-staff
+ * strips around 8:1, so a shorter box crops less off the sides and the
+ * notation stays recognisable without the thumbnail taking more width.
+ */
+const THUMBNAIL_WIDTH = 56;
+const THUMBNAIL_HEIGHT = 40;
 
 /**
  * A piece in a list. Compact enough to browse.
@@ -85,13 +93,15 @@ const styles = StyleSheet.create({
     gap: spacing.lg,
   },
   thumbnail: {
-    width: THUMBNAIL_SIZE,
-    height: THUMBNAIL_SIZE,
+    width: THUMBNAIL_WIDTH,
+    height: THUMBNAIL_HEIGHT,
+    // Centred against the text block so one- and two-line rows both align.
+    alignSelf: 'center',
   },
   details: {
     flex: 1,
     // Keeps short rows from collapsing tighter than the thumbnail.
-    minHeight: THUMBNAIL_SIZE,
+    minHeight: THUMBNAIL_HEIGHT,
     justifyContent: 'center',
   },
   composer: {

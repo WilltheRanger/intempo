@@ -14,10 +14,17 @@ export const colors = {
 
   /** Warm near-black. Headings and body copy. */
   textPrimary: '#14110E',
-  /** Warm gray. Composer names, supporting copy. */
-  textSecondary: '#6E6862',
-  /** Metadata, placeholders, disabled text. */
-  textTertiary: '#A39C93',
+  /**
+   * Warm gray. Composer names, supporting copy.
+   * ~6.9:1 on `bg` — clearly below primary, comfortably readable.
+   */
+  textSecondary: '#5C564D',
+  /**
+   * Metadata, placeholders, disabled text.
+   * ~4.6:1 on `bg`, which clears WCAG AA for the 14pt metadata step. The
+   * previous value sat near 2.6:1 and read as washed out.
+   */
+  textTertiary: '#7A7367',
 
   /** Default 1px border on cards, dividers, inputs. */
   border: '#E6E2DA',
