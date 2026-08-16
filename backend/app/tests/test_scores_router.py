@@ -413,3 +413,141 @@ def test_delete_with_dependent_analyses_returns_409(
     )
     assert res.status_code == 409
     assert "analyses" in res.json()["detail"]
+
+
+
+# ---- Signed download URLs -------------------------------------------------
+#
+# `scores.source_image_url` holds the signed *upload* URL, which stops working
+# minutes after the upload. A stored score therefore has no displayable image
+# until one is signed fresh on read — which is why every thumbnail in the app
+# is still fixture artwork.
+
+
+def _install_storage(client: MagicMock, *, signed=None, raises: bool = False) -> MagicMock:
+    """Attach storage behaviour to a client already built by `_install_supabase`."""
+    bucket = client.storage.from_.return_value
+    if raises:
+        bucket.create_signed_urls.side_effect = RuntimeError("storage unreachable")
+    else:
+        bucket.create_signed_urls.return_value = signed if signed is not None else []
+    return client
+
+
+def test_object_key_recovered_from_every_url_shape() -> None:
+    """Signing needs the object key, and the key only exists inside the URL."""
+    key = "11111111-1111-1111-1111-111111111111/abc.jpg"
+    for prefix in (
+        "/storage/v1/object/sign/",
+        "/storage/v1/object/upload/sign/",
+        "/storage/v1/object/authenticated/",
+        "/storage/v1/object/public/",
+    ):
+        url = f"{PROJECT_HOST}{prefix}score-images/{key}?token=eyJfake"
+        assert scores_module._object_key_from(url) == key, prefix
+
+
+def test_object_key_is_none_for_a_foreign_url() -> None:
+    assert scores_module._object_key_from("https://evil.example.com/page.jpg") is None
+    assert scores_module._object_key_from(
+        f"{PROJECT_HOST}/storage/v1/object/sign/other-bucket/x/abc.jpg"
+    ) is None
+    assert scores_module._object_key_from("") is None
+
+
+def test_list_returns_a_display_url(
+    monkeypatch: pytest.MonkeyPatch,
+    client: TestClient,
+    make_token: Callable[..., str],
+) -> None:
+    user_id, score_id = uuid4(), uuid4()
+    row = _row_for(score_id, user_id)
+    supabase = _install_supabase(monkeypatch, returning_rows=[row])
+    _install_storage(
+        supabase,
+        signed=[{"path": f"{user_id}/abc.jpg", "signedUrl": "https://cdn.example/abc.jpg?token=t"}],
+    )
+
+    res = client.get("/v1/scores", headers={"Authorization": f"Bearer {make_token(sub=str(user_id))}"})
+
+    assert res.status_code == 200
+    body = res.json()[0]
+    assert body["image_url"] == "https://cdn.example/abc.jpg?token=t"
+    assert body["image_url_expires_at"] is not None
+    # The stored upload URL is still reported, unchanged and still unusable.
+    assert body["source_image_url"] == row["source_image_url"]
+    supabase.storage.from_.assert_called_with("score-images")
+
+
+def test_list_signs_the_whole_page_in_one_storage_call(
+    monkeypatch: pytest.MonkeyPatch,
+    client: TestClient,
+    make_token: Callable[..., str],
+) -> None:
+    """Forty scores must not be forty round trips."""
+    user_id = uuid4()
+    rows = [_row_for(uuid4(), user_id) for _ in range(40)]
+    supabase = _install_supabase(monkeypatch, returning_rows=rows)
+    _install_storage(supabase, signed=[])
+
+    client.get("/v1/scores", headers={"Authorization": f"Bearer {make_token(sub=str(user_id))}"})
+
+    assert supabase.storage.from_.return_value.create_signed_urls.call_count == 1
+
+
+def test_signing_failure_degrades_to_no_image(
+    monkeypatch: pytest.MonkeyPatch,
+    client: TestClient,
+    make_token: Callable[..., str],
+) -> None:
+    """A library with no thumbnails is a usable screen. A 500 is not."""
+    user_id, score_id = uuid4(), uuid4()
+    supabase = _install_supabase(monkeypatch, returning_rows=[_row_for(score_id, user_id)])
+    _install_storage(supabase, raises=True)
+
+    res = client.get("/v1/scores", headers={"Authorization": f"Bearer {make_token(sub=str(user_id))}"})
+
+    assert res.status_code == 200
+    assert res.json()[0]["image_url"] is None
+    assert res.json()[0]["image_url_expires_at"] is None
+
+
+def test_get_one_score_signs_too(
+    monkeypatch: pytest.MonkeyPatch,
+    client: TestClient,
+    make_token: Callable[..., str],
+) -> None:
+    user_id, score_id = uuid4(), uuid4()
+    supabase = _install_supabase(monkeypatch, returning_row=_row_for(score_id, user_id))
+    _install_storage(
+        supabase,
+        # Supabase sometimes echoes the bucket back on `path`; that must not
+        # stop the URL matching the key we asked for.
+        signed=[{"path": f"score-images/{user_id}/abc.jpg", "signedUrl": "https://cdn.example/one.jpg"}],
+    )
+
+    res = client.get(
+        f"/v1/scores/{score_id}",
+        headers={"Authorization": f"Bearer {make_token(sub=str(user_id))}"},
+    )
+
+    assert res.status_code == 200
+    assert res.json()["image_url"] == "https://cdn.example/one.jpg"
+
+
+def test_an_entry_reporting_an_error_is_skipped(
+    monkeypatch: pytest.MonkeyPatch,
+    client: TestClient,
+    make_token: Callable[..., str],
+) -> None:
+    user_id, score_id = uuid4(), uuid4()
+    supabase = _install_supabase(monkeypatch, returning_rows=[_row_for(score_id, user_id)])
+    _install_storage(
+        supabase,
+        signed=[{"path": f"{user_id}/abc.jpg", "error": "Object not found", "signedUrl": None}],
+    )
+
+    res = client.get("/v1/scores", headers={"Authorization": f"Bearer {make_token(sub=str(user_id))}"})
+
+    assert res.status_code == 200
+    assert res.json()[0]["image_url"] is None

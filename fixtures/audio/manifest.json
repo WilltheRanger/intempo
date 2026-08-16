@@ -1,0 +1,939 @@
+{
+  "_comment": "The Batch 3 tuning corpus. See README.md. Edit target_bpm and score to match what was actually played — a grid that doesn't match the take is real arithmetic about the wrong thing.",
+  "clips": [
+    {
+      "id": "01_detache_clean",
+      "file": "01_detache_clean.wav",
+      "label": "Détaché — clean",
+      "target_bpm": 60,
+      "double_bass": true,
+      "expect": "Ground truth. Deviations should sit inside ±15 ms before any other clip matters.",
+      "score": {
+        "time_signature": "4/4",
+        "key_signature": null,
+        "tempo_marking": null,
+        "bpm_hint": 60,
+        "clef": "bass",
+        "measures": [
+          {
+            "measure_number": 1,
+            "notes": [
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              },
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              },
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              },
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              }
+            ],
+            "slurs": []
+          },
+          {
+            "measure_number": 2,
+            "notes": [
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              },
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              },
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              },
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              }
+            ],
+            "slurs": []
+          },
+          {
+            "measure_number": 3,
+            "notes": [
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              },
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              },
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              },
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              }
+            ],
+            "slurs": []
+          },
+          {
+            "measure_number": 4,
+            "notes": [
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              },
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              },
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              },
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              }
+            ],
+            "slurs": []
+          },
+          {
+            "measure_number": 5,
+            "notes": [
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              },
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              },
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              },
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              }
+            ],
+            "slurs": []
+          },
+          {
+            "measure_number": 6,
+            "notes": [
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              },
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              },
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              },
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              }
+            ],
+            "slurs": []
+          },
+          {
+            "measure_number": 7,
+            "notes": [
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              },
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              },
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              },
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              }
+            ],
+            "slurs": []
+          },
+          {
+            "measure_number": 8,
+            "notes": [
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              },
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              },
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              },
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              }
+            ],
+            "slurs": []
+          }
+        ],
+        "repeats": [],
+        "ocr_confidence": 1.0,
+        "notes_to_human": "Hand-written tuning fixture, not OCR output."
+      }
+    },
+    {
+      "id": "02_detache_rushing",
+      "file": "02_detache_rushing.wav",
+      "label": "Détaché — rushing",
+      "target_bpm": 60,
+      "double_bass": true,
+      "expect": "Count correct; deviations drifting increasingly negative across the 8 bars.",
+      "score": {
+        "time_signature": "4/4",
+        "key_signature": null,
+        "tempo_marking": null,
+        "bpm_hint": 60,
+        "clef": "bass",
+        "measures": [
+          {
+            "measure_number": 1,
+            "notes": [
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              },
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              },
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              },
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              }
+            ],
+            "slurs": []
+          },
+          {
+            "measure_number": 2,
+            "notes": [
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              },
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              },
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              },
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              }
+            ],
+            "slurs": []
+          },
+          {
+            "measure_number": 3,
+            "notes": [
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              },
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              },
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              },
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              }
+            ],
+            "slurs": []
+          },
+          {
+            "measure_number": 4,
+            "notes": [
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              },
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              },
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              },
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              }
+            ],
+            "slurs": []
+          },
+          {
+            "measure_number": 5,
+            "notes": [
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              },
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              },
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              },
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              }
+            ],
+            "slurs": []
+          },
+          {
+            "measure_number": 6,
+            "notes": [
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              },
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              },
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              },
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              }
+            ],
+            "slurs": []
+          },
+          {
+            "measure_number": 7,
+            "notes": [
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              },
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              },
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              },
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              }
+            ],
+            "slurs": []
+          },
+          {
+            "measure_number": 8,
+            "notes": [
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              },
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              },
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              },
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              }
+            ],
+            "slurs": []
+          }
+        ],
+        "repeats": [],
+        "ocr_confidence": 1.0,
+        "notes_to_human": "Hand-written tuning fixture, not OCR output."
+      }
+    },
+    {
+      "id": "03_detache_dragging",
+      "file": "03_detache_dragging.wav",
+      "label": "Détaché — dragging",
+      "target_bpm": 60,
+      "double_bass": true,
+      "expect": "Count correct; deviations drifting increasingly positive across the 8 bars.",
+      "score": {
+        "time_signature": "4/4",
+        "key_signature": null,
+        "tempo_marking": null,
+        "bpm_hint": 60,
+        "clef": "bass",
+        "measures": [
+          {
+            "measure_number": 1,
+            "notes": [
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              },
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              },
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              },
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              }
+            ],
+            "slurs": []
+          },
+          {
+            "measure_number": 2,
+            "notes": [
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              },
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              },
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              },
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              }
+            ],
+            "slurs": []
+          },
+          {
+            "measure_number": 3,
+            "notes": [
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              },
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              },
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              },
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              }
+            ],
+            "slurs": []
+          },
+          {
+            "measure_number": 4,
+            "notes": [
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              },
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              },
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              },
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              }
+            ],
+            "slurs": []
+          },
+          {
+            "measure_number": 5,
+            "notes": [
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              },
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              },
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              },
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              }
+            ],
+            "slurs": []
+          },
+          {
+            "measure_number": 6,
+            "notes": [
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              },
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              },
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              },
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              }
+            ],
+            "slurs": []
+          },
+          {
+            "measure_number": 7,
+            "notes": [
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              },
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              },
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              },
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              }
+            ],
+            "slurs": []
+          },
+          {
+            "measure_number": 8,
+            "notes": [
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              },
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              },
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              },
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              }
+            ],
+            "slurs": []
+          }
+        ],
+        "repeats": [],
+        "ocr_confidence": 1.0,
+        "notes_to_human": "Hand-written tuning fixture, not OCR output."
+      }
+    },
+    {
+      "id": "04_slurred",
+      "file": "04_slurred.wav",
+      "label": "Slurred",
+      "target_bpm": 60,
+      "double_bass": true,
+      "expect": "Expected to miss onsets inside slurs. Record the failure; don't tune it away in v1.",
+      "score": {
+        "time_signature": "4/4",
+        "key_signature": null,
+        "tempo_marking": null,
+        "bpm_hint": 60,
+        "clef": "bass",
+        "measures": [
+          {
+            "measure_number": 1,
+            "notes": [
+              {
+                "pitch": "E2",
+                "duration": "eighth"
+              },
+              {
+                "pitch": "E2",
+                "duration": "eighth"
+              },
+              {
+                "pitch": "E2",
+                "duration": "eighth"
+              },
+              {
+                "pitch": "E2",
+                "duration": "eighth"
+              },
+              {
+                "pitch": "E2",
+                "duration": "eighth"
+              },
+              {
+                "pitch": "E2",
+                "duration": "eighth"
+              },
+              {
+                "pitch": "E2",
+                "duration": "eighth"
+              },
+              {
+                "pitch": "E2",
+                "duration": "eighth"
+              }
+            ],
+            "slurs": [
+              {
+                "start_note_index": 0,
+                "end_note_index": 3
+              },
+              {
+                "start_note_index": 4,
+                "end_note_index": 7
+              }
+            ]
+          },
+          {
+            "measure_number": 2,
+            "notes": [
+              {
+                "pitch": "E2",
+                "duration": "eighth"
+              },
+              {
+                "pitch": "E2",
+                "duration": "eighth"
+              },
+              {
+                "pitch": "E2",
+                "duration": "eighth"
+              },
+              {
+                "pitch": "E2",
+                "duration": "eighth"
+              },
+              {
+                "pitch": "E2",
+                "duration": "eighth"
+              },
+              {
+                "pitch": "E2",
+                "duration": "eighth"
+              },
+              {
+                "pitch": "E2",
+                "duration": "eighth"
+              },
+              {
+                "pitch": "E2",
+                "duration": "eighth"
+              }
+            ],
+            "slurs": [
+              {
+                "start_note_index": 0,
+                "end_note_index": 3
+              },
+              {
+                "start_note_index": 4,
+                "end_note_index": 7
+              }
+            ]
+          },
+          {
+            "measure_number": 3,
+            "notes": [
+              {
+                "pitch": "E2",
+                "duration": "eighth"
+              },
+              {
+                "pitch": "E2",
+                "duration": "eighth"
+              },
+              {
+                "pitch": "E2",
+                "duration": "eighth"
+              },
+              {
+                "pitch": "E2",
+                "duration": "eighth"
+              },
+              {
+                "pitch": "E2",
+                "duration": "eighth"
+              },
+              {
+                "pitch": "E2",
+                "duration": "eighth"
+              },
+              {
+                "pitch": "E2",
+                "duration": "eighth"
+              },
+              {
+                "pitch": "E2",
+                "duration": "eighth"
+              }
+            ],
+            "slurs": [
+              {
+                "start_note_index": 0,
+                "end_note_index": 3
+              },
+              {
+                "start_note_index": 4,
+                "end_note_index": 7
+              }
+            ]
+          },
+          {
+            "measure_number": 4,
+            "notes": [
+              {
+                "pitch": "E2",
+                "duration": "eighth"
+              },
+              {
+                "pitch": "E2",
+                "duration": "eighth"
+              },
+              {
+                "pitch": "E2",
+                "duration": "eighth"
+              },
+              {
+                "pitch": "E2",
+                "duration": "eighth"
+              },
+              {
+                "pitch": "E2",
+                "duration": "eighth"
+              },
+              {
+                "pitch": "E2",
+                "duration": "eighth"
+              },
+              {
+                "pitch": "E2",
+                "duration": "eighth"
+              },
+              {
+                "pitch": "E2",
+                "duration": "eighth"
+              }
+            ],
+            "slurs": [
+              {
+                "start_note_index": 0,
+                "end_note_index": 3
+              },
+              {
+                "start_note_index": 4,
+                "end_note_index": 7
+              }
+            ]
+          }
+        ],
+        "repeats": [],
+        "ocr_confidence": 1.0,
+        "notes_to_human": "Hand-written tuning fixture, not OCR output."
+      }
+    },
+    {
+      "id": "05_open_e_long",
+      "file": "05_open_e_long.wav",
+      "label": "Open E — 2s",
+      "target_bpm": 60,
+      "double_bass": true,
+      "expect": "One onset. Tests whether low-register detection fires at all.",
+      "score": {
+        "time_signature": "2/4",
+        "key_signature": null,
+        "tempo_marking": null,
+        "bpm_hint": 60,
+        "clef": "bass",
+        "measures": [
+          {
+            "measure_number": 1,
+            "notes": [
+              {
+                "pitch": "E1",
+                "duration": "half"
+              }
+            ],
+            "slurs": []
+          }
+        ],
+        "repeats": [],
+        "ocr_confidence": 1.0,
+        "notes_to_human": "Hand-written tuning fixture, not OCR output."
+      }
+    },
+    {
+      "id": "06_pizzicato",
+      "file": "06_pizzicato.wav",
+      "label": "Pizzicato",
+      "target_bpm": 60,
+      "double_bass": true,
+      "expect": "Should always work. Watch for over-detection from string ring.",
+      "score": {
+        "time_signature": "4/4",
+        "key_signature": null,
+        "tempo_marking": null,
+        "bpm_hint": 60,
+        "clef": "bass",
+        "measures": [
+          {
+            "measure_number": 1,
+            "notes": [
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              },
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              },
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              },
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              }
+            ],
+            "slurs": []
+          },
+          {
+            "measure_number": 2,
+            "notes": [
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              },
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              },
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              },
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              }
+            ],
+            "slurs": []
+          },
+          {
+            "measure_number": 3,
+            "notes": [
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              },
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              },
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              },
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              }
+            ],
+            "slurs": []
+          },
+          {
+            "measure_number": 4,
+            "notes": [
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              },
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              },
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              },
+              {
+                "pitch": "E2",
+                "duration": "quarter"
+              }
+            ],
+            "slurs": []
+          }
+        ],
+        "repeats": [],
+        "ocr_confidence": 1.0,
+        "notes_to_human": "Hand-written tuning fixture, not OCR output."
+      }
+    }
+  ]
+}
