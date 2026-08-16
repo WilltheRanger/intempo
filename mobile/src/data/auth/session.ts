@@ -35,6 +35,23 @@ export function getSupabaseClient(): SupabaseClient | null {
   return client;
 }
 
+/**
+ * Ends the session and clears the persisted tokens.
+ *
+ * A no-op when Supabase isn't configured, which is the state the app boots in
+ * until the env vars are set.
+ */
+export async function signOut(): Promise<void> {
+  const supabase = getSupabaseClient();
+  if (!supabase) {
+    return;
+  }
+  const { error } = await supabase.auth.signOut();
+  if (error) {
+    throw error;
+  }
+}
+
 /** Current access token, or null when signed out or unconfigured. */
 export async function getAccessToken(): Promise<string | null> {
   const supabase = getSupabaseClient();
