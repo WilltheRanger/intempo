@@ -1,5 +1,6 @@
 import { getMe } from '../api/me';
 import { getScore, listScores } from '../api/scores';
+import { getAuthAvatarUrl } from '../auth/session';
 import type { Musician, Piece, ScoreResponse } from '../types';
 import type { MusicianSource, PieceSource } from './types';
 
@@ -50,23 +51,32 @@ export const apiPieceSource: PieceSource = {
 };
 
 /**
- * The account, straight from `/v1/me`.
+ * The account, from `/v1/me` plus the auth session.
  *
- * Unlike the pieces above, nothing here is invented — the endpoint returns
- * every field the Profile screen renders.
+ * Every field but the photo comes from the endpoint. The photo has no column
+ * on `users` and no upload endpoint, so it is read from the Supabase auth
+ * user's metadata — the one avatar the app can reach without a schema change,
+ * and only present for accounts created through an OAuth provider.
  */
-function toMusician(me: Awaited<ReturnType<typeof getMe>>): Musician {
+function toMusician(
+  me: Awaited<ReturnType<typeof getMe>>,
+  avatarUrl: string | null,
+): Musician {
   return {
     id: me.id,
     email: me.email,
     tier: me.tier,
     role: me.role,
     studioId: me.studio_id,
+    avatarUrl,
   };
 }
 
 export const apiMusicianSource: MusicianSource = {
   async getMusician() {
-    return toMusician(await getMe());
+    // Both read the session that's already established; neither depends on the
+    // other, so there's no reason to wait on them in turn.
+    const [me, avatarUrl] = await Promise.all([getMe(), getAuthAvatarUrl()]);
+    return toMusician(me, avatarUrl);
   },
 };

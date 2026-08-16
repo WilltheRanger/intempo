@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import {
+  Avatar,
   Card,
   EmptyState,
   LoadingState,
@@ -73,10 +74,24 @@ export function ProfileScreen() {
     <ScreenContainer>
       <PageHeader title="Profile" />
 
-      <Card padded={false}>
+      {/*
+        The photo leads, with the address beside it — the two things that say
+        whose account this is. Everything below is what kind of account it is.
+      */}
+      <View style={styles.identity}>
+        <Avatar source={musician.avatarUrl} email={musician.email} size={64} />
+        <Text variant="body" style={styles.identityEmail} numberOfLines={2}>
+          {musician.email}
+        </Text>
+      </View>
+
+      <Card padded={false} style={styles.account}>
         <View style={styles.rows}>
-          <AccountRow label="Email" value={musician.email} divided={false} />
-          <AccountRow label="Plan" value={formatTier(musician.tier)} />
+          <AccountRow
+            label="Plan"
+            value={formatTier(musician.tier)}
+            divided={false}
+          />
           <AccountRow label="Role" value={formatRole(musician.role)} />
           {/*
             The studio's name isn't on `/v1/me` — only its id, which means
@@ -110,6 +125,18 @@ export function ProfileScreen() {
 }
 
 const styles = StyleSheet.create({
+  identity: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.lg,
+    marginTop: spacing.sm,
+  },
+  identityEmail: {
+    flexShrink: 1,
+  },
+  account: {
+    marginTop: spacing['2xl'],
+  },
   rows: {
     paddingHorizontal: spacing.lg,
   },

@@ -36,6 +36,25 @@ export function getSupabaseClient(): SupabaseClient | null {
 }
 
 /**
+ * The signed-in user's profile photo, if the identity provider supplied one.
+ *
+ * Nothing in our own schema stores an avatar, so this is the only photo the
+ * app can reach. OAuth providers write it into the auth user's metadata —
+ * Google under `picture`, most others under `avatar_url` — and accounts
+ * created with an email and password have neither. Null is the common case.
+ */
+export async function getAuthAvatarUrl(): Promise<string | null> {
+  const supabase = getSupabaseClient();
+  if (!supabase) {
+    return null;
+  }
+  const { data } = await supabase.auth.getUser();
+  const metadata = data.user?.user_metadata ?? {};
+  const url = metadata.avatar_url ?? metadata.picture;
+  return typeof url === 'string' && url ? url : null;
+}
+
+/**
  * Ends the session and clears the persisted tokens.
  *
  * A no-op when Supabase isn't configured, which is the state the app boots in

@@ -1,15 +1,17 @@
 import { useNavigation } from '@react-navigation/native';
-import { StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
 import { FeaturedPieceCard } from '../../components/pieces/FeaturedPieceCard';
 import { PieceCard } from '../../components/pieces/PieceCard';
 import {
+  Avatar,
   EmptyState,
   LoadingState,
   PageHeader,
   ScreenContainer,
   SectionHeader,
 } from '../../components/primitives';
+import { useMe } from '../../data/hooks/useMe';
 import { useCurrentPiece, useLibrary } from '../../data/hooks/usePieces';
 import type { Piece } from '../../data/types';
 import { spacing } from '../../design';
@@ -23,6 +25,7 @@ export function TodayScreen() {
   const navigation = useNavigation<TabScreenNavigation<'Today'>>();
   const currentPiece = useCurrentPiece();
   const library = useLibrary();
+  const me = useMe();
 
   function openPractice(piece: Piece) {
     navigation.navigate('Practice', { pieceId: piece.id });
@@ -36,7 +39,25 @@ export function TodayScreen() {
 
   return (
     <ScreenContainer>
-      <PageHeader title={getGreeting()} />
+      <PageHeader
+        title={getGreeting()}
+        // Held back until the account resolves: an avatar that appears as a
+        // fallback glyph and then changes into the musician's own letter is
+        // worse than one that arrives a frame late.
+        action={
+          me.data ? (
+            <Pressable
+              onPress={() => navigation.navigate('Profile')}
+              accessibilityRole="button"
+              accessibilityLabel="Your profile"
+              hitSlop={spacing.sm}
+              style={({ pressed }) => (pressed ? styles.pressed : undefined)}
+            >
+              <Avatar source={me.data.avatarUrl} email={me.data.email} />
+            </Pressable>
+          ) : null
+        }
+      />
 
       <ContinueSection
         piece={currentPiece.data ?? null}
@@ -107,6 +128,9 @@ function ContinueSection({
 }
 
 const styles = StyleSheet.create({
+  pressed: {
+    opacity: 0.6,
+  },
   section: {
     marginTop: spacing['3xl'],
   },
