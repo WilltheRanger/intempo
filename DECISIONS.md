@@ -6,6 +6,25 @@ Operating Principle #5.
 
 ---
 
+## 2026-08-16 — Patch `expo-audio` rather than fork or replace it, to get an unprocessed input source on Android
+
+**Context:** `AudioStream` is right on iOS — it opens the session in `.measurement` mode, so the system applies no input processing. On Android it opens `AudioRecord` on `MediaRecorder.AudioSource.MIC`, which is the general-purpose source and passes through the OEM's input chain. Automatic gain is the specific problem: it reshapes attack envelopes, and attack envelopes are what the onset detector measures. Android takes would have been quietly less accurate than iOS ones with nothing anywhere saying so.
+
+**Decision:** `patch-package`, on one function in `AudioStream.kt`.
+
+- The source becomes `AudioSource.UNPROCESSED` where the device reports `PROPERTY_SUPPORT_AUDIO_SOURCE_UNPROCESSED`, and `VOICE_RECOGNITION` where it does not. `MIC` is no longer used at all.
+- On top of the source, `AutomaticGainControl`, `NoiseSuppressor` and `AcousticEchoCanceler` are explicitly disabled on the capture session, because some devices attach them regardless of the source asked for. The effect objects are retained for the life of the stream and released on stop — an `AudioEffect` that is garbage collected takes its setting with it.
+
+**Alternatives considered:**
+
+- *A local Expo module replacing `AudioStream` for Android.* Rejected: it means owning `AudioRecord`, its capture loop, its buffer marshalling and its lifecycle to change one constant, and diverging from upstream's bug fixes forever.
+- *An Expo config plugin rewriting the Kotlin at prebuild (`withDangerousMod`).* Rejected: the same string-matching fragility as a patch, with none of a patch's tooling — no clean-file diff, no loud failure when upstream moves.
+- *Leaving it and documenting it.* Rejected. This was the state after the previous entry, and it puts a known measurement error into a measurement app.
+
+**Trade-off accepted:** a patched dependency has to be re-made on every `expo-audio` upgrade. `patch-package` fails the install loudly when the context no longer matches, which is the behaviour worth having — a silent revert here would mean thresholds tuned against processed audio. The patch is small, self-contained, and worth sending upstream.
+
+**Not verified.** There is no Android toolchain in this environment, so this Kotlin has never been compiled, let alone run against a microphone. What is verified is that the patch applies cleanly to a fresh `npm install`. The first real Android build is the test, and it should be a build before it is a take.
+
 ## 2026-08-16 — Capture takes as raw PCM through `AudioStream` and a web `AudioWorklet`, not through either platform's recorder
 
 **Context:** the mobile app needed real audio capture. The analysis pipeline measures note onsets — where an attack begins, to within milliseconds — and every decision below follows from that one requirement.
@@ -22,7 +41,9 @@ Operating Principle #5.
 - *`MediaRecorder` on web.* Rejected for the same reason: Opus in WebM on Chrome, AAC in MP4 on Safari, both lossy, neither optional.
 - *Resampling to 22.05 kHz in the client,* which is the rate the pipeline loads at. Rejected. It would roughly halve upload size, but it moves an irreversible step onto a browser resampler of unknown quality when the server already does it with soxr. The WAV header carries the true rate, so the server gets it right from any device. We pay bandwidth to keep the one lossy step on the machine we control.
 
-**Trade-off accepted — and one gap that is not closed:** on web the three voice-processing constraints are enforced. **On native they are not.** Turning off system AGC on iOS needs `AVAudioSession` in `.measurement` mode, which `expo-audio` does not expose; reaching it means a config plugin or a patched module. Auto gain reshapes attack envelopes, which is the shape being measured, so this is a real risk to native accuracy — not a cosmetic gap. It is recorded here rather than absorbed silently, and it should be closed before any threshold tuning is done against native recordings (see `TUNING_LOG.md`).
+**Correction, same day.** This entry originally recorded an open gap on iOS: that system auto-gain could not be turned off because `expo-audio` exposes no way to reach `AVAudioSession`'s `.measurement` mode. **That was wrong, and it was wrong because it was inferred from the JavaScript type surface rather than read from the shipped native source.** `AudioStream.start()` in `node_modules/expo-audio/ios/AudioStream.swift` opens every stream with `session.setCategory(.record, mode: .measurement)` — exactly the mode that asks the system for no input processing. iOS was already correct.
+
+Reading the Android source in the same pass turned up the gap that does exist: `AudioStream.kt` creates its `AudioRecord` on `MediaRecorder.AudioSource.MIC`, the platform's general-purpose source, which runs through whatever the OEM's input chain applies. See the entry below.
 
 Uncompressed audio also costs upload: mono 16-bit at 48 kHz is 96 KB a second, so a three-minute take is about 17 MB. Accepted as the price of a measurable signal. A 15-minute cap (`MAX_TAKE_SECONDS`) bounds memory; when it bites, the "Listening back" screen says so rather than truncating quietly.
 

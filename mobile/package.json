@@ -28,6 +28,7 @@
   "devDependencies": {
     "@expo/metro-runtime": "^57.0.10",
     "@types/react": "~19.2.2",
+    "patch-package": "^8.0.1",
     "react-dom": "^19.2.3",
     "react-native-web": "^0.21.2",
     "typescript": "~6.0.3"
@@ -38,7 +39,8 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "typecheck": "tsc --noEmit",
-    "build:web": "expo export --platform web"
+    "build:web": "expo export --platform web",
+    "postinstall": "patch-package"
   },
   "private": true
 }

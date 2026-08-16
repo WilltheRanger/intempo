@@ -6,6 +6,69 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-16 20:45 — Unprocessed input — and a correction to the entry below
+
+**Batch:** Frontend rebuild — Record + Verdict flow.
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`
+
+**The correction first.** The entry below reported an open gap: that iOS auto
+gain could not be turned off because `expo-audio` exposes no way to reach
+`AVAudioSession`'s `.measurement` mode. That is wrong. `AudioStream.start()` in
+`node_modules/expo-audio/ios/AudioStream.swift` opens every stream with
+`session.setCategory(.record, mode: .measurement)` — the exact mode that asks
+the system for no input processing. **iOS was already correct.** I inferred the
+gap from the JavaScript type surface, where `AudioMode` has no mode field,
+instead of reading the native source that was sitting in `node_modules`.
+
+**The gap that does exist is on Android.** Reading `AudioStream.kt` in the same
+pass: it opens `AudioRecord` on `MediaRecorder.AudioSource.MIC`, the platform's
+general-purpose source, which runs through whatever input chain the OEM
+applies. Automatic gain reshapes attack envelopes, and attack envelopes are
+what the onset detector measures — so Android takes would have been quietly
+less accurate than iOS ones, with nothing anywhere saying so.
+
+**What changed:**
+
+- `patches/expo-audio+57.0.3.patch` — `resolveAudioSource()` picks
+  `UNPROCESSED` where the device reports
+  `PROPERTY_SUPPORT_AUDIO_SOURCE_UNPROCESSED` and `VOICE_RECOGNITION` where it
+  doesn't; `MIC` is no longer used. On top of that,
+  `AutomaticGainControl`, `NoiseSuppressor` and `AcousticEchoCanceler` are
+  explicitly disabled on the capture session, since some devices attach them
+  regardless of the source. The effect objects are held for the life of the
+  stream and released in `stop()` — a garbage-collected `AudioEffect` takes its
+  setting with it and the processing returns mid-take.
+- `patch-package` added, wired to `postinstall`.
+- `lib/audioRecorder.ts` — dropped both `setAudioModeAsync` calls. Now that the
+  Swift has been read it's clear `AudioStream` owns the session end to end:
+  `start()` sets category and mode, `stop()` deactivates with
+  `notifyOthersOnDeactivation`. A second opinion from the JS side could only
+  race it. The module doc now states the real position on each platform.
+- `DECISIONS.md` — the old entry carries the correction rather than being
+  edited to look right, and a new entry covers patching over forking.
+
+**Tests run:** `npx tsc --noEmit` clean. Patch verified by deleting
+`node_modules/expo-audio` and reinstalling: `expo-audio@57.0.3 ✔`, and the
+patched source is present afterwards. `npx expo export` for iOS and web. The
+web capture re-run against a fake device after removing the session calls —
+still a clean WAV (PCM, mono, 16-bit, 44100/88200/2, riffSize 262180 and
+dataSize 262144 exact against 262188 bytes, 2.97 s, peak 32767).
+
+**Known side effects / things to watch:**
+
+- **The Kotlin has never been compiled.** There is no Android toolchain here.
+  What is verified is that the patch applies to a clean install; the first
+  Android build is the real test and should be run as a build before it is run
+  as a take.
+- The patch must be re-made on every `expo-audio` upgrade. `patch-package`
+  fails the install loudly when upstream moves, which is the behaviour worth
+  having here — a silent revert would mean thresholds tuned against processed
+  audio.
+- Worth sending upstream; a measurement-grade source is the right default for
+  a raw-PCM stream API.
+
+---
+
 ## 2026-08-16 20:05 — Audio capture — the record button is real
 
 **Batch:** Frontend rebuild — Record + Verdict flow.
