@@ -77,11 +77,13 @@ const FIXTURE_PIECES: FixturePiece[] = [
     thumbnail: require('../../../assets/fixtures/01_simple_printed.jpg'),
   },
   {
+    // Just added, never opened: no progress and no practice date. Exercises
+    // the "Start practice" label and the empty-progress path.
     id: 'fixture-paganini-24',
     title: 'Caprice No. 24 in A minor, Op. 1',
     composer: 'Niccolò Paganini',
     movement: null,
-    progress: 0.08,
+    progress: null,
     practicedDaysAgo: null,
     thumbnail: require('../../../assets/fixtures/03_complex_printed.jpg'),
   },
