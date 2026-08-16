@@ -97,7 +97,18 @@ export interface ScoreResponse {
   user_id: string;
   title: string;
   composer: string | null;
+  /**
+   * What was uploaded — the signed *upload* URL, expired minutes later. Never
+   * usable for display, which is what `image_url` is for.
+   */
   source_image_url: string;
+  /**
+   * A download URL signed when the score was read, valid for an hour. Null
+   * when the object key couldn't be recovered or storage is unconfigured, so
+   * every caller has to handle its absence.
+   */
+  image_url: string | null;
+  image_url_expires_at: string | null;
   score_json: ScoreJson;
   shared_with_studio: string | null;
   ocr_confidence: number | null;
@@ -209,11 +220,11 @@ export type ThumbnailSource = string | number;
 /**
  * What the UI renders. Deliberately not the same shape as `ScoreResponse`.
  *
- * `movement`, `progress`, `lastPracticedAt`, and `thumbnail` have no backing
- * column or endpoint today (see the Phase 1 audit). They are typed nullable so
- * every component is forced to handle their absence — which is exactly what
- * happens the moment the fixture source is swapped for the API source. Do not
- * make them non-nullable to simplify a component.
+ * `movement` and `progress` still have no backing column (see the Phase 1
+ * audit); `lastPracticedAt` and `thumbnail` now do. All four stay nullable,
+ * because the two that are backed can still be absent — a piece nobody has
+ * recorded has no last-practiced date, and a signed URL can fail. Do not make
+ * any of them non-nullable to simplify a component.
  */
 export interface Piece {
   id: string;
@@ -223,9 +234,9 @@ export interface Piece {
   movement: string | null;
   /** 0–1. No backing field. */
   progress: number | null;
-  /** ISO 8601. Nearest real signal would be `analyses.created_at`. */
+  /** ISO 8601, from the most recent analysis. Null until one exists. */
   lastPracticedAt: string | null;
-  /** Score images live in a private bucket with no read endpoint yet. */
+  /** A signed download URL from `/v1/scores`, or a bundled fixture image. */
   thumbnail: ThumbnailSource | null;
 }
 

@@ -39,35 +39,80 @@ import type {
  *  - `thumbnail`        — score images sit in a private bucket and no endpoint
  *                         signs a download URL.
  */
-function toPiece(score: ScoreResponse): Piece {
+function toPiece(score: ScoreResponse, lastPracticedAt: string | null = null): Piece {
   return {
     id: score.id,
     title: score.title,
     composer: score.composer,
     movement: null,
     progress: null,
-    lastPracticedAt: null,
-    thumbnail: null,
+    lastPracticedAt,
+    // Signed on read and good for an hour. Null when signing failed, which is
+    // a thumbnail-shaped hole rather than an error — `ScoreThumbnail` already
+    // falls back to its ruled-staff drawing.
+    thumbnail: score.image_url,
   };
+}
+
+/**
+ * When each score was last recorded against, from the analyses list.
+ *
+ * One extra request for the whole library rather than one per piece:
+ * `/v1/analyses` is newest-first, so the first row naming a score is that
+ * score's most recent take and everything after it can be ignored.
+ *
+ * A failure here costs the "3 days ago" line and nothing else, so it degrades
+ * to an empty map instead of taking the library down with it.
+ */
+async function lastPracticedByScore(): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  try {
+    const analyses = await listAnalyses({ limit: 200 });
+    for (const analysis of analyses) {
+      if (!out.has(analysis.score_id)) {
+        out.set(analysis.score_id, analysis.created_at);
+      }
+    }
+  } catch {
+    // Fall through with what we have.
+  }
+  return out;
 }
 
 export const apiPieceSource: PieceSource = {
   async listPieces() {
-    const scores = await listScores();
-    return scores.map(toPiece);
+    const [scores, practiced] = await Promise.all([
+      listScores(),
+      lastPracticedByScore(),
+    ]);
+    return scores.map((score) => toPiece(score, practiced.get(score.id) ?? null));
   },
 
   async getCurrentPiece() {
-    // `/v1/scores` is ordered created_at DESC, so this is "most recently
-    // added". Once analyses exist it should become "score of the most recent
-    // analysis", which is what "continue practicing" actually means.
-    const scores = await listScores({ limit: 1 });
-    const [mostRecent] = scores;
+    // The piece to continue is the one most recently *played*, not the one
+    // most recently added — so the newest analysis names it. A library with no
+    // analyses yet falls back to the newest score, which is the only sensible
+    // thing to offer someone who has never recorded.
+    const analyses = await listAnalyses({ limit: 1 }).catch(() => []);
+    const [latest] = analyses;
+
+    if (latest) {
+      const score = await getScore(latest.score_id).catch(() => null);
+      if (score) {
+        return toPiece(score, latest.created_at);
+      }
+    }
+
+    const [mostRecent] = await listScores({ limit: 1 });
     return mostRecent ? toPiece(mostRecent) : null;
   },
 
   async getPiece(id) {
-    return toPiece(await getScore(id));
+    const [score, practiced] = await Promise.all([
+      getScore(id),
+      lastPracticedByScore(),
+    ]);
+    return toPiece(score, practiced.get(id) ?? null);
   },
 };
 
