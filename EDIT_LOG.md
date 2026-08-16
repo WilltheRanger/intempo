@@ -6,6 +6,70 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-16 18:40 — Record + Verdict — sign-off fixes
+
+**Batch:** Frontend rebuild — Record + Verdict flow.
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`
+
+Four owner-requested fixes before locking both screens. No redesign: the
+composition, tokens, type and navigation are as approved.
+
+- **One information system per state on the measure list.** Words by default on
+  every row; tapping selects a row, which warms to the page colour edge to edge,
+  firms its number from tertiary to primary ink, and swaps the word for the
+  figure. Only one row at a time, and tapping another moves the selection. To
+  let the tint reach the card edges, the row now owns its own horizontal gutter
+  (the wrapper's `paddingHorizontal` is gone) and the hairline moved onto an
+  inner view, so dividers stay inset while the selection runs full width.
+- **Start versus stop is now unmistakable.** The idle control was a black disc
+  with a white dot, which reads as a stop button before anything has started.
+  Idle is a microphone glyph over the words "Start recording"; recording is a
+  filled square over "Stop recording". The label is inside the `Pressable`, so
+  it's part of the target rather than a caption under it.
+- **The dev message is gone.** "Recording needs an audio module that isn't
+  installed yet…" was development information on a shipped screen. Removed; the
+  control now behaves as though recording works and lands on the fixture take.
+  `CAN_RECORD` stays in `lib/audioRecorder` for code that has to branch on it,
+  with a comment saying it is not for the interface.
+- **The metronome line toggles.** Tapping switches between off and the last
+  mode that was on (`visual` when there's no earlier choice — an audio click
+  through the speaker is the one mode that would end up inside the recording).
+  It writes the same device preference the Settings screen does. Locked during
+  a take alongside the tempo, since the mode is recorded onto the take.
+
+**Three-foot test (Record):** first the piece title, second the black control
+with its label, third the 96 BPM reading. The empty middle is doing the work —
+nothing was added to it.
+
+**Tests run:** `npx tsc --noEmit` clean; web export rebuilt and both flows
+driven in Chromium at 393×852.
+
+- Measure rows: zero figures visible on arrival; after tapping 6 exactly one
+  row shows a figure, its background is `rgb(247,242,233)` = `colors.bg`, and
+  the tint spans 351 of the card's 351px. Tapping 9 moves it.
+- Record: no dev copy anywhere in the rendered text. Metronome toggles
+  `Metronome off` → `Visual metronome`, and is `pointer-events: none` with
+  `aria-disabled` while recording.
+- Verdict-colour quarantine re-swept after the row refactor: Today, Library,
+  Insights and Profile all report 0 elements carrying the three values.
+- Today re-measured and unchanged: scroll height 812, content padding 94px
+  against the 71pt bar.
+
+**Known side effects / things to watch:**
+
+- The metronome label uses ARIA props (`aria-checked`, `aria-disabled`) rather
+  than `accessibilityState`. react-native-web maps `accessibilityState.disabled`
+  but silently drops `checked`, so the web build was announcing a switch with no
+  state. Both spellings land in the same place on native.
+- When on, the label reads the mode name ("Visual metronome") rather than
+  "Metronome on", because Settings already names four modes and one word of
+  state would lose which. Flagged for the owner.
+- The label is gold in both states. Gold is the app's tappable-text language
+  (links, "See all"), so it signals the line does something; the word carries on
+  or off. This is the one place gold isn't an active-state marker.
+
+---
+
 ## 2026-08-16 18:02 — Verdict screen — practice-feedback refinement pass
 
 **Batch:** Frontend rebuild — Record + Verdict flow.

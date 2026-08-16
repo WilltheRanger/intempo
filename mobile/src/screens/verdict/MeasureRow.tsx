@@ -1,4 +1,4 @@
-import { Pressable, StyleSheet } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
 import { Text } from '../../components/primitives/Text';
 import type { MeasureVerdict } from '../../data/types';
@@ -29,9 +29,10 @@ export interface MeasureRowProps {
  * One measure of the take: its number, how far it sat from the beat, and the
  * word for it.
  *
- * Tapping swaps the word for the figure behind it. The spec keeps timing
- * numbers out of the interface by default and allows exactly this — a
- * power-user affordance, off on first read, never the thing you land on.
+ * Words by default, every row the same. Tapping selects a row — it warms, its
+ * number firms up, and the word gives way to the figure behind it. The spec
+ * keeps timing numbers out of the interface by default and allows exactly
+ * this: one row at a time, asked for, never the thing you land on.
  */
 export function MeasureRow({
   measure,
@@ -46,32 +47,42 @@ export function MeasureRow({
     <Pressable
       onPress={onToggle}
       accessibilityRole="button"
+      accessibilityState={{ selected: revealed }}
       accessibilityLabel={`Measure ${measure.measure}: ${verdict}`}
       accessibilityHint="Shows the timing figure for this measure."
+      // The selected tint runs the full width of the card; the hairline inside
+      // stays inset. A band that stops short of the edges reads as a floating
+      // block rather than as a row of the list.
       style={({ pressed }) => [
         styles.row,
-        divided && styles.divided,
+        revealed && styles.rowRevealed,
         pressed && styles.pressed,
       ]}
     >
-      <Text variant="metadata" color="textTertiary" style={styles.number}>
-        {measure.measure}
-      </Text>
+      <View style={[styles.inner, divided && styles.divided]}>
+        <Text
+          variant="metadata"
+          color={revealed ? 'textPrimary' : 'textTertiary'}
+          style={styles.number}
+        >
+          {measure.measure}
+        </Text>
 
-      <DeviationBar
-        deviationPct={measure.deviationPct}
-        fill={tone}
-        accessibilityLabel={verdict}
-        style={styles.bar}
-      />
+        <DeviationBar
+          deviationPct={measure.deviationPct}
+          fill={tone}
+          accessibilityLabel={verdict}
+          style={styles.bar}
+        />
 
-      {/*
-        The word carries the verdict; the colour repeats it. Revealing the
-        figure keeps the colour, so the row doesn't change meaning on tap.
-      */}
-      <Text variant="metadataSmall" color={tone} style={styles.verdict}>
-        {revealed ? formatOffset(measure.deviationPct) : verdict}
-      </Text>
+        {/*
+          The word carries the verdict; the colour repeats it. Revealing the
+          figure keeps the colour, so the row doesn't change meaning on tap.
+        */}
+        <Text variant="metadataSmall" color={tone} style={styles.verdict}>
+          {revealed ? formatOffset(measure.deviationPct) : verdict}
+        </Text>
+      </View>
     </Pressable>
   );
 }
@@ -84,6 +95,17 @@ function formatOffset(deviationPct: number): string {
 
 const styles = StyleSheet.create({
   row: {
+    paddingHorizontal: MEASURE_COLUMNS.gutter,
+  },
+  rowRevealed: {
+    // The page colour, borrowed onto the card: warm enough to read as chosen,
+    // quiet enough that eleven unselected rows still look like a list.
+    backgroundColor: colors.bg,
+  },
+  pressed: {
+    backgroundColor: colors.surfacePressed,
+  },
+  inner: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: MEASURE_COLUMNS.gap,
@@ -92,9 +114,6 @@ const styles = StyleSheet.create({
   divided: {
     borderTopWidth: BORDER_WIDTH,
     borderTopColor: colors.border,
-  },
-  pressed: {
-    backgroundColor: colors.surfacePressed,
   },
   number: {
     width: MEASURE_COLUMNS.number,

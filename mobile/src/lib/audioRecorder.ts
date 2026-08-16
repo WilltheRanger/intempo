@@ -36,5 +36,12 @@ export async function startRecording(): Promise<Recorder> {
   throw new AudioCaptureUnavailableError();
 }
 
-/** Whether a take can actually be captured on this build. */
+/**
+ * Whether a take can actually be captured on this build.
+ *
+ * For code that has to branch on it — a real `submitTake` call versus the
+ * mocked one. Not for the interface: a musician has no use for the news that a
+ * dependency is missing, and a screen that explains its own scaffolding is
+ * showing them the workshop.
+ */
 export const CAN_RECORD = false;
