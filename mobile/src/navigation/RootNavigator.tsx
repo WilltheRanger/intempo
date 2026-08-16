@@ -1,6 +1,7 @@
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 
+import { AddPieceScreen } from '../screens/addPiece/AddPieceScreen';
 import { InsightsScreen } from '../screens/insights/InsightsScreen';
 import { LibraryScreen } from '../screens/library/LibraryScreen';
 import { PracticeScreen } from '../screens/practice/PracticeScreen';
@@ -38,6 +39,7 @@ export function RootNavigator() {
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="Tabs" component={TabNavigator} />
       <Stack.Screen name="Practice" component={PracticeScreen} />
+      <Stack.Screen name="AddPiece" component={AddPieceScreen} />
     </Stack.Navigator>
   );
 }

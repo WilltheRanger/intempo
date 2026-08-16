@@ -1,3 +1,4 @@
+import { useNavigation } from '@react-navigation/native';
 import { Library, Plus, Search } from 'lucide-react-native';
 import { useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
@@ -14,7 +15,12 @@ import {
 } from '../../components/primitives';
 import { useLibrary } from '../../data/hooks/usePieces';
 import type { Piece } from '../../data/types';
-import { spacing } from '../../design';
+import { motion, spacing } from '../../design';
+import type {
+  AddPieceOption,
+  TabScreenNavigation,
+} from '../../navigation/types';
+import { AddPieceSheet } from './AddPieceSheet';
 
 /** Case- and accent-insensitive match across title and composer. */
 function matches(piece: Piece, query: string): boolean {
@@ -41,6 +47,7 @@ function normalise(value: string): string {
 }
 
 export function LibraryScreen() {
+  const navigation = useNavigation<TabScreenNavigation<'Library'>>();
   const library = useLibrary();
   const [query, setQuery] = useState('');
 
@@ -50,9 +57,13 @@ export function LibraryScreen() {
     [pieces, query],
   );
 
-  function handleAddPiece() {
-    // The Add Piece bottom sheet is the next stage. Wired deliberately to
-    // nothing rather than to a throwaway placeholder screen.
+  const [addSheetVisible, setAddSheetVisible] = useState(false);
+
+  function handleSelectOption(option: AddPieceOption) {
+    setAddSheetVisible(false);
+    // Let the sheet finish dismissing before the push, so the two animations
+    // don't overlap.
+    setTimeout(() => navigation.navigate('AddPiece', { option }), motion.fast);
   }
 
   return (
@@ -63,7 +74,7 @@ export function LibraryScreen() {
           <PrimaryButton
             label="Add piece"
             icon={Plus}
-            onPress={handleAddPiece}
+            onPress={() => setAddSheetVisible(true)}
             haptic={false}
             size="compact"
           />
@@ -86,6 +97,12 @@ export function LibraryScreen() {
         results={results}
         query={query}
         onClearSearch={() => setQuery('')}
+      />
+
+      <AddPieceSheet
+        visible={addSheetVisible}
+        onClose={() => setAddSheetVisible(false)}
+        onSelect={handleSelectOption}
       />
     </ScreenContainer>
   );

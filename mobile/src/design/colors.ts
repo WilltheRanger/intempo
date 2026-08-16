@@ -47,6 +47,13 @@ export const colors = {
   /** Pressed states. */
   actionBgPressed: '#332E28',
   surfacePressed: '#F5F2EC',
+
+  /**
+   * Dimming behind a sheet or modal. Derived from `textPrimary` rather than
+   * neutral black so it stays in the warm family. Not a new accent — a sheet
+   * needs something behind it, and pure black reads cold against ivory.
+   */
+  scrim: 'rgba(20, 17, 14, 0.32)',
 } as const;
 
 export type ColorToken = keyof typeof colors;

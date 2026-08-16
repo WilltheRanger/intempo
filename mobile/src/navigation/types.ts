@@ -2,9 +2,13 @@ import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import type { CompositeNavigationProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
+/** How a piece gets into the library. */
+export type AddPieceOption = 'scan' | 'import' | 'manual';
+
 export type RootStackParamList = {
   Tabs: undefined;
   Practice: { pieceId: string };
+  AddPiece: { option: AddPieceOption };
 };
 
 export type TabParamList = {
