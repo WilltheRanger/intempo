@@ -1,7 +1,9 @@
 import { useNavigation } from '@react-navigation/native';
 import { Layers, Plus } from 'lucide-react-native';
+import { useState } from 'react';
 import { StyleSheet } from 'react-native';
 
+import { ConfirmDialog } from '../../components/overlays/ConfirmDialog';
 import {
   EmptyState,
   PageHeader,
@@ -28,6 +30,10 @@ import { DraggablePageList } from './DraggablePageList';
 export function CapturedPagesScreen() {
   const navigation = useNavigation<RootNavigation>();
   const pages = useCapturedPages();
+  // A captured page can't be recovered — the photo is gone with it — and the
+  // bin sits a thumb's width from the drag handle.
+  const [pendingDelete, setPendingDelete] = useState<string | null>(null);
+  const pendingPosition = pages.findIndex((page) => page.id === pendingDelete) + 1;
 
   function handleRetake(id: string, index: number) {
     // Stands in for re-shooting the page: swap in a different image so the
@@ -38,7 +44,11 @@ export function CapturedPagesScreen() {
   if (pages.length === 0) {
     return (
       <ScreenContainer>
-        <PageHeader title="Review pages" />
+        <PageHeader
+          title="Review pages"
+          onBack={() => navigation.goBack()}
+          backLabel="Back to the scanner"
+        />
         <EmptyState
           icon={Layers}
           title="No pages left"
@@ -63,7 +73,12 @@ export function CapturedPagesScreen() {
         />
       }
     >
-      <PageHeader eyebrow={pageCountLabel(pages.length)} title="Review pages" />
+      <PageHeader
+        eyebrow={pageCountLabel(pages.length)}
+        title="Review pages"
+        onBack={() => navigation.goBack()}
+        backLabel="Back to the scanner"
+      />
 
       <Text variant="metadataSmall" color="textTertiary" style={styles.hint}>
         Drag to reorder — pages transcribe in this order.
@@ -73,7 +88,7 @@ export function CapturedPagesScreen() {
         pages={pages}
         onReorder={(id, toIndex) => captureSession.moveTo(id, toIndex)}
         onRetake={(page, index) => handleRetake(page.id, index)}
-        onDelete={(id) => captureSession.remove(id)}
+        onDelete={(id) => setPendingDelete(id)}
         onNudge={(id, direction) => captureSession.move(id, direction)}
       />
 
@@ -82,6 +97,20 @@ export function CapturedPagesScreen() {
         icon={Plus}
         onPress={() => navigation.goBack()}
         style={styles.addPage}
+      />
+
+      <ConfirmDialog
+        visible={pendingDelete !== null}
+        title={`Delete page ${pendingPosition}?`}
+        message="The photo goes with it. You'd have to shoot the page again."
+        confirmLabel="Delete"
+        onConfirm={() => {
+          if (pendingDelete) {
+            captureSession.remove(pendingDelete);
+          }
+          setPendingDelete(null);
+        }}
+        onCancel={() => setPendingDelete(null)}
       />
     </ScreenContainer>
   );

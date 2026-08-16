@@ -16,6 +16,9 @@ export type RootStackParamList = {
   Transcribe: undefined;
   TranscriptionReview: undefined;
   PieceDetail: { pieceId: string };
+  ChangeEmail: undefined;
+  ChangePassword: undefined;
+  Acknowledgements: undefined;
 };
 
 export type TabParamList = {

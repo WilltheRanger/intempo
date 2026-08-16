@@ -8,7 +8,11 @@ export const MIN_PASSWORD_LENGTH = 6;
  */
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-export type AuthMode = 'signIn' | 'signUp';
+export type AuthMode = 'signIn' | 'signUp' | 'reset';
+
+export function isEmail(value: string): boolean {
+  return EMAIL_PATTERN.test(value.trim());
+}
 
 /** The first thing wrong with the form, or null when it's ready to send. */
 export function validate(
@@ -19,14 +23,31 @@ export function validate(
   if (!email.trim()) {
     return 'Enter your email address.';
   }
-  if (!EMAIL_PATTERN.test(email.trim())) {
+  if (!isEmail(email)) {
     return "That doesn't look like an email address.";
+  }
+  if (mode === 'reset') {
+    return null;
   }
   if (!password) {
     return 'Enter your password.';
   }
   if (mode === 'signUp' && password.length < MIN_PASSWORD_LENGTH) {
     return `Passwords need at least ${MIN_PASSWORD_LENGTH} characters.`;
+  }
+  return null;
+}
+
+/** The first thing wrong with a new password, or null. */
+export function validateNewPassword(
+  password: string,
+  repeated: string,
+): string | null {
+  if (password.length < MIN_PASSWORD_LENGTH) {
+    return `Passwords need at least ${MIN_PASSWORD_LENGTH} characters.`;
+  }
+  if (password !== repeated) {
+    return "Those two passwords don't match.";
   }
   return null;
 }
@@ -50,6 +71,9 @@ export function describeAuthError(error: unknown): string {
   }
   if (message.includes('user already registered')) {
     return 'There is already an account with that address. Sign in instead.';
+  }
+  if (message.includes('same as the old password')) {
+    return 'That is already your password. Choose a different one.';
   }
   if (message.includes('rate limit') || message.includes('too many')) {
     return 'Too many attempts. Wait a minute and try again.';

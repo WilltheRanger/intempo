@@ -33,7 +33,7 @@ import { PieceInsightRow } from './PieceInsightRow';
  * use, so no claim here is one the backend won't be able to make.
  */
 export function InsightsScreen() {
-  const { data: insights, isPending, isError } = useInsights();
+  const { data: insights, isPending, isError, refetch } = useInsights();
 
   if (isPending) {
     return (
@@ -70,7 +70,7 @@ export function InsightsScreen() {
   }
 
   return (
-    <ScreenContainer>
+    <ScreenContainer onRefresh={() => refetch()}>
       <PageHeader eyebrow={windowLabel(insights.windowDays)} title="Insights" />
 
       <Card emphasis>

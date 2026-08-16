@@ -1,7 +1,9 @@
+import { ChevronLeft } from 'lucide-react-native';
 import type { ReactNode } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { spacing } from '../../design';
+import { IconButton } from './IconButton';
 import { Text } from './Text';
 
 export interface PageHeaderProps {
@@ -13,12 +15,42 @@ export interface PageHeaderProps {
    * shouldn't span the full width. Keep it compact — the title leads.
    */
   action?: ReactNode;
+  /**
+   * Back control above the title, for a pushed screen.
+   *
+   * Worth being explicit rather than automatic: iOS's swipe-back gesture is
+   * real but invisible, Android's system back is a different affordance again,
+   * and neither exists on the web build. A screen someone can reach needs a
+   * way out they can see.
+   */
+  onBack?: () => void;
+  /** Announced by screen readers, e.g. "Back to library". */
+  backLabel?: string;
 }
 
 /** The serif screen title, with an optional line of context above it. */
-export function PageHeader({ title, eyebrow, action }: PageHeaderProps) {
+export function PageHeader({
+  title,
+  eyebrow,
+  action,
+  onBack,
+  backLabel = 'Back',
+}: PageHeaderProps) {
   return (
     <View style={styles.container}>
+      {onBack ? (
+        <View style={styles.backRow}>
+          <IconButton
+            icon={ChevronLeft}
+            label={backLabel}
+            onPress={onBack}
+            // Pulled out to the gutter so the glyph lines up with the title
+            // below it rather than sitting indented by its own padding.
+            style={styles.back}
+          />
+        </View>
+      ) : null}
+
       {eyebrow ? (
         <Text variant="metadata" color="textTertiary" style={styles.eyebrow}>
           {eyebrow}
@@ -43,6 +75,13 @@ const styles = StyleSheet.create({
     // own — the inset is whatever the device reports.
     paddingTop: spacing.lg,
     paddingBottom: spacing.md,
+  },
+  backRow: {
+    flexDirection: 'row',
+    marginBottom: spacing.sm,
+  },
+  back: {
+    marginLeft: -spacing.md,
   },
   eyebrow: {
     marginBottom: spacing.sm,

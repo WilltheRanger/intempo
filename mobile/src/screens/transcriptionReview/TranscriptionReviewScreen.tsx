@@ -106,7 +106,11 @@ export function TranscriptionReviewScreen() {
 
   return (
     <ScreenContainer>
-      <PageHeader title="Review transcription" />
+      <PageHeader
+        title="Review transcription"
+        onBack={() => navigation.goBack()}
+        backLabel="Back to pages"
+      />
 
       {editingDetails ? (
         <Card style={styles.details}>
