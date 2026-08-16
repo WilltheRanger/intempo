@@ -1,6 +1,6 @@
 import { useNavigation } from '@react-navigation/native';
 import { Layers, Plus } from 'lucide-react-native';
-import { StyleSheet, View } from 'react-native';
+import { StyleSheet } from 'react-native';
 
 import {
   EmptyState,
@@ -51,7 +51,18 @@ export function CapturedPagesScreen() {
   }
 
   return (
-    <ScreenContainer>
+    // A scan can be four pages or thirty, so Continue is pinned rather than
+    // parked under the last row. Add page stays with the list: it belongs to
+    // the pages, and it's the one action that shouldn't be easier to hit than
+    // scrolling through what you've already captured.
+    <ScreenContainer
+      footer={
+        <PrimaryButton
+          label="Continue"
+          onPress={() => navigation.navigate('Transcribe')}
+        />
+      }
+    >
       <PageHeader eyebrow={pageCountLabel(pages.length)} title="Review pages" />
 
       <Text variant="metadataSmall" color="textTertiary" style={styles.hint}>
@@ -66,18 +77,12 @@ export function CapturedPagesScreen() {
         onNudge={(id, direction) => captureSession.move(id, direction)}
       />
 
-      <View style={styles.actions}>
-        <SecondaryButton
-          label="Add page"
-          icon={Plus}
-          onPress={() => navigation.goBack()}
-        />
-        <PrimaryButton
-          label="Continue"
-          onPress={() => navigation.navigate('Transcribe')}
-          style={styles.continue}
-        />
-      </View>
+      <SecondaryButton
+        label="Add page"
+        icon={Plus}
+        onPress={() => navigation.goBack()}
+        style={styles.addPage}
+      />
     </ScreenContainer>
   );
 }
@@ -90,10 +95,7 @@ const styles = StyleSheet.create({
   hint: {
     marginBottom: spacing.md,
   },
-  actions: {
-    marginTop: spacing['2xl'],
-  },
-  continue: {
-    marginTop: spacing.md,
+  addPage: {
+    marginTop: spacing.xl,
   },
 });
