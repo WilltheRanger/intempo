@@ -10,7 +10,7 @@ import {
   PrimaryButton,
   ScreenContainer,
   SearchField,
-  SectionHeader,
+  Text,
 } from '../../components/primitives';
 import { useLibrary } from '../../data/hooks/usePieces';
 import type { Piece } from '../../data/types';
@@ -146,7 +146,13 @@ function LibraryContent({
 
   return (
     <View style={styles.section}>
-      <SectionHeader label={countLabel(results.length, Boolean(query.trim()))} />
+      {/*
+        Tertiary information, so it's quieter than a section heading — this is
+        a count, not a label introducing a group.
+      */}
+      <Text variant="metadataSmall" color="textTertiary" style={styles.count}>
+        {countLabel(results.length, Boolean(query.trim()))}
+      </Text>
       <View style={styles.list}>
         {results.map((piece) => (
           <PieceCard key={piece.id} piece={piece} showPracticeDetail dense />
@@ -164,6 +170,9 @@ function countLabel(count: number, searching: boolean): string {
 const styles = StyleSheet.create({
   section: {
     marginTop: spacing['2xl'],
+  },
+  count: {
+    marginBottom: spacing.md,
   },
   list: {
     gap: spacing.md,

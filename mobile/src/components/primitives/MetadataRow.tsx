@@ -6,6 +6,8 @@ import { Text } from './Text';
 export interface MetadataRowProps {
   /** Fragments to join. Null and undefined entries are dropped. */
   items: (string | null | undefined)[];
+  /** `metadataSmall` for dense list rows. */
+  variant?: 'metadata' | 'metadataSmall';
   style?: StyleProp<TextStyle>;
 }
 
@@ -15,13 +17,17 @@ export interface MetadataRowProps {
  * Renders nothing when every fragment is absent, so a card doesn't reserve
  * space for metadata it doesn't have.
  */
-export function MetadataRow({ items, style }: MetadataRowProps) {
+export function MetadataRow({
+  items,
+  variant = 'metadata',
+  style,
+}: MetadataRowProps) {
   const content = joinMetadata(items);
   if (!content) {
     return null;
   }
   return (
-    <Text variant="metadata" color="textTertiary" style={style}>
+    <Text variant={variant} color="textTertiary" style={style}>
       {content}
     </Text>
   );
