@@ -8,7 +8,10 @@ export type AddPieceOption = 'scan' | 'import' | 'manual';
 export type RootStackParamList = {
   Tabs: undefined;
   Practice: { pieceId: string };
-  AddPiece: { option: AddPieceOption };
+  /** Scan has its own screen; this covers the other two options. */
+  AddPiece: { option: Exclude<AddPieceOption, 'scan'> };
+  Scanner: undefined;
+  CapturedPages: { pageCount: number };
 };
 
 export type TabParamList = {

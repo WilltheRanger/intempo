@@ -40,9 +40,17 @@ export const colors = {
   /** Muted antique gold. The only accent. Used sparingly. */
   accent: '#9A7B4F',
 
-  /** Primary action surface and its label. */
+  /**
+   * Primary action surface and its label.
+   *
+   * These two double as the palette for full-bleed dark surfaces — the camera
+   * scanner uses `actionBg` as its ground and `actionText` for chrome, rather
+   * than introducing a parallel set of near-blacks.
+   */
   actionBg: '#1A1714',
   actionText: '#FBFAF7',
+  /** Secondary text and inactive chrome on a dark surface. */
+  onDarkMuted: 'rgba(251, 250, 247, 0.55)',
 
   /** Pressed states. */
   actionBgPressed: '#332E28',
