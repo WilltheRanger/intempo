@@ -11,7 +11,9 @@ export type RootStackParamList = {
   /** Scan has its own screen; this covers the other two options. */
   AddPiece: { option: Exclude<AddPieceOption, 'scan'> };
   Scanner: undefined;
-  CapturedPages: { pageCount: number };
+  /** Pages live in the shared capture session, not in params. */
+  CapturedPages: undefined;
+  Transcribe: undefined;
 };
 
 export type TabParamList = {
