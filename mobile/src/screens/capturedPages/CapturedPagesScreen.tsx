@@ -55,7 +55,7 @@ export function CapturedPagesScreen() {
       <PageHeader eyebrow={pageCountLabel(pages.length)} title="Review pages" />
 
       <Text variant="metadataSmall" color="textTertiary" style={styles.hint}>
-        Drag a page by its handle to reorder. Pages transcribe in this order.
+        Drag to reorder — pages transcribe in this order.
       </Text>
 
       <DraggablePageList
