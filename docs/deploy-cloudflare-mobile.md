@@ -15,21 +15,54 @@ The existing Pages project has **Root directory `frontend`**. Changing it to
 project instead so both stay reachable.
 
 Cloudflare dashboard → **Workers & Pages** → **Create** → **Pages** →
-**Connect to Git**, pick the `intempo` repo, then:
+**Connect to Git** → pick the `intempo` repo → **Begin setup**.
 
-| Setting | Value |
+| Field | Value |
 |---|---|
-| Project name | `intempo-mobile` (anything not already taken) |
-| Framework preset | `None` |
-| **Root directory** | `mobile` |
-| Build command | `npx expo export --platform web` |
-| Build output directory | `dist` |
+| Project name | anything free — it becomes `<name>.pages.dev` |
+| Production branch | **`main`** (the default, and correct — `main` has the app) |
+| Framework preset | **None** |
+| Root directory | **leave empty** |
+| Build command | **`npm run build`** |
+| Build output directory | **`mobile/dist`** |
 
-Under **Settings → Environment variables**:
+Then **Environment variables → Production**, before the first build:
 
 | Variable | Value | Why |
 |---|---|---|
-| `NODE_VERSION` | `22` | Expo SDK 57 needs a current Node; Cloudflare's default is often older, and that is the usual first-build failure. |
+| `NODE_VERSION` | `22` | Expo SDK 57 needs a current Node. Cloudflare's default is older, and this is the usual first-build failure. |
+
+Save and deploy. First build takes 3–5 minutes, mostly `npm ci`.
+
+`npm run build` is the root `package.json`'s only script — it runs
+`cd mobile && npm ci && npx expo export --platform web`. Keeping the path in
+the repo rather than in a dashboard field means the two can't drift apart, and
+it's the configuration verified from a clean tree on `main`.
+
+<details>
+<summary>The equivalent setup using Root directory instead</summary>
+
+| Field | Value |
+|---|---|
+| Root directory | `mobile` |
+| Build command | `npx expo export --platform web` |
+| Build output directory | `dist` — **not** `mobile/dist` |
+
+Under the v2 root-directory strategy the output path is *relative to the root
+directory*, so `mobile/dist` there sends Cloudflare looking for
+`mobile/mobile/dist`. That is the second-most-common first-build failure.
+
+</details>
+
+### Nothing else needs configuring
+
+- **The SPA fallback ships in the repo** — `mobile/public/_redirects` is copied
+  into the export, so a refresh on `/scores` doesn't 404.
+- **So do the cache headers** — `mobile/public/_headers` marks the hashed
+  bundle and assets immutable and the entry point no-cache.
+- **No secrets are required.** With no Supabase variables the app runs on
+  fixtures and opens straight onto Today; the sign-in gate passes through by
+  design. Adding them (below) turns the gate on.
 
 ### The production branch
 

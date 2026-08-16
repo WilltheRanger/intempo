@@ -3,9 +3,9 @@
 The `analyses` flow is stateful (queued → processing → done) and the
 sweeper filters on `status` + `updated_at`, which deep MagicMock chains
 model badly. This fake implements just the query surface those paths use
-— `table().insert()/select()/update()` with `.eq()/.in_()/.lt()/.limit()
-.execute()` — over real dict rows, so tests assert on actual state
-transitions.
+— `table().insert()/select()/update()` with
+`.eq()/.in_()/.lt()/.gte()/.limit()/.execute()`, plus `select(count="exact")`
+— over real dict rows, so tests assert on actual state transitions.
 """
 
 from __future__ import annotations
@@ -20,8 +20,12 @@ def _iso() -> str:
 
 
 class _Result:
-    def __init__(self, data: list[dict[str, Any]]):
+    def __init__(self, data: list[dict[str, Any]], count: int | None = None):
         self.data = data
+        #: Mirrors supabase-py: populated only when the query asked for it.
+        #: Callers that didn't ask must see `None`, not a number, or a fallback
+        #: path that exists for older clients would never be exercised.
+        self.count = count
 
 
 class _Query:
@@ -31,6 +35,7 @@ class _Query:
         self._payload = payload
         self._filters: list[tuple[str, str, Any]] = []
         self._limit: int | None = None
+        self._count: str | None = None
 
     def eq(self, col: str, val: Any) -> "_Query":
         self._filters.append(("eq", col, val))
@@ -42,6 +47,10 @@ class _Query:
 
     def lt(self, col: str, val: Any) -> "_Query":
         self._filters.append(("lt", col, val))
+        return self
+
+    def gte(self, col: str, val: Any) -> "_Query":
+        self._filters.append(("gte", col, val))
         return self
 
     def limit(self, n: int) -> "_Query":
@@ -62,6 +71,8 @@ class _Query:
                 return False
             if kind == "lt" and not (str(row.get(col)) < str(val)):
                 return False
+            if kind == "gte" and not (str(row.get(col)) >= str(val)):
+                return False
         return True
 
     def execute(self) -> _Result:
@@ -75,8 +86,10 @@ class _Table:
     def insert(self, payload: dict) -> _Query:
         return _Query(self, "insert", payload)
 
-    def select(self, *_cols) -> _Query:
-        return _Query(self, "select")
+    def select(self, *_cols, count: str | None = None) -> _Query:
+        query = _Query(self, "select")
+        query._count = count
+        return query
 
     def update(self, payload: dict) -> _Query:
         return _Query(self, "update", payload)
@@ -99,11 +112,18 @@ class _Table:
             return _Result([dict(row)])
 
         matched = [r for r in self.rows if q._matches(r)]
+        # The count is of everything matching, before any limit — that is what
+        # PostgREST returns, and a count that shrank to fit a page would make
+        # a quota check silently wrong.
+        total = len(matched)
         if q._limit is not None:
             matched = matched[: q._limit]
 
         if q._op == "select":
-            return _Result([dict(r) for r in matched])
+            return _Result(
+                [dict(r) for r in matched],
+                count=total if q._count else None,
+            )
         if q._op == "update":
             for r in matched:
                 r.update(q._payload or {})

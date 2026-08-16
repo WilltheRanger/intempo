@@ -14,7 +14,8 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.auth import current_jwt_payload
 from app.db import get_service_client
-from app.models.user import MeResponse, UserRole, UserTier
+from app.models.user import MeResponse, UsageResponse, UserRole, UserTier
+from app.services.tier_limits import usage_for
 
 router = APIRouter(tags=["me"])
 
@@ -70,10 +71,27 @@ async def get_me(payload: dict[str, Any] = Depends(current_jwt_payload)) -> MeRe
     rows = existing.data or []
     row = rows[0] if rows else _provision_user(client, user_id, email)
 
+    tier = UserTier(row.get("tier", UserTier.free.value))
+
+    # Best-effort. This endpoint is also the first-touch provisioning call, and
+    # failing it over a usage counter would lock someone out of the app on the
+    # very first request they make.
+    try:
+        usage = usage_for(client, user_id, tier.value)
+        analyses = UsageResponse(
+            used=usage.used,
+            limit=usage.limit,
+            remaining=usage.remaining,
+            resets_at=usage.period_end,
+        )
+    except Exception:  # noqa: BLE001
+        analyses = None
+
     return MeResponse(
         id=user_id,
         email=row["email"],
-        tier=UserTier(row.get("tier", UserTier.free.value)),
+        tier=tier,
         role=UserRole(row.get("role", UserRole.student.value)),
         studio_id=UUID(row["studio_id"]) if row.get("studio_id") else None,
+        analyses=analyses,
     )
