@@ -373,6 +373,11 @@ const styles = StyleSheet.create({
   control: {
     alignItems: 'center',
     gap: spacing.md,
+    // Lifted off the bottom edge. The safe-area inset below this only keeps the
+    // control clear of the home indicator, which is a different question from
+    // where a thumb actually rests — that is around a sixth of the screen up,
+    // not against the edge.
+    marginBottom: spacing['4xl'],
   },
   record: {
     width: RECORD_SIZE,

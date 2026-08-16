@@ -6,6 +6,33 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-16 18:55 — Record — the control lifted into the thumb zone
+
+**Batch:** Frontend rebuild — Record + Verdict flow.
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`
+
+Owner: the record control sat too low for a phone. It did — the safe-area inset
+below it only guarantees clearance of the home indicator, which is a different
+question from where a thumb rests. One `marginBottom: spacing['4xl']` on the
+control, no other change.
+
+Measured at 393×852, before → after:
+
+| | web (no indicator) | device (34pt indicator) |
+|---|---|---|
+| Circle centre from bottom | 90 → **132** | 108 → **150** |
+| As a fraction of screen height | 0.106 → **0.155** | 0.127 → **0.176** |
+| Label bottom from edge | 16 → **56** | 34 → **74** |
+
+Both land at roughly a sixth of the screen up, which is where a thumb sits on a
+phone this size. The block above it (tempo, metronome, timer) is centred in the
+remaining space, so it rises with the control rather than opening a gap.
+
+**Tests run:** `npx tsc --noEmit` clean, web export rebuilt, both insets driven
+in Chromium and both states screenshotted.
+
+---
+
 ## 2026-08-16 18:40 — Record + Verdict — sign-off fixes
 
 **Batch:** Frontend rebuild — Record + Verdict flow.
