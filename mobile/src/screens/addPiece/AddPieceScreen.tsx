@@ -1,5 +1,5 @@
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
-import { Camera, Images, PencilLine, type LucideIcon } from 'lucide-react-native';
+import { Images, PencilLine, type LucideIcon } from 'lucide-react-native';
 import { StyleSheet, View } from 'react-native';
 
 import {
@@ -21,13 +21,8 @@ interface OptionCopy {
   description: string;
 }
 
-const COPY: Record<AddPieceOption, OptionCopy> = {
-  scan: {
-    title: 'Scan sheet music',
-    icon: Camera,
-    description:
-      'The camera scanner is the next stage. It will capture pages, let you reorder them, and hand them to transcription.',
-  },
+/** Scan has a real screen now; only these two are still placeholders. */
+const COPY: Record<Exclude<AddPieceOption, 'scan'>, OptionCopy> = {
   import: {
     title: 'Import score',
     icon: Images,

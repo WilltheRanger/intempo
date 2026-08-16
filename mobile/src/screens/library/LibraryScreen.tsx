@@ -63,7 +63,13 @@ export function LibraryScreen() {
     setAddSheetVisible(false);
     // Let the sheet finish dismissing before the push, so the two animations
     // don't overlap.
-    setTimeout(() => navigation.navigate('AddPiece', { option }), motion.fast);
+    setTimeout(() => {
+      if (option === 'scan') {
+        navigation.navigate('Scanner');
+        return;
+      }
+      navigation.navigate('AddPiece', { option });
+    }, motion.fast);
   }
 
   return (

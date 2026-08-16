@@ -2,10 +2,12 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 
 import { AddPieceScreen } from '../screens/addPiece/AddPieceScreen';
+import { CapturedPagesScreen } from '../screens/capturedPages/CapturedPagesScreen';
 import { InsightsScreen } from '../screens/insights/InsightsScreen';
 import { LibraryScreen } from '../screens/library/LibraryScreen';
 import { PracticeScreen } from '../screens/practice/PracticeScreen';
 import { ProfileScreen } from '../screens/profile/ProfileScreen';
+import { ScannerScreen } from '../screens/scanner/ScannerScreen';
 import { TodayScreen } from '../screens/today/TodayScreen';
 import { BottomTabBar } from './BottomTabBar';
 import type { RootStackParamList, TabParamList } from './types';
@@ -40,6 +42,13 @@ export function RootNavigator() {
       <Stack.Screen name="Tabs" component={TabNavigator} />
       <Stack.Screen name="Practice" component={PracticeScreen} />
       <Stack.Screen name="AddPiece" component={AddPieceScreen} />
+      {/* Full-bleed dark camera surface — presented over everything. */}
+      <Stack.Screen
+        name="Scanner"
+        component={ScannerScreen}
+        options={{ animation: 'slide_from_bottom' }}
+      />
+      <Stack.Screen name="CapturedPages" component={CapturedPagesScreen} />
     </Stack.Navigator>
   );
 }
