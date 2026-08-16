@@ -139,6 +139,56 @@ export interface Piece {
   thumbnail: ThumbnailSource | null;
 }
 
+/**
+ * The five-state verdict vocabulary, defined by the product spec in BPM terms:
+ * on tempo within ±2, slight rush/drag out to ±5, rushing/dragging beyond.
+ *
+ * `verdictForDeviation` in `lib/tempo.ts` is the single implementation of
+ * those thresholds.
+ */
+export type Verdict =
+  | 'on_tempo'
+  | 'slight_rush'
+  | 'rushing'
+  | 'slight_drag'
+  | 'dragging';
+
+/** One piece's practice record over the insights window. */
+export interface PieceInsight {
+  pieceId: string;
+  title: string;
+  composer: string | null;
+  /** Completed analyses of this piece in the window. */
+  sessions: number;
+  /**
+   * Mean deviation from the target tempo, in BPM. Positive is ahead of the
+   * beat. Derived from `analyses.result_json`, which the spec describes as
+   * per-note deltas, verdict, and trend.
+   */
+  meanBpmDeviation: number;
+  verdict: Verdict;
+}
+
+/**
+ * What the Insights tab renders.
+ *
+ * Every field maps to something the backend will genuinely be able to produce:
+ * counts and timestamps come from `analyses`, deviations and verdicts from
+ * `analyses.result_json`, and titles from the joined `scores` row. Nothing
+ * here is a metric invented to fill the screen.
+ */
+export interface PracticeInsights {
+  /** Days the window covers. */
+  windowDays: number;
+  /** Completed analyses in the window, across every piece. */
+  sessions: number;
+  /** Mean BPM deviation across every session. Positive is ahead of the beat. */
+  meanBpmDeviation: number;
+  verdict: Verdict;
+  /** Most drift first — the pieces worth attention lead. */
+  pieces: PieceInsight[];
+}
+
 /** The signed-in musician, as the UI needs them. */
 export interface Musician {
   id: string;

@@ -1,5 +1,6 @@
-import type { Musician, Piece } from '../types';
-import type { MusicianSource, PieceSource } from './types';
+import { verdictForDeviation } from '../../lib/tempo';
+import type { Musician, Piece, PieceInsight } from '../types';
+import type { InsightsSource, MusicianSource, PieceSource } from './types';
 
 /**
  * Development fixtures.
@@ -132,5 +133,73 @@ const FIXTURE_MUSICIAN: Musician = {
 export const fixtureMusicianSource: MusicianSource = {
   async getMusician() {
     return FIXTURE_MUSICIAN;
+  },
+};
+
+/** The window Insights reports on. */
+const INSIGHTS_WINDOW_DAYS = 30;
+
+/**
+ * Practice history for four of the pieces above.
+ *
+ * Only the two measured quantities are stated — how many sessions, and the
+ * mean deviation in BPM. Every verdict, including the headline, is classified
+ * from those by `verdictForDeviation`, so the fixture cannot claim a verdict
+ * its own numbers don't support.
+ *
+ * The deviations are unflattering on purpose. A fixture where everything is on
+ * tempo would exercise none of the vocabulary and would design the screen for
+ * the one musician who doesn't need it.
+ */
+const FIXTURE_SESSIONS: {
+  pieceId: string;
+  sessions: number;
+  meanBpmDeviation: number;
+}[] = [
+  { pieceId: 'fixture-wohlfahrt-28', sessions: 12, meanBpmDeviation: 6.2 },
+  { pieceId: 'fixture-bach-bwv1001', sessions: 9, meanBpmDeviation: -3.8 },
+  { pieceId: 'fixture-mozart-k216', sessions: 5, meanBpmDeviation: 3.6 },
+  { pieceId: 'fixture-kreutzer-02', sessions: 8, meanBpmDeviation: 1.4 },
+];
+
+function toPieceInsight(entry: (typeof FIXTURE_SESSIONS)[number]): PieceInsight {
+  const piece = FIXTURE_PIECES.find(({ id }) => id === entry.pieceId);
+  return {
+    pieceId: entry.pieceId,
+    title: piece?.title ?? 'Unknown piece',
+    composer: piece?.composer ?? null,
+    sessions: entry.sessions,
+    meanBpmDeviation: entry.meanBpmDeviation,
+    verdict: verdictForDeviation(entry.meanBpmDeviation),
+  };
+}
+
+export const fixtureInsightsSource: InsightsSource = {
+  async getInsights() {
+    const pieces = FIXTURE_SESSIONS.map(toPieceInsight).sort(
+      (a, b) =>
+        Math.abs(b.meanBpmDeviation) - Math.abs(a.meanBpmDeviation),
+    );
+
+    const sessions = pieces.reduce((total, piece) => total + piece.sessions, 0);
+    if (sessions === 0) {
+      return null;
+    }
+
+    // Session-weighted, so a piece practised twice doesn't sway the headline
+    // as much as one practised a dozen times.
+    const meanBpmDeviation =
+      pieces.reduce(
+        (total, piece) => total + piece.meanBpmDeviation * piece.sessions,
+        0,
+      ) / sessions;
+
+    return {
+      windowDays: INSIGHTS_WINDOW_DAYS,
+      sessions,
+      meanBpmDeviation,
+      verdict: verdictForDeviation(meanBpmDeviation),
+      pieces,
+    };
   },
 };
