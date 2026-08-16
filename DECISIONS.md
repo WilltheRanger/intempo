@@ -6,6 +6,24 @@ Operating Principle #5.
 
 ---
 
+## 2026-08-17 — Rewrite exported asset paths after the build rather than vendoring the fonts
+
+**Context:** the first Cloudflare Pages deploy of the mobile app rendered a blank page. The build log was clean end to end and ended `Success: Assets published!`. The cause was in the log the whole time, as a number: `dist` holds 27 assets, `Uploaded 12 files`, and exactly 15 files sit under a directory called `node_modules`.
+
+**Cloudflare Pages silently skips anything under `node_modules` in the build output.** Metro names an exported asset after the path of the module that imported it, so a font from `@expo-google-fonts` lands at `dist/assets/node_modules/@expo-google-fonts/inter/400Regular/Inter_….ttf`. All four typefaces 404'd. `useFonts` never resolved, and `App.tsx` gated the entire app on `fontsLoaded` behind a plain ivory `<View>` — so the app rendered a blank screen, forever, because of a decorative resource.
+
+**Decision:** a post-export step (`mobile/scripts/flatten-vendor-assets.mjs`) renames `dist/assets/node_modules` to `dist/assets/vendor` and rewrites the references in the bundle. Wired into `npm run build:web`, which the root build script now calls, so local and CI cannot drift.
+
+**Alternatives considered:**
+
+- *Copy the four fonts into `mobile/assets/` and import them from there.* Rejected: it fixes the fonts and leaves the eleven `@react-navigation/elements` icons still unreachable, so the same failure returns the next time any dependency ships an asset. It also means the typefaces stop being managed by `@expo-google-fonts` and start being four binaries someone has to remember to update.
+- *A Metro config knob.* There isn't one. The destination path is derived from the importing module's location and there is no supported way to change it.
+- *Leave it and accept missing fonts.* Rejected — that was the bug.
+
+**Trade-off accepted:** we string-rewrite a built artifact, which is the kind of thing that breaks quietly when the upstream format changes. Mitigated by the script failing loudly: if it moves files but rewrites zero references, it exits non-zero, because a rename without a rewrite produces exactly the failure it exists to prevent and would otherwise look like success.
+
+**Separately, and worth keeping even if the above becomes unnecessary:** `App.tsx` no longer waits forever. `useFonts`'s error is honoured and a 5-second timeout backs it up, so a font that 404s or hangs costs the typeface and not the interface. Verified by forcing every `.ttf` to 404 and confirming the app still renders.
+
 ## 2026-08-16 — Patch `expo-audio` rather than fork or replace it, to get an unprocessed input source on Android
 
 **Context:** `AudioStream` is right on iOS — it opens the session in `.measurement` mode, so the system applies no input processing. On Android it opens `AudioRecord` on `MediaRecorder.AudioSource.MIC`, which is the general-purpose source and passes through the OEM's input chain. Automatic gain is the specific problem: it reshapes attack envelopes, and attack envelopes are what the onset detector measures. Android takes would have been quietly less accurate than iOS ones with nothing anywhere saying so.
