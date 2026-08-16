@@ -36,6 +36,73 @@ export function getSupabaseClient(): SupabaseClient | null {
 }
 
 /**
+ * Whether sign-in is possible at all.
+ *
+ * False when the Supabase env vars are absent, which is how the app runs
+ * against fixtures. Callers use it to decide whether an auth gate means
+ * anything — see `useAuthStatus`.
+ */
+export function isAuthConfigured(): boolean {
+  return Boolean(SUPABASE_URL && SUPABASE_ANON_KEY);
+}
+
+export interface AuthResult {
+  /** True when the call left the user signed in. */
+  session: boolean;
+  /**
+   * Sign-up only, and only when Supabase is set to confirm addresses: the
+   * account exists but no session was issued until the link is followed.
+   */
+  awaitingConfirmation: boolean;
+}
+
+/** Signs in with an email and password. Throws with the provider's reason. */
+export async function signIn(
+  email: string,
+  password: string,
+): Promise<AuthResult> {
+  const supabase = requireClient();
+  const { data, error } = await supabase.auth.signInWithPassword({
+    email,
+    password,
+  });
+  if (error) {
+    throw error;
+  }
+  return { session: Boolean(data.session), awaitingConfirmation: false };
+}
+
+/**
+ * Creates an account.
+ *
+ * Supabase issues no session when the project confirms email addresses, which
+ * is the default — the account exists but the musician has to follow a link
+ * first. That is a real outcome, not a failure, so it comes back as one.
+ */
+export async function signUp(
+  email: string,
+  password: string,
+): Promise<AuthResult> {
+  const supabase = requireClient();
+  const { data, error } = await supabase.auth.signUp({ email, password });
+  if (error) {
+    throw error;
+  }
+  return {
+    session: Boolean(data.session),
+    awaitingConfirmation: Boolean(data.user) && !data.session,
+  };
+}
+
+function requireClient(): SupabaseClient {
+  const supabase = getSupabaseClient();
+  if (!supabase) {
+    throw new Error('Sign-in is unavailable: Supabase is not configured.');
+  }
+  return supabase;
+}
+
+/**
  * The signed-in user's profile photo, if the identity provider supplied one.
  *
  * Nothing in our own schema stores an avatar, so this is the only photo the
