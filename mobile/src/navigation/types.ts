@@ -15,6 +15,7 @@ export type RootStackParamList = {
   CapturedPages: undefined;
   Transcribe: undefined;
   TranscriptionReview: undefined;
+  PieceDetail: undefined;
 };
 
 export type TabParamList = {
