@@ -44,6 +44,10 @@ export function ScreenContainer({
   };
 
   return (
+    // `edges={['top']}` pads by the inset the device actually reports, so a
+    // Dynamic Island (59pt), an older notch (47pt), and a flat-top phone
+    // (20pt) each get the right gap with no per-device branching. The bar
+    // below owns the bottom inset; claiming it here too would double it.
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       {scrollable ? (
         <ScrollView

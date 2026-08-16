@@ -25,7 +25,10 @@ export function PageHeader({ title, eyebrow }: PageHeaderProps) {
 
 const styles = StyleSheet.create({
   container: {
-    paddingTop: spacing.md,
+    // Intentional breathing room *after* the top safe-area inset, which
+    // `ScreenContainer` applies. Never a status-bar or notch offset of its
+    // own — the inset is whatever the device reports.
+    paddingTop: spacing.lg,
     paddingBottom: spacing.md,
   },
   eyebrow: {

@@ -44,6 +44,11 @@ export default function App() {
   return (
     <SafeAreaProvider>
       <QueryClientProvider client={queryClient}>
+        {/*
+          Visible, with dark content for the ivory page beneath it. `app.json`
+          pins `userInterfaceStyle: light`, so this stays correct even when the
+          device is in dark mode.
+        */}
         <StatusBar style="dark" />
         {fontsLoaded ? (
           <NavigationContainer theme={navigationTheme}>
