@@ -25,7 +25,10 @@
     "react-native-url-polyfill": "^4.0.0"
   },
   "devDependencies": {
+    "@expo/metro-runtime": "^57.0.10",
     "@types/react": "~19.2.2",
+    "react-dom": "^19.2.3",
+    "react-native-web": "^0.21.2",
     "typescript": "~6.0.3"
   },
   "scripts": {
