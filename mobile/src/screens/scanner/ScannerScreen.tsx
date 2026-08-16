@@ -2,12 +2,13 @@ import { useNavigation } from '@react-navigation/native';
 import * as Haptics from 'expo-haptics';
 import { StatusBar } from 'expo-status-bar';
 import { Images, X, Zap, ZapOff } from 'lucide-react-native';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ScoreThumbnail } from '../../components/pieces/ScoreThumbnail';
 import { Text } from '../../components/primitives/Text';
+import { captureSession, useCapturedPages } from '../../data/captureSession';
 import type { ThumbnailSource } from '../../data/types';
 import {
   BORDER_WIDTH,
@@ -25,17 +26,12 @@ import { ViewfinderPage } from './ViewfinderPage';
  * Stand-in images for captured pages. Real capture writes camera output here
  * instead; nothing else about this screen changes.
  */
-const MOCK_CAPTURES: ThumbnailSource[] = [
+export const MOCK_CAPTURES: ThumbnailSource[] = [
   require('../../../assets/fixtures/01_simple_printed.jpg'),
   require('../../../assets/fixtures/02_medium_printed.jpg'),
   require('../../../assets/fixtures/03_complex_printed.jpg'),
   require('../../../assets/fixtures/04_handwritten_clean.jpg'),
 ];
-
-interface CapturedPage {
-  id: string;
-  source: ThumbnailSource;
-}
 
 const CAPTURE_BUTTON_SIZE = 68;
 
@@ -50,25 +46,25 @@ const CAPTURE_BUTTON_SIZE = 68;
 export function ScannerScreen() {
   const navigation = useNavigation<RootNavigation>();
   const insets = useSafeAreaInsets();
-  const [pages, setPages] = useState<CapturedPage[]>([]);
+  const pages = useCapturedPages();
   const [flashOn, setFlashOn] = useState(false);
+
+  // Opening the scanner starts a new session. Coming back from review to add
+  // another page doesn't remount this screen, so the pages survive that.
+  useEffect(() => {
+    captureSession.reset();
+  }, []);
 
   const lastPage = pages[pages.length - 1];
   const FlashIcon = flashOn ? Zap : ZapOff;
 
   function handleCapture() {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    setPages((previous) => [
-      ...previous,
-      {
-        id: `page-${previous.length + 1}`,
-        source: MOCK_CAPTURES[previous.length % MOCK_CAPTURES.length],
-      },
-    ]);
+    captureSession.add(MOCK_CAPTURES[pages.length % MOCK_CAPTURES.length]);
   }
 
   function handleDone() {
-    navigation.navigate('CapturedPages', { pageCount: pages.length });
+    navigation.navigate('CapturedPages');
   }
 
   return (

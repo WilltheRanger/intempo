@@ -1,0 +1,82 @@
+import { useSyncExternalStore } from 'react';
+
+import type { ThumbnailSource } from './types';
+
+export interface CapturedPage {
+  id: string;
+  source: ThumbnailSource;
+}
+
+/**
+ * The pages captured in the current scan, shared between the scanner and the
+ * review screen.
+ *
+ * Deliberately not route params: reordering and deleting have to survive the
+ * round trip when someone goes back to add another page, and params would
+ * reset that. Module-level rather than a provider because a capture session is
+ * genuinely global — there is only ever one in flight.
+ *
+ * This is where real capture output lands later. Nothing above it changes.
+ */
+let pages: CapturedPage[] = [];
+let nextId = 1;
+
+const listeners = new Set<() => void>();
+
+function commit(next: CapturedPage[]): void {
+  pages = next;
+  listeners.forEach((listener) => listener());
+}
+
+function subscribe(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
+}
+
+function getSnapshot(): CapturedPage[] {
+  return pages;
+}
+
+/** Subscribes a component to the current capture session. */
+export function useCapturedPages(): CapturedPage[] {
+  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+}
+
+export const captureSession = {
+  /** Clears the session. Called when the scanner opens fresh. */
+  reset(): void {
+    nextId = 1;
+    commit([]);
+  },
+
+  add(source: ThumbnailSource): void {
+    commit([...pages, { id: `page-${nextId++}`, source }]);
+  },
+
+  remove(id: string): void {
+    commit(pages.filter((page) => page.id !== id));
+  },
+
+  /** Swaps a page with its neighbour. Out-of-range moves are ignored. */
+  move(id: string, direction: -1 | 1): void {
+    const index = pages.findIndex((page) => page.id === id);
+    const target = index + direction;
+    if (index === -1 || target < 0 || target >= pages.length) {
+      return;
+    }
+    const next = [...pages];
+    [next[index], next[target]] = [next[target], next[index]];
+    commit(next);
+  },
+
+  /** Replaces one page's image, standing in for re-shooting it. */
+  replace(id: string, source: ThumbnailSource): void {
+    commit(pages.map((page) => (page.id === id ? { ...page, source } : page)));
+  },
+
+  current(): CapturedPage[] {
+    return pages;
+  },
+};
