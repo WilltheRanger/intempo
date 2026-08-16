@@ -21,10 +21,10 @@ export interface PieceCardProps {
    */
   showPracticeDetail?: boolean;
   /**
-   * Trims vertical padding for screens that show many rows at once.
+   * The Library's row treatment: tighter vertical padding for browsing many
+   * rows at once, and a wider gutter between thumbnail and text.
    *
-   * Off by default so Today's preview keeps its approved proportions; the
-   * Library turns it on, where density matters more than air.
+   * Off by default so Today's preview keeps its approved proportions.
    */
   dense?: boolean;
 }
@@ -81,6 +81,7 @@ export function PieceCard({
 
         {showPracticeDetail ? (
           <MetadataRow
+            variant="metadataSmall"
             items={[
               formatProgressPercent(piece.progress),
               formatLastPracticed(piece.lastPracticedAt),
@@ -126,6 +127,11 @@ const styles = StyleSheet.create({
   },
   rowDense: {
     paddingVertical: spacing.xs,
+    // Gives the thumbnail air on its right before the text column starts.
+    // Scoped here rather than applied to every row: the extra 4pt narrows the
+    // text column enough to wrap titles that currently fit on one line in
+    // Today's preview, and Today is frozen.
+    gap: spacing.xl,
   },
   thumbnail: {
     width: THUMBNAIL_WIDTH,

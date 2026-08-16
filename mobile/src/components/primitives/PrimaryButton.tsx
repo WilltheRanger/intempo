@@ -81,10 +81,10 @@ export function PrimaryButton({
       {loading ? (
         <ActivityIndicator color={colors.actionText} />
       ) : (
-        <View style={styles.content}>
+        <View style={[styles.content, size === 'compact' && styles.contentCompact]}>
           {Icon ? (
             <Icon
-              size={ICON_SIZE.md}
+              size={size === 'compact' ? ICON_SIZE.sm : ICON_SIZE.md}
               strokeWidth={ICON_STROKE_WIDTH}
               color={colors.actionText}
             />
@@ -111,6 +111,9 @@ const styles = StyleSheet.create({
     // Exactly the minimum comfortable target — no smaller.
     height: MIN_TOUCH_TARGET,
     alignSelf: 'flex-start',
+    // Tighter gutters and a smaller glyph pull the width in, so the button
+    // sits under the page title in the hierarchy instead of rivalling it.
+    paddingHorizontal: spacing.md,
   },
   pressed: {
     backgroundColor: colors.actionBgPressed,
@@ -122,5 +125,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
+  },
+  contentCompact: {
+    gap: spacing.xs,
   },
 });

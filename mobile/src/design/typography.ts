@@ -84,6 +84,17 @@ export const typography = {
     fontSize: 14,
     lineHeight: 20,
   },
+  /**
+   * Metadata in dense contexts — list rows, counts.
+   *
+   * One step down from `metadata` so it sits clearly below the title and
+   * composer above it, rather than competing with them.
+   */
+  metadataSmall: {
+    fontFamily: fontFamily.sansRegular,
+    fontSize: 13,
+    lineHeight: 18,
+  },
   /** Section labels. Sentence case — the brief rules out decorative uppercase. */
   sectionLabel: {
     fontFamily: fontFamily.sansMedium,

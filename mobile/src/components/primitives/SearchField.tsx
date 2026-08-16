@@ -14,9 +14,9 @@ import {
 import {
   BORDER_WIDTH,
   colors,
-  CONTROL_HEIGHT,
   ICON_SIZE,
   ICON_STROKE_WIDTH,
+  MIN_TOUCH_TARGET,
   radii,
   spacing,
   typography,
@@ -104,7 +104,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.md,
-    height: CONTROL_HEIGHT,
+    // Shorter than a button — a field this size still taps comfortably, and
+    // it sits at the minimum target rather than below it.
+    height: MIN_TOUCH_TARGET,
     paddingHorizontal: spacing.lg,
     backgroundColor: colors.surface,
     borderRadius: radii.md,
