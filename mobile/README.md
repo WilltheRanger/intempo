@@ -51,6 +51,34 @@ not an implementation one.
 `PieceSource`. `data/sources/index.ts` picks the implementation — fixtures
 today, the live backend later. Swapping it changes one line and no component.
 
+## Today is the canonical reference
+
+The Today screen is approved and frozen. Library, Piece Detail, Practice,
+Insights, and Profile derive from it — they do not get their own visual
+decisions. Nothing about Today changes without the owner asking for it.
+
+What that means in practice when building a new screen:
+
+- **Compose, don't invent.** Everything on Today is built from
+  `components/primitives` and `components/pieces`. If a new screen seems to
+  need a new card, button, or heading style, it almost certainly needs an
+  existing one with different content.
+- **Values come from `design/`.** No new colours, sizes, radii, or spacing
+  steps. The accent appears sparingly — on Today it is used three times
+  (progress fill, "See all", active tab) and nowhere else.
+- **Serif is for titles only.** Screen titles, the featured composition
+  title, and library composition titles. Everything functional — composers,
+  metadata, labels, controls — is Inter.
+- **Borders, never shadows.** One hairline `BORDER_WIDTH` in `colors.border`.
+- **Score imagery earns its place.** A piece is shown with its score, not an
+  icon or a coloured tile.
+- **Titles clamp.** Composition titles cap at two lines; composers and
+  metadata at one. Long real repertoire names — "Sonata for Violin and Piano
+  No. 9 in A major, Op. 47 'Kreutzer'" — must not break a row's layout.
+- **Safe areas, never device constants.** Top spacing is `ScreenContainer`'s
+  `SafeAreaView`; bottom spacing is the measured tab-bar height from
+  `navigation/tabBarMetrics`. No status-bar or notch numbers anywhere.
+
 ## Why fixtures
 
 The Today screen shows progress, a last-practiced line, and score thumbnails.
