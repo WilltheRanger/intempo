@@ -1,34 +1,37 @@
 import { StyleSheet, View } from 'react-native';
 
-import { BORDER_WIDTH, colors, radii, spacing } from '../../design';
+import { ScoreThumbnail } from '../../components/pieces/ScoreThumbnail';
+import type { ThumbnailSource } from '../../data/types';
+import { colors, radii, spacing } from '../../design';
 
 /** Corner bracket length, in points. */
 const CORNER = 26;
 const CORNER_WEIGHT = 2;
-const STAFF_COUNT = 8;
+
+export interface ViewfinderPageProps {
+  /** The image the next capture will produce. */
+  source: ThumbnailSource;
+}
 
 /**
  * Stands in for the camera feed.
  *
- * There is no camera in this build, so rather than a black rectangle or a
- * faked photograph this draws a page of ruled staves inside the framing
- * guide — enough to judge how the guide sits against sheet music. It uses the
- * same ruled-line motif as the score thumbnail placeholder.
+ * Shows the exact image the next capture will produce, through the same
+ * component and fit the captured-page thumbnails use — so what sits inside
+ * the framing guide is what comes back on the review screen.
  */
-export function ViewfinderPage() {
+export function ViewfinderPage({ source }: ViewfinderPageProps) {
   return (
     <View style={styles.frame}>
-      <View style={styles.page}>
-        {Array.from({ length: STAFF_COUNT }, (_, index) => (
-          <View key={index} style={styles.stave}>
-            {Array.from({ length: 5 }, (_, line) => (
-              <View key={line} style={styles.staveLine} />
-            ))}
-          </View>
-        ))}
-      </View>
+      <ScoreThumbnail
+        source={source}
+        radius={radii.sm}
+        style={styles.page}
+      />
 
-      {/* Framing guide: four brackets, nothing that pulses or glows. */}
+      {/* Framing guide: four plain brackets, nothing that pulses or glows.
+          They sit on the dark ground just outside the page — drawn on the
+          page itself, a warm-white guide on warm-white paper disappears. */}
       <View style={[styles.corner, styles.topLeft]} />
       <View style={[styles.corner, styles.topRight]} />
       <View style={[styles.corner, styles.bottomLeft]} />
@@ -42,26 +45,10 @@ const styles = StyleSheet.create({
     width: '82%',
     // Close to A4 portrait, which is what most sheet music is.
     aspectRatio: 0.74,
-    // Insets the page so the brackets fall on the dark ground just outside
-    // it. Sitting them on the page itself makes a white guide on white paper.
     padding: spacing.md,
   },
   page: {
     flex: 1,
-    backgroundColor: colors.actionText,
-    borderRadius: radii.sm,
-    paddingHorizontal: '9%',
-    paddingVertical: '7%',
-    justifyContent: 'space-between',
-    overflow: 'hidden',
-  },
-  stave: {
-    justifyContent: 'space-between',
-    height: '7%',
-  },
-  staveLine: {
-    height: BORDER_WIDTH,
-    backgroundColor: colors.borderStrong,
     width: '100%',
   },
   corner: {

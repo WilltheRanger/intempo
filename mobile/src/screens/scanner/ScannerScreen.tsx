@@ -25,12 +25,17 @@ import { ViewfinderPage } from './ViewfinderPage';
 /**
  * Stand-in images for captured pages. Real capture writes camera output here
  * instead; nothing else about this screen changes.
+ *
+ * Page-shaped rather than the library's score strips: those are single staff
+ * lines at roughly 8:1, and cropping one into a portrait viewfinder shows two
+ * noteheads at enormous magnification instead of a sheet of music. See
+ * `assets/captures/SOURCES.md`.
  */
 export const MOCK_CAPTURES: ThumbnailSource[] = [
-  require('../../../assets/fixtures/01_simple_printed.jpg'),
-  require('../../../assets/fixtures/02_medium_printed.jpg'),
-  require('../../../assets/fixtures/03_complex_printed.jpg'),
-  require('../../../assets/fixtures/04_handwritten_clean.jpg'),
+  require('../../../assets/captures/page-01.jpg'),
+  require('../../../assets/captures/page-02.jpg'),
+  require('../../../assets/captures/page-03.jpg'),
+  require('../../../assets/captures/page-04.jpg'),
 ];
 
 const CAPTURE_BUTTON_SIZE = 68;
@@ -57,10 +62,13 @@ export function ScannerScreen() {
 
   const lastPage = pages[pages.length - 1];
   const FlashIcon = flashOn ? Zap : ZapOff;
+  // What's framed is what the next capture yields — the viewfinder and the
+  // resulting page thumbnail show the same image.
+  const nextCapture = MOCK_CAPTURES[pages.length % MOCK_CAPTURES.length];
 
   function handleCapture() {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    captureSession.add(MOCK_CAPTURES[pages.length % MOCK_CAPTURES.length]);
+    captureSession.add(nextCapture);
   }
 
   function handleDone() {
@@ -109,7 +117,7 @@ export function ScannerScreen() {
       </View>
 
       <View style={styles.viewfinder}>
-        <ViewfinderPage />
+        <ViewfinderPage source={nextCapture} />
       </View>
 
       <View
