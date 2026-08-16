@@ -6,6 +6,54 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-16 19:15 — Record — an even vertical rhythm
+
+**Batch:** Frontend rebuild — Record + Verdict flow.
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`
+
+Lifting the control exposed how lumpy the spacing under it already was. Two
+causes, both structural:
+
+1. **`body` was `justifyContent: 'center'` with a fixed 40pt gap.** Centring one
+   block in leftover space means the two voids around it are whatever is left
+   over — they aren't chosen, they're a remainder. Now `space-evenly`, so the
+   interval above the tempo group, between it and the timer, and below the timer
+   are one measure that scales with the screen.
+2. **The container's standard 24pt bottom padding was landing under the timer.**
+   That padding exists for content ending above a tab bar; here the footer owns
+   the bottom edge, so it was pure extra air in exactly the gap that had to
+   match the others. Cancelled on this screen with `paddingBottom: 0` in
+   `contentStyle`.
+
+Measured gaps between the four blocks, 393×852 with a 34pt indicator:
+
+| | before | after |
+|---|---|---|
+| Title → Target tempo | 100 | **92** |
+| Metronome → timer | 41 | **80** |
+| Timer → control | 121 | **97** |
+
+Spread went from 80pt to 17pt. The residual 17 is the two paddings that belong
+to their own components — `PageHeader`'s 12pt below the title and the footer's
+16pt above the action — and cancelling those would mean negative margins
+fighting two shared primitives, which is worse than a gap that is 20% larger
+before the action zone.
+
+Checked at four sizes; the rhythm compresses proportionally and nothing
+collides:
+
+| | title→tempo | metronome→timer | timer→control | circle centre from bottom |
+|---|---|---|---|---|
+| 393×852, 34pt indicator | 92 | 80 | 97 | 150 |
+| 393×852, flat top | 112 | 102 | 117 | 132 |
+| 375×667 (SE) | 51 | 39 | 56 | 132 |
+| 430×932 (Max) | 118 | 108 | 123 | 150 |
+
+**Tests run:** `npx tsc --noEmit` clean, web export rebuilt, all four sizes
+driven in Chromium and screenshotted.
+
+---
+
 ## 2026-08-16 18:55 — Record — the control lifted into the thumb zone
 
 **Batch:** Frontend rebuild — Record + Verdict flow.

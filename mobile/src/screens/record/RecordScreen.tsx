@@ -325,14 +325,23 @@ const RECORD_SIZE = 88;
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
+    // The container's standard bottom padding is for content that ends above a
+    // tab bar. Here the footer owns the bottom edge, so that padding only
+    // shows up as extra air under the timer — which is exactly the gap that
+    // has to match the two above it.
+    paddingBottom: 0,
   },
   centred: {
     justifyContent: 'center',
   },
   body: {
     flex: 1,
-    justifyContent: 'center',
-    gap: spacing['4xl'],
+    // Distributed rather than centred with a fixed gap. Centring a block in
+    // leftover space makes the two voids around it whatever happens to be
+    // left, which is how one gap ended up three times the other. This way the
+    // interval above the tempo, between it and the timer, and below the timer
+    // are the same measure, and they all scale together on a shorter phone.
+    justifyContent: 'space-evenly',
   },
   tempo: {
     alignItems: 'center',
