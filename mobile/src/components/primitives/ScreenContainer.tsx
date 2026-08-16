@@ -1,5 +1,5 @@
 import { BottomTabBarHeightContext } from '@react-navigation/bottom-tabs';
-import { useContext, type ReactNode } from 'react';
+import { useContext, useRef, useState, type ReactNode } from 'react';
 import {
   ScrollView,
   StyleSheet,
@@ -51,6 +51,21 @@ export function ScreenContainer({
   const insets = useSafeAreaInsets();
   const barHeight = hasTabBar ? tabBarHeight : 0;
 
+  // The footer's rule marks content passing underneath. With nothing to
+  // scroll there's nothing to divide, so it stays hidden and the action sits
+  // on the page like any other.
+  const [overflows, setOverflows] = useState(false);
+  const viewportHeight = useRef(0);
+  const contentHeight = useRef(0);
+
+  function measureOverflow() {
+    if (!footer) {
+      return;
+    }
+    const next = contentHeight.current > viewportHeight.current + 1;
+    setOverflows((current) => (current === next ? current : next));
+  }
+
   // A footer ends the scroll area early, so content scrolls clear of it on its
   // own — no measuring, and no padding that has to be kept in sync with
   // whatever the footer holds. Without one the content still has to clear the
@@ -73,6 +88,14 @@ export function ScreenContainer({
       contentContainerStyle={[styles.content, bottomInset, contentStyle]}
       showsVerticalScrollIndicator={false}
       keyboardShouldPersistTaps="handled"
+      onLayout={(event) => {
+        viewportHeight.current = event.nativeEvent.layout.height;
+        measureOverflow();
+      }}
+      onContentSizeChange={(_width, height) => {
+        contentHeight.current = height;
+        measureOverflow();
+      }}
     >
       {children}
     </ScrollView>
@@ -93,7 +116,15 @@ export function ScreenContainer({
       {footer ? (
         // Same construction as the tab bar: page background behind a hairline
         // rule, not a raised surface. Content passes above the rule and stops.
-        <View style={[styles.footer, footerInset]}>{footer}</View>
+        <View
+          style={[
+            styles.footer,
+            overflows ? styles.footerDivided : null,
+            footerInset,
+          ]}
+        >
+          {footer}
+        </View>
       ) : null}
     </SafeAreaView>
   );
@@ -115,9 +146,16 @@ const styles = StyleSheet.create({
   },
   footer: {
     backgroundColor: colors.bg,
+    // The border is always laid out and only ever changes colour. Toggling its
+    // width would resize the footer, which resizes the scroll area, which can
+    // flip the overflow test that drew it — content within a point of filling
+    // the screen would sit there oscillating.
     borderTopWidth: BORDER_WIDTH,
-    borderTopColor: colors.border,
+    borderTopColor: 'transparent',
     paddingHorizontal: SCREEN_GUTTER,
     paddingTop: spacing.lg,
+  },
+  footerDivided: {
+    borderTopColor: colors.border,
   },
 });
