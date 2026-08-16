@@ -67,16 +67,20 @@ repo needs to change. Note that under the v2 root directory strategy the
 output is `dist`, and writing `mobile/dist` there sends it looking for
 `mobile/mobile/dist`.
 
-If the field is unavailable, put the path in the command instead:
+If the field is unavailable or won't stick, there is a root `package.json`
+whose only job is to reach the app, so the path lives in the repo rather than
+in a dashboard field:
 
 | Setting | Value |
 |---|---|
 | Root directory | *(empty)* |
-| Build command | `cd mobile && npm ci && npx expo export --platform web` |
+| Build command | `npm run build` |
 | Build output directory | `mobile/dist` |
 
-`npm ci` is required in that form: with no `package.json` at the repo root,
-Cloudflare's automatic install step never runs.
+It runs `cd mobile && npm ci && npx expo export --platform web`. The `npm ci`
+is the part that matters: with no dependencies declared at the repo root,
+Cloudflare's automatic install step installs nothing, and without it `npx`
+goes and fetches its own copy of Expo — which is what the failing log shows.
 
 ### Auth is off unless you add the keys
 
