@@ -15,6 +15,7 @@ import {
   disabledOpacity,
   ICON_SIZE,
   ICON_STROKE_WIDTH,
+  MIN_TOUCH_TARGET,
   radii,
   spacing,
 } from '../../design';
@@ -28,6 +29,12 @@ export interface PrimaryButtonProps {
   loading?: boolean;
   /** Light impact on press. On by default — primary actions are meaningful. */
   haptic?: boolean;
+  /**
+   * `compact` shrinks to its content and sits at the minimum comfortable
+   * touch target, for a primary action that belongs beside a heading rather
+   * than spanning the screen. Same fill, label, and radius either way.
+   */
+  size?: 'default' | 'compact';
   style?: StyleProp<ViewStyle>;
 }
 
@@ -44,6 +51,7 @@ export function PrimaryButton({
   disabled = false,
   loading = false,
   haptic = true,
+  size = 'default',
   style,
 }: PrimaryButtonProps) {
   const inactive = disabled || loading;
@@ -64,6 +72,7 @@ export function PrimaryButton({
       accessibilityState={{ disabled: inactive, busy: loading }}
       style={({ pressed }) => [
         styles.button,
+        size === 'compact' && styles.compact,
         pressed && !inactive && styles.pressed,
         disabled && styles.disabled,
         style,
@@ -97,6 +106,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: spacing.lg,
+  },
+  compact: {
+    // Exactly the minimum comfortable target — no smaller.
+    height: MIN_TOUCH_TARGET,
+    alignSelf: 'flex-start',
   },
   pressed: {
     backgroundColor: colors.actionBgPressed,

@@ -1,11 +1,13 @@
 import { Search, X } from 'lucide-react-native';
 import { useState } from 'react';
 import {
+  Platform,
   Pressable,
   StyleSheet,
   TextInput,
   View,
   type StyleProp,
+  type TextStyle,
   type ViewStyle,
 } from 'react-native';
 
@@ -19,6 +21,17 @@ import {
   spacing,
   typography,
 } from '../../design';
+
+/**
+ * react-native-web renders TextInput as a DOM input, which draws the browser's
+ * own focus ring inside our container. The container carries the focus
+ * treatment, so suppress the inner one. No-op on native, where TextInput draws
+ * no outline of its own.
+ */
+const NO_INNER_OUTLINE = Platform.select({
+  web: { outlineStyle: 'none', outlineWidth: 0 },
+  default: {},
+}) as TextStyle;
 
 export interface SearchFieldProps {
   value: string;
@@ -57,7 +70,10 @@ export function SearchField({
         onBlur={() => setFocused(false)}
         placeholder={placeholder}
         placeholderTextColor={colors.textTertiary}
-        style={styles.input}
+        // Android draws its own underline under TextInput; the container's
+        // border is the only edge this field should have.
+        underlineColorAndroid="transparent"
+        style={[styles.input, NO_INNER_OUTLINE]}
         autoCorrect={false}
         autoCapitalize="none"
         returnKeyType="search"
@@ -96,7 +112,9 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
   },
   focused: {
-    borderColor: colors.borderStrong,
+    // The whole container takes the accent on focus — the one place the gold
+    // marks state rather than an action.
+    borderColor: colors.accent,
   },
   input: {
     flex: 1,
