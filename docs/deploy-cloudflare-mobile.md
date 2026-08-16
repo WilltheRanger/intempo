@@ -31,8 +31,37 @@ Under **Settings → Environment variables**:
 |---|---|---|
 | `NODE_VERSION` | `22` | Expo SDK 57 needs a current Node; Cloudflare's default is often older, and that is the usual first-build failure. |
 
-Set the **production branch** to whichever branch carries the mobile app.
-Cloudflare also builds a preview URL for every other branch and PR.
+### Set the production branch, or the first build fails
+
+**`mobile/` does not exist on `main`.** It is empty there — zero files — and a
+build pointed at `main` fails on the missing root directory before it reaches
+npm. Cloudflare defaults the production branch to `main`, so this is the step
+that catches people.
+
+Two ways round it, either is fine:
+
+- **Point the project at the branch.** Settings → Builds & deployments →
+  Production branch → `claude/mobile-frontend-rebuild-vay1tg`. Live now, and it
+  keeps redeploying as that branch moves.
+- **Merge PR #2 to `main` first**, then leave the production branch as `main`.
+  Tidier long-term; nothing deploys until the merge lands.
+
+Cloudflare also builds a preview URL for every other branch and PR either way.
+
+### Auth is off unless you add the keys
+
+With no Supabase variables set, the app runs on fixtures and opens straight
+onto Today — the sign-in gate passes through, by design. To exercise the real
+auth flow on the deployed preview, add both under Environment variables:
+
+| Variable | Value |
+|---|---|
+| `EXPO_PUBLIC_SUPABASE_URL` | the project URL |
+| `EXPO_PUBLIC_SUPABASE_ANON_KEY` | the anon key |
+
+Both are public by design — the anon key is meant to ship in a client, and row
+level security is what protects the data. Adding them turns on the gate, so the
+preview then opens on the sign-in screen instead of the app.
 
 ## What already ships in the repo
 
@@ -41,6 +70,12 @@ Cloudflare also builds a preview URL for every other branch and PR.
   Without it, a refresh or a shared deep link 404s.
 - **`npm run build:web`** in `mobile/package.json`, the same command Cloudflare
   runs, so a failure can be reproduced locally before pushing.
+- **`mobile/package-lock.json`**, so Cloudflare's install resolves the same
+  versions this was built and verified against.
+
+Verified on this branch with Node 22: install tree clean, `npx expo export
+--platform web` succeeds, and `dist/` comes out at 4.9 MB — `index.html`, a
+3.3 MB JS bundle, four bundled fonts, the fixture images, and `_redirects`.
 
 ## What this preview is, and what it isn't
 
