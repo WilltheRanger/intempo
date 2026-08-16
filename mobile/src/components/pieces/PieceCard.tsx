@@ -2,7 +2,9 @@ import { Pressable, StyleSheet, View } from 'react-native';
 
 import { colors, radii, spacing } from '../../design';
 import type { Piece } from '../../data/types';
+import { formatLastPracticed, formatProgressPercent } from '../../lib/format';
 import { Card } from '../primitives/Card';
+import { MetadataRow } from '../primitives/MetadataRow';
 import { ProgressBar } from '../primitives/ProgressBar';
 import { Text } from '../primitives/Text';
 import { ScoreThumbnail } from './ScoreThumbnail';
@@ -10,6 +12,14 @@ import { ScoreThumbnail } from './ScoreThumbnail';
 export interface PieceCardProps {
   piece: Piece;
   onPress?: () => void;
+  /**
+   * Adds a percentage and last-practiced line under the progress bar.
+   *
+   * Off by default, which keeps Today's preview exactly as approved. The
+   * Library turns it on: that screen is where a musician decides what to work
+   * on next, and "practiced three weeks ago" is the deciding signal.
+   */
+  showPracticeDetail?: boolean;
 }
 
 /**
@@ -29,7 +39,11 @@ const THUMBNAIL_HEIGHT = 40;
  * else. Exact dates and counts belong on the piece detail screen; repeating
  * them on every row is what makes a library tiring to scan.
  */
-export function PieceCard({ piece, onPress }: PieceCardProps) {
+export function PieceCard({
+  piece,
+  onPress,
+  showPracticeDetail = false,
+}: PieceCardProps) {
   const content = (
     <View style={styles.row}>
       <ScoreThumbnail source={piece.thumbnail} style={styles.thumbnail} />
@@ -56,6 +70,16 @@ export function PieceCard({ piece, onPress }: PieceCardProps) {
           accessibilityLabel={`Progress through ${piece.title}`}
           style={styles.progress}
         />
+
+        {showPracticeDetail ? (
+          <MetadataRow
+            items={[
+              formatProgressPercent(piece.progress),
+              formatLastPracticed(piece.lastPracticedAt),
+            ]}
+            style={styles.practiceDetail}
+          />
+        ) : null}
       </View>
     </View>
   );
@@ -108,6 +132,9 @@ const styles = StyleSheet.create({
     marginTop: spacing.xs,
   },
   progress: {
+    marginTop: spacing.sm,
+  },
+  practiceDetail: {
     marginTop: spacing.sm,
   },
 });

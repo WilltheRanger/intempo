@@ -55,6 +55,36 @@ const FIXTURE_PIECES: FixturePiece[] = [
     practicedDaysAgo: 26,
     thumbnail: require('../../../assets/fixtures/01_simple_printed.jpg'),
   },
+  // Appended below so the Today preview — which takes the first three pieces
+  // that aren't the featured one — stays exactly as approved. These give the
+  // Library screen a repertoire worth scrolling and searching.
+  {
+    id: 'fixture-mozart-k216',
+    title: 'Violin Concerto No. 3 in G major, K. 216',
+    composer: 'W. A. Mozart',
+    movement: 'I. Allegro',
+    progress: 0.45,
+    practicedDaysAgo: 8,
+    thumbnail: require('../../../assets/fixtures/02_medium_printed.jpg'),
+  },
+  {
+    id: 'fixture-massenet-meditation',
+    title: 'Méditation from Thaïs',
+    composer: 'Jules Massenet',
+    movement: null,
+    progress: 0.9,
+    practicedDaysAgo: 19,
+    thumbnail: require('../../../assets/fixtures/01_simple_printed.jpg'),
+  },
+  {
+    id: 'fixture-paganini-24',
+    title: 'Caprice No. 24 in A minor, Op. 1',
+    composer: 'Niccolò Paganini',
+    movement: null,
+    progress: 0.08,
+    practicedDaysAgo: null,
+    thumbnail: require('../../../assets/fixtures/03_complex_printed.jpg'),
+  },
 ];
 
 function toPiece({ practicedDaysAgo, ...piece }: FixturePiece): Piece {
