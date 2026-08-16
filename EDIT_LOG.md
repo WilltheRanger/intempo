@@ -6,6 +6,74 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-16 23:10 — On `main` now; Pages caching; the verdict-corrections endpoint
+
+**Branch:** `main` — the owner asked for development to move here so updates
+are visible without a PR round trip. `claude/mobile-frontend-rebuild-vay1tg` is
+merged and done with.
+
+**The deploy.** PR #3 merged, so `main` carries the whole app at `f3cb2f3`. The
+`intempo` Pages project's check has come back green on the last two commits.
+Verified the exact Cloudflare command from a clean tree on `main` before
+merging — `rm -rf mobile/node_modules mobile/dist && npm run build` at the repo
+root — exits 0, applies the `expo-audio` patch via `postinstall`, writes a
+4.9 MB `mobile/dist`; the export was then served and driven in a browser with
+no console errors.
+
+`mobile/public/_headers` added. Everything under `_expo/static/*` and
+`assets/*` carries a content hash in its filename, so those are `immutable` for
+a year — the JS bundle alone is 3.3 MB and was being re-fetched on every visit.
+`index.html` is the one file whose name never changes, so it must always
+revalidate; a stale copy pins a browser to a deleted bundle and the app fails
+to boot on a URL that looks fine.
+
+**Two Pages projects are failing and neither is this app's.** There are now
+three — `intempo` (green), `front`, and `i`. The other two report failure in
+the same second they start, which means the build never ran: a configuration
+error, usually a root directory that doesn't exist on the branch. They red
+every commit, which makes the checks list useless for spotting a real failure.
+Recorded in the deploy doc; their logs are only in the Cloudflare dashboard.
+
+**`/v1/analyses/:id/corrections`** — the §7.5 feedback loop. The table and its
+RLS policy have existed since Batch 1; only the endpoint was missing. §7.5
+calls this the moat and says to ship it from day one, and the reasoning holds:
+the onset-detection algorithms are public, labelled bowed-string onset data is
+not. It is also the only route out of where Batch 3 is stuck — thresholds are
+untuned because tuning needs a human ear on real recordings, and this is how
+ears reach recordings at any scale beyond one person's afternoon.
+
+- POST takes a whole take's corrections in one request. Twenty-four measures
+  should not be twenty-four round trips.
+- Both verdicts are stored, the app's and the musician's. Keeping only the
+  correction would lose what it was correcting, which is the comparison the
+  dataset exists to make.
+- `unsure` is an accepted answer. §7.5 warns that many corrections come from
+  disagreeing with the concept rather than catching a misfire, and someone who
+  genuinely can't remember is more useful in the data than someone who guessed.
+- Appends rather than replaces. Two different opinions about the same measure
+  are both data; the second is later, not truer.
+- GET is owner-scoped so a client can show a measure as already corrected. The
+  table has no SELECT policy at all — the only other reader is the
+  service-role retraining pipeline.
+- Someone else's analysis is a **404**, not a 403, matching the rest of the
+  API: an id that isn't yours is an id that doesn't exist.
+
+**Tests run:** `203 passed` (was 192; +11). Route ordering checked explicitly —
+`corrections` shares the `/analyses` prefix and must not shadow
+`GET /v1/analyses/:id`; both resolve.
+
+**Known side effects / things to watch:**
+
+- **Nothing calls this yet.** The verdict screen has no "this was wrong"
+  control, and adding one is UI work behind the §2 gate.
+- The `2000`-character comment cap and the `200`-corrections-per-request cap
+  are chosen, not derived. Both are generous for the shape of the interaction.
+- I still can't load the deployed site from here — the sandbox proxy refuses
+  `CONNECT` to `pages.dev` with a 403. Everything above is verified locally and
+  from GitHub's view of the Pages check, not from the live URL.
+
+---
+
 ## 2026-08-16 22:30 — Score images are displayable; last-practiced is real
 
 **Batch:** backend gap-closing, toward `USE_FIXTURES = false`.
