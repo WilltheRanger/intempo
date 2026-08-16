@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}All six{% endblock %}
+{% block navover %}on{% endblock %}
+{% block body %}
+<main>
+  <div>
+    <h2>Every clip, at the parameters on the right</h2>
+    <p class="note">
+      The regression rule: a threshold change is checked against all six, not
+      just the clip that prompted it. Losing the open-E onset while rescuing
+      the slurred clip is the classic Batch 3 mistake, and this is where it
+      shows up.
+    </p>
+    <table>
+      <tr>
+        <th>clip</th><th>status</th>
+        <th class="num">det</th><th class="num">exp</th>
+        <th class="num">missed</th><th class="num">extra</th>
+        <th class="num">worst ms</th><th class="num">mean ms</th>
+        <th class="num">quality</th>
+      </tr>
+      {% for row in rows %}
+      <tr>
+        <td>
+          <a href="/?clip={{ row.clip.id }}{% for k, v in query.items() %}{% if k != 'clip' %}&{{ k }}={{ v }}{% endif %}{% endfor %}">{{ row.clip.label }}</a>
+          {% if not row.clip.available %}<span class="tag">not recorded</span>
+          {% elif row.clip.synthetic %}<span class="tag">synthetic</span>{% endif %}
+        </td>
+        {% if row.error %}
+          <td colspan="8" class="bad">{{ row.error }}</td>
+        {% else %}
+          <td class="{% if row.diag.status != 'ok' %}bad{% endif %}">{{ row.diag.status }}</td>
+          <td class="num">{{ row.diag.n_detected }}</td>
+          <td class="num">{{ row.diag.n_expected }}</td>
+          <td class="num {% if row.diag.missed_expected %}warn{% endif %}">{{ row.diag.missed_expected|length }}</td>
+          <td class="num {% if row.diag.extra_detected %}warn{% endif %}">{{ row.diag.extra_detected|length }}</td>
+          <td class="num">{{ '%.0f'|format(row.diag.worst_ms) }}</td>
+          <td class="num">{{ '%.0f'|format(row.diag.mean_abs_ms) }}</td>
+          <td class="num">{{ '%.3f'|format(row.diag.quality) }}</td>
+        {% endif %}
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+
+  <aside>
+    <h2>Parameters</h2>
+    {% if applied %}<p class="warn" style="font-size:12px">Overridden for this request only.</p>{% endif %}
+    <dl>
+      {% for key, value in params.items() %}
+        <div class="{% if key in applied %}over{% endif %}" style="display:contents">
+          <dt>{{ key.split('.')[1] }}</dt><dd>{{ value }}</dd>
+        </div>
+      {% endfor %}
+    </dl>
+  </aside>
+</main>
+{% endblock %}

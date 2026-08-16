@@ -33,8 +33,8 @@ Under **Settings → Environment variables**:
 
 ### The production branch
 
-`mobile/` now exists on `main` — PR #2 was merged on 2026-08-16 — so the
-default production branch is correct and nothing needs changing.
+`mobile/` now exists on `main` — PR #2 merged 2026-08-16, commit `46c2da3` —
+so the default production branch is correct and nothing needs changing.
 
 Before that merge it was not: `mobile/` was empty on `main`, zero files, and a
 build pointed there failed on the missing root directory before it reached npm.
@@ -42,6 +42,20 @@ That was the second of the two failures logged below. If you ever see it again,
 the cause is the same: the branch being built doesn't have the app on it.
 
 Cloudflare also builds a preview URL for every other branch and PR.
+
+### Status, 2026-08-16
+
+The `intempo` project builds green — the check on PR #2's head commit
+(`6a3b1d9`) came back `success`, which is the first time this has worked. The
+merge means `main` builds from the same configuration.
+
+**There is a second Pages project on this repo, `front`, and it is failing.**
+It reports failure in the same second it starts, which is a configuration
+error rather than a build error — the build never runs. Two projects on one
+repo is only worth keeping if they serve different apps (`frontend/` and
+`mobile/`); if `front` was an earlier attempt at this one, deleting it stops a
+permanently red check on every PR. Its logs are in the Cloudflare dashboard;
+they aren't reachable from here.
 
 ### If the build fails on a missing package.json
 

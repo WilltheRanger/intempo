@@ -110,3 +110,9 @@ postgres-data/
 *.bak
 *.tmp
 *.orig
+
+# Generated stand-ins for the Batch 3 tuning corpus. Deterministic output of
+# fixtures/audio/make_synthetic.py — regenerate rather than commit. The six
+# real recordings are NOT ignored: they are the spec for what good output
+# looks like and belong in the repo.
+fixtures/audio/*.synthetic.wav

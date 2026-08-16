@@ -8,6 +8,7 @@ read so the same access rules apply at the API layer.
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from urllib.parse import urlparse
 from uuid import UUID
@@ -54,7 +55,14 @@ class ScoreResponse(BaseModel):
     user_id: UUID
     title: str
     composer: str | None = None
+    #: What was uploaded. Historical: the signed upload URL, long expired.
+    #: Never usable for display — see `image_url`.
     source_image_url: str
+    #: A freshly signed download URL for the sheet music, or null when the
+    #: object key can't be recovered or storage isn't configured. This is the
+    #: one to render.
+    image_url: str | None = None
+    image_url_expires_at: datetime | None = None
     score_json: dict[str, Any]
     shared_with_studio: UUID | None = None
     ocr_confidence: float | None = None
@@ -74,6 +82,39 @@ def _media_type_for(url: str) -> str:
     return "image/jpeg"
 
 
+#: The shapes a Supabase storage URL takes for one object, as path prefixes
+#: before `<bucket>/<path>`. Both the ownership check and the object-key
+#: extraction below read them, so a new shape is added in exactly one place.
+_STORAGE_PREFIXES = (
+    "/storage/v1/object/sign/",
+    "/storage/v1/object/upload/sign/",
+    "/storage/v1/object/authenticated/",
+    "/storage/v1/object/public/",
+)
+
+
+def _object_key_from(image_url: str, bucket: str = SCORE_BUCKET) -> str | None:
+    """`<user_id>/<uuid>.<ext>` out of a stored storage URL, or None.
+
+    `scores.source_image_url` holds the signed *upload* URL, which stops
+    working minutes after the upload — so displaying an image means signing a
+    fresh download, and signing needs the object key rather than the URL. The
+    key is in the URL's path; this pulls it back out.
+
+    Storing the key on the row would be tidier than re-deriving it, and is the
+    right follow-up. It needs a migration and a backfill, and the derivation is
+    safe today because `_assert_image_url_owned_by` has already refused any URL
+    that isn't one of these shapes.
+    """
+    path = urlparse(image_url).path
+    for prefix in _STORAGE_PREFIXES:
+        marker = f"{prefix}{bucket}/"
+        if path.startswith(marker):
+            key = path[len(marker) :]
+            return key or None
+    return None
+
+
 def _assert_image_url_owned_by(image_url: str, user_id: UUID) -> None:
     """The signed URL must point at the score-images bucket under the user's prefix.
 
@@ -90,13 +131,9 @@ def _assert_image_url_owned_by(image_url: str, user_id: UUID) -> None:
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="image_url must be http(s)",
         )
-    expected_prefix = f"/storage/v1/object/sign/{SCORE_BUCKET}/{user_id}/"
-    expected_authenticated_prefix = f"/storage/v1/object/authenticated/{SCORE_BUCKET}/{user_id}/"
-    expected_public_prefix = f"/storage/v1/object/public/{SCORE_BUCKET}/{user_id}/"
-    if not (
-        parsed.path.startswith(expected_prefix)
-        or parsed.path.startswith(expected_authenticated_prefix)
-        or parsed.path.startswith(expected_public_prefix)
+    if not any(
+        parsed.path.startswith(f"{prefix}{SCORE_BUCKET}/{user_id}/")
+        for prefix in _STORAGE_PREFIXES
     ):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -127,6 +164,63 @@ def _download_image(image_url: str) -> bytes:
     return body
 
 
+#: How long a display URL lives. Long enough that a library screen scrolled
+#: for a while doesn't start showing broken images, short enough that a leaked
+#: URL stops working the same session. `image_url_expires_at` is returned so a
+#: client can re-fetch rather than guess.
+SIGNED_DOWNLOAD_TTL_SECONDS = 60 * 60
+
+
+def _sign_downloads(keys: list[str]) -> dict[str, str]:
+    """Object key → signed download URL, for as many as storage will give us.
+
+    Batched: a library of forty scores is one storage call, not forty. Missing
+    keys are simply absent from the result, and a signing failure degrades the
+    whole batch to no images rather than failing the request — a list of scores
+    with no thumbnails is a usable screen; a 500 is not.
+    """
+    if not keys:
+        return {}
+    client = get_service_client()
+    if client is None:
+        return {}
+
+    bucket = client.storage.from_(SCORE_BUCKET)
+    try:
+        signed = bucket.create_signed_urls(keys, SIGNED_DOWNLOAD_TTL_SECONDS)
+    except Exception:
+        return {}
+
+    out: dict[str, str] = {}
+    for entry in signed or []:
+        if not isinstance(entry, dict) or entry.get("error"):
+            continue
+        url = entry.get("signedUrl") or entry.get("signedURL") or entry.get("signed_url")
+        path = entry.get("path")
+        if url and path:
+            # Supabase echoes the key back; it may or may not carry the bucket.
+            out[str(path).removeprefix(f"{SCORE_BUCKET}/")] = str(url)
+    return out
+
+
+def _with_image_urls(rows: list[dict[str, Any]]) -> list[ScoreResponse]:
+    """Rows to responses, signing every recoverable image in one call."""
+    keys = {}
+    for row in rows:
+        key = _object_key_from(row.get("source_image_url") or "")
+        if key:
+            keys[row["id"]] = key
+
+    signed = _sign_downloads(sorted(set(keys.values())))
+    expires_at = datetime.now(tz=timezone.utc) + timedelta(seconds=SIGNED_DOWNLOAD_TTL_SECONDS)
+
+    out = []
+    for row in rows:
+        url = signed.get(keys.get(row["id"], ""))
+        out.append(_row_to_response(row, image_url=url, expires_at=expires_at if url else None))
+    return out
+
+
 def _service_client():
     client = get_service_client()
     if client is None:
@@ -137,13 +231,20 @@ def _service_client():
     return client
 
 
-def _row_to_response(row: dict[str, Any]) -> ScoreResponse:
+def _row_to_response(
+    row: dict[str, Any],
+    *,
+    image_url: str | None = None,
+    expires_at: datetime | None = None,
+) -> ScoreResponse:
     return ScoreResponse(
         id=row["id"],
         user_id=row["user_id"],
         title=row["title"],
         composer=row.get("composer"),
         source_image_url=row["source_image_url"],
+        image_url=image_url,
+        image_url_expires_at=expires_at,
         score_json=row["score_json"],
         shared_with_studio=row.get("shared_with_studio"),
         ocr_confidence=row.get("ocr_confidence"),
@@ -204,7 +305,7 @@ async def list_scores(
         .range(offset, offset + limit - 1)
         .execute()
     )
-    return [_row_to_response(r) for r in response.data or []]
+    return _with_image_urls(response.data or [])
 
 
 @router.get("/{score_id}", response_model=ScoreResponse)
@@ -224,7 +325,7 @@ async def get_score(
     rows = response.data or []
     if not rows:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="score not found")
-    return _row_to_response(rows[0])
+    return _with_image_urls(rows)[0]
 
 
 @router.patch("/{score_id}", response_model=ScoreResponse)

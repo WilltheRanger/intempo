@@ -6,6 +6,153 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-16 22:30 — Score images are displayable; last-practiced is real
+
+**Batch:** backend gap-closing, toward `USE_FIXTURES = false`.
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`
+
+Two of the four null fields in `sources/api.ts` are now backed. `upload.py`'s
+own docstring has always said "reads happen later through `/v1/scores/:id`
+… which sign download URLs" — that was the contract; nothing implemented it.
+
+**Backend — `scores.py`:**
+
+- `ScoreResponse` gains `image_url` and `image_url_expires_at`: a download URL
+  signed at read time, good for an hour. `source_image_url` stays and is
+  documented for what it is — the signed *upload* URL, expired minutes after
+  the upload, never usable for display.
+- `_object_key_from()` recovers `<user>/<uuid>.<ext>` from the stored URL,
+  since signing needs the key and only the URL was kept. The four storage URL
+  shapes now live in one tuple that both this and `_assert_image_url_owned_by`
+  read, so a new shape is added once. Deriving is safe because the assertion
+  has already refused anything else; storing the key on the row would be
+  tidier and is the right follow-up, but it needs a migration and a backfill.
+- Signing is **batched** — a library of forty scores is one storage call, not
+  forty — and **degrades to no image** on failure. A list of scores with no
+  thumbnails is a usable screen; a 500 is not.
+
+**Client — `sources/api.ts`:**
+
+- `thumbnail` is the signed URL. Still nullable: signing can fail, and
+  `ScoreThumbnail` already falls back to its ruled-staff drawing.
+- `lastPracticedAt` needed **no backend change at all** — `/v1/analyses` has
+  existed since the vocabulary fix. One extra request for the whole library
+  rather than one per piece: the list is newest-first, so the first row naming
+  a score is that score's most recent take.
+- `getCurrentPiece` now means "most recently *played*", from the newest
+  analysis, rather than "most recently added". It falls back to the newest
+  score for someone who has never recorded, which is the only sensible thing to
+  offer them.
+
+**Tests run:** `192 passed` (was 185; +7 covering key extraction from all four
+URL shapes, a foreign URL, the batched call count, the degrade path, the
+bucket-prefixed echo, and an error entry).
+
+Then the part that actually proves it. `mobile/scripts/stub-api.py` serves the
+real response shapes over HTTP; with `USE_FIXTURES` flipped to false and
+`EXPO_PUBLIC_API_BASE_URL` pointed at it, the app was driven in Chromium:
+
+- Four real score images loaded from signed URLs — all eight `<img>` elements
+  reported `naturalWidth: 1200`, so they decoded, they didn't just get a src.
+- Today's featured card is the Bach Sonata with "Practiced today", not the
+  newest-added score — `getCurrentPiece` reading the analyses list.
+- Library shows "Practiced 3 days ago" on the Wohlfahrt, and nothing on the
+  Suite, which has no analysis. The null case renders as absence.
+- Request log exactly as designed: `/v1/analyses?limit=1`, `/v1/scores/:id`,
+  `/v1/scores`, `/v1/analyses?limit=200`, `/v1/me`, then the four images.
+- No failed requests, no page errors.
+
+`USE_FIXTURES` is back to `true` and the fixture build re-exported — the real
+backend isn't deployed and there are no Supabase keys.
+
+**Known side effects / things to watch:**
+
+- **Two fields are still null: `movement` and `progress`.** `movement` has no
+  column and no `score_json` field. `progress` has neither, and it also has no
+  definition — what counts as progress on a piece is a product decision, not a
+  schema one. Both need answering before `USE_FIXTURES` can flip for real.
+- Signing adds one storage round trip to every `/v1/scores` read, including
+  callers that never render an image. Worth measuring against a real project
+  before optimising; the alternative (a separate endpoint) costs the client N
+  requests instead.
+- The stub validates nothing and enforces no auth. It is a fixture with an HTTP
+  interface, not a mock of the backend's behaviour.
+
+---
+
+## 2026-08-16 21:40 — Batch 3 tuning dashboard
+
+**Batch:** 3 (audio analysis core) — the tuning appendix's step 2.
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`
+
+First backend work since the merge. The appendix is explicit that the readout
+comes before any threshold change, and it wasn't built — so `TUNING_LOG.md` had
+one entry, the untuned baseline, and no way to produce a second.
+
+**What changed:**
+
+- `backend/app/services/diagnostics.py` — `analyze_with_diagnostics()`. The
+  same functions `analyze()` calls, in the same order, with the same config
+  object, keeping the intermediate state instead of discarding it: detected
+  onsets, the expected grid, DTW's raw mapping, what fuzzy matching matched and
+  dropped, per-note deltas, and a peak envelope for drawing. Peak rather than
+  mean — an attack is one or two samples wide and averaging a bucket flattens
+  exactly the transient this is about.
+- `backend/tuning_dashboard/` — FastAPI + Jinja2, two pages. `/` is one clip in
+  detail; `/overview` is all six at the current parameters, which is what makes
+  the appendix's regression rule cheap enough to follow. Plots are inline SVG
+  computed in Python: no CDN to be offline from, no bundle, reload is instant.
+- Per-request parameter overrides (`?onset.delta=0.05`) so three candidates can
+  be compared without editing `config.toml`. Nothing is written back.
+- A "paste this into the tuning prompt" block, formatted exactly as §4's prompt
+  pattern wants it. §4's rule is that every round quotes real numbers from a
+  named clip; the fastest way to make that happen is to have them already
+  formatted.
+- `fixtures/audio/` — `manifest.json` describing all six clips with the score
+  and tempo each is played against (a grid that doesn't match the take is real
+  arithmetic about the wrong thing), a README saying exactly what to record, and
+  `make_synthetic.py` for stand-ins until then.
+
+**Two bugs I introduced and fixed, both found by looking rather than assuming:**
+
+1. **Mistyped parameters were silently ignored.** `_overrides` filtered the
+   query string to known tunables, so `?onset.detla=0.05` rendered a completely
+   convincing page for a parameter that never moved — the worst thing a
+   measurement tool can do, and the exact failure a comment in the file claimed
+   to prevent. Now anything that isn't page state is treated as an intended
+   override and an unknown name is a 400.
+2. **Deviation bars drew on the wrong side of the axis.** The heading says up is
+   late, and the rushing clip's all-negative deltas were drawing upward. SVG's y
+   grows downward, so the arithmetic inverts — caught on the first screenshot.
+
+**Tests run:** `185 passed` (was 166; +19). `test_diagnostics.py` pins the
+property the whole tool rests on — diagnostics and `analyze()` agree on status,
+verdict, quality, counts, trend and every per-note delta. `test_tuning_dashboard.py`
+covers overrides, the 400 on a typo, both routes, and the bar direction in both
+directions, read back out of the rendered SVG geometry.
+
+Driven in Chromium at 1280×1400: both pages render, no console errors, and the
+overview table read back as data.
+
+**Known side effects / things to watch:**
+
+- **The six recordings still don't exist, and that is the whole blocker.** The
+  synthetic stand-ins have exact known onset times and none of what a threshold
+  has to survive — bow noise, room reflection, a bass's slow attack, string
+  ring. Every clip that came from one is labelled `synthetic` in the UI.
+- `config.toml` is untouched. No threshold moved, and none should until there
+  is real audio.
+- The generator's first version cut its decay envelope off at a non-zero value,
+  which is a step, which is a transient — it produced 2× detections that looked
+  exactly like a real over-detection problem. Recorded in `TUNING_LOG.md`
+  because the same thing will happen with a hard-edited real clip.
+- No hover-to-read on the charts, which server-rendered SVG gives up. The
+  numbers table carries the same data, and it's the thing that gets pasted.
+- `*.synthetic.wav` is gitignored (5.6 MB, deterministic). The real six are
+  deliberately **not** ignored — the appendix says commit them.
+
+---
+
 ## 2026-08-16 20:45 — Unprocessed input — and a correction to the entry below
 
 **Batch:** Frontend rebuild — Record + Verdict flow.
