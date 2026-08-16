@@ -7,8 +7,14 @@
  * state has to be an explicit value rather than a derived one.
  */
 export const colors = {
-  /** Warm ivory page background. */
-  bg: '#FBFAF7',
+  /**
+   * Warm ivory page background.
+   *
+   * Warmed from #FBFAF7. Pure-white cards then sit slightly lighter than the
+   * page, which is the intended relationship. Kept pale enough to stay ivory
+   * rather than drifting to cream or parchment.
+   */
+  bg: '#F7F2E9',
   /** Cards and raised surfaces. */
   surface: '#FFFFFF',
 
