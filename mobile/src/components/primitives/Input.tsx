@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import {
   Platform,
   StyleSheet,
   TextInput,
   View,
   type StyleProp,
+  type TextInputProps,
   type TextStyle,
   type ViewStyle,
 } from 'react-native';
@@ -36,6 +37,24 @@ export interface InputProps {
   placeholder?: string;
   /** Serif, for a composition title. Sans for everything else. */
   serif?: boolean;
+  /**
+   * Small control on the label's right — a "Show" for a password, say. Keep it
+   * to a word; the label leads.
+   */
+  action?: ReactNode;
+  /**
+   * Keyboard and autofill behaviour. Passed straight through, because an email
+   * field that autocapitalises or a password field the keychain can't see is
+   * broken in a way no amount of styling fixes.
+   */
+  secureTextEntry?: boolean;
+  keyboardType?: TextInputProps['keyboardType'];
+  autoCapitalize?: TextInputProps['autoCapitalize'];
+  autoComplete?: TextInputProps['autoComplete'];
+  textContentType?: TextInputProps['textContentType'];
+  returnKeyType?: TextInputProps['returnKeyType'];
+  onSubmitEditing?: TextInputProps['onSubmitEditing'];
+  editable?: boolean;
   style?: StyleProp<ViewStyle>;
 }
 
@@ -51,15 +70,28 @@ export function Input({
   onChangeText,
   placeholder,
   serif = false,
+  action,
+  secureTextEntry = false,
+  keyboardType,
+  autoCapitalize,
+  autoComplete,
+  textContentType,
+  returnKeyType,
+  onSubmitEditing,
+  editable = true,
   style,
 }: InputProps) {
   const [focused, setFocused] = useState(false);
 
   return (
     <View style={style}>
-      <Text variant="sectionLabel" color="textSecondary" style={styles.label}>
-        {label}
-      </Text>
+      <View style={styles.labelRow}>
+        <Text variant="sectionLabel" color="textSecondary">
+          {label}
+        </Text>
+        {action}
+      </View>
+
       <TextInput
         value={value}
         onChangeText={onChangeText}
@@ -69,10 +101,19 @@ export function Input({
         placeholderTextColor={colors.textTertiary}
         underlineColorAndroid="transparent"
         accessibilityLabel={label}
+        secureTextEntry={secureTextEntry}
+        keyboardType={keyboardType}
+        autoCapitalize={autoCapitalize}
+        autoComplete={autoComplete}
+        textContentType={textContentType}
+        returnKeyType={returnKeyType}
+        onSubmitEditing={onSubmitEditing}
+        editable={editable}
         style={[
           styles.field,
           serif ? styles.serifText : styles.sansText,
           focused && styles.focused,
+          !editable && styles.disabled,
           NO_INNER_OUTLINE,
         ]}
       />
@@ -81,7 +122,10 @@ export function Input({
 }
 
 const styles = StyleSheet.create({
-  label: {
+  labelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     marginBottom: spacing.sm,
   },
   field: {
@@ -102,5 +146,8 @@ const styles = StyleSheet.create({
   },
   focused: {
     borderColor: colors.accent,
+  },
+  disabled: {
+    color: colors.textTertiary,
   },
 });

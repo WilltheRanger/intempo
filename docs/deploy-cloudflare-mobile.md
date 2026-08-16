@@ -66,3 +66,10 @@ what it is when you share the link.
   before it can be called finished.
 - **Fonts are bundled, not fetched.** Newsreader and Inter ship as four TTFs in
   the export; there is no font CDN to fail.
+- **`EXPO_PUBLIC_*` values are baked in, and cached.** They're inlined at
+  transform time, and Metro's cache key doesn't include them — so adding,
+  changing, or removing `EXPO_PUBLIC_SUPABASE_URL` and
+  `EXPO_PUBLIC_SUPABASE_ANON_KEY` between local builds keeps the old value
+  until you run `npx expo export --platform web --clear`. It cost a confusing
+  half-hour once: a build with the keys removed still showed the sign-in gate.
+  CI is unaffected, since each run starts from a cold cache.
