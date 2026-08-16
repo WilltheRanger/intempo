@@ -49,6 +49,10 @@ function normalise(value: string): string {
 export function LibraryScreen() {
   const navigation = useNavigation<TabScreenNavigation<'Library'>>();
   const library = useLibrary();
+
+  async function refresh() {
+    await library.refetch();
+  }
   const [query, setQuery] = useState('');
 
   const pieces = useMemo(() => library.data ?? [], [library.data]);
@@ -73,7 +77,7 @@ export function LibraryScreen() {
   }
 
   return (
-    <ScreenContainer>
+    <ScreenContainer onRefresh={refresh}>
       <PageHeader
         title="Library"
         action={

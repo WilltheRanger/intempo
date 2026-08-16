@@ -1,6 +1,7 @@
 import { BottomTabBarHeightContext } from '@react-navigation/bottom-tabs';
 import { useContext, useRef, useState, type ReactNode } from 'react';
 import {
+  RefreshControl,
   ScrollView,
   StyleSheet,
   View,
@@ -26,6 +27,11 @@ export interface ScreenContainerProps {
    * of one long scroll away.
    */
   footer?: ReactNode;
+  /**
+   * Pull-to-refresh. Omit on screens with nothing to re-fetch — a spinner that
+   * resolves instantly teaches people the gesture does nothing.
+   */
+  onRefresh?: () => Promise<unknown>;
 }
 
 /**
@@ -40,7 +46,18 @@ export function ScreenContainer({
   scrollable = true,
   contentStyle,
   footer,
+  onRefresh,
 }: ScreenContainerProps) {
+  const [refreshing, setRefreshing] = useState(false);
+
+  async function handleRefresh() {
+    setRefreshing(true);
+    try {
+      await onRefresh?.();
+    } finally {
+      setRefreshing(false);
+    }
+  }
   // The context tells us *whether* a tab bar is below us — it's absent on
   // screens pushed above the tabs, like Practice. It does not tell us how
   // tall ours is: with a custom `tabBar` React Navigation publishes its own
@@ -88,6 +105,18 @@ export function ScreenContainer({
       contentContainerStyle={[styles.content, bottomInset, contentStyle]}
       showsVerticalScrollIndicator={false}
       keyboardShouldPersistTaps="handled"
+      refreshControl={
+        onRefresh ? (
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => void handleRefresh()}
+            // The spinner is chrome, so it takes the accent rather than the
+            // platform's default blue.
+            tintColor={colors.accent}
+            colors={[colors.accent]}
+          />
+        ) : undefined
+      }
       onLayout={(event) => {
         viewportHeight.current = event.nativeEvent.layout.height;
         measureOverflow();

@@ -94,6 +94,64 @@ export async function signUp(
   };
 }
 
+/**
+ * Sends a password-reset link.
+ *
+ * Always resolves, even for an address with no account: telling an anonymous
+ * caller which addresses are registered is an account-enumeration hole, and
+ * Supabase deliberately doesn't distinguish the two either.
+ *
+ * The link lands wherever the Supabase project's redirect settings point. In
+ * this build that's the project's Site URL — completing the reset inside the
+ * app needs a deep-link scheme registered and a handler for the recovery
+ * event, which is real work that can't be verified without a device and a
+ * live project.
+ */
+export async function requestPasswordReset(email: string): Promise<void> {
+  const supabase = requireClient();
+  const { error } = await supabase.auth.resetPasswordForEmail(email);
+  if (error) {
+    throw error;
+  }
+}
+
+/** Sends the confirmation mail again, for the one that never arrived. */
+export async function resendConfirmation(email: string): Promise<void> {
+  const supabase = requireClient();
+  const { error } = await supabase.auth.resend({ type: 'signup', email });
+  if (error) {
+    throw error;
+  }
+}
+
+/**
+ * Changes the password on the signed-in account.
+ *
+ * Supabase has no "current password" check on this call — the session is the
+ * proof. The screen asks for it anyway and verifies it by signing in with it
+ * first, so someone can't change the password on a borrowed unlocked phone.
+ */
+export async function updatePassword(password: string): Promise<void> {
+  const supabase = requireClient();
+  const { error } = await supabase.auth.updateUser({ password });
+  if (error) {
+    throw error;
+  }
+}
+
+/**
+ * Starts an email change. The address doesn't move until the link sent to the
+ * new one is followed, so the caller should say so rather than reporting it
+ * done.
+ */
+export async function updateEmail(email: string): Promise<void> {
+  const supabase = requireClient();
+  const { error } = await supabase.auth.updateUser({ email });
+  if (error) {
+    throw error;
+  }
+}
+
 function requireClient(): SupabaseClient {
   const supabase = getSupabaseClient();
   if (!supabase) {

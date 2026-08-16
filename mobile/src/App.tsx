@@ -10,6 +10,7 @@ import { StatusBar } from 'expo-status-bar';
 import { View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { hydratePreferences } from './data/preferences';
 import { colors, fontsToLoad } from './design';
 import { RootNavigator } from './navigation/RootNavigator';
@@ -52,6 +53,7 @@ export default function App() {
 
   return (
     <SafeAreaProvider>
+      <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
         {/*
           Visible, with dark content for the ivory page beneath it. `app.json`
@@ -68,6 +70,7 @@ export default function App() {
           <View style={{ flex: 1, backgroundColor: colors.bg }} />
         )}
       </QueryClientProvider>
+      </ErrorBoundary>
     </SafeAreaProvider>
   );
 }

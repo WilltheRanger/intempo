@@ -13,20 +13,39 @@ import {
   ScreenContainer,
   Text,
 } from '../../components/primitives';
-import { signIn, signUp } from '../../data/auth/session';
-import { spacing } from '../../design';
 import {
-  describeAuthError,
-  validate,
-  type AuthMode,
-} from './authErrors';
+  requestPasswordReset,
+  resendConfirmation,
+  signIn,
+  signUp,
+} from '../../data/auth/session';
+import { spacing } from '../../design';
+import { describeAuthError, validate, type AuthMode } from './authErrors';
+
+/** What the screen is waiting on the musician's inbox for. */
+type Sent = 'confirmation' | 'reset';
+
+const COPY: Record<AuthMode, { lede: string; submit: string }> = {
+  signIn: {
+    lede: 'Sign in to reach your library and your practice history.',
+    submit: 'Sign in',
+  },
+  signUp: {
+    lede: 'Create an account to start building a library.',
+    submit: 'Create account',
+  },
+  reset: {
+    lede: "Enter your address and we'll send a link to set a new password.",
+    submit: 'Send reset link',
+  },
+};
 
 /**
- * Sign in, or create an account.
+ * Sign in, create an account, or ask for a password reset.
  *
- * One screen for both, because the two differ by a verb and a line of copy —
- * a second screen would be the same form with the same fields, and switching
- * between them would push and pop for no reason.
+ * One screen for all three, because they differ by a verb, a line of copy, and
+ * whether the password field is there — separate screens would be the same
+ * form reached by a push and a pop.
  *
  * The gate above this decides when it appears; it doesn't navigate anywhere on
  * success. Supabase emits the new session, `useAuthStatus` hears it, and the
@@ -39,14 +58,14 @@ export function AuthScreen() {
   const [revealed, setRevealed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [confirmationSentTo, setConfirmationSentTo] = useState<string | null>(
-    null,
-  );
+  const [sent, setSent] = useState<Sent | null>(null);
+  const [resent, setResent] = useState(false);
 
-  const signingIn = mode === 'signIn';
+  const needsPassword = mode !== 'reset';
+  const copy = COPY[mode];
 
-  function switchMode() {
-    setMode(signingIn ? 'signUp' : 'signIn');
+  function go(next: AuthMode) {
+    setMode(next);
     setError(null);
   }
 
@@ -59,20 +78,27 @@ export function AuthScreen() {
 
     setBusy(true);
     setError(null);
+    const address = email.trim();
     try {
-      const address = email.trim();
-      const result = signingIn
-        ? await signIn(address, password)
-        : await signUp(address, password);
+      if (mode === 'reset') {
+        await requestPasswordReset(address);
+        setSent('reset');
+        return;
+      }
+
+      const result =
+        mode === 'signIn'
+          ? await signIn(address, password)
+          : await signUp(address, password);
 
       // A sign-up against a project that confirms addresses returns no
       // session. Saying "welcome" here and then showing the form again would
       // read as a failure; what actually happened is that mail is on its way.
       if (result.awaitingConfirmation) {
-        setConfirmationSentTo(address);
+        setSent('confirmation');
         setPassword('');
       }
-      // On success the auth listener swaps this screen out. Nothing to do.
+      // Otherwise the auth listener swaps this screen out. Nothing to do.
     } catch (cause) {
       setError(describeAuthError(cause));
     } finally {
@@ -80,34 +106,86 @@ export function AuthScreen() {
     }
   }
 
-  if (confirmationSentTo) {
+  async function resend() {
+    setBusy(true);
+    setError(null);
+    try {
+      await resendConfirmation(email.trim());
+      setResent(true);
+    } catch (cause) {
+      setError(describeAuthError(cause));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (sent) {
     return (
       <ScreenContainer contentStyle={styles.centred}>
         <View>
           <Text variant="screenTitle">Check your email</Text>
           <Text variant="body" color="textSecondary" style={styles.lede}>
-            We sent a confirmation link to {confirmationSentTo}. Follow it and
-            you&apos;ll be signed in.
+            {sent === 'reset'
+              ? `If there's an account for ${email.trim()}, a link to set a new password is on its way.`
+              : `We sent a confirmation link to ${email.trim()}. Follow it and you'll be signed in.`}
           </Text>
+
+          {error ? (
+            <Text
+              variant="metadataSmall"
+              color="textSecondary"
+              style={styles.error}
+            >
+              {error}
+            </Text>
+          ) : null}
+
+          {/*
+            The mail that never arrives is the commonest way an account stalls,
+            and there is nowhere else to ask for another one.
+          */}
+          {sent === 'confirmation' ? (
+            <Text
+              variant="metadataSmall"
+              color="textTertiary"
+              style={styles.error}
+            >
+              {resent
+                ? 'Sent again. It can take a minute to arrive.'
+                : "Didn't get it? Check spam, or send it again."}
+            </Text>
+          ) : null}
         </View>
 
-        <Pressable
-          onPress={() => {
-            setConfirmationSentTo(null);
-            setMode('signIn');
-          }}
-          accessibilityRole="button"
-          accessibilityLabel="Back to sign in"
-          hitSlop={spacing.md}
-          style={({ pressed }) => [
-            styles.switch,
-            pressed && styles.switchPressed,
-          ]}
-        >
-          <Text variant="sectionAction" color="accent">
-            Back to sign in
-          </Text>
-        </Pressable>
+        <View>
+          {sent === 'confirmation' && !resent ? (
+            <PrimaryButton
+              label="Send it again"
+              onPress={() => void resend()}
+              loading={busy}
+              style={styles.submit}
+            />
+          ) : null}
+
+          <Pressable
+            onPress={() => {
+              setSent(null);
+              setResent(false);
+              go('signIn');
+            }}
+            accessibilityRole="button"
+            accessibilityLabel="Back to sign in"
+            hitSlop={spacing.md}
+            style={({ pressed }) => [
+              styles.switch,
+              pressed && styles.switchPressed,
+            ]}
+          >
+            <Text variant="sectionAction" color="accent">
+              Back to sign in
+            </Text>
+          </Pressable>
+        </View>
       </ScreenContainer>
     );
   }
@@ -123,9 +201,7 @@ export function AuthScreen() {
         <View>
           <Text variant="screenTitle">InTempo</Text>
           <Text variant="body" color="textSecondary" style={styles.lede}>
-            {signingIn
-              ? 'Sign in to reach your library and your practice history.'
-              : 'Create an account to start building a library.'}
+            {copy.lede}
           </Text>
 
           <Input
@@ -137,42 +213,65 @@ export function AuthScreen() {
             autoCapitalize="none"
             autoComplete="email"
             textContentType="emailAddress"
+            returnKeyType={needsPassword ? 'next' : 'go'}
+            onSubmitEditing={needsPassword ? undefined : () => void submit()}
             editable={!busy}
             style={styles.field}
           />
 
-          <Input
-            label="Password"
-            value={password}
-            onChangeText={setPassword}
-            secureTextEntry={!revealed}
-            autoCapitalize="none"
-            // Tells the keychain to offer a saved password on sign-in and to
-            // suggest a strong one on sign-up.
-            autoComplete={signingIn ? 'current-password' : 'new-password'}
-            textContentType={signingIn ? 'password' : 'newPassword'}
-            returnKeyType="go"
-            onSubmitEditing={() => void submit()}
-            editable={!busy}
-            action={
-              <Pressable
-                onPress={() => setRevealed((shown) => !shown)}
-                accessibilityRole="button"
-                accessibilityLabel={
-                  revealed ? 'Hide password' : 'Show password'
-                }
-                hitSlop={spacing.md}
-                style={({ pressed }) =>
-                  pressed ? styles.switchPressed : undefined
-                }
-              >
-                <Text variant="sectionAction" color="accent">
-                  {revealed ? 'Hide' : 'Show'}
-                </Text>
-              </Pressable>
-            }
-            style={styles.field}
-          />
+          {needsPassword ? (
+            <Input
+              label="Password"
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry={!revealed}
+              autoCapitalize="none"
+              // Tells the keychain to offer a saved password on sign-in and to
+              // suggest a strong one on sign-up.
+              autoComplete={
+                mode === 'signIn' ? 'current-password' : 'new-password'
+              }
+              textContentType={mode === 'signIn' ? 'password' : 'newPassword'}
+              returnKeyType="go"
+              onSubmitEditing={() => void submit()}
+              editable={!busy}
+              action={
+                <Pressable
+                  onPress={() => setRevealed((shown) => !shown)}
+                  accessibilityRole="button"
+                  accessibilityLabel={
+                    revealed ? 'Hide password' : 'Show password'
+                  }
+                  hitSlop={spacing.md}
+                  style={({ pressed }) =>
+                    pressed ? styles.switchPressed : undefined
+                  }
+                >
+                  <Text variant="sectionAction" color="accent">
+                    {revealed ? 'Hide' : 'Show'}
+                  </Text>
+                </Pressable>
+              }
+              style={styles.field}
+            />
+          ) : null}
+
+          {mode === 'signIn' ? (
+            <Pressable
+              onPress={() => go('reset')}
+              accessibilityRole="button"
+              accessibilityLabel="Forgot your password"
+              hitSlop={spacing.sm}
+              style={({ pressed }) => [
+                styles.forgot,
+                pressed && styles.switchPressed,
+              ]}
+            >
+              <Text variant="sectionAction" color="accent">
+                Forgot your password?
+              </Text>
+            </Pressable>
+          ) : null}
 
           {error ? (
             <Text
@@ -185,7 +284,7 @@ export function AuthScreen() {
           ) : null}
 
           <PrimaryButton
-            label={signingIn ? 'Sign in' : 'Create account'}
+            label={copy.submit}
             onPress={() => void submit()}
             loading={busy}
             style={styles.submit}
@@ -193,10 +292,10 @@ export function AuthScreen() {
         </View>
 
         <Pressable
-          onPress={switchMode}
+          onPress={() => go(mode === 'signUp' ? 'signIn' : 'signUp')}
           accessibilityRole="button"
           accessibilityLabel={
-            signingIn ? 'Create an account' : 'Sign in instead'
+            mode === 'signUp' ? 'Sign in instead' : 'Create an account'
           }
           hitSlop={spacing.md}
           style={({ pressed }) => [
@@ -205,9 +304,11 @@ export function AuthScreen() {
           ]}
         >
           <Text variant="metadata" color="textSecondary">
-            {signingIn ? 'New to InTempo? ' : 'Already have an account? '}
+            {mode === 'signUp'
+              ? 'Already have an account? '
+              : 'New to InTempo? '}
             <Text variant="metadata" color="accent">
-              {signingIn ? 'Create an account' : 'Sign in'}
+              {mode === 'signUp' ? 'Sign in' : 'Create an account'}
             </Text>
           </Text>
         </Pressable>
@@ -231,6 +332,10 @@ const styles = StyleSheet.create({
   },
   field: {
     marginTop: spacing.lg,
+  },
+  forgot: {
+    marginTop: spacing.md,
+    alignSelf: 'flex-start',
   },
   error: {
     marginTop: spacing.lg,

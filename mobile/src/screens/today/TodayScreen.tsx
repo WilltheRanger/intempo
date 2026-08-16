@@ -41,6 +41,12 @@ export function TodayScreen() {
   const library = useLibrary();
   const me = useMe();
 
+  // Progress and last-practiced move while the app is closed, so the gesture
+  // has something real to fetch.
+  async function refresh() {
+    await Promise.all([currentPiece.refetch(), library.refetch(), me.refetch()]);
+  }
+
   function openPractice(piece: Piece) {
     navigation.navigate('Practice', { pieceId: piece.id });
   }
@@ -52,7 +58,7 @@ export function TodayScreen() {
     .slice(0, PREVIEW_LIMIT);
 
   return (
-    <ScreenContainer>
+    <ScreenContainer onRefresh={refresh}>
       <PageHeader
         title={getGreeting()}
         // Held back until the account resolves: an avatar that appears as a

@@ -1,8 +1,10 @@
+import { useNavigation } from '@react-navigation/native';
 import { useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import appConfig from '../../../app.json';
+import { ConfirmDialog } from '../../components/overlays/ConfirmDialog';
 import {
   Avatar,
   Card,
@@ -21,7 +23,9 @@ import { preferences, usePreferences } from '../../data/preferences';
 import type { MetronomeMode } from '../../data/types';
 import { spacing } from '../../design';
 import { formatRole, formatTier } from '../../lib/format';
+import type { RootNavigation } from '../../navigation/types';
 import { AccountRow } from './AccountRow';
+import { LinkRow } from './LinkRow';
 import { ToggleRow } from './ToggleRow';
 
 /**
@@ -38,7 +42,9 @@ import { ToggleRow } from './ToggleRow';
 export function ProfileScreen() {
   const { data: musician, isPending, isError } = useMe();
   const settings = usePreferences();
+  const navigation = useNavigation<RootNavigation>();
   const queryClient = useQueryClient();
+  const [confirmingSignOut, setConfirmingSignOut] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
   const [signOutError, setSignOutError] = useState<string | null>(null);
   // Tapping the photo is the affordance; the camera or pencil badge over it
@@ -46,6 +52,7 @@ export function ProfileScreen() {
   const [photoNote, setPhotoNote] = useState(false);
 
   async function handleSignOut() {
+    setConfirmingSignOut(false);
     setSigningOut(true);
     setSignOutError(null);
     try {
@@ -132,6 +139,15 @@ export function ProfileScreen() {
           {musician.studioId ? (
             <AccountRow label="Studio" value="Connected" />
           ) : null}
+          <LinkRow
+            label="Email"
+            value={musician.email}
+            onPress={() => navigation.navigate('ChangeEmail')}
+          />
+          <LinkRow
+            label="Password"
+            onPress={() => navigation.navigate('ChangePassword')}
+          />
         </View>
       </Card>
 
@@ -193,12 +209,16 @@ export function ProfileScreen() {
             value={appConfig.expo.version}
             divided={false}
           />
+          <LinkRow
+            label="Acknowledgements"
+            onPress={() => navigation.navigate('Acknowledgements')}
+          />
         </View>
       </Card>
 
       <SecondaryButton
         label={signingOut ? 'Signing out…' : 'Sign out'}
-        onPress={handleSignOut}
+        onPress={() => setConfirmingSignOut(true)}
         disabled={signingOut}
         style={styles.signOut}
       />
@@ -212,6 +232,15 @@ export function ProfileScreen() {
           {signOutError}
         </Text>
       ) : null}
+
+      <ConfirmDialog
+        visible={confirmingSignOut}
+        title="Sign out?"
+        message="Your library stays on the server. You'll need your password to get back in."
+        confirmLabel="Sign out"
+        onConfirm={() => void handleSignOut()}
+        onCancel={() => setConfirmingSignOut(false)}
+      />
     </ScreenContainer>
   );
 }

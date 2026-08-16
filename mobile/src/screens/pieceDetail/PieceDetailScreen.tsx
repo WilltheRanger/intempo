@@ -78,7 +78,11 @@ export function PieceDetailScreen() {
 
   return (
     <ScreenContainer>
-      <PageHeader title={piece.title} />
+      <PageHeader
+        title={piece.title}
+        onBack={() => navigation.goBack()}
+        backLabel="Back to library"
+      />
 
       {piece.composer ? (
         <Text variant="composer" color="textSecondary">

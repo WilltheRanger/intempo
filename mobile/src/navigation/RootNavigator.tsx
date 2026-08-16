@@ -4,6 +4,9 @@ import { StyleSheet, View } from 'react-native';
 
 import { useAuthStatus } from '../data/auth/useAuthStatus';
 import { colors } from '../design';
+import { AcknowledgementsScreen } from '../screens/account/AcknowledgementsScreen';
+import { ChangeEmailScreen } from '../screens/account/ChangeEmailScreen';
+import { ChangePasswordScreen } from '../screens/account/ChangePasswordScreen';
 import { AddPieceScreen } from '../screens/addPiece/AddPieceScreen';
 import { AuthScreen } from '../screens/auth/AuthScreen';
 import { CapturedPagesScreen } from '../screens/capturedPages/CapturedPagesScreen';
@@ -78,6 +81,12 @@ export function RootNavigator() {
         component={TranscriptionReviewScreen}
       />
       <Stack.Screen name="PieceDetail" component={PieceDetailScreen} />
+      <Stack.Screen name="ChangeEmail" component={ChangeEmailScreen} />
+      <Stack.Screen name="ChangePassword" component={ChangePasswordScreen} />
+      <Stack.Screen
+        name="Acknowledgements"
+        component={AcknowledgementsScreen}
+      />
     </Stack.Navigator>
   );
 }
