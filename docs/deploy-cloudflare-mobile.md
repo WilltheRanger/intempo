@@ -31,22 +31,17 @@ Under **Settings → Environment variables**:
 |---|---|---|
 | `NODE_VERSION` | `22` | Expo SDK 57 needs a current Node; Cloudflare's default is often older, and that is the usual first-build failure. |
 
-### Set the production branch, or the first build fails
+### The production branch
 
-**`mobile/` does not exist on `main`.** It is empty there — zero files — and a
-build pointed at `main` fails on the missing root directory before it reaches
-npm. Cloudflare defaults the production branch to `main`, so this is the step
-that catches people.
+`mobile/` now exists on `main` — PR #2 was merged on 2026-08-16 — so the
+default production branch is correct and nothing needs changing.
 
-Two ways round it, either is fine:
+Before that merge it was not: `mobile/` was empty on `main`, zero files, and a
+build pointed there failed on the missing root directory before it reached npm.
+That was the second of the two failures logged below. If you ever see it again,
+the cause is the same: the branch being built doesn't have the app on it.
 
-- **Point the project at the branch.** Settings → Builds & deployments →
-  Production branch → `claude/mobile-frontend-rebuild-vay1tg`. Live now, and it
-  keeps redeploying as that branch moves.
-- **Merge PR #2 to `main` first**, then leave the production branch as `main`.
-  Tidier long-term; nothing deploys until the merge lands.
-
-Cloudflare also builds a preview URL for every other branch and PR either way.
+Cloudflare also builds a preview URL for every other branch and PR.
 
 ### If the build fails on a missing package.json
 
@@ -107,8 +102,16 @@ preview then opens on the sign-in screen instead of the app.
 - **`mobile/package-lock.json`**, so Cloudflare's install resolves the same
   versions this was built and verified against.
 
-Verified on this branch with Node 22: install tree clean, `npx expo export
---platform web` succeeds, and `dist/` comes out at 4.9 MB — `index.html`, a
+- **`patch-package` is a runtime dependency, not a dev one.** It runs from
+  `postinstall` and applies `patches/expo-audio+57.0.3.patch`, which is what
+  keeps Android recording off the OEM's processed input path. `npm ci` installs
+  dev dependencies anyway, so this is belt and braces — but a build environment
+  that omitted them would produce a working app that records subtly wrong
+  audio, which is the one failure worth being paranoid about.
+
+Verified from a clean tree with Node 22: `rm -rf mobile/node_modules
+mobile/dist && npm run build` at the repo root — the exact command Cloudflare
+runs — exits 0, applies the patch, and writes `mobile/dist`: `index.html`, a
 3.3 MB JS bundle, four bundled fonts, the fixture images, and `_redirects`.
 
 ## What this preview is, and what it isn't
