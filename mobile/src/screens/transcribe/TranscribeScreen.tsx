@@ -5,7 +5,6 @@ import { StyleSheet, View } from 'react-native';
 import {
   EmptyState,
   MetadataRow,
-  PrimaryButton,
   ProgressBar,
   ScreenContainer,
   SecondaryButton,
@@ -36,6 +35,16 @@ export function TranscribeScreen() {
   const [completed, setCompleted] = useState(0);
   const isComplete = total > 0 && completed >= total;
 
+  // Finishing hands straight off to the review. A "ready" screen in between
+  // would only ask the musician to confirm that a wait had ended. `replace`
+  // rather than `navigate` so Back from the review returns to the pages, not
+  // to a processing screen that has nothing left to do.
+  useEffect(() => {
+    if (isComplete) {
+      navigation.replace('TranscriptionReview');
+    }
+  }, [isComplete, navigation]);
+
   useEffect(() => {
     if (total === 0 || completed >= total) {
       return;
@@ -63,14 +72,10 @@ export function TranscribeScreen() {
   return (
     <ScreenContainer scrollable={false} contentStyle={styles.centered}>
       <View>
-        <Text variant="heroTitle">
-          {isComplete ? 'Transcription ready' : 'Transcribing your score'}
-        </Text>
+        <Text variant="heroTitle">Transcribing your score</Text>
 
         <Text variant="body" color="textSecondary" style={styles.subtitle}>
-          {isComplete
-            ? 'Check the notation before you save this piece.'
-            : 'Reading notation and preparing playback…'}
+          Reading notation and preparing playback…
         </Text>
 
         {/*
@@ -78,41 +83,23 @@ export function TranscribeScreen() {
           track while the screen says "Page 1 of 3" reads as nothing happening.
         */}
         <ProgressBar
-          value={isComplete ? 1 : Math.min(completed + 1, total) / total}
+          value={Math.min(completed + 1, total) / total}
           accessibilityLabel="Transcription progress"
           style={styles.progress}
         />
 
         <MetadataRow
           variant="metadataSmall"
-          items={[
-            isComplete
-              ? pageLabel(total)
-              : `Page ${Math.min(completed + 1, total)} of ${total}`,
-          ]}
+          items={[`Page ${Math.min(completed + 1, total)} of ${total}`]}
           style={styles.meta}
         />
       </View>
 
       <View style={styles.actions}>
-        {isComplete ? (
-          <PrimaryButton
-            label="Review transcription"
-            onPress={() => navigation.navigate('TranscriptionReview')}
-          />
-        ) : (
-          <SecondaryButton
-            label="Cancel"
-            onPress={() => navigation.goBack()}
-          />
-        )}
+        <SecondaryButton label="Cancel" onPress={() => navigation.goBack()} />
       </View>
     </ScreenContainer>
   );
-}
-
-function pageLabel(count: number): string {
-  return count === 1 ? '1 page read' : `${count} pages read`;
 }
 
 const styles = StyleSheet.create({

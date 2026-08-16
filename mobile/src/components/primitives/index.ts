@@ -13,5 +13,11 @@ export { IconButton, type IconButtonProps } from './IconButton';
 export { ProgressBar, type ProgressBarProps } from './ProgressBar';
 export { MetadataRow, type MetadataRowProps } from './MetadataRow';
 export { SearchField, type SearchFieldProps } from './SearchField';
+export { Input, type InputProps } from './Input';
+export {
+  SegmentedControl,
+  type SegmentedControlProps,
+  type SegmentedControlOption,
+} from './SegmentedControl';
 export { EmptyState, type EmptyStateProps } from './EmptyState';
 export { LoadingState, type LoadingStateProps } from './LoadingState';

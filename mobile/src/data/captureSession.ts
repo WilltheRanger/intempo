@@ -71,6 +71,19 @@ export const captureSession = {
     commit(next);
   },
 
+  /** Moves a page to an absolute index. Used by drag-to-reorder. */
+  moveTo(id: string, index: number): void {
+    const from = pages.findIndex((page) => page.id === id);
+    const to = Math.max(0, Math.min(pages.length - 1, index));
+    if (from === -1 || from === to) {
+      return;
+    }
+    const next = [...pages];
+    const [moved] = next.splice(from, 1);
+    next.splice(to, 0, moved);
+    commit(next);
+  },
+
   /** Replaces one page's image, standing in for re-shooting it. */
   replace(id: string, source: ThumbnailSource): void {
     commit(pages.map((page) => (page.id === id ? { ...page, source } : page)));
