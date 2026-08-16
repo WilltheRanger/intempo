@@ -5,6 +5,7 @@ import { AddPieceScreen } from '../screens/addPiece/AddPieceScreen';
 import { CapturedPagesScreen } from '../screens/capturedPages/CapturedPagesScreen';
 import { InsightsScreen } from '../screens/insights/InsightsScreen';
 import { LibraryScreen } from '../screens/library/LibraryScreen';
+import { PieceDetailScreen } from '../screens/pieceDetail/PieceDetailScreen';
 import { PracticeScreen } from '../screens/practice/PracticeScreen';
 import { ProfileScreen } from '../screens/profile/ProfileScreen';
 import { ScannerScreen } from '../screens/scanner/ScannerScreen';
@@ -56,6 +57,7 @@ export function RootNavigator() {
         name="TranscriptionReview"
         component={TranscriptionReviewScreen}
       />
+      <Stack.Screen name="PieceDetail" component={PieceDetailScreen} />
     </Stack.Navigator>
   );
 }
