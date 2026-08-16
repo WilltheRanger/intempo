@@ -6,6 +6,70 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-17 00:30 — A boot watchdog, because a white page says nothing
+
+**Branch:** `main`.
+
+The first Cloudflare deploy came back blank. The build log was clean end to
+end — right commit, patch applied, 2586 modules bundled, `Success: Your site
+was deployed!` — and the same artifact, built from a fresh clone of `main`,
+renders correctly when served locally. Same result in Chrome and Brave, so not
+a browser. That left no way to tell a missing bundle from a crashed one without
+the owner's devtools, which is a bad place to be.
+
+**Two things came out of it.**
+
+**1. `_redirects` was being rejected, and was protecting nothing.** The log:
+
+```
+Parsed 0 valid redirect rules.
+  - #1: /*    /index.html   200
+    Infinite loop detected in this rule and has been ignored.
+```
+
+That is the rule Cloudflare's own SPA docs give; their current parser refuses
+it. And it was guarding a door that doesn't exist — there is no `linking`
+config on `NavigationContainer`, so the URL never changes. Driving the built
+export and reading `page.url()` at each step gives `/` throughout, across every
+tab and a pushed screen. Removed, with `docs/pages-spa-fallback.md` recording
+what to put back when URL routing lands and that it must be checked against the
+build log rather than assumed from the docs.
+
+**2. `mobile/public/index.html` is now checked in, carrying a boot watchdog.**
+Expo uses `public/index.html` as the shell when present and still injects the
+hashed `<script>` and favicon into it — verified before relying on it. The file
+otherwise matches what Expo emits byte for byte, so nothing about the app
+changes.
+
+The watchdog runs before the bundle and covers the three ways a boot can fail
+silently:
+
+| Failure | What it now says |
+|---|---|
+| Bundle 404s | `The app bundle failed to load.` + the URL |
+| Bundle served as HTML (the SPA-fallback trap) | `The app crashed while starting. SyntaxError: Unexpected token '<'` |
+| Nothing threw, nothing mounted | `The app did not start.` + a live re-fetch reporting the bundle's HTTP status and `Content-Type` |
+
+All three exercised in Chromium by intercepting the bundle request, plus a
+healthy boot to confirm it stays silent — Today renders, scroll height 812
+against the frozen reference, `#root` has one child, no console errors.
+
+Deliberately plain: no fonts, no design tokens, no framework. It has to work in
+exactly the conditions where everything else didn't.
+
+**Known side effects / things to watch:**
+
+- The shell is now ours to maintain. If Expo changes its default template — the
+  reset styles, the `#root` element — this file won't follow. It is short and
+  commented for that reason.
+- The watchdog's 8-second timer is a guess at "long enough that a slow 3G load
+  isn't reported as a failure". A 3.3 MB bundle on a bad connection could
+  exceed it and show a false alarm on top of an app that then mounts fine.
+- This makes the failure *legible*; it does not fix the deploy. The cause is
+  still unknown at the time of writing.
+
+---
+
 ## 2026-08-16 23:55 — Free-tier quota; Cloudflare setup written down properly
 
 **Branch:** `main`.
