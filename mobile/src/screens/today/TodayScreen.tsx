@@ -21,6 +21,20 @@ import type { TabScreenNavigation } from '../../navigation/types';
 /** How many pieces the library preview shows before "See all". */
 const PREVIEW_LIMIT = 3;
 
+const AVATAR_SIZE = 42;
+
+/**
+ * Tappable box around the mark.
+ *
+ * Bigger than the mark, and pulled back in by the difference so the header row
+ * keeps the height the greeting gives it — a taller row would push the whole
+ * screen down. `hitSlop` would have done this too, but only on device: it has
+ * no effect under react-native-web, so the target couldn't be verified in the
+ * one place this build can be driven. A real box behaves the same everywhere.
+ */
+const AVATAR_TARGET = 48;
+const AVATAR_INSET = (AVATAR_TARGET - AVATAR_SIZE) / 2;
+
 export function TodayScreen() {
   const navigation = useNavigation<TabScreenNavigation<'Today'>>();
   const currentPiece = useCurrentPiece();
@@ -50,10 +64,12 @@ export function TodayScreen() {
               onPress={() => navigation.navigate('Profile')}
               accessibilityRole="button"
               accessibilityLabel="Your profile"
-              hitSlop={spacing.sm}
-              style={({ pressed }) => (pressed ? styles.pressed : undefined)}
+              style={({ pressed }) => [
+                styles.avatar,
+                pressed && styles.pressed,
+              ]}
             >
-              <Avatar source={me.data.avatarUrl} email={me.data.email} />
+              <Avatar source={me.data.avatarUrl} size={AVATAR_SIZE} />
             </Pressable>
           ) : null
         }
@@ -128,6 +144,18 @@ function ContinueSection({
 }
 
 const styles = StyleSheet.create({
+  avatar: {
+    width: AVATAR_TARGET,
+    height: AVATAR_TARGET,
+    margin: -AVATAR_INSET,
+    alignItems: 'center',
+    justifyContent: 'center',
+    // No vertical nudge: the row centres the mark on the greeting's line box,
+    // and the greeting's ink — cap of "G" down to the tail of "g" — is centred
+    // in that box to within a fifth of a point. Measured off the rendered
+    // type, not the font metrics. Shifting to the cap band instead would lift
+    // the mark 4.5pt and leave it riding above the word.
+  },
   pressed: {
     opacity: 0.6,
   },
