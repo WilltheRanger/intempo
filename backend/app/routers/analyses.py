@@ -17,6 +17,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, s
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.auth import current_user_id
+from app.services.tier_limits import tier_of, usage_for
 from app.db import get_service_client
 from app.models.analysis import BpmSource, MetronomeMode
 from app.routers.upload import AUDIO_BUCKET
@@ -118,6 +119,31 @@ def _row_to_response(row: dict[str, Any]) -> AnalysisResponse:
     )
 
 
+def _assert_within_quota(client: Any, user_id: UUID) -> None:
+    """Free accounts get three analyses a calendar month (spec Batch 8, step 2).
+
+    The 403 body is structured rather than prose because the client has to act
+    on it — show how many are left and offer the upgrade — and parsing a
+    sentence to do that is how copy changes become bugs.
+
+    Checked before the row is inserted, so a refused analysis leaves nothing
+    behind and doesn't itself count toward the month.
+    """
+    usage = usage_for(client, user_id, tier_of(client, user_id))
+    if not usage.exhausted:
+        return
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail={
+            "code": "tier_limit",
+            "limit": usage.limit,
+            "used": usage.used,
+            "tier": usage.tier,
+            "resets_at": usage.period_end.isoformat(),
+        },
+    )
+
+
 @router.post("", response_model=CreateAnalysisResponse, status_code=status.HTTP_202_ACCEPTED)
 async def create_analysis(
     body: CreateAnalysisRequest,
@@ -127,6 +153,7 @@ async def create_analysis(
     _assert_audio_url_owned_by(body.audio_url, user_id)
     client = _service_client()
     _assert_score_owned(client, body.score_id, user_id)
+    _assert_within_quota(client, user_id)
 
     insert_payload = {
         "user_id": str(user_id),

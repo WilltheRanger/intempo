@@ -6,6 +6,81 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-16 23:55 — Free-tier quota; Cloudflare setup written down properly
+
+**Branch:** `main`.
+
+**`docs/deploy-cloudflare-mobile.md`** now opens with a field-by-field setup
+for a new Pages project from `main`, rather than the older instructions written
+when `mobile/` didn't exist there. Recommended shape: root directory empty,
+build command `npm run build`, output `mobile/dist`, `NODE_VERSION=22`. The
+root-directory alternative is kept in a fold, with the trap spelled out — under
+the v2 strategy the output path is relative to the root directory, so `mobile`
++ `mobile/dist` sends Cloudflare looking for `mobile/mobile/dist`.
+
+**Free-tier quota — Batch 8's first half.** `users.tier` has been on the row
+since Batch 1 and nothing counted or enforced anything.
+
+- `services/tier_limits.py` — `month_bounds`, `count_analyses_this_month`,
+  `usage_for`, `tier_of`. Calendar month per the spec, not a rolling 30 days:
+  it resets on the 1st for everyone, which is the version a musician can
+  predict without being told. UTC, because the server doesn't know their
+  timezone and a window inferred from a device clock can be gamed by changing
+  the clock.
+- `POST /v1/analyses` refuses the fourth with `403 {code: "tier_limit", limit,
+  used, tier, resets_at}`. Structured rather than prose because the client has
+  to act on it, and parsing a sentence to decide whether to show a paywall is
+  how copy changes become bugs. Checked **before** the insert, so a refused
+  analysis leaves no row and doesn't itself count toward the month.
+- `GET /v1/me` gains `analyses: {used, limit, remaining, resets_at}` so a
+  client can show "2 of 3 used" without first being refused. A paywall that
+  only appears at the moment of refusal ambushes someone who has just finished
+  playing. Best-effort — `/v1/me` is also first-touch provisioning, and failing
+  it over a usage counter would lock someone out on their very first request.
+- Paid tiers skip the count query entirely; `limit` is `null` rather than a
+  large number, so "unlimited" is a value rather than something to recognise.
+  `student_via_teacher` is unlimited too — their teacher is paying, and
+  limiting them bills the studio twice.
+
+**Deliberately not built: billing.** Batch 8 specifies Stripe Checkout, and
+Apple requires in-app purchase for digital subscriptions, so an iOS-first app
+can't simply take that route. Counting and enforcing needs none of it resolved,
+and shipping this half now means the limit is real before there's anything to
+sell. The decision is the owner's and it's still open.
+
+**Tests run:** `216 passed` (was 203; +13). The quota tests use the stateful
+fake rather than MagicMock chains, because what's worth testing is that N
+inserted rows produce a count of N and the (N+1)th request is refused — a mock
+that returns what it's told proves only that the code reads its own arrangement
+back. Covers month boundaries including December and a leap February, last
+month's analyses not blocking this month, another user's not counting, the
+structured 403, no row left behind, and pro never refused.
+
+**Two things the fake was missing, now added:** `.gte()` and
+`select(count="exact")`. The count is of everything matching *before* any
+limit, which is what PostgREST returns — a count that shrank to fit a page
+would make the quota silently wrong.
+
+**A bug this turned up.** `count_analyses_this_month` used `int(count)` on
+whatever the client returned. `int()` on a `MagicMock` is `1`, so an
+unconfigured mock reported a brand-new account as having already used one
+analysis. Now `isinstance(count, int)` with a documented fallback to counting
+rows — anything that isn't already an integer is a client that didn't answer
+the question, and coercing it invents a number.
+
+**Known side effects / things to watch:**
+
+- **Failed analyses count against the quota.** A pipeline run costs the same
+  whether it succeeds, so this is the defensible reading — but someone whose
+  three attempts all failed on a bad microphone has had no value from the
+  month. Worth revisiting once there are real failure rates.
+- Nothing in the app shows the counter or handles the 403 yet. Both are UI and
+  sit behind the §2 gate.
+- `FREE_MONTHLY_ANALYSES = 3` is the spec's number, in one place, not scattered
+  through the router.
+
+---
+
 ## 2026-08-16 23:10 — On `main` now; Pages caching; the verdict-corrections endpoint
 
 **Branch:** `main` — the owner asked for development to move here so updates

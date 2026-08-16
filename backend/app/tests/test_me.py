@@ -76,13 +76,17 @@ def test_existing_user_returns_row(
         headers={"Authorization": f"Bearer {make_token(sub=user_id, email=row['email'])}"},
     )
     assert res.status_code == 200, res.text
-    assert res.json() == {
+    body = res.json()
+    assert {k: body[k] for k in ("id", "email", "tier", "role", "studio_id")} == {
         "id": str(user_id),
         "email": row["email"],
         "tier": "pro",
         "role": "student",
         "studio_id": str(studio_id),
     }
+    # Pro has no quota, so the limit is null rather than a large number.
+    assert body["analyses"]["limit"] is None
+    assert body["analyses"]["remaining"] is None
     mock_client.table.return_value.insert.assert_not_called()
 
 
@@ -113,13 +117,17 @@ def test_first_touch_provisioning(
         },
     )
     assert res.status_code == 200, res.text
-    assert res.json() == {
+    body = res.json()
+    assert {k: body[k] for k in ("id", "email", "tier", "role", "studio_id")} == {
         "id": str(user_id),
         "email": new_row["email"],
         "tier": "free",
         "role": "student",
         "studio_id": None,
     }
+    # A brand-new free account has used none of its three.
+    assert body["analyses"]["limit"] == 3
+    assert body["analyses"]["used"] == 0
     table.insert.assert_called_once()
     inserted = table.insert.call_args.args[0]
     assert inserted["id"] == str(user_id)
