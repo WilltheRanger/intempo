@@ -116,11 +116,14 @@ export const fixturePieceSource: PieceSource = {
 };
 
 /**
- * A freshly provisioned account — free tier, student role, no studio.
+ * A freshly provisioned account — free tier, student role, no studio, and no
+ * profile photo.
  *
  * That is exactly what `/v1/me` writes on first touch
  * (`backend/app/routers/me.py`), so the Profile screen is developed against
- * the state most accounts are actually in rather than a flattering one.
+ * the state most accounts are actually in rather than a flattering one. The
+ * null photo is the same choice: only OAuth sign-ups have one, so the monogram
+ * is what most musicians will see and it should be the state under test.
  */
 const FIXTURE_MUSICIAN: Musician = {
   id: 'fixture-musician',
@@ -128,6 +131,7 @@ const FIXTURE_MUSICIAN: Musician = {
   tier: 'free',
   role: 'student',
   studioId: null,
+  avatarUrl: null,
 };
 
 export const fixtureMusicianSource: MusicianSource = {

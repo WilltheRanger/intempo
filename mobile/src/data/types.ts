@@ -196,4 +196,14 @@ export interface Musician {
   tier: UserTier;
   role: UserRole;
   studioId: string | null;
+  /**
+   * Profile photo. Null for most accounts, and null is the normal state — not
+   * an error to design around.
+   *
+   * There is no avatar column on `users` and no endpoint that accepts an
+   * upload, so the only photo the app can reach today is the one an OAuth
+   * provider puts in the Supabase auth user's metadata. Everyone who signed up
+   * with an email address has none, and falls back to a monogram.
+   */
+  avatarUrl: string | null;
 }
