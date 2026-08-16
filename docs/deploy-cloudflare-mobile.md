@@ -43,19 +43,35 @@ the cause is the same: the branch being built doesn't have the app on it.
 
 Cloudflare also builds a preview URL for every other branch and PR.
 
-### Status, 2026-08-16
+### Status, 2026-08-16 — deploying from `main`
 
-The `intempo` project builds green — the check on PR #2's head commit
-(`6a3b1d9`) came back `success`, which is the first time this has worked. The
-merge means `main` builds from the same configuration.
+`main` carries the whole app as of `f3cb2f3`, and the `intempo` project's build
+check has come back **green** on the last two commits. That is the deploy path:
+push to `main`, Cloudflare builds it.
 
-**There is a second Pages project on this repo, `front`, and it is failing.**
-It reports failure in the same second it starts, which is a configuration
-error rather than a build error — the build never runs. Two projects on one
-repo is only worth keeping if they serve different apps (`frontend/` and
-`mobile/`); if `front` was an earlier attempt at this one, deleting it stops a
-permanently red check on every PR. Its logs are in the Cloudflare dashboard;
-they aren't reachable from here.
+Verified from a clean tree on `main` before the merge — `rm -rf
+mobile/node_modules mobile/dist && npm run build` at the repo root, which is
+the exact command Cloudflare runs. Exits 0, applies the `expo-audio` patch via
+`postinstall`, and writes a 4.9 MB `mobile/dist`. The export was then served
+and driven in a browser: every screen renders, fonts load, no console errors.
+
+**There are three Pages projects on this repo and two of them are failing.**
+
+| Project | State | What it looks like |
+|---|---|---|
+| `intempo` | ✅ green | The one that works. This is the deploy. |
+| `front` | ❌ failing | Reports failure in the same second it starts |
+| `i` | ❌ failing | Same shape |
+
+A build that fails in zero seconds never ran — that is a configuration error,
+not a build error, and the usual cause is a **root directory that doesn't
+exist** on the branch being built. Both extra projects red every commit, which
+makes the checks list useless for spotting a real failure.
+
+If `front` and `i` were attempts at this same app, delete them; `intempo`
+already serves it. If one is meant for the Vite frontend in `frontend/`, set
+its root directory to `frontend`. Their logs are only in the Cloudflare
+dashboard — nothing about them is reachable from the repo.
 
 ### If the build fails on a missing package.json
 
@@ -110,7 +126,14 @@ preview then opens on the sign-in screen instead of the app.
 
 - **`mobile/public/_redirects`** — the SPA fallback (`/* /index.html 200`).
   Expo copies `public/` into the export, so it lands in `dist/` automatically.
-  Without it, a refresh or a shared deep link 404s.
+  Without it, a refresh or a shared deep link 404s. It cannot be tested against
+  a plain local static server — `python -m http.server` knows nothing about it,
+  so `/scores` 404s locally and works on Pages. Don't chase that one.
+- **`mobile/public/_headers`** — immutable caching for `_expo/static/*` and
+  `assets/*`, both of which carry content hashes in their filenames, and
+  no-cache for `index.html`, which doesn't. Without it the 3.3 MB bundle is
+  re-fetched on every visit; with a stale `index.html` a browser can end up
+  pinned to a bundle that no longer exists.
 - **`npm run build:web`** in `mobile/package.json`, the same command Cloudflare
   runs, so a failure can be reproduced locally before pushing.
 - **`mobile/package-lock.json`**, so Cloudflare's install resolves the same
