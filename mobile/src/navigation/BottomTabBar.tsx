@@ -77,11 +77,11 @@ export function BottomTabBar({
             <Icon
               size={ICON_SIZE.lg}
               strokeWidth={ICON_STROKE_WIDTH}
-              color={focused ? colors.accent : colors.textTertiary}
+              color={focused ? colors.accent : colors.textSecondary}
             />
             <Text
               variant="sectionLabel"
-              color={focused ? 'accent' : 'textTertiary'}
+              color={focused ? 'accent' : 'textSecondary'}
               style={styles.label}
             >
               {label}

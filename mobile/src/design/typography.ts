@@ -48,15 +48,19 @@ export const typography = {
   /** The featured composition title. */
   heroTitle: {
     fontFamily: fontFamily.serifRegular,
-    fontSize: 28,
-    lineHeight: 34,
+    fontSize: 26,
+    lineHeight: 31,
     letterSpacing: -0.4,
   },
-  /** Composition titles in lists. Medium, for presence against sans metadata. */
+  /**
+   * Composition titles in lists. Medium, for presence against sans metadata.
+   * Leading is tight relative to the size so a two-line title doesn't stretch
+   * the row.
+   */
   pieceTitle: {
     fontFamily: fontFamily.serifMedium,
     fontSize: 20,
-    lineHeight: 26,
+    lineHeight: 24,
     letterSpacing: -0.2,
   },
   /** Composer names. */
