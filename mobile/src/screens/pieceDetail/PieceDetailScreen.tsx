@@ -343,13 +343,26 @@ export function PieceDetailScreen() {
       {hasNotation || hasPages ? (
         <Card padded={false} style={styles.accessCard}>
           <View style={styles.accessRows}>
+            {/*
+              Both rows carry this piece's id. They used to push routes that
+              read the shared *scan session* instead, so every piece in the
+              library opened whatever was last photographed — and, because the
+              captured-pages screen has a live "Continue" footer, you could
+              walk from any piece into the transcription flow and save a
+              hardcoded fixture over it.
+            */}
             {hasNotation ? (
               <SheetOptionRow
                 icon={FileMusic}
                 label="Digital score"
                 description="The transcribed notation."
                 divided={false}
-                onPress={() => navigation.navigate('TranscriptionReview')}
+                onPress={() =>
+                  navigation.navigate('PieceScore', {
+                    pieceId: piece.id,
+                    view: 'notation',
+                  })
+                }
               />
             ) : null}
             {/*
@@ -361,9 +374,14 @@ export function PieceDetailScreen() {
               <SheetOptionRow
                 icon={Layers}
                 label="Original pages"
-                description="The photos this piece was transcribed from."
+                description="The photograph this piece was transcribed from."
                 divided={hasNotation}
-                onPress={() => navigation.navigate('CapturedPages')}
+                onPress={() =>
+                  navigation.navigate('PieceScore', {
+                    pieceId: piece.id,
+                    view: 'original',
+                  })
+                }
               />
             ) : null}
           </View>

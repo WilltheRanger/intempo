@@ -16,6 +16,13 @@ export type RootStackParamList = {
   Transcribe: undefined;
   TranscriptionReview: undefined;
   PieceDetail: { pieceId: string };
+  /**
+   * A saved piece's own score — the engraving, the photograph, or both.
+   *
+   * Takes a `pieceId` precisely because the screens this replaced didn't: they
+   * read the shared capture session, so every piece showed the same thing.
+   */
+  PieceScore: { pieceId: string; view?: 'notation' | 'original' };
   ChangeEmail: undefined;
   ChangePassword: undefined;
   Acknowledgements: undefined;

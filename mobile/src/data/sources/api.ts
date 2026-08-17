@@ -85,10 +85,48 @@ async function lastPracticedByScore(): Promise<Map<string, string>> {
   return out;
 }
 
+/** The endpoint's own ceiling (`le=200` on `/v1/scores`). */
+const SCORES_PAGE = 200;
+
+/**
+ * A hard stop, so a server that always returns a full page cannot spin this
+ * forever. Forty thousand pieces is not a library anyone has; reaching it means
+ * something is wrong, and stopping is better than hanging.
+ */
+const MAX_SCORE_PAGES = 200;
+
+/**
+ * Every score, not the first page of them.
+ *
+ * `listScores()` defaults to 50 and the library rendered exactly that, with no
+ * indication there was more — and `LibraryScreen`'s search filters the array it
+ * is given, so piece 51 was not merely below the fold, it was unfindable.
+ *
+ * Paged rather than given a big limit: a cap of 200 is the same bug at a higher
+ * number. This asks until the answer is short, which is the only way to know it
+ * has them all.
+ */
+async function listAllScores(): Promise<ScoreResponse[]> {
+  const all: ScoreResponse[] = [];
+  for (let page = 0; page < MAX_SCORE_PAGES; page += 1) {
+    const batch = await listScores({
+      limit: SCORES_PAGE,
+      offset: page * SCORES_PAGE,
+    });
+    all.push(...batch);
+    // A short page is the last page. An exactly-full final page costs one more
+    // request that comes back empty, which is the price of not guessing.
+    if (batch.length < SCORES_PAGE) {
+      break;
+    }
+  }
+  return all;
+}
+
 export const apiPieceSource: PieceSource = {
   async listPieces() {
     const [scores, practiced] = await Promise.all([
-      listScores(),
+      listAllScores(),
       lastPracticedByScore(),
     ]);
     return scores.map((score) => toPiece(score, practiced.get(score.id) ?? null));
@@ -261,7 +299,11 @@ export const apiInsightsSource: InsightsSource = {
   async getInsights(): Promise<PracticeInsights | null> {
     const [analyses, scores] = await Promise.all([
       listAnalyses({ status: 'done' }),
-      listScores({ limit: 200 }),
+      // All of them, not the first 200: this is the id → title map, and a
+      // missing entry renders as "Unknown piece" on the insights list. A
+      // library past the cap would have quietly started mislabelling its
+      // oldest pieces.
+      listAllScores(),
     ]);
 
     const since = Date.now() - INSIGHTS_WINDOW_DAYS * 24 * 60 * 60 * 1000;
