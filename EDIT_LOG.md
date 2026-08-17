@@ -6,6 +6,94 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-17 05:10 — The metronome now exists
+
+**Branch:** `main`. Chosen from "start anywhere you like", because this was the
+largest thing in the app that was **stored, displayed, toggleable and connected
+to nothing.** `metronome_mode` has been written onto every take since Batch 4,
+shown on the Record screen, switchable in the profile, and sent to the backend.
+Nothing has ever ticked, flashed or buzzed. A take submitted with
+`metronome_mode: "haptic"` was telling the pipeline something untrue.
+
+**What changed:**
+
+- `lib/metronome/beats.ts` — pure. A time signature becomes beats-per-bar *in
+  quarter notes*, matching `scheduleScore`'s unit, so the accent and the
+  reference playback agree about what the BPM on screen means. `6/8` is 3.
+  `9/8` is four and a half quarters, so it returns null and every beat is
+  struck the same — the OCR's literal `"unknown"` lands in the same place. A
+  metronome that is plain beats one that puts "one" in the wrong place.
+- `lib/metronome/clock.ts` — drift-corrected beat clock for the visual and
+  haptic modes. Beat times are `start + index × period`, never accumulated.
+  Fires a loop rather than one beat per wake-up, so a backgrounded tab doesn't
+  lose count.
+- `lib/metronome/click.web.ts` — the audible click, booked against
+  `AudioContext.currentTime` with a lookahead window. Why it doesn't share the
+  clock above is in `DECISIONS.md`.
+- `lib/metronome/click.ts` — the native click. **Unverified, and worse than
+  the web one**: it re-strikes two pre-rendered players from the JS clock, so
+  it carries jitter the browser build doesn't. Said plainly at the top of the
+  file.
+- `lib/metronome/useMetronome.ts` — mode, tempo and take phase in, beat out.
+  Runs only while recording. Surfaces `silent`, for the case where the mode is
+  haptic and haptics are switched off in the profile.
+- `screens/record/BeatIndicator.tsx` — the visual mode: one mark per beat in
+  the bar, the current one filled.
+- `screens/record/RecordScreen.tsx` — wires it in. In visual mode the beat row
+  replaces the metronome toggle at the same height, so nothing above moves when
+  a take starts.
+
+**Design notes (no new patterns — existing tokens only).** A row of marks
+rather than one thing flashing, because a flash says *that* a beat happened and
+this has to say *which*: someone glancing up mid-phrase is looking for their
+place in the bar. The fill is ink on the downbeat and gold elsewhere — gold is
+already this app's active state and ink is its strongest value, so "one" reads
+darkest from a music stand without a second colour system. Nothing animates: a
+transition would put the visible change *after* the beat, which is the exact
+error being measured.
+
+**Three-foot test (Record, mid-take):** the piece title, then the record
+button, then the timer. The beat marks are fourth and peripheral, which is
+right — they are for glancing at, not for looking at. Hierarchy unchanged from
+the locked version of this screen.
+
+**Tests:** `tsc --noEmit` clean, `build:web` clean. `beatsPerBar` checked
+against 16 cases including `6/8`, `9/8`, `2/2`, `"unknown"`, null and junk —
+all pass. Then measured in Chromium against the built bundle with a fake
+microphone, driving the real UI (Today → Continue practice → toggle → record):
+
+| | measured | expected |
+|---|---|---|
+| Visual, beat-to-beat at 92 BPM | 651 ms | 652 ms |
+| Audio, worst click-to-click error on the audio clock | **0 s** | 0 s |
+| Accent period, 4/4 | every 4th | every 4th |
+| Click pitches | 1000 / 1600 Hz | plain / accent |
+| Booked ahead of sounding | 0.08–0.24 s | lookahead, not per-beat |
+
+Counting before the take: none. Counting after Stop: none. Clicks booked but
+not yet sounded when the take ends: discarded with the context. The visual row
+is absent in audio mode and vice versa — the modes are exclusive. No console
+errors in any run.
+
+**One defect found and fixed in the process:** `accessibilityValue` does not
+reach the DOM on react-native-web — the `aria-valuenow`/`aria-valuemax` I set
+came back null. The same class of gap as `accessibilityState` on this screen.
+Rather than re-spell it in ARIA, the row is no longer a progressbar at all: a
+live region announcing a position ninety-two times a minute would be unusable,
+and a musician who can't see this has the haptic and audio modes. It carries
+one static label instead.
+
+**Honest status:** the web build is verified end to end. **The native build is
+not, and cannot be here** — no simulator, no device. What needs a person:
+whether the native click's jitter is audible, and whether 12pt marks read from
+a music-stand distance. Neither is answerable from a screenshot.
+
+**Known side effects:** none. The Record screen's layout is unchanged when the
+metronome is off, which is still the default. **Rollback:** revert this commit;
+`lib/metronome/` is self-contained and the Record screen's diff is additive.
+
+---
+
 ## 2026-08-17 04:05 — The tab bar sat on the home indicator (my regression)
 
 **Branch:** `main`. Reported from a real iPhone: the tab icons had almost no

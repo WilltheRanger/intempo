@@ -6,6 +6,26 @@ Operating Principle #5.
 
 ---
 
+## 2026-08-17 — Two clocks for the metronome, not one
+
+**Context:** the metronome has three outputs — a row of marks on screen, a haptic tap, and a click. The obvious build is one beat clock fanning out to all three. It is wrong for one of them.
+
+Anything the screen draws or the phone vibrates is already bounded by the frame rate and by how fast a hand can feel a difference; a few milliseconds late is imperceptible. A click is not. The ear places a transient an order of magnitude more finely than the eye places a change, and a metronome that wobbles is worse than none because a musician will play the wobble — into a take this app then measures for timing errors and attributes to them.
+
+**Decision:** `clock.ts` is a drift-corrected JS timer and drives the visual and haptic modes. `click.web.ts` ignores it entirely and books clicks against `AudioContext.currentTime` with a lookahead window, which is the standard Web Audio scheduling pattern. The two run independently, which is safe because `metronome_mode` is an enum — never more than one output at a time.
+
+Both compute a beat's time as `start + index × period`, never by adding a period to the last beat. Accumulating would lose a fraction of a millisecond per beat and be a quarter of a second out by the end of a two-minute take: the app would be measuring its own error and billing it to the player.
+
+**Alternatives considered:**
+
+- *One JS clock for all three.* Rejected on the measurement, not on principle. Booked against the audio clock, click-to-click error came back at exactly 0 seconds. A JS timer driving the same clicks would have carried the scheduler jitter straight into the reference a musician is playing to.
+- *Schedule the whole take's clicks up front,* as `scorePlayer.web.ts` does for a piece. Rejected: a take can run fifteen minutes, which is over 1,300 oscillator nodes held for the duration, and the take can be stopped at any moment. The lookahead window books a quarter-second at a time and closing the context takes the rest with it.
+- *A native scheduling module,* so the device build gets the same guarantee as the browser. Deferred, not rejected — see the trade-off.
+
+**Trade-off accepted:** the native click path (`click.ts`) re-strikes two pre-rendered `expo-audio` players from the JS clock, so **on a device the clicks inherit JS-thread jitter that the web build does not have.** That is written at the top of the file. It cannot be measured in this environment — there is no simulator or device — so what it needs is a person with headphones judging whether the jitter is audible. If it is, the fix is a native scheduler, not a faster timer.
+
+**Also decided: no count-in.** A take is aligned against the score by what was played, not by when the file starts, so an offset at the top costs the analysis nothing. A count-in the recorder captures as silence is a product feature with its own UI, and inventing one inside a clock module is how features arrive that nobody chose.
+
 ## 2026-08-17 — Rewrite exported asset paths after the build rather than vendoring the fonts
 
 **Context:** the first Cloudflare Pages deploy of the mobile app rendered a blank page. The build log was clean end to end and ended `Success: Assets published!`. The cause was in the log the whole time, as a number: `dist` holds 27 assets, `Uploaded 12 files`, and exactly 15 files sit under a directory called `node_modules`.
