@@ -7,7 +7,17 @@ export {
   fontsToLoad,
   type TypographyToken,
 } from './typography';
-export { motion, pressedOpacity, disabledOpacity } from './motion';
+export {
+  motion,
+  pressedOpacity,
+  disabledOpacity,
+  EASE_OUT,
+  STAGGER_MS,
+  STAGGER_CAP,
+  RISE_DISTANCE,
+  PRESSED_SCALE,
+  SKELETON_PULSE,
+} from './motion';
 
 /**
  * Minimum comfortable touch target, in points. Anything interactive should

@@ -4,7 +4,6 @@ import { StyleSheet, View } from 'react-native';
 import {
   Card,
   EmptyState,
-  LoadingState,
   PageHeader,
   ScreenContainer,
   SectionHeader,
@@ -13,6 +12,8 @@ import {
 import { useInsights } from '../../data/hooks/useInsights';
 import { spacing } from '../../design';
 import { formatTendency, formatTendencyDetail } from '../../lib/tempo';
+import { FadeIn } from '../../components/motion';
+import { InsightsSkeleton } from '../../components/skeletons';
 import { DeviationBar } from './DeviationBar';
 import { PieceInsightRow } from './PieceInsightRow';
 
@@ -39,7 +40,7 @@ export function InsightsScreen() {
     return (
       <ScreenContainer>
         <PageHeader title="Insights" />
-        <LoadingState />
+        <InsightsSkeleton />
       </ScreenContainer>
     );
   }
@@ -109,8 +110,10 @@ export function InsightsScreen() {
       <SectionHeader label="By piece" style={styles.section} />
 
       <View style={styles.pieces}>
-        {insights.pieces.map((piece) => (
-          <PieceInsightRow key={piece.pieceId} insight={piece} />
+        {insights.pieces.map((piece, index) => (
+          <FadeIn key={piece.pieceId} index={index}>
+            <PieceInsightRow insight={piece} />
+          </FadeIn>
         ))}
       </View>
     </ScreenContainer>

@@ -1,8 +1,9 @@
-import { Pressable, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 import { colors, radii, spacing } from '../../design';
 import type { Piece } from '../../data/types';
 import { formatLastPracticed, formatProgressPercent } from '../../lib/format';
+import { PressableScale } from '../motion';
 import { Card } from '../primitives/Card';
 import { MetadataRow } from '../primitives/MetadataRow';
 import { ProgressBar } from '../primitives/ProgressBar';
@@ -109,16 +110,16 @@ export function PieceCard({
   }
 
   return (
-    <Pressable
+    <PressableScale
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={
         piece.composer ? `${piece.title}, ${piece.composer}` : piece.title
       }
-      style={({ pressed }) => [styles.pressable, pressed && styles.pressed]}
+      style={styles.pressable}
     >
       <Card padded={false}>{content}</Card>
-    </Pressable>
+    </PressableScale>
   );
 }
 

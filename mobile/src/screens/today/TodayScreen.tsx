@@ -3,10 +3,15 @@ import { Pressable, StyleSheet, View } from 'react-native';
 
 import { FeaturedPieceCard } from '../../components/pieces/FeaturedPieceCard';
 import { PieceCard } from '../../components/pieces/PieceCard';
+import { FadeIn } from '../../components/motion';
+import {
+  FeaturedPieceSkeleton,
+  PieceListSkeleton,
+  SectionHeadingSkeleton,
+} from '../../components/skeletons';
 import {
   Avatar,
   EmptyState,
-  LoadingState,
   PageHeader,
   ScreenContainer,
   SectionHeader,
@@ -90,7 +95,14 @@ export function TodayScreen() {
         onContinue={openPractice}
       />
 
-      {preview.length > 0 ? (
+      {library.isPending ? (
+        // The section the list will occupy, so the screen doesn't grow a whole
+        // block under the reader's eyes when the library resolves.
+        <View style={styles.section}>
+          <SectionHeadingSkeleton />
+          <PieceListSkeleton count={PREVIEW_LIMIT} />
+        </View>
+      ) : preview.length > 0 ? (
         <View style={styles.section}>
           <SectionHeader
             label="Your library"
@@ -98,8 +110,10 @@ export function TodayScreen() {
             onActionPress={() => navigation.navigate('Library')}
           />
           <View style={styles.list}>
-            {preview.map((piece) => (
-              <PieceCard key={piece.id} piece={piece} />
+            {preview.map((piece, index) => (
+              <FadeIn key={piece.id} index={index}>
+                <PieceCard piece={piece} />
+              </FadeIn>
             ))}
           </View>
         </View>
@@ -122,7 +136,12 @@ function ContinueSection({
   onContinue,
 }: ContinueSectionProps) {
   if (isPending) {
-    return <LoadingState />;
+    return (
+      <View>
+        <SectionHeadingSkeleton />
+        <FeaturedPieceSkeleton />
+      </View>
+    );
   }
 
   if (isError) {

@@ -22,3 +22,9 @@ export {
 } from './SegmentedControl';
 export { EmptyState, type EmptyStateProps } from './EmptyState';
 export { LoadingState, type LoadingStateProps } from './LoadingState';
+export {
+  Skeleton,
+  SkeletonText,
+  type SkeletonProps,
+  type SkeletonTextProps,
+} from './Skeleton';
