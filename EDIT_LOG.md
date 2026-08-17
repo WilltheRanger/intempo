@@ -6,6 +6,34 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-17 18:55 — Warmup moves above the fact
+
+**Branch:** `main`. Owner: put the warmup above "Did you know".
+
+Today now reads: **the piece you are on → the warmup → the fact → the pieces
+worth a look → the last thirty days.** The two things to play sit together at
+the top; the fact is the only block that asks nothing of you, and it reads
+better once the playing is done.
+
+**What changed:** `screens/today/TodayScreen.tsx` only — the two blocks swapped
+and the entrance stagger renumbered to follow the order they are now read in.
+No component changed.
+
+One comment needed amending rather than moving with its block: the fact's
+docblock explained the serif problem as the lead sitting "directly under a card
+whose subject is a piece". That is no longer where it is. The reasoning still
+holds — it now sits in the *middle* of the serif run, with the warmup above and
+the two suggestions below — so the comment says that instead of a sentence that
+had quietly become false.
+
+**Tests:** `tsc --noEmit` clean, `build:web` clean. In Chromium: Start still
+opens the warmup page from its new position, the tempo round-trips 72 → 68 with
+Listen sounding D major at the new tempo, both suggestion rows and the summary
+still reach their destinations, Library and search unaffected. No console
+errors.
+
+**Rollback:** revert this commit.
+
 ## 2026-08-17 18:30 — Why "Did you know" looked wrong, and the card's identity/state split
 
 **Branch:** `main`. Owner: fix the card collision, and *"that did you know just
