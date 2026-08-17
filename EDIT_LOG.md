@@ -6,6 +6,68 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-17 13:40 — The warmup wraps, and the page stops reading like a web page
+
+**Branch:** `main`. Owner: show the whole warmup by wrapping rather than making
+people swipe sideways, leave room for the tempo and text underneath, and
+*"remember it's a mobile app so it should not have that style like a website"*.
+Structure was put to them as options (§2 gate): **light plate + control bar**,
+and **tighten Today's sections too**.
+
+**What was reading as web:** the Warmup page was a left-aligned text column
+under a lone back chevron, with its one control — a small centred stepper —
+floating mid-page above 500pt of dead ivory. Today's blocks sat 32pt apart,
+which reads as separate pages of a document rather than one screen.
+
+**What changed:**
+
+- `lib/notation/engrave.ts` — **rewritten to lay out multiple systems.** Bars
+  are packed onto lines and stacked; a bar is never split across a wrap,
+  because these are counting exercises and a bar read across a fold is a bar
+  miscounted. Adds **justification** — each system stretches to fill the width,
+  capped at 1.5× so a short final line doesn't spread four notes across the
+  page. Note names are laid out per system rather than by the component.
+- `components/notation/Stave.tsx` — draws systems, and gains `scale` and
+  `justify`. Names are now SVG text so they travel with their system; a row of
+  absolutely positioned labels worked for one stave and would have needed a
+  second layout pass for four.
+- `screens/warmup/WarmupScreen.tsx` — rebuilt. A nav row rather than a page
+  header; the exercise name as content; a **full-bleed ruled plate on
+  `surface`** that takes whatever height is left, so a short warmup fills the
+  screen with paper instead of leaving a band above the controls; and a
+  **control bar** holding the tempo and Listen. Notation draws at 1.25×.
+- `components/primitives/ScreenContainer.tsx` — `footerTone="surface"`, so a
+  footer that is a control area you work in reads differently from a footer
+  that holds a single action.
+- `screens/today/*` — sections 32 → 24pt apart, the panel tighter still at
+  20pt, and `TodayRow` grown to a 60pt list row rather than a paragraph with a
+  chevron.
+
+**Three-foot test (Warmup):** the music, then the tempo, then Listen. The
+notation is now unambiguously the subject of the screen, which it was not when
+it sat as a strip between two paragraphs.
+
+**Tests:** `tsc --noEmit` clean, `build:web` clean. The engraver's suite was
+rewritten for the new API — 40 assertions, all pass: staff positions on all
+four clefs unchanged, **bars never split across a wrap**, systems stack without
+overlapping, the box covers the last system, justification widens a system to
+exactly the target width and never past it, a short final system is not
+over-stretched, beams still break at barlines and across a wrap, ledger counts
+and stem sides unchanged. In Chromium: the warmup renders as two justified
+systems with the whole exercise visible and no horizontal scroll; the tempo
+stepper moved 72 → 68 and Listen sounded D major at the new tempo; the Today
+panel reported the remembered 68. Library, search, suggestions and every
+destination re-verified. No console errors.
+
+**Honest status:** verified in the web build against fixtures. Unproven on a
+device: whether 1.25× notation is readable from a music stand, and whether the
+plate/control-bar split holds on a short screen like an SE. **Still not done:**
+`PieceDetail` renders a progress bar for a field the backend cannot supply.
+
+**Rollback:** revert this commit. The engraver rewrite is the only part that is
+not additive; its old single-system behaviour is what you get by omitting
+`maxWidth`.
+
 ## 2026-08-17 12:05 — Warmup becomes a page, and Today gets an ink panel
 
 **Branch:** `main`. Owner: call it the warmup, make it a page you open with a

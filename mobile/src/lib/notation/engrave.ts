@@ -7,17 +7,18 @@ import type { Clef } from '../../data/types';
  * until a viola part arrives and every note sits a third off, so the arithmetic
  * lives on its own where it can be checked a note at a time.
  *
- * **Scope, stated honestly.** This engraves a few bars of a single line:
- * noteheads, stems, beamed eighths, ledger lines, inline sharps and barlines.
- * It is not a score engraver — no key signatures, no slurs, no dynamics, no
- * chords, no rests. It exists to draw the daily excerpt, whose notes this app
- * authors, and the excerpts are written to stay inside what it can draw.
+ * **Scope, stated honestly.** This engraves a single line of music across as
+ * many systems as it takes: noteheads, stems, beamed eighths, ledger lines,
+ * inline sharps, barlines and the note names underneath. It is not a score
+ * engraver — no key signatures, no slurs, no dynamics, no chords, no rests. It
+ * exists to draw the daily warmup, whose notes this app authors, and the
+ * warmups are written to stay inside what it can draw.
  *
  * **It draws no clef**, and that is a decision rather than an omission. A clef
  * is a piece of calligraphy; a hand-approximated treble clef in an app for
  * classical musicians would be the first thing a reader noticed and the last
  * thing they forgave. The pitches are instead disambiguated the way a study
- * book does it — the note names are printed under the staff — and the block
+ * book does it — the note names are printed under each system — and the screen
  * names the instrument it is written for. Honest about being an exercise
  * diagram rather than pretending to be engraved sheet music.
  */
@@ -64,6 +65,8 @@ export interface EngravedNote {
   accidental: Accidental;
   /** Y positions of ledger lines this note needs, above or below the staff. */
   ledgers: number[];
+  /** The note's letter and accidental, for the row under the system. */
+  name: string;
 }
 
 export interface EngravedBeam {
@@ -74,24 +77,23 @@ export interface EngravedBeam {
   stemUp: boolean;
 }
 
-export interface Engraving {
-  width: number;
-  height: number;
-  /**
-   * Shift every y by this before drawing.
-   *
-   * The layout is computed in its own space and then trimmed to what it
-   * actually occupies, so a run of low notes doesn't leave a band of empty
-   * staff above it. Applied once as a group transform rather than folded into
-   * every coordinate, so the numbers above stay readable as staff positions.
-   */
-  offsetY: number;
-  /** Y of each of the five staff lines, top first. */
+export interface EngravedSystem {
+  /** Y of each of the five staff lines, top first. Absolute in the drawing. */
   staffLines: number[];
-  /** X of each barline, including the final one. */
+  /** X of each barline, including the one that ends the system. */
   barlines: number[];
   notes: EngravedNote[];
   beams: EngravedBeam[];
+  /** Baseline for the note names printed under this system. */
+  nameY: number;
+  /** Right edge of this system's staff lines. */
+  width: number;
+}
+
+export interface Engraving {
+  width: number;
+  height: number;
+  systems: EngravedSystem[];
 }
 
 export interface EngraveOptions {
@@ -99,17 +101,50 @@ export interface EngraveOptions {
   lineGap?: number;
   /** Horizontal distance between noteheads. */
   noteGap?: number;
-  /** Space before the first note. */
+  /** Space before the first note of a system. */
   leftPad?: number;
   rightPad?: number;
+  /**
+   * Wrap onto a new system past this width.
+   *
+   * Wrapping rather than scrolling sideways, because an exercise you have to
+   * swipe through is one you cannot read while holding a bow. Omitted means a
+   * single system however long it runs — which is what the Today preview
+   * wants, since it is clipped deliberately.
+   */
+  maxWidth?: number;
+  /** Cap on notes drawn. Applied before wrapping. */
+  maxNotes?: number;
+  /**
+   * Stretch each system to fill `maxWidth`.
+   *
+   * What an engraver calls justification, and the reason a printed page has
+   * flush right margins. Without it a system holding two bars stops a
+   * quarter of the way short of the next one and the block reads as ragged
+   * rather than as music. Ignored without a `maxWidth` to stretch to.
+   */
+  justify?: boolean;
 }
 
 /** Half the notehead's height, in staff gaps. Mirrors `Stave`'s HEAD_RY. */
 const HEAD_RADIUS_FACTOR = 0.46;
 /** Breathing room around the drawing, in staff gaps. */
 const PADDING_FACTOR = 0.7;
+/** Height reserved under each system for its row of note names. */
+const NAME_ROW_FACTOR = 2.2;
+/** Gap between one system's names and the next system's staff. */
+const SYSTEM_GAP_FACTOR = 1.6;
+/** Stem length, in staff gaps. An octave, which is the engraver's convention. */
+const STEM_FACTOR = 3.5;
+/**
+ * How far justification may stretch the note spacing.
+ *
+ * A final system holding one bar would otherwise spread four notes across the
+ * page, which looks like a mistake rather than a line ending.
+ */
+const MAX_JUSTIFY_STRETCH = 1.5;
 
-const DEFAULTS: Required<EngraveOptions> = {
+const DEFAULTS = {
   lineGap: 9,
   noteGap: 30,
   leftPad: 22,
@@ -135,34 +170,72 @@ export function accidentalOf(pitch: string): Accidental {
   return match[2] === '#' ? 'sharp' : null;
 }
 
+/** `F#4` reads as `F♯` — the octave is on the staff, and the sharp is a glyph. */
+export function displayName(pitch: string): string {
+  return pitch.replace(/#/, '♯').replace(/-?\d+$/, '');
+}
+
+/** Split a run of notes into bars, using the `barBefore` flags. */
+export function splitBars(notes: StaveNote[]): StaveNote[][] {
+  const bars: StaveNote[][] = [];
+  for (const note of notes) {
+    if (note.barBefore || bars.length === 0) {
+      bars.push([]);
+    }
+    bars[bars.length - 1].push(note);
+  }
+  return bars;
+}
+
 /**
- * Lay out a few bars.
+ * Pack bars onto systems.
  *
- * Notes are evenly spaced rather than spaced by duration. Proportional spacing
- * is what a real engraver does and it is wrong here: these are exercises read
- * at a glance on a phone, and even columns make the beat positions obvious,
- * which is the whole point of a rhythm exercise.
+ * Whole bars only. Breaking a bar across a line break is legal in engraving and
+ * wrong here: these are counting exercises, and a bar read across a fold is a
+ * bar miscounted. A bar too wide for a system on its own gets a system of its
+ * own and overflows rather than being split.
  */
-export function engrave(
+export function packSystems(
+  bars: StaveNote[][],
+  notesPerSystem: number,
+): StaveNote[][] {
+  const systems: StaveNote[][] = [];
+  let current: StaveNote[] = [];
+
+  for (const bar of bars) {
+    if (current.length > 0 && current.length + bar.length > notesPerSystem) {
+      systems.push(current);
+      current = [];
+    }
+    current = current.concat(bar);
+  }
+  if (current.length > 0) {
+    systems.push(current);
+  }
+  return systems;
+}
+
+/**
+ * Lay out one system, in its own coordinate space.
+ *
+ * The middle staff line is 0 here; the caller shifts the whole thing once it
+ * knows how tall the system turned out to be.
+ */
+function layoutSystem(
   notes: StaveNote[],
   clef: Clef,
-  options: EngraveOptions = {},
-): Engraving {
-  const { lineGap, noteGap, leftPad, rightPad } = { ...DEFAULTS, ...options };
+  lineGap: number,
+  noteGap: number,
+  leftPad: number,
+  rightPad: number,
+): { system: EngravedSystem; top: number; bottom: number } {
   const halfGap = lineGap / 2;
-
-  const staffHeight = lineGap * 4;
-  // Enough headroom for a stem and two ledger lines above the staff. The box
-  // is trimmed to the real extent at the end, so this only has to be a
-  // starting offset that nothing draws above.
-  const topLine = lineGap * 5;
-  const staffLines = Array.from({ length: 5 }, (_, i) => topLine + i * lineGap);
-  const middleLine = topLine + staffHeight / 2;
   const middleStep = MIDDLE_LINE_STEP[clef];
-
+  const staffLines = [-2, -1, 0, 1, 2].map((i) => i * lineGap);
   const engravedNotes: EngravedNote[] = [];
   const barlines: number[] = [];
   const beams: EngravedBeam[] = [];
+  const stemLength = lineGap * STEM_FACTOR;
 
   let x = leftPad;
 
@@ -174,10 +247,9 @@ export function engrave(
     }
 
     const step = stepOf(note.pitch);
-    const y = step === null ? middleLine : middleLine - (step - middleStep) * halfGap;
-    const stemUp = y > middleLine;
+    const y = step === null ? 0 : -(step - middleStep) * halfGap;
+    const stemUp = y > 0;
     const filled = note.value === 'quarter' || note.value === 'eighth';
-    const stemLength = lineGap * 3.5;
 
     engravedNotes.push({
       x,
@@ -185,6 +257,7 @@ export function engrave(
       filled,
       stemUp,
       accidental: accidentalOf(note.pitch),
+      name: displayName(note.pitch),
       stem:
         note.value === 'whole'
           ? null
@@ -196,13 +269,14 @@ export function engrave(
               from: y,
               to: stemUp ? y - stemLength : y + stemLength,
             },
-      ledgers: ledgerLinesFor(y, topLine, staffLines[4], lineGap),
+      ledgers: ledgerLinesFor(y, staffLines[0], staffLines[4], lineGap),
     });
 
     x += noteGap;
   });
 
-  barlines.push(x - noteGap + noteGap / 2 + rightPad / 2);
+  const right = x - noteGap / 2 + rightPad;
+  barlines.push(right);
 
   // Beam runs of eighths, broken at barlines: a beam across a barline would
   // group notes that are in different bars.
@@ -246,29 +320,135 @@ export function engrave(
   });
   flush();
 
-  // The real extent of the drawing, not an estimate: stems and ledger lines
-  // both reach outside the staff, and a box sized from the noteheads alone
-  // clips exactly the tall notes an exercise is written to practise.
-  const extents = [topLine, staffLines[4]];
+  // The real extent, not an estimate: stems and ledger lines both reach
+  // outside the staff, and a box sized from the noteheads alone clips exactly
+  // the tall notes an exercise is written to practise.
+  const extents = [staffLines[0], staffLines[4]];
   for (const note of engravedNotes) {
-    extents.push(note.y - HEAD_RADIUS_FACTOR * lineGap, note.y + HEAD_RADIUS_FACTOR * lineGap);
+    extents.push(
+      note.y - HEAD_RADIUS_FACTOR * lineGap,
+      note.y + HEAD_RADIUS_FACTOR * lineGap,
+    );
     if (note.stem) {
       extents.push(note.stem.to);
     }
     extents.push(...note.ledgers);
   }
-  const lowest = Math.max(...extents);
-  const highest = Math.min(...extents);
+
+  const nameY = Math.max(...extents) + lineGap * NAME_ROW_FACTOR;
 
   return {
-    width: x - noteGap + noteGap / 2 + rightPad,
-    height: lowest - highest + PADDING_FACTOR * lineGap * 2,
-    offsetY: PADDING_FACTOR * lineGap - highest,
-    staffLines,
-    barlines,
-    notes: engravedNotes,
-    beams,
+    system: {
+      staffLines,
+      barlines,
+      notes: engravedNotes,
+      beams,
+      nameY,
+      width: right,
+    },
+    top: Math.min(...extents),
+    bottom: nameY,
   };
+}
+
+/** Shift every coordinate in a system down by `dy`. */
+function shift(system: EngravedSystem, dy: number): EngravedSystem {
+  return {
+    staffLines: system.staffLines.map((y) => y + dy),
+    barlines: system.barlines,
+    nameY: system.nameY + dy,
+    width: system.width,
+    notes: system.notes.map((note) => ({
+      ...note,
+      y: note.y + dy,
+      ledgers: note.ledgers.map((y) => y + dy),
+      stem: note.stem
+        ? { ...note.stem, from: note.stem.from + dy, to: note.stem.to + dy }
+        : null,
+    })),
+    beams: system.beams.map((beam) => ({ ...beam, y: beam.y + dy })),
+  };
+}
+
+/**
+ * Lay out a run of notes, wrapping onto as many systems as it takes.
+ *
+ * Notes are evenly spaced rather than spaced by duration. Proportional spacing
+ * is what a real engraver does and it is wrong here: these are exercises read
+ * at a glance on a phone, and even columns make the beat positions obvious,
+ * which is the whole point of a rhythm exercise.
+ */
+export function engrave(
+  notes: StaveNote[],
+  clef: Clef,
+  options: EngraveOptions = {},
+): Engraving {
+  const lineGap = options.lineGap ?? DEFAULTS.lineGap;
+  const noteGap = options.noteGap ?? DEFAULTS.noteGap;
+  const leftPad = options.leftPad ?? DEFAULTS.leftPad;
+  const rightPad = options.rightPad ?? DEFAULTS.rightPad;
+
+  const capped = options.maxNotes ? truncateAtBar(notes, options.maxNotes) : notes;
+
+  const perSystem = options.maxWidth
+    ? Math.max(1, Math.floor((options.maxWidth - leftPad - rightPad) / noteGap))
+    : capped.length;
+  const runs = options.maxWidth ? packSystems(splitBars(capped), perSystem) : [capped];
+
+  const padding = PADDING_FACTOR * lineGap;
+  const gap = lineGap * SYSTEM_GAP_FACTOR;
+
+  const systems: EngravedSystem[] = [];
+  let cursor = padding;
+  let width = 0;
+
+  for (const run of runs) {
+    if (run.length === 0) {
+      continue;
+    }
+    // A system's width is leftPad + (n - ½) gaps + rightPad, because the final
+    // barline sits half a gap past the last note. Solve that for the gap that
+    // makes it exactly `maxWidth`.
+    const stretched =
+      options.justify && options.maxWidth && run.length > 1
+        ? Math.min(
+            (options.maxWidth - leftPad - rightPad) / (run.length - 0.5),
+            noteGap * MAX_JUSTIFY_STRETCH,
+          )
+        : noteGap;
+    const laid = layoutSystem(run, clef, lineGap, stretched, leftPad, rightPad);
+    systems.push(shift(laid.system, cursor - laid.top));
+    cursor += laid.bottom - laid.top + gap;
+    width = Math.max(width, laid.system.width);
+  }
+
+  return {
+    width,
+    // The last system needs no inter-system gap, only the outer padding.
+    height: Math.max(cursor - gap + padding, padding * 2),
+    systems,
+  };
+}
+
+/**
+ * Cut a run of notes down, preferring to stop where a bar does.
+ *
+ * A preview that ends halfway through a bar reads as a rendering failure
+ * rather than as an extract, so this drops back to the last barline inside the
+ * limit — unless that would leave almost nothing, in which case a hard cut is
+ * the lesser problem.
+ */
+export function truncateAtBar(notes: StaveNote[], limit: number): StaveNote[] {
+  if (notes.length <= limit) {
+    return notes;
+  }
+  const head = notes.slice(0, limit);
+  for (let i = head.length - 1; i > 0; i -= 1) {
+    if (head[i].barBefore) {
+      return i >= limit / 2 ? head.slice(0, i) : head;
+    }
+  }
+  return head;
 }
 
 /**

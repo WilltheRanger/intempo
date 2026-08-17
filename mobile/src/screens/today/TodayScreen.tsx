@@ -252,11 +252,14 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
   section: {
-    marginTop: spacing['3xl'],
+    // One step tighter than it was. At 32pt the blocks read as separate pages
+    // of a document rather than as parts of one screen — which is most of what
+    // made this feel like a web page.
+    marginTop: spacing['2xl'],
   },
   panelSection: {
-    // Tighter above than a text section: a full-bleed band reads as attached
-    // to the page, and too much air makes it float.
-    marginTop: spacing['2xl'],
+    // Tighter still: a full-bleed band reads as attached to the page, and too
+    // much air above it makes it float.
+    marginTop: spacing.xl,
   },
 });
