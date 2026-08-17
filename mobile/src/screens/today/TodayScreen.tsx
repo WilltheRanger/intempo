@@ -22,7 +22,7 @@ import { getGreeting } from '../../lib/greeting';
 import { formatTendency } from '../../lib/tempo';
 import { suggestionsFor } from '../../lib/today';
 import type { TabScreenNavigation } from '../../navigation/types';
-import { ExcerptBlock } from './ExcerptBlock';
+import { WarmupPanel } from './WarmupPanel';
 import { NotesBlock } from './NotesBlock';
 import { PracticeCard } from './PracticeCard';
 import { TodayRow } from './TodayRow';
@@ -168,10 +168,17 @@ export function TodayScreen() {
         onContinue={() => openPractice(piece)}
       />
 
+      {/*
+        The panel carries its own heading — it is a surface rather than a
+        section on the page, so a `SectionHeader` above it would label the
+        ivory it sits on rather than the thing itself.
+      */}
       <FadeIn index={0}>
-        <View style={styles.section}>
-          <SectionHeader label="Today's excerpt" />
-          <ExcerptBlock instrument={instrument} />
+        <View style={styles.panelSection}>
+          <WarmupPanel
+            instrument={instrument}
+            onStart={() => navigation.navigate('Warmup')}
+          />
         </View>
       </FadeIn>
 
@@ -246,5 +253,10 @@ const styles = StyleSheet.create({
   },
   section: {
     marginTop: spacing['3xl'],
+  },
+  panelSection: {
+    // Tighter above than a text section: a full-bleed band reads as attached
+    // to the page, and too much air makes it float.
+    marginTop: spacing['2xl'],
   },
 });

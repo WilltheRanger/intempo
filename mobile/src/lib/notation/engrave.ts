@@ -1,7 +1,7 @@
 import type { Clef } from '../../data/types';
 
 /**
- * Where every mark on a short excerpt goes.
+ * Where every mark on a few bars of notation goes.
  *
  * Pure geometry, no drawing. Engraving is the kind of thing that looks right
  * until a viola part arrives and every note sits a third off, so the arithmetic
@@ -43,7 +43,7 @@ const MIDDLE_LINE_STEP: Record<Clef, number> = {
 
 export type NoteValue = 'whole' | 'half' | 'quarter' | 'eighth';
 
-export interface ExcerptNote {
+export interface StaveNote {
   /** Scientific pitch, e.g. `D4`, `F#4`. Flats are not drawn — see `Accidental`. */
   pitch: string;
   value: NoteValue;
@@ -136,7 +136,7 @@ export function accidentalOf(pitch: string): Accidental {
 }
 
 /**
- * Lay out an excerpt.
+ * Lay out a few bars.
  *
  * Notes are evenly spaced rather than spaced by duration. Proportional spacing
  * is what a real engraver does and it is wrong here: these are exercises read
@@ -144,7 +144,7 @@ export function accidentalOf(pitch: string): Accidental {
  * which is the whole point of a rhythm exercise.
  */
 export function engrave(
-  notes: ExcerptNote[],
+  notes: StaveNote[],
   clef: Clef,
   options: EngraveOptions = {},
 ): Engraving {

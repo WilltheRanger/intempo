@@ -6,6 +6,76 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-17 12:05 — Warmup becomes a page, and Today gets an ink panel
+
+**Branch:** `main`. Owner: call it the warmup, make it a page you open with a
+name and a Start button on Today, and *"the today looks kind of bland right
+now"*. The visual treatment was put to them as three options (§2 gate); they
+chose the ink panel.
+
+**What changed:**
+
+- **Renamed throughout.** `lib/excerpt.ts` → `lib/warmup.ts`, `Excerpt` →
+  `Warmup`, `excerptFor`/`excerptScore` → `warmupFor`/`warmupScore`. In
+  `engrave.ts`, `ExcerptNote` → `StaveNote` — it is a notation input, not a
+  product noun, and naming it after the one feature that uses it was already
+  wrong. Code vocabulary now matches the product's.
+- `screens/warmup/WarmupScreen.tsx` — new, pushed on the root stack. Full-size
+  notation, the focus line, a tempo stepper and Listen. A page because working
+  from notation needs it readable from a stand and the tempo is something you
+  set once and play against; neither fits under a two-line preview.
+- `screens/today/WarmupPanel.tsx` — new. A **full-bleed ink band**, the only
+  dark surface on Today: label, name, focus, the first bars engraved in cream,
+  and Start. No new colours — `actionBg`/`actionText`/`onDarkMuted` already
+  exist as the palette for full-bleed dark surfaces and the camera scanner uses
+  the same three. **The notation is the only ornament, and it is real:** the
+  actual opening bars of the actual warmup, not a decorative flourish.
+- `components/notation/Stave.tsx` — a `tone` prop so one engraver serves both
+  grounds, and `maxNotes`, which truncates **at a barline** where it can. A
+  preview ending mid-bar reads as a rendering failure rather than an extract.
+- `components/primitives/PrimaryButton.tsx` — a `tone="light"` variant: cream
+  fill, ink label, for a button on a dark ground. The same button seen against
+  the opposite surface, from the same token pair.
+- `components/practice/TempoStepper.tsx` — **extracted** from the Record
+  screen, which now uses it. Two steppers that disagree about their step size
+  or their limits is the sort of drift nobody notices until a musician does.
+- Route `Warmup` added; `ExcerptBlock` deleted.
+
+**Why the panel fixes "bland".** Today ran card → type → more type, with one
+visual event in the whole screen. The inverted band gives it a second, and it
+earns its place by carrying information rather than decoration — it also marks
+the warmup as a *different kind of thing* from the piece above it.
+
+**Three-foot test:** the practice card, then the ink panel, then the Start
+button inside it. The rows below recede properly. Two focal points, but they
+are sequential rather than competing — you read down the screen, and the
+second one is a surface, not a rival card.
+
+**Tests:** `tsc --noEmit` clean, `build:web` clean. Driven in Chromium against
+the built bundle: the panel renders the engraving in cream and truncates at the
+bar (8 notes, exactly one bar); Start opens the page; the tempo stepper moved
+72 → 68 and **Listen sounded D major at the new tempo**; going back, the panel
+reported 68 rather than the authored 72. The Record screen still shows "Target
+tempo" and its 92 BPM after the extraction. Library, search, the suggestion
+rows and every other destination re-verified. No console errors.
+
+**One defect found and fixed:** the panel first showed `warmup.bpm` — the
+tempo it was *written* at — so slowing the warmup down on the page left Today
+still claiming 72. It now reads the same remembered tempo the page does, which
+is keyed into `practiceTempo` by the warmup's id, so a warmup you slow down is
+remembered exactly the way a piece is.
+
+**Honest status:** verified in the web build against fixtures. Unproven on a
+device: whether cream notation on ink holds up in sunlight, and whether the
+band reads as a surface rather than as a very dark card at arm's length.
+**Still not done:** `PieceDetail` renders a progress bar for a field the
+backend cannot supply.
+
+**Rollback:** revert this commit; the rename is mechanical and the panel,
+page and stepper are additive.
+
+---
+
 ## 2026-08-17 10:30 — A daily excerpt for your instrument, and a term with a fact
 
 **Branch:** `main`. Owner: *"last take is basically cont practice"* — correct,

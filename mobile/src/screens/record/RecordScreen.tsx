@@ -1,23 +1,17 @@
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
-import { Mic, Minus, Plus, Square } from 'lucide-react-native';
+import { Mic, Square } from 'lucide-react-native';
 import { useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import {
   EmptyState,
-  IconButton,
   LoadingState,
   PageHeader,
   ScreenContainer,
   Text,
 } from '../../components/primitives';
 import { usePiece } from '../../data/hooks/usePieces';
-import {
-  MAX_BPM,
-  MIN_BPM,
-  practiceTempo,
-  usePracticeTempos,
-} from '../../data/practiceTempo';
+import { practiceTempo, usePracticeTempos } from '../../data/practiceTempo';
 import { preferences, usePreferences } from '../../data/preferences';
 import { PressableScale } from '../../components/motion';
 import { takeSubmissionSource } from '../../data/sources';
@@ -37,13 +31,12 @@ import {
   radii,
   spacing,
 } from '../../design';
+import { TempoStepper } from '../../components/practice/TempoStepper';
 import { impact, ImpactFeedbackStyle } from '../../lib/haptics';
 import { beatsPerBar, useMetronome } from '../../lib/metronome';
 import type { RootNavigation, RootStackParamList } from '../../navigation/types';
 import { BeatIndicator } from './BeatIndicator';
 import { ListenButton } from './ListenButton';
-
-const BPM_STEP = 2;
 
 const METRONOME_LABELS = {
   off: 'Metronome off',
@@ -132,10 +125,6 @@ export function RecordScreen() {
     // elapsedMs is read once to resume from where it paused, not tracked.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase]);
-
-  function adjustTempo(by: number) {
-    practiceTempo.set(params.pieceId, targetBpm + by);
-  }
 
   async function start() {
     // `startRecording` awaits a permission prompt, which is long enough for a
@@ -287,32 +276,12 @@ export function RecordScreen() {
           everything already played.
         */}
         <View style={styles.tempo}>
-          <Text variant="sectionLabel" color="textSecondary">
-            Target tempo
-          </Text>
-
-          <View style={styles.tempoRow}>
-            <IconButton
-              icon={Minus}
-              label="Slower"
-              onPress={() => adjustTempo(-BPM_STEP)}
-              disabled={recording || targetBpm <= MIN_BPM}
-            />
-            <View style={styles.reading}>
-              <Text variant="screenTitle" style={styles.bpm}>
-                {targetBpm}
-              </Text>
-              <Text variant="metadata" color="textTertiary">
-                BPM
-              </Text>
-            </View>
-            <IconButton
-              icon={Plus}
-              label="Faster"
-              onPress={() => adjustTempo(BPM_STEP)}
-              disabled={recording || targetBpm >= MAX_BPM}
-            />
-          </View>
+          <TempoStepper
+            label="Target tempo"
+            bpm={targetBpm}
+            onChange={(next) => practiceTempo.set(params.pieceId, next)}
+            disabled={recording}
+          />
 
           {/*
             Locked with the tempo once recording starts: the mode is written
@@ -495,19 +464,6 @@ const styles = StyleSheet.create({
   tempo: {
     alignItems: 'center',
     gap: spacing.md,
-  },
-  tempoRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing['2xl'],
-  },
-  reading: {
-    alignItems: 'center',
-    minWidth: 96,
-  },
-  bpm: {
-    // Digits change every step; without this the row twitches as widths shift.
-    fontVariant: ['tabular-nums'],
   },
   timer: {
     textAlign: 'center',

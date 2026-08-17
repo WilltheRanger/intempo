@@ -1,8 +1,8 @@
 import type { Clef, Instrument, ScoreJson } from '../data/types';
-import type { ExcerptNote } from './notation/engrave';
+import type { StaveNote } from './notation/engrave';
 
 /**
- * The daily excerpt: a few bars written for the instrument in your hands.
+ * The daily warmup: a few bars written for the instrument in your hands.
  *
  * **Why these are hand-authored rather than pulled from the library.** A daily
  * exercise has to be short, in first position, and about one thing. Slicing
@@ -10,40 +10,40 @@ import type { ExcerptNote } from './notation/engrave';
  * mid-phrase; and slicing it out of the musician's *own* library would just
  * hand back a fragment of what they are already practising.
  *
- * Every excerpt states what it trains. An exercise without a stated purpose is
+ * Every warmup states what it trains. An exercise without a stated purpose is
  * a warm-up ritual, and this app has no business inventing rituals.
  *
  * **Range discipline.** Everything here sits in first position on its
- * instrument. An exercise that needs a shift is not a warm-up, and one printed
+ * instrument. An exercise that needs a shift is not a warmup, and one printed
  * outside the range of the instrument it claims to be for is worse than none.
- * The ranges are noted per instrument below and are the reason each excerpt is
+ * The ranges are noted per instrument below and are the reason each warmup is
  * written four times rather than transposed automatically — automatic
  * transposition would put a viola exercise on strings a viola does not have.
  */
 
-export interface Excerpt {
+export interface Warmup {
   id: string;
   /** What it is, in the words a teacher would use. */
   name: string;
   /** What it trains. One clause, always present. */
   focus: string;
-  notes: ExcerptNote[];
+  notes: StaveNote[];
   /** A comfortable working tempo in quarter-note BPM, not a target. */
   bpm: number;
   clef: Clef;
 }
 
-const q = (pitch: string, barBefore = false): ExcerptNote => ({
+const q = (pitch: string, barBefore = false): StaveNote => ({
   pitch,
   value: 'quarter',
   ...(barBefore ? { barBefore } : {}),
 });
-const e = (pitch: string, barBefore = false): ExcerptNote => ({
+const e = (pitch: string, barBefore = false): StaveNote => ({
   pitch,
   value: 'eighth',
   ...(barBefore ? { barBefore } : {}),
 });
-const h = (pitch: string, barBefore = false): ExcerptNote => ({
+const h = (pitch: string, barBefore = false): StaveNote => ({
   pitch,
   value: 'half',
   ...(barBefore ? { barBefore } : {}),
@@ -58,7 +58,7 @@ const h = (pitch: string, barBefore = false): ExcerptNote => ({
  * four bars of four, which is what a scale exercise has to be if it is going
  * to be counted.
  */
-function scale(pitches: string[]): ExcerptNote[] {
+function scale(pitches: string[]): StaveNote[] {
   const full = [...pitches, ...pitches.slice(0, -1).reverse()];
   return full.map((pitch, index) =>
     index === full.length - 1
@@ -74,8 +74,8 @@ function scale(pitches: string[]): ExcerptNote[] {
  * as a bar. The final whole note is where the bow stops and you listen to the
  * string ring.
  */
-function crossings(lower: string, upper: string, second: [string, string], hold: string): ExcerptNote[] {
-  const bar = (a: string, b: string, first: boolean): ExcerptNote[] =>
+function crossings(lower: string, upper: string, second: [string, string], hold: string): StaveNote[] {
+  const bar = (a: string, b: string, first: boolean): StaveNote[] =>
     [e(a, first), e(b), e(a), e(b), e(a), e(b), e(a), e(b)];
   return [
     ...bar(lower, upper, true),
@@ -87,7 +87,7 @@ function crossings(lower: string, upper: string, second: [string, string], hold:
 /**
  * Violin — first position, G3 to B5. Open strings G3 D4 A4 E5.
  */
-const VIOLIN: Excerpt[] = [
+const VIOLIN: Warmup[] = [
   {
     id: 'violin-d-major',
     name: 'D major, one octave',
@@ -121,7 +121,7 @@ const VIOLIN: Excerpt[] = [
 /**
  * Viola — first position, C3 to E5, in alto clef. Open strings C3 G3 D4 A4.
  */
-const VIOLA: Excerpt[] = [
+const VIOLA: Warmup[] = [
   {
     id: 'viola-g-major',
     name: 'G major, one octave',
@@ -155,7 +155,7 @@ const VIOLA: Excerpt[] = [
 /**
  * Cello — first position, C2 to D4, in bass clef. Open strings C2 G2 D3 A3.
  */
-const CELLO: Excerpt[] = [
+const CELLO: Warmup[] = [
   {
     id: 'cello-d-major',
     name: 'D major, one octave',
@@ -193,7 +193,7 @@ const CELLO: Excerpt[] = [
  * printed, and printing the sounding pitch would put every exercise two ledger
  * lines under the staff for no reason. Open strings E2 A2 D3 G3, as written.
  */
-const DOUBLE_BASS: Excerpt[] = [
+const DOUBLE_BASS: Warmup[] = [
   {
     id: 'bass-g-major',
     name: 'G major, one octave',
@@ -224,7 +224,7 @@ const DOUBLE_BASS: Excerpt[] = [
   },
 ];
 
-const BY_INSTRUMENT: Record<Instrument, Excerpt[]> = {
+const BY_INSTRUMENT: Record<Instrument, Warmup[]> = {
   violin: VIOLIN,
   viola: VIOLA,
   cello: CELLO,
@@ -245,13 +245,13 @@ export function dayIndex(now: Date = new Date()): number {
 }
 
 /**
- * Today's excerpt for an instrument.
+ * Today's warmup for an instrument.
  *
- * Rotates by the date rather than at random: it has to be the same excerpt all
- * day, and the same one on every device, or "today's excerpt" would mean
+ * Rotates by the date rather than at random: it has to be the same warmup all
+ * day, and the same one on every device, or "today's warmup" would mean
  * nothing and closing the app would reroll the work you had started.
  */
-export function excerptFor(instrument: Instrument, now: Date = new Date()): Excerpt {
+export function warmupFor(instrument: Instrument, now: Date = new Date()): Warmup {
   const set = BY_INSTRUMENT[instrument] ?? VIOLIN;
   return set[dayIndex(now) % set.length];
 }
@@ -264,15 +264,15 @@ const VALUE_DURATIONS = {
 } as const;
 
 /**
- * The excerpt as a score the existing player can sound.
+ * The warmup as a score the existing player can sound.
  *
  * Reuses `scheduleScore` and the reference voice rather than growing a second
  * playback path — the same code that plays a piece plays the exercise, so a
  * timing bug cannot exist in one and not the other.
  */
-export function excerptScore(excerpt: Excerpt): ScoreJson {
+export function warmupScore(warmup: Warmup): ScoreJson {
   const measures: ScoreJson['measures'] = [];
-  for (const note of excerpt.notes) {
+  for (const note of warmup.notes) {
     if (note.barBefore || measures.length === 0) {
       measures.push({ measure_number: measures.length + 1, notes: [], slurs: [] });
     }
@@ -287,11 +287,11 @@ export function excerptScore(excerpt: Excerpt): ScoreJson {
     time_signature: '4/4',
     key_signature: null,
     tempo_marking: null,
-    bpm_hint: excerpt.bpm,
-    clef: excerpt.clef,
+    bpm_hint: warmup.bpm,
+    clef: warmup.clef,
     measures,
     repeats: [],
     ocr_confidence: 1,
-    notes_to_human: 'Daily excerpt. Authored, not OCR output.',
+    notes_to_human: 'Daily warmup. Authored, not OCR output.',
   };
 }
