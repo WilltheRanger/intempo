@@ -32,6 +32,15 @@ export interface ScreenContainerProps {
    * resolves instantly teaches people the gesture does nothing.
    */
   onRefresh?: () => Promise<unknown>;
+  /**
+   * The footer's ground.
+   *
+   * `page` is the default and the app's usual bottom bar: the ivory carried
+   * down behind a hairline, the way the tab bar does it. `surface` lifts it
+   * onto the card colour, for a screen whose footer is a control area you work
+   * in rather than a single action you finish with.
+   */
+  footerTone?: 'page' | 'surface';
 }
 
 /**
@@ -47,6 +56,7 @@ export function ScreenContainer({
   contentStyle,
   footer,
   onRefresh,
+  footerTone = 'page',
 }: ScreenContainerProps) {
   const [refreshing, setRefreshing] = useState(false);
 
@@ -148,6 +158,7 @@ export function ScreenContainer({
         <View
           style={[
             styles.footer,
+            footerTone === 'surface' ? styles.footerSurface : null,
             overflows ? styles.footerDivided : null,
             footerInset,
           ]}
@@ -183,6 +194,12 @@ const styles = StyleSheet.create({
     borderTopColor: 'transparent',
     paddingHorizontal: SCREEN_GUTTER,
     paddingTop: spacing.lg,
+  },
+  footerSurface: {
+    backgroundColor: colors.surface,
+    // Always drawn on this tone: the surface is what marks the control area
+    // off, and it needs an edge whether or not the content above scrolls.
+    borderTopColor: colors.border,
   },
   footerDivided: {
     borderTopColor: colors.border,

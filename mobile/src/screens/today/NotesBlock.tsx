@@ -51,7 +51,7 @@ const styles = StyleSheet.create({
   rule: {
     height: BORDER_WIDTH,
     backgroundColor: colors.border,
-    marginVertical: spacing.lg,
+    marginVertical: spacing.md,
   },
   fact: {
     marginTop: spacing.xs,

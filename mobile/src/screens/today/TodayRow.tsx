@@ -85,8 +85,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.md,
-    minHeight: MIN_TOUCH_TARGET,
-    paddingVertical: spacing.md,
+    // A native list row, not a paragraph with a chevron: 44pt is the minimum
+    // a target may be, and a row you tap all day should clear it comfortably.
+    minHeight: MIN_TOUCH_TARGET + spacing.lg,
+    paddingVertical: spacing.lg,
   },
   ruled: {
     borderBottomWidth: BORDER_WIDTH,
