@@ -6,7 +6,6 @@ import { StyleSheet, View } from 'react-native';
 import {
   Card,
   EmptyState,
-  LoadingState,
   MetadataRow,
   PageHeader,
   PrimaryButton,
@@ -15,6 +14,8 @@ import {
   SectionHeader,
   Text,
 } from '../../components/primitives';
+import { FadeIn } from '../../components/motion';
+import { VerdictSkeleton } from '../../components/skeletons';
 import { takeSource } from '../../data/sources';
 import type { TakeResult } from '../../data/types';
 import { spacing } from '../../design';
@@ -54,7 +55,7 @@ export function VerdictScreen() {
   if (isPending) {
     return (
       <ScreenContainer>
-        <LoadingState />
+        <VerdictSkeleton />
       </ScreenContainer>
     );
   }
@@ -187,8 +188,8 @@ export function VerdictScreen() {
           tint edge to edge. */}
       <Card padded={false}>
         {take.measures.map((measure, index) => (
+          <FadeIn key={measure.measure} index={index}>
           <MeasureRow
-            key={measure.measure}
             measure={measure}
             revealed={revealed === measure.measure}
             onToggle={() =>
@@ -198,6 +199,7 @@ export function VerdictScreen() {
             }
             divided={index > 0}
           />
+          </FadeIn>
         ))}
       </Card>
 

@@ -13,6 +13,7 @@ import {
 } from '../../components/primitives';
 import { usePiece } from '../../data/hooks/usePieces';
 import { preferences, usePreferences } from '../../data/preferences';
+import { PressableScale } from '../../components/motion';
 import { takeSubmissionSource } from '../../data/sources';
 import type { MetronomeMode } from '../../data/types';
 import {
@@ -383,11 +384,14 @@ function RecordButton({
   onPress: () => void;
 }) {
   return (
-    <Pressable
+    <PressableScale
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={recording ? 'Stop recording' : 'Start recording'}
       style={styles.control}
+      // More give than the default: this is the one control a musician reaches
+      // for without looking, and it has to answer the finger.
+      activeScale={0.94}
     >
       {({ pressed }) => (
         <>
@@ -412,7 +416,7 @@ function RecordButton({
           </Text>
         </>
       )}
-    </Pressable>
+    </PressableScale>
   );
 }
 

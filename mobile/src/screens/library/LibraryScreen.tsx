@@ -4,9 +4,10 @@ import { useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { PieceCard } from '../../components/pieces/PieceCard';
+import { FadeIn } from '../../components/motion';
+import { PieceListSkeleton } from '../../components/skeletons';
 import {
   EmptyState,
-  LoadingState,
   PageHeader,
   PrimaryButton,
   ScreenContainer,
@@ -141,7 +142,11 @@ function LibraryContent({
   onOpenPiece,
 }: LibraryContentProps) {
   if (isPending) {
-    return <LoadingState />;
+    return (
+      <View style={styles.section}>
+        <PieceListSkeleton count={5} dense showPracticeDetail />
+      </View>
+    );
   }
 
   if (isError) {
@@ -186,14 +191,15 @@ function LibraryContent({
         {countLabel(results.length, Boolean(query.trim()))}
       </Text>
       <View style={styles.list}>
-        {results.map((piece) => (
-          <PieceCard
-            key={piece.id}
-            piece={piece}
-            showPracticeDetail
-            dense
-            onPress={() => onOpenPiece(piece)}
-          />
+        {results.map((piece, index) => (
+          <FadeIn key={piece.id} index={index}>
+            <PieceCard
+              piece={piece}
+              showPracticeDetail
+              dense
+              onPress={() => onOpenPiece(piece)}
+            />
+          </FadeIn>
         ))}
       </View>
     </View>

@@ -6,6 +6,86 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-17 02:15 — Motion and skeletons
+
+**Branch:** `main`. UI work, requested by the owner, with the two aesthetic
+calls put to them first per §2: skeletons that **mirror each screen's real
+layout**, and motion limited to **entrances plus press feedback**.
+
+**Library choice: none.** Everything here is opacity and transform, which
+React Native's built-in `Animated` runs on the native driver. Reanimated is for
+gesture-driven and layout animation, and this is neither — so no new native
+dependency, and no risk to the web build.
+
+**A constraint worth recording:** the usual iOS skeleton shimmer is a moving
+gradient, and §3's design laws ban gradients. Skeletons pulse opacity instead.
+Quieter, and it suits a screen whose only job is to say "nearly there".
+
+**What changed:**
+
+- `design/motion.ts` — one easing curve (`EASE_OUT`, decelerating; nothing
+  eases *in*, because a UI element that accelerates away from rest reads as
+  sluggish in exactly the frames being waited on), plus stagger, rise distance,
+  press scale, and the skeleton pulse.
+- `components/motion/FadeIn` — fade with an 8pt rise. Mount-only: content that
+  re-animates on every refetch flickers at someone reading it. Under reduced
+  motion it renders plainly rather than running a zero-duration animation,
+  which would still start at opacity zero for a frame.
+- `components/motion/PressableScale` — press-in instant, press-out eased. That
+  asymmetry is iOS's: the response has to feel like it happened *under* the
+  finger while the release can settle. Takes function children like
+  `Pressable`, so a control that already swaps a colour gains scale without
+  being restructured.
+- `primitives/Skeleton` + `SkeletonText` — the fill is `colors.border`, not a
+  grey: on warm ivory a neutral grey reads as cold and foreign. Placeholders
+  are hidden from screen readers rather than announced as a dozen unlabelled
+  boxes. `SkeletonText` rags its last line, which is the difference between
+  reading as text and reading as a stack of bars.
+- `components/skeletons/` — Today (featured card **and** the library section
+  below it), Library, Insights, Verdict. Measurements are copied from the real
+  components — a 56pt banner, a 56×40 thumbnail, `MeasureRow`'s 24/78 columns —
+  so nothing moves when content lands.
+- Rows on Today, Library, Insights and the verdict's measure list now stagger
+  in at 30ms, capped at six so a forty-row library doesn't cascade.
+- `PieceCard` and the record control give under the finger; the record button
+  gets more (0.94) because it's the one control reached for without looking.
+
+**Three-foot test:** unchanged, and deliberately. Motion here doesn't touch
+static hierarchy — Today still reads featured card, then library, then tab bar.
+The skeleton is the same composition in placeholder form, which is the point:
+the shape is legible before a word has loaded.
+
+**Tests run:** `tsc` clean, web export built, driven in Chromium at 393×852.
+
+- Skeletons observed by temporarily delaying the fixture sources 4s, then
+  reverted. Screenshots of Today, Library and Insights match their loaded
+  layouts block for block.
+- Pulse verified live: opacity sampled 0.45 → 0.76 across 450ms.
+- **Reduced motion verified**: 0.45 → 0.45, static at the dim end, and content
+  renders immediately with no fade.
+- **Today's frozen reference intact**: scroll height 812, greeting top 16 —
+  the same numbers as the golden-screen entry.
+- No element left stuck part-way through a fade.
+- Card press: `matrix(0.97, …)` while held, back to rest on release.
+- No console errors on any screen.
+
+**Known side effects / things to watch:**
+
+- The skeletons hard-code measurements from the components they mirror. When
+  one of those changes shape its skeleton has to follow, or the layout will
+  jump again. The constants are named after their component to make that
+  obvious, but nothing enforces it.
+- Verdict's skeleton assumes twelve measure rows. Being wrong by a row costs
+  nothing; being wrong about the shape would move the page under someone's
+  eyes.
+- Native-stack already gives real iOS push/pop with the interactive back-swipe
+  **on a device**. On the web build there is still no screen transition — that
+  was the option not taken, and it remains available.
+- `LoadingState` is now used only by the screens without a bespoke skeleton
+  (Profile, Record, Practice, PieceDetail).
+
+---
+
 ## 2026-08-17 01:10 — The blank page: Cloudflare skips `node_modules`
 
 **Branch:** `main`.
