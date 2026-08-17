@@ -140,20 +140,36 @@ is the part that matters: with no dependencies declared at the repo root,
 Cloudflare's automatic install step installs nothing, and without it `npx`
 goes and fetches its own copy of Expo — which is what the failing log shows.
 
-### Auth is off unless you add the keys
+### Auth and live data need all three variables — and a hosted backend
 
-With no Supabase variables set, the app runs on fixtures and opens straight
-onto Today — the sign-in gate passes through, by design. To exercise the real
-auth flow on the deployed preview, add both under Environment variables:
+**Never put `SUPABASE_SERVICE_ROLE_KEY`, `ANTHROPIC_API_KEY` or
+`GEMINI_API_KEY` in a Pages environment.** This project is a *static export*;
+the FastAPI backend does not run here, so nothing on Cloudflare would read
+them. Named with the `EXPO_PUBLIC_` prefix they would be inlined into the
+bundle and readable by every visitor — and the service-role key bypasses RLS,
+so that is full read/write on every account's data. Without the prefix Expo
+ignores them and they do nothing. There is no naming that makes them useful
+here. They belong wherever `backend/Dockerfile` is deployed.
 
-| Variable | Value |
-|---|---|
-| `EXPO_PUBLIC_SUPABASE_URL` | the project URL |
-| `EXPO_PUBLIC_SUPABASE_ANON_KEY` | the anon key |
+Three variables put the app on live data, and **the app only switches when all
+three are present** (`mobile/src/data/environment.ts`):
 
-Both are public by design — the anon key is meant to ship in a client, and row
-level security is what protects the data. Adding them turns on the gate, so the
-preview then opens on the sign-in screen instead of the app.
+| Variable | Value | Safe to publish? |
+|---|---|---|
+| `EXPO_PUBLIC_SUPABASE_URL` | the project URL | Yes |
+| `EXPO_PUBLIC_SUPABASE_ANON_KEY` | the anon key | Yes — meant to ship in a client; RLS protects the data |
+| `EXPO_PUBLIC_API_BASE_URL` | the public URL of the FastAPI backend | Yes, it's just a hostname |
+
+**Add the third one only once a backend is actually serving at that URL.**
+Setting all three against a host that isn't up takes the deployed site from a
+working fixture demo to every screen failing to load — the switch is presence,
+not reachability, so it cannot detect the difference.
+
+Setting only the first two is deliberately a no-op: the app stays on fixtures
+and the sign-in gate stays open. The gate follows the same all-three predicate
+as the data, because a build that demands a sign-in and then serves sample data
+is a gate guarding nothing. (This changed on 2026-08-17; before that the two
+Supabase variables alone were enough to turn the gate on.)
 
 ## What already ships in the repo
 
