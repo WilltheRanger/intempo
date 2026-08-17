@@ -176,19 +176,74 @@ function toPiece({ practicedDaysAgo, ...piece }: FixturePiece): Piece {
   return { ...piece, lastPracticedAt: practicedAt.toISOString() };
 }
 
+/**
+ * Pieces added by hand during this run of the app, newest first.
+ *
+ * In memory and gone on reload, which is the right lifetime for sample data:
+ * persisting them would leave a demo build slowly accumulating a library that
+ * looks real, and the fixtures exist precisely so that what's on screen is
+ * known. The point is that the Add-manually flow *behaves* correctly — the
+ * piece appears in the library, opens, and can be practised against — not
+ * that it survives.
+ */
+const CREATED_PIECES: FixturePiece[] = [];
+
 export const fixturePieceSource: PieceSource = {
   async listPieces() {
-    return FIXTURE_PIECES.map(toPiece);
+    return [...CREATED_PIECES, ...FIXTURE_PIECES].map(toPiece);
   },
 
   async getCurrentPiece() {
+    // The seeded piece, even when something was just added. This mirrors
+    // `apiPieceSource`, where the piece to continue comes from the newest
+    // *analysis* and only falls back to the newest score when there are no
+    // analyses at all — and the fixtures do have a take.
     const [mostRecent] = FIXTURE_PIECES;
     return mostRecent ? toPiece(mostRecent) : null;
   },
 
   async getPiece(id) {
-    const match = FIXTURE_PIECES.find((piece) => piece.id === id);
+    const match = [...CREATED_PIECES, ...FIXTURE_PIECES].find(
+      (piece) => piece.id === id,
+    );
     return match ? toPiece(match) : null;
+  },
+
+  async createPiece(input) {
+    const created: FixturePiece = {
+      id: `manual-${CREATED_PIECES.length + 1}-${input.title
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-|-$/g, '')
+        .slice(0, 40)}`,
+      title: input.title,
+      composer: input.composer,
+      movement: null,
+      progress: null,
+      practicedDaysAgo: null,
+      // No photograph was taken, so there is nothing to show. `ScoreThumbnail`
+      // draws its ruled staff for a null source, which is the truthful image
+      // for a piece that has no page behind it.
+      thumbnail: null,
+      markedBpm: input.bpm,
+      // No notes: this flow collects a title and a tempo, not a transcription.
+      // `warmupScore`-style playback and the analysis pipeline both need
+      // measures, so a piece added this way can be practised with the
+      // metronome but not analysed — the same limitation the backend has.
+      score: {
+        clef: input.clef,
+        time_signature: input.timeSignature,
+        key_signature: null,
+        tempo_marking: null,
+        bpm_hint: input.bpm,
+        measures: [],
+        repeats: [],
+        ocr_confidence: 0,
+        notes_to_human: '',
+      },
+    };
+    CREATED_PIECES.unshift(created);
+    return toPiece(created);
   },
 };
 

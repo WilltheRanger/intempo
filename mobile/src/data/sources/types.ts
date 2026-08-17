@@ -1,5 +1,6 @@
 import type { SubmitTakeInput } from '../practice/submitTake';
 import type {
+  Clef,
   Musician,
   Piece,
   PracticeInsights,
@@ -19,6 +20,33 @@ export interface PieceSource {
   /** The piece to continue practicing, or null when the library is empty. */
   getCurrentPiece(): Promise<Piece | null>;
   getPiece(id: string): Promise<Piece | null>;
+  /**
+   * Adds a piece the musician typed in rather than photographed.
+   *
+   * Deliberately narrower than the endpoint behind it: the transcribed path
+   * runs OCR, takes ten seconds and belongs to the capture flow, which owns
+   * its own progress state. This is the instant one, and the only way into
+   * the library that needs no camera, no network round trip to an OCR
+   * provider, and no API keys.
+   */
+  createPiece(input: NewPiece): Promise<Piece>;
+}
+
+/** What the Add-manually form collects. */
+export interface NewPiece {
+  title: string;
+  composer: string | null;
+  /**
+   * Which staff the piece is written on. Not asked for: it is derived from
+   * the musician's instrument, because a form field for it would be a
+   * question most people can't answer about a piece they're describing from
+   * memory, and the instrument gets it right nearly always.
+   */
+  clef: Clef;
+  /** `"4/4"`, or null when they left it blank. */
+  timeSignature: string | null;
+  /** The tempo to practise at, or null. */
+  bpm: number | null;
 }
 
 /** The same seam for the signed-in account. */

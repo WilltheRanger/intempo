@@ -111,8 +111,10 @@ export interface ScoreResponse {
   /**
    * What was uploaded — the signed *upload* URL, expired minutes later. Never
    * usable for display, which is what `image_url` is for.
+   *
+   * Null for a piece entered by hand, which was never photographed.
    */
-  source_image_url: string;
+  source_image_url: string | null;
   /**
    * A download URL signed when the score was read, valid for an hour. Null
    * when the object key couldn't be recovered or storage is unconfigured, so

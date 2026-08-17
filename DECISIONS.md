@@ -6,6 +6,95 @@ Operating Principle #5.
 
 ---
 
+## 2026-08-17 — The fixture/live switch is derived from the environment, not declared in code
+
+**Context:** every screen read from a `PieceSource`, and `sources/index.ts`
+chose between the fixture and API implementations with `const USE_FIXTURES =
+true`. Turning the app on meant editing that line and pushing.
+
+**Decision: `IS_LIVE_BACKEND` is computed from the presence of
+`EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_ANON_KEY` and
+`EXPO_PUBLIC_API_BASE_URL`. There is no flag to flip.**
+
+The constant was a loaded gun. `api/client.ts` defaults its base URL to
+`http://127.0.0.1:8000`, and nothing hosts the backend, so flipping the flag
+and pushing would have shipped a Cloudflare site whose every screen failed
+against a host that exists only on a developer's laptop. The failure would have
+looked like a backend outage rather than a build-configuration mistake.
+
+Deriving it removes the class of error entirely: a build that was given a
+project and a host runs live, one that wasn't runs on sample data, and
+`.env` being gitignored makes "wasn't" the default for CI and Cloudflare.
+
+**`EXPO_PUBLIC_API_BASE_URL` is checked for explicit presence, not
+truthiness** — because of that localhost default. "No backend was named" and
+"the backend is at the default" are different claims and only the raw
+`process.env` read distinguishes them.
+
+**The auth gate follows the same predicate.** `useAuthStatus` used to ask "are
+the Supabase vars set", which is a *nearly* identical question. The gap is a
+state that can really occur — credentials but no API host — in which the old
+code demanded a sign-in and then served fixtures: a gate guarding data that
+wasn't the account's. `isAuthConfigured()` was deleted rather than kept
+alongside; two predicates that agree almost always are worse than one, because
+the disagreement is exactly where the bug lives.
+
+**Alternatives considered:**
+
+- *Keep the boolean, add a build-time check.* Still leaves the deploy correct
+  only as long as someone remembers the check.
+- *A separate `EXPO_PUBLIC_USE_FIXTURES` flag.* An independent switch that can
+  contradict the other three — "live, but with no host" becomes expressible,
+  and that is precisely the state worth making unrepresentable.
+- *Runtime health probe of the API.* Honest, but it makes the app's data source
+  depend on network conditions, so the same build shows different libraries on
+  a flaky connection. Configuration should not be discovered.
+
+**Trade-off accepted:** a developer who sets only some of the three vars gets
+sample data with no in-app explanation. `describeFixtureReason()` names the
+missing variable for the console, which is where that reader is looking.
+
+## 2026-08-17 — A piece can exist without a photograph
+
+**Context:** `scores.source_image_url` was NOT NULL, and `POST /v1/scores`
+required an image it could run OCR over. Every route into the library went
+through a readable photograph.
+
+**Decision: `source_image_url` becomes nullable, and `POST /v1/scores` accepts
+either an image *or* a hand-entered clef, time signature and tempo.**
+
+One provenance was an assumption, not a requirement. A handwritten part, a
+library copy under a bad lamp, or a piece someone is working from a book they
+would rather not photograph all need to be in the library, and none of them
+yields an image OCR can read. It is also the only route in that needs no
+camera, no OCR provider and no API keys — which makes it the route that still
+works when the rest is misconfigured.
+
+**NULL rather than a sentinel string** (`""`, `"manual"`, `"none"`): a sentinel
+makes every reader of the column responsible for knowing which strings are real
+URLs, and `_object_key_from()` already returns None for anything that isn't a
+storage URL, so NULL flows through the display-signing path with no special
+case.
+
+**Both halves at once is an error, not something to reconcile.** A body with an
+`image_url` *and* a `clef` is rejected rather than having the manual fields
+silently ignored. A caller sending both has misunderstood something, and
+overwriting what OCR read off the page with what a human guessed is the worse
+of the two outcomes.
+
+**`ocr_confidence` is NULL for a hand-entered piece, not 0.** The column asks
+how well OCR read the page. For a page that was never read the answer is "it
+didn't", which 0 — meaning "read it, understood nothing" — states wrongly. The
+`score_json`'s own `ocr_confidence` stays 0.0, because that field is required
+by the schema and no notes were read.
+
+**Trade-off accepted, and surfaced in the UI:** a piece created this way has no
+measures, so the analysis pipeline has nothing to align a recording against and
+cannot produce a verdict. It can be opened and practised with the metronome.
+The form says so under the button rather than letting a musician discover it
+after recording a take. The alternative — a manual note-entry editor — is a
+notation editor, which is a product in itself.
+
 ## 2026-08-17 — One dark surface on Today, and it is the warmup
 
 **Context:** the owner asked for the warmup to become a page you open, with a name and a Start button on Today, and said Today "looks kind of bland". Three treatments were put to them — an ink panel, notation bare on the page, and a bordered study-book plate. They chose the ink panel.
