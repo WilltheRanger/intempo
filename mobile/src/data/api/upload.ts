@@ -5,12 +5,15 @@ import { apiFetch } from './client';
  * POST /v1/upload/score-image — presigned PUT straight to Supabase Storage.
  * Files never stream through FastAPI.
  *
- * Known backend issue, flagged in the Phase 1 audit: the signed upload URL
- * expires after 5 minutes, and it is the only form `POST /v1/scores` accepts
- * for `image_url` (the returned `public_url` is a bare bucket path with no
- * scheme, which the backend's validator rejects). So `scores.source_image_url`
- * is not usable for display later. Reading a score image back needs a signed
- * download endpoint that does not exist yet.
+ * Pass the returned `upload_url` to `POST /v1/scores` as `image_url`: it is
+ * the only form the backend's validator accepts, because `public_url` comes
+ * back as a bare bucket path with no scheme. It expires five minutes after
+ * issue, so create the score in the same flow as the upload rather than
+ * storing it for later.
+ *
+ * That expiry is why `scores.source_image_url` is never rendered. Displaying
+ * a score image reads `image_url` from `/v1/scores`, which the backend signs
+ * fresh on every read and returns with `image_url_expires_at`.
  */
 export function requestScoreImageUpload(
   filename: string,

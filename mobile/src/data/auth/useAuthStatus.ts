@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 
-import { getSupabaseClient, isAuthConfigured } from './session';
+import { IS_LIVE_BACKEND } from '../environment';
+import { getSupabaseClient } from './session';
 
 export type AuthStatus = 'loading' | 'signedIn' | 'signedOut';
 
@@ -11,20 +12,28 @@ export type AuthStatus = 'loading' | 'signedIn' | 'signedOut';
  * `onAuthStateChange`, which covers sign-in, sign-out, token refresh, and a
  * session restored from storage on a cold start.
  *
- * When Supabase isn't configured this reports `signedIn`. That is deliberate:
- * a build with no auth credentials also has no backend to reach — every
- * screen is on fixtures — so gating it would lock the app behind a form that
- * cannot succeed. The gate protects real sessions; it doesn't stand in for
- * one. If a shipped build ever loses its env vars, it degrades to that same
- * fixture state rather than to unauthenticated access to live data, because
- * `apiFetch` has no host to talk to either.
+ * **A fixture build reports `signedIn` and shows no gate.** Sample data
+ * belongs to nobody, so there is nothing to sign in to and a form that cannot
+ * succeed would be the only thing standing between a reader and the app.
+ *
+ * The predicate is `IS_LIVE_BACKEND` rather than "are the Supabase vars set",
+ * and the difference is a real state: a build with Supabase credentials but no
+ * API host would otherwise demand a sign-in and then serve fixtures — the gate
+ * would be theatre, guarding data that isn't the account's. Tying both to one
+ * predicate means the gate is present exactly when there is something behind
+ * it. A shipped build that loses its env vars degrades to fixtures rather than
+ * to unauthenticated access to live data, because `apiFetch` then has no host
+ * to talk to either.
  */
 export function useAuthStatus(): AuthStatus {
   const [status, setStatus] = useState<AuthStatus>(() =>
-    isAuthConfigured() ? 'loading' : 'signedIn',
+    IS_LIVE_BACKEND ? 'loading' : 'signedIn',
   );
 
   useEffect(() => {
+    if (!IS_LIVE_BACKEND) {
+      return;
+    }
     const supabase = getSupabaseClient();
     if (!supabase) {
       return;

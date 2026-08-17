@@ -21,6 +21,15 @@ export interface ListenButtonProps {
   bpm: number;
   /** Locked during a take. */
   disabled?: boolean;
+  /**
+   * Where the playhead is, about once a frame, and `(0, 0)` when it stops.
+   *
+   * For a caller that wants to say something about the position this button is
+   * already tracking — which measure is sounding, say. The button keeps
+   * drawing its own progress line either way; this doesn't replace it, and a
+   * caller that doesn't need the numbers omits it.
+   */
+  onProgress?: (elapsedS: number, totalS: number) => void;
 }
 
 /**
@@ -35,16 +44,28 @@ export interface ListenButtonProps {
  * through is it", and a line answers that without adding a second number to a
  * screen that already shows a tempo and a clock.
  */
-export function ListenButton({ score, bpm, disabled = false }: ListenButtonProps) {
+export function ListenButton({
+  score,
+  bpm,
+  disabled = false,
+  onProgress,
+}: ListenButtonProps) {
   const [playing, setPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
   const handle = useRef<PlaybackHandle | null>(null);
+
+  // Read through a ref inside the callbacks below: `stop` runs from an unmount
+  // effect with no dependency list, so capturing the prop directly would pin
+  // the first render's copy for the life of the component.
+  const report = useRef(onProgress);
+  report.current = onProgress;
 
   function stop() {
     handle.current?.stop();
     handle.current = null;
     setPlaying(false);
     setProgress(0);
+    report.current?.(0, 0);
   }
 
   // Leaving the screen, or starting a take, must silence it. A note still
@@ -76,11 +97,15 @@ export function ListenButton({ score, bpm, disabled = false }: ListenButtonProps
     setPlaying(true);
     setProgress(0);
     handle.current = playSchedule(schedule, {
-      onProgress: (elapsed, total) => setProgress(total > 0 ? elapsed / total : 0),
+      onProgress: (elapsed, total) => {
+        setProgress(total > 0 ? elapsed / total : 0);
+        report.current?.(elapsed, total);
+      },
       onEnd: () => {
         handle.current = null;
         setPlaying(false);
         setProgress(0);
+        report.current?.(0, 0);
       },
     });
   }

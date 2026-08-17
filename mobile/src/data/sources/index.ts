@@ -1,3 +1,4 @@
+import { IS_LIVE_BACKEND } from '../environment';
 import {
   apiInsightsSource,
   apiMusicianSource,
@@ -21,29 +22,31 @@ import type {
 } from './types';
 
 /**
- * Flip to `false` once the backend can serve progress, last-practiced, and
- * score thumbnails. Nothing else in the app changes — that is the point of
- * routing every screen through `PieceSource`.
+ * Which side of the seam this build is on.
+ *
+ * Was a hardcoded `USE_FIXTURES = true` that someone had to remember to flip.
+ * It is now a fact about the environment — see `../environment.ts` for why
+ * that distinction is load-bearing rather than tidy.
  */
-const USE_FIXTURES: boolean = true;
+const USE_FIXTURES: boolean = !IS_LIVE_BACKEND;
 
 export const pieceSource: PieceSource = USE_FIXTURES
   ? fixturePieceSource
   : apiPieceSource;
 
 /**
- * The account follows the same flag, but for a different reason: `/v1/me`
- * serves every field the Profile screen renders, so this one is fixture-backed
- * only because there is no sign-in yet to produce a token.
+ * The account follows the same switch, for the same reason as everything
+ * else: `/v1/me` serves every field the Profile screen renders, and it needs
+ * a bearer token that only a configured Supabase client can produce.
  */
 export const musicianSource: MusicianSource = USE_FIXTURES
   ? fixtureMusicianSource
   : apiMusicianSource;
 
 /**
- * Insights now follows the flag like everything else: `GET /v1/analyses`
- * exists, and the adapter aggregates the caller's finished takes over the
- * same window the fixture describes.
+ * Insights follows it too: `GET /v1/analyses` exists, and the adapter
+ * aggregates the caller's finished takes over the same window the fixture
+ * describes.
  */
 export const insightsSource: InsightsSource = USE_FIXTURES
   ? fixtureInsightsSource
@@ -56,7 +59,7 @@ export const takeSource: TakeSource = USE_FIXTURES
 /**
  * Where a finished recording goes.
  *
- * Capture is real on both sides of this flag — the microphone, the WAV and the
+ * Capture is real on both sides of this seam — the microphone, the WAV and the
  * duration are genuine either way. Only the destination changes: storage and
  * the pipeline, or the sample take.
  */

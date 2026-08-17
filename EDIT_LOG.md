@@ -6,6 +6,129 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-17 20:40 — Wire the live project; add a piece by hand; stop the piece screen lying
+
+**Branch:** `main`. Owner: *"can you make every basic functionality of the app?"*
+
+The finding that shaped this session: **almost nothing was unbuilt — it was
+unconnected.** The backend serves the whole API, the pipeline runs, its tests
+pass. What was missing was a database behind it and a switch that could be
+turned on without breaking the deployed site.
+
+### The Supabase project is real now
+
+`intempo-dev` (`<project-ref>`) restored from paused, and all four
+migrations verified *after* the fact rather than trusted: 7 tables, 7 enums,
+RLS on all 7, 13 policies, `users_auth_fk` present, `users.id` default dropped,
+both storage buckets present and private (50 MB audio / 10 MB images).
+The three `{"success":true}` responses from the first attempt were **not**
+evidence — the project went to `RESTORING` immediately afterwards and two
+verification queries failed with ECONNREFUSED. The counts above come from a
+query run once it reported `ACTIVE_HEALTHY`.
+
+### The fixture switch is now a fact, not a decision
+
+`USE_FIXTURES = true` was a hardcoded constant someone had to remember to flip.
+Flipping and pushing it would have broken the live Cloudflare site: the API
+base URL defaults to `http://127.0.0.1:8000` and nothing hosts the backend, so
+every screen would have failed against a host that exists on one laptop.
+
+New `mobile/src/data/environment.ts` derives `IS_LIVE_BACKEND` from the
+presence of all three env vars. `EXPO_PUBLIC_API_BASE_URL` is checked for
+*explicit presence* rather than truthiness, precisely because of that localhost
+default. `.env` is gitignored, so CI and Cloudflare keep building the fixture
+app unchanged — verified by building with the file moved aside.
+
+`useAuthStatus` now follows the same predicate instead of "are the Supabase
+vars set". Those two questions differ in a state that can really occur — creds
+but no API host — where the old code demanded a sign-in and then served
+fixtures, a gate guarding nothing. `isAuthConfigured()` is deleted; two
+predicates that agree almost always are worse than one.
+
+### Add a piece by hand — the only route in that needs no camera
+
+Migration `004_manual_scores.sql`: `scores.source_image_url` drops NOT NULL.
+NULL rather than a sentinel string, so no reader has to know which strings are
+real URLs.
+
+`POST /v1/scores` takes either an `image_url` **or** `clef` + optional
+`time_signature`/`bpm_hint`, and rejects a body carrying both — a caller
+sending both has misunderstood something, and overwriting what OCR read with
+what they guessed is the worse failure. `ocr_confidence` is stored NULL for a
+hand-entered piece: the column asks how well OCR read the page, and for a page
+never read the answer is "it didn't", not "badly".
+
+The clef is **not** a form field — it comes from the instrument in the profile
+(`lib/instrument.ts`). "Which clef is this in" is a question about a page, put
+to someone describing a piece from memory.
+
+Also fixed while in there: `POST /v1/scores` returned the one response whose
+`image_url` was always null, because it skipped the signing path every other
+read uses.
+
+### The piece screen stops claiming things that aren't true
+
+`PieceDetailScreen` reported **"Measure 1 of 24"** for every piece in the
+library — `MOCK_MEASURE_COUNT`, a constant — while a `setTimeout` advanced the
+number and made no sound. It now schedules the real `score_json` through the
+same engine the warmup and record screens use, at the tempo this piece was last
+practised at, and the readout follows the playhead (`measureAt`).
+
+Everything on the screen is now conditional on the piece actually having it:
+no notes → no transport; no photograph → no image banner and no "Original
+pages" row; never recorded → no empty progress bar. A hand-entered piece hits
+all four, which is how they were found.
+
+`ListenButton` gained an optional `onProgress`, read through a ref because
+`stop` runs from an unmount effect with no dependency list and would otherwise
+pin the first render's copy of the prop.
+
+**Three-foot test** — the new *Add manually* screen. First: the serif
+"Add manually". Second: the ink "Add to library" block. Third: the four
+labelled fields. The action reading louder than the fields is right for a form
+— the fields are content and recede; nothing competes. Fields sit on the page
+rather than in a card (§3 laws 3 and 10) and the submit follows the established
+`TranscriptionReviewScreen` composition rather than a new one.
+
+**Tests:** backend 216 → 219 passed (3 new: the manual path never touches OCR —
+deliberately left unstubbed so a regression fails loudly; missing clef → 422;
+manual fields alongside an image → 422). `tsc --noEmit` clean, `build:web`
+clean, page-background guard passed. 18/18 checks in Chromium against the built
+app: validation refusals, create → land on the piece → back skips the form →
+library 7 → 8, a transcribed piece keeps its transport and reports **3
+measures** from its score rather than 24.
+
+Two of my own assertions were wrong first time and were fixed rather than
+accepted: `goBack()` didn't land where I assumed, and a count check passed on a
+non-match. A `/*` fragment in the extracted text was my harness walking the
+boot-watchdog script's text node, not UI — confirmed against the screenshot.
+
+**Not done, and why — this is the honest part:**
+
+- **Nothing live was exercised end to end.** This container's egress policy
+  denies `*.supabase.co` (403 on CONNECT). That blocks the backend's JWKS
+  fetch, storage, and every client call, so sign-in → save → record → verdict
+  cannot be run here at all. Not a missing key: a blocked host.
+- **`SUPABASE_SERVICE_ROLE_KEY` is blank** in `backend/.env`. The management
+  API exposes only publishable/anon keys. Left blank on purpose — a dummy value
+  would produce Supabase 401s that look like an auth bug, whereas blank hits the
+  existing "service-role client is not configured" message.
+- **OCR keys are blank**, so `POST /v1/scores` with an image fails at the OCR
+  step. Everything else works without them.
+- **Import score** is still a placeholder; it now offers "Scan instead" rather
+  than a dead end. It needs an image-picker dependency, and everything after
+  the picker is the scanner's existing flow.
+- **`PracticeScreen` is unreachable** — registered in `RootNavigator`, but
+  nothing navigates to it, and it still runs on `MOCK_MEASURE_COUNT`. Left in
+  place rather than deleted: that is a product call.
+- **The piece card for a hand-entered piece is now a card containing one
+  button.** Honest, but arguably §3 law 3. Removing the card is a visual
+  restructure and belongs to the owner.
+
+**Rollback:** revert this commit. The migration is separately reversible —
+rows created before it all have a `source_image_url`, so the NOT NULL can be
+restored once no NULLs remain.
+
 ## 2026-08-17 18:55 — Warmup moves above the fact
 
 **Branch:** `main`. Owner: put the warmup above "Did you know".

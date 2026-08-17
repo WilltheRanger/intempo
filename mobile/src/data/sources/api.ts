@@ -1,7 +1,7 @@
 import { getAnalysis, listAnalyses } from '../api/analyses';
 import { submitTake, waitForAnalysis } from '../practice/submitTake';
 import { getMe } from '../api/me';
-import { getScore, listScores } from '../api/scores';
+import { createScore, getScore, listScores } from '../api/scores';
 import { getAuthAvatarUrl } from '../auth/session';
 import { verdictFor } from '../../lib/tempo';
 import type {
@@ -115,6 +115,18 @@ export const apiPieceSource: PieceSource = {
       lastPracticedByScore(),
     ]);
     return toPiece(score, practiced.get(id) ?? null);
+  },
+
+  async createPiece(input) {
+    const score = await createScore({
+      title: input.title,
+      composer: input.composer,
+      clef: input.clef,
+      time_signature: input.timeSignature,
+      bpm_hint: input.bpm,
+    });
+    // Never practised — it was created a moment ago.
+    return toPiece(score, null);
   },
 };
 

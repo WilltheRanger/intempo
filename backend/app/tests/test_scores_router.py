@@ -166,6 +166,101 @@ def test_post_creates_score(
     assert payload["score_json"]["ocr_confidence"] == GOOD_PAYLOAD["ocr_confidence"]
 
 
+def test_post_creates_hand_entered_score_without_touching_ocr(
+    monkeypatch: pytest.MonkeyPatch,
+    client: TestClient,
+    make_token: Callable[..., str],
+) -> None:
+    """A piece typed in by hand: no image, no download, no OCR call.
+
+    OCR is deliberately left unstubbed. If the manual path ever reaches it,
+    this test fails by trying to call a real provider rather than passing
+    against a mock that hides the regression.
+    """
+    user_id = uuid4()
+    score_id = uuid4()
+    row = _row_for(
+        score_id,
+        user_id,
+        title="Suite No. 1 in G major",
+        composer="J. S. Bach",
+        source_image_url=None,
+        ocr_confidence=None,
+        score_json={**GOOD_PAYLOAD, "clef": "bass", "measures": [], "ocr_confidence": 0.0},
+    )
+    sb = _install_supabase(monkeypatch, returning_row=row)
+
+    res = client.post(
+        "/v1/scores",
+        json={
+            "title": "Suite No. 1 in G major",
+            "composer": "J. S. Bach",
+            "clef": "bass",
+            "time_signature": "4/4",
+            "bpm_hint": 88,
+        },
+        headers={"Authorization": f"Bearer {make_token(sub=user_id)}"},
+    )
+    assert res.status_code == 201, res.text
+    body = res.json()
+    assert body["source_image_url"] is None
+    assert body["image_url"] is None
+    assert body["ocr_confidence"] is None
+
+    payload = sb.table.return_value.insert.call_args.args[0]
+    assert payload["source_image_url"] is None
+    # Null, not 0: the column says how well OCR read the page, and it never
+    # read one.
+    assert payload["ocr_confidence"] is None
+    assert payload["score_json"]["clef"] == "bass"
+    assert payload["score_json"]["time_signature"] == "4/4"
+    assert payload["score_json"]["bpm_hint"] == 88
+    assert payload["score_json"]["measures"] == []
+
+
+def test_post_without_image_url_requires_a_clef(
+    monkeypatch: pytest.MonkeyPatch,
+    client: TestClient,
+    make_token: Callable[..., str],
+) -> None:
+    user_id = uuid4()
+    _install_supabase(monkeypatch, returning_row=_row_for(uuid4(), user_id))
+
+    res = client.post(
+        "/v1/scores",
+        json={"title": "Untitled"},
+        headers={"Authorization": f"Bearer {make_token(sub=user_id)}"},
+    )
+    assert res.status_code == 422
+    assert "clef" in res.text
+
+
+def test_post_rejects_manual_fields_alongside_an_image(
+    monkeypatch: pytest.MonkeyPatch,
+    client: TestClient,
+    make_token: Callable[..., str],
+) -> None:
+    """Both provenances at once is a caller bug, not something to reconcile."""
+    user_id = uuid4()
+    _stub_download(monkeypatch)
+    _stub_ocr(monkeypatch)
+    _install_supabase(monkeypatch, returning_row=_row_for(uuid4(), user_id))
+
+    res = client.post(
+        "/v1/scores",
+        json={
+            "image_url": _signed_url(user_id),
+            "title": "Etude #1",
+            "clef": "treble",
+            "bpm_hint": 120,
+        },
+        headers={"Authorization": f"Bearer {make_token(sub=user_id)}"},
+    )
+    assert res.status_code == 422
+    # Names the offending fields, so the caller doesn't have to bisect.
+    assert "clef" in res.text and "bpm_hint" in res.text
+
+
 def test_post_rejects_url_outside_user_prefix(
     monkeypatch: pytest.MonkeyPatch,
     client: TestClient,

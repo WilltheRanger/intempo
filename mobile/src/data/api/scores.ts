@@ -1,4 +1,4 @@
-import type { ScoreJson, ScoreResponse } from '../types';
+import type { Clef, ScoreJson, ScoreResponse } from '../types';
 import { apiFetch } from './client';
 
 export interface ListScoresParams {
@@ -23,18 +23,41 @@ export function getScore(id: string): Promise<ScoreResponse> {
   return apiFetch<ScoreResponse>(`/v1/scores/${id}`);
 }
 
-export interface CreateScoreInput {
+/**
+ * A new piece, from a photograph or from typing. The two are exclusive and the
+ * backend rejects a body that mixes them, so these are separate shapes rather
+ * than one shape with optional halves.
+ */
+export type CreateScoreInput = TranscribedScoreInput | HandEnteredScoreInput;
+
+export interface TranscribedScoreInput {
   image_url: string;
   title: string;
   composer?: string | null;
 }
 
+export interface HandEnteredScoreInput {
+  image_url?: never;
+  title: string;
+  composer?: string | null;
+  /**
+   * Required: OCR would have read it off the page, and nothing did. The app
+   * derives it from the musician's instrument rather than asking.
+   */
+  clef: Clef;
+  /** `"4/4"`. Null when the musician left it blank. */
+  time_signature?: string | null;
+  /** The tempo to practise at. Null when they didn't say. */
+  bpm_hint?: number | null;
+}
+
 /**
  * POST /v1/scores
  *
- * Runs OCR inline and takes 10–14 seconds in practice (EDIT_LOG.md, Batch 2).
- * Any caller needs a real progress state, not a brief spinner. Moving this to
- * a background task is scoped for Batch 4.
+ * With an image this runs OCR inline and takes 10–14 seconds in practice
+ * (EDIT_LOG.md, Batch 2), so any caller needs a real progress state rather
+ * than a brief spinner. A hand-entered piece skips OCR and returns straight
+ * away.
  */
 export function createScore(input: CreateScoreInput): Promise<ScoreResponse> {
   return apiFetch<ScoreResponse>('/v1/scores', {

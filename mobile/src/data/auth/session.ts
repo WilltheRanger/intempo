@@ -35,16 +35,15 @@ export function getSupabaseClient(): SupabaseClient | null {
   return client;
 }
 
-/**
- * Whether sign-in is possible at all.
- *
- * False when the Supabase env vars are absent, which is how the app runs
- * against fixtures. Callers use it to decide whether an auth gate means
- * anything — see `useAuthStatus`.
+/*
+ * There was an `isAuthConfigured()` here. It answered "are the Supabase vars
+ * set", which is *nearly* the question callers were asking and not quite it —
+ * the app is only meaningfully signed in when there is also a backend holding
+ * the account's data. Having two predicates that agree almost always is worse
+ * than having one, so the survivor is `IS_LIVE_BACKEND` in
+ * `../environment.ts`. Inside this module the null from `getSupabaseClient()`
+ * already says everything a caller needs.
  */
-export function isAuthConfigured(): boolean {
-  return Boolean(SUPABASE_URL && SUPABASE_ANON_KEY);
-}
 
 export interface AuthResult {
   /** True when the call left the user signed in. */
