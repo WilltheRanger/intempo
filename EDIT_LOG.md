@@ -6,6 +6,35 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-17 16:40 — The daily term is gone; the fact stays
+
+**Branch:** `main`. Owner: remove the term, keep only "Did you know".
+
+**What changed:**
+
+- `lib/terms.ts` → `lib/facts.ts`, with the term machinery deleted:
+  `Term`, `TEMPO_TERMS`, `GENERAL_TERMS`, `METRE_TERMS`, `termFromMarking` and
+  `termFor`. About sixty lines of curated tempo, expression and metre
+  definitions, **recoverable from the commit before this one** if the feature
+  is ever wanted back — they are not lost, just not shipped.
+- `screens/today/NotesBlock.tsx` — deleted. With the term gone the block was a
+  single `<Text>`, and a component that renders one line of prose is ceremony.
+  The fact is inlined under a `Did you know` section heading, which is the same
+  shape as every other section on the screen.
+- `screens/today/TodayScreen.tsx` — heading changed from "Today's term".
+
+The section that carried a heading, a serif word, a definition, a rule and a
+second heading is now a heading and a sentence. It sits better as a footnote,
+which is what it always was.
+
+**Tests:** `tsc --noEmit` clean, `build:web` clean, no stale references to the
+removed module or component anywhere in `src/`. The facts corpus survived the
+edit intact: **24 distinct facts across the rotation**, stable within a day and
+moving overnight. Library, search, the warmup and every destination
+re-verified. No console errors.
+
+**Rollback:** revert this commit; the deleted terms come back with it.
+
 ## 2026-08-17 16:10 — The white band above the greeting
 
 **Branch:** `main`. Owner sent a screenshot from their phone: "feel like
