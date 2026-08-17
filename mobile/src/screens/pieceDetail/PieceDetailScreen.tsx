@@ -180,6 +180,10 @@ export function PieceDetailScreen() {
   const measureCount = piece.score?.measures.length ?? 0;
   const hasNotation = measureCount > 0;
   const hasPages = piece.thumbnail !== null;
+  /** Anything to say about how this piece has gone so far. */
+  const hasHistory = piece.progress !== null || piece.lastPracticedAt !== null;
+  /** Whether there is state worth grouping with the action — see the card below. */
+  const hasState = hasPages || hasHistory;
 
   return (
     <ScreenContainer>
@@ -258,55 +262,59 @@ export function PieceDetailScreen() {
         </Text>
       ) : null}
 
-      <Card emphasis padded={false} style={styles.scoreCard}>
-        {/*
-          Only when there is a page to show. A hand-entered piece has none, and
-          the fallback drawing filled 88pt with a single grey rule — a picture
-          of nothing, which is worse than no picture (§3 law 10).
-        */}
-        {hasPages ? (
-          <ScoreThumbnail
-            source={piece.thumbnail}
-            radius={0}
-            style={styles.banner}
-          />
-        ) : null}
+      {/*
+        The card groups the piece's *state* — its page, how far in you are, when
+        you last played it — with the action that continues it. That is what a
+        card is for (§3 law 3).
 
-        <View style={styles.scoreBody}>
-          {/*
-            Progress and last-practised are both null for a piece that has
-            never been recorded, and an empty track above an empty line is two
-            elements reporting the same absence. The button below says what to
-            do about it.
-          */}
-          {piece.progress !== null ? (
-            <ProgressBar
-              value={piece.progress}
-              accessibilityLabel={`Progress through ${piece.title}`}
-            />
-          ) : null}
-          {piece.progress !== null || piece.lastPracticedAt !== null ? (
-            <MetadataRow
-              variant="metadataSmall"
-              items={[
-                formatProgressPercent(piece.progress),
-                formatLastPracticed(piece.lastPracticedAt),
-              ]}
-              style={piece.progress !== null ? styles.scoreMeta : undefined}
+        A piece with none of that had all three hidden one by one until the card
+        held a single button, which is a box drawn around nothing (§3 law 10).
+        So the box now depends on there being something to group: with state, a
+        card; without it, the action on the page, where it reads as the one thing
+        to do next rather than as the sole occupant of a container.
+      */}
+      {hasState ? (
+        <Card emphasis padded={false} style={styles.scoreCard}>
+          {hasPages ? (
+            <ScoreThumbnail
+              source={piece.thumbnail}
+              radius={0}
+              style={styles.banner}
             />
           ) : null}
 
-          <PrimaryButton
-            label={started ? 'Continue practice' : 'Start practice'}
-            onPress={() => navigation.navigate('Record', { pieceId: piece.id })}
-            style={
-              piece.progress !== null || piece.lastPracticedAt !== null
-                ? styles.practice
-                : undefined
-            }
-          />
-        </View>
-      </Card>
+          <View style={styles.scoreBody}>
+            {piece.progress !== null ? (
+              <ProgressBar
+                value={piece.progress}
+                accessibilityLabel={`Progress through ${piece.title}`}
+              />
+            ) : null}
+            {hasHistory ? (
+              <MetadataRow
+                variant="metadataSmall"
+                items={[
+                  formatProgressPercent(piece.progress),
+                  formatLastPracticed(piece.lastPracticedAt),
+                ]}
+                style={piece.progress !== null ? styles.scoreMeta : undefined}
+              />
+            ) : null}
+
+            <PrimaryButton
+              label={started ? 'Continue practice' : 'Start practice'}
+              onPress={() => navigation.navigate('Record', { pieceId: piece.id })}
+              style={hasHistory ? styles.practice : undefined}
+            />
+          </View>
+        </Card>
+      ) : (
+        <PrimaryButton
+          label="Start practice"
+          onPress={() => navigation.navigate('Record', { pieceId: piece.id })}
+          style={styles.bareAction}
+        />
+      )}
 
       {/*
         Only for a piece that has notes. A hand-entered piece has none, and a
@@ -470,6 +478,12 @@ const styles = StyleSheet.create({
   },
   practice: {
     marginTop: spacing.lg,
+  },
+  // The action standing on the page rather than inside a card. Same gap the card
+  // would have taken, so a library of mixed pieces doesn't shift as you page
+  // between them.
+  bareAction: {
+    marginTop: spacing.xl,
   },
   playbackCard: {
     marginTop: spacing.md,

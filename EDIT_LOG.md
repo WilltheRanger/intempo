@@ -6,6 +6,69 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-18 00:30 — Note names off the score screen; the card earns its box
+
+**Branch:** `main`. Owner: *"Remove the note names and fix the piece card."*
+Both were items I had flagged for their decision.
+
+### The engraving no longer labels every note
+
+`Stave` gains `showNoteNames`, default **on** — the warmup keeps them, because
+that screen is an exercise for a student and the letters teach. `PieceScoreScreen`
+turns them off: a letter under every note on repertoire reads as a beginner's
+crib.
+
+**Removing them incurred a debt, and it is paid.** `engrave.ts` draws no clef by
+deliberate choice, and its own docstring said the note names were carrying the
+information a clef would. Take the names away and the same notehead is a
+different pitch to a violist than to a violinist — so the score screen now
+states it in text: **“Treble clef · 4/4 · 92 BPM”**, which is what a printed
+part carries in its top-left corner and belongs on a screen for reading music
+anyway. Fifteen labels became one line of real metadata.
+
+`EngraveOptions.nameRow` threads through to `layoutSystem`, so the layout stops
+*reserving* the row's height as well as not drawing it — otherwise every system
+would have kept a band of empty space beneath it. Measured on the rendered SVG:
+15px of slack below the lowest ink, against a 175px drawing.
+
+### The card now depends on having something to group
+
+A card groups the piece's state — its page, how far in you are, when you last
+played it — with the action that continues it. On a piece with none of that,
+those three had been hidden one by one until the card held a single button: a
+box drawn around nothing (§3 laws 3 and 10).
+
+The box is now conditional on `hasState`. With state, the card as before; without
+it, the action sits on the page, where it reads as the one thing to do next. A
+photographed-but-never-recorded piece still gets a card, because the page crop
+*is* state worth grouping with the action — verified, not assumed.
+
+**Tests:** `tsc --noEmit` and `build:web` clean. New `verify-fixes` suite, 10
+checks: the clef and time signature are in text, **zero** SVG text nodes remain
+in the engraving, no reserved band, a practised piece keeps its card content, an
+unpractised one shows no stray percentages, and a hand-entered piece has **no
+card-like surface at all**. The three earlier fixture suites re-run: green.
+
+One check failed before it was right, and the reason is worth recording because
+it has now caught me three times: it found 8 note names reading
+`D,E,F♯,G,A,B,C♯,D` — the D-major *warmup*, not the piece. React Navigation
+keeps Today mounted behind a pushed screen, so `querySelectorAll('svg')` picked
+its stave. The `height: 0` in the same result was the tell. Both SVG checks now
+filter on `aria-hidden` and a non-zero height.
+
+**Flagged, not fixed:** removing the names makes the **short final system** more
+noticeable — the 3-bar fixture puts its closing whole note alone on a stub staff
+about a fifth of the width, and it now has no label to give it presence. The
+engraver is behaving as designed (`MAX_JUSTIFY_STRETCH` deliberately refuses to
+spread one note across a page, and an unjustified last system is correct
+practice). Drawing the final system's staff lines out to the full width would
+read as "the line ends here" rather than as a broken render — but that is an
+engraving-judgement change to a component whose look is the owner's, so it waits
+on a word.
+
+**Rollback:** revert this commit. `showNoteNames` defaults to the old behaviour,
+so reverting the screen alone restores the previous look.
+
 ## 2026-08-17 23:40 — The scan flow is real, and testable on a laptop
 
 **Branch:** `main`. Owner: *"build the scan flow and help me set up the backend keys"*.
