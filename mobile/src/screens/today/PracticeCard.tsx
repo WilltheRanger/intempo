@@ -92,7 +92,19 @@ export function PracticeCard({
           </Text>
         ) : null}
 
-        <Text variant="metadata" color="textTertiary" style={styles.tempo}>
+        {/*
+          Smaller than the movement above it but darker, which is the point.
+          The identity stack descends 26pt serif ink → 16pt composer → 14pt
+          movement, each rung smaller *and* lighter; the tempo used to wear
+          rung three's exact style, so the eye read a four-rung ladder with an
+          unexplained gap in it. Dropping a step while gaining weight breaks
+          the ladder's direction, which says "different kind of thing" where a
+          plain rank drop would only have said "less important".
+
+          It also lands byte-identical to the verdict below — both are practice
+          state about the same take, so they should group.
+        */}
+        <Text variant="metadataSmall" color="textSecondary" style={styles.tempo}>
           {formatWorkingTempo(workingBpm, piece.markedBpm)}
         </Text>
 
