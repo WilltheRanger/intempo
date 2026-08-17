@@ -11,6 +11,7 @@ import { View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { hydratePracticeTempos } from './data/practiceTempo';
 import { hydratePreferences } from './data/preferences';
 import { colors, fontsToLoad } from './design';
 import { RootNavigator } from './navigation/RootNavigator';
@@ -74,6 +75,7 @@ export default function App() {
   // first frame anyway, which is more than enough time for one storage read.
   useEffect(() => {
     void hydratePreferences();
+    void hydratePracticeTempos();
   }, []);
 
   return (

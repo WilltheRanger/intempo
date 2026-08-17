@@ -6,6 +6,94 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-17 03:20 — Practise slower, and hear it first
+
+**Branch:** `main`. Owner's feature. The two design calls were put to them
+first: **absolute BPM saved per piece** (not a percentage of the marked tempo),
+and playback of **the actual notes** rather than a click — with an instrument
+choice to come later, from the profile or onboarding.
+
+**Two things this landed on that were not what they appeared to be.** The
+metronome was a stored preference and a line of text with **no implementation
+at all** — nothing has ever flashed or ticked. And the Record screen ignored
+the piece entirely, opening at a hard-coded 96 BPM while `bpm_hint` sat unused
+in the score. "Play it slower" meant nudging ± away from an arbitrary number.
+
+**The constraint that shaped it.** §4 is unambiguous: anything through the
+speaker while recording lands in the microphone as phantom onsets and corrupts
+the analysis. So listening is a step *before* the take, and starting a take
+silences it. That is enforced, not documented — see the verification below.
+
+**What changed:**
+
+- `lib/score/schedule.ts` — pure: a score and a tempo become notes with times
+  and frequencies. The same walk `alignment.build_timeline` does server-side,
+  kept deliberately parallel so a note the app plays at 2.5s is the note the
+  pipeline expects at 2.5s. Ties fold into one sounding note; re-striking a
+  tied note is exactly the error a musician would hear. Repeats are **not**
+  followed, and that's recorded in the file.
+- `lib/score/voice.ts` — the instrument seam. One reference voice today, keyed
+  by name so adding cello later is an entry rather than a restructure. A clean
+  tone on purpose: a synthesised near-miss of a cello is worse than something
+  that obviously isn't one, because the near-miss invites the comparison.
+- `lib/scorePlayer.web.ts` — Web Audio, every note scheduled up front against
+  `audioContext.currentTime`. Timers drift tens of milliseconds over a minute,
+  which is the same order as the deviations this app measures; a reference
+  that wanders would be worse than none.
+- `lib/scorePlayer.ts` — native. No Web Audio and `expo-audio` plays files
+  rather than synthesising, so the piece is rendered to PCM, written to a WAV
+  in the cache (`expo-file-system`, added), and played. Rendering up front puts
+  the timing in the samples where the JS thread can't perturb it.
+- `lib/audio/wav.ts` — split into `encodeWavBytes` and `encodeWav`; uploading a
+  take wants a `Blob`, writing one to a device wants the bytes.
+- `data/practiceTempo.ts` — per-piece BPM, local like `preferences`,
+  validated on read so an old or corrupt value can't put the recorder outside
+  the range the backend accepts. Resolution order: what the musician chose,
+  then the score's marking, then a fallback — their choice outranks the score,
+  the score outranks a guess.
+- `Piece` gains `markedBpm` and `score`. Both nullable: OCR often can't read a
+  tempo marking off a phone photo, and listings don't fetch the notes.
+- `ListenButton` on the Record screen, under the tempo. A progress line inside
+  the control's own border rather than a second timer — the screen already has
+  a tempo and a clock.
+
+**Tests run:** `tsc` clean, web export built, driven in Chromium.
+
+- **The pitches are right**, which is the thing worth checking: instrumenting
+  `createOscillator` gives 294 / 330 / 370 / 392 / 440 Hz — D4, E4, F♯4, G4,
+  A4 — and 36 oscillators for 9 notes × 4 harmonics.
+- Tempo seeds from the piece: **92**, the fixture's `markedBpm`, not the old
+  hard-coded 96.
+- Two taps of Slower → 88, and still 88 after leaving the screen and coming
+  back. Remembered.
+- **Audio-bleed guard verified**: start a take mid-playback and the playback
+  `AudioContext` reports `closed` while the recorder's own reports `running`.
+  A closed context cannot make a sound.
+
+**A wrong reading I nearly believed.** The first bleed test counted live
+oscillators via `onended` and reported 32 still sounding — apparently a
+serious bug. `onended` never fires after `context.close()`; the oscillators
+were already dead. Re-tested against context state, which is the only thing
+that actually decides whether audio can reach a microphone.
+
+**Known side effects / things to watch:**
+
+- **The native player has never made a sound.** No simulator, no device. It
+  typechecks against `expo-audio`'s and `expo-file-system`'s documented APIs
+  and that is all that can be said for it.
+- Repeats are ignored. A repeat that doubles a preview's length is more
+  surprising than useful, but a musician playing a repeated section will hear
+  the playback stop early.
+- The fixture pieces all share one three-bar demo score, so every piece
+  currently sounds the same. Real scores arrive with OCR.
+- **The metronome still does nothing.** This feature gives the beat a reason to
+  exist — the same clock drives both — but the visual and haptic modes remain
+  unbuilt.
+- `expo-file-system` is a new native dependency, used only by the native
+  player.
+
+---
+
 ## 2026-08-17 02:15 — Motion and skeletons
 
 **Branch:** `main`. UI work, requested by the owner, with the two aesthetic

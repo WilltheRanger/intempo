@@ -1,0 +1,168 @@
+import { AudioModule } from 'expo-audio';
+import { File, Paths } from 'expo-file-system';
+
+import { encodeWavBytes } from './audio/wav';
+import type { Schedule } from './score/schedule';
+import { DEFAULT_VOICE, VOICES, type VoiceName } from './score/voice';
+import type { PlaybackHandle, PlayOptions } from './score/player.types';
+
+/**
+ * Playing a score on a device.
+ *
+ * Web Audio doesn't exist here and `expo-audio` plays files rather than
+ * synthesising, so the piece is rendered to PCM in JavaScript, written to a
+ * WAV in the cache directory, and handed to a player.
+ *
+ * Rendering the whole thing up front rather than streaming is deliberate: the
+ * timing then lives in the samples, where nothing can perturb it. A note
+ * triggered by a JS timer inherits every hitch of the JS thread, and this app
+ * is in the business of telling people their timing is off — a reference that
+ * wanders would be worse than no reference.
+ *
+ * 22.05 kHz mono, which is what the analysis pipeline loads at anyway. A
+ * three-minute piece is about 8 MB of Int16 held briefly while it's written.
+ *
+ * **Unverified.** There is no simulator or device in the environment this was
+ * written in. It is built against `expo-audio`'s and `expo-file-system`'s
+ * documented APIs and typechecks, and it has never made a sound.
+ */
+
+const SAMPLE_RATE = 22050;
+const CHANNELS = 1;
+
+/** Mix the schedule down to 16-bit PCM. */
+function render(schedule: Schedule, voice: VoiceName): Int16Array {
+  const spec = VOICES[voice] ?? VOICES[DEFAULT_VOICE];
+  const total = Math.ceil((schedule.durationS + spec.releaseS + 0.2) * SAMPLE_RATE);
+  const mix = new Float32Array(Math.max(total, 1));
+
+  for (const note of schedule.notes) {
+    const start = Math.floor(note.startS * SAMPLE_RATE);
+    const length = Math.floor((note.durationS + spec.releaseS) * SAMPLE_RATE);
+    const attack = Math.max(1, Math.floor(spec.attackS * SAMPLE_RATE));
+    const release = Math.max(1, Math.floor(spec.releaseS * SAMPLE_RATE));
+    const sustainEnd = Math.max(attack, length - release);
+
+    for (let i = 0; i < length; i += 1) {
+      const at = start + i;
+      if (at >= mix.length) {
+        break;
+      }
+      // Linear attack and release. Ramps rather than steps: a gain that jumps
+      // is a click, and a click is an onset — the one artefact this app must
+      // not teach someone to hear as part of the music.
+      const envelope =
+        i < attack
+          ? i / attack
+          : i > sustainEnd
+            ? Math.max(0, 1 - (i - sustainEnd) / release)
+            : 1;
+
+      const t = i / SAMPLE_RATE;
+      let sample = 0;
+      for (let h = 0; h < spec.harmonics.length; h += 1) {
+        sample += spec.harmonics[h] * Math.sin(2 * Math.PI * note.frequency * (h + 1) * t);
+      }
+      mix[at] += sample * envelope * spec.gain;
+    }
+  }
+
+  const pcm = new Int16Array(mix.length);
+  for (let i = 0; i < mix.length; i += 1) {
+    const clamped = Math.max(-1, Math.min(1, mix[i]));
+    pcm[i] = clamped < 0 ? clamped * 0x8000 : clamped * 0x7fff;
+  }
+  return pcm;
+}
+
+export function playSchedule(
+  schedule: Schedule,
+  { voice = DEFAULT_VOICE, onProgress, onEnd }: PlayOptions = {},
+): PlaybackHandle {
+  if (schedule.notes.length === 0) {
+    onEnd?.();
+    return { stop: () => {}, isPlaying: () => false };
+  }
+
+  let stopped = false;
+  let player: { play: () => void; remove: () => void; currentTime: number } | null = null;
+  let file: File | null = null;
+  let timer: ReturnType<typeof setInterval> | null = null;
+
+  function cleanUp() {
+    if (timer) {
+      clearInterval(timer);
+      timer = null;
+    }
+    try {
+      player?.remove();
+    } catch {
+      // Already released.
+    }
+    player = null;
+    try {
+      // The cache directory is the system's to clear, but a rendered piece has
+      // no value after it has been heard and can be megabytes.
+      file?.delete();
+    } catch {
+      // Nothing to clean up.
+    }
+    file = null;
+  }
+
+  function finish() {
+    if (stopped) {
+      return;
+    }
+    stopped = true;
+    cleanUp();
+    onEnd?.();
+  }
+
+  // Rendering is synchronous and can take a moment on a long piece, so it
+  // happens off the call that started playback.
+  void (async () => {
+    try {
+      const pcm = render(schedule, voice);
+      const bytes = encodeWavBytes({
+        chunks: [pcm],
+        sampleRate: SAMPLE_RATE,
+        channels: CHANNELS,
+      });
+
+      if (stopped) {
+        return;
+      }
+
+      const target = new File(Paths.cache, `intempo-listen-${Date.now()}.wav`);
+      target.create({ overwrite: true });
+      // `write` takes a string or a typed array; the bytes go straight down.
+      target.write(bytes);
+      file = target;
+
+      const created = new AudioModule.AudioPlayer({ uri: target.uri }, 100, false, 0);
+      player = created as unknown as typeof player;
+      created.play();
+
+      timer = setInterval(() => {
+        if (stopped || !player) {
+          return;
+        }
+        const elapsed = player.currentTime;
+        if (elapsed >= schedule.durationS) {
+          finish();
+          return;
+        }
+        onProgress?.(elapsed, schedule.durationS);
+      }, 100);
+    } catch {
+      // A render or write failure is not worth a crash on a listen button.
+      finish();
+    }
+  })();
+
+  return {
+    stop: finish,
+    isPlaying: () => !stopped,
+  };
+}

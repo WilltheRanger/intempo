@@ -43,12 +43,15 @@ export function durationOf(
 }
 
 /**
- * Builds the WAV file.
+ * The WAV file as bytes.
  *
- * One allocation for the whole file rather than a `Blob` of parts: the header
+ * Separate from `encodeWav` because not every caller wants a `Blob`: uploading
+ * a take does, and writing one to disk on a device wants the bytes themselves.
+ *
+ * One allocation for the whole file rather than assembling parts: the header
  * has to state the data length, so the length has to be known first anyway.
  */
-export function encodeWav({ chunks, sampleRate, channels }: WavInput): Blob {
+export function encodeWavBytes({ chunks, sampleRate, channels }: WavInput): Uint8Array {
   const samples = sampleCount(chunks);
   const dataBytes = samples * (BITS_PER_SAMPLE / 8);
   const buffer = new ArrayBuffer(HEADER_BYTES + dataBytes);
@@ -85,7 +88,14 @@ export function encodeWav({ chunks, sampleRate, channels }: WavInput): Blob {
     }
   }
 
-  return new Blob([buffer], { type: 'audio/wav' });
+  return new Uint8Array(buffer);
+}
+
+/** The same file, wrapped for anything that uploads or reads it as a `Blob`. */
+export function encodeWav(input: WavInput): Blob {
+  // `slice()` so the Blob owns its own copy — a view over a buffer that is
+  // reused later would change under it.
+  return new Blob([encodeWavBytes(input).slice().buffer], { type: 'audio/wav' });
 }
 
 function writeAscii(view: DataView, offset: number, text: string): void {
