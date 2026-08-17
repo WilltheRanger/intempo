@@ -17,10 +17,16 @@ import type { Clef } from '../../data/types';
  * **It draws no clef**, and that is a decision rather than an omission. A clef
  * is a piece of calligraphy; a hand-approximated treble clef in an app for
  * classical musicians would be the first thing a reader noticed and the last
- * thing they forgave. The pitches are instead disambiguated the way a study
- * book does it — the note names are printed under each system — and the screen
- * names the instrument it is written for. Honest about being an exercise
- * diagram rather than pretending to be engraved sheet music.
+ * thing they forgave. Honest about being an exercise diagram rather than
+ * pretending to be engraved sheet music.
+ *
+ * Something else therefore has to say which clef these positions are in, or the
+ * same notehead means a different pitch to a violist than to a violinist. Two
+ * callers answer it two ways, and `nameRow` selects between them: the warmup
+ * prints the note names under each system, the way a study book does, and the
+ * screen names the instrument; a screen for reading a real piece turns the names
+ * off — they read as a beginner's crib on repertoire — and states the clef as
+ * score metadata instead. What is not acceptable is neither.
  */
 
 /** Diatonic steps above C0 — the unit the staff actually measures in. */
@@ -124,6 +130,23 @@ export interface EngraveOptions {
    * rather than as music. Ignored without a `maxWidth` to stretch to.
    */
   justify?: boolean;
+  /**
+   * Reserve the row of note names beneath each system.
+   *
+   * On by default, because the warmup — the reason this engraver exists —
+   * prints them: it is an exercise for a student, and the letters teach.
+   *
+   * Off for reading a real piece, where fifteen letters under the notes is
+   * clutter that implies the reader cannot read music. **Turning it off means
+   * the clef has to be stated somewhere else**, since nothing here draws one
+   * and the names were carrying that information (see the note on
+   * `MIDDLE_LINE_STEP`). `PieceScoreScreen` prints it as score metadata, which
+   * is where a clef belongs on a screen for reading music.
+   *
+   * This only governs the space reserved for the row; `nameY` is still
+   * returned, so a caller that wants the geometry can have it.
+   */
+  nameRow?: boolean;
 }
 
 /** Half the notehead's height, in staff gaps. Mirrors `Stave`'s HEAD_RY. */
@@ -132,6 +155,9 @@ const HEAD_RADIUS_FACTOR = 0.46;
 const PADDING_FACTOR = 0.7;
 /** Height reserved under each system for its row of note names. */
 const NAME_ROW_FACTOR = 2.2;
+
+/** Breathing room below the lowest ink when no names are drawn, in staff gaps. */
+const BARE_BOTTOM_FACTOR = 0.8;
 /** Gap between one system's names and the next system's staff. */
 const SYSTEM_GAP_FACTOR = 1.6;
 /** Stem length, in staff gaps. An octave, which is the engraver's convention. */
@@ -228,6 +254,7 @@ function layoutSystem(
   noteGap: number,
   leftPad: number,
   rightPad: number,
+  nameRow: boolean,
 ): { system: EngravedSystem; top: number; bottom: number } {
   const halfGap = lineGap / 2;
   const middleStep = MIDDLE_LINE_STEP[clef];
@@ -347,7 +374,11 @@ function layoutSystem(
       width: right,
     },
     top: Math.min(...extents),
-    bottom: nameY,
+    // Without the name row the system ends just below its lowest ink, plus
+    // enough to keep a low ledger line off the next system. Returning `nameY`
+    // regardless would leave a band of empty space under every system —
+    // reserved for labels that are not being drawn.
+    bottom: nameRow ? nameY : Math.max(...extents) + lineGap * BARE_BOTTOM_FACTOR,
   };
 }
 
@@ -387,6 +418,7 @@ export function engrave(
   const noteGap = options.noteGap ?? DEFAULTS.noteGap;
   const leftPad = options.leftPad ?? DEFAULTS.leftPad;
   const rightPad = options.rightPad ?? DEFAULTS.rightPad;
+  const nameRow = options.nameRow ?? true;
 
   const capped = options.maxNotes ? truncateAtBar(notes, options.maxNotes) : notes;
 
@@ -416,7 +448,7 @@ export function engrave(
             noteGap * MAX_JUSTIFY_STRETCH,
           )
         : noteGap;
-    const laid = layoutSystem(run, clef, lineGap, stretched, leftPad, rightPad);
+    const laid = layoutSystem(run, clef, lineGap, stretched, leftPad, rightPad, nameRow);
     systems.push(shift(laid.system, cursor - laid.top));
     cursor += laid.bottom - laid.top + gap;
     width = Math.max(width, laid.system.width);

@@ -33,6 +33,18 @@ export interface StaveProps {
   scale?: number;
   /** Stretch systems to fill `maxWidth`. */
   justify?: boolean;
+  /**
+   * Print each note's letter under the system.
+   *
+   * On by default: the warmup is an exercise for a student, and the letters
+   * teach. Off for reading a real piece, where a letter under every note reads
+   * as a beginner's crib.
+   *
+   * **A caller that turns this off has to state the clef**, because nothing
+   * here draws one and the names were carrying that information — the same
+   * notehead is a different pitch in alto clef. See `engrave.ts`.
+   */
+  showNoteNames?: boolean;
 }
 
 const LINE_GAP = 9;
@@ -55,13 +67,15 @@ const BEAM_FACTOR = 0.55;
 /**
  * Engraved notation, wrapped onto as many systems as it takes.
  *
- * Draws what `engrave` laid out and nothing more. **No clef** — the reasoning
- * is in `engrave.ts`, and the note names printed under each system carry the
- * information a clef would.
+ * Draws what `engrave` laid out and nothing more. **No clef** — the reasoning is
+ * in `engrave.ts`. With `showNoteNames` on, the names under each system carry
+ * the information a clef would; with it off, the caller owes the reader that
+ * information some other way.
  *
  * The names are SVG text rather than React Native text so they travel with the
  * system they belong to. A row of absolutely positioned labels worked for one
- * stave and would have needed a second layout pass for four.
+ * stave and would have needed a second layout pass for four. They can be turned
+ * off — see `showNoteNames`, and read the obligation that comes with it.
  */
 export function Stave({
   notes,
@@ -71,6 +85,7 @@ export function Stave({
   maxNotes,
   scale = 1,
   justify = false,
+  showNoteNames = true,
 }: StaveProps) {
   const dark = tone === 'dark';
   const ink = dark ? colors.actionText : colors.textPrimary;
@@ -86,6 +101,9 @@ export function Stave({
     maxWidth,
     maxNotes,
     justify,
+    // Also stops the layout reserving the row's height, so hiding the names
+    // doesn't leave a band of empty space under every system.
+    nameRow: showNoteNames,
   });
 
   const headRx = lineGap * HEAD_RX_FACTOR;
@@ -98,8 +116,10 @@ export function Stave({
       width={layout.width}
       height={layout.height}
       accessibilityRole="image"
-      // The names are drawn, not described: a screen reader spelling out
-      // fifteen note letters is noise, and the exercise is named above.
+      // Not described. With names on, a screen reader spelling out fifteen note
+      // letters is noise and the exercise is named above; with them off there is
+      // no text here to read at all. Either way the screen carries the piece's
+      // name, clef and tempo in real text, which is the useful alternative.
       accessible={false}
     >
       {layout.systems.map((system, s) => (
@@ -174,16 +194,18 @@ export function Stave({
                 strokeWidth={note.filled ? 0 : stroke * 1.3}
               />
 
-              <SvgText
-                x={note.x}
-                y={system.nameY}
-                fill={label}
-                fontSize={typography.metadataSmall.fontSize * scale}
-                fontFamily={fontFamily.sansRegular}
-                textAnchor="middle"
-              >
-                {note.name}
-              </SvgText>
+              {showNoteNames ? (
+                <SvgText
+                  x={note.x}
+                  y={system.nameY}
+                  fill={label}
+                  fontSize={typography.metadataSmall.fontSize * scale}
+                  fontFamily={fontFamily.sansRegular}
+                  textAnchor="middle"
+                >
+                  {note.name}
+                </SvgText>
+              ) : null}
             </G>
           ))}
 

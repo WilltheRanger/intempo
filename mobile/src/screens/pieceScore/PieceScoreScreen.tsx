@@ -7,6 +7,7 @@ import { ScoreThumbnail } from '../../components/pieces/ScoreThumbnail';
 import {
   EmptyState,
   LoadingState,
+  MetadataRow,
   PageHeader,
   ScreenContainer,
   SegmentedControl,
@@ -15,10 +16,24 @@ import {
 import { usePiece } from '../../data/hooks/usePieces';
 import { spacing } from '../../design';
 import { describeOmissions, staveScoreFor } from '../../lib/notation/fromScore';
+import type { Clef } from '../../data/types';
 import type { RootStackParamList } from '../../navigation/types';
 
 /** Read from a stand, not glanced at — the same size the warmup page uses. */
 const STAVE_SCALE = 1.25;
+
+/**
+ * How a clef is named in prose.
+ *
+ * Spelled out rather than drawn: `engrave.ts` deliberately draws no clef, and a
+ * hand-approximated treble clef would be the first thing a musician noticed.
+ */
+const CLEF_LABELS: Record<Clef, string> = {
+  treble: 'Treble clef',
+  bass: 'Bass clef',
+  alto: 'Alto clef',
+  tenor: 'Tenor clef',
+};
 
 /** Tall enough that a page of sheet music is legible rather than indicated. */
 const PAGE_HEIGHT = 420;
@@ -100,6 +115,26 @@ export function PieceScoreScreen() {
         backLabel="Back to piece"
       />
 
+      {/*
+        What a printed part states in its top-left corner, and what the stave
+        cannot: nothing here draws a clef, so without this line the same
+        notehead is a different pitch to a violist than to a violinist.
+      */}
+      {showing === 'notation' && hasNotation ? (
+        <MetadataRow
+          variant="metadataSmall"
+          items={[
+            CLEF_LABELS[piece.score?.clef ?? 'treble'],
+            piece.score?.time_signature && piece.score.time_signature !== 'unknown'
+              ? piece.score.time_signature
+              : null,
+            piece.score?.tempo_marking,
+            piece.markedBpm ? `${piece.markedBpm} BPM` : null,
+          ]}
+          style={styles.scoreMeta}
+        />
+      ) : null}
+
       {showToggle ? (
         <SegmentedControl
           label="Score view"
@@ -128,6 +163,11 @@ export function PieceScoreScreen() {
               maxWidth={width}
               scale={STAVE_SCALE}
               justify
+              // A letter under every note is a study-book aid. On repertoire it
+              // reads as a crib, so the clef is stated as metadata above
+              // instead — which is where a clef belongs on a screen for reading
+              // music, and is the obligation `showNoteNames={false}` carries.
+              showNoteNames={false}
             />
           )}
 
@@ -151,6 +191,9 @@ export function PieceScoreScreen() {
 }
 
 const styles = StyleSheet.create({
+  scoreMeta: {
+    marginTop: spacing.sm,
+  },
   plate: {
     marginTop: spacing.xl,
   },
