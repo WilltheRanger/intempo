@@ -6,6 +6,33 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-17 15:05 — Today's two list blocks move to the foot of the screen
+
+**Branch:** `main`. Owner: "Also worth a look" and "Last 30 days" belong at the
+very bottom.
+
+Today now reads: **the piece you are on → today's term → the warmup → the
+pieces worth a look → the last thirty days.** Today's work first, then the two
+blocks you read rather than act on. Both of those are doors to other screens —
+a piece, and the Insights tab — so they belong at the foot of this one rather
+than between the card and the things you do today.
+
+**What changed:** `screens/today/TodayScreen.tsx` only — the two sections moved
+below the warmup and the entrance stagger renumbered to follow the order they
+are now read in. No component changed.
+
+**Three-foot test:** the practice card, the Continue button inside it, then the
+warmup's notation. Unchanged at the top, which is the part the owner said was
+already right.
+
+**Tests:** `tsc --noEmit` clean, `build:web` clean. In Chromium: both moved
+blocks still reach their destinations from the bottom of the screen — the two
+suggestions to their pieces, the summary to the Insights tab — and Start still
+opens the warmup page with the tempo round-tripping 72 → 68. Library and search
+unaffected. No console errors.
+
+**Rollback:** revert this commit.
+
 ## 2026-08-17 14:35 — The warmup drops to the foot of Today, and loses the ink band
 
 **Branch:** `main`. Owner: the stacking hierarchy on Today isn't there, the top
