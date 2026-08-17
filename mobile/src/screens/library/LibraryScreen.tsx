@@ -3,7 +3,6 @@ import { Library, Plus, Search } from 'lucide-react-native';
 import { useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
-import { PieceCard } from '../../components/pieces/PieceCard';
 import { FadeIn } from '../../components/motion';
 import { PieceListSkeleton } from '../../components/skeletons';
 import {
@@ -12,16 +11,18 @@ import {
   PrimaryButton,
   ScreenContainer,
   SearchField,
-  Text,
+  SectionHeader,
 } from '../../components/primitives';
 import { useLibrary } from '../../data/hooks/usePieces';
 import type { Piece } from '../../data/types';
 import { motion, spacing } from '../../design';
+import { groupByRecency } from '../../lib/library';
 import type {
   AddPieceOption,
   TabScreenNavigation,
 } from '../../navigation/types';
 import { AddPieceSheet } from './AddPieceSheet';
+import { PieceRow } from './PieceRow';
 
 /** Case- and accent-insensitive match across title and composer. */
 function matches(piece: Piece, query: string): boolean {
@@ -80,6 +81,10 @@ export function LibraryScreen() {
   return (
     <ScreenContainer onRefresh={refresh}>
       <PageHeader
+        // The count moves into the eyebrow, where every other screen puts its
+        // line of context. As a row of its own it was a third heading between
+        // the search field and the first piece.
+        eyebrow={pieces.length > 0 ? countLabel(results.length, Boolean(query.trim())) : null}
         title="Library"
         action={
           <PrimaryButton
@@ -144,7 +149,7 @@ function LibraryContent({
   if (isPending) {
     return (
       <View style={styles.section}>
-        <PieceListSkeleton count={5} dense showPracticeDetail />
+        <PieceListSkeleton count={5} />
       </View>
     );
   }
@@ -181,27 +186,47 @@ function LibraryContent({
     );
   }
 
-  return (
-    <View style={styles.section}>
-      {/*
-        Tertiary information, so it's quieter than a section heading — this is
-        a count, not a label introducing a group.
-      */}
-      <Text variant="metadataSmall" color="textTertiary" style={styles.count}>
-        {countLabel(results.length, Boolean(query.trim()))}
-      </Text>
-      <View style={styles.list}>
+  // Searching flattens the groups. "This week" over a set of results that was
+  // filtered by a word is a heading about the wrong thing — when you've typed
+  // "Kreutzer" the answer is the matches, in one list.
+  const searching = Boolean(query.trim());
+  if (searching) {
+    return (
+      <View style={styles.section}>
         {results.map((piece, index) => (
           <FadeIn key={piece.id} index={index}>
-            <PieceCard
+            <PieceRow
               piece={piece}
-              showPracticeDetail
-              dense
+              last={index === results.length - 1}
               onPress={() => onOpenPiece(piece)}
             />
           </FadeIn>
         ))}
       </View>
+    );
+  }
+
+  const groups = groupByRecency(results);
+  let row = 0;
+
+  return (
+    <View style={styles.section}>
+      {groups.map((group) => (
+        <View key={group.key} style={styles.group}>
+          <SectionHeader label={group.label} />
+          {group.pieces.map((piece, index) => (
+            // The stagger runs across the whole screen rather than restarting
+            // per group, so the rows arrive as one sweep instead of four.
+            <FadeIn key={piece.id} index={row++}>
+              <PieceRow
+                piece={piece}
+                last={index === group.pieces.length - 1}
+                onPress={() => onOpenPiece(piece)}
+              />
+            </FadeIn>
+          ))}
+        </View>
+      ))}
     </View>
   );
 }
@@ -215,10 +240,9 @@ const styles = StyleSheet.create({
   section: {
     marginTop: spacing['2xl'],
   },
-  count: {
-    marginBottom: spacing.md,
-  },
-  list: {
-    gap: spacing.md,
+  group: {
+    // The gap between groups is what a heading needs to belong to the rows
+    // below it rather than float between two blocks.
+    marginBottom: spacing['2xl'],
   },
 });

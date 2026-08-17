@@ -6,6 +6,91 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-17 06:40 — Today and Library stop being the same screen
+
+**Branch:** `main`. Owner's report: Today feels bare, and it and Library don't
+look much different. Direction chosen by the owner from four options
+(§2 gate): differentiate both.
+
+**The diagnosis was worse than the report.** All three tabs were one
+composition — serif title, then a stack of white rounded cards, one per piece,
+each with a title, a composer, a gold bar and a metadata line. Today's bottom
+two-thirds was the top of Library, three rows shorter, from the same
+`PieceCard`. Two things nobody had reported fell out of the comparison: the
+gold bar encoded **progress** on two screens and **signed deviation** on a
+third, and the progress it encoded **doesn't exist** — `sources/api.ts` maps
+`progress` and `movement` to null. Live, these screens got barer, not richer.
+Full reasoning in `DECISIONS.md`.
+
+**What changed:**
+
+- `screens/today/TodayScreen.tsx` — rewritten. The library preview is gone.
+  The greeting moved to the eyebrow and the piece took the 36pt title; at 36
+  against 26 the salutation had been outranking the only thing anyone opens
+  the screen for. The action is pinned to the footer, in the thumb's reach.
+- `screens/today/ContinuePanel.tsx` — new, and deliberately **not a card**: a
+  full-bleed sheet strip, the piece's own recent verdict, the working tempo.
+- `screens/library/PieceRow.tsx` — new. An index entry: thumbnail, title, one
+  metadata line, a hairline rule. No card, no bar.
+- `lib/library.ts` — new, pure. Groups the repertoire by recency.
+- `lib/format.ts` — `daysSincePracticed` extracted and shared, so a heading and
+  the row under it cannot disagree about which week something is in;
+  `formatLastPracticedShort` for the metadata line.
+- `lib/tempo.ts` — `formatWorkingTempo`. `practiceTempo` has stored an absolute
+  BPM per piece since yesterday and it was visible **only** on the Record
+  screen; you had to open a take to find out where you left off.
+- `components/pieces/PieceCard.tsx`, `FeaturedPieceCard.tsx` — **deleted**.
+  Nothing else used them.
+- `components/skeletons/PieceSkeletons.tsx` — rebuilt to mirror the new shapes.
+
+**Design notes.** No new patterns, no new tokens. Two structural calls: Today
+uses the type scale for hierarchy instead of a border (§3 laws 3 and 8), and
+Library uses rules instead of cards because a library is the one screen where
+density is the point — you are scanning forty titles to find one.
+
+Searching flattens the groups. "This week" over a set filtered by a word is a
+heading about the wrong thing.
+
+**Three-foot test.** *Today*: the piece title, the sheet-music band, the
+Continue button — and nothing else competes, which is the first time that has
+been true of this screen. *Library*: the word Library, the run of piece titles,
+then the group headings. The two now share no silhouette.
+
+**Tests:** `tsc --noEmit` clean, `build:web` clean. `groupByRecency` checked
+against boundaries (0/6/7/27/28 days) and a sweep over 0–90 days asserting the
+heading and the row's own label never contradict each other — all pass. Driven
+in Chromium against the built bundle: groups render (`This week`, `Earlier this
+month`, `Not practiced yet`), search flattens them to none and reports
+"2 pieces found", no-match state and Clear search work, a row still opens the
+piece, Today still reaches the recorder. No console errors.
+
+**Two defects found in the loading state and fixed** — both only visible with
+an artificial fixture delay, which is why they had gone unnoticed:
+
+1. The greeting rendered as a 36pt title while pending and a 14pt eyebrow once
+   loaded, so it **shrank to a third of its size** as the data landed. It is
+   now the eyebrow in every state.
+2. The skeleton's sheet strip bled off the left edge only. `Skeleton` defaults
+   to `width: '100%'`, so negative margins slid the block sideways instead of
+   widening it. Fixed with `width="auto"` and `alignSelf: 'stretch'`.
+
+The strip's vertical position across the transition went from **66pt out to
+10pt out**. It cannot be exact — how many lines a title takes depends on the
+title — and the skeleton file now says so rather than claiming pixel-parity.
+
+**Honest status:** verified visually and interactively against fixtures in the
+web build. Today's practice sentence is real data through `PracticeInsights`,
+but **no real analyses exist yet**, so what it says in production is unproven.
+**Not done:** `PieceDetail` still renders a progress bar for a field the
+backend cannot supply — same defect, different screen, outside what was asked
+for here.
+
+**Known side effects:** Today shows one piece and no list, so starting a
+different piece means the Library tab. Deliberate — see `DECISIONS.md`.
+**Rollback:** revert this commit; the deleted card components come back with it.
+
+---
+
 ## 2026-08-17 05:10 — The metronome now exists
 
 **Branch:** `main`. Chosen from "start anywhere you like", because this was the
