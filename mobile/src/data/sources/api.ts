@@ -359,6 +359,28 @@ export const apiTakeSource: TakeSource = {
     const score = await getScore(analysis.score_id).catch(() => null);
     return toTake(analysis, result, score);
   },
+
+  async getLatestTake() {
+    // The same call Insights makes, sorted rather than aggregated. No new
+    // endpoint: `GET /v1/analyses` returns the caller's own analyses and the
+    // ordering is settled here rather than assumed of the server.
+    const analyses = await listAnalyses({ status: 'done' });
+
+    const newest = analyses
+      .slice()
+      .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at))
+      // A finished analysis whose `result_json` can't be read is not a take
+      // anyone can be shown, so it is skipped rather than rendered blank.
+      .map((analysis) => ({ analysis, result: asResult(analysis) }))
+      .find((entry) => entry.result !== null);
+
+    if (!newest?.result) {
+      return null;
+    }
+
+    const score = await getScore(newest.analysis.score_id).catch(() => null);
+    return toTake(newest.analysis, newest.result, score);
+  },
 };
 
 /**

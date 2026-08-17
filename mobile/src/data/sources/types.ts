@@ -43,6 +43,14 @@ export interface InsightsSource {
 export interface TakeSource {
   /** Null when the id doesn't exist or isn't the caller's. */
   getTake(analysisId: string): Promise<TakeResult | null>;
+  /**
+   * The most recent finished take, across every piece.
+   *
+   * Today asks "how did last time go" and that is a different question from
+   * the 30-day aggregate Insights answers. Null before the pipeline has
+   * finished anything — the normal state of a new account, not an error.
+   */
+  getLatestTake(): Promise<TakeResult | null>;
 }
 
 /**

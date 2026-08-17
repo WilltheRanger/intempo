@@ -1,21 +1,26 @@
 import { StyleSheet, View } from 'react-native';
 
-import { BORDER_WIDTH, colors, spacing } from '../../design';
+import {
+  BORDER_WIDTH,
+  CONTROL_HEIGHT,
+  colors,
+  radii,
+  spacing,
+} from '../../design';
 import { FadeIn } from '../motion';
-import { SCREEN_GUTTER } from '../primitives/ScreenContainer';
 import { Skeleton, SkeletonText } from '../primitives/Skeleton';
 
 /**
  * Placeholders shaped like the components they stand in for.
  *
- * The measurements here are copied from the real components — a 200pt sheet
- * strip on Today, a 52×38 thumbnail on a Library row — because a skeleton
- * whose proportions are a guess produces a jump at exactly the moment someone
- * starts reading, which is worse than a spinner.
+ * The measurements here are copied from the real components — a 56pt banner on
+ * Today's card, a 52×38 thumbnail on a Library row — because a skeleton whose
+ * proportions are a guess produces a jump at exactly the moment someone starts
+ * reading, which is worse than a spinner.
  *
  * **They cannot match exactly, and pretending otherwise would be the bug.**
  * How many lines a title takes depends on the title: "Sonata No. 1 in G minor,
- * BWV 1001" wraps to two at 36pt and "Méditation from Thaïs" does not. These
+ * BWV 1001" wraps to two at 26pt and "Méditation from Thaïs" does not. These
  * are built for the common case in classical repertoire — long titles — and
  * measured against it, not asserted to be pixel-exact.
  *
@@ -23,51 +28,44 @@ import { Skeleton, SkeletonText } from '../primitives/Skeleton';
  * constants are named after the component they mirror to make that obvious.
  */
 
-/** `ContinuePanel`'s full-bleed sheet strip. */
-const SHEET_HEIGHT = 200;
+/** `PracticeCard`'s sheet-music banner. */
+const BANNER_HEIGHT = 56;
 /** `PieceRow`'s thumbnail. */
 const THUMBNAIL = { width: 52, height: 38 };
 
-/** The 36pt title's line box, and the leading between two of them. */
-const TITLE_LINE = 36;
-const TITLE_LEADING = 6;
-
 /**
- * Stands in for Today's title block and `ContinuePanel`.
+ * Stands in for Today's section label and `PracticeCard`.
  *
- * The title is drawn here even though the screen renders it above the panel,
- * because it is the piece's title and arrives with the piece — unlike the
- * greeting above it, which is known immediately and is never a placeholder.
- *
- * Two title lines, then composer, then movement: the shape of a piece of
- * classical repertoire. One line would sit the sheet strip 66pt too high and
- * drop it as the content landed.
+ * The label is drawn as a placeholder rather than as the real words: it is
+ * "Continue practicing", which is only true once there is something to
+ * continue, and asserting it over an empty library would be the screen
+ * promising something it has not yet checked.
  */
 export function ContinueSkeleton() {
   return (
     <View>
-      <Skeleton height={TITLE_LINE} width="92%" />
-      <Skeleton height={TITLE_LINE} width="64%" style={styles.titleSecondLine} />
-      {/* Composer, then movement. */}
-      <Skeleton height={20} width="42%" style={styles.gapXs} />
-      <Skeleton height={18} width="26%" style={styles.gapXs} />
+      <Skeleton height={13} width={112} style={styles.label} />
 
-      {/*
-        `width="auto"` matters: the default is `100%`, which is the parent's
-        content box, so the negative margins slid the block left instead of
-        widening it and only the left edge bled. Stretching gives it the
-        parent's width to extend *from*.
-      */}
-      <Skeleton
-        width="auto"
-        height={SHEET_HEIGHT}
-        radius={0}
-        style={styles.sheet}
-      />
+      <View style={styles.card}>
+        <Skeleton height={BANNER_HEIGHT} radius={0} />
+        <View style={styles.cardBody}>
+          {/* Title over two lines, composer, movement. */}
+          <Skeleton height={26} width="88%" />
+          <Skeleton height={26} width="52%" style={styles.gapXs} />
+          <Skeleton height={20} width="42%" style={styles.gapSm} />
+          <Skeleton height={16} width="30%" style={styles.gapXs} />
 
-      {/* The practice sentence, then the working tempo. */}
-      <SkeletonText lines={2} style={styles.reason} />
-      <Skeleton height={14} width="38%" style={styles.gapSm} />
+          {/* Working tempo, then when it was last practiced. */}
+          <Skeleton height={18} width="26%" style={styles.gapMd} />
+          <Skeleton height={16} width="38%" style={styles.gapXs} />
+
+          <Skeleton
+            height={CONTROL_HEIGHT}
+            radius={radii.md}
+            style={styles.gapMd}
+          />
+        </View>
+      </View>
     </View>
   );
 }
@@ -106,13 +104,19 @@ export function PieceListSkeleton({ count = 5 }: PieceListSkeletonProps) {
 export { SkeletonText };
 
 const styles = StyleSheet.create({
-  sheet: {
-    marginTop: spacing['2xl'],
-    marginHorizontal: -SCREEN_GUTTER,
-    alignSelf: 'stretch',
+  label: {
+    marginBottom: spacing.md,
   },
-  reason: {
-    marginTop: spacing['2xl'],
+  card: {
+    backgroundColor: colors.surface,
+    borderRadius: radii.lg,
+    borderWidth: BORDER_WIDTH,
+    borderColor: colors.border,
+    overflow: 'hidden',
+  },
+  cardBody: {
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
   },
   row: {
     flexDirection: 'row',
@@ -127,7 +131,7 @@ const styles = StyleSheet.create({
   rowBody: {
     flex: 1,
   },
-  titleSecondLine: { marginTop: TITLE_LEADING },
   gapXs: { marginTop: spacing.xs },
   gapSm: { marginTop: spacing.sm },
+  gapMd: { marginTop: spacing.md },
 });
