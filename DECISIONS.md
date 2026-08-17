@@ -27,6 +27,8 @@ Today ran card → type → more type, with a single visual event in the whole s
 
 **Trade-off accepted:** Today now has two focal points where §3 law 4 asks for one. They are sequential rather than competing — a card you read, then a surface you notice — but it is a real tension, and if the screen starts to feel busy the panel is what gives way, not the card.
 
+> **Reversed the same day.** The owner read the band as competing with the card, not following it, and they were right — the trade-off above was rationalising a defect rather than accepting a cost. The warmup is now plain notation on the page background at the foot of the screen, and the panel gave way exactly as this paragraph said it should. What survives from this decision is the reasoning about *where* dark surfaces may be used, not the claim that Today needed one.
+
 **Also decided: `TempoStepper` is extracted rather than duplicated.** The warmup page needs the same control the Record screen has. Two steppers that quietly disagree about their step size or their limits is the kind of drift nobody notices until a musician does.
 
 ## 2026-08-17 — A daily excerpt, and an engraver that refuses to draw a clef

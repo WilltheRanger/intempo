@@ -48,6 +48,12 @@ const AVATAR_INSET = (AVATAR_TARGET - AVATAR_SIZE) / 2;
  * its tempo and the action that starts it are one object and earn the box
  * (§3 law 3); what follows are separate suggestions, so they get rules instead.
  *
+ * The order is deliberate and reads as a descent: the piece you are working,
+ * then the pieces worth a look, then the month, then a term, then the warmup.
+ * Everything above the warmup is about this musician's own repertoire, and the
+ * one optional thing on the screen belongs after that run rather than inside
+ * it.
+ *
  * **What is not here is the library preview.** Three rows of the Library tab
  * once sat at the bottom of this screen, which made its lower two-thirds a
  * copy of a destination one tap away. The rows below are not that: each names
@@ -168,22 +174,8 @@ export function TodayScreen() {
         onContinue={() => openPractice(piece)}
       />
 
-      {/*
-        The panel carries its own heading — it is a surface rather than a
-        section on the page, so a `SectionHeader` above it would label the
-        ivory it sits on rather than the thing itself.
-      */}
-      <FadeIn index={0}>
-        <View style={styles.panelSection}>
-          <WarmupPanel
-            instrument={instrument}
-            onStart={() => navigation.navigate('Warmup')}
-          />
-        </View>
-      </FadeIn>
-
       {attention || neglected ? (
-        <FadeIn index={1}>
+        <FadeIn index={0}>
           <View style={styles.section}>
             <SectionHeader label="Also worth a look" />
             {attention ? (
@@ -211,7 +203,7 @@ export function TodayScreen() {
       ) : null}
 
       {summary ? (
-        <FadeIn index={2}>
+        <FadeIn index={1}>
           <View style={styles.section}>
             <SectionHeader label={`Last ${summary.windowDays} days`} />
             <TodayRow
@@ -226,10 +218,26 @@ export function TodayScreen() {
         </FadeIn>
       ) : null}
 
-      <FadeIn index={3}>
+      <FadeIn index={2}>
         <View style={styles.section}>
           <SectionHeader label="Today's term" />
           <NotesBlock score={piece.score} />
+        </View>
+      </FadeIn>
+
+      {/*
+        Last on the screen, and after the term. It is the one optional thing
+        here — everything above is about the musician's own repertoire, and a
+        warm-up placed second was interrupting that run rather than following
+        it.
+      */}
+      <FadeIn index={3}>
+        <View style={styles.section}>
+          <SectionHeader label="Warmup" />
+          <WarmupPanel
+            instrument={instrument}
+            onStart={() => navigation.navigate('Warmup')}
+          />
         </View>
       </FadeIn>
     </ScreenContainer>
@@ -256,10 +264,5 @@ const styles = StyleSheet.create({
     // of a document rather than as parts of one screen — which is most of what
     // made this feel like a web page.
     marginTop: spacing['2xl'],
-  },
-  panelSection: {
-    // Tighter still: a full-bleed band reads as attached to the page, and too
-    // much air above it makes it float.
-    marginTop: spacing.xl,
   },
 });
