@@ -4,11 +4,21 @@ import Svg, { Ellipse, G, Line } from 'react-native-svg';
 import { Text } from '../primitives/Text';
 import type { Clef } from '../../data/types';
 import { colors, spacing } from '../../design';
-import { engrave, type ExcerptNote } from '../../lib/notation/engrave';
+import { engrave, type StaveNote } from '../../lib/notation/engrave';
 
 export interface StaveProps {
-  notes: ExcerptNote[];
+  notes: StaveNote[];
   clef: Clef;
+  /**
+   * Which ground it is drawn on.
+   *
+   * `dark` inverts the ink so the same engraving can sit on the warmup panel.
+   * Not a theme — it is the one place in the app with a full-bleed dark
+   * surface, and the `action*`/`onDark*` pair already exists for exactly that.
+   */
+  tone?: 'light' | 'dark';
+  /** Cap the bars drawn, for a preview that only needs to suggest the shape. */
+  maxNotes?: number;
 }
 
 const LINE_GAP = 9;
@@ -36,8 +46,14 @@ const BEAM_THICKNESS = LINE_GAP * 0.55;
  * Ink on the page background rather than on a white card: this is notation, and
  * notation on a warm ground is what a study book looks like.
  */
-export function Stave({ notes, clef }: StaveProps) {
-  const layout = engrave(notes, clef, { lineGap: LINE_GAP, noteGap: NOTE_GAP });
+export function Stave({ notes, clef, tone = 'light', maxNotes }: StaveProps) {
+  const dark = tone === 'dark';
+  const ink = dark ? colors.actionText : colors.textPrimary;
+  const rule = dark ? colors.onDarkMuted : colors.textSecondary;
+
+  // Truncated at a barline where possible, so a preview never ends mid-bar.
+  const shown = maxNotes ? truncateAtBar(notes, maxNotes) : notes;
+  const layout = engrave(shown, clef, { lineGap: LINE_GAP, noteGap: NOTE_GAP });
 
   return (
     <View>
@@ -57,7 +73,7 @@ export function Stave({ notes, clef }: StaveProps) {
             y1={y}
             x2={layout.width}
             y2={y}
-            stroke={colors.textSecondary}
+            stroke={rule}
             strokeWidth={STAFF_STROKE}
           />
         ))}
@@ -69,7 +85,7 @@ export function Stave({ notes, clef }: StaveProps) {
             y1={layout.staffLines[0]}
             x2={x}
             y2={layout.staffLines[4]}
-            stroke={colors.textSecondary}
+            stroke={rule}
             strokeWidth={STAFF_STROKE * 1.2}
           />
         ))}
@@ -83,13 +99,13 @@ export function Stave({ notes, clef }: StaveProps) {
                 y1={y}
                 x2={note.x + HEAD_RX * 1.7}
                 y2={y}
-                stroke={colors.textPrimary}
+                stroke={ink}
                 strokeWidth={STROKE}
               />
             ))}
 
             {note.accidental === 'sharp' ? (
-              <Sharp x={note.x - LINE_GAP * 1.55} y={note.y} />
+              <Sharp x={note.x - LINE_GAP * 1.55} y={note.y} ink={ink} />
             ) : null}
 
             {note.stem ? (
@@ -98,7 +114,7 @@ export function Stave({ notes, clef }: StaveProps) {
                 y1={note.stem.from}
                 x2={note.stem.x}
                 y2={note.stem.to}
-                stroke={colors.textPrimary}
+                stroke={ink}
                 strokeWidth={STROKE * 1.2}
               />
             ) : null}
@@ -109,8 +125,8 @@ export function Stave({ notes, clef }: StaveProps) {
               rx={HEAD_RX}
               ry={HEAD_RY}
               transform={`rotate(${HEAD_TILT} ${note.x} ${note.y})`}
-              fill={note.filled ? colors.textPrimary : 'none'}
-              stroke={colors.textPrimary}
+              fill={note.filled ? ink : 'none'}
+              stroke={ink}
               strokeWidth={note.filled ? 0 : STROKE * 1.3}
             />
           </G>
@@ -125,7 +141,7 @@ export function Stave({ notes, clef }: StaveProps) {
             y1={beam.y + (beam.stemUp ? BEAM_THICKNESS / 2 : -BEAM_THICKNESS / 2)}
             x2={beam.to}
             y2={beam.y + (beam.stemUp ? BEAM_THICKNESS / 2 : -BEAM_THICKNESS / 2)}
-            stroke={colors.textPrimary}
+            stroke={ink}
             strokeWidth={BEAM_THICKNESS}
           />
         ))}
@@ -142,15 +158,36 @@ export function Stave({ notes, clef }: StaveProps) {
           <Text
             key={`name-${index}`}
             variant="metadataSmall"
-            color="textTertiary"
+            color={dark ? 'onDarkMuted' : 'textTertiary'}
             style={[styles.name, { left: note.x - NOTE_GAP / 2, width: NOTE_GAP }]}
           >
-            {displayName(notes[index].pitch)}
+            {displayName(shown[index].pitch)}
           </Text>
         ))}
       </View>
     </View>
   );
+}
+
+/**
+ * Cut a run of notes down, preferring to stop where a bar does.
+ *
+ * A preview that ends halfway through a bar reads as a rendering failure
+ * rather than as an extract, so this drops back to the last barline inside the
+ * limit — unless that would leave almost nothing, in which case a hard cut is
+ * the lesser problem.
+ */
+function truncateAtBar(notes: StaveNote[], limit: number): StaveNote[] {
+  if (notes.length <= limit) {
+    return notes;
+  }
+  const head = notes.slice(0, limit);
+  for (let i = head.length - 1; i > 0; i -= 1) {
+    if (head[i].barBefore) {
+      return i >= limit / 2 ? head.slice(0, i) : head;
+    }
+  }
+  return head;
 }
 
 /** `F#4` reads as `F♯` — the octave is on the staff, and the sharp is a glyph. */
@@ -166,16 +203,16 @@ function displayName(pitch: string): string {
  * no accidental at all. Four strokes: two uprights and two crossbars, the
  * crossbars slanted upwards the way they are cut in every music face.
  */
-function Sharp({ x, y }: { x: number; y: number }) {
+function Sharp({ x, y, ink }: { x: number; y: number; ink: string }) {
   const w = LINE_GAP * 0.34;
   const h = LINE_GAP * 1.1;
   const slant = LINE_GAP * 0.16;
   return (
     <G>
-      <Line x1={x - w} y1={y - h} x2={x - w} y2={y + h * 0.75} stroke={colors.textPrimary} strokeWidth={STROKE} />
-      <Line x1={x + w} y1={y - h * 0.75} x2={x + w} y2={y + h} stroke={colors.textPrimary} strokeWidth={STROKE} />
-      <Line x1={x - w * 2} y1={y - slant * 0.4} x2={x + w * 2} y2={y - slant * 1.6} stroke={colors.textPrimary} strokeWidth={STROKE * 1.5} />
-      <Line x1={x - w * 2} y1={y + slant * 1.6} x2={x + w * 2} y2={y + slant * 0.4} stroke={colors.textPrimary} strokeWidth={STROKE * 1.5} />
+      <Line x1={x - w} y1={y - h} x2={x - w} y2={y + h * 0.75} stroke={ink} strokeWidth={STROKE} />
+      <Line x1={x + w} y1={y - h * 0.75} x2={x + w} y2={y + h} stroke={ink} strokeWidth={STROKE} />
+      <Line x1={x - w * 2} y1={y - slant * 0.4} x2={x + w * 2} y2={y - slant * 1.6} stroke={ink} strokeWidth={STROKE * 1.5} />
+      <Line x1={x - w * 2} y1={y + slant * 1.6} x2={x + w * 2} y2={y + slant * 0.4} stroke={ink} strokeWidth={STROKE * 1.5} />
     </G>
   );
 }

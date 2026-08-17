@@ -35,6 +35,13 @@ export interface PrimaryButtonProps {
    * than spanning the screen. Same fill, label, and radius either way.
    */
   size?: 'default' | 'compact';
+  /**
+   * `light` inverts the fill for use on a dark ground — cream button, ink
+   * label. Not a second style so much as the same button seen against the
+   * opposite surface; both tones come from the `action*` pair, which the
+   * palette already describes as doubling for full-bleed dark surfaces.
+   */
+  tone?: 'ink' | 'light';
   style?: StyleProp<ViewStyle>;
 }
 
@@ -52,9 +59,12 @@ export function PrimaryButton({
   loading = false,
   haptic = true,
   size = 'default',
+  tone = 'ink',
   style,
 }: PrimaryButtonProps) {
   const inactive = disabled || loading;
+  const light = tone === 'light';
+  const labelColor = light ? 'actionBg' : 'actionText';
 
   function handlePress() {
     if (haptic) {
@@ -72,24 +82,25 @@ export function PrimaryButton({
       accessibilityState={{ disabled: inactive, busy: loading }}
       style={({ pressed }) => [
         styles.button,
+        light && styles.buttonLight,
         size === 'compact' && styles.compact,
-        pressed && !inactive && styles.pressed,
+        pressed && !inactive && (light ? styles.pressedLight : styles.pressed),
         disabled && styles.disabled,
         style,
       ]}
     >
       {loading ? (
-        <ActivityIndicator color={colors.actionText} />
+        <ActivityIndicator color={light ? colors.actionBg : colors.actionText} />
       ) : (
         <View style={[styles.content, size === 'compact' && styles.contentCompact]}>
           {Icon ? (
             <Icon
               size={size === 'compact' ? ICON_SIZE.sm : ICON_SIZE.md}
               strokeWidth={ICON_STROKE_WIDTH}
-              color={colors.actionText}
+              color={light ? colors.actionBg : colors.actionText}
             />
           ) : null}
-          <Text variant="button" color="actionText">
+          <Text variant="button" color={labelColor}>
             {label}
           </Text>
         </View>
@@ -107,6 +118,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: spacing.lg,
   },
+  buttonLight: {
+    backgroundColor: colors.actionText,
+  },
   compact: {
     // Exactly the minimum comfortable target — no smaller.
     height: MIN_TOUCH_TARGET,
@@ -117,6 +131,9 @@ const styles = StyleSheet.create({
   },
   pressed: {
     backgroundColor: colors.actionBgPressed,
+  },
+  pressedLight: {
+    backgroundColor: colors.surfacePressed,
   },
   disabled: {
     opacity: disabledOpacity,

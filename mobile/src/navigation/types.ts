@@ -20,6 +20,8 @@ export type RootStackParamList = {
   ChangePassword: undefined;
   Acknowledgements: undefined;
   Record: { pieceId: string };
+  /** The daily warmup. Reads the instrument from preferences, so no params. */
+  Warmup: undefined;
   /** The analysis to show. Everything else comes from the API. */
   Verdict: { analysisId: string };
 };

@@ -11,6 +11,7 @@ import { AddPieceScreen } from '../screens/addPiece/AddPieceScreen';
 import { AuthScreen } from '../screens/auth/AuthScreen';
 import { CapturedPagesScreen } from '../screens/capturedPages/CapturedPagesScreen';
 import { InsightsScreen } from '../screens/insights/InsightsScreen';
+import { WarmupScreen } from '../screens/warmup/WarmupScreen';
 import { LibraryScreen } from '../screens/library/LibraryScreen';
 import { PieceDetailScreen } from '../screens/pieceDetail/PieceDetailScreen';
 import { PracticeScreen } from '../screens/practice/PracticeScreen';
@@ -90,6 +91,7 @@ export function RootNavigator() {
         component={AcknowledgementsScreen}
       />
       <Stack.Screen name="Record" component={RecordScreen} />
+      <Stack.Screen name="Warmup" component={WarmupScreen} />
       <Stack.Screen name="Verdict" component={VerdictScreen} />
     </Stack.Navigator>
   );

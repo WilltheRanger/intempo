@@ -6,6 +6,29 @@ Operating Principle #5.
 
 ---
 
+## 2026-08-17 — One dark surface on Today, and it is the warmup
+
+**Context:** the owner asked for the warmup to become a page you open, with a name and a Start button on Today, and said Today "looks kind of bland". Three treatments were put to them — an ink panel, notation bare on the page, and a bordered study-book plate. They chose the ink panel.
+
+**Decision: the warmup panel is a full-bleed band in `actionBg`, and it is the only dark surface on the screen.**
+
+Today ran card → type → more type, with a single visual event in the whole screen. A second one was needed, and the warmup is the right thing to be it: an inverted surface says *this is a different kind of thing from the piece above it* far more efficiently than another heading would.
+
+**No new colours.** `actionBg` / `actionText` / `onDarkMuted` already exist, and the palette file already describes them as doubling for full-bleed dark surfaces — the camera scanner uses the same three. This is the established dark treatment applied somewhere new, not a style invented to make a screen interesting.
+
+**Full-bleed rather than inset.** Inset by the gutter it would read as a very dark *card*, which is the one thing the palette notes say this colour must not become, and Today already has a card.
+
+**The notation is the only ornament, and it is real** — the actual opening bars of the actual warmup, engraved, in cream. Nothing was added to make the panel interesting. §3 law 10 cuts both ways: if a decorative mark can be removed without loss, it should never have been drawn.
+
+**Alternatives considered:**
+
+- *Notation bare on the ivory.* The quietest option and entirely defensible, but it would not have answered the blandness — it is more of the same surface.
+- *A bordered plate.* Structure from borders, which the design laws prefer in general. Rejected here because Today would then have two bordered boxes stacked, and the second would read as a weaker copy of the first.
+
+**Trade-off accepted:** Today now has two focal points where §3 law 4 asks for one. They are sequential rather than competing — a card you read, then a surface you notice — but it is a real tension, and if the screen starts to feel busy the panel is what gives way, not the card.
+
+**Also decided: `TempoStepper` is extracted rather than duplicated.** The warmup page needs the same control the Record screen has. Two steppers that quietly disagree about their step size or their limits is the kind of drift nobody notices until a musician does.
+
 ## 2026-08-17 — A daily excerpt, and an engraver that refuses to draw a clef
 
 **Context:** the owner spotted that "Last take" was effectively a second copy of the practice card. They were right, and by construction rather than by coincidence: `apiPieceSource.getCurrentPiece()` resolves the piece by taking the **newest analysis** and returning its score, and `getLatestTake()` returns that same analysis. Against the real backend the two blocks name the same piece every time. The fixtures had hidden it by disagreeing with each other — `fixturePieceSource` returned the first fixture piece while the fixture take belonged to a different one, which is a fixture bug and is now fixed.

@@ -1,5 +1,5 @@
 import type { ScoreJson } from '../data/types';
-import { dayIndex } from './excerpt';
+import { dayIndex } from './warmup';
 
 /**
  * A term and a fact, one of each, daily.
