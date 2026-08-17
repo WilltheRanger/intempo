@@ -1,24 +1,29 @@
 import { useNavigation } from '@react-navigation/native';
-import { Play } from 'lucide-react-native';
 import { Pressable, StyleSheet, View } from 'react-native';
 
+import { FadeIn } from '../../components/motion';
 import {
   Avatar,
   EmptyState,
-  PrimaryButton,
+  PageHeader,
   ScreenContainer,
-  Skeleton,
-  Text,
+  SectionHeader,
 } from '../../components/primitives';
 import { ContinueSkeleton } from '../../components/skeletons';
 import { useInsights } from '../../data/hooks/useInsights';
+import { useLatestTake } from '../../data/hooks/useLatestTake';
 import { useMe } from '../../data/hooks/useMe';
-import { useCurrentPiece } from '../../data/hooks/usePieces';
+import { useCurrentPiece, useLibrary } from '../../data/hooks/usePieces';
 import { practiceTempo, usePracticeTempos } from '../../data/practiceTempo';
-import { CONTROL_HEIGHT, radii, spacing } from '../../design';
+import type { Piece } from '../../data/types';
+import { spacing } from '../../design';
+import { formatLastPracticedShort } from '../../lib/format';
 import { getGreeting } from '../../lib/greeting';
+import { formatTendency } from '../../lib/tempo';
+import { suggestionsFor } from '../../lib/today';
 import type { TabScreenNavigation } from '../../navigation/types';
-import { ContinuePanel } from './ContinuePanel';
+import { PracticeCard } from './PracticeCard';
+import { TodayRow } from './TodayRow';
 
 const AVATAR_SIZE = 36;
 
@@ -35,27 +40,29 @@ const AVATAR_TARGET = 48;
 const AVATAR_INSET = (AVATAR_TARGET - AVATAR_SIZE) / 2;
 
 /**
- * Today: the one piece to pick back up, and why.
+ * Today: the piece to pick back up, then a few reasons to look elsewhere.
  *
- * **What this screen is not, any more.** It used to lead with a greeting and
- * then show a featured card followed by three rows of the library — which made
- * its bottom two-thirds an exact copy of the top of the Library tab, three
- * rows shorter. A preview of a destination that is one tap away is the clearest
- * case of §3 law 10 there is, so it's gone.
+ * **The card is a card again**, and it is the only one on the screen. A piece,
+ * its tempo and the action that starts it are one object and earn the box
+ * (§3 law 3); what follows are separate suggestions, so they get rules instead.
  *
- * The greeting moved to the eyebrow and the piece took the title. That is the
- * hierarchy the screen always wanted: "Good morning" is context, the piece is
- * the content, and at 36pt against 26pt the salutation was outranking the only
- * thing on the screen anyone came for.
+ * **What is not here is the library preview.** Three rows of the Library tab
+ * once sat at the bottom of this screen, which made its lower two-thirds a
+ * copy of a destination one tap away. The rows below are not that: each names
+ * a piece *and the reason it is being raised* — drifting from the beat,
+ * untouched for a month, the take you just finished. A row without a reason
+ * would be a list, and a list belongs in the Library.
  *
- * The action is pinned to the footer rather than sitting inside a card. It is
- * the single thing this screen exists to start, and §3 law 7 puts the primary
- * action in the thumb's reach.
+ * Every block hides itself when its data is absent, so a new account with one
+ * piece and no analyses sees a card and nothing else — which is the truth
+ * about a new account rather than a screen full of empty furniture.
  */
 export function TodayScreen() {
   const navigation = useNavigation<TabScreenNavigation<'Today'>>();
   const currentPiece = useCurrentPiece();
+  const library = useLibrary();
   const insights = useInsights();
+  const latestTake = useLatestTake();
   const me = useMe();
 
   // The working tempo is local and per piece, so this subscribes rather than
@@ -63,26 +70,32 @@ export function TodayScreen() {
   usePracticeTempos();
 
   async function refresh() {
-    await Promise.all([currentPiece.refetch(), insights.refetch(), me.refetch()]);
+    await Promise.all([
+      currentPiece.refetch(),
+      library.refetch(),
+      insights.refetch(),
+      latestTake.refetch(),
+      me.refetch(),
+    ]);
   }
 
   const piece = currentPiece.data ?? null;
 
   // Straight to a take. `Practice` remains the score-reading shell; what
   // someone means by "continue practicing" is recording one.
-  function openPractice() {
-    if (piece) {
-      navigation.navigate('Record', { pieceId: piece.id });
-    }
+  function openPractice(target: Piece) {
+    navigation.navigate('Record', { pieceId: target.id });
   }
 
-  // This piece's own recent practice, out of the aggregate the Insights tab
-  // already fetches. Absent until the pipeline has analysed something, which
-  // is the normal state for a new account rather than an error.
-  const insight =
-    piece && insights.data
-      ? (insights.data.pieces.find((entry) => entry.pieceId === piece.id) ?? null)
-      : null;
+  const take = latestTake.data ?? null;
+
+  const { attention, neglected } = suggestionsFor({
+    pieces: library.data ?? [],
+    insights: insights.data ?? null,
+    excludeIds: [piece?.id ?? null, take?.pieceId ?? null],
+  });
+
+  const summary = insights.data ?? null;
 
   const avatar = me.data ? (
     <Pressable
@@ -95,33 +108,12 @@ export function TodayScreen() {
     </Pressable>
   ) : null;
 
-  /*
-    The greeting is the eyebrow in every state, never a 36pt title in one and
-    a 14pt line in another. It was the latter, and the effect was a heading
-    that shrank to a third of its size the moment the pieces arrived — the
-    exact jump the skeleton below exists to prevent.
-  */
-  const greeting = (
-    // Its own row, rather than the avatar sharing the title's row as
-    // `PageHeader` would have it. A 36pt title long enough to wrap — which
-    // most classical titles are — left the mark floating in the middle of the
-    // second line and squeezed the text to three-quarter width.
-    <View style={styles.greetingRow}>
-      <Text variant="metadata" color="textTertiary">
-        {getGreeting()}
-      </Text>
-      {avatar}
-    </View>
-  );
+  const header = <PageHeader title={getGreeting()} action={avatar} />;
 
   if (currentPiece.isPending) {
     return (
-      // A placeholder for the action too. Without one the footer appears from
-      // nothing and the whole screen shifts up as it lands.
-      <ScreenContainer
-        footer={<Skeleton height={CONTROL_HEIGHT} radius={radii.md} />}
-      >
-        <View style={styles.header}>{greeting}</View>
+      <ScreenContainer>
+        {header}
         <ContinueSkeleton />
       </ScreenContainer>
     );
@@ -130,7 +122,7 @@ export function TodayScreen() {
   if (currentPiece.isError) {
     return (
       <ScreenContainer onRefresh={refresh}>
-        <View style={styles.header}>{greeting}</View>
+        {header}
         <EmptyState
           title="Couldn't load your pieces"
           description="Check your connection and pull to try again."
@@ -142,7 +134,7 @@ export function TodayScreen() {
   if (!piece) {
     return (
       <ScreenContainer onRefresh={refresh}>
-        <View style={styles.header}>{greeting}</View>
+        {header}
         <EmptyState
           title="Nothing to practice yet"
           description="Photograph a piece of sheet music and it will show up here."
@@ -151,38 +143,77 @@ export function TodayScreen() {
     );
   }
 
-  const workingBpm = practiceTempo.for(piece.id, piece.markedBpm);
-
   return (
-    <ScreenContainer
-      onRefresh={refresh}
-      footer={
-        <PrimaryButton
-          label="Continue practice"
-          icon={Play}
-          onPress={openPractice}
-        />
-      }
-    >
-      <View style={styles.header}>
-        {greeting}
+    <ScreenContainer onRefresh={refresh}>
+      {header}
 
-        <Text variant="screenTitle">{piece.title}</Text>
+      <SectionHeader label="Continue practicing" />
+      <PracticeCard
+        piece={piece}
+        workingBpm={practiceTempo.for(piece.id, piece.markedBpm)}
+        onContinue={() => openPractice(piece)}
+      />
 
-        {piece.composer ? (
-          <Text variant="composer" color="textSecondary" style={styles.composer}>
-            {piece.composer}
-          </Text>
-        ) : null}
+      {take ? (
+        <FadeIn index={0}>
+          <View style={styles.section}>
+            <SectionHeader label="Last take" />
+            <TodayRow
+              title={take.pieceTitle}
+              // The pipeline's own sentence, shown verbatim exactly as the
+              // verdict screen shows it. Nothing here re-words a finding.
+              detail={`${formatLastPracticedShort(take.recordedAt) ?? 'Just now'}  ·  ${take.headline}`}
+              detailLines={3}
+              onPress={() => navigation.navigate('Verdict', { analysisId: take.id })}
+              last
+            />
+          </View>
+        </FadeIn>
+      ) : null}
 
-        {piece.movement ? (
-          <Text variant="metadata" color="textTertiary" style={styles.movement}>
-            {piece.movement}
-          </Text>
-        ) : null}
-      </View>
+      {attention || neglected ? (
+        <FadeIn index={1}>
+          <View style={styles.section}>
+            <SectionHeader label="Also worth a look" />
+            {attention ? (
+              <TodayRow
+                title={attention.title}
+                detail={attention.detail}
+                onPress={() =>
+                  navigation.navigate('PieceDetail', { pieceId: attention.pieceId })
+                }
+                last={!neglected}
+              />
+            ) : null}
+            {neglected ? (
+              <TodayRow
+                title={neglected.title}
+                detail={neglected.detail}
+                onPress={() =>
+                  navigation.navigate('PieceDetail', { pieceId: neglected.pieceId })
+                }
+                last
+              />
+            ) : null}
+          </View>
+        </FadeIn>
+      ) : null}
 
-      <ContinuePanel piece={piece} insight={insight} workingBpm={workingBpm} />
+      {summary ? (
+        <FadeIn index={2}>
+          <View style={styles.section}>
+            <SectionHeader label={`Last ${summary.windowDays} days`} />
+            <TodayRow
+              title={formatTendency(summary.verdict)}
+              detail={
+                summary.sessions === 1 ? '1 session' : `${summary.sessions} sessions`
+              }
+              onPress={() => navigation.navigate('Insights')}
+              last
+            />
+          </View>
+        </FadeIn>
+      ) : null}
     </ScreenContainer>
   );
 }
@@ -194,26 +225,15 @@ const styles = StyleSheet.create({
     margin: -AVATAR_INSET,
     alignItems: 'center',
     justifyContent: 'center',
+    // No vertical nudge: the row centres the mark on the greeting's line box,
+    // and the greeting's ink — cap of "G" down to the tail of "g" — is centred
+    // in that box to within a fifth of a point. Measured off the rendered
+    // type, not the font metrics.
   },
   pressed: {
     opacity: 0.6,
   },
-  header: {
-    // The same breathing room after the safe-area inset that `PageHeader`
-    // gives every other screen, so Today's title sits on the same line as
-    // Library's and Insights' when you switch tabs.
-    paddingTop: spacing.lg,
-  },
-  greetingRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: spacing.sm,
-  },
-  composer: {
-    marginTop: spacing.xs,
-  },
-  movement: {
-    marginTop: spacing.xs,
+  section: {
+    marginTop: spacing['3xl'],
   },
 });

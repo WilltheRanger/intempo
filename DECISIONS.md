@@ -6,6 +6,31 @@ Operating Principle #5.
 
 ---
 
+## 2026-08-17 — Today keeps its card; what sits under it must give a reason
+
+**Context:** the cardless Today from earlier today was rejected by the owner — "I don't think this is a good today. Keep the continue practice in a box like you did last time." Fair: stripping the card removed the resemblance to Library but left a screen with one piece, one sentence and a lot of air. Bare was the original complaint and the redesign had made it worse.
+
+**Decision:** the practice card comes back and stays the only card on the screen, and content goes underneath it. But the previous decision's finding still holds — *a list of pieces on Today is the Library tab with fewer rows* — so it needs a rule, not just restraint:
+
+> **Nothing on Today may name a piece without saying why it is on the screen.**
+
+Every row carries its reason as the line under the title: "Rushing across 12 sessions", "Not practiced yet", "Today · You rushed across measures 5 to 8". A row that only names a piece is a list; a row that gives a reason is a suggestion. The old library preview failed this rule, which is why it read as a duplicate of Library, and it is now written down so the next person adding to this screen has a test to apply.
+
+Two consequences follow mechanically:
+
+- **The rows carry no thumbnail.** A sheet crop beside a title *is* the Library row. The card above already carries the score image.
+- **Nothing may be named twice.** The piece in the card, the piece in the last take, and the two suggestions are all deduplicated against each other. "60 Studies" appearing as both the take you just finished and a piece worth a look is two true statements that read as one bug.
+
+**Decision: `getLatestTake()` goes on the `TakeSource` seam** rather than being derived from `PracticeInsights` on the screen.
+
+**Alternatives considered:**
+
+- *Reuse `insights.pieces` for the last take.* Rejected — it cannot answer the question. `PracticeInsights` is a thirty-day aggregate; "how did last time go" is about one recording, and the two would silently disagree the moment a musician's last take differed from their month.
+- *A new backend endpoint.* Unnecessary. `GET /v1/analyses` already returns the caller's own analyses for Insights; the adapter sorts what it already fetches and settles the ordering client-side rather than assuming the server's.
+- *Skeletons for the suggestion blocks too.* Rejected: each block hides itself when its data is absent, so a placeholder would promise content that may never arrive — on a new account, three of the four blocks are correctly empty forever until the pipeline runs.
+
+**Trade-off accepted:** Today now fires four queries (`current piece`, `library`, `insights`, `latest take`) where it fired two. On fixtures that is free; against the API it is two extra round trips on the app's first screen. Worth watching, and the fix if it bites is a single aggregated endpoint, not fewer blocks.
+
 ## 2026-08-17 — Today and Library get different compositions, not different content
 
 **Context:** the owner said Today felt bare and that it and Library "don't look much different". Putting the three tabs side by side showed why, and it was worse than the report: **all three were the same composition.** A serif title, then a vertical stack of white rounded cards, one per piece, each carrying a title, a composer, a gold horizontal bar and a grey metadata line. Today's bottom two-thirds was literally the top of Library, three rows shorter, drawn by the same `PieceCard` component.

@@ -8,6 +8,7 @@ import type {
   PieceInsight,
   ScoreJson,
   ScoreNote,
+  TakeResult,
 } from '../types';
 import type {
   InsightsSource,
@@ -343,46 +344,54 @@ export const fixtureTakeSource: TakeSource = {
     if (analysisId !== FIXTURE_TAKE_ID) {
       return null;
     }
-    const piece = FIXTURE_PIECES.find(
-      ({ id }) => id === 'fixture-wohlfahrt-28',
-    );
-    const measures: MeasureVerdict[] = FIXTURE_MEASURES.map((m) => {
-      const direction: Direction =
-        m.band === 'on' ? 'on' : m.dragPct < 0 ? 'rush' : 'drag';
-      return {
-        measure: m.measure,
-        noteCount: m.notes,
-        // Negated, exactly as the API adapter negates the wire value.
-        deviationPct: -m.dragPct,
-        band: m.band,
-        direction,
-        verdict: verdictFor(m.band, direction),
-      };
-    });
+    return buildFixtureTake();
+  },
 
-    const recordedAt = new Date();
-    recordedAt.setMinutes(recordedAt.getMinutes() - 4);
-
-    return {
-      id: FIXTURE_TAKE_ID,
-      pieceId: 'fixture-wohlfahrt-28',
-      pieceTitle: piece?.title ?? 'Unknown piece',
-      composer: piece?.composer ?? null,
-      recordedAt: recordedAt.toISOString(),
-      targetBpm: 96,
-      status: 'ok',
-      // The pipeline writes this sentence; the screen shows it verbatim.
-      headline: 'You rushed across measures 5 to 8, then pulled it back.',
-      direction: 'rush',
-      verdict: verdictFor('rush_drag', 'rush'),
-      lowConfidence: false,
-      measures,
-      trend: measures.map((m) => m.deviationPct),
-      missedNotes: 1,
-      extraNotes: 0,
-    };
+  // One take in the fixture set, so the latest is that one.
+  async getLatestTake() {
+    return buildFixtureTake();
   },
 };
+
+/** The sample take, built fresh so `recordedAt` is always recent. */
+function buildFixtureTake(): TakeResult {
+  const piece = FIXTURE_PIECES.find(({ id }) => id === 'fixture-wohlfahrt-28');
+  const measures: MeasureVerdict[] = FIXTURE_MEASURES.map((m) => {
+    const direction: Direction =
+      m.band === 'on' ? 'on' : m.dragPct < 0 ? 'rush' : 'drag';
+    return {
+      measure: m.measure,
+      noteCount: m.notes,
+      // Negated, exactly as the API adapter negates the wire value.
+      deviationPct: -m.dragPct,
+      band: m.band,
+      direction,
+      verdict: verdictFor(m.band, direction),
+    };
+  });
+
+  const recordedAt = new Date();
+  recordedAt.setMinutes(recordedAt.getMinutes() - 4);
+
+  return {
+    id: FIXTURE_TAKE_ID,
+    pieceId: 'fixture-wohlfahrt-28',
+    pieceTitle: piece?.title ?? 'Unknown piece',
+    composer: piece?.composer ?? null,
+    recordedAt: recordedAt.toISOString(),
+    targetBpm: 96,
+    status: 'ok',
+    // The pipeline writes this sentence; the screen shows it verbatim.
+    headline: 'You rushed across measures 5 to 8, then pulled it back.',
+    direction: 'rush',
+    verdict: verdictFor('rush_drag', 'rush'),
+    lowConfidence: false,
+    measures,
+    trend: measures.map((m) => m.deviationPct),
+    missedNotes: 1,
+    extraNotes: 0,
+  };
+}
 
 /** The take the practice flow lands on while the app runs on fixtures. */
 export const FIXTURE_TAKE_ID_FOR_FLOW = FIXTURE_TAKE_ID;

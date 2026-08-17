@@ -6,6 +6,84 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-17 08:15 — Today gets its card back, and three blocks of real content
+
+**Branch:** `main`. Owner: *"I don't think this is a good today. Keep the
+continue practice in a box like you did last time and maybe add a piece of
+content or few below."* Blocks chosen by the owner from four options — all
+four. Ideas were put to them before anything was built (§2 gate).
+
+Fair rejection. Removing the card killed the resemblance to Library but left
+one piece, one sentence and a lot of air — and *bare* was the original
+complaint. The card is back and is the only one on the screen.
+
+**The rule that keeps this from becoming Library again**, now written into
+`lib/today.ts` and `DECISIONS.md`: **nothing on Today may name a piece without
+saying why it is on the screen.** Each row carries its reason on the line under
+the title. The old library preview failed that test, which is exactly why it
+read as a duplicate.
+
+**What changed:**
+
+- `screens/today/PracticeCard.tsx` — the box, restored. Same construction as
+  the card deleted this morning, with one difference: **no progress bar and no
+  percentage.** They rendered `piece.progress`, which the API maps to null. The
+  working tempo takes their place.
+- `screens/today/TodayRow.tsx` — the suggestion row. No thumbnail, on purpose:
+  a sheet crop beside a title *is* the Library row.
+- `lib/today.ts` — new, pure. Picks the two suggestions and dedupes them
+  against the card and the last take.
+- `data/sources/types.ts`, `api.ts`, `fixtures.ts` — `getLatestTake()` added to
+  the `TakeSource` seam, both sides. No new endpoint: the API adapter sorts the
+  analyses it already fetches for Insights.
+- `data/hooks/useLatestTake.ts` — new.
+- `components/skeletons/PieceSkeletons.tsx` — `ContinueSkeleton` mirrors the
+  card again rather than the panel it briefly replaced.
+
+**The screen now reads:** greeting · Continue practicing (card) · Last take ·
+Also worth a look · Last 30 days. Every block hides itself when its data is
+absent, so a new account with one piece and no analyses sees the card and
+nothing else — the truth about a new account, not a screen of empty furniture.
+
+**Three-foot test:** the card, then the "Continue practice" button inside it,
+then the rows below. The rows recede, which is what "one dominant focal point"
+means when there are four blocks on a screen.
+
+**Tests:** `tsc --noEmit` clean, `build:web` clean. `suggestionsFor` checked
+against 8 cases — card and last take both excluded, on-tempo pieces never
+called "worth attention", never-practiced beating long-ago, alphabetical ties,
+a one-piece library suggesting nothing, attention and neglected never
+colliding, singular session wording — all pass. In Chromium against the built
+bundle: all four sections render, no piece appears twice, and every
+destination was confirmed — last take → that take's verdict screen, both
+suggestions → their pieces, the summary → the Insights tab, the card →
+the recorder. Library re-checked and unaffected. No console errors.
+
+**Two false alarms I chased, both my harness rather than the app** — worth
+recording because the trap will recur:
+
+1. I read `navigate('Insights')` and the avatar's `navigate('Profile')` as
+   silently broken. They are not. **React Navigation keeps inactive tab screens
+   in the DOM** (marked `aria-hidden`), so `document.body.innerText` returns the
+   whole app and the first match wins regardless of what is on screen. A
+   screenshot I had already taken showed Insights rendered correctly. Verified
+   properly by reading the accent colour off the focused tab.
+2. The same thing then made the Library grouping look broken — "Not practiced
+   yet" appeared as a heading out of order. It was Today's Paganini row,
+   through the same hidden-DOM leak. The check now excludes anything under an
+   `aria-hidden` ancestor.
+
+**Honest status:** verified against fixtures in the web build. The last take
+and the two insight-derived blocks are wired to real data paths, but **no real
+analyses exist yet**, so what they say in production is unproven. Today now
+fires four queries where it fired two — free on fixtures, two extra round trips
+against the API. **Still not done:** `PieceDetail` renders a progress bar for a
+field the backend cannot supply.
+
+**Rollback:** revert this commit.
+
+---
+
 ## 2026-08-17 06:40 — Today and Library stop being the same screen
 
 **Branch:** `main`. Owner's report: Today feels bare, and it and Library don't
