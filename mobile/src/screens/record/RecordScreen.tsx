@@ -38,7 +38,9 @@ import {
   spacing,
 } from '../../design';
 import { impact, ImpactFeedbackStyle } from '../../lib/haptics';
+import { beatsPerBar, useMetronome } from '../../lib/metronome';
 import type { RootNavigation, RootStackParamList } from '../../navigation/types';
+import { BeatIndicator } from './BeatIndicator';
 import { ListenButton } from './ListenButton';
 
 const BPM_STEP = 2;
@@ -200,6 +202,19 @@ export function RecordScreen() {
     );
   }
 
+  const recording = phase === 'recording';
+
+  // Runs for the length of the take and no longer. The accent follows the
+  // score's own time signature, so "one" lands where the musician is counting
+  // it rather than every four beats regardless.
+  const perBar = beatsPerBar(piece?.score?.time_signature);
+  const metronome = useMetronome({
+    mode: metronomeMode,
+    bpm: targetBpm,
+    timeSignature: piece?.score?.time_signature,
+    running: recording,
+  });
+
   if (isPending) {
     return (
       <ScreenContainer>
@@ -235,8 +250,6 @@ export function RecordScreen() {
       </ScreenContainer>
     );
   }
-
-  const recording = phase === 'recording';
 
   return (
     <ScreenContainer
@@ -304,8 +317,13 @@ export function RecordScreen() {
           {/*
             Locked with the tempo once recording starts: the mode is written
             onto the take, so changing it mid-way would mislabel what was
-            actually playing.
+            actually playing. In visual mode the row it occupies becomes the
+            metronome itself — the same height, so nothing above shifts when
+            the take begins.
           */}
+          {recording && metronomeMode === 'visual' ? (
+            <BeatIndicator beat={metronome.beat} perBar={perBar} />
+          ) : (
           <Pressable
             onPress={toggleMetronome}
             disabled={recording}
@@ -333,6 +351,24 @@ export function RecordScreen() {
               {METRONOME_LABELS[metronomeMode]}
             </Text>
           </Pressable>
+          )}
+
+          {/*
+            A mode that can't produce anything has to say so. Haptics off in
+            the profile silences the haptic metronome completely, and a
+            metronome you can't perceive is indistinguishable from the bug this
+            feature replaced — stored, displayed, connected to nothing.
+          */}
+          {metronome.silent ? (
+            <Text
+              variant="metadataSmall"
+              color="textTertiary"
+              style={styles.note}
+            >
+              Haptics are turned off in your profile, so nothing is marking the
+              beat.
+            </Text>
+          ) : null}
 
           <ListenButton
             score={piece.score}
@@ -498,6 +534,9 @@ const styles = StyleSheet.create({
   problem: {
     textAlign: 'center',
     marginBottom: spacing.xl,
+  },
+  note: {
+    textAlign: 'center',
   },
   control: {
     alignItems: 'center',
