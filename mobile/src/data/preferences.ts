@@ -1,9 +1,19 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSyncExternalStore } from 'react';
 
-import type { MetronomeMode } from './types';
+import type { Instrument, MetronomeMode } from './types';
 
 export interface Preferences {
+  /**
+   * The instrument this musician plays.
+   *
+   * Chooses the clef and range of the daily excerpt, and will choose the
+   * reference voice once there is more than one. Violin by default because it
+   * is the commonest of the four, not because it is the assumed case — the
+   * control sits in the profile and the excerpt names the instrument it is
+   * written for, so a violist sees immediately that it needs changing.
+   */
+  instrument: Instrument;
   /**
    * How the metronome marks the beat while recording. Mirrors the
    * `metronome_mode` column on `analyses`, so this is the default a recording
@@ -21,6 +31,7 @@ export interface Preferences {
 }
 
 const DEFAULTS: Preferences = {
+  instrument: 'violin',
   metronomeMode: 'off',
   haptics: true,
   reduceMotion: false,
@@ -77,6 +88,9 @@ export async function hydratePreferences(): Promise<void> {
     }
     const saved = JSON.parse(raw) as Partial<Preferences>;
     current = {
+      instrument: isInstrument(saved.instrument)
+        ? saved.instrument
+        : DEFAULTS.instrument,
       metronomeMode: isMetronomeMode(saved.metronomeMode)
         ? saved.metronomeMode
         : DEFAULTS.metronomeMode,
@@ -91,6 +105,12 @@ export async function hydratePreferences(): Promise<void> {
   } catch {
     // Unreadable or malformed: the defaults are already in place.
   }
+}
+
+const INSTRUMENTS: Instrument[] = ['violin', 'viola', 'cello', 'double_bass'];
+
+function isInstrument(value: unknown): value is Instrument {
+  return INSTRUMENTS.includes(value as Instrument);
 }
 
 const METRONOME_MODES: MetronomeMode[] = [
@@ -113,6 +133,10 @@ export const preferences = {
   /** Synchronous read, for callers that aren't components. */
   current(): Preferences {
     return current;
+  },
+
+  setInstrument(instrument: Instrument): void {
+    commit({ ...current, instrument });
   },
 
   setMetronomeMode(metronomeMode: MetronomeMode): void {

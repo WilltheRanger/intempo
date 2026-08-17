@@ -15,13 +15,15 @@ import { useLatestTake } from '../../data/hooks/useLatestTake';
 import { useMe } from '../../data/hooks/useMe';
 import { useCurrentPiece, useLibrary } from '../../data/hooks/usePieces';
 import { practiceTempo, usePracticeTempos } from '../../data/practiceTempo';
+import { usePreferences } from '../../data/preferences';
 import type { Piece } from '../../data/types';
 import { spacing } from '../../design';
-import { formatLastPracticedShort } from '../../lib/format';
 import { getGreeting } from '../../lib/greeting';
 import { formatTendency } from '../../lib/tempo';
 import { suggestionsFor } from '../../lib/today';
 import type { TabScreenNavigation } from '../../navigation/types';
+import { ExcerptBlock } from './ExcerptBlock';
+import { NotesBlock } from './NotesBlock';
 import { PracticeCard } from './PracticeCard';
 import { TodayRow } from './TodayRow';
 
@@ -49,9 +51,14 @@ const AVATAR_INSET = (AVATAR_TARGET - AVATAR_SIZE) / 2;
  * **What is not here is the library preview.** Three rows of the Library tab
  * once sat at the bottom of this screen, which made its lower two-thirds a
  * copy of a destination one tap away. The rows below are not that: each names
- * a piece *and the reason it is being raised* — drifting from the beat,
- * untouched for a month, the take you just finished. A row without a reason
- * would be a list, and a list belongs in the Library.
+ * a piece *and the reason it is being raised*. A row without a reason would be
+ * a list, and a list belongs in the Library.
+ *
+ * **Nor is there a "Last take" section any more.** `getCurrentPiece` resolves
+ * through the newest analysis, so the piece being continued and the piece last
+ * recorded are the same piece by construction — the section was a second copy
+ * of the card. Its one piece of information, the pipeline's verdict sentence,
+ * moved onto the card where it belongs.
  *
  * Every block hides itself when its data is absent, so a new account with one
  * piece and no analyses sees a card and nothing else — which is the truth
@@ -68,6 +75,9 @@ export function TodayScreen() {
   // The working tempo is local and per piece, so this subscribes rather than
   // reading once — changing it on the Record screen has to show here.
   usePracticeTempos();
+  // Likewise the instrument: switching it in the profile has to change the
+  // excerpt on the way back, not on the next cold start.
+  const { instrument } = usePreferences();
 
   async function refresh() {
     await Promise.all([
@@ -151,25 +161,19 @@ export function TodayScreen() {
       <PracticeCard
         piece={piece}
         workingBpm={practiceTempo.for(piece.id, piece.markedBpm)}
+        // Only when it is genuinely this piece's take. Against the API it
+        // always is; a fixture or a deleted score could disagree, and a
+        // verdict about a different piece on this card would be a lie.
+        lastTakeHeadline={take && take.pieceId === piece.id ? take.headline : null}
         onContinue={() => openPractice(piece)}
       />
 
-      {take ? (
-        <FadeIn index={0}>
-          <View style={styles.section}>
-            <SectionHeader label="Last take" />
-            <TodayRow
-              title={take.pieceTitle}
-              // The pipeline's own sentence, shown verbatim exactly as the
-              // verdict screen shows it. Nothing here re-words a finding.
-              detail={`${formatLastPracticedShort(take.recordedAt) ?? 'Just now'}  ·  ${take.headline}`}
-              detailLines={3}
-              onPress={() => navigation.navigate('Verdict', { analysisId: take.id })}
-              last
-            />
-          </View>
-        </FadeIn>
-      ) : null}
+      <FadeIn index={0}>
+        <View style={styles.section}>
+          <SectionHeader label="Today's excerpt" />
+          <ExcerptBlock instrument={instrument} />
+        </View>
+      </FadeIn>
 
       {attention || neglected ? (
         <FadeIn index={1}>
@@ -214,6 +218,13 @@ export function TodayScreen() {
           </View>
         </FadeIn>
       ) : null}
+
+      <FadeIn index={3}>
+        <View style={styles.section}>
+          <SectionHeader label="Today's term" />
+          <NotesBlock score={piece.score} />
+        </View>
+      </FadeIn>
     </ScreenContainer>
   );
 }

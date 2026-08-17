@@ -14,6 +14,16 @@ export interface PracticeCardProps {
   piece: Piece;
   /** The tempo this piece is being worked at, from `practiceTempo`. */
   workingBpm: number;
+  /**
+   * How the last take of *this piece* went — the pipeline's own sentence.
+   *
+   * It lives on the card rather than in a block of its own because it is about
+   * the piece on the card. `getCurrentPiece` resolves through the newest
+   * analysis, so the piece you are continuing and the piece you last recorded
+   * are the same piece by construction; a separate "Last take" section was a
+   * second copy of this card with a sentence attached.
+   */
+  lastTakeHeadline: string | null;
   onContinue: () => void;
 }
 
@@ -41,7 +51,12 @@ const BANNER_HEIGHT = 56;
  * working tempo replaces them: real, stored per piece, and until now visible
  * only on the Record screen.
  */
-export function PracticeCard({ piece, workingBpm, onContinue }: PracticeCardProps) {
+export function PracticeCard({
+  piece,
+  workingBpm,
+  lastTakeHeadline,
+  onContinue,
+}: PracticeCardProps) {
   const lastPracticed = formatLastPracticed(piece.lastPracticedAt);
 
   return (
@@ -85,6 +100,12 @@ export function PracticeCard({ piece, workingBpm, onContinue }: PracticeCardProp
           </Text>
         ) : null}
 
+        {lastTakeHeadline ? (
+          <Text variant="metadataSmall" color="textSecondary" style={styles.verdict}>
+            {lastTakeHeadline}
+          </Text>
+        ) : null}
+
         <PrimaryButton
           label="Continue practice"
           icon={Play}
@@ -118,6 +139,9 @@ const styles = StyleSheet.create({
   },
   last: {
     marginTop: spacing.xs,
+  },
+  verdict: {
+    marginTop: spacing.sm,
   },
   action: {
     marginTop: spacing.md,

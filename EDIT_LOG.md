@@ -6,6 +6,81 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-17 10:30 — A daily excerpt for your instrument, and a term with a fact
+
+**Branch:** `main`. Owner: *"last take is basically cont practice"* — correct,
+and by construction. `getCurrentPiece()` resolves the piece through the newest
+analysis and `getLatestTake()` returns that same analysis, so against the real
+backend the two blocks name the same piece **every time**. The fixtures had
+hidden it by disagreeing with each other. Their idea for the replacement, which
+is better than any of the four I offered: a term and a fact together, plus a
+short excerpt for the instrument they play.
+
+**What changed:**
+
+- `lib/notation/engrave.ts` — new, pure. Turns pitches into staff positions,
+  stems, beams, ledger lines and barlines. **Draws no clef**; `DECISIONS.md`
+  has the reasoning, and the note names printed under the staff carry what a
+  clef would say.
+- `components/notation/Stave.tsx` — new. Renders that with `react-native-svg`.
+  The sharp is drawn as four strokes rather than set as `♯`: the glyph lands on
+  the system font stack and Android often has no character for it.
+- `lib/excerpt.ts` — new. Three exercises per instrument, hand-authored, all in
+  first position, each stating what it trains. Rotates by date so it is the
+  same excerpt all day and on every device.
+- `lib/terms.ts` — new. The term comes from the markings on **your own score**
+  where OCR read one — tempo marking first, then time signature, then a general
+  list. The fact is a 24-entry corpus rotating daily.
+- `data/preferences.ts`, `data/types.ts`, `screens/profile/ProfileScreen.tsx` —
+  `instrument`, with a control in the profile. Flagged as coming when the
+  Listen feature landed; now it is needed.
+- `screens/today/ExcerptBlock.tsx`, `NotesBlock.tsx` — new blocks.
+- `screens/today/PracticeCard.tsx` — carries the last take's verdict sentence.
+- `screens/today/TodayScreen.tsx` — "Last take" section removed.
+- `data/sources/fixtures.ts` — **fixture bug fixed.** The current piece and the
+  sample take named different pieces, which contradicts what the API adapter
+  actually does and is what disguised the duplication.
+
+**The excerpt can be heard but not recorded**, and that is deliberate: a take is
+analysed against a score row in the backend, and an exercise the app authored
+has no such row. A record button here would analyse against the wrong music.
+
+**Three-foot test:** the practice card, the Continue button inside it, then the
+stave. The excerpt is the second thing you see and asks for nothing, which is
+right for something optional. The term and fact close the screen as a footnote.
+
+**Tests:** `tsc --noEmit` clean, `build:web` clean.
+
+- `engrave` — 28 assertions. Every line of all four clefs (treble E4·G4·B4·D5·F5,
+  bass G2·B2·D3·F3·A3, alto F3·A3·C4·E4·G4, tenor D3·F3·A3·C4·E4), ledger counts
+  above and below including the no-ledger case just outside the staff, stem
+  directions and which side of the notehead they attach to, a sharp not moving
+  its note, beams breaking at barlines, whole notes carrying no stem. All pass.
+- `excerpt` — every excerpt in every rotation checked for range, clef, flats the
+  engraver cannot draw, and **bar lengths**. All pass, and the check found two
+  real bugs in my own corpus first: the scales left a three-beat bar, and the
+  string crossings were barred every two beats instead of four.
+- In Chromium against the built bundle: notation renders — beams, ledger lines
+  and stem directions all correct on screen. `Listen` sounded the violin excerpt
+  as **D4 E4 F♯4 G4 A4 B4 C♯5** and, after switching to cello in the profile,
+  the same scale exactly an octave lower — **D3 E3 F♯3 G3 A3 B3 C♯4** — at 60
+  oscillators for 15 notes × 4 harmonics. Every destination re-verified. Library
+  unaffected. No console errors.
+
+**Honest status:** verified in the web build against fixtures. Unproven:
+whether the notation reads well at arm's length on a real phone, and whether
+three excerpts per instrument is enough before the rotation feels short. The
+fact corpus repeats after about a month, which is why it is a footnote.
+**Still not done:** `PieceDetail` renders a progress bar for a field the
+backend cannot supply.
+
+**Known side effects:** the fixture Bach piece is now "practiced today" rather
+than two days ago, so Library shows it under "This week" with today's date.
+That is the fixture becoming self-consistent, not a display change.
+**Rollback:** revert this commit.
+
+---
+
 ## 2026-08-17 08:15 — Today gets its card back, and three blocks of real content
 
 **Branch:** `main`. Owner: *"I don't think this is a good today. Keep the

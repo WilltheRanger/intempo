@@ -6,6 +6,35 @@ Operating Principle #5.
 
 ---
 
+## 2026-08-17 — A daily excerpt, and an engraver that refuses to draw a clef
+
+**Context:** the owner spotted that "Last take" was effectively a second copy of the practice card. They were right, and by construction rather than by coincidence: `apiPieceSource.getCurrentPiece()` resolves the piece by taking the **newest analysis** and returning its score, and `getLatestTake()` returns that same analysis. Against the real backend the two blocks name the same piece every time. The fixtures had hidden it by disagreeing with each other — `fixturePieceSource` returned the first fixture piece while the fixture take belonged to a different one, which is a fixture bug and is now fixed.
+
+**Decision: the verdict sentence moves onto the card**, and the freed block becomes a daily excerpt chosen by the musician's instrument. The owner asked for a term and a fact together, plus "based off the musical instrument they play, a short excerpt they can choose to practise every day".
+
+**Decision: `instrument` is a local preference, not account data.** It picks the clef and range of the excerpt and will pick the reference voice. None of that belongs to the backend, and it follows `metronomeMode` and `haptics` into `preferences`.
+
+**Decision: the excerpts are hand-authored, four sets of three, one per instrument** — not transposed from a single set.
+
+- *Automatic transposition was the obvious alternative and is wrong.* Transposing a violin exercise down for cello puts it on strings a cello does not have, and a "first position" exercise that needs a shift is not a warm-up. The corpus is checked by test against each instrument's written first-position range.
+- *Slicing four bars out of the musician's own library* was the other alternative. Rejected: it lands mid-phrase, needs whatever technique the piece needs, and hands back a fragment of what they are already practising.
+
+**Decision: the excerpt can be heard but not recorded.** A take is analysed against a score row in the backend, and an exercise the app authored has no such row. A "record" button here would either fail or quietly analyse against the wrong music. Better absent than dishonest — and `Listen` already gives the reference the exercise actually needs.
+
+**Decision: the engraver draws no clef.**
+
+A clef is calligraphy. A hand-approximated treble clef in an app for classical musicians would be the first thing a reader noticed and the last thing they forgave, and I am not able to author a good one as an SVG path.
+
+**Alternatives considered:**
+
+- *The Unicode glyphs `𝄞 𝄢 𝄡`.* Rejected: they land on the system font stack, and Android frequently has no glyph — a tofu box in the middle of a stave is worse than no clef at all. The same reasoning applies to `♯`, which **is** drawn, as four strokes.
+- *Bundling a music font (Bravura is SIL OFL).* The correct long-term answer, and deferred rather than rejected. It is ~500 KB of asset for one glyph per excerpt today, and asset paths in this build have already cost one blank-page incident.
+- *Drawing the clefs anyway.* Rejected on quality.
+
+Instead the note names are printed under the staff, the way a study book does for a beginner, and the block names the instrument it is written for. That is honest about being an exercise diagram rather than pretending to be engraved sheet music.
+
+**Trade-off accepted:** the fact corpus is 24 entries and repeats after about a month. That is why it is a footnote at the bottom of the screen rather than a feature of it. Every entry is a settled statement of record — anything that needed a "probably" was left out rather than hedged, because a wrong fact about Bach in an app for classical musicians is expensive.
+
 ## 2026-08-17 — Today keeps its card; what sits under it must give a reason
 
 **Context:** the cardless Today from earlier today was rejected by the owner — "I don't think this is a good today. Keep the continue practice in a box like you did last time." Fair: stripping the card removed the resemblance to Library but left a screen with one piece, one sentence and a lot of air. Bare was the original complaint and the redesign had made it worse.

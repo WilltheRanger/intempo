@@ -86,7 +86,10 @@ const FIXTURE_PIECES: FixturePiece[] = [
     composer: 'J. S. Bach',
     movement: 'I. Adagio',
     progress: 0.62,
-    practicedDaysAgo: 2,
+    // Recorded minutes ago, so it is both the piece to continue and the piece
+    // the sample take belongs to — which is what the API adapter produces,
+    // since `getCurrentPiece` resolves through the newest analysis.
+    practicedDaysAgo: 0,
     thumbnail: require('../../../assets/fixtures/04_handwritten_clean.jpg'),
     markedBpm: MARKED_BPM,
     score: DEMO_SCORE,
@@ -355,7 +358,7 @@ export const fixtureTakeSource: TakeSource = {
 
 /** The sample take, built fresh so `recordedAt` is always recent. */
 function buildFixtureTake(): TakeResult {
-  const piece = FIXTURE_PIECES.find(({ id }) => id === 'fixture-wohlfahrt-28');
+  const piece = FIXTURE_PIECES.find(({ id }) => id === 'fixture-bach-bwv1001');
   const measures: MeasureVerdict[] = FIXTURE_MEASURES.map((m) => {
     const direction: Direction =
       m.band === 'on' ? 'on' : m.dragPct < 0 ? 'rush' : 'drag';
@@ -375,7 +378,7 @@ function buildFixtureTake(): TakeResult {
 
   return {
     id: FIXTURE_TAKE_ID,
-    pieceId: 'fixture-wohlfahrt-28',
+    pieceId: 'fixture-bach-bwv1001',
     pieceTitle: piece?.title ?? 'Unknown piece',
     composer: piece?.composer ?? null,
     recordedAt: recordedAt.toISOString(),

@@ -14,6 +14,17 @@
 export type UserTier = 'free' | 'pro' | 'teacher' | 'student_via_teacher';
 export type UserRole = 'student' | 'teacher';
 
+/**
+ * What the musician plays.
+ *
+ * Local, not account data — it decides which clef the daily excerpt is written
+ * in and which reference voice sounds, and neither belongs to the backend. The
+ * four bowed strings only: this app measures a bow arm, and offering
+ * instruments the analysis has never been tuned against would be a promise it
+ * can't keep.
+ */
+export type Instrument = 'violin' | 'viola' | 'cello' | 'double_bass';
+
 /** `metronome_mode` on `analyses`. */
 export type MetronomeMode =
   | 'off'
