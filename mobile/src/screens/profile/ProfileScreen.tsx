@@ -20,7 +20,7 @@ import {
 import { signOut } from '../../data/auth/session';
 import { useMe } from '../../data/hooks/useMe';
 import { preferences, usePreferences } from '../../data/preferences';
-import type { MetronomeMode } from '../../data/types';
+import type { Instrument, MetronomeMode } from '../../data/types';
 import { spacing } from '../../design';
 import { formatRole, formatTier } from '../../lib/format';
 import type { RootNavigation } from '../../navigation/types';
@@ -152,6 +152,27 @@ export function ProfileScreen() {
       </Card>
 
       <SectionHeader label="Practice" style={styles.section} />
+      <Card style={styles.settingCard}>
+        <Text variant="button">Instrument</Text>
+        <Text
+          variant="metadataSmall"
+          color="textTertiary"
+          style={styles.settingNote}
+        >
+          Sets the clef and range of the daily excerpt on Today.
+        </Text>
+
+        <SegmentedControl
+          label="Instrument"
+          options={INSTRUMENT_OPTIONS}
+          value={settings.instrument}
+          onChange={(instrument: Instrument) =>
+            preferences.setInstrument(instrument)
+          }
+          style={styles.control}
+        />
+      </Card>
+
       <Card>
         <Text variant="button">Metronome</Text>
         <Text
@@ -253,6 +274,20 @@ const AVATAR_SIZE = 76;
  * headphones caveat below the control rather than in the label, where it
  * wouldn't fit and would crowd the other three.
  */
+/**
+ * The four bowed strings, in score order.
+ *
+ * "Bass" rather than "Double bass" in the control: four segments across a
+ * phone leave no room for the longer word, and no one reading a string app
+ * mistakes it for a bass guitar. The full name is used everywhere it fits.
+ */
+const INSTRUMENT_OPTIONS = [
+  { value: 'violin' as const, label: 'Violin' },
+  { value: 'viola' as const, label: 'Viola' },
+  { value: 'cello' as const, label: 'Cello' },
+  { value: 'double_bass' as const, label: 'Bass' },
+];
+
 const METRONOME_OPTIONS = [
   { value: 'off' as const, label: 'Off' },
   { value: 'visual' as const, label: 'Visual' },
@@ -275,6 +310,9 @@ const styles = StyleSheet.create({
   },
   identityEmail: {
     flexShrink: 1,
+  },
+  settingCard: {
+    marginBottom: spacing.md,
   },
   section: {
     marginTop: spacing['2xl'],
