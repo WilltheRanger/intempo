@@ -6,6 +6,91 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-17 23:40 — The scan flow is real, and testable on a laptop
+
+**Branch:** `main`. Owner: *"build the scan flow and help me set up the backend keys"*.
+
+### The flow now sends bytes
+
+Every step existed and none of them did anything. `TranscribeScreen` was a
+`setTimeout` advancing a bar at 900ms a page; `TranscriptionReviewScreen`'s
+"detected" title and composer came from `buildDraft`, a fixture keyed on nothing
+but the page count; and "Save piece" navigated to `fixture-wohlfahrt-28`, so
+every scan in the app's history "saved" as the same Wohlfahrt study.
+
+- **`lib/scan/uploadPage.ts`** (new) — page → signed upload URL → PUT bytes.
+- **`TranscribeScreen`** — the real upload, with real failure states.
+- **`TranscriptionReviewScreen`** — rewritten: names the piece and creates it.
+- **`hooks/useScan.ts`** (new) — `POST /v1/scores`, which is where OCR runs.
+
+**Naming comes before transcription, and that is not a compromise.** OCR reads
+notes: `score_json` has no title or composer field, because a photograph of an
+inner page usually shows neither. So there was nothing for the old "detected
+details" step to detect and its editable values were invented. The title is the
+musician's to give, and `POST /v1/scores` requires it before it will run OCR at
+all. The photograph stays on screen while they type — the title is usually
+printed on the page they are looking at — and the transcription is checked
+afterwards on the piece's own score screen, against a score that exists.
+
+**Only the first page is transcribed, and the screen says so.**
+`POST /v1/scores` takes one `image_url` and there is no column, table or
+endpoint for a multi-page score. Later pages are not uploaded at all rather than
+uploaded and discarded.
+
+**The fixture build refuses up front** rather than trying to upload to
+`http://127.0.0.1:8000` and failing with "Failed to fetch", which would read as
+a bug in the app. `useTranscribePage` refuses too: there is no fixture
+implementation of "read this photograph", and a fabricated transcription is the
+single most misleading thing this app could produce.
+
+### The stub API accepts writes, so all of this is verifiable here
+
+`scripts/stub-api.py` was read-only, so nothing in `sources/api.ts` past a GET
+had ever run. It now serves `POST /v1/upload/*`, `PUT` to the signed URL,
+`POST/PATCH/DELETE /v1/scores` — and **enough Supabase Auth to hold a session**,
+because the app is only live when it has both a project and an API host, and
+that same predicate turns on the sign-in gate. Without auth the app parked on a
+form that could not succeed and no live path ran.
+
+It deliberately does *not* invent OCR output: it returns a fixed three-bar
+score. A test that passes against fabricated notes proves nothing.
+
+`POST /v1/scores` against an upload URL nothing was PUT to returns 502, matching
+the real backend, so the ordering is actually enforced.
+
+### Three bugs the browser found, two of them mine
+
+1. **`Image.resolveAssetSource` does not exist on react-native-web.** The upload
+   died on the only platform this build can be driven on. `expo-asset`'s
+   `Asset.fromModule` is the supported cross-platform resolver, and is now a
+   **direct** dependency rather than a transitive one, since production code
+   relies on it.
+2. **Back from a saved piece walked into the finished scan flow.**
+   `navigation.replace` swapped out only the review screen, leaving the scanner
+   and page list beneath it — and the session had just been cleared, so it was a
+   dead end. Now `navigation.reset` to tabs → the new piece.
+3. **The stub's CORS preflight didn't name PUT**, so the browser dropped the
+   upload with "Failed to fetch" — the stub's bug wearing the app's clothes.
+
+**Tests:** `tsc --noEmit` clean, both builds clean. New `scan-flow` suite, 18
+checks, all passing against the live build: the gate appears, sign-in works, the
+library comes from the API not fixtures, capture → upload → name → save, and the
+observed request sequence is `POST /auth/v1/token` → `POST
+/v1/upload/score-image` → `PUT /storage/…` → `POST /v1/scores`. Empty title
+refused. The saved piece carries real notation and reports **3 measures** from
+its own score. Library 5 → 6. The three earlier suites re-run against a fixture
+build for regressions: all green, 38 checks.
+
+**Still not real:** the camera. The viewfinder is a bundled image and the
+shutter appends one of four repo fixtures — so what gets uploaded is a stock
+page, not what the phone is pointed at. That needs `expo-camera` and a device;
+the upload path above is what it will feed. Import score is still a placeholder.
+`progress` still has no backing field. Nothing has run against Supabase —
+egress here denies `*.supabase.co`.
+
+**Rollback:** revert this commit. The stub is dev-only and touches nothing
+shipped.
+
 ## 2026-08-17 22:40 — A piece's score screen; the library stops capping at 50
 
 **Branch:** `main`. Owner: *"just keep building what you can"*.

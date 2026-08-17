@@ -20,6 +20,8 @@ export interface CapturedPage {
  */
 let pages: CapturedPage[] = [];
 let nextId = 1;
+/** Set by the transcribe step, consumed by the save. See `setUploadedImageUrl`. */
+let uploadedImageUrl: string | null = null;
 
 const listeners = new Set<() => void>();
 
@@ -48,6 +50,7 @@ export const captureSession = {
   /** Clears the session. Called when the scanner opens fresh. */
   reset(): void {
     nextId = 1;
+    uploadedImageUrl = null;
     commit([]);
   },
 
@@ -91,5 +94,24 @@ export const captureSession = {
 
   current(): CapturedPage[] {
     return pages;
+  },
+
+  /**
+   * Remembers where the uploaded page landed, for the save that follows.
+   *
+   * The value is a **signed upload URL that expires five minutes after
+   * issue** — the only form `POST /v1/scores` accepts. It lives here rather
+   * than in route params because the review screen can be left and returned
+   * to, and because `reset()` must be able to clear it: a stale URL from a
+   * previous scan is worse than none, since the save would fail against an
+   * expired signature with nothing on screen explaining why.
+   */
+  setUploadedImageUrl(url: string | null): void {
+    uploadedImageUrl = url;
+    listeners.forEach((listener) => listener());
+  },
+
+  uploadedImageUrl(): string | null {
+    return uploadedImageUrl;
   },
 };
