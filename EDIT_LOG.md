@@ -6,6 +6,111 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-17 21:55 — Rename and remove a piece; four correctness bugs from the audit
+
+**Branch:** `main`. Owner: *"continue on the other stuff"*.
+
+### You can now fix or remove a piece
+
+`deleteScore` and `updateScore` had been sitting in `api/scores.ts` since Batch
+1 with **no caller anywhere in the app**. You could add a piece and never
+correct it or get rid of it — which the manual-add flow shipped an hour earlier
+made much sharper, since a typed title is a title with typos in it.
+
+`PieceSource` gains `updatePiece` and `deletePiece`, both implemented on both
+sides of the seam. The UI is a `⋮` in the piece header opening the existing
+`BottomSheet` with Rename / Remove: rename is the inline `Card`-of-`Input`s
+`TranscriptionReviewScreen` already uses, remove goes through the existing
+`ConfirmDialog`. No new component and no new visual pattern.
+
+**The fixture refuses the same deletions the backend does.** `analyses.score_id`
+is `ON DELETE RESTRICT`, so a piece that has been recorded against cannot be
+removed. The fixture source checks `FIXTURE_SESSIONS` and raises the same
+refusal — otherwise the sample data would be wrong about a rule that protects
+practice history, and there would be no way to exercise that path without a
+live database.
+
+The refusal is *not* the backend's sentence. `"score has dependent analyses;
+delete those first (soft-delete is V2)"` is right for an API consumer and three
+kinds of wrong on a phone — "score" for a piece, "analyses" for recordings, and
+an internal roadmap note. `PIECE_HAS_RECORDINGS` in `sources/types.ts` is the
+one both sources raise.
+
+### Four bugs from the functionality audit
+
+The audit workflow started last session finished during this one (13 agents,
+53 findings flagged both silently-wrong and buildable-now). It ran against
+pre-change code, so several findings were already fixed by the 20:40 commit —
+notably the piece screen's fake 24-measure playback. Four that were still live:
+
+1. **The server could never clear a composer** — and this was a defect in code
+   shipped an hour earlier, since the new rename form lets you empty that
+   field. `PATCH /v1/scores` used `if body.composer is not None`, so
+   `{"composer": null}` was indistinguishable from omitting it: 200 OK, old
+   value still there, no error. Now reads `model_fields_set`, which asks what
+   the client actually *sent*. An explicit null title is refused instead — null
+   is meaningful for a composer (anonymous, traditional) and not for a title.
+2. **Change-password re-authenticated as the wrong person.** It signed in with
+   the address `useMe()` returned rather than the session's. On a fixture build
+   that is `you@example.com` — so the moment real credentials were configured,
+   which happened at 20:40, tapping "Change password" would have attempted a
+   sign-in as an address the musician has never heard of. New
+   `getSessionEmail()` reads the session, which is the authority on who is
+   signed in; the profile row merely describes them.
+3. **Signing up with an address that already has an account promised mail that
+   is never sent.** With confirmations on, Supabase does not error for this —
+   it returns an obfuscated user, and the only tell is an empty `identities`
+   array. That read as "awaiting confirmation", so the app said "Follow the
+   link and you'll be signed in" and the musician waited forever. Now a
+   distinct state whose copy covers both readings without confirming the
+   address is taken, since that would hand over the account-enumeration oracle
+   Supabase is deliberately withholding. The heading changes too — "Check your
+   email" contradicted the line under it.
+4. **An expired session was reported as a network fault.** `getAccessToken()`
+   returns null when a refresh fails, and `apiFetch` attached the header only
+   `if (token)` — so the request went out unauthenticated, the backend said
+   "Missing bearer token", and screens rendered "check your connection". Now no
+   token means a 401 with "Your session has ended. Sign in again.", and a 401
+   *from* the server clears the session so `onAuthStateChange` returns the app
+   to the gate instead of leaving every query failing forever.
+
+Also: `PATCH /v1/scores` returned the last unsigned response in the router, so
+a rename dropped the piece's thumbnail until the next list fetch. And the
+`api.ts` header docstring still claimed `/v1/analyses` was unbuilt and that
+nothing signed a download URL — both false since Batch 4. Two of its four
+"null" fields are live; it now says so.
+
+**Three-foot test** — the piece screen with the new control. First: the serif
+title. Second: the sheet-music banner. Third: the `⋮`, which recedes, as a
+secondary action should. The sheet and dialog are existing components and did
+not change.
+
+**Tests:** backend 219 → 222 (composer cleared by explicit null; omission
+leaves it alone; null title refused). `tsc --noEmit` and `build:web` clean.
+Two browser suites against the built app, 28 checks, all passing: the
+rename/remove suite (refusal with its reason, empty-title refused, rename
+propagates to the library, unrecorded piece deletes, 7 → 6) and the
+manual-add suite re-run for regressions (7 → 8).
+
+**Not done:**
+
+- **Import score**, still a placeholder — needs an image-picker dependency.
+- **`Digital score` / `Original pages` open the wrong thing.** The audit found
+  they read the in-memory *scan session*, not the piece you opened, so from any
+  piece you can walk into the scan flow and land on the Wohlfahrt fixture. The
+  20:40 commit hides both rows when the piece has no notes or no photograph,
+  which narrows it but does not fix it. Real fix needs the scan flow to save.
+- **The whole scan → transcribe → review → save flow is mocked**: the shutter
+  appends bundled repo images, `TranscribeScreen` is a `setTimeout`, and "Save
+  piece" navigates to a hardcoded fixture id. Nothing is uploaded.
+- **The library stops at 50 pieces** and search only filters that first page.
+- **`progress` has no backing field**, so the bar, the percentage and
+  "Continue practice" vs "Start practice" are all fixture-only.
+- Nothing live was exercised: this container's egress policy still denies
+  `*.supabase.co`.
+
+**Rollback:** revert this commit.
+
 ## 2026-08-17 20:40 — Wire the live project; add a piece by hand; stop the piece screen lying
 
 **Branch:** `main`. Owner: *"can you make every basic functionality of the app?"*

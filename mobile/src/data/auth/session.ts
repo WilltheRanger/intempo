@@ -53,6 +53,17 @@ export interface AuthResult {
    * account exists but no session was issued until the link is followed.
    */
   awaitingConfirmation: boolean;
+  /**
+   * Sign-up only: the address looks like it already has an account, so no
+   * confirmation mail is coming.
+   *
+   * "Possibly" is honest rather than hedging. Supabase obfuscates this case on
+   * purpose and the empty-`identities` tell is a behaviour, not a contract —
+   * so the screen phrases its message to cover both readings instead of
+   * announcing that the address is taken, which would hand an attacker the
+   * account-enumeration oracle Supabase is withholding.
+   */
+  possiblyAlreadyRegistered: boolean;
 }
 
 /** Signs in with an email and password. Throws with the provider's reason. */
@@ -68,7 +79,12 @@ export async function signIn(
   if (error) {
     throw error;
   }
-  return { session: Boolean(data.session), awaitingConfirmation: false };
+  return {
+    session: Boolean(data.session),
+    awaitingConfirmation: false,
+    // Only sign-up can tell us anything about this.
+    possiblyAlreadyRegistered: false,
+  };
 }
 
 /**
@@ -77,6 +93,17 @@ export async function signIn(
  * Supabase issues no session when the project confirms email addresses, which
  * is the default — the account exists but the musician has to follow a link
  * first. That is a real outcome, not a failure, so it comes back as one.
+ *
+ * **The address that already has an account is the case worth knowing about.**
+ * With confirmations on, Supabase does not error for it. It returns a fully
+ * obfuscated user — deliberately, so a stranger cannot test which addresses
+ * are registered — and the one thing that gives it away is an empty
+ * `identities` array. Read naively that looks identical to a fresh sign-up
+ * awaiting confirmation, and the app told the musician a link was on its way
+ * that would sign them in. No link is ever sent. They wait forever.
+ *
+ * (`authErrors.ts` maps a "user already registered" error, but Supabase only
+ * returns that with confirmations *off*, so it never covers the default.)
  */
 export async function signUp(
   email: string,
@@ -87,9 +114,14 @@ export async function signUp(
   if (error) {
     throw error;
   }
+  const identities = data.user?.identities;
   return {
     session: Boolean(data.session),
     awaitingConfirmation: Boolean(data.user) && !data.session,
+    // `undefined` means this Supabase version didn't send the field, which is
+    // not the same as "no identities" — only an actual empty array is the
+    // signal, so anything else stays false.
+    possiblyAlreadyRegistered: Array.isArray(identities) && identities.length === 0,
   };
 }
 
@@ -193,6 +225,26 @@ export async function signOut(): Promise<void> {
   if (error) {
     throw error;
   }
+}
+
+/**
+ * The signed-in address, from the session itself.
+ *
+ * **Not the same thing as `/v1/me`'s email, and the difference bites.**
+ * `ChangePasswordScreen` re-authenticates before changing a password, and it
+ * used to do so with the address `useMe()` returned. On a fixture build that
+ * is `you@example.com`; the moment real credentials are configured, the
+ * re-auth would sign in as an address the session holder has never heard of.
+ * The session is the authority on who is signed in — the profile row is a
+ * description of them, fetched separately and possibly stale.
+ */
+export async function getSessionEmail(): Promise<string | null> {
+  const supabase = getSupabaseClient();
+  if (!supabase) {
+    return null;
+  }
+  const { data } = await supabase.auth.getSession();
+  return data.session?.user?.email ?? null;
 }
 
 /** Current access token, or null when signed out or unconfigured. */

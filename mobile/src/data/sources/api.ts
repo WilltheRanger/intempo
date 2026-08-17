@@ -1,7 +1,8 @@
 import { getAnalysis, listAnalyses } from '../api/analyses';
 import { submitTake, waitForAnalysis } from '../practice/submitTake';
 import { getMe } from '../api/me';
-import { createScore, getScore, listScores } from '../api/scores';
+import { ApiError } from '../api/client';
+import { createScore, deleteScore, getScore, listScores, updateScore } from '../api/scores';
 import { getAuthAvatarUrl } from '../auth/session';
 import { verdictFor } from '../../lib/tempo';
 import type {
@@ -17,6 +18,7 @@ import type {
   ScoreResponse,
   TakeResult,
 } from '../types';
+import { PIECE_HAS_RECORDINGS } from './types';
 import type {
   InsightsSource,
   MusicianSource,
@@ -28,16 +30,18 @@ import type {
 /**
  * The real backend, mapped into the shape the UI renders.
  *
- * Four fields come back null because nothing behind `/v1/scores` can supply
- * them yet. They are listed here rather than quietly omitted so the work
- * needed to light each one up stays visible:
+ * Two fields come back null because nothing behind `/v1/scores` can supply
+ * them. They are listed here rather than quietly omitted so the work needed to
+ * light each one up stays visible:
  *
- *  - `movement`         — no column on `scores`.
- *  - `progress`         — no progress concept anywhere in the schema.
- *  - `lastPracticedAt`  — would come from `analyses.created_at`; `/v1/analyses`
- *                         is unbuilt (Batch 4).
- *  - `thumbnail`        — score images sit in a private bucket and no endpoint
- *                         signs a download URL.
+ *  - `movement`  — no column on `scores`. Collected by the OCR review form and
+ *                  then dropped, because there is nowhere to put it.
+ *  - `progress`  — no progress concept anywhere in the schema, so the bar and
+ *                  the percentage are fixture-only and `started` is always
+ *                  false against the live API.
+ *
+ * The other two are live: `lastPracticedAt` comes from `/v1/analyses`, and
+ * `thumbnail` from the download URL the backend signs on every read.
  */
 function toPiece(score: ScoreResponse, lastPracticedAt: string | null = null): Piece {
   return {
@@ -127,6 +131,31 @@ export const apiPieceSource: PieceSource = {
     });
     // Never practised — it was created a moment ago.
     return toPiece(score, null);
+  },
+
+  async updatePiece(id, input) {
+    const score = await updateScore(id, {
+      title: input.title,
+      composer: input.composer,
+    });
+    // The edit doesn't touch practice history, so keep the date the rest of
+    // the app is showing rather than dropping it to null.
+    const practiced = await lastPracticedByScore();
+    return toPiece(score, practiced.get(id) ?? null);
+  },
+
+  async deletePiece(id) {
+    try {
+      await deleteScore(id);
+    } catch (cause) {
+      // 409 is the "this piece has takes" rule. The backend's sentence is
+      // written for an API consumer — see `PIECE_HAS_RECORDINGS`. Everything
+      // else is a genuine failure and keeps its own message.
+      if (cause instanceof ApiError && cause.status === 409) {
+        throw new Error(PIECE_HAS_RECORDINGS);
+      }
+      throw cause;
+    }
   },
 };
 

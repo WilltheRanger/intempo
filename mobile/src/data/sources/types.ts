@@ -30,7 +30,37 @@ export interface PieceSource {
    * provider, and no API keys.
    */
   createPiece(input: NewPiece): Promise<Piece>;
+  /** Corrects what a piece is called. Nothing else about it is editable. */
+  updatePiece(id: string, input: PieceEdit): Promise<Piece>;
+  /**
+   * Removes a piece from the library.
+   *
+   * **Rejects when the piece has been recorded against.** `analyses.score_id`
+   * is `ON DELETE RESTRICT` and there is no soft delete, so the backend answers
+   * 409 rather than destroying the practice history attached to it. Callers
+   * must show that reason — it is a rule about the musician's own data, not a
+   * transient failure to retry.
+   */
+  deletePiece(id: string): Promise<void>;
 }
+
+/** What can be corrected after the fact. */
+export interface PieceEdit {
+  title: string;
+  composer: string | null;
+}
+
+/**
+ * Why a piece with recordings can't be removed, in the musician's terms.
+ *
+ * The backend's own sentence is *"score has dependent analyses; delete those
+ * first (soft-delete is V2)"* — correct for an API consumer, and three kinds
+ * of wrong on a phone: it says "score" for a piece, "analyses" for
+ * recordings, and carries an internal roadmap note. Both sources raise this
+ * instead, so the two agree and neither invents its own wording.
+ */
+export const PIECE_HAS_RECORDINGS =
+  "You've recorded this piece, so it stays in your library — removing it would take that practice history with it.";
 
 /** What the Add-manually form collects. */
 export interface NewPiece {

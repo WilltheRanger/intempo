@@ -10,6 +10,7 @@ import type {
   ScoreNote,
   TakeResult,
 } from '../types';
+import { PIECE_HAS_RECORDINGS } from './types';
 import type {
   InsightsSource,
   MusicianSource,
@@ -203,9 +204,7 @@ export const fixturePieceSource: PieceSource = {
   },
 
   async getPiece(id) {
-    const match = [...CREATED_PIECES, ...FIXTURE_PIECES].find(
-      (piece) => piece.id === id,
-    );
+    const match = find(id);
     return match ? toPiece(match) : null;
   },
 
@@ -245,7 +244,40 @@ export const fixturePieceSource: PieceSource = {
     CREATED_PIECES.unshift(created);
     return toPiece(created);
   },
+
+  async updatePiece(id, input) {
+    const match = find(id);
+    if (!match) {
+      throw new Error('That piece is no longer in your library.');
+    }
+    match.title = input.title;
+    match.composer = input.composer;
+    return toPiece(match);
+  },
+
+  async deletePiece(id) {
+    // The same refusal the backend gives, for the same reason. Letting the
+    // sample data delete a piece the real one would keep would make the demo
+    // wrong about a rule that protects practice history — and it is the only
+    // way to exercise that path without a live database.
+    if (FIXTURE_SESSIONS.some((session) => session.pieceId === id)) {
+      throw new Error(PIECE_HAS_RECORDINGS);
+    }
+    for (const list of [CREATED_PIECES, FIXTURE_PIECES]) {
+      const index = list.findIndex((piece) => piece.id === id);
+      if (index >= 0) {
+        list.splice(index, 1);
+        return;
+      }
+    }
+    throw new Error('That piece is no longer in your library.');
+  },
 };
+
+/** Across both lists — added this session, and seeded. */
+function find(id: string): FixturePiece | undefined {
+  return [...CREATED_PIECES, ...FIXTURE_PIECES].find((piece) => piece.id === id);
+}
 
 /**
  * A freshly provisioned account — free tier, student role, no studio, and no
