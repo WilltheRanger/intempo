@@ -7,7 +7,6 @@ import { PrimaryButton } from '../../components/primitives/PrimaryButton';
 import { Text } from '../../components/primitives/Text';
 import type { Piece } from '../../data/types';
 import { spacing } from '../../design';
-import { formatLastPracticed } from '../../lib/format';
 import { formatWorkingTempo } from '../../lib/tempo';
 
 export interface PracticeCardProps {
@@ -44,6 +43,11 @@ const BANNER_HEIGHT = 56;
  * of the same. The action lives inside it so it reads as "continue *this*"
  * rather than as a floating global button.
  *
+ * **"Practiced today" is gone too.** It was the third grey line in a stack of
+ * three, above the one sentence on the card anybody opens the app to read. The
+ * card now says what the piece is, what tempo it is being worked at, and how
+ * the last take went — and stops.
+ *
  * **The progress bar and percentage are gone.** They rendered `piece.progress`,
  * which `sources/api.ts` maps to null with the note that there is no progress
  * concept anywhere in the schema — so they were fixture-only ornament, and they
@@ -57,8 +61,6 @@ export function PracticeCard({
   lastTakeHeadline,
   onContinue,
 }: PracticeCardProps) {
-  const lastPracticed = formatLastPracticed(piece.lastPracticedAt);
-
   return (
     <Card emphasis padded={false}>
       <ScoreThumbnail source={piece.thumbnail} radius={0} style={styles.banner} />
@@ -93,12 +95,6 @@ export function PracticeCard({
         <Text variant="metadata" color="textTertiary" style={styles.tempo}>
           {formatWorkingTempo(workingBpm, piece.markedBpm)}
         </Text>
-
-        {lastPracticed ? (
-          <Text variant="metadataSmall" color="textTertiary" style={styles.last}>
-            {lastPracticed}
-          </Text>
-        ) : null}
 
         {lastTakeHeadline ? (
           <Text variant="metadataSmall" color="textSecondary" style={styles.verdict}>
@@ -136,9 +132,6 @@ const styles = StyleSheet.create({
   },
   tempo: {
     marginTop: spacing.md,
-  },
-  last: {
-    marginTop: spacing.xs,
   },
   verdict: {
     marginTop: spacing.sm,

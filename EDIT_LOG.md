@@ -6,6 +6,50 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-17 17:20 — "Practiced today" removed, and the fact gets a lead
+
+**Branch:** `main`. Owner: remove "Practiced today", and the "Did you know"
+block doesn't fit. Treatment chosen from three options (§2 gate): give each
+fact a lead.
+
+**Why it didn't fit, stated plainly.** Every block on Today is the same shape —
+a small label, a serif lead, a grey line of detail. The fact was a label over
+three lines of grey prose with no lead and nothing to act on: **the only body
+copy on the screen.** It read as pasted in rather than composed.
+
+**What changed:**
+
+- `lib/facts.ts` — `Fact` gains a `lead`, and all 24 are written: "Sixty-eight
+  quartets", "Before the endpin", "A is not always 440". Short phrases that
+  name the subject, in the same programme-note register as the facts. Not
+  headlines and not hooks — a fact block that shouts would be worse than one
+  that doesn't fit.
+- `screens/today/TodayScreen.tsx` — label, serif lead, grey detail. The detail
+  drops from `body` to `metadataSmall`, which is what `TodayRow` and the warmup
+  use, so the three blocks are now literally the same construction.
+- `screens/today/PracticeCard.tsx` — "Practiced today" gone, and with it the
+  last of the housekeeping stack. **This also half-fixes the hierarchy
+  inversion I flagged yesterday:** the verdict sentence used to sit third in a
+  run of three grey lines; it now sits second in a run of two. The card says
+  what the piece is, what tempo it is being worked at, how the last take went,
+  and stops.
+
+**Three-foot test:** the card, the Continue button, then three identically
+built blocks descending the page. Nothing on the screen is now composed
+differently from everything else, which was the complaint.
+
+**Tests:** `tsc --noEmit` clean, `build:web` clean. The corpus checked across
+the rotation: **24 facts, 24 distinct leads**, none empty, none over 30
+characters, none ending in punctuation, every sentence still substantial.
+Library, search, the warmup page and every destination re-verified. No console
+errors.
+
+**Still not fixed, and still the owner's call:** inside the card, `I. Adagio`
+and the tempo line remain set identically though one is the piece's identity
+and the other is practice state.
+
+**Rollback:** revert this commit.
+
 ## 2026-08-17 16:40 — The daily term is gone; the fact stays
 
 **Branch:** `main`. Owner: remove the term, keep only "Did you know".
