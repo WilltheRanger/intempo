@@ -16,6 +16,25 @@
     <title>InTempo</title>
 
     <!--
+      The page's own ground, which is not the same thing as the app's.
+      `ScreenContainer` paints ivory inside the React tree; anything outside it
+      — the strip behind the status bar, the overscroll region, the browser
+      chrome it tints — falls through to the document, and the document's
+      default is white. On a warm-ivory app that shows up as a white band above
+      the greeting.
+
+      `theme-color` is the same value for Android and for an installed PWA.
+
+      This hex is the one place in the app allowed to repeat a design token, and
+      only because an HTML file cannot import one. It mirrors `colors.bg` in
+      `src/design/colors.ts`, and `scripts/flatten-vendor-assets.mjs` fails the
+      build if the two drift apart — drift here is invisible in code review and
+      obvious on a phone.
+    -->
+    <meta name="theme-color" content="#F7F2E9" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+
+    <!--
       Expo generates this file by default. It is checked in so it can carry the
       boot watchdog below; everything above and inside <body> matches what Expo
       would have emitted, and Expo still injects the hashed <script> and the
@@ -26,6 +45,7 @@
       html,
       body {
         height: 100%;
+        background-color: #F7F2E9;
       }
       /* These styles disable body scrolling if you are using <ScrollView> */
       body {

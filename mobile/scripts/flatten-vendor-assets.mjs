@@ -53,6 +53,10 @@ async function main() {
   const source = join(DIST, FROM);
   if (!existsSync(source)) {
     console.log('flatten-vendor-assets: nothing under node_modules, skipping.');
+    // The background check still runs: it is about the checked-in source, not
+    // about this export, and skipping it on a re-run would mean the guard
+    // passed once and then quietly stopped guarding.
+    await checkPageBackground();
     return;
   }
 
@@ -86,6 +90,41 @@ async function main() {
     console.error('No references were rewritten — the assets are now unreachable.');
     process.exit(1);
   }
+
+  await checkPageBackground();
+}
+
+/**
+ * The page background in `public/index.html` must equal `colors.bg`.
+ *
+ * That hex is the one duplicated design token in the app — an HTML file cannot
+ * import a TypeScript module — and it paints the strip behind the status bar
+ * and the overscroll region. If it drifts from the token, the app gets a band
+ * of the wrong ivory at the top of every screen: invisible in a diff, obvious
+ * on a phone, and impossible to attribute to the commit that caused it.
+ */
+async function checkPageBackground() {
+  const tokens = await readFile(new URL('../src/design/colors.ts', import.meta.url), 'utf8');
+  const token = /\bbg:\s*'(#[0-9A-Fa-f]{3,8})'/.exec(tokens)?.[1];
+  if (!token) {
+    console.error('Could not find `colors.bg` in src/design/colors.ts.');
+    process.exit(1);
+  }
+
+  const html = await readFile(new URL('../public/index.html', import.meta.url), 'utf8');
+  const used = [...html.matchAll(/#[0-9A-Fa-f]{6}\b/g)].map((m) => m[0]);
+  const background = used.filter((hex) => hex.toUpperCase() === token.toUpperCase());
+
+  // Two: the stylesheet rule and the theme-color meta. Fewer means one of them
+  // was edited on its own.
+  if (background.length < 2) {
+    console.error(
+      `public/index.html should use ${token} (colors.bg) for both the page ` +
+        `background and theme-color; found ${background.length} of 2.`,
+    );
+    process.exit(1);
+  }
+  console.log(`flatten-vendor-assets: page background matches colors.bg (${token}).`);
 }
 
 await main();
