@@ -6,6 +6,50 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-17 16:10 — The white band above the greeting
+
+**Branch:** `main`. Owner sent a screenshot from their phone: "feel like
+there's something off". No specifics, so this is what I could find and prove.
+
+**Found and fixed: the document had no background.** `html`, `body` and `#root`
+all computed to `rgba(0, 0, 0, 0)`, so anything the React tree does not cover
+falls through to the browser's default white — the strip behind the status bar,
+the overscroll region, and the chrome a browser tints from the page. On a
+warm-ivory app that is a white band across the top of every screen, which is
+exactly what the screenshot shows above "Good evening".
+
+`ScreenContainer` paints ivory *inside* the app. Nothing was painting the page.
+
+**What changed:**
+
+- `mobile/public/index.html` — `background-color` on `html, body`, plus
+  `theme-color` for Android and installed PWAs and
+  `apple-mobile-web-app-status-bar-style: default` so an installed iOS app gets
+  dark glyphs over the ivory rather than a light bar.
+- `mobile/scripts/flatten-vendor-assets.mjs` — a guard. That hex is now **the
+  one duplicated design token in the app**, because an HTML file cannot import
+  a TypeScript module, so the build fails if it stops matching `colors.bg`.
+  Drift here is invisible in a diff and obvious on a phone.
+
+**Tests:** `tsc --noEmit` clean, `build:web` clean. Computed styles after the
+fix: `html` and `body` both `rgb(247, 242, 233)`, `theme-color` `#F7F2E9`.
+The guard was checked in both directions — `colors.bg` edited to a different
+value fails the build with `found 0 of 2` and exit 1; restored, it passes. It
+also runs on the re-export path where there is nothing to flatten, which was a
+bug in my first version of it: the script returned early and the guard silently
+stopped guarding. Library, search, warmup and every destination re-verified.
+No console errors.
+
+**Not fixed, because it is a design call and not mine to make:** inside the
+practice card, "I. Adagio" and "Working at 114 · marked 92" are set in
+*identical* styles though one is the piece's identity and the other is practice
+state; and the pipeline's verdict — the sentence this whole app exists to
+produce — is the **smallest text on the card**, sitting under two lines of
+housekeeping. That is a hierarchy inversion and my best guess at the rest of
+"something off". Raised with the owner rather than changed.
+
+**Rollback:** revert this commit.
+
 ## 2026-08-17 15:05 — Today's two list blocks move to the foot of the screen
 
 **Branch:** `main`. Owner: "Also worth a look" and "Last 30 days" belong at the
