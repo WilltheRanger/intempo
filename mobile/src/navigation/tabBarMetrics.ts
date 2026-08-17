@@ -16,8 +16,15 @@ export const TAB_BAR_ROW_HEIGHT = Math.max(
 /** Padding above the icons. */
 export const TAB_BAR_PADDING_TOP = spacing.md;
 
-/** Minimum padding below the labels, when there's no home indicator to clear. */
-export const TAB_BAR_MIN_PADDING_BOTTOM = spacing.md;
+/**
+ * Minimum padding below the labels, when there's no home indicator to clear.
+ *
+ * Only ever a floor — on a device that reports an inset, the inset wins. It is
+ * one step above the padding on top of the icons because the labels sit at the
+ * very edge of the frame, and matching the two made the row read as bottom-
+ * heavy on hardware with no inset at all.
+ */
+export const TAB_BAR_MIN_PADDING_BOTTOM = spacing.lg;
 
 /**
  * Total height of the tab bar, including the home-indicator inset.

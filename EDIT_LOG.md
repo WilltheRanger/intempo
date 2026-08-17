@@ -6,6 +6,57 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-17 04:05 — The tab bar sat on the home indicator (my regression)
+
+**Branch:** `main`. Reported from a real iPhone: the tab icons had almost no
+room above the bar you swipe to exit the app.
+
+**It was mine, from two commits ago.** When I added `mobile/public/index.html`
+to carry the boot watchdog, I copied Expo's default viewport meta — which does
+not include `viewport-fit=cover`. Without that attribute iOS reports every
+`env(safe-area-inset-*)` as **0**. `react-native-safe-area-context`'s web
+provider measures those exact values (confirmed in
+`NativeSafeAreaProvider.web.js`), so `insets.bottom` came back 0, and the tab
+bar fell through to its floor instead of the 34pt home-indicator inset.
+
+Worth naming: the tab-bar code was never wrong, and I had verified it — with
+insets simulated. The defect was one HTML attribute, upstream of everything I
+had tested, in a file I wrote for an unrelated reason.
+
+**What changed:**
+
+- `mobile/public/index.html` — `viewport-fit=cover` on the viewport meta, with
+  a comment saying why it is load-bearing so nobody trims it back to the Expo
+  default. Verified it survives `expo export` verbatim into `dist/index.html`.
+- `mobile/src/navigation/tabBarMetrics.ts` — `TAB_BAR_MIN_PADDING_BOTTOM`
+  12pt → 16pt (`spacing.md` → `spacing.lg`). This is only ever a floor; where
+  a device reports an inset, the inset still wins. It applies on hardware with
+  no home indicator, where matching the 12pt above the icons left the labels
+  reading as though they were falling off the frame.
+
+**Tests:** `tsc --noEmit` clean, `build:web` clean. Measured in Chromium at
+393×852 against the built bundle, driving the provider's real path by setting
+the hidden probe's padding:
+
+| | `paddingBottom` | bar height |
+|---|---|---|
+| No inset reported | 16px | 75pt |
+| 34pt home indicator | 34px | 93pt |
+
+The bar stays flush to the viewport bottom in both (`rect.bottom` 852 =
+`innerHeight`). Today's scroll content grew 812 → 816, which is the 4pt of
+extra floor arriving through `useTabBarHeight()` — the content inset tracking
+the bar, as it should.
+
+**Three-foot test (Today, re-run):** unchanged — the greeting, then the
+practice piece, then the library. The tab bar is not in the first three things
+you notice, which is the whole point of it.
+
+**Known side effects:** none beyond the 4pt. **Rollback:** revert this commit;
+the two changes are independent of each other.
+
+---
+
 ## 2026-08-17 03:20 — Practise slower, and hear it first
 
 **Branch:** `main`. Owner's feature. The two design calls were put to them

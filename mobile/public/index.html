@@ -3,7 +3,16 @@
   <head>
     <meta charset="utf-8" />
     <meta http-equiv="X-UA-Compatible" content="IE=edge" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />
+    <!--
+      `viewport-fit=cover` is load-bearing, not boilerplate. Without it iOS
+      reports every env(safe-area-inset-*) as 0, and since
+      react-native-safe-area-context's web provider measures those exact
+      values, the tab bar loses the 34pt it needs to clear the home indicator.
+    -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, shrink-to-fit=no, viewport-fit=cover"
+    />
     <title>InTempo</title>
 
     <!--
