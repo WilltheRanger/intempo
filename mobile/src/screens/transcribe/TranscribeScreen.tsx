@@ -4,57 +4,90 @@ import { StyleSheet, View } from 'react-native';
 
 import {
   EmptyState,
-  MetadataRow,
-  ProgressBar,
+  LoadingState,
   ScreenContainer,
   SecondaryButton,
   Text,
 } from '../../components/primitives';
-import { useCapturedPages } from '../../data/captureSession';
+import { captureSession, useCapturedPages } from '../../data/captureSession';
+import { IS_LIVE_BACKEND } from '../../data/environment';
+import { uploadPage } from '../../lib/scan/uploadPage';
 import { spacing } from '../../design';
 import type { RootNavigation } from '../../navigation/types';
 
 /**
- * How long each page appears to take. Mock only — there is no transcription
- * pipeline behind this, and nothing here measures real work.
- */
-const MOCK_MS_PER_PAGE = 900;
-
-/**
- * Mocked transcription processing.
+ * Uploading the captured page to storage.
  *
- * Progress is reported per page rather than as a percentage: the page count is
- * something we genuinely know, whereas "73%" would be invented precision about
- * work that isn't happening. When the real pipeline lands it can report the
- * page it's on and this screen is unchanged.
+ * **This screen used to be a `setTimeout`.** It advanced a bar at 900ms a page
+ * and then handed on to a review screen showing a hardcoded fixture; nothing
+ * was ever sent anywhere. It now performs the real upload and reports what it
+ * is actually doing.
+ *
+ * **Only the first page.** `POST /v1/scores` takes a single `image_url` and
+ * there is no column, table or endpoint for a multi-page score, so a second
+ * page has nowhere to go. Uploading pages that would then be discarded would
+ * cost the musician time and bandwidth to no end, so they are not uploaded —
+ * and the screen says which page it transcribed rather than letting someone
+ * discover the omission later.
+ *
+ * Transcription itself happens on the *next* step: OCR runs inside
+ * `POST /v1/scores`, which needs a title, and only the musician has that. So
+ * this screen uploads, and the review screen names and saves.
  */
 export function TranscribeScreen() {
   const navigation = useNavigation<RootNavigation>();
   const pages = useCapturedPages();
   const total = pages.length;
-  const [completed, setCompleted] = useState(0);
-  const isComplete = total > 0 && completed >= total;
+  const [error, setError] = useState<string | null>(null);
 
-  // Finishing hands straight off to the review. A "ready" screen in between
-  // would only ask the musician to confirm that a wait had ended. `replace`
-  // rather than `navigate` so Back from the review returns to the pages, not
-  // to a processing screen that has nothing left to do.
-  useEffect(() => {
-    if (isComplete) {
-      navigation.replace('TranscriptionReview');
-    }
-  }, [isComplete, navigation]);
+  const first = pages[0] ?? null;
+
+  /**
+   * Answered before any request goes out.
+   *
+   * Without this, the sample-data build would try to upload to
+   * `http://127.0.0.1:8000` — `api/client.ts`'s default — and fail with
+   * "Failed to fetch", which reads as a bug in the app rather than the truth:
+   * there is no backend in this build to read a photograph.
+   */
+  const unavailable = !IS_LIVE_BACKEND;
 
   useEffect(() => {
-    if (total === 0 || completed >= total) {
+    if (!first || unavailable) {
       return;
     }
-    const timer = setTimeout(
-      () => setCompleted((done) => done + 1),
-      MOCK_MS_PER_PAGE,
-    );
-    return () => clearTimeout(timer);
-  }, [completed, total]);
+    // Guards against the upload finishing after the screen has gone — an
+    // unmounted `navigation.replace` throws, and a late `setError` warns.
+    let live = true;
+
+    void (async () => {
+      try {
+        const url = await uploadPage(first);
+        if (!live) {
+          return;
+        }
+        captureSession.setUploadedImageUrl(url);
+        // `replace`, so Back from the review returns to the pages rather than
+        // to an upload that has nothing left to do.
+        navigation.replace('TranscriptionReview');
+      } catch (cause) {
+        if (!live) {
+          return;
+        }
+        setError(
+          cause instanceof Error
+            ? cause.message
+            : 'The upload failed. Check your connection and try again.',
+        );
+      }
+    })();
+
+    return () => {
+      live = false;
+    };
+    // Keyed on the page's identity: re-running on every render would upload in
+    // a loop, and the page cannot change while this screen is mounted.
+  }, [first?.id, unavailable]);
 
   if (total === 0) {
     return (
@@ -69,30 +102,57 @@ export function TranscribeScreen() {
     );
   }
 
+  if (unavailable) {
+    return (
+      <ScreenContainer>
+        <EmptyState
+          title="Transcription needs the backend"
+          description="This build runs on sample data, so there is nothing to read your photograph. Add a piece manually instead."
+          actionLabel="Back to pages"
+          onActionPress={() => navigation.goBack()}
+        />
+      </ScreenContainer>
+    );
+  }
+
+  if (error) {
+    return (
+      <ScreenContainer>
+        <EmptyState
+          title="The page didn't upload"
+          description={error}
+          actionLabel="Back to pages"
+          onActionPress={() => navigation.goBack()}
+        />
+      </ScreenContainer>
+    );
+  }
+
   return (
     <ScreenContainer scrollable={false} contentStyle={styles.centered}>
       <View>
-        <Text variant="heroTitle">Transcribing your score</Text>
+        <Text variant="heroTitle">Sending your page</Text>
 
         <Text variant="body" color="textSecondary" style={styles.subtitle}>
-          Reading notation and preparing playback…
+          Uploading the photograph. Reading the notation comes next, once you
+          have named the piece.
         </Text>
 
         {/*
-          Tracks the page being read, matching the label beneath it — an empty
-          track while the screen says "Page 1 of 3" reads as nothing happening.
+          A spinner, not a bar. A single upload exposes no milestones this
+          screen can see, and a bar creeping toward a number it is not
+          measuring is invented precision — which is exactly what the mocked
+          version did, page by page, while doing no work at all.
         */}
-        <ProgressBar
-          value={Math.min(completed + 1, total) / total}
-          accessibilityLabel="Transcription progress"
-          style={styles.progress}
-        />
-
-        <MetadataRow
-          variant="metadataSmall"
-          items={[`Page ${Math.min(completed + 1, total)} of ${total}`]}
-          style={styles.meta}
-        />
+        <View style={styles.progress}>
+          <LoadingState
+            label={
+              total > 1
+                ? `Page 1 of ${total} — only the first is transcribed`
+                : undefined
+            }
+          />
+        </View>
       </View>
 
       <View style={styles.actions}>
@@ -113,9 +173,6 @@ const styles = StyleSheet.create({
   },
   progress: {
     marginTop: spacing['3xl'],
-  },
-  meta: {
-    marginTop: spacing.md,
   },
   actions: {
     marginTop: spacing['3xl'],

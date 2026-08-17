@@ -1,94 +1,104 @@
 import { useNavigation } from '@react-navigation/native';
 import { ChevronLeft, ChevronRight } from 'lucide-react-native';
-import { useEffect, useMemo, useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { useState } from 'react';
+import { StyleSheet, View } from 'react-native';
 
-import { NotationPlaceholder } from '../../components/pieces/NotationPlaceholder';
 import { ScoreThumbnail } from '../../components/pieces/ScoreThumbnail';
-import { TransportControls } from '../../components/playback/TransportControls';
 import {
-  Card,
   EmptyState,
   IconButton,
   Input,
-  MetadataRow,
   PageHeader,
   PrimaryButton,
   ScreenContainer,
-  SecondaryButton,
-  SegmentedControl,
   Text,
 } from '../../components/primitives';
-import { useCapturedPages } from '../../data/captureSession';
-import { buildDraft } from '../../data/sources/transcriptionDraft';
+import { captureSession, useCapturedPages } from '../../data/captureSession';
+import { useTranscribePage } from '../../data/hooks/useScan';
 import { spacing } from '../../design';
 import type { RootNavigation } from '../../navigation/types';
 
-/** Mock playback pace: one measure per beat-ish interval. */
-const MOCK_MS_PER_MEASURE = 550;
+/** Tall enough to read a title and a composer off the photograph. */
+const PAGE_HEIGHT = 300;
 
 /**
- * Fixed height for the comparison frame.
+ * Naming the piece, and saving it.
  *
- * Both views occupy exactly this box so switching between them changes the
- * content and nothing else — a frame that resizes defeats the comparison.
- */
-const COMPARE_HEIGHT = 220;
-
-/**
- * Saving isn't wired to storage, so the flow lands on the library fixture the
- * draft describes rather than inventing a piece that exists nowhere.
- */
-const SAVED_PIECE_ID = 'fixture-wohlfahrt-28';
-
-type ScoreView = 'notation' | 'original';
-
-const VIEW_OPTIONS = [
-  { value: 'notation' as const, label: 'Notation' },
-  { value: 'original' as const, label: 'Original' },
-];
-
-/**
- * Frontend-only review of a transcription.
+ * **This is where the score is created, and where OCR actually runs.** The
+ * screen it replaced was scaffolding end to end: the "detected" title and
+ * composer came from `buildDraft`, a fixture keyed on nothing but the page
+ * count; the notation panel drew a structural placeholder; playback moved a
+ * marker and made no sound; and "Save piece" navigated to
+ * `fixture-wohlfahrt-28` — a hardcoded id, so every scan in the app's history
+ * "saved" as the same Wohlfahrt study.
  *
- * Everything here is scaffolding: the notation is structural, playback moves a
- * marker rather than making sound, and the detected details come from a
- * fixture. What it establishes is the shape of the screen — correcting what
- * was detected, and checking the result against the page it came from.
+ * **Why naming comes before transcription rather than after.** OCR reads notes.
+ * `score_json` has no title field and no composer field, because a phone
+ * photograph of an inner page usually shows neither — so there is nothing for a
+ * "detected details" step to detect, and the old screen's editable "detected"
+ * values were invented. The title is the musician's to give, and
+ * `POST /v1/scores` requires it before it will run OCR at all.
+ *
+ * So: the photograph stays on screen while they type, which is genuinely
+ * useful — the title is usually printed on the page they are looking at. The
+ * transcription is then checked afterwards, on the piece's own score screen,
+ * against a score that really exists.
  */
 export function TranscriptionReviewScreen() {
   const navigation = useNavigation<RootNavigation>();
   const pages = useCapturedPages();
-  const draft = useMemo(() => buildDraft(pages.length), [pages.length]);
+  const transcribe = useTranscribePage();
 
-  // Detected values are a starting point, not a result — every one of them is
-  // editable, because OCR gets composer names and movement titles wrong.
-  const [title, setTitle] = useState(draft.title);
-  const [composer, setComposer] = useState(draft.composer);
-  const [movement, setMovement] = useState(draft.movement ?? '');
-
-  const [editingDetails, setEditingDetails] = useState(false);
-  const [view, setView] = useState<ScoreView>('notation');
+  const [title, setTitle] = useState('');
+  const [composer, setComposer] = useState('');
   const [pageIndex, setPageIndex] = useState(0);
-  const [measure, setMeasure] = useState(1);
-  const [isPlaying, setIsPlaying] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const measures = draft.measuresPerPage[pageIndex] ?? 0;
+  const imageUrl = captureSession.uploadedImageUrl();
 
-  useEffect(() => {
-    if (!isPlaying || measures === 0) {
+  async function save() {
+    const trimmed = title.trim();
+    if (!trimmed) {
+      setError('Give the piece a title — it is how you will find it again.');
       return;
     }
-    const timer = setTimeout(() => {
-      setMeasure((current) => (current >= measures ? 1 : current + 1));
-    }, MOCK_MS_PER_MEASURE);
-    return () => clearTimeout(timer);
-  }, [isPlaying, measure, measures]);
+    if (!imageUrl) {
+      setError(
+        'The uploaded page has expired. Go back and send it again.',
+      );
+      return;
+    }
 
-  function goToPage(next: number) {
-    setPageIndex(next);
-    setMeasure(1);
-    setIsPlaying(false);
+    setError(null);
+    try {
+      const piece = await transcribe.mutateAsync({
+        imageUrl,
+        title: trimmed,
+        composer: composer.trim() || null,
+      });
+      // The scan is finished with; leaving it in place would let a later save
+      // reuse an expired upload URL.
+      captureSession.reset();
+      // `reset`, not `replace`. Replacing swaps out only this screen and leaves
+      // the scanner and the page list underneath — so Back from the piece you
+      // just saved walked *into* the scan flow you had finished, whose session
+      // had been cleared a line earlier. That is a dead end, and the browser
+      // test found it. This rebuilds the stack as tabs → the new piece, which
+      // is where someone who has just saved a piece expects Back to go.
+      navigation.reset({
+        index: 1,
+        routes: [
+          { name: 'Tabs' },
+          { name: 'PieceDetail', params: { pieceId: piece.id } },
+        ],
+      });
+    } catch (cause) {
+      setError(
+        cause instanceof Error
+          ? cause.message
+          : 'The score could not be saved. Try again.',
+      );
+    }
   }
 
   if (pages.length === 0) {
@@ -96,7 +106,7 @@ export function TranscriptionReviewScreen() {
       <ScreenContainer>
         <EmptyState
           title="Nothing to review"
-          description="Capture and transcribe a score first."
+          description="Capture a page of sheet music first."
           actionLabel="Back"
           onActionPress={() => navigation.goBack()}
         />
@@ -107,132 +117,82 @@ export function TranscriptionReviewScreen() {
   return (
     <ScreenContainer>
       <PageHeader
-        title="Review transcription"
+        title="Name this piece"
         onBack={() => navigation.goBack()}
         backLabel="Back to pages"
       />
 
-      {editingDetails ? (
-        <Card style={styles.details}>
-          <Input
-            label="Title"
-            value={title}
-            onChangeText={setTitle}
-            placeholder="Composition title"
-            serif
-          />
-          <Input
-            label="Composer"
-            value={composer}
-            onChangeText={setComposer}
-            placeholder="Composer"
-            style={styles.field}
-          />
-          <Input
-            label="Movement"
-            value={movement}
-            onChangeText={setMovement}
-            placeholder="Optional"
-            style={styles.field}
-          />
-          <SecondaryButton
-            label="Done"
-            onPress={() => setEditingDetails(false)}
-            style={styles.field}
-          />
-        </Card>
-      ) : (
-        // Detected metadata reads as a summary, not a form. The fields are one
-        // tap away for the cases OCR gets wrong, which is what this screen is
-        // for — but they don't dominate it until they're needed.
-        <View style={styles.summary}>
-          <View style={styles.summaryText}>
-            <Text variant="pieceTitle" numberOfLines={2}>
-              {title || 'Untitled piece'}
-            </Text>
-            <MetadataRow
-              variant="metadataSmall"
-              items={[composer, movement]}
-              style={styles.summaryMeta}
-            />
-          </View>
+      <Text variant="body" color="textSecondary" style={styles.lede}>
+        Reading the notation takes about ten seconds once you save.
+      </Text>
 
-          <Pressable
-            onPress={() => setEditingDetails(true)}
-            accessibilityRole="button"
-            accessibilityLabel="Edit detected details"
-            hitSlop={spacing.md}
-            style={({ pressed }) => (pressed ? styles.editPressed : undefined)}
-          >
-            <Text variant="sectionAction" color="accent">
-              Edit
-            </Text>
-          </Pressable>
+      <Input
+        label="Title"
+        value={title}
+        onChangeText={setTitle}
+        placeholder="Sonata No. 1 in G minor"
+        serif
+        autoCapitalize="words"
+        style={styles.first}
+      />
+      <Input
+        label="Composer"
+        value={composer}
+        onChangeText={setComposer}
+        placeholder="Optional"
+        autoCapitalize="words"
+        style={styles.field}
+      />
+
+      {/*
+        The page stays visible while they type, because the title is usually
+        printed on it. Paging through is kept for the same reason — the title
+        can be on a different sheet from the one that opens the scan — even
+        though only the first page is transcribed.
+      */}
+      {pages.length > 1 ? (
+        <View style={styles.pageNav}>
+          <IconButton
+            icon={ChevronLeft}
+            label="Previous page"
+            onPress={() => setPageIndex((index) => index - 1)}
+            disabled={pageIndex === 0}
+          />
+          <Text variant="sectionLabel" color="textSecondary">
+            Page {pageIndex + 1} of {pages.length}
+          </Text>
+          <IconButton
+            icon={ChevronRight}
+            label="Next page"
+            onPress={() => setPageIndex((index) => index + 1)}
+            disabled={pageIndex >= pages.length - 1}
+          />
         </View>
-      )}
+      ) : null}
 
-      <View style={styles.pageNav}>
-        <IconButton
-          icon={ChevronLeft}
-          label="Previous page"
-          onPress={() => goToPage(pageIndex - 1)}
-          disabled={pageIndex === 0}
-        />
-        <Text variant="sectionLabel" color="textSecondary">
-          Page {pageIndex + 1} of {pages.length}
+      <ScoreThumbnail
+        source={pages[pageIndex]?.source ?? null}
+        style={styles.page}
+      />
+
+      {pages.length > 1 ? (
+        <Text variant="metadataSmall" color="textTertiary" style={styles.caveat}>
+          Only the first page is transcribed. A score spanning several pages
+          isn&apos;t supported yet.
         </Text>
-        <IconButton
-          icon={ChevronRight}
-          label="Next page"
-          onPress={() => goToPage(pageIndex + 1)}
-          disabled={pageIndex >= pages.length - 1}
-        />
-      </View>
+      ) : null}
 
-      <Card>
-        <SegmentedControl
-          label="Score view"
-          options={VIEW_OPTIONS}
-          value={view}
-          onChange={setView}
-        />
-
-        <View style={styles.compare}>
-          {view === 'notation' ? (
-            <NotationPlaceholder measures={measures} currentMeasure={measure} />
-          ) : (
-            <ScoreThumbnail
-              source={pages[pageIndex]?.source ?? null}
-              style={styles.original}
-            />
-          )}
-        </View>
-
-        <Text
-          variant="metadataSmall"
-          color="textTertiary"
-          style={styles.measureReadout}
-        >
-          Measure {measure} of {measures}
+      {error ? (
+        <Text variant="metadataSmall" color="textSecondary" style={styles.error}>
+          {error}
         </Text>
-
-        <View style={styles.transport}>
-          <TransportControls
-            isPlaying={isPlaying}
-            onTogglePlay={() => setIsPlaying((playing) => !playing)}
-            onPrevious={() => setMeasure((m) => Math.max(1, m - 1))}
-            onNext={() => setMeasure((m) => Math.min(measures, m + 1))}
-            previousDisabled={measure === 1}
-            nextDisabled={measure >= measures}
-          />
-        </View>
-      </Card>
+      ) : null}
 
       <PrimaryButton
         label="Save piece"
-        onPress={() =>
-          navigation.navigate('PieceDetail', { pieceId: SAVED_PIECE_ID })
-        }
+        onPress={() => void save()}
+        loading={transcribe.isPending}
+        disabled={transcribe.isPending}
         style={styles.save}
       />
     </ScreenContainer>
@@ -240,24 +200,11 @@ export function TranscriptionReviewScreen() {
 }
 
 const styles = StyleSheet.create({
-  details: {
-    marginTop: spacing.md,
-  },
-  summary: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    gap: spacing.lg,
+  lede: {
     marginTop: spacing.xs,
   },
-  summaryText: {
-    flexShrink: 1,
-  },
-  summaryMeta: {
-    marginTop: spacing.xs,
-  },
-  editPressed: {
-    opacity: 0.6,
+  first: {
+    marginTop: spacing.xl,
   },
   field: {
     marginTop: spacing.lg,
@@ -267,22 +214,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     marginTop: spacing.xl,
-    marginBottom: spacing.md,
   },
-  compare: {
-    height: COMPARE_HEIGHT,
-    marginTop: spacing.lg,
-    justifyContent: 'center',
-  },
-  original: {
+  page: {
     width: '100%',
-    height: '100%',
+    height: PAGE_HEIGHT,
+    marginTop: spacing.xl,
   },
-  measureReadout: {
-    marginTop: spacing.lg,
-  },
-  transport: {
+  caveat: {
     marginTop: spacing.md,
+  },
+  error: {
+    marginTop: spacing.lg,
   },
   save: {
     marginTop: spacing['2xl'],
