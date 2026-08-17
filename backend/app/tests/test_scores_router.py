@@ -430,6 +430,75 @@ def test_patch_replaces_score_json(
     assert update_payload["ocr_confidence"] == 0.95
 
 
+def test_patch_can_clear_a_composer(
+    monkeypatch: pytest.MonkeyPatch,
+    client: TestClient,
+    make_token: Callable[..., str],
+) -> None:
+    """An explicit null clears the field; it is not read as "unchanged".
+
+    The distinction is the feature. With an `is not None` check there is no way
+    to remove a composer at all — the request 200s with the old value still in
+    place.
+    """
+    user_id = uuid4()
+    score_id = uuid4()
+    sb = _install_supabase(
+        monkeypatch, returning_row=_row_for(score_id, user_id, composer=None)
+    )
+
+    res = client.patch(
+        f"/v1/scores/{score_id}",
+        json={"composer": None},
+        headers={"Authorization": f"Bearer {make_token(sub=user_id)}"},
+    )
+    assert res.status_code == 200, res.text
+    assert res.json()["composer"] is None
+    update = sb.table.return_value.update.call_args.args[0]
+    assert update == {"composer": None}
+
+
+def test_patch_omitting_composer_leaves_it_alone(
+    monkeypatch: pytest.MonkeyPatch,
+    client: TestClient,
+    make_token: Callable[..., str],
+) -> None:
+    """The other half of the same distinction: absent means untouched."""
+    user_id = uuid4()
+    score_id = uuid4()
+    sb = _install_supabase(
+        monkeypatch, returning_row=_row_for(score_id, user_id, composer="Eccles")
+    )
+
+    res = client.patch(
+        f"/v1/scores/{score_id}",
+        json={"title": "Renamed"},
+        headers={"Authorization": f"Bearer {make_token(sub=user_id)}"},
+    )
+    assert res.status_code == 200, res.text
+    update = sb.table.return_value.update.call_args.args[0]
+    assert "composer" not in update
+
+
+def test_patch_rejects_a_null_title(
+    monkeypatch: pytest.MonkeyPatch,
+    client: TestClient,
+    make_token: Callable[..., str],
+) -> None:
+    """Null is meaningful for a composer, not for a title — so it is refused."""
+    user_id = uuid4()
+    score_id = uuid4()
+    _install_supabase(monkeypatch, returning_row=_row_for(score_id, user_id))
+
+    res = client.patch(
+        f"/v1/scores/{score_id}",
+        json={"title": None},
+        headers={"Authorization": f"Bearer {make_token(sub=user_id)}"},
+    )
+    assert res.status_code == 400
+    assert "title cannot be null" in res.text
+
+
 def test_patch_empty_body_returns_400(
     monkeypatch: pytest.MonkeyPatch,
     client: TestClient,

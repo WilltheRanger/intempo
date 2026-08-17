@@ -1,4 +1,13 @@
-import { getAccessToken } from '../auth/session';
+import { getAccessToken, signOut } from '../auth/session';
+
+/**
+ * What the musician is told when the session is the problem.
+ *
+ * One sentence, used for both halves of the same situation — no token to send,
+ * and a token the server rejected — because they are indistinguishable from
+ * the outside and the remedy is the same.
+ */
+const SESSION_ENDED = 'Your session has ended. Sign in again.';
 
 /**
  * Base URL for the FastAPI backend. Override per environment with
@@ -46,9 +55,15 @@ export async function apiFetch<T>(
 
   if (authenticated) {
     const token = await getAccessToken();
-    if (token) {
-      requestHeaders.Authorization = `Bearer ${token}`;
+    // No token means the session is gone — expired past refresh, or signed out
+    // in another tab. Sending the request anyway is what this used to do, and
+    // the backend answered "Missing bearer token", which screens rendered as
+    // "check your connection": an expired session reported as a network fault,
+    // with no way for the musician to act on it.
+    if (!token) {
+      throw new ApiError(401, path, SESSION_ENDED);
     }
+    requestHeaders.Authorization = `Bearer ${token}`;
   }
 
   const response = await fetch(`${API_BASE_URL}${path}`, {
@@ -58,6 +73,16 @@ export async function apiFetch<T>(
   });
 
   if (!response.ok) {
+    // A rejected token is not retryable and not the caller's problem to
+    // interpret. Clearing the session makes `onAuthStateChange` fire, which
+    // returns the app to the sign-in screen instead of leaving every query
+    // failing against a credential that will never work again.
+    if (response.status === 401 && authenticated) {
+      await signOut().catch(() => {
+        // Already gone, or storage refused. The throw below still stands.
+      });
+      throw new ApiError(401, path, SESSION_ENDED);
+    }
     throw new ApiError(
       response.status,
       path,

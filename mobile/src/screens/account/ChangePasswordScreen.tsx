@@ -16,8 +16,11 @@ import {
   SecondaryButton,
   Text,
 } from '../../components/primitives';
-import { signIn, updatePassword } from '../../data/auth/session';
-import { useMe } from '../../data/hooks/useMe';
+import {
+  getSessionEmail,
+  signIn,
+  updatePassword,
+} from '../../data/auth/session';
 import { spacing } from '../../design';
 import {
   describeAuthError,
@@ -34,7 +37,6 @@ import {
  */
 export function ChangePasswordScreen() {
   const navigation = useNavigation();
-  const { data: musician } = useMe();
 
   const [currentPassword, setCurrentPassword] = useState('');
   const [password, setPassword] = useState('');
@@ -54,17 +56,21 @@ export function ChangePasswordScreen() {
       setError(complaint);
       return;
     }
-    if (!musician) {
-      setError('Your account is still loading. Try again in a moment.');
-      return;
-    }
-
     setBusy(true);
     setError(null);
     try {
+      // The address to re-authenticate as comes from the *session*, not from
+      // `/v1/me`. They are different values, and using the profile's would
+      // re-authenticate as whoever that row describes — on a fixture build,
+      // `you@example.com`. The session is the authority on who is signed in.
+      const email = await getSessionEmail();
+      if (!email) {
+        setError('You are not signed in on this device.');
+        return;
+      }
       // Proves the person holding the phone is the account's owner. A wrong
       // password throws here and nothing is changed.
-      await signIn(musician.email, currentPassword);
+      await signIn(email, currentPassword);
       await updatePassword(password);
       setDone(true);
     } catch (cause) {

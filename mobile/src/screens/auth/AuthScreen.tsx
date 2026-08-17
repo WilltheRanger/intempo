@@ -23,7 +23,7 @@ import { spacing } from '../../design';
 import { describeAuthError, validate, type AuthMode } from './authErrors';
 
 /** What the screen is waiting on the musician's inbox for. */
-type Sent = 'confirmation' | 'reset';
+type Sent = 'confirmation' | 'reset' | 'maybeExisting';
 
 const COPY: Record<AuthMode, { lede: string; submit: string }> = {
   signIn: {
@@ -95,7 +95,11 @@ export function AuthScreen() {
       // session. Saying "welcome" here and then showing the form again would
       // read as a failure; what actually happened is that mail is on its way.
       if (result.awaitingConfirmation) {
-        setSent('confirmation');
+        // An address that already has an account lands here too, looking
+        // identical — Supabase withholds the difference on purpose. Promising
+        // a link that is never sent strands the musician, so this case gets
+        // its own message rather than the confirmation one.
+        setSent(result.possiblyAlreadyRegistered ? 'maybeExisting' : 'confirmation');
         setPassword('');
       }
       // Otherwise the auth listener swaps this screen out. Nothing to do.
@@ -123,11 +127,21 @@ export function AuthScreen() {
     return (
       <ScreenContainer contentStyle={styles.centred}>
         <View>
-          <Text variant="screenTitle">Check your email</Text>
+          {/*
+            "Check your email" contradicts the line below it when no mail was
+            sent, which is exactly the case this state exists to describe.
+          */}
+          <Text variant="screenTitle">
+            {sent === 'maybeExisting'
+              ? 'Check your email — or sign in'
+              : 'Check your email'}
+          </Text>
           <Text variant="body" color="textSecondary" style={styles.lede}>
             {sent === 'reset'
               ? `If there's an account for ${email.trim()}, a link to set a new password is on its way.`
-              : `We sent a confirmation link to ${email.trim()}. Follow it and you'll be signed in.`}
+              : sent === 'maybeExisting'
+                ? `If ${email.trim()} is new, a confirmation link is on its way. If it already has an account, no mail is sent — sign in instead, or reset the password.`
+                : `We sent a confirmation link to ${email.trim()}. Follow it and you'll be signed in.`}
           </Text>
 
           {error ? (

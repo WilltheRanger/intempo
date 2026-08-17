@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
 
 import { pieceSource } from '../sources';
-import type { NewPiece } from '../sources/types';
+import type { NewPiece, PieceEdit } from '../sources/types';
 import type { Piece } from '../types';
 
 export const pieceKeys = {
@@ -48,6 +48,37 @@ export function useCreatePiece() {
   const queryClient = useQueryClient();
   return useMutation<Piece, Error, NewPiece>({
     mutationFn: (input) => pieceSource.createPiece(input),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: pieceKeys.all });
+    },
+  });
+}
+
+/** Corrects a piece's title or composer. */
+export function useUpdatePiece(id: string) {
+  const queryClient = useQueryClient();
+  return useMutation<Piece, Error, PieceEdit>({
+    mutationFn: (input) => pieceSource.updatePiece(id, input),
+    onSuccess: () => {
+      // The title appears on Today, in the library, in insights and on the
+      // verdict screen, so this invalidates everything rather than patching
+      // the detail entry and leaving four stale copies of the old name.
+      void queryClient.invalidateQueries({ queryKey: pieceKeys.all });
+    },
+  });
+}
+
+/**
+ * Removes a piece from the library.
+ *
+ * Expect this to reject: a piece that has been recorded against cannot be
+ * deleted, and the rejection carries the backend's own sentence explaining
+ * why. Callers must render it rather than treating it as a retryable error.
+ */
+export function useDeletePiece() {
+  const queryClient = useQueryClient();
+  return useMutation<void, Error, string>({
+    mutationFn: (id) => pieceSource.deletePiece(id),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: pieceKeys.all });
     },

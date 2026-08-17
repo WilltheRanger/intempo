@@ -401,13 +401,27 @@ async def update_score(
     body: UpdateScoreRequest,
     user_id: UUID = Depends(current_user_id),
 ) -> ScoreResponse:
+    # `model_fields_set` rather than `is not None`, and the difference is a
+    # whole feature: with a None check there is no way to *clear* a composer,
+    # because "composer": null is indistinguishable from omitting it. The
+    # request 200s with the old value still in place — a silent no-op, which
+    # is the worst answer available. This asks what the client actually sent.
+    sent = body.model_fields_set
+
     update: dict[str, Any] = {}
     if body.score_json is not None:
         update["score_json"] = body.score_json.model_dump(mode="json")
         update["ocr_confidence"] = body.score_json.ocr_confidence
-    if body.title is not None:
+    if "title" in sent:
+        # Null is meaningful for a composer — anonymous, or traditional — but
+        # not for a title. Refuse it rather than ignoring it.
+        if body.title is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="title cannot be null; omit it to leave it unchanged",
+            )
         update["title"] = body.title
-    if body.composer is not None:
+    if "composer" in sent:
         update["composer"] = body.composer
     if not update:
         raise HTTPException(
@@ -426,7 +440,10 @@ async def update_score(
     rows = response.data or []
     if not rows:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="score not found")
-    return _row_to_response(rows[0])
+    # Signed like every other read. A rename returning a null `image_url` made
+    # the caller's freshly-updated piece lose its thumbnail until the next
+    # list fetch.
+    return _with_image_urls(rows)[0]
 
 
 @router.delete("/{score_id}", status_code=status.HTTP_204_NO_CONTENT)
