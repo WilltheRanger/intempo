@@ -6,6 +6,48 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-17 14:35 — The warmup drops to the foot of Today, and loses the ink band
+
+**Branch:** `main`. Owner: the stacking hierarchy on Today isn't there, the top
+is fine but the warmup section takes away from it — move it down so the term
+and fact come first, and drop the black for the page background with a preview
+and a Start button, the way the first iteration looked.
+
+**They were right about the band.** An inverted full-bleed surface directly
+under the practice card was not "a second visual event" so much as **a second
+focal point competing with the first** — §3 law 4 says two competing focal
+points means the hierarchy is wrong, and I logged that tension as an accepted
+trade-off two commits ago rather than treating it as the defect it was. The
+order compounded it: the one optional thing on the screen was interrupting the
+run of blocks about the musician's own repertoire.
+
+**What changed:**
+
+- `screens/today/WarmupPanel.tsx` — the band is gone. Name, focus, the same
+  engraved preview on the page background, and a compact ink **Start** on the
+  meta row where the first iteration had Listen.
+- `screens/today/TodayScreen.tsx` — the warmup moves to last, after the term
+  and fact. The screen now reads as a descent: the piece you are working, the
+  pieces worth a look, the month, a term, then the warmup.
+
+A side effect worth having: the notation is ink-on-light in both places now, so
+tapping Start no longer inverts the music on the way through. The page lifts it
+onto a plate, which is a change of paper rather than a change of ink.
+
+**Three-foot test:** the practice card, the Continue button inside it, then the
+run of section headings. Nothing below the card competes with it, which is the
+first time that has been true since the panel went in.
+
+**Tests:** `tsc --noEmit` clean, `build:web` clean. In Chromium: Start still
+reaches the warmup page from its new position at the foot of the screen, the
+tempo stepper moved 72 → 68 and Listen sounded D major at the new tempo, and
+Today reported the remembered 68. Library, search, suggestions and every
+destination re-verified. No console errors.
+
+**Honest status:** verified in the web build against fixtures. **Still not
+done:** `PieceDetail` renders a progress bar for a field the backend cannot
+supply. **Rollback:** revert this commit.
+
 ## 2026-08-17 13:40 — The warmup wraps, and the page stops reading like a web page
 
 **Branch:** `main`. Owner: show the whole warmup by wrapping rather than making
