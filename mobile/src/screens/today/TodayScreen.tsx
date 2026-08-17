@@ -104,6 +104,7 @@ export function TodayScreen() {
   }
 
   const take = latestTake.data ?? null;
+  const fact = factFor();
 
   const { attention, neglected } = suggestionsFor({
     pieces: library.data ?? [],
@@ -174,11 +175,21 @@ export function TodayScreen() {
         onContinue={() => openPractice(piece)}
       />
 
+      {/*
+        The same shape as the warmup below it and the rows beneath that: a
+        label, a serif lead, a grey line of detail. It was a label over three
+        lines of body copy, which made it the only paragraph on the screen.
+      */}
       <FadeIn index={0}>
         <View style={styles.section}>
           <SectionHeader label="Did you know" />
-          <Text variant="body" color="textSecondary">
-            {factFor().text}
+          <Text variant="pieceTitle">{fact.lead}</Text>
+          <Text
+            variant="metadataSmall"
+            color="textSecondary"
+            style={styles.factText}
+          >
+            {fact.text}
           </Text>
         </View>
       </FadeIn>
@@ -260,6 +271,9 @@ const styles = StyleSheet.create({
   },
   pressed: {
     opacity: 0.6,
+  },
+  factText: {
+    marginTop: 2,
   },
   section: {
     // One step tighter than it was. At 32pt the blocks read as separate pages
