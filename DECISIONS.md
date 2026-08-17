@@ -58,6 +58,8 @@ A clef is calligraphy. A hand-approximated treble clef in an app for classical m
 
 Instead the note names are printed under the staff, the way a study book does for a beginner, and the block names the instrument it is written for. That is honest about being an exercise diagram rather than pretending to be engraved sheet music.
 
+**Superseded in part, later the same day:** the owner removed the daily term, keeping only the fact. The reasoning below about the fact corpus still stands; the term's "read it off your own score" argument is now history, and the code for it is in git rather than in the app.
+
 **Trade-off accepted:** the fact corpus is 24 entries and repeats after about a month. That is why it is a footnote at the bottom of the screen rather than a feature of it. Every entry is a settled statement of record — anything that needed a "probably" was left out rather than hedged, because a wrong fact about Bach in an app for classical musicians is expensive.
 
 ## 2026-08-17 — Today keeps its card; what sits under it must give a reason

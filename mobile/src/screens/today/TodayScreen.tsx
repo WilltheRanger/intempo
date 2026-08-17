@@ -8,6 +8,7 @@ import {
   PageHeader,
   ScreenContainer,
   SectionHeader,
+  Text,
 } from '../../components/primitives';
 import { ContinueSkeleton } from '../../components/skeletons';
 import { useInsights } from '../../data/hooks/useInsights';
@@ -19,11 +20,11 @@ import { usePreferences } from '../../data/preferences';
 import type { Piece } from '../../data/types';
 import { spacing } from '../../design';
 import { getGreeting } from '../../lib/greeting';
+import { factFor } from '../../lib/facts';
 import { formatTendency } from '../../lib/tempo';
 import { suggestionsFor } from '../../lib/today';
 import type { TabScreenNavigation } from '../../navigation/types';
 import { WarmupPanel } from './WarmupPanel';
-import { NotesBlock } from './NotesBlock';
 import { PracticeCard } from './PracticeCard';
 import { TodayRow } from './TodayRow';
 
@@ -48,7 +49,7 @@ const AVATAR_INSET = (AVATAR_TARGET - AVATAR_SIZE) / 2;
  * its tempo and the action that starts it are one object and earn the box
  * (§3 law 3); what follows are separate suggestions, so they get rules instead.
  *
- * The order is deliberate: today's work first — the piece you are on, a term,
+ * The order is deliberate: today's work first — the piece you are on, a fact,
  * the warmup — and then the two blocks you read rather than act on, the pieces
  * worth a look and the month behind you. Both of those are doors to other
  * screens, so they belong at the foot of this one.
@@ -175,8 +176,10 @@ export function TodayScreen() {
 
       <FadeIn index={0}>
         <View style={styles.section}>
-          <SectionHeader label="Today's term" />
-          <NotesBlock score={piece.score} />
+          <SectionHeader label="Did you know" />
+          <Text variant="body" color="textSecondary">
+            {factFor().text}
+          </Text>
         </View>
       </FadeIn>
 
