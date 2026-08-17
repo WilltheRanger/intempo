@@ -6,6 +6,31 @@ Operating Principle #5.
 
 ---
 
+## 2026-08-17 — Today and Library get different compositions, not different content
+
+**Context:** the owner said Today felt bare and that it and Library "don't look much different". Putting the three tabs side by side showed why, and it was worse than the report: **all three were the same composition.** A serif title, then a vertical stack of white rounded cards, one per piece, each carrying a title, a composer, a gold horizontal bar and a grey metadata line. Today's bottom two-thirds was literally the top of Library, three rows shorter, drawn by the same `PieceCard` component.
+
+Two things fell out of the comparison that nobody had reported:
+
+- **The gold bar meant three different things.** Progress through the piece on Today and Library; signed deviation from the beat, diverging from a centre tick, on Insights. Same colour, same weight, same width. One encoding for "how far through" and "how far off".
+- **The progress it encoded does not exist.** `sources/api.ts` maps `progress` and `movement` to null and says why: *"no progress concept anywhere in the schema"*. Against the live backend every piece loses its percentage, its bar and its movement line — so the screens do not get less bare when the API lands, they get **more** bare and **more** identical.
+
+**Decision:** differentiate by composition, not by adding content. Today became one piece with no card at all; Library became a grouped index with no cards either.
+
+- **Today**: greeting demoted to the eyebrow, the piece promoted to the 36pt title. The library preview deleted outright. A full-bleed sheet-music strip, the piece's own recent verdict from `PracticeInsights`, the working tempo from `practiceTempo`, and the action pinned to the footer.
+- **Library**: rows grouped by recency under quiet headings, separated by hairlines, no cards, no bars. Searching flattens the groups.
+
+**Alternatives considered:**
+
+- *Add content to Today — a streak, a session count, a week strip.* Rejected. Today wasn't short of things, it was short of a reason to be its own screen; a counter would have been decoration on top of a duplicate. It also drifts towards the gamification the brief rules out.
+- *Group the Library by composer.* Tried on paper and rejected against the actual data: a violinist's library is mostly one piece per composer, so it produced a heading for nearly every row. Recency groups meaningfully **and** answers what a library is opened to answer — what have I not touched in a month.
+- *Keep the cards and just change the spacing.* Rejected: the sameness was the card, not the gap between them.
+- *Fix only the gold bar.* Rejected as too small — it is a real defect, but the screens would still have been the same screen.
+
+**Trade-off accepted:** Today now shows exactly one piece, so there is no way to start a different one without going to the Library tab. That is one extra tap for a case the tab bar already serves, and it buys a screen with a single focal point. If it proves wrong, the fix is a "choose another piece" control, **not** the return of the preview list.
+
+**Also decided: progress stops being displayed on these two screens.** Not deleted from the type — the field stays, and `PieceDetail` still renders it — but Today and Library no longer show a percentage or a bar that the backend cannot produce. As a side effect the gold bar now means one thing in the tab bar's reach: deviation, on Insights.
+
 ## 2026-08-17 — Two clocks for the metronome, not one
 
 **Context:** the metronome has three outputs — a row of marks on screen, a haptic tap, and a click. The obvious build is one beat clock fanning out to all three. It is wrong for one of them.

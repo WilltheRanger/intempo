@@ -13,6 +13,28 @@ function calendarDaysBetween(from: Date, to: Date): number {
 }
 
 /**
+ * Whole days since a piece was last practiced, or null if it never was.
+ *
+ * Shared so the Library's grouping and its row labels can't disagree about
+ * which week something falls in — a row reading "5 days" under a heading that
+ * says "Earlier this month" is the kind of thing nobody notices in review and
+ * everybody notices in use.
+ */
+export function daysSincePracticed(
+  isoTimestamp: string | null,
+  now: Date = new Date(),
+): number | null {
+  if (!isoTimestamp) {
+    return null;
+  }
+  const practicedAt = new Date(isoTimestamp);
+  if (Number.isNaN(practicedAt.getTime())) {
+    return null;
+  }
+  return calendarDaysBetween(practicedAt, now);
+}
+
+/**
  * "Practiced yesterday", "Practiced 3 weeks ago".
  *
  * Returns null when there is no timestamp, so callers omit the line entirely
@@ -20,16 +42,10 @@ function calendarDaysBetween(from: Date, to: Date): number {
  * yet — see `data/sources/api.ts`.
  */
 export function formatLastPracticed(isoTimestamp: string | null): string | null {
-  if (!isoTimestamp) {
+  const days = daysSincePracticed(isoTimestamp);
+  if (days === null) {
     return null;
   }
-
-  const practicedAt = new Date(isoTimestamp);
-  if (Number.isNaN(practicedAt.getTime())) {
-    return null;
-  }
-
-  const days = calendarDaysBetween(practicedAt, new Date());
 
   if (days <= 0) {
     return 'Practiced today';
@@ -47,6 +63,37 @@ export function formatLastPracticed(isoTimestamp: string | null): string | null 
 
   const months = Math.round(days / 30);
   return months <= 1 ? 'Practiced last month' : `Practiced ${months} months ago`;
+}
+
+/**
+ * The same age, in a couple of words, for the right-hand column of a list.
+ *
+ * "Practiced 3 weeks ago" is a sentence, and a sentence repeated down forty
+ * rows stops being read. This is the column you scan to find what you have
+ * been neglecting, so it says only what changes from row to row.
+ */
+export function formatLastPracticedShort(
+  isoTimestamp: string | null,
+): string | null {
+  const days = daysSincePracticed(isoTimestamp);
+  if (days === null) {
+    return null;
+  }
+  if (days <= 0) {
+    return 'Today';
+  }
+  if (days === 1) {
+    return 'Yesterday';
+  }
+  if (days < 7) {
+    return `${days} days`;
+  }
+  if (days < 28) {
+    const weeks = Math.round(days / 7);
+    return weeks === 1 ? 'Last week' : `${weeks} weeks`;
+  }
+  const months = Math.round(days / 30);
+  return months <= 1 ? 'Last month' : `${months} months`;
 }
 
 /** `0.62` becomes `"62%"`. Null in, null out. */

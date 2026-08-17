@@ -1,9 +1,6 @@
 export {
-  FeaturedPieceSkeleton,
-  PieceRowSkeleton,
+  ContinueSkeleton,
   PieceListSkeleton,
-  SectionHeadingSkeleton,
-  type PieceRowSkeletonProps,
   type PieceListSkeletonProps,
 } from './PieceSkeletons';
 export { VerdictSkeleton } from './VerdictSkeleton';

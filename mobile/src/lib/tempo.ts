@@ -29,6 +29,28 @@ export function verdictFor(band: Band, direction: Direction): Verdict {
   return direction === 'rush' ? 'rushing' : 'dragging';
 }
 
+/**
+ * "Working at 76  ·  marked 92".
+ *
+ * The tempo a musician has actually settled on for a piece is the most
+ * personal thing the app knows about their practice, and until now it only
+ * existed on the Record screen — you had to open a take to find out where you
+ * left off. Naming both numbers matters when they differ: the gap between them
+ * *is* the work in progress.
+ *
+ * When they agree, or nothing was marked, one number is the whole truth and
+ * saying it twice would invent a distinction.
+ */
+export function formatWorkingTempo(
+  workingBpm: number,
+  markedBpm: number | null,
+): string {
+  if (markedBpm === null || markedBpm === workingBpm) {
+    return `${workingBpm} BPM`;
+  }
+  return `Working at ${workingBpm}  ·  marked ${markedBpm}`;
+}
+
 const VERDICT_LABELS: Record<Verdict, string> = {
   on_tempo: 'On tempo',
   slight_rush: 'Slight rush',
