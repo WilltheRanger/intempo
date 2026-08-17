@@ -454,11 +454,32 @@ export function engrave(
     width = Math.max(width, laid.system.width);
   }
 
+  // Staff lines run to a common right margin.
+  //
+  // Without this a short final system draws a stub staff — the 3-bar case puts
+  // one whole note on a stave a fifth of the column wide, which reads as a
+  // rendering failure rather than as a line of music ending. Justification
+  // cannot fix it: `MAX_JUSTIFY_STRETCH` deliberately refuses to spread one
+  // note across a page, and it is right to refuse.
+  //
+  // So the *paper* is squared off while the *music* is left alone. Notes keep
+  // the positions they were given, and the closing barline stays where the
+  // music actually stops — the staff simply carries on past it to the margin,
+  // the way pre-printed manuscript paper does under a written-out exercise.
+  // Moving the barline to the margin instead would invent an empty bar.
+  //
+  // Only when there is a column to square off against. Without `maxWidth` there
+  // is no margin to reach, and the Today preview — one system, clipped on
+  // purpose — must keep its natural width.
+  const flush = options.maxWidth
+    ? systems.map((system) => ({ ...system, width }))
+    : systems;
+
   return {
     width,
     // The last system needs no inter-system gap, only the outer padding.
     height: Math.max(cursor - gap + padding, padding * 2),
-    systems,
+    systems: flush,
   };
 }
 
