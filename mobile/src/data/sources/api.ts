@@ -51,6 +51,8 @@ function toPiece(score: ScoreResponse, lastPracticedAt: string | null = null): P
     // a thumbnail-shaped hole rather than an error — `ScoreThumbnail` already
     // falls back to its ruled-staff drawing.
     thumbnail: score.image_url,
+    markedBpm: score.score_json?.bpm_hint ?? null,
+    score: score.score_json ?? null,
   };
 }
 

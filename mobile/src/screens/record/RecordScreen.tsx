@@ -12,6 +12,12 @@ import {
   Text,
 } from '../../components/primitives';
 import { usePiece } from '../../data/hooks/usePieces';
+import {
+  MAX_BPM,
+  MIN_BPM,
+  practiceTempo,
+  usePracticeTempos,
+} from '../../data/practiceTempo';
 import { preferences, usePreferences } from '../../data/preferences';
 import { PressableScale } from '../../components/motion';
 import { takeSubmissionSource } from '../../data/sources';
@@ -33,14 +39,9 @@ import {
 } from '../../design';
 import { impact, ImpactFeedbackStyle } from '../../lib/haptics';
 import type { RootNavigation, RootStackParamList } from '../../navigation/types';
+import { ListenButton } from './ListenButton';
 
-/** The tempo range the backend accepts. */
-const MIN_BPM = 20;
-const MAX_BPM = 300;
 const BPM_STEP = 2;
-
-/** Where the tempo starts when the piece has no marking to go on. */
-const DEFAULT_BPM = 96;
 
 const METRONOME_LABELS = {
   off: 'Metronome off',
@@ -78,7 +79,11 @@ export function RecordScreen() {
   const { data: piece, isPending } = usePiece(params.pieceId);
   const { metronomeMode } = usePreferences();
 
-  const [targetBpm, setTargetBpm] = useState(DEFAULT_BPM);
+  // Read through the store so the piece's own marking seeds it and yesterday's
+  // choice survives. Subscribing keeps this in step if the tempo is changed
+  // elsewhere; the store is the source of truth, not this component.
+  usePracticeTempos();
+  const targetBpm = practiceTempo.for(params.pieceId, piece?.markedBpm ?? null);
   const [phase, setPhase] = useState<Phase>('ready');
   const [elapsedMs, setElapsedMs] = useState(0);
   const [problem, setProblem] = useState<string | null>(null);
@@ -127,7 +132,7 @@ export function RecordScreen() {
   }, [phase]);
 
   function adjustTempo(by: number) {
-    setTargetBpm((bpm) => Math.min(MAX_BPM, Math.max(MIN_BPM, bpm + by)));
+    practiceTempo.set(params.pieceId, targetBpm + by);
   }
 
   async function start() {
@@ -328,6 +333,14 @@ export function RecordScreen() {
               {METRONOME_LABELS[metronomeMode]}
             </Text>
           </Pressable>
+
+          <ListenButton
+            score={piece.score}
+            bpm={targetBpm}
+            // Silenced the moment a take starts: anything through the speaker
+            // lands in the microphone as phantom onsets (§4).
+            disabled={recording}
+          />
         </View>
 
         <Text variant="screenTitle" style={styles.timer}>

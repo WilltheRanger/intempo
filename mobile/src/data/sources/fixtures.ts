@@ -6,6 +6,8 @@ import type {
   Musician,
   Piece,
   PieceInsight,
+  ScoreJson,
+  ScoreNote,
 } from '../types';
 import type {
   InsightsSource,
@@ -32,6 +34,50 @@ interface FixturePiece extends Omit<Piece, 'lastPracticedAt'> {
   practicedDaysAgo: number | null;
 }
 
+
+/**
+ * A short study every fixture piece shares, so playback has real notes to
+ * sound before any score has been through OCR.
+ *
+ * Two bars of D-major quarters and a held note — deliberately plain. It is
+ * standing in for a score, not pretending to be a particular one, and a
+ * recognisable tune would invite the comparison.
+ */
+function quarter(pitch: string): ScoreNote {
+  return { pitch, duration: 'quarter', tied_to_next: false };
+}
+
+/** A plausible study tempo, so the recorder seeds from the piece. */
+const MARKED_BPM = 92;
+
+const DEMO_SCORE: ScoreJson = {
+  time_signature: '4/4',
+  key_signature: 'D major',
+  tempo_marking: null,
+  bpm_hint: MARKED_BPM,
+  clef: 'treble',
+  measures: [
+    {
+      measure_number: 1,
+      notes: ['D4', 'E4', 'F#4', 'G4'].map(quarter),
+      slurs: [],
+    },
+    {
+      measure_number: 2,
+      notes: ['A4', 'G4', 'F#4', 'E4'].map(quarter),
+      slurs: [],
+    },
+    {
+      measure_number: 3,
+      notes: [{ pitch: 'D4', duration: 'whole', tied_to_next: false }],
+      slurs: [],
+    },
+  ],
+  repeats: [],
+  ocr_confidence: 1,
+  notes_to_human: 'Fixture score. Not OCR output.',
+};
+
 const FIXTURE_PIECES: FixturePiece[] = [
   {
     id: 'fixture-bach-bwv1001',
@@ -41,6 +87,8 @@ const FIXTURE_PIECES: FixturePiece[] = [
     progress: 0.62,
     practicedDaysAgo: 2,
     thumbnail: require('../../../assets/fixtures/04_handwritten_clean.jpg'),
+    markedBpm: MARKED_BPM,
+    score: DEMO_SCORE,
   },
   {
     id: 'fixture-kreutzer-02',
@@ -50,6 +98,8 @@ const FIXTURE_PIECES: FixturePiece[] = [
     progress: 0.34,
     practicedDaysAgo: 5,
     thumbnail: require('../../../assets/fixtures/03_complex_printed.jpg'),
+    markedBpm: MARKED_BPM,
+    score: DEMO_SCORE,
   },
   {
     id: 'fixture-wohlfahrt-28',
@@ -59,6 +109,8 @@ const FIXTURE_PIECES: FixturePiece[] = [
     progress: 0.81,
     practicedDaysAgo: 12,
     thumbnail: require('../../../assets/fixtures/02_medium_printed.jpg'),
+    markedBpm: MARKED_BPM,
+    score: DEMO_SCORE,
   },
   {
     id: 'fixture-wohlfahrt-01',
@@ -68,6 +120,8 @@ const FIXTURE_PIECES: FixturePiece[] = [
     progress: 1,
     practicedDaysAgo: 26,
     thumbnail: require('../../../assets/fixtures/01_simple_printed.jpg'),
+    markedBpm: MARKED_BPM,
+    score: DEMO_SCORE,
   },
   // Appended below so the Today preview — which takes the first three pieces
   // that aren't the featured one — stays exactly as approved. These give the
@@ -80,6 +134,8 @@ const FIXTURE_PIECES: FixturePiece[] = [
     progress: 0.45,
     practicedDaysAgo: 8,
     thumbnail: require('../../../assets/fixtures/02_medium_printed.jpg'),
+    markedBpm: MARKED_BPM,
+    score: DEMO_SCORE,
   },
   {
     id: 'fixture-massenet-meditation',
@@ -89,6 +145,8 @@ const FIXTURE_PIECES: FixturePiece[] = [
     progress: 0.9,
     practicedDaysAgo: 19,
     thumbnail: require('../../../assets/fixtures/01_simple_printed.jpg'),
+    markedBpm: MARKED_BPM,
+    score: DEMO_SCORE,
   },
   {
     // Just added, never opened: no progress and no practice date. Exercises
@@ -100,6 +158,8 @@ const FIXTURE_PIECES: FixturePiece[] = [
     progress: null,
     practicedDaysAgo: null,
     thumbnail: require('../../../assets/fixtures/03_complex_printed.jpg'),
+    markedBpm: MARKED_BPM,
+    score: DEMO_SCORE,
   },
 ];
 

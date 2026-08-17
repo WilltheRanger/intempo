@@ -238,6 +238,19 @@ export interface Piece {
   lastPracticedAt: string | null;
   /** A signed download URL from `/v1/scores`, or a bundled fixture image. */
   thumbnail: ThumbnailSource | null;
+  /**
+   * The tempo written on the score, as OCR read it. Null when the marking was
+   * absent or illegible — which is common on a phone photo of a manuscript, so
+   * every caller has to have an answer for its absence.
+   */
+  markedBpm: number | null;
+  /**
+   * The parsed score, for anything that needs the notes rather than the title
+   * — playback, and eventually a rendered stave. Null on listings, which don't
+   * fetch it, so its absence means "not loaded here", not "this piece has no
+   * notes".
+   */
+  score: ScoreJson | null;
 }
 
 /**
