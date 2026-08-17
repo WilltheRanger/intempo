@@ -49,10 +49,10 @@ const AVATAR_INSET = (AVATAR_TARGET - AVATAR_SIZE) / 2;
  * its tempo and the action that starts it are one object and earn the box
  * (§3 law 3); what follows are separate suggestions, so they get rules instead.
  *
- * The order is deliberate: today's work first — the piece you are on, a fact,
- * the warmup — and then the two blocks you read rather than act on, the pieces
- * worth a look and the month behind you. Both of those are doors to other
- * screens, so they belong at the foot of this one.
+ * The order is deliberate: the two things to play first — the piece you are on
+ * and the warmup — then the fact, then the two blocks you read rather than act
+ * on. The last two are doors to other screens, so they belong at the foot of
+ * this one.
  *
  * **What is not here is the library preview.** Three rows of the Library tab
  * once sat at the bottom of this screen, which made its lower two-thirds a
@@ -176,23 +176,38 @@ export function TodayScreen() {
       />
 
       {/*
+        Straight after the piece you are working. Both are things to play, so
+        they belong together — the fact below them is the only block on the
+        screen that asks nothing of you, and it reads better once the playing
+        is done.
+      */}
+      <FadeIn index={0}>
+        <View style={styles.section}>
+          <SectionHeader label="Warmup" />
+          <WarmupPanel
+            instrument={instrument}
+            onStart={() => navigation.navigate('Warmup')}
+          />
+        </View>
+      </FadeIn>
+
+      {/*
         Label, lead, detail — the shape stays; the lead is sans now.
 
         On this screen `pieceTitle` renders five times and three of them name
-        something you can play: the warmup, and the two suggestions below it.
-        A serif lead put the fact in the repertoire's voice, directly under a
-        card whose subject is a piece — the position where the eye is most
-        primed to read "another piece". Five of the twenty-four leads in
+        something you can play: the warmup above and the two suggestions below.
+        A serif lead put the fact in the repertoire's voice while sitting in
+        the middle of that run — and five of the twenty-four leads in
         `facts.ts` are outright names of things ("The Chaconne", "Il Cannone",
-        "The wolf tone"), and on those days the block was indistinguishable
-        from a suggestion row.
+        "The wolf tone"), so on those days the block was indistinguishable from
+        a suggestion row.
 
         Nothing here is misaligned; the geometry was checked and is exact. It
         is the *meaning* of a style that was wrong, which is why it read as off
         without being locatable. The block is a footnote by its own docstring,
         and sans is it saying so (§3 law 4).
       */}
-      <FadeIn index={0}>
+      <FadeIn index={1}>
         <View style={styles.section}>
           <SectionHeader label="Did you know" />
           <Text variant="body">{fact.lead}</Text>
@@ -203,21 +218,6 @@ export function TodayScreen() {
           >
             {fact.text}
           </Text>
-        </View>
-      </FadeIn>
-
-      {/*
-        After the fact and before the two blocks you only read. It is the one
-        optional thing on the screen, so it sits past the piece you are
-        actually working and short of the doors to other screens.
-      */}
-      <FadeIn index={1}>
-        <View style={styles.section}>
-          <SectionHeader label="Warmup" />
-          <WarmupPanel
-            instrument={instrument}
-            onStart={() => navigation.navigate('Warmup')}
-          />
         </View>
       </FadeIn>
 
