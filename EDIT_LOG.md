@@ -6,6 +6,87 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-17 22:40 — A piece's score screen; the library stops capping at 50
+
+**Branch:** `main`. Owner: *"just keep building what you can"*.
+
+### "Digital score" and "Original pages" now open the piece you opened
+
+Both rows on the piece screen pushed routes that read the in-memory **scan
+session** rather than the piece. So every piece in the library showed whatever
+was last photographed, under the wrong name; with no scan in flight they showed
+"Nothing to review"; and because `CapturedPagesScreen` has a live "Continue"
+footer, you could walk from any piece forward into the transcription flow and
+land on a hardcoded Wohlfahrt fixture. Found by the audit, and it was the
+worst-behaved navigation left in the app.
+
+New `PieceScore: { pieceId, view? }` route and `PieceScoreScreen`, which reads
+the piece and renders its own `score_json` through the existing `Stave`
+engraver, with the existing `SegmentedControl` toggling to the photograph. The
+toggle appears only when both halves exist; a hand-entered piece has neither,
+so the piece screen offers no rows at all and the screen says why if reached
+directly.
+
+**The engraving does not round rhythm** (`lib/notation/fromScore.ts`).
+`engrave.ts` draws four values — whole, half, quarter, eighth — and no rests,
+while `score_json` can hold dotted values, sixteenths, thirty-seconds and
+rests. The tempting mapping is nearest-drawable: a sixteenth becomes an eighth,
+a rest disappears. That would put a rhythmically wrong line of music in front
+of a musician and say nothing — and rhythm is the entire subject of this app, so
+a stave that misreports it is the one picture it must never draw. Undrawable
+notes are **left out and counted**, and `describeOmissions()` says exactly what
+was omitted and that playback uses the full score. Today's fixtures are fully
+drawable, so nothing is omitted; the honesty is there for when OCR lands.
+
+### The library stops at 50 pieces
+
+`listPieces()` called `listScores()` at its default limit of 50 and the library
+rendered exactly that with no indication there was more. `LibraryScreen` filters
+the array it is handed, so piece 51 was not below the fold — it was
+**unfindable by search**. `listAllScores()` now pages at the endpoint's own
+ceiling of 200 until a page comes back short, with a 200-page hard stop so a
+misbehaving server cannot spin it forever. Raising the limit to 200 would have
+been the same bug at a higher number.
+
+The insights adapter had the same `limit: 200` on its id → title map, where a
+miss renders as "Unknown piece" — so a library past the cap would have quietly
+started mislabelling its oldest pieces. Also fixed.
+
+**Three-foot test** — `PieceScoreScreen`. First: the serif piece title. Second:
+the engraved staff. Third: the Notation/Original toggle. The composer eyebrow
+recedes. Correct order — the music is the subject of the screen.
+
+**Tests:** `tsc --noEmit` and `build:web` clean. New browser suite, 10 checks,
+all passing: opens the piece you came from and not the scan fixture, composer
+eyebrow, no "Nothing to review", no scan-flow Continue footer, an engraving is
+drawn, nothing omitted for a drawable score, toggles to the original, back
+returns to the piece, and a hand-entered piece offers no score rows.
+Three selectors were wrong before they were right — `SegmentedControl` exposes
+`tab`, not `button`, and the tab bar is not reachable from a pushed screen
+without backing out first.
+
+**Two things left for the owner rather than decided:**
+
+- **`Stave` labels every note with its name** (D, E, F♯ …). That is a teaching
+  affordance and right for the warmup; on a screen for reading a transcribed
+  piece it is clutter that implies the reader can't read music. `Stave` has no
+  opt-out prop. Adding one is small — say the word.
+- **A short final system looks like a fragment.** The 3-bar fixture puts its
+  closing whole note alone on system 2, and `MAX_JUSTIFY_STRETCH = 1.5` caps how
+  far one note will stretch, so it renders about a fifth of the width. Leaving
+  the last system unjustified is correct engraving practice, so this is the
+  engraver behaving as designed — it just reads oddly at three bars, and real
+  scores will hit it far less.
+
+**Still not done:** the scan → transcribe → review → save flow is still mocked
+end to end (shutter appends bundled images, `TranscribeScreen` is a
+`setTimeout`, "Save piece" navigates to a fixture id); `progress` has no backing
+field so the bar, the percentage and "Continue practice" stay fixture-only;
+import score is still a placeholder; `PracticeScreen` is still unreachable.
+Nothing live was exercised — egress still denies `*.supabase.co`.
+
+**Rollback:** revert this commit.
+
 ## 2026-08-17 21:55 — Rename and remove a piece; four correctness bugs from the audit
 
 **Branch:** `main`. Owner: *"continue on the other stuff"*.
