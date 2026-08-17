@@ -6,6 +6,46 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-18 00:55 — Staff lines run to a common right margin
+
+**Branch:** `main`. Owner approved the fix flagged in the entry below.
+
+A short final system drew a stub staff: the 3-bar score put its closing whole
+note on a stave a fifth of the column wide, which reads as a rendering failure
+rather than as a line of music ending. Justification could not fix it —
+`MAX_JUSTIFY_STRETCH` deliberately refuses to spread one note across a page, and
+it is right to refuse.
+
+So `engrave` squares off the **paper** and leaves the **music** alone. Every
+system's staff lines now reach the same right margin; notes keep the positions
+they were given, and the closing barline stays where the music actually stops,
+with the staff carrying on past it — the way pre-printed manuscript paper does
+under a written-out exercise. Moving the barline to the margin instead would
+invent an empty bar.
+
+Only when there is a column to square off against. Without `maxWidth` there is
+no margin to reach, so **Today's warmup preview is untouched**: it passes
+`maxNotes` and no `maxWidth`, and must keep its natural width because it is
+clipped on purpose.
+
+This is in the engraver, so it reaches the warmup page too — both its systems
+are now flush, where the second used to stop short after the closing D.
+
+**Tests:** `tsc --noEmit` and `build:web` clean. New `verify-flush` suite, 5
+checks, measured off the rendered SVG rather than eyeballed: every staff line on
+the score screen shares one right edge (350px), that edge equals the drawing
+width, the warmup is flush too, and the Today preview still reports its natural
+259px against a 390px column. All four earlier fixture suites re-run: green.
+
+One assertion was wrong before it was right — I had asserted the Today preview
+*overruns* its column. It does not: `maxNotes` caps it well short. The code was
+never involved, since the flush change cannot reach a caller that passes no
+`maxWidth`; the check now asserts what actually matters, that the preview keeps
+a natural width rather than the column's.
+
+**Rollback:** revert this commit; the `flush` mapping is four lines in
+`engrave`.
+
 ## 2026-08-18 00:30 — Note names off the score screen; the card earns its box
 
 **Branch:** `main`. Owner: *"Remove the note names and fix the piece card."*
@@ -56,15 +96,8 @@ keeps Today mounted behind a pushed screen, so `querySelectorAll('svg')` picked
 its stave. The `height: 0` in the same result was the tell. Both SVG checks now
 filter on `aria-hidden` and a non-zero height.
 
-**Flagged, not fixed:** removing the names makes the **short final system** more
-noticeable — the 3-bar fixture puts its closing whole note alone on a stub staff
-about a fifth of the width, and it now has no label to give it presence. The
-engraver is behaving as designed (`MAX_JUSTIFY_STRETCH` deliberately refuses to
-spread one note across a page, and an unjustified last system is correct
-practice). Drawing the final system's staff lines out to the full width would
-read as "the line ends here" rather than as a broken render — but that is an
-engraving-judgement change to a component whose look is the owner's, so it waits
-on a word.
+**The short final system** — flagged here first, then approved and fixed in the
+entry above. See *Staff lines run to a common right margin*.
 
 **Rollback:** revert this commit. `showNoteNames` defaults to the old behaviour,
 so reverting the screen alone restores the previous look.
