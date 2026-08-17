@@ -6,6 +6,82 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-17 18:30 — Why "Did you know" looked wrong, and the card's identity/state split
+
+**Branch:** `main`. Owner: fix the card collision, and *"that did you know just
+looks visually off for some reason"* — no specifics, and the "for some reason"
+turned out to be the diagnostic clue.
+
+**Nothing was misaligned.** I measured the rendered type of every run on the
+screen and checked the geometry against the tokens: `SectionHeader`
+marginBottom 12 → lead at 488 = 476+12; `factText` marginTop 2 → detail at 513;
+section marginTop 24 → next label at 573. All exact. A fault you can feel but
+not locate is usually a *meaning* error, not a measurement one.
+
+**The cause.** On Today, `pieceTitle` (19/23 Newsreader Medium, ink) renders
+five times and three of them name something you can play — the warmup and the
+two suggestions. The fact's lead wore that identical style, directly under a
+card whose subject is a piece: the position where the eye is most primed to
+read "another piece". **Five of the twenty-four leads are outright names of
+things** ("The Chaconne", "Il Cannone", "The wolf tone"), and on those days the
+block was indistinguishable from a suggestion row.
+
+**What changed:**
+
+- `screens/today/TodayScreen.tsx` — the lead drops from `pieceTitle` to `body`
+  (16/24 sans, ink). The label/lead/detail shape the owner chose is untouched;
+  only the *voice* changes. Height cost 23 → 24pt; nothing reflows.
+- `screens/today/PracticeCard.tsx` — the tempo goes from `metadata`/
+  `textTertiary` (byte-identical to the movement) to `metadataSmall`/
+  `textSecondary`. **Smaller but darker**, which is the point: the identity
+  stack descends 26pt serif ink → 16pt composer → 14pt movement, each rung
+  smaller *and* lighter, and the tempo was wearing rung three's exact style. A
+  plain rank drop would say "less important"; breaking the ladder's direction
+  says "different kind of thing". It also lands byte-identical to the verdict
+  beneath it, which is the right grouping — both are practice state.
+- `lib/facts.ts` — **nine leads rewritten.** Five were their sentence's own
+  opening words ("The Chaconne" over "The Chaconne that ends…"), so the block
+  said the same thing twice, six points apart. Four more echoed their sentence
+  less obviously.
+- Two stale comments corrected: the warmup block was still documented as "last
+  on the screen" (it has been third of five since the 15:05 reorder), and
+  `facts.ts` still claimed the fact sits "at the foot of Today" (it is second).
+
+**Method.** Nine agents across four lenses — measure/leading, semantic
+signalling, vertical rhythm, editorial — each adversarially verified. Two of
+the four diagnoses were **refuted by their verifiers and dropped**: setting the
+fact in `body` (which would have restored the three-line paragraph the owner
+had already rejected, a regression documented in the very file being edited),
+and a rhythm fix resting on the false premise that the 33pt inter-row gap is
+empty — `TodayRow` draws a hairline rule at its midpoint.
+
+**I corrected the synthesis twice rather than shipping it as written.** It
+claimed nine leads are work names; the real figure is five, and I checked each.
+It also implied `pieceTitle` is a musical-name token; it is the app's general
+block-lead step (`EmptyState`, `ConfirmDialog`, `BottomSheet`, `InsightsScreen`
+all use it), so the argument is screen-local perception, not token semantics.
+The shipped comment says that.
+
+**Tests:** `tsc --noEmit` clean, `build:web` clean. A new stutter check over
+the whole corpus — flagging any lead sharing two or more content words with its
+sentence's opening — **caught four echoes I had missed by eye, and one I
+introduced while fixing another** ("Haydn settled it" over "was settled by
+Haydn"). Now: 24 facts, 24 distinct leads, 0 stutters, none over 30 characters.
+Measured after the change: lead 16/24 ink, detail 13/18 secondary, card tempo
+13/18 secondary against a 14/20 tertiary movement. Library, search, the warmup
+page and every destination re-verified. No console errors.
+
+**Three-foot test:** the card, the Continue button inside it, then the two
+block headings. The fact now reads as a note rather than as a fifth piece — the
+serif run down the screen is pieces only.
+
+**Honest status:** both edits are hypotheses about perception, verified as
+screenshots at 393pt and not on a device. What I cannot check here: whether the
+sans lead reads as lead-and-detail rather than as two paragraphs, and whether
+smaller-but-darker reads as a category change rather than as an inconsistency.
+
+**Rollback:** revert this commit.
+
 ## 2026-08-17 17:20 — "Practiced today" removed, and the fact gets a lead
 
 **Branch:** `main`. Owner: remove "Practiced today", and the "Did you know"

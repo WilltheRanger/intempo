@@ -176,14 +176,26 @@ export function TodayScreen() {
       />
 
       {/*
-        The same shape as the warmup below it and the rows beneath that: a
-        label, a serif lead, a grey line of detail. It was a label over three
-        lines of body copy, which made it the only paragraph on the screen.
+        Label, lead, detail — the shape stays; the lead is sans now.
+
+        On this screen `pieceTitle` renders five times and three of them name
+        something you can play: the warmup, and the two suggestions below it.
+        A serif lead put the fact in the repertoire's voice, directly under a
+        card whose subject is a piece — the position where the eye is most
+        primed to read "another piece". Five of the twenty-four leads in
+        `facts.ts` are outright names of things ("The Chaconne", "Il Cannone",
+        "The wolf tone"), and on those days the block was indistinguishable
+        from a suggestion row.
+
+        Nothing here is misaligned; the geometry was checked and is exact. It
+        is the *meaning* of a style that was wrong, which is why it read as off
+        without being locatable. The block is a footnote by its own docstring,
+        and sans is it saying so (§3 law 4).
       */}
       <FadeIn index={0}>
         <View style={styles.section}>
           <SectionHeader label="Did you know" />
-          <Text variant="pieceTitle">{fact.lead}</Text>
+          <Text variant="body">{fact.lead}</Text>
           <Text
             variant="metadataSmall"
             color="textSecondary"
@@ -195,10 +207,9 @@ export function TodayScreen() {
       </FadeIn>
 
       {/*
-        Last on the screen, and after the term. It is the one optional thing
-        here — everything above is about the musician's own repertoire, and a
-        warm-up placed second was interrupting that run rather than following
-        it.
+        After the fact and before the two blocks you only read. It is the one
+        optional thing on the screen, so it sits past the piece you are
+        actually working and short of the doors to other screens.
       */}
       <FadeIn index={1}>
         <View style={styles.section}>
