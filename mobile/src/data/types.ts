@@ -233,7 +233,7 @@ export type ThumbnailSource = string | number;
 /**
  * What the UI renders. Deliberately not the same shape as `ScoreResponse`.
  *
- * `movement` and `progress` still have no backing column (see the Phase 1
+ * `movement` still has no backing column (see the Phase 1
  * audit); `lastPracticedAt` and `thumbnail` now do. All four stay nullable,
  * because the two that are backed can still be absent — a piece nobody has
  * recorded has no last-practiced date, and a signed URL can fail. Do not make
@@ -245,8 +245,6 @@ export interface Piece {
   composer: string | null;
   /** e.g. "II. Adagio". No backing field. */
   movement: string | null;
-  /** 0–1. No backing field. */
-  progress: number | null;
   /** ISO 8601, from the most recent analysis. Null until one exists. */
   lastPracticedAt: string | null;
   /** A signed download URL from `/v1/scores`, or a bundled fixture image. */

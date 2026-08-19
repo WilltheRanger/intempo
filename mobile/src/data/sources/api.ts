@@ -30,18 +30,16 @@ import type {
 /**
  * The real backend, mapped into the shape the UI renders.
  *
- * Two fields come back null because nothing behind `/v1/scores` can supply
- * them. They are listed here rather than quietly omitted so the work needed to
- * light each one up stays visible:
+ * **One field still comes back null**: `movement`, which has no column on
+ * `scores`. The OCR review form collects it and drops it, because there is
+ * nowhere to put it. Named here rather than quietly omitted so the work needed
+ * to light it up stays visible.
  *
- *  - `movement`  — no column on `scores`. Collected by the OCR review form and
- *                  then dropped, because there is nowhere to put it.
- *  - `progress`  — no progress concept anywhere in the schema, so the bar and
- *                  the percentage are fixture-only and `started` is always
- *                  false against the live API.
- *
- * The other two are live: `lastPracticedAt` comes from `/v1/analyses`, and
- * `thumbnail` from the download URL the backend signs on every read.
+ * `progress` used to be listed beside it. It is gone from the app entirely —
+ * there was no progress concept anywhere in the schema and none was coming, so
+ * the bar and the percentage were fixture-only ornament wherever they appeared.
+ * Everything else here is live: `lastPracticedAt` comes from `/v1/analyses`,
+ * and `thumbnail` from the download URL the backend signs on every read.
  */
 function toPiece(score: ScoreResponse, lastPracticedAt: string | null = null): Piece {
   return {
@@ -49,7 +47,6 @@ function toPiece(score: ScoreResponse, lastPracticedAt: string | null = null): P
     title: score.title,
     composer: score.composer,
     movement: null,
-    progress: null,
     lastPracticedAt,
     // Signed on read and good for an hour. Null when signing failed, which is
     // a thumbnail-shaped hole rather than an error — `ScoreThumbnail` already

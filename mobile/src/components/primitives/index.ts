@@ -11,7 +11,6 @@ export { Avatar, type AvatarProps } from './Avatar';
 export { PrimaryButton, type PrimaryButtonProps } from './PrimaryButton';
 export { SecondaryButton, type SecondaryButtonProps } from './SecondaryButton';
 export { IconButton, type IconButtonProps } from './IconButton';
-export { ProgressBar, type ProgressBarProps } from './ProgressBar';
 export { MetadataRow, type MetadataRowProps } from './MetadataRow';
 export { SearchField, type SearchFieldProps } from './SearchField';
 export { Input, type InputProps } from './Input';

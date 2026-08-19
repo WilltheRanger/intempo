@@ -45,7 +45,6 @@ export function useTranscribePage() {
         title: score.title,
         composer: score.composer,
         movement: null,
-        progress: null,
         lastPracticedAt: null,
         thumbnail: score.image_url,
         markedBpm: score.score_json?.bpm_hint ?? null,

@@ -6,6 +6,55 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-18 03:05 — `progress` is gone, and "Continue practice" works again
+
+**Branch:** `main`. Owner: `/loop improve the app as much as you can` — third
+iteration.
+
+### The bug
+
+`PieceDetailScreen` decided its button label with `progress !== null &&
+progress > 0`. `progress` has no backing column anywhere in the schema and
+`sources/api.ts` maps it to null — so **against the live API every piece read
+"Start practice" forever**, including one recorded fifty times. It only ever
+looked right because the fixtures hand-wrote values like `0.62`.
+
+It now reads `lastPracticedAt !== null`: the piece has been recorded against,
+which is the question the button is actually asking, and it comes from
+`/v1/analyses` on both sides of the seam.
+
+`started` and `hasHistory` had become the same expression, so they collapsed
+into one `played` — one fact answering both questions rather than two names for
+it.
+
+### The field
+
+Removed entirely — type, both sources, the fixtures, `formatProgressPercent`,
+and the `ProgressBar` primitive it was the last caller of.
+
+This is a decision already made, applied to the last place that hadn't caught
+up. Today's `PracticeCard` dropped its bar and percentage earlier in the
+project, with the note that they "rendered `piece.progress`, which
+`sources/api.ts` maps to null with the note that there is no progress concept
+anywhere in the schema — so they were fixture-only ornament". Every word of
+that applied here too; the piece screen was simply the last one still drawing
+it, showing "81%" through a Wohlfahrt study the app has never measured.
+
+What remains on the card is true: the page, when you last played it, and the
+action. A recorded piece keeps its "Practiced 2 weeks ago" line.
+
+**If a real measure of progress ever arrives** — the trend across a piece's
+recent takes is computable from data the app already has — this is a small
+component to write back. What was removed was the *fiction*, not the idea.
+
+**Tests:** `tsc --noEmit` and `build:web` clean. New `verify-progress` suite, 7
+checks: a recorded piece says "Continue practice", a never-recorded one says
+"Start practice", no percentage appears anywhere on the screen, **no
+`progressbar` element exists in the DOM**, and the real practice line survives.
+All seven earlier suites re-run: green.
+
+**Rollback:** revert this commit; `ProgressBar.tsx` comes back with it.
+
 ## 2026-08-18 02:20 — Import score, the last unbuilt route in
 
 **Branch:** `main`. Owner: `/loop improve the app as much as you can` — second
