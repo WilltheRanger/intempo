@@ -2,6 +2,9 @@ import 'react-native-url-polyfill/auto';
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { Platform } from 'react-native';
+
+import { authRedirectUrl } from '../../lib/authRedirect';
 
 /**
  * Supabase client for auth only. The backend verifies the access token this
@@ -27,8 +30,22 @@ export function getSupabaseClient(): SupabaseClient | null {
         storage: AsyncStorage,
         autoRefreshToken: true,
         persistSession: true,
-        // No URL to parse from in a native app.
-        detectSessionInUrl: false,
+        /*
+         * On the web this is how an emailed link finishes its job.
+         *
+         * It was hardcoded `false` with the note "no URL to parse from in a
+         * native app" — true of native, and wrong about the platform this build
+         * is actually served on. Supabase returns from a reset or a
+         * confirmation with the tokens in the URL fragment, and with detection
+         * off they sat there unread: the session was never established and the
+         * `PASSWORD_RECOVERY` event never fired, so every emailed link in the
+         * app was a dead end no matter what the mail said.
+         *
+         * Native genuinely has no URL to parse — a deep link arrives through
+         * `Linking` instead — so the original reasoning survives, scoped to the
+         * platform it was about.
+         */
+        detectSessionInUrl: Platform.OS === 'web',
       },
     });
   }
@@ -110,7 +127,11 @@ export async function signUp(
   password: string,
 ): Promise<AuthResult> {
   const supabase = requireClient();
-  const { data, error } = await supabase.auth.signUp({ email, password });
+  const { data, error } = await supabase.auth.signUp({
+    email,
+    password,
+    options: { emailRedirectTo: authRedirectUrl() },
+  });
   if (error) {
     throw error;
   }
@@ -132,15 +153,17 @@ export async function signUp(
  * caller which addresses are registered is an account-enumeration hole, and
  * Supabase deliberately doesn't distinguish the two either.
  *
- * The link lands wherever the Supabase project's redirect settings point. In
- * this build that's the project's Site URL — completing the reset inside the
- * app needs a deep-link scheme registered and a handler for the recovery
- * event, which is real work that can't be verified without a device and a
- * live project.
+ * **The link now comes back to the app.** It used to land on the project's
+ * Site URL — a Supabase page — because no `redirectTo` was given and nothing
+ * here could have handled the return anyway. See `authRedirectUrl`, and note
+ * that the value it returns has to be listed under Redirect URLs in the
+ * Supabase dashboard or Supabase quietly ignores it.
  */
 export async function requestPasswordReset(email: string): Promise<void> {
   const supabase = requireClient();
-  const { error } = await supabase.auth.resetPasswordForEmail(email);
+  const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: authRedirectUrl(),
+  });
   if (error) {
     throw error;
   }
@@ -149,7 +172,11 @@ export async function requestPasswordReset(email: string): Promise<void> {
 /** Sends the confirmation mail again, for the one that never arrived. */
 export async function resendConfirmation(email: string): Promise<void> {
   const supabase = requireClient();
-  const { error } = await supabase.auth.resend({ type: 'signup', email });
+  const { error } = await supabase.auth.resend({
+    type: 'signup',
+    email,
+    options: { emailRedirectTo: authRedirectUrl() },
+  });
   if (error) {
     throw error;
   }
@@ -177,7 +204,10 @@ export async function updatePassword(password: string): Promise<void> {
  */
 export async function updateEmail(email: string): Promise<void> {
   const supabase = requireClient();
-  const { error } = await supabase.auth.updateUser({ email });
+  const { error } = await supabase.auth.updateUser(
+    { email },
+    { emailRedirectTo: authRedirectUrl() },
+  );
   if (error) {
     throw error;
   }

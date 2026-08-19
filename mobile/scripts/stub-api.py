@@ -255,6 +255,12 @@ class H(http.server.BaseHTTPRequestHandler):
 
     def do_PUT(self):
         path = self.path.split("?")[0]
+        # Setting a new password after a reset link, and changing an email.
+        # supabase-js emits USER_UPDATED on the response, which is what ends the
+        # app's `recovering` state.
+        if path == "/auth/v1/user":
+            self._read_body()
+            return self._send(200, json.dumps(_session()["user"]).encode())
         if "/storage/v1/object/upload/sign/" in path:
             body = self._read_body()
             if not body:
