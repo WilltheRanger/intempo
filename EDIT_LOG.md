@@ -6,6 +6,54 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-18 02:20 — Import score, the last unbuilt route in
+
+**Branch:** `main`. Owner: `/loop improve the app as much as you can` — second
+iteration.
+
+All three ways into the library are real now: photograph it, import it, or type
+it in.
+
+`expo-image-picker`, with its photo permission declared in `app.json`. The
+screen itself is small on purpose — **picked pages go into the same
+`captureSession` the scanner fills**, so the page list, the upload, the naming
+step and OCR are the flow that already exists and is already tested. Only the
+source of the images differs, and that is the whole feature.
+
+**A button rather than opening the picker on arrival.** On web the picker is a
+file input and a browser opens one only inside a user gesture; an effect on
+mount is silently ignored. So the tap has to be a real tap — which is also the
+better screen, since it says what is about to happen before the system sheet
+takes over.
+
+**No permission asked up front.** `launchImageLibraryAsync` asks for what it
+needs when it needs it, and picking a specific file grants access to that file
+alone. Requesting the whole library on arrival would ask for more than this
+screen uses.
+
+Importing calls `captureSession.reset()` first, exactly as opening the scanner
+does: importing starts a new piece rather than adding to whatever was
+photographed earlier. Cropping is off — a page of music cropped to a square is a
+page of music with its music cut off.
+
+`AddPieceScreen` is now just the fork between the two non-camera routes; it used
+to carry the "not built yet" placeholder in its own body, which is why it still
+owns the route rather than each screen owning one.
+
+**Tests:** `tsc --noEmit` and `build:web` clean. New `verify-import` suite, 8
+checks driving the real file chooser: the screen is real rather than a
+placeholder, it discloses the one-page limit, the chooser opens and **accepts
+multiple files**, two chosen fixtures arrive in the review list as blob-backed
+images rather than bundled assets, and Continue lands in the same transcribe
+step scanning uses. All six earlier suites re-run: green.
+
+**Known limits, both already on screen:** only the first page is transcribed,
+because `POST /v1/scores` takes one `image_url`; and PDFs are not accepted —
+the picker is images only, since nothing downstream can rasterise a page.
+
+**Rollback:** revert this commit. `expo-image-picker` and its `app.json` entry
+come with it.
+
 ## 2026-08-18 01:40 — The camera is real
 
 **Branch:** `main`. Owner: `/loop improve the app as much as you can` — first

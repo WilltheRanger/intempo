@@ -22,6 +22,12 @@
           "cameraPermission": "InTempo uses the camera to photograph your sheet music so it can be transcribed.",
           "recordAudioAndroid": false
         }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "InTempo reads photos of sheet music you choose, so they can be transcribed."
+        }
       ]
     ],
     "ios": {
