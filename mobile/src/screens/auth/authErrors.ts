@@ -8,7 +8,14 @@ export const MIN_PASSWORD_LENGTH = 6;
  */
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-export type AuthMode = 'signIn' | 'signUp' | 'reset';
+export type AuthMode = 'signIn' | 'signUp' | 'reset' | 'magicLink';
+
+/** Modes that send a link to an address rather than taking a password. */
+const LINK_MODES: ReadonlySet<AuthMode> = new Set<AuthMode>(['reset', 'magicLink']);
+
+export function needsPassword(mode: AuthMode): boolean {
+  return !LINK_MODES.has(mode);
+}
 
 export function isEmail(value: string): boolean {
   return EMAIL_PATTERN.test(value.trim());
@@ -26,7 +33,7 @@ export function validate(
   if (!isEmail(email)) {
     return "That doesn't look like an email address.";
   }
-  if (mode === 'reset') {
+  if (!needsPassword(mode)) {
     return null;
   }
   if (!password) {

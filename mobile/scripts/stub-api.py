@@ -191,6 +191,12 @@ class H(http.server.BaseHTTPRequestHandler):
         if path in ("/auth/v1/token", "/auth/v1/signup"):
             body = json.loads(self._read_body() or b"{}")
             return self._send(200, json.dumps(_session(body.get("email"))).encode())
+        # Magic link, password reset and resend all post here and all answer
+        # {}: the mail is the response, and the app must not read the empty
+        # body as a failure.
+        if path in ("/auth/v1/otp", "/auth/v1/recover", "/auth/v1/resend"):
+            self._read_body()
+            return self._send(200, b"{}")
         if path == "/auth/v1/logout":
             return self._send(204, b"")
 

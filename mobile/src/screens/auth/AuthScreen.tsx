@@ -16,14 +16,20 @@ import {
 import {
   requestPasswordReset,
   resendConfirmation,
+  sendSignInLink,
   signIn,
   signUp,
 } from '../../data/auth/session';
 import { spacing } from '../../design';
-import { describeAuthError, validate, type AuthMode } from './authErrors';
+import {
+  describeAuthError,
+  needsPassword,
+  validate,
+  type AuthMode,
+} from './authErrors';
 
 /** What the screen is waiting on the musician's inbox for. */
-type Sent = 'confirmation' | 'reset' | 'maybeExisting';
+type Sent = 'confirmation' | 'reset' | 'maybeExisting' | 'magicLink';
 
 const COPY: Record<AuthMode, { lede: string; submit: string }> = {
   signIn: {
@@ -37,6 +43,10 @@ const COPY: Record<AuthMode, { lede: string; submit: string }> = {
   reset: {
     lede: "Enter your address and we'll send a link to set a new password.",
     submit: 'Send reset link',
+  },
+  magicLink: {
+    lede: "Enter your address and we'll send a link that signs you in. No password needed.",
+    submit: 'Email me a link',
   },
 };
 
@@ -61,7 +71,7 @@ export function AuthScreen() {
   const [sent, setSent] = useState<Sent | null>(null);
   const [resent, setResent] = useState(false);
 
-  const needsPassword = mode !== 'reset';
+  const showPassword = needsPassword(mode);
   const copy = COPY[mode];
 
   function go(next: AuthMode) {
@@ -83,6 +93,12 @@ export function AuthScreen() {
       if (mode === 'reset') {
         await requestPasswordReset(address);
         setSent('reset');
+        return;
+      }
+
+      if (mode === 'magicLink') {
+        await sendSignInLink(address);
+        setSent('magicLink');
         return;
       }
 
@@ -137,7 +153,9 @@ export function AuthScreen() {
               : 'Check your email'}
           </Text>
           <Text variant="body" color="textSecondary" style={styles.lede}>
-            {sent === 'reset'
+            {sent === 'magicLink'
+              ? `A link that signs you in is on its way to ${email.trim()}. It expires in an hour, and opening it on this device is the quickest way back.`
+              : sent === 'reset'
               ? `If there's an account for ${email.trim()}, a link to set a new password is on its way.`
               : sent === 'maybeExisting'
                 ? `If ${email.trim()} is new, a confirmation link is on its way. If it already has an account, no mail is sent — sign in instead, or reset the password.`
@@ -227,13 +245,13 @@ export function AuthScreen() {
             autoCapitalize="none"
             autoComplete="email"
             textContentType="emailAddress"
-            returnKeyType={needsPassword ? 'next' : 'go'}
-            onSubmitEditing={needsPassword ? undefined : () => void submit()}
+            returnKeyType={showPassword ? 'next' : 'go'}
+            onSubmitEditing={showPassword ? undefined : () => void submit()}
             editable={!busy}
             style={styles.field}
           />
 
-          {needsPassword ? (
+          {showPassword ? (
             <Input
               label="Password"
               value={password}
@@ -271,10 +289,43 @@ export function AuthScreen() {
           ) : null}
 
           {mode === 'signIn' ? (
+            <View style={styles.signInLinks}>
+              <Pressable
+                onPress={() => go('magicLink')}
+                accessibilityRole="button"
+                accessibilityLabel="Email me a sign-in link instead"
+                hitSlop={spacing.sm}
+                style={({ pressed }) => (pressed ? styles.switchPressed : undefined)}
+              >
+                <Text variant="sectionAction" color="accent">
+                  Email me a link
+                </Text>
+              </Pressable>
+
+              <Pressable
+                onPress={() => go('reset')}
+                accessibilityRole="button"
+                accessibilityLabel="Forgot your password"
+                hitSlop={spacing.sm}
+                style={({ pressed }) => (pressed ? styles.switchPressed : undefined)}
+              >
+                <Text variant="sectionAction" color="accent">
+                  Forgot your password?
+                </Text>
+              </Pressable>
+            </View>
+          ) : null}
+
+          {/*
+            A way back to the password form. Both link modes are reached from
+            sign-in, so without this the only exit is the account switcher at
+            the foot, which says the wrong thing.
+          */}
+          {mode === 'magicLink' || mode === 'reset' ? (
             <Pressable
-              onPress={() => go('reset')}
+              onPress={() => go('signIn')}
               accessibilityRole="button"
-              accessibilityLabel="Forgot your password"
+              accessibilityLabel="Use a password instead"
               hitSlop={spacing.sm}
               style={({ pressed }) => [
                 styles.forgot,
@@ -282,7 +333,7 @@ export function AuthScreen() {
               ]}
             >
               <Text variant="sectionAction" color="accent">
-                Forgot your password?
+                Use a password instead
               </Text>
             </Pressable>
           ) : null}
@@ -334,6 +385,14 @@ export function AuthScreen() {
 const styles = StyleSheet.create({
   flex: {
     flex: 1,
+  },
+  // The two things you can ask for from the sign-in form, on one line: a link
+  // instead of a password, and a link because you have forgotten it.
+  signInLinks: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: spacing.lg,
+    marginTop: spacing.lg,
   },
   // The form is the whole screen; centring stops it clinging to the top.
   centred: {
