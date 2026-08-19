@@ -6,6 +6,81 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-18 03:50 — The password-reset link now goes somewhere
+
+**Branch:** `main`. Owner: `/loop improve the app as much as you can` — fourth
+iteration.
+
+"Forgot your password?" sent a mail saying *"a link to set a new password is on
+its way"*, and following that link could not set a password. It landed on the
+project's Site URL — a Supabase page — because no `redirectTo` was ever given,
+and nothing in the app could have handled the return if it had.
+
+### The one line at the root of it
+
+```ts
+// No URL to parse from in a native app.
+detectSessionInUrl: false,
+```
+
+True of native, and wrong about the platform this build is served on. Supabase
+returns from a reset with the tokens in the URL fragment; with detection off
+they sat there unread, no session was established, and `PASSWORD_RECOVERY` never
+fired. It is now `Platform.OS === 'web'` — the original reasoning survives,
+scoped to the platform it was actually about.
+
+### The rest of the chain
+
+- **`lib/authRedirect.ts`** — where a link should come back to. The web origin
+  the app is being served from, so a preview build's mail doesn't send people to
+  production; `Linking.createURL('/')` on native, which is `intempo://` from a
+  standalone build and `exp://` in Expo Go.
+- **`scheme: "intempo"`** in `app.json`, so native has a scheme to come back
+  through at all. `expo-linking` added as a direct dependency.
+- **`redirectTo`/`emailRedirectTo`** on all four mails: reset, sign-up,
+  resent confirmation, and email change.
+- **`recovering` is a new auth state.** A reset link establishes a real session,
+  so the naive reading is "signed in" — which drops someone who came to set a
+  password into Today with the thing they clicked for unfinished.
+  `RootNavigator` holds it outside the tabs, like the sign-in gate, because it
+  is the same kind of thing: the app is not reachable until it is dealt with.
+- **`SetPasswordScreen`** — and deliberately **no current-password field**,
+  unlike `ChangePasswordScreen`. That screen asks for the old password because
+  it is reachable from an unlocked phone on a music stand. Here the proof is the
+  link, which went to the address on the account; and asking would be absurd,
+  since not knowing it is why they are here. "Cancel" signs out rather than
+  letting an emailed link quietly become a session.
+
+Two races closed while wiring it: `getSession()` resolving *after*
+`PASSWORD_RECOVERY` would have downgraded the state to plain "signed in", and a
+token refresh arriving while the screen is open would have dismissed it
+mid-typing. Both now refuse to leave `recovering` except on `USER_UPDATED`,
+which is exactly the event the password change emits.
+
+**One thing the Supabase dashboard still needs:** whatever `authRedirectUrl()`
+returns has to be listed under **Redirect URLs**, or Supabase ignores it and
+silently falls back to the Site URL — which looks precisely like this feature
+not working.
+
+**Tests:** `tsc --noEmit` and both builds clean. New `verify-recovery` suite, 10
+checks driving a genuine Supabase-shaped recovery redirect — tokens in the
+fragment, `type=recovery`: a plain visit still gates on sign-in, the link opens
+"Set a new password" rather than the app, no current-password field, a weak
+password is refused *with its reason*, a mismatch is refused, the update is
+really sent (`PUT /auth/v1/user` observed), and the app is reached afterwards
+with the screen gone. All eight earlier suites re-run: green.
+
+Two of my own checks were wrong before they were right. `page.goto` to a URL
+differing only in the fragment is a *same-document* navigation, so the app never
+reloaded and never re-parsed — the product was fine and the harness was lying; a
+real emailed link redirects through Supabase's domain first, which `reload()`
+reproduces. And the weak-password assertion was `/\w/`, which would have passed
+on any screen at all; it now asserts the actual sentence
+("Passwords need at least 6 characters").
+
+**Not verified:** the native deep link. `intempo://` needs a device or a
+simulator, and nothing here can open one.
+
 ## 2026-08-18 03:05 — `progress` is gone, and "Continue practice" works again
 
 **Branch:** `main`. Owner: `/loop improve the app as much as you can` — third

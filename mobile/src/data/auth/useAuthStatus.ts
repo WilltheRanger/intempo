@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { IS_LIVE_BACKEND } from '../environment';
 import { getSupabaseClient } from './session';
 
-export type AuthStatus = 'loading' | 'signedIn' | 'signedOut';
+export type AuthStatus = 'loading' | 'signedIn' | 'signedOut' | 'recovering';
 
 /**
  * Whether there's a session, kept in step with Supabase.
@@ -42,13 +42,42 @@ export function useAuthStatus(): AuthStatus {
     let active = true;
 
     void supabase.auth.getSession().then(({ data }) => {
-      if (active) {
-        setStatus(data.session ? 'signedIn' : 'signedOut');
+      if (!active) {
+        return;
       }
+      // Never downgrades `recovering`. This promise and the auth listener race
+      // on a reset link — `detectSessionInUrl` establishes the session and
+      // fires `PASSWORD_RECOVERY` while this is still in flight — and whichever
+      // lands second wins. Resolving to a plain "signedIn" here would drop
+      // someone into Today with the reset they clicked on unfinished.
+      setStatus((current) =>
+        current === 'recovering'
+          ? 'recovering'
+          : data.session
+            ? 'signedIn'
+            : 'signedOut',
+      );
     });
 
-    const { data } = supabase.auth.onAuthStateChange((_event, session) => {
-      setStatus(session ? 'signedIn' : 'signedOut');
+    const { data } = supabase.auth.onAuthStateChange((event, session) => {
+      if (!session) {
+        setStatus('signedOut');
+        return;
+      }
+      if (event === 'PASSWORD_RECOVERY') {
+        setStatus('recovering');
+        return;
+      }
+      // `USER_UPDATED` is what arrives when the new password is saved, which is
+      // the moment recovery is finished. Every other event with a session —
+      // including the token refreshes that keep arriving while the set-password
+      // screen is open — must not knock us out of `recovering` early, or the
+      // screen vanishes mid-typing.
+      setStatus((current) =>
+        current === 'recovering' && event !== 'USER_UPDATED'
+          ? 'recovering'
+          : 'signedIn',
+      );
     });
 
     return () => {

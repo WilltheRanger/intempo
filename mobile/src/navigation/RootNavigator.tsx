@@ -9,6 +9,7 @@ import { ChangeEmailScreen } from '../screens/account/ChangeEmailScreen';
 import { ChangePasswordScreen } from '../screens/account/ChangePasswordScreen';
 import { AddPieceScreen } from '../screens/addPiece/AddPieceScreen';
 import { AuthScreen } from '../screens/auth/AuthScreen';
+import { SetPasswordScreen } from '../screens/auth/SetPasswordScreen';
 import { CapturedPagesScreen } from '../screens/capturedPages/CapturedPagesScreen';
 import { InsightsScreen } from '../screens/insights/InsightsScreen';
 import { WarmupScreen } from '../screens/warmup/WarmupScreen';
@@ -65,6 +66,14 @@ export function RootNavigator() {
 
   if (status === 'signedOut') {
     return <AuthScreen />;
+  }
+
+  // A reset link establishes a real session, so this would otherwise read as
+  // "signed in" and drop someone into Today with the reset they clicked on
+  // unfinished. Held outside the navigator like the sign-in gate, because it is
+  // the same kind of thing: the app is not reachable until it is dealt with.
+  if (status === 'recovering') {
+    return <SetPasswordScreen />;
   }
 
   return (

@@ -50,6 +50,7 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "scheme": "intempo"
   }
 }
