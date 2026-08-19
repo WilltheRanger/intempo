@@ -27,10 +27,12 @@ const MIME_BY_EXT: Record<string, string> = {
 /**
  * A URI the platform can read bytes from, for any captured page.
  *
- * A page's `source` is a `ThumbnailSource`: a URL string once capture is real,
- * or a **number** for a bundled asset — the module id Metro assigns to
- * `require('…/page-01.jpg')`, which is what the mock scanner still produces. A
- * number means nothing to `fetch`, so it has to be resolved.
+ * A page's `source` is a `ThumbnailSource`. Real capture gives a URL string —
+ * a `file:` URI on device, a `blob:` one on web — and that is now the only
+ * thing the scanner produces. The **number** branch is for a bundled asset,
+ * the module id Metro assigns to `require('…/page.jpg')`: the type still
+ * permits it, so it is still handled rather than left to fail at runtime if
+ * anything ever routes one here.
  *
  * `Image.resolveAssetSource` is the obvious call and it is **not available on
  * react-native-web** — it throws `resolveAssetSource is not a function`, which

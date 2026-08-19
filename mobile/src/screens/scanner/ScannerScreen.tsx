@@ -1,7 +1,8 @@
 import { useNavigation } from '@react-navigation/native';
+import { CameraView, useCameraPermissions } from 'expo-camera';
 import { StatusBar } from 'expo-status-bar';
 import { Images, X, Zap, ZapOff } from 'lucide-react-native';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -9,7 +10,6 @@ import { ScoreThumbnail } from '../../components/pieces/ScoreThumbnail';
 import { Text } from '../../components/primitives/Text';
 import { impact, ImpactFeedbackStyle } from '../../lib/haptics';
 import { captureSession, useCapturedPages } from '../../data/captureSession';
-import type { ThumbnailSource } from '../../data/types';
 import {
   BORDER_WIDTH,
   colors,
@@ -22,37 +22,45 @@ import {
 import type { RootNavigation } from '../../navigation/types';
 import { ViewfinderPage } from './ViewfinderPage';
 
-/**
- * Stand-in images for captured pages. Real capture writes camera output here
- * instead; nothing else about this screen changes.
- *
- * Page-shaped rather than the library's score strips: those are single staff
- * lines at roughly 8:1, and cropping one into a portrait viewfinder shows two
- * noteheads at enormous magnification instead of a sheet of music. See
- * `assets/captures/SOURCES.md`.
- */
-export const MOCK_CAPTURES: ThumbnailSource[] = [
-  require('../../../assets/captures/page-01.jpg'),
-  require('../../../assets/captures/page-02.jpg'),
-  require('../../../assets/captures/page-03.jpg'),
-  require('../../../assets/captures/page-04.jpg'),
-];
-
 const CAPTURE_BUTTON_SIZE = 68;
 
 /**
- * Mock document scanner.
+ * Photographing a page of sheet music.
  *
- * No camera, no recognition — pressing capture appends a page and updates the
- * count. The chrome is what's being evaluated: how the framing guide sits over
- * a page, where the controls fall under the thumb, and how the count and Done
- * action behave as pages accumulate.
+ * **The camera is real now.** This screen used to render one of four bundled
+ * repo images in the viewfinder and append that same image on the shutter — so
+ * every scan in the app produced stock pages, whatever the phone was pointed
+ * at, and the upload built on top of it was uploading a fixture. The chrome is
+ * unchanged; only the picture behind it became true.
+ *
+ * **A laptop webcam previews mirrored, and the photograph does not.**
+ * `ExpoCamera.web.js` applies `scaleX(-1)` on `native.type === front` alone and
+ * ignores the `mirror` prop entirely, so a machine whose only camera is
+ * user-facing mirrors the preview whatever `facing` says. Measured rather than
+ * assumed: the preview carried `scaleX(-1)` while the captured file came back
+ * the other way round — so the **file is true** and OCR reads a correct page;
+ * only the picture you frame against is reversed. Countering it here was
+ * rejected because nothing in the props says whether the flip was applied, so
+ * the counter would mirror a real back camera on a phone browser — trading a
+ * confusing preview on a laptop for a wrong one on the target device. A phone's
+ * back camera resolves to `back` and is never mirrored.
+ *
+ * **Nothing falls back to a fake page.** A device with no camera, or a refused
+ * permission, gets a plain explanation and the two routes that still work —
+ * import, or typing the piece in. Substituting a stock image for the page
+ * someone believes they just photographed is the worst thing this screen could
+ * do: it would flow all the way through OCR and into their library under a
+ * title they chose.
  */
 export function ScannerScreen() {
   const navigation = useNavigation<RootNavigation>();
   const insets = useSafeAreaInsets();
   const pages = useCapturedPages();
   const [flashOn, setFlashOn] = useState(false);
+  const [permission, requestPermission] = useCameraPermissions();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const camera = useRef<CameraView>(null);
 
   // Opening the scanner starts a new session. Coming back from review to add
   // another page doesn't remount this screen, so the pages survive that.
@@ -60,15 +68,45 @@ export function ScannerScreen() {
     captureSession.reset();
   }, []);
 
+  // Asked once, on arrival, rather than behind a button: the screen is a
+  // viewfinder and it cannot show one without this. `canAskAgain` false means
+  // the system dialog will never appear again, so asking would do nothing.
+  useEffect(() => {
+    if (permission && !permission.granted && permission.canAskAgain) {
+      void requestPermission();
+    }
+  }, [permission?.granted, permission?.canAskAgain]);
+
   const lastPage = pages[pages.length - 1];
   const FlashIcon = flashOn ? Zap : ZapOff;
-  // What's framed is what the next capture yields — the viewfinder and the
-  // resulting page thumbnail show the same image.
-  const nextCapture = MOCK_CAPTURES[pages.length % MOCK_CAPTURES.length];
+  const ready = permission?.granted === true;
 
-  function handleCapture() {
-    impact(ImpactFeedbackStyle.Medium);
-    captureSession.add(nextCapture);
+  async function handleCapture() {
+    if (!ready || busy) {
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const photo = await camera.current?.takePictureAsync({
+        quality: 0.8,
+        // The bytes are uploaded from this URI, and holding a whole page as a
+        // base64 string in JS memory for every page is how a scanner runs a
+        // phone out of heap.
+        base64: false,
+      });
+      if (!photo?.uri) {
+        throw new Error('The camera returned no image.');
+      }
+      impact(ImpactFeedbackStyle.Medium);
+      captureSession.add(photo.uri);
+    } catch (cause) {
+      setError(
+        cause instanceof Error ? cause.message : 'That photo could not be taken.',
+      );
+    } finally {
+      setBusy(false);
+    }
   }
 
   function handleDone() {
@@ -117,7 +155,31 @@ export function ScannerScreen() {
       </View>
 
       <View style={styles.viewfinder}>
-        <ViewfinderPage source={nextCapture} />
+        <ViewfinderPage>
+          {ready ? (
+            <CameraView
+              ref={camera}
+              style={styles.camera}
+              facing="back"
+              enableTorch={flashOn}
+              // Stills only. Asking for the microphone here would put a second
+              // permission prompt in front of a screen that photographs paper.
+              mode="picture"
+            />
+          ) : (
+            <View style={styles.unavailable}>
+              <Text variant="metadataSmall" color="onDarkMuted" style={styles.unavailableText}>
+                {cameraMessage(permission)}
+              </Text>
+            </View>
+          )}
+        </ViewfinderPage>
+
+        {error ? (
+          <Text variant="metadataSmall" color="onDarkMuted" style={styles.error}>
+            {error}
+          </Text>
+        ) : null}
       </View>
 
       <View
@@ -156,12 +218,15 @@ export function ScannerScreen() {
         </View>
 
         <Pressable
-          onPress={handleCapture}
+          onPress={() => void handleCapture()}
+          disabled={!ready || busy}
           accessibilityRole="button"
           accessibilityLabel="Capture page"
+          accessibilityState={{ disabled: !ready || busy }}
           style={({ pressed }) => [
             styles.captureRing,
             pressed && styles.capturePressed,
+            (!ready || busy) && styles.captureDisabled,
           ]}
         >
           <View style={styles.captureCore} />
@@ -189,6 +254,25 @@ export function ScannerScreen() {
   );
 }
 
+/**
+ * Why there is no picture, in the musician's terms.
+ *
+ * Three genuinely different situations, and lumping them together would leave
+ * someone tapping a dead shutter with no idea whether to change a setting, plug
+ * in a webcam, or give up and type the piece in.
+ */
+function cameraMessage(
+  permission: ReturnType<typeof useCameraPermissions>[0],
+): string {
+  if (!permission) {
+    return 'Starting the camera…';
+  }
+  if (!permission.canAskAgain) {
+    return 'InTempo does not have camera access. Turn it on in your device settings, or add the piece by hand instead.';
+  }
+  return 'InTempo needs your camera to photograph sheet music.';
+}
+
 function pageCountLabel(count: number): string {
   if (count === 0) {
     return 'No pages yet';
@@ -197,6 +281,27 @@ function pageCountLabel(count: number): string {
 }
 
 const styles = StyleSheet.create({
+  camera: {
+    flex: 1,
+    width: '100%',
+  },
+  unavailable: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: spacing.xl,
+  },
+  unavailableText: {
+    textAlign: 'center',
+  },
+  error: {
+    marginTop: spacing.lg,
+    textAlign: 'center',
+    paddingHorizontal: spacing.xl,
+  },
+  captureDisabled: {
+    opacity: 0.4,
+  },
   screen: {
     flex: 1,
     backgroundColor: colors.actionBg,

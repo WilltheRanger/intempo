@@ -1,7 +1,6 @@
+import type { ReactNode } from 'react';
 import { StyleSheet, View } from 'react-native';
 
-import { ScoreThumbnail } from '../../components/pieces/ScoreThumbnail';
-import type { ThumbnailSource } from '../../data/types';
 import { colors, radii, spacing } from '../../design';
 
 /** Corner bracket length, in points. */
@@ -9,25 +8,24 @@ const CORNER = 26;
 const CORNER_WEIGHT = 2;
 
 export interface ViewfinderPageProps {
-  /** The image the next capture will produce. */
-  source: ThumbnailSource;
+  /** The camera preview, or whatever stands in for it. */
+  children: ReactNode;
 }
 
 /**
- * Stands in for the camera feed.
+ * The framing guide the page is lined up inside.
  *
- * Shows the exact image the next capture will produce, through the same
- * component and fit the captured-page thumbnails use — so what sits inside
- * the framing guide is what comes back on the review screen.
+ * **It used to be the camera.** This component held a bundled image and the
+ * docstring said it "stands in for the camera feed" — so the scanner showed the
+ * same four repo fixtures to everyone, and the shutter appended one of them
+ * regardless of what the phone was pointed at. The frame is all that remains
+ * of that: it now wraps a real preview, and the geometry is unchanged so the
+ * composition the owner approved survives the swap.
  */
-export function ViewfinderPage({ source }: ViewfinderPageProps) {
+export function ViewfinderPage({ children }: ViewfinderPageProps) {
   return (
     <View style={styles.frame}>
-      <ScoreThumbnail
-        source={source}
-        radius={radii.sm}
-        style={styles.page}
-      />
+      <View style={styles.page}>{children}</View>
 
       {/* Framing guide: four plain brackets, nothing that pulses or glows.
           They sit on the dark ground just outside the page — drawn on the
@@ -50,6 +48,11 @@ const styles = StyleSheet.create({
   page: {
     flex: 1,
     width: '100%',
+    borderRadius: radii.sm,
+    // The preview is a child that doesn't know about the radius, so the frame
+    // does the clipping.
+    overflow: 'hidden',
+    backgroundColor: colors.actionBg,
   },
   corner: {
     position: 'absolute',

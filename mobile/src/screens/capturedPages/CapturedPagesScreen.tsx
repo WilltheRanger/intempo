@@ -15,7 +15,6 @@ import {
 import { captureSession, useCapturedPages } from '../../data/captureSession';
 import { spacing } from '../../design';
 import type { RootNavigation } from '../../navigation/types';
-import { MOCK_CAPTURES } from '../scanner/ScannerScreen';
 import { DraggablePageList } from './DraggablePageList';
 
 /**
@@ -35,10 +34,16 @@ export function CapturedPagesScreen() {
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
   const pendingPosition = pages.findIndex((page) => page.id === pendingDelete) + 1;
 
-  function handleRetake(id: string, index: number) {
-    // Stands in for re-shooting the page: swap in a different image so the
-    // change is visible. Real retake reopens the camera for this page only.
-    captureSession.replace(id, MOCK_CAPTURES[(index + 1) % MOCK_CAPTURES.length]);
+  function handleRetake(id: string) {
+    // Drops the page and returns to the viewfinder, which is the only thing
+    // "retake" can honestly mean now that capture is real. It used to swap in a
+    // different bundled image — visible motion standing in for a photograph.
+    //
+    // `goBack` rather than `navigate`: the scanner is still mounted underneath,
+    // so this returns to it without remounting — and remounting would fire its
+    // `captureSession.reset()` and discard every other page.
+    captureSession.remove(id);
+    navigation.goBack();
   }
 
   if (pages.length === 0) {
@@ -87,7 +92,7 @@ export function CapturedPagesScreen() {
       <DraggablePageList
         pages={pages}
         onReorder={(id, toIndex) => captureSession.moveTo(id, toIndex)}
-        onRetake={(page, index) => handleRetake(page.id, index)}
+        onRetake={(page) => handleRetake(page.id)}
         onDelete={(id) => setPendingDelete(id)}
         onNudge={(id, direction) => captureSession.move(id, direction)}
       />

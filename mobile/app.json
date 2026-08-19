@@ -15,6 +15,13 @@
           "enableBackgroundPlayback": false,
           "enableBackgroundRecording": false
         }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "InTempo uses the camera to photograph your sheet music so it can be transcribed.",
+          "recordAudioAndroid": false
+        }
       ]
     ],
     "ios": {
