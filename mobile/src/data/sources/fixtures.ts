@@ -22,10 +22,9 @@ import type {
 /**
  * Development fixtures.
  *
- * These exist because the backend has no concept of practice progress, a
- * last-practiced timestamp, a "current" piece, or a readable score image (see
- * the Phase 1 audit). The UI is built against the shape those fields will
- * eventually have so that no screen changes when the endpoints land.
+ * These exist so every screen can be developed and driven without a backend.
+ * They are the same shape the API adapter produces, so no screen changes when
+ * the two are swapped — which is the point of the seam in `sources/index.ts`.
  *
  * The artwork is the repo's own public-domain fixture set from
  * `fixtures/scores/` — each thumbnail is genuinely the piece it claims to be.
@@ -86,7 +85,6 @@ const FIXTURE_PIECES: FixturePiece[] = [
     title: 'Sonata No. 1 in G minor, BWV 1001',
     composer: 'J. S. Bach',
     movement: 'I. Adagio',
-    progress: 0.62,
     // Recorded minutes ago, so it is both the piece to continue and the piece
     // the sample take belongs to — which is what the API adapter produces,
     // since `getCurrentPiece` resolves through the newest analysis.
@@ -100,7 +98,6 @@ const FIXTURE_PIECES: FixturePiece[] = [
     title: '42 Études ou Caprices, No. 2',
     composer: 'Rodolphe Kreutzer',
     movement: null,
-    progress: 0.34,
     practicedDaysAgo: 5,
     thumbnail: require('../../../assets/fixtures/03_complex_printed.jpg'),
     markedBpm: MARKED_BPM,
@@ -111,7 +108,6 @@ const FIXTURE_PIECES: FixturePiece[] = [
     title: '60 Studies for the Violin, Op. 45',
     composer: 'Franz Wohlfahrt',
     movement: 'No. 28 — Allegretto',
-    progress: 0.81,
     practicedDaysAgo: 12,
     thumbnail: require('../../../assets/fixtures/02_medium_printed.jpg'),
     markedBpm: MARKED_BPM,
@@ -122,7 +118,6 @@ const FIXTURE_PIECES: FixturePiece[] = [
     title: '60 Studies for the Violin, Op. 45',
     composer: 'Franz Wohlfahrt',
     movement: 'No. 1 — Allegro moderato',
-    progress: 1,
     practicedDaysAgo: 26,
     thumbnail: require('../../../assets/fixtures/01_simple_printed.jpg'),
     markedBpm: MARKED_BPM,
@@ -136,7 +131,6 @@ const FIXTURE_PIECES: FixturePiece[] = [
     title: 'Violin Concerto No. 3 in G major, K. 216',
     composer: 'W. A. Mozart',
     movement: 'I. Allegro',
-    progress: 0.45,
     practicedDaysAgo: 8,
     thumbnail: require('../../../assets/fixtures/02_medium_printed.jpg'),
     markedBpm: MARKED_BPM,
@@ -147,20 +141,18 @@ const FIXTURE_PIECES: FixturePiece[] = [
     title: 'Méditation from Thaïs',
     composer: 'Jules Massenet',
     movement: null,
-    progress: 0.9,
     practicedDaysAgo: 19,
     thumbnail: require('../../../assets/fixtures/01_simple_printed.jpg'),
     markedBpm: MARKED_BPM,
     score: DEMO_SCORE,
   },
   {
-    // Just added, never opened: no progress and no practice date. Exercises
-    // the "Start practice" label and the empty-progress path.
+    // Just added, never recorded against. Exercises the "Start practice" label
+    // and every path that asks whether a piece has any history.
     id: 'fixture-paganini-24',
     title: 'Caprice No. 24 in A minor, Op. 1',
     composer: 'Niccolò Paganini',
     movement: null,
-    progress: null,
     practicedDaysAgo: null,
     thumbnail: require('../../../assets/fixtures/03_complex_printed.jpg'),
     markedBpm: MARKED_BPM,
@@ -218,7 +210,6 @@ export const fixturePieceSource: PieceSource = {
       title: input.title,
       composer: input.composer,
       movement: null,
-      progress: null,
       practicedDaysAgo: null,
       // No photograph was taken, so there is nothing to show. `ScoreThumbnail`
       // draws its ruled staff for a null source, which is the truthful image

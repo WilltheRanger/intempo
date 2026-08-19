@@ -22,7 +22,6 @@ import {
   MetadataRow,
   PageHeader,
   PrimaryButton,
-  ProgressBar,
   ScreenContainer,
   SecondaryButton,
   Text,
@@ -35,7 +34,7 @@ import {
 import type { Piece } from '../../data/types';
 import { practiceTempo, usePracticeTempos } from '../../data/practiceTempo';
 import { spacing } from '../../design';
-import { formatLastPracticed, formatProgressPercent } from '../../lib/format';
+import { formatLastPracticed } from '../../lib/format';
 import { scheduleScore, type Schedule } from '../../lib/score';
 import type { RootNavigation, RootStackParamList } from '../../navigation/types';
 import { ListenButton } from '../record/ListenButton';
@@ -176,14 +175,21 @@ export function PieceDetailScreen() {
     );
   }
 
-  const started = piece.progress !== null && piece.progress > 0;
+  /**
+   * Whether this piece has been recorded before.
+   *
+   * One fact, answering two questions: whether the button says "Continue" and
+   * whether there is any history to show. It used to be two — `started` read
+   * `progress > 0`, a field with no backing column that `sources/api.ts` maps
+   * to null, so against the live API every piece said "Start practice" forever,
+   * including one recorded fifty times.
+   */
+  const played = piece.lastPracticedAt !== null;
   const measureCount = piece.score?.measures.length ?? 0;
   const hasNotation = measureCount > 0;
   const hasPages = piece.thumbnail !== null;
-  /** Anything to say about how this piece has gone so far. */
-  const hasHistory = piece.progress !== null || piece.lastPracticedAt !== null;
   /** Whether there is state worth grouping with the action — see the card below. */
-  const hasState = hasPages || hasHistory;
+  const hasState = hasPages || played;
 
   return (
     <ScreenContainer>
@@ -284,27 +290,25 @@ export function PieceDetailScreen() {
           ) : null}
 
           <View style={styles.scoreBody}>
-            {piece.progress !== null ? (
-              <ProgressBar
-                value={piece.progress}
-                accessibilityLabel={`Progress through ${piece.title}`}
-              />
-            ) : null}
-            {hasHistory ? (
+            {/*
+              No progress bar. It rendered `piece.progress`, a field with no
+              backing column anywhere in the schema — Today's card dropped it as
+              "fixture-only ornament" and this was the last screen still drawing
+              it, so against the live API it was a bar that never appeared and a
+              percentage that was never computed. What is left is true: when you
+              last played this.
+            */}
+            {played ? (
               <MetadataRow
                 variant="metadataSmall"
-                items={[
-                  formatProgressPercent(piece.progress),
-                  formatLastPracticed(piece.lastPracticedAt),
-                ]}
-                style={piece.progress !== null ? styles.scoreMeta : undefined}
+                items={[formatLastPracticed(piece.lastPracticedAt)]}
               />
             ) : null}
 
             <PrimaryButton
-              label={started ? 'Continue practice' : 'Start practice'}
+              label={played ? 'Continue practice' : 'Start practice'}
               onPress={() => navigation.navigate('Record', { pieceId: piece.id })}
-              style={hasHistory ? styles.practice : undefined}
+              
             />
           </View>
         </Card>
@@ -472,9 +476,6 @@ const styles = StyleSheet.create({
   scoreBody: {
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.lg,
-  },
-  scoreMeta: {
-    marginTop: spacing.sm,
   },
   practice: {
     marginTop: spacing.lg,

@@ -96,14 +96,6 @@ export function formatLastPracticedShort(
   return months <= 1 ? 'Last month' : `${months} months`;
 }
 
-/** `0.62` becomes `"62%"`. Null in, null out. */
-export function formatProgressPercent(progress: number | null): string | null {
-  if (progress === null || Number.isNaN(progress)) {
-    return null;
-  }
-  const clamped = Math.min(Math.max(progress, 0), 1);
-  return `${Math.round(clamped * 100)}%`;
-}
 
 const TIER_LABELS: Record<UserTier, string> = {
   free: 'Free',
