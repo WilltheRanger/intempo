@@ -6,6 +6,70 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-18 01:40 — The camera is real
+
+**Branch:** `main`. Owner: `/loop improve the app as much as you can` — first
+iteration, taking the top item off the open list.
+
+The scanner rendered one of four bundled repo images in the viewfinder and
+appended **that same image** on the shutter. So every scan produced stock pages
+whatever the phone was pointed at — and since last night's work put a real
+upload and real OCR behind it, the pipeline was faithfully transcribing a
+fixture and filing it under a title the musician had chosen.
+
+`expo-camera` (a direct dependency, with its permission string declared in
+`app.json`) replaces it. `ViewfinderPage` keeps its frame and corner brackets
+and now wraps a live `CameraView`; the chrome the owner approved is untouched.
+Permission is requested on arrival rather than behind a button — the screen is a
+viewfinder and cannot show one without it — and `canAskAgain: false` skips the
+ask, because the system dialog will never appear again.
+
+**Nothing falls back to a fake page.** No camera, or a refused permission, gets
+a plain explanation and the routes that still work. Three distinct messages, not
+one: "starting", "needs your camera", and "turn it on in settings" are different
+situations, and lumping them together leaves someone tapping a dead shutter with
+no idea whether to change a setting or give up and type the piece in.
+Substituting a stock image for the page someone believes they just photographed
+would flow through OCR into their library under a title they chose — the worst
+thing this screen could do.
+
+**"Retake" became real too.** It used to swap in a different bundled image —
+visible motion standing in for a photograph. It now drops the page and returns
+to the viewfinder, via `goBack` rather than `navigate`, because the scanner is
+still mounted underneath and remounting would fire its `captureSession.reset()`
+and discard every other page.
+
+### The mirrored preview, measured rather than assumed
+
+The web preview shows the feed mirrored. `mirror={false}` looked like the fix
+and **is a no-op**: `ExpoCamera.web.js` applies `scaleX(-1)` on
+`native.type === front` alone and ignores the prop, so a machine whose only
+camera is user-facing mirrors whatever `facing` says. The prop was removed
+rather than left in place implying it did something.
+
+A pixel comparison settled what actually matters: sampling luminance either side
+of centre, the preview and the captured file come back on **opposite** sides —
+the file is the unmirrored stream. So OCR reads a true page and only the picture
+you frame against is reversed. Countering the flip here was rejected: nothing in
+the props says whether it was applied, so the counter would mirror a real back
+camera on a phone browser — trading a confusing preview on a laptop for a wrong
+one on the target device.
+
+**Tests:** `tsc --noEmit` and `build:web` clean. New `verify-camera` suite, 8
+checks across two browser contexts: a live 640x480 `MediaStream` playing in the
+viewfinder, no bundled fixture anywhere in it, the shutter producing real
+blob-backed image data, the page count following, the captures reaching review —
+and, with permission withheld, an explanation on screen and **still no stock
+page**. All five earlier fixture suites re-run: green.
+
+**Still not verified on a device.** Torch, focus, resolution and the native
+permission dialog are all untested — a synthetic 640x480 stream in headless
+Chromium is not a phone camera. The web preview is also not the product: it is
+where this could be driven, not where it will be used.
+
+**Rollback:** revert this commit. `expo-camera` and the `app.json` plugin entry
+come with it.
+
 ## 2026-08-18 00:55 — Staff lines run to a common right margin
 
 **Branch:** `main`. Owner approved the fix flagged in the entry below.
