@@ -6,6 +6,50 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-18 04:35 — Magic-link sign-in
+
+**Branch:** `main`. Owner: `/loop improve the app as much as you can` — fifth
+iteration.
+
+The spec asks for "Auth (email + magic link)" and lists *"magic-link login works
+end-to-end"* in a Definition of Done. The legacy web frontend had it; the mobile
+app never did. It was **unbuildable until the previous iteration** — a link that
+signs you in is worthless if it lands on a Supabase page, so this waited on the
+redirect work rather than being an oversight.
+
+`sendSignInLink` is now most of it: `signInWithOtp` with the same
+`authRedirectUrl()` the reset uses. Following the link fires `SIGNED_IN`,
+`useAuthStatus` hears it, and the app replaces the screen — no new state, unlike
+recovery, because signing in is exactly what a session already means.
+
+**`shouldCreateUser` stays at its default of true**, so an unknown address gets
+an account. The alternative is worse than it looks: with it false, Supabase
+errors for an address it doesn't know, and that error is an account-enumeration
+oracle a stranger could walk. The cost is a typo'd address creating a stray
+account nobody confirms — the trade every passwordless product makes.
+
+`AuthMode` gains `magicLink`, and the "does this mode take a password" test
+moved out of `AuthScreen` into `needsPassword()` beside the mode itself, since
+two modes now answer no and the screen was deciding it inline.
+
+**Composition:** "Email me a link" sits beside "Forgot your password?" under the
+sign-in form — the two things you can ask for from that form, on one line. Both
+link modes then offer "Use a password instead", which they needed and the reset
+mode never had: it was reachable only from sign-in and its only exit was the
+account switcher at the foot, which says the wrong thing.
+
+**Tests:** `tsc --noEmit` and both builds clean. New `verify-magiclink` suite,
+14 checks: the affordance is on the sign-in form and the reset one survives
+beside it, the magic-link form shows **zero password inputs**, an empty and a
+malformed address are both refused *before anything is sent* (asserted on the
+request count, not just the message), the real send is observed as
+`POST /auth/v1/otp`, the sent screen doesn't offer the confirmation-only
+"Send it again", and following a `type=magiclink` fragment reaches the app
+rather than the set-password screen. All eight fixture suites re-run: green.
+
+**Not verified:** the native deep link, same as last iteration — `intempo://`
+needs a device.
+
 ## 2026-08-18 03:50 — The password-reset link now goes somewhere
 
 **Branch:** `main`. Owner: `/loop improve the app as much as you can` — fourth

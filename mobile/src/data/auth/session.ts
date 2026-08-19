@@ -147,6 +147,36 @@ export async function signUp(
 }
 
 /**
+ * Sends a sign-in link — the spec's "magic link", and the last piece of
+ * §Auth that the mobile app never had.
+ *
+ * It was unbuildable until the emailed link had somewhere to land: with no
+ * `redirectTo` and no URL parsing, a link that signs you in would have signed
+ * you in to a Supabase page. That is fixed, so this is now mostly one call.
+ *
+ * **`shouldCreateUser` is left at its default of true**, so an address with no
+ * account gets one. That is the passwordless convention, and the alternative is
+ * worse than it looks: with it false, Supabase errors for an unknown address
+ * and the error is an account-enumeration oracle — a stranger could test
+ * addresses one at a time. The cost is that a typo'd address creates a stray
+ * account that nobody ever confirms, which is the trade every passwordless
+ * product makes.
+ *
+ * Nothing is returned. Either the mail arrives and the link establishes a
+ * session — which `useAuthStatus` hears, replacing the screen — or it doesn't.
+ */
+export async function sendSignInLink(email: string): Promise<void> {
+  const supabase = requireClient();
+  const { error } = await supabase.auth.signInWithOtp({
+    email,
+    options: { emailRedirectTo: authRedirectUrl() },
+  });
+  if (error) {
+    throw error;
+  }
+}
+
+/**
  * Sends a password-reset link.
  *
  * Always resolves, even for an address with no account: telling an anonymous
