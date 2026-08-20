@@ -16,7 +16,6 @@ import { WarmupScreen } from '../screens/warmup/WarmupScreen';
 import { LibraryScreen } from '../screens/library/LibraryScreen';
 import { PieceDetailScreen } from '../screens/pieceDetail/PieceDetailScreen';
 import { PieceScoreScreen } from '../screens/pieceScore/PieceScoreScreen';
-import { PracticeScreen } from '../screens/practice/PracticeScreen';
 import { RecordScreen } from '../screens/record/RecordScreen';
 import { ProfileScreen } from '../screens/profile/ProfileScreen';
 import { ScannerScreen } from '../screens/scanner/ScannerScreen';
@@ -79,7 +78,6 @@ export function RootNavigator() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="Tabs" component={TabNavigator} />
-      <Stack.Screen name="Practice" component={PracticeScreen} />
       <Stack.Screen name="AddPiece" component={AddPieceScreen} />
       {/* Full-bleed dark camera surface — presented over everything. */}
       <Stack.Screen

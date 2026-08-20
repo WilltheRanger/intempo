@@ -7,7 +7,6 @@ export type AddPieceOption = 'scan' | 'import' | 'manual';
 
 export type RootStackParamList = {
   Tabs: undefined;
-  Practice: { pieceId: string };
   /** Scan has its own screen; this covers the other two options. */
   AddPiece: { option: Exclude<AddPieceOption, 'scan'> };
   Scanner: undefined;
@@ -45,7 +44,7 @@ export type RootNavigation = NativeStackNavigationProp<RootStackParamList>;
 /**
  * Navigation as seen from inside a tab screen: it can switch tabs *and* push
  * onto the root stack, so both `navigate('Library')` and
- * `navigate('Practice', …)` typecheck.
+ * `navigate('Record', …)` typecheck.
  */
 export type TabScreenNavigation<T extends keyof TabParamList> =
   CompositeNavigationProp<
