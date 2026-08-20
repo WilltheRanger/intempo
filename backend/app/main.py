@@ -3,7 +3,9 @@ import logging
 from contextlib import asynccontextmanager, suppress
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
+from app.config import settings
 from app.routers import analyses, calibration, corrections, health, me, scores, upload
 from app.workers.analysis_runner import (
     SWEEP_INTERVAL_SECONDS,
@@ -51,6 +53,35 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(title="InTempo API", lifespan=lifespan)
+
+# The app and this API are never same-origin — 8081 against 8000 in
+# development, a Pages site against wherever this is hosted in production — so
+# without this the browser refuses every request before sending it and the app
+# shows "Failed to fetch", which names nothing.
+#
+# `allow_credentials=False` because auth is a bearer token, not a cookie:
+# nothing here needs the browser to attach ambient credentials, and asking for
+# them would rule out ever using a wildcard origin for no gain.
+#
+# `Authorization` has to be named explicitly. It is not a CORS-safelisted
+# header, so a preflight that omits it fails every authenticated request while
+# leaving `/v1/health` working — which looks like an auth bug rather than a
+# CORS one.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.cors_origins,
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
+    max_age=600,
+)
+
+if not settings.CORS_ALLOWED_ORIGINS:
+    log.info(
+        "CORS_ALLOWED_ORIGINS is not set — allowing localhost development "
+        "origins only. A deployed frontend must name its own origin."
+    )
+
 app.include_router(health.router, prefix="/v1")
 app.include_router(me.router, prefix="/v1")
 app.include_router(upload.router, prefix="/v1")
