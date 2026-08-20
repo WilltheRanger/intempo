@@ -116,37 +116,6 @@ async def current_jwt_payload(
     return _decode_token(creds.credentials)
 
 
-async def current_user(
-    payload: dict[str, Any] = Depends(current_jwt_payload),
-) -> dict[str, Any]:
-    """FastAPI dependency: loads the full users row from Supabase.
-
-    Returns a raw dict (not a Pydantic model) so each caller can decide
-    whether to parse it as `User`, `MeResponse`, etc.
-    Raises 404 if the user has a valid JWT but no row in `users` —
-    callers that want first-touch provisioning should depend on
-    `current_user_id` + `current_jwt_payload` instead and handle the
-    missing-row case directly.
-    """
-    sub = payload.get("sub")
-    if not sub:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token missing subject",
-        )
-    client = get_service_client()
-    if client is None:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Supabase service-role client is not configured",
-        )
-    response = client.table("users").select("*").eq("id", sub).limit(1).execute()
-    rows = response.data or []
-    if not rows:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-    return rows[0]
-
-
 async def current_user_id_provisioned(
     payload: dict[str, Any] = Depends(current_jwt_payload),
 ) -> UUID:
