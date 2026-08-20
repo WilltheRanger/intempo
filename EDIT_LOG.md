@@ -6,6 +6,67 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-18 05:20 — Screens stop blaming the connection, and the app can't hang
+
+**Branch:** `main`. Owner: `/loop improve the app as much as you can` — sixth
+iteration.
+
+### The message existed; nothing showed it
+
+Two iterations ago `apiFetch` learned to say *"Your session has ended. Sign in
+again."* Five screens then threw it away and substituted their own hardcoded
+line — **"Check your connection and try again"** — for every failure there is.
+So the fix was half a fix: the app produced the right sentence and rendered the
+wrong one. A musician whose session expired was told to check their wifi, and
+so was one whose server had returned a 500.
+
+`describeLoadError` now maps the failure to something true and actionable: the
+session ending, a 403, a 404, a 5xx that says *"this is not something you did"*,
+and connection as the default. That default is deliberate rather than lazy —
+`fetch` rejects with a bare `TypeError` for a dropped connection, a DNS failure
+and a CORS refusal alike, so anything that isn't a recognisable `ApiError`
+genuinely is "something between here and the server".
+
+`VerdictScreen` was left alone: its copy already covers the case where there is
+simply no take, which is not an error, and rewriting it would have made that
+wrong.
+
+### A 401 shouldn't be an error message at all
+
+`apiFetch` now signs out when there is no usable token, not just when the server
+rejects one. A refresh that failed past recovery leaves a stored session that
+cannot work while `onAuthStateChange` may never fire — so the app sat on a
+screen showing an error about a session the gate still believed in. Clearing it
+returns the musician to sign-in, which is the only thing that actually helps,
+and is what "sign in again" was asking them to do by hand.
+
+### The blank-screen hang
+
+`RootNavigator` renders a bare ivory rectangle while auth is `loading`, and
+`getSession()` had no timeout — a wedged storage read turned the whole app into
+a blank screen with nothing to tap. `SESSION_TIMEOUT_MS` (8s) resolves a stuck
+load to `signedOut`, on the same reasoning as `FONT_TIMEOUT_MS` in `App.tsx`:
+signing in again is a recoverable annoyance, a blank screen is an outage. It
+only ever resolves a *stuck* load, and never overrides `recovering`.
+
+### Making it testable
+
+The stub gained failure injection — `GET /__fail?status=500` makes every
+subsequent `/v1/*` answer with that status. Without it there was no way to see
+what a screen says when the server is broken, which is exactly the copy most
+likely to be wrong and least likely to be exercised.
+
+**Tests:** `tsc --noEmit` and both builds clean. New `verify-errors` suite, 6
+checks against a live-ish build: a 500 produces "The server had a problem" and
+**not** "Check your connection", and a 401 returns to the sign-in screen rather
+than sitting on a broken one. All eight fixture suites re-run: green.
+
+The suite's own "no runtime errors" check failed first time, counting the 500s
+it had just injected on purpose; it now ignores exactly the statuses it asked
+for.
+
+**Rollback:** revert this commit.
+
 ## 2026-08-18 04:35 — Magic-link sign-in
 
 **Branch:** `main`. Owner: `/loop improve the app as much as you can` — fifth

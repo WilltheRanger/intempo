@@ -75,6 +75,13 @@ ANALYSES.sort(key=lambda a: a["created_at"], reverse=True)
 CREATED: dict = {}
 UPLOADED: set = set()
 
+#: Failure injection for the error-handling paths. `GET /__fail?status=500`
+#: makes every subsequent /v1/* answer with that status; `status=0` clears it.
+#: Without this there is no way to see what a screen says when the server is
+#: broken, which is exactly the copy most likely to be wrong and least likely
+#: to be exercised.
+FAIL: dict = {"status": 0}
+
 ME = {"id": USER, "email": "you@example.com", "tier": "free", "role": "student",
       "studio_id": None, "baseline_profile": {}, "created_at": iso(NOW - timedelta(days=60))}
 
@@ -133,6 +140,14 @@ class H(http.server.BaseHTTPRequestHandler):
     def do_OPTIONS(self): self._send(204, b"")
     def do_GET(self):
         path = self.path.split("?")[0]
+        if path == "/__fail":
+            from urllib.parse import parse_qs, urlparse
+            q = parse_qs(urlparse(self.path).query)
+            FAIL["status"] = int((q.get("status") or ["0"])[0])
+            return self._send(200, json.dumps(FAIL).encode())
+        if FAIL["status"] and path.startswith("/v1/"):
+            return self._send(FAIL["status"],
+                              json.dumps({"detail": "injected failure"}).encode())
         if path == "/v1/me":
             return self._send(200, json.dumps(ME).encode())
         if path == "/v1/scores":

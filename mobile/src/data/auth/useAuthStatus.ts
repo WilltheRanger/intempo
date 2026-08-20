@@ -25,6 +25,19 @@ export type AuthStatus = 'loading' | 'signedIn' | 'signedOut' | 'recovering';
  * to unauthenticated access to live data, because `apiFetch` then has no host
  * to talk to either.
  */
+/**
+ * How long to wait for the stored session before giving up and showing the
+ * sign-in screen.
+ *
+ * The same reasoning as `FONT_TIMEOUT_MS` in `App.tsx`, and the same failure it
+ * prevents: `RootNavigator` renders a bare ivory rectangle while this is
+ * `loading`, so a `getSession()` that never settles — a wedged storage read, a
+ * Supabase client that never resolves — turned the whole app into a blank
+ * screen with nothing to tap. Signing in again is a recoverable annoyance; a
+ * blank screen is an outage. On any working deployment this never fires.
+ */
+const SESSION_TIMEOUT_MS = 8000;
+
 export function useAuthStatus(): AuthStatus {
   const [status, setStatus] = useState<AuthStatus>(() =>
     IS_LIVE_BACKEND ? 'loading' : 'signedIn',
@@ -80,8 +93,17 @@ export function useAuthStatus(): AuthStatus {
       );
     });
 
+    // Only ever resolves a *stuck* load. Once anything real has been decided
+    // this is a no-op, and it never overrides `recovering`.
+    const timeout = setTimeout(() => {
+      if (active) {
+        setStatus((current) => (current === 'loading' ? 'signedOut' : current));
+      }
+    }, SESSION_TIMEOUT_MS);
+
     return () => {
       active = false;
+      clearTimeout(timeout);
       data.subscription.unsubscribe();
     };
   }, []);

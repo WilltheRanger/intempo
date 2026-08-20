@@ -18,6 +18,7 @@ import { useCurrentPiece, useLibrary } from '../../data/hooks/usePieces';
 import { practiceTempo, usePracticeTempos } from '../../data/practiceTempo';
 import { usePreferences } from '../../data/preferences';
 import type { Piece } from '../../data/types';
+import { describeLoadError } from '../../data/api/describeError';
 import { spacing } from '../../design';
 import { getGreeting } from '../../lib/greeting';
 import { factFor } from '../../lib/facts';
@@ -142,7 +143,7 @@ export function TodayScreen() {
         {header}
         <EmptyState
           title="Couldn't load your pieces"
-          description="Check your connection and pull to try again."
+          description={describeLoadError(currentPiece.error)}
         />
       </ScreenContainer>
     );

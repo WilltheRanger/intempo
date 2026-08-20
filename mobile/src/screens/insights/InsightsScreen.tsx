@@ -10,6 +10,7 @@ import {
   Text,
 } from '../../components/primitives';
 import { useInsights } from '../../data/hooks/useInsights';
+import { describeLoadError } from '../../data/api/describeError';
 import { spacing } from '../../design';
 import { formatTendency, formatTendencyDetail } from '../../lib/tempo';
 import { FadeIn } from '../../components/motion';
@@ -34,7 +35,7 @@ import { PieceInsightRow } from './PieceInsightRow';
  * use, so no claim here is one the backend won't be able to make.
  */
 export function InsightsScreen() {
-  const { data: insights, isPending, isError, refetch } = useInsights();
+  const { data: insights, isPending, isError, error, refetch } = useInsights();
 
   if (isPending) {
     return (
@@ -51,7 +52,7 @@ export function InsightsScreen() {
         <PageHeader title="Insights" />
         <EmptyState
           title="Couldn't load your practice"
-          description="Check your connection and try again."
+          description={describeLoadError(error)}
         />
       </ScreenContainer>
     );
