@@ -7,9 +7,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import pytest
-from pydantic import ValidationError
 
-from app.services.ocr import claude_provider as cp_module
 from app.services.ocr.base import OCRProviderError, OCRResponse
 from app.services.ocr.claude_provider import (
     ClaudeProvider,

@@ -17,10 +17,8 @@ from fastapi.testclient import TestClient
 
 from app import auth as auth_module
 from app.main import app
-from app.routers import scores as scores_module
 from app.services.provisioning import ensure_user_row
 from app.tests.test_scores_router import (
-    GOOD_PAYLOAD,
     _install_supabase,
     _row_for,
     _stub_download,

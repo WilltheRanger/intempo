@@ -7,7 +7,7 @@ exercises the chain logic without going through any real SDK.
 
 from __future__ import annotations
 
-from typing import Any, Callable
+from typing import Callable
 
 import pytest
 from pydantic import ValidationError
@@ -136,7 +136,10 @@ def test_all_low_confidence_returns_first_low_confidence() -> None:
     p1 = _FakeProvider("p1", response=_response("p1", conf=0.4))
     p2 = _FakeProvider("p2", response=_response("p2", conf=0.5))
     score = parse_sheet_music(b"<jpeg>", providers=[p1, p2])
-    # First-encountered low-confidence wins (matches `best_low_confidence is None` check).
+    # First in the chain wins, not the higher score: cross-provider confidence
+    # figures are each model's estimate of its own work and are not comparable.
+    # See the comment in `pipeline.py`; the variable used to be called
+    # `best_low_confidence`, which implied a ranking that does not exist.
     assert score.ocr_confidence == 0.4
     assert p1.calls == 1
     assert p2.calls == 1

@@ -8,7 +8,6 @@ on `parse_sheet_music`. Supabase is mocked via the chained
 
 from __future__ import annotations
 
-import json
 from typing import Any, Callable
 from unittest.mock import MagicMock
 from uuid import UUID, uuid4
@@ -124,7 +123,9 @@ def _stub_ocr(monkeypatch: pytest.MonkeyPatch, *, score: ScoreJson | None = None
 
 
 def _stub_download(monkeypatch: pytest.MonkeyPatch, body: bytes = b"<jpeg>") -> None:
-    monkeypatch.setattr(scores_module, "_download_image", lambda url: body)
+    monkeypatch.setattr(
+        scores_module, "_download_image", lambda url, **_kwargs: body
+    )
 
 
 # ---- POST /v1/scores ------------------------------------------------------
