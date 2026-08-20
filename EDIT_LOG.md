@@ -6,6 +6,91 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-20 16:10 — The Cloudflare deploy was going to fail on CORS, which the backend had none of
+
+**Branch:** `main`. Owner: user asked to try the app on Cloudflare Pages.
+
+**The backend had no CORS middleware at all.** Not misconfigured — absent. A
+browser on `intempo.pages.dev` calling a hosted API sends a preflight carrying
+`Authorization`, gets no `Access-Control-Allow-Origin` back, and refuses every
+request before sending it. The app would have shown *"Failed to fetch"*, which
+names neither the cause nor the fix.
+
+**Why nothing caught it.** The API tests use `TestClient`, which is in-process:
+no browser, no preflight, no enforcement. The browser suites talk to
+`mobile/scripts/stub-api.py`, which *does* send the headers — I added them
+myself in an earlier iteration after the score upload failed with exactly this
+message. So the stub had learned the lesson and the real backend never had.
+
+This is not only a deploy problem: `expo start` serves on 8081 and the API runs
+on 8000, so **a single laptop is cross-origin too**. The first time the real
+backend met the real frontend it would have failed on every authenticated call
+while `/v1/health` kept working — which reads as an auth bug and is not one.
+
+### What was added
+
+`CORSMiddleware`, with the origins in `CORS_ALLOWED_ORIGINS`:
+
+- **`Authorization` named explicitly.** It is not a CORS-safelisted header, so
+  omitting it fails every authenticated request while leaving unauthenticated
+  ones fine — the failure shape most likely to be misread.
+- **All four methods.** PATCH and DELETE are the ones that get forgotten; the
+  stub shipped without PUT and the upload broke opaquely until it was found.
+- **`allow_credentials=False`.** Auth is a bearer token, not a cookie. Nothing
+  needs ambient credentials, and asking for them would rule out ever widening
+  the origin list, since `*` and credentials cannot be combined.
+- **Localhost defaults**, so a fresh checkout can make a request without being
+  configured first. A deployment must name its own origin: a default that
+  quietly allowed the production site would also allow every other site.
+
+### The trap the test caught
+
+Writing `CORS_ALLOWED_ORIGINS=` into `.env` — which is exactly what a commented
+template invites, and what I had just done — overrode the default with an empty
+list and refused **every** browser request, while looking like a setting
+somebody had considered. `test_localhost_works_out_of_the_box` failed
+immediately.
+
+Empty now means unconfigured rather than "allow nothing". There is no reason to
+want zero origins — the headers are simply absent if nobody asks for them — so
+the empty case is always a mistake and is treated as one.
+
+### Verification
+
+Seven unit tests, then each guard removed in turn: dropping the middleware
+fails 5, dropping `Authorization` fails 2, dropping PATCH/DELETE fails 1.
+
+Unit tests can only assert the headers are *present*. Whether a page is
+*permitted to read the response* is enforced by the browser, so a browser has
+to say so: `verify-cors-browser.mjs` loads a page on 8899 and fetches a real
+uvicorn on 8000. Both a plain GET and an `Authorization`-bearing request
+succeed. Pointed at a server whose allow-list names a different origin, the
+same script reports **`TypeError: Failed to fetch`** — the exact message the
+Pages deploy would have produced.
+
+That check was worth insisting on: the first run of it "passed" against a
+misconfigured origin, because the old uvicorn had not actually died and the new
+one never bound. A passing test against a stale process is worse than no test.
+
+### Also
+
+`mobile/public/_redirects` — the SPA fallback. The app has no linking config so
+every screen lives at `/`, but a stray path otherwise gets Cloudflare's 404,
+which looks like the deployment being broken. `200` rather than `301`
+deliberately: a redirect drops the URL fragment, and Supabase returns from an
+emailed link with `#access_token=…`.
+
+**Tests:** 257 passed (was 250). Lint clean.
+
+**Still open, and the user's to decide:** nothing hosts the FastAPI backend. A
+Pages deploy with `EXPO_PUBLIC_API_BASE_URL` unset runs on sample data and
+works; with it pointed at a host that does not exist, every screen fails. Those
+are the two options and only the second needs the work above.
+
+**Rollback:** `git revert`.
+
+---
+
 ## 2026-08-20 14:45 — The server fetching a URL you gave it: two guards that read stronger than they were
 
 **Branch:** `main`. Owner: `/loop improve the app as much as you can` —
