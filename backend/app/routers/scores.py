@@ -17,7 +17,7 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from app.auth import current_user_id
+from app.auth import current_user_id, current_user_id_provisioned
 from app.db import get_service_client
 from app.routers.upload import SCORE_BUCKET
 from app.services.ocr import OCRError, parse_sheet_music
@@ -326,7 +326,7 @@ def _hand_entered(body: CreateScoreRequest) -> ScoreJson:
 @router.post("", response_model=ScoreResponse, status_code=status.HTTP_201_CREATED)
 async def create_score(
     body: CreateScoreRequest,
-    user_id: UUID = Depends(current_user_id),
+    user_id: UUID = Depends(current_user_id_provisioned),
 ) -> ScoreResponse:
     manual = body.image_url is None
     score = _hand_entered(body) if manual else _transcribe(body.image_url, user_id)

@@ -6,6 +6,58 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-18 06:05 — Writes provision their own user row
+
+**Branch:** `main`. Owner: `/loop improve the app as much as you can` — seventh
+iteration. Backend this time.
+
+Supabase Auth and `public.users` are separate tables, and the row in the second
+was created on first touch of `/v1/me`. `scores.user_id` and `analyses.user_id`
+are foreign keys onto it — so **a create landing before `/v1/me` failed on
+`scores_user_id_fkey`** with a 500 that says nothing useful.
+
+The client was asked to prevent this. `useMe`'s docstring said *"keep it the
+first authenticated request after sign-in"*, and `TodayScreen` fires five
+queries in parallel — so the client was politely asked to win a race it had no
+way to control. EDIT_LOG already records the 500 that resulted, which is how the
+audit found it.
+
+**The invariant belongs where the constraint is.** New
+`current_user_id_provisioned` dependency, used by the three endpoints that
+insert a row referencing `users(id)`: `POST /v1/scores`, `POST /v1/analyses`,
+`POST /v1/analyses/{id}/corrections`. Reads keep plain `current_user_id` — they
+tolerate a missing row and should not pay for a write on every request.
+
+**An upsert, not select-then-insert.** Two requests arriving together would both
+see no row and both insert, and the second would fail on the primary key —
+which is precisely the concurrency a client firing several queries at once
+produces. `ON CONFLICT DO NOTHING` is one round trip with no such window. It
+deliberately does not update the email of an existing row: this runs on every
+write, and `/v1/me` is where the profile is actually reconciled.
+
+A token with no `email` claim gets an obviously-fake `@unknown.invalid`
+placeholder rather than a 500, since the column is NOT NULL and `/v1/me`
+corrects it on the next read.
+
+Both client docstrings that asked callers to uphold the old ordering are
+rewritten — a rule nobody needs to follow is worse than no rule, because
+someone will follow it.
+
+**Tests:** backend 222 → **226**. Four new: the upsert is an upsert with
+`on_conflict`/`ignore_duplicates` and not an insert; a missing email claim does
+not 500; `POST /v1/scores` provisions before it runs; and **reads do not
+provision**, which is the half most likely to rot silently. `tsc --noEmit`
+clean.
+
+The 23 tests that failed first time were the fixture's fault, not the code's:
+they patch `get_service_client` on the *router* module, and the new dependency
+lives in `auth`, so provisioning reached for a real client and tried to open a
+network connection. An autouse fixture in `conftest` neutralises it, and
+`test_provisioning.py` overrides that where the call is the thing being
+observed.
+
+**Rollback:** revert this commit.
+
 ## 2026-08-18 05:20 — Screens stop blaming the connection, and the app can't hang
 
 **Branch:** `main`. Owner: `/loop improve the app as much as you can` — sixth

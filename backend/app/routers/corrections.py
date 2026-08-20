@@ -24,7 +24,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.auth import current_user_id
+from app.auth import current_user_id, current_user_id_provisioned
 from app.db import get_service_client
 
 router = APIRouter(prefix="/analyses", tags=["corrections"])
@@ -107,7 +107,7 @@ def _assert_owns_analysis(analysis_id: UUID, user_id: UUID) -> None:
 async def create_corrections(
     analysis_id: UUID,
     body: CreateCorrectionsRequest,
-    user_id: UUID = Depends(current_user_id),
+    user_id: UUID = Depends(current_user_id_provisioned),
 ) -> list[CorrectionResponse]:
     """Record what the musician says actually happened.
 

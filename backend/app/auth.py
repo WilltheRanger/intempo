@@ -25,6 +25,7 @@ from jwt import PyJWKClient
 
 from app.config import settings
 from app.db import get_service_client
+from app.services.provisioning import ensure_user_row
 
 bearer = HTTPBearer(auto_error=False)
 
@@ -144,3 +145,34 @@ async def current_user(
     if not rows:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     return rows[0]
+
+
+async def current_user_id_provisioned(
+    payload: dict[str, Any] = Depends(current_jwt_payload),
+) -> UUID:
+    """The JWT subject, with its `public.users` row guaranteed to exist.
+
+    For endpoints that *write* a row referencing `users(id)`. `current_user_id`
+    remains the right dependency for reads, which tolerate a missing row and
+    should not pay for a write on every request.
+
+    See `services/provisioning.py` for why this exists rather than the client
+    being asked to call `/v1/me` first.
+    """
+    sub = payload.get("sub")
+    try:
+        user_id = UUID(str(sub))
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token subject is not a UUID",
+        ) from exc
+
+    client = get_service_client()
+    if client is None:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Supabase service-role client is not configured",
+        )
+    ensure_user_row(client, user_id, payload.get("email"))
+    return user_id

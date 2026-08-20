@@ -84,9 +84,9 @@ export interface MusicianSource {
   /**
    * The signed-in musician.
    *
-   * Against the real backend this is also the provisioning call: it creates
-   * the `public.users` row on first touch, and other endpoints fail until it
-   * has run. Keep it the first authenticated request after sign-in.
+   * An ordinary read, callable in any order. It also creates the
+   * `public.users` row on first touch, but nothing depends on that any more:
+   * the writes that need the row provision it themselves. See `useMe`.
    */
   getMusician(): Promise<Musician>;
 }

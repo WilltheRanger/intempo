@@ -16,7 +16,7 @@ from uuid import UUID
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.auth import current_user_id
+from app.auth import current_user_id, current_user_id_provisioned
 from app.services.tier_limits import tier_of, usage_for
 from app.db import get_service_client
 from app.models.analysis import BpmSource, MetronomeMode
@@ -148,7 +148,7 @@ def _assert_within_quota(client: Any, user_id: UUID) -> None:
 async def create_analysis(
     body: CreateAnalysisRequest,
     background_tasks: BackgroundTasks,
-    user_id: UUID = Depends(current_user_id),
+    user_id: UUID = Depends(current_user_id_provisioned),
 ) -> CreateAnalysisResponse:
     _assert_audio_url_owned_by(body.audio_url, user_id)
     client = _service_client()
