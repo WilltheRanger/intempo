@@ -8,6 +8,7 @@ import {
   LoadingState,
   PageHeader,
   ScreenContainer,
+  SecondaryButton,
   Text,
 } from '../../components/primitives';
 import { usePiece } from '../../data/hooks/usePieces';
@@ -92,6 +93,19 @@ export function RecordScreen() {
   const recorder = useRef<Recorder | null>(null);
   const starting = useRef(false);
 
+  // The finished take, kept when sending it fails.
+  //
+  // It used to be a local in `stop()`, so a failed upload — a dropped
+  // connection, a 500, anything — dropped the audio on the floor and the only
+  // way forward was to play the whole thing again. The quota message said
+  // "Your recording is safe" while this was true, which it was not.
+  //
+  // A ref rather than state: nothing renders from the blob, and re-rendering
+  // between a failure and a retry must not lose it. `pendingTake` below is the
+  // state the button reads.
+  const unsent = useRef<{ audio: Blob; filename: string } | null>(null);
+  const [pendingTake, setPendingTake] = useState(false);
+
   // Leaving mid-take — back gesture, a deep link, anything — has to release
   // the microphone. Nothing else will.
   useEffect(
@@ -137,6 +151,12 @@ export function RecordScreen() {
     impact(ImpactFeedbackStyle.Medium);
     setProblem(null);
     setTruncated(false);
+    // A new take supersedes the held one. Without this, "Send it again" stayed
+    // on screen through the new recording and would have sent the *previous*
+    // take — the same silent substitution this whole change exists to stop,
+    // pointing the other way.
+    unsent.current = null;
+    setPendingTake(false);
 
     try {
       recorder.current = await startRecording();
@@ -164,9 +184,30 @@ export function RecordScreen() {
     impact(ImpactFeedbackStyle.Medium);
     setPhase('analysing');
 
+    let recording;
     try {
-      const recording = await active.stop();
-      setTruncated(recording.truncated);
+      recording = await active.stop();
+    } catch (error) {
+      setProblem(messageFor(error));
+      setElapsedMs(0);
+      setPhase('ready');
+      return;
+    }
+
+    setTruncated(recording.truncated);
+    await send(recording);
+  }
+
+  /**
+   * Sends a finished take, keeping it if that fails.
+   *
+   * Separate from `stop` so a retry runs the same path with the same bytes
+   * rather than a second code path that could diverge from the first.
+   */
+  async function send(recording: { audio: Blob; filename: string }) {
+    setPhase('analysing');
+    setProblem(null);
+    try {
       const analysisId = await takeSubmissionSource.submit({
         // A piece is a score; the id is the same row.
         scoreId: params.pieceId,
@@ -175,8 +216,16 @@ export function RecordScreen() {
         audio: recording.audio,
         filename: recording.filename,
       });
+      unsent.current = null;
+      setPendingTake(false);
       navigation.replace('Verdict', { analysisId });
     } catch (error) {
+      // The quota is the one failure a retry cannot clear — the count does not
+      // move until next month, so offering "Send again" would be offering the
+      // same refusal. Everything else is worth one tap.
+      const retriable = describeTierLimit(error) === null;
+      unsent.current = retriable ? recording : null;
+      setPendingTake(retriable);
       // Back to the top of the screen with the tempo still set, so the reply
       // to a failed take is one tap rather than a re-setup.
       setProblem(messageFor(error));
@@ -255,6 +304,24 @@ export function RecordScreen() {
             >
               {problem}
             </Text>
+          ) : null}
+          {/*
+            Offered only while a take is actually being held, so the control
+            appears exactly when the sentence above it says the recording is
+            still here. A quota refusal keeps no take and shows no button —
+            there is nothing a retry would do but fetch the same refusal.
+          */}
+          {pendingTake ? (
+            <SecondaryButton
+              label="Send it again"
+              onPress={() => {
+                const take = unsent.current;
+                if (take) {
+                  void send(take);
+                }
+              }}
+              style={styles.retry}
+            />
           ) : null}
           <RecordButton
             recording={recording}
@@ -380,7 +447,7 @@ function messageFor(error: unknown): string {
   if (quota) {
     return quota;
   }
-  return 'The take couldn\u2019t be sent for analysis. Check your connection and try again \u2014 the tempo is still set.';
+  return 'That take couldn\u2019t be sent. It is still here \u2014 check your connection and send it again.';
 }
 
 /** `03:07`. Minutes and seconds only — a take is not an hour long. */
@@ -493,6 +560,9 @@ const styles = StyleSheet.create({
   },
   footer: {
     alignItems: 'center',
+  },
+  retry: {
+    marginBottom: spacing.md,
   },
   problem: {
     textAlign: 'center',
