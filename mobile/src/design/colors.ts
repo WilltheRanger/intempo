@@ -22,13 +22,22 @@ export const colors = {
   textPrimary: '#14110E',
   /**
    * Warm gray. Composer names, supporting copy.
-   * ~6.9:1 on `bg` — clearly below primary, comfortably readable.
+   * 6.51:1 on `bg`, 7.26:1 on `surface` — clearly below primary, comfortably
+   * readable, and clear of WCAG AA at any size.
    */
   textSecondary: '#5C564D',
   /**
    * Metadata, placeholders, disabled text.
-   * ~4.6:1 on `bg`, which clears WCAG AA for the 14pt metadata step. The
-   * previous value sat near 2.6:1 and read as washed out.
+   *
+   * **4.21:1 on `bg`, 4.69:1 on `surface`.** This comment used to claim
+   * "~4.6:1 on `bg`, which clears WCAG AA" — that figure is the one for
+   * `surface`, and most of this colour's text sits on `bg`, where it is 0.29
+   * short of the 4.5 floor. Measured, not estimated: `audit-a11y.mjs`.
+   *
+   * Left as it is pending a decision on the palette — `#756E63` would clear
+   * 4.5:1 on `bg` and is a 4% darkening, visually all but identical — because
+   * the palette is the user's to set. What is not deferred is the comment
+   * saying it passes when it does not.
    */
   textTertiary: '#7A7367',
 
@@ -37,7 +46,16 @@ export const colors = {
   /** Focused/active border. Stands in for the `:focus` ring RN doesn't have. */
   borderStrong: '#D8D2C6',
 
-  /** Muted antique gold. The only accent. Used sparingly. */
+  /**
+   * Muted antique gold. The only accent. Used sparingly.
+   *
+   * 3.54:1 on `bg`. That clears WCAG AA for *large* text (3:1) and misses it
+   * for the 13px labels it is currently used on — active tab labels, section
+   * labels, "Metronome off". `#846A44` would clear 4.5:1, at the cost of a
+   * visibly darker gold. A palette decision, so it is recorded rather than
+   * taken; `audit-a11y.mjs` holds the line at the current value so it cannot
+   * quietly get worse.
+   */
   accent: '#9A7B4F',
 
   /**
