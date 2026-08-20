@@ -6,6 +6,72 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-20 17:20 — A build that could not say what it was connected to
+
+**Branch:** `main`. Owner: user deploying to Cloudflare Pages, asked me to check
+their configuration.
+
+I could not check it — no access to their Pages dashboard, and every outbound
+HTTPS request from this container is refused by the egress proxy, `example.com`
+included. What I *could* do is make the deployment answer the question itself.
+
+`describeFixtureReason()` exists to say, in one sentence, whether a build is
+talking to a backend and which variable is missing if it is not. Its docstring
+says it is *"for the developer reading a console on a build that unexpectedly
+shows seeded pieces — 'it silently fell back' is the failure mode this whole
+module exists to avoid."*
+
+**Nothing called it.** Written for exactly this moment and never wired up, so at
+the only moment it mattered it was useless. Someone opens a fresh deployment,
+sees a library of Bach and Wohlfahrt, and has no way to tell whether that is
+their data or the seed — the two are identical on screen.
+
+Now logged once at boot. A console line rather than anything on screen:
+convention 8 keeps developer chrome out of the product and a banner would be
+exactly that, but a build that cannot say what it is connected to costs an
+afternoon, and the person who needs the answer already has the console open.
+
+Three builds, three answers:
+
+| what is set | says |
+|---|---|
+| nothing | `Running on sample data: EXPO_PUBLIC_SUPABASE_URL, EXPO_PUBLIC_SUPABASE_ANON_KEY, EXPO_PUBLIC_API_BASE_URL are not set.` |
+| URL + anon key | `Running on sample data: EXPO_PUBLIC_API_BASE_URL is not set.` |
+| all three | `InTempo: connected to the API — showing your data.` |
+
+**A probe of mine that lied first.** The middle case initially reported
+"connected to the API", which would have been a serious thing to ship. It was
+the test, not the app: I built without `EXPO_NO_DOTENV=1`, so Expo read the
+local `.env` and filled in the third variable behind my back. Cloudflare has no
+`.env` — it is gitignored — so the honest simulation needs that flag, and with
+it the message is right. Worth writing down because it is the second time this
+session that `.env` has quietly made a build something other than what I
+thought I was testing.
+
+Also widened `.gitignore` from `dist-live/` to `dist-*/`, since simulating
+deployment configurations means more than two output directories.
+
+### What was verified against the live project
+
+Through the Supabase MCP, which routes differently from raw HTTPS and does
+work: project `intempo-dev` **ACTIVE_HEALTHY** on Postgres 17.6; all seven
+tables present with **RLS enabled on every one**; zero rows everywhere, so
+nobody has signed up yet. The anon key and project URL handed to the user match
+the live project exactly — checked rather than copied from a local file that
+could have been stale.
+
+Not verifiable from here, and said plainly to the user rather than guessed at:
+the Pages environment variables, whether the site is up, and the Supabase Auth
+redirect URLs — the MCP exposes no tool for auth configuration.
+
+**Tests:** typecheck clean.
+
+**Three-foot test:** not applicable — nothing on screen changed.
+
+**Rollback:** `git revert`.
+
+---
+
 ## 2026-08-20 16:10 — The Cloudflare deploy was going to fail on CORS, which the backend had none of
 
 **Branch:** `main`. Owner: user asked to try the app on Cloudflare Pages.

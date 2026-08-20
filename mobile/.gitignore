@@ -8,7 +8,7 @@ node_modules/
 dist/
 # The same bundle built with EXPO_PUBLIC_* set, for testing against the stub
 # API. Two builds have to coexist because they differ only by inlined env.
-dist-live/
+dist-*/
 web-build/
 expo-env.d.ts
 
