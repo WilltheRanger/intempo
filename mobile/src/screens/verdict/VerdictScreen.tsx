@@ -73,6 +73,44 @@ export function VerdictScreen() {
     );
   }
 
+  // The run itself failed — the audio couldn't be fetched, the pipeline threw,
+  // or the row was swept up as stuck. Distinct from the branch below, where
+  // the pipeline ran fine and reports that it heard nothing usable, and
+  // distinct again from the take not existing.
+  //
+  // `failure_reason` is a machine token (`audio_unavailable`,
+  // `internal_error`), so it is not shown. What the musician needs to know is
+  // whether playing it again is worth their time, and the backend already
+  // answers that: it marks a stuck row `failed_recoverable` "so the client can
+  // offer a retry". The recording is theirs either way and nothing about it
+  // was wrong, which is the first thing to say.
+  if (take.failure) {
+    return (
+      <ScreenContainer
+        footer={
+          <PrimaryButton
+            label={take.failure.recoverable ? 'Try again' : 'Record again'}
+            onPress={() =>
+              navigation.replace('Record', { pieceId: take.pieceId })
+            }
+          />
+        }
+      >
+        <PageHeader
+          eyebrow={take.pieceTitle}
+          title="This take didn't get analysed"
+          onBack={() => navigation.goBack()}
+          backLabel="Back to the piece"
+        />
+        <Text variant="body" color="textSecondary">
+          {take.failure.recoverable
+            ? 'Something went wrong on our side, not with your playing. Recording it again usually works.'
+            : "We couldn't process this recording. Your playing wasn't the problem — record it again when you have a moment."}
+        </Text>
+      </ScreenContainer>
+    );
+  }
+
   // The pipeline finished but heard nothing it could use. That is an outcome
   // with a sentence attached, not a failure to report as one.
   if (take.status !== 'ok') {

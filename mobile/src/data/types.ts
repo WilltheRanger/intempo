@@ -374,6 +374,29 @@ export interface MeasureVerdict {
  * sentence explaining it and no measures, and the screen has to say so rather
  * than render an empty chart.
  */
+/**
+ * Why a take produced no result at all.
+ *
+ * Distinct from `ResultStatus`, and the distinction matters. `ResultStatus`
+ * describes what the *pipeline heard* — it ran to completion and reports that
+ * it could not align, or found no onsets, and it writes a sentence saying so.
+ * This describes the run itself not finishing: the audio could not be fetched,
+ * the pipeline threw, or the row was swept up as stuck.
+ *
+ * `recoverable` is the backend's own distinction, not an invention here:
+ * `analysis_runner` marks stuck rows `failed_recoverable` specifically "so the
+ * client can offer a retry".
+ */
+export interface TakeFailure {
+  recoverable: boolean;
+  /**
+   * The backend's `failure_reason` — a machine token like `audio_unavailable`
+   * or `internal_error`, never a sentence. Not for display; the screen writes
+   * its own copy from `recoverable`. Carried so a report can name it.
+   */
+  reason: string | null;
+}
+
 export interface TakeResult {
   id: string;
   pieceId: string;
@@ -381,6 +404,12 @@ export interface TakeResult {
   composer: string | null;
   recordedAt: string;
   targetBpm: number;
+  /**
+   * Set when the run failed instead of producing a result. When this is set
+   * every field below it is empty or a placeholder — there is no analysis to
+   * describe — so check it before reading `status`, `headline` or `measures`.
+   */
+  failure: TakeFailure | null;
   status: ResultStatus;
   /** The pipeline's sentence, shown verbatim. */
   headline: string;

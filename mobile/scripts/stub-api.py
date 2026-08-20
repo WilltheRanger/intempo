@@ -137,6 +137,51 @@ def _result(deltas_by_measure, notes_per_measure=4):
     return per_note, per_measure, trend
 
 
+def _finish(row):
+    """Complete a polled analysis, honouring the injected outcome."""
+    outcome = FAIL["outcome"]
+
+    if outcome in ("failed", "failed_recoverable"):
+        # No result_json at all — the row failed before there was anything to
+        # write. `failure_reason` is what `analysis_runner._finish_failed`
+        # stores, and it is a token rather than a sentence.
+        row["status"] = outcome
+        row["failure_reason"] = ("audio_unavailable" if outcome == "failed"
+                                 else "stuck_swept")
+        row["result_json"] = None
+        return
+
+    row["status"] = "done"
+    if outcome in ("alignment_failed", "no_onsets"):
+        # The pipeline ran to completion and reports what it heard. It writes a
+        # sentence and no measures — `analysis.py` returns early with exactly
+        # this shape.
+        row["result_json"] = {
+            "status": outcome, "quality": 0.2, "low_confidence": True,
+            "verdict": ("We couldn't line your playing up with the score. "
+                        "Start from the first note and play the passage through."
+                        if outcome == "alignment_failed"
+                        else "We couldn't hear any notes in that recording."),
+            "verdict_direction": "on", "per_note": [], "per_measure": [],
+            "trend": [], "n_detected_onsets": 0, "n_expected_onsets": 32,
+            "n_missed_notes": 32, "n_extra_notes": 0,
+        }
+        return
+
+    per_note, per_measure, trend = _result(
+        [-1.0, -2.5, -4.0, -6.0, -9.0, -12.0, -15.0, -13.0])
+    # `warn_quality` is 0.7; below it the screen adds its caveat.
+    quality = 0.55 if outcome == "low_confidence" else 0.88
+    row["result_json"] = {
+        "status": "ok", "quality": quality,
+        "verdict": "You rushed as the passage went on.",
+        "verdict_direction": "rush", "low_confidence": quality < 0.7,
+        "per_note": per_note, "per_measure": per_measure, "trend": trend,
+        "n_detected_onsets": len(per_note), "n_expected_onsets": len(per_note),
+        "n_missed_notes": 0, "n_extra_notes": 0,
+    }
+
+
 #: One shape per seeded take, so the screens that read them are not all looking
 #: at the same picture: a rushing take, a steady one, and a drifting one.
 TAKE_SHAPES = {
@@ -199,7 +244,27 @@ def _public(row):
 #: Without this there is no way to see what a screen says when the server is
 #: broken, which is exactly the copy most likely to be wrong and least likely
 #: to be exercised.
-FAIL: dict = {"status": 0, "tier_limit": False}
+FAIL: dict = {"status": 0, "tier_limit": False, "outcome": ""}
+
+#: How a submitted take finishes. `GET /__fail?outcome=X` sets it; empty means
+#: a normal successful analysis.
+#:
+#:   alignment_failed | no_onsets  — the pipeline ran and heard nothing usable.
+#:                                   `result_json.status` says so and carries a
+#:                                   sentence; there are no measures.
+#:   low_confidence               — a real result, but below `warn_quality`
+#:                                   (0.7 in config.toml), so the screen adds
+#:                                   its caveat.
+#:   failed | failed_recoverable  — the *run* failed. No `result_json` at all,
+#:                                   and `failure_reason` is a machine token.
+#:                                   The recoverable one is what the sweeper
+#:                                   writes for a stuck row, specifically so a
+#:                                   retry can be offered.
+#:
+#: None of these could be reached before: a take always succeeded, so four of
+#: the five screens the app can show after a recording had never rendered.
+OUTCOMES = ("alignment_failed", "no_onsets", "low_confidence",
+            "failed", "failed_recoverable")
 
 def _next_month():
     """The first instant of next month — what `tier_limits.month_bounds` returns."""
@@ -278,6 +343,11 @@ class H(http.server.BaseHTTPRequestHandler):
             q = parse_qs(urlparse(self.path).query)
             FAIL["status"] = int((q.get("status") or ["0"])[0])
             FAIL["tier_limit"] = (q.get("tier_limit") or ["0"])[0] == "1"
+            outcome = (q.get("outcome") or [""])[0]
+            if outcome and outcome not in OUTCOMES:
+                return self._send(400, json.dumps(
+                    {"detail": f"unknown outcome; try one of {list(OUTCOMES)}"}).encode())
+            FAIL["outcome"] = outcome
             return self._send(200, json.dumps(FAIL).encode())
         if FAIL["status"] and path.startswith("/v1/"):
             return self._send(FAIL["status"],
@@ -315,21 +385,9 @@ class H(http.server.BaseHTTPRequestHandler):
             # screen says anything while it waits.
             row["_polls"] += 1
             if row["_polls"] == 1:
-                row["status"] = "running"
-            elif row["_polls"] >= 2:
-                row["status"] = "done"
-                if row["result_json"] is None:
-                    per_note, per_measure, trend = _result(
-                        [-1.0, -2.5, -4.0, -6.0, -9.0, -12.0, -15.0, -13.0])
-                    row["result_json"] = {
-                        "status": "ok", "quality": 0.88,
-                        "verdict": "You rushed as the passage went on.",
-                        "verdict_direction": "rush", "low_confidence": False,
-                        "per_note": per_note, "per_measure": per_measure,
-                        "trend": trend, "n_detected_onsets": len(per_note),
-                        "n_expected_onsets": len(per_note),
-                        "n_missed_notes": 0, "n_extra_notes": 0,
-                    }
+                row["status"] = "processing"
+            elif row["_polls"] >= 2 and row["status"] != "done":
+                _finish(row)
             row["updated_at"] = iso(NOW)
             return self._send(200, json.dumps(_public(row)).encode())
         if path == "/auth/v1/user":
@@ -425,6 +483,7 @@ class H(http.server.BaseHTTPRequestHandler):
                 "bpm_source": body.get("bpm_source") or "manual",
                 "metronome_mode": body.get("metronome_mode") or "off",
                 "audio_url": body["audio_url"], "error_message": None,
+                "failure_reason": None, "alignment_quality": None, "finished_at": None,
                 "created_at": iso(at), "updated_at": iso(at),
                 "result_json": None,
                 # Not part of the response — bookkeeping for the poll below.

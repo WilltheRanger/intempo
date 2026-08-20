@@ -6,6 +6,91 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-20 06:05 — A failed take stops being reported as a missing one
+
+**Branch:** `main`. Owner: `/loop improve the app as much as you can` —
+thirteenth iteration.
+
+A recording has five possible endings. Only one of them had ever been on
+screen.
+
+### The defect
+
+When an analysis **fails** — the audio couldn't be fetched, the pipeline threw,
+or the row was swept up as stuck — the backend writes `status: failed` (or
+`failed_recoverable`) and a `failure_reason`, and no `result_json`.
+
+`apiTakeSource.getTake` called `asResult`, which needs a `result_json`, got
+null, and returned null. `VerdictScreen` renders null as:
+
+> **Couldn't load this take** — It may have been removed, or the analysis never
+> finished.
+
+Said to someone who has just finished playing. Every clause of it is wrong: the
+take was not removed, the analysis *did* finish, and the one thing they need to
+know — is it worth playing again — is exactly what the backend had already
+answered and the client threw away. `analysis_runner` marks a stuck row
+`failed_recoverable` with a comment saying it does so **"so the client can offer
+a retry"**; nothing in the client read `failure_reason` or the status at all.
+
+### The fix
+
+`TakeResult` gains `failure: TakeFailure | null`, deliberately separate from
+`ResultStatus`. The two describe different things and conflating them is how
+this got missed:
+
+- `ResultStatus` (`alignment_failed`, `no_onsets`) is **what the pipeline
+  heard**. It ran to completion and wrote a sentence about it.
+- `TakeFailure` is **the run not finishing**. There is no analysis to describe.
+
+`getTake` checks the row status *before* `asResult`, so a failed run becomes a
+take with `failure` set rather than a null indistinguishable from a bad id.
+`VerdictScreen` gets a branch above the existing one, using the same
+`PageHeader` + body + footer vocabulary as its neighbour — no new component, no
+new visual pattern:
+
+> **This take didn't get analysed** — Something went wrong on our side, not
+> with your playing. Recording it again usually works.  **[Try again]**
+
+and for a non-recoverable failure, the same shape with "We couldn't process
+this recording" and **[Record again]**. `failure_reason` is not shown:
+`audio_unavailable` and `internal_error` are machine tokens, and the screen
+writes its own copy from `recoverable`, which is the part that changes what the
+musician should do.
+
+### Making the other four endings reachable
+
+None of this could be tested, because a take against the stub always succeeded.
+`GET /__fail?outcome=…` now injects any of `alignment_failed`, `no_onsets`,
+`low_confidence`, `failed`, `failed_recoverable`, and rejects anything else
+rather than silently doing nothing. Also fixed the row status the stub writes
+mid-run: `running`, where the backend's enum says `processing`.
+
+**New suite:** `verify-outcomes.mjs` records a real take through the UI once per
+outcome and asserts on what the player is told — that a swept take is not
+called missing, that neither failure branch blames their playing, that only the
+recoverable one offers "Try again", that no chart is drawn for a take with no
+result, and that a low-confidence take still reports its result *with* the
+caveat rather than being replaced by it.
+
+**Tests:** backend 233 passed, typecheck clean, ten suites green on the fixture
+bundle and twelve on the live bundle.
+
+**Three-foot test** (the new screen): headline, then the sentence, then the
+action in the thumb zone. One focal point, and it matches the "Nothing to
+measure" branch beside it exactly — which is the point, since they are two
+answers to the same question.
+
+**Scope note:** this changes copy the user sees, which §2 gates. It was done as
+a correctness fix — the old sentence stated things that were false — inside the
+existing component vocabulary, with no layout, style or new pattern introduced.
+The wording is the user's to overrule.
+
+**Rollback:** `git revert`. The `failure` field is additive and both sources set
+it.
+
+---
+
 ## 2026-08-20 04:50 — The core loop is exercised end to end for the first time
 
 **Branch:** `main`. Owner: `/loop improve the app as much as you can` — twelfth

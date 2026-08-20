@@ -8,6 +8,7 @@ import { verdictFor } from '../../lib/tempo';
 import type {
   AnalysisResponse,
   AnalysisResultJson,
+  AnalysisStatus,
   Band,
   Direction,
   MeasureVerdict,
@@ -414,6 +415,7 @@ function toTake(
     composer: score?.composer ?? null,
     recordedAt: analysis.created_at,
     targetBpm: analysis.target_bpm,
+    failure: null,
     status: result.status,
     headline: result.verdict,
     direction: result.verdict_direction,
@@ -427,9 +429,58 @@ function toTake(
   };
 }
 
+/**
+ * A run that failed instead of producing a result.
+ *
+ * Every field an analysis would have described is empty, because there is no
+ * analysis — this exists so the screen can tell "the pipeline failed" apart
+ * from "there is no such take", which are the same `null` otherwise and read
+ * to the musician as very different things.
+ */
+function toFailedTake(
+  analysis: AnalysisResponse,
+  score: ScoreResponse | null,
+): TakeResult {
+  return {
+    id: analysis.id,
+    pieceId: analysis.score_id,
+    pieceTitle: score?.title ?? 'Unknown piece',
+    composer: score?.composer ?? null,
+    recordedAt: analysis.created_at,
+    targetBpm: analysis.target_bpm,
+    failure: {
+      recoverable: analysis.status === 'failed_recoverable',
+      reason: analysis.failure_reason,
+    },
+    // Placeholders. `failure` being set is the signal to ignore all of these;
+    // they exist only because `TakeResult` is one shape.
+    status: 'ok',
+    headline: '',
+    direction: 'on',
+    verdict: 'on_tempo',
+    lowConfidence: false,
+    measures: [],
+    trend: [],
+    missedNotes: 0,
+    extraNotes: 0,
+  };
+}
+
+const RUN_FAILED = new Set<AnalysisStatus>(['failed', 'failed_recoverable']);
+
 export const apiTakeSource: TakeSource = {
   async getTake(analysisId) {
     const analysis = await getAnalysis(analysisId);
+    // Before `asResult`, because a failed run has no `result_json` and would
+    // otherwise fall into the same null as an id that doesn't exist. The
+    // screen then said "It may have been removed, or the analysis never
+    // finished" to someone who had just played — naming a cause that wasn't
+    // the cause, and dropping the backend's own recoverable/not distinction,
+    // which exists precisely so a retry can be offered.
+    if (RUN_FAILED.has(analysis.status)) {
+      const score = await getScore(analysis.score_id).catch(() => null);
+      return toFailedTake(analysis, score);
+    }
     const result = asResult(analysis);
     if (!result) {
       return null;
