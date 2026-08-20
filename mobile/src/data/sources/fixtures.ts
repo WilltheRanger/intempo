@@ -478,6 +478,10 @@ function buildFixtureTake(): TakeResult {
     composer: piece?.composer ?? null,
     recordedAt: recordedAt.toISOString(),
     targetBpm: 96,
+    // The sample take always succeeds. A failed run is a live-only outcome —
+    // fabricating one here would put a "we couldn't read that" screen in front
+    // of someone browsing the demo, describing a recording they never made.
+    failure: null,
     status: 'ok',
     // The pipeline writes this sentence; the screen shows it verbatim.
     headline: 'You rushed across measures 5 to 8, then pulled it back.',
