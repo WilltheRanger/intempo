@@ -80,7 +80,13 @@ const styles = StyleSheet.create({
   },
   segment: {
     flex: 1,
-    minHeight: MIN_TOUCH_TARGET - spacing.sm,
+    // The full 44, not `MIN_TOUCH_TARGET - spacing.sm`. The subtraction made
+    // the *track* 44 tall, which looks like it satisfies the floor and does
+    // not: the `Pressable` is what receives the tap, and the track's padding
+    // around it is not tappable. The control is 52 tall now, which is the
+    // honest cost of a target you can actually hit with an instrument in your
+    // hands.
+    minHeight: MIN_TOUCH_TARGET,
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: radii.sm,

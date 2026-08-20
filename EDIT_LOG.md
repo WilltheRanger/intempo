@@ -6,6 +6,72 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-20 12:15 — The accessibility findings, decided by the user and applied
+
+**Branch:** `main`. Owner: `/loop improve the app as much as you can` —
+eighteenth iteration. Follows directly from the audit in the previous entry,
+which measured three gaps and handed two of them back rather than taking them.
+
+The user decided all three. Applied as decided:
+
+### 1. `textTertiary` `#7A7367` → `#756E63`
+
+Clears WCAG AA on the page background: **4.21:1 → 4.52:1** on `bg`, 5.04:1 on
+`surface`. A 4% darkening, visually all but identical. Affects composer lines,
+piece counts, metadata rows, placeholders and disabled text.
+
+### 2. The accent stays gold, and stops being a text colour
+
+Chosen over darkening the brand accent by 14%. The consequence turned out to be
+larger than the question implied, and is worth stating: AA relaxes to 3:1 only
+at 18.66px bold or 24px, and **the largest variant the accent was ever used
+with is 16px**. So "raise the sizes" resolves to "no gold text at all".
+
+`#9A7B4F` is unchanged and stays on everything that is not a word — tab icons,
+the beat indicator, focused input borders, the trend stroke, the avatar, the
+refresh spinner — where the 3:1 floor applies and it passes at 3.54:1.
+
+Gold text became ink, at eight sites: the active tab label, `SectionHeader`'s
+action, five links in `AuthScreen`, the one in `ChangePasswordScreen`, and the
+metronome line on Record.
+
+**What is lost:** gold was the app's mark for a tappable label. That
+affordance is gone from those eight, which was the trade the user took
+knowingly. The active tab is still marked twice — the icon keeps its gold, and
+the label is ink against the grey of the other three — so the one place the
+colour was carrying state on its own is still legible.
+
+### 3. `SegmentedControl` segment `36` → `44`
+
+Was `MIN_TOUCH_TARGET - spacing.sm`, which made the *track* 44 and looked like
+it satisfied the floor. The `Pressable` receives the tap and it was 36; the
+track's padding is not tappable. The control is 52 tall now — Profile's two
+rows gain 8px each — which is the honest cost of a target you can hit with an
+instrument in your hands.
+
+### The ratchet moves to zero
+
+The audit's baselines were `unnamed: 0, small: 8, worstRatio: 3.54,
+distinctColours: 2`. Every screen now measures clean, so they are all zero.
+
+Zero is the only baseline worth holding. A non-zero one is a number someone has
+to remember the reason for, and the reasons decay faster than the code does.
+Verified it still bites by tightening below zero: two real failures, non-zero
+exit.
+
+**Tests:** typecheck clean, eleven suites green on the fixture bundle and
+fifteen on the live bundle, plus the audit clean on all six screens.
+
+**Three-foot test** (Library, where the change is most visible): the piece
+titles, then the section headings, then the metadata. Unchanged — the tab bar
+recedes slightly now that its active label is ink rather than gold, which if
+anything helps, since bottom navigation is furniture and was competing.
+
+**Rollback:** `git revert`. Two token values, eight colour props, one
+`minHeight`.
+
+---
+
 ## 2026-08-20 11:05 — Accessibility, measured; two findings handed back rather than taken
 
 **Branch:** `main`. Owner: `/loop improve the app as much as you can` —

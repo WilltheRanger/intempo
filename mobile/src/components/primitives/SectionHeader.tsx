@@ -42,7 +42,7 @@ export function SectionHeader({
           hitSlop={hitSlop}
           style={({ pressed }) => (pressed ? styles.pressed : undefined)}
         >
-          <Text variant="sectionAction" color="accent">
+          <Text variant="sectionAction" color="textPrimary">
             {actionLabel}
           </Text>
         </Pressable>

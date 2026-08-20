@@ -29,17 +29,14 @@ export const colors = {
   /**
    * Metadata, placeholders, disabled text.
    *
-   * **4.21:1 on `bg`, 4.69:1 on `surface`.** This comment used to claim
-   * "~4.6:1 on `bg`, which clears WCAG AA" — that figure is the one for
-   * `surface`, and most of this colour's text sits on `bg`, where it is 0.29
-   * short of the 4.5 floor. Measured, not estimated: `audit-a11y.mjs`.
+   * 4.52:1 on `bg`, 5.04:1 on `surface` — clears WCAG AA at every size it is
+   * used at. Measured, not estimated: `audit-a11y.mjs`.
    *
-   * Left as it is pending a decision on the palette — `#756E63` would clear
-   * 4.5:1 on `bg` and is a 4% darkening, visually all but identical — because
-   * the palette is the user's to set. What is not deferred is the comment
-   * saying it passes when it does not.
+   * Was `#7A7367`, documented as "~4.6:1 on `bg`". That figure was the ratio
+   * on `surface`; on `bg`, where most of this text actually sits, it was 4.21
+   * — under the floor. A 4% darkening fixes it and is all but invisible.
    */
-  textTertiary: '#7A7367',
+  textTertiary: '#756E63',
 
   /** Default 1px border on cards, dividers, inputs. */
   border: '#E6E2DA',
@@ -49,12 +46,16 @@ export const colors = {
   /**
    * Muted antique gold. The only accent. Used sparingly.
    *
-   * 3.54:1 on `bg`. That clears WCAG AA for *large* text (3:1) and misses it
-   * for the 13px labels it is currently used on — active tab labels, section
-   * labels, "Metronome off". `#846A44` would clear 4.5:1, at the cost of a
-   * visibly darker gold. A palette decision, so it is recorded rather than
-   * taken; `audit-a11y.mjs` holds the line at the current value so it cannot
-   * quietly get worse.
+   * **Not a text colour.** 3.54:1 on `bg`, which clears the 3:1 floor for
+   * icons, borders and fills, and misses the 4.5:1 floor for text at every
+   * size this app has — the largest variant the accent was used with is 16px,
+   * and AA only relaxes to 3:1 at 18.66px bold. So the gold is kept exactly as
+   * it is, on everything that is not a word: tab icons, the beat indicator,
+   * focused input borders, the trend stroke, the avatar, the refresh spinner.
+   *
+   * Gold text became ink. Tappable labels lost the gold that marked them, and
+   * that was the trade accepted when the alternative was darkening the brand
+   * accent by 14%. `audit-a11y.mjs` holds the line.
    */
   accent: '#9A7B4F',
 

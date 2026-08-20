@@ -379,11 +379,13 @@ export function RecordScreen() {
           >
             <Text
               variant="metadataSmall"
-              // Gold in both states, because gold is what a tappable label
-              // looks like everywhere else in the app. The word carries on or
-              // off; the colour only says this line does something. Locked
-              // during a take, it drops back to metadata.
-              color={recording ? 'textTertiary' : 'accent'}
+              // Ink when live, metadata grey when locked during a take. It
+              // was gold, because gold was what a tappable label looked like
+              // everywhere in the app — but at 13px the accent is 3.54:1,
+              // under the 4.5:1 floor, so nothing is gold text any more. The
+              // word still carries on or off; the weight of the colour says
+              // whether the line does anything.
+              color={recording ? 'textTertiary' : 'textPrimary'}
             >
               {METRONOME_LABELS[metronomeMode]}
             </Text>
