@@ -6,6 +6,93 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-20 04:50 — The core loop is exercised end to end for the first time
+
+**Branch:** `main`. Owner: `/loop improve the app as much as you can` — twelfth
+iteration.
+
+Record → submit → poll → verdict is what InTempo is *for*, and no test had ever
+run it. The reason was one line: the stub had no `POST /v1/analyses` handler at
+all, so every take fell through to a 404 and the only analysis path anything
+exercised was the free-tier refusal. The verdict screen had never rendered from
+an API response — only from seeded data, which a different function builds.
+
+### What the stub was missing
+
+- **`POST /v1/analyses`** — accepts the take and answers **202** with
+  `{analysis_id, status: "queued"}`, matching `create_analysis`.
+- **`GET /v1/analyses/:id`** — advances queued → running → done one step per
+  poll. Not done-on-first-request: the client polls every 1.5 s and sits on a
+  waiting screen while it does, and handing back a finished analysis
+  immediately would mean nothing ever renders that screen.
+- **A populated `result_json`.** The seeded analyses carried
+  `per_note: [], per_measure: [], trend: []`. That is why the Insights tab
+  read "No practice recorded yet" against three finished analyses — a take
+  with no measures carries no timing to aggregate, so `getInsights` correctly
+  returned null. **The app was right and the stub was lying**, which is the
+  worst arrangement of the two.
+
+Bands are computed from the thresholds in `backend/config.toml`
+`[tolerance]`, copied rather than chosen: a stub that bands its own numbers
+differently from the pipeline lets a client bug hide behind a colour only this
+file believes in. Three takes are seeded with different shapes — one rushing,
+one inside tolerance the whole way, one dragging and worsening — because "good"
+was a state no screen had ever rendered.
+
+### The screenshot caught a sign error I had just introduced
+
+With the loop running, the verdict screen drew a trend line sloping toward
+**Behind**, above measure rows reading **Slight rush**, under a headline
+reading **You rushed throughout**. Three parts of one screen disagreeing about
+one take.
+
+The app was correct. `classification.rolling_trend` returns the trend
+**rush-positive** — it negates `delta_pct` on the way in, the one sign flip in
+the payload — and computes it **per note**, not per measure. `TrendLine`
+documents its input as rush-positive and `sources/api.ts` deliberately does not
+flip it again, with a comment saying so. My stub had built the trend
+drag-positive and per-measure, so it was inverted.
+
+Worth recording because of what nearly happened: with no screenshot, the
+obvious next move would have been to "fix" `TrendLine` — correct code — and
+bury a stub defect inside the app. The chart is now asserted against the
+verdict in `verify-verdict.mjs`: on a rushing take the polyline must end at a
+smaller y than it started, or the check fails. That assertion holds the sign
+convention still across three files that each handle it differently.
+
+### Two stale comments
+
+- `TodayScreen` still explained itself in terms of the `Practice` screen
+  deleted last iteration.
+- `InsightsScreen`'s docstring said *"Nothing behind this is live yet.
+  `/v1/analyses` is unbuilt"*. It has been live for some time. Replaced with
+  what actually matters to the next reader: null means no *usable* takes, not
+  no takes, so an empty Insights tab on data that appears to exist is a
+  `per_measure` problem.
+
+**New suites:** `verify-verdict.mjs` (the full loop, with the trend/verdict
+agreement check) and `verify-insights.mjs` (aggregation over real analyses,
+with a check that no piece renders as "Unknown piece" — the score join
+failing quietly).
+
+**Tests:** typecheck clean. Ten suites green on the fixture bundle, eleven on
+the live bundle against the stub.
+
+**Three-foot test** — the verdict screen, now that it can be seen with real
+data: first the verdict headline in serif, second the trend chart, third the
+measure list. That is the intended order and the hierarchy holds. No change
+was made to it; §2 reserves that for the user.
+
+**Still not closeable in-session:** the microphone is Chromium's fake device,
+so the *audio* is synthetic — what is real is MediaRecorder producing bytes,
+the upload, the create, the polling and the render. Real audio through the real
+pipeline still needs a device and keys.
+
+**Rollback:** `git revert`. The stub and the two suites are test infrastructure;
+the two comment fixes are inert.
+
+---
+
 ## 2026-08-20 03:40 — The unreachable practice mock is deleted, and tsc stops typechecking the build output
 
 **Branch:** `main`. Owner: `/loop improve the app as much as you can` — eleventh

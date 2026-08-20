@@ -29,10 +29,15 @@ import { PieceInsightRow } from './PieceInsightRow';
  * means anything. Session counts stay, since a count of takes isn't a timing
  * measurement.
  *
- * Nothing behind this is live yet. `/v1/analyses` is unbuilt, so the numbers
- * come from fixtures — but every field maps to a real column, and the verdicts
- * are classified from the deviations by the same thresholds the pipeline will
- * use, so no claim here is one the backend won't be able to make.
+ * This is live. `apiInsightsSource.getInsights` reads finished analyses from
+ * `/v1/analyses`, joins them to `/v1/scores` for titles, and aggregates over
+ * the last 30 days in the client — the endpoint returns takes rather than
+ * summaries, deliberately, since one list serves several screens.
+ *
+ * Null means no *usable* takes, not no takes: an analysis with no
+ * `per_measure` rows carries no timing to aggregate and is skipped. The empty
+ * state that produces is correct, and is worth remembering when this screen
+ * looks empty against data that appears to exist.
  */
 export function InsightsScreen() {
   const { data: insights, isPending, isError, error, refetch } = useInsights();

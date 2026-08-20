@@ -58,20 +58,122 @@ def score_row(sid, title, composer, img, _):
         "created_at": iso(NOW - timedelta(days=20)), "updated_at": iso(NOW - timedelta(days=20)),
     }
 
+# Band edges, as a percentage of one beat, copied from `backend/config.toml`
+# `[tolerance]`. Copied rather than invented: a stub that bands its own numbers
+# differently from the pipeline would let a client bug hide behind a colour
+# that only this file believes in.
+INNER_PCT, MID_PCT, OUTER_PCT = 5.0, 10.0, 20.0
+
+
+def _band(delta_pct):
+    magnitude = abs(delta_pct)
+    if magnitude < INNER_PCT:
+        return "on"
+    if magnitude < MID_PCT:
+        return "slight"
+    if magnitude < OUTER_PCT:
+        return "rush_drag"
+    return "severe"
+
+
+def _direction(delta_pct):
+    # Negative is early, which is rushing — the sign convention in
+    # `services/analysis.py`.
+    if delta_pct < 0:
+        return "rush"
+    return "drag" if delta_pct > 0 else "on"
+
+
+def _result(deltas_by_measure, notes_per_measure=4):
+    """An analysis result in the shape `services/analysis.py` emits.
+
+    The deltas are given, not computed from audio — nothing here listens to
+    anything. What this reproduces is the *structure*: per-note deltas banded
+    by the thresholds above, per-measure summaries derived from them by the
+    same rule as `_summarize_measures`, and a trend series. Empty lists were
+    what stood here before, and they made the aggregation in `sources/api.ts`
+    unreachable: the Insights tab reported "No practice recorded yet" against
+    three finished analyses, because a take with no measures carries no timing
+    to aggregate. The app was right; the stub was not.
+    """
+    per_note, per_measure = [], []
+    index = 0
+    for measure_number, avg in enumerate(deltas_by_measure, start=1):
+        group = []
+        for note in range(notes_per_measure):
+            # Spread the notes either side of the measure's average so the
+            # per-note view has something to show and the average still holds.
+            delta_pct = round(avg + (note - (notes_per_measure - 1) / 2) * 1.5, 2)
+            group.append(delta_pct)
+            per_note.append({
+                "global_index": index, "measure_number": measure_number,
+                # One beat at 96 BPM is 625 ms.
+                "delta_ms": round(delta_pct / 100 * 625, 1),
+                "delta_pct": delta_pct, "band": _band(delta_pct),
+                "direction": _direction(delta_pct), "is_slur_interior": False,
+            })
+            index += 1
+        worst = max(group, key=lambda d: (_band(d) == "severe", _band(d) == "rush_drag",
+                                          _band(d) == "slight"))
+        per_measure.append({
+            "measure_number": measure_number, "note_count": notes_per_measure,
+            "avg_delta_pct": round(sum(group) / len(group), 2),
+            "worst_band": _band(worst), "direction": _direction(avg),
+        })
+
+    # `classification.rolling_trend`: one value per *note*, not per measure, and
+    # **rush-positive** — it negates `delta_pct` on the way in, which is the one
+    # sign flip in the whole payload. Getting either wrong here is not a
+    # cosmetic stub detail: a per-measure, drag-positive trend drew the line
+    # sloping toward "Behind" on a take whose own measure rows said "Slight
+    # rush", so the screen contradicted itself on one screenshot. `TrendLine`
+    # documents its input as rush-positive and `sources/api.ts` deliberately
+    # does not flip it, both correctly.
+    window = 8
+    values = [-n["delta_pct"] for n in per_note]
+    trend = [round(sum(values[max(0, i - window + 1):i + 1])
+                   / len(values[max(0, i - window + 1):i + 1]), 2)
+             for i in range(len(values))]
+    return per_note, per_measure, trend
+
+
+#: One shape per seeded take, so the screens that read them are not all looking
+#: at the same picture: a rushing take, a steady one, and a drifting one.
+TAKE_SHAPES = {
+    # Steady, then rushing from measure 5 — which is what the verdict says.
+    "aaaaaaaa-0000-0000-0000-000000000001": (
+        [-1.0, -2.0, -3.5, -4.0, -11.0, -14.0, -16.0, -12.0],
+        "You rushed across measures 5 to 8.", "rush", 0.91),
+    # Inside tolerance the whole way. The screens need a take with nothing
+    # wrong with it, or "good" is a state nothing has ever rendered.
+    "aaaaaaaa-0000-0000-0000-000000000002": (
+        [1.0, -1.5, 2.0, 0.5, -2.0, 1.5, -0.5, 2.5],
+        "Steady the whole way through.", "on", 0.95),
+    # Dragging, and worse as it goes — the shape a tiring player makes.
+    "aaaaaaaa-0000-0000-0000-000000000004": (
+        [2.0, 4.0, 7.0, 9.0, 12.0, 15.0, 19.0, 23.0],
+        "You dragged, and it grew through the take.", "drag", 0.78),
+}
+
 ANALYSES = []
 for sid, _t, _c, _i, days in SCORES:
     if days is None:
         continue
     at = NOW - timedelta(days=days)
+    shape, verdict, verdict_direction, quality = TAKE_SHAPES.get(
+        sid, ([-1.0] * 8, "Steady the whole way through.", "on", 0.9))
+    per_note, per_measure, trend = _result(shape)
     ANALYSES.append({
         "id": f"bbbbbbbb-0000-0000-0000-{sid[-12:]}", "user_id": USER, "score_id": sid,
         "assignment_id": None, "status": "done", "target_bpm": 96, "bpm_source": "manual",
         "metronome_mode": "off", "audio_url": "x", "error_message": None,
         "created_at": iso(at), "updated_at": iso(at),
-        "result_json": {"status": "ok", "quality": 0.91, "verdict": "You rushed across measures 5 to 8.",
-                        "verdict_direction": "rush", "low_confidence": False,
-                        "per_note": [], "per_measure": [], "trend": [],
-                        "n_detected_onsets": 32, "n_expected_onsets": 32,
+        "result_json": {"status": "ok", "quality": quality, "verdict": verdict,
+                        "verdict_direction": verdict_direction,
+                        # `warn_quality` in config.toml is 0.7.
+                        "low_confidence": quality < 0.7,
+                        "per_note": per_note, "per_measure": per_measure, "trend": trend,
+                        "n_detected_onsets": len(per_note), "n_expected_onsets": len(per_note),
                         "n_missed_notes": 0, "n_extra_notes": 0},
     })
 ANALYSES.sort(key=lambda a: a["created_at"], reverse=True)
@@ -81,6 +183,16 @@ ANALYSES.sort(key=lambda a: a["created_at"], reverse=True)
 #: HTTP interface, not a database.
 CREATED: dict = {}
 UPLOADED: set = set()
+
+#: Takes submitted through POST /v1/analyses during this run, keyed by id.
+#: Separate from ANALYSES because these carry a `_polls` counter that drives
+#: the queued → running → done transition and must never reach the client.
+SUBMITTED: dict = {}
+
+
+def _public(row):
+    """A stored analysis without the stub's own bookkeeping."""
+    return {k: v for k, v in row.items() if not k.startswith("_")}
 
 #: Failure injection for the error-handling paths. `GET /__fail?status=500`
 #: makes every subsequent /v1/* answer with that status; `status=0` clears it.
@@ -187,7 +299,39 @@ class H(http.server.BaseHTTPRequestHandler):
                 (score_row(*s) for s in SCORES if s[0] == sid), None)
             return self._send(200 if row else 404, json.dumps(row or {"detail": "not found"}).encode())
         if path == "/v1/analyses":
-            return self._send(200, json.dumps(ANALYSES).encode())
+            return self._send(200, json.dumps(
+                [_public(a) for a in SUBMITTED.values()] + ANALYSES).encode())
+        if path.startswith("/v1/analyses/"):
+            aid = path.rsplit("/", 1)[-1]
+            row = SUBMITTED.get(aid)
+            if row is None:
+                match = next((a for a in ANALYSES if a["id"] == aid), None)
+                return self._send(200 if match else 404,
+                                  json.dumps(match or {"detail": "not found"}).encode())
+            # The pipeline takes real seconds, and the client polls every 1.5 s
+            # for up to a minute. Advancing one step per poll exercises the
+            # waiting state instead of handing back a finished analysis on the
+            # first request — which is the only way to find out whether the
+            # screen says anything while it waits.
+            row["_polls"] += 1
+            if row["_polls"] == 1:
+                row["status"] = "running"
+            elif row["_polls"] >= 2:
+                row["status"] = "done"
+                if row["result_json"] is None:
+                    per_note, per_measure, trend = _result(
+                        [-1.0, -2.5, -4.0, -6.0, -9.0, -12.0, -15.0, -13.0])
+                    row["result_json"] = {
+                        "status": "ok", "quality": 0.88,
+                        "verdict": "You rushed as the passage went on.",
+                        "verdict_direction": "rush", "low_confidence": False,
+                        "per_note": per_note, "per_measure": per_measure,
+                        "trend": trend, "n_detected_onsets": len(per_note),
+                        "n_expected_onsets": len(per_note),
+                        "n_missed_notes": 0, "n_extra_notes": 0,
+                    }
+            row["updated_at"] = iso(NOW)
+            return self._send(200, json.dumps(_public(row)).encode())
         if path == "/auth/v1/user":
             return self._send(200, json.dumps(_session()["user"]).encode())
         if path == "/auth/v1/settings":
@@ -265,6 +409,31 @@ class H(http.server.BaseHTTPRequestHandler):
                 "code": "tier_limit", "limit": 3, "used": 3, "tier": "free",
                 "resets_at": iso(_next_month()),
             }}).encode())
+
+        if path == "/v1/analyses":
+            body = json.loads(self._read_body() or b"{}")
+            # `_assert_audio_url_owned_by` rejects a URL outside the caller's
+            # own storage prefix, and the client is meant never to send one.
+            if not body.get("audio_url"):
+                return self._send(422, b'{"detail":"audio_url is required"}')
+            aid = f"dddddddd-0000-0000-0000-{len(SUBMITTED) + 1:012d}"
+            at = NOW
+            SUBMITTED[aid] = {
+                "id": aid, "user_id": USER, "score_id": body.get("score_id"),
+                "assignment_id": None, "status": "queued",
+                "target_bpm": body.get("target_bpm") or 96,
+                "bpm_source": body.get("bpm_source") or "manual",
+                "metronome_mode": body.get("metronome_mode") or "off",
+                "audio_url": body["audio_url"], "error_message": None,
+                "created_at": iso(at), "updated_at": iso(at),
+                "result_json": None,
+                # Not part of the response — bookkeeping for the poll below.
+                "_polls": 0,
+            }
+            # 202, matching `create_analysis`: the work happens after the
+            # response, which is the whole reason the client polls.
+            return self._send(202, json.dumps(
+                {"analysis_id": aid, "status": "queued"}).encode())
 
         if path == "/v1/scores":
             body = json.loads(self._read_body() or b"{}")
