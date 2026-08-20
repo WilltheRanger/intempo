@@ -21,6 +21,18 @@ export class ApiError extends Error {
     readonly status: number,
     readonly path: string,
     message: string,
+    /**
+     * The parsed `detail`, when the server sent a structured one.
+     *
+     * FastAPI's `detail` is usually a string, and for those this is the same
+     * text as `message`. Some are objects — the tier-limit 403 carries a code,
+     * the limit, the count and a reset date, deliberately, *because the client
+     * has to act on it*. That body used to be thrown away here: anything that
+     * wasn't a string fell through to "Request failed (403)", so the one error
+     * the backend took trouble to make actionable arrived as the least
+     * informative string in the app.
+     */
+    readonly detail: unknown = message,
   ) {
     super(message);
     this.name = 'ApiError';
@@ -92,11 +104,8 @@ export async function apiFetch<T>(
       });
       throw new ApiError(401, path, SESSION_ENDED);
     }
-    throw new ApiError(
-      response.status,
-      path,
-      await readErrorDetail(response, path),
-    );
+    const { message, detail } = await readError(response, path);
+    throw new ApiError(response.status, path, message, detail);
   }
 
   if (response.status === 204) {
@@ -106,18 +115,29 @@ export async function apiFetch<T>(
   return (await response.json()) as T;
 }
 
-/** FastAPI returns `{ "detail": "..." }`; fall back to the status line. */
-async function readErrorDetail(
+/**
+ * FastAPI's error body, as both a sentence and the raw thing.
+ *
+ * The body is read **once** — a `Response` can only be consumed once, so
+ * parsing it twice to get the two halves separately would throw on the second
+ * read.
+ */
+async function readError(
   response: Response,
   path: string,
-): Promise<string> {
+): Promise<{ message: string; detail: unknown }> {
+  const fallback = `Request failed (${response.status}): ${path}`;
   try {
     const payload = (await response.json()) as { detail?: unknown };
-    if (typeof payload.detail === 'string') {
-      return payload.detail;
+    const { detail } = payload;
+    if (typeof detail === 'string') {
+      return { message: detail, detail };
     }
+    // Structured: keep it whole, and leave the sentence to whoever understands
+    // the shape. See `describeTierLimit`.
+    return { message: fallback, detail: detail ?? payload };
   } catch {
-    // Body wasn't JSON. Fall through.
+    // Body wasn't JSON.
+    return { message: fallback, detail: null };
   }
-  return `Request failed (${response.status}): ${path}`;
 }

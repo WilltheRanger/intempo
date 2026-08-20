@@ -34,6 +34,7 @@ import {
 import { TempoStepper } from '../../components/practice/TempoStepper';
 import { impact, ImpactFeedbackStyle } from '../../lib/haptics';
 import { beatsPerBar, useMetronome } from '../../lib/metronome';
+import { describeTierLimit } from '../../lib/tierLimit';
 import type { RootNavigation, RootStackParamList } from '../../navigation/types';
 import { BeatIndicator } from './BeatIndicator';
 import { ListenButton } from './ListenButton';
@@ -372,6 +373,12 @@ function messageFor(error: unknown): string {
   }
   if (error instanceof EmptyRecordingError) {
     return 'That take came back silent. Check the microphone isn\u2019t muted or covered, then try again.';
+  }
+  // Before the generic message, because this one is neither a connection
+  // problem nor something trying again will fix.
+  const quota = describeTierLimit(error);
+  if (quota) {
+    return quota;
   }
   return 'The take couldn\u2019t be sent for analysis. Check your connection and try again \u2014 the tempo is still set.';
 }
