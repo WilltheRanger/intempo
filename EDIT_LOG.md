@@ -6,6 +6,80 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-20 11:05 — Accessibility, measured; two findings handed back rather than taken
+
+**Branch:** `main`. Owner: `/loop improve the app as much as you can` —
+seventeenth iteration.
+
+Never audited. `audit-a11y.mjs` now walks Today, Library, Insights, Profile,
+piece detail and Record, checking three things chosen for this product rather
+than off a generic list:
+
+- **Accessible names** — a control without one is unusable with VoiceOver.
+- **44pt targets** — the iOS floor, and more pointed here than in most apps:
+  the person tapping has a violin under their chin and a bow in the other hand.
+- **4.5:1 contrast** — also more pointed than usual, since sheet music gets
+  read under whatever light the room has.
+
+### What it found
+
+**Zero unnamed controls, on every screen.** Worth stating plainly: every
+interactive element in the app already carries an accessible name. That is not
+luck, it is the `accessibilityLabel` discipline in the primitives, and it is
+the finding that would have been most work to fix.
+
+**Eight targets at 36pt** — the segments of the two `SegmentedControl`s in
+Profile. Deliberate: `segment` is `MIN_TOUCH_TARGET - spacing.sm`, because the
+*track* around them is 44 tall. But the `Pressable` is what receives the tap
+and it is 36; the track's 4px padding is not tappable.
+
+**Two colours under AA**, appearing on nearly every screen:
+
+| token | value | on `bg` | floor | used for |
+|---|---|---|---|---|
+| `textTertiary` | `#7A7367` | **4.21:1** | 4.5 | metadata, composer lines, "7 pieces" |
+| `accent` | `#9A7B4F` | **3.54:1** | 4.5 | active tab label, section labels, "Metronome off" |
+
+`#756E63` clears 4.5:1 for the first — a 4% darkening, visually all but
+identical. `#846A44` clears it for the second, at the cost of a visibly darker
+gold.
+
+### What was fixed, and what was not
+
+Fixed: **a comment that claimed a compliance the code did not have.**
+`textTertiary` was documented as *"~4.6:1 on `bg`, which clears WCAG AA"*. That
+figure is the ratio on `surface` (#FFFFFF); on `bg` (#F7F2E9), where most of
+this text actually sits, it is 4.21. Same category as "Your recording is safe"
+two iterations ago — a stated claim with nothing behind it. Both tokens now
+carry their measured ratios and the candidate values.
+
+Not fixed: **the colours and the target size.** The palette and the design
+system are the user's, explicitly, and a token change ripples through every
+screen. These are decisions, not defects, and taking them quietly would be
+exactly the independent aesthetic judgement §2 exists to prevent. They are
+recorded here with the numbers needed to decide, and raised with the user.
+
+### The ratchet
+
+The suite does not pretend the gaps are closed. It records them as ceilings —
+`unnamed: 0`, `small: 8`, `worstRatio: 3.54`, `distinctColours: 2` — and fails
+if any moves the wrong way. A new screen with an unnamed control, a ninth
+undersized target, a third colour under AA: all caught. Lowering a baseline
+becomes a deliberate act that has to be explained here.
+
+Verified the ratchet actually bites, rather than being a test that only ever
+passes: tightened each baseline by one notch against the unchanged app and
+confirmed three real failures and a non-zero exit.
+
+**Tests:** typecheck clean; the audit passes at baseline and fails when
+tightened.
+
+**Three-foot test:** no screen changed.
+
+**Rollback:** `git revert` — the change is two comments and a new suite.
+
+---
+
 ## 2026-08-20 09:50 — A photograph becoming a piece, carried through for the first time
 
 **Branch:** `main`. Owner: `/loop improve the app as much as you can` —
