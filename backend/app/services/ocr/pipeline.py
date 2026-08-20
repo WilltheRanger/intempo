@@ -20,6 +20,8 @@ Provider chain semantics:
 
 from __future__ import annotations
 
+import logging
+
 from pydantic import ValidationError
 
 from app.config import settings
@@ -33,6 +35,8 @@ from app.services.ocr.gemini_provider import (
     gemini_pro_provider,
 )
 from app.services.score_schema import ScoreJson
+
+log = logging.getLogger("intempo.ocr")
 
 CONFIDENCE_THRESHOLD = 0.7
 
@@ -78,8 +82,15 @@ def parse_sheet_music(
         raise OCRError("provider chain is empty")
 
     failures: list[str] = []
-    best_low_confidence: ScoreJson | None = None
-    best_low_confidence_label: str | None = None
+    # **First** in the chain, not highest-scoring, and deliberately so — this
+    # was called `best_low_confidence`, which implied a comparison that would
+    # be meaningless. `ocr_confidence` is each model's own estimate of its own
+    # work; a 0.5 from one provider and a 0.4 from another are not the same
+    # quantity and ranking them would be reading a number that does not exist.
+    # The chain order encodes which provider is trusted more, so the first one
+    # to produce anything usable is the one to keep.
+    first_low_confidence: ScoreJson | None = None
+    first_low_confidence_from: str | None = None
 
     for provider in chain:
         try:
@@ -94,11 +105,20 @@ def parse_sheet_music(
         failures.append(
             f"{provider.name}: low confidence {response.score.ocr_confidence:.2f}"
         )
-        if best_low_confidence is None:
-            best_low_confidence = response.score
-            best_low_confidence_label = provider.name
+        if first_low_confidence is None:
+            first_low_confidence = response.score
+            first_low_confidence_from = provider.name
 
-    if best_low_confidence is not None:
-        return best_low_confidence
+    if first_low_confidence is not None:
+        # Which provider's transcription the musician is about to be shown and
+        # asked to correct. The name was being tracked and then dropped, so
+        # nothing anywhere recorded whose reading of the page this was.
+        log.info(
+            "returning low-confidence transcription from %s (confidence %.2f); tried: %s",
+            first_low_confidence_from,
+            first_low_confidence.ocr_confidence,
+            "; ".join(failures),
+        )
+        return first_low_confidence
 
     raise OCRError("all providers failed: " + "; ".join(failures))

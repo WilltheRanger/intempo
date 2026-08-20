@@ -184,7 +184,10 @@ def generate_verdict(
     think in BPM (§3.5 language rules). The BPM figure is an
     approximation: target_bpm scaled by the run's mean %-of-beat drift.
     """
-    cfg = config or load_audio_config()
+    # No config is read here — the run-finding below is pure geometry over
+    # deltas that were already banded using it. `config` stays in the signature
+    # because every function in this module takes it, and a caller having to
+    # remember which ones actually use it is worse than an ignored argument.
     timed = [d for d in deltas if not d.is_slur_interior]
     if not timed:
         return Verdict(text="Not enough clear notes to judge your timing.", direction=Direction.on)

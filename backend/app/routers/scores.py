@@ -8,6 +8,7 @@ read so the same access rules apply at the API layer.
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any
 from urllib.parse import urlparse
@@ -27,6 +28,8 @@ router = APIRouter(prefix="/scores", tags=["scores"])
 
 # Cap how big an image we'll pull from a signed URL before bailing.
 # Matches the score-images bucket's 10 MB limit, with headroom.
+log = logging.getLogger("intempo.scores")
+
 MAX_IMAGE_BYTES = 12 * 1024 * 1024
 
 # Default download timeout in seconds. Spec wants the whole flow under 10s,
@@ -183,27 +186,91 @@ def _assert_image_url_owned_by(image_url: str, user_id: UUID) -> None:
         )
 
 
-def _download_image(image_url: str) -> bytes:
+#: Redirects to follow. Supabase serves signed object URLs from the same host,
+#: so one or two is generous; the cap exists so a redirect chain cannot become
+#: a way to spend the request budget.
+MAX_IMAGE_REDIRECTS = 3
+
+
+def _download_image(image_url: str, *, expected_origin: str | None = None) -> bytes:
+    """Fetch a score image, refusing anything too large, too far, or not there.
+
+    **The size limit is enforced while reading, not after.** This used to be
+    `client.get()` followed by `len(body) > MAX_IMAGE_BYTES`, which reads the
+    whole response into memory first — so a 2 GB object in the caller's own
+    storage prefix was fully buffered before being rejected. A limit that only
+    refuses after allocating protects the OCR provider downstream and nothing
+    else. Streaming stops at the first chunk that crosses the line, so the most
+    this ever holds is one chunk past the limit.
+
+    **Redirects may not leave the endpoint the caller was authorised for.**
+    `_assert_image_url_owned_by` checks the URL is a Supabase score-images URL
+    under this user's prefix, and its docstring says "we never download
+    arbitrary internet URLs" — which was true of the URL given and not of where
+    following redirects could end up. A 302 to a link-local address would have
+    been followed.
+
+    The comparison is host *and* port, not host alone: a redirect to another
+    port on the same host reaches a different service, which is most of what
+    an SSRF is for.
+    """
     try:
-        with httpx.Client(timeout=IMAGE_DOWNLOAD_TIMEOUT, follow_redirects=True) as client:
-            response = client.get(image_url)
+        with httpx.Client(
+            timeout=IMAGE_DOWNLOAD_TIMEOUT,
+            follow_redirects=True,
+            max_redirects=MAX_IMAGE_REDIRECTS,
+        ) as client:
+            with client.stream("GET", image_url) as response:
+                if response.status_code != 200:
+                    raise HTTPException(
+                        status_code=status.HTTP_502_BAD_GATEWAY,
+                        detail=f"image download returned status {response.status_code}",
+                    )
+                final = response.url
+                final_origin = f"{final.host}:{final.port}"
+                if expected_origin and final_origin != expected_origin:
+                    # Names both ends. Supabase serves signed object URLs from
+                    # the project host and is not expected to redirect off it —
+                    # but that could not be verified against a live project
+                    # from where this was written, so if this ever fires in
+                    # production the message has to say where it went rather
+                    # than leaving someone to guess at a bare 403.
+                    log.warning(
+                        "image download redirected off the approved origin: %s -> %s",
+                        expected_origin,
+                        final_origin,
+                    )
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail=(
+                            f"image_url redirected off the storage host "
+                            f"({expected_origin} -> {final_origin})"
+                        ),
+                    )
+                # Trust the declared length only to refuse early — never to
+                # decide the read is safe, since it is a claim, not a fact.
+                declared = response.headers.get("content-length")
+                if declared and declared.isdigit() and int(declared) > MAX_IMAGE_BYTES:
+                    raise HTTPException(
+                        status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+                        detail=f"image is larger than {MAX_IMAGE_BYTES} bytes",
+                    )
+                chunks: list[bytes] = []
+                total = 0
+                for chunk in response.iter_bytes():
+                    total += len(chunk)
+                    if total > MAX_IMAGE_BYTES:
+                        raise HTTPException(
+                            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+                            detail=f"image is larger than {MAX_IMAGE_BYTES} bytes",
+                        )
+                    chunks.append(chunk)
     except httpx.RequestError as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=f"failed to download image: {exc}",
         ) from exc
-    if response.status_code != 200:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"image download returned status {response.status_code}",
-        )
-    body = response.content
-    if len(body) > MAX_IMAGE_BYTES:
-        raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail=f"image is larger than {MAX_IMAGE_BYTES} bytes",
-        )
-    return body
+    return b"".join(chunks)
 
 
 #: How long a display URL lives. Long enough that a library screen scrolled
@@ -299,7 +366,13 @@ def _row_to_response(
 def _transcribe(image_url: str, user_id: UUID) -> ScoreJson:
     """Photograph → notes. The original path, unchanged."""
     _assert_image_url_owned_by(image_url, user_id)
-    image_bytes = _download_image(image_url)
+    # The endpoint the guard above just approved. Passed on so a redirect
+    # cannot move the fetch somewhere the guard never saw. `httpx.URL.port`
+    # fills in the scheme default, so this is compared against the same.
+    approved = httpx.URL(image_url)
+    image_bytes = _download_image(
+        image_url, expected_origin=f"{approved.host}:{approved.port}"
+    )
     try:
         return parse_sheet_music(image_bytes, media_type=_media_type_for(image_url))
     except OCRError as exc:

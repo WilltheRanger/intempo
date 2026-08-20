@@ -6,6 +6,103 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-20 14:45 — The server fetching a URL you gave it: two guards that read stronger than they were
+
+**Branch:** `main`. Owner: `/loop improve the app as much as you can` —
+twentieth iteration. Backend again, following the coverage sweep.
+
+`_download_image` in `routers/scores.py` was the largest uncovered block in any
+router — twenty lines at **0%**. It is also the one place the server fetches a
+URL supplied by a caller, so the tests were the smaller half of what came out
+of it.
+
+### The size limit was enforced too late to be a size limit
+
+```python
+response = client.get(image_url)      # whole body into memory
+if len(response.content) > MAX_IMAGE_BYTES:   # ...then refuse
+```
+
+A 2 GB object in the caller's own storage prefix was fully buffered before
+being rejected. That bounds what reaches the OCR provider and nothing else —
+and memory is what a size limit is for.
+
+Now streamed, with a running total that raises at the first chunk over the
+line, so the most it ever holds is one chunk past the limit. `Content-Length`
+is checked first as a fast refusal — and *only* as a refusal, never as
+permission, since it is a claim by the server rather than a fact about what it
+will send.
+
+### The ownership guard could be walked off its host by a redirect
+
+`_assert_image_url_owned_by` checks the URL is a Supabase score-images URL
+under this user's prefix, and its docstring says **"we never download arbitrary
+internet URLs"**. That was true of the URL handed in and not of where
+`follow_redirects=True` could end up. A 302 from the storage host to
+`169.254.169.254` would have been followed.
+
+The final URL now has to match the origin the guard approved — **host and
+port**, not host alone, because a redirect to another port on the same host
+reaches a different service, which is most of what an SSRF is for. Redirects
+are capped at three.
+
+**A risk I could not close from here, stated plainly:** if real Supabase
+storage ever redirects cross-host, this refuses a legitimate upload. The egress
+policy blocks `*.supabase.co`, so that could not be checked against a live
+project. Signed object URLs are served from the project host as far as the
+documentation goes, and a same-origin redirect is tested and allowed — but if
+this fires in production it will be because I was wrong. The 403 names both
+origins and logs a warning, so the failure says where it went rather than
+leaving a bare refusal to be guessed at.
+
+### Nine tests, then the mutations
+
+Happy path, non-200 → 502, unreachable host → 502, oversize → 413, an
+over-declared length refused before the body, a body exactly at the limit
+allowed, an off-origin redirect → 403, a same-origin redirect followed, and an
+under-declared length.
+
+Both fixes were then reverted in turn against the tests: buffering the whole
+body → **2 failures**; dropping the origin check → **1 failure**. Held.
+
+**One test I had to correct.** I wrote it as "a lying `Content-Length` must
+still hit the 413" and it did not raise — httpx honours the declared length and
+stops there, so lying *downward* returns ten bytes rather than smuggling
+anything through. It now asserts the property that actually holds: the read is
+bounded either way, by the declared length when there is one and by the running
+cap when there is not.
+
+**And two junk assertions I nearly shipped.** Two of the first-draft tests
+ended `assert ... or True`, which cannot fail. Deleted, along with a third that
+compared two string literals and tested nothing.
+
+### While in here
+
+- **`ocr/pipeline.py`: a name that described a comparison that never happened.**
+  `best_low_confidence` keeps the *first* low-confidence result, not the
+  highest-scoring one, and there is a test asserting exactly that. The
+  behaviour is right — `ocr_confidence` is each model's estimate of its own
+  work, so a 0.5 from one provider and a 0.4 from another are not the same
+  quantity and ranking them would be reading a number that does not exist. The
+  chain order is the trust order. Renamed `first_low_confidence`, with the
+  reasoning written down in both the module and the test.
+- The provider name was being tracked into `best_low_confidence_label` and then
+  dropped, so nothing recorded whose reading of the page a musician was about
+  to be shown and asked to correct. It is logged now.
+- `classification.py` loaded the audio config into a variable nothing read.
+- Seven unused imports across the test suite. `ruff check app/` is clean.
+- `HTTP_413_REQUEST_ENTITY_TOO_LARGE` → `HTTP_413_CONTENT_TOO_LARGE`; the
+  deprecation warnings are gone.
+
+**Tests:** 250 passed (was 241). `routers/scores.py` 90% → 96%, total 96% →
+97%. Lint clean.
+
+**Three-foot test:** not applicable — backend only.
+
+**Rollback:** `git revert`.
+
+---
+
 ## 2026-08-20 13:30 — The auth module's refusals get tested, and one door gets bricked up
 
 **Branch:** `main`. Owner: `/loop improve the app as much as you can` —
