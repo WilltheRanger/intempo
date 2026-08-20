@@ -21,7 +21,7 @@ import type {
   AddPieceOption,
   TabScreenNavigation,
 } from '../../navigation/types';
-import { AddPieceSheet } from './AddPieceSheet';
+import { AddPieceSheet } from '../../components/pieces/AddPieceSheet';
 import { PieceRow } from './PieceRow';
 
 /** Case- and accent-insensitive match across title and composer. */

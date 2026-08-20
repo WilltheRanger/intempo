@@ -1,7 +1,9 @@
 import { useNavigation } from '@react-navigation/native';
+import { useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { FadeIn } from '../../components/motion';
+import { AddPieceSheet } from '../../components/pieces/AddPieceSheet';
 import {
   Avatar,
   EmptyState,
@@ -23,8 +25,9 @@ import { spacing } from '../../design';
 import { getGreeting } from '../../lib/greeting';
 import { factFor } from '../../lib/facts';
 import { formatTendency } from '../../lib/tempo';
+import { motion } from '../../design';
 import { suggestionsFor } from '../../lib/today';
-import type { TabScreenNavigation } from '../../navigation/types';
+import type { AddPieceOption, TabScreenNavigation } from '../../navigation/types';
 import { WarmupPanel } from './WarmupPanel';
 import { PracticeCard } from './PracticeCard';
 import { TodayRow } from './TodayRow';
@@ -78,6 +81,7 @@ export function TodayScreen() {
   const insights = useInsights();
   const latestTake = useLatestTake();
   const me = useMe();
+  const [addSheetVisible, setAddSheetVisible] = useState(false);
 
   // The working tempo is local and per piece, so this subscribes rather than
   // reading once — changing it on the Record screen has to show here.
@@ -103,6 +107,21 @@ export function TodayScreen() {
   // reached from the piece itself.
   function openPractice(target: Piece) {
     navigation.navigate('Record', { pieceId: target.id });
+  }
+
+  // The same three destinations the Library's button reaches, by the same
+  // route — one definition of "add a piece", not two that can drift.
+  function handleSelectOption(option: AddPieceOption) {
+    setAddSheetVisible(false);
+    // Let the sheet finish dismissing before the push, so the two animations
+    // don't overlap.
+    setTimeout(() => {
+      if (option === 'scan') {
+        navigation.navigate('Scanner');
+        return;
+      }
+      navigation.navigate('AddPiece', { option });
+    }, motion.fast);
   }
 
   const take = latestTake.data ?? null;
@@ -150,13 +169,26 @@ export function TodayScreen() {
     );
   }
 
+  // A brand-new account lands here, and this used to be a dead end: it told
+  // them to photograph sheet music and the only thing on the screen they could
+  // press was their own avatar. The instruction named an action the screen did
+  // not offer, and the way to do it was a tab away behind a button they had no
+  // reason to look for. The sheet is the Library's, shared rather than
+  // duplicated, so all three routes in are offered from the first screen.
   if (!piece) {
     return (
       <ScreenContainer onRefresh={refresh}>
         {header}
         <EmptyState
           title="Nothing to practice yet"
-          description="Photograph a piece of sheet music and it will show up here."
+          description="Add a piece of sheet music and it will show up here."
+          actionLabel="Add a piece"
+          onActionPress={() => setAddSheetVisible(true)}
+        />
+        <AddPieceSheet
+          visible={addSheetVisible}
+          onClose={() => setAddSheetVisible(false)}
+          onSelect={handleSelectOption}
         />
       </ScreenContainer>
     );
