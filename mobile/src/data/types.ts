@@ -127,6 +127,8 @@ export interface ScoreResponse {
   user_id: string;
   title: string;
   composer: string | null;
+  /** e.g. "I. Adagio". Null for music with no movements. */
+  movement: string | null;
   /**
    * What was uploaded — the signed *upload* URL, expired minutes later. Never
    * usable for display, which is what `image_url` is for.
@@ -252,17 +254,17 @@ export type ThumbnailSource = string | number;
 /**
  * What the UI renders. Deliberately not the same shape as `ScoreResponse`.
  *
- * `movement` still has no backing column (see the Phase 1
- * audit); `lastPracticedAt` and `thumbnail` now do. All four stay nullable,
- * because the two that are backed can still be absent — a piece nobody has
- * recorded has no last-practiced date, and a signed URL can fail. Do not make
- * any of them non-nullable to simplify a component.
+ * Every field is now backed by the API — `movement` was the last one that
+ * wasn't, and got a column in migration 005. They stay nullable all the same,
+ * because backed is not the same as present: a piece nobody has recorded has
+ * no last-practiced date, music in one movement has no movement, and a signed
+ * URL can fail. Do not make any of them non-nullable to simplify a component.
  */
 export interface Piece {
   id: string;
   title: string;
   composer: string | null;
-  /** e.g. "II. Adagio". No backing field. */
+  /** e.g. "II. Adagio". Null for music that has none. */
   movement: string | null;
   /** ISO 8601, from the most recent analysis. Null until one exists. */
   lastPracticedAt: string | null;

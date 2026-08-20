@@ -68,6 +68,7 @@ def _row_for(score_id: UUID, user_id: UUID, **overrides: Any) -> dict[str, Any]:
         "user_id": str(user_id),
         "title": "Etude #1",
         "composer": None,
+        "movement": None,
         "source_image_url": _signed_url(user_id),
         "score_json": GOOD_PAYLOAD,
         "shared_with_studio": None,
@@ -428,6 +429,76 @@ def test_patch_replaces_score_json(
     sb.table.return_value.update.assert_called_once()
     update_payload = sb.table.return_value.update.call_args.args[0]
     assert update_payload["ocr_confidence"] == 0.95
+
+
+def test_movement_round_trips_through_create_and_read(
+    monkeypatch: pytest.MonkeyPatch,
+    client: TestClient,
+    make_token: Callable[..., str],
+) -> None:
+    """Which movement of a work this is — the reason two Wohlfahrt studies in a
+    library are no longer two identical rows."""
+    user_id = uuid4()
+    score_id = uuid4()
+    sb = _install_supabase(
+        monkeypatch,
+        returning_row=_row_for(score_id, user_id, movement="I. Adagio"),
+    )
+
+    res = client.post(
+        "/v1/scores",
+        json={
+            "title": "Sonata No. 1 in G minor, BWV 1001",
+            "composer": "J. S. Bach",
+            "movement": "I. Adagio",
+            "clef": "treble",
+        },
+        headers={"Authorization": f"Bearer {make_token(sub=user_id)}"},
+    )
+    assert res.status_code == 201, res.text
+    assert res.json()["movement"] == "I. Adagio"
+    assert sb.table.return_value.insert.call_args.args[0]["movement"] == "I. Adagio"
+
+
+def test_patch_can_clear_a_movement(
+    monkeypatch: pytest.MonkeyPatch,
+    client: TestClient,
+    make_token: Callable[..., str],
+) -> None:
+    """An explicit null clears it — music that turned out to have no movements."""
+    user_id = uuid4()
+    score_id = uuid4()
+    sb = _install_supabase(
+        monkeypatch, returning_row=_row_for(score_id, user_id, movement=None)
+    )
+
+    res = client.patch(
+        f"/v1/scores/{score_id}",
+        json={"movement": None},
+        headers={"Authorization": f"Bearer {make_token(sub=user_id)}"},
+    )
+    assert res.status_code == 200, res.text
+    assert sb.table.return_value.update.call_args.args[0] == {"movement": None}
+
+
+def test_patch_omitting_movement_leaves_it_alone(
+    monkeypatch: pytest.MonkeyPatch,
+    client: TestClient,
+    make_token: Callable[..., str],
+) -> None:
+    user_id = uuid4()
+    score_id = uuid4()
+    sb = _install_supabase(
+        monkeypatch, returning_row=_row_for(score_id, user_id, movement="II. Fuga")
+    )
+
+    res = client.patch(
+        f"/v1/scores/{score_id}",
+        json={"title": "Renamed"},
+        headers={"Authorization": f"Bearer {make_token(sub=user_id)}"},
+    )
+    assert res.status_code == 200, res.text
+    assert "movement" not in sb.table.return_value.update.call_args.args[0]
 
 
 def test_patch_can_clear_a_composer(

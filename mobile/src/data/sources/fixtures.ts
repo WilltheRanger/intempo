@@ -209,7 +209,7 @@ export const fixturePieceSource: PieceSource = {
         .slice(0, 40)}`,
       title: input.title,
       composer: input.composer,
-      movement: null,
+      movement: input.movement,
       practicedDaysAgo: null,
       // No photograph was taken, so there is nothing to show. `ScoreThumbnail`
       // draws its ruled staff for a null source, which is the truthful image
@@ -243,6 +243,7 @@ export const fixturePieceSource: PieceSource = {
     }
     match.title = input.title;
     match.composer = input.composer;
+    match.movement = input.movement;
     return toPiece(match);
   },
 

@@ -30,23 +30,20 @@ import type {
 /**
  * The real backend, mapped into the shape the UI renders.
  *
- * **One field still comes back null**: `movement`, which has no column on
- * `scores`. The OCR review form collects it and drops it, because there is
- * nowhere to put it. Named here rather than quietly omitted so the work needed
- * to light it up stays visible.
- *
- * `progress` used to be listed beside it. It is gone from the app entirely —
- * there was no progress concept anywhere in the schema and none was coming, so
- * the bar and the percentage were fixture-only ornament wherever they appeared.
- * Everything else here is live: `lastPracticedAt` comes from `/v1/analyses`,
- * and `thumbnail` from the download URL the backend signs on every read.
+ * **Every field is live.** Two used to be listed here as permanently null and
+ * both are now resolved, in opposite directions: `progress` was deleted,
+ * because nothing in the product could compute it and none of it was coming;
+ * `movement` was given a column, because it is a fact the musician already
+ * knows and was already being asked for. `lastPracticedAt` comes from
+ * `/v1/analyses`, and `thumbnail` from the download URL the backend signs on
+ * every read.
  */
 function toPiece(score: ScoreResponse, lastPracticedAt: string | null = null): Piece {
   return {
     id: score.id,
     title: score.title,
     composer: score.composer,
-    movement: null,
+    movement: score.movement,
     lastPracticedAt,
     // Signed on read and good for an hour. Null when signing failed, which is
     // a thumbnail-shaped hole rather than an error — `ScoreThumbnail` already
@@ -160,6 +157,7 @@ export const apiPieceSource: PieceSource = {
     const score = await createScore({
       title: input.title,
       composer: input.composer,
+      movement: input.movement,
       clef: input.clef,
       time_signature: input.timeSignature,
       bpm_hint: input.bpm,
@@ -172,6 +170,7 @@ export const apiPieceSource: PieceSource = {
     const score = await updateScore(id, {
       title: input.title,
       composer: input.composer,
+      movement: input.movement,
     });
     // The edit doesn't touch practice history, so keep the date the rest of
     // the app is showing rather than dropping it to null.

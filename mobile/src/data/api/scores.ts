@@ -34,12 +34,14 @@ export interface TranscribedScoreInput {
   image_url: string;
   title: string;
   composer?: string | null;
+  movement?: string | null;
 }
 
 export interface HandEnteredScoreInput {
   image_url?: never;
   title: string;
   composer?: string | null;
+  movement?: string | null;
   /**
    * Required: OCR would have read it off the page, and nothing did. The app
    * derives it from the musician's instrument rather than asking.
@@ -69,6 +71,7 @@ export function createScore(input: CreateScoreInput): Promise<ScoreResponse> {
 export interface UpdateScoreInput {
   title?: string;
   composer?: string | null;
+  movement?: string | null;
   score_json?: ScoreJson;
 }
 

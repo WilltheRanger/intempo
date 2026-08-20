@@ -92,6 +92,7 @@ export function PieceDetailScreen() {
   const [editing, setEditing] = useState(false);
   const [draftTitle, setDraftTitle] = useState('');
   const [draftComposer, setDraftComposer] = useState('');
+  const [draftMovement, setDraftMovement] = useState('');
   const [error, setError] = useState<string | null>(null);
 
   const updatePiece = useUpdatePiece(params.pieceId);
@@ -101,6 +102,7 @@ export function PieceDetailScreen() {
     setError(null);
     setDraftTitle(current.title);
     setDraftComposer(current.composer ?? '');
+    setDraftMovement(current.movement ?? '');
     setEditing(true);
   }
 
@@ -115,6 +117,7 @@ export function PieceDetailScreen() {
       await updatePiece.mutateAsync({
         title,
         composer: draftComposer.trim() || null,
+        movement: draftMovement.trim() || null,
       });
       setEditing(false);
     } catch (cause) {
@@ -241,6 +244,14 @@ export function PieceDetailScreen() {
             value={draftComposer}
             onChangeText={setDraftComposer}
             placeholder="Optional"
+            autoCapitalize="words"
+            style={styles.editField}
+          />
+          <Input
+            label="Movement"
+            value={draftMovement}
+            onChangeText={setDraftMovement}
+            placeholder="I. Adagio — optional"
             autoCapitalize="words"
             style={styles.editField}
           />
