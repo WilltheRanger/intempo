@@ -81,16 +81,44 @@ export function TranscriptionReviewScreen() {
       // The scan is finished with; leaving it in place would let a later save
       // reuse an expired upload URL.
       captureSession.reset();
-      // `reset`, not `replace`. Replacing swaps out only this screen and leaves
-      // the scanner and the page list underneath — so Back from the piece you
-      // just saved walked *into* the scan flow you had finished, whose session
-      // had been cleared a line earlier. That is a dead end, and the browser
-      // test found it. This rebuilds the stack as tabs → the new piece, which
-      // is where someone who has just saved a piece expects Back to go.
+      // Unwind the finished flow, then open the piece.
+      //
+      // `replace` was wrong first: it swaps out only this screen and leaves the
+      // scanner and the page list underneath, so Back from the piece you just
+      // saved walked *into* the scan flow you had finished, whose session had
+      // been cleared a line earlier.
+      //
+      // `reset({routes: [{name: 'Tabs'}, …]})` fixed that and broke something
+      // quieter: it rebuilds the whole stack, so the `Tabs` entry it writes is
+      // a *fresh* one and the tab navigator falls back to its initial tab.
+      // Someone who opened the scanner from the Library was returned to Today,
+      // having lost the tab they were on for no reason they could see.
+      //
+      // `popTo('Tabs')` then `navigate` looked like the answer and wasn't: two
+      // dispatches, the second from a screen the first had already unmounted,
+      // and the tab still came back as Today.
+      //
+      // So: one dispatch, and carry the existing `Tabs` route object across
+      // rather than writing a fresh `{ name: 'Tabs' }`. The nested tab state
+      // travels with it, which is the whole point — `{ name: 'Tabs' }` is a
+      // *new* Tabs with no state, and a navigator with no state falls back to
+      // its initial route.
+      const tabs = navigation
+        .getState()
+        ?.routes.find((route) => route.name === 'Tabs')?.state;
+      const activeTab = tabs?.routes[tabs.index ?? 0]?.name;
       navigation.reset({
         index: 1,
         routes: [
-          { name: 'Tabs' },
+          {
+            name: 'Tabs',
+            // Naming the tab is what preserves it. The live nested state can't
+            // be passed straight through — `reset` takes a *partial* state and
+            // that one is a settled one — and it doesn't need to be: every tab
+            // here is a leaf screen, so which tab is the whole of it.
+            // Undefined on a cold start, which is honestly "no tab chosen yet".
+            state: activeTab ? { index: 0, routes: [{ name: activeTab }] } : undefined,
+          },
           { name: 'PieceDetail', params: { pieceId: piece.id } },
         ],
       });
