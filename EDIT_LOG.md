@@ -6,6 +6,76 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-20 13:30 — The auth module's refusals get tested, and one door gets bricked up
+
+**Branch:** `main`. Owner: `/loop improve the app as much as you can` —
+nineteenth iteration.
+
+The client has had fifteen iterations of attention and the backend almost none,
+so: coverage. 96% overall, which is healthy — except `app/auth.py` at **69%**,
+and that is the security boundary.
+
+Everything uncovered in it was a **refusal**. Untested refusals are the
+dangerous kind: a refactor that turns one into an acceptance passes the whole
+suite without a word.
+
+### The dead one
+
+`current_user(payload)` — 31 lines that look like an auth dependency, are typed
+as one, load the `users` row and 404 if it is missing. **Nothing depends on
+it.** Every router uses `current_user_id`, `current_jwt_payload`, or
+`current_user_id_provisioned`. Deleted: an unused door on a security boundary
+is worse than an untested one, because it invites being wired up later by
+someone who assumes it is exercised.
+
+### The tested ones
+
+Eight new tests, covering every remaining rejection:
+
+- an empty `sub`, and an absent `sub` claim (two different branches)
+- `Basic <a perfectly valid JWT>` — not authentication however valid the token
+- **a JWKS fetch failure returning 401 rather than admitting the caller.** The
+  branch it would be catastrophic to get wrong: if a key-server failure ever
+  returned a payload instead of raising, every token including a forged one
+  would be accepted
+- `SUPABASE_URL` unset → 500, a server fault rather than a rejected caller
+- `current_user_id_provisioned` with a non-UUID subject → 401
+- the same without a service-role client → **500, not a silent pass**: the
+  handler behind it is about to insert a row referencing `users(id)`, and
+  waving the caller through unprovisioned trades a clear 500 for a foreign-key
+  error somewhere further in
+- and the acceptance still working, since refusals only mean something
+  alongside it
+
+`app/auth.py` 69% → **96%**; suite 233 → 241.
+
+### Checked by mutation, not by passing
+
+A test asserting 401 passes trivially if everything 401s. Each guard was
+removed in turn against the new tests:
+
+- JWKS failure returning a payload → **caught**
+- unconfigured client waved through → **caught**
+- `if not sub` in `current_user_id` removed → **not caught**, and correctly so.
+  `UUID(sub)` rejects `""` and `None` with the same 401, so that guard is
+  defence in depth and deleting it changes no behaviour. The test had been
+  asserting `"subject" in detail`, which passed under the mutation by
+  coincidence — the substring survives in the other message. It now asserts the
+  property (rejected, no user id returned) and says in its docstring that two
+  guards deliver it and neither is individually load-bearing. A test that
+  passes for a reason you have not checked is a test you do not have.
+
+Added `pytest-cov` as a dev dependency so this is measurable next time rather
+than a one-off.
+
+**Tests:** 241 passed.
+
+**Three-foot test:** not applicable — backend only, no screen touched.
+
+**Rollback:** `git revert`.
+
+---
+
 ## 2026-08-20 12:15 — The accessibility findings, decided by the user and applied
 
 **Branch:** `main`. Owner: `/loop improve the app as much as you can` —
