@@ -108,3 +108,20 @@ def bad_token() -> str:
         "email": "attacker@example.com",
     }
     return jwt.encode(payload, pem, algorithm="ES256")
+
+
+@pytest.fixture(autouse=True)
+def _stub_provisioning(monkeypatch: pytest.MonkeyPatch):
+    """Neutralise the first-touch provisioning that write endpoints now run.
+
+    `current_user_id_provisioned` upserts the `users` row before any handler
+    that inserts a row referencing it — see `services/provisioning.py`. That
+    needs a Supabase client, and tests patch `get_service_client` on the
+    *router* module they are exercising, so without this the dependency reaches
+    for a real one and every write test tries to open a network connection.
+
+    Autouse and a plain mock: the provisioning behaviour itself is covered
+    directly in `test_provisioning.py`, and every other test is about the
+    handler, not about the row already existing.
+    """
+    monkeypatch.setattr(auth_module, "get_service_client", lambda: MagicMock())
