@@ -3,5 +3,9 @@
   "compilerOptions": {
     "strict": true
   },
-  "exclude": ["node_modules", "dist", ".expo"]
+  // `dist*` rather than `dist`: the test harness builds a second bundle into
+  // `dist-live/` (the same app with EXPO_PUBLIC_* set), and tsc happily walked
+  // into 3.4 MB of minified output and blew its stack on it. Anything the
+  // bundler emits is output, not source.
+  "exclude": ["node_modules", "dist", "dist-*", ".expo"]
 }

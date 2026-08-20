@@ -6,6 +6,77 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-20 03:40 — The unreachable practice mock is deleted, and tsc stops typechecking the build output
+
+**Branch:** `main`. Owner: `/loop improve the app as much as you can` — eleventh
+iteration.
+
+### A screen nothing could open
+
+`PracticeScreen` was registered in `RootNavigator` and reachable from nowhere.
+Nothing in the app called `navigate('Practice', …)`; `PieceDetail`'s "Start
+practice" and "Continue practice" both route to `Record`, and have since the
+recording flow was built.
+
+It was a mock throughout, and its own docstring said so — *"Nothing makes
+sound, nothing listens, nothing is recorded."* The measure counter stepped on a
+`setTimeout` against `MOCK_MEASURE_COUNT`, a constant 24, so it would have
+reported "Measure 1 of 24" for every piece in the library including the
+hand-entered ones with no notes at all. The same fiction was removed from
+`PieceDetail` in an earlier iteration, where it was replaced with real
+scheduling through the actual `score_json`; this copy survived only because
+nobody could reach it to notice.
+
+Deleting it took a closed set with it — 493 lines, nothing else referenced any
+of it:
+
+- `screens/practice/PracticeScreen.tsx`
+- `components/pieces/NotationPlaceholder.tsx` — staves and barlines with no
+  noteheads. Convention 7 in CLAUDE.md is explicit that sheet music is the
+  visual identity and placeholders are not it; the real engraver
+  (`lib/notation/engrave.ts`, drawn through `sheet/SheetCrop` and `Stave`) has
+  been in use on every screen that shows notation for some time.
+- `components/playback/TransportControls.tsx` — the whole `playback/`
+  directory, imported by nothing else. Real playback is `ListenButton`, used on
+  three screens.
+- `data/sources/pieceMock.ts` — `MOCK_MEASURE_COUNT`, `MOCK_DEFAULT_BPM` and
+  the tempo bounds, all of which had real equivalents elsewhere.
+- The `Practice` route in `navigation/types.ts` and its `Stack.Screen`.
+
+Two of these were features in mock form — looping a section, and a session
+timer. Neither exists anywhere else now. That is deliberate: a mock is not a
+feature, and whether InTempo gets a loop control is a design decision, not
+something to be inherited by accident from scaffolding. Noted here so it is a
+choice rather than an oversight.
+
+### tsc was typechecking a 3.4 MB minified bundle
+
+`npm run typecheck` started dying with `RangeError: Maximum call stack size
+exceeded` — no error message, just a stack trace inside the TypeScript checker.
+It reproduced on a clean `HEAD`, so it was not the deletion.
+
+`--generateTrace` named the file it died on:
+`dist-live/_expo/static/js/web/index-*.js`. `tsconfig.json` excluded `dist` and
+I had added `dist-live` in the previous iteration, so tsc was walking into the
+bundler's own output and recursing through minified code until it ran out of
+stack. Exclude is now `dist-*`.
+
+Worth recording because of how it presented: raising `--stack-size` made it
+"pass", which would have buried a real defect under a flag. The crash was
+telling the truth — there *was* something pathological being checked, and it
+was not source.
+
+**Tests:** typecheck clean. Nine suites green on the fixture bundle, nine on
+the live bundle against the stub — all 18 re-run after the deletion, since the
+navigator changed.
+
+**Three-foot test:** not applicable — no screen changed. The screen that was
+deleted could not be reached to be looked at.
+
+**Rollback:** `git revert` this commit restores the mock and its registration.
+
+---
+
 ## 2026-08-20 02:30 — Movement becomes a real column, and the test harness stops lying about which build it is testing
 
 **Branch:** `main`. Owner: `/loop improve the app as much as you can` — tenth
