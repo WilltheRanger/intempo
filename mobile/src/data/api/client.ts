@@ -61,6 +61,15 @@ export async function apiFetch<T>(
     // "check your connection": an expired session reported as a network fault,
     // with no way for the musician to act on it.
     if (!token) {
+      // Sign out, don't just report. A refresh that failed past recovery leaves
+      // the stored session unusable while `onAuthStateChange` may never fire —
+      // so the app would sit on a screen showing an error about a session the
+      // gate still believes in. Clearing it returns the musician to sign-in,
+      // which is the only thing that actually helps, and is what "your session
+      // has ended" was asking them to do by hand.
+      await signOut().catch(() => {
+        // Already gone. The throw below still stands.
+      });
       throw new ApiError(401, path, SESSION_ENDED);
     }
     requestHeaders.Authorization = `Bearer ${token}`;

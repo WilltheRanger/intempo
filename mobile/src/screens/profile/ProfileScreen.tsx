@@ -21,6 +21,7 @@ import { signOut } from '../../data/auth/session';
 import { useMe } from '../../data/hooks/useMe';
 import { preferences, usePreferences } from '../../data/preferences';
 import type { Instrument, MetronomeMode } from '../../data/types';
+import { describeLoadError } from '../../data/api/describeError';
 import { spacing } from '../../design';
 import { formatRole, formatTier } from '../../lib/format';
 import type { RootNavigation } from '../../navigation/types';
@@ -40,7 +41,7 @@ import { ToggleRow } from './ToggleRow';
  * like a control and isn't one.
  */
 export function ProfileScreen() {
-  const { data: musician, isPending, isError } = useMe();
+  const { data: musician, isPending, isError, error } = useMe();
   const settings = usePreferences();
   const navigation = useNavigation<RootNavigation>();
   const queryClient = useQueryClient();
@@ -83,7 +84,7 @@ export function ProfileScreen() {
         <PageHeader title="Profile" />
         <EmptyState
           title="Couldn't load your account"
-          description="Check your connection and try again."
+          description={describeLoadError(error)}
         />
       </ScreenContainer>
     );

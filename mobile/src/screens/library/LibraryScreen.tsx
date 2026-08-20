@@ -109,6 +109,7 @@ export function LibraryScreen() {
       <LibraryContent
         isPending={library.isPending}
         isError={library.isError}
+        error={library.error}
         pieces={pieces}
         results={results}
         query={query}
@@ -130,6 +131,8 @@ export function LibraryScreen() {
 interface LibraryContentProps {
   isPending: boolean;
   isError: boolean;
+  /** Why, so the empty state can say something true rather than guess. */
+  error: unknown;
   pieces: Piece[];
   results: Piece[];
   query: string;
@@ -140,6 +143,7 @@ interface LibraryContentProps {
 function LibraryContent({
   isPending,
   isError,
+  error,
   pieces,
   results,
   query,
@@ -158,7 +162,7 @@ function LibraryContent({
     return (
       <EmptyState
         title="Couldn't load your library"
-        description="Check your connection and try again."
+        description={describeLoadError(error)}
       />
     );
   }
@@ -245,4 +249,5 @@ const styles = StyleSheet.create({
     // below it rather than float between two blocks.
     marginBottom: spacing['2xl'],
   },
-});
+});import { describeLoadError } from '../../data/api/describeError';
+
