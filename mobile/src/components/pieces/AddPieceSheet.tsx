@@ -1,7 +1,7 @@
 import { Camera, Images, PencilLine } from 'lucide-react-native';
 
-import { BottomSheet } from '../../components/overlays/BottomSheet';
-import { SheetOptionRow } from '../../components/overlays/SheetOptionRow';
+import { BottomSheet } from '../overlays/BottomSheet';
+import { SheetOptionRow } from '../overlays/SheetOptionRow';
 import type { AddPieceOption } from '../../navigation/types';
 
 export interface AddPieceSheetProps {
@@ -31,7 +31,13 @@ const OPTIONS = [
   },
 ];
 
-/** The three ways a piece enters the library. */
+/**
+ * The three ways a piece enters the library.
+ *
+ * Shared rather than the Library's own, because Today needs it too: a new
+ * account lands on Today with nothing, and until this moved, the screen told
+ * them to photograph sheet music and offered nothing to press.
+ */
 export function AddPieceSheet({
   visible,
   onClose,

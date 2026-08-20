@@ -6,6 +6,69 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-20 07:20 — The first screen a new account sees was a dead end
+
+**Branch:** `main`. Owner: `/loop improve the app as much as you can` —
+fourteenth iteration.
+
+Every dataset in the repo starts with a library that is already full, so all
+four tabs had only ever been judged with content in them. Nothing had looked at
+a brand-new account — which is the first thing anyone who signs up actually
+sees.
+
+`GET /__fail?empty=1` now makes the stub serve an empty library, no analyses,
+and a quota with nothing used. `verify-firstrun.mjs` walks all four tabs on it.
+
+### What it found
+
+Today, on a fresh account, said:
+
+> **Nothing to practice yet** — Photograph a piece of sheet music and it will
+> show up here.
+
+and the only thing on the screen anyone could press was **their own avatar**.
+The instruction named an action the screen did not offer. The way to do it was
+a tab away, behind a button in the Library header they had no reason to look
+for — on a screen whose own copy implied the action lived here.
+
+The other three tabs were fine: Library says "No pieces yet" with Add piece
+directly above it, Insights explains what would fill it, Profile reads "0 of 3
+this month" rather than going blank. Worth stating plainly, because "I checked
+and three of four were already right" is the useful half of a sweep like this.
+
+### The fix
+
+`EmptyState` has taken `actionLabel`/`onActionPress` all along — the Library
+and the verdict screen both use them. Today simply never passed them.
+
+`AddPieceSheet` moved from `screens/library/` to `components/pieces/` and is
+now shared. Today opens the same sheet, with the same three routes in, through
+the same handler shape — one definition of "add a piece" rather than a second
+that can drift from the first. The description changed from "Photograph a piece
+of sheet music" to "Add a piece of sheet music", since photographing is one of
+three ways and the sentence sat directly above a button offering all three.
+
+No new component, no new visual pattern: the button is `EmptyState`'s own,
+identical to "Clear search" on a Library with no matches.
+
+**Tests:** typecheck clean, ten suites green on the fixture bundle and thirteen
+on the live bundle. `verify-firstrun` also presses the button, opens the sheet
+and follows it into Add manually — a button that only *looks* like a way out
+would pass a check on its label alone.
+
+**Three-foot test:** "Good morning", then "Nothing to practice yet", then the
+button. The hierarchy resolves, but the greeting is the largest thing on a
+screen whose actual message is that the library is empty — the greeting
+outweighs the content on this one state. Left alone: that is a composition
+judgement and §2 puts it with the user. Same for the button sitting high rather
+than in the thumb zone (§3 law 7) — it is where `EmptyState` puts its action
+everywhere in the app, and moving it is a design-system change, not a screen
+fix.
+
+**Rollback:** `git revert`. The sheet move is a rename plus two import updates.
+
+---
+
 ## 2026-08-20 06:05 — A failed take stops being reported as a missing one
 
 **Branch:** `main`. Owner: `/loop improve the app as much as you can` —

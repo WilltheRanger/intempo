@@ -244,7 +244,7 @@ def _public(row):
 #: Without this there is no way to see what a screen says when the server is
 #: broken, which is exactly the copy most likely to be wrong and least likely
 #: to be exercised.
-FAIL: dict = {"status": 0, "tier_limit": False, "outcome": ""}
+FAIL: dict = {"status": 0, "tier_limit": False, "outcome": "", "empty": False}
 
 #: How a submitted take finishes. `GET /__fail?outcome=X` sets it; empty means
 #: a normal successful analysis.
@@ -348,13 +348,26 @@ class H(http.server.BaseHTTPRequestHandler):
                 return self._send(400, json.dumps(
                     {"detail": f"unknown outcome; try one of {list(OUTCOMES)}"}).encode())
             FAIL["outcome"] = outcome
+            # A brand-new account: no pieces, no takes, no analyses. The first
+            # thing anyone who signs up actually sees, and until this existed
+            # there was no way to look at it — every seeded screen assumed a
+            # library that was already full.
+            if "empty" in q:
+                FAIL["empty"] = q["empty"][0] == "1"
             return self._send(200, json.dumps(FAIL).encode())
         if FAIL["status"] and path.startswith("/v1/"):
             return self._send(FAIL["status"],
                               json.dumps({"detail": "injected failure"}).encode())
         if path == "/v1/me":
+            if FAIL["empty"]:
+                fresh = dict(ME)
+                fresh["analyses"] = {"used": 0, "limit": 3, "remaining": 3,
+                                     "resets_at": iso(_next_month())}
+                return self._send(200, json.dumps(fresh).encode())
             return self._send(200, json.dumps(ME).encode())
         if path == "/v1/scores":
+            if FAIL["empty"]:
+                return self._send(200, b"[]")
             # CREATED holds both new scores *and* edited copies of seeded ones,
             # so it overrides by id rather than appending — otherwise renaming a
             # seeded piece listed it twice, once under each name.
@@ -369,6 +382,8 @@ class H(http.server.BaseHTTPRequestHandler):
                 (score_row(*s) for s in SCORES if s[0] == sid), None)
             return self._send(200 if row else 404, json.dumps(row or {"detail": "not found"}).encode())
         if path == "/v1/analyses":
+            if FAIL["empty"]:
+                return self._send(200, b"[]")
             return self._send(200, json.dumps(
                 [_public(a) for a in SUBMITTED.values()] + ANALYSES).encode())
         if path.startswith("/v1/analyses/"):
