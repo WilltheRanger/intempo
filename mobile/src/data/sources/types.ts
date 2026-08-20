@@ -48,6 +48,7 @@ export interface PieceSource {
 export interface PieceEdit {
   title: string;
   composer: string | null;
+  movement: string | null;
 }
 
 /**
@@ -66,6 +67,8 @@ export const PIECE_HAS_RECORDINGS =
 export interface NewPiece {
   title: string;
   composer: string | null;
+  /** e.g. "I. Adagio". Null for music with no movements. */
+  movement: string | null;
   /**
    * Which staff the piece is written on. Not asked for: it is derived from
    * the musician's instrument, because a form field for it would be a

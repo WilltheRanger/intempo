@@ -6,6 +6,106 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-20 02:30 — Movement becomes a real column, and the test harness stops lying about which build it is testing
+
+**Branch:** `main`. Owner: `/loop improve the app as much as you can` — tenth
+iteration.
+
+### Movement
+
+`Piece.movement` was the last field the UI rendered that no column backed. It
+was a fixture invention: `sources/api.ts` hardcoded `movement: null`, so the
+seeded library showed "I. Adagio" and "No. 28 — Allegretto" and a real account
+never could. Two Wohlfahrt studies from the same opus are the same library row
+without it.
+
+This is the opposite call to the one made about `progress`, which was deleted
+in an earlier iteration. Progress was a number nothing could compute — a
+fiction with no fact behind it. A movement is a fact the musician already
+knows, the forms were already collecting it, and the only thing missing was
+somewhere to put it.
+
+So it got somewhere to put it:
+
+- `backend/app/migrations/005_score_movement.sql` — `scores.movement text`,
+  nullable, applied and verified against the live project.
+- `routers/scores.py` — on `ScoreCreateRequest`, `ScoreUpdateRequest` and
+  `ScoreResponse`; in the insert payload and `_row_to_response`. The PATCH
+  path uses `model_fields_set`, so an explicit `null` clears the field and an
+  omitted key leaves it alone — the same distinction already made for
+  `composer`. Three tests cover set / clear / leave-alone; suite at **233
+  passed**.
+- Client: `data/types.ts`, `api/scores.ts` (all three input shapes),
+  `sources/api.ts`, `sources/types.ts`, `hooks/useScan.ts`.
+- Forms: the Movement field now saves on all three routes into the library —
+  Add manually, the rename card on a piece, and Name-this-piece after a scan.
+- `sources/fixtures.ts` honours it on create and edit, so the sample data and
+  the API agree about what an edit does.
+
+Deleted `sources/transcriptionDraft.ts` while here. It was the mock that made
+`buildDraft` invent a Wohlfahrt title and composer for every scan; the screen
+that used it was rebuilt three iterations ago and nothing imported it.
+
+### The harness was testing a bundle it had not built
+
+Four suites were run against a "live" bundle that was silently a fixture
+bundle. Two independent faults, both mine:
+
+1. **Metro caches transforms, and `EXPO_PUBLIC_*` is inlined at transform
+   time.** `expo export` with the env set produced a bundle with no env in it,
+   because `environment.ts` had not changed content since the previous build,
+   so its cached transform — carrying the *old* empty env — was reused. Every
+   "live" run was exercising fixture code paths. `--clear` is now mandatory
+   for both builds, and the fixture build passes `EXPO_NO_DOTENV=1` so it is
+   env-free deliberately rather than by accident.
+2. **The suites hardcoded port 8899**, so pointing them at a different build
+   was not possible. They now read `BASE_URL`, the fixture bundle serves on
+   8899 and the live one on 8900, and both stay up at once.
+
+With the live bundle actually live, four suites failed. All four were the
+harness, not the app, and each is worth recording because the failure mode was
+"a test that passed for the wrong reason":
+
+- `verify-progress` opened the Caprice as its never-recorded piece. The
+  Caprice has no takes in the fixtures and *does* have one in the stub. It now
+  finds a never-recorded row by looking for the absence of the interpunct that
+  separates composer from practice date, which works on either dataset.
+- `verify-quota` failed on the quota row — correctly. `/v1/me` on the real
+  backend returns an `analyses` block and the stub omitted it, so the app was
+  right to render nothing rather than invent a count. The stub now returns it.
+- `manual-add` and `edit-delete` indexed into `input:visible` by position, so
+  adding a Movement field between Composer and Time signature made them type a
+  metre into the wrong box. Both address fields by label now.
+
+Two real stub bugs surfaced on the way: `GET /v1/scores` appended `CREATED` to
+the seeded rows instead of overriding by id, so editing a seeded piece listed
+it twice; and `/v1/me` was missing the usage block above.
+
+**New suite:** `verify-movement.mjs` — signs in against the stub, checks the
+seeded movement arrives on GET, that a piece without one shows nothing rather
+than a blank line, that an edit appears in the PATCH body, and that it survives
+a reload. That last check is the point: it proves the value came back from the
+server rather than sitting in React state that never left the browser.
+
+**Tests:** backend 233 passed. Nine suites green on the fixture bundle, nine on
+the live bundle against the stub.
+
+**Three-foot test:** unchanged — no screen was recomposed. The Movement field
+sits in the existing field rhythm on the three forms that already had Title and
+Composer, and on a piece screen the movement was already being rendered under
+the composer. What changed is whether the value is true.
+
+**Known limits, unchanged and still not closeable in-session:** the egress
+policy blocks `*.supabase.co`, so nothing here was exercised against the real
+Supabase project — the stub is the substitute and its fidelity is exactly as
+good as the fixes above make it. Live magic-link auth, a real upload → OCR →
+save, and mic → analysis all still need keys and a device.
+
+**Rollback:** `git revert` this commit. The migration is additive and nullable,
+so an older client is unaffected by the column remaining.
+
+---
+
 ## 2026-08-18 07:30 — The free-tier limit stops being reported as a network fault
 
 **Branch:** `main`. Owner: `/loop improve the app as much as you can` — ninth

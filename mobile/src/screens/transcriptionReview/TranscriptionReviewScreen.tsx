@@ -51,6 +51,7 @@ export function TranscriptionReviewScreen() {
 
   const [title, setTitle] = useState('');
   const [composer, setComposer] = useState('');
+  const [movement, setMovement] = useState('');
   const [pageIndex, setPageIndex] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
@@ -75,6 +76,7 @@ export function TranscriptionReviewScreen() {
         imageUrl,
         title: trimmed,
         composer: composer.trim() || null,
+        movement: movement.trim() || null,
       });
       // The scan is finished with; leaving it in place would let a later save
       // reuse an expired upload URL.
@@ -140,6 +142,15 @@ export function TranscriptionReviewScreen() {
         value={composer}
         onChangeText={setComposer}
         placeholder="Optional"
+        autoCapitalize="words"
+        style={styles.field}
+      />
+
+      <Input
+        label="Movement"
+        value={movement}
+        onChangeText={setMovement}
+        placeholder="I. Adagio — optional"
         autoCapitalize="words"
         style={styles.field}
       />

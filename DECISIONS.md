@@ -6,6 +6,45 @@ Operating Principle #5.
 
 ---
 
+## 2026-08-20 — A field with no column is either given one or deleted, decided by whether a fact exists behind it
+
+**Context:** the UI rendered two fields that no database column backed —
+`progress` and `movement`. Both came from the fixture data and both were
+hardcoded `null` in `sources/api.ts`, so both were invisible on any real
+account. They were the same *kind* of defect and got opposite treatments, which
+is worth writing down so the next one is not decided by whichever is less work.
+
+**Decision: `progress` was deleted; `movement` was given a column.**
+
+The test is not "is this field used" or "would users like it". It is **is there
+a fact behind it that something can produce.**
+
+- **Progress**: a percentage through a piece. Nothing in the system can compute
+  it. There is no notion of a piece being "80% learned" in the score, the
+  analyses, or anything a musician tells the app. Any value would have been
+  invented, and a progress bar that moves for reasons the user cannot predict
+  is worse than no progress bar. Backing it with a column would have meant
+  inventing the number in a new place rather than deleting the fiction.
+- **Movement**: "I. Adagio". The musician already knows it, three forms were
+  already asking for it, and the value was being typed and then dropped on the
+  floor. The fact existed; only the storage was missing.
+
+**Alternative considered — leave `movement` fixture-only until a batch needs
+it.** Rejected because the cost is not deferred, it is transferred: every
+screenshot, demo and test showing a movement was showing something the product
+could not do, and the forms were quietly discarding what people typed. A field
+that accepts input and silently drops it is worse than one that is absent.
+
+**Alternative considered — infer the movement from the title.** Rejected. "No.
+28" in a title is sometimes a movement and sometimes the piece; guessing wrong
+mislabels a musician's own library, and the correct value is one field away.
+
+**Trade-off accepted:** one more nullable column and one more field on three
+forms. Nullable is the honest default — most music the app will see has no
+movement at all, and null says that where an empty string would not.
+
+---
+
 ## 2026-08-17 — The fixture/live switch is derived from the environment, not declared in code
 
 **Context:** every screen read from a `PieceSource`, and `sources/index.ts`

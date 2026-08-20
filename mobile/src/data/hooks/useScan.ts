@@ -10,6 +10,8 @@ export interface TranscribeInput {
   imageUrl: string;
   title: string;
   composer: string | null;
+  /** e.g. "I. Adagio". Null for music with no movements. */
+  movement: string | null;
 }
 
 /**
@@ -39,12 +41,13 @@ export function useTranscribePage() {
         image_url: input.imageUrl,
         title: input.title,
         composer: input.composer,
+        movement: input.movement,
       });
       return {
         id: score.id,
         title: score.title,
         composer: score.composer,
-        movement: null,
+        movement: score.movement,
         lastPracticedAt: null,
         thumbnail: score.image_url,
         markedBpm: score.score_json?.bpm_hint ?? null,

@@ -39,9 +39,16 @@ SCORES = [
     ("aaaaaaaa-0000-0000-0000-000000000004", "Caprice No. 24 in A minor", "Niccolò Paganini", "04_handwritten_clean.jpg", 12),
 ]
 
+# Keyed by score id. Only some music has movements, which is the point — the
+# column is nullable and the UI has to cope with both.
+MOVEMENTS = {
+    "aaaaaaaa-0000-0000-0000-000000000003": "I. Prélude",
+}
+
 def score_row(sid, title, composer, img, _):
     return {
         "id": sid, "user_id": USER, "title": title, "composer": composer,
+        "movement": MOVEMENTS.get(sid),
         "source_image_url": f"https://proj.supabase.co/storage/v1/object/sign/score-images/{USER}/{img}?token=expired",
         "image_url": f"{BASE}/img/{img}?token=signed",
         "image_url_expires_at": iso(NOW + timedelta(hours=1)),
@@ -82,8 +89,22 @@ UPLOADED: set = set()
 #: to be exercised.
 FAIL: dict = {"status": 0, "tier_limit": False}
 
+def _next_month():
+    """The first instant of next month — what `tier_limits.month_bounds` returns."""
+    return (NOW.replace(year=NOW.year + 1, month=1, day=1, hour=0, minute=0,
+                        second=0, microsecond=0)
+            if NOW.month == 12
+            else NOW.replace(month=NOW.month + 1, day=1, hour=0, minute=0,
+                             second=0, microsecond=0))
+
+
 ME = {"id": USER, "email": "you@example.com", "tier": "free", "role": "student",
-      "studio_id": None, "baseline_profile": {}, "created_at": iso(NOW - timedelta(days=60))}
+      "studio_id": None, "baseline_profile": {}, "created_at": iso(NOW - timedelta(days=60)),
+      # `routers/me.py` returns this block on every call, and the profile
+      # screen's quota row is driven by it. Omitting it made the row vanish and
+      # look like an app bug, when the app was correctly declining to invent a
+      # count the server never sent.
+      "analyses": {"used": 2, "limit": 3, "remaining": 1, "resets_at": iso(_next_month())}}
 
 
 def _b64(obj):
@@ -152,7 +173,12 @@ class H(http.server.BaseHTTPRequestHandler):
         if path == "/v1/me":
             return self._send(200, json.dumps(ME).encode())
         if path == "/v1/scores":
-            rows = [score_row(*s) for s in SCORES] + list(CREATED.values())
+            # CREATED holds both new scores *and* edited copies of seeded ones,
+            # so it overrides by id rather than appending — otherwise renaming a
+            # seeded piece listed it twice, once under each name.
+            rows = [CREATED.get(s[0]) or score_row(*s) for s in SCORES]
+            seeded = {s[0] for s in SCORES}
+            rows += [r for sid, r in CREATED.items() if sid not in seeded]
             rows.sort(key=lambda r: r["created_at"], reverse=True)
             return self._send(200, json.dumps(rows).encode())
         if path.startswith("/v1/scores/"):
@@ -237,17 +263,7 @@ class H(http.server.BaseHTTPRequestHandler):
             self._read_body()
             return self._send(403, json.dumps({"detail": {
                 "code": "tier_limit", "limit": 3, "used": 3, "tier": "free",
-                # The first instant of next month, which is what
-                # `tier_limits.month_bounds` actually returns. `day=1 + 32
-                # days` lands on the 2nd and made the app print a date the
-                # real backend would never send.
-                "resets_at": iso(
-                    NOW.replace(year=NOW.year + 1, month=1, day=1, hour=0,
-                                minute=0, second=0, microsecond=0)
-                    if NOW.month == 12
-                    else NOW.replace(month=NOW.month + 1, day=1, hour=0,
-                                     minute=0, second=0, microsecond=0)
-                ),
+                "resets_at": iso(_next_month()),
             }}).encode())
 
         if path == "/v1/scores":
@@ -263,6 +279,7 @@ class H(http.server.BaseHTTPRequestHandler):
                 "id": sid, "user_id": USER,
                 "title": body.get("title") or "Untitled",
                 "composer": body.get("composer"),
+                "movement": body.get("movement"),
                 "source_image_url": image_url,
                 "image_url": f"{BASE}/img/01_simple_printed.jpg?token=signed" if image_url else None,
                 "image_url_expires_at": iso(NOW + timedelta(hours=1)) if image_url else None,
@@ -328,6 +345,8 @@ class H(http.server.BaseHTTPRequestHandler):
             # Explicit null clears it — the distinction the real router now makes.
             if "composer" in body:
                 row["composer"] = body["composer"]
+            if "movement" in body:
+                row["movement"] = body["movement"]
             CREATED[sid] = row
             return self._send(200, json.dumps(row).encode())
         self._send(404, b'{"detail":"not found"}')

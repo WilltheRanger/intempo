@@ -49,6 +49,9 @@ class CreateScoreRequest(BaseModel):
     image_url: str | None = Field(default=None, min_length=1, max_length=2048)
     title: str = Field(min_length=1, max_length=200)
     composer: str | None = Field(default=None, max_length=200)
+    #: e.g. "I. Adagio". Null for music that has no movements at all, which is
+    #: most études and every caprice.
+    movement: str | None = Field(default=None, min_length=1, max_length=200)
 
     #: Manual entry only. Rejected alongside `image_url` rather than silently
     #: ignored: a caller that sends both has misunderstood something, and
@@ -84,6 +87,7 @@ class UpdateScoreRequest(BaseModel):
     score_json: ScoreJson | None = None
     title: str | None = Field(default=None, min_length=1, max_length=200)
     composer: str | None = Field(default=None, max_length=200)
+    movement: str | None = Field(default=None, max_length=200)
 
 
 class ScoreResponse(BaseModel):
@@ -91,6 +95,7 @@ class ScoreResponse(BaseModel):
     user_id: UUID
     title: str
     composer: str | None = None
+    movement: str | None = None
     #: What was uploaded. Historical: the signed upload URL, long expired.
     #: Never usable for display — see `image_url`. Null for a piece entered
     #: by hand, which was never photographed at all.
@@ -279,6 +284,7 @@ def _row_to_response(
         user_id=row["user_id"],
         title=row["title"],
         composer=row.get("composer"),
+        movement=row.get("movement"),
         source_image_url=row["source_image_url"],
         image_url=image_url,
         image_url_expires_at=expires_at,
@@ -335,6 +341,7 @@ async def create_score(
         "user_id": str(user_id),
         "title": body.title,
         "composer": body.composer,
+        "movement": body.movement,
         "source_image_url": body.image_url,
         "score_json": score.model_dump(mode="json"),
         # Null rather than 0 for a hand-entered piece: the column answers "how
@@ -423,6 +430,11 @@ async def update_score(
         update["title"] = body.title
     if "composer" in sent:
         update["composer"] = body.composer
+    # Same `sent` treatment as the composer, and for the same reason: an
+    # explicit null is how a movement gets cleared, and `is not None` would
+    # make that indistinguishable from omitting the field.
+    if "movement" in sent:
+        update["movement"] = body.movement
     if not update:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

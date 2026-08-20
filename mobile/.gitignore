@@ -6,6 +6,9 @@ node_modules/
 # Expo
 .expo/
 dist/
+# The same bundle built with EXPO_PUBLIC_* set, for testing against the stub
+# API. Two builds have to coexist because they differ only by inlined env.
+dist-live/
 web-build/
 expo-env.d.ts
 

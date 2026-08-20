@@ -56,6 +56,7 @@ export function ManualPieceForm() {
 
   const [title, setTitle] = useState('');
   const [composer, setComposer] = useState('');
+  const [movement, setMovement] = useState('');
   const [timeSignature, setTimeSignature] = useState('');
   const [bpm, setBpm] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -90,6 +91,7 @@ export function ManualPieceForm() {
       const piece = await createPiece.mutateAsync({
         title: trimmedTitle,
         composer: composer.trim() || null,
+        movement: movement.trim() || null,
         clef: clefFor(instrument),
         timeSignature: trimmedSignature || null,
         bpm: parsedBpm,
@@ -129,6 +131,15 @@ export function ManualPieceForm() {
         value={composer}
         onChangeText={setComposer}
         placeholder="Optional"
+        autoCapitalize="words"
+        returnKeyType="next"
+        style={styles.field}
+      />
+      <Input
+        label="Movement"
+        value={movement}
+        onChangeText={setMovement}
+        placeholder="I. Adagio — optional"
         autoCapitalize="words"
         returnKeyType="next"
         style={styles.field}
