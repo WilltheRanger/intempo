@@ -6,6 +6,81 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-20 08:35 — "Your recording is safe" was not true, so the code was changed to make it true
+
+**Branch:** `main`. Owner: `/loop improve the app as much as you can` —
+fifteenth iteration.
+
+The free-tier refusal opened with **"Your recording is safe, but you've used all
+3 of your free analyses this month."** I wrote that sentence in the ninth
+iteration, and never checked whether anything backed it.
+
+Nothing did. `recording` was a local `const` inside `RecordScreen.stop()`. Any
+failure — quota, a 500, a dropped connection — hit the catch, set a message,
+returned to `ready`, and the audio went out of scope. A musician who played a
+four-minute take on hotel wifi was told their recording was safe and had to
+play the whole thing again. The one reassuring clause in the sentence was the
+only false one in it.
+
+Two ways out: soften the claim, or make it true. Both, as it turns out, because
+the two failures are not the same failure.
+
+### Everything except the quota now really does keep the take
+
+`stop()` splits: `stop` ends the recording, `send` submits it. On failure
+`send` keeps the take in a ref and shows **Send it again**, which re-runs the
+same path with the same bytes rather than a second code path that could
+diverge. The generic message became *"That take couldn't be sent. It is still
+here — check your connection and send it again."*
+
+The quota is the exception and is treated as one: the count does not move until
+next month, so a retry would fetch the same refusal, and holding audio in
+memory for weeks is not something this app does. `send` checks
+`describeTierLimit` and keeps nothing, so no button appears — the control is on
+screen exactly when the sentence above it says the take is still here.
+
+The refusal now reads **"That take wasn't analysed — you've used all 3 of your
+free analyses this month. The count resets on September 1."** It still leads
+with the take rather than the limit, because they have just played something
+and answering with billing first answers a question they did not ask. It just
+no longer implies the take is waiting somewhere.
+
+### A bug in the fix, found by writing the test
+
+`start()` cleared `problem` but not the held take, so pressing Start left "Send
+it again" on screen through the new recording — pointing at the *previous*
+take. The same silent substitution the change exists to prevent, aimed the
+other way. `start()` now clears it, and the button disappearing is what makes
+the supersession visible.
+
+### Measuring it
+
+`verify-retry.mjs` asserts on bytes, not on the presence of a button. First
+attempt measured the request body in the browser and got `0, 0` — Playwright
+reports a Blob request body as empty, so a client-side count cannot tell a real
+upload from an empty one, which is the exact distinction the test exists to
+make. The stub now records the size of every audio PUT and serves it at
+`/__uploads` (`?reset=1` to clear, so a diagnostic doesn't list four takes from
+three previous runs). The retry re-sends **135212 bytes, the same 135212** —
+that is the claim, checked.
+
+**Tests:** typecheck clean, ten suites green on the fixture bundle and fourteen
+on the live bundle.
+
+**Three-foot test** (Record, after a failed send): the sentence, then "Send it
+again", then the record button — all three in the footer, in the thumb zone,
+and the retry sits directly above the control it is an alternative to. One
+focal point; the take that failed is the subject and the screen says so.
+
+**Scope note:** this changes two pieces of copy, which §2 gates. Both were
+corrections — one stated something false, the other promised what the code now
+does. No new component: `SecondaryButton` is the app's existing secondary
+control. Wording is the user's to overrule.
+
+**Rollback:** `git revert`.
+
+---
+
 ## 2026-08-20 07:20 — The first screen a new account sees was a dead end
 
 **Branch:** `main`. Owner: `/loop improve the app as much as you can` —

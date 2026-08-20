@@ -229,6 +229,9 @@ ANALYSES.sort(key=lambda a: a["created_at"], reverse=True)
 CREATED: dict = {}
 UPLOADED: set = set()
 
+#: Sizes of every audio PUT this run, in order. Read back at `/__uploads`.
+UPLOAD_SIZES: list = []
+
 #: Takes submitted through POST /v1/analyses during this run, keyed by id.
 #: Separate from ANALYSES because these carry a `_polls` counter that drives
 #: the queued → running → done transition and must never reach the client.
@@ -358,6 +361,13 @@ class H(http.server.BaseHTTPRequestHandler):
         if FAIL["status"] and path.startswith("/v1/"):
             return self._send(FAIL["status"],
                               json.dumps({"detail": "injected failure"}).encode())
+        if path == "/__uploads":
+            # `?reset=1` clears the list. Sizes accumulate across runs
+            # otherwise, and a diagnostic listing four takes from three
+            # previous runs is a diagnostic nobody can read.
+            if "reset=1" in self.path:
+                UPLOAD_SIZES.clear()
+            return self._send(200, json.dumps({"sizes": UPLOAD_SIZES}).encode())
         if path == "/v1/me":
             if FAIL["empty"]:
                 fresh = dict(ME)
@@ -567,6 +577,11 @@ class H(http.server.BaseHTTPRequestHandler):
             if not body:
                 return self._send(400, b'{"detail":"empty upload"}')
             UPLOADED.add(f"{BASE}{self.path}")
+            # Byte count only, never the audio. A test asserting that a retry
+            # re-sent *the same take* has to measure something, and
+            # Playwright does not expose a Blob request body — so the
+            # measurement happens where the bytes actually land.
+            UPLOAD_SIZES.append(len(body))
             return self._send(200, json.dumps({"Key": path}).encode())
         self._send(404, b'{"detail":"not found"}')
 

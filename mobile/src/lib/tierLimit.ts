@@ -65,8 +65,17 @@ function whenItResets(resetsAt: string | null): string {
 /**
  * What to tell someone who has run out, or null if that isn't what happened.
  *
- * Leads with the recording rather than the limit. They have just played
- * something; the first thing they need to know is that it wasn't wasted.
+ * **This used to open "Your recording is safe", and it wasn't.** The take was a
+ * local in `RecordScreen.stop()` and was dropped the moment the send failed —
+ * so the one reassuring clause in the sentence was the only false one. Every
+ * other failure now really does keep the take and offer to send it again; the
+ * quota is the exception, because the count does not move until next month and
+ * holding audio in memory for weeks is not something this app does.
+ *
+ * So it says what is true instead. It still leads with the take rather than
+ * the limit — they have just played something, and being told about billing
+ * first would be answering a question they did not ask — but it says the take
+ * was not analysed rather than implying it is waiting somewhere.
  */
 export function describeTierLimit(error: unknown): string | null {
   const limit = tierLimitOf(error);
@@ -77,5 +86,5 @@ export function describeTierLimit(error: unknown): string | null {
     limit.limit === null
       ? `${limit.used} analyses`
       : `all ${limit.limit} of your free analyses`;
-  return `Your recording is safe, but you've used ${count} this month. The count resets ${whenItResets(limit.resetsAt)}.`;
+  return `That take wasn't analysed — you've used ${count} this month. The count resets ${whenItResets(limit.resetsAt)}.`;
 }
