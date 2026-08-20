@@ -194,7 +194,7 @@ function RevealAction({
       hitSlop={spacing.md}
       style={({ pressed }) => (pressed ? styles.pressed : undefined)}
     >
-      <Text variant="sectionAction" color="accent">
+      <Text variant="sectionAction" color="textPrimary">
         {revealed ? 'Hide' : 'Show'}
       </Text>
     </Pressable>

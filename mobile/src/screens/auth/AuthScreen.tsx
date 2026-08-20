@@ -213,7 +213,7 @@ export function AuthScreen() {
               pressed && styles.switchPressed,
             ]}
           >
-            <Text variant="sectionAction" color="accent">
+            <Text variant="sectionAction" color="textPrimary">
               Back to sign in
             </Text>
           </Pressable>
@@ -279,7 +279,7 @@ export function AuthScreen() {
                     pressed ? styles.switchPressed : undefined
                   }
                 >
-                  <Text variant="sectionAction" color="accent">
+                  <Text variant="sectionAction" color="textPrimary">
                     {revealed ? 'Hide' : 'Show'}
                   </Text>
                 </Pressable>
@@ -297,7 +297,7 @@ export function AuthScreen() {
                 hitSlop={spacing.sm}
                 style={({ pressed }) => (pressed ? styles.switchPressed : undefined)}
               >
-                <Text variant="sectionAction" color="accent">
+                <Text variant="sectionAction" color="textPrimary">
                   Email me a link
                 </Text>
               </Pressable>
@@ -309,7 +309,7 @@ export function AuthScreen() {
                 hitSlop={spacing.sm}
                 style={({ pressed }) => (pressed ? styles.switchPressed : undefined)}
               >
-                <Text variant="sectionAction" color="accent">
+                <Text variant="sectionAction" color="textPrimary">
                   Forgot your password?
                 </Text>
               </Pressable>
@@ -332,7 +332,7 @@ export function AuthScreen() {
                 pressed && styles.switchPressed,
               ]}
             >
-              <Text variant="sectionAction" color="accent">
+              <Text variant="sectionAction" color="textPrimary">
                 Use a password instead
               </Text>
             </Pressable>
@@ -372,7 +372,7 @@ export function AuthScreen() {
             {mode === 'signUp'
               ? 'Already have an account? '
               : 'New to InTempo? '}
-            <Text variant="metadata" color="accent">
+            <Text variant="metadata" color="textPrimary">
               {mode === 'signUp' ? 'Sign in' : 'Create an account'}
             </Text>
           </Text>

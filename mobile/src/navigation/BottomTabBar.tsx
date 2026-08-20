@@ -86,11 +86,16 @@ export function BottomTabBar({
             <Icon
               size={ICON_SIZE.lg}
               strokeWidth={ICON_STROKE_WIDTH}
+              // The icon keeps the gold. Non-text has a 3:1 contrast floor
+              // and the accent clears it; text has 4.5:1 and it does not.
               color={focused ? colors.accent : colors.textSecondary}
             />
             <Text
               variant="sectionLabel"
-              color={focused ? 'accent' : 'textSecondary'}
+              // Ink rather than gold: at 13px the accent is 3.54:1, under the
+              // 4.5:1 floor. The active tab is still marked twice — the gold
+              // icon above, and ink against grey here.
+              color={focused ? 'textPrimary' : 'textSecondary'}
               style={styles.label}
             >
               {label}
