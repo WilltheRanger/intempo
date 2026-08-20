@@ -98,8 +98,9 @@ export function TodayScreen() {
 
   const piece = currentPiece.data ?? null;
 
-  // Straight to a take. `Practice` remains the score-reading shell; what
-  // someone means by "continue practicing" is recording one.
+  // Straight to a take: what someone means by "continue practicing" is
+  // recording one. Reading the score without recording is `PieceScore`,
+  // reached from the piece itself.
   function openPractice(target: Piece) {
     navigation.navigate('Record', { pieceId: target.id });
   }
