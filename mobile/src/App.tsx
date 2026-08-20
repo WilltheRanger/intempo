@@ -11,6 +11,7 @@ import { View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { describeFixtureReason } from './data/environment';
 import { hydratePracticeTempos } from './data/practiceTempo';
 import { hydratePreferences } from './data/preferences';
 import { colors, fontsToLoad } from './design';
@@ -76,6 +77,25 @@ export default function App() {
   useEffect(() => {
     void hydratePreferences();
     void hydratePracticeTempos();
+  }, []);
+
+  // Say once, at boot, whether this build is talking to a backend.
+  //
+  // `describeFixtureReason` was written for exactly this and then never
+  // called, which made it useless at the only moment it mattered: someone
+  // opens a fresh deployment, sees a library of Bach and Wohlfahrt, and has no
+  // way to tell whether that is their data or the seed. Both look identical,
+  // and "it silently fell back" is the failure this whole module exists to
+  // prevent.
+  //
+  // A console line rather than anything on screen. Convention 8 keeps
+  // developer chrome out of the product, and a banner would be exactly that —
+  // but a build that cannot say what it is connected to costs an afternoon,
+  // and the person who needs the answer already has the console open.
+  useEffect(() => {
+    const reason = describeFixtureReason();
+    // eslint-disable-next-line no-console
+    console.info(reason ?? 'InTempo: connected to the API — showing your data.');
   }, []);
 
   return (
