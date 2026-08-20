@@ -135,10 +135,23 @@ def _finish_failed(client, analysis_id: str, reason: str) -> None:
 
 
 # In-process BackgroundTasks don't survive a crash/restart: a job that was
-# 'processing' when the server died would spin forever in the UI. On
-# startup we mark any 'queued'/'processing' row older than this window
+# 'processing' when the server died would spin forever in the UI. Any
+# 'queued'/'processing' row older than this window is marked
 # 'failed_recoverable' so the client can offer a retry (spec Batch 4 §4).
 STUCK_AFTER = timedelta(minutes=10)
+
+#: How often to look, once the server is up.
+#:
+#: The sweep used to run **only** at startup, which recovers exactly one class
+#: of failure: the crash you restart after. It does nothing for a server that
+#: stays up — a worker thread killed by the OOM reaper, a `_update` to 'done'
+#: that fails, a task that never returns — and those rows then spin in the UI
+#: until the next deploy, which could be weeks. A musician waiting on a verdict
+#: gets no answer and no error.
+#:
+#: Half of `STUCK_AFTER`, so nothing waits longer than about fifteen minutes
+#: for an answer it is never going to get.
+SWEEP_INTERVAL_SECONDS = 5 * 60
 
 
 def sweep_stuck_analyses(client=None, *, now: datetime | None = None) -> int:
@@ -164,3 +177,18 @@ def sweep_stuck_analyses(client=None, *, now: datetime | None = None) -> int:
     if swept:
         log.info("swept %d stuck analysis row(s) to failed_recoverable", swept)
     return swept
+
+
+def sweep_once() -> int:
+    """One sweep, with its failure contained.
+
+    Split out so the periodic loop cannot die: a transient Supabase error must
+    cost one sweep, not every sweep for the lifetime of the process. Returns 0
+    when it failed, which is indistinguishable from "nothing to sweep" — and
+    that is fine, because the caller's only job either way is to try again.
+    """
+    try:
+        return sweep_stuck_analyses()
+    except Exception:  # noqa: BLE001 — the loop outlives any one failure
+        log.exception("stuck-analysis sweep failed")
+        return 0

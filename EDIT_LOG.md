@@ -6,6 +6,48 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-18 06:45 — Stuck analyses recover while the server is up
+
+**Branch:** `main`. Owner: `/loop improve the app as much as you can` — eighth
+iteration. Backend again.
+
+`sweep_stuck_analyses` ran **only in the startup lifespan**. That recovers
+exactly one class of failure: the crash you restart after. It does nothing for a
+server that stays up — a worker thread killed by the OOM reaper, an `_update` to
+`done` that fails, a task that simply never returns — and those rows then sit in
+`processing` until the next deploy, which on a stable deployment could be weeks.
+
+The musician's side of that: the record screen polls until the analysis reaches
+a finished state, and `processing` is not one. They get no verdict and no error,
+for as long as the server stays healthy. A stable deployment made it *worse*.
+
+`_sweep_periodically` now runs for the life of the app, every
+`SWEEP_INTERVAL_SECONDS` (5 minutes — half of `STUCK_AFTER`, so nothing waits
+more than about fifteen minutes for an answer it is never going to get).
+
+Three details that matter more than the loop:
+
+- **`asyncio.to_thread`.** The sweep is a synchronous Supabase call; running it
+  on the event loop would stall every request for its duration.
+- **`sweep_once` contains its own failure.** A transient Supabase error must
+  cost one sweep, not every sweep for the lifetime of the process — an
+  unguarded `await` in a `while True` ends the loop permanently and silently.
+- **The task is cancelled on shutdown.** Without it the loop outlives the app
+  under a reloader, and each restart leaves another one sweeping.
+
+**Tests:** backend 226 → **230**. The sweep marks only rows past the window and
+sets the status the client actually treats as finished; `sweep_once` returns 0
+on failure rather than propagating; and the loop **runs more than once** and
+stops when cancelled — asserted on a call count, since "it swept" is the one
+thing a startup-only sweep also does. Driven with `asyncio.run` rather than
+adding an async test plugin for one loop-shaped test.
+
+Also smoke-tested rather than assumed: the server starts, serves, and shuts down
+with **no "Task was destroyed but it is pending"** warning, which is what a
+failed cancel looks like.
+
+**Rollback:** revert this commit.
+
 ## 2026-08-18 06:05 — Writes provision their own user row
 
 **Branch:** `main`. Owner: `/loop improve the app as much as you can` — seventh
