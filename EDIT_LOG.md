@@ -6,6 +6,67 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-20 09:50 — A photograph becoming a piece, carried through for the first time
+
+**Branch:** `main`. Owner: `/loop improve the app as much as you can` —
+sixteenth iteration.
+
+The other half of what InTempo does. `verify-import` stopped at "Name this
+piece", so upload → `POST /v1/scores` → OCR → a real score in the library had
+never been run: **every piece any test had ever opened was seeded.**
+
+`verify-scan-save.mjs` carries it through — a real file through the picker, a
+title typed, saved, and then checked against the server rather than against
+what the screen happens to be showing: the composer and movement come back from
+the response, the `PUT /storage` is asserted to happen *before* the
+`POST /v1/scores` (the order is the whole reason the backend can trust the URL
+it stores), OCR produced measures so the piece can actually be analysed, and
+the piece survives a reload.
+
+It works. What it also found was a smaller thing that had been true since the
+flow was built.
+
+### Saving a scanned piece silently moved you to a different tab
+
+`TranscriptionReviewScreen` finished with
+`reset({ routes: [{ name: 'Tabs' }, { name: 'PieceDetail', … }] })`. That
+`{ name: 'Tabs' }` is a **new** Tabs route with no state, so the tab navigator
+fell back to its initial route. Someone who opened the scanner from their
+Library was returned to Today, having lost the tab they were on for no reason
+they could see. Backing out of the same flow *without* saving landed on Library
+correctly, which is what made it invisible: only the success path moved you.
+
+Two attempts before the fix worked, both worth recording:
+
+- **`popTo('Tabs')` then `navigate('PieceDetail')`** — reads correctly, still
+  landed on Today. Two dispatches, the second issued from a screen the first
+  had already unmounted.
+- **Passing the live nested state straight through** — the runtime would take
+  it, but `reset` is typed for a *partial* state and the live one is settled.
+
+What works is naming the tab: `state: { index: 0, routes: [{ name: activeTab }] }`.
+Every tab here is a leaf screen, so which tab is the whole of the state, and
+undefined on a cold start is honestly "no tab chosen yet".
+
+### A test that had been passing by luck
+
+`verify-progress` picked its never-recorded piece by slicing 24 characters off
+a library row's text and matching that as an accessible name. Library rows
+concatenate title and composer with no separator, so the slice landed
+mid-composer and matched only because the fixture title happened to be long
+enough. The new pieces broke it. It now holds the element and clicks it, rather
+than reconstructing a name to look it up by.
+
+**Tests:** typecheck clean, ten suites green on the fixture bundle and fifteen
+on the live bundle.
+
+**Three-foot test:** no screen changed — the fix is which navigation state the
+save leaves behind.
+
+**Rollback:** `git revert`.
+
+---
+
 ## 2026-08-20 08:35 — "Your recording is safe" was not true, so the code was changed to make it true
 
 **Branch:** `main`. Owner: `/loop improve the app as much as you can` —
