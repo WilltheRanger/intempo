@@ -6,6 +6,72 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-20 17:50 — Two Pages projects, and a file I should not have added
+
+**Branch:** `main`. Owner: user cannot see any of this session's work on their
+Cloudflare deployment.
+
+### Why they cannot see it
+
+**The repo has two frontends, and they are two different Pages projects.**
+`docs/deploy-cloudflare-mobile.md` says so in its second paragraph, and says
+the existing project has **Root directory `frontend`** — the Vite web app,
+untouched since 2026-08-15, before this session began.
+
+Every change in these twenty-one iterations is in `mobile/` or `backend/`. A
+Pages project pointed at `frontend/` would rebuild happily on every push and
+show none of it, which is exactly the report.
+
+Two other causes worth ruling out in the same breath, both common and neither
+visible from here: **environment-variable changes do not trigger a rebuild** on
+Pages — the assets are static and already deployed, so a redeploy is required —
+and a first build on Cloudflare's default Node fails, which is why the doc
+lists `NODE_VERSION=22`.
+
+### The file I should not have added
+
+Chasing the CORS work earlier today I created `mobile/public/_redirects` with
+`/*  /index.html  200`, reasoning about fragments and 404s from first
+principles. It was written well and it was wrong.
+
+That file had been **deleted on purpose** in `2dfb984`, and
+`docs/pages-spa-fallback.md` exists solely to record why:
+
+```
+Parsed 0 valid redirect rules.
+Found invalid redirect lines:
+  - #1: /*    /index.html   200
+    Infinite loop detected in this rule and has been ignored.
+```
+
+Cloudflare's own SPA documentation gives that rule and Cloudflare's parser
+refuses it. The earlier session also established the fallback protects nothing
+here — there is no `linking` config, so React Navigation never touches the URL
+and every screen lives at `/`, verified by reading `page.url()` at each step.
+
+Reverted. The commit that removed it put the reasoning in a document named
+after the decision, and I created the file anyway without reading the history
+of a path I was adding. **Reasoning from first principles is not a substitute
+for `git log` on the file you are writing** — the answer was already in the
+repository, written down by someone who had seen the build log I could not.
+
+The earlier EDIT_LOG entry that recorded the addition has been struck through
+in place rather than left to be found later and believed: a wrong instruction
+in the log is worse than none.
+
+### Verified while looking
+
+Root `package.json` runs `cd mobile && npm ci && npm run build:web`, and
+`build:web` includes `flatten-vendor-assets.mjs` — the step without which
+Cloudflare silently skips everything under `node_modules` and serves a blank
+page. That matches the doc and is correct.
+
+**Tests:** unchanged; nothing but a deleted file and a documentation fix.
+
+**Rollback:** `git revert`.
+
+---
+
 ## 2026-08-20 17:20 — A build that could not say what it was connected to
 
 **Branch:** `main`. Owner: user deploying to Cloudflare Pages, asked me to check
@@ -140,11 +206,11 @@ one never bound. A passing test against a stale process is worse than no test.
 
 ### Also
 
-`mobile/public/_redirects` — the SPA fallback. The app has no linking config so
-every screen lives at `/`, but a stray path otherwise gets Cloudflare's 404,
-which looks like the deployment being broken. `200` rather than `301`
-deliberately: a redirect drops the URL fragment, and Supabase returns from an
-emailed link with `#access_token=…`.
+~~`mobile/public/_redirects` — the SPA fallback.~~ **Added here and reverted in
+the next commit — see the 17:50 entry.** A previous session had removed that
+exact rule for cause: Cloudflare's parser rejects it as an infinite loop, and
+`docs/pages-spa-fallback.md` exists to say so. I added it without reading the
+history of the file I was creating.
 
 **Tests:** 257 passed (was 250). Lint clean.
 
