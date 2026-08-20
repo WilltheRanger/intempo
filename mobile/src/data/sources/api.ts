@@ -212,6 +212,7 @@ function toMusician(
     tier: me.tier,
     role: me.role,
     studioId: me.studio_id,
+    usage: me.analyses ?? null,
     avatarUrl,
   };
 }

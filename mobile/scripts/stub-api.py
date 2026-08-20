@@ -80,7 +80,7 @@ UPLOADED: set = set()
 #: Without this there is no way to see what a screen says when the server is
 #: broken, which is exactly the copy most likely to be wrong and least likely
 #: to be exercised.
-FAIL: dict = {"status": 0}
+FAIL: dict = {"status": 0, "tier_limit": False}
 
 ME = {"id": USER, "email": "you@example.com", "tier": "free", "role": "student",
       "studio_id": None, "baseline_profile": {}, "created_at": iso(NOW - timedelta(days=60))}
@@ -144,6 +144,7 @@ class H(http.server.BaseHTTPRequestHandler):
             from urllib.parse import parse_qs, urlparse
             q = parse_qs(urlparse(self.path).query)
             FAIL["status"] = int((q.get("status") or ["0"])[0])
+            FAIL["tier_limit"] = (q.get("tier_limit") or ["0"])[0] == "1"
             return self._send(200, json.dumps(FAIL).encode())
         if FAIL["status"] and path.startswith("/v1/"):
             return self._send(FAIL["status"],
@@ -229,6 +230,25 @@ class H(http.server.BaseHTTPRequestHandler):
                 "object_key": key,
                 "expires_at": iso(NOW + timedelta(minutes=5)),
             }).encode())
+
+        # The free-tier refusal, in the exact shape routers/analyses.py sends:
+        # a structured detail the client is meant to act on.
+        if path == "/v1/analyses" and FAIL["tier_limit"]:
+            self._read_body()
+            return self._send(403, json.dumps({"detail": {
+                "code": "tier_limit", "limit": 3, "used": 3, "tier": "free",
+                # The first instant of next month, which is what
+                # `tier_limits.month_bounds` actually returns. `day=1 + 32
+                # days` lands on the 2nd and made the app print a date the
+                # real backend would never send.
+                "resets_at": iso(
+                    NOW.replace(year=NOW.year + 1, month=1, day=1, hour=0,
+                                minute=0, second=0, microsecond=0)
+                    if NOW.month == 12
+                    else NOW.replace(month=NOW.month + 1, day=1, hour=0,
+                                     minute=0, second=0, microsecond=0)
+                ),
+            }}).encode())
 
         if path == "/v1/scores":
             body = json.loads(self._read_body() or b"{}")

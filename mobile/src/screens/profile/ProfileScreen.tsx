@@ -19,6 +19,7 @@ import {
 } from '../../components/primitives';
 import { signOut } from '../../data/auth/session';
 import { useMe } from '../../data/hooks/useMe';
+import type { Musician } from '../../data/types';
 import { preferences, usePreferences } from '../../data/preferences';
 import type { Instrument, MetronomeMode } from '../../data/types';
 import { describeLoadError } from '../../data/api/describeError';
@@ -78,6 +79,8 @@ export function ProfileScreen() {
     );
   }
 
+  const usage = describeUsage(musician?.usage ?? null);
+
   if (isError || !musician) {
     return (
       <ScreenContainer>
@@ -132,6 +135,19 @@ export function ProfileScreen() {
             divided={false}
           />
           <AccountRow label="Role" value={formatRole(musician.role)} />
+          {/*
+            The quota, before it is ever hit. `/v1/me` has carried this all
+            along and nothing read it, so the only way to learn about the limit
+            was to be refused by it — right after playing something. The
+            backend's own note on `UsageResponse` says as much: "a paywall that
+            only appears at the moment of refusal is a paywall that ambushes
+            someone who has just finished playing."
+
+            Absent for unlimited tiers, and absent when the server didn't
+            report it — that is "unknown", not "unlimited", and a row saying
+            either would be a guess.
+          */}
+          {usage ? <AccountRow label="Analyses" value={usage} /> : null}
           {/*
             The studio's name isn't on `/v1/me` — only its id, which means
             nothing to the person reading it. Confirm the membership and leave
@@ -334,3 +350,18 @@ const styles = StyleSheet.create({
     marginTop: spacing.md,
   },
 });
+
+/**
+ * "2 of 3 this month", or null when there is nothing true to say.
+ *
+ * Null for an unlimited tier — a row reading "unlimited" on an account that
+ * simply has no quota is noise — and null when the server didn't report usage
+ * at all, since that means the count is unknown and printing anything would
+ * invent it.
+ */
+function describeUsage(usage: Musician['usage']): string | null {
+  if (!usage || usage.limit === null) {
+    return null;
+  }
+  return `${usage.used} of ${usage.limit} this month`;
+}

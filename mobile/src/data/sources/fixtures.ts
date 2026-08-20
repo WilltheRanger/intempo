@@ -286,8 +286,24 @@ const FIXTURE_MUSICIAN: Musician = {
   tier: 'free',
   role: 'student',
   studioId: null,
+  // Two of three used, so the quota is visible in the sample data rather than
+  // only appearing at the moment someone is refused.
+  usage: {
+    used: 2,
+    limit: 3,
+    remaining: 1,
+    resets_at: nextMonthStart(),
+  },
   avatarUrl: null,
 };
+
+/** The first instant of next month, UTC — where the server's quota resets. */
+function nextMonthStart(): string {
+  const now = new Date();
+  return new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1),
+  ).toISOString();
+}
 
 export const fixtureMusicianSource: MusicianSource = {
   async getMusician() {

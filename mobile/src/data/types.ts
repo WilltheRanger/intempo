@@ -39,6 +39,25 @@ export interface MeResponse {
   tier: UserTier;
   role: UserRole;
   studio_id: string | null;
+  /**
+   * Where this account stands against its monthly quota.
+   *
+   * Null when the server couldn't count — `/v1/me` computes this best-effort
+   * so a broken counter can't lock someone out on their first request. Null is
+   * therefore "unknown", **not** "unlimited", and callers must not render it
+   * as either.
+   */
+  analyses: UsageResponse | null;
+}
+
+/** Analyses used this calendar month, and what the ceiling is. */
+export interface UsageResponse {
+  used: number;
+  /** Null for tiers with no quota — a distinct value, not a very large number. */
+  limit: number | null;
+  remaining: number | null;
+  /** ISO 8601. The first instant of next month, when `used` returns to zero. */
+  resets_at: string;
 }
 
 export type Clef = 'treble' | 'bass' | 'alto' | 'tenor';
@@ -376,6 +395,8 @@ export interface TakeResult {
 
 /** The signed-in musician, as the UI needs them. */
 export interface Musician {
+  /** Monthly analysis quota, or null when the server didn't report it. */
+  usage: UsageResponse | null;
   id: string;
   email: string;
   tier: UserTier;

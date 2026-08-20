@@ -6,6 +6,76 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-18 07:30 — The free-tier limit stops being reported as a network fault
+
+**Branch:** `main`. Owner: `/loop improve the app as much as you can` — ninth
+iteration.
+
+The backend's quota enforcement is sound: `_assert_within_quota` fails **closed**
+(no swallowed exceptions), the count includes failed analyses, and the refusal
+is a 403 whose body is deliberately structured — `code`, `limit`, `used`,
+`tier`, `resets_at`. `routers/analyses.py` explains why in a comment: *"the
+client has to act on it — show how many are left and offer the upgrade — and
+parsing a sentence to do that is how copy changes become bugs."*
+
+**The client parsed nothing.** Two failures compounded:
+
+1. `readErrorDetail` kept `detail` only when it was a *string*. A structured
+   body fell through to `Request failed (403): /v1/analyses`, so the one error
+   the backend took trouble to make actionable was destroyed in the transport
+   layer before any screen saw it.
+2. `RecordScreen`'s fallback then said **"The take couldn't be sent for
+   analysis. Check your connection and try again."**
+
+So a musician who had used their three analyses recorded a take, waited through
+the upload, and was told their internet was broken. They would check it, find it
+fine, try again, and be told the same thing. Forever.
+
+### What changed
+
+- **`ApiError` carries `detail`**, the parsed body, alongside the sentence.
+  `readError` reads the response **once** — a `Response` body can only be
+  consumed once, so fetching the two halves separately would throw on the
+  second read.
+- **`lib/tierLimit.ts`** recognises the refusal and writes the sentence. It
+  keys on `code === 'tier_limit'`, **not on the 403**: an ownership check
+  raises 403 too, and telling someone they are out of analyses when they have
+  opened somebody else's score would be worse than saying nothing.
+- The message leads with the recording — *"Your recording is safe, but you've
+  used all 3 of your free analyses this month. The count resets on September
+  1."* They have just played something; the first thing they need to know is
+  that it wasn't wasted.
+
+### And the quota is now visible before the refusal
+
+`/v1/me` has carried `analyses` usage all along and **nothing read it** — the
+client's `MeResponse` didn't even declare the field. The only way to learn about
+the limit was to be refused by it, immediately after playing. The backend's note
+on `UsageResponse` says exactly that: *"a paywall that only appears at the
+moment of refusal is a paywall that ambushes someone who has just finished
+playing."*
+
+Profile now shows **"2 of 3 this month"**. Absent for unlimited tiers, and
+absent when the server didn't report usage — that is *unknown*, not
+*unlimited*, and a row saying either would be a guess. `/v1/me` computes usage
+best-effort precisely so a broken counter can't lock someone out, which makes
+null a state the client has to respect rather than paper over.
+
+**Tests:** backend 230 (unchanged — the server was already right). `tsc` and
+both builds clean. New `verify-quota` (profile shows the quota) and
+`verify-quota-refusal`, which drives a **real take with a synthetic microphone**
+into a stub returning the genuine structured 403: the message names the reason,
+reassures about the recording, gives the reset date, and does **not** mention
+the connection. All eight earlier suites re-run: green.
+
+Two of my own artefacts, corrected rather than accepted: the assertion for the
+reset date expected `on <digit>` and the text reads "on September 1"; and the
+stub's own `resets_at` was computed as `day=1 + 32 days`, landing on the **2nd**
+— a date the real `month_bounds` would never produce. A stub that lies quietly
+is worse than no stub.
+
+**Rollback:** revert this commit.
+
 ## 2026-08-18 06:45 — Stuck analyses recover while the server is up
 
 **Branch:** `main`. Owner: `/loop improve the app as much as you can` — eighth
