@@ -6,6 +6,67 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-20 18:40 — Metro's cache is global, so a clean clone is not a clean build
+
+**Branch:** `main`. Owner: user cannot see this session's work on their
+deployment; I set out to verify the repo was deployable.
+
+### The build is fine
+
+Ran the exact command Cloudflare runs — `npm run build`, which is
+`cd mobile && npm ci && npm run build:web` — from a fresh `git clone` of `main`.
+Exit 0, the flatten step ran, output in `mobile/dist`, and today's boot
+diagnostic is present in the bundle. So a failing build is *not* why the user
+sees nothing, which was the hypothesis worth eliminating first: Cloudflare
+keeps serving the last good deployment when a build fails, so "the site still
+works" and "the build succeeded" are not the same claim.
+
+### But the clone was not clean
+
+The bundle from that fresh clone contained the **real Supabase project ref** —
+in a directory with no `.env` (it is gitignored), from a shell with zero
+`EXPO_PUBLIC_*` variables.
+
+**Metro's cache is `/tmp/metro-cache`, shared across every project on the
+machine.** `EXPO_PUBLIC_*` is inlined at *transform* time, the transform is
+cached against file content, and the cache does not belong to the checkout. So
+a brand-new clone in a brand-new directory inherited a transform of
+`environment.ts` carrying environment from an entirely different build.
+
+This is the third time this session that `.env` or its cache has made a build
+something other than what I thought I was testing, and it is the worst of the
+three, because "fresh clone, no `.env`, clean shell" is exactly the setup one
+would trust without checking.
+
+`build:web` now passes `--clear`. It costs build time and buys the guarantee
+that what a build contains is what its environment said. On Cloudflare it is a
+no-op — each build is a fresh container with an empty cache — which is also why
+this cannot explain the user's missing changes, and why the fix is for whoever
+builds locally.
+
+Re-run with `--clear`: the project ref is gone and the boot line correctly
+names all three missing variables.
+
+### A standalone preview, since I cannot reach their deployment
+
+Every outbound HTTPS request from this container is refused by the egress
+proxy, `example.com` included, so nothing about the live site is checkable from
+here. Instead: the export inlined into **one 4.9 MB HTML file** — the bundle as
+an inline script, all 21 assets as data URIs — which runs from `file://` with
+**zero network requests and zero errors**. All four tabs, piece detail, and 19
+SVG elements of engraved notation, verified by driving it in Chromium.
+
+Publishing it as an Artifact was refused at validation (too large, inline
+script), so it went to the user as a file. Recorded because it is a repeatable
+way to hand someone a working build when no deployment is reachable — the whole
+app, no server, no keys.
+
+**Tests:** unchanged. Build verified from a clean clone.
+
+**Rollback:** `git revert` — the change is one flag in one npm script.
+
+---
+
 ## 2026-08-20 17:50 — Two Pages projects, and a file I should not have added
 
 **Branch:** `main`. Owner: user cannot see any of this session's work on their
