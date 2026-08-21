@@ -44,7 +44,7 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "typecheck": "tsc --noEmit",
-    "build:web": "expo export --platform web && node scripts/flatten-vendor-assets.mjs",
+    "build:web": "expo export --platform web --clear && node scripts/flatten-vendor-assets.mjs",
     "postinstall": "patch-package"
   },
   "private": true
