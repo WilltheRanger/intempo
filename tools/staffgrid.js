@@ -160,51 +160,75 @@ async function staffGrid(dataB64, opts) {
   // margin — and that returned a stretched comb sitting a line too high.
   const half = Math.max(1, Math.round(lineH/2));
   const combScore = (x, top, sp) => {
-    let dark = 0, light = 0;
+    // The worst of the five lines, against the middling one of the four gaps.
+    //
+    // Averaging both terms is what put the comb a whole space below the staff
+    // on a dense page: the gaps between real staff lines are full of noteheads,
+    // so sliding the comb down until its gaps sample the clean paper underneath
+    // *raises* an averaged score, even though only four of its five lines still
+    // land on ink. Scoring the darkest-it-has-to-be — the brightest line — makes
+    // that trade impossible, because the one line hanging off the staff is
+    // sitting on paper and drags the whole score with it.
+    let worstLine = -1e9;
     for (let k = 0; k < 5; k++) {
       const y = Math.round(top + k*sp);
       if (y - half < 0 || y + half >= H) return -1e9;
       let s = 0; for (let dy = -half; dy <= half; dy++) s += grey[(y+dy)*W+x];
-      dark += s/(2*half+1);
+      worstLine = Math.max(worstLine, s/(2*half+1));
     }
+    const gaps = [];
     for (let k = 0; k < 4; k++) {
       const y = Math.round(top + (k+0.5)*sp);
       if (y < 0 || y >= H) return -1e9;
-      light += grey[y*W+x];
+      gaps.push(grey[y*W+x]);
     }
-    return light/4 - dark/5;
+    gaps.sort((a, b) => a - b);
+    return (gaps[1] + gaps[2])/2 - worstLine;
   };
 
-  // An unconstrained search over the full height at a few dozen columns. This
-  // is what a staff looks like to the scorer with nothing else assumed, and on
-  // a real photograph it wins by a wide margin — scores of 50 to 90 against a
-  // threshold of 18 — because five dark lines separated by four light gaps is
-  // not a pattern that text or noteheads happen to make.
-  const freeAt = (x) => {
-    let best = null;
-    for (let top = 2; top < H - 4*spacing - 2; top += 0.5)
-      for (let sp = spacing - 3; sp <= spacing + 3; sp += 0.25) {
-        const v = combScore(x, top, sp);
-        if (!best || v > best.v) best = { v, top, sp, x };
-      }
-    return best;
+  // Choose which staff, globally, before measuring anything about it.
+  //
+  // Five dark lines over four light gaps is not unique on a page of music.
+  // Stacked ledger lines above a high passage make one, a neighbouring system
+  // caught by the crop makes one, and both score as well as the real staff in
+  // the columns where they exist. Searching each column independently and
+  // fitting a curve through the answers gives a curve through none of them: on
+  // a real page here the per-column answers sat within 70px of each other and
+  // the fitted curve still swung 230px across the width, crossing the staff
+  // diagonally.
+  //
+  // What separates the staff from its impostors is not how good it looks in one
+  // column but that it is *there in every column*. So the seed is a straight
+  // tilted comb scored by its MEDIAN across columns spread over the width —
+  // ledger lines score brilliantly in the few columns they occupy and nowhere
+  // else, and a median cannot be moved by that. The tilt is searched too, since
+  // a hand-held page is never level and a level comb would fit no staff at all.
+  const probeX = [];
+  for (let x = Math.round(W*0.06); x < W*0.94; x += Math.round(W/34)) probeX.push(x);
+  const medianScore = (top0, slope) => {
+    const vals = [];
+    for (const x of probeX) vals.push(combScore(x, top0 + slope*(x - W/2), spacing));
+    vals.sort((a, b) => a - b);
+    return vals[Math.floor(vals.length/2)];
   };
-  const probes = [];
-  for (let x = Math.round(W*0.04); x < W*0.96; x += Math.round(W/48)) {
-    const p = freeAt(x);
-    if (p && p.v > 25) probes.push(p);
-  }
+  let seed = null;
+  const maxSlope = 0.09;                      // about 5°, past any hand-held tilt
+  const slopeStep = 2/W;                      // two pixels of rise across the page
+  for (let slope = -maxSlope; slope <= maxSlope; slope += slopeStep)
+    for (let top0 = 2; top0 < H - 4*spacing - 2; top0 += 1) {
+      const v = medianScore(top0, slope);
+      if (!seed || v > seed.v) seed = { v, top0, slope };
+    }
+
+  const probes = probeX.map((x) => ({ x, top: seed.top0 + seed.slope*(x - W/2), sp: spacing }));
 
   const win = spacing*0.4, step = Math.max(2, Math.round(spacing/3));
-  // Robust fit through the probes: reject the ones that disagree by more than
-  // half a space — those are combs that locked onto a block of text — and refit.
-  let topAt = quadFit(probes, 'top'), spAt = quadFit(probes, 'sp');
-  for (let pass = 0; pass < 3; pass++) {
-    const fit = topAt;
-    const good = probes.filter(p => Math.abs(p.top - fit(p.x)) < spacing*0.5);
-    if (good.length < 6) break;
-    topAt = quadFit(good, 'top'); spAt = quadFit(good, 'sp');
-  }
+
+  // Start the refinement from the seed line and let it bend from there. Each
+  // pass moves a column at most half a space, so a line slip stays unreachable;
+  // several passes follow a page that bends much further than that.
+  let topAt = (x) => seed.top0 + seed.slope*(x - W/2), spAt = () => spacing;
+  let agreement = 1;
   let cols = [], kept = [], moved = null;
   for (let pass = 0; pass < 5; pass++) {
     const prev = topAt;

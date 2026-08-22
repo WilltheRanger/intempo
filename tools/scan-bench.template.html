@@ -1146,6 +1146,66 @@ async function callGeminiStream(model, key, b64, mime, extra, think, on) {
 }
 
 /**
+ * The schema, handed to Claude as a tool rather than described in prose.
+ *
+ * Gemini has `response_mime_type: application/json` and simply cannot answer in
+ * prose. Claude had no equivalent here, and on the annotated slices it started
+ * narrating instead — "Looking at the image, I need to identify the staff..." —
+ * which arrives as a JSON parse error complaining about the letter L. That is
+ * not a prompt problem to be argued with; the API has a mechanism for it.
+ * Forcing a tool call makes prose unrepresentable.
+ *
+ * Deliberately loose. It exists to guarantee the *shape* of the answer, not to
+ * second-guess the prompt, which is the backend's and stays the source of
+ * truth for what the fields mean.
+ */
+const TRANSCRIPTION_TOOL = {
+  name: 'transcription',
+  description: 'Return the transcription of the sheet music in the image.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      time_signature: { type: ['string', 'null'] },
+      key_signature: { type: ['string', 'null'] },
+      tempo_marking: { type: ['string', 'null'] },
+      bpm_hint: { type: ['number', 'null'] },
+      clef: { type: ['string', 'null'] },
+      ocr_confidence: { type: ['number', 'null'] },
+      notes_to_human: { type: ['string', 'null'] },
+      measures: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            measure_number: { type: ['integer', 'null'] },
+            start_tick: { type: ['number', 'null'] },
+            end_tick: { type: ['number', 'null'] },
+            notes: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  pitch: { type: ['string', 'null'] },
+                  duration: { type: ['string', 'null'] },
+                  articulation: { type: ['string', 'null'] },
+                  tied_to_next: { type: ['boolean', 'null'] },
+                  dynamics: { type: ['string', 'null'] },
+                },
+                required: ['pitch', 'duration'],
+              },
+            },
+            slurs: { type: 'array', items: { type: 'object' } },
+          },
+          required: ['notes'],
+        },
+      },
+      repeats: { type: 'array', items: { type: 'object' } },
+    },
+    required: ['measures'],
+  },
+};
+
+/**
  * Claude, streamed, with adaptive thinking and a summary of it.
  *
  * `budget_tokens` is gone on these models and returns a 400; adaptive thinking
@@ -1161,6 +1221,11 @@ async function callClaudeStream(model, key, b64, mime, extra, think, on) {
         'anthropic-dangerous-direct-browser-access':'true'},
       body: JSON.stringify({ model: model.model, max_tokens: 16000, stream: true,
         ...(think ? { thinking: { type: 'adaptive', display: 'summarized' } } : {}),
+        tools: [TRANSCRIPTION_TOOL],
+        // Thinking and a forced tool choice cannot be combined, so when thinking
+        // is on the tool is offered rather than required — the schema still
+        // steers the answer, and the prose guard falls back to stripFences.
+        ...(think ? {} : { tool_choice: { type: 'tool', name: 'transcription' } }),
         messages:[{role:'user',content:[
           {type:'image',source:{type:'base64',media_type:mime,data:b64}},
           {type:'text',text: extra ? PROMPT + '\n\n' + extra : PROMPT}]}]})});
@@ -1168,7 +1233,7 @@ async function callClaudeStream(model, key, b64, mime, extra, think, on) {
     const body = await res.json().catch(() => null);
     throw new Error(body?.error?.message ?? `HTTP ${res.status}`);
   }
-  let text = '', input = 0, output = 0, blockType = null, stopReason = null;
+  let text = '', toolJson = '', input = 0, output = 0, blockType = null, stopReason = null;
   for await (const ev of sse(res)) {
     if (ev.type === 'error') throw new Error(ev.error?.message ?? 'stream error');
     if (ev.type === 'message_start') input = ev.message?.usage?.input_tokens ?? 0;
@@ -1176,8 +1241,12 @@ async function callClaudeStream(model, key, b64, mime, extra, think, on) {
     if (ev.type === 'content_block_delta') {
       const d = ev.delta;
       if (d?.type === 'thinking_delta') on?.thinking?.(d.thinking ?? '');
-      // Only text blocks carry the answer. Reading content[0] instead, as this
-      // did before, returns the thinking block the moment thinking is on.
+      // The tool call carries the answer, streamed as fragments of JSON.
+      else if (d?.type === 'input_json_delta') {
+        toolJson += d.partial_json ?? ''; on?.text?.(d.partial_json ?? '');
+      }
+      // Only text blocks carry a prose answer. Reading content[0] instead, as
+      // this did before, returns the thinking block the moment thinking is on.
       else if (d?.type === 'text_delta' && blockType === 'text') {
         text += d.text ?? ''; on?.text?.(d.text ?? '');
       }
@@ -1189,8 +1258,18 @@ async function callClaudeStream(model, key, b64, mime, extra, think, on) {
   }
   if (stopReason === 'max_tokens') throw new Error(TRUNCATED);
   if (stopReason === 'refusal') throw new Error('the model declined to answer this request');
-  if (!text) throw new Error('the stream carried no answer, only thinking');
-  return { text, input, output };
+  const answer = toolJson || text;
+  if (!answer) throw new Error('the stream carried no answer, only thinking');
+  if (!toolJson && !/^\s*[[{`]/.test(answer)) {
+    // Only reachable with thinking on, where the tool can be offered but not
+    // required. Say which of the two it is rather than leaving a parse error
+    // about the letter L to be interpreted.
+    throw new Error('the model wrote prose instead of filling in the schema'
+      + (think ? ' — turn thinking off, which lets the bench require the schema '
+               + 'rather than merely offer it' : '')
+      + `. It began: ${answer.slice(0, 160)}`);
+  }
+  return { text: answer, input, output };
 }
 
 async function callGemini(model, key, b64, mime, extra, think) {
