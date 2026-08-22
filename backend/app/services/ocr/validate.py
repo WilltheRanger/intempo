@@ -62,6 +62,41 @@ TUPLET_NOTE = (
 
 Verdict = Literal["ok", "short", "long", "empty", "pickup", "unverifiable"]
 
+
+@dataclass(frozen=True)
+class NumberingGap:
+    """A jump in the measure numbers, which is evidence of a misread page."""
+
+    after: int
+    next: int
+
+    @property
+    def missing(self) -> int:
+        return self.next - self.after - 1
+
+    def describe(self) -> str:
+        return f"{self.missing} measure(s) missing between {self.after} and {self.next}"
+
+
+def numbering_gaps(score: ScoreJson) -> list[NumberingGap]:
+    """Measure numbers that skip.
+
+    Not arithmetic like the beat check, but the same kind of evidence: a
+    transcription running 409, 414, 415 has either lost four measures or
+    mis-numbered them, and either way something on the page is not in the JSON.
+
+    Seen in the wild on a real photograph — a **boxed rehearsal mark reading
+    49** came back as measure **409**, which inserted an empty measure and
+    renumbered the rest of the line. The prompt now names that case explicitly;
+    this catches it when the prompt does not.
+    """
+    numbers = [m.measure_number for m in score.measures]
+    return [
+        NumberingGap(after=a, next=b)
+        for a, b in zip(numbers, numbers[1:], strict=False)
+        if b - a != 1
+    ]
+
 #: How much of the score has to agree before a beat count is treated as the
 #: meter. Below this there is no majority to be an outlier *from*, and calling
 #: the most common of four different answers "the meter" would manufacture
@@ -204,6 +239,18 @@ def validate_measures(score: ScoreJson) -> list[MeasureFinding]:
 def problems(score: ScoreJson) -> list[MeasureFinding]:
     """Only the measures that are provably wrong."""
     return [f for f in validate_measures(score) if f.is_problem]
+
+
+def describe_numbering(gaps: list[NumberingGap]) -> str:
+    """The numbering complaint, for the retry text. Empty when it is fine."""
+    if not gaps:
+        return ""
+    return (
+        "The measure numbers skip: "
+        + "; ".join(g.describe() for g in gaps)
+        + ". Number the measures sequentially from 1 in the order they appear, "
+        "and do not emit a measure for a boxed rehearsal mark."
+    )
 
 
 def describe_for_retry(findings: list[MeasureFinding]) -> str:

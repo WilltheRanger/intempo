@@ -76,6 +76,34 @@
   footer{font-size:12.5px;color:var(--faint);border-top:1px solid var(--rule);
          padding-top:16px;max-width:70ch}
   footer code{font-family:var(--mono)}
+  /* `mcell`, not `bar` — `.bar` is already the progress bar in the measure
+     table (`height:5px; overflow:hidden`), so a figure sharing the name was
+     silently styled as a five-pixel progress bar and every stave rendered as
+     a sliver. The drawing was correct the whole time; the cascade was not. */
+  .staves{display:flex;flex-wrap:wrap;gap:14px;align-items:flex-start}
+  .mcell{margin:0;border:1px solid var(--rule);border-radius:9px;background:var(--panel);
+         padding:8px 10px 4px;display:flex;flex-direction:column;gap:4px}
+  .mcell.bad{border-color:var(--bad)}
+  .mcell figcaption{display:flex;justify-content:space-between;gap:14px;font-family:var(--mono);
+                    font-size:10.5px;color:var(--faint);font-variant-numeric:tabular-nums}
+  .mcell.bad figcaption .barbeats{color:var(--bad);font-weight:500}
+  /* `display:block` on the svg, and no overflow container around it.
+     As an inline element inside a flex column the svg contributed no height —
+     the box measured 100x0 with a 100x108 drawing inside it — and the staves
+     rendered as slivers. Each measure is narrow enough that `flex-wrap` on
+     `.staves` handles the layout without a scroller. */
+  .barsvg{display:block}
+  .mcell svg{display:block}
+  .cantdraw{font-size:10.5px;color:var(--bad);font-family:var(--mono);padding-bottom:4px}
+  .staff{stroke:var(--faint);stroke-width:.7;opacity:.75}
+  .head-filled{fill:var(--ink)}
+  .head-open{fill:none;stroke:var(--ink);stroke-width:1.6}
+  .stem,.flag{stroke:var(--ink);stroke-width:1.3;fill:none}
+  .rest{fill:var(--ink)}
+  .restlab{font-family:var(--mono);font-size:7px;fill:var(--faint);text-anchor:middle}
+  .acc{font-size:12px;fill:var(--ink);text-anchor:middle}
+  .unknown{font-size:13px;fill:var(--bad);text-anchor:middle;font-weight:600}
+  .clefname{font-size:11.5px;color:var(--faint);font-family:var(--mono)}
   .spin{display:inline-block;width:13px;height:13px;border:2px solid var(--rule);
         border-top-color:var(--gold);border-radius:50%;animation:s .7s linear infinite;
         vertical-align:-2px;margin-right:7px}
@@ -227,6 +255,152 @@ async function fetchWithin(url, init) {
   } finally {
     clearTimeout(timer);
   }
+}
+
+// ---------------------------------------------------------------------------
+// Engraving, for checking the reading against the page
+//
+// Deliberately *not* `mobile/src/lib/notation/engrave.ts`. That one draws
+// `whole | half | quarter | eighth` and no rests, because it exists to draw the
+// daily warmup, whose notes the app authors to stay inside what it can draw —
+// and `fromScore.ts` handles anything else by omitting it. Omission is exactly
+// wrong here: the whole question is whether the transcription matches the page,
+// and a drawing that quietly drops the notes it finds difficult answers a
+// different question. So this draws every duration in the schema, rests
+// included, and where it cannot draw something it says so on the stave.
+//
+// It draws no clef glyph, for the same reason the app's engraver doesn't: a
+// hand-approximated treble clef is the first thing a musician notices and the
+// last they forgive. The clef is named in words at the left instead.
+// ---------------------------------------------------------------------------
+const SPACE = 9;            // one staff space
+const STAFF_H = SPACE * 4;  // five lines
+const LETTERS = { C:0, D:1, E:2, F:3, G:4, A:5, B:6 };
+const MIDDLE_LINE_STEP = {  // the step sitting on each clef's middle line
+  treble: 4*7 + LETTERS.B, bass: 3*7 + LETTERS.D,
+  alto: 4*7 + LETTERS.C,   tenor: 3*7 + LETTERS.A,
+};
+const HEADS = {  // duration -> [filled, stemmed, flags, dotted]
+  whole:[0,0,0,0], dotted_whole:[0,0,0,1], half:[0,1,0,0], dotted_half:[0,1,0,1],
+  quarter:[1,1,0,0], dotted_quarter:[1,1,0,1], eighth:[1,1,1,0], dotted_eighth:[1,1,1,1],
+  sixteenth:[1,1,2,0], dotted_sixteenth:[1,1,2,1], thirty_second:[1,1,3,0],
+};
+const PITCH_RE = /^([A-G])(#|b)?(-?\d+)$/;
+
+function stepOf(pitch) {
+  const m = PITCH_RE.exec(String(pitch).trim());
+  if (!m) return null;
+  return (+m[3]) * 7 + LETTERS[m[1]];
+}
+const accidentalOf = (p) => (/#$/.test(String(p).replace(/-?\d+$/,'')) ? '♯'
+  : /b$/.test(String(p).replace(/-?\d+$/,'')) ? '♭' : '');
+
+/** One measure of notation as SVG, plus whatever could not be drawn. */
+function engraveMeasure(measure, clef, finding) {
+  const notes = measure.notes ?? [];
+  const middleStep = MIDDLE_LINE_STEP[clef] ?? MIDDLE_LINE_STEP.treble;
+  const PAD_TOP = SPACE * 4, PAD_BOTTOM = SPACE * 4;
+  const NOTE_W = 26, LEFT = 8;
+  const width = Math.max(90, LEFT + notes.length * NOTE_W + 14);
+  const height = STAFF_H + PAD_TOP + PAD_BOTTOM;
+  const midY = PAD_TOP + STAFF_H / 2;
+  const yFor = (step) => midY - (step - middleStep) * (SPACE / 2);
+
+  const parts = [];
+  for (let i = 0; i < 5; i++) {
+    const y = PAD_TOP + i * SPACE;
+    parts.push(`<line x1="0" y1="${y}" x2="${width}" y2="${y}" class="staff"/>`);
+  }
+
+  const undrawable = [];
+  notes.forEach((note, i) => {
+    const x = LEFT + i * NOTE_W + NOTE_W / 2;
+    const spec = HEADS[note.duration];
+    const isRest = String(note.pitch).toLowerCase() === 'rest';
+
+    if (isRest) {
+      // Rests get a mark that cannot be mistaken for a notehead, with the
+      // value spelled out — reading a rest's shape is a skill this drawing
+      // should not require of someone checking a transcription.
+      parts.push(`<rect x="${x-4}" y="${midY-SPACE}" width="8" height="${SPACE*0.8}" class="rest"/>`);
+      parts.push(`<text x="${x}" y="${midY+SPACE*2.1}" class="restlab">${(note.duration||'').replace('dotted_','.').slice(0,5)}</text>`);
+      return;
+    }
+    const step = stepOf(note.pitch);
+    if (step === null || !spec) {
+      undrawable.push(`${note.pitch} ${note.duration}`);
+      parts.push(`<text x="${x}" y="${midY}" class="unknown">?</text>`);
+      return;
+    }
+    const [filled, stemmed, flags, dotted] = spec;
+    const y = yFor(step);
+
+    // Ledger lines, above and below, on the line positions only.
+    const topLine = PAD_TOP, botLine = PAD_TOP + STAFF_H;
+    for (let ly = topLine - SPACE; ly >= y - 0.1; ly -= SPACE)
+      parts.push(`<line x1="${x-8}" y1="${ly}" x2="${x+8}" y2="${ly}" class="staff"/>`);
+    for (let ly = botLine + SPACE; ly <= y + 0.1; ly += SPACE)
+      parts.push(`<line x1="${x-8}" y1="${ly}" x2="${x+8}" y2="${ly}" class="staff"/>`);
+
+    const acc = accidentalOf(note.pitch);
+    if (acc) parts.push(`<text x="${x-11}" y="${y+3.5}" class="acc">${acc}</text>`);
+
+    parts.push(`<ellipse cx="${x}" cy="${y}" rx="5.4" ry="4" transform="rotate(-20 ${x} ${y})"
+      class="${filled ? 'head-filled' : 'head-open'}"/>`);
+    if (dotted) parts.push(`<circle cx="${x+9}" cy="${y - (Math.round((y-PAD_TOP)/SPACE*2)%2===0 ? SPACE/2 : 0)}" r="1.5" class="head-filled"/>`);
+
+    if (stemmed) {
+      const up = y > midY;                       // below the middle line, stem up
+      const sx = up ? x + 5 : x - 5;
+      const sy = up ? y - SPACE * 3.2 : y + SPACE * 3.2;
+      parts.push(`<line x1="${sx}" y1="${y}" x2="${sx}" y2="${sy}" class="stem"/>`);
+      for (let f = 0; f < flags; f++) {
+        const fy = sy + (up ? 1 : -1) * f * 4.5;
+        parts.push(`<path d="M${sx} ${fy} q 7 ${up?4:-4} 6 ${up?11:-11}" class="flag"/>`);
+      }
+    }
+  });
+
+  const tone = finding?.is_problem ? 'bad' : finding?.verdict === 'ok' ? 'ok' : 'neutral';
+  return { svg: `<svg viewBox="0 0 ${width} ${height}" width="${width}" height="${height}"
+      role="img" aria-label="measure ${measure.measure_number}">${parts.join('')}</svg>`,
+    width, undrawable, tone };
+}
+
+/** The whole transcription, measure by measure, with the verdicts attached. */
+function engraveScore(score, findings) {
+  const clef = score.clef ?? 'treble';
+  const byNumber = new Map(findings.map((f) => [f.measure_number, f]));
+  const cells = (score.measures ?? []).map((m, i) => {
+    const finding = byNumber.get(m.measure_number) ?? findings[i];
+    const { svg, undrawable, tone } = engraveMeasure(m, clef, finding);
+    const beats = finding ? `${finding.actual_beats}${finding.expected_beats !== null ? `/${finding.expected_beats}` : ''}` : '';
+    return `<figure class="mcell ${tone}">
+      <figcaption><span class="barno">${esc(m.measure_number)}</span>
+        <span class="barbeats">${esc(beats)}</span></figcaption>
+      <div class="barsvg">${svg}</div>
+      ${undrawable.length ? `<div class="cantdraw">couldn’t draw: ${esc(undrawable.join(', '))}</div>` : ''}
+    </figure>`;
+  });
+  return `<div class="staves">${cells.join('')}</div>`;
+}
+
+/**
+ * Measure numbers that skip.
+ *
+ * Not arithmetic like the beat check, but the same kind of evidence: a
+ * transcription that goes 409, 414, 415 has either lost four measures or
+ * mis-numbered them, and either way something on the page is not in the JSON.
+ * Worth surfacing next to the drawing, since that is where it becomes obvious.
+ */
+function numberingGaps(score) {
+  const ns = (score.measures ?? []).map((m) => m.measure_number).filter((n) => Number.isFinite(n));
+  const gaps = [];
+  for (let i = 1; i < ns.length; i++) {
+    const jump = ns[i] - ns[i - 1];
+    if (jump !== 1) gaps.push({ after: ns[i - 1], next: ns[i], missing: jump - 1 });
+  }
+  return gaps;
 }
 
 // --- providers -------------------------------------------------------------
@@ -453,6 +627,7 @@ $('go').addEventListener('click', async () => {
 
     const findings = validateMeasures(score);
     const bad = findings.filter(f => f.is_problem);
+    const gaps = numberingGaps(score);
     const meter = findings[0]?.expected_beats ?? null;
     const meterText = !findings.length ? 'no measures came back'
       : meter === null ? 'meter unknown, and the music does not agree on one'
@@ -486,6 +661,14 @@ $('go').addEventListener('click', async () => {
         <div><b>Cost</b>$${cost.toFixed(4)}</div>
       </div>
       ${score.notes_to_human ? `<div class="said" style="margin-top:20px"><b>What it flagged:</b> ${esc(score.notes_to_human)}</div>` : ''}
+      ${findings.length ? `<h2 style="margin-top:28px">What it read
+        <span class="clefname" style="text-transform:none;letter-spacing:0">
+          — ${esc(score.clef ?? 'treble')} clef, so read the noteheads against that</span></h2>
+        ${engraveScore(score, findings)}` : ''}
+      ${gaps.length ? `<div class="said" style="margin-top:18px"><b>The measure numbers skip.</b>
+        ${gaps.map(g => `${g.missing} missing between ${g.after} and ${g.next}`).join('; ')}.
+        Either measures were dropped, or something on the page that is not a measure number was
+        read as one — a boxed rehearsal mark is the usual culprit.</div>` : ''}
       ${findings.length ? `<h2 style="margin-top:26px">Measure by measure</h2>
         <div class="scroll"><table><thead><tr><th>Measure</th><th>Beats</th><th></th>
         <th>Notes</th><th>Verdict</th></tr></thead><tbody>${rows}</tbody></table></div>` : ''}

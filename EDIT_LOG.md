@@ -6,6 +6,77 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-20 22:15 — A rehearsal mark read as a measure number, and a drawing to catch it with
+
+**Branch:** `main`. Owner: user ran their own page through the scan bench and
+reported back.
+
+### What their page produced
+
+17 measures, 111 notes, confidence **0.9**, and five measures that do not add
+up. The measure numbers ran **409, 414, 415 … 426, 429, 431** — with 409 empty.
+
+The user diagnosed it, and it is better than anything the numbers alone would
+have given: **a boxed rehearsal mark reading 49 was read as measure 409.** That
+inserted a phantom empty measure and renumbered the entire line.
+
+Two fixes, one for the model and one for when the model ignores it.
+
+**The prompt** said nothing about rehearsal marks, or about how to number
+measures at all. It now says: number sequentially from 1 in the order they
+appear; a boxed or circled number above the staff is a rehearsal mark, not a
+measure and not a measure number, and belongs in `notes_to_human`; small
+numbers by a note are fingerings; never emit an empty measure unless the image
+genuinely shows an unreadable one. The rehearsal-mark rule names the actual
+failure, 49 → 409, because a rule with a case attached is easier to follow than
+a rule without one.
+
+Numbering from 1 rather than copying the printed numbers is the safer of the
+two: a photographed line is a passage, not a movement, and a wrong starting
+number renumbers everything after it — which is exactly what happened.
+
+**`numbering_gaps`** catches it when the prompt does not. A transcription
+running 409, 414, 415 has either lost four measures or mis-numbered them, and
+either way something on the page is not in the JSON. Deliberately about
+*jumps*, not about where the numbering starts: 409, 410, 411 is an ignored
+instruction, which is a much weaker signal than a misread page.
+
+### Drawing what it read
+
+The user asked to see the notes, which is the right instinct — the beat check
+says a measure is wrong, not what is wrong with it.
+
+Deliberately **not** `mobile/src/lib/notation/engrave.ts`. That draws
+`whole | half | quarter | eighth` and no rests, because it exists for the daily
+warmup, whose notes the app authors to fit; `fromScore.ts` handles the rest by
+omitting it. Omission is precisely wrong here — the question is whether the
+transcription matches the page, and a drawing that quietly drops what it finds
+difficult answers a different question. The bench engraver draws every duration
+in the schema, rests included, dots, accidentals, flags, ledger lines, and puts
+a red `?` on anything it cannot draw. Measures are bordered by verdict, so a
+short measure is visibly the one to look at.
+
+### Two bugs found by looking at it
+
+**The staves rendered as slivers.** `.barsvg` measured 100×0 around a 100×108
+drawing. Two causes, and the second is the instructive one: an inline `<svg>`
+in a flex column contributes no height without `display:block`, and — the real
+culprit — **`.bar` was already the progress bar in the measure table**,
+`height:5px; overflow:hidden`. A `<figure class="bar">` was therefore styled as
+a five-pixel progress bar. The drawing had been correct the whole time; the
+cascade was not. Renamed to `.mcell`.
+
+Worth recording because it is the exact failure the design guidance warns
+about — classes that cancel each other out — and because I found it by
+measuring each layer rather than by staring at the CSS. `.barsvg` 100×0 while
+`.bar svg` 100×108 named the boundary the height was lost at in one line.
+
+**Tests:** 301 passed (was 294). Lint clean.
+
+**Rollback:** `git revert`.
+
+---
+
 ## 2026-08-20 20:30 — Checking a transcription against arithmetic instead of against a model
 
 **Branch:** `main`. Owner: user asked how to make sheet-music transcription
