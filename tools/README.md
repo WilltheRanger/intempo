@@ -22,6 +22,18 @@ server here to send it anywhere else — and is kept in `localStorage` so it nee
 not be retyped. Calls cost real money: about $0.005 a page on Flash, $0.03 on
 Sonnet.
 
+**iPhone photographs work.** A HEIC is converted to JPEG through the browser's
+own decoder, which means Safari on macOS and iOS; on Chrome or Firefox, which
+cannot open one, it is passed to Gemini untouched because Gemini accepts the
+format. Only Claude on a non-Safari browser has no route, and it says so in
+those terms rather than returning an API error about an invalid request.
+
+The same step scales anything over 2000px down and bakes EXIF rotation into the
+pixels. Both matter: a 12-megapixel photo goes from ~3 MB to ~30 KB, which the
+models downsample anyway and which you are otherwise billed for, and an iPhone
+stores portrait orientation in EXIF rather than the pixels, so a page that is
+not rotated arrives on its side and reads as gibberish.
+
 ## `build-validator-sandbox.py`
 
 ```sh
