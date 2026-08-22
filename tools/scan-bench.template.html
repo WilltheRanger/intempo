@@ -109,9 +109,11 @@
          aria-label="Choose or drop a photograph of sheet music">
       Drop a photograph here, or click to choose one.<br>
       <span style="font-size:12.5px;color:var(--faint)">One line of music reads best — that is
-      what the prompt asks for.</span>
+      what the prompt asks for. HEIC straight off an iPhone is fine.</span>
     </div>
-    <input id="file" type="file" accept="image/*" hidden>
+    <!-- The extensions are spelled out because an iPhone photo is HEIC and
+     `image/*` alone does not reliably match it in every file picker. -->
+<input id="file" type="file" accept="image/*,.heic,.HEIC,.heif,.HEIF" hidden>
   </section>
 
   <div class="row">
@@ -126,6 +128,13 @@
     has no backend. It is kept in this browser’s <code>localStorage</code> so you don’t retype
     it, and never leaves the machine except in the request you just made. Costs are real:
     roughly $0.005 a page on Flash, $0.03 on Sonnet.
+    <br><br>
+    Photographs are re-encoded before they are sent: HEIC becomes JPEG, anything over 2000px
+    is scaled down, and EXIF rotation is applied to the pixels so a portrait shot doesn’t
+    arrive sideways. A 12-megapixel phone photo goes from about 3&nbsp;MB to 30&nbsp;KB, which
+    the models would have downsampled anyway and which you would otherwise have been billed
+    for. HEIC needs Safari to convert; on Chrome or Firefox it is passed to Gemini as-is,
+    which accepts the format — Claude does not.
   </footer>
 </div>
 
@@ -183,6 +192,21 @@ function validateMeasures(score){
       is_problem:['short','long','empty'].includes(verdict)};
   });
 }
+
+//: What each vendor will accept as an image. Claude has no HEIC — an iPhone
+//: photo sent to it unconverted comes back as an invalid-request error that
+//: says nothing about the format.
+const VENDOR_ACCEPTS = {
+  google: ['image/png', 'image/jpeg', 'image/webp', 'image/heic', 'image/heif'],
+  anthropic: ['image/jpeg', 'image/png', 'image/gif', 'image/webp'],
+};
+
+//: Long edge to normalise to. A phone photograph is 12 megapixels and the
+//: models downsample anyway — Claude at roughly 1568px — so sending the
+//: original buys nothing and is billed by the pixel. Only ever shrinks: the
+//: bake-off's worst results were on crops that were already too small, and
+//: upscaling would invent detail rather than recover it.
+const MAX_EDGE = 2000;
 
 //: Long enough for the slowest honest read — the bake-off recorded 29s on
 //: Sonnet — and short enough that a hung request eventually says so instead of
@@ -253,9 +277,75 @@ function stripFences(t) {
   return s.replace(/^```(?:json)?\s*/,'').replace(/\s*```$/,'').trim();
 }
 
+/**
+ * Turn whatever was dropped into something the chosen model will accept.
+ *
+ * Re-encoding through a canvas does three jobs at once: it converts HEIC on a
+ * browser that can decode it, it shrinks a 12-megapixel phone photograph to
+ * something worth paying for, and it strips EXIF — which matters because an
+ * iPhone writes orientation into EXIF rather than the pixels, and a page that
+ * arrives on its side reads as gibberish.
+ *
+ * The decode is the browser\'s, so HEIC works wherever the browser can already
+ * open one — Safari on macOS and iOS. Chrome and Firefox cannot, and rather
+ * than fail there, a HEIC goes to Gemini untouched, since Gemini accepts the
+ * format directly. Only Claude plus a non-Safari browser has no route, and
+ * that case says so in those terms instead of returning an API error about an
+ * invalid request.
+ */
+async function normalise(file, vendor) {
+  const accepts = VENDOR_ACCEPTS[vendor];
+  const looksHeic = /heic|heif/i.test(file.type) || /\.hei[cf]$/i.test(file.name);
+
+  try {
+    const bitmap = await createImageBitmap(file);
+    const scale = Math.min(1, MAX_EDGE / Math.max(bitmap.width, bitmap.height));
+    const w = Math.round(bitmap.width * scale), h = Math.round(bitmap.height * scale);
+    const canvas = document.createElement('canvas');
+    canvas.width = w; canvas.height = h;
+    canvas.getContext('2d').drawImage(bitmap, 0, 0, w, h);
+    bitmap.close?.();
+    const blob = await new Promise((res) => canvas.toBlob(res, 'image/jpeg', 0.92));
+    if (!blob) throw new Error('canvas produced no image');
+    return {
+      blob, mime: 'image/jpeg', width: w, height: h,
+      converted: looksHeic || scale < 1,
+      note: looksHeic ? `converted from HEIC, ${w}×${h}`
+        : scale < 1 ? `scaled down to ${w}×${h}` : `${w}×${h}`,
+    };
+  } catch (e) {
+    // The browser could not decode it. HEIC on anything but Safari, usually.
+    if (looksHeic && accepts.includes('image/heic')) {
+      return {
+        blob: file, mime: 'image/heic', width: null, height: null, converted: false,
+        note: 'sent as HEIC — this browser cannot open one, but Gemini accepts them',
+      };
+    }
+    if (looksHeic) {
+      throw new Error(
+        'This browser cannot open a HEIC, and Claude does not accept the format. '
+        + 'Either open this page in Safari, pick a Gemini model, or set the iPhone to '
+        + 'Settings → Camera → Formats → Most Compatible so it shoots JPEG.');
+    }
+    if (!accepts.includes(file.type)) {
+      throw new Error(`${file.type || 'that file'} is not an image this model accepts.`);
+    }
+    return { blob: file, mime: file.type, width: null, height: null, converted: false, note: '' };
+  }
+}
+
+const toBase64 = (blob) => new Promise((resolve, reject) => {
+  const r = new FileReader();
+  r.onload = () => resolve(String(r.result).split(',')[1]);
+  r.onerror = () => reject(new Error('could not read the file'));
+  r.readAsDataURL(blob);
+});
+
 // --- page ------------------------------------------------------------------
 const $ = (id) => document.getElementById(id);
-let image = null; // {b64, mime, name}
+const esc = (s) => String(s).replace(/[<&>]/g, (c) => ({'<':'&lt;','&':'&amp;','>':'&gt;'}[c]));
+let chosen = null;   // the File exactly as picked
+let prepared = null; // what normalise() made of it for the current vendor
 
 MODELS.forEach((m, i) => {
   const o = document.createElement('option');
@@ -274,7 +364,9 @@ function syncVendor() {
     : 'An Anthropic key — console.anthropic.com, starts sk-ant-';
   $('host').textContent = m.vendor === 'google'
     ? 'generativelanguage.googleapis.com' : 'api.anthropic.com';
-  refresh();
+  // The same photograph may be converted for one vendor and passed through for
+  // another, so re-prepare rather than assume the last result still applies.
+  if (chosen) { void prepare(); } else { refresh(); }
 }
 $('model').addEventListener('change', syncVendor);
 $('key').addEventListener('input', () => {
@@ -282,19 +374,46 @@ $('key').addEventListener('input', () => {
   refresh();
 });
 
-function refresh() { $('go').disabled = !(image && $('key').value.trim()); }
+function refresh() { $('go').disabled = !(prepared && $('key').value.trim()); }
 
-function accept(file) {
-  if (!file || !file.type.startsWith('image/')) return;
-  const reader = new FileReader();
-  reader.onload = () => {
-    const url = reader.result;
-    image = { b64: String(url).split(',')[1], mime: file.type, name: file.name };
-    $('drop').innerHTML = `<img src="${url}" alt="the page you chose">
-      <div style="margin-top:10px;font-size:12.5px;color:var(--faint)">${file.name} — click to replace</div>`;
-    refresh();
-  };
-  reader.readAsDataURL(file);
+async function accept(file) {
+  // Not `file.type.startsWith('image/')`: a HEIC off an iPhone often arrives
+  // with an empty type, and rejecting it here would be rejecting exactly the
+  // file this bench exists to read.
+  if (!file) return;
+  chosen = file;
+  await prepare();
+}
+
+/**
+ * Normalise the chosen file for the current vendor and show what will be sent.
+ *
+ * Re-run when the model changes, because the same photograph may be converted
+ * for one vendor and passed through for another.
+ */
+async function prepare() {
+  if (!chosen) return;
+  prepared = null;
+  $('drop').innerHTML = `<span class="spin"></span>preparing ${esc(chosen.name)}…`;
+  try {
+    prepared = await normalise(chosen, currentModel().vendor);
+    // The preview is of the *prepared* image, not the original — a browser
+    // that cannot decode a HEIC cannot display one either, so previewing the
+    // original would show a broken image for the file it is about to send.
+    const url = prepared.mime === 'image/heic' ? null : URL.createObjectURL(prepared.blob);
+    const size = (prepared.blob.size / 1024).toFixed(0);
+    $('drop').innerHTML =
+      (url ? `<img src="${url}" alt="the page that will be sent">`
+           : `<div style="font-size:34px;line-height:1">🎼</div>
+              <div style="font-size:13px;margin-top:6px">no preview — this browser cannot open a HEIC</div>`)
+      + `<div style="margin-top:10px;font-size:12.5px;color:var(--faint)">`
+      + `${esc(chosen.name)} — ${size} KB${prepared.note ? `, ${esc(prepared.note)}` : ''}`
+      + ` — click to replace</div>`;
+  } catch (e) {
+    $('drop').innerHTML = `<div style="color:var(--bad);font-weight:500">${esc(e.message)}</div>
+      <div style="margin-top:10px;font-size:12.5px;color:var(--faint)">${esc(chosen.name)} — click to replace</div>`;
+  }
+  refresh();
 }
 $('drop').addEventListener('click', () => $('file').click());
 $('drop').addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $('file').click(); } });
@@ -304,7 +423,6 @@ $('file').addEventListener('change', (e) => accept(e.target.files[0]));
 $('drop').addEventListener('drop', (e) => accept(e.dataTransfer.files[0]));
 
 const TAG = {ok:'t-ok',short:'t-bad',long:'t-bad',empty:'t-bad',pickup:'t-neutral',unverifiable:'t-neutral'};
-const esc = (s) => String(s).replace(/[<&>]/g, (c) => ({'<':'&lt;','&':'&amp;','>':'&gt;'}[c]));
 
 $('go').addEventListener('click', async () => {
   const model = currentModel(), key = $('key').value.trim();
@@ -320,7 +438,8 @@ $('go').addEventListener('click', async () => {
   }, 1000);
   try {
     const call = model.vendor === 'google' ? callGemini : callClaude;
-    const { text, input, output } = await call(model, key, image.b64, image.mime);
+    const b64 = await toBase64(prepared.blob);
+    const { text, input, output } = await call(model, key, b64, prepared.mime);
     const ms = Math.round(performance.now() - started);
     const cost = (input * model.input_price + output * model.output_price) / 1e6;
 
