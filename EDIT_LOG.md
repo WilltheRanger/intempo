@@ -6,6 +6,75 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-22 (evening) — Ledger lines are not a staff, and Claude needed a schema
+
+**Branch:** `main`. Owner: "what even is happening" + a screenshot of a real
+page where the grid ran diagonally across the staff and every Claude slice read
+returned `Unexpected token 'L', "Looking at"... is not valid JSON`.
+
+Two faults, unrelated, both mine.
+
+### 1. The grid crossed the staff diagonally
+
+Five dark lines over four light gaps **is not unique on a page of music.**
+Stacked ledger lines above a high passage make one. A neighbouring system caught
+by the crop makes one. Both score as well as the real staff *in the columns
+where they exist*.
+
+The previous version searched every column independently and fitted a curve
+through the answers. On a real band from the owner's page the per-column answers
+sat within 70px of each other and the fitted curve still swung **230px**,
+because a least-squares fit has no opinion about which staff it is describing.
+
+**Fix:** decide which staff *globally*, first. The seed is now a straight tilted
+comb scored by its **median across columns spread over the width**, with the
+tilt searched as well as the offset. Ledger lines score brilliantly in the few
+columns they occupy and nowhere else, and a median cannot be moved by that. The
+per-column refinement then bends that line to the page exactly as before.
+
+A second, independent bias in the same stage: the score averaged the five lines
+against the four gaps, which put the comb **a whole space below the staff** on a
+dense page. The gaps between real staff lines are full of noteheads, so sliding
+the comb down until its gaps sample the clean paper *raises* an averaged score,
+even though only four of its five lines still land on ink. It now scores the
+**brightest** line against the middling gaps — the one line hanging off the
+staff is sitting on paper and drags the whole score down, so the trade is
+unavailable.
+
+| | before | after |
+|---|---|---|
+| grid on a real two-system band | crossed the staff diagonally | on the staff, full width |
+| original test page | ±6px, 232 of 310 columns | ±6px, 248 of 298 columns |
+
+### 2. Claude narrated instead of answering
+
+Gemini has `response_mime_type: application/json` and *cannot* answer in prose.
+Claude had no equivalent here, so on the annotated slices it started explaining
+itself — which arrives as a parse error complaining about the letter L.
+
+That is not a prompt to argue with. The schema now goes as a **tool**, and with
+thinking off the tool choice is **forced**, so prose is unrepresentable. With
+thinking on a tool cannot be forced (the API disallows the combination), so it
+is offered instead and a guard names which of the two happened rather than
+leaving a parse error to be interpreted.
+
+The schema is deliberately loose — it guarantees the *shape*, not the meaning.
+`ocr_prompt.txt` stays the source of truth for what the fields are.
+
+### Honest status
+
+- The grid fix is verified on a real two-system band from the owner's page and
+  on the original test page, both by overlay at zoom.
+- The Claude fix is verified against a faithful Anthropic SSE stream in five
+  shapes — tool call, thinking then tool call, fenced text, prose, truncated —
+  but **not against the live API**. No key here.
+- The ledger-line failure mode is fixed for the case seen. A crop containing two
+  full systems is a related case the median seed should also handle, since only
+  one of them runs the full width — but that has **not** been tested on a real
+  two-system crop, only reasoned about.
+
+---
+
 ## 2026-08-22 (later still) — Showing the pipeline, and what showing it caught
 
 **Branch:** `main`. Owner: "I want to see the whole pipeline… I need to see its
