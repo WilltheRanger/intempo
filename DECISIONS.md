@@ -6,6 +6,60 @@ Operating Principle #5.
 
 ---
 
+## 2026-08-22 — Barlines are read by the model, not detected by image analysis
+
+**Context:** stage 1b cuts a photographed staff into enlarged per-measure
+slices. That needs measure boundaries. Six ways of finding barlines in the
+image were built and measured against a real phone photo of a bass part:
+
+| Approach | Why it failed |
+|---|---|
+| Column ink coverage ≥ 0.9 | Real barlines scored 0.75–0.89; raising the bar let stems through |
+| Coverage along a leaning column | Recovered the real ones and admitted three stems with them |
+| Neighbouring ink within ±1 space | Barlines 0.16–0.23, stems 0.24–0.33 — overlapping, no threshold |
+| Row-wise stroke width | Barlines 0.11–0.26, stems 0.16–0.27 — no separation at all |
+| Overhang above and below the staff | Barlines 0.13–0.26, stems 0.16–0.19 — inverted, if anything |
+| Connected components | One slur runs the whole system; eight barlines and forty noteheads come back as a single blob 2000px wide |
+
+Every one of these is a locality assumption, and a page of real music breaks
+locality: slurs cross barlines, beams cross stems, a stem whose notehead sits
+on an outer line spans the staff exactly as a barline does.
+
+**Decision: the model finds the barlines; the CV prints a ruler so it can say
+where they are.**
+
+**Alternatives considered.**
+
+- *Keep tuning the detector.* Barline detection is a known-hard OMR subproblem
+  and the failures above are not near-misses — they are the same numbers for
+  both classes. More thresholds would fit this one photograph.
+- *Fixed overlapping windows, no boundaries at all.* Robust, but it gives up
+  measure-aligned crops, and measure alignment is what makes the beat-sum
+  validator able to say which measure is wrong.
+- *Ask the model for pixel coordinates.* It guesses. Coordinates are not
+  something a vision model reads; printed numbers are.
+
+**Why this one.** It splits the work along the grain of what each side is
+actually good at. Locating five parallel lines on a curved page to sub-pixel
+precision is arithmetic, and the model cannot do it. Seeing that a vertical
+stroke is a barline rather than a stem is recognition, and the CV cannot do it.
+The ruler is the interface between them: the CV prints numbers, the model reads
+one off, and neither has to do the other's job.
+
+**Trade-offs accepted.**
+
+- A barline pass costs a request. It is folded into the slice reads rather than
+  run separately, but the slices are read one at a time, so stage 1b costs
+  roughly one request per twelve ticks of staff instead of one per page.
+- A model that misreads a tick puts a boundary in the wrong place, and nothing
+  downstream catches it except the beat-sum validator noticing the measure does
+  not add up — which is the same signal that catches a misread note.
+- The stroke candidates are still computed and passed along as an advisory
+  hint. They are cheap, and a hint that agrees with the model is weak evidence
+  the boundary is right.
+
+---
+
 ## 2026-08-20 — A field with no column is either given one or deleted, decided by whether a fact exists behind it
 
 **Context:** the UI rendered two fields that no database column backed —
