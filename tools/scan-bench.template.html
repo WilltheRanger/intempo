@@ -72,6 +72,8 @@
   .tr h4{font-size:13.5px;font-weight:600;margin:0 0 4px;letter-spacing:-.01em}
   .tr h4 em{font-style:normal;font-family:var(--mono);font-size:11px;color:var(--faint);
     font-weight:400;margin-left:8px}
+  .tr h4 em.w-model{color:var(--gold)}
+  .tr h4 em.w-local{color:var(--faint)}
   .tr p{margin:0;font-size:13px;line-height:1.55;color:var(--dim);max-width:66ch}
   .tr .ev{margin-top:10px}
   .tr .ev img{max-width:100%;display:block;border:1px solid var(--rule)}
@@ -225,6 +227,11 @@
 
   <section>
     <h2>Pipeline</h2>
+    <p class="hint">Everything except the reads is arithmetic that runs here, in this page: the
+      staff is located, the pitch grid drawn and the slices cut without a model and without a
+      request. The model is asked one question, once per slice — <b>what notes are in this
+      picture</b>. It never sees the whole page, never locates the staff, and never computes a
+      coordinate. The trace marks which side each step ran on.</p>
     <div class="row">
       <label class="opt"><input type="checkbox" id="optPre" checked>
         <span>Deskew &amp; binarize <em>(stage 1)</em></span></label>
@@ -653,11 +660,24 @@ function spark(values, markIndex, w, h) {
       stroke-linejoin="round" opacity=".75"/></svg>`;
 }
 
-/** One trace entry, live on the page from the moment it is opened. */
-function traceOpen(title, detail, meta) {
+/**
+ * One trace entry, live on the page from the moment it is opened.
+ *
+ * Every entry says which side of the line it runs on, because the two are easy
+ * to confuse when they scroll past in one stream. Almost all of this pipeline
+ * is arithmetic in the browser — no model, no network, no cost — and the model
+ * is asked exactly one question, once per slice: what notes are in this
+ * picture. It never sees the whole page, never locates the staff, and never
+ * computes a coordinate. Reading the trace as though the model were doing the
+ * measuring gives entirely the wrong idea of where the risk in this thing is.
+ */
+function traceOpen(title, detail, meta, where) {
   const el = document.createElement('div');
   el.className = 'tr live';
-  el.innerHTML = `<h4>${esc(title)}${meta ? `<em>${esc(meta)}</em>` : ''}</h4>`
+  const tag = where === 'model'
+    ? `<em class="w-model">model · billed</em>`
+    : `<em class="w-local">in the browser · free</em>`;
+  el.innerHTML = `<h4>${esc(title)}${tag}${meta ? `<em>${esc(meta)}</em>` : ''}</h4>`
     + (detail ? `<p>${esc(detail)}</p>` : '')
     + `<div class="ev"></div>`;
   $('trace').appendChild(el);
@@ -1643,7 +1663,7 @@ $('go').addEventListener('click', async () => {
    */
   const readOnce = async (blob, mime, extra, label) => {
     const b64 = await toBase64(blob);
-    const t = traceOpen(label || 'Reading the page', null, model.name);
+    const t = traceOpen(label || 'Reading the page', null, model.name, 'model');
     if (think) t.say('Thinking is on, and the summary is streamed below as it is produced.');
     const onThinking = think ? t.thinking() : null;
     let answer = '';
