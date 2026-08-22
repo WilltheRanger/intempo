@@ -6,6 +6,82 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-21 03:10 — The pipeline, as far as a browser can honestly take it
+
+**Branch:** `main`. Owner: user sent a seven-stage OMR pipeline design and asked
+for it testable in the scan bench.
+
+Built stages 0–5. Two of them are adapted and one is **not built at all**, and
+that is the most useful part of this entry.
+
+### Segmentation does not work, and I proved it before building on it
+
+Stages 1 and 5 both rest on staff and measure segmentation, so it was
+de-risked first rather than assumed.
+
+A horizontal projection over the user's photograph found **18 lines with gaps
+of 33, 31, 7, 207, 12, 15, 5** — noise. The cause was skew: across 1600px even
+one degree displaces a line by 28px, more than the staff spacing, so the
+projection smears.
+
+Skew detection itself works well — a rotation search maximising projection
+variance finds **−1.4°**, sharpness 9591 against 5950 flat. But deskewing and
+re-running found **one clean staff out of five**. The page is *curled*, so each
+staff has its own local skew and no single rotation straightens them all.
+
+So segmentation is not in the bench, and the UI says why on the stage itself. A
+segmenter that works on flat scans and silently mislabels a hand-held photo is
+worse than none, because everything downstream inherits the mislabelling. It
+needs local dewarping, which needs a server.
+
+**Two hours to find out, and worth every minute:** stage 5 as designed —
+"send the high resolution crop of that single measure" — is not available, and
+building the UI first would have found that at the end instead of the start.
+
+### What was built
+
+- **Stage 0, capture gate.** Laplacian variance for blur, blown-pixel fraction
+  for glare, rotation search for skew. On the user's photo: sharpness 707,
+  glare 0%, skew −1.7°, all in under half a second. Thresholds are from
+  measuring this repo's fixtures, not from a paper, and the numbers are shown
+  so a bad threshold is visible rather than silent.
+- **Stage 1, partial.** Deskew and adaptive binarization, both real. Global
+  thresholding was never an option — a hand-held photo is lit from one side.
+- **Stage 2, adapted.** Not homr and Audiveris. Two reads from the models here,
+  diffed measure by measure and **aligned by position, not by measure number** —
+  the numbers are a label the model chose, and two reads can label the same bar
+  differently.
+- **Stage 3.** Beat sums, numbering gaps, repetition, plus two new ones:
+  **pickup/final complement** (a short opening measure is only an anacrusis if
+  the last measure pays it back, and `validate_measures` forgives it on the
+  assumption that it is) and **repeat balance**.
+- **Stage 4.** Green/amber/red from agreement crossed with constraints.
+- **Stage 5, adapted.** No measure crop, so it sends the image with the failing
+  measures and the broken constraint named, asking for a fix and explicitly not
+  a fresh read.
+
+### One rule in stage 4 that is specific to this product
+
+Two reads that disagree on **pitch** but agree on **rhythm** come out
+**green**. `alignment.py` reads `note.pitch` in exactly one place —
+`is_rest = note.pitch == "rest"` — and builds its entire timeline from
+durations. A pitch disagreement is not a defect this pipeline should spend a
+repair request on. A generic OMR confidence score would mark it amber and be
+wrong about what matters here.
+
+### Stage 6 and 7
+
+Not built. Audio cross-check needs a recording and belongs in the app; the
+correction UI is its own build. Perceptual-hash caching is achievable and was
+not attempted here.
+
+**Tests:** 310 passed. Lint clean. Stages 0, 1, 3 and 4 verified against the
+user's actual photograph and against synthetic disagreeing reads.
+
+**Rollback:** `git revert`.
+
+---
+
 ## 2026-08-21 00:40 — Confident and wrong: the failure the beat check cannot see
 
 **Branch:** `main`. Owner: user asked whether the model was "just giving up" on
