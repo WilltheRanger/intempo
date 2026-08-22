@@ -1,0 +1,388 @@
+<title>Scan Bench</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,500&family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@400;500;600&display=swap">
+<style>
+  :root {
+    --ground:#F7F2E9; --panel:#FFF; --ink:#14110E; --muted:#5C564D; --faint:#756E63;
+    --rule:#E6E2DA; --ok:#2F6B4F; --bad:#A33A2A; --neutral:#8A8378; --gold:#9A7B4F;
+    --serif:'Newsreader',Georgia,serif; --sans:'Inter',system-ui,sans-serif;
+    --mono:'IBM Plex Mono',ui-monospace,monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground:#17150F; --panel:#201D16; --ink:#F2EDE2; --muted:#B5AC9C; --faint:#8F877A;
+      --rule:#322D24; --ok:#6FBF92; --bad:#E08A76; --neutral:#8F877A; --gold:#C9A46A;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground:#17150F; --panel:#201D16; --ink:#F2EDE2; --muted:#B5AC9C; --faint:#8F877A;
+    --rule:#322D24; --ok:#6FBF92; --bad:#E08A76; --neutral:#8F877A; --gold:#C9A46A;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--sans);
+       line-height:1.55;padding:clamp(22px,4vw,52px)}
+  .wrap{max-width:980px;margin:0 auto;display:flex;flex-direction:column;gap:30px}
+  h1{font-family:var(--serif);font-weight:400;font-size:clamp(29px,5vw,42px);margin:0;
+     letter-spacing:-.01em;text-wrap:balance}
+  .lede{color:var(--muted);max-width:64ch;margin:0}
+  h2{font-size:11.5px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;
+     color:var(--faint);margin:0 0 12px}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+  label.f{display:flex;flex-direction:column;gap:6px;flex:1;min-width:230px}
+  label.f span{font-size:11.5px;font-weight:600;letter-spacing:.09em;
+               text-transform:uppercase;color:var(--faint)}
+  input,select,button{font:inherit;font-size:14px;padding:9px 12px;border-radius:8px;
+    border:1px solid var(--rule);background:var(--panel);color:var(--ink);min-height:42px}
+  input[type=password]{font-family:var(--mono);font-size:13px}
+  button{cursor:pointer;font-weight:500}
+  button:hover:not(:disabled){border-color:var(--gold)}
+  button:disabled{opacity:.5;cursor:not-allowed}
+  button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+  .go{background:var(--ink);color:var(--ground);border-color:var(--ink);padding:11px 22px}
+  .drop{border:1.5px dashed var(--rule);border-radius:12px;padding:30px;text-align:center;
+        color:var(--muted);cursor:pointer;background:var(--panel);transition:border-color .15s}
+  .drop:hover,.drop.over{border-color:var(--gold);color:var(--ink)}
+  .drop img{max-width:100%;max-height:280px;border-radius:8px;display:block;margin:0 auto}
+  .hint{font-size:12.5px;color:var(--faint);max-width:66ch}
+  .hint code{font-family:var(--mono)}
+  .verdict{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;
+           padding-bottom:14px;border-bottom:1px solid var(--rule)}
+  .headline{font-family:var(--serif);font-size:clamp(20px,3.2vw,26px)}
+  .meterline{font-size:12.5px;color:var(--muted);font-family:var(--mono)}
+  table{width:100%;border-collapse:collapse;font-size:14px}
+  th{text-align:left;font-size:10.5px;letter-spacing:.07em;text-transform:uppercase;
+     color:var(--faint);font-weight:600;padding:0 10px 7px 0}
+  td{padding:8px 10px 8px 0;border-top:1px solid var(--rule);vertical-align:top}
+  td.num{font-family:var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+  .tag{display:inline-block;font-size:10.5px;font-weight:600;letter-spacing:.04em;
+       text-transform:uppercase;padding:2px 7px;border-radius:4px;border:1px solid}
+  .t-ok{color:var(--ok);border-color:var(--ok)}
+  .t-bad{color:var(--bad);border-color:var(--bad)}
+  .t-neutral{color:var(--neutral);border-color:var(--neutral)}
+  .bar{height:5px;border-radius:3px;background:var(--rule);overflow:hidden;min-width:80px}
+  .bar span{display:block;height:100%}
+  .stats{display:flex;gap:26px;flex-wrap:wrap;font-family:var(--mono);font-size:12.5px;
+         color:var(--muted);font-variant-numeric:tabular-nums}
+  .stats b{display:block;font-family:var(--sans);font-size:10.5px;font-weight:600;
+           letter-spacing:.07em;text-transform:uppercase;color:var(--faint)}
+  pre{font-family:var(--mono);font-size:12px;line-height:1.6;background:var(--panel);
+      border:1px solid var(--rule);border-radius:8px;padding:13px;overflow-x:auto;margin:0;
+      max-height:340px;overflow-y:auto;color:var(--muted)}
+  .said{background:var(--panel);border:1px solid var(--rule);border-left:3px solid var(--gold);
+        padding:12px 15px;border-radius:0 8px 8px 0;font-size:13.5px;color:var(--muted)}
+  .err{border-left-color:var(--bad);color:var(--ink)}
+  details summary{cursor:pointer;font-size:11.5px;font-weight:600;letter-spacing:.09em;
+                  text-transform:uppercase;color:var(--faint);margin-bottom:10px}
+  .scroll{overflow-x:auto}
+  footer{font-size:12.5px;color:var(--faint);border-top:1px solid var(--rule);
+         padding-top:16px;max-width:70ch}
+  footer code{font-family:var(--mono)}
+  .spin{display:inline-block;width:13px;height:13px;border:2px solid var(--rule);
+        border-top-color:var(--gold);border-radius:50%;animation:s .7s linear infinite;
+        vertical-align:-2px;margin-right:7px}
+  @keyframes s{to{transform:rotate(360deg)}}
+  @media (prefers-reduced-motion:reduce){.spin{animation:none}}
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>Photograph a page. See what the pipeline reads.</h1>
+    <p class="lede">The same prompt, models and settings the backend uses, run straight from
+      this page so you can point it at your own music. The transcription comes back with the
+      beat-sum check applied, so you can see not just what it read but whether what it read
+      adds up.</p>
+  </header>
+
+  <section>
+    <h2>Provider</h2>
+    <div class="row">
+      <label class="f"><span>Model</span>
+        <select id="model"></select></label>
+      <label class="f"><span>API key</span>
+        <input id="key" type="password" placeholder="paste your key" autocomplete="off"></label>
+    </div>
+    <p class="hint" id="keyhint"></p>
+  </section>
+
+  <section>
+    <h2>The page</h2>
+    <div class="drop" id="drop" tabindex="0" role="button"
+         aria-label="Choose or drop a photograph of sheet music">
+      Drop a photograph here, or click to choose one.<br>
+      <span style="font-size:12.5px;color:var(--faint)">One line of music reads best — that is
+      what the prompt asks for.</span>
+    </div>
+    <input id="file" type="file" accept="image/*" hidden>
+  </section>
+
+  <div class="row">
+    <button class="go" id="go" disabled>Read this page</button>
+    <span class="hint" id="status"></span>
+  </div>
+
+  <section id="out"></section>
+
+  <footer>
+    Your key is sent to <span id="host">the model provider</span> and nowhere else — this page
+    has no backend. It is kept in this browser’s <code>localStorage</code> so you don’t retype
+    it, and never leaves the machine except in the request you just made. Costs are real:
+    roughly $0.005 a page on Flash, $0.03 on Sonnet.
+  </footer>
+</div>
+
+<script>
+// ---------------------------------------------------------------------------
+// The prompt and the model settings are lifted from the backend verbatim —
+// backend/app/prompts/ocr_prompt.txt and the provider registries — because a
+// bench that asks a different question than production answers a question
+// nobody has. The build script substitutes them, so they cannot drift by hand.
+// ---------------------------------------------------------------------------
+const PROMPT = __PROMPT__;
+const MODELS = __MODELS__;
+
+// A literal port of backend/app/services/ocr/validate.py, held to it by
+// app/tests/test_sandbox_parity.py.
+const DURATION_BEATS = {whole:4,dotted_whole:6,half:2,dotted_half:3,quarter:1,
+  dotted_quarter:1.5,eighth:.5,dotted_eighth:.75,sixteenth:.25,dotted_sixteenth:.375,thirty_second:.125};
+const TOLERANCE=1e-6, MIN_AGREEMENT=.6, MIN_MEASURES_TO_INFER=3;
+
+function beatsPerMeasure(ts){
+  if(!ts||ts==='unknown')return null;
+  const m=/^(\d+)\/(\d+)$/.exec(String(ts).trim());
+  if(!m)return null;
+  const c=+m[1],u=+m[2];
+  return c<=0||u<=0?null:c*(4/u);
+}
+function inferBeatsPerMeasure(sums){
+  const votes=sums.filter(s=>s>0);
+  if(votes.length<MIN_MEASURES_TO_INFER)return null;
+  const tally=new Map();
+  for(const v of votes)tally.set(v,(tally.get(v)??0)+1);
+  let winner=null,hits=-1;
+  for(const [value,count] of tally){
+    if(count>hits||(count===hits&&value<winner)){winner=value;hits=count;}
+  }
+  return hits/votes.length<MIN_AGREEMENT?null:winner;
+}
+function validateMeasures(score){
+  const measures=score.measures??[];
+  const sums=measures.map(m=>(m.notes??[]).reduce((t,n)=>t+(DURATION_BEATS[n.duration]??0),0));
+  const stated=beatsPerMeasure(score.time_signature);
+  const inferred=stated===null?inferBeatsPerMeasure(sums):null;
+  const expected=stated!==null?stated:inferred;
+  const meterInferred=stated===null&&inferred!==null;
+  return measures.map((m,i)=>{
+    const actual=sums[i],count=(m.notes??[]).length;
+    let verdict;
+    if(count===0)verdict='empty';
+    else if(expected===null)verdict='unverifiable';
+    else if(Math.abs(actual-expected)<=TOLERANCE)verdict='ok';
+    else if(i===0&&actual<expected)verdict='pickup';
+    else verdict=actual<expected?'short':'long';
+    return{measure_number:m.measure_number??i+1,verdict,expected_beats:expected,
+      actual_beats:actual,note_count:count,meter_inferred:meterInferred,
+      is_problem:['short','long','empty'].includes(verdict)};
+  });
+}
+
+//: Long enough for the slowest honest read — the bake-off recorded 29s on
+//: Sonnet — and short enough that a hung request eventually says so instead of
+//: leaving a spinner up forever.
+const TIMEOUT_MS = 90000;
+
+/** fetch with a deadline, reported as a sentence rather than an AbortError. */
+async function fetchWithin(url, init) {
+  const stop = new AbortController();
+  const timer = setTimeout(() => stop.abort(), TIMEOUT_MS);
+  try {
+    return await fetch(url, { ...init, signal: stop.signal });
+  } catch (e) {
+    if (e.name === 'AbortError') {
+      throw new Error(`no answer after ${TIMEOUT_MS / 1000}s — the provider is slow, unreachable, or the request was blocked`);
+    }
+    throw e;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// --- providers -------------------------------------------------------------
+async function callGemini(model, key, b64, mime) {
+  const res = await fetchWithin(
+    `https://generativelanguage.googleapis.com/v1beta/models/${model.model}:generateContent`,
+    { method:'POST',
+      headers:{'Content-Type':'application/json','x-goog-api-key':key},
+      body: JSON.stringify({
+        contents:[{parts:[{inline_data:{mime_type:mime,data:b64}},{text:PROMPT}]}],
+        // Mirrors GenerateContentConfig in gemini_provider.py: JSON mode, and
+        // thinking off — 2.5 bills thinking tokens against the output budget
+        // and OCR needs no internal reasoning.
+        generationConfig:{response_mime_type:'application/json',
+          maxOutputTokens:16000, thinkingConfig:{thinkingBudget:0}},
+      })});
+  const body = await res.json();
+  if (!res.ok) throw new Error(body?.error?.message ?? `HTTP ${res.status}`);
+  const text = body?.candidates?.[0]?.content?.parts?.[0]?.text;
+  if (!text) throw new Error('empty response text');
+  const u = body.usageMetadata ?? {};
+  return { text, input: u.promptTokenCount ?? 0,
+           output: (u.candidatesTokenCount ?? 0) + (u.thoughtsTokenCount ?? 0) };
+}
+
+async function callClaude(model, key, b64, mime) {
+  const res = await fetchWithin('https://api.anthropic.com/v1/messages',
+    { method:'POST',
+      headers:{'Content-Type':'application/json','x-api-key':key,
+        'anthropic-version':'2023-06-01',
+        // Without this the API refuses a browser origin outright.
+        'anthropic-dangerous-direct-browser-access':'true'},
+      body: JSON.stringify({ model: model.model, max_tokens: 4000,
+        messages:[{role:'user',content:[
+          {type:'image',source:{type:'base64',media_type:mime,data:b64}},
+          {type:'text',text:PROMPT}]}]})});
+  const body = await res.json();
+  if (!res.ok) throw new Error(body?.error?.message ?? `HTTP ${res.status}`);
+  const text = body?.content?.[0]?.text;
+  if (!text) throw new Error('no text in the first content part');
+  return { text, input: body.usage?.input_tokens ?? 0, output: body.usage?.output_tokens ?? 0 };
+}
+
+/** Claude sometimes fences JSON despite the prompt forbidding it — same strip as the backend. */
+function stripFences(t) {
+  const s = t.trim();
+  if (!s.startsWith('```')) return s;
+  return s.replace(/^```(?:json)?\s*/,'').replace(/\s*```$/,'').trim();
+}
+
+// --- page ------------------------------------------------------------------
+const $ = (id) => document.getElementById(id);
+let image = null; // {b64, mime, name}
+
+MODELS.forEach((m, i) => {
+  const o = document.createElement('option');
+  o.value = i; o.textContent = `${m.name}  ·  ${m.vendor}`;
+  $('model').appendChild(o);
+});
+
+function currentModel() { return MODELS[+$('model').value]; }
+function keyStorageId() { return `intempo.key.${currentModel().vendor}`; }
+
+function syncVendor() {
+  const m = currentModel();
+  $('key').value = localStorage.getItem(keyStorageId()) ?? '';
+  $('keyhint').textContent = m.vendor === 'google'
+    ? 'A Google AI Studio key — aistudio.google.com/apikey'
+    : 'An Anthropic key — console.anthropic.com, starts sk-ant-';
+  $('host').textContent = m.vendor === 'google'
+    ? 'generativelanguage.googleapis.com' : 'api.anthropic.com';
+  refresh();
+}
+$('model').addEventListener('change', syncVendor);
+$('key').addEventListener('input', () => {
+  try { localStorage.setItem(keyStorageId(), $('key').value.trim()); } catch (e) { /* private window */ }
+  refresh();
+});
+
+function refresh() { $('go').disabled = !(image && $('key').value.trim()); }
+
+function accept(file) {
+  if (!file || !file.type.startsWith('image/')) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    const url = reader.result;
+    image = { b64: String(url).split(',')[1], mime: file.type, name: file.name };
+    $('drop').innerHTML = `<img src="${url}" alt="the page you chose">
+      <div style="margin-top:10px;font-size:12.5px;color:var(--faint)">${file.name} — click to replace</div>`;
+    refresh();
+  };
+  reader.readAsDataURL(file);
+}
+$('drop').addEventListener('click', () => $('file').click());
+$('drop').addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $('file').click(); } });
+$('file').addEventListener('change', (e) => accept(e.target.files[0]));
+['dragenter','dragover'].forEach(t => $('drop').addEventListener(t, (e) => { e.preventDefault(); $('drop').classList.add('over'); }));
+['dragleave','drop'].forEach(t => $('drop').addEventListener(t, (e) => { e.preventDefault(); $('drop').classList.remove('over'); }));
+$('drop').addEventListener('drop', (e) => accept(e.dataTransfer.files[0]));
+
+const TAG = {ok:'t-ok',short:'t-bad',long:'t-bad',empty:'t-bad',pickup:'t-neutral',unverifiable:'t-neutral'};
+const esc = (s) => String(s).replace(/[<&>]/g, (c) => ({'<':'&lt;','&':'&amp;','>':'&gt;'}[c]));
+
+$('go').addEventListener('click', async () => {
+  const model = currentModel(), key = $('key').value.trim();
+  $('go').disabled = true;
+  $('status').innerHTML = '<span class="spin"></span>reading the page…';
+  $('out').innerHTML = '';
+  const started = performance.now();
+  // A clock rather than a bare spinner: these calls take 7-29s legitimately,
+  // so "still going" and "hung" are indistinguishable without one.
+  const tick = setInterval(() => {
+    $('status').innerHTML = `<span class="spin"></span>reading the page… `
+      + `${Math.round((performance.now() - started) / 1000)}s`;
+  }, 1000);
+  try {
+    const call = model.vendor === 'google' ? callGemini : callClaude;
+    const { text, input, output } = await call(model, key, image.b64, image.mime);
+    const ms = Math.round(performance.now() - started);
+    const cost = (input * model.input_price + output * model.output_price) / 1e6;
+
+    let score;
+    try { score = JSON.parse(stripFences(text)); }
+    catch (e) {
+      $('out').innerHTML = `<div class="said err"><b>The model did not return usable JSON.</b><br>${esc(e.message)}</div>
+        <details style="margin-top:16px" open><summary>What it said</summary><pre>${esc(text)}</pre></details>`;
+      return;
+    }
+
+    const findings = validateMeasures(score);
+    const bad = findings.filter(f => f.is_problem);
+    const meter = findings[0]?.expected_beats ?? null;
+    const meterText = !findings.length ? 'no measures came back'
+      : meter === null ? 'meter unknown, and the music does not agree on one'
+      : findings[0].meter_inferred ? `${meter} beats per measure — inferred from the music`
+      : `${meter} beats per measure — from the header (${esc(score.time_signature)})`;
+
+    const rows = findings.map(f => {
+      const pct = meter ? Math.min(100, (f.actual_beats / meter) * 100) : 0;
+      const colour = f.is_problem ? 'var(--bad)' : f.verdict === 'ok' ? 'var(--ok)' : 'var(--neutral)';
+      return `<tr><td class="num">${f.measure_number}</td>
+        <td class="num">${f.actual_beats}${meter !== null ? ` / ${meter}` : ''}</td>
+        <td style="width:32%"><div class="bar"><span style="width:${pct}%;background:${colour}"></span></div></td>
+        <td class="num">${f.note_count}</td>
+        <td><span class="tag ${TAG[f.verdict]}">${f.verdict}</span></td></tr>`;
+    }).join('');
+
+    const noteCount = findings.reduce((t, f) => t + f.note_count, 0);
+    $('out').innerHTML = `
+      <div class="verdict">
+        <span class="headline">${!findings.length ? 'Nothing was transcribed'
+          : bad.length === 0 ? 'Every measure adds up'
+          : `${bad.length} measure${bad.length > 1 ? 's don’t' : ' doesn’t'} add up`}</span>
+        <span class="meterline">${meterText}</span>
+      </div>
+      <div class="stats" style="margin-top:18px">
+        <div><b>Confidence</b>${score.ocr_confidence ?? '—'} <span style="color:var(--faint)">self-reported</span></div>
+        <div><b>Measures</b>${findings.length}</div>
+        <div><b>Notes</b>${noteCount}</div>
+        <div><b>Key</b>${esc(score.key_signature ?? '—')}</div>
+        <div><b>Latency</b>${(ms / 1000).toFixed(1)}s</div>
+        <div><b>Cost</b>$${cost.toFixed(4)}</div>
+      </div>
+      ${score.notes_to_human ? `<div class="said" style="margin-top:20px"><b>What it flagged:</b> ${esc(score.notes_to_human)}</div>` : ''}
+      ${findings.length ? `<h2 style="margin-top:26px">Measure by measure</h2>
+        <div class="scroll"><table><thead><tr><th>Measure</th><th>Beats</th><th></th>
+        <th>Notes</th><th>Verdict</th></tr></thead><tbody>${rows}</tbody></table></div>` : ''}
+      <details style="margin-top:26px"><summary>The transcription it returned</summary>
+        <pre>${esc(JSON.stringify(score, null, 2))}</pre></details>`;
+  } catch (e) {
+    const hint = /Failed to fetch/i.test(e.message)
+      ? ' — the request never left the browser. Usually a wrong key, or a network block.'
+      : '';
+    $('out').innerHTML = `<div class="said err"><b>That didn’t work.</b><br>${esc(e.message)}${hint}</div>`;
+  } finally {
+    clearInterval(tick);
+    $('status').textContent = '';
+    refresh();
+  }
+});
+
+syncVendor();
+</script>

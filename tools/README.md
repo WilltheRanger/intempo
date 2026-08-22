@@ -2,6 +2,26 @@
 
 Things you run by hand, not part of the app or the API.
 
+## `build-scan-bench.py`
+
+```sh
+cd backend && uv run python ../tools/build-scan-bench.py
+```
+
+Builds `scan-bench.html` — one file, no server, no install. Open it, paste an
+API key, drop in a photograph of sheet music, and see what the pipeline reads
+off it, with the beat-sum check already applied.
+
+**The prompt and the model registry are read out of the backend**, not copied
+by hand: `app/prompts/ocr_prompt.txt` and the provider registries. A bench that
+asks a different question than production answers a question nobody has, so if
+the prompt changes or a model is repriced, the bench changes on the next build.
+
+The key goes straight from the browser to Google or Anthropic — there is no
+server here to send it anywhere else — and is kept in `localStorage` so it need
+not be retyped. Calls cost real money: about $0.005 a page on Flash, $0.03 on
+Sonnet.
+
 ## `build-validator-sandbox.py`
 
 ```sh
