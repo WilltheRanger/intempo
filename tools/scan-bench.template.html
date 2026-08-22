@@ -247,7 +247,7 @@
       <label class="opt"><input type="checkbox" id="optRepair">
         <span>Repair the bad measures <em>(stage 5)</em></span></label>
       <label class="opt"><input type="checkbox" id="optThink">
-        <span>Let Gemini think <em>(off in production)</em></span></label>
+        <span>Let the model think <em>(off in production)</em></span></label>
     </div>
     <p class="hint">Each read is a separate billed request, so two reads cost twice and a
       repair pass costs once more. Stage 1 and the capture gate are free — they run here.</p>
@@ -1062,6 +1062,20 @@ function scoreAgainstTruth(score, truth) {
 
 // --- providers -------------------------------------------------------------
 /**
+ * Running out of room mid-answer, said in those words.
+ *
+ * This is the failure that made Claude look broken. The two callers were not
+ * symmetric — Gemini got 16000 output tokens and Claude 4000 — so a dense page
+ * transcribed fine on one and returned JSON cut off mid-array on the other. All
+ * the user saw was a parse error about an unexpected end of input, which points
+ * at the bench rather than at the ceiling that actually caused it. Both are on
+ * 16000 now, and if it happens again it says so.
+ */
+const TRUNCATED = 'the answer ran past the output limit and arrived cut in half — '
+  + 'the page is too dense for one read. Crop to a single staff, or turn on the pitch grid, '
+  + 'which reads a few measures at a time.';
+
+/**
  * Read a Server-Sent Events body as it arrives.
  *
  * Both providers stream the same way and neither SDK is available here — the
@@ -1111,7 +1125,7 @@ async function callGeminiStream(model, key, b64, mime, extra, think, on) {
     const body = await res.json().catch(() => null);
     throw new Error(body?.error?.message ?? `HTTP ${res.status}`);
   }
-  let text = '', input = 0, output = 0;
+  let text = '', input = 0, output = 0, finish = null;
   for await (const chunk of sse(res)) {
     if (chunk.error) throw new Error(chunk.error.message ?? 'stream error');
     for (const part of chunk?.candidates?.[0]?.content?.parts ?? []) {
@@ -1119,10 +1133,14 @@ async function callGeminiStream(model, key, b64, mime, extra, think, on) {
       if (part.thought) on?.thinking?.(part.text);
       else { text += part.text; on?.text?.(part.text); }
     }
+    const fin = chunk?.candidates?.[0]?.finishReason;
+    if (fin && fin !== 'STOP') finish = fin;
     const u = chunk.usageMetadata;
     if (u) { input = u.promptTokenCount ?? input;
              output = (u.candidatesTokenCount ?? 0) + (u.thoughtsTokenCount ?? 0) || output; }
   }
+  if (finish === 'MAX_TOKENS') throw new Error(TRUNCATED);
+  if (finish) throw new Error(`the model stopped early: ${finish}`);
   if (!text) throw new Error('the stream carried no answer, only thinking');
   return { text, input, output };
 }
@@ -1150,7 +1168,7 @@ async function callClaudeStream(model, key, b64, mime, extra, think, on) {
     const body = await res.json().catch(() => null);
     throw new Error(body?.error?.message ?? `HTTP ${res.status}`);
   }
-  let text = '', input = 0, output = 0, blockType = null;
+  let text = '', input = 0, output = 0, blockType = null, stopReason = null;
   for await (const ev of sse(res)) {
     if (ev.type === 'error') throw new Error(ev.error?.message ?? 'stream error');
     if (ev.type === 'message_start') input = ev.message?.usage?.input_tokens ?? 0;
@@ -1164,8 +1182,13 @@ async function callClaudeStream(model, key, b64, mime, extra, think, on) {
         text += d.text ?? ''; on?.text?.(d.text ?? '');
       }
     }
-    if (ev.type === 'message_delta') output = ev.usage?.output_tokens ?? output;
+    if (ev.type === 'message_delta') {
+      output = ev.usage?.output_tokens ?? output;
+      stopReason = ev.delta?.stop_reason ?? stopReason;
+    }
   }
+  if (stopReason === 'max_tokens') throw new Error(TRUNCATED);
+  if (stopReason === 'refusal') throw new Error('the model declined to answer this request');
   if (!text) throw new Error('the stream carried no answer, only thinking');
   return { text, input, output };
 }
