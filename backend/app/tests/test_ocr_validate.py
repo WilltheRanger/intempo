@@ -12,6 +12,8 @@ import pytest
 
 from app.services.ocr.validate import (
     MIN_AGREEMENT,
+    describe_numbering,
+    numbering_gaps,
     beats_per_measure,
     describe_for_retry,
     infer_beats_per_measure,
@@ -214,3 +216,64 @@ def test_retry_text_offers_the_tuplet_escape() -> None:
 
 def test_a_clean_score_asks_for_no_retry() -> None:
     assert describe_for_retry(validate_measures(_score([QUARTERS] * 3))) == ""
+
+
+# --- measure numbering -----------------------------------------------------
+#
+# From a real photograph: a boxed rehearsal mark reading 49 came back as
+# measure 409, which inserted an empty measure and renumbered the whole line.
+# The prompt now names that case; this is what catches it when the prompt is
+# not enough.
+
+
+def _numbered(numbers: list[int]) -> ScoreJson:
+    score = _score([QUARTERS] * len(numbers))
+    return ScoreJson.model_validate(
+        {
+            **score.model_dump(),
+            "measures": [
+                {**m.model_dump(), "measure_number": n}
+                for m, n in zip(score.measures, numbers, strict=True)
+            ],
+        }
+    )
+
+
+def test_sequential_numbering_has_no_gaps() -> None:
+    assert numbering_gaps(_numbered([1, 2, 3, 4])) == []
+
+
+def test_a_jump_is_reported_with_how_many_are_missing() -> None:
+    gaps = numbering_gaps(_numbered([409, 414, 415]))
+    assert len(gaps) == 1
+    assert gaps[0].missing == 4
+    assert "409" in gaps[0].describe() and "414" in gaps[0].describe()
+
+
+def test_several_jumps_are_all_reported() -> None:
+    assert len(numbering_gaps(_numbered([1, 2, 7, 8, 20]))) == 2
+
+
+def test_numbers_going_backwards_count_as_a_gap() -> None:
+    """Not only skips — any non-consecutive step means the numbering is wrong."""
+    assert numbering_gaps(_numbered([5, 4, 3])) != []
+
+
+def test_a_score_that_starts_high_but_runs_on_is_fine() -> None:
+    """The complaint is about jumps, not about where the numbering starts.
+
+    A prompt asking for numbering from 1 does not make 409, 410, 411 evidence
+    of a misread page — it makes it evidence of an ignored instruction, which
+    is a different and much weaker signal.
+    """
+    assert numbering_gaps(_numbered([409, 410, 411])) == []
+
+
+def test_the_numbering_complaint_names_the_fix() -> None:
+    text = describe_numbering(numbering_gaps(_numbered([409, 414])))
+    assert "sequentially from 1" in text
+    assert "rehearsal" in text
+
+
+def test_no_complaint_when_the_numbering_is_sound() -> None:
+    assert describe_numbering(numbering_gaps(_numbered([1, 2, 3]))) == ""
