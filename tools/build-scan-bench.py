@@ -24,6 +24,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 TEMPLATE = ROOT / "tools" / "scan-bench.template.html"
 OUTPUT = ROOT / "tools" / "scan-bench.html"
+STAFF_GRID = ROOT / "tools" / "staffgrid.js"
+STAFF_GRID_PLACEHOLDER = "/* __STAFFGRID__ */"
 
 
 def main() -> int:
@@ -63,10 +65,23 @@ def main() -> int:
             return 1
         html = html.replace(placeholder, json.dumps(value))
 
+    # The staff reader is a real source file rather than a string in the
+    # template, so it can be syntax-checked, diffed and driven from a test
+    # harness. It is inlined here because the bench has to stay one file.
+    if STAFF_GRID_PLACEHOLDER not in html:
+        print(f"template has no {STAFF_GRID_PLACEHOLDER} placeholder", file=sys.stderr)
+        return 1
+    staff_grid = STAFF_GRID.read_text()
+    if "</script" in staff_grid:
+        print("staffgrid.js contains </script and would close the tag early", file=sys.stderr)
+        return 1
+    html = html.replace(STAFF_GRID_PLACEHOLDER, staff_grid)
+
     OUTPUT.write_text(html)
     print(
         f"{OUTPUT.relative_to(ROOT)}  —  {len(models)} models, "
-        f"prompt {len(PROMPT)} chars, {OUTPUT.stat().st_size / 1024:.0f} KB"
+        f"prompt {len(PROMPT)} chars, staff reader {len(staff_grid) / 1024:.0f} KB, "
+        f"{OUTPUT.stat().st_size / 1024:.0f} KB"
     )
     return 0
 
