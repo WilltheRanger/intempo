@@ -205,6 +205,11 @@
           <option value="alto">alto</option>
           <option value="tenor">tenor</option>
         </select></label>
+      <p class="hint" id="gridUnavailable" hidden style="flex-basis:100%;margin:0">
+        The pitch grid is off because this browser cannot open a HEIC, and it has to measure
+        the staff in the image to draw one. Open the bench in Safari, or set the iPhone to
+        Settings&nbsp;→&nbsp;Camera&nbsp;→&nbsp;Formats&nbsp;→&nbsp;Most&nbsp;Compatible so it
+        shoots JPEG. The other stages still run.</p>
       <label class="opt"><input type="checkbox" id="optRepair">
         <span>Repair the bad measures <em>(stage 5)</em></span></label>
       <label class="opt"><input type="checkbox" id="optThink">
@@ -1145,12 +1150,30 @@ async function prepare() {
       + `<div style="margin-top:10px;font-size:12.5px;color:var(--faint)">`
       + `${esc(chosen.name)} — ${size} KB${prepared.note ? `, ${esc(prepared.note)}` : ''}`
       + ` — click to replace</div>`;
+    syncGridAvailability();
   } catch (e) {
     $('drop').innerHTML = `<div style="color:var(--bad);font-weight:500">${esc(e.message)}</div>
       <div style="margin-top:10px;font-size:12.5px;color:var(--faint)">${esc(chosen.name)} — click to replace</div>`;
   }
   refresh();
 }
+/**
+ * Stage 1b needs pixels, so take the option away when there are none.
+ *
+ * Leaving it tickable meant the only signal was a refusal after the button was
+ * pressed — a fair error message arriving one step too late, on the file this
+ * bench most exists to read. A control that cannot work should look like one.
+ */
+function syncGridAvailability() {
+  const box = $('optGrid');
+  const dead = !!prepared && prepared.mime === 'image/heic';
+  box.disabled = dead;
+  if (dead) box.checked = false;
+  const note = $('gridUnavailable');
+  note.hidden = !dead;
+  $('gridClef').disabled = dead;
+}
+
 $('drop').addEventListener('click', () => $('file').click());
 $('drop').addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $('file').click(); } });
 $('file').addEventListener('change', (e) => accept(e.target.files[0]));
@@ -1261,16 +1284,33 @@ $('go').addEventListener('click', async () => {
 
   try {
     // --- stage 0 + 1 -----------------------------------------------------
+    //
+    // Every free stage here needs real pixels, and on a HEIC outside Safari
+    // there are none: `normalise` falls back to shipping the file untouched
+    // because Gemini reads the format, but this browser still cannot open it.
+    // That used to abort the whole run with the browser's own "source image
+    // could not be decoded", before a single request was sent — the one file
+    // this bench most exists to read, refused by the part of it that costs
+    // nothing. The stages that need pixels now stand down and say why.
     stage = 'checking the photograph';
-    const bmp = await createImageBitmap(prepared.blob);
-    const base = document.createElement('canvas');
-    base.width = bmp.width; base.height = bmp.height;
-    base.getContext('2d').drawImage(bmp, 0, 0); bmp.close?.();
+    let base = null;
+    try {
+      const bmp = await createImageBitmap(prepared.blob);
+      base = document.createElement('canvas');
+      base.width = bmp.width; base.height = bmp.height;
+      base.getContext('2d').drawImage(bmp, 0, 0); bmp.close?.();
+    } catch {
+      base = null;
+    }
+    const undecodable = base === null
+      ? 'this browser cannot open a HEIC — open the bench in Safari, or set the '
+        + 'iPhone to Settings → Camera → Formats → Most Compatible so it shoots JPEG'
+      : null;
 
-    const gate = captureGate(base);
-    const skew = findSkew(base);
+    const gate = base ? captureGate(base) : null;
+    const skew = base ? findSkew(base) : null;
     let sendCanvas = base, preNote = 'not applied';
-    if (doPre && !doGrid) {
+    if (doPre && !doGrid && base) {
       stage = 'deskewing and binarizing';
       sendCanvas = preprocess(base, skew.angle);
       preNote = `deskewed ${skew.angle}°, binarized against a local mean`;
@@ -1278,16 +1318,24 @@ $('go').addEventListener('click', async () => {
       // Stage 1b deskews from its own measurement of the staff and needs the
       // grey photograph to do it. Binarizing first would hand it a mask.
       preNote = 'skipped — stage 1b deskews from the staff itself';
+    } else if (doPre && !base) {
+      preNote = `skipped — ${undecodable}`;
     }
 
     // --- stage 1b --------------------------------------------------------
     let gridInfo = null, slices = null, sliceReads = [];
     if (doGrid) {
+      // Refuse here rather than quietly reading the page the ordinary way. The
+      // whole point of ticking this box is the annotated slices; a run that
+      // silently produced something else would be answering a question nobody
+      // asked, and billing for it.
+      if (undecodable) throw new Error(
+        `The pitch grid has to measure the staff in the image, and ${undecodable}.`);
       stage = 'finding the staff';
       const source = await fullResCanvas(chosen, crop, 4200);
       const sourceB64 = await toBase64(await new Promise(r => source.toBlob(r, 'image/png')));
       gridInfo = await staffGrid(sourceB64, {});
-          // The pitch labels are only right for the clef they were drawn for, and
+      // The pitch labels are only right for the clef they were drawn for, and
       // nothing on the page tells the drawing code which one it is — the clef
       // sign is what the model is being asked to read. So it is asked here
       // instead, where a wrong answer is one click to fix rather than a silent
@@ -1311,12 +1359,14 @@ $('go').addEventListener('click', async () => {
       // construction wherever a seam falls.
       second = null;
     } else {
-      sendBlob = await new Promise(r => sendCanvas.toBlob(r, 'image/jpeg', 0.92));
+      sendBlob = sendCanvas
+        ? await new Promise(r => sendCanvas.toBlob(r, 'image/jpeg', 0.92))
+        : prepared.blob;
       stage = twoReads ? 'reading it twice' : 'reading the page';
-      first = await readOnce(sendBlob, 'image/jpeg');
+      first = await readOnce(sendBlob, sendCanvas ? 'image/jpeg' : prepared.mime);
       if (twoReads) {
         stage = 'second read';
-        second = await readOnce(sendBlob, 'image/jpeg');
+        second = await readOnce(sendBlob, sendCanvas ? 'image/jpeg' : prepared.mime);
       }
     }
 
@@ -1344,7 +1394,7 @@ $('go').addEventListener('click', async () => {
         + 'measure is a tuplet, leave it and say so in notes_to_human.\n\nPrevious transcription:\n'
         + JSON.stringify(first);
       try {
-        repaired = await readOnce(sendBlob, 'image/jpeg', note);
+        repaired = await readOnce(sendBlob, sendCanvas ? 'image/jpeg' : prepared.mime, note);
         ({ rows, ca } = agree(repaired, second));
       } catch (e) { repaired = { __error: String(e.message) }; }
     }
@@ -1398,13 +1448,15 @@ $('go').addEventListener('click', async () => {
       </div>
 
       <div class="stage"><h3>Stage 0 — capture gate <em>free</em></h3>
-        <div class="gate">
+        ${!gate ? `<p class="hint">Stood down — ${esc(undecodable)}. Sharpness, glare and skew
+          are all measured on the pixels, and there are none here. The read below went ahead:
+          Gemini opens the format even though the browser cannot.</p>` : `<div class="gate">
           <div><b>Sharpness</b><span class="${gate.sharpnessOk?'g-ok':'g-warn'}">${gate.sharpness}</span>
             ${gate.sharpnessOk?'':' — soft, consider retaking'}</div>
           <div><b>Glare</b><span class="${gate.glareOk?'g-ok':'g-warn'}">${gate.glare}%</span>
             ${gate.glareOk?'':' — blown highlights'}</div>
           <div><b>Skew</b>${skew.angle}° <span style="color:var(--faint)">(×${skew.gain} sharper flat)</span></div>
-        </div></div>
+        </div>`}</div>
 
       ${gridInfo ? `<div class="stage"><h3>Stage 1b — staff grid
           <em>${slices.length} slice${slices.length>1?'s':''} · ${esc($('gridClef').value)} clef</em></h3>
