@@ -58,6 +58,10 @@
           letter-spacing:.07em;text-transform:uppercase;color:var(--faint)}
   .g-ok{color:var(--ok)} .g-warn{color:var(--bad)}
   .stage{margin-top:26px}
+  .slices{display:flex;flex-direction:column;gap:14px;margin-top:14px}
+  .slices figure{margin:0}
+  .slices img{width:100%;display:block;border:1px solid var(--rule)}
+  .slices figcaption{font-family:var(--mono);font-size:11px;color:var(--faint);margin-top:5px}
   .stage h3{font-size:11.5px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;
             color:var(--faint);margin:0 0 10px;display:flex;gap:10px;align-items:baseline}
   .stage h3 em{font-style:normal;font-family:var(--mono);font-size:11px;color:var(--faint);
@@ -192,6 +196,15 @@
         <span>Deskew &amp; binarize <em>(stage 1)</em></span></label>
       <label class="opt"><input type="checkbox" id="optTwo" checked>
         <span>Two reads, diffed <em>(stage 2 &amp; 4)</em></span></label>
+      <label class="opt"><input type="checkbox" id="optGrid">
+        <span>Pitch grid &amp; zoomed slices <em>(stage 1b · crop to one staff)</em></span></label>
+      <label class="opt"><span>Clef</span>
+        <select id="gridClef">
+          <option value="treble">treble</option>
+          <option value="bass">bass</option>
+          <option value="alto">alto</option>
+          <option value="tenor">tenor</option>
+        </select></label>
       <label class="opt"><input type="checkbox" id="optRepair">
         <span>Repair the bad measures <em>(stage 5)</em></span></label>
       <label class="opt"><input type="checkbox" id="optThink">
@@ -239,7 +252,8 @@
     <br><br>
     Photographs are re-encoded before they are sent: HEIC becomes JPEG, anything over 2000px
     is scaled down, and EXIF rotation is applied to the pixels so a portrait shot doesn’t
-    arrive sideways. A 12-megapixel phone photo goes from about 3&nbsp;MB to 30&nbsp;KB, which
+    arrive sideways. Stage 1b is the exception — it reads the file at full resolution,
+    because it re-renders slices of it and cannot enlarge detail that was already discarded. A 12-megapixel phone photo goes from about 3&nbsp;MB to 30&nbsp;KB, which
     the models would have downsampled anyway and which you would otherwise have been billed
     for. HEIC needs Safari to convert; on Chrome or Firefox it is passed to Gemini as-is,
     which accepts the format — Claude does not.
@@ -255,6 +269,13 @@
 // ---------------------------------------------------------------------------
 const PROMPT = __PROMPT__;
 const MODELS = __MODELS__;
+
+// ---------------------------------------------------------------------------
+// tools/staffgrid.js, inlined by the build. Kept as its own source file so it
+// can be syntax-checked and driven from a harness; inlined because the bench
+// has to remain one file you can open from disk.
+// ---------------------------------------------------------------------------
+/* __STAFFGRID__ */
 
 // A literal port of backend/app/services/ocr/validate.py, held to it by
 // app/tests/test_sandbox_parity.py.
@@ -523,13 +544,20 @@ function numberingGaps(score) {
 //
 //   0 capture gate      built     blur, glare and skew, measured on the image
 //   1 preprocessing     partial   deskew and adaptive binarize, both real.
-//                                 Staff and measure SEGMENTATION IS NOT HERE:
-//                                 a global rotation plus a horizontal
-//                                 projection found 1 of 5 staves on a curled
-//                                 hand-held photo, and a segmenter that works
-//                                 on flat scans and silently mislabels
-//                                 everything else is worse than none. It needs
-//                                 local dewarping, which needs a server.
+//                                 PAGE segmentation is still not here: a global
+//                                 rotation plus a horizontal projection found 1
+//                                 of 5 staves on a curled hand-held photo, and
+//                                 a segmenter that works on flat scans and
+//                                 silently mislabels everything else is worse
+//                                 than none.
+//   1b staff grid       built     on ONE staff, which is why it asks you to
+//                                 crop. Locates the five lines as they actually
+//                                 run across a curved page, prints the pitch of
+//                                 every height on the image, and cuts enlarged
+//                                 overlapping slices with a numbered ruler.
+//                                 Barlines are found by the model reading the
+//                                 ruler, not by image analysis — see the note
+//                                 in staffgrid.js for why that was abandoned.
 //   2 two engines       adapted   not homr and Audiveris — two reads from the
 //                                 models available here, diffed measure by
 //                                 measure. Different engines would be better;
@@ -543,6 +571,85 @@ function numberingGaps(score) {
 //                                 rather than a fresh read.
 //   6 audio cross-check absent    needs a recording; belongs in the app
 // ===========================================================================
+
+/**
+ * Stage 1b. What the model is asked once the page has been annotated.
+ *
+ * Everything here exists to replace a judgement with a reading. A model asked
+ * which line a notehead sits on has to count staff lines in a photograph, and
+ * when it cannot it invents a plausible note rather than admitting it — which
+ * is exactly the failure this whole bench keeps reproducing. The pitch is now
+ * printed beside the note, so the question becomes which label the notehead
+ * lines up with.
+ *
+ * The ruler does the same for position. Asking for pixel coordinates gets a
+ * guess; asking which printed number a barline sits under gets a reading.
+ */
+const TILE_PROMPT = `This image is one slice of a SINGLE staff, enlarged from a photograph, with two things drawn on top of it.
+
+PITCH LABELS run down both edges, one per pitch, each with a faint line across the slice at that height. Blue labels mark the five printed staff lines; red labels mark the spaces between them and the ledger positions above and below. To name a note, find which label its notehead centre lines up with and read it. Do not count staff lines yourself — the answer is printed next to the note.
+
+A NUMBERED RULER runs along the top. Those numbers are absolute positions in the whole staff and mean the same thing in every slice.
+
+Report ONLY measures whose opening AND closing barlines are both visible in this slice. A measure running off either edge is another slice's job — leave it out entirely rather than guessing at its missing half.
+
+For each measure you do report, add two extra fields:
+  "start_tick" — the ruler number its opening barline sits under
+  "end_tick"   — the ruler number its closing barline sits under
+Use one decimal place when a barline falls between two numbers.
+
+Set "measure_number" to null. The tick positions identify the measures; numbering them within a slice would be wrong, because this slice does not start at the beginning of the piece.`;
+
+/**
+ * Stitch the slices back into one transcription.
+ *
+ * The slices overlap on purpose, so the same measure genuinely arrives twice
+ * and one of the two copies has to go. Tick ranges make that a comparison of
+ * positions rather than a comparison of note lists, which matters because the
+ * two reads of an overlapped measure are exactly the ones most likely to
+ * disagree about its contents.
+ */
+function mergeSlices(reads) {
+  const dated = [], undated = [];
+  for (const r of reads) {
+    for (const m of (r.measures ?? [])) {
+      const s = Number(m.start_tick), e = Number(m.end_tick);
+      if (Number.isFinite(s) && Number.isFinite(e) && e > s) dated.push({ m, s, e });
+      else undated.push(m);
+    }
+  }
+  dated.sort((a, b) => a.s - b.s || a.e - b.e);
+  const kept = [];
+  let duplicates = 0;
+  for (const item of dated) {
+    const clash = kept.find(k => {
+      const lap = Math.min(k.e, item.e) - Math.max(k.s, item.s);
+      return lap > 0.5 * Math.min(k.e - k.s, item.e - item.s);
+    });
+    if (clash) { duplicates++; continue; }
+    kept.push(item);
+  }
+  // A field the slices disagree on is decided by count, not by whichever slice
+  // happened to be read first.
+  const vote = (field, fallback) => {
+    const tally = new Map();
+    for (const r of reads) { const v = r[field]; if (v == null) continue;
+      tally.set(v, (tally.get(v) ?? 0) + 1); }
+    let best = fallback, hits = 0;
+    for (const [v, n] of tally) if (n > hits) { best = v; hits = n; }
+    return best;
+  };
+  return {
+    clef: vote('clef', 'treble'),
+    key_signature: vote('key_signature', null),
+    time_signature: vote('time_signature', null),
+    tempo_marking: vote('tempo_marking', null),
+    bpm_hint: vote('bpm_hint', null),
+    measures: kept.map((k, i) => Object.assign({}, k.m, { measure_number: i + 1 })),
+    notes_to_human: reads.map(r => r.notes_to_human).filter(Boolean).join(' '),
+    __slices: { kept: kept.length, duplicates, undated: undated.length },
+  };
+}
 
 /** Stage 0. Is this photograph worth spending a request on? */
 function captureGate(canvas) {
@@ -933,6 +1040,31 @@ async function normalise(file, vendor, crop) {
   }
 }
 
+/**
+ * The chosen file at full resolution, cropped but not shrunk.
+ *
+ * Everything else here goes through `normalise`, which caps the long edge at
+ * 2000px because that is all a model keeps and the rest is billed for nothing.
+ * Stage 1b is the exception: it re-renders slices at about 1450px each, so a
+ * fifth of a 2000px photograph arrives as 400 real pixels stretched to 1450 —
+ * an enlargement of detail that was thrown away one step earlier. Measuring a
+ * staff whose lines are two pixels apart failed for the same reason before the
+ * resolution was put back.
+ */
+async function fullResCanvas(file, box, maxEdge) {
+  const bitmap = await createImageBitmap(file);
+  const sx = Math.round((box?.x ?? 0) * bitmap.width);
+  const sy = Math.round((box?.y ?? 0) * bitmap.height);
+  const sw = Math.round((box?.w ?? 1) * bitmap.width);
+  const sh = Math.round((box?.h ?? 1) * bitmap.height);
+  const scale = Math.min(1, (maxEdge || 4200) / Math.max(sw, sh));
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.round(sw * scale); canvas.height = Math.round(sh * scale);
+  canvas.getContext('2d').drawImage(bitmap, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+  bitmap.close?.();
+  return canvas;
+}
+
 const toBase64 = (blob) => new Promise((resolve, reject) => {
   const r = new FileReader();
   r.onload = () => resolve(String(r.result).split(',')[1]);
@@ -1106,6 +1238,7 @@ const TAG = {ok:'t-ok',short:'t-bad',long:'t-bad',empty:'t-bad',pickup:'t-neutra
 $('go').addEventListener('click', async () => {
   const model = currentModel(), key = $('key').value.trim();
   const twoReads = $('optTwo').checked, doPre = $('optPre').checked, doRepair = $('optRepair').checked;
+  const doGrid = $('optGrid').checked;
   $('go').disabled = true;
   $('out').innerHTML = '';
   const started = performance.now();
@@ -1137,21 +1270,56 @@ $('go').addEventListener('click', async () => {
     const gate = captureGate(base);
     const skew = findSkew(base);
     let sendCanvas = base, preNote = 'not applied';
-    if (doPre) {
+    if (doPre && !doGrid) {
       stage = 'deskewing and binarizing';
       sendCanvas = preprocess(base, skew.angle);
       preNote = `deskewed ${skew.angle}°, binarized against a local mean`;
+    } else if (doPre && doGrid) {
+      // Stage 1b deskews from its own measurement of the staff and needs the
+      // grey photograph to do it. Binarizing first would hand it a mask.
+      preNote = 'skipped — stage 1b deskews from the staff itself';
     }
-    const sendBlob = await new Promise(r => sendCanvas.toBlob(r, 'image/jpeg', 0.92));
+
+    // --- stage 1b --------------------------------------------------------
+    let gridInfo = null, slices = null, sliceReads = [];
+    if (doGrid) {
+      stage = 'finding the staff';
+      const source = await fullResCanvas(chosen, crop, 4200);
+      const sourceB64 = await toBase64(await new Promise(r => source.toBlob(r, 'image/png')));
+      gridInfo = await staffGrid(sourceB64, {});
+          // The pitch labels are only right for the clef they were drawn for, and
+      // nothing on the page tells the drawing code which one it is — the clef
+      // sign is what the model is being asked to read. So it is asked here
+      // instead, where a wrong answer is one click to fix rather than a silent
+      // transposition through every note on the staff.
+      const drawer = staffDraw(gridInfo, { clef: $('gridClef').value });
+      slices = drawer.tiles({ ticksPerTile: 12, overlapTicks: 2 });
+    }
 
     // --- stage 2 ---------------------------------------------------------
-    stage = twoReads ? 'reading it twice' : 'reading the page';
-    const first = await readOnce(sendBlob, 'image/jpeg');
-    let second = null;
-    if (twoReads) {
-      stage = 'second read';
-      second = await readOnce(sendBlob, 'image/jpeg');
+    let first, second = null, sendBlob = null;
+    if (doGrid) {
+      for (let i = 0; i < slices.length; i++) {
+        stage = `reading slice ${i+1} of ${slices.length}`;
+        const blob = await new Promise(r => slices[i].canvas.toBlob(r, 'image/jpeg', 0.92));
+        try { sliceReads.push(await readOnce(blob, 'image/jpeg', TILE_PROMPT)); }
+        catch (e) { sliceReads.push({ __error: String(e.message), measures: [] }); }
+      }
+      first = mergeSlices(sliceReads.filter(r => !r.__error));
+      // Two reads of the same slices would double an already multiplied cost,
+      // and the slices already overlap, so the same measure is read twice by
+      // construction wherever a seam falls.
+      second = null;
+    } else {
+      sendBlob = await new Promise(r => sendCanvas.toBlob(r, 'image/jpeg', 0.92));
+      stage = twoReads ? 'reading it twice' : 'reading the page';
+      first = await readOnce(sendBlob, 'image/jpeg');
+      if (twoReads) {
+        stage = 'second read';
+        second = await readOnce(sendBlob, 'image/jpeg');
+      }
     }
+
 
     // --- stages 3 + 4 ----------------------------------------------------
     let { rows, ca } = agree(first, second);
@@ -1159,7 +1327,13 @@ $('go').addEventListener('click', async () => {
 
     // --- stage 5 ---------------------------------------------------------
     const bad = rows.filter(r => r.status !== 'green');
-    if (doRepair && bad.length) {
+    // Repair re-sends the image with the failing measures named. Under stage 1b
+    // there is no single image holding them — a measure lives in one slice, and
+    // which one is only known after the merge. Rather than send the wrong
+    // picture, the stage sits out. Re-reading just the offending slice is the
+    // obvious next move and is not built yet.
+    const repairSkipped = doRepair && doGrid && bad.length > 0;
+    if (doRepair && !doGrid && bad.length) {
       stage = `repairing ${bad.length} measure(s)`;
       const complaints = bad.map(r => `measure ${r.number} (position ${r.index+1}): ${r.why}`
         + (r.a?.is_problem ? `; ${r.a.describe ? '' : ''}${r.a.actual_beats} of ${r.a.expected_beats} beats` : ''));
@@ -1231,6 +1405,39 @@ $('go').addEventListener('click', async () => {
             ${gate.glareOk?'':' — blown highlights'}</div>
           <div><b>Skew</b>${skew.angle}° <span style="color:var(--faint)">(×${skew.gain} sharper flat)</span></div>
         </div></div>
+
+      ${gridInfo ? `<div class="stage"><h3>Stage 1b — staff grid
+          <em>${slices.length} slice${slices.length>1?'s':''} · ${esc($('gridClef').value)} clef</em></h3>
+        <div class="gate">
+          <div><b>Staff spacing</b>${gridInfo.spacing}px
+            <span style="color:var(--faint)">line ${gridInfo.lineH}, gap ${gridInfo.spaceH}</span></div>
+          <div><b>Skew</b>${gridInfo.skew}°</div>
+          <div><b>Curve left to right</b>${gridInfo.drift}px
+            <span style="color:var(--faint)">what a rotation cannot remove</span></div>
+          <div><b>Fit</b>±${gridInfo.residMedian}px
+            <span style="color:var(--faint)">${gridInfo.kept} of ${gridInfo.of} columns</span></div>
+          <div><b>Read at</b>${gridInfo.W}×${gridInfo.H}
+            <span style="color:var(--faint)">full resolution, not the 2000px send copy</span></div>
+        </div>
+        <div class="slices">${slices.map((t, i) => `<figure>
+            <img src="${t.canvas.toDataURL('image/jpeg', 0.85)}" alt="slice ${i+1}">
+            <figcaption>ticks ${t.tick0}–${t.tick1}${sliceReads[i]?.__error
+              ? ` · <span class="c-red">${esc(sliceReads[i].__error)}</span>`
+              : ` · ${(sliceReads[i]?.measures ?? []).length} measure(s)`}</figcaption>
+          </figure>`).join('')}</div>
+        <p class="hint">Every pitch is printed on the image, so reading a note is reading a
+          label rather than counting lines in a photograph. The ruler numbers let a measure be
+          located without anyone estimating a pixel coordinate.
+          Merged: ${first.__slices.kept} measures kept, ${first.__slices.duplicates} duplicate(s)
+          dropped where slices overlap${first.__slices.undated
+            ? `, ${first.__slices.undated} discarded for having no tick range` : ''}.
+          ${gridInfo.residMedian > gridInfo.spacing * 0.15
+            ? '<b>The grid fit is loose — check a slice before trusting the pitches.</b>' : ''}</p></div>` : ''}
+
+      ${repairSkipped ? `<div class="stage"><h3>Stage 5 — repair <em>sat out</em></h3>
+        <p class="hint">Repair re-sends the picture with the failing measures named, and under
+          stage 1b there is no single picture holding them. Re-reading only the slice a bad
+          measure came from is the right fix and is not built yet.</p></div>` : ''}
 
       <div class="stage"><h3>Stage 1 — preprocessing <em>free · no segmentation</em></h3>
         <p class="hint">${esc(preNote)}. Staff and measure segmentation is not here: a global
