@@ -6,6 +6,86 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-22 (later still) — Showing the pipeline, and what showing it caught
+
+**Branch:** `main`. Owner: "I want to see the whole pipeline… I need to see its
+thinking process, and how it does it sort of how Claude shows."
+
+### What was built
+
+Every stage narrates itself on the page while it runs, with the evidence it
+decided on — run-length histograms behind the staff spacing, staff positions
+behind the curve, the fitted grid drawn back onto the photograph, the ink mask
+before and after line removal, the annotated slices, and the model's own
+reasoning streamed live.
+
+Reads are streamed rather than awaited whole. Gemini gets `thinkingConfig` with
+`includeThoughts`; Claude gets `thinking: {type:'adaptive', display:'summarized'}`.
+Both flags matter: without `includeThoughts`, and without `display` on Opus 4.7
+where the default is `omitted`, the model reasons, you are billed, and the panel
+stays empty. Claude's answer is now read from the first **text** block rather
+than `content[0]` — which is the thinking block the moment thinking is on.
+
+### ⚠️ Correction to the 2026-08-22 entry below
+
+That entry says the grid "sits on the printed lines end to end". **It did not.**
+It sat over a space off the staff at both ends. The claim came from the
+full-width overlay, where 45px of error across 4027px vanishes when the image
+is scaled to fit a screen. The zoomed slices show it immediately, and the trace
+put them on the page.
+
+`residMedian ±2.19px` was quoted in that entry as evidence of a good fit. It is
+**a vanity metric**: it measures how well the curve agrees with the columns the
+curve itself selected. It stayed at 2.19 while the real error was 70px.
+
+### The bug, and why four "verified" runs missed it
+
+Two causes, both in the deskew:
+
+1. The angle maximised the variance of a sheared projection. The black
+   page-edge bands dominate that projection — they are horizontal, so they pull
+   the peak toward zero. A staff tilted −1.4° measured as **−0.8°**.
+2. It was applied with the **wrong sign**, turning a 93px drop across the page
+   into a 137px one.
+
+The per-column tracking window is under half a space (deliberately — it is what
+stops a column slipping onto a neighbouring line). No column could reach a staff
+137px away, so they all saturated at the window rim and the fit came out flat.
+
+**The deskew is now gone.** It only ever existed so a straight-line model of the
+staff would fit, and this models a curve. In its place: an unconstrained search
+of the full image height at 48 columns — five dark lines separated by four light
+gaps wins by a wide margin on a real photograph, scores of 50–90 against a
+threshold of 18 — then a robust quadratic through those, then per-column
+refinement within half a space of that curve so a line slip stays unreachable.
+
+| | before | after |
+|---|---|---|
+| fit error vs unanchored search | −36 to +70px | within 2px |
+| columns kept | 103 of 310 | 232 of 310 |
+| grid at 2.4× zoom, both ends | over a space off | on the lines |
+
+### The lesson worth keeping
+
+Five of the six defects in this file have now been caught by *rendering
+something and looking at it*, and none by a metric. The metrics were healthy
+throughout — including the one I quoted in a commit message as proof the thing
+worked. A number computed from the same data the model selected cannot falsify
+that model. The trace exists so the evidence is on the page by default rather
+than only when someone thinks to go looking.
+
+### Honest status
+
+- Verified in the **built** bench with the provider stubbed by a real SSE stream,
+  so the live thinking pane is exercised rather than merely constructed.
+- **Still not verified against a real model.** No API key here.
+- The alignment fix is verified two ways: against an unanchored per-column
+  search across the width, and by eye at 2.4× zoom at both ends of the staff.
+- Barline hints, one staff at a time, stage 5 sitting out under 1b — all
+  unchanged and all still true.
+
+---
+
 ## 2026-08-22 (later) — A HEIC killed the run before a request was sent
 
 **Branch:** `main`. Owner hit "That didn't work. The source image could not be
@@ -94,7 +174,11 @@ metrics, which stayed plausible throughout.
 
 Result on the owner's bass part: staff located at 4027×714, spacing 37px,
 skew −0.8°, **8px of curl left to right that no rotation can remove**, fit
-±2.2px median over 336 columns. The grid sits on the printed lines end to end.
+±2.2px median over 336 columns. ~~The grid sits on the printed lines end to
+end.~~ **Struck through — this was wrong.** The grid was over a space off the
+staff at both ends, the deskew was the cause, and `±2.2px` was measuring
+agreement with the columns the fit selected rather than distance to the printed
+staff. See the 2026-08-22 (later still) entry above.
 
 ### Barlines: abandoned as image analysis, on purpose
 

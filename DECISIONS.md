@@ -6,6 +6,57 @@ Operating Principle #5.
 
 ---
 
+## 2026-08-22 — The pipeline shows its evidence by default, not on request
+
+**Context:** the staff reader has now been wrong six times. Every one of those
+versions reported healthy numbers. Five were caught by rendering something and
+looking at it; none was caught by a metric.
+
+The last one is the clearest case. `residMedian ±2.19px` was quoted in a commit
+message as proof the grid fitted, while the grid was actually 70px — nearly two
+staff spaces — off the printed staff at one end. The metric was not lying: it
+measures how well the curve agrees with the columns the curve itself selected.
+It cannot fall, because rejecting the columns that disagree is a step in the
+algorithm. **A number computed from the data a model selected cannot falsify
+that model.**
+
+**Decision: the bench renders the evidence for every stage, inline, as the work
+happens — and the model's reasoning is streamed alongside it.**
+
+**Alternatives considered.**
+
+- *A debug flag.* Evidence you have to opt into is evidence nobody looks at
+  until they already suspect something. Every one of the six defects was found
+  by looking at a picture; in four of those cases I only rendered the picture
+  after a metric had already convinced me the stage was fine.
+- *Better metrics.* Worth having, and one was added — the fit is now checked
+  against an unanchored per-column search rather than against its own inliers.
+  But the reason that check exists is that a picture showed the problem first.
+  Metrics are how a known failure is prevented from returning; they are not how
+  an unknown one is found.
+- *Log to the console.* The evidence here is images. A histogram, an overlay and
+  a mask are the whole point, and the console cannot show them next to the
+  sentence that explains what they are for.
+
+**Why this one.** The bench's purpose is to make a claim about accuracy
+checkable. A run that prints only its conclusion can be believed or disbelieved;
+one that shows its working can be checked. The first time the trace ran it
+caught a bug that four previous "verified" runs had missed — which is the
+argument for it, made without being asked for.
+
+**Trade-offs accepted.**
+
+- Rendering full-resolution masks and overlays inline costs memory and makes the
+  page long. Acceptable: this is a bench, and scrolling past evidence is cheaper
+  than not having it.
+- Streaming needs a hand-written SSE reader for both providers, because the
+  bench is one file with no SDK. About sixty lines, shared between them.
+- Thinking is billed as output. It stays behind a checkbox, off by default,
+  matching the backend — the bench measures that assumption rather than
+  quietly departing from it.
+
+---
+
 ## 2026-08-22 — Barlines are read by the model, not detected by image analysis
 
 **Context:** stage 1b cuts a photographed staff into enlarged per-measure
