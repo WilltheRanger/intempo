@@ -194,9 +194,34 @@
         <span>Two reads, diffed <em>(stage 2 &amp; 4)</em></span></label>
       <label class="opt"><input type="checkbox" id="optRepair">
         <span>Repair the bad measures <em>(stage 5)</em></span></label>
+      <label class="opt"><input type="checkbox" id="optThink">
+        <span>Let Gemini think <em>(off in production)</em></span></label>
     </div>
     <p class="hint">Each read is a separate billed request, so two reads cost twice and a
       repair pass costs once more. Stage 1 and the capture gate are free — they run here.</p>
+    <p class="hint"><b style="color:var(--ink)">Thinking is off by default</b> because
+      <code>gemini_provider.py</code> turns it off, on the reasoning that “for OCR we don’t need
+      internal reasoning.” That is worth testing rather than assuming — reading dense notation
+      may be exactly where reasoning earns its cost, and it is the one setting that differs most
+      between Flash, where it was tuned, and Pro, where it was not. Thinking tokens are billed as
+      output.</p>
+  </section>
+
+  <section>
+    <h2>Ground truth <span style="text-transform:none;letter-spacing:0;font-weight:400">— optional, and the only way to know</span></h2>
+    <p class="hint">Type the rhythm of what is actually on the page and every read gets scored
+      against it. <b style="color:var(--ink)">Rhythm only</b> — the analysis reads
+      <code>note.pitch</code> in exactly one place, to ask whether a note is a rest, and builds
+      its whole timeline from durations. So this is about half the typing of a real
+      transcription and covers everything the product consumes.</p>
+    <p class="hint"><code>w h q e s t</code> = whole, half, quarter, eighth, sixteenth,
+      thirty-second. Add <code>.</code> to dot it, <code>r</code> to make it a rest.
+      Separate measures with <code>|</code>. So a bar of four quarters then two halves is
+      <code>q q q q | h h</code>, and a dotted quarter, eighth and quarter rest is
+      <code>q. e qr</code>.</p>
+    <textarea id="truth" spellcheck="false" placeholder="q q q q | e e e e q q | h. qr"
+      aria-label="The rhythm actually on the page" style="min-height:80px"></textarea>
+    <p class="hint" id="truthnote"></p>
   </section>
 
   <div class="row">
@@ -683,8 +708,103 @@ function agree(a, b) {
   return { rows, ca, cb };
 }
 
+// ===========================================================================
+// Ground truth, and what to do with it
+//
+// The bake-off measured schema-validity, self-reported confidence, latency and
+// cost — never whether the notes were right, because nothing in the repo says
+// what right is. So "it makes things up" stays an impression, and every prompt
+// or model change after it is guesswork.
+//
+// The way out is cheaper than it looks. `alignment.py` reads `note.pitch` in
+// exactly one place — `is_rest = note.pitch === 'rest'` — and builds its whole
+// expected timeline from durations. So a ground truth that covers what the
+// product actually consumes is **rhythm only**: roughly half the values of a
+// full transcription, and none of the pitch-naming that makes transcription
+// slow.
+// ===========================================================================
+
+//: Shorthand a musician can type faster than they can think about it.
+//: `w h q e s t` for whole, half, quarter, eighth, sixteenth, thirty-second;
+//: a trailing `.` dots it; a trailing `r` makes it a rest. Measures split on
+//: `|`, notes on whitespace.
+const SHORTHAND = { w:'whole', h:'half', q:'quarter', e:'eighth', s:'sixteenth', t:'thirty_second' };
+
+function parseRhythm(text) {
+  const measures = [], errors = [];
+  text.split('|').forEach((bar, bi) => {
+    const tokens = bar.trim().split(/\s+/).filter(Boolean);
+    if (!tokens.length) return;
+    const notes = [];
+    for (const tok of tokens) {
+      const m = /^([whqest])(\.?)(r?)$/i.exec(tok);
+      if (!m) { errors.push(`measure ${bi+1}: "${tok}" is not a duration`); continue; }
+      const base = SHORTHAND[m[1].toLowerCase()];
+      const duration = m[2] ? `dotted_${base}` : base;
+      if (!(duration in DURATION_BEATS)) {
+        errors.push(`measure ${bi+1}: "${tok}" — ${duration} is not in the schema`);
+        continue;
+      }
+      notes.push({ duration, rest: Boolean(m[3]) });
+    }
+    measures.push(notes);
+  });
+  return { measures, errors };
+}
+
+/** Levenshtein over duration tokens — how many edits turn one bar into another. */
+function editDistance(a, b) {
+  const m = a.length, n = b.length;
+  let prev = Array.from({ length: n + 1 }, (_, j) => j);
+  for (let i = 1; i <= m; i++) {
+    const cur = [i];
+    for (let j = 1; j <= n; j++) {
+      cur[j] = a[i-1] === b[j-1] ? prev[j-1]
+        : 1 + Math.min(prev[j-1], prev[j], cur[j-1]);
+    }
+    prev = cur;
+  }
+  return prev[n];
+}
+
+/**
+ * Score a transcription against what the page actually says.
+ *
+ * Reported as a **note error rate** — edits divided by true notes, the way
+ * speech recognition reports word error rate — because a percentage of
+ * measures "correct" hides how wrong the wrong ones were, and one dropped note
+ * in a measure costs the same as an entirely invented bar under that metric.
+ *
+ * Measures are aligned by position. Aligning by measure number would let a
+ * mis-numbered transcription score well by comparing the wrong bars, and
+ * mis-numbering is one of the failures being measured.
+ */
+function scoreAgainstTruth(score, truth) {
+  const got = (score.measures ?? []).map(m =>
+    (m.notes ?? []).map(n => (String(n.pitch).toLowerCase() === 'rest' ? 'R:' : '') + n.duration));
+  const want = truth.measures.map(m => m.map(n => (n.rest ? 'R:' : '') + n.duration));
+
+  let edits = 0, trueNotes = 0, exact = 0;
+  const rows = [];
+  const n = Math.max(got.length, want.length);
+  for (let i = 0; i < n; i++) {
+    const g = got[i] ?? [], w = want[i] ?? [];
+    const d = editDistance(g, w);
+    edits += d; trueNotes += w.length;
+    if (d === 0 && w.length) exact++;
+    rows.push({ index: i, got: g.length, want: w.length, edits: d,
+      missing: !want[i], extra: !got[i] });
+  }
+  return {
+    rows, edits, trueNotes, exactMeasures: exact,
+    measuresGot: got.length, measuresWant: want.length,
+    noteErrorRate: trueNotes ? +(edits / trueNotes * 100).toFixed(1) : null,
+    measureAccuracy: want.length ? +(exact / want.length * 100).toFixed(0) : null,
+  };
+}
+
 // --- providers -------------------------------------------------------------
-async function callGemini(model, key, b64, mime, extra) {
+async function callGemini(model, key, b64, mime, extra, think) {
   const res = await fetchWithin(
     `https://generativelanguage.googleapis.com/v1beta/models/${model.model}:generateContent`,
     { method:'POST',
@@ -695,8 +815,11 @@ async function callGemini(model, key, b64, mime, extra) {
         // Mirrors GenerateContentConfig in gemini_provider.py: JSON mode, and
         // thinking off — 2.5 bills thinking tokens against the output budget
         // and OCR needs no internal reasoning.
-        generationConfig:{response_mime_type:'application/json',
-          maxOutputTokens:16000, thinkingConfig:{thinkingBudget:0}},
+        generationConfig:{response_mime_type:'application/json', maxOutputTokens:16000,
+          // -1 lets the model decide how much to think; 0 turns it off, which
+          // is what the backend does. Toggled here so the assumption can be
+          // measured rather than inherited.
+          thinkingConfig:{thinkingBudget: think ? -1 : 0}},
       })});
   const body = await res.json();
   if (!res.ok) throw new Error(body?.error?.message ?? `HTTP ${res.status}`);
@@ -994,9 +1117,10 @@ $('go').addEventListener('click', async () => {
   const call = model.vendor === 'google' ? callGemini : callClaude;
   let spent = 0, tokens = 0;
 
+  const think = $('optThink').checked;
   const readOnce = async (blob, mime, extra) => {
     const b64 = await toBase64(blob);
-    const { text, input, output } = await call(model, key, b64, mime, extra);
+    const { text, input, output } = await call(model, key, b64, mime, extra, think);
     spent += (input * model.input_price + output * model.output_price) / 1e6;
     tokens += input + output;
     return JSON.parse(stripFences(text));
@@ -1057,6 +1181,38 @@ $('go').addEventListener('click', async () => {
     rows.forEach(r => counts[r.status]++);
     const ms = Math.round(performance.now() - started);
 
+    // --- scored against the page, if the page was typed in ---------------
+    let truthReport = '';
+    const rawTruth = $('truth').value.trim();
+    if (rawTruth) {
+      const truth = parseRhythm(rawTruth);
+      if (truth.errors.length) {
+        truthReport = `<div class="stage"><h3>Scored against the page</h3>
+          <div class="said err">Could not read the rhythm you typed:
+          ${esc(truth.errors.slice(0,4).join('; '))}</div></div>`;
+      } else {
+        const sc = scoreAgainstTruth(score, truth);
+        const bars = sc.rows.map(r => {
+          const tone = r.edits === 0 && !r.missing && !r.extra ? 'c-green'
+            : r.edits <= 1 ? 'c-amber' : 'c-red';
+          const label = r.missing ? 'extra' : r.extra ? 'missed' : `${r.edits}`;
+          return `<span class="chip ${tone}" title="read ${r.got}, page has ${r.want}">${r.index+1}: ${label}</span>`;
+        }).join('');
+        truthReport = `<div class="stage"><h3>Scored against the page <em>the only number that is not an opinion</em></h3>
+          <div class="gate">
+            <div><b>Note error rate</b><span class="${sc.noteErrorRate <= 5 ? 'g-ok' : 'g-warn'}">${sc.noteErrorRate}%</span>
+              <span style="color:var(--faint)">${sc.edits} edits over ${sc.trueNotes} notes</span></div>
+            <div><b>Measures exact</b>${sc.exactMeasures} of ${sc.measuresWant}
+              <span style="color:var(--faint)">(${sc.measureAccuracy}%)</span></div>
+            <div><b>Measure count</b>${sc.measuresGot} read, ${sc.measuresWant} on the page</div>
+          </div>
+          <div class="rag" style="margin-top:12px">${bars}</div>
+          <p class="hint" style="margin-top:10px">Edits per measure — how many insertions,
+            deletions or substitutions turn the read into the page. Aligned by position, not by
+            measure number, since mis-numbering is one of the things being measured.</p></div>`;
+      }
+    }
+
     const chip = (r) => `<span class="chip c-${r.status}" title="${esc(r.why)}">${r.number}</span>`;
     const line = (label, body) => body ? `<div class="said" style="margin-top:12px"><b>${label}</b> ${body}</div>` : '';
 
@@ -1083,7 +1239,8 @@ $('go').addEventListener('click', async () => {
           than none.</p></div>
 
       <div class="stage"><h3>Stage 2 &amp; 4 — ${second?'two reads, diffed':'one read'}
-        <em>$${spent.toFixed(4)} · ${tokens} tokens · ${(ms/1000).toFixed(1)}s</em></h3>
+        <em>${esc(model.name)}${model.vendor==='google' ? (think?' · thinking on':' · thinking off') : ''}
+        · $${spent.toFixed(4)} · ${tokens} tokens · ${(ms/1000).toFixed(1)}s</em></h3>
         <div class="rag">${rows.map(chip).join('')}</div>
         <p class="hint" style="margin-top:10px">${second
           ? 'Green means both reads agree and every constraint passes. Amber means they agree but something fails, or they differ and both are internally valid. Red means they differ and at least one fails.'
@@ -1102,6 +1259,7 @@ $('go').addEventListener('click', async () => {
         <p class="hint">${repaired.__error ? 'The repair pass failed: ' + esc(repaired.__error)
           : `Sent ${bad.length} measure(s) back with the broken constraint named. The results above are after the repair.`}</p></div>` : ''}
 
+      ${truthReport}
       ${score.notes_to_human ? `<div class="said" style="margin-top:22px"><b>What it flagged:</b> ${esc(score.notes_to_human)}</div>` : ''}
 
       <div class="stage"><h3>What it read <em>${esc(score.clef ?? 'treble')} clef</em></h3>
@@ -1120,6 +1278,19 @@ $('go').addEventListener('click', async () => {
     $('status').textContent = '';
     refresh();
   }
+});
+
+$('truth').addEventListener('input', () => {
+  const raw = $('truth').value.trim();
+  if (!raw) { $('truthnote').textContent = ''; return; }
+  const { measures, errors } = parseRhythm(raw);
+  const notes = measures.reduce((t, m) => t + m.length, 0);
+  const sums = measures.map(m => m.reduce((t, n) => t + DURATION_BEATS[n.duration], 0));
+  const uneven = [...new Set(sums)].length > 1;
+  $('truthnote').innerHTML = errors.length
+    ? `<span style="color:var(--bad)">${esc(errors.slice(0,3).join('; '))}</span>`
+    : `${measures.length} measure(s), ${notes} notes — beats per measure: ${sums.join(', ')}`
+      + (uneven ? ' <span style="color:var(--bad)">— these differ, which is worth a second look at your own typing before you trust the score</span>' : '');
 });
 
 syncVendor();

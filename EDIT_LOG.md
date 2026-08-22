@@ -6,6 +6,74 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-21 05:00 — Scoring against the page, because "it makes things up" is not a number
+
+**Branch:** `main`. Owner: user reports Gemini Pro reading their part badly and
+inventing notes.
+
+Consistent with everything measured so far — and neither of us can say **how**
+badly, which is the problem. The bake-off measured schema-validity,
+self-reported confidence, latency and cost. Nothing in the repository says what
+a correct reading of any fixture is, so every prompt or model change from here
+is guesswork with an opinion attached.
+
+### Ground truth, at half the cost it looks like
+
+`alignment.py` reads `note.pitch` in **exactly one place** —
+`is_rest = note.pitch == "rest"` — and builds its entire expected timeline from
+durations. So a ground truth covering everything the product actually consumes
+is **rhythm only**: roughly half the values of a full transcription and none of
+the pitch-naming that makes transcribing slow.
+
+The bench takes it as shorthand a musician can type faster than they can think
+about it — `w h q e s t`, `.` to dot, `r` for a rest, `|` between measures. A
+bar of four quarters and two halves is `q q q q | h h`. Live feedback while
+typing reports the beats per measure and says so when they differ, since that
+usually means a typo in the truth rather than a finding about the model.
+
+### Reported as a note error rate
+
+Edits over true notes, the way speech recognition reports word error rate,
+because "percent of measures correct" hides how wrong the wrong ones were — one
+dropped note and an entirely invented bar score the same under it.
+
+Measured on synthetic cases:
+
+| read | note error rate | measures exact |
+|---|---|---|
+| identical to the page | **0%** | 3/3 |
+| one dropped eighth | **8.3%** | 2/3 |
+| four bars of quarters, invented | **100%** | 1/3 |
+
+That last row is the case the user is describing, and it is the point of the
+whole exercise: the beat-sum check calls it sound, the model reports 0.9, and
+the note error rate says 100%.
+
+Aligned by position rather than measure number — aligning by number would let a
+mis-numbered transcription score well by comparing the wrong bars, and
+mis-numbering is one of the things being measured.
+
+### A concrete hypothesis about Pro
+
+`gemini_provider.py` sets `thinking_budget=0` with the reasoning *"For OCR we
+don't need internal reasoning."* That was decided for Flash, where the chain was
+tuned, and inherited by Pro, which exists precisely to reason.
+
+Reading dense notation may be the case where reasoning earns its cost, so the
+bench now has a **thinking toggle**, off by default to match production. It is
+one checkbox and one run to find out, and with the scorer above the answer is a
+number rather than an impression.
+
+**Not claimed:** that thinking will help. It is a testable assumption that was
+never tested, on the model where it was never tuned.
+
+**Tests:** 310 passed. Lint clean. Shorthand parser, error rate and the
+thinking toggle all verified in a browser.
+
+**Rollback:** `git revert`.
+
+---
+
 ## 2026-08-21 03:10 — The pipeline, as far as a browser can honestly take it
 
 **Branch:** `main`. Owner: user sent a seven-stage OMR pipeline design and asked
