@@ -6,6 +6,77 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-20 23:30 — The page was five staves and the prompt asks for one
+
+**Branch:** `main`. Owner: user re-ran their page and asked what came back.
+
+### What they photographed
+
+A cello part, bass clef, **five staves on one page**, shot at an angle: bowings,
+rehearsal boxes 49–52, printed measure numbers 409, 414, 419, 423, 429 down the
+left. 4284×5712, 24 megapixels.
+
+The prompt's first line is **"You are reading a single line of sheet music."**
+
+That is the whole story. The model was asked for one line, given five, tried to
+do all of them, and lost its place: measures 11–16 came back visually
+identical, 17–20 identical, several with nothing but stacked ledger lines.
+
+**The previous fix did work.** `notes_to_human` now reads *"Rehearsal mark 49 is
+above measure 3 of the third staff… Rehearsal mark 50 is above measure 5 of the
+fourth staff"* — the marks were identified as marks, not turned into measures,
+and the numbering starts at 1. The 49 → 409 failure is gone. What replaced it
+is a different and larger problem that was always there underneath.
+
+### A hypothesis I checked and dropped
+
+My first thought was resolution: five staves squeezed into a 2000px frame must
+leave each one too small. Arithmetic says otherwise — a crop is scaled to
+2000px on *its* long edge, which for one staff is the width, so cropping buys
+**no vertical detail at all**. Worth writing down because it was convincing and
+wrong, and because the fix that follows is right for a completely different
+reason.
+
+What cropping actually buys: the model is asked to read the thing the prompt
+describes. One staff, not five.
+
+### Cropping
+
+The bench now shows the whole page with a drag-select box. Fractions of the
+source rather than pixels, so the selection means the same thing however the
+preview is sized; a veil dims everything outside it; a stray click under 3% wide
+reads as "I meant the whole page" rather than "I meant a sliver". Verified on
+their actual photograph: the whole page prepares as 1500×2000, and one dragged
+staff as **2000×359** — which also happens to be 1.33× wider, since the crop's
+long edge is now the width.
+
+The copy says why rather than just how: *"One staff at a time is not a
+limitation to work around — it is what the thing is built to do."*
+
+### Reading a HEIC in a container that cannot
+
+Chromium here refuses `image/heic`, so the file could not be examined the way
+the bench would. `pillow-heif` decoded it, and the same PNG then drove the crop
+test. Worth noting that the bench's own HEIC path — pass through to Gemini
+untouched — is what let the user get a result at all from a browser that cannot
+open one.
+
+### An edit that silently did nothing
+
+The markup insertion for the crop stage was the one replacement in that batch I
+did not `assert` on, and its anchor did not match — the file had a comment
+between the lines I was matching. It reported success and changed nothing, and
+the failure surfaced two steps later as a Playwright timeout on a selector that
+had never existed. Every string replacement into a file gets an assert; the one
+that does not is the one that fails.
+
+**Tests:** unchanged — the bench is a tool, not shipped code. 301 backend tests
+still pass.
+
+**Rollback:** `git revert`.
+
+---
+
 ## 2026-08-20 22:15 — A rehearsal mark read as a measure number, and a drawing to catch it with
 
 **Branch:** `main`. Owner: user ran their own page through the scan bench and
