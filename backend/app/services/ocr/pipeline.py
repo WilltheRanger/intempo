@@ -30,6 +30,7 @@ from app.services.ocr.claude_provider import (
     claude_opus_provider,
     claude_sonnet_provider,
 )
+from app.services.ocr.validate import problems as beat_problems
 from app.services.ocr.gemini_provider import (
     gemini_flash_provider,
     gemini_pro_provider,
@@ -97,6 +98,39 @@ def parse_sheet_music(
             response: OCRResponse = provider.parse(image_bytes, mime_type=media_type)
         except (ValidationError, OCRProviderError, ValueError) as exc:
             failures.append(f"{provider.name}: {type(exc).__name__}: {exc}")
+            continue
+
+        # Arithmetic before self-assessment.
+        #
+        # `ocr_confidence` is the model marking its own homework, and the
+        # bake-off shows how little that is worth: on the handwritten fixture
+        # one provider reported 0.90 and the other 0.32 for the same page, and
+        # the confident one is first in the shipped chain — so it clears the
+        # threshold, returns, and the second opinion is never asked for.
+        #
+        # Whether the durations in a measure add up to the time signature is
+        # not an opinion. A transcription that contradicts itself is wrong no
+        # matter how sure the model is, and it is wrong in the way that matters
+        # most: `alignment.py` builds its whole expected timeline from those
+        # durations, so one bad measure desynchronises every measure after it.
+        broken = beat_problems(response.score)
+        if broken:
+            failures.append(
+                f"{provider.name}: {len(broken)} measure(s) do not add up "
+                f"({', '.join(str(f.measure_number) for f in broken)})"
+            )
+            log.info(
+                "%s: transcription does not add up, trying the next provider: %s",
+                provider.name,
+                "; ".join(f.describe() for f in broken),
+            )
+            # Kept as a fallback, exactly like a low-confidence result: a
+            # transcription with a bad measure is still better than none for
+            # the human-correction flow, and refusing outright would make a
+            # single mis-read note lose the whole page.
+            if first_low_confidence is None:
+                first_low_confidence = response.score
+                first_low_confidence_from = provider.name
             continue
 
         if response.score.ocr_confidence >= CONFIDENCE_THRESHOLD:

@@ -196,3 +196,88 @@ def test_unknown_provider_in_chain_raises(monkeypatch: pytest.MonkeyPatch) -> No
     monkeypatch.setattr(pipeline_module.settings, "OCR_PROVIDER_CHAIN", "claude-sonnet-4-6,bogus")
     with pytest.raises(OCRError, match="unknown provider"):
         parse_sheet_music(b"<jpeg>")
+
+
+# ---------------------------------------------------------------------------
+# Beat-sum validation in the chain
+#
+# The point of these is that arithmetic outranks self-assessment. A provider
+# saying 0.95 about a transcription that contradicts itself should not end the
+# search — that is precisely the case the bake-off exposed, where the most
+# confident provider is first in the chain and the second opinion is never
+# reached.
+# ---------------------------------------------------------------------------
+
+
+def _measures(*beat_counts: int) -> list[dict]:
+    """Measures of N quarter notes each, so the sums are obvious to read."""
+    return [
+        {
+            "measure_number": i + 1,
+            "notes": [
+                {"pitch": "A4", "duration": "quarter", "tied_to_next": False}
+                for _ in range(n)
+            ],
+            "slurs": [],
+        }
+        for i, n in enumerate(beat_counts)
+    ]
+
+
+def _scored(conf: float, *beat_counts: int, time_signature: str = "4/4") -> OCRResponse:
+    """`_response` above, with the measures spelled out rather than stubbed."""
+    base = _response("fake", conf)
+    return base.model_copy(
+        update={
+            "score": ScoreJson.model_validate(
+                {
+                    "time_signature": time_signature,
+                    "key_signature": "C major",
+                    "tempo_marking": None,
+                    "bpm_hint": None,
+                    "clef": "treble",
+                    "measures": _measures(*beat_counts),
+                    "repeats": [],
+                    "ocr_confidence": conf,
+                    "notes_to_human": "",
+                }
+            )
+        }
+    )
+
+
+def test_a_confident_transcription_that_does_not_add_up_does_not_win() -> None:
+    """0.95 and a three-beat measure in 4/4 is still wrong."""
+    p1 = _FakeProvider("p1", response=_scored(0.95, 4, 3, 4))
+    p2 = _FakeProvider("p2", response=_scored(0.80, 4, 4, 4))
+    score = parse_sheet_music(b"<jpeg>", providers=[p1, p2])
+    assert score.ocr_confidence == 0.80
+    assert p2.calls == 1, "the second provider must actually be reached"
+
+
+def test_a_sound_transcription_still_short_circuits_the_chain() -> None:
+    """Validation must not make every page pay for every provider."""
+    p1 = _FakeProvider("p1", response=_scored(0.95, 4, 4, 4))
+    p2 = _FakeProvider("p2", response=_scored(0.99, 4, 4, 4))
+    parse_sheet_music(b"<jpeg>", providers=[p1, p2])
+    assert p2.calls == 0
+
+
+def test_a_broken_transcription_is_kept_when_nothing_better_arrives() -> None:
+    """Better than nothing: the correction flow needs something to correct.
+
+    Refusing the page outright would let one mis-read note lose the whole
+    transcription, which is a worse trade than showing it with a flagged
+    measure.
+    """
+    p1 = _FakeProvider("p1", response=_scored(0.95, 4, 3, 4))
+    score = parse_sheet_music(b"<jpeg>", providers=[p1])
+    assert score.ocr_confidence == 0.95
+
+
+def test_an_unreadable_meter_does_not_make_everything_suspect() -> None:
+    """Inference must not turn a coherent score into a pile of failures."""
+    p1 = _FakeProvider("p1", response=_scored(0.9, 2, 2, 2, 2, time_signature="unknown"))
+    p2 = _FakeProvider("p2", response=_scored(0.99, 4, 4, 4))
+    parse_sheet_music(b"<jpeg>", providers=[p1, p2])
+    assert p2.calls == 0, "a self-consistent 2/4 score should have been accepted"
