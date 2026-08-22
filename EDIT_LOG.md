@@ -6,6 +6,44 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-22 (later) — A HEIC killed the run before a request was sent
+
+**Branch:** `main`. Owner hit "That didn't work. The source image could not be
+decoded." on `IMG_1111.HEIC` with stage 1b switched off.
+
+Not caused by the grid work — a pre-existing hole opened when stages 0–5 were
+added. Outside Safari a browser cannot open a HEIC. `normalise` already handled
+that by shipping the file untouched, since Gemini reads the format. But the
+capture gate then called `createImageBitmap` on the raw blob and threw, killing
+the run before a single request. The one file the bench most exists to read,
+refused by the part of it that costs nothing.
+
+**Fixed by letting the pixel-dependent stages stand down** rather than abort:
+stage 0 and stage 1 explain that their measurements need pixels and there are
+none, and the read goes ahead. Stage 1b refuses outright instead — a run that
+silently produced something other than annotated slices would answer a question
+nobody asked and bill for it. The send falls back to the original blob and mime,
+which is what `normalise` had already chosen.
+
+Better, the choice is removed before it can be made: with an undecodable file
+the stage 1b checkbox and clef selector are disabled and a note gives the two
+real fixes — open the bench in Safari, or set the iPhone to
+Settings → Camera → Formats → Most Compatible.
+
+**A note on the verification.** The probe for this reported the fix broken
+twice, and both times the probe was wrong: first it waited on the Run button,
+which was still enabled from the previous file, then on the drop-zone filename,
+which matches the interim "preparing …" placeholder. It now waits for the zone
+to settle. Worth recording because the failure mode was a *green-looking test
+of a red-looking product* — the inverse of the usual one, and the reason to
+check what a probe is actually synchronising on before believing it.
+
+Verified in the built bench: HEIC with grid off completes with stage 0 stood
+down; HEIC with grid on refuses with the actionable message; PNG unaffected;
+switching HEIC → PNG re-enables the option.
+
+---
+
 ## 2026-08-22 — Print the pitch on the page; read it in enlarged slices
 
 **Branch:** `main`. Owner: "even Pro doesn't work… draw the notes on for the
