@@ -48,6 +48,26 @@
   .cropbox{position:absolute;border:1.5px solid var(--gold);background:rgba(154,123,79,.14);
            pointer-events:none}
   .cropveil{position:absolute;inset:0;background:rgba(20,17,14,.45);pointer-events:none}
+  .opt{display:flex;align-items:center;gap:7px;font-size:13px;cursor:pointer;
+       border:1px solid var(--rule);border-radius:8px;padding:8px 12px;background:var(--panel)}
+  .opt input{min-height:0;padding:0;margin:0}
+  .opt em{color:var(--faint);font-style:normal;font-size:11.5px;font-family:var(--mono)}
+  .gate{display:flex;gap:22px;flex-wrap:wrap;font-family:var(--mono);font-size:12.5px;
+        padding:12px 0;border-bottom:1px solid var(--rule);font-variant-numeric:tabular-nums}
+  .gate b{display:block;font-family:var(--sans);font-size:10.5px;font-weight:600;
+          letter-spacing:.07em;text-transform:uppercase;color:var(--faint)}
+  .g-ok{color:var(--ok)} .g-warn{color:var(--bad)}
+  .stage{margin-top:26px}
+  .stage h3{font-size:11.5px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;
+            color:var(--faint);margin:0 0 10px;display:flex;gap:10px;align-items:baseline}
+  .stage h3 em{font-style:normal;font-family:var(--mono);font-size:11px;color:var(--faint);
+               text-transform:none;letter-spacing:0}
+  .rag{display:flex;flex-wrap:wrap;gap:6px}
+  .chip{font-family:var(--mono);font-size:11.5px;padding:5px 9px;border-radius:6px;
+        border:1px solid;font-variant-numeric:tabular-nums}
+  .c-green{color:var(--ok);border-color:var(--ok)}
+  .c-amber{color:var(--gold);border-color:var(--gold)}
+  .c-red{color:var(--bad);border-color:var(--bad)}
   .croprow{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:10px;
            font-size:12.5px;color:var(--faint);font-family:var(--mono)}
   .hint code{font-family:var(--mono)}
@@ -165,8 +185,22 @@
     </div>
   </section>
 
+  <section>
+    <h2>Pipeline</h2>
+    <div class="row">
+      <label class="opt"><input type="checkbox" id="optPre" checked>
+        <span>Deskew &amp; binarize <em>(stage 1)</em></span></label>
+      <label class="opt"><input type="checkbox" id="optTwo" checked>
+        <span>Two reads, diffed <em>(stage 2 &amp; 4)</em></span></label>
+      <label class="opt"><input type="checkbox" id="optRepair">
+        <span>Repair the bad measures <em>(stage 5)</em></span></label>
+    </div>
+    <p class="hint">Each read is a separate billed request, so two reads cost twice and a
+      repair pass costs once more. Stage 1 and the capture gate are free — they run here.</p>
+  </section>
+
   <div class="row">
-    <button class="go" id="go" disabled>Read this page</button>
+    <button class="go" id="go" disabled>Run the pipeline</button>
     <span class="hint" id="status"></span>
   </div>
 
@@ -455,14 +489,209 @@ function numberingGaps(score) {
   return gaps;
 }
 
+// ===========================================================================
+// The pipeline
+//
+// Stages 0-5 of the design, as far as a browser can honestly take them. Where
+// a stage could not be built, it says so rather than shipping a version that
+// works on easy pages and misleads on hard ones.
+//
+//   0 capture gate      built     blur, glare and skew, measured on the image
+//   1 preprocessing     partial   deskew and adaptive binarize, both real.
+//                                 Staff and measure SEGMENTATION IS NOT HERE:
+//                                 a global rotation plus a horizontal
+//                                 projection found 1 of 5 staves on a curled
+//                                 hand-held photo, and a segmenter that works
+//                                 on flat scans and silently mislabels
+//                                 everything else is worse than none. It needs
+//                                 local dewarping, which needs a server.
+//   2 two engines       adapted   not homr and Audiveris — two reads from the
+//                                 models available here, diffed measure by
+//                                 measure. Different engines would be better;
+//                                 two reads still catch a lost place.
+//   3 constraints       built     beat sums, numbering, repetition, pickup and
+//                                 final complement, repeat balance
+//   4 per-measure RAG   built     agreement crossed with constraints
+//   5 targeted repair   adapted   no measure crop, because that needs stage 1.
+//                                 Sends the image with the failing measures and
+//                                 the broken constraint named, asking for a fix
+//                                 rather than a fresh read.
+//   6 audio cross-check absent    needs a recording; belongs in the app
+// ===========================================================================
+
+/** Stage 0. Is this photograph worth spending a request on? */
+function captureGate(canvas) {
+  const { width: W, height: H } = canvas;
+  const d = canvas.getContext('2d', { willReadFrequently: true }).getImageData(0,0,W,H).data;
+  const grey = new Float32Array(W*H);
+  let blown = 0;
+  for (let i = 0; i < W*H; i++) {
+    grey[i] = 0.299*d[i*4] + 0.587*d[i*4+1] + 0.114*d[i*4+2];
+    if (grey[i] > 250) blown++;
+  }
+  // Blur: variance of the Laplacian. A sharp page has strong second
+  // derivatives at every stem and staff line; a soft one does not.
+  let sum = 0, sumSq = 0, n = 0;
+  for (let y = 1; y < H-1; y++) for (let x = 1; x < W-1; x++) {
+    const l = 4*grey[y*W+x] - grey[(y-1)*W+x] - grey[(y+1)*W+x] - grey[y*W+x-1] - grey[y*W+x+1];
+    sum += l; sumSq += l*l; n++;
+  }
+  const lapVar = sumSq/n - (sum/n)**2;
+  return {
+    sharpness: Math.round(lapVar),
+    // Thresholds from measuring this repo's fixtures and the user's photo,
+    // not from a paper. They are a starting point to be tuned, and the numbers
+    // are shown so a bad threshold is visible rather than silent.
+    sharpnessOk: lapVar > 120,
+    glare: +(blown / (W*H) * 100).toFixed(2),
+    glareOk: blown / (W*H) < 0.02,
+  };
+}
+
+/** Stage 0/1. The rotation that makes the staff lines horizontal. */
+function findSkew(canvas, range = 4, coarse = 0.5) {
+  const score = (angle) => {
+    const W = 800, H = Math.round(canvas.height * W / canvas.width);
+    const c = document.createElement('canvas'); c.width = W; c.height = H;
+    const ctx = c.getContext('2d', { willReadFrequently: true });
+    ctx.translate(W/2,H/2); ctx.rotate(angle*Math.PI/180); ctx.translate(-W/2,-H/2);
+    ctx.drawImage(canvas, 0, 0, W, H);
+    const d = ctx.getImageData(0,0,W,H).data;
+    const proj = new Int32Array(H);
+    for (let y = 0; y < H; y++) {
+      let dark = 0;
+      for (let x = 0; x < W; x++) {
+        const g = 0.299*d[(y*W+x)*4] + 0.587*d[(y*W+x)*4+1] + 0.114*d[(y*W+x)*4+2];
+        if (g < 140) dark++;
+      }
+      proj[y] = dark;
+    }
+    // Sharpness, not peak: a deskewed page has tall narrow spikes where the
+    // staff lines are, and variance measures exactly that.
+    const mu = proj.reduce((a,b)=>a+b,0)/H;
+    return proj.reduce((a,b)=>a+(b-mu)*(b-mu),0)/H;
+  };
+  let best = 0, bestScore = -1;
+  for (let a = -range; a <= range; a += coarse) {
+    const v = score(a); if (v > bestScore) { bestScore = v; best = a; }
+  }
+  for (let a = best-coarse; a <= best+coarse; a += 0.1) {
+    const v = score(a); if (v > bestScore) { bestScore = v; best = a; }
+  }
+  const flat = score(0);
+  return { angle: +best.toFixed(1), gain: +(bestScore/flat).toFixed(2) };
+}
+
+/** Stage 1. Rotate flat, then threshold against a local mean. */
+function preprocess(canvas, angle) {
+  const { width: W, height: H } = canvas;
+  const c = document.createElement('canvas'); c.width = W; c.height = H;
+  const ctx = c.getContext('2d', { willReadFrequently: true });
+  ctx.fillStyle = '#fff'; ctx.fillRect(0,0,W,H);
+  ctx.translate(W/2,H/2); ctx.rotate(-angle*Math.PI/180); ctx.translate(-W/2,-H/2);
+  ctx.drawImage(canvas, 0, 0);
+  ctx.setTransform(1,0,0,1,0,0);
+
+  const im = ctx.getImageData(0,0,W,H), d = im.data;
+  const grey = new Float32Array(W*H);
+  for (let i = 0; i < W*H; i++) grey[i] = 0.299*d[i*4] + 0.587*d[i*4+1] + 0.114*d[i*4+2];
+  // Integral image, so a window mean is four lookups regardless of radius.
+  const S = new Float64Array((W+1)*(H+1));
+  for (let y=0;y<H;y++) for (let x=0;x<W;x++)
+    S[(y+1)*(W+1)+(x+1)] = grey[y*W+x] + S[y*(W+1)+(x+1)] + S[(y+1)*(W+1)+x] - S[y*(W+1)+x];
+  const R = Math.max(8, Math.round(Math.min(W,H)/90));
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const x0=Math.max(0,x-R), y0=Math.max(0,y-R), x1=Math.min(W,x+R+1), y1=Math.min(H,y+R+1);
+    const mean = (S[y1*(W+1)+x1]-S[y0*(W+1)+x1]-S[y1*(W+1)+x0]+S[y0*(W+1)+x0]) / ((x1-x0)*(y1-y0));
+    // Global thresholding fails here: a hand-held photo is lit from one side
+    // and the paper is far brighter at one corner than the other.
+    const v = grey[y*W+x] < mean - 10 ? 0 : 255;
+    const i = (y*W+x)*4; d[i]=d[i+1]=d[i+2]=v; d[i+3]=255;
+  }
+  ctx.putImageData(im, 0, 0);
+  return c;
+}
+
+/** Stage 3. Everything that can be decided without a second opinion. */
+function constraints(score) {
+  const findings = validateMeasures(score);
+  const out = { findings, beats: findings.filter(f=>f.is_problem),
+    gaps: numberingGaps(score), repeats: repeatedRuns(score),
+    pickup: null, repeatBalance: [] };
+
+  // Pickup and final measure must complement, or the short opening was a
+  // dropped note rather than an anacrusis — which matters, because
+  // validateMeasures forgives it on the assumption that it was one.
+  if (findings.length >= 3 && findings[0].verdict === 'pickup') {
+    const meter = findings[0].expected_beats;
+    const total = findings[0].actual_beats + findings[findings.length-1].actual_beats;
+    if (meter !== null && Math.abs(total - meter) > TOLERANCE) {
+      out.pickup = `measure ${findings[0].measure_number} is short `
+        + `(${findings[0].actual_beats} of ${meter}) and was allowed as a pickup, but the last `
+        + `measure is ${findings[findings.length-1].actual_beats} rather than the `
+        + `${meter - findings[0].actual_beats} that would complete it`;
+    }
+  }
+
+  const numbers = new Set((score.measures ?? []).map(m => m.measure_number));
+  const reps = score.repeats ?? [];
+  for (const r of reps) {
+    if (r.end_measure < r.start_measure)
+      out.repeatBalance.push(`${r.type} runs backwards, ${r.start_measure} to ${r.end_measure}`);
+    for (const [edge, label] of [[r.start_measure,'start'],[r.end_measure,'end']])
+      if (numbers.size && !numbers.has(edge))
+        out.repeatBalance.push(`${r.type} ${label}s at measure ${edge}, which is not in the score`);
+  }
+  const firsts = reps.filter(r=>r.type==='first_ending').length;
+  const seconds = reps.filter(r=>r.type==='second_ending').length;
+  if (firsts !== seconds)
+    out.repeatBalance.push(`${firsts} first ending(s) against ${seconds} second — endings come in pairs`);
+  return out;
+}
+
+/** Stage 2/4. Two reads, aligned and scored measure by measure. */
+function agree(a, b) {
+  const key = (m) => (m.notes ?? []).map(n => `${n.pitch}:${n.duration}`).join(',');
+  const A = a?.measures ?? [], B = b?.measures ?? [];
+  const ca = constraints(a), cb = b ? constraints(b) : null;
+  const rows = [];
+  const n = Math.max(A.length, B.length);
+  for (let i = 0; i < n; i++) {
+    const ma = A[i], mb = B[i];
+    const fa = ca.findings[i], fb = cb?.findings?.[i];
+    const bothHave = Boolean(ma && mb);
+    // Aligned by position, not by measure_number. The numbers are a label the
+    // model chose and two reads can label the same bar differently; position
+    // is what the two lists actually share.
+    const same = bothHave && key(ma) === key(mb);
+    const rhythmSame = bothHave &&
+      (ma.notes??[]).map(n=>n.duration).join(',') === (mb.notes??[]).map(n=>n.duration).join(',');
+    const aOk = fa ? !fa.is_problem : false;
+    const bOk = fb ? !fb.is_problem : false;
+
+    let status, why;
+    if (!b) { status = aOk ? 'amber' : 'red'; why = aOk ? 'one read only' : 'one read, and it fails'; }
+    else if (!bothHave) { status = 'red'; why = 'only one read produced this measure'; }
+    else if (same && aOk && bOk) { status = 'green'; why = 'both reads agree and both pass'; }
+    else if (rhythmSame && aOk && bOk) { status = 'green'; why = 'rhythms agree and both pass — pitch differs, which the analysis does not read'; }
+    else if (same) { status = 'amber'; why = 'reads agree but a constraint fails'; }
+    else if (aOk && bOk) { status = 'amber'; why = 'reads differ, both internally valid'; }
+    else { status = 'red'; why = 'reads differ and at least one fails'; }
+    rows.push({ index: i, number: ma?.measure_number ?? mb?.measure_number ?? i+1,
+                status, why, a: fa, b: fb });
+  }
+  return { rows, ca, cb };
+}
+
 // --- providers -------------------------------------------------------------
-async function callGemini(model, key, b64, mime) {
+async function callGemini(model, key, b64, mime, extra) {
   const res = await fetchWithin(
     `https://generativelanguage.googleapis.com/v1beta/models/${model.model}:generateContent`,
     { method:'POST',
       headers:{'Content-Type':'application/json','x-goog-api-key':key},
       body: JSON.stringify({
-        contents:[{parts:[{inline_data:{mime_type:mime,data:b64}},{text:PROMPT}]}],
+        contents:[{parts:[{inline_data:{mime_type:mime,data:b64}},
+          {text: extra ? PROMPT + '\n\n' + extra : PROMPT}]}],
         // Mirrors GenerateContentConfig in gemini_provider.py: JSON mode, and
         // thinking off — 2.5 bills thinking tokens against the output budget
         // and OCR needs no internal reasoning.
@@ -478,7 +707,7 @@ async function callGemini(model, key, b64, mime) {
            output: (u.candidatesTokenCount ?? 0) + (u.thoughtsTokenCount ?? 0) };
 }
 
-async function callClaude(model, key, b64, mime) {
+async function callClaude(model, key, b64, mime, extra) {
   const res = await fetchWithin('https://api.anthropic.com/v1/messages',
     { method:'POST',
       headers:{'Content-Type':'application/json','x-api-key':key,
@@ -488,7 +717,7 @@ async function callClaude(model, key, b64, mime) {
       body: JSON.stringify({ model: model.model, max_tokens: 4000,
         messages:[{role:'user',content:[
           {type:'image',source:{type:'base64',media_type:mime,data:b64}},
-          {type:'text',text:PROMPT}]}]})});
+          {type:'text',text: extra ? PROMPT + '\n\n' + extra : PROMPT}]}]})});
   const body = await res.json();
   if (!res.ok) throw new Error(body?.error?.message ?? `HTTP ${res.status}`);
   const text = body?.content?.[0]?.text;
@@ -753,93 +982,138 @@ const TAG = {ok:'t-ok',short:'t-bad',long:'t-bad',empty:'t-bad',pickup:'t-neutra
 
 $('go').addEventListener('click', async () => {
   const model = currentModel(), key = $('key').value.trim();
+  const twoReads = $('optTwo').checked, doPre = $('optPre').checked, doRepair = $('optRepair').checked;
   $('go').disabled = true;
-  $('status').innerHTML = '<span class="spin"></span>reading the page…';
   $('out').innerHTML = '';
   const started = performance.now();
-  // A clock rather than a bare spinner: these calls take 7-29s legitimately,
-  // so "still going" and "hung" are indistinguishable without one.
   const tick = setInterval(() => {
-    $('status').innerHTML = `<span class="spin"></span>reading the page… `
+    $('status').innerHTML = `<span class="spin"></span>${stage} … `
       + `${Math.round((performance.now() - started) / 1000)}s`;
-  }, 1000);
-  try {
-    const call = model.vendor === 'google' ? callGemini : callClaude;
-    const b64 = await toBase64(prepared.blob);
-    const { text, input, output } = await call(model, key, b64, prepared.mime);
-    const ms = Math.round(performance.now() - started);
-    const cost = (input * model.input_price + output * model.output_price) / 1e6;
+  }, 500);
+  let stage = 'reading the page';
+  const call = model.vendor === 'google' ? callGemini : callClaude;
+  let spent = 0, tokens = 0;
 
-    let score;
-    try { score = JSON.parse(stripFences(text)); }
-    catch (e) {
-      $('out').innerHTML = `<div class="said err"><b>The model did not return usable JSON.</b><br>${esc(e.message)}</div>
-        <details style="margin-top:16px" open><summary>What it said</summary><pre>${esc(text)}</pre></details>`;
-      return;
+  const readOnce = async (blob, mime, extra) => {
+    const b64 = await toBase64(blob);
+    const { text, input, output } = await call(model, key, b64, mime, extra);
+    spent += (input * model.input_price + output * model.output_price) / 1e6;
+    tokens += input + output;
+    return JSON.parse(stripFences(text));
+  };
+
+  try {
+    // --- stage 0 + 1 -----------------------------------------------------
+    stage = 'checking the photograph';
+    const bmp = await createImageBitmap(prepared.blob);
+    const base = document.createElement('canvas');
+    base.width = bmp.width; base.height = bmp.height;
+    base.getContext('2d').drawImage(bmp, 0, 0); bmp.close?.();
+
+    const gate = captureGate(base);
+    const skew = findSkew(base);
+    let sendCanvas = base, preNote = 'not applied';
+    if (doPre) {
+      stage = 'deskewing and binarizing';
+      sendCanvas = preprocess(base, skew.angle);
+      preNote = `deskewed ${skew.angle}°, binarized against a local mean`;
+    }
+    const sendBlob = await new Promise(r => sendCanvas.toBlob(r, 'image/jpeg', 0.92));
+
+    // --- stage 2 ---------------------------------------------------------
+    stage = twoReads ? 'reading it twice' : 'reading the page';
+    const first = await readOnce(sendBlob, 'image/jpeg');
+    let second = null;
+    if (twoReads) {
+      stage = 'second read';
+      second = await readOnce(sendBlob, 'image/jpeg');
     }
 
-    const findings = validateMeasures(score);
-    const bad = findings.filter(f => f.is_problem);
-    const gaps = numberingGaps(score);
-    const repeats = repeatedRuns(score);
-    const meter = findings[0]?.expected_beats ?? null;
-    const meterText = !findings.length ? 'no measures came back'
-      : meter === null ? 'meter unknown, and the music does not agree on one'
-      : findings[0].meter_inferred ? `${meter} beats per measure — inferred from the music`
-      : `${meter} beats per measure — from the header (${esc(score.time_signature)})`;
+    // --- stages 3 + 4 ----------------------------------------------------
+    let { rows, ca } = agree(first, second);
+    let repaired = null;
 
-    const rows = findings.map(f => {
-      const pct = meter ? Math.min(100, (f.actual_beats / meter) * 100) : 0;
-      const colour = f.is_problem ? 'var(--bad)' : f.verdict === 'ok' ? 'var(--ok)' : 'var(--neutral)';
-      return `<tr><td class="num">${f.measure_number}</td>
-        <td class="num">${f.actual_beats}${meter !== null ? ` / ${meter}` : ''}</td>
-        <td style="width:32%"><div class="bar"><span style="width:${pct}%;background:${colour}"></span></div></td>
-        <td class="num">${f.note_count}</td>
-        <td><span class="tag ${TAG[f.verdict]}">${f.verdict}</span></td></tr>`;
-    }).join('');
+    // --- stage 5 ---------------------------------------------------------
+    const bad = rows.filter(r => r.status !== 'green');
+    if (doRepair && bad.length) {
+      stage = `repairing ${bad.length} measure(s)`;
+      const complaints = bad.map(r => `measure ${r.number} (position ${r.index+1}): ${r.why}`
+        + (r.a?.is_problem ? `; ${r.a.describe ? '' : ''}${r.a.actual_beats} of ${r.a.expected_beats} beats` : ''));
+      const note = 'A previous read of this image produced the transcription below. '
+        + 'These measures are wrong or uncertain:\n' + complaints.map(c=>'  - '+c).join('\n')
+        + '\n\nReturn the SAME transcription with only those measures corrected. Do not '
+        + 're-read the measures that are not listed, and do not renumber anything. If a listed '
+        + 'measure is a tuplet, leave it and say so in notes_to_human.\n\nPrevious transcription:\n'
+        + JSON.stringify(first);
+      try {
+        repaired = await readOnce(sendBlob, 'image/jpeg', note);
+        ({ rows, ca } = agree(repaired, second));
+      } catch (e) { repaired = { __error: String(e.message) }; }
+    }
 
-    const noteCount = findings.reduce((t, f) => t + f.note_count, 0);
+    const score = repaired && !repaired.__error ? repaired : first;
+    const findings = ca.findings;
+    const counts = { green:0, amber:0, red:0 };
+    rows.forEach(r => counts[r.status]++);
+    const ms = Math.round(performance.now() - started);
+
+    const chip = (r) => `<span class="chip c-${r.status}" title="${esc(r.why)}">${r.number}</span>`;
+    const line = (label, body) => body ? `<div class="said" style="margin-top:12px"><b>${label}</b> ${body}</div>` : '';
+
     $('out').innerHTML = `
       <div class="verdict">
-        <span class="headline">${!findings.length ? 'Nothing was transcribed'
-          : bad.length === 0 ? 'Every measure adds up'
-          : `${bad.length} measure${bad.length > 1 ? 's don’t' : ' doesn’t'} add up`}</span>
-        <span class="meterline">${meterText}</span>
+        <span class="headline">${counts.red ? `${counts.red} measure${counts.red>1?'s':''} to look at`
+          : counts.amber ? `${counts.amber} uncertain` : 'Every measure green'}</span>
+        <span class="meterline">${counts.green} green · ${counts.amber} amber · ${counts.red} red</span>
       </div>
-      <div class="stats" style="margin-top:18px">
-        <div><b>Confidence</b>${score.ocr_confidence ?? '—'} <span style="color:var(--faint)">self-reported</span></div>
-        <div><b>Measures</b>${findings.length}</div>
-        <div><b>Notes</b>${noteCount}</div>
-        <div><b>Key</b>${esc(score.key_signature ?? '—')}</div>
-        <div><b>Latency</b>${(ms / 1000).toFixed(1)}s</div>
-        <div><b>Cost</b>$${cost.toFixed(4)}</div>
-      </div>
-      ${score.notes_to_human ? `<div class="said" style="margin-top:20px"><b>What it flagged:</b> ${esc(score.notes_to_human)}</div>` : ''}
-      ${findings.length ? `<h2 style="margin-top:28px">What it read
-        <span class="clefname" style="text-transform:none;letter-spacing:0">
-          — ${esc(score.clef ?? 'treble')} clef, so read the noteheads against that</span></h2>
-        ${engraveScore(score, findings)}` : ''}
-      ${repeats.length ? `<div class="said err" style="margin-top:18px">
-        <b>Measures repeat note for note.</b>
-        ${repeats.map(r => `${r.length} measure${r.length>1?'s':''} at position ${r.first_at+1}
-          reappear at position ${r.again_at+1}`).join('; ')}.
-        Every copy adds up, which is why the check above is happy — repeating a plausible
-        measure is what a model does when it has lost its place on a dense page. If the part
-        genuinely repeats, this is a false alarm; if it doesn’t, the transcription is
-        confident and wrong, which is the worst state it can be in.</div>` : ''}
-      ${gaps.length ? `<div class="said" style="margin-top:18px"><b>The measure numbers skip.</b>
-        ${gaps.map(g => `${g.missing} missing between ${g.after} and ${g.next}`).join('; ')}.
-        Either measures were dropped, or something on the page that is not a measure number was
-        read as one — a boxed rehearsal mark is the usual culprit.</div>` : ''}
-      ${findings.length ? `<h2 style="margin-top:26px">Measure by measure</h2>
-        <div class="scroll"><table><thead><tr><th>Measure</th><th>Beats</th><th></th>
-        <th>Notes</th><th>Verdict</th></tr></thead><tbody>${rows}</tbody></table></div>` : ''}
-      <details style="margin-top:26px"><summary>The transcription it returned</summary>
-        <pre>${esc(JSON.stringify(score, null, 2))}</pre></details>`;
+
+      <div class="stage"><h3>Stage 0 — capture gate <em>free</em></h3>
+        <div class="gate">
+          <div><b>Sharpness</b><span class="${gate.sharpnessOk?'g-ok':'g-warn'}">${gate.sharpness}</span>
+            ${gate.sharpnessOk?'':' — soft, consider retaking'}</div>
+          <div><b>Glare</b><span class="${gate.glareOk?'g-ok':'g-warn'}">${gate.glare}%</span>
+            ${gate.glareOk?'':' — blown highlights'}</div>
+          <div><b>Skew</b>${skew.angle}° <span style="color:var(--faint)">(×${skew.gain} sharper flat)</span></div>
+        </div></div>
+
+      <div class="stage"><h3>Stage 1 — preprocessing <em>free · no segmentation</em></h3>
+        <p class="hint">${esc(preNote)}. Staff and measure segmentation is not here: a global
+          rotation plus a horizontal projection found one staff in five on a curled hand-held
+          page, and a segmenter that works on flat scans and mislabels everything else is worse
+          than none.</p></div>
+
+      <div class="stage"><h3>Stage 2 &amp; 4 — ${second?'two reads, diffed':'one read'}
+        <em>$${spent.toFixed(4)} · ${tokens} tokens · ${(ms/1000).toFixed(1)}s</em></h3>
+        <div class="rag">${rows.map(chip).join('')}</div>
+        <p class="hint" style="margin-top:10px">${second
+          ? 'Green means both reads agree and every constraint passes. Amber means they agree but something fails, or they differ and both are internally valid. Red means they differ and at least one fails.'
+          : 'One read, so nothing can be amber for the right reason — agreement is the signal this stage exists to produce. Turn on two reads.'}</p></div>
+
+      <div class="stage"><h3>Stage 3 — constraints <em>free</em></h3>
+        ${line('Beat sums:', ca.beats.length ? ca.beats.map(f=>`measure ${f.measure_number} has ${f.actual_beats} of ${f.expected_beats}`).join('; ') : '')}
+        ${line('Repetition:', ca.repeats.length ? ca.repeats.map(r=>`${r.length} measure(s) at ${r.first_at+1} reappear at ${r.again_at+1}`).join('; ') : '')}
+        ${line('Numbering:', ca.gaps.length ? ca.gaps.map(g=>`${g.missing} missing between ${g.after} and ${g.next}`).join('; ') : '')}
+        ${line('Pickup:', ca.pickup ? esc(ca.pickup) : '')}
+        ${line('Repeats:', ca.repeatBalance.length ? esc(ca.repeatBalance.join('; ')) : '')}
+        ${!ca.beats.length && !ca.repeats.length && !ca.gaps.length && !ca.pickup && !ca.repeatBalance.length
+          ? '<p class="hint">Every constraint passes.</p>' : ''}</div>
+
+      ${repaired ? `<div class="stage"><h3>Stage 5 — repair</h3>
+        <p class="hint">${repaired.__error ? 'The repair pass failed: ' + esc(repaired.__error)
+          : `Sent ${bad.length} measure(s) back with the broken constraint named. The results above are after the repair.`}</p></div>` : ''}
+
+      ${score.notes_to_human ? `<div class="said" style="margin-top:22px"><b>What it flagged:</b> ${esc(score.notes_to_human)}</div>` : ''}
+
+      <div class="stage"><h3>What it read <em>${esc(score.clef ?? 'treble')} clef</em></h3>
+        ${engraveScore(score, findings)}</div>
+
+      <details style="margin-top:26px"><summary>The transcription</summary>
+        <pre>${esc(JSON.stringify(score, null, 2))}</pre></details>
+      ${second ? `<details style="margin-top:10px"><summary>The second read</summary>
+        <pre>${esc(JSON.stringify(second, null, 2))}</pre></details>` : ''}`;
   } catch (e) {
     const hint = /Failed to fetch/i.test(e.message)
-      ? ' — the request never left the browser. Usually a wrong key, or a network block.'
-      : '';
+      ? ' — the request never left the browser. Usually a wrong key, or a network block.' : '';
     $('out').innerHTML = `<div class="said err"><b>That didn’t work.</b><br>${esc(e.message)}${hint}</div>`;
   } finally {
     clearInterval(tick);

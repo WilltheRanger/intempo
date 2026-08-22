@@ -163,6 +163,67 @@ def describe_repeats(runs: list[RepeatedRun]) -> str:
     )
 
 
+def pickup_complement(score: ScoreJson) -> str | None:
+    """A pickup must be paid back by the final measure, or it is a dropped note.
+
+    Music that opens with an anacrusis of *n* beats conventionally ends with a
+    measure of `meter - n`, so the two together make one whole. When they do
+    not, the short opening measure was probably not a pickup at all — which
+    matters, because `validate_measures` forgives a short first measure on the
+    assumption that it was.
+
+    Returns None when there is nothing to say: no meter, too little music, or
+    a first measure that is already full.
+    """
+    findings = validate_measures(score)
+    if len(findings) < 3:
+        return None
+    first, last = findings[0], findings[-1]
+    meter = first.expected_beats
+    if meter is None or first.verdict != "pickup":
+        return None
+    total = first.actual_beats + last.actual_beats
+    if abs(total - meter) <= TOLERANCE:
+        return None
+    return (
+        f"measure {first.measure_number} is short ({first.actual_beats:g} of "
+        f"{meter:g}) and was allowed as a pickup, but the last measure is "
+        f"{last.actual_beats:g} rather than the {meter - first.actual_beats:g} "
+        "that would complete it — so the opening may be a dropped note rather "
+        "than an anacrusis"
+    )
+
+
+def repeat_balance(score: ScoreJson) -> list[str]:
+    """Repeat and ending brackets that do not close.
+
+    Cheap, and it catches a specific misreading: a barline with dots read as a
+    repeat when the dots were staccato marks, or an ending bracket opened and
+    never closed because the page ran out before the second ending.
+    """
+    numbers = {m.measure_number for m in score.measures}
+    complaints: list[str] = []
+    for repeat in score.repeats:
+        if repeat.end_measure < repeat.start_measure:
+            complaints.append(
+                f"{repeat.type} runs backwards, from measure "
+                f"{repeat.start_measure} to {repeat.end_measure}"
+            )
+        for edge, label in ((repeat.start_measure, "start"), (repeat.end_measure, "end")):
+            if numbers and edge not in numbers:
+                complaints.append(
+                    f"{repeat.type} {label}s at measure {edge}, which is not in the score"
+                )
+    firsts = sum(1 for r in score.repeats if r.type == "first_ending")
+    seconds = sum(1 for r in score.repeats if r.type == "second_ending")
+    if firsts != seconds:
+        complaints.append(
+            f"{firsts} first ending(s) against {seconds} second ending(s) — "
+            "endings come in pairs"
+        )
+    return complaints
+
+
 def numbering_gaps(score: ScoreJson) -> list[NumberingGap]:
     """Measure numbers that skip.
 
