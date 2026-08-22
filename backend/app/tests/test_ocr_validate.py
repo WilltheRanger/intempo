@@ -13,7 +13,9 @@ import pytest
 from app.services.ocr.validate import (
     MIN_AGREEMENT,
     describe_numbering,
+    describe_repeats,
     numbering_gaps,
+    repeated_runs,
     beats_per_measure,
     describe_for_retry,
     infer_beats_per_measure,
@@ -277,3 +279,93 @@ def test_the_numbering_complaint_names_the_fix() -> None:
 
 def test_no_complaint_when_the_numbering_is_sound() -> None:
     assert describe_numbering(numbering_gaps(_numbered([1, 2, 3]))) == ""
+
+
+# --- repetition ------------------------------------------------------------
+#
+# The failure the beat-sum check cannot see. A model that loses its place on a
+# dense page does not emit nonsense — it emits a plausible measure again. Every
+# copy sums to the time signature, every constraint passes, and the confidence
+# comes back high. Internally consistent and wrong.
+#
+# Observed: a five-staff cello part came back as nine measures, "every measure
+# adds up", confidence 0.85, with a three-measure block repeated three times.
+
+
+def _patterned(patterns: list[list[str]]) -> ScoreJson:
+    return ScoreJson.model_validate(
+        {
+            "time_signature": "4/4", "key_signature": "C major", "tempo_marking": None,
+            "bpm_hint": None, "clef": "bass", "repeats": [],
+            "ocr_confidence": 0.9, "notes_to_human": "",
+            "measures": [
+                {
+                    "measure_number": i + 1, "slurs": [],
+                    "notes": [
+                        {"pitch": p, "duration": "quarter", "tied_to_next": False}
+                        for p in pattern
+                    ],
+                }
+                for i, pattern in enumerate(patterns)
+            ],
+        }
+    )
+
+
+A = ["C3", "D3", "E3", "F3"]
+B = ["G3", "A3", "B3", "C4"]
+C = ["D4", "C4", "B3", "A3"]
+D = ["E3", "F3", "G3", "A3"]
+
+
+def test_a_repeated_block_is_found() -> None:
+    runs = repeated_runs(_patterned([A, B, C, A, B, C, A, B, C]))
+    assert len(runs) == 1
+    assert runs[0].length == 3
+
+
+def test_one_repetition_is_reported_once_not_once_per_offset() -> None:
+    """ABC ABC otherwise reports 1→4, 2→5 and 3→6 — one thing said three times."""
+    assert len(repeated_runs(_patterned([A, B, C, A, B, C]))) == 1
+
+
+def test_distinct_music_is_not_flagged() -> None:
+    assert repeated_runs(_patterned([A, B, C, D])) == []
+
+
+def test_two_identical_measures_alone_are_not_evidence() -> None:
+    """An ostinato is music. `min_length` is 2, so a single pair is below it."""
+    assert repeated_runs(_patterned([A, A, B, C])) == []
+
+
+def test_empty_measures_are_not_a_repetition() -> None:
+    """They are already reported as empty; counting them here would flag every
+    page with two unreadable bars."""
+    assert repeated_runs(_patterned([[], [], A, B])) == []
+
+
+def test_the_longest_block_wins() -> None:
+    """A four-measure repeat contains a two-measure one; report the real shape."""
+    runs = repeated_runs(_patterned([A, B, C, D, A, B, C, D]))
+    assert len(runs) == 1 and runs[0].length == 4
+
+
+def test_repetition_survives_a_beat_sum_check() -> None:
+    """The point of the whole thing, stated as a test.
+
+    Every measure here is four quarter notes in 4/4, so `problems` is empty and
+    the transcription looks sound. It is not.
+    """
+    score = _patterned([A, B, C, A, B, C])
+    assert problems(score) == []
+    assert repeated_runs(score) != []
+
+
+def test_the_complaint_offers_the_legitimate_explanation() -> None:
+    text = describe_repeats(repeated_runs(_patterned([A, B, C, A, B, C])))
+    assert "notes_to_human" in text
+    assert "really does repeat" in text
+
+
+def test_no_complaint_without_repetition() -> None:
+    assert describe_repeats(repeated_runs(_patterned([A, B, C, D]))) == ""

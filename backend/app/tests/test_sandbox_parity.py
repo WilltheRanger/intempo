@@ -85,6 +85,19 @@ const fn = new Function(body + '; return { validateMeasures, describeForRetry };
 console.log(JSON.stringify(cases.map((c) => fn.validateMeasures(c))));
 """
 
+#: The scan bench carries the same port plus the repetition check, which the
+#: validator sandbox does not. Checked separately so both stay honest.
+BENCH_RUNNER = """
+const fs = require('fs');
+const html = fs.readFileSync(process.argv[2], 'utf8');
+const body = html.slice(html.indexOf('const SPACE ='), html.indexOf('// --- providers'));
+const shared = html.slice(html.indexOf('const DURATION_BEATS'), html.indexOf('// --- Engraving'));
+const cases = JSON.parse(fs.readFileSync(process.argv[3], 'utf8'));
+const fn = new Function(shared + body + '; return { repeatedRuns, numberingGaps };')();
+console.log(JSON.stringify(cases.map((c) => ({
+  repeats: fn.repeatedRuns(c), gaps: fn.numberingGaps(c) }))));
+"""
+
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node not installed")
 def test_the_sandbox_agrees_with_the_validator() -> None:

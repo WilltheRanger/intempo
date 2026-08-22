@@ -78,6 +78,91 @@ class NumberingGap:
         return f"{self.missing} measure(s) missing between {self.after} and {self.next}"
 
 
+@dataclass(frozen=True)
+class RepeatedRun:
+    """A block of measures that repeats verbatim later in the score."""
+
+    first_at: int   # 0-based index where the block first appears
+    again_at: int   # 0-based index where the copy starts
+    length: int
+
+    def describe(self) -> str:
+        block = "measure" if self.length == 1 else f"{self.length} measures"
+        return (
+            f"{block} at position {self.first_at + 1} reappear verbatim at "
+            f"position {self.again_at + 1}"
+        )
+
+
+def _fingerprint(measure) -> tuple:
+    """What makes two measures the same reading, for this purpose.
+
+    Pitch and duration in order. Not the measure number, which is a label, and
+    not slurs or dynamics, which can legitimately differ between two measures
+    that are otherwise the same music.
+    """
+    return tuple((n.pitch, n.duration) for n in measure.notes)
+
+
+def repeated_runs(score: ScoreJson, *, min_length: int = 2) -> list[RepeatedRun]:
+    """Blocks of measures repeated note-for-note — the shape of a lost model.
+
+    **This is the failure the beat-sum check cannot see.** A model that has
+    lost its place on a dense page does not produce nonsense; it produces a
+    plausible measure again, and again. Every copy sums to the time signature,
+    so every constraint passes and the confidence comes back high. Internally
+    consistent and wrong is the hardest state to detect, and repetition is its
+    signature.
+
+    Real music does repeat, which is why `min_length` is 2 and why this is
+    evidence rather than a verdict: two identical measures in a row can be an
+    ostinato, and a returning phrase is what phrases do. What is not music is
+    the same three measures appearing twice inside nine on a page where the
+    printed part shows no repeat at all.
+    """
+    prints = [_fingerprint(m) for m in score.measures]
+    n = len(prints)
+    found: list[RepeatedRun] = []
+    claimed: set[int] = set()
+
+    # Longest first. A six-measure repeat trivially contains a three-measure
+    # one, and reporting both says the same thing twice.
+    for length in range(n // 2, min_length - 1, -1):
+        for start in range(n - length + 1):
+            block = list(prints[start : start + length])
+            # Empty measures are already reported by `validate_measures`;
+            # counting them here would flag every page with two unreadable bars
+            # as a repetition.
+            if any(len(b) == 0 for b in block):
+                continue
+            for other in range(start + length, n - length + 1):
+                if list(prints[other : other + length]) != block:
+                    continue
+                span = set(range(start, start + length)) | set(range(other, other + length))
+                # ABC ABC ABC otherwise reports 1→4, 2→5 and 3→6, which are
+                # one repetition described three times with the window slid
+                # along it. The first one covers the phenomenon.
+                if span & claimed:
+                    continue
+                found.append(RepeatedRun(first_at=start, again_at=other, length=length))
+                claimed |= span
+                break
+    return found
+
+
+def describe_repeats(runs: list[RepeatedRun]) -> str:
+    """The repetition complaint, for a retry or a report."""
+    if not runs:
+        return ""
+    return (
+        "Measures repeat verbatim: "
+        + "; ".join(r.describe() for r in runs)
+        + ". If the part really does repeat, say so in notes_to_human. "
+        "Otherwise re-read those measures — repeating a plausible measure is "
+        "what happens when the place is lost on a dense page."
+    )
+
+
 def numbering_gaps(score: ScoreJson) -> list[NumberingGap]:
     """Measure numbers that skip.
 
