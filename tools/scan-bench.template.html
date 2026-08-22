@@ -414,6 +414,37 @@ function engraveScore(score, findings) {
  * mis-numbered them, and either way something on the page is not in the JSON.
  * Worth surfacing next to the drawing, since that is where it becomes obvious.
  */
+/**
+ * Blocks of measures repeated note-for-note — a port of `repeated_runs`.
+ *
+ * The failure the beat-sum check cannot see: a model that loses its place on a
+ * dense page emits a plausible measure again rather than nonsense, every copy
+ * sums to the meter, and the confidence comes back high. Internally consistent
+ * and wrong.
+ */
+function repeatedRuns(score, minLength = 2) {
+  const prints = (score.measures ?? []).map((m) =>
+    JSON.stringify((m.notes ?? []).map((n) => [n.pitch, n.duration])));
+  const n = prints.length, found = [], claimed = new Set();
+  for (let length = Math.floor(n / 2); length >= minLength; length--) {
+    for (let start = 0; start + length <= n; start++) {
+      const block = prints.slice(start, start + length);
+      if (block.some((b) => b === '[]')) continue;
+      for (let other = start + length; other + length <= n; other++) {
+        if (prints.slice(other, other + length).join('|') !== block.join('|')) continue;
+        const span = [];
+        for (let i = start; i < start + length; i++) span.push(i);
+        for (let i = other; i < other + length; i++) span.push(i);
+        if (span.some((i) => claimed.has(i))) continue;
+        found.push({ first_at: start, again_at: other, length });
+        span.forEach((i) => claimed.add(i));
+        break;
+      }
+    }
+  }
+  return found;
+}
+
 function numberingGaps(score) {
   const ns = (score.measures ?? []).map((m) => m.measure_number).filter((n) => Number.isFinite(n));
   const gaps = [];
@@ -750,6 +781,7 @@ $('go').addEventListener('click', async () => {
     const findings = validateMeasures(score);
     const bad = findings.filter(f => f.is_problem);
     const gaps = numberingGaps(score);
+    const repeats = repeatedRuns(score);
     const meter = findings[0]?.expected_beats ?? null;
     const meterText = !findings.length ? 'no measures came back'
       : meter === null ? 'meter unknown, and the music does not agree on one'
@@ -787,6 +819,14 @@ $('go').addEventListener('click', async () => {
         <span class="clefname" style="text-transform:none;letter-spacing:0">
           — ${esc(score.clef ?? 'treble')} clef, so read the noteheads against that</span></h2>
         ${engraveScore(score, findings)}` : ''}
+      ${repeats.length ? `<div class="said err" style="margin-top:18px">
+        <b>Measures repeat note for note.</b>
+        ${repeats.map(r => `${r.length} measure${r.length>1?'s':''} at position ${r.first_at+1}
+          reappear at position ${r.again_at+1}`).join('; ')}.
+        Every copy adds up, which is why the check above is happy — repeating a plausible
+        measure is what a model does when it has lost its place on a dense page. If the part
+        genuinely repeats, this is a false alarm; if it doesn’t, the transcription is
+        confident and wrong, which is the worst state it can be in.</div>` : ''}
       ${gaps.length ? `<div class="said" style="margin-top:18px"><b>The measure numbers skip.</b>
         ${gaps.map(g => `${g.missing} missing between ${g.after} and ${g.next}`).join('; ')}.
         Either measures were dropped, or something on the page that is not a measure number was

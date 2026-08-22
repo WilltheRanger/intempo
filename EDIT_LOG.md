@@ -6,6 +6,73 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-21 00:40 — Confident and wrong: the failure the beat check cannot see
+
+**Branch:** `main`. Owner: user asked whether the model was "just giving up" on
+their five-staff page.
+
+It was not. It returned **9 measures for a page holding roughly 25**, at
+confidence **0.85**, and the beat-sum check reported *"Every measure adds up."*
+The drawing showed why: a three-measure block appearing three times.
+
+That is worse than giving up. A model that loses its place on a dense page does
+not emit nonsense — it emits a plausible measure again. Every copy sums to the
+meter, so every constraint passes and the confidence comes back high.
+**Internally consistent and wrong** is the hardest state to detect, and it is
+the exact state a beat-sum check certifies as fine.
+
+### `repeated_runs`
+
+Blocks of measures repeated note-for-note, fingerprinted on `(pitch, duration)`
+in order — not the measure number, which is a label, and not slurs or dynamics,
+which can legitimately differ between two bars of the same music.
+
+Deliberately evidence rather than verdict, because **real music repeats**:
+
+- `min_length` is 2, so a single identical pair is below the bar — an ostinato
+  is music.
+- Empty measures are excluded; they are already reported as empty, and counting
+  them would flag every page with two unreadable bars.
+- Longest block first, and overlapping runs are collapsed. `ABC ABC ABC`
+  otherwise reports 1→4, 2→5 *and* 3→6 — one repetition described three times
+  with the window slid along it.
+
+A test states the point directly: a score of `A B C A B C` in 4/4 has **zero**
+beat-sum problems and a repetition. Both are true; only one of them means the
+transcription is usable.
+
+### On the user's pipeline proposal
+
+They sent a seven-stage design — guided capture, deskew and segmentation, two
+independent engines diffed measure by measure, deterministic constraints,
+per-measure confidence from *agreement* rather than self-report, targeted repair
+of only the bad measures, audio cross-check against the student's own onsets,
+and cached corrections keyed on a perceptual hash of the page.
+
+It is a good design and most of it is right. Notes for the record, since the
+sequencing matters more than the list:
+
+- **Stage 4 is the load-bearing one** and does not need stage 2 to start.
+  Agreement between two runs is a real confidence signal even when both runs
+  are the same model — which is available today, needs no OMR engine, and
+  directly replaces the self-reported number the bake-off showed to be
+  anti-correlated with difficulty.
+- **Stage 5 depends on stage 1.** Targeted repair needs a crop of one measure,
+  which needs segmentation. Until that exists, "repair" can only mean re-reading
+  the whole image, which is what already fails.
+- **Stage 6 needs users.** "Every student off the same way in the same measure
+  is your OMR" is the sharpest idea in the document and it requires many
+  students. It is a later signal, not an early one.
+- **Stage 0 is probably the largest single win** — the page above would not
+  have been accepted by a capture gate that rejects a whole page when the
+  prompt reads one line — and it is UI, so §2 puts it with the user.
+
+**Tests:** 310 passed (was 301). Lint clean.
+
+**Rollback:** `git revert`.
+
+---
+
 ## 2026-08-20 23:30 — The page was five staves and the prompt asks for one
 
 **Branch:** `main`. Owner: user re-ran their page and asked what came back.
