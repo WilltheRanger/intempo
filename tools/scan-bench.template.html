@@ -58,6 +58,40 @@
           letter-spacing:.07em;text-transform:uppercase;color:var(--faint)}
   .g-ok{color:var(--ok)} .g-warn{color:var(--bad)}
   .stage{margin-top:26px}
+  /* The trace. Entries appear as the work happens, so the page reads as a
+     record of what was done rather than a report issued afterwards. */
+  #trace{margin-top:8px}
+  .tr{border-left:2px solid var(--rule);padding:0 0 18px 16px;position:relative}
+  .tr:last-child{padding-bottom:0}
+  .tr::before{content:"";position:absolute;left:-5px;top:5px;width:8px;height:8px;
+    border-radius:50%;background:var(--rule)}
+  .tr.live::before{background:var(--gold);animation:pulse 1.1s ease-in-out infinite}
+  .tr.done::before{background:var(--ink)}
+  .tr.bad::before{background:var(--bad)}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}
+  .tr h4{font-size:13.5px;font-weight:600;margin:0 0 4px;letter-spacing:-.01em}
+  .tr h4 em{font-style:normal;font-family:var(--mono);font-size:11px;color:var(--faint);
+    font-weight:400;margin-left:8px}
+  .tr p{margin:0;font-size:13px;line-height:1.55;color:var(--dim);max-width:66ch}
+  .tr .ev{margin-top:10px}
+  .tr .ev img{max-width:100%;display:block;border:1px solid var(--rule)}
+  .tr .ev figure{margin:0 0 8px}
+  .tr .ev figcaption{font-family:var(--mono);font-size:10.5px;color:var(--faint);margin-top:4px}
+  .tr .kv{font-family:var(--mono);font-size:11.5px;color:var(--faint);margin-top:8px;
+    display:flex;flex-wrap:wrap;gap:4px 18px}
+  /* Reasoning, set apart from the narration around it: the model's words, not
+     the bench's. Monospace and dimmed so it reads as a quotation. */
+  .think{margin-top:8px;border-left:2px solid var(--gold);padding:8px 0 8px 12px;
+    font-family:var(--mono);font-size:11.5px;line-height:1.6;color:var(--faint);
+    white-space:pre-wrap;max-height:280px;overflow-y:auto;max-width:78ch}
+  .think:empty{display:none}
+  .think.closed{max-height:60px;overflow:hidden;
+    -webkit-mask-image:linear-gradient(#000 20px,transparent);
+    mask-image:linear-gradient(#000 20px,transparent)}
+  .thinkbar{display:flex;align-items:center;gap:10px;margin-top:10px;
+    font-family:var(--mono);font-size:11px;color:var(--faint)}
+  .thinkbar button{font-family:var(--mono);font-size:11px;padding:2px 8px;border-radius:4px}
+  .spark{display:block;margin-top:6px;max-width:100%}
   .slices{display:flex;flex-direction:column;gap:14px;margin-top:14px}
   .slices figure{margin:0}
   .slices img{width:100%;display:block;border:1px solid var(--rule)}
@@ -247,6 +281,7 @@
     <span class="hint" id="status"></span>
   </div>
 
+  <section id="trace"></section>
   <section id="out"></section>
 
   <footer>
@@ -576,6 +611,116 @@ function numberingGaps(score) {
 //                                 rather than a fresh read.
 //   6 audio cross-check absent    needs a recording; belongs in the app
 // ===========================================================================
+
+// ---------------------------------------------------------------------------
+// The trace
+//
+// Entries are appended while the work is happening, not assembled afterwards.
+// That matters for more than looks: the CV stages here were wrong five separate
+// times with numbers that read as perfectly reasonable, and what caught every
+// one of them was seeing the evidence rather than the conclusion. A run that
+// only prints its answer can only be believed or disbelieved; one that shows
+// its working can be checked.
+// ---------------------------------------------------------------------------
+
+/** Yield to the browser so an appended entry actually paints before the next runs. */
+const paint = () => new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)));
+
+/**
+ * A series drawn as a bare line with its chosen point marked.
+ *
+ * No axes, no grid, no legend. The question each of these answers is "was the
+ * peak the algorithm picked obviously the peak, or did it squeak past a rival?"
+ * — and that is a question about shape, which anything more would only clutter.
+ */
+function spark(values, markIndex, w, h) {
+  w = w || 300; h = h || 42;
+  const n = values.length;
+  if (!n) return '';
+  let lo = Infinity, hi = -Infinity;
+  for (const v of values) { if (v < lo) lo = v; if (v > hi) hi = v; }
+  const span = hi - lo || 1;
+  const x = (i) => (i/(n-1 || 1))*(w-2) + 1;
+  const y = (v) => h - 1 - ((v - lo)/span)*(h-2);
+  let d = '';
+  for (let i = 0; i < n; i++) d += `${i ? 'L' : 'M'}${x(i).toFixed(1)} ${y(values[i]).toFixed(1)}`;
+  const mx = markIndex != null && markIndex >= 0 && markIndex < n ? x(markIndex) : null;
+  return `<svg class="spark" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}"
+    role="img" aria-hidden="true" preserveAspectRatio="none">
+    ${mx != null ? `<line x1="${mx.toFixed(1)}" y1="0" x2="${mx.toFixed(1)}" y2="${h}"
+        stroke="var(--gold)" stroke-width="1.5"/>` : ''}
+    <path d="${d}" fill="none" stroke="currentColor" stroke-width="1.2"
+      stroke-linejoin="round" opacity=".75"/></svg>`;
+}
+
+/** One trace entry, live on the page from the moment it is opened. */
+function traceOpen(title, detail, meta) {
+  const el = document.createElement('div');
+  el.className = 'tr live';
+  el.innerHTML = `<h4>${esc(title)}${meta ? `<em>${esc(meta)}</em>` : ''}</h4>`
+    + (detail ? `<p>${esc(detail)}</p>` : '')
+    + `<div class="ev"></div>`;
+  $('trace').appendChild(el);
+  const ev = el.querySelector('.ev');
+  return {
+    el,
+    say: (text) => { const p = document.createElement('p');
+      p.style.marginTop = '8px'; p.textContent = text; ev.appendChild(p); },
+    images: (list) => {
+      for (const im of list) {
+        const fig = document.createElement('figure');
+        const img = new Image();
+        img.src = im.canvas.toDataURL('image/jpeg', 0.85);
+        img.alt = im.label;
+        fig.appendChild(img);
+        const cap = document.createElement('figcaption');
+        cap.textContent = im.label; fig.appendChild(cap);
+        ev.appendChild(fig);
+      }
+    },
+    series: (list) => {
+      for (const sr of list) {
+        const d = document.createElement('div');
+        d.innerHTML = `<figcaption style="font-family:var(--mono);font-size:10.5px;
+          color:var(--faint)">${esc(sr.name)}</figcaption>` + spark(sr.values, sr.mark);
+        ev.appendChild(d);
+      }
+    },
+    rows: (pairs) => {
+      const d = document.createElement('div');
+      d.className = 'kv';
+      d.innerHTML = pairs.map(([k, v]) => `<span>${esc(k)} <b>${esc(v)}</b></span>`).join('');
+      ev.appendChild(d);
+    },
+    /** A live reasoning pane, appended to as the stream delivers it. */
+    thinking: () => {
+      const bar = document.createElement('div');
+      bar.className = 'thinkbar';
+      bar.innerHTML = `<span>thinking</span><button type="button">show all</button>`;
+      const pane = document.createElement('div');
+      pane.className = 'think closed';
+      bar.querySelector('button').addEventListener('click', () => {
+        const open = pane.classList.toggle('closed');
+        bar.querySelector('button').textContent = open ? 'show all' : 'collapse';
+      });
+      ev.appendChild(bar); ev.appendChild(pane);
+      return (chunk) => {
+        pane.textContent += chunk;
+        if (!pane.classList.contains('closed')) pane.scrollTop = pane.scrollHeight;
+      };
+    },
+    done: (meta) => {
+      el.classList.remove('live'); el.classList.add('done');
+      if (meta) el.querySelector('h4').innerHTML += `<em>${esc(meta)}</em>`;
+    },
+    failed: (why) => {
+      el.classList.remove('live'); el.classList.add('bad');
+      const p = document.createElement('p');
+      p.style.color = 'var(--bad)'; p.style.marginTop = '8px';
+      p.textContent = why; ev.appendChild(p);
+    },
+  };
+}
 
 /**
  * Stage 1b. What the model is asked once the page has been annotated.
@@ -916,6 +1061,115 @@ function scoreAgainstTruth(score, truth) {
 }
 
 // --- providers -------------------------------------------------------------
+/**
+ * Read a Server-Sent Events body as it arrives.
+ *
+ * Both providers stream the same way and neither SDK is available here — the
+ * bench is one file you open from disk — so this is the shared plumbing. The
+ * point of streaming is not speed: it is that the reasoning shows up while it
+ * is happening rather than as a paragraph that appears after a long silence.
+ */
+async function* sse(res) {
+  const reader = res.body.getReader(), dec = new TextDecoder();
+  let buf = '';
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buf += dec.decode(value, { stream: true });
+    let cut;
+    while ((cut = buf.indexOf('\n\n')) >= 0) {
+      const frame = buf.slice(0, cut); buf = buf.slice(cut + 2);
+      for (const line of frame.split('\n')) {
+        if (!line.startsWith('data:')) continue;
+        const payload = line.slice(5).trim();
+        if (!payload || payload === '[DONE]') continue;
+        try { yield JSON.parse(payload); } catch { /* keep-alive or partial */ }
+      }
+    }
+  }
+}
+
+/**
+ * Gemini, streamed, with the thinking summary switched on.
+ *
+ * `thinkingBudget: -1` lets the model decide how long to think; `includeThoughts`
+ * is what makes any of it visible. Without the second flag the first is invisible
+ * from outside — you pay for the thinking and see none of it.
+ */
+async function callGeminiStream(model, key, b64, mime, extra, think, on) {
+  const res = await fetchWithin(
+    `https://generativelanguage.googleapis.com/v1beta/models/${model.model}:streamGenerateContent?alt=sse`,
+    { method:'POST',
+      headers:{'Content-Type':'application/json','x-goog-api-key':key},
+      body: JSON.stringify({
+        contents:[{parts:[{inline_data:{mime_type:mime,data:b64}},
+          {text: extra ? PROMPT + '\n\n' + extra : PROMPT}]}],
+        generationConfig:{response_mime_type:'application/json', maxOutputTokens:16000,
+          thinkingConfig:{thinkingBudget: think ? -1 : 0, includeThoughts: !!think}},
+      })});
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new Error(body?.error?.message ?? `HTTP ${res.status}`);
+  }
+  let text = '', input = 0, output = 0;
+  for await (const chunk of sse(res)) {
+    if (chunk.error) throw new Error(chunk.error.message ?? 'stream error');
+    for (const part of chunk?.candidates?.[0]?.content?.parts ?? []) {
+      if (typeof part.text !== 'string') continue;
+      if (part.thought) on?.thinking?.(part.text);
+      else { text += part.text; on?.text?.(part.text); }
+    }
+    const u = chunk.usageMetadata;
+    if (u) { input = u.promptTokenCount ?? input;
+             output = (u.candidatesTokenCount ?? 0) + (u.thoughtsTokenCount ?? 0) || output; }
+  }
+  if (!text) throw new Error('the stream carried no answer, only thinking');
+  return { text, input, output };
+}
+
+/**
+ * Claude, streamed, with adaptive thinking and a summary of it.
+ *
+ * `budget_tokens` is gone on these models and returns a 400; adaptive thinking
+ * replaces it. `display` matters more than it looks: on Opus 4.7 the default is
+ * "omitted", which streams thinking blocks with the text stripped out — the
+ * model reasons, you are billed, and the panel sits empty.
+ */
+async function callClaudeStream(model, key, b64, mime, extra, think, on) {
+  const res = await fetchWithin('https://api.anthropic.com/v1/messages',
+    { method:'POST',
+      headers:{'Content-Type':'application/json','x-api-key':key,
+        'anthropic-version':'2023-06-01',
+        'anthropic-dangerous-direct-browser-access':'true'},
+      body: JSON.stringify({ model: model.model, max_tokens: 16000, stream: true,
+        ...(think ? { thinking: { type: 'adaptive', display: 'summarized' } } : {}),
+        messages:[{role:'user',content:[
+          {type:'image',source:{type:'base64',media_type:mime,data:b64}},
+          {type:'text',text: extra ? PROMPT + '\n\n' + extra : PROMPT}]}]})});
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new Error(body?.error?.message ?? `HTTP ${res.status}`);
+  }
+  let text = '', input = 0, output = 0, blockType = null;
+  for await (const ev of sse(res)) {
+    if (ev.type === 'error') throw new Error(ev.error?.message ?? 'stream error');
+    if (ev.type === 'message_start') input = ev.message?.usage?.input_tokens ?? 0;
+    if (ev.type === 'content_block_start') blockType = ev.content_block?.type;
+    if (ev.type === 'content_block_delta') {
+      const d = ev.delta;
+      if (d?.type === 'thinking_delta') on?.thinking?.(d.thinking ?? '');
+      // Only text blocks carry the answer. Reading content[0] instead, as this
+      // did before, returns the thinking block the moment thinking is on.
+      else if (d?.type === 'text_delta' && blockType === 'text') {
+        text += d.text ?? ''; on?.text?.(d.text ?? '');
+      }
+    }
+    if (ev.type === 'message_delta') output = ev.usage?.output_tokens ?? output;
+  }
+  if (!text) throw new Error('the stream carried no answer, only thinking');
+  return { text, input, output };
+}
+
 async function callGemini(model, key, b64, mime, extra, think) {
   const res = await fetchWithin(
     `https://generativelanguage.googleapis.com/v1beta/models/${model.model}:generateContent`,
@@ -1264,6 +1518,7 @@ $('go').addEventListener('click', async () => {
   const doGrid = $('optGrid').checked;
   $('go').disabled = true;
   $('out').innerHTML = '';
+  $('trace').innerHTML = '';
   const started = performance.now();
   const tick = setInterval(() => {
     $('status').innerHTML = `<span class="spin"></span>${stage} … `
@@ -1274,12 +1529,42 @@ $('go').addEventListener('click', async () => {
   let spent = 0, tokens = 0;
 
   const think = $('optThink').checked;
-  const readOnce = async (blob, mime, extra) => {
+  const stream = model.vendor === 'google' ? callGeminiStream : callClaudeStream;
+
+  /**
+   * One read, narrated.
+   *
+   * Streamed rather than awaited whole, so the reasoning arrives while it is
+   * being produced. The old shape returned a parsed object after a silence of
+   * ten or fifteen seconds, which told you nothing about what the model had
+   * been doing with them.
+   */
+  const readOnce = async (blob, mime, extra, label) => {
     const b64 = await toBase64(blob);
-    const { text, input, output } = await call(model, key, b64, mime, extra, think);
-    spent += (input * model.input_price + output * model.output_price) / 1e6;
-    tokens += input + output;
-    return JSON.parse(stripFences(text));
+    const t = traceOpen(label || 'Reading the page', null, model.name);
+    if (think) t.say('Thinking is on, and the summary is streamed below as it is produced.');
+    const onThinking = think ? t.thinking() : null;
+    let answer = '';
+    try {
+      const { text, input, output } = await stream(model, key, b64, mime, extra, think, {
+        thinking: (chunk) => onThinking?.(chunk),
+        text: (chunk) => { answer += chunk; },
+      });
+      spent += (input * model.input_price + output * model.output_price) / 1e6;
+      tokens += input + output;
+      const parsed = JSON.parse(stripFences(text));
+      const n = (parsed.measures ?? []).length;
+      t.done(`${n} measure${n === 1 ? '' : 's'} · ${input + output} tokens`);
+      return parsed;
+    } catch (e) {
+      // A model that returns something other than the JSON asked for is the
+      // single most common failure here, and "unexpected token" on its own
+      // hides what it actually said.
+      t.failed(answer && /JSON|token/i.test(e.message)
+        ? `${e.message} — it answered: ${answer.slice(0, 400)}`
+        : e.message);
+      throw e;
+    }
   };
 
   try {
@@ -1293,6 +1578,7 @@ $('go').addEventListener('click', async () => {
     // this bench most exists to read, refused by the part of it that costs
     // nothing. The stages that need pixels now stand down and say why.
     stage = 'checking the photograph';
+    const tOpen = traceOpen('The photograph', `${chosen.name}, ${(chosen.size/1024/1024).toFixed(1)} MB.`);
     let base = null;
     try {
       const bmp = await createImageBitmap(prepared.blob);
@@ -1309,6 +1595,23 @@ $('go').addEventListener('click', async () => {
 
     const gate = base ? captureGate(base) : null;
     const skew = base ? findSkew(base) : null;
+    if (gate) {
+      tOpen.rows([['size', `${base.width}×${base.height}`],
+                  ['sharpness', String(gate.sharpness)],
+                  ['glare', `${gate.glare}%`],
+                  ['skew', `${skew.angle}°`]]);
+      tOpen.say(gate.sharpnessOk
+        ? 'Sharp enough to read. Sharpness is the variance of the Laplacian — a crisp page has '
+          + 'strong second derivatives at every stem and staff line, a soft one does not.'
+        : 'Soft. Everything downstream is measuring a blur, and the first thing to try is '
+          + 'another photograph rather than another model.');
+      tOpen.done();
+    } else {
+      tOpen.say(`No pixels: ${undecodable}. The stages that measure the image stand down; `
+        + 'the read still goes ahead, because Gemini opens the format even though the browser cannot.');
+      tOpen.done('not decoded');
+    }
+    await paint();
     let sendCanvas = base, preNote = 'not applied';
     if (doPre && !doGrid && base) {
       stage = 'deskewing and binarizing';
@@ -1332,9 +1635,28 @@ $('go').addEventListener('click', async () => {
       if (undecodable) throw new Error(
         `The pitch grid has to measure the staff in the image, and ${undecodable}.`);
       stage = 'finding the staff';
+      const tSrc = traceOpen('Reading the file again, at full size', null);
       const source = await fullResCanvas(chosen, crop, 4200);
+      tSrc.say(`${source.width}×${source.height}. Everything else here goes through a 2000px `
+        + 'copy, because that is all a model keeps. This stage cannot: it re-renders slices at '
+        + 'about 1450px each, so a fifth of a 2000px photograph would arrive as 400 real pixels '
+        + 'stretched to 1450 — enlarging detail that was thrown away one step earlier.');
+      tSrc.done();
+      await paint();
+
       const sourceB64 = await toBase64(await new Promise(r => source.toBlob(r, 'image/png')));
       gridInfo = await staffGrid(sourceB64, {});
+      // Replayed rather than streamed: the reader runs to completion in about a
+      // second, and threading a callback through it would buy nothing but a
+      // seam between the measuring code and the page it is measured for.
+      for (const st of gridInfo.steps) {
+        const t = traceOpen(st.title, st.detail);
+        if (st.series) t.series(st.series);
+        if (st.images) t.images(st.images);
+        if (st.rows) t.rows(st.rows);
+        t.done();
+        await paint();
+      }
       // The pitch labels are only right for the clef they were drawn for, and
       // nothing on the page tells the drawing code which one it is — the clef
       // sign is what the model is being asked to read. So it is asked here
@@ -1342,6 +1664,15 @@ $('go').addEventListener('click', async () => {
       // transposition through every note on the staff.
       const drawer = staffDraw(gridInfo, { clef: $('gridClef').value });
       slices = drawer.tiles({ ticksPerTile: 12, overlapTicks: 2 });
+      const tSlice = traceOpen('Annotated and cut into slices',
+        `Pitch labels down both edges of every slice, so naming a note is reading the label it `
+        + `lines up with rather than counting lines in a photograph. A numbered ruler along the `
+        + `top, so a barline can be located by reading a printed number rather than estimating a `
+        + `pixel. ${slices.length} slices, overlapping by two ticks so a measure landing on a `
+        + `seam is whole in one of them.`, `${$('gridClef').value} clef`);
+      tSlice.images(slices.map(t => ({ canvas: t.canvas, label: `ticks ${t.tick0}–${t.tick1}` })));
+      tSlice.done();
+      await paint();
     }
 
     // --- stage 2 ---------------------------------------------------------
@@ -1350,10 +1681,23 @@ $('go').addEventListener('click', async () => {
       for (let i = 0; i < slices.length; i++) {
         stage = `reading slice ${i+1} of ${slices.length}`;
         const blob = await new Promise(r => slices[i].canvas.toBlob(r, 'image/jpeg', 0.92));
-        try { sliceReads.push(await readOnce(blob, 'image/jpeg', TILE_PROMPT)); }
+        try { sliceReads.push(await readOnce(blob, 'image/jpeg', TILE_PROMPT,
+                `Reading slice ${i+1} of ${slices.length} — ticks ${slices[i].tick0}–${slices[i].tick1}`)); }
         catch (e) { sliceReads.push({ __error: String(e.message), measures: [] }); }
+        await paint();
       }
       first = mergeSlices(sliceReads.filter(r => !r.__error));
+      const m = first.__slices;
+      const tMerge = traceOpen('Stitching the slices back together',
+        `The slices overlap on purpose, so the same measure genuinely arrives twice and one copy `
+        + `has to go. Tick ranges decide it — a comparison of positions, not of note lists, which `
+        + `matters because the two reads of an overlapped measure are the ones most likely to `
+        + `disagree about its contents.`);
+      tMerge.rows([['kept', String(m.kept)], ['duplicates dropped', String(m.duplicates)],
+                   ['discarded, no tick range', String(m.undated)],
+                   ['clef', String(first.clef)], ['metre', String(first.time_signature)]]);
+      tMerge.done(`${m.kept} measures`);
+      await paint();
       // Two reads of the same slices would double an already multiplied cost,
       // and the slices already overlap, so the same measure is read twice by
       // construction wherever a seam falls.
@@ -1373,6 +1717,20 @@ $('go').addEventListener('click', async () => {
 
     // --- stages 3 + 4 ----------------------------------------------------
     let { rows, ca } = agree(first, second);
+    const tCheck = traceOpen('Checking it against the rules',
+      'Nothing here looks at the page again. These are the things a transcription can be caught '
+      + 'contradicting on its own: whether each measure adds up to the metre, whether the numbering '
+      + 'runs straight, whether a run of measures repeats verbatim, whether a pickup is matched by '
+      + 'a short final bar, whether the repeat marks balance. It is the only check in the pipeline '
+      + 'that costs nothing and cannot be talked round.');
+    tCheck.rows(rows.map(r => [`m${r.number}`, r.status]));
+    for (const f of (ca.findings ?? []).slice(0, 6)) {
+      tCheck.say(typeof f === 'string' ? f : (f.detail ?? f.message ?? JSON.stringify(f)));
+    }
+    tCheck.done(`${rows.filter(r=>r.status==='green').length} green · `
+      + `${rows.filter(r=>r.status==='amber').length} amber · `
+      + `${rows.filter(r=>r.status==='red').length} red`);
+    await paint();
     let repaired = null;
 
     // --- stage 5 ---------------------------------------------------------
@@ -1532,6 +1890,10 @@ $('go').addEventListener('click', async () => {
     const hint = /Failed to fetch/i.test(e.message)
       ? ' — the request never left the browser. Usually a wrong key, or a network block.' : '';
     $('out').innerHTML = `<div class="said err"><b>That didn’t work.</b><br>${esc(e.message)}${hint}</div>`;
+    // Leave the trace standing. Where a run stopped is most of what you want to
+    // know about why, and clearing it would throw that away.
+    const open = $('trace').querySelector('.tr.live');
+    if (open) { open.classList.remove('live'); open.classList.add('bad'); }
   } finally {
     clearInterval(tick);
     $('status').textContent = '';
