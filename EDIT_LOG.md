@@ -6,6 +6,88 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-22 — Print the pitch on the page; read it in enlarged slices
+
+**Branch:** `main`. Owner: "even Pro doesn't work… draw the notes on for the
+staff and give it zoomed in, clear screenshots of each measure."
+
+The bench has been measuring a model that guesses. Asked which line a notehead
+sits on, it has to count staff lines in a blurry photograph, and when it cannot
+it produces a plausible note rather than an admission. Printing the answer
+beside the note turns counting into reading.
+
+### What was built
+
+`tools/staffgrid.js` — plain browser JS, its own source file so it can be
+syntax-checked and driven from a harness, inlined into the bench by
+`build-scan-bench.py` (new `/* __STAFFGRID__ */` placeholder). Two halves:
+`staffGrid` measures the page, `staffDraw` annotates and crops it.
+
+Bench stage 1b, behind a checkbox with a clef selector: crop to one staff, get
+overlapping enlarged slices carrying pitch labels down both edges and a
+numbered ruler along the top, one read per slice, merged by tick range.
+
+### Five things that were wrong before they were right
+
+Each of these produced numbers that looked fine and a grid that was not, and
+each was caught by rendering an overlay and looking at it — never by the
+metrics, which stayed plausible throughout.
+
+1. **Five lines tracked separately drift apart.** The top line's search window
+   overlapped the "Poco meno" heading and it walked off: 69 samples against
+   ~116 for the others, −60.7px of invented drift, spacing nearly doubling
+   left to right. Fixed by tracking the staff as one rigid comb — a beam can
+   darken one line and still lose to the four that disagree.
+2. **Scoring the comb against paper beside the staff rewards a wider comb.**
+   Its probes reach cleaner margin, so the search returned a comb at 18.5px
+   spacing sitting a line above a staff whose real spacing is ~16.5. Fixed by
+   scoring lines against the spaces between them, which has no scale bias.
+3. **That score is flat on a phone photo anyway** — 13.5 at the true spacing,
+   14.2 at a wrong one. Spacing now comes from vertical run-length modes,
+   which are decisive where brightness is not.
+4. **A running expectation is free to walk, and did** — a whole line down over
+   1800px. Every column is now anchored to the deskewed seed, with a window
+   narrower than half a space, so a one-line slip is unreachable.
+5. **The image had been downscaled to 1800px first.** That was the largest
+   single error: a printed staff line is two pixels of low-contrast grey and
+   resampling smears it into the paper. At native 4027px every stage above
+   became well-conditioned. The bench had the same bug — its 2000px send copy
+   — so stage 1b now reads the original file.
+
+Result on the owner's bass part: staff located at 4027×714, spacing 37px,
+skew −0.8°, **8px of curl left to right that no rotation can remove**, fit
+±2.2px median over 336 columns. The grid sits on the printed lines end to end.
+
+### Barlines: abandoned as image analysis, on purpose
+
+Six approaches, all failed, all documented in `staffgrid.js`: column coverage,
+coverage along a leaning column, neighbouring ink, row-wise stroke width,
+overhang above and below, and connected components. Real barlines and real
+stems landed in the same range every time — a single slur runs the whole
+system, so components merge and every locality assumption breaks.
+
+Reading barlines is the one part of this a vision model is reliably good at.
+It gets that job, and the printed ruler is how it answers without anyone
+estimating a pixel coordinate. The stroke candidates ship as an advisory hint.
+
+### Honest status
+
+- Verified with a Playwright run of the **built** bench, with the provider
+  stubbed. Six slices render, the merge runs, the panel reports.
+- **Not verified against a real model.** No API key here. Whether labelled
+  slices actually raise accuracy is exactly the question the bench exists to
+  answer, and only the owner can run it.
+- **One staff at a time.** `staffGrid` finds the strongest comb on the image;
+  on a full page that is one staff of five. Page segmentation is still absent
+  and still needs local dewarping. Hence the crop step.
+- **Stage 5 repair sits out under 1b** and says so in the UI: there is no
+  single image holding the failing measures. Re-reading the offending slice
+  is the obvious fix and is not built.
+- The clef is chosen by hand. The labels are only right for the clef they were
+  drawn for, and the clef sign is what the model is being asked to read.
+
+---
+
 ## 2026-08-21 05:00 — Scoring against the page, because "it makes things up" is not a number
 
 **Branch:** `main`. Owner: user reports Gemini Pro reading their part badly and
