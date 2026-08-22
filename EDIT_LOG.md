@@ -6,6 +6,107 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-20 20:30 — Checking a transcription against arithmetic instead of against a model
+
+**Branch:** `main`. Owner: user asked how to make sheet-music transcription
+accurate, then to start on it with somewhere to try it out.
+
+### The reframe that came first
+
+`note.pitch` appears in **exactly one place** in the whole analysis path:
+
+```python
+# alignment.py:99
+is_rest = note.pitch == "rest"
+```
+
+The expected timeline is built from `_beats(note.duration)` alone. So a
+transcription with every pitch wrong and every rhythm right still produces a
+correct verdict, while one perfect pitch-wise with a single wrong duration
+desynchronises every measure after it. The accuracy problem is much narrower
+than "read sheet music correctly": durations, measure boundaries, rest-or-not,
+and slur spans. The prompt currently spends most of its schema on the rest.
+
+### What the bake-off already showed and nobody had scored
+
+There is **no ground truth anywhere in the repo** — five fixture images, no
+expected transcriptions. `bakeoff/` measures schema-validity, self-reported
+confidence, latency and cost, never correctness. So:
+
+- the two providers disagree by **8 measures versus 5** on the same page, and
+  nothing noticed;
+- on the handwritten fixture Gemini reports **0.90** and Claude **0.32**, and
+  Gemini averages 0.92 across everything it does not crash on;
+- the shipped chain puts Gemini first with `CONFIDENCE_THRESHOLD = 0.7`, so it
+  clears the bar on its own say-so and **the second opinion is never reached**.
+
+### `services/ocr/validate.py`
+
+Durations in a measure must sum to what the time signature holds. Arithmetic —
+no ground truth, no second model, runs on every score for free, and it catches
+exactly the class of error that matters most.
+
+Run against the five cached OCR responses it found **nothing**: where it could
+check, the transcriptions already add up. Worth stating plainly rather than
+dressing up. But that surfaced the real problem — **three of five fixtures come
+back `time_signature: "unknown"`**, because a phone photo of an inner page has
+no header, and the check was therefore switched off for 60% of scores.
+
+So the meter is **inferred from the music** when the header cannot be read: if
+most measures agree on a beat count, that is the meter and the outliers are the
+suspects. On the fixtures it recovers 4/4 and 2/4 correctly, and coverage goes
+from **8/19 measures to 19/19**.
+
+Guards that matter more than the happy path, because a validator that flags
+correct music trains people to ignore it:
+
+- a **pickup** first measure is short by design, and only the first;
+- a **stated** meter always beats an inferred one, or a consistently mis-read
+  score would vote itself correct;
+- inference needs **60% of at least three** measures, so a plurality is not a
+  majority;
+- **tuplets cannot be written in this schema at all** — `Duration` has no
+  triplet member — so the retry text says so, rather than asking the model to
+  fix a measure that is already as right as the schema permits.
+
+Dropping the first measure from the vote was the obvious refinement and made
+things worse: on a genuine 50/50 split (4,4,4,3,3,3) it turned a tie into 3 of
+5 and manufactured a meter. Every measure votes now.
+
+### In the chain
+
+Validation runs **before** the confidence check. A provider claiming 0.95 about
+a transcription that contradicts itself no longer ends the search — that is
+precisely the case the bake-off exposed. A broken transcription is still kept as
+a fallback, because the correction flow needs something to correct and one
+mis-read note should not lose the whole page.
+
+### The sandbox
+
+`tools/validator-sandbox.template.html` + `build-validator-sandbox.py` produce
+one openable file: no server, no keys, no install. It runs the rules against
+the real cached transcriptions, and the JSON is editable, so a measure can be
+broken by hand to see the verdict flip and read the exact retry text.
+
+The JavaScript in it is a port, and a port drifts — at which point the sandbox
+teaches rules the pipeline does not follow, which is worse than no sandbox.
+`test_sandbox_parity.py` runs both over 13 cases covering every branch and
+fails if they disagree.
+
+**Tests:** 294 passed (was 257). Lint clean. Verified in a browser: all five
+fixtures, a hand-broken measure flipping the verdict, and malformed JSON not
+throwing.
+
+**Not done, and next in value order:** ground truth for the fixtures (needs
+someone who reads music — the user, not me); an accuracy metric weighted by
+what the pipeline actually consumes; consensus between providers instead of
+first-past-the-threshold; a retry that feeds `describe_for_retry` back to the
+model, which needs the provider interface to accept extra prompt text.
+
+**Rollback:** `git revert`.
+
+---
+
 ## 2026-08-20 18:40 — Metro's cache is global, so a clean clone is not a clean build
 
 **Branch:** `main`. Owner: user cannot see this session's work on their

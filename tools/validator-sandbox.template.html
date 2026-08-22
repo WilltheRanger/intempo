@@ -1,0 +1,254 @@
+<title>Beat-Sum Validator</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,500&family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@400;500;600&display=swap">
+<style>
+  :root {
+    --ground: #F7F2E9;  --panel: #FFFFFF;  --ink: #14110E;
+    --muted: #5C564D;   --faint: #756E63;  --rule: #E6E2DA;
+    --ok: #2F6B4F;      --bad: #A33A2A;    --unknown: #8A8378;  --gold: #9A7B4F;
+    --serif: 'Newsreader', Georgia, serif;
+    --sans: 'Inter', system-ui, sans-serif;
+    --mono: 'IBM Plex Mono', ui-monospace, monospace;
+  }
+  :root:not([data-theme="light"]) { }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #17150F; --panel: #201D16; --ink: #F2EDE2; --muted: #B5AC9C;
+      --faint: #8F877A;  --rule: #322D24;  --ok: #6FBF92; --bad: #E08A76;
+      --unknown: #8F877A; --gold: #C9A46A;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #17150F; --panel: #201D16; --ink: #F2EDE2; --muted: #B5AC9C;
+    --faint: #8F877A;  --rule: #322D24;  --ok: #6FBF92; --bad: #E08A76;
+    --unknown: #8F877A; --gold: #C9A46A;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--ground); color: var(--ink);
+    font-family: var(--sans); line-height: 1.55;
+    padding: clamp(24px, 5vw, 56px);
+  }
+  .wrap { max-width: 940px; margin: 0 auto; display: flex; flex-direction: column; gap: 34px; }
+  h1 { font-family: var(--serif); font-weight: 400; font-size: clamp(30px, 5vw, 42px);
+       margin: 0; letter-spacing: -0.01em; text-wrap: balance; }
+  .lede { color: var(--muted); max-width: 62ch; margin: 0; }
+  .lede code { font-family: var(--mono); font-size: 0.88em; color: var(--ink); }
+  h2 { font-family: var(--sans); font-size: 12px; font-weight: 600; letter-spacing: 0.09em;
+       text-transform: uppercase; color: var(--faint); margin: 0 0 14px; }
+  .picker { display: flex; flex-wrap: wrap; gap: 8px; }
+  button {
+    font: inherit; font-size: 13px; padding: 8px 14px; border-radius: 7px;
+    border: 1px solid var(--rule); background: var(--panel); color: var(--ink);
+    cursor: pointer; min-height: 40px;
+  }
+  button:hover { border-color: var(--gold); }
+  button[aria-pressed="true"] { background: var(--ink); color: var(--ground); border-color: var(--ink); }
+  button:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+  textarea {
+    width: 100%; min-height: 190px; font-family: var(--mono); font-size: 12.5px;
+    line-height: 1.6; padding: 14px; border-radius: 10px; border: 1px solid var(--rule);
+    background: var(--panel); color: var(--ink); resize: vertical;
+  }
+  textarea:focus-visible { outline: 2px solid var(--gold); outline-offset: 1px; }
+  .verdict { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap;
+             padding-bottom: 16px; border-bottom: 1px solid var(--rule); }
+  .headline { font-family: var(--serif); font-size: clamp(21px, 3.4vw, 27px); }
+  .meterline { font-size: 13px; color: var(--muted); font-family: var(--mono); }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th { text-align: left; font-size: 11px; letter-spacing: 0.07em; text-transform: uppercase;
+       color: var(--faint); font-weight: 600; padding: 0 10px 8px 0; }
+  td { padding: 9px 10px 9px 0; border-top: 1px solid var(--rule); vertical-align: top; }
+  td.num { font-family: var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .tag { display: inline-block; font-size: 11px; font-weight: 600; letter-spacing: 0.04em;
+         text-transform: uppercase; padding: 2px 7px; border-radius: 4px; border: 1px solid; }
+  .t-ok { color: var(--ok); border-color: var(--ok); }
+  .t-bad { color: var(--bad); border-color: var(--bad); }
+  .t-neutral { color: var(--unknown); border-color: var(--unknown); }
+  .bar { height: 5px; border-radius: 3px; background: var(--rule); overflow: hidden; min-width: 90px; }
+  .bar span { display: block; height: 100%; }
+  .retry { font-family: var(--mono); font-size: 12.5px; white-space: pre-wrap;
+           background: var(--panel); border: 1px solid var(--rule); border-left: 3px solid var(--gold);
+           padding: 14px 16px; border-radius: 0 8px 8px 0; overflow-x: auto; color: var(--muted); }
+  .scroll { overflow-x: auto; }
+  footer { font-size: 12.5px; color: var(--faint); border-top: 1px solid var(--rule);
+           padding-top: 18px; max-width: 68ch; }
+  footer code { font-family: var(--mono); }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>Does this transcription add up?</h1>
+    <p class="lede">The durations in a measure must sum to what the time signature holds.
+      No ground truth, no second model — just arithmetic, which is why it costs nothing to run
+      on every score. When the header is illegible the meter is recovered from the music itself.
+      This is the same logic as <code>backend/app/services/ocr/validate.py</code>; the parity
+      test <code>test_sandbox_parity.py</code> fails the build if the two ever disagree.</p>
+  </header>
+
+  <section>
+    <h2>A transcription to check</h2>
+    <div class="picker" id="picker"></div>
+  </section>
+
+  <section>
+    <h2>Score JSON — edit it and watch the verdict change</h2>
+    <textarea id="input" spellcheck="false" aria-label="Score JSON"></textarea>
+  </section>
+
+  <section id="out"></section>
+
+  <footer>
+    Beats are quarter-notes, matching <code>alignment.py</code>, so 6/8 is three beats and not six.
+    A first measure that comes up short is allowed — that is a pickup, not a mistake.
+    A meter is only inferred from the music when at least 60% of three or more measures agree,
+    because the most common of several different answers is not a majority.
+  </footer>
+</div>
+
+<script>
+// ---------------------------------------------------------------------------
+// A port of backend/app/services/ocr/validate.py. Kept deliberately literal —
+// same constant names, same order of checks — because the value of a sandbox
+// is that it behaves like the thing it stands for. test_sandbox_parity.py runs
+// both over the same cases and fails if they ever disagree.
+// ---------------------------------------------------------------------------
+const DURATION_BEATS = {
+  whole: 4, dotted_whole: 6, half: 2, dotted_half: 3, quarter: 1,
+  dotted_quarter: 1.5, eighth: 0.5, dotted_eighth: 0.75,
+  sixteenth: 0.25, dotted_sixteenth: 0.375, thirty_second: 0.125,
+};
+const TOLERANCE = 1e-6, MIN_AGREEMENT = 0.6, MIN_MEASURES_TO_INFER = 3;
+
+function beatsPerMeasure(ts) {
+  if (!ts || ts === 'unknown') return null;
+  const m = /^(\d+)\/(\d+)$/.exec(String(ts).trim());
+  if (!m) return null;
+  const count = +m[1], unit = +m[2];
+  if (count <= 0 || unit <= 0) return null;
+  return count * (4 / unit);
+}
+
+function inferBeatsPerMeasure(sums) {
+  const votes = sums.filter((s) => s > 0);
+  if (votes.length < MIN_MEASURES_TO_INFER) return null;
+  const tally = new Map();
+  for (const v of votes) tally.set(v, (tally.get(v) ?? 0) + 1);
+  let winner = null, hits = -1;
+  for (const [value, count] of tally) {
+    if (count > hits || (count === hits && value < winner)) { winner = value; hits = count; }
+  }
+  return hits / votes.length < MIN_AGREEMENT ? null : winner;
+}
+
+function validateMeasures(score) {
+  const measures = score.measures ?? [];
+  const sums = measures.map((m) =>
+    (m.notes ?? []).reduce((t, n) => t + (DURATION_BEATS[n.duration] ?? 0), 0));
+  const stated = beatsPerMeasure(score.time_signature);
+  const inferred = stated === null ? inferBeatsPerMeasure(sums) : null;
+  const expected = stated !== null ? stated : inferred;
+  const meterInferred = stated === null && inferred !== null;
+
+  return measures.map((m, i) => {
+    const actual = sums[i], count = (m.notes ?? []).length;
+    let verdict;
+    if (count === 0) verdict = 'empty';
+    else if (expected === null) verdict = 'unverifiable';
+    else if (Math.abs(actual - expected) <= TOLERANCE) verdict = 'ok';
+    else if (i === 0 && actual < expected) verdict = 'pickup';
+    else verdict = actual < expected ? 'short' : 'long';
+    return { measure_number: m.measure_number ?? i + 1, verdict,
+             expected_beats: expected, actual_beats: actual,
+             note_count: count, meter_inferred: meterInferred,
+             is_problem: ['short', 'long', 'empty'].includes(verdict) };
+  });
+}
+
+function describeForRetry(findings) {
+  const bad = findings.filter((f) => f.is_problem);
+  if (!bad.length) return '';
+  const line = (f) => f.verdict === 'empty'
+    ? `measure ${f.measure_number}: no notes`
+    : `measure ${f.measure_number}: ${f.actual_beats} beats, expected ${f.expected_beats} (${f.verdict})`;
+  return 'Your previous transcription does not add up. In these measures the note '
+    + 'durations do not sum to the time signature:\n'
+    + bad.map((f) => '  - ' + line(f)).join('\n')
+    + '\n\nRe-read only those measures against the image and correct the durations. '
+    + 'If a passage is a triplet or other tuplet, say so in notes_to_human and leave '
+    + 'your best approximation — no triplet duration exists in the schema, so a tuplet '
+    + 'passage cannot sum.';
+}
+
+// --- rendering -------------------------------------------------------------
+const FIXTURES = __FIXTURES__;
+const picker = document.getElementById('picker');
+const input = document.getElementById('input');
+const out = document.getElementById('out');
+
+const TAG = { ok: 't-ok', short: 't-bad', long: 't-bad', empty: 't-bad',
+              pickup: 't-neutral', unverifiable: 't-neutral' };
+
+function render() {
+  let score;
+  try { score = JSON.parse(input.value); }
+  catch (e) {
+    out.innerHTML = `<div class="verdict"><span class="headline">That isn’t valid JSON</span></div>
+      <p class="lede" style="margin-top:14px">${String(e.message).replace(/[<&]/g, '')}</p>`;
+    return;
+  }
+  const findings = validateMeasures(score);
+  if (!findings.length) {
+    out.innerHTML = `<div class="verdict"><span class="headline">No measures to check</span>
+      <span class="meterline">the transcription is empty</span></div>`;
+    return;
+  }
+  const bad = findings.filter((f) => f.is_problem);
+  const meter = findings[0].expected_beats;
+  const meterText = meter === null ? 'meter unknown, and the music does not agree on one'
+    : findings[0].meter_inferred ? `${meter} beats per measure — inferred from the music`
+    : `${meter} beats per measure — from the header (${score.time_signature})`;
+
+  const rows = findings.map((f) => {
+    const pct = meter ? Math.min(100, (f.actual_beats / meter) * 100) : 0;
+    const colour = f.is_problem ? 'var(--bad)' : f.verdict === 'ok' ? 'var(--ok)' : 'var(--unknown)';
+    return `<tr>
+      <td class="num">${f.measure_number}</td>
+      <td class="num">${f.actual_beats}${meter !== null ? ` / ${meter}` : ''}</td>
+      <td style="width:36%"><div class="bar"><span style="width:${pct}%;background:${colour}"></span></div></td>
+      <td class="num">${f.note_count}</td>
+      <td><span class="tag ${TAG[f.verdict]}">${f.verdict}</span></td>
+    </tr>`;
+  }).join('');
+
+  out.innerHTML = `
+    <div class="verdict">
+      <span class="headline">${bad.length === 0
+        ? 'Every measure adds up'
+        : `${bad.length} measure${bad.length > 1 ? 's don’t' : ' doesn’t'} add up`}</span>
+      <span class="meterline">${meterText}</span>
+    </div>
+    <div class="scroll"><table>
+      <thead><tr><th>Measure</th><th>Beats</th><th></th><th>Notes</th><th>Verdict</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>
+    ${bad.length ? `<h2 style="margin-top:26px">What the model gets told on retry</h2>
+      <div class="retry">${describeForRetry(findings).replace(/[<&]/g, '')}</div>` : ''}`;
+}
+
+FIXTURES.forEach((f, i) => {
+  const b = document.createElement('button');
+  b.textContent = f.name;
+  b.setAttribute('aria-pressed', i === 0 ? 'true' : 'false');
+  b.onclick = () => {
+    picker.querySelectorAll('button').forEach((x) => x.setAttribute('aria-pressed', 'false'));
+    b.setAttribute('aria-pressed', 'true');
+    input.value = JSON.stringify(f.score, null, 2);
+    render();
+  };
+  picker.appendChild(b);
+});
+
+input.addEventListener('input', render);
+input.value = JSON.stringify(FIXTURES[0].score, null, 2);
+render();
+</script>
