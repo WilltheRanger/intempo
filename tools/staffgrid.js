@@ -63,6 +63,28 @@ async function staffGrid(dataB64, opts) {
     return ink;
   };
 
+  // A record of the working, not just the answer.
+  //
+  // Every stage here decides something on evidence — an angle from a variance
+  // peak, a spacing from a histogram mode, a curve from a few hundred column
+  // fits — and every one of those decisions was wrong at least once while this
+  // was being built, each time with numbers that looked entirely reasonable.
+  // What caught them was looking at the evidence. So the evidence is kept.
+  const steps = [];
+  const note = (title, detail, extra) => {
+    steps.push(Object.assign({ title, detail }, extra || {}));
+  };
+  const snapshot = (mask, label) => {
+    const c2 = document.createElement('canvas'); c2.width = W; c2.height = H;
+    const g2 = c2.getContext('2d'), im = g2.createImageData(W, H);
+    for (let i = 0; i < W*H; i++) {
+      const v = mask[i] ? 0 : 255;
+      im.data[i*4] = v; im.data[i*4+1] = v; im.data[i*4+2] = v; im.data[i*4+3] = 255;
+    }
+    g2.putImageData(im, 0, 0);
+    return { label, canvas: c2 };
+  };
+
   // ---- 1. Spacing, from vertical run lengths -------------------------------
   // Run lengths are decisive where brightness is not. Walk each column and
   // histogram the black and white runs: two sharp modes fall out, the thickness
@@ -90,36 +112,52 @@ async function staffGrid(dataB64, opts) {
   const lineH = modeOf(h0.black, 1, Math.round(H/12));
   const spaceH = modeOf(h0.white, 2, Math.round(H/6));
   const spacing = lineH + spaceH;
+  note('Staff spacing', `Walked every column and histogrammed the black and white runs. `
+    + `The black mode is a printed line — ${lineH}px thick. The white mode is the gap `
+    + `between two of them — ${spaceH}px. One staff space is ${spacing}px.`,
+    { series: [
+        { name: 'black runs (line thickness)', values: Array.from(h0.black.slice(0, Math.min(H, spacing*3))), mark: lineH },
+        { name: 'white runs (gap between lines)', values: Array.from(h0.white.slice(0, Math.min(H, spacing*3))), mark: spaceH },
+      ],
+      images: [snapshot(ink0, 'what counts as ink')] });
 
-  // ---- 2. Skew -------------------------------------------------------------
-  // Shear the ink into a horizontal projection and keep the angle whose profile
-  // is spikiest. Five long parallel lines are the only thing on a page that can
-  // make a projection spike, so this locks onto the staff and ignores the text.
-  let skew = 0, bestVar = -1;
-  const skewStride = Math.max(1, Math.round(W/1200));
-  for (let a = -4; a <= 4; a += 0.1) {
-    const t = Math.tan(a*Math.PI/180), prof = new Float64Array(H);
-    for (let y = 0; y < H; y++) { const row = y*W;
-      for (let x = 0; x < W; x += skewStride) { if (!ink0[row+x]) continue;
-        const yy = y + Math.round((x - W/2)*t); if (yy >= 0 && yy < H) prof[yy]++; } }
-    let m = 0; for (let y = 0; y < H; y++) m += prof[y]; m /= H;
-    let v = 0; for (let y = 0; y < H; y++) v += (prof[y]-m)*(prof[y]-m);
-    if (v > bestVar) { bestVar = v; skew = +a.toFixed(2); }
+  /** Least squares through a quadratic — enough for page curl, too stiff to chase a beam. */
+  function quadFit(pts, key) {
+    let S0=0,S1=0,S2=0,S3=0,S4=0,T0=0,T1=0,T2=0;
+    for (const p of pts) { const x=p.x, y=p[key], x2=x*x;
+      S0++; S1+=x; S2+=x2; S3+=x2*x; S4+=x2*x2; T0+=y; T1+=x*y; T2+=x2*y; }
+    const M=[[S0,S1,S2],[S1,S2,S3],[S2,S3,S4]], V=[T0,T1,T2];
+    for (let i=0;i<3;i++) {
+      let p=i; for (let r=i+1;r<3;r++) if (Math.abs(M[r][i])>Math.abs(M[p][i])) p=r;
+      const tm=M[i]; M[i]=M[p]; M[p]=tm; const tv=V[i]; V[i]=V[p]; V[p]=tv;
+      for (let r=0;r<3;r++) { if (r===i || !M[i][i]) continue;
+        const f=M[r][i]/M[i][i];
+        for (let q=i;q<3;q++) M[r][q]-=f*M[i][q];
+        V[r]-=f*V[i]; }
+    }
+    const a=V[0]/(M[0][0]||1), bb=V[1]/(M[1][1]||1), cc=V[2]/(M[2][2]||1);
+    return (x) => a + bb*x + cc*x*x;
   }
 
-  const c = canvasOf(-skew), grey = greyOf(c), ink = binarise(grey, Math.max(8, Math.round(spacing*2)));
-
-  // ---- 3. The staff, as one rigid comb -------------------------------------
-  // Track the staff as a single object, never five independent lines. Tracking
-  // lines separately is what broke first: the top line's search window
-  // overlapped the tempo heading and it walked off, taking 60px of invented
-  // drift with it. Sliding the whole comb lets a beam darken one line and still
-  // lose to the four that disagree.
+  // ---- 2. Where the staff runs ---------------------------------------------
   //
-  // The comb is scored against the spaces between its own lines, not against
-  // the paper beside the staff. Measuring against distant paper rewards a wider
-  // comb — its probes reach cleaner margin — and that returned a stretched comb
-  // sitting a line too high.
+  // There is no deskew step, and removing it fixed the worst bug in this file.
+  //
+  // A global rotation only ever existed so that a straight-line model of the
+  // staff would fit. This models a curve, so it never needed one — and the
+  // rotation was actively wrong twice over. The angle came from maximising the
+  // variance of a sheared projection, which the black page-edge bands dominate:
+  // they are horizontal, so they pull the peak toward zero, and a staff whose
+  // true tilt was −1.4° was measured at −0.8°. Then it was applied with the
+  // wrong sign, turning a 93px drop into a 137px one. Every number downstream
+  // still looked healthy; the grid sat a space and a half off the staff at the
+  // right-hand end, which only a zoomed screenshot showed.
+  const c = canvasOf(0), grey = greyOf(c);
+  const ink = binarise(grey, Math.max(8, Math.round(spacing*2)));
+
+  // Score the comb against the spaces between its own lines. Measuring against
+  // the paper beside the staff rewards a wider comb — its probes reach cleaner
+  // margin — and that returned a stretched comb sitting a line too high.
   const half = Math.max(1, Math.round(lineH/2));
   const combScore = (x, top, sp) => {
     let dark = 0, light = 0;
@@ -137,56 +175,101 @@ async function staffGrid(dataB64, opts) {
     return light/4 - dark/5;
   };
 
-  // With spacing known, where the staff sits is a one-dimensional question, and
-  // the median across the width keeps a block of text from answering it.
-  const probeX = []; for (let x = Math.round(W*0.1); x < W*0.9; x += Math.round(W/60)) probeX.push(x);
-  let seed = null;
-  for (let top = 2; top < H - 4*spacing - 2; top += 0.5) {
-    const b = probeX.map(x => combScore(x, top, spacing)).sort((p, q) => p - q);
-    const v = b[Math.floor(b.length/2)];
-    if (!seed || v > seed.v) seed = { v, top, sp: spacing };
-  }
-
-  // Track per column against the seed, never against a running expectation.
-  // A running expectation is free to walk, and it did: over the width it slid a
-  // whole line down. Anchoring every column to the deskewed seed with a window
-  // narrower than half a space makes a one-line slip unreachable by
-  // construction, so residual page curl is all that is left to fit.
-  const win = spacing*0.4, step = Math.max(2, Math.round(spacing/3)), cols = [];
-  for (let x = 0; x < W; x += step) {
+  // An unconstrained search over the full height at a few dozen columns. This
+  // is what a staff looks like to the scorer with nothing else assumed, and on
+  // a real photograph it wins by a wide margin — scores of 50 to 90 against a
+  // threshold of 18 — because five dark lines separated by four light gaps is
+  // not a pattern that text or noteheads happen to make.
+  const freeAt = (x) => {
     let best = null;
-    for (let top = seed.top - win; top <= seed.top + win; top += 0.25)
-      for (let sp = spacing - 1.2; sp <= spacing + 1.2; sp += 0.2) {
+    for (let top = 2; top < H - 4*spacing - 2; top += 0.5)
+      for (let sp = spacing - 3; sp <= spacing + 3; sp += 0.25) {
         const v = combScore(x, top, sp);
-        if (!best || v > best.v) best = { v, top, sp };
+        if (!best || v > best.v) best = { v, top, sp, x };
       }
-    // Solid ink (a chord, a barline) and blank paper both flatten the
-    // lines-versus-spaces contrast, so one threshold rules out both.
-    if (best.v > 18) cols.push({ x, top: best.top, sp: best.sp });
+    return best;
+  };
+  const probes = [];
+  for (let x = Math.round(W*0.04); x < W*0.96; x += Math.round(W/48)) {
+    const p = freeAt(x);
+    if (p && p.v > 25) probes.push(p);
   }
 
-  function quadFit(pts, key) {
-    let S0=0,S1=0,S2=0,S3=0,S4=0,T0=0,T1=0,T2=0;
-    for (const p of pts) { const x=p.x, y=p[key], x2=x*x;
-      S0++; S1+=x; S2+=x2; S3+=x2*x; S4+=x2*x2; T0+=y; T1+=x*y; T2+=x2*y; }
-    const M=[[S0,S1,S2],[S1,S2,S3],[S2,S3,S4]], V=[T0,T1,T2];
-    for (let i=0;i<3;i++) {
-      let p=i; for (let r=i+1;r<3;r++) if (Math.abs(M[r][i])>Math.abs(M[p][i])) p=r;
-      const tm=M[i]; M[i]=M[p]; M[p]=tm; const tv=V[i]; V[i]=V[p]; V[p]=tv;
-      for (let r=0;r<3;r++) { if (r===i || !M[i][i]) continue;
-        const f=M[r][i]/M[i][i];
-        for (let q=i;q<3;q++) M[r][q]-=f*M[i][q];
-        V[r]-=f*V[i]; }
-    }
-    const a=V[0]/(M[0][0]||1), bb=V[1]/(M[1][1]||1), cc=V[2]/(M[2][2]||1);
-    return (x) => a + bb*x + cc*x*x;
+  const win = spacing*0.4, step = Math.max(2, Math.round(spacing/3));
+  // Robust fit through the probes: reject the ones that disagree by more than
+  // half a space — those are combs that locked onto a block of text — and refit.
+  let topAt = quadFit(probes, 'top'), spAt = quadFit(probes, 'sp');
+  for (let pass = 0; pass < 3; pass++) {
+    const fit = topAt;
+    const good = probes.filter(p => Math.abs(p.top - fit(p.x)) < spacing*0.5);
+    if (good.length < 6) break;
+    topAt = quadFit(good, 'top'); spAt = quadFit(good, 'sp');
   }
-  // One pass of outlier rejection: fit, drop columns off the curve, refit.
-  let topAt = quadFit(cols, 'top');
-  const kept = cols.filter(p => Math.abs(p.top - topAt(p.x)) < spacing*0.12);
-  topAt = quadFit(kept, 'top');
-  const spAt = quadFit(kept, 'sp');
+  let cols = [], kept = [], moved = null;
+  for (let pass = 0; pass < 5; pass++) {
+    const prev = topAt;
+    cols = [];
+    for (let x = 0; x < W; x += step) {
+      const c0 = prev(x), s0 = spAt(x);
+      let best = null;
+      for (let top = c0 - win; top <= c0 + win; top += 0.25)
+        for (let sp = s0 - 0.6; sp <= s0 + 0.6; sp += 0.1) {
+          const v = combScore(x, top, sp);
+          if (!best || v > best.v) best = { v, top, sp };
+        }
+      // Solid ink (a chord, a barline) and blank paper both flatten the
+      // lines-versus-spaces contrast, so one threshold rules out both.
+      if (best.v > 18) cols.push({ x, top: best.top, sp: best.sp });
+    }
+    if (cols.length < 12) break;
+    let fit = quadFit(cols, 'top');
+    const trimmed = cols.filter(p => Math.abs(p.top - fit(p.x)) < spacing*0.12);
+    kept = trimmed.length >= 12 ? trimmed : cols;
+    topAt = quadFit(kept, 'top');
+    spAt = quadFit(kept, 'sp');
+    // Stop when a pass stops moving the curve. Running on would only re-fit the
+    // same columns, and every extra pass is another chance to drift.
+    let sum = 0, n = 0;
+    for (let x = 0; x < W; x += Math.round(W/40)) { sum += Math.abs(topAt(x) - prev(x)); n++; }
+    moved = sum/n;
+    if (moved < 0.5) break;
+  }
   const lineY = (k, x) => topAt(x) + k*spAt(x);
+
+  const combOverlay = () => {
+    const c2 = document.createElement('canvas'); c2.width = W; c2.height = H;
+    const g2 = c2.getContext('2d'); g2.drawImage(c, 0, 0);
+    g2.lineWidth = Math.max(1, lineH/4); g2.strokeStyle = 'rgba(215,40,40,0.85)';
+    for (let k = 0; k < 5; k++) { g2.beginPath();
+      for (let x = 0; x < W; x += 8) { const Y = lineY(k, x); x === 0 ? g2.moveTo(x, Y) : g2.lineTo(x, Y); }
+      g2.stroke(); }
+    g2.fillStyle = 'rgba(20,120,215,0.8)';
+    for (const p of kept) g2.fillRect(p.x - 1, p.top - 1, 3, 3);
+    return { label: 'the fitted staff, drawn back onto the page', canvas: c2 };
+  };
+  const residSorted = kept.map(p => Math.abs(p.top - topAt(p.x))).sort((a, b) => a - b);
+  const medianResid = residSorted.length ? residSorted[Math.floor(residSorted.length/2)] : NaN;
+  note('Finding the staff, without straightening the page',
+    `Searched the full height of ${probes.length} columns for five dark lines separated by four `
+    + `light gaps, with nothing assumed about where the staff is. That pattern wins by a wide `
+    + `margin — nothing text or noteheads make comes close — so the columns can be searched `
+    + `independently and still agree.\n\nThere is no rotation step. A global rotation only ever `
+    + `existed so a straight-line model would fit, and this models a curve. It was also wrong `
+    + `twice over: the angle came from a projection the black page edges dominate, so a −1.4° `
+    + `tilt measured as −0.8°, and it was then applied with the wrong sign — turning a 93px drop `
+    + `across the page into 137px.`,
+    { series: [{ name: 'staff top by column, left to right', values: probes.map(p => p.top) }] });
+
+  note('Where the staff actually runs',
+    `Refined the curve at ${cols.length} columns, keeping the ${kept.length} that agree with it, `
+    + `each searched only within half a space of the current fit so no column can slip onto a `
+    + `neighbouring line. The staff falls ${Math.abs(+(topAt(W-40) - topAt(40)).toFixed(1))}px `
+    + `${topAt(W-40) > topAt(40) ? 'lower' : 'higher'} at the right edge than the left — tilt and `
+    + `curl together, which is why the grid is a curve and not five straight lines. `
+    + `Spread among the kept columns ±${medianResid.toFixed(2)}px; what matters more is the `
+    + `picture below, since a fit can agree beautifully with the columns it chose and still sit `
+    + `off the printed staff.`,
+    { images: [combOverlay()] });
 
   // ---- 4. Staff-line removal -----------------------------------------------
   // With the lines located exactly, take them out. Leaving them in was quietly
@@ -196,6 +279,7 @@ async function staffGrid(dataB64, opts) {
   // separates those. A pixel is deleted only where the vertical run through it
   // is line-thin — a stem or a barline crossing the line is taller than that
   // and survives, which is what keeps the strokes continuous.
+  const inkBefore = ink.slice();
   const inkNL = ink.slice();
   for (let x = 0; x < W; x++) {
     for (let k = 0; k < 5; k++) {
@@ -209,6 +293,14 @@ async function staffGrid(dataB64, opts) {
       }
     }
   }
+
+  note('Staff lines removed',
+    'A pixel is deleted only where the vertical run through it is line-thin, so a stem or a '
+    + 'barline crossing a line survives and stays continuous. Leaving the lines in was quietly '
+    + 'ruining every measurement made near the staff: five lines of ink cross every column, so '
+    + '"is there anything beside this stroke?" answered about the same for empty paper as for a '
+    + 'notehead.',
+    { images: [snapshot(inkBefore, 'before'), snapshot(inkNL, 'after')] });
 
   // ---- 5. Barline hints ----------------------------------------------------
   // Advisory only, and deliberately so. Separating a barline from a stem by
@@ -253,17 +345,25 @@ async function staffGrid(dataB64, opts) {
     barHints.push(Math.round(g.reduce((a,b)=>a+b,0)/g.length));
   }
   const barX = barHints;
+  note('Barline hints',
+    `${barHints.length} vertical stroke${barHints.length === 1 ? '' : 's'} span the staff top to `
+    + 'bottom. Some are barlines and some are stems, and nothing in the image separates them — '
+    + 'six ways of trying are written up in DECISIONS.md, and real barlines and real stems landed '
+    + 'in the same range every time. These go to the model as a hint it may ignore; the ruler '
+    + 'printed on each slice is how it answers.',
+    { rows: barHints.map((x, i) => [`stroke ${i+1}`, `x ${x}`]) });
 
   const resid = kept.map(p => Math.abs(p.top - topAt(p.x))).sort((a,b)=>a-b);
   return {
-    W, H, skew, lineH, spaceH, spacing,
-    seedTop: +seed.top.toFixed(1),
+    W, H, lineH, spaceH, spacing,
+    probes: probes.length,
+    tilt: +(((topAt(W-40) - topAt(40))/(W-80))*180/Math.PI).toFixed(2),
     cols: cols.length, kept: kept.length, of: Math.ceil(W/step),
     drift: +(topAt(W-40) - topAt(40)).toFixed(1),
     spacingLeft: +spAt(40).toFixed(2), spacingRight: +spAt(W-40).toFixed(2),
     residMedian: +(resid.length ? resid[Math.floor(resid.length/2)] : NaN).toFixed(2),
     residP90: +(resid.length ? resid[Math.floor(resid.length*0.9)] : NaN).toFixed(2),
-    barX,
+    barX, steps,
     _canvas: c, _topAt: topAt, _spAt: spAt, _lineY: lineY, _kept: kept,
   };
 }
