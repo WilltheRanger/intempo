@@ -57,13 +57,19 @@ class GeminiProvider:
             input_tokens * self._input_price + output_tokens * self._output_price
         ) / 1_000_000
 
-    def parse(self, image_bytes: bytes, mime_type: str = "image/jpeg") -> OCRResponse:
+    def parse(
+        self,
+        image_bytes: bytes,
+        mime_type: str = "image/jpeg",
+        note: str | None = None,
+    ) -> OCRResponse:
+        prompt = f"{PROMPT}\n\n{note}" if note else PROMPT
         start = time.monotonic()
         response = self._get_client().models.generate_content(
             model=self.model,
             contents=[
                 types.Part.from_bytes(data=image_bytes, mime_type=mime_type),
-                PROMPT,
+                prompt,
             ],
             config=types.GenerateContentConfig(
                 response_mime_type="application/json",

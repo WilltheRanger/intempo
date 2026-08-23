@@ -35,6 +35,7 @@ from app.services.ocr.gemini_provider import (
     gemini_flash_provider,
     gemini_pro_provider,
 )
+from app.services.ocr.confirm import confirm_reading
 from app.services.ocr.omr_provider import omr_local_provider
 from app.services.score_schema import ScoreJson
 
@@ -80,11 +81,44 @@ def parse_sheet_music(
     *,
     media_type: str = "image/jpeg",
     providers: list[OCRProvider] | None = None,
+    confirm: bool = True,
 ) -> ScoreJson:
-    """Run the image through the configured provider chain."""
+    """Run the image through the configured provider chain.
+
+    `confirm=False` turns off the OMR second opinion, for tests and for callers
+    that want the vision chain on its own.
+    """
     chain = providers if providers is not None else _default_chain()
     if not chain:
         raise OCRError("provider chain is empty")
+
+    # The OMR engine reads first, and a vision model checks its answer.
+    #
+    # Not a fallthrough step, because a fallthrough would stop at the engine
+    # and the engine's reading is *partial* — measured on a real page it got
+    # the clef, the key and the barlines right and found 15 measures where
+    # there were about 25. Returning that would be worse than the vision model
+    # alone. Showing it to the model instead plays each to its strength:
+    # structure from the engine, coverage from the model, and a much easier
+    # question than transcribing from nothing.
+    #
+    # Skipped silently when the engine is not installed, which is the normal
+    # case — it costs one failed `which` and the chain proceeds as before.
+    if confirm and settings.OMR_CONFIRM:
+        try:
+            engine = get_provider(settings.OMR_CONFIRM).parse(image_bytes, media_type)
+        except (ValidationError, OCRProviderError, ValueError, OCRError) as exc:
+            log.info("no OMR second opinion available: %s", exc)
+        else:
+            confirmed = confirm_reading(
+                engine.score, image_bytes, media_type=media_type, provider=chain[0]
+            )
+            if not beat_problems(confirmed):
+                return confirmed
+            log.info(
+                "confirmed reading still has measures that do not add up; "
+                "falling back to the ordinary chain"
+            )
 
     failures: list[str] = []
     # **First** in the chain, not highest-scoring, and deliberately so — this
