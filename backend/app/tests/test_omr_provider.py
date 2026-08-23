@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import os
 import stat
+import zipfile
 from pathlib import Path
 
 import pytest
@@ -111,6 +112,47 @@ def test_unreadable_output_is_refused(tmp_path: Path) -> None:
     name = _stub(tmp_path, 'printf \'not xml\' > "$3/score.musicxml"\n')
     with pytest.raises(OCRProviderError):
         OMRProvider(command=name).parse(b"x")
+
+
+def test_the_argument_template_is_substituted(tmp_path: Path) -> None:
+    """Audiveris takes `-batch -export -output DIR -- FILE`; oemer takes
+    `FILE -o DIR`. There is no convention, so the shape is configuration."""
+    name = _stub(
+        tmp_path,
+        # $4 is {out} under this template. Writing there proves the placeholder
+        # landed in the right position, which asserting on argv text would not.
+        'cat > "$4/score.musicxml" <<\'XML\'\n'
+        '<score-partwise><part id="P1"><measure number="1">'
+        "<note><rest/><type>quarter</type></note></measure></part></score-partwise>\nXML\n",
+    )
+    provider = OMRProvider(command=name, args="-batch -export -output {out} -- {image}")
+    assert provider.parse(b"x", "image/png").score.measures
+
+
+def test_a_broken_template_says_so(tmp_path: Path) -> None:
+    name = _stub(tmp_path, "exit 0\n")
+    with pytest.raises(OCRProviderError) as caught:
+        OMRProvider(command=name, args="{nonsense}").parse(b"x")
+    assert "OMR_ARGS" in str(caught.value)
+
+
+def test_a_compressed_mxl_is_read(tmp_path: Path) -> None:
+    """Audiveris exports .mxl — a zip holding the document — not a bare file."""
+    archive = tmp_path / "payload.mxl"
+    with zipfile.ZipFile(archive, "w") as bundle:
+        bundle.writestr("META-INF/container.xml", "<container/>")
+        bundle.writestr("score.xml", FIXTURE.read_text(encoding="utf-8"))
+    name = _stub(tmp_path, f'cp "{archive}" "$3/out.mxl"\n', name="fake-mxl")
+    response = OMRProvider(command=name).parse(b"x", "image/png")
+    assert response.score.clef == "bass"
+    assert len(response.score.measures) == 2
+
+
+def test_a_corrupt_mxl_is_refused(tmp_path: Path) -> None:
+    name = _stub(tmp_path, 'printf \'not a zip\' > "$3/out.mxl"\n', name="fake-badmxl")
+    with pytest.raises(OCRProviderError) as caught:
+        OMRProvider(command=name).parse(b"x")
+    assert "readable .mxl" in str(caught.value)
 
 
 def test_it_is_registered_but_not_in_the_default_chain() -> None:

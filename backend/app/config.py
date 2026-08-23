@@ -48,6 +48,13 @@ class Settings:
     #: Any binary taking `<image> -o <dir>` and writing MusicXML will do —
     #: oemer, homr and Audiveris all fit.
     OMR_COMMAND: str = os.getenv("OMR_COMMAND", "oemer")
+
+    #: How to invoke it. `{image}` and `{out}` are substituted; there is no
+    #: convention between engines to rely on:
+    #:
+    #:     oemer      {image} -o {out}
+    #:     Audiveris  -batch -export -output {out} -- {image}
+    OMR_ARGS: str = os.getenv("OMR_ARGS", "{image} -o {out}")
     STRIPE_SECRET_KEY: str = os.getenv("STRIPE_SECRET_KEY", "")
     STRIPE_WEBHOOK_SECRET: str = os.getenv("STRIPE_WEBHOOK_SECRET", "")
 

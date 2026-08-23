@@ -29,16 +29,24 @@ what `HoughLinesP` returns, which surfaces twenty minutes into a run as
 `IndexError: invalid index to scalar variable` — after the segmentation networks
 have done their work and thrown it away.
 
-`OMR_COMMAND` points at any engine taking `<image> -o <dir>` and writing
-MusicXML; Audiveris and homr both fit and carry neither of these problems.
+`OMR_COMMAND` and `OMR_ARGS` point at any engine that writes MusicXML. The
+argument shapes differ and there is no convention to rely on:
+
+    oemer      {image} -o {out}
+    Audiveris  -batch -export -output {out} -- {image}
+
+Audiveris also exports `.mxl` — a zip holding the MusicXML — rather than a bare
+document, so both are read.
 """
 
 from __future__ import annotations
 
+import shlex
 import shutil
 import subprocess
 import tempfile
 import time
+import zipfile
 from pathlib import Path
 
 from app.config import settings
@@ -66,12 +74,14 @@ class OMRProvider:
         *,
         name: str = "omr-local",
         command: str | None = None,
+        args: str | None = None,
         timeout_s: int = DEFAULT_TIMEOUT_S,
         clef_fallback: str = "treble",
     ) -> None:
         self.name = name
         self.model = name
         self._command = command
+        self._args = args
         self._timeout_s = timeout_s
         self._clef_fallback = clef_fallback
 
@@ -99,9 +109,21 @@ class OMRProvider:
             out_dir = work / "out"
             out_dir.mkdir()
 
+            template = self._args if self._args is not None else settings.OMR_ARGS
+            try:
+                argv = [
+                    part.format(image=str(image_path), out=str(out_dir))
+                    for part in shlex.split(template)
+                ]
+            except (KeyError, IndexError, ValueError) as exc:
+                raise OCRProviderError(
+                    f"{self.name}: OMR_ARGS is not a usable template ({template!r}): {exc}. "
+                    "Use {image} and {out} as the placeholders."
+                ) from exc
+
             try:
                 completed = subprocess.run(
-                    [command, str(image_path), "-o", str(out_dir)],
+                    [command, *argv],
                     capture_output=True,
                     text=True,
                     timeout=self._timeout_s,
@@ -123,12 +145,16 @@ class OMRProvider:
                     + (f" — {tail}" if tail else "")
                 )
 
-            produced = sorted(out_dir.rglob("*.musicxml")) + sorted(out_dir.rglob("*.xml"))
+            produced = (
+                sorted(out_dir.rglob("*.musicxml"))
+                + sorted(out_dir.rglob("*.mxl"))
+                + sorted(out_dir.rglob("*.xml"))
+            )
             if not produced:
                 raise OCRProviderError(
                     f"{self.name}: engine finished but wrote no MusicXML into {out_dir.name}"
                 )
-            raw_text = produced[0].read_text(encoding="utf-8", errors="replace")
+            raw_text = _read_musicxml(produced[0], self.name)
 
         try:
             score = score_json_from_musicxml(raw_text, clef_fallback=self._clef_fallback)
@@ -152,6 +178,28 @@ class OMRProvider:
             cost_usd=0.0,
             latency_ms=int((time.perf_counter() - started) * 1000),
         )
+
+
+def _read_musicxml(path: Path, provider: str) -> str:
+    """Read a MusicXML document, compressed or not.
+
+    A `.mxl` is a zip. Its `META-INF/container.xml` names the real document, but
+    that indirection is not worth honouring for one file: take the first entry
+    that is not container metadata, which is what every writer produces.
+    """
+    if path.suffix.lower() != ".mxl":
+        return path.read_text(encoding="utf-8", errors="replace")
+    try:
+        with zipfile.ZipFile(path) as archive:
+            names = [
+                n for n in archive.namelist()
+                if not n.startswith("META-INF/") and n.lower().endswith((".xml", ".musicxml"))
+            ]
+            if not names:
+                raise OCRProviderError(f"{provider}: {path.name} holds no MusicXML document")
+            return archive.read(names[0]).decode("utf-8", errors="replace")
+    except zipfile.BadZipFile as exc:
+        raise OCRProviderError(f"{provider}: {path.name} is not a readable .mxl: {exc}") from exc
 
 
 omr_local_provider = OMRProvider()
