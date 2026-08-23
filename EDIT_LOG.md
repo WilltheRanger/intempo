@@ -6,6 +6,51 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-30 (last) — A partial take was analysed as a whole one
+
+**Branch:** `main`. `/loop` iteration. The finding recorded on 2026-08-29 when
+`subseq=True` was measured and refused — that a partial recording is not merely
+coverage-penalised but **confidently wrong**.
+
+Matching normalised each sequence onto its own unit span, which is unbounded:
+it stretches whatever it is handed until the ends line up, and so it asserts
+that the take covers the score. A take of the first twenty notes of a forty-note
+piece mapped onto written notes 0–39. Every delta was measured against the wrong
+note and a verdict was produced anyway.
+
+Replaced with a clamped ratio of median inter-onset intervals. **The clamp is
+the fix, not the ratio** — reading a half take as a whole one needs 2×, reading
+every-other-note as a complete slow take needs 0.5×, and [0.6, 1.7] puts both
+out of reach while leaving room far beyond the ±20% the verdict bands call
+severe. The prior underneath it is that `target_bpm` is a number the musician
+*set*, so a take near that tempo needs a ratio near 1 — and practising slowly is
+not an exception, it is them moving the tempo control.
+
+Better or equal on every case measured; wrong-piece rejection improves most
+(0.248 → **0.000**). All six corpus clips are bit-identical. Numbers in
+`TUNING_LOG.md`.
+
+**A minimum take length came out of a genuine regression.** A median over two
+intervals is not a median, and a missed note inflates one — `[0.5, 1.0]` medians
+to 0.75 and compresses a take that was played evenly, which broke a four-note
+test. Below seven onsets the score's own units are used unchanged, which costs
+nothing: at 20% fast, six notes or fewer match **perfectly** unscaled, and only
+from eight does it collapse.
+
+**An alternative measured and rejected:** refitting the rate from a first DTW
+pass is more robust to a missed note and does fix the four-note case, but breaks
+tempo-invariance — a 32-note take 20% fast mapped to 0–26 instead of 0–31,
+because the first pass is the sliding match the second is meant to correct.
+
+**Still not solved:** a take that starts *mid-piece* still anchors at note 0.
+Locating it needs the score's own structure, and a musician recording from bar
+15 has no way to say so. Left as it is.
+
+**Tests:** 538, unchanged in count — one assertion tightened (a sparse take is
+now rejected at 0.119 rather than 0.301). Ruff clean.
+
+---
+
 ## 2026-08-30 (later) — Slurred music could not be analysed at all
 
 **Branch:** `main`. `/loop` iteration.

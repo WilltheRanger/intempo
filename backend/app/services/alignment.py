@@ -307,6 +307,34 @@ def _quality_from_cost(total_cost: float, path_len: int, sec_per_beat: float) ->
     return float(np.clip(1.0 - avg_error_beats / 0.5, 0.0, 1.0))
 
 
+#: How far the matching step may rescale a recording toward the written pace.
+#:
+#: Not a tolerance on playing — the verdict's bands do that, and they call ±20%
+#: severe. This is a bound on what the *matcher* is allowed to believe, and the
+#: two numbers it has to exclude are exact: **2.0**, which is a take of half the
+#: piece read as the whole of it, and **0.5**, which is every-other-note read as
+#: a complete slow performance. Both produce a confident analysis of bars nobody
+#: played. Everything a musician plausibly does against a tempo they set
+#: themselves sits well inside.
+MIN_TEMPO_RATIO = 0.6
+MAX_TEMPO_RATIO = 1.7
+
+#: How many onsets a take needs before its pace is estimated from it at all.
+#:
+#: Below this the estimate is both unnecessary and unreliable, and the two facts
+#: have the same cause. Unnecessary: the sliding error that scaling exists to
+#: prevent grows with the length of the take, and measured at 20% fast a take of
+#: six notes or fewer matches **perfectly** with no scaling, while eight notes
+#: collapses to 38% and thirty-two to 9%. Unreliable: a median over two or three
+#: intervals is not a median, and a single *missed* note inflates an interval —
+#: [0.5, 1.0] medians to 0.75 and compresses a take that was played evenly.
+#:
+#: So below the crossover the score's own units are used unchanged, which is
+#: exactly right: `expected` is built at `target_bpm`, the tempo the musician
+#: set.
+MIN_ONSETS_TO_ESTIMATE_TEMPO = 7
+
+
 def to_timeline_base(detected: np.ndarray) -> np.ndarray:
     """Detected onsets re-expressed as seconds since the first note.
 
@@ -384,29 +412,56 @@ def align_dtw(
     #     64 notes, 10% fast →  8%
     #
     # A musician who rushes is the entire audience for this app, and their
-    # notes were being attributed to the wrong bars — so every per-measure
-    # verdict after the first few was about a measure they had not played.
+    # notes were being attributed to the wrong bars.
     #
-    # Each sequence is put on its own unit span before matching. Deciding
+    # So the recording is put into the score's units before matching. Deciding
     # *which* onset is which note cannot depend on how fast it was played;
-    # deciding whether it was early or late must. Only the first is done here —
+    # deciding whether it was early or late must. Only the first happens here —
     # `compute_deltas` works in real seconds and is untouched, so the verdict
-    # still reports the rushing that this normalisation ignores.
+    # still reports the rushing this ignores.
     #
-    # By span rather than by a tempo ratio from median inter-onset intervals,
-    # which measured better on a wrong-piece take (0.000 vs 0.248) and much
-    # worse on the case that actually harms someone: a take with every other
-    # note missing gets rescaled to look complete, matching note i to written
-    # note i instead of 2i, and a dropped-notes performance comes back as a
-    # confident analysis of the wrong bars.
-    def _unit_span(seq: np.ndarray) -> np.ndarray:
-        if seq.size < 2:
-            return seq - (seq[0] if seq.size else 0.0)
-        span = float(np.ptp(seq))
-        return (seq - seq[0]) / (span if span > 0 else 1.0)
+    # **Bounded, and that is the whole point.** This scaled each sequence onto
+    # its own unit span, which is unbounded: it stretches whatever it is given
+    # until the two ends line up, and so it *asserts* that the take covers the
+    # score. A musician who played the first half of the piece had those notes
+    # smeared across all of it — every delta measured against the wrong written
+    # note, reported confidently. Measured on a 40-note score, a take of notes
+    # 0–19 mapped to written notes 0–39.
+    #
+    # A ratio of median inter-onset intervals, clamped, cannot do that. The
+    # clamp is what makes it safe rather than merely different: reading a half
+    # take as a whole one needs 2×, and reading every-other-note as a complete
+    # slow take needs 0.5×, and neither is reachable. What is reachable covers
+    # a musician far outside the ±20% the verdict bands call severe — so the
+    # tempo differences this exists to absorb pass through untouched, and the
+    # two rescalings that produce confident nonsense do not.
+    #
+    # The prior underneath it is that `target_bpm` is a number the musician
+    # *set* — `expected` is built at it, so a take near that tempo needs a
+    # ratio near 1. Practising slowly is not the exception it looks like: the
+    # tempo control is what they moved to do it.
+    #
+    #   case               span (was)   bounded (now)
+    #   perfect               1.000        1.000
+    #   20% fast              1.000        1.000
+    #   gradual rush 13%      0.725        0.725
+    #   first half            0.400        0.500   ← and now maps to 0–19
+    #   every other note      0.301        0.119
+    #   WRONG PIECE           0.248        0.000
+    def _into_score_units(seq: np.ndarray, reference: np.ndarray) -> np.ndarray:
+        """`seq` shifted to a zero origin and scaled toward `reference`'s pace."""
+        shifted = seq - (seq[0] if seq.size else 0.0)
+        if seq.size < MIN_ONSETS_TO_ESTIMATE_TEMPO or reference.size < 2:
+            return shifted
+        played = float(np.median(np.diff(seq)))
+        written = float(np.median(np.diff(reference)))
+        if played <= 0 or written <= 0:
+            return shifted
+        ratio = written / played
+        return shifted * min(max(ratio, MIN_TEMPO_RATIO), MAX_TEMPO_RATIO)
 
-    x = _unit_span(detected).reshape(1, -1)
-    y = _unit_span(expected).reshape(1, -1)
+    x = _into_score_units(detected, expected).reshape(1, -1)
+    y = (expected - (expected[0] if expected.size else 0.0)).reshape(1, -1)
     try:
         acc_cost, wp = librosa.sequence.dtw(
             X=x,
