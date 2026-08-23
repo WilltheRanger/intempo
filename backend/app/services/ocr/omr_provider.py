@@ -137,12 +137,9 @@ class OMRProvider:
                 raise OCRProviderError(f"{self.name}: could not run {command!r}: {exc}") from exc
 
             if completed.returncode != 0:
-                # The last few lines of stderr, not all of it: these engines are
-                # chatty about progress and the useful part is at the end.
-                tail = "\n".join((completed.stderr or "").strip().splitlines()[-4:])
                 raise OCRProviderError(
                     f"{self.name}: engine exited {completed.returncode}"
-                    + (f" — {tail}" if tail else "")
+                    + _explain(completed)
                 )
 
             produced = (
@@ -151,8 +148,15 @@ class OMRProvider:
                 + sorted(out_dir.rglob("*.xml"))
             )
             if not produced:
+                # Audiveris exits *zero* when it gives up — "Could not export
+                # since transcription did not complete successfully" — and the
+                # actual reason is a line further up its own log. Without it the
+                # failure is a mystery; with it, it says things like "Too large
+                # image: 24,470,208 pixels (vs 20,000,000 max)", which names both
+                # the problem and the fix.
                 raise OCRProviderError(
-                    f"{self.name}: engine finished but wrote no MusicXML into {out_dir.name}"
+                    f"{self.name}: engine finished but wrote no MusicXML"
+                    + _explain(completed)
                 )
             raw_text = _read_musicxml(produced[0], self.name)
 
@@ -178,6 +182,25 @@ class OMRProvider:
             cost_usd=0.0,
             latency_ms=int((time.perf_counter() - started) * 1000),
         )
+
+
+def _explain(completed: subprocess.CompletedProcess[str]) -> str:
+    """The engine's own words about what went wrong.
+
+    Both streams, because these engines disagree about which one to use —
+    Audiveris logs everything to stdout, oemer raises on stderr — and the last
+    few lines only, because both are chatty about progress and the useful part
+    is at the end.
+    """
+    lines: list[str] = []
+    for stream in (completed.stderr, completed.stdout):
+        lines.extend((stream or "").strip().splitlines())
+    interesting = [
+        line for line in lines
+        if any(word in line for word in ("rror", "ARN", "xception", "ailed", "not ", "Too "))
+    ]
+    tail = (interesting or lines)[-4:]
+    return (" — " + " | ".join(t.strip() for t in tail)) if tail else ""
 
 
 def _read_musicxml(path: Path, provider: str) -> str:
