@@ -6,6 +6,108 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-01 (evening) — One hesitation renames eight bars. Measured, not fixed.
+
+**Branch:** `main`. `/loop` iteration. Two findings: rhythmically varied music
+is handled well, and a **serious defect in the core claim of the product** that
+I am reporting rather than shipping a fix for, because the fix I measured is
+not safe yet.
+
+### What is fine
+
+The score used here is twenty bars cycling five shapes — quarters; eighths;
+dotted-quarter/eighth/half; sixteenths/quarter/half; and a bar with a rest.
+96 sounded notes, gaps from 208 ms to 1667 ms, an eight-fold range. Nothing in
+the pipeline had been shown that before; every other audio test plays a uniform
+stream of one duration.
+
+| take | result |
+|---|---|
+| played well | quality **0.985**, 96/96 notes, no bar reported off-tempo |
+| one note dropped | 0.975, reported as one missed note, no bar wrongly flagged |
+| one extra note | 0.973, reported as one extra note, no bar wrongly flagged |
+
+Insertions and deletions are handled exactly right.
+
+### What is not
+
+| take | sounds attributed to the note that made them |
+|---|---|
+| bar 8 held a beat too long | **48 right, 48 wrong** |
+| bar 13 hurried | **67 right, 29 wrong** |
+
+A single hesitation and half the take is attributed to the wrong written note.
+The app then reports eight bars as off-tempo — including bars 10, 12, 15 and 17
+— on a take where the musician played one bar long and everything else
+perfectly. Quality falls to 0.517, so it is also flagged low-confidence while
+being wrong about which bars.
+
+**It is not a bug in the search.** Holding a bar leaves the take offset from
+the written grid for the rest of the piece. DTW's cost is the distance between
+absolute times, so explaining the remainder as "they skipped two notes" costs
+two free steps, while the truth costs 0.83 s on each of 88 pairs. Shifting is
+the *cheaper answer to the question being asked*. A per-skip penalty was tried
+across 0.1–1.5 × the written gap and moves it barely at all, for the same
+reason: no penalty bridges a 73-second cost difference.
+
+### The fix I measured and did not ship
+
+Matching on **intervals** rather than instants is offset-invariant by
+construction: a hesitation is one long interval instead of a permanent shift,
+and a dropped note merges two intervals, which is DTW's native many-to-one.
+
+    bar 8 held        48 right / 48 wrong  →  96 right / 0 wrong
+    bar 13 hurried    67 right / 29 wrong  →  96 right / 0 wrong
+    six corpus clips  unchanged to three decimals
+    first half only   0.500 → 0.000  (refused *more* firmly)
+    wrong piece       0.081 → 0.000
+    last third only   0.090 → 0.000
+
+It also fixes mild acceleration (5% → quality 0.653 becomes 0.741). And then:
+
+    steady take at 110% of the written pace   1.000 → **0.682**
+    steady take at 125%                       1.000 → 1.000
+    accelerating to 20% fast                  0.405 → **0.000**
+
+Non-monotone, and 110% is well inside the tempo clamp. Quality jumping around
+depending on how the interval path happens to land is not something to put in
+front of a musician, so it stays out.
+
+**The deeper reason it is not a one-line change**, and the thing worth writing
+down: after a hesitation, *quality and note identity want opposite mappings*.
+The residuals are measured in absolute seconds, so the shifted mapping — the
+wrong one — scores better. The metric encodes the absolute-time worldview. Any
+real fix has to answer a product question first: when a musician holds a bar
+and carries on, has everything after it dragged (true against a metronome) or
+has one bar dragged (true against their own pulse)? The app stores
+`metronome_mode` on the analysis, so it could answer differently per take —
+but that is a decision about what the verdict *says*, which is the user's under
+§2, not mine.
+
+**Pinned, not papered over.** `test_varied_rhythm.py` locks in the four correct
+behaviours and marks the two defective ones `xfail(strict=True)`, with the
+measurement in the reason. Strict, so when this is fixed the xfail flips to a
+failure and whoever fixed it finds out.
+
+**A measurement error of mine, recorded because it cost two rounds.** The first
+harness scored attribution by "the most common index offset", which is wrong
+the instant a take has a genuine dropped note — it reported the correct
+handling of a dropped note as a 51% failure. Ground truth is now exact: the
+performer records which written note each sound came from. The first render was
+also wrong in a different way — a flat 0.22 s note for every duration, so half
+notes were a blip and sixteenths overlapped, which made a *clean* take look
+like a 0.554. Both were mine, not the pipeline's.
+
+**No three-foot test.** No UI touched.
+
+**Tests:** backend 590 (was 584; +4 passing, +2 strict xfail). `ruff` clean.
+
+**Known side effects:** none — no production code changed in this entry.
+
+**Rollback:** delete `app/tests/test_varied_rhythm.py`.
+
+---
+
 ## 2026-09-01 (latest) — The app got less sure of itself the more you practised
 
 **Branch:** `main`. `/loop` iteration. Started from a different question than
