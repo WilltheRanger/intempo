@@ -80,8 +80,17 @@ class _FakeProvider:
         self._raises = raises
         self.calls = 0
 
-    def parse(self, image_bytes: bytes, mime_type: str = "image/jpeg") -> OCRResponse:
+    def parse(
+        self,
+        image_bytes: bytes,
+        mime_type: str = "image/jpeg",
+        note: str | None = None,
+    ) -> OCRResponse:
+        # `note` is the third argument of the `OCRProvider` protocol and is how
+        # the arithmetic re-read hands a model its own bad bars back. A fake
+        # that omits it stops being a stand-in for a provider.
         self.calls += 1
+        self.note = note
         if self._raises is not None:
             raise self._raises
         if self._outcome is not None:
@@ -312,7 +321,7 @@ def test_a_truncated_page_stops_the_chain(monkeypatch) -> None:
         _Provider("second", OCRProviderError("second: should never be asked")),
     ]
     with pytest.raises(OCRError):
-        parse_sheet_music(b"img", providers=chain, confirm=False)
+        parse_sheet_music(b"img", providers=chain, retry=False)
 
     assert asked == ["first"], "the second provider was billed for a certain failure"
 
@@ -347,7 +356,7 @@ def test_an_ordinary_failure_still_falls_through(monkeypatch) -> None:
                 input_tokens=1, output_tokens=1, cost_usd=0.0, latency_ms=1,
             )
 
-    assert parse_sheet_music(b"img", providers=[_Fails(), _Works()], confirm=False) is good
+    assert parse_sheet_music(b"img", providers=[_Fails(), _Works()], retry=False) is good
     assert asked == ["first", "second"]
 
 

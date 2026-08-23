@@ -1,8 +1,13 @@
-"""The OMR second opinion, and the vision model checking it.
+"""Handing a model its own bad arithmetic back, and letting it try again.
 
-The arrangement only earns its place if it can be *worse* as well as better,
-and the code has to notice. So most of these are about the confirmation being
-rejected, not accepted.
+The step only earns its place if it can be *worse* as well as better, and the
+code has to notice. So most of these are about the retry being rejected, not
+accepted.
+
+A measure whose durations do not sum to the time signature is *known* to be
+wrong — no judgement, just arithmetic — and it is wrong in the way that matters
+most: `alignment.py` accumulates durations to build its expected timeline, so
+one bad bar shifts every bar after it.
 """
 
 from __future__ import annotations
@@ -10,7 +15,7 @@ from __future__ import annotations
 import pytest
 
 from app.services.ocr.base import OCRProviderError, OCRResponse
-from app.services.ocr.confirm import confirm_reading
+from app.services.ocr.confirm import retry_with_arithmetic
 from app.services.score_schema import Measure, Note, ScoreJson
 
 
@@ -52,23 +57,38 @@ class _Stub:
 FOUR = [("C3", "quarter")] * 4
 
 
-def test_the_engine_reading_is_shown_to_the_model() -> None:
-    """The whole point: the model is checking, not transcribing from nothing."""
-    engine = _score([FOUR])
-    stub = _Stub(_score([FOUR, FOUR]))
-    confirm_reading(engine, b"img", media_type="image/png", provider=stub)
-    assert "already read this image" in stub.note
-    assert '"C3"' in stub.note, "the engine's actual notes have to be in the prompt"
+def test_the_model_is_told_which_measures_do_not_add_up() -> None:
+    """The whole point: the retry is aimed, not a re-roll.
+
+    A bare "try again" re-rolls the same dice. Naming the measure and the
+    arithmetic gives the model somewhere to look — and lets it answer that the
+    passage is a tuplet, which is a real answer this schema cannot represent.
+    """
+    broken = _score([[("C3", "quarter")] * 7])
+    stub = _Stub(_score([FOUR]))
+    retry_with_arithmetic(broken, b"img", media_type="image/png", provider=stub)
+    assert "does not add up" in stub.note
+    assert "1" in stub.note, "the offending measure has to be named"
 
 
-def test_a_correction_that_adds_missing_measures_is_taken() -> None:
-    """The engine's characteristic failure is dropping measures it could not
-    resolve. Recovering them is the main thing this step is for."""
-    engine = _score([FOUR])
-    better = _score([FOUR, FOUR, FOUR])
-    assert len(confirm_reading(
-        engine, b"img", media_type="image/png", provider=_Stub(better)
-    ).measures) == 3
+def test_a_reading_that_already_adds_up_is_not_re_read() -> None:
+    """No second call, and therefore no second bill, when the arithmetic is
+    already sound. This is the common case."""
+    good = _score([FOUR, FOUR])
+    stub = _Stub(_score([FOUR]))
+    assert retry_with_arithmetic(
+        good, b"img", media_type="image/png", provider=stub
+    ) is good
+    assert stub.note is None, "the model was asked to re-read a page that was fine"
+
+
+def test_a_retry_that_fixes_the_arithmetic_is_taken() -> None:
+    """The point of the whole step."""
+    broken = _score([FOUR, [("C3", "quarter")] * 7])
+    fixed = _score([FOUR, FOUR])
+    assert retry_with_arithmetic(
+        broken, b"img", media_type="image/png", provider=_Stub(fixed)
+    ) is fixed
 
 
 def test_a_correction_that_breaks_more_measures_is_refused() -> None:
@@ -80,7 +100,7 @@ def test_a_correction_that_breaks_more_measures_is_refused() -> None:
     """
     engine = _score([FOUR, FOUR])
     worse = _score([FOUR, [("C3", "quarter")] * 7])
-    assert confirm_reading(
+    assert retry_with_arithmetic(
         engine, b"img", media_type="image/png", provider=_Stub(worse)
     ) is engine
 
@@ -94,7 +114,7 @@ def test_an_equally_broken_correction_is_still_taken() -> None:
     """
     engine = _score([[("C3", "quarter")] * 7])
     other = _score([[("D3", "quarter")] * 7])
-    assert confirm_reading(
+    assert retry_with_arithmetic(
         engine, b"img", media_type="image/png", provider=_Stub(other)
     ) is other
 
@@ -104,7 +124,7 @@ def test_a_failing_model_leaves_the_engine_reading_standing() -> None:
     trading it for an exception."""
     engine = _score([FOUR])
     stub = _Stub(OCRProviderError("rate limited"))
-    assert confirm_reading(
+    assert retry_with_arithmetic(
         engine, b"img", media_type="image/png", provider=stub
     ) is engine
 
@@ -112,28 +132,21 @@ def test_a_failing_model_leaves_the_engine_reading_standing() -> None:
 def test_an_empty_correction_leaves_the_engine_reading_standing() -> None:
     engine = _score([FOUR])
     empty = ScoreJson(clef="bass", ocr_confidence=0.5, measures=[])
-    assert confirm_reading(
+    assert retry_with_arithmetic(
         engine, b"img", media_type="image/png", provider=_Stub(empty)
     ) is engine
 
 
-def test_it_is_on_by_default_and_names_the_local_engine() -> None:
-    from app.config import settings
+def test_the_retry_is_on_by_default() -> None:
+    """A page whose bars do not add up is the failure this exists for, so it
+    must not need switching on."""
+    import inspect
 
-    assert settings.OMR_CONFIRM == "omr-local"
+    from app.services.ocr.pipeline import parse_sheet_music
+
+    assert inspect.signature(parse_sheet_music).parameters["retry"].default is True
 
 
-def test_the_engine_is_not_in_the_fallthrough_chain() -> None:
-    """It must not be, and this is the reason.
-
-    The chain stops at the first provider that succeeds. The engine's reading
-    is accurate about clef, key and barlines but incomplete — on a real page it
-    found 15 measures where there were about 25 — so a chain that stopped there
-    would return less than the vision model alone.
-    """
-    from app.config import settings
-
-    assert "omr-local" not in settings.OCR_PROVIDER_CHAIN
 
 
 @pytest.mark.parametrize("missing", ["", "   "])

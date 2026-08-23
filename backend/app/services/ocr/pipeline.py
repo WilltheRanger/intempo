@@ -36,8 +36,7 @@ from app.services.ocr.gemini_provider import (
     gemini_flash_provider,
     gemini_pro_provider,
 )
-from app.services.ocr.confirm import confirm_reading
-from app.services.ocr.omr_provider import omr_local_provider
+from app.services.ocr.confirm import retry_with_arithmetic
 from app.services.score_schema import ScoreJson
 
 log = logging.getLogger("intempo.ocr")
@@ -55,9 +54,6 @@ PROVIDER_REGISTRY: dict[str, OCRProvider] = {
     claude_opus_provider.name: claude_opus_provider,
     gemini_flash_provider.name: gemini_flash_provider,
     gemini_pro_provider.name: gemini_pro_provider,
-    # Registered but not in the default chain: it needs installing, it takes
-    # minutes, and it is a second opinion rather than a first read.
-    omr_local_provider.name: omr_local_provider,
 }
 
 
@@ -85,8 +81,7 @@ def _default_chain() -> list[OCRProvider]:
 #: first has failed. Anything smoother than this would be invented.
 Stage = str
 
-STAGE_ENGINE = "engine"
-STAGE_CONFIRMING = "confirming"
+STAGE_CONFIRMING = "rereading"
 #: Reading with a named provider, e.g. `reading:claude-sonnet-4-6`.
 STAGE_READING = "reading"
 
@@ -109,15 +104,13 @@ def parse_sheet_music(
     *,
     media_type: str = "image/jpeg",
     providers: list[OCRProvider] | None = None,
-    confirm: bool = True,
+    retry: bool = True,
     on_stage: Callable[[Stage], None] | None = None,
-    engine_bytes: bytes | None = None,
-    engine_media_type: str = "image/jpeg",
 ) -> ScoreJson:
     """Run the image through the configured provider chain.
 
-    `confirm=False` turns off the OMR second opinion, for tests and for callers
-    that want the vision chain on its own.
+    `retry=False` turns off the arithmetic re-read, for tests and for callers
+    that want a single pass.
 
     `engine_bytes` is the *same page* prepared for the OMR engine rather than
     for a model, and the two are not interchangeable. Measured on a full page:
@@ -146,38 +139,20 @@ def parse_sheet_music(
         except Exception:  # noqa: BLE001 — reporting must never break reading
             log.warning("stage callback failed for %s", name, exc_info=True)
 
-    # The OMR engine reads first, and a vision model checks its answer.
+    # A transcription whose bars do not add up is *known* to be wrong — no
+    # judgement, just arithmetic — and it is wrong in the way that matters
+    # most, because `alignment.py` accumulates durations to build its expected
+    # timeline and one bad bar shifts every bar after it.
     #
-    # Not a fallthrough step, because a fallthrough would stop at the engine
-    # and the engine's reading is *partial* — measured on a real page it got
-    # the clef, the key and the barlines right and found 15 measures where
-    # there were about 25. Returning that would be worse than the vision model
-    # alone. Showing it to the model instead plays each to its strength:
-    # structure from the engine, coverage from the model, and a much easier
-    # question than transcribing from nothing.
+    # So instead of shrugging and keeping it as a low-confidence fallback, the
+    # model is handed its own arithmetic back with the offending measures named
+    # and asked to re-read those. See `confirm.py` for why a correction is
+    # taken only when it is not worse.
     #
-    # Skipped silently when the engine is not installed, which is the normal
-    # case — it costs one failed `which` and the chain proceeds as before.
-    if confirm and settings.OMR_CONFIRM:
-        try:
-            stage(STAGE_ENGINE)
-            engine = get_provider(settings.OMR_CONFIRM).parse(
-                engine_bytes if engine_bytes is not None else image_bytes,
-                engine_media_type if engine_bytes is not None else media_type,
-            )
-        except (ValidationError, OCRProviderError, ValueError, OCRError) as exc:
-            log.info("no OMR second opinion available: %s", exc)
-        else:
-            stage(STAGE_CONFIRMING)
-            confirmed = confirm_reading(
-                engine.score, image_bytes, media_type=media_type, provider=chain[0]
-            )
-            if not beat_problems(confirmed):
-                return confirmed
-            log.info(
-                "confirmed reading still has measures that do not add up; "
-                "falling back to the ordinary chain"
-            )
+    # This replaced an OMR second opinion, which read the page with Audiveris
+    # and asked a model to check it. The engine needed a 2 GB host to find
+    # fewer measures than the model already found; the shape of the step was
+    # right and survives here with a model on both sides.
 
     failures: list[str] = []
     # **First** in the chain, not highest-scoring, and deliberately so — this
@@ -240,6 +215,17 @@ def parse_sheet_music(
                 provider.name,
                 "; ".join(f.describe() for f in broken),
             )
+            if retry:
+                stage(STAGE_CONFIRMING)
+                corrected = retry_with_arithmetic(
+                    response.score, image_bytes, media_type=media_type, provider=provider
+                )
+                if not beat_problems(corrected):
+                    return corrected
+                # Still broken, but possibly less so — keep the better of the
+                # two as the fallback rather than the one we started with.
+                response = response.model_copy(update={"score": corrected})
+
             # Kept as a fallback, exactly like a low-confidence result: a
             # transcription with a bad measure is still better than none for
             # the human-correction flow, and refusing outright would make a

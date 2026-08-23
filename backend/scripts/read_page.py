@@ -6,8 +6,8 @@
     # Reproduce a failed scan — the real chain, on the real page:
     uv run python scripts/read_page.py ~/Desktop/part.jpg --chain
 
-    # Compare engines on the same page, each run independently:
-    uv run python scripts/read_page.py ~/Desktop/part.jpg --provider claude-sonnet-5,omr-local
+    # Compare providers on the same page, each run independently:
+    uv run python scripts/read_page.py ~/Desktop/part.jpg --provider claude-sonnet-5,claude-opus-5
 
     # Prove whether normalisation is what fixed a page:
     uv run python scripts/read_page.py ~/Desktop/part.jpg --chain --raw
@@ -18,8 +18,7 @@ prints the provider's actual error, or the schema fields it got wrong, or the
 transcription and its beat-sum verdict. It normalises the image first, exactly
 as the worker does, so what runs here is what runs on the server.
 
-The local OMR engine has nowhere else to run either: the scan bench is one HTML
-file with no server, so it cannot start a subprocess.
+There is no OMR engine any more — see DECISIONS.md, 2026-08-25.
 
 It prints the beat-sum verdict per measure, not just the transcription. A
 transcription on its own invites reading it and nodding; the verdict is the part

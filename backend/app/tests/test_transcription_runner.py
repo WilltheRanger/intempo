@@ -12,7 +12,7 @@ import pytest
 from fastapi import HTTPException
 
 from app.services.ocr import OCRError
-from app.services.ocr.pipeline import STAGE_CONFIRMING, STAGE_ENGINE
+from app.services.ocr.pipeline import STAGE_CONFIRMING
 from app.services.score_schema import Measure, Note, ScoreJson
 from app.workers import transcription_runner as runner
 
@@ -128,9 +128,8 @@ def test_each_stage_is_written_as_it_happens(table, monkeypatch) -> None:
     of time, so what it reports has to be what it actually did."""
 
     def fake_parse(image_bytes, *, media_type, on_stage=None, **_engine):
-        on_stage(STAGE_ENGINE)
+        on_stage("reading:claude-sonnet-5")
         on_stage(STAGE_CONFIRMING)
-        on_stage("reading:claude-sonnet-4-6")
         return _score()
 
     monkeypatch.setattr(runner, "parse_sheet_music", fake_parse)
@@ -139,11 +138,10 @@ def test_each_stage_is_written_as_it_happens(table, monkeypatch) -> None:
     stages = [p["transcription_stage"] for p in table.patches if "transcription_stage" in p]
     assert stages == [
         "Fetching the page",
-        "Finding the staves",
-        "Checking the reading",
-        # Not the provider's name. "claude-sonnet-4-6" tells a musician nothing
+        # Not the provider's name. "claude-sonnet-5" tells a musician nothing
         # they can act on and rather more than they asked about.
         "Reading the notation",
+        "Checking the bar counts",
         None,
     ]
 
