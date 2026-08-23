@@ -6,6 +6,51 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-05 — The first request of every session was a failure
+
+**Branch:** `main`. The user is testing from Cloudflare against the deployed
+API, so I went looking at what a browser actually meets. The first thing it
+meets is a sleeping host.
+
+Render's own dashboard says it plainly: *"Your free instance will spin down
+with inactivity, which can delay requests by 50 seconds or more."* The client's
+deadline is **45 seconds**, and its comment says — correctly — that the cold
+start is "about a minute".
+
+So the deadline was set to survive a wait it is shorter than. Every session
+beginning after a quiet period opened with *"The server took too long to
+answer"*, and the musician had to ask again by hand. Not once: every time.
+
+**Raising the deadline is the obvious fix and the wrong one.** It would make a
+genuinely dead connection take over a minute to report, which is a worse
+failure and a commoner one.
+
+**The attempt that times out is the attempt that wakes the host.** So a
+repeatable request is simply asked once more, and the second attempt lands on a
+running server and returns in the ordinary time.
+
+**Only repeatable ones**, and this is the whole safety argument. A GET that
+times out has changed nothing. A POST that times out may have been received,
+run, and had only its *answer* lost — resending it submits a second take, or
+creates a second piece, and the musician finds a duplicate they never made.
+Silence is the better failure there.
+
+**And only when nothing was heard back at all.** A 500 is an answer: the server
+heard, ran and failed, so asking again just fails again behind a longer wait.
+There is a test for that too, because "retry on failure" is the natural way to
+write this and it is wrong.
+
+**No three-foot test.** No UI touched — the error copy this replaces was
+already there, and no screen changed.
+
+**Tests:** mobile 45 (was 41; +4). Mutation-checked in both directions, each
+asserted applied and verified restored: removing the retry fails 2, retrying
+everything fails 1. `tsc` clean.
+
+**Rollback:** revert the commit. `send` returns to a single attempt.
+
+---
+
 ## 2026-09-04 (evening) — `/v1/ready` now names the one thing that names nothing
 
 **Branch:** `main`. Told the user to trust `/v1/ready` to say what is blocking a
