@@ -163,11 +163,82 @@ class TestTheTempoClampStillRefusesWhatItRefused:
 
         assert result.quality < 0.4
 
-    def test_a_different_piece_scores_zero(self) -> None:
+    def test_a_different_piece_is_refused(self) -> None:
+        """Across seeds, not one.
+
+        This asserted `quality < 0.05` on a single random sequence, which was
+        over-fitted: onsets scattered uniformly across the same span occasionally
+        *do* line up, and the number that came out depended on the seed. What
+        the product needs is that the take is refused — `broken_quality`, 0.4 —
+        so that is what is measured, over enough draws to mean something.
+        """
+        from app.services.audio_config import load_audio_config
+
         expected = self._expected()
-        rng = np.random.default_rng(3)
-        detected = np.sort(rng.uniform(0, float(expected[-1]), expected.size))
+        broken = load_audio_config().alignment.broken_quality
+        qualities = np.array(
+            [
+                align_dtw(
+                    np.sort(
+                        np.random.default_rng(seed).uniform(
+                            0, float(expected[-1]), expected.size
+                        )
+                    ),
+                    expected,
+                    target_bpm=BPM,
+                ).quality
+                for seed in range(60)
+            ]
+        )
 
-        result = align_dtw(detected - detected[0], expected, target_bpm=BPM)
+        assert float(np.median(qualities)) < 0.05, "the typical case must be nowhere near"
+        # Not all sixty: uniform noise over the right span sometimes lands on
+        # the beat. It was 4 in 60 before the cost function changed and is 1 now.
+        assert int((qualities > broken).sum()) <= 2, (
+            f"{int((qualities > broken).sum())} of 60 random takes were analysed "
+            f"rather than refused"
+        )
 
-        assert result.quality < 0.05
+    def _in_rhythm(self, gaps: list[float]) -> float:
+        """Quality for a take of the right note count in a rhythm of its own."""
+        expected = self._expected()
+        pattern = np.array((gaps * expected.size)[: expected.size - 1], dtype=float)
+        detected = np.concatenate([[0.0], np.cumsum(pattern)])
+        return align_dtw(detected, expected, target_bpm=BPM).quality
+
+    def test_a_take_with_no_relation_to_the_written_rhythm_is_refused(self) -> None:
+        """The right instrument, the wrong page.
+
+        It has to differ in **rhythm**, not tempo. An earlier version of this
+        used forty quarters against forty eighths and scored 1.000 — correctly,
+        because that is the same uniform stream played half as fast, which is
+        practising slowly. Quality removes offset and rate on purpose.
+        """
+        assert self._in_rhythm([0.55, 0.28]) < 0.4, "swung against straight eighths"
+        assert (
+            self._in_rhythm(
+                list(np.random.default_rng(1).choice([0.21, 0.42, 0.83, 1.25], 40))
+            )
+            < 0.4
+        ), "note values drawn at random"
+
+    def test_a_rhythm_that_rescales_onto_the_written_one_is_analysed_not_refused(
+        self,
+    ) -> None:
+        """A deliberate change of behaviour, pinned so it cannot drift back.
+
+        Long-short-short against straight eighths used to score 0.000 and be
+        refused; it now scores about 0.7 and is analysed. Once the take is put
+        into the score's units it *is* mostly eighths with a long note every
+        third — so the matcher lines the notes up and the verdict describes the
+        rhythm error, note by note, instead of the app saying it could not hear
+        the piece.
+
+        That is the same tolerance that lets a hesitating musician keep their
+        bar numbers, and it is the price of it: a take in the wrong rhythm gets
+        a verdict rather than a refusal. Whether that is the better answer for
+        a musician is a real question and it needs a real recording and an ear
+        — see EDIT_LOG 2026-09-01.
+        """
+        assert self._in_rhythm([0.9, 0.35, 0.35]) > 0.4
+        assert self._in_rhythm([0.62, 0.21]) > 0.4

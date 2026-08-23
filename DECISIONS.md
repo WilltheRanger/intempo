@@ -6,6 +6,74 @@ Operating Principle #5.
 
 ---
 
+## 2026-09-01 (later) — Match on intervals, with position as a saturated tie-break
+
+**Context:** the previous entry in `EDIT_LOG.md` measured a defect in the
+product's core claim. A take that holds one bar a beat too long had **48 of its
+96 sounds attributed to the wrong written note**, and the app named eight bars
+as off-tempo in a performance where one bar was long and the rest was perfect.
+
+The cause is not the search. DTW's cost was the distance between absolute
+times, so a take offset from the written grid is cheaper to explain as "they
+skipped two notes" (two steps) than as "they hesitated" (0.83 s on each of 88
+pairs). A per-skip penalty from 0.1 to 1.5 written gaps barely moves it,
+because no penalty bridges 73 seconds.
+
+The user was asked what the app should say and chose **"one bar dragged —
+measure against your own pulse"**. Note identity is the prerequisite for that,
+and for the grid reading too: today's answer is wrong about *which* notes.
+
+**Decision:** the cost between a detection and a written note is the difference
+between their **inter-onset intervals**, plus a **saturated** term for how far
+apart they are in the piece.
+
+    cost(i, j) = |interval(i) - interval(j)| + 0.5 * min(|t_i - t_j|, 0.15 * gap)
+
+### Alternatives considered, each measured
+
+**Absolute time alone** — what it replaces. Correct on everything except a
+timing disturbance, where it gets half the take wrong.
+
+**Intervals alone.** Offset-invariant by construction, and it fixes identity
+completely: 96 right, 0 wrong on both hesitation cases, six corpus clips
+unchanged, every unsafe take refused *more* firmly. Unusable anyway: a passage
+of equal intervals is a plateau of equal cost, so the path through it is
+arbitrary. Quality wandered — a steady take at 110% of the written pace scored
+0.682 where 125% scored 1.000. Non-monotone, and both are well inside the
+tempo clamp.
+
+**An unsaturated hybrid.** Adding position back at any weight restores the
+plateau ordering, and at every weight from 0.25 to 2.0 it also restores the
+shift: 27 to 29 sounds still wrong. The absolute error after a hesitation is
+0.83 s against an interval error of ~0.01 s, so position wins the argument
+whatever it is scaled by. The cap is the whole idea, not a refinement of it.
+
+**A per-skip penalty on the warp path.** Measured across 0.1–1.5 written gaps.
+Moves the wrong-note count from 48 to 44. Rejected on arithmetic.
+
+### Trade-offs accepted
+
+- **A take in a different rhythm is now analysed rather than refused**, when it
+  rescales onto the written one. Long-short-short against straight eighths went
+  from 0.000 to 0.700; dotted pairs from 0.000 to 0.754. This is the same
+  tolerance that lets a hesitating musician keep their bar numbers, and it
+  cannot be had separately. It is arguably the better answer — someone playing
+  dotted where straight is written played the right notes and wants to be told
+  where the rhythm went, not that the app could not hear them — but that needs
+  a real recording and an ear to settle. Pinned by a test either way.
+- **Two constants that are not in `config.toml`**, with `MIN_TEMPO_RATIO` and
+  the gap-core bounds, for the same reason: they bound what the matcher may
+  believe rather than expressing a threshold about playing.
+- **A cost matrix is built explicitly**, O(N×M): 19 MB at 1536 notes. librosa
+  built the same matrix internally from the feature rows, so this is not new
+  memory — and it is *faster*, 83 ms against 145 ms at that size.
+- **The cap sits between two mild failures**, 0.12 (a genuinely dropped note
+  costs one neighbour) and 0.20 (seven wrong on a hurried bar). Every value in
+  between is far better than the 48 it replaces, so the choice inside that
+  window is not delicate; it is 0.15 because that is the middle of it.
+
+---
+
 ## 2026-09-01 — Measure the played tempo with a clipped mean, not a median
 
 **Context:** the matcher rescales a recording toward the score's pace before

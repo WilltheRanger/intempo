@@ -19,7 +19,6 @@ moment a take has a genuine dropped note, and it hid the real result twice.
 from __future__ import annotations
 
 import numpy as np
-import pytest
 
 from app.services import audio as audio_svc
 from app.services.alignment import (
@@ -204,30 +203,25 @@ def test_an_extra_note_is_reported_as_extra_and_nothing_else() -> None:
     assert wrong == 0 and right == 96
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "KNOWN DEFECT, measured not assumed. A take that holds one bar a beat "
-        "too long is offset from the written grid for the rest of the piece, "
-        "and DTW's cost is the distance between absolute times — so explaining "
-        "the remainder as 'they skipped two notes' costs nothing while the "
-        "truth costs 0.83 s on every one of 88 pairs. Shifting is not a bug in "
-        "the search; it is the cheaper answer to the question being asked. "
-        "Half the take is then attributed to the wrong written note, and the "
-        "app names bars the musician played perfectly. "
-        "Matching on intervals instead fixes it completely (96 right, 0 wrong "
-        "here, and the six corpus clips are unchanged) but destabilises "
-        "quality on takes at a steady wrong tempo — 110% of the written pace "
-        "falls from 1.000 to 0.682 while 125% stays at 1.000. Not shippable "
-        "as measured. See EDIT_LOG 2026-09-01."
-    ),
-)
 def test_holding_one_bar_too_long_does_not_move_every_later_note() -> None:
+    """This was a strict xfail for exactly one commit, and the reason is the
+    most useful thing in this file.
+
+    Holding a bar leaves the take offset from the written grid for everything
+    after it. DTW's cost was the distance between absolute times, so explaining
+    the remainder as "they skipped two notes" cost two steps while the truth
+    cost 0.83 s on each of 88 pairs — the shift was not a failure of the
+    search, it was the cheaper answer to the question being asked. Half the
+    take was attributed to the wrong written note and the app named eight bars
+    as off-tempo in a performance where one bar was long and the rest was
+    perfect.
+
+    Matching on intervals is what fixed it; see `_cost_matrix`.
+    """
     right, wrong = _attribution(_score(), stretched_measure=8, factor=1.25)
     assert wrong == 0, f"{wrong} of {right + wrong} sounds attributed to the wrong note"
 
 
-@pytest.mark.xfail(strict=True, reason="Same defect, in the other direction.")
 def test_hurrying_one_bar_does_not_move_every_later_note() -> None:
     right, wrong = _attribution(_score(), stretched_measure=13, factor=0.75)
     assert wrong == 0, f"{wrong} of {right + wrong} sounds attributed to the wrong note"
