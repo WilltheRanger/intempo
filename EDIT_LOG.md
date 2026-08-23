@@ -6,6 +6,43 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-02 (correction) — The previous entry claimed coverage it did not have
+
+**Branch:** `main`. Correcting `0ee0dae`, whose message says *"putting the
+residuals back on one line fails 2"*. **It did not.** Re-run with an assertion
+that the mutation actually applied: **612 passed.** The change had no test
+covering it at all.
+
+**Two failures of mine, and they are the same failure.** The mutation script
+used `str.replace` and never checked the result differed, so a no-op read as a
+clean run. That is exactly how the log entries went missing from `743e5af` an
+hour earlier — a script that fails quietly and a command chained after it. A
+mutation check that cannot fail is worse than none: it launders an untested
+change as a verified one.
+
+**Why the tests missed it.** `test_pulse_anchor.py` builds a hesitation by
+adding 0.8 s to the second half of an offset series. That never reaches the
+residual code, because the *matcher* absorbs a clean step by itself — the
+offsets it leaves behind read `0 0 0 0 0 −33 −33 −33`, and there is no step for
+the anchor to take out. The synthetic case tested nothing.
+
+The end-to-end varied-rhythm take is the only case that does exercise it: real
+audio, a bar genuinely held, a step the matcher cannot absorb. Those two tests
+now assert `low_confidence is False` and `quality > 0.9` alongside the bar
+numbers, and with the residuals put back on one line **they fail**, verified
+with the mutation asserted this time.
+
+**The measured claim in the previous entry is still true** — 0.592 → 0.954 and
+0.559 → 0.950, all six corpus clips bit-identical, every unsafe take at 0.000.
+It was the *coverage* claim that was wrong, not the result.
+
+**Tests:** backend 612, unchanged in count; two of them now assert what the
+previous entry only measured by hand. `ruff` clean.
+
+**Rollback:** nothing to roll back; this adds assertions.
+
+---
+
 ## 2026-09-02 (later) — Confidence was still reading the take the old way
 
 **Branch:** `main`. `/loop` iteration, and the last piece of the same bug.
