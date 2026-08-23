@@ -83,8 +83,18 @@ export function TranscribingPanel({ piece }: TranscribingPanelProps) {
 
   return (
     <View style={styles.panel} accessibilityRole="progressbar">
+      {/*
+        A page with no stage yet is *queued* — waiting for another page to
+        finish, because the server reads a bounded number at once. "Getting
+        ready" described the app; this describes what is actually happening,
+        which is the difference between a wait that makes sense and one that
+        looks stuck.
+      */}
       <Text variant="pieceTitle">
-        {piece.transcriptionStage ?? 'Getting ready to read this page'}
+        {piece.transcriptionStage ??
+          (piece.transcriptionStatus === 'queued'
+            ? 'Waiting for another page to finish'
+            : 'Getting ready to read this page')}
       </Text>
 
       <View style={styles.track}>

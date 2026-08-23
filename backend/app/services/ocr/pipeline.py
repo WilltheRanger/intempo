@@ -31,6 +31,7 @@ from app.services.ocr.claude_provider import (
     claude_opus_provider,
     claude_sonnet_provider,
 )
+from app.services.ocr.validate import numbering_gaps
 from app.services.ocr.validate import problems as beat_problems
 from app.services.ocr.gemini_provider import (
     gemini_flash_provider,
@@ -97,6 +98,49 @@ def _is_truncation(exc: Exception) -> bool:
     it.
     """
     return "cut off" in str(exc).lower()
+
+
+
+def renumber(score: ScoreJson) -> ScoreJson:
+    """Number the measures 1..N in the order they were read.
+
+    **The program is better at this than a model and it is not close.** The
+    numbers are positional — first bar on the page is 1 — so deriving them is
+    counting, and counting is what a program does without ever having a bad
+    minute. Asking for them instead bought the single most common failure this
+    pipeline has: a boxed rehearsal mark reading **49** came back as measure
+    **409**, which inserted an empty measure and renumbered the rest of the
+    line.
+
+    The anomaly is *reported before it is normalised*, not hidden by it.
+    `numbering_gaps` is what catches a rehearsal mark being counted as a bar,
+    and silently renumbering would destroy exactly that signal — the numbers
+    would come out 1..N and look immaculate while a spurious measure sat in the
+    middle of them. So the gap is logged and named in `notes_to_human`, and
+    then the numbering is made positional.
+
+    Deliberately not a no-op when the numbers already run 1..N: it must be safe
+    to call on every reading, or it will not be called on the one that needed
+    it.
+    """
+    gaps = numbering_gaps(score)
+    if gaps:
+        described = ", ".join(f"{g.after}→{g.next}" for g in gaps)
+        log.info("measure numbers skip (%s); renumbering positionally", described)
+
+    renumbered = [
+        measure.model_copy(update={"measure_number": position})
+        for position, measure in enumerate(score.measures, start=1)
+    ]
+    note = score.notes_to_human
+    if gaps:
+        gap_note = (
+            f"The measure numbers read from the page skipped ({described}), which "
+            "usually means a rehearsal mark was counted as a bar. They have been "
+            "renumbered from 1 — check the bar count against your copy."
+        )
+        note = f"{note}\n{gap_note}".strip() if note else gap_note
+    return score.model_copy(update={"measures": renumbered, "notes_to_human": note})
 
 
 def parse_sheet_music(
@@ -169,6 +213,10 @@ def parse_sheet_music(
         try:
             stage(f"{STAGE_READING}:{provider.name}")
             response: OCRResponse = provider.parse(image_bytes, mime_type=media_type)
+            # Before the beat check, the retry or the confidence gate look at
+            # it: everything downstream keys off measure numbers, and the
+            # program can derive them more reliably than a model can read them.
+            response = response.model_copy(update={"score": renumber(response.score)})
         except (ValidationError, OCRProviderError, ValueError) as exc:
             failures.append(f"{provider.name}: {type(exc).__name__}: {exc}")
             if _is_truncation(exc):
