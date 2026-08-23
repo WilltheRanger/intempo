@@ -61,6 +61,62 @@ def _human_stage(stage: str) -> str:
     return _HUMAN_STAGES.get(stage, STAGE_READING_HUMAN)
 
 
+
+#: What the pipeline says, and what it means for the person holding the page.
+#:
+#: **The default used to be the only answer, and it was a guess.** Every failed
+#: read said "A flatter, better-lit shot of the page usually fixes it" —
+#: including for a photograph that was perfectly sharp and had simply run past
+#: the output cap. Sending someone back to re-photograph a page that was never
+#: the problem is worse than saying nothing: it is confident, actionable and
+#: wrong, and they will do it, and it will fail again the same way.
+#:
+#: So the reason is derived from what actually happened, and the photograph is
+#: only blamed when nothing more specific is known.
+_FAILURE_REASONS: tuple[tuple[str, str], ...] = (
+    (
+        "cut off",
+        "This page has more notes than one reading can hold. Photographing "
+        "fewer bars at a time — a system or two — gets through it.",
+    ),
+    (
+        "rate limit",
+        "The transcription service is busy. This usually clears in a minute or "
+        "two; the piece is in your library and can be read again.",
+    ),
+    (
+        "api key",
+        "The transcription service is not configured. This is a fault on our "
+        "side, not with your page.",
+    ),
+    (
+        "media type",
+        "That image format could not be read. A JPEG or PNG works.",
+    ),
+)
+
+_UNKNOWN_REASON = (
+    "The notation could not be read from this photograph. A flatter, "
+    "better-lit shot of the page usually fixes it."
+)
+
+
+def _why_it_failed(detail: str) -> str:
+    """Turn the pipeline's own account into something worth acting on.
+
+    Underscores are flattened to spaces before matching: these strings come
+    from several places — exception text, environment variable names, SDK error
+    classes — and `GEMINI_API_KEY` and "api key" are the same fact written two
+    ways. Matching the prose form only would have silently missed the one that
+    actually appears in the log.
+    """
+    haystack = detail.lower().replace("_", " ")
+    for needle, reason in _FAILURE_REASONS:
+        if needle in haystack:
+            return reason
+    return _UNKNOWN_REASON
+
+
 def run_transcription(score_id: str) -> None:
     """Read the page for one score row and write the notes into it.
 
@@ -109,12 +165,7 @@ def run_transcription(score_id: str) -> None:
         return
     except OCRError as exc:
         log.warning("transcription %s: %s", score_id, exc)
-        _fail(
-            client,
-            score_id,
-            "The notation could not be read from this photograph. "
-            "A flatter, better-lit shot of the page usually fixes it.",
-        )
+        _fail(client, score_id, _why_it_failed(str(exc)))
         return
     except Exception:  # noqa: BLE001 — anything at all beats a row stuck reading
         log.exception("transcription %s: internal error", score_id)

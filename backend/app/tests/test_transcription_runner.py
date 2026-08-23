@@ -237,3 +237,59 @@ def test_a_stage_write_that_fails_does_not_lose_the_transcription(table, monkeyp
     monkeypatch.setattr(runner, "parse_sheet_music", fake_parse)
     runner.run_transcription(SCORE_ID)
     assert _final(table)["transcription_status"] == "done"
+
+
+# ---- what the musician is told ---------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "detail,expected",
+    [
+        (
+            "all providers failed: claude-sonnet-4-6: the transcription was cut "
+            "off at 16000 tokens — this page has more notes than one response can hold",
+            "fewer bars",
+        ),
+        ("all providers failed: claude-sonnet-4-6: RateLimitError: rate limit", "busy"),
+        ("all providers failed: gemini-flash: GEMINI_API_KEY is not configured", "our"),
+        (
+            "all providers failed: claude: BadRequestError: image media type mismatch",
+            "format",
+        ),
+    ],
+)
+def test_the_reason_matches_what_actually_happened(
+    table, monkeypatch, detail: str, expected: str
+) -> None:
+    """The default used to be the only answer, and it was a guess.
+
+    Every failed read said "a flatter, better-lit shot usually fixes it",
+    including for a sharp photograph that had simply run past the output cap.
+    Sending someone to re-photograph a page that was never the problem is worse
+    than saying nothing: it is confident, actionable and wrong, and they will
+    do it, and it will fail again in the same place.
+    """
+    monkeypatch.setattr(
+        runner,
+        "parse_sheet_music",
+        lambda *a, **k: (_ for _ in ()).throw(OCRError(detail)),
+    )
+    runner.run_transcription(SCORE_ID)
+
+    final = _final(table)
+    assert final["transcription_status"] == "failed"
+    assert expected in final["transcription_error"]
+    # And specifically NOT the photograph, which was never at fault here.
+    assert "better-lit" not in final["transcription_error"]
+
+
+def test_an_unrecognised_failure_still_says_something_useful(table, monkeypatch) -> None:
+    """The photograph is blamed only when nothing more specific is known —
+    which is the one case where it is a fair guess rather than a wrong one."""
+    monkeypatch.setattr(
+        runner,
+        "parse_sheet_music",
+        lambda *a, **k: (_ for _ in ()).throw(OCRError("all providers failed: ???")),
+    )
+    runner.run_transcription(SCORE_ID)
+    assert "better-lit" in _final(table)["transcription_error"]
