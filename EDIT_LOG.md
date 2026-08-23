@@ -6,6 +6,91 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-25 (later) — Audiveris actually run, and what it costs
+
+**Branch:** `main`. Owner: "can we add the OMR?"
+
+### Built it, ran it, and it found a defect no mock could
+
+Audiveris 5.4 built from source in this environment — JDK 21, Gradle, and the
+`javax.media:jai-core` removal the install script already documents. 39 MB
+installed, about four minutes to build. **This is the first time the OMR path
+in this repo has executed against a real engine rather than a mock.**
+
+It immediately exposed something every existing test was blind to.
+
+`prepare_for_model()` targets 1568 px, which is what a vision model sees after
+Anthropic's own resizing. On a 3024×4032 page Audiveris answers:
+
+> With a too low interline value of 10 pixels … the picture resolution is too
+> low (try 300 DPI)
+
+and reads nothing. Handing the model's copy to the engine **does not make the
+second opinion worse — it removes it**, and reports the removal as an engine
+that found nothing, which is indistinguishable from a page it could not parse.
+
+Every earlier OMR test fed a 30–50 KB fixture crop. Those are already under
+both targets, so the two paths were identical on the only input ever tested.
+
+### The numbers that decide everything else
+
+Same page, same engine:
+
+| long edge | time | peak RSS | result |
+|---|---|---|---|
+| 1568 px | 1.4 s | 159 MB | **fails** — resolution too low |
+| **2048 px** | **9.3 s** | **517 MB** | transcribed |
+| 2400 px | 10.5 s | 543 MB | transcribed |
+| 3024 px | 15.4 s | 723 MB | transcribed |
+
+`prepare_for_engine()` targets 2048 px at quality 95 with **no chroma
+subsampling** — the engine is thresholding thin black lines out of a
+photograph, and subsampling smears exactly those edges; unlike a model it
+cannot read around the damage. 2048 over the original because it reads the same
+page in 40% of the time and 70% of the memory, and memory is the binding
+constraint.
+
+`parse_sheet_music` gained `engine_bytes`, defaulting to the model's image so a
+caller with one image behaves exactly as before.
+
+### It will not run on Render's free plan
+
+One page needs ~520 MB on top of the ~150 MB the Python service already holds.
+Free and Starter are both 512 MB. **It will be killed.** Standard, at 2 GB,
+runs it comfortably.
+
+Recorded in `render.yaml` and `docs/deploy-omr.md` rather than left to be
+discovered as an OOM. The API works without the engine — one failed lookup on
+PATH, a log line, and the vision chain answers as it always did — so this is a
+paid upgrade bought for a specific gain, not a bug.
+
+### What the gain is, on the bundled fixtures
+
+Audiveris read the clef correctly every time, including **bass** on the
+handwritten page, and got the time signature and key on the cleanly printed
+one. It also stopped at 2–6 measures on excerpts a model reads in full, and
+read no time signature on two of four.
+
+Which is exactly why it is `OMR_CONFIRM` and not part of
+`OCR_PROVIDER_CHAIN`: the chain stops at the first provider that succeeds, and
+stopping at the engine would return less than the model alone. Structure from
+the engine, coverage from the model, and the model asked to check rather than
+to transcribe from nothing.
+
+### Honest status
+
+- **429 tests pass, 4 skipped; ruff clean.** With the engine on PATH the
+  integration suite runs **6 tests for real**, including the new one asserting
+  that the model's page fails and the engine's page transcribes.
+- The engine is **not** in the deployed image and the Docker path is
+  **unbuilt** here — no Docker in this session. `WITH_AUDIVERIS=1` follows the
+  same steps that worked, but that is an argument from similarity, not a build.
+- Audiveris logs `*** No installed OCR languages ***` and reads notes anyway;
+  it is text — titles, directions — that is skipped. Irrelevant to rhythm.
+- Still nothing verified about the *vision* half: no API key here.
+
+---
+
 ## 2026-08-25 — The scan pipeline had never once been run on the input it receives
 
 **Branch:** `main`. Owner: "fix the whole OCR/OMR system so it actually works."
