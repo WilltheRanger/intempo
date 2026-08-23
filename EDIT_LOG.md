@@ -6,6 +6,84 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-23 (later) — Audiveris reads the page; oemer did not
+
+**Branch:** `main`. Owner: "try audiveris instead."
+
+### The comparison
+
+Same photograph, same page, two engines:
+
+| | the page | oemer | Audiveris 5.4 |
+|---|---|---|---|
+| measures | ~25 | 5 | **15** |
+| clef | bass | treble | **bass** ✅ |
+| key | two flats | C major | **Bb major** ✅ |
+| metre | common time | none | none |
+| worst measure | 4 beats | 43.25 | 10 |
+| time | — | ~6 min | **42 s** |
+
+Audiveris gets the clef and the key right and **finds barlines where oemer
+found none at all** — eight of its fifteen measures sum to exactly four beats.
+That last point is the one that matters here: InTempo reports rushing and
+dragging *per measure*, so without measure boundaries there is nothing to
+report against.
+
+The measures running long are what a missed barline looks like from this side:
+two bars merged into one. No time signature was found, so `validate.py` cannot
+infer a metre — the modal beat count is 4.0 but only in 6 of 15, under the 0.6
+agreement floor — and it calls every measure unverifiable rather than guessing.
+The check behaving as designed on a real, partial reading.
+
+Both outputs are kept as fixtures with tests over them. It is the only direct
+comparison in the repository between two OMR engines on real input.
+
+### Four obstacles to running it at all
+
+1. **No prebuilt binary.** GitHub's releases page 403s through this sandbox's
+   proxy, so it was built from source.
+2. **`javax.media:jai-core` is only on `repository.jboss.org`**, which the proxy
+   refuses. Removed locally — it is a declared dependency whose sole trace in
+   the source is the property-key string `com.sun.media.jai.disableMediaLib`,
+   not an API call, and the maintained fork `jai-imageio-core:1.4.0` is already
+   there. **A local workaround for a blocked host, not a patch to propose.**
+3. **Every release from 5.9 targets Java 25**; this box has 21, and JDK
+   downloads from Adoptium and Foojay are both blocked. So the version measured
+   above is **v5.4, the last release targeting Java 21** — about a year behind
+   current. If 5.11 reads better, that is not captured here.
+4. **A 20-megapixel ceiling.** The owner's page is 4284×5712 = 24.5MP and
+   Audiveris refused it outright. A phone photo routinely exceeds this, so it
+   will be hit by anyone using it.
+
+### Two defects of mine, found by running the thing
+
+- **The CLI printed "every measure adds up" when nothing had been checked.**
+  `describe_for_retry` reports *problems*, and an unverifiable measure is not a
+  problem — it is an absence of evidence, which is the opposite of a clean bill
+  of health. It now says which of the three cases it is.
+- **A silent engine failure carried no explanation.** Audiveris exits **zero**
+  when it gives up, with the real reason further up its own log. Both streams
+  are now read and the interesting lines surfaced, so the 20MP refusal reports
+  itself as "Too large image: 24,470,208 pixels (vs 20,000,000 max)" instead of
+  a bare "wrote no MusicXML".
+
+### Corrections
+
+- Commit `d440c6d` says "339 tests pass" — correct at the time. The next
+  commit says **343; it is 342.** Second time I have written a count before
+  running the suite. Left in git rather than force-pushing over it.
+
+### Honest status
+
+- 342 tests pass, ruff clean. The end-to-end path is verified with the real
+  engine: `read_page.py` → provider → Audiveris → `.mxl` → `ScoreJson` →
+  validator, in 42 seconds at zero cost.
+- **The reading is partial, not good.** 15 measures against ~25 on the page,
+  and no metre. It is a usable second opinion, not a transcription to trust.
+- Neither engine is in the default chain, and the vision path stays primary.
+
+---
+
 ## 2026-08-23 — A real OMR engine, and what it did to a real page
 
 **Branch:** `main`. Owner: "can you please build the omr so we can try as well."

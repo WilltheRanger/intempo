@@ -74,7 +74,20 @@ def _report(name: str, image: bytes, mime: str, *, dump: Path | None) -> bool:
             f"  {notes}"
         )
     problems = describe_for_retry(rows)
-    print(f"  {problems}" if problems else "  every measure adds up")
+    if problems:
+        print(f"  {problems}")
+    elif all(row.verdict == "unverifiable" for row in rows):
+        # "every measure adds up" was printed here, and it was a lie: nothing
+        # had been checked. `describe_for_retry` reports problems, and an
+        # unverifiable measure is not a problem — it is an absence of evidence,
+        # which is the opposite of a clean bill of health.
+        print(
+            "  nothing could be checked — no time signature was read, and the beat "
+            "counts disagree too much to infer one"
+        )
+    else:
+        checked = sum(1 for row in rows if row.verdict != "unverifiable")
+        print(f"  every measure that could be checked adds up ({checked} of {len(rows)})")
 
     if dump is not None:
         target = dump / f"{name}.json"
