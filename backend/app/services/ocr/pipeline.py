@@ -66,12 +66,57 @@ def get_provider(name: str) -> OCRProvider:
     return PROVIDER_REGISTRY[name]
 
 
+#: Names in `OCR_PROVIDER_CHAIN` that this build does not know.
+#:
+#: Read by `/v1/ready` so a stale name is *reported* rather than merely
+#: survived. Recomputed on every `_default_chain()` call, because the setting
+#: is read fresh each time.
+unknown_provider_names: list[str] = []
+
+
 def _default_chain() -> list[OCRProvider]:
+    """The configured chain, minus any name this build has never heard of.
+
+    **Skips rather than raises, and that is a deliberate reversal.** It used to
+    raise, and the consequence was found the hard way: the shipped default read
+    `claude-sonnet-4-6,claude-opus-4-7`, both names from the previous Claude
+    generation, so the very first scan died with "unknown provider" and no page
+    could be read whatever keys were set. One stale name in a list of three
+    took down a feature that had two working models in it.
+
+    A model being renamed is a fact of life and should cost that model, not the
+    feature. What must not happen is losing it *silently*, so the names are
+    logged at warning and kept in `unknown_provider_names` for `/v1/ready` to
+    report. An empty result still raises — a chain with nothing usable in it is
+    a configuration error with no fallback left.
+    """
     raw = settings.OCR_PROVIDER_CHAIN.strip()
     if not raw:
         return [claude_sonnet_provider, claude_opus_provider]
+
     names = [n.strip() for n in raw.split(",") if n.strip()]
-    return [get_provider(n) for n in names]
+    chain: list[OCRProvider] = []
+    unknown: list[str] = []
+    for name in names:
+        if name in PROVIDER_REGISTRY:
+            chain.append(PROVIDER_REGISTRY[name])
+        else:
+            unknown.append(name)
+
+    unknown_provider_names[:] = unknown
+    if unknown:
+        log.warning(
+            "OCR_PROVIDER_CHAIN names %s are not known to this build and were "
+            "skipped; usable chain is %s",
+            unknown,
+            [p.name for p in chain] or "empty",
+        )
+    if not chain:
+        raise OCRError(
+            f"OCR_PROVIDER_CHAIN has no usable provider; unknown: {unknown}; "
+            f"known: {sorted(PROVIDER_REGISTRY)}"
+        )
+    return chain
 
 
 #: A step the pipeline actually took, reported as it happens.

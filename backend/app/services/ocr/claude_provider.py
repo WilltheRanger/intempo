@@ -54,6 +54,11 @@ def _strip_markdown_fences(text: str) -> str:
 class ClaudeProvider:
     """Provider for any HS256-served Claude vision-capable model."""
 
+    #: The setting that has to be present for this provider to run at all.
+    #: Named here rather than inferred from `name` in the readiness check,
+    #: because a provider is the thing that knows what unlocks it.
+    api_key_setting = "ANTHROPIC_API_KEY"
+
     def __init__(
         self,
         *,

@@ -6,6 +6,74 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-28 (later) — `/v1/ready`, and the reason no photograph could ever have been read
+
+**Branch:** `main`. Owner: "make sure it fully works so when I come back I can
+play my bass and get insights."
+
+### `/v1/health` was answering 200 for a deployment that could do nothing
+
+It returned `{"status": "ok"}` with no service-role key, no model key, and a
+database missing a column the code writes to. Render therefore reported the
+service **live**, and a musician who could not sign in had no way to tell a
+missing key from a bug. Neither had anyone helping them.
+
+`GET /v1/ready` now answers what the deployment can actually *do*. It names the
+setting that is missing and what its absence costs, in the musician's terms —
+"nothing can be written; saving a piece, recording a take and running an
+analysis all fail" rather than an exception type. **It never reports a value**,
+which is a tested property, not an intention: the point is that it can be
+opened on a phone and pasted into a chat.
+
+`/v1/health` is untouched and stays trivial. Render's health check points at
+it, so anything that can fail inside it can take a working deployment offline.
+A deployment missing its keys should stay up and say so, not crash-loop and say
+nothing. `/v1/ready` answers 503 instead, so a script can tell without parsing.
+
+It also checks the **schema**, because migrations here are applied by hand
+through the Supabase SQL editor and nothing auto-applies `app/migrations/*.sql`.
+Shipping code and applying its migration are two separate acts with an
+invisible gap between them, and that gap has already bitten once this week:
+`analyses.instrument` went live in code before the column existed. The check
+names the migration file to apply.
+
+### What it found on its first run: OCR could never have worked
+
+`OCR_PROVIDER_CHAIN` — both the shipped default in `config.py` and the value in
+`backend/.env` — read:
+
+    gemini-2.5-flash,claude-sonnet-4-6,claude-opus-4-7
+
+Two of those three are names from the **previous Claude generation**. The
+registry holds `claude-sonnet-5` and `claude-opus-5`. `_default_chain()` raised
+`OCRError: unknown provider 'claude-sonnet-4-6'` before contacting anything, so
+**no photographed page could be read at all, whatever keys were set** — and the
+failure would have surfaced to a musician as their photograph being unreadable.
+
+Two fixes, because the value being wrong and the value being *fatal* are
+different problems:
+
+1. The default and `.env` now name current models.
+2. `_default_chain()` **skips** names it does not recognise instead of raising.
+   A model being renamed is a fact of life and should cost that model, not the
+   feature — there were two working models in that list. Skipped is not
+   swallowed: the names are logged at warning and `/v1/ready` reports them as a
+   non-blocking check. A chain with *nothing* usable still raises, since that
+   has no fallback left.
+
+`test_unknown_provider_in_chain_raises` had asserted the fatal behaviour — and
+used `claude-sonnet-4-6` as its example of a **bogus** name while the shipped
+default used the same name for real. Replaced with one test for the
+nothing-usable case and one for the partial skip.
+
+**Render is very likely carrying the same stale chain.** It cannot be read
+through the API and was not changed from here — `/v1/ready` on the deployed
+host will now say so directly.
+
+**Tests:** 487 → **496**. Ruff clean.
+
+---
+
 ## 2026-08-28 — Prepping the tuning loop found the bug that would have wasted the session
 
 **Branch:** `main`. Owner: "prep for your recordings."
