@@ -129,3 +129,71 @@ def test_the_step_is_skipped_when_no_engine_is_installed(monkeypatch) -> None:
             )
 
     assert parse_sheet_music(b"img", providers=[_Vision()]) is score
+
+
+# ---- the page the engine is given -----------------------------------------
+#
+# Added after building Audiveris 5.4 and running it for the first time. What it
+# turned up is the reason `prepare_for_engine` exists at all.
+
+
+def test_the_engine_and_the_model_cannot_share_one_prepared_page() -> None:
+    """Measured, not assumed, on a 3024x4032 page with Audiveris 5.4:
+
+        long edge   time    peak RSS   result
+             1568    1.4s      159 MB  FAILED — "interline value of 10 pixels"
+             2048    9.3s      517 MB  transcribed
+             3024   15.4s      723 MB  transcribed
+
+    `prepare_for_model` targets 1568 px, which is exactly right for a vision
+    model and below the floor a rule-based engine can work at. Handing the
+    model's copy to the engine does not degrade the second opinion — it removes
+    it, and reports the removal as an engine that found nothing.
+    """
+    from app.services.page_image import ENGINE_TARGET_EDGE, MODEL_MAX_EDGE
+
+    assert ENGINE_TARGET_EDGE > MODEL_MAX_EDGE
+
+
+@needs_engine
+def test_the_engine_reads_a_page_prepared_for_it_and_not_one_prepared_for_a_model() -> None:
+    """The real engine, on both preparations of the same photograph.
+
+    This is the test that would have caught it. Every earlier OMR test fed the
+    engine a 30-50 KB fixture crop, which is already under both targets — so
+    the two paths were indistinguishable and the failure only appears on the
+    input the app actually receives.
+    """
+    import io
+
+    from PIL import Image
+
+    from app.services.ocr.base import OCRProviderError
+    from app.services.page_image import prepare_for_engine, prepare_for_model
+
+    # A full sheet, as a phone shoots one.
+    src = Image.open(PAGE).convert("RGB")
+    sheet = Image.new("RGB", (3024, 4032), "white")
+    band = src.resize(
+        (int(3024 * 0.92), max(1, int(src.height * (3024 * 0.92) / src.width))),
+        Image.Resampling.LANCZOS,
+    )
+    y = 240
+    while y + band.height < 4032:
+        sheet.paste(band, (120, y))
+        y += int(band.height * 1.9)
+    buffer = io.BytesIO()
+    sheet.save(buffer, format="JPEG", quality=95, subsampling=0)
+    photo = buffer.getvalue()
+
+    provider = get_provider("omr-local")
+
+    engine_page, engine_media = prepare_for_engine(photo)
+    assert max(Image.open(io.BytesIO(engine_page)).size) > 1568
+    # The engine reads this one. Not asserting the reading is *correct* — it is
+    # a photograph and the engine is imperfect — only that it produced measures.
+    assert provider.parse(engine_page, engine_media).score.measures
+
+    model_page, model_media = prepare_for_model(photo)
+    with pytest.raises(OCRProviderError):
+        provider.parse(model_page, model_media)

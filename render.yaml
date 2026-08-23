@@ -50,6 +50,12 @@ services:
       # one failed lookup on PATH, a log line, and the vision chain answers as
       # it always did. Left named rather than blanked so that adding the engine
       # later is a rebuild and not a config hunt.
+      #
+      # Measured before you consider turning it on: Audiveris needs about
+      # 520 MB and 10 seconds for one page, on top of the ~150 MB this service
+      # already holds. Free and Starter are both 512 MB, so it will be killed
+      # — it needs Standard (2 GB). See docs/deploy-omr.md for the numbers and
+      # for why the engine cannot use the same prepared image the model gets.
       - key: OMR_CONFIRM
         value: omr-local
       - key: OMR_COMMAND

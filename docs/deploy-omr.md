@@ -1,5 +1,99 @@
 # Running the OMR second opinion
 
+**Measured, not estimated.** Audiveris 5.4 built from source and run on a
+3024x4032 page — the shape a phone actually produces:
+
+| long edge | time | peak RSS | result |
+|---|---|---|---|
+| 1568 px | 1.4 s | 159 MB | **fails** — "interline value of 10 pixels … resolution is too low" |
+| **2048 px** | **9.3 s** | **517 MB** | transcribed |
+| 2400 px | 10.5 s | 543 MB | transcribed |
+| 3024 px | 15.4 s | 723 MB | transcribed |
+
+Two things follow, and both are load-bearing.
+
+## The engine cannot use the image the model gets
+
+`prepare_for_model()` targets 1568 px, which is what a vision model sees after
+Anthropic's own resizing — exactly right for the model, and **below the floor
+Audiveris can work at**. Handing the model's copy to the engine does not make
+the second opinion worse; it removes it, and reports the removal as an engine
+that found nothing.
+
+So `prepare_for_engine()` prepares the same photograph separately at 2048 px,
+quality 95 and no chroma subsampling — the engine is thresholding thin black
+lines out of a photograph, and subsampling smears exactly those edges. 2048 is
+chosen over the original resolution because it reads the same page in 40% of
+the time and 70% of the memory.
+
+## It will not run on Render's free plan
+
+**512 MB is the free and Starter allowance. One page needs about 520 MB on top
+of the ~150 MB the Python service already holds.** It will be killed.
+
+| Render plan | RAM | OMR |
+|---|---|---|
+| Free | 512 MB | no — OOM |
+| Starter | 512 MB | no — OOM |
+| Standard | 2 GB | yes, comfortably |
+
+That is the whole decision. The API works without the engine — one failed
+lookup on PATH, a log line, and the vision chain answers as it always did — so
+this is a paid upgrade bought for a specific gain, not a bug to fix.
+
+## What the gain actually is
+
+Audiveris is accurate about structure and incomplete about coverage. On the
+bundled fixtures it read the clef correctly every time, including **bass** on
+the handwritten page, and found the time signature and key on the cleanly
+printed one. It also stopped at 2-6 measures on excerpts a model reads in full.
+
+That is why it is `OMR_CONFIRM` and not part of `OCR_PROVIDER_CHAIN`: the chain
+stops at the first provider that succeeds, and stopping at the engine would
+return less than the model alone. The engine reads first, the model is shown
+the photograph *and* the engine's answer, and is asked to check it.
+
+## Turning it on
+
+```
+docker build --build-arg WITH_AUDIVERIS=1 -t intempo-api ./backend
+```
+
+Then set, in the service's environment:
+
+```
+OMR_CONFIRM=omr-local
+OMR_COMMAND=/opt/audiveris/bin/Audiveris
+OMR_ARGS=-batch -export -output {out} -- {image}
+```
+
+To build it outside Docker, `backend/scripts/install-audiveris.sh` does the
+same thing and prints the two variables. Both remove `javax.media:jai-core`,
+which is served only from a repository many networks block and whose sole trace
+in the Audiveris source is a property-key *string*.
+
+Check it on a real page before trusting it:
+
+```
+cd backend && uv run python scripts/read_page.py YOUR_PAGE.jpg --provider omr-local
+```
+
+## Known limits
+
+- **20 megapixels.** Audiveris refuses a larger page outright. A phone shoots
+  12-48 MP, so this is the first thing a real photograph hits —
+  `prepare_for_engine()` caps it.
+- **It exits zero on failure.** `omr_provider.py` treats "finished but wrote no
+  MusicXML" as an error for this reason.
+- **No OCR languages installed.** Audiveris logs `*** No installed OCR
+  languages ***` and reads notes anyway; it is text (titles, directions) that
+  is skipped. Adding Tesseract language data would fix it and is not needed for
+  rhythm.
+
+---
+
+# Running the OMR second opinion
+
 The API works without any of this. When no engine is on `PATH` the second
 opinion is skipped, the vision chain answers exactly as it did before, and
 nothing fails. Everything here is optional.

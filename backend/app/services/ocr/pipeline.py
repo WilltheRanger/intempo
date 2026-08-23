@@ -111,11 +111,22 @@ def parse_sheet_music(
     providers: list[OCRProvider] | None = None,
     confirm: bool = True,
     on_stage: Callable[[Stage], None] | None = None,
+    engine_bytes: bytes | None = None,
+    engine_media_type: str = "image/jpeg",
 ) -> ScoreJson:
     """Run the image through the configured provider chain.
 
     `confirm=False` turns off the OMR second opinion, for tests and for callers
     that want the vision chain on its own.
+
+    `engine_bytes` is the *same page* prepared for the OMR engine rather than
+    for a model, and the two are not interchangeable. Measured on a full page:
+    at the 1568px a vision model is served, Audiveris reports "interline value
+    of 10 pixels … resolution is too low" and reads nothing; at 2048px it
+    transcribes the page. Passing the model's copy to the engine does not
+    degrade the second opinion — it removes it, silently, as an engine that
+    "found nothing". Defaults to `image_bytes` so a caller with one image
+    behaves exactly as before.
 
     `on_stage` is called as each step begins, for a caller that has to tell a
     human what is happening — this takes tens of seconds and a musician
@@ -150,14 +161,10 @@ def parse_sheet_music(
     if confirm and settings.OMR_CONFIRM:
         try:
             stage(STAGE_ENGINE)
-            # Note for whoever installs an OMR engine: `image_bytes` has been
-            # normalised to 1568px on the long edge for the *vision model*,
-            # which is all a model sees anyway. A rule-based engine wants more
-            # than that — Audiveris measures staff spacing in pixels, and a
-            # full page at 1568px leaves roughly ten pixels between lines,
-            # which is tight. If the second opinion is ever switched on for
-            # real, hand it the original bytes rather than these.
-            engine = get_provider(settings.OMR_CONFIRM).parse(image_bytes, media_type)
+            engine = get_provider(settings.OMR_CONFIRM).parse(
+                engine_bytes if engine_bytes is not None else image_bytes,
+                engine_media_type if engine_bytes is not None else media_type,
+            )
         except (ValidationError, OCRProviderError, ValueError, OCRError) as exc:
             log.info("no OMR second opinion available: %s", exc)
         else:

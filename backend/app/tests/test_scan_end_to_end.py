@@ -133,7 +133,7 @@ def test_a_full_page_photograph_of_each_fixture_reaches_the_model(
     monkeypatch.setattr(
         runner,
         "parse_sheet_music",
-        lambda b, *, media_type, on_stage=None: parse_sheet_music(
+        lambda b, *, media_type, on_stage=None, **_engine: parse_sheet_music(
             b, media_type=media_type, providers=[model], confirm=False
         ),
     )
@@ -167,7 +167,7 @@ def test_a_sideways_photograph_arrives_upright(wired, monkeypatch) -> None:
     monkeypatch.setattr(
         runner,
         "parse_sheet_music",
-        lambda b, *, media_type, on_stage=None: parse_sheet_music(
+        lambda b, *, media_type, on_stage=None, **_engine: parse_sheet_music(
             b, media_type=media_type, providers=[model], confirm=False
         ),
     )
@@ -202,7 +202,7 @@ def test_a_model_answering_with_extra_keys_does_not_lose_the_page(wired, monkeyp
     monkeypatch.setattr(
         runner,
         "parse_sheet_music",
-        lambda b, *, media_type, on_stage=None: parse_sheet_music(
+        lambda b, *, media_type, on_stage=None, **_engine: parse_sheet_music(
             b, media_type=media_type, providers=[model], confirm=False
         ),
     )
@@ -225,7 +225,7 @@ def test_an_undecodable_download_still_reaches_the_provider(wired, monkeypatch) 
     monkeypatch.setattr(
         runner,
         "parse_sheet_music",
-        lambda b, *, media_type, on_stage=None: parse_sheet_music(
+        lambda b, *, media_type, on_stage=None, **_engine: parse_sheet_music(
             b, media_type=media_type, providers=[model], confirm=False
         ),
     )
