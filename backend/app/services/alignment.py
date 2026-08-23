@@ -41,6 +41,15 @@ class ExpectedNote:
     note_index_in_measure: int
     global_index: int
     is_slur_interior: bool
+    #: First note of a slur, or the first note after one ends — the notes that
+    #: carry a real bow attack and so are held to the tolerance bands.
+    #:
+    #: Nothing reads this yet; `is_slur_interior` is what the verdict filters
+    #: on, and its complement is the same set. Kept because it is the spec's
+    #: vocabulary and it is what a slur-total check (spec: "we measure the
+    #: *total* duration of the slur") would need. One honest limitation: a slur
+    #: ending on a measure's last note puts "the first note after" in the next
+    #: measure, and this is computed per measure, so that one goes unmarked.
     is_slur_boundary: bool
 
 
@@ -179,9 +188,20 @@ def build_timeline(score: ScoreJson, target_bpm: float) -> ExpectedTimeline:
         interior: set[int] = set()
         boundary: set[int] = set()
         for slur in measure.slurs:
+            # Spec §"Slurred passages": the boundary notes are "first note of
+            # the slur, first note after the slur ends" — so the slur's *own*
+            # last note is interior, not a boundary.
+            #
+            # This read `range(start + 1, end)` and marked `end` a boundary,
+            # which timed the last note under the bow. That note has no bow
+            # attack; it is a left-hand change inside one stroke. The onset
+            # detector either misses it or fires late, which is precisely the
+            # phantom-"dragging" report the spec warns about — a player using
+            # ordinary legato was being told they dragged on the last note of
+            # every slur.
             boundary.add(slur.start_note_index)
-            boundary.add(slur.end_note_index)
-            for i in range(slur.start_note_index + 1, slur.end_note_index):
+            boundary.add(slur.end_note_index + 1)
+            for i in range(slur.start_note_index + 1, slur.end_note_index + 1):
                 interior.add(i)
 
         for i, note in enumerate(measure.notes):

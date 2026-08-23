@@ -6,6 +6,59 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-27 (later) — The last note of every slur was being timed
+
+**Branch:** `main`. Owner: "improve anything else."
+
+### The bug
+
+`build_timeline` marked a slur's interior as `range(start + 1, end)` and both
+`start` and `end` as boundaries. The spec is explicit:
+
+> **Boundary notes** (first note of the slur, first note after the slur ends):
+> held to standard tolerance bands.
+> **Interior slurred notes**: NOT timed individually.
+
+"First note *after* the slur ends" — so the slur's own last note is interior.
+The code held it to the tolerance bands instead.
+
+That note is played under the same bow stroke as the ones before it. There is
+no bow attack on it; it is a left-hand change inside one stroke, and the onset
+detector "either misses notes inside the slur or fires late" — the spec's own
+words, in the section on why slurred bass produces **phantom "dragging"**.
+
+So a player using ordinary legato was being told they dragged on the last note
+of every slur. Every slur. `is_slur_interior` is what `classification.py`
+filters the verdict on, so this fed straight into the per-measure result and
+the overall rush/drag call.
+
+Fixed to `range(start + 1, end + 1)`, and the boundary set to
+`{start, end + 1}`. The change strictly *removes* notes from the timed set, so
+it can only reduce spurious flags — which is the one thing that can be said
+about it without a real recording. **Not verified by ear**; it cannot be, in
+session. Three tests now pin the spec's definition, including the note after a
+slur and two slurs in one measure.
+
+`is_slur_boundary` is still consumed by nothing — `is_slur_interior`'s
+complement is the same set. Kept, because it is the spec's vocabulary and what
+a slur-*total* check would need, and now documented as unread along with its
+one honest limitation: a slur ending on a measure's last note puts "the first
+note after" in the next measure, and this is computed per measure.
+
+### `estimate_bpm` removed
+
+Superseded by `services/calibration.calibrate`, which is what
+`POST /v1/calibration` actually calls and which does the same median-IOI work
+with the diagnostics the flow needs (too quiet, too few onsets, uneven pulse,
+octave ambiguity). `estimate_bpm` was reachable only from its own two tests
+while its docstring claimed to be "the §4 calibration flow" — a false signpost
+for anyone reading the audio layer. 36 lines and both tests gone.
+
+**Tests:** 478 with the new slur cases, **476** after dropping the two dead
+ones. Ruff clean.
+
+---
+
 ## 2026-08-27 — Triplets, and the four beat tables that made them dangerous
 
 **Branch:** `main`. Owner: "fix those and improve anything else."
