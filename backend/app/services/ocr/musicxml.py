@@ -22,7 +22,7 @@ from __future__ import annotations
 import xml.etree.ElementTree as ET
 from typing import Final
 
-from app.services.score_schema import Measure, Note, ScoreJson, Slur
+from app.services.score_schema import Measure, Note, ScoreJson, Slur, Tuplet
 
 # MusicXML type names → ours. Anything longer than a whole note (breve, long)
 # and anything shorter than a 32nd is absent from `Duration`, and a piece of
@@ -106,6 +106,26 @@ def _strip_namespace(root: ET.Element) -> None:
     for element in root.iter():
         if "}" in element.tag:
             element.tag = element.tag.split("}", 1)[1]
+
+
+def _tuplet_ratio(note: ET.Element) -> tuple[int, int] | None:
+    """The ratio printed over the bracket, as `<time-modification>` states it.
+
+    Read separately from `_duration_name`, which consumes the same element and
+    throws the ratio away once it has picked a duration. The ratio is what lets
+    the beat sum be checked against what the page *says*: three triplet eighths
+    written for a bracketed 5 sum to exactly one beat, and only the stated
+    ratio can tell anyone the approximation happened.
+    """
+    actual = _text(note.find("time-modification/actual-notes"))
+    normal = _text(note.find("time-modification/normal-notes"))
+    if actual is None or normal is None:
+        return None
+    try:
+        pair = (int(actual), int(normal))
+    except ValueError:
+        return None
+    return pair if pair[0] > 1 else None
 
 
 def _duration_name(note: ET.Element) -> str | None:
@@ -328,6 +348,8 @@ def score_json_from_musicxml(
         #: if filtering leaves nothing.
         not_filtered: list[Note] = []
         slur_starts: dict[str, int] = {}
+        #: The printed ratio for each note in `notes`, positionally.
+        ratios: list[tuple[int, int] | None] = []
         slurs: list[Slur] = []
 
         # `<backup>` rewinds the clock so a second voice can be written over
@@ -391,6 +413,7 @@ def score_json_from_musicxml(
             if filtered_out:
                 continue
             notes.append(built)
+            ratios.append(_tuplet_ratio(note_el))
 
             for slur in note_el.iterfind("notations/slur"):
                 number = slur.get("number", "1")
@@ -417,8 +440,35 @@ def score_json_from_musicxml(
         if not notes and not_filtered:
             notes = not_filtered
 
+        # Consecutive notes carrying the same ratio are one bracket. MusicXML
+        # also marks brackets with `<notations><tuplet type="start"/>`, but not
+        # every exporter writes them, whereas `<time-modification>` is what
+        # actually changes the arithmetic and is therefore always present.
+        tuplets: list[Tuplet] = []
+        run_start = 0
+        for position in range(len(ratios) + 1):
+            ending = position == len(ratios) or ratios[position] != ratios[run_start]
+            if not ending:
+                continue
+            ratio = ratios[run_start] if run_start < len(ratios) else None
+            if ratio is not None and run_start < len(notes):
+                tuplets.append(
+                    Tuplet(
+                        start_note_index=run_start,
+                        end_note_index=min(position, len(notes)) - 1,
+                        actual_notes=ratio[0],
+                        normal_notes=ratio[1],
+                    )
+                )
+            run_start = position
+
         measures.append(
-            Measure(measure_number=number if number >= 1 else index, notes=notes, slurs=slurs)
+            Measure(
+                measure_number=number if number >= 1 else index,
+                notes=notes,
+                slurs=slurs,
+                tuplets=tuplets,
+            )
         )
 
     total_notes = sum(len(m.notes) for m in measures)

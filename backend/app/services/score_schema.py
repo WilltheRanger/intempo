@@ -144,10 +144,53 @@ class Slur(_Strict):
         return end
 
 
+class Tuplet(_Strict):
+    """A bracketed group, and the ratio printed over it.
+
+    Modelled per measure over an index range, exactly like `Slur`, rather than
+    as a key on every note. Two reasons, and the first is what decided it:
+
+    1. **A per-note key is ambiguous about grouping.** Six consecutive
+       `triplet_eighth`s are two groups of three, or one group of six, and a
+       flat marking on each note cannot tell them apart. A range can.
+    2. Output cost. The prompt is written the way it is because a real page was
+       refused for running past the token limit; a key on every note is paid on
+       every note, and a range is paid once per bracket.
+
+    `actual_notes` over `normal_notes` is MusicXML's own vocabulary
+    (`<time-modification>`), so the file path and the vision path describe a
+    tuplet the same way.
+
+    This is a **check**, not a source of durations. The beats still come from
+    `duration`. What the ratio adds is the fault the beat sum cannot see: three
+    `triplet_eighth`s written where the page brackets a 5:4 quintuplet sum to
+    exactly 1.0, the bar adds up, and the reading is silently wrong.
+    """
+
+    start_note_index: int = Field(ge=0)
+    end_note_index: int = Field(ge=0)
+    #: "3" in "3 in the time of 2".
+    actual_notes: int = Field(ge=2)
+    #: "2" in "3 in the time of 2".
+    normal_notes: int = Field(ge=1)
+
+    @field_validator("end_note_index")
+    @classmethod
+    def _end_after_start(cls, end: int, info) -> int:
+        start = info.data.get("start_note_index")
+        if start is not None and end < start:
+            raise ValueError("tuplet end_note_index must be >= start_note_index")
+        return end
+
+
 class Measure(_Strict):
     measure_number: int = Field(ge=1)
     notes: list[Note] = Field(default_factory=list)
     slurs: list[Slur] = Field(default_factory=list)
+    #: Empty for the overwhelming majority of measures, and for every score
+    #: written before the field existed — which is why it defaults rather than
+    #: being required.
+    tuplets: list[Tuplet] = Field(default_factory=list)
 
 
 class Repeat(_Strict):
@@ -315,4 +358,125 @@ def broken_ties(measures: Sequence[Measure]) -> list[BrokenTie]:
                 next_pitch=None if following is None else following.pitch,
             )
         )
+    return out
+
+
+# --- tuplets ----------------------------------------------------------------
+#
+# The durations already carry the beats; the ratio is what lets arithmetic
+# catch a misread the beat sum cannot see. Three `triplet_eighth`s written where
+# the page brackets a 5:4 quintuplet sum to exactly 1.0 — the bar adds up and
+# the reading is silently wrong. Stating the ratio makes that answerable.
+
+
+#: Ratios `Duration` can express. Three in the time of two, and nothing else.
+#:
+#: A quintuplet, a septuplet or a dotted triplet has no name in `Duration`, so a
+#: score claiming one is telling us it holds notes we cannot place. That is
+#: worth reporting rather than approximating: `TUPLET_NOTE` in `ocr/validate`
+#: is the sentence the model is given about it.
+WRITABLE_TUPLET_RATIOS: frozenset[tuple[int, int]] = frozenset({(3, 2)})
+
+#: Which plain value each tuplet duration is three-in-the-time-of-two *of*.
+TRIPLET_OF: dict[str, str] = {
+    "triplet_half": "whole",
+    "triplet_quarter": "half",
+    "triplet_eighth": "quarter",
+    "triplet_sixteenth": "eighth",
+}
+
+
+@dataclass(frozen=True)
+class TupletFault:
+    """A bracketed group whose contents contradict the ratio printed over it."""
+
+    measure_number: int
+    start_note_index: int
+    actual_notes: int
+    normal_notes: int
+    reason: Literal["count", "unwritable", "range", "durations"]
+    detail: str
+
+    def describe(self) -> str:
+        return (
+            f"measure {self.measure_number}: the {self.actual_notes}:"
+            f"{self.normal_notes} group starting at note "
+            f"{self.start_note_index} {self.detail}"
+        )
+
+
+def tuplet_faults(measures: Sequence[Measure]) -> list[TupletFault]:
+    """Every bracketed group that does not match what it says it is."""
+    out: list[TupletFault] = []
+
+    for measure in measures:
+        for tuplet in measure.tuplets:
+            ratio = (tuplet.actual_notes, tuplet.normal_notes)
+            common = dict(
+                measure_number=measure.measure_number,
+                start_note_index=tuplet.start_note_index,
+                actual_notes=tuplet.actual_notes,
+                normal_notes=tuplet.normal_notes,
+            )
+
+            if tuplet.end_note_index >= len(measure.notes):
+                out.append(
+                    TupletFault(
+                        **common,
+                        reason="range",
+                        detail=(
+                            f"runs to note {tuplet.end_note_index}, but the measure "
+                            f"has {len(measure.notes)}"
+                        ),
+                    )
+                )
+                continue
+
+            counted = tuplet.end_note_index - tuplet.start_note_index + 1
+            if counted != tuplet.actual_notes:
+                out.append(
+                    TupletFault(
+                        **common,
+                        reason="count",
+                        detail=(
+                            f"holds {counted} note{'' if counted == 1 else 's'}, "
+                            f"not {tuplet.actual_notes}"
+                        ),
+                    )
+                )
+                continue
+
+            if ratio not in WRITABLE_TUPLET_RATIOS:
+                out.append(
+                    TupletFault(
+                        **common,
+                        reason="unwritable",
+                        detail=(
+                            "is a ratio these durations cannot express — only "
+                            "three in the time of two can be written"
+                        ),
+                    )
+                )
+                continue
+
+            wrong = [
+                note.duration
+                for note in measure.notes[
+                    tuplet.start_note_index : tuplet.end_note_index + 1
+                ]
+                if note.duration not in TRIPLET_OF
+            ]
+            if wrong:
+                out.append(
+                    TupletFault(
+                        **common,
+                        reason="durations",
+                        detail=(
+                            "contains "
+                            + ", ".join(sorted(set(wrong)))
+                            + ", which are not triplet values"
+                        ),
+                    )
+                )
+
     return out

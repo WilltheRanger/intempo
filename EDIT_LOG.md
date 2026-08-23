@@ -6,6 +6,58 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-29 (later) — Brackets now state what they are
+
+**Branch:** `main`. Audit follow-up, item 2 of 5.
+
+The MusicXML path checked tuplet ratios; the vision path had no ratio to check
+against, because the model emitted a duration name and nothing else. So the
+fault the beat sum is blind to went unseen: three `triplet_eighth`s written
+where the page brackets a **5:4 quintuplet** sum to exactly 1.0, the bar adds
+up, and the reading is silently wrong.
+
+**Modelled per measure over an index range, like `Slur`, not as a key on every
+note.** Two reasons, and the first decided it: six consecutive triplet eighths
+are two groups of three *or* one group of six, and a flat marking on each note
+cannot tell them apart — a range can. The second is output cost, which is not
+abstract here: the prompt is written the way it is because a real page was
+refused for running past the token limit, and a key on every note is paid on
+every note.
+
+`actual_notes` over `normal_notes` is MusicXML's own `<time-modification>`
+vocabulary, so a scanned page and an imported file describe a bracket the same
+way — and `musicxml.py` now populates the same field, grouping consecutive
+notes that share a ratio, so the check does not behave differently depending on
+how the piece arrived.
+
+**The ratio is a check, not a source of durations.** Beats still come from
+`duration`; a test pins that three triplet eighths remain exactly one beat.
+
+Four faults are reported: a group whose note count contradicts its ratio, a
+group running past the end of the measure, a ratio these durations cannot
+express (anything but 3:2), and a bracket over plain durations. All flow into
+`MeasureFinding.tuplet_faults` and `is_problem`, beside `broken_ties`, for the
+same reason — a clean beat sum must not be able to hide them.
+
+The prompt now asks for the ratio **even when the durations cannot express it**:
+"put your best approximation in the durations and the real ratio here. The ratio
+is how the program knows the approximation happened." Prompt grew 3,809 → 4,942
+characters, about 280 tokens a call, which buys a check nothing else can do.
+
+`ScoreTuplet` mirrored in `mobile/src/data/types.ts`. The correction screen
+spreads the measure (`{...m, notes: working}`) so brackets survive an edit
+untouched.
+
+**Found, not fixed — pre-existing:** adding or deleting a note in the correction
+screen does not reindex `slurs`, and now does not reindex `tuplets` either, so
+both can point at the wrong notes after an edit. It has been true of slurs since
+the editor shipped; brackets give it a second instance. Reported rather than
+folded into this change.
+
+**Tests:** 515 → **527**. Ruff clean, `tsc --noEmit` clean.
+
+---
+
 ## 2026-08-29 — A tie nobody checked was deleting onsets
 
 **Branch:** `main`. Audit follow-up, item 1 of 5.
