@@ -59,6 +59,8 @@ export function useTranscribePage() {
         transcriptionStatus: score.transcription_status ?? 'done',
         transcriptionStage: score.transcription_stage ?? null,
         transcriptionError: score.transcription_error ?? null,
+        transcriptionAccepted: Boolean(score.transcription_accepted_at),
+        pageImageDiscarded: Boolean(score.page_image_discarded_at),
       };
     },
     onSuccess: () => {

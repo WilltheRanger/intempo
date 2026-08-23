@@ -33,7 +33,12 @@ import type {
 interface FixturePiece
   extends Omit<
     Piece,
-    'lastPracticedAt' | 'transcriptionStatus' | 'transcriptionStage' | 'transcriptionError'
+    | 'lastPracticedAt'
+    | 'transcriptionStatus'
+    | 'transcriptionStage'
+    | 'transcriptionError'
+    | 'transcriptionAccepted'
+    | 'pageImageDiscarded'
   > {
   /** Resolved to an ISO timestamp at read time so it never goes stale. */
   practicedDaysAgo: number | null;
@@ -50,6 +55,10 @@ const TRANSCRIBED = {
   transcriptionStatus: 'done',
   transcriptionStage: null,
   transcriptionError: null,
+  // Not accepted: the sample pieces keep their artwork, which is the whole
+  // reason a library screen has anything to look at in this build.
+  transcriptionAccepted: false,
+  pageImageDiscarded: false,
 } as const;
 
 

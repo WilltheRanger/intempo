@@ -96,3 +96,15 @@ export function updateScore(
 export function deleteScore(id: string): Promise<void> {
   return apiFetch<void>(`/v1/scores/${id}`, { method: 'DELETE' });
 }
+
+/**
+ * POST /v1/scores/:id/accept — the reading is right, discard the photograph.
+ *
+ * Irreversible: the page image is deleted from storage and the score keeps
+ * only its transcription. The backend refuses while a page is still being read
+ * and for one that failed, so this cannot destroy a photograph that is still
+ * the only record of the music.
+ */
+export function acceptTranscription(id: string): Promise<ScoreResponse> {
+  return apiFetch<ScoreResponse>(`/v1/scores/${id}/accept`, { method: 'POST' });
+}
