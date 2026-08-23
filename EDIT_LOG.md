@@ -6,6 +6,79 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-03 — The marks that change how many bars there are
+
+**Branch:** `main`. `/loop` iteration, continuing the probe of the reading side
+that found the double-stop gap. Same question: what does real notation contain
+that the prompt never mentions, and what happens when a model meets it?
+
+Four more, and they are worse than the double stop, because a double stop makes
+a bar overrun and the beat-sum check catches it. **These change the number of
+bars, and the arithmetic still works.**
+
+### Measured
+
+A page of one bar of notes, **eight bars' rest**, four more bars — an ordinary
+orchestral bass part. Read as a *single* rest bar, which is what a model that
+has never been told about the printed number will do:
+
+    read correctly (8 rest bars)   ok                quality 0.989   20 notes
+    read as one rest bar           alignment_failed  quality 0.000    0 notes
+    validator, both readings       nothing flagged
+
+One whole rest in 4/4 adds up perfectly, so the beat check passes. And the
+musician was told **"check you're on the right piece and re-record"** — which is
+the wrong place to look. The recording is fine. The page is short.
+
+### Two fixes
+
+**So it does not happen.** Four rules added to the prompt, each with its
+consequence stated so it survives a rewrite:
+
+- a **multi-measure rest** is a bar with a number over it; emit that many bars
+- a **bar repeat sign** (`%`) means write the previous measure out again
+- **D.C., D.S., al Fine, al Coda, segno, coda** cannot be represented at all —
+  the format holds ordinary repeats and endings and nothing else — so read the
+  page straight through once and name the mark in `notes_to_human`. Silently
+  rearranging into playing order and silently ignoring it are both wrong.
+- a **fermata** has no duration; keep the printed value and say so.
+
+**And so it is diagnosable when it happens anyway.** A take that runs far
+longer than its page now gets its own message: *"Your recording is much longer
+than this page of music — that usually means some bars are missing from it.
+Check for a rest bar with a number over it, or a repeat, that didn't make it
+into the transcription."*
+
+Compared as **spans, not note counts**, because the bars that go missing this
+way are rests: they carry no notes, so counting notes cannot see them. Time is
+the only thing that shows a gap where nothing was played.
+
+**The threshold is 1.8× and it sits where it does for a reason.** Practising
+slowly makes a take longer than its page too, and that is the most ordinary
+thing a musician does — so the line sits past `MAX_TEMPO_RATIO` (1.7), the point
+beyond which the matcher already refuses to believe a tempo difference. Inside
+it, a longer take *is* a slower tempo by definition. Tested at 1.5×, 1.7× and
+3.0×.
+
+**No three-foot test.** No UI touched — this changes a sentence the musician
+reads, but it is a failure message in the backend's own words, not a screen.
+
+**Tests:** backend 624 (was 620; +4). Both guards mutation-checked with the
+mutation asserted: removing the message fails 1, weakening the prompt rule
+fails 1. `ruff` clean. All six corpus fixtures untouched — the new branch only
+fires on a take 1.8× its page.
+
+**What is still unrepresentable, and now says so.** D.C. and D.S. genuinely
+cannot be expressed by `RepeatType`, which holds `repeat`, `first_ending` and
+`second_ending`. The prompt now requires the model to report them rather than
+guess, which turns a silent mis-analysis into a note a human can read. Making
+the schema hold them is a real piece of work and is not this.
+
+**Rollback:** revert the commit; the prompt rules and the new branch are
+independent of each other.
+
+---
+
 ## 2026-09-02 (evening) — A double stop would have shifted the page, and a way to check a take
 
 **Branch:** `main`. `/loop` iteration. Two things, one found by probing the

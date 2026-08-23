@@ -227,3 +227,88 @@ def test_a_result_stored_before_this_existed_still_loads() -> None:
 
     old = AnalysisResult(status="ok", quality=0.9, verdict="You held the tempo")
     assert old.tolerance is None
+
+
+def test_a_page_shorter_than_the_take_says_bars_are_missing(tmp_path) -> None:
+    """The likeliest transcription failure in an orchestral part, and the one
+    nothing else can see.
+
+    A multi-measure rest — a bar with a number over it — read as a single bar
+    of rest leaves the timeline short by every bar the number stood for. The
+    beat-sum check passes, because one whole rest in 4/4 adds up. The alignment
+    then fails at quality 0.000 and the musician used to be told to check they
+    were on the right piece, which is the wrong place to look: the recording is
+    fine and the page is short.
+    """
+    from app.tests.audio_helpers import bass_scale, synth_bowed_take
+
+    def page(rest_bars: int) -> ScoreJson:
+        measures = [
+            Measure(
+                measure_number=1, notes=[Note(pitch="E2", duration="quarter")] * 4
+            )
+        ]
+        for _ in range(rest_bars):
+            measures.append(
+                Measure(
+                    measure_number=len(measures) + 1,
+                    notes=[Note(pitch="rest", duration="whole")],
+                )
+            )
+        for _ in range(4):
+            measures.append(
+                Measure(
+                    measure_number=len(measures) + 1,
+                    notes=[Note(pitch="E2", duration="quarter")] * 4,
+                )
+            )
+        return ScoreJson(
+            clef="bass", time_signature="4/4", ocr_confidence=0.9, measures=measures
+        )
+
+    # The musician plays the page as printed: one bar, eight bars' rest, four bars.
+    times: list[float] = []
+    clock = 1.0
+    for measure in page(8).measures:
+        for note in measure.notes:
+            beats = 4.0 if note.duration == "whole" else 1.0
+            if note.pitch != "rest":
+                times.append(clock)
+            clock += beats
+    y = synth_bowed_take(times, freqs_hz=bass_scale(len(times)), note_dur_s=0.55)
+
+    good = analyze((y, SR), page(8), target_bpm=60.0, double_bass=True)
+    assert good.status == "ok", "the correctly-read page has to still work"
+
+    short = analyze((y, SR), page(1), target_bpm=60.0, double_bass=True)
+    assert short.status == "alignment_failed"
+    assert "longer than this page" in short.verdict
+    assert "rest bar with a number over it" in short.verdict
+    assert "right piece" not in short.verdict, "that is the wrong place to send them"
+
+
+def test_playing_slowly_is_not_called_a_missing_page(tmp_path) -> None:
+    """The thing that message must never accuse.
+
+    Practising under tempo makes the take longer than the page too, and it is
+    the most ordinary thing a musician does. The threshold sits past the tempo
+    clamp for exactly this reason: inside it, a longer take is a slower tempo
+    by definition.
+    """
+    import numpy as np
+
+    from app.services.analysis import _take_is_much_longer_than_the_page
+
+    page = np.arange(20, dtype=float)
+    assert not _take_is_much_longer_than_the_page(page * 1.5, page)
+    assert not _take_is_much_longer_than_the_page(page * 1.7, page)
+    assert _take_is_much_longer_than_the_page(page * 3.0, page)
+
+
+def test_a_take_too_short_to_compare_is_not_accused(tmp_path) -> None:
+    import numpy as np
+
+    from app.services.analysis import _take_is_much_longer_than_the_page
+
+    assert not _take_is_much_longer_than_the_page(np.array([1.0]), np.arange(20.0))
+    assert not _take_is_much_longer_than_the_page(np.arange(20.0), np.array([1.0]))
