@@ -43,6 +43,9 @@ class ToleranceConfig:
     dragging_inner_pct: float
     dragging_mid_pct: float
     dragging_outer_pct: float
+    #: See `[tolerance.pulse]` in config.toml.
+    disturbance_deviations: float = 6.0
+    disturbance_floor_beats: float = 0.1667
 
 
 @dataclass(frozen=True)
@@ -106,6 +109,12 @@ def _parse(raw: dict) -> AudioConfig:
             dragging_inner_pct=float(tol["dragging_inner_pct"]),
             dragging_mid_pct=float(tol["dragging_mid_pct"]),
             dragging_outer_pct=float(tol["dragging_outer_pct"]),
+            disturbance_deviations=float(
+                tol.get("pulse", {}).get("disturbance_deviations", 6.0)
+            ),
+            disturbance_floor_beats=float(
+                tol.get("pulse", {}).get("disturbance_floor_beats", 0.1667)
+            ),
         ),
         trend=TrendConfig(window=int(trend["window"])),
         alignment=AlignmentConfig(
