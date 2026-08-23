@@ -6,6 +6,89 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-01 (latest) — The app got less sure of itself the more you practised
+
+**Branch:** `main`. `/loop` iteration. Started from a different question than
+the last two: not "what happens around a take" but "what happens to a take the
+length of a real practice session". Every audio fixture in this repo is between
+8 and 32 notes. A session is hundreds.
+
+    128 notes   quality 0.986
+    256 notes   quality 0.761   ← `warn_quality` is 0.7
+    768 notes   quality 0.759
+    1536 notes  quality 0.744
+
+**The take is perfect in all four.** The cause is arithmetic. Onset times are
+quantised to the analysis hop, 23.2 ms, so a median of inter-onset intervals
+snaps to a multiple of it: eighth notes written 416.67 ms apart come back as a
+uniform **418.0 ms**, which is 18 frames exactly. The matcher rescales by that
+ratio, inherits 0.3% of rate error, and accumulates it. Past half a note gap
+the warp path has to give back a whole note at once, and what it leaves is two
+parallel ramps with a step between them — a shape no straight line can remove,
+so the residuals that decide "can this be trusted" explode.
+
+Diagnosed by printing the scaled sequences elementwise: `x - y` walked steadily
+from 0 to −324 ms across 256 notes and the DTW path showed index offsets
+`[-1, 0]`, one slip. Then confirmed on the estimator alone: median 418.0 ms
+against a written 416.67, at every length, unchanged.
+
+**I had the wrong fix first, and it is worth recording that I did.** The first
+attempt was a second alignment pass that re-derives the rate from the pairs the
+first pass matched. It was written, wired in and measured — and it barely
+helped, because the first pass's mapping is *already contaminated by the slip
+it is supposed to detect*. It also cost a second DTW per candidate cell. Removed
+in favour of fixing the estimator, after which the slip does not happen.
+
+**`typical_gap`: the median picks the centre, the mean of everything near it
+supplies the precision.** Gaps outside 0.6×–1.6× of the median do not count.
+Four estimators measured, on eighths at 72 BPM / quarters at 60 / sixteenths at
+100, as residual drift across the whole take:
+
+    median          324 ms   209 ms   5875 ms
+    rank-trimmed    324 ms   209 ms    119 ms
+    plain mean        0 ms     0 ms      0 ms
+    clipped mean      0 ms     0 ms      0 ms
+
+The rank-trimmed row is the one worth staring at. It is the obvious robust
+average and it is *wrong here*: the gaps carrying the correction are the
+minority — mostly 18-frame gaps with a few 17-frame ones — so trimming by rank
+throws away exactly the evidence. The plain mean is unbiased and loses to the
+clipped mean only on robustness: one 6-second page turn in sixty eighth notes
+moves it from 417 ms to 510 ms. A pause is not a tempo. Written up in
+`DECISIONS.md`.
+
+**After:**
+
+     64 notes  0.987 → **0.987**       768 notes  0.759 → **0.986**
+    256 notes  0.761 → **0.986**      1536 notes  0.744 → **0.986** (all 1536
+                                                    matched, was 1527)
+
+Flat. Which is the point: a perfect take is a perfect take at any length.
+
+**All six corpus fixtures bit-identical** for the third entry running, and the
+whole tempo-clamp table is unchanged — perfect 1.000, 20% fast 1.000, first
+half 0.500 mapping to written 0–19, every-other-note 0.300, wrong piece 0.000.
+That table is the only thing standing between the matcher and a confident
+analysis of bars nobody played, so it is now a test class rather than a comment.
+
+**Also in this change:** the line fit had two copies (the quality residuals and,
+briefly, the rate refinement). One `_fit_line`, used by both, before the
+refinement was removed — the deduplication stays.
+
+**No three-foot test.** No UI touched.
+
+**Tests:** backend 584 (was 572; +12 in `test_long_takes.py`). Mutation-checked
+against both rejected estimators: restoring the median fails 3, substituting a
+plain mean fails 3. `ruff` clean.
+
+**Known side effects:** none measured. Long takes now match every note where
+they previously lost a handful to the slip.
+
+**Rollback:** revert the commit; `typical_gap` is the only behavioural change
+and it is one function.
+
+---
+
 ## 2026-09-01 (later) — The other end of the take, and why the search had to be a grid
 
 **Branch:** `main`. `/loop` iteration, continuing the sweep the last entry
