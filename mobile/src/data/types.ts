@@ -134,6 +134,35 @@ export interface ScoreMeasure {
   slurs: ScoreSlur[];
   /** Absent on scores written before brackets were recorded. */
   tuplets?: ScoreTuplet[];
+  /**
+   * The meter, when it **changes** at this measure. Absent everywhere else,
+   * and absent on every score written before it was recorded.
+   *
+   * The one field on a measure that is not about the notes in it. Anything
+   * rebuilding a measure has to carry it — a bar edited without it loses the
+   * change, and then every bar after it reads as having the wrong number of
+   * beats, because the meter it set was running for all of them. Spreading the
+   * measure, as `MeasureEditScreen` does, is enough.
+   */
+  time_signature?: string | null;
+}
+
+/**
+ * A marking that says the tempo itself changes: rit., accel., a tempo.
+ *
+ * Not `tempo_marking`, which is what the piece is headed with. This is what
+ * makes a *correct* performance stop matching a steady beat — and until it was
+ * recorded, a musician who slowed exactly as marked was told they dragged.
+ *
+ * The extent is not stated and is not missing: a rit. carries no amount and
+ * usually no printed end, so the server derives where it stops from the next
+ * marking.
+ */
+export interface ScoreTempoChange {
+  measure_number: number;
+  kind: 'ritardando' | 'accelerando' | 'a_tempo';
+  /** What is printed — "rit.", "poco rall.". Quoted, never paraphrased. */
+  text: string;
 }
 
 export interface ScoreRepeat {
@@ -164,6 +193,8 @@ export interface ScoreJson {
   clef: Clef | null;
   measures: ScoreMeasure[];
   repeats: ScoreRepeat[];
+  /** Absent on scores written before tempo markings were recorded. */
+  tempo_changes?: ScoreTempoChange[];
   ocr_confidence: number;
   notes_to_human: string;
 }
@@ -274,6 +305,15 @@ export interface PerNoteResult {
   direction: Direction;
   /** Interior slur notes aren't timed individually — musicianship, not drift. */
   is_slur_interior: boolean;
+  /**
+   * A written tempo change covers this note's measure, so `band` and
+   * `direction` are `on` by *refusal* rather than by measurement: the bands
+   * measure distance from a steady beat and the page has said the beat is not
+   * steady there.
+   */
+  under_tempo_change?: boolean;
+  /** The change lurched at this note instead of flowing. */
+  uneven?: boolean;
 }
 
 export interface PerMeasureResult {
@@ -283,6 +323,14 @@ export interface PerMeasureResult {
   avg_delta_pct: number;
   worst_band: Band;
   direction: Direction;
+  /**
+   * A written tempo change covers this measure. Nothing renders this yet, and
+   * when something does: a rushing or dragging colour here would be colouring
+   * a bar the page said would not be steady.
+   */
+  under_tempo_change?: boolean;
+  /** Somewhere in this measure the change lurched rather than flowed. */
+  uneven?: boolean;
 }
 
 /**

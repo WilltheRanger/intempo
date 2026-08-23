@@ -6,6 +6,47 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-04 (later) — The retry could delete a change of metre
+
+**Branch:** `main`. Went looking for what the new fields could break, and found
+one.
+
+`_splice` puts re-read measures back into a score by replacing them whole. The
+retry asks a model about **durations** — "measure 2 has 5 beats, expected 3,
+correct the durations" — and a change of metre belongs to the *bar*, not to the
+notes in it. A model that fixes the four durations and says nothing about the
+time signature deletes the change by omission.
+
+Reproduced:
+
+    before: [(1, None), (2, '3/4'), (3, None)]
+    after:  [(1, None), (2, None),  (3, None)]
+    validator now flags: [(2, 'short'), (3, 'short')]
+
+Bar **3** as well, because the metre bar 2 set was running for it too. The
+not-worse guard caught that particular retry, 1 problem becoming 2 — but that
+is luck: a retry that also "fixed" bar 3 to four beats would have passed the
+guard and lost the metre silently.
+
+Carried forward on omission only. A patch that *states* a time signature has
+read one, and that reading is the point of asking again.
+
+**The app was already safe and its types were not.** `MeasureEditScreen` spreads
+both the score and the measure, so anything the server sent survives a round
+trip at runtime whether TypeScript knows about it or not. But the types said the
+server sends fields it no longer only sends, so `ScoreMeasure.time_signature`,
+`ScoreJson.tempo_changes` and the two new per-note/per-measure flags are now
+declared. Nothing renders them — that is a §2 gate — but a type that lies about
+the wire is a trap for whoever writes the next screen.
+
+**No three-foot test.** No UI touched.
+
+**Tests:** backend 659 (was 657; +2). Mobile 41, `tsc` clean.
+
+**Rollback:** revert the commit.
+
+---
+
 ## 2026-09-04 — A ritardando is judged on how evenly you made it
 
 **Branch:** `main`. The other two-thirds of the user's answer. A take that slows
