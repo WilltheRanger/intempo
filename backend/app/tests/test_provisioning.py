@@ -21,8 +21,7 @@ from app.services.provisioning import ensure_user_row
 from app.tests.test_scores_router import (
     _install_supabase,
     _row_for,
-    _stub_download,
-    _stub_ocr,
+    _stub_worker,
 )
 
 
@@ -76,8 +75,7 @@ def test_creating_a_score_provisions_the_user_first(
     # Overrides the autouse stub in conftest so the call can be observed.
     monkeypatch.setattr(auth_module, "get_service_client", lambda: provisioning)
 
-    _stub_download(monkeypatch)
-    _stub_ocr(monkeypatch)
+    _stub_worker(monkeypatch)
     _install_supabase(monkeypatch, returning_row=_row_for(uuid4(), user_id))
 
     res = client.post(
