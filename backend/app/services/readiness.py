@@ -18,7 +18,6 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 
-from app.config import settings
 from app.db import get_service_client
 
 log = logging.getLogger(__name__)
@@ -83,7 +82,16 @@ class Readiness:
 
 
 def _configuration_checks() -> list[Check]:
-    """Settings only. No network, so this half always answers."""
+    """Settings only. No network, so this half always answers.
+
+    The settings object is fetched here rather than bound at import. This
+    endpoint's whole job is to report what the process is *currently*
+    configured with, and a snapshot taken at import time is a different claim —
+    one that happens to be true in production, where nothing reloads, and
+    quietly false anywhere it does.
+    """
+    from app.config import settings
+
     checks = [
         Check(
             name="supabase_url",
@@ -102,6 +110,28 @@ def _configuration_checks() -> list[Check]:
                 "SUPABASE_SERVICE_ROLE_KEY is not set — nothing can be written. "
                 "Saving a piece, recording a take and running an analysis all fail."
             ),
+        ),
+        Check(
+            name="cors_allowed_origins",
+            ok=bool(settings.CORS_ALLOWED_ORIGINS),
+            detail=(
+                "CORS_ALLOWED_ORIGINS is not set. Native clients are unaffected, "
+                "and localhost development is already covered — but a browser on "
+                "any other origin is refused *before* it sends anything, and the "
+                "only thing it can report is \"Failed to fetch\". Name the web "
+                "app's origin here, including its preview domain if previews "
+                "should work."
+            ),
+            # Not blocking. Unset is correct for a local server and for a
+            # deployment that only serves the native app, and this endpoint
+            # exists to be believed — a 503 on a working API would teach
+            # whoever reads it to stop reading it.
+            #
+            # It is here at all because it is the one misconfiguration in this
+            # list that names *nothing* on its own: no server log, no status
+            # code, no message beyond "Failed to fetch". Everything else fails
+            # loudly somewhere.
+            blocking=False,
         ),
     ]
 

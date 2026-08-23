@@ -14,21 +14,37 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
-from app.config import settings
+from app import config as app_config
 from app.main import app
 from app.services import readiness
 from app.services.readiness import Check, Readiness
+
+
+def _settings():
+    """The settings object the code will actually read, fetched now.
+
+    Not a module-level binding. `test_cors.py` rebuilds the CORS middleware by
+    reloading `app.config`, which replaces this object — so a test holding the
+    old one patches something nothing reads, and passes or fails depending on
+    which file ran first. It did: three tests here were green alone and red in
+    the suite.
+
+    Imported as `app_config` because `from app.main import app` shadows the
+    package — `app.config` then resolves to an attribute of the FastAPI
+    instance, which is a very confusing AttributeError to read.
+    """
+    return app_config.settings
 
 client = TestClient(app)
 
 
 @pytest.fixture
 def unconfigured(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(settings, "SUPABASE_URL", "")
-    monkeypatch.setattr(settings, "SUPABASE_KEY", "")
-    monkeypatch.setattr(settings, "SUPABASE_SERVICE_ROLE_KEY", "")
-    monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", "")
-    monkeypatch.setattr(settings, "GEMINI_API_KEY", "")
+    monkeypatch.setattr(_settings(), "SUPABASE_URL", "")
+    monkeypatch.setattr(_settings(), "SUPABASE_KEY", "")
+    monkeypatch.setattr(_settings(), "SUPABASE_SERVICE_ROLE_KEY", "")
+    monkeypatch.setattr(_settings(), "ANTHROPIC_API_KEY", "")
+    monkeypatch.setattr(_settings(), "GEMINI_API_KEY", "")
 
 
 def test_a_bare_deployment_is_not_ready_and_says_why(unconfigured) -> None:
@@ -51,7 +67,7 @@ def test_it_never_reports_a_value(monkeypatch: pytest.MonkeyPatch) -> None:
         "GEMINI_API_KEY": "AIza-yyyyyyyyyyyyyyyyyyyyyyyy",
     }
     for name, value in secrets.items():
-        monkeypatch.setattr(settings, name, value)
+        monkeypatch.setattr(_settings(), name, value)
 
     body = repr(readiness.check().as_dict())
     for name, value in secrets.items():
@@ -64,9 +80,8 @@ def test_one_stale_model_name_does_not_stop_the_others(
     """The bug this was written for: the shipped chain named two models from
     the previous Claude generation, `_default_chain()` raised, and no page could
     be read at all even though a usable model was configured."""
-    monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", "present")
-    monkeypatch.setattr(
-        settings, "OCR_PROVIDER_CHAIN", "claude-sonnet-4-6,claude-sonnet-5"
+    monkeypatch.setattr(_settings(), "ANTHROPIC_API_KEY", "present")
+    monkeypatch.setattr(_settings(), "OCR_PROVIDER_CHAIN", "claude-sonnet-4-6,claude-sonnet-5"
     )
 
     result = readiness.check()
@@ -82,7 +97,7 @@ def test_one_stale_model_name_does_not_stop_the_others(
 def test_a_chain_with_nothing_usable_is_reported_not_raised(
     monkeypatch: pytest.MonkeyPatch, unconfigured
 ) -> None:
-    monkeypatch.setattr(settings, "OCR_PROVIDER_CHAIN", "not-a-model,also-not")
+    monkeypatch.setattr(_settings(), "OCR_PROVIDER_CHAIN", "not-a-model,also-not")
     result = readiness.check()
     assert result.ready is False
     assert any("OCR_PROVIDER_CHAIN" in b for b in result.blocking)
@@ -112,7 +127,7 @@ def test_a_missing_migration_names_the_file_to_apply(
             return None
 
     monkeypatch.setattr(readiness, "get_service_client", lambda: _Missing())
-    monkeypatch.setattr(settings, "SUPABASE_SERVICE_ROLE_KEY", "present")
+    monkeypatch.setattr(_settings(), "SUPABASE_SERVICE_ROLE_KEY", "present")
 
     result = readiness.check()
     failed = [c for c in result.checks if c.name == "schema:analyses.instrument"]
@@ -145,3 +160,73 @@ def test_readiness_is_ready_when_every_blocking_check_passes() -> None:
     )
     assert result.ready is True
     assert result.blocking == []
+
+
+class TestTheOneMisconfigurationThatNamesNothing:
+    """CORS is the only setting in this list whose failure is silent everywhere.
+
+    A missing key produces a 500 with a message. A missing column produces a
+    column-not-found. A stale provider name is logged. A browser refused by
+    CORS never sends the request at all — there is no server log, no status
+    code, and the only thing the client can report is "Failed to fetch".
+
+    So it is named here, and deliberately **not** blocking: unset is correct
+    for a local server and for a deployment serving only the native app, and a
+    503 on a working API would teach whoever reads this endpoint to stop
+    reading it.
+    """
+
+    def test_it_is_reported_when_unset(self, monkeypatch) -> None:
+        from app.services.readiness import _configuration_checks
+
+
+        monkeypatch.setattr(_settings(), "CORS_ALLOWED_ORIGINS", "", raising=False)
+        check = next(
+            c for c in _configuration_checks() if c.name == "cors_allowed_origins"
+        )
+
+        assert check.ok is False
+        assert "Failed to fetch" in check.detail, (
+            "the detail has to name the symptom, because nothing else will"
+        )
+
+    def test_it_does_not_stop_a_deployment_being_ready(self, monkeypatch) -> None:
+        from app.services.readiness import _configuration_checks
+
+
+        monkeypatch.setattr(_settings(), "CORS_ALLOWED_ORIGINS", "", raising=False)
+        check = next(
+            c for c in _configuration_checks() if c.name == "cors_allowed_origins"
+        )
+
+        assert check.blocking is False
+
+    def test_it_passes_once_an_origin_is_named(self, monkeypatch) -> None:
+        from app.services.readiness import _configuration_checks
+
+
+        monkeypatch.setattr(_settings(), "CORS_ALLOWED_ORIGINS", "https://intempo.pages.dev", raising=False
+        )
+        check = next(
+            c for c in _configuration_checks() if c.name == "cors_allowed_origins"
+        )
+
+        assert check.ok is True
+
+    def test_it_still_reports_no_value(self, monkeypatch) -> None:
+        """The endpoint's standing promise, and an origin list is not a secret —
+        but the rule is that nothing here echoes a setting, and one exception
+        is how that stops being true."""
+        from app.services.readiness import _configuration_checks
+
+
+        monkeypatch.setattr(_settings(),
+            "CORS_ALLOWED_ORIGINS",
+            "https://something-identifiable.example",
+            raising=False,
+        )
+        rendered = " ".join(
+            c.detail + c.name for c in _configuration_checks()
+        )
+
+        assert "something-identifiable" not in rendered
