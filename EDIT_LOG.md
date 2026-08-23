@@ -6,6 +6,37 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-29 (last) — Two docs that had stopped being true
+
+**Branch:** `main`. Audit follow-up, item 5 of 5.
+
+`pipeline.parse_sheet_music` documented an `engine_bytes` parameter that was
+removed with Audiveris — a whole paragraph about preparing the page at 2048px
+for an engine that is not in the image. Rewritten as the history it now is,
+pointing at `confirm.retry_with_arithmetic`, which is what took over the
+second-opinion role.
+
+`CLAUDE.md` said the correction screen handled "durations and rests only …
+never widen it to pitch to make it complete", while `MeasureEditScreen` had
+shipped pitch, accidentals, add and delete. A future session reading that would
+have deleted a working feature to obey the file.
+
+The reasoning had changed too, not just the scope, so the entry says why rather
+than only what: the verdict reads `pitch` solely as `== "rest"`, but a **tie**
+is now validated by whether two noteheads share a pitch — so a wrong pitch can
+delete an onset, and correcting it is repairing the timeline.
+
+Two entries added while there: what actually flags a measure now (beat sums,
+broken ties, tuplet ratios, density — and that the last three exist because a
+bar can sum to exactly the right number of beats and still be wrong), and the
+fact that **three** implementations of that validator exist and only
+`test_sandbox_parity.py` holds them together. That one bit three times this
+session.
+
+**Tests:** 535, unchanged. Ruff clean.
+
+---
+
 ## 2026-08-29 (later still) — Density flagged; `subseq` measured and refused
 
 **Branch:** `main`. Audit follow-up, item 3 of 5. One half shipped, one half

@@ -201,14 +201,13 @@ def parse_sheet_music(
     `retry=False` turns off the arithmetic re-read, for tests and for callers
     that want a single pass.
 
-    `engine_bytes` is the *same page* prepared for the OMR engine rather than
-    for a model, and the two are not interchangeable. Measured on a full page:
-    at the 1568px a vision model is served, Audiveris reports "interline value
-    of 10 pixels … resolution is too low" and reads nothing; at 2048px it
-    transcribes the page. Passing the model's copy to the engine does not
-    degrade the second opinion — it removes it, silently, as an engine that
-    "found nothing". Defaults to `image_bytes` so a caller with one image
-    behaves exactly as before.
+    There is one image and one chain. An `engine_bytes` parameter used to sit
+    here, carrying the same page prepared at 2048px for Audiveris rather than at
+    the 1568px a vision model is served — the engine reported "interline value
+    of 10 pixels … resolution is too low" and read nothing at the smaller size.
+    Both the parameter and the engine went with the OMR removal (DECISIONS.md,
+    2026-08-25); the second opinion it fed is now `confirm.retry_with_arithmetic`,
+    which has a model on both sides and needs no second copy of the page.
 
     `on_stage` is called as each step begins, for a caller that has to tell a
     human what is happening — this takes tens of seconds and a musician

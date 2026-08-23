@@ -191,10 +191,28 @@ there works differently as of 2026-08-24:
   `analyze(..., double_bass=...)`. Store the instrument, never a derived flag —
   how each instrument should be treated is still being tuned.
 - **A misread bar is fixable, not fatal.** `MeasureEditScreen` corrects
-  durations and rests on the measures `validate.py` flags, reached from the
-  caveat line on `PieceScore`. Durations and rests only, because they are the
-  only things the verdict reads — never widen it to pitch to "make it
-  complete".
+  durations, rests, **pitch** (stepping by letter, with a separate accidental
+  control) and adds or deletes notes. Reached two ways from `PieceScore`: the
+  caveat line for the bars `validate.py` flags, and a picker over *every*
+  measure — because two compensating errors in one bar sum correctly and are
+  invisible to the beat check.
+  This entry used to say "durations and rests only … never widen it to pitch".
+  Pitch shipped, and the reasoning had changed with it: the verdict reads
+  `pitch` only as `== "rest"`, but a **tie** is now validated by whether two
+  noteheads share a pitch, so a wrong pitch can delete an onset. Correcting it
+  is repairing the timeline, not decoration.
+- **Four things flag a measure, and only one of them is arithmetic.** Beat sums
+  (`verdict`), broken ties, tuplet ratios that contradict their bracket, and
+  note density far above the page's median. The last three all exist because a
+  measure can sum to **exactly** the right number of beats and still be wrong —
+  a slur written as a tie, a 5:4 bracket approximated as triplets, a tremolo
+  read as sixteen sixteenths. Keep them separate from `verdict`; collapsing
+  them lets a clean beat sum hide them.
+- **Three implementations of that validator exist**, and they must agree:
+  `ocr/validate.py`, the port in `tools/validator-sandbox.template.html`, and
+  another in `tools/scan-bench.template.html`. `test_sandbox_parity.py` is the
+  only thing holding them together — when you add a check, port it and add a
+  case, or the browser tools will quietly call a bad page clean.
 - **The photograph is deleted only when a person accepts the reading.**
   `POST /v1/scores/:id/accept` is the only thing that discards it, and it
   refuses for a page still being read or one that failed. Never wire discarding
