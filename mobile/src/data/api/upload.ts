@@ -32,18 +32,100 @@ export function requestAudioUpload(filename: string): Promise<UploadResponse> {
   });
 }
 
-/** Uploads bytes to a presigned URL. Returns once storage has accepted them. */
-export async function uploadToSignedUrl(
+/**
+ * How long to give the upload before deciding it is not going to finish.
+ *
+ * Two minutes. A phone photograph of a page is several megabytes and this is
+ * the one request in the app that sends a large body, so it is the one that
+ * suffers on a weak connection — and it is doing so from wherever the musician
+ * happens to be practising, which is not usually next to the router.
+ */
+const UPLOAD_TIMEOUT_MS = 120_000;
+
+export class UploadError extends Error {
+  constructor(message: string, readonly cause?: unknown) {
+    super(message);
+    this.name = 'UploadError';
+  }
+}
+
+export interface UploadOptions {
+  /**
+   * Bytes sent so far and bytes in total, as the upload proceeds.
+   *
+   * Real numbers off the transfer — the reason this is `XMLHttpRequest` and
+   * not `fetch`, which cannot report the progress of a request body at all.
+   * A screen that has to sit through a multi-megabyte upload deserves better
+   * than a spinner, and this is the one step in the scan whose progress is
+   * genuinely measurable rather than merely staged.
+   */
+  onProgress?: (sent: number, total: number) => void;
+}
+
+/**
+ * Uploads bytes to a presigned URL. Returns once storage has accepted them.
+ *
+ * **Every failure here used to reach the musician as the platform's own
+ * wording.** This was a bare `fetch` with no timeout and no `catch`, so a
+ * connection that died mid-upload threw `TypeError: Load failed` — iOS
+ * Safari's phrasing — and `TranscribeScreen` rendered `cause.message`
+ * verbatim. That is the "Load failed" that kept appearing on real scans: not
+ * the backend, not OCR, but the upload before either of them, reporting itself
+ * in a string that names no cause and suggests no remedy.
+ */
+export function uploadToSignedUrl(
   uploadUrl: string,
   file: Blob,
   contentType: string,
+  { onProgress }: UploadOptions = {},
 ): Promise<void> {
-  const response = await fetch(uploadUrl, {
-    method: 'PUT',
-    headers: { 'Content-Type': contentType },
-    body: file,
+  return new Promise((resolve, reject) => {
+    const request = new XMLHttpRequest();
+    request.open('PUT', uploadUrl);
+    request.setRequestHeader('Content-Type', contentType);
+    request.timeout = UPLOAD_TIMEOUT_MS;
+
+    request.upload.onprogress = (event) => {
+      if (event.lengthComputable) {
+        onProgress?.(event.loaded, event.total);
+      }
+    };
+
+    request.onload = () => {
+      if (request.status >= 200 && request.status < 300) {
+        resolve();
+        return;
+      }
+      // Named separately because they need different things from the
+      // musician: an expired URL means start the scan again, and anything
+      // else means try again as-is.
+      if (request.status === 400 || request.status === 403) {
+        reject(
+          new UploadError(
+            'The upload link expired before the page finished sending. Take the photograph again.',
+          ),
+        );
+        return;
+      }
+      reject(new UploadError(`Storage refused the page (${request.status}). Try again.`));
+    };
+
+    request.ontimeout = () =>
+      reject(
+        new UploadError(
+          'Sending the page took too long. A stronger connection — or moving closer to the router — usually fixes it.',
+        ),
+      );
+
+    request.onerror = () =>
+      reject(
+        new UploadError(
+          'The page could not be sent. Check your connection and try again.',
+        ),
+      );
+
+    request.onabort = () => reject(new UploadError('The upload was cancelled.'));
+
+    request.send(file);
   });
-  if (!response.ok) {
-    throw new Error(`Upload failed (${response.status})`);
-  }
 }

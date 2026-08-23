@@ -6,6 +6,69 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-24 (later) — "Load failed" was the upload, not the backend
+
+**Branch:** `main`. Owner reported it a third time, after the async rework was
+pushed. It kept happening because I had been fixing the wrong request.
+
+### Where it actually came from
+
+`uploadToSignedUrl` was a bare `fetch` PUT of the whole photograph to Supabase
+storage — **no timeout, and no `catch` anywhere above it**. A connection that
+died mid-upload threw `TypeError: Load failed`, iOS Safari's own phrasing, and
+`TranscribeScreen` rendered `cause.message` verbatim.
+
+So the string on screen was the platform's, describing a transfer that never
+finished, and it was reaching a musician as the app's explanation of a failed
+scan. It named no cause and suggested no remedy because it was never written to
+be read.
+
+**This is before the backend is involved at all.** Neither the download fix,
+the media-type fix, nor moving OCR into a worker could have touched it — all
+three are downstream of an upload that had already failed. Two of my earlier
+diagnoses attributed it to the request that follows this one; both were wrong,
+and the reason I could not tell is that I never enumerated which requests could
+produce that string until now.
+
+### What changed
+
+`uploadToSignedUrl` is now `XMLHttpRequest` with a two-minute timeout, and
+every ending has a sentence: expired link (start the scan again), storage
+refused with a status, timed out, connection failed, cancelled.
+
+`XMLHttpRequest` rather than `fetch` **because `fetch` cannot report the
+progress of a request body at all.** That limitation is what the old spinner on
+`TranscribeScreen` was defending — its comment argued that "a single upload
+exposes no milestones this screen can see", which was true of the tool and not
+of the upload. The transfer knows exactly how many bytes have gone. So the scan
+screen now shows a measured bar and `2.4 of 5.8 MB sent`: a stalled upload
+shows a stalled bar, which is the whole difference from a spinner that looks
+identical whether the page is moving or the connection is dead.
+
+`TranscribeScreen` no longer prints `cause.message` for anything thrown. Only
+`UploadError`, `ScanUploadError` and `ApiError` carry sentences meant for a
+musician; anything else gets a general one, because saying less beats saying
+something meaningless.
+
+### Deliberately not done
+
+**The photograph is not downscaled before upload**, which would make this
+faster and more reliable. A phone page is 3–12 MB and a vision model
+downsamples anything over ~1568px anyway — but the scan-bench work in this repo
+established that downscaling destroys staff lines for the pixel-CV path
+(EDIT_LOG, "4027→1800 destroyed the lines"), and the upload is the only copy.
+Trading a resolution that a future OMR pass needs for an upload that is merely
+slower is not mine to make silently. Worth revisiting if uploads keep failing.
+
+### Verified
+
+`UploadProgress` screenshotted at a real fraction (2.4 / 5.8 MB → 41%) against
+the fixture build. `tsc --noEmit` clean. The failure paths are **not** verified
+against a real dropped connection — I cannot reach the network from this
+session.
+
+---
+
 ## 2026-08-24 — Reading a page stops being a request you have to sit through
 
 **Branch:** `main`. Owner: "I think the pipeline gets stuck you need to add
