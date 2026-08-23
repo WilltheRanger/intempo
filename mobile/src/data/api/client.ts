@@ -118,17 +118,30 @@ export async function apiFetch<T>(
 /**
  * How long to wait before deciding the request is not coming back.
  *
- * Forty-five seconds, which is far longer than any endpoint should need and
- * deliberately so: the API is on a host that sleeps when idle, and the first
- * request after a nap pays a cold start of about a minute before a single line
- * of application code runs. A shorter timeout would abort perfectly healthy
- * requests and report it as a failure.
+ * Forty-five seconds, which is far longer than any endpoint should need.
+ *
+ * It is deliberately **not** long enough to cover a cold start. The host warns
+ * that waking it "can delay requests by 50 seconds or more", and stretching
+ * this past that would make a genuinely dead connection take over a minute to
+ * report. `send` retries a repeatable request instead, which handles the nap
+ * without punishing every other failure for it.
  *
  * This is a backstop against a connection that has died silently, not a
  * latency budget. Long work — reading a photographed page — is not held on a
  * connection at all any more; it is a row the app polls.
  */
 const REQUEST_TIMEOUT_MS = 45_000;
+
+/**
+ * Methods that can be sent twice without meaning it twice.
+ *
+ * The whole retry below turns on this. A GET that times out has changed
+ * nothing, so asking again costs a request. A POST that times out may have
+ * been received, run, and had only its *answer* lost — resending it would
+ * submit a second take, or create a second piece, and the musician would find
+ * a duplicate they never made. Silence is the better failure there.
+ */
+const REPEATABLE = new Set(['GET', 'HEAD', 'OPTIONS']);
 
 /**
  * `fetch`, with a deadline and an error a person can read.
@@ -143,29 +156,53 @@ const REQUEST_TIMEOUT_MS = 45_000;
  * Zero rather than a plausible 502: no server answered, so attributing a
  * status to one would be inventing a fact about a conversation that never
  * happened.
+ *
+ * **A repeatable request is tried once more before that.** The host sleeps
+ * when idle and warns that waking it "can delay requests by 50 seconds or
+ * more" — longer than the deadline here, which means the first request after
+ * any quiet period was reliably a failure the musician had to retry by hand.
+ * The attempt that times out is also the attempt that *wakes the host*, so the
+ * second one lands on a running server and returns in the ordinary time.
+ *
+ * Not a general retry policy. One extra attempt, only for methods that can be
+ * repeated, only when nothing was heard back at all — a request that got a 500
+ * is answered and is not tried again.
  */
 async function send(path: string, init: RequestInit): Promise<Response> {
-  const controller = new AbortController();
-  const deadline = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-  try {
-    return await fetch(`${API_BASE_URL}${path}`, { ...init, signal: controller.signal });
-  } catch (cause) {
-    if (controller.signal.aborted) {
-      throw new ApiError(
-        0,
-        path,
-        'The server took too long to answer. It may be waking up — try again in a moment.',
-      );
+  const method = (init.method ?? 'GET').toUpperCase();
+  const attempts = REPEATABLE.has(method) ? 2 : 1;
+
+  let lastTimedOut = false;
+  let lastCause: unknown;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const controller = new AbortController();
+    const deadline = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    try {
+      return await fetch(`${API_BASE_URL}${path}`, {
+        ...init,
+        signal: controller.signal,
+      });
+    } catch (cause) {
+      lastTimedOut = controller.signal.aborted;
+      lastCause = cause;
+    } finally {
+      clearTimeout(deadline);
     }
+  }
+
+  if (lastTimedOut) {
     throw new ApiError(
       0,
       path,
-      'Could not reach the server. Check your connection and try again.',
-      cause,
+      'The server took too long to answer. It may be waking up — try again in a moment.',
     );
-  } finally {
-    clearTimeout(deadline);
   }
+  throw new ApiError(
+    0,
+    path,
+    'Could not reach the server. Check your connection and try again.',
+    lastCause,
+  );
 }
 
 /**
