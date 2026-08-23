@@ -21,6 +21,7 @@ Provider chain semantics:
 from __future__ import annotations
 
 import logging
+from typing import Callable
 
 from pydantic import ValidationError
 
@@ -76,21 +77,50 @@ def _default_chain() -> list[OCRProvider]:
     return [get_provider(n) for n in names]
 
 
+#: A step the pipeline actually took, reported as it happens.
+#:
+#: Every value is an event the pipeline observes, never an estimate of how far
+#: through it is — there is no such number. The chain's length is known but a
+#: provider's duration is not, and the second one is only reached when the
+#: first has failed. Anything smoother than this would be invented.
+Stage = str
+
+STAGE_ENGINE = "engine"
+STAGE_CONFIRMING = "confirming"
+#: Reading with a named provider, e.g. `reading:claude-sonnet-4-6`.
+STAGE_READING = "reading"
+
+
 def parse_sheet_music(
     image_bytes: bytes,
     *,
     media_type: str = "image/jpeg",
     providers: list[OCRProvider] | None = None,
     confirm: bool = True,
+    on_stage: Callable[[Stage], None] | None = None,
 ) -> ScoreJson:
     """Run the image through the configured provider chain.
 
     `confirm=False` turns off the OMR second opinion, for tests and for callers
     that want the vision chain on its own.
+
+    `on_stage` is called as each step begins, for a caller that has to tell a
+    human what is happening — this takes tens of seconds and a musician
+    watching a spinner cannot tell it apart from a hang. It is advisory: a
+    callback that raises must not lose a transcription that succeeded, so it is
+    called defensively.
     """
     chain = providers if providers is not None else _default_chain()
     if not chain:
         raise OCRError("provider chain is empty")
+
+    def stage(name: Stage) -> None:
+        if on_stage is None:
+            return
+        try:
+            on_stage(name)
+        except Exception:  # noqa: BLE001 — reporting must never break reading
+            log.warning("stage callback failed for %s", name, exc_info=True)
 
     # The OMR engine reads first, and a vision model checks its answer.
     #
@@ -106,10 +136,12 @@ def parse_sheet_music(
     # case — it costs one failed `which` and the chain proceeds as before.
     if confirm and settings.OMR_CONFIRM:
         try:
+            stage(STAGE_ENGINE)
             engine = get_provider(settings.OMR_CONFIRM).parse(image_bytes, media_type)
         except (ValidationError, OCRProviderError, ValueError, OCRError) as exc:
             log.info("no OMR second opinion available: %s", exc)
         else:
+            stage(STAGE_CONFIRMING)
             confirmed = confirm_reading(
                 engine.score, image_bytes, media_type=media_type, provider=chain[0]
             )
@@ -133,9 +165,18 @@ def parse_sheet_music(
 
     for provider in chain:
         try:
+            stage(f"{STAGE_READING}:{provider.name}")
             response: OCRResponse = provider.parse(image_bytes, mime_type=media_type)
         except (ValidationError, OCRProviderError, ValueError) as exc:
             failures.append(f"{provider.name}: {type(exc).__name__}: {exc}")
+            continue
+
+        if response.score.clef is None:
+            # `ScoreJson.clef` is optional so a score can exist before it has
+            # been read. A provider answering without one has not read it
+            # either, and the next provider deserves the page.
+            failures.append(f"{provider.name}: no clef")
+            log.info("%s: returned no clef, trying the next provider", provider.name)
             continue
 
         # Arithmetic before self-assessment.

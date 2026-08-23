@@ -17,7 +17,6 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 from app.routers import scores as scores_module
-from app.services.score_schema import ScoreJson
 
 
 GOOD_PAYLOAD = {
@@ -116,16 +115,18 @@ def _install_supabase(monkeypatch: pytest.MonkeyPatch, *, returning_row: dict | 
     return client
 
 
-def _stub_ocr(monkeypatch: pytest.MonkeyPatch, *, score: ScoreJson | None = None) -> None:
-    if score is None:
-        score = ScoreJson.model_validate(GOOD_PAYLOAD)
-    monkeypatch.setattr(scores_module, "parse_sheet_music", lambda *a, **k: score)
+def _stub_worker(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    """Catch the enqueued transcription instead of running it.
 
-
-def _stub_download(monkeypatch: pytest.MonkeyPatch, body: bytes = b"<jpeg>") -> None:
-    monkeypatch.setattr(
-        scores_module, "_download_image", lambda url, **_kwargs: body
-    )
+    `TestClient` runs a `BackgroundTask` for real once the response is sent, so
+    without this every POST in this file would try to fetch a URL and call a
+    vision model. The returned list records the score ids handed to the worker,
+    which is the thing worth asserting here — what the worker then *does* with
+    one is `test_transcription_runner.py`'s subject.
+    """
+    enqueued: list[str] = []
+    monkeypatch.setattr(scores_module, "run_transcription", enqueued.append)
+    return enqueued
 
 
 # ---- POST /v1/scores ------------------------------------------------------
@@ -141,10 +142,16 @@ def test_post_creates_score(
     client: TestClient,
     make_token: Callable[..., str],
 ) -> None:
+    """The row exists immediately, with the reading still to come.
+
+    OCR used to run inside this request and the assertions used to be about its
+    result. They cannot be any more, and that is the point of the change: the
+    piece is real and openable the moment this returns, and the notes arrive in
+    the same row a minute later.
+    """
     user_id = uuid4()
     score_id = uuid4()
-    _stub_download(monkeypatch)
-    _stub_ocr(monkeypatch)
+    enqueued = _stub_worker(monkeypatch)
     sb = _install_supabase(monkeypatch, returning_row=_row_for(score_id, user_id))
 
     res = client.post(
@@ -159,13 +166,17 @@ def test_post_creates_score(
     body = res.json()
     assert body["id"] == str(score_id)
     assert body["user_id"] == str(user_id)
-    assert body["score_json"]["clef"] == "treble"
-    assert body["ocr_confidence"] == GOOD_PAYLOAD["ocr_confidence"]
-    # Insert was called with the user's id and the OCR result, not arbitrary data.
+
     sb.table.return_value.insert.assert_called_once()
     payload = sb.table.return_value.insert.call_args.args[0]
     assert payload["user_id"] == str(user_id)
-    assert payload["score_json"]["ocr_confidence"] == GOOD_PAYLOAD["ocr_confidence"]
+    assert payload["transcription_status"] == "queued"
+    # No notes yet, and no claim about how well any were read.
+    assert payload["score_json"]["measures"] == []
+    assert payload["ocr_confidence"] is None
+    # And the work was actually handed on — a queued row nobody reads is worse
+    # than the inline version it replaced.
+    assert enqueued == [str(score_id)]
 
 
 def test_post_creates_hand_entered_score_without_touching_ocr(
@@ -244,8 +255,7 @@ def test_post_rejects_manual_fields_alongside_an_image(
 ) -> None:
     """Both provenances at once is a caller bug, not something to reconcile."""
     user_id = uuid4()
-    _stub_download(monkeypatch)
-    _stub_ocr(monkeypatch)
+    _stub_worker(monkeypatch)
     _install_supabase(monkeypatch, returning_row=_row_for(uuid4(), user_id))
 
     res = client.post(
@@ -270,8 +280,7 @@ def test_post_rejects_url_outside_user_prefix(
 ) -> None:
     user_id = uuid4()
     other_user = uuid4()
-    _stub_download(monkeypatch)
-    _stub_ocr(monkeypatch)
+    _stub_worker(monkeypatch)
     _install_supabase(monkeypatch, returning_row=_row_for(uuid4(), user_id))
 
     # Signed URL points at *another* user's prefix — should be 403 before download.
@@ -290,8 +299,7 @@ def test_post_rejects_arbitrary_external_url(
     make_token: Callable[..., str],
 ) -> None:
     user_id = uuid4()
-    _stub_download(monkeypatch)
-    _stub_ocr(monkeypatch)
+    _stub_worker(monkeypatch)
     _install_supabase(monkeypatch, returning_row=_row_for(uuid4(), user_id))
 
     res = client.post(
@@ -305,29 +313,30 @@ def test_post_rejects_arbitrary_external_url(
     assert res.status_code == 403
 
 
-def test_post_ocr_failure_returns_422(
+def test_a_bad_url_is_refused_before_a_row_is_written(
     monkeypatch: pytest.MonkeyPatch,
     client: TestClient,
     make_token: Callable[..., str],
 ) -> None:
-    from app.services.ocr import OCRError
+    """The ownership check stays in the request, and this is why.
 
+    A URL that is not this caller's object can never be transcribed, so
+    creating a row to discover that in a worker would leave the musician a
+    library entry that was doomed before it was written. OCR moved to the
+    background; the guard did not.
+    """
     user_id = uuid4()
-    _stub_download(monkeypatch)
-    monkeypatch.setattr(
-        scores_module,
-        "parse_sheet_music",
-        lambda *a, **k: (_ for _ in ()).throw(OCRError("nope")),
-    )
-    _install_supabase(monkeypatch)
+    enqueued = _stub_worker(monkeypatch)
+    sb = _install_supabase(monkeypatch, returning_row=_row_for(uuid4(), user_id))
 
     res = client.post(
         "/v1/scores",
-        json={"image_url": _signed_url(user_id), "title": "etude"},
+        json={"image_url": _signed_url(uuid4()), "title": "sneaky"},
         headers={"Authorization": f"Bearer {make_token(sub=user_id)}"},
     )
-    assert res.status_code == 422
-    assert "OCR failed" in res.json()["detail"]
+    assert res.status_code == 403
+    sb.table.return_value.insert.assert_not_called()
+    assert enqueued == []
 
 
 # ---- GET /v1/scores -------------------------------------------------------

@@ -96,7 +96,19 @@ class ScoreJson(_Strict):
     key_signature: str | None = Field(default=None, max_length=40)
     tempo_marking: str | None = None
     bpm_hint: int | None = Field(default=None, ge=20, le=300)
-    clef: Clef
+    #: Which clef the staff is in, or None when nothing has read the page yet.
+    #:
+    #: Optional for the same reason `time_signature` and `key_signature` are:
+    #: it is a fact printed on the page, and a score can exist before anyone
+    #: has looked. A piece created from a photograph holds an empty
+    #: transcription for the minute or so its worker takes, and a clef guessed
+    #: to fill the gap would be shown to a musician as though it had been read
+    #: — a bass part labelled "Treble clef" is a worse answer than no label.
+    #:
+    #: A *transcription* still has to name one: `pipeline.py` treats a provider
+    #: that returns no clef as a failed read and tries the next provider, so
+    #: this never loosens what OCR is held to.
+    clef: Clef | None = None
     measures: list[Measure] = Field(default_factory=list)
     repeats: list[Repeat] = Field(default_factory=list)
     ocr_confidence: float = Field(ge=0.0, le=1.0)

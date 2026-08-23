@@ -14,27 +14,31 @@ from typing import Any
 from urllib.parse import urlparse
 from uuid import UUID
 
-import httpx
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    HTTPException,
+    Query,
+    Response,
+    status,
+)
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.auth import current_user_id, current_user_id_provisioned
 from app.db import get_service_client
 from app.routers.upload import SCORE_BUCKET
-from app.services.ocr import OCRError, parse_sheet_music
+from app.workers.transcription_runner import run_transcription
 from app.services.score_schema import Clef, ScoreJson
 
 # Fetching the page lives in `services/page_image.py` so the transcription
 # worker can reach it without importing this module, which imports the worker.
-# Aliased back to the private names this module has always used them under, so
-# nothing else here — or in the tests that reach for them — has to change.
-from app.services.page_image import (  # noqa: E402  (grouped with app imports)
+# What is left here is what a *request* still needs: recognising a storage URL,
+# and signing readable ones for display.
+from app.services.page_image import (
     SIGNED_DOWNLOAD_TTL_SECONDS,
     STORAGE_PREFIXES as _STORAGE_PREFIXES,
-    download_image as _download_image,
-    media_type_of as _media_type_of,
     object_key_from as _object_key_from,
-    readable_url as _readable_url,
 )
 
 router = APIRouter(prefix="/scores", tags=["scores"])
@@ -116,6 +120,18 @@ class ScoreResponse(BaseModel):
     score_json: dict[str, Any]
     shared_with_studio: UUID | None = None
     ocr_confidence: float | None = None
+    #: `queued` → `reading` → `done` | `failed`. Always `done` for a piece
+    #: entered by hand, and for every score written before OCR moved to a
+    #: worker — so a client can treat "no notes and status done" as the honest
+    #: "this piece has none" rather than "wait a moment".
+    transcription_status: str = "done"
+    #: The step the worker last reported, in words fit to put on screen, or
+    #: null once it has finished. Free text on purpose: the steps follow the
+    #: shape of the provider chain, and pinning them to an enum would make
+    #: adding a provider a migration.
+    transcription_stage: str | None = None
+    #: Why the reading failed, if it did. Null at every other time.
+    transcription_error: str | None = None
     created_at: str
     updated_at: str
 
@@ -227,27 +243,34 @@ def _row_to_response(
         score_json=row["score_json"],
         shared_with_studio=row.get("shared_with_studio"),
         ocr_confidence=row.get("ocr_confidence"),
+        # Defaulted rather than indexed: a row read back from a database that
+        # has not run migration 006 yet has no such column, and a library that
+        # 500s during a deploy is a worse failure than one that says every
+        # piece is finished — which, before 006, every piece was.
+        transcription_status=row.get("transcription_status") or "done",
+        transcription_stage=row.get("transcription_stage"),
+        transcription_error=row.get("transcription_error"),
         created_at=row["created_at"],
         updated_at=row["updated_at"],
     )
 
 
-def _transcribe(image_url: str, user_id: UUID) -> ScoreJson:
-    """Photograph → notes. The original path, unchanged."""
-    _assert_image_url_owned_by(image_url, user_id)
-    fetch_url = _readable_url(image_url)
-    # The endpoint the guard above just approved. Passed on so a redirect
-    # cannot move the fetch somewhere the guard never saw. `httpx.URL.port`
-    # fills in the scheme default, so this is compared against the same.
-    approved = httpx.URL(fetch_url)
-    image_bytes = _download_image(
-        fetch_url, expected_origin=f"{approved.host}:{approved.port}"
-    )
-    media_type = _media_type_of(image_bytes, image_url)
-    try:
-        return parse_sheet_music(image_bytes, media_type=media_type)
-    except OCRError as exc:
-        raise HTTPException(status_code=422, detail=f"OCR failed: {exc}") from exc
+def _awaiting_transcription() -> ScoreJson:
+    """The score a photographed piece holds until the worker has read it.
+
+    Empty, and honestly so. `score_json` is NOT NULL and the row exists from
+    the moment the request is accepted, so something has to be in the column
+    for the minute or so before the notes are. An empty transcription is not a
+    placeholder invented for that: it is exactly what a hand-entered piece
+    holds, and every reader in the app already copes with a piece that has no
+    notes. `transcription_status` is what distinguishes "none yet" from "none
+    ever", and it is the only thing that should be consulted for the
+    difference.
+
+    `ocr_confidence = 0.0` for the same reason it is 0 on a hand-entered
+    piece: nothing has been read, so nothing is claimed about anything.
+    """
+    return ScoreJson(measures=[], repeats=[], ocr_confidence=0.0, notes_to_human="")
 
 
 def _hand_entered(body: CreateScoreRequest) -> ScoreJson:
@@ -276,10 +299,34 @@ def _hand_entered(body: CreateScoreRequest) -> ScoreJson:
 @router.post("", response_model=ScoreResponse, status_code=status.HTTP_201_CREATED)
 async def create_score(
     body: CreateScoreRequest,
+    background_tasks: BackgroundTasks,
     user_id: UUID = Depends(current_user_id_provisioned),
 ) -> ScoreResponse:
+    """Create the piece, and — if it came from a photograph — start reading it.
+
+    **This used to run OCR inline and return the notes.** It no longer does,
+    and the reason is not speed: a vision model reading a page takes tens of
+    seconds no matter where it runs, and holding a request open for that is
+    what broke. Backgrounding the app killed the fetch; a dropped connection
+    lost the work rather than just the answer; and the app could show nothing
+    but a spinner, which is indistinguishable from a hang.
+
+    So the row is written immediately — a real library entry, with the title
+    the musician gave it — and `transcription_status` says what is happening to
+    it. The client polls the row it already has. Same shape as `/v1/analyses`,
+    for the same reason.
+
+    Still 201 with the row, not 202 with an id: the piece genuinely exists when
+    this returns, and everything except its notes is already usable.
+    """
     manual = body.image_url is None
-    score = _hand_entered(body) if manual else _transcribe(body.image_url, user_id)
+    if not manual:
+        # Before anything is written. A URL that isn't this user's object is a
+        # 403 the caller can act on, and a row that could never be transcribed
+        # should not be created to discover that in a worker.
+        _assert_image_url_owned_by(body.image_url, user_id)
+
+    score = _hand_entered(body) if manual else _awaiting_transcription()
 
     insert_payload = {
         "user_id": str(user_id),
@@ -290,8 +337,12 @@ async def create_score(
         "score_json": score.model_dump(mode="json"),
         # Null rather than 0 for a hand-entered piece: the column answers "how
         # well did OCR read this", and for a piece that was never read the
-        # answer is "it didn't", not "badly".
-        "ocr_confidence": None if manual else score.ocr_confidence,
+        # answer is "it didn't", not "badly". Null for a queued one too, and
+        # for the same reason — it has not been read *yet*.
+        "ocr_confidence": None,
+        # A hand-entered piece is finished the moment it is written; there is
+        # nothing to read and never will be.
+        "transcription_status": "done" if manual else "queued",
     }
     inserted = (
         _service_client().table("scores").insert(insert_payload).execute()
@@ -302,6 +353,13 @@ async def create_score(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="failed to persist score",
         )
+
+    if not manual:
+        # After the insert, so the worker cannot look for a row that is not
+        # there yet, and after the response is sent, which is what
+        # `BackgroundTasks` guarantees.
+        background_tasks.add_task(run_transcription, str(rows[0]["id"]))
+
     # Signed like every other read, so a client can render the page it just
     # uploaded without a second request. This used to return an unsigned row,
     # which meant POST was the one response whose `image_url` was always null.
