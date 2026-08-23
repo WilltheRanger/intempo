@@ -28,6 +28,7 @@ from app.services.alignment import (
     build_timeline,
     is_alignment_broken,
     to_timeline_base,
+    closest_expected_gap,
 )
 from app.services.audio_config import AudioConfig, load_audio_config
 from app.services.classification import Delta, compute_deltas, generate_verdict, rolling_trend
@@ -139,11 +140,18 @@ def analyze_with_diagnostics(
     if double_bass:
         y = audio_svc.high_pass(y, sr, cfg.onset.double_bass_highpass_hz)
 
-    onsets = audio_svc.detect_onsets(
-        audio_svc.pre_emphasis(y, config=cfg), sr, double_bass=double_bass, config=cfg
-    )
+    # Same order as `analyze()`: the score is read first so the detector knows
+    # how close together the notes it is looking for are.
     timeline = build_timeline(score, target_bpm)
     expected = timeline.onsets
+
+    onsets = audio_svc.detect_onsets(
+        audio_svc.pre_emphasis(y, config=cfg),
+        sr,
+        double_bass=double_bass,
+        config=cfg,
+        min_gap_s=closest_expected_gap(expected),
+    )
 
     # The envelope is of the signal as loaded, not as pre-emphasised: the plot
     # should look like the recording, while the onset marks show what the

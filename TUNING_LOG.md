@@ -6,6 +6,76 @@ value, regression results across all six fixture clips, and rationale.
 
 ---
 
+## 2026-08-30 (last) — The peak-picking ceiling, resolved without a threshold change
+
+**`config.toml` is untouched.** `pre_max` stays 20 and is now a *cap* rather
+than the value. All six clips are bit-identical — they are all at 60 BPM, where
+the derived window resolves to the cap and nothing changes.
+
+### The ceiling, as arithmetic
+
+`pre_max`/`post_max` make a peak the largest in a window, so a window wider than
+the gap between two notes means the quieter of them is never reported. At 20
+frames — **±464 ms**:
+
+| note value | detectable below |
+|---|---|
+| quarter | 129 BPM |
+| eighth | 65 BPM |
+| triplet eighth | 43 BPM |
+| **sixteenth** | **32 BPM** |
+
+Nobody practises sixteenths at 32 BPM. Most étude and excerpt writing was
+invisible. `librosa`'s own default for this sample rate is **1** frame.
+
+### The corpus could not decide it, and that is a finding
+
+Swept 1 → 20 frames across all six clips: **121/121 onsets, 0 spurious, at every
+value**. The clips are all quarters or eighths at 60 BPM — gaps of 500–1000 ms,
+where a 464 ms window suppresses nothing and there is no ring to over-detect.
+The corpus cannot see this parameter at all.
+
+### Why no constant works
+
+The window is wide because it stops one note being detected twice. Probed
+against the failure shapes the spec names:
+
+| signal | window 3 | window 20 |
+|---|---|---|
+| ringing pizzicato | 8 hits / **8 spurious** | 8 / 0 |
+| one note, heavy vibrato | 1 / 26 | 1 / 4 |
+| sixteenths @ 100 BPM | **32/32 found** | **4/32 found** |
+
+The wide window is doing real work. And no constant can do both, for an exact
+reason: a **5.5 Hz ring beat is 182 ms apart** and **sixteenths at 100 BPM are
+150 ms apart**. They are the same time scale, and nothing in the timing
+distinguishes them.
+
+Separating the two knobs was tried and failed — raising `pre_avg`/`post_avg`
+(never configured; librosa defaults them to 100 ms) improved sixteenths from 12
+spurious to 2, and did **nothing** for ring or vibrato.
+
+### What the score already knows
+
+It says which note values are written; `target_bpm` says how fast. The smallest
+gap to expect is known before a sample is read. The window is now half of it,
+capped at `pre_max`:
+
+| signal | derived | fixed 20 |
+|---|---|---|
+| ringing pizzicato | 8/0 (window 20) | 8/0 |
+| heavy vibrato | 1/4 (window 20) | 1/4 |
+| sixteenths @ 100 BPM | **32/1** (window 3) | 4/0 |
+
+Slow music is untouched because the derivation returns the cap there. Fast music
+becomes detectable at all.
+
+**Still synthetic.** The ring and vibrato signals are the failure *shapes* the
+spec names, not recordings of them. What is not synthetic is the ceiling: a
+window wider than the gap cannot report both notes, and that is arithmetic.
+
+---
+
 ## 2026-08-30 (later) — Matching bounded. No thresholds changed, corpus unmoved.
 
 `config.toml` untouched. All six clips identical to the entry below —

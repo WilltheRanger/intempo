@@ -6,6 +6,47 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-31 — Fast passages were undetectable, and no constant could fix it
+
+**Branch:** `main`. `/loop` iteration. The ±464 ms peak-picking ceiling recorded
+on 2026-08-27 and left open since.
+
+`pre_max`/`post_max` require a peak to be the largest in a window, so a window
+wider than the gap between two notes means the quieter is never reported. At 20
+frames that is **sixteenths only below 32 BPM** — most étude and excerpt writing
+was invisible, and `librosa`'s own default for this sample rate is 1 frame.
+
+**It could not be fixed by choosing a better number, and the reason is exact.**
+The window is wide because it stops one note being detected twice; a 5.5 Hz
+ring beat is 182 ms apart and sixteenths at 100 BPM are 150 ms apart. Same time
+scale. Measured, one constant cannot have both: at window 3 a ringing pizzicato
+gives 8 spurious onsets and sixteenths are all found; at 20 the pizzicato is
+clean and 4 of 32 sixteenths survive. Raising `pre_avg`/`post_avg` — never
+configured, librosa defaults them — helped sixteenths and did nothing for ring
+or vibrato.
+
+So the window is no longer chosen. It is **derived** from the smallest gap the
+score expects, which is known before a sample is read, and capped at the
+configured `pre_max`. `analyze()` and `analyze_with_diagnostics` now build the
+timeline *before* reading the audio to pass it down — nothing about that
+ordering depends on the recording.
+
+Slow music is untouched: the derivation returns the cap, and all six corpus
+clips are bit-identical. Sixteenths at 100 BPM go from **4 of 32** detected to
+**32 of 32 with one spurious**.
+
+**`config.toml` is untouched** — `pre_max` is now the cap rather than the value,
+so this is not a threshold change and the old behaviour is still what slow music
+gets. Full numbers in `TUNING_LOG.md`.
+
+**Still synthetic**, and the caveat is specific: the ring and vibrato signals are
+the failure *shapes* the spec names, not recordings of them. The ceiling itself
+is not synthetic — a window wider than the gap cannot report both notes.
+
+**Tests:** 538 → **541**. Ruff clean.
+
+---
+
 ## 2026-08-30 (last) — A partial take was analysed as a whole one
 
 **Branch:** `main`. `/loop` iteration. The finding recorded on 2026-08-29 when
