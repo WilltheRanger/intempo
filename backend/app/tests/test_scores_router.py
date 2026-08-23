@@ -796,3 +796,134 @@ def test_an_entry_reporting_an_error_is_skipped(
 
     assert res.status_code == 200
     assert res.json()[0]["image_url"] is None
+
+
+# ---- POST /v1/scores/:id/accept -------------------------------------------
+#
+# The musician says the reading is right, and the photograph is discarded. The
+# delete is irreversible, so most of what follows is about the states where it
+# must NOT happen.
+
+
+def _accept(client: TestClient, score_id: UUID, token: str):
+    return client.post(
+        f"/v1/scores/{score_id}/accept", headers={"Authorization": f"Bearer {token}"}
+    )
+
+
+def test_accepting_discards_the_photograph(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    user_id, score_id = uuid4(), uuid4()
+    row = _row_for(score_id, user_id, transcription_status="done")
+    sb = _install_supabase(monkeypatch, returning_row=row)
+    _install_storage(sb, signed=[])
+
+    res = _accept(client, score_id, make_token(sub=user_id))
+    assert res.status_code == 200, res.text
+
+    # The object actually removed, by key rather than by URL.
+    sb.storage.from_.assert_called_with("score-images")
+    sb.storage.from_.return_value.remove.assert_called_once_with([f"{user_id}/abc.jpg"])
+
+    patch = sb.table.return_value.update.call_args.args[0]
+    assert patch["transcription_accepted_at"]
+    assert patch["page_image_discarded_at"]
+    # Nulled together with the timestamp, never apart: a row still naming a
+    # deleted object would sign download URLs for a file that 404s.
+    assert patch["source_image_url"] is None
+
+
+def test_a_page_still_being_read_cannot_be_accepted(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """There is nothing to accept, and the photograph is about to be needed."""
+    user_id, score_id = uuid4(), uuid4()
+    sb = _install_supabase(
+        monkeypatch,
+        returning_row=_row_for(score_id, user_id, transcription_status="reading"),
+    )
+    _install_storage(sb, signed=[])
+
+    res = _accept(client, score_id, make_token(sub=user_id))
+    assert res.status_code == 409
+    assert "still being read" in res.json()["detail"]
+    sb.storage.from_.return_value.remove.assert_not_called()
+
+
+def test_a_failed_reading_keeps_its_photograph(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """The one case where the photograph is the *only* record of the page.
+
+    There is no transcription to replace it with, so discarding it would lose
+    the music rather than compress it.
+    """
+    user_id, score_id = uuid4(), uuid4()
+    sb = _install_supabase(
+        monkeypatch,
+        returning_row=_row_for(score_id, user_id, transcription_status="failed"),
+    )
+    _install_storage(sb, signed=[])
+
+    res = _accept(client, score_id, make_token(sub=user_id))
+    assert res.status_code == 409
+    assert "only record" in res.json()["detail"]
+    sb.storage.from_.return_value.remove.assert_not_called()
+
+
+def test_a_storage_failure_records_the_acceptance_but_not_the_discard(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """Accepted-but-still-there is a real state, and has to be recorded as one.
+
+    The decision is the musician's and stands either way. What must not happen
+    is the row claiming a file was discarded that is still in the bucket — the
+    object is then still there to remove on a later attempt.
+    """
+    user_id, score_id = uuid4(), uuid4()
+    sb = _install_supabase(monkeypatch, returning_row=_row_for(score_id, user_id))
+    _install_storage(sb, signed=[])
+    sb.storage.from_.return_value.remove.side_effect = RuntimeError("storage unreachable")
+
+    res = _accept(client, score_id, make_token(sub=user_id))
+    assert res.status_code == 200, res.text
+
+    patch = sb.table.return_value.update.call_args.args[0]
+    assert patch["transcription_accepted_at"]
+    assert "page_image_discarded_at" not in patch
+    assert "source_image_url" not in patch
+
+
+def test_accepting_twice_is_not_an_error(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """A double tap or a retried request, not a mistake to report."""
+    user_id, score_id = uuid4(), uuid4()
+    row = _row_for(
+        score_id,
+        user_id,
+        source_image_url=None,
+        transcription_accepted_at="2026-08-24T00:00:00+00:00",
+        page_image_discarded_at="2026-08-24T00:00:00+00:00",
+    )
+    sb = _install_supabase(monkeypatch, returning_row=row)
+    _install_storage(sb, signed=[])
+
+    assert _accept(client, score_id, make_token(sub=user_id)).status_code == 200
+    # Nothing left to remove — the key comes from a URL that is already gone.
+    sb.storage.from_.return_value.remove.assert_not_called()
+
+
+def test_accepting_someone_elses_score_is_404(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    sb = _install_supabase(monkeypatch, returning_row=None)
+    _install_storage(sb, signed=[])
+    res = _accept(client, uuid4(), make_token(sub=uuid4()))
+    assert res.status_code == 404
+    sb.storage.from_.return_value.remove.assert_not_called()
+
+
+def test_accepting_unauthenticated_is_401(client: TestClient) -> None:
+    assert client.post(f"/v1/scores/{uuid4()}/accept").status_code == 401
