@@ -50,11 +50,23 @@ export function beatsPerMeasure(timeSignature: string | null): number | null {
  * Empty when the time signature is unknown — there is nothing to compare
  * against, and inventing 4/4 would flag every waltz on the page.
  *
- * A tolerance, because these are floating-point sums of thirds and sevenths in
- * tuplet-heavy music and an exact comparison would report rounding as a
- * misreading.
+ * A tolerance, because these are floating-point sums of thirds in tuplet-heavy
+ * music and an exact comparison would report rounding as a misreading.
  */
-const TOLERANCE = 0.01;
+
+/**
+ * How far a bar may be from its meter and still count as adding up.
+ *
+ * Matches `TOLERANCE` in the backend's `services/ocr/validate.py`, and it has
+ * to: the backend decides which bars are worth re-reading, this decides which
+ * bars the app offers to fix, and a musician seeing "bar 7 doesn't add up" with
+ * no way to open bar 7 is the app disagreeing with itself in front of them.
+ *
+ * `describeBeats` carried its own inline `0.01` for the same question, so the
+ * edit screen could call a bar balanced while the score screen still listed it
+ * as a problem. One constant now, and both use it.
+ */
+export const BEAT_TOLERANCE = 1e-6;
 
 export function problemMeasures(score: ScoreJson): number[] {
   const perBar = beatsPerMeasure(score.time_signature);
@@ -71,7 +83,7 @@ export function problemMeasures(score: ScoreJson): number[] {
     if (total === null) {
       continue;
     }
-    if (Math.abs(total - perBar) > TOLERANCE) {
+    if (Math.abs(total - perBar) > BEAT_TOLERANCE) {
       out.push(measure.measure_number);
     }
   }
@@ -248,7 +260,7 @@ export function describeBeats(
   }
   return {
     text: `${shown} of ${expected} beats`,
-    balanced: Math.abs(actual - expected) < 0.01,
+    balanced: Math.abs(actual - expected) < BEAT_TOLERANCE,
     expected,
   };
 }
