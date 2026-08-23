@@ -69,8 +69,15 @@ class _FakeMessages:
         self._response = response
         self.calls: list[dict[str, Any]] = []
 
-    def create(self, *, model: str, max_tokens: int, messages: list[dict]) -> _FakeResponse:
-        self.calls.append({"model": model, "max_tokens": max_tokens, "messages": messages})
+    def create(
+        self, *, model: str, max_tokens: int, messages: list[dict], **extra: Any
+    ) -> _FakeResponse:
+        # `**extra` captures `thinking` and `output_config`, which the provider
+        # now sets per model. Recorded rather than ignored: whether thinking is
+        # on is a cost decision, and the tests below assert it.
+        self.calls.append(
+            {"model": model, "max_tokens": max_tokens, "messages": messages, **extra}
+        )
         return self._response
 
 
@@ -122,7 +129,7 @@ def test_parse_clean_response_returns_ocr_response(install_fake) -> None:
     )
     result = claude_sonnet_provider.parse(b"<jpeg>")
     assert isinstance(result, OCRResponse)
-    assert result.model == "claude-sonnet-4-6"
+    assert result.model == "claude-sonnet-5"
     assert result.score.measures[0].notes[0].pitch == "D3"
     assert result.input_tokens == 1500
     assert result.output_tokens == 300
@@ -176,14 +183,66 @@ def test_parse_first_part_no_text_raises(install_fake) -> None:
         claude_sonnet_provider.parse(b"<jpeg>")
 
 
-def test_pricing_constants_match_spec() -> None:
-    """Sonnet 4.6: $3/$15 per 1M; Opus 4.7: $15/$75 per 1M (spec §6 + Anthropic pricing 2026-04)."""
+def test_pricing_constants_match_the_published_rates() -> None:
+    """Sonnet 5: $3/$15 per 1M. Opus 5: $5/$25 (list, checked 2026-08-24).
+
+    The Opus figures this replaced were $15/$75 — wrong by 3x, and they had
+    been overstating the fallback's cost for as long as they had been there.
+
+    List rates, not Sonnet 5's $2/$10 introductory pricing, which expires
+    2026-08-31: a hardcoded intro rate would quietly *under*-report every scan
+    from September. Telemetry that overstates cost is a nuisance; telemetry
+    that understates it is a trap.
+    """
     from app.services.ocr.claude_provider import claude_opus_provider as opus
 
     assert claude_sonnet_provider._input_price == 3.0
     assert claude_sonnet_provider._output_price == 15.0
-    assert opus._input_price == 15.0
-    assert opus._output_price == 75.0
+    assert opus._input_price == 5.0
+    assert opus._output_price == 25.0
+
+
+def test_the_first_read_does_not_pay_for_thinking(install_fake) -> None:
+    """Transcription is perception, not reasoning — the answer is on the page.
+
+    This matters twice over on Sonnet 5. Omitting the parameter runs *adaptive*
+    thinking, which is billed, and thinking tokens count against `max_tokens` —
+    so the default would both cost more and make truncation likelier on exactly
+    the long pages that were already truncating.
+    """
+    fake = install_fake(
+        claude_sonnet_provider,
+        _FakeResponse(
+            content=[_FakePart(json.dumps(GOOD_PAYLOAD))],
+            usage=_FakeUsage(input_tokens=10, output_tokens=10),
+        ),
+    )
+    claude_sonnet_provider.parse(b"<jpeg>")
+    assert fake.messages.calls[0]["thinking"] == {"type": "disabled"}
+
+
+def test_the_fallback_keeps_thinking_on_at_low_effort(install_fake) -> None:
+    """Not disabled, deliberately.
+
+    Anthropic documents two failure modes for disabled thinking on Opus 5: it
+    can leak `<thinking>` tags into the visible response, and it can write a
+    tool call into text instead of a tool block. The first would corrupt the
+    JSON this parses. Adaptive at low effort is the documented way to avoid
+    that while keeping the spend down, and the fallback runs rarely enough
+    that the care is nearly free.
+    """
+    from app.services.ocr.claude_provider import claude_opus_provider as opus
+
+    fake = install_fake(
+        opus,
+        _FakeResponse(
+            content=[_FakePart(json.dumps(GOOD_PAYLOAD))],
+            usage=_FakeUsage(input_tokens=10, output_tokens=10),
+        ),
+    )
+    opus.parse(b"<jpeg>")
+    assert fake.messages.calls[0]["thinking"] == {"type": "adaptive"}
+    assert fake.messages.calls[0]["output_config"] == {"effort": "low"}
 
 
 # ---- SDK errors ------------------------------------------------------------

@@ -34,7 +34,7 @@ class Settings:
     SUPABASE_SERVICE_ROLE_KEY: str = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
     GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
     OCR_PROVIDER_CHAIN: str = os.getenv(
-        "OCR_PROVIDER_CHAIN", "claude-sonnet-4-6,claude-opus-4-7"
+        "OCR_PROVIDER_CHAIN", "claude-sonnet-5,claude-opus-5"
     )
 
     #: The local OMR engine, used as a second opinion rather than a first read.
