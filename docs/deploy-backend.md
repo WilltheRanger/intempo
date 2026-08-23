@@ -13,6 +13,22 @@ Two steps.
 asks for the secrets on first deploy and keeps them out of git. Fly and Railway
 read `backend/Dockerfile` directly if you prefer them.
 
+It names `plan: free`. If Render asks for a card before deploying anything,
+something in the blueprint has named a paid instance — check that line first.
+
+**What the free plan costs:** the service sleeps after about 15 minutes idle,
+so the next request pays a cold start of roughly a minute, and memory is tight.
+That is fine while you are trying the thing out and wrong once a real user is
+the one waiting — change `plan` to `starter` then.
+
+Two consequences worth knowing before you blame the app:
+
+* **The first scan after a quiet spell will look like it hung.** It is the
+  container waking up, not the OCR. The second is normal speed.
+* **Audio analysis may run out of memory** on the free plan — the OCR path is
+  light but the analysis path loads librosa and numpy. If `/v1/analyses`
+  returns 502 while `/v1/scores` is fine, that is what happened.
+
 You will be asked for:
 
 | Variable | Where it comes from |
