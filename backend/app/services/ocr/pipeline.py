@@ -35,6 +35,7 @@ from app.services.ocr.gemini_provider import (
     gemini_flash_provider,
     gemini_pro_provider,
 )
+from app.services.ocr.omr_provider import omr_local_provider
 from app.services.score_schema import ScoreJson
 
 log = logging.getLogger("intempo.ocr")
@@ -52,6 +53,9 @@ PROVIDER_REGISTRY: dict[str, OCRProvider] = {
     claude_opus_provider.name: claude_opus_provider,
     gemini_flash_provider.name: gemini_flash_provider,
     gemini_pro_provider.name: gemini_pro_provider,
+    # Registered but not in the default chain: it needs installing, it takes
+    # minutes, and it is a second opinion rather than a first read.
+    omr_local_provider.name: omr_local_provider,
 }
 
 

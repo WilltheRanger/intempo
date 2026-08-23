@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  A hand-authored MusicXML excerpt standing in for what an OMR engine emits.
+
+  Deliberately awkward: a bass clef on line 4, two flats, a chord (whose second
+  note must not be counted), a grace note (likewise), a tie, a slur, a
+  staccato, a dotted rhythm, a rest, and one double-flat that this schema
+  cannot represent and must therefore be dropped rather than mis-named.
+
+  Written by hand rather than captured from a run, so it exercises the cases
+  that matter instead of the cases one photograph happened to contain.
+-->
+<score-partwise version="4.0">
+  <part-list>
+    <score-part id="P1"><part-name>Cello</part-name></score-part>
+  </part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes>
+        <divisions>4</divisions>
+        <key><fifths>-2</fifths><mode>major</mode></key>
+        <time><beats>4</beats><beat-type>4</beat-type></time>
+        <clef><sign>F</sign><line>4</line></clef>
+      </attributes>
+      <direction placement="above">
+        <direction-type><words>Poco meno</words></direction-type>
+        <sound tempo="76"/>
+      </direction>
+      <note>
+        <pitch><step>G</step><octave>3</octave></pitch>
+        <duration>8</duration><type>half</type>
+        <notations><slur number="1" type="start"/></notations>
+      </note>
+      <note>
+        <pitch><step>B</step><alter>-1</alter><octave>2</octave></pitch>
+        <duration>4</duration><type>quarter</type>
+        <notations>
+          <slur number="1" type="stop"/>
+          <articulations><staccato/></articulations>
+        </notations>
+      </note>
+      <note>
+        <rest/>
+        <duration>4</duration><type>quarter</type>
+      </note>
+    </measure>
+    <measure number="2">
+      <note>
+        <pitch><step>D</step><octave>3</octave></pitch>
+        <duration>6</duration><type>quarter</type><dot/>
+        <tie type="start"/>
+        <notations><tied type="start"/></notations>
+      </note>
+      <note>
+        <pitch><step>D</step><octave>3</octave></pitch>
+        <duration>2</duration><type>eighth</type>
+        <tie type="stop"/>
+      </note>
+      <note>
+        <pitch><step>F</step><alter>1</alter><octave>3</octave></pitch>
+        <duration>4</duration><type>quarter</type>
+      </note>
+      <note>
+        <chord/>
+        <pitch><step>A</step><octave>3</octave></pitch>
+        <duration>4</duration><type>quarter</type>
+      </note>
+      <note>
+        <grace/>
+        <pitch><step>E</step><octave>3</octave></pitch>
+        <type>16th</type>
+      </note>
+      <note>
+        <pitch><step>E</step><alter>-2</alter><octave>3</octave></pitch>
+        <duration>4</duration><type>quarter</type>
+      </note>
+    </measure>
+  </part>
+</score-partwise>
