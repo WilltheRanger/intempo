@@ -27,8 +27,8 @@ import httpx
 import pytest
 from fastapi import HTTPException
 
-from app.routers import scores as scores_module
-from app.routers.scores import _download_image
+from app.services import page_image
+from app.services.page_image import download_image as _download_image
 
 
 @pytest.fixture()
@@ -101,7 +101,7 @@ def test_oversize_body_is_413_and_stops_reading(serve, monkeypatch) -> None:
     more than the limit; what matters is that the call refuses rather than
     returning a body.
     """
-    monkeypatch.setattr(scores_module, "MAX_IMAGE_BYTES", 1024)
+    monkeypatch.setattr(page_image, "MAX_IMAGE_BYTES", 1024)
     base = serve(_ok(b"x" * 200_000))
     with pytest.raises(HTTPException) as excinfo:
         _download_image(f"{base}/huge.jpg")
@@ -115,7 +115,7 @@ def test_declared_length_over_the_limit_is_refused_before_the_body(serve, monkey
     is a claim by the server and not a fact about what it will send. The body
     cap above is what makes it safe to trust this one only in that direction.
     """
-    monkeypatch.setattr(scores_module, "MAX_IMAGE_BYTES", 1024)
+    monkeypatch.setattr(page_image, "MAX_IMAGE_BYTES", 1024)
     base = serve(_ok(b"x" * 4096))
     with pytest.raises(HTTPException) as excinfo:
         _download_image(f"{base}/declared.jpg")
@@ -124,7 +124,7 @@ def test_declared_length_over_the_limit_is_refused_before_the_body(serve, monkey
 
 def test_a_body_at_the_limit_is_allowed(serve, monkeypatch) -> None:
     """The boundary is 'larger than', so exactly the limit must pass."""
-    monkeypatch.setattr(scores_module, "MAX_IMAGE_BYTES", 1024)
+    monkeypatch.setattr(page_image, "MAX_IMAGE_BYTES", 1024)
     base = serve(_ok(b"x" * 1024))
     assert len(_download_image(f"{base}/exact.jpg")) == 1024
 
@@ -201,7 +201,7 @@ def test_an_under_declared_length_bounds_the_read_rather_than_bypassing_it(
     the point of the cap is memory, and a server that under-declares limits
     what it gets to send.
     """
-    monkeypatch.setattr(scores_module, "MAX_IMAGE_BYTES", 1024)
+    monkeypatch.setattr(page_image, "MAX_IMAGE_BYTES", 1024)
 
     def respond(h: BaseHTTPRequestHandler) -> None:
         h.send_response(200)
@@ -259,8 +259,8 @@ UPLOAD_URL = (
 def test_an_upload_url_is_exchanged_for_a_readable_one(monkeypatch) -> None:
     """The bug itself. A PUT-only URL must not be the one that gets fetched."""
     bucket = _FakeBucket({"signedURL": "/object/sign/score-images/x/page.jpg?token=z"})
-    monkeypatch.setattr(scores_module, "get_service_client", lambda: _FakeClient(bucket))
-    resolved = scores_module._readable_url(UPLOAD_URL)
+    monkeypatch.setattr(page_image, "get_service_client", lambda: _FakeClient(bucket))
+    resolved = page_image.readable_url(UPLOAD_URL)
 
     assert "/object/upload/sign/" not in resolved
     assert resolved.startswith("https://")
@@ -273,8 +273,8 @@ def test_an_absolute_signed_url_is_passed_through(monkeypatch) -> None:
     """Some SDK versions return a full URL, others a path. Both have to work."""
     absolute = "https://proj.supabase.co/storage/v1/object/sign/score-images/x?token=z"
     bucket = _FakeBucket({"signedUrl": absolute})
-    monkeypatch.setattr(scores_module, "get_service_client", lambda: _FakeClient(bucket))
-    assert scores_module._readable_url(UPLOAD_URL) == absolute
+    monkeypatch.setattr(page_image, "get_service_client", lambda: _FakeClient(bucket))
+    assert page_image.readable_url(UPLOAD_URL) == absolute
 
 
 def test_a_signing_failure_leaves_the_url_as_given(monkeypatch) -> None:
@@ -284,19 +284,19 @@ def test_a_signing_failure_leaves_the_url_as_given(monkeypatch) -> None:
     should cost nothing rather than fail the scan.
     """
     bucket = _FakeBucket(RuntimeError("storage unreachable"))
-    monkeypatch.setattr(scores_module, "get_service_client", lambda: _FakeClient(bucket))
-    assert scores_module._readable_url(UPLOAD_URL) == UPLOAD_URL
+    monkeypatch.setattr(page_image, "get_service_client", lambda: _FakeClient(bucket))
+    assert page_image.readable_url(UPLOAD_URL) == UPLOAD_URL
 
 
 def test_no_storage_client_leaves_the_url_as_given(monkeypatch) -> None:
-    monkeypatch.setattr(scores_module, "get_service_client", lambda: None)
-    assert scores_module._readable_url(UPLOAD_URL) == UPLOAD_URL
+    monkeypatch.setattr(page_image, "get_service_client", lambda: None)
+    assert page_image.readable_url(UPLOAD_URL) == UPLOAD_URL
 
 
 def test_a_url_with_no_extractable_key_is_left_alone(monkeypatch) -> None:
-    monkeypatch.setattr(scores_module, "get_service_client", lambda: None)
+    monkeypatch.setattr(page_image, "get_service_client", lambda: None)
     other = "https://proj.supabase.co/somewhere/else.jpg"
-    assert scores_module._readable_url(other) == other
+    assert page_image.readable_url(other) == other
 
 
 # ---- what the bytes actually are -------------------------------------------
@@ -326,7 +326,7 @@ _HEIC = b"\x00\x00\x00\x18" + b"ftyp" + b"heic" + b"\x00" * 32
 )
 def test_the_bytes_decide_the_media_type(body: bytes, expected: str) -> None:
     """Every one of these is named `.jpg` and none of them is asked about it."""
-    assert scores_module._media_type_of(body, "https://x/page.jpg") == expected
+    assert page_image.media_type_of(body, "https://x/page.jpg") == expected
 
 
 def test_the_live_failure_png_bytes_under_a_jpg_name() -> None:
@@ -337,19 +337,19 @@ def test_the_live_failure_png_bytes_under_a_jpg_name() -> None:
     pair. Naming it after the failure rather than the mechanism because that is
     what a future reader will be searching for.
     """
-    assert scores_module._media_type_of(_PNG, "https://x/scores/u/page.jpg") == "image/png"
+    assert page_image.media_type_of(_PNG, "https://x/scores/u/page.jpg") == "image/png"
 
 
 def test_an_mp4_is_not_mistaken_for_a_heic() -> None:
     """HEIF shares its container with MP4, so the brand is what separates them
     — matching `ftyp` alone would call a video a photograph."""
     mp4 = b"\x00\x00\x00\x18" + b"ftyp" + b"isom" + b"\x00" * 32
-    assert scores_module._media_type_of(mp4, "https://x/page.png") == "image/png"
+    assert page_image.media_type_of(mp4, "https://x/page.png") == "image/png"
 
 
 def test_a_riff_that_is_not_a_webp_is_not_called_one() -> None:
     wav = b"RIFF" + b"\x00\x00\x00\x00" + b"WAVE" + b"\x00" * 16
-    assert scores_module._media_type_of(wav, "https://x/page.png") == "image/png"
+    assert page_image.media_type_of(wav, "https://x/page.png") == "image/png"
 
 
 @pytest.mark.parametrize(
@@ -365,11 +365,11 @@ def test_a_riff_that_is_not_a_webp_is_not_called_one() -> None:
 def test_unrecognised_bytes_fall_back_to_the_name(url: str, expected: str) -> None:
     """Rather than refusing. An exotic-but-valid format the sniffer has never
     heard of should still reach the provider to be judged there."""
-    assert scores_module._media_type_of(b"\x00\x01\x02\x03nothing", url) == expected
+    assert page_image.media_type_of(b"\x00\x01\x02\x03nothing", url) == expected
 
 
 def test_an_empty_body_does_not_raise() -> None:
     """Slicing past the end of a short `bytes` is not an error in Python, and
     this asserts it stays that way rather than growing a length check that
     someone later removes."""
-    assert scores_module._media_type_of(b"", "https://x/page.jpg") == "image/jpeg"
+    assert page_image.media_type_of(b"", "https://x/page.jpg") == "image/jpeg"
