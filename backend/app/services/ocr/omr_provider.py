@@ -14,10 +14,23 @@ subprocess.
 
 **Not installed by default.** The engine pulls ~500MB of ONNX runtime and
 downloads model weights on first run, which does not belong in the deployed
-image unless it is being used. `pip install oemer onnxruntime==1.21.1`, or set
-`OMR_COMMAND` to any engine that takes an image and writes MusicXML — Audiveris
-and homr both do. When it is absent the provider says so and the chain moves on,
-which is the point of the chain.
+image unless it is being used. When it is absent the provider says so and the
+chain moves on, which is the point of the chain.
+
+To install it, the pins matter and neither is oemer's fault — it was released
+against older majors and both dependencies have since made breaking changes
+that surface as tracebacks from inside the library:
+
+    pip install oemer 'onnxruntime==1.21.1' 'opencv-python-headless==4.12.0.88'
+
+Unpinned, `onnxruntime` 1.29 refuses oemer's exported graph outright
+("ConvTranspose ... pads must not contain negative values") and OpenCV 5 changes
+what `HoughLinesP` returns, which surfaces twenty minutes into a run as
+`IndexError: invalid index to scalar variable` — after the segmentation networks
+have done their work and thrown it away.
+
+`OMR_COMMAND` points at any engine taking `<image> -o <dir>` and writing
+MusicXML; Audiveris and homr both fit and carry neither of these problems.
 """
 
 from __future__ import annotations
@@ -68,8 +81,10 @@ class OMRProvider:
         if resolved is None:
             raise OCRProviderError(
                 f"{self.name}: no OMR engine on PATH (looked for {command!r}). "
-                "Install one with `pip install oemer onnxruntime==1.21.1`, or point "
-                "OMR_COMMAND at a binary that takes an image and writes MusicXML."
+                "Install one with `pip install oemer 'onnxruntime==1.21.1' "
+                "'opencv-python-headless==4.12.0.88'` — both pins are load-bearing, "
+                "see this module's docstring — or point OMR_COMMAND at any binary "
+                "that takes an image and writes MusicXML."
             )
         return resolved
 
