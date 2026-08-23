@@ -161,11 +161,11 @@ def test_the_validator_catches_that_this_reading_is_wrong(oemer_score) -> None:
     assert len(oemer_score.measures) < 10, "five systems collapsed into five measures"
 
 
-_DURATION_BEATS = {
-    "whole": 4.0, "dotted_whole": 6.0, "half": 2.0, "dotted_half": 3.0,
-    "quarter": 1.0, "dotted_quarter": 1.5, "eighth": 0.5, "dotted_eighth": 0.75,
-    "sixteenth": 0.25, "dotted_sixteenth": 0.375, "thirty_second": 0.125,
-}
+# Imported, not copied. A second table here had already drifted once — it was
+# written before triplets existed and raised `KeyError: 'triplet_eighth'` the
+# moment they did, on a fixture that had held triplets all along. The beat
+# value of a duration has exactly one correct answer and `alignment.py` owns it.
+from app.services.alignment import _DURATION_BEATS  # noqa: E402
 
 
 def test_duplicate_measure_numbers_survive_conversion(oemer_score) -> None:

@@ -74,7 +74,11 @@ export type Duration =
   | 'quarter' | 'dotted_quarter'
   | 'eighth' | 'dotted_eighth'
   | 'sixteenth' | 'dotted_sixteenth'
-  | 'thirty_second';
+  | 'thirty_second'
+  | 'triplet_half'
+  | 'triplet_quarter'
+  | 'triplet_eighth'
+  | 'triplet_sixteenth';
 
 export type RepeatType = 'repeat' | 'first_ending' | 'second_ending';
 

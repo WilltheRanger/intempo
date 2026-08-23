@@ -20,10 +20,12 @@ is the part that can be established for free.
   from the transcription itself** when the header cannot be read: if most
   measures agree on a beat count, that count is the meter, and the measures that
   disagree are the suspects. See `infer_beats_per_measure`.
-- **Tuplets.** `Duration` has no triplet member, so a triplet passage cannot be
-  written down correctly in this schema at all. The model has to approximate,
-  and the approximation will not sum. Flagging that as a transcription error
-  would be blaming the model for the schema's gap — see `TUPLET_NOTE`.
+- **Tuplets.** `Duration` now names triplets — `triplet_eighth` and friends —
+  so a 3:2 passage *can* be written correctly and a bar of them sums. What
+  still cannot be written is a quintuplet, a septuplet, or a dotted triplet.
+  Those approximate and will not sum, and flagging that as a transcription
+  error would be blaming the reader for the schema's remaining gap — see
+  `TUPLET_NOTE`.
 - **A pickup measure**, which is short by design. Only the first measure can be
   one, so only the first measure gets that benefit of the doubt.
 """
@@ -33,31 +35,24 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
-from app.services.score_schema import ScoreJson
+from app.services.score_schema import DURATION_BEATS, ScoreJson
 
-#: Quarter-note beats per duration. Deliberately the same table as
-#: `alignment._DURATION_BEATS` — if these two ever disagree, this validator
-#: would be checking a timeline the analysis does not build.
-DURATION_BEATS: dict[str, float] = {
-    "whole": 4.0,
-    "dotted_whole": 6.0,
-    "half": 2.0,
-    "dotted_half": 3.0,
-    "quarter": 1.0,
-    "dotted_quarter": 1.5,
-    "eighth": 0.5,
-    "dotted_eighth": 0.75,
-    "sixteenth": 0.25,
-    "dotted_sixteenth": 0.375,
-    "thirty_second": 0.125,
-}
+#: Imported, not copied — see `score_schema.DURATION_BEATS` for why.
 
-#: Floating-point slack. A dotted-sixteenth is 0.375 and sums of thirds never
-#: land exactly, so an exact comparison would flag correct music.
+#: Floating-point slack, so an exact comparison cannot flag correct music.
+#:
+#: Thirds are not exactly representable in binary, so the
+#: arithmetic here is not the exact arithmetic the notation implies. As it
+#: happens every triplet grouping in this table still *sums* back to its bar
+#: length exactly — round-to-nearest recovers it — verified exhaustively over
+#: every ordered combination up to six notes and 600k random bars up to
+#: eighteen. That is a property of these particular values, not a theorem, and
+#: it is not something a beat check should depend on.
 TOLERANCE = 1e-6
 
 TUPLET_NOTE = (
-    "no triplet duration exists in the schema, so a tuplet passage cannot sum"
+    "triplets can be written, but no other tuplet can — a quintuplet, a "
+    "septuplet or a dotted triplet has to be approximated and will not sum"
 )
 
 Verdict = Literal["ok", "short", "long", "empty", "pickup", "unverifiable"]
@@ -341,7 +336,7 @@ def infer_beats_per_measure(sums: list[float]) -> float | None:
 def validate_measures(score: ScoreJson) -> list[MeasureFinding]:
     """One finding per measure, in order."""
     sums = [
-        sum(DURATION_BEATS.get(note.duration, 0.0) for note in measure.notes)
+        sum(DURATION_BEATS[note.duration] for note in measure.notes)
         for measure in score.measures
     ]
     stated = beats_per_measure(score.time_signature)

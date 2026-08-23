@@ -27,7 +27,25 @@ export const BEATS: Record<Duration, number> = {
   sixteenth: 0.25,
   dotted_sixteenth: 0.375,
   thirty_second: 0.125,
+  // Three in the time of two. Thirds are not exactly representable in binary,
+  // which is why every beat-sum comparison carries a tolerance rather than
+  // testing equality — see TOLERANCE in backend services/ocr/validate.py.
+  triplet_half: 4 / 3,
+  triplet_quarter: 2 / 3,
+  triplet_eighth: 1 / 3,
+  triplet_sixteenth: 1 / 6,
 };
+
+/**
+ * What to sound a duration this build does not recognise as.
+ *
+ * Only reachable if the backend has learned a note value the app has not, and
+ * only for playback — the beat *check* refuses to count such a bar rather than
+ * guessing (`reading.beatsOf` returns null). A quarter is the least-wrong
+ * guess: the note is audible and the drift is one beat, where silence would
+ * make the musician think the app had lost the passage.
+ */
+const UNKNOWN_DURATION_BEATS = 1;
 
 /** Semitones above C for each letter, before any accidental. */
 const SEMITONES: Record<string, number> = {
@@ -124,7 +142,7 @@ export function scheduleScore(
 
     for (let i = 0; i < measureNotes.length; i += 1) {
       const note = measureNotes[i];
-      let beats = BEATS[note.duration] ?? 1;
+      let beats = BEATS[note.duration] ?? UNKNOWN_DURATION_BEATS;
 
       // A tie chain sounds as one note. Absorb every note it runs into, then
       // skip past them so they don't sound on their own.
@@ -132,7 +150,7 @@ export function scheduleScore(
       while (held.tied_to_next && i + 1 < measureNotes.length) {
         i += 1;
         held = measureNotes[i];
-        beats += BEATS[held.duration] ?? 1;
+        beats += BEATS[held.duration] ?? UNKNOWN_DURATION_BEATS;
       }
 
       const durationS = beats * secondsPerBeat;

@@ -22,25 +22,14 @@ import librosa
 import numpy as np
 
 from app.services.audio_config import AudioConfig, load_audio_config
-from app.services.score_schema import Measure, ScoreJson
+from app.services.score_schema import DURATION_BEATS, Measure, ScoreJson
 
 # Note duration → length in quarter-note beats. `target_bpm` is always
 # quarter-notes-per-minute, so a quarter note is 1.0 beats regardless of
 # the notated time signature's lower number (a pragmatic MVP choice; the
 # common exceptions like 6/8 are a documented V2 gap).
-_DURATION_BEATS: dict[str, float] = {
-    "whole": 4.0,
-    "dotted_whole": 6.0,
-    "half": 2.0,
-    "dotted_half": 3.0,
-    "quarter": 1.0,
-    "dotted_quarter": 1.5,
-    "eighth": 0.5,
-    "dotted_eighth": 0.75,
-    "sixteenth": 0.25,
-    "dotted_sixteenth": 0.375,
-    "thirty_second": 0.125,
-}
+#: Imported, not copied — see `score_schema.DURATION_BEATS` for why.
+_DURATION_BEATS = DURATION_BEATS
 
 
 @dataclass(frozen=True)
@@ -62,7 +51,26 @@ class ExpectedTimeline:
 
 
 def _beats(duration: str) -> float:
-    return _DURATION_BEATS.get(duration, 1.0)
+    """Beats for a duration, or a loud failure.
+
+    This indexed with a `.get(duration, 1.0)` default. `Duration` is a closed
+    Literal that Pydantic validates, so nothing unknown reaches here from a
+    stored score — but a duration added to the Literal and forgotten in the
+    table would have been silently counted as a quarter note, which does not
+    produce a wrong beat, it produces a wrong *timeline*: every onset after it
+    shifts, and the analysis reports the player rushing or dragging from that
+    bar to the end of the piece.
+
+    The identical default in `validate.py` — `.get(duration, 0.0)` — did
+    exactly that when the triplets landed. Raise instead.
+    """
+    try:
+        return _DURATION_BEATS[duration]
+    except KeyError:  # pragma: no cover - unreachable via a validated score
+        raise KeyError(
+            f"no beat value for duration {duration!r}; add it to "
+            "score_schema.DURATION_BEATS"
+        ) from None
 
 
 
