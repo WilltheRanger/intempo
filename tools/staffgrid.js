@@ -480,14 +480,30 @@ function staffDraw(grid, opts) {
       g.fillText(String(t), X, rulerH*0.45);
     }
 
-    if (o.barHints) {
-      g.strokeStyle = 'rgba(20,150,70,0.45)'; g.lineWidth = Math.max(1, scale*0.5);
-      g.setLineDash([scale*4, scale*4]);
+    // Candidate strokes, each labelled with the ruler position it stands at.
+    //
+    // These are every column where ink spans the staff top to bottom, which is
+    // both the barlines and the note stems — image analysis cannot separate
+    // them (see DECISIONS.md). But a model *can*, by looking at whether a
+    // notehead hangs off the stroke, and that is a far easier question than the
+    // one it was being asked. Left to estimate positions unaided it produced
+    // "irregular spacing at roughly 10, 13.5, 16, 17.5, 19, 21, 22" and picked
+    // none of them. Marking each candidate with its printed position turns
+    // measuring into choosing.
+    if (o.barHints && o.barHints.length) {
+      g.save();
+      g.strokeStyle = 'rgba(20,150,70,0.5)'; g.lineWidth = Math.max(1, scale*0.5);
+      g.font = Math.round(spacing*0.4*scale) + 'px ui-monospace, SFMono-Regular, monospace';
+      g.textAlign = 'center'; g.textBaseline = 'top';
+      g.fillStyle = 'rgba(15,120,55,0.95)';
       for (const bx of o.barHints) {
         if (bx < x0 || bx > x1) continue;
+        g.setLineDash([scale*4, scale*4]);
         g.beginPath(); g.moveTo(px(bx), rulerH); g.lineTo(px(bx), c.height); g.stroke();
+        g.setLineDash([]);
+        g.fillText((bx/tickEvery).toFixed(1), px(bx), c.height - spacing*0.55*scale);
       }
-      g.setLineDash([]);
+      g.restore();
     }
     return { canvas: c, x0, x1, scale, tickEvery, width: c.width, height: c.height };
   }
