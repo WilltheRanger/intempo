@@ -3,6 +3,7 @@ import { Asset } from 'expo-asset';
 import {
   requestScoreImageUpload,
   uploadToSignedUrl,
+  type UploadOptions,
 } from '../../data/api/upload';
 import type { CapturedPage } from '../../data/captureSession';
 
@@ -106,7 +107,10 @@ export class ScanUploadError extends Error {
  * expires five minutes after issue, so the caller must create the score in the
  * same flow rather than storing it.
  */
-export async function uploadPage(page: CapturedPage): Promise<string> {
+export async function uploadPage(
+  page: CapturedPage,
+  options: UploadOptions = {},
+): Promise<string> {
   const uri = uriFor(page);
   if (!uri) {
     throw new ScanUploadError('That page could not be read from the device.');
@@ -132,6 +136,10 @@ export async function uploadPage(page: CapturedPage): Promise<string> {
 
   const { contentType, ext } = typeOf(bytes, uri);
   const signed = await requestScoreImageUpload(`page.${ext}`);
-  await uploadToSignedUrl(signed.upload_url, bytes, contentType);
+  // Not wrapped in a `ScanUploadError`. `uploadToSignedUrl` already throws an
+  // `UploadError` whose message is written for the musician and names which of
+  // the several ways this can fail actually happened — re-wrapping it would
+  // replace a specific sentence with a general one.
+  await uploadToSignedUrl(signed.upload_url, bytes, contentType, options);
   return signed.upload_url;
 }
