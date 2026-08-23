@@ -180,6 +180,64 @@ def test_duplicate_measure_numbers_survive_conversion(oemer_score) -> None:
     assert len(numbers) != len(set(numbers))
 
 
+AUDIVERIS = (
+    Path(__file__).resolve().parents[3]
+    / "fixtures"
+    / "musicxml"
+    / "audiveris_phone_photo.musicxml"
+)
+
+
+@pytest.fixture(scope="module")
+def audiveris_score():
+    """The same photograph, read by Audiveris 5.4 instead of oemer."""
+    return score_json_from_musicxml(
+        AUDIVERIS.read_text(encoding="utf-8"), clef_fallback="treble"
+    )
+
+
+def test_audiveris_reads_the_header_correctly(audiveris_score) -> None:
+    """Both engines were given the same photograph of the same page.
+
+    oemer said treble clef and C major; Audiveris says bass clef and B-flat
+    major, which is what is printed. Kept as a test because it is the only
+    direct comparison in the repository between two OMR engines on real input,
+    and it is the evidence behind preferring one of them.
+    """
+    assert audiveris_score.clef == "bass"
+    assert audiveris_score.key_signature == "Bb major"
+
+
+def test_audiveris_finds_barlines_where_oemer_found_none(
+    audiveris_score, oemer_score
+) -> None:
+    """The difference that matters for this product.
+
+    InTempo reports rushing and dragging *per measure*, so measure boundaries
+    are not a nicety — without them there is nothing to report against. oemer
+    returned one measure per system; Audiveris returned fifteen.
+    """
+    assert len(audiveris_score.measures) > 2 * len(oemer_score.measures)
+
+
+def test_audiveris_measures_mostly_add_up(audiveris_score) -> None:
+    """Not all of them, and the ones that do not are the honest finding.
+
+    Eight of fifteen sum to exactly four beats. The rest run long, which is what
+    a missed barline looks like from here — two bars merged into one. No time
+    signature was found, so `validate.py` cannot infer a metre (the modal beat
+    count is 4.0 but only in 6 of 15 measures, under the 0.6 agreement floor)
+    and correctly reports every measure as unverifiable rather than guessing.
+    """
+    sums = [
+        sum(_DURATION_BEATS[n.duration] for n in m.notes)
+        for m in audiveris_score.measures
+    ]
+    assert sum(1 for value in sums if value == 4.0) >= 6
+    assert audiveris_score.time_signature is None
+    assert all(row.verdict == "unverifiable" for row in validate_measures(audiveris_score))
+
+
 def test_clef_falls_back_when_absent() -> None:
     """`ScoreJson.clef` has no null. A missing clef must resolve to something,
     and the caller says to what rather than this file guessing treble."""
