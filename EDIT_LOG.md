@@ -75,6 +75,12 @@ photographed a page; the only question they have is what came off it, and it
 was two taps away behind a screen showing a tempo they hadn't chosen for a
 piece they hadn't seen read.
 
+The piece screen gained a row back to a scan in flight — "Reading this page",
+with the current step as its description. Without it, backing out of a page
+being read meant losing sight of it: the app navigated there once, right after
+saving, and nothing else led back. Its "Digital score" row is hidden while a
+scan is unfinished, because it would open a screen with no notes on it.
+
 `ListenButton` moved from `screens/record/` to `components/score/` — the score
 screen needs the same control for a different reason (hearing a transcription
 back is the fastest way to catch a bar OCR got wrong) and two playback buttons

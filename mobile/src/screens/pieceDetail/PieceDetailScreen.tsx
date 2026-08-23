@@ -191,6 +191,12 @@ export function PieceDetailScreen() {
   const measureCount = piece.score?.measures.length ?? 0;
   const hasNotation = measureCount > 0;
   const hasPages = piece.thumbnail !== null;
+  // A scan still in flight. The piece is real and openable already — that is
+  // the whole point of writing the row first — but it has no notes yet, so
+  // every row here that promises notation would open an empty screen.
+  const stillReading =
+    piece.transcriptionStatus === 'queued' || piece.transcriptionStatus === 'reading';
+  const readingFailed = piece.transcriptionStatus === 'failed';
   /** Whether there is state worth grouping with the action — see the card below. */
   const hasState = hasPages || played;
 
@@ -363,9 +369,31 @@ export function PieceDetailScreen() {
         </Card>
       ) : null}
 
-      {hasNotation || hasPages ? (
+      {hasNotation || hasPages || stillReading || readingFailed ? (
         <Card padded={false} style={styles.accessCard}>
           <View style={styles.accessRows}>
+            {/*
+              A scan in flight, or one that failed, needs a way back to the
+              screen that says so. Without this the only route to it was the
+              one time the app navigated there itself, right after saving — so
+              backing out of a page being read meant losing sight of it, on a
+              piece that gives no other sign anything is happening.
+            */}
+            {stillReading || readingFailed ? (
+              <SheetOptionRow
+                icon={FileMusic}
+                label={stillReading ? 'Reading this page' : "This page couldn't be read"}
+                description={
+                  stillReading
+                    ? piece.transcriptionStage ?? 'Transcribing the notation.'
+                    : 'Photograph it again to try once more.'
+                }
+                divided={false}
+                onPress={() =>
+                  navigation.navigate('PieceScore', { pieceId: piece.id })
+                }
+              />
+            ) : null}
             {/*
               Both rows carry this piece's id. They used to push routes that
               read the shared *scan session* instead, so every piece in the
@@ -374,7 +402,7 @@ export function PieceDetailScreen() {
               walk from any piece into the transcription flow and save a
               hardcoded fixture over it.
             */}
-            {hasNotation ? (
+            {hasNotation && !stillReading && !readingFailed ? (
               <SheetOptionRow
                 icon={FileMusic}
                 label="Digital score"
@@ -398,7 +426,7 @@ export function PieceDetailScreen() {
                 icon={Layers}
                 label="Original pages"
                 description="The photograph this piece was transcribed from."
-                divided={hasNotation}
+                divided={hasNotation || stillReading || readingFailed}
                 onPress={() =>
                   navigation.navigate('PieceScore', {
                     pieceId: piece.id,
