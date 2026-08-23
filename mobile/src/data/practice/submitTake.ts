@@ -1,5 +1,6 @@
 import { createAnalysis, getAnalysis } from '../api/analyses';
 import { requestAudioUpload, uploadToSignedUrl } from '../api/upload';
+import { preferences } from '../preferences';
 import type { AnalysisResponse, MetronomeMode } from '../types';
 
 export interface SubmitTakeInput {
@@ -37,6 +38,15 @@ export async function submitTake({
     // the flow where a short clip infers it instead.
     bpm_source: 'manual',
     metronome_mode: metronomeMode,
+    // Read here rather than threaded down from the recording screen: it is a
+    // fact about the musician, not about this take, and every caller would
+    // otherwise have to remember to pass it.
+    //
+    // Always sent, including when nobody has changed it. The default is violin
+    // and Profile displays it as the musician's instrument, so sending it is
+    // reporting what the app already says about them rather than guessing on
+    // their behalf.
+    instrument: preferences.current().instrument,
   });
   return analysis_id;
 }

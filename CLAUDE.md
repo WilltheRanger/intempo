@@ -180,6 +180,16 @@ there works differently as of 2026-08-24:
 - **Caveats are quiet lines, not badges.** `lib/notation/reading.ts` names the
   bars that don't add up, and confidence is surfaced only when it is *low* and
   with no number in the sentence.
+- **A piece can also arrive as a file.** `ImportFileScreen` reads MusicXML,
+  unzipping `.mxl` in `lib/musicxml/file.ts` (magic bytes, not extension). It
+  is the only route where the durations are *stated* rather than read, so it is
+  the one whose timeline cannot be wrong. A multi-part file asks which part you
+  play and shows the answer afterwards — never guess it, and never infer the
+  instrument from the clef: a cello reads bass clef too.
+- **The analysis knows what you play.** `submitTake` sends the `Instrument`
+  preference; `analyses.instrument` stores it; `analysis_runner` turns it into
+  `analyze(..., double_bass=...)`. Store the instrument, never a derived flag —
+  how each instrument should be treated is still being tuned.
 - **A misread bar is fixable, not fatal.** `MeasureEditScreen` corrects
   durations and rests on the measures `validate.py` flags, reached from the
   caveat line on `PieceScore`. Durations and rests only, because they are the

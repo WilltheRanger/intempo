@@ -19,7 +19,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.auth import current_user_id, current_user_id_provisioned
 from app.services.tier_limits import tier_of, usage_for
 from app.db import get_service_client
-from app.models.analysis import BpmSource, MetronomeMode
+from app.models.analysis import BpmSource, Instrument, MetronomeMode
 from app.routers.upload import AUDIO_BUCKET
 from app.workers.analysis_runner import run_analysis
 
@@ -34,6 +34,12 @@ class CreateAnalysisRequest(BaseModel):
     target_bpm: float = Field(ge=20, le=300)
     bpm_source: BpmSource
     metronome_mode: MetronomeMode = MetronomeMode.off
+    #: What the musician plays, so onset detection can be set for it.
+    #:
+    #: Optional, and null means "not stated" rather than any particular
+    #: instrument — an older client sends nothing, and guessing on its behalf
+    #: would apply bass settings to a violin or the reverse.
+    instrument: Instrument | None = None
 
 
 class CreateAnalysisResponse(BaseModel):
@@ -49,6 +55,7 @@ class AnalysisResponse(BaseModel):
     target_bpm: float
     bpm_source: str
     metronome_mode: str
+    instrument: str | None = None
     result_json: dict[str, Any] | None = None
     failure_reason: str | None = None
     alignment_quality: float | None = None
@@ -110,6 +117,9 @@ def _row_to_response(row: dict[str, Any]) -> AnalysisResponse:
         target_bpm=row["target_bpm"],
         bpm_source=row["bpm_source"],
         metronome_mode=row.get("metronome_mode", "off"),
+        # None for every row written before the column existed, and for a
+        # client that did not say. Not defaulted to anything — see migration 008.
+        instrument=row.get("instrument"),
         result_json=row.get("result_json"),
         failure_reason=row.get("failure_reason"),
         alignment_quality=row.get("alignment_quality"),
@@ -162,6 +172,7 @@ async def create_analysis(
         "target_bpm": body.target_bpm,
         "bpm_source": body.bpm_source.value,
         "metronome_mode": body.metronome_mode.value,
+        "instrument": body.instrument.value if body.instrument else None,
         "status": "queued",
     }
     inserted = client.table("analyses").insert(insert_payload).execute()

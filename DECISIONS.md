@@ -6,6 +6,66 @@ Operating Principle #5.
 
 ---
 
+## 2026-08-27 — Store the instrument on an analysis, not a `double_bass` flag
+
+**Context:** `services/analysis.analyze()` has taken a `double_bass` keyword
+since Batch 3 — a high-pass filter and a lower onset-detection threshold, both
+there because the low register is where finding note attacks is hardest. No
+caller had ever set it. `analysis_runner` called
+`analyze((y, sr), score, target_bpm)` and the flag defaulted false, so the
+entire low-register path was dead code in an app whose spec names double bass
+as its initial instrument focus (§1, line 59). Every bass player had been
+analysed with thresholds tuned for treble strings.
+
+Wiring it up required deciding where the value comes from and what shape it
+takes in the database.
+
+### Where the value comes from
+
+**A `Instrument` preference the app already had, over a new field on the
+score, and over inferring it from the clef.**
+
+- **Infer from `score_json.clef`.** *Rejected, and it is the tempting one.* A
+  bass part is in bass clef — but so is a cello part. A cello's low C is around
+  65 Hz, under the 80 Hz high-pass, so treating the two alike would filter away
+  the fundamental of exactly the notes a cellist most needs heard. The clef is
+  a property of the page; the instrument is a property of the player.
+- **A field on the score.** *Rejected.* It asks the same question on every
+  piece a person adds, to answer something that changes for almost nobody.
+- **The `Instrument` preference.** *Chosen.* It already exists, already
+  includes `double_bass`, already has a picker in Profile, and already decides
+  which clef the daily warmup is written in. It had simply never left the
+  phone. No new UI, no migration for the user-facing part, and the answer is
+  given once.
+
+### What the column holds
+
+**`instrument text` over `double_bass boolean`.**
+
+The boolean is smaller and is what the pipeline actually reads today. It is
+still the wrong column, because it stores a *conclusion* rather than a *fact*,
+and this particular conclusion is unsettled: the spec asks for a **high-pass**
+filter in one place (line 2490) and a **low-frequency boost of 80–300 Hz** in
+another (line 1281), which are opposite treatments of the same band. Which is
+right needs real recordings and a musician's ear — it is a `TUNING_LOG.md`
+question, not a code one.
+
+A column holding the instrument survives that being decided. A column holding
+today's interpretation would need a backfill the moment it changed, and could
+never answer "how did the cellists do" at all, because the answer was thrown
+away at write time.
+
+**Nullable, no default.** A row written before the column existed was analysed
+without anyone saying what the instrument was, and "we do not know" is the
+honest value. Defaulting to `violin` would record a guess as a fact.
+
+**Trade-off accepted:** the runner now does a string comparison
+(`row["instrument"] == "double_bass"`) where a boolean read would do, and the
+mapping from instrument to pipeline settings lives in code rather than in the
+data. That is the point — it is the part expected to change.
+
+---
+
 ## 2026-08-25 — Keep photograph-first transcription, and build the correction step it always assumed
 
 **Context:** after several failed scans the owner asked whether the whole

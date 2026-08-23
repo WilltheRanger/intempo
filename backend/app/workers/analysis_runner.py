@@ -21,6 +21,7 @@ from datetime import datetime, timedelta, timezone
 import httpx
 
 from app.db import get_service_client
+from app.models.analysis import Instrument
 from app.services import audio as audio_svc
 from app.services.analysis import analyze
 from app.services.score_schema import ScoreJson
@@ -77,7 +78,20 @@ def run_analysis(analysis_id: str) -> None:
         audio_bytes = download_audio(row["audio_url"])
         score = _load_score(client, row["score_id"], row["user_id"])
         y, sr = audio_svc.load_audio_bytes(audio_bytes)
-        result = analyze((y, sr), score, float(row["target_bpm"]))
+        # The one caller that has ever set this. `analyze()` has taken a
+        # `double_bass` flag since Batch 3 — a high-pass filter and a lower
+        # onset threshold for the register where attacks are softest and the
+        # detector is weakest — and nothing had ever turned it on, so every
+        # bass player was analysed with settings tuned for treble strings.
+        #
+        # Read from the row rather than passed in: the work happens after the
+        # response is sent, so the row is the only thing that survives.
+        result = analyze(
+            (y, sr),
+            score,
+            float(row["target_bpm"]),
+            double_bass=row.get("instrument") == Instrument.double_bass.value,
+        )
     except AudioFetchError as exc:
         log.warning("analysis %s: %s", analysis_id, exc)
         _finish_failed(client, analysis_id, "audio_unavailable")

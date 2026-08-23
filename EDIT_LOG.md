@@ -6,6 +6,92 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-27 (latest) — Notation-file import, and the analysis learns the instrument
+
+**Branch:** `main`. Owner approved the import screen design under the §2 gate,
+choosing "build it, with `.mxl`".
+
+### 1. Open a notation file — `/scores/new` → the third real way in
+
+`POST /v1/scores/import` had been live and API-only. It now has a screen.
+
+**Why this route matters.** Every other way into the library ends in a guess:
+the camera reads a photograph with a model that can misread a bar, and typing a
+piece in produces no notes at all. A MusicXML file *states* the durations, and
+durations are what `alignment.py` builds its timeline from — so this is the one
+route where the thing a verdict is measured against cannot be wrong.
+
+**`.mxl` is unzipped client-side** (`lib/musicxml/file.ts`, using `fflate`).
+The endpoint takes uncompressed XML and says unpacking is the client's job.
+MuseScore, Sibelius and Finale all export the compressed form by default, so
+without this the picker would have rejected most scores people actually have.
+The zip is detected by **magic bytes, not extension** — the same lesson as
+`media_type_of` on the backend, since the extension is the one part of a file
+anybody can rename. `META-INF/container.xml` is read for the real document
+rather than guessing `score.xml`, and a BOM is stripped because Finale on
+Windows writes them.
+
+**The part list is parsed locally and is advisory.** The backend refuses to
+guess on a multi-part file — a cellist who silently gets the piccolo line has a
+transcription that is timed, verdicted and wrong in a way that looks right — and
+returns a 422 naming the parts. Parsing the `<part-list>` client-side means the
+musician sees the choice *before* uploading eight megabytes rather than after.
+The backend's answer still decides; this only offers the question.
+
+**Composition.** Three states, one at a time, so the screen always has a single
+job and a single dominant element: choose a file → pick your part, if and only
+if the file holds more than one → name it and save. Fields and part rows sit on
+the page, not in cards (§3 law 3); structure is hairlines. Actions are in flow
+rather than pinned, matching `ImportPagesScreen` and `ManualPieceForm` — the
+first draft pinned the primary action to the footer and the screenshot showed
+why that was wrong: a title, a button, and ~900px of nothing between them.
+
+The chosen part is shown on the confirmation line with a labelled **Change
+part** control. The first version let the musician choose a part and then never
+see it again, which on an orchestral score is the one thing worth being sure
+about. A labelled control rather than a tap on the line, because an affordance
+nobody can see is not one.
+
+**Three-foot test**, on the screenshots of the running build:
+- *Empty:* "Open a notation file" → "Choose a file" → the lede. One action.
+- *Part choice:* the list of part names → the question → the screen title.
+- *Naming:* the Title field → "Add to library" → the file · part line.
+
+**Verified end to end against real files** — a single-part fixture and a
+five-part orchestral one — by driving the web build's file input under
+Playwright: pick → part choice → form → chosen part shown. No console errors.
+`tsc --noEmit` clean. **Not verified on a device**: the iOS/Android document
+picker is the one part a browser cannot stand in for.
+
+### 2. The double-bass flag finally has a caller
+
+`analyze()` has taken a `double_bass` keyword since Batch 3 — a high-pass filter
+and a lower onset threshold for the register where attacks are softest and the
+detector is weakest. **Nothing had ever set it.** Every bass player was analysed
+with thresholds tuned for treble strings, in an app whose spec names double bass
+as its initial instrument focus.
+
+The value was already in the product: the app has had an `Instrument`
+preference since the warmup shipped, with `double_bass` in it and a picker in
+Profile. It just never left the phone. `submitTake` now sends it, migration 008
+stores it on `analyses`, and `analysis_runner` reads it.
+
+Stored as the **instrument**, not as a `double_bass` boolean — see
+`DECISIONS.md`, and note that the spec contradicts itself on what the filter
+should even be (high-pass in one place, an 80–300 Hz boost in another). That
+one needs real recordings and belongs in `TUNING_LOG.md`.
+
+Six tests, including cello asserting **false**: it reads bass clef and is not a
+double bass, and its low C at ~65 Hz sits under the 80 Hz high-pass.
+
+**Honest status:** the flag is now reachable and tested. Whether the settings
+behind it are *right* is untested and untestable here — nobody in this session
+can hear a bass.
+
+**Tests:** 476 → **482**. Ruff clean, `tsc --noEmit` clean.
+
+---
+
 ## 2026-08-27 (later) — The last note of every slur was being timed
 
 **Branch:** `main`. Owner: "improve anything else."

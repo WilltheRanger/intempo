@@ -1,4 +1,4 @@
-import type { AnalysisResponse, MetronomeMode } from '../types';
+import type { AnalysisResponse, Instrument, MetronomeMode } from '../types';
 import { apiFetch } from './client';
 
 export interface ListAnalysesParams {
@@ -40,6 +40,16 @@ export interface CreateAnalysisInput {
   target_bpm: number;
   bpm_source: 'manual' | 'calibration_clip';
   metronome_mode: MetronomeMode;
+  /**
+   * What the musician plays, so the pipeline can look for onsets the way this
+   * instrument produces them.
+   *
+   * A double bass note swells in rather than snapping in and sits where onset
+   * detection is weakest, so it needs a lower threshold and a filter. That
+   * setting existed in the backend from the start and nothing had ever sent
+   * the value that turns it on.
+   */
+  instrument?: Instrument;
 }
 
 /**
