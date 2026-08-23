@@ -1,4 +1,5 @@
-import type { Duration, ScoreJson, ScoreNote } from '../../data/types';
+import type { Duration, ScoreJson } from '../../data/types';
+import { flattenNotes, readTies } from '../notation/ties';
 
 /**
  * A score and a tempo, turned into notes with times and pitches.
@@ -137,38 +138,47 @@ export function scheduleScore(
   let clock = leadInS;
   let globalIndex = 0;
 
-  for (const measure of score.measures ?? []) {
-    const measureNotes = measure.notes ?? [];
-
-    for (let i = 0; i < measureNotes.length; i += 1) {
-      const note = measureNotes[i];
-      let beats = BEATS[note.duration] ?? UNKNOWN_DURATION_BEATS;
-
-      // A tie chain sounds as one note. Absorb every note it runs into, then
-      // skip past them so they don't sound on their own.
-      let held: ScoreNote = note;
-      while (held.tied_to_next && i + 1 < measureNotes.length) {
-        i += 1;
-        held = measureNotes[i];
-        beats += BEATS[held.duration] ?? UNKNOWN_DURATION_BEATS;
-      }
-
-      const durationS = beats * secondsPerBeat;
-      const frequency = note.pitch === 'rest' ? null : frequencyOf(note.pitch);
-
-      if (frequency !== null) {
-        notes.push({
-          startS: clock,
-          durationS: durationS * articulation,
-          frequency,
-          measureNumber: measure.measure_number,
-          globalIndex,
-        });
-        globalIndex += 1;
-      }
-
-      clock += durationS;
+  // Walked flat, and the ties read the way the backend reads them. Both matter:
+  // a tie across a barline is the commonest kind and the old per-measure loop
+  // could not see one, and a tie is only real when both noteheads are the same
+  // pitch — otherwise it is a slur, which sounds as separate notes. See
+  // `notation/ties.ts`.
+  const measures = score.measures ?? [];
+  const flat = flattenNotes(measures);
+  const ties = readTies(measures);
+  // Which measure each flat note belongs to, so a scheduled note can still say.
+  const measureOf: number[] = [];
+  for (const measure of measures) {
+    for (const _ of measure.notes ?? []) {
+      measureOf.push(measure.measure_number);
     }
+  }
+
+  for (let i = 0; i < flat.length; i += 1) {
+    if (ties.absorbed[i]) {
+      continue; // already sounding, as part of the note that tied into it
+    }
+    const note = flat[i];
+    let beats = BEATS[note.duration] ?? UNKNOWN_DURATION_BEATS;
+    for (let held = i + 1; held < flat.length && ties.absorbed[held]; held += 1) {
+      beats += BEATS[flat[held].duration] ?? UNKNOWN_DURATION_BEATS;
+    }
+
+    const durationS = beats * secondsPerBeat;
+    const frequency = note.pitch === 'rest' ? null : frequencyOf(note.pitch);
+
+    if (frequency !== null) {
+      notes.push({
+        startS: clock,
+        durationS: durationS * articulation,
+        frequency,
+        measureNumber: measureOf[i],
+        globalIndex,
+      });
+      globalIndex += 1;
+    }
+
+    clock += durationS;
   }
 
   return { notes, durationS: clock, bpm };

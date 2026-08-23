@@ -6,6 +6,44 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-31 (later) — The app played a different piece from the one it graded
+
+**Branch:** `main`. `/loop` iteration. Checking whether the mobile side had
+drifted from the timeline work of the last few days. It had, twice, in the same
+loop.
+
+`scheduleScore` — what the Listen button plays, and what `PieceDetail` and the
+warmup use — absorbed a tie on `tied_to_next` alone:
+
+- **No pitch check.** A tie joins one pitch to itself; a curve between two
+  different pitches is a slur. The app merged one into a single long note while
+  the backend, since the tie validator landed, counts two.
+- **Stopped at the barline.** The loop looked only as far as the end of the
+  measure, so a tie into the next bar was never absorbed — and a tie across a
+  barline is the commonest kind there is. The app re-attacked a note the
+  analysis holds straight through.
+
+Both are audible. Press Listen, hear one rhythm, get a verdict measured against
+another — and a musician told they rushed a bar that sounded right in the app
+has been handed two different pieces of music.
+
+`notation/ties.ts` mirrors `score_schema.read_ties`, and `scheduleScore` now
+walks the score flat rather than measure by measure, which is what lets a tie
+reach across a barline at all.
+
+**Checked by running both.** 1,296 cases — every arrangement of tie/no-tie over
+E2, G2 and a rest across two measures, so barline crossings and pitch changes
+are both covered — through the Python and the TypeScript. **Zero
+disagreements.** Similar-looking code is what drifted in the first place.
+
+**Checked and left alone:** repeats are deliberately not played back — the
+schedule says so and gives its reason, that listening to a passage is the use
+here. Not a drift.
+
+**Tests:** mobile 16 → **25**. Backend 541 unchanged. `tsc` clean.
+
+---
+
 ## 2026-08-31 — Fast passages were undetectable, and no constant could fix it
 
 **Branch:** `main`. `/loop` iteration. The ±464 ms peak-picking ceiling recorded
