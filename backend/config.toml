@@ -36,6 +36,15 @@ dragging_inner_pct = 5.0
 dragging_mid_pct = 10.0
 dragging_outer_pct = 20.0
 
+[tolerance.pulse]
+# When a musician breaks their pulse rather than drifting off it. Below these
+# the drift accumulates from the start of the take, so steady rushing shows as
+# a growing delta (which is the whole product); above them the reference
+# re-anchors, so a hesitation is named where it happened instead of blaming
+# every bar after it. Starting values — needs real recordings and an ear.
+disturbance_deviations = 6.0   # robust deviations of the take's own interval errors
+disturbance_floor_beats = 0.1667  # floor under that, as a fraction of one beat
+
 [trend]
 window = 8                 # rolling-average window in notes (§4)
 

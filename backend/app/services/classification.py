@@ -79,6 +79,63 @@ def _direction(delta_pct: float, band: Band) -> Direction:
     return Direction.rush if delta_pct < 0 else Direction.drag
 
 
+def _pulse_anchors(
+    offsets: np.ndarray, beat_s: float, *, config: AudioConfig | None = None
+) -> np.ndarray:
+    """The reference each note's drift is measured from, note by note.
+
+    **Two things look identical to a clock and are opposite to a musician.**
+    Playing steadily a little fast is a *ramp*: every interval is slightly
+    short, the offset grows note after note, and it must be reported — that is
+    the entire product. Hesitating is a *step*: one or two intervals are much
+    too long and then the pulse resumes, and reporting it as "every bar after
+    this one dragged" is false. It was false, and it named eight bars in a take
+    where one bar was long.
+
+    Measured on twenty bars with bar 8 held a beat too long, the app said:
+
+        m8 +29%  m9 +99%  m10 +100%  m11 +99%  m12 +100%  …  m15 +99%
+
+    So the reference re-anchors after a *run* of intervals that departs from
+    what this take otherwise does. The notes inside the run keep the drift —
+    a bar genuinely played slow is dragging and has to say so — and the notes
+    after it start again from where the musician actually is.
+
+    A run, not a single interval, because a bar played 25% slow is four
+    stretched intervals in a row, not one. Absorbing them individually would
+    report the bar as clean, which is the opposite mistake.
+
+    The two thresholds live in `[tolerance.pulse]`. They are far apart from
+    what they have to separate — the rushing fixture drifts 8 ms a beat, note
+    after note, while a bar held a quarter longer moves an interval by 208 ms —
+    so neither sits near a decision, and both are starting values that want a
+    real recording and an ear.
+    """
+    cfg = config or load_audio_config()
+    anchors = np.empty(offsets.size, dtype=float)
+    if offsets.size == 0:
+        return anchors
+    steps = np.diff(offsets, prepend=offsets[0])
+    # The take's own habit, robustly: what a typical interval error looks like
+    # here, immune to the handful that are the disturbance.
+    centre = float(np.median(steps))
+    spread = float(np.median(np.abs(steps - centre)))
+    limit = max(
+        cfg.tolerance.disturbance_deviations * spread,
+        cfg.tolerance.disturbance_floor_beats * beat_s,
+    )
+    disturbed = np.abs(steps - centre) > limit
+
+    anchor = offsets[0]
+    for i in range(offsets.size):
+        anchors[i] = anchor
+        # Re-anchor once the run ends, so the last note of the disturbance
+        # still carries it and the next note starts from where the player is.
+        if disturbed[i] and (i + 1 >= offsets.size or not disturbed[i + 1]):
+            anchor = offsets[i]
+    return anchors
+
+
 def compute_deltas(
     cleaned: CleanedAlignment,
     detected: np.ndarray,
@@ -89,11 +146,16 @@ def compute_deltas(
 ) -> list[Delta]:
     """Per matched note-pair, compute the timing delta in ms and % of beat.
 
-    The recording's lead-in latency (reaction time before the first note)
-    is not a timing error, so we set the origin at the first matched
-    onset: its delta is defined as zero and every later note is measured
-    as drift from that start. This makes gradual rushing/dragging show up
-    as a growing delta, which is exactly what the trend + verdict key on.
+    The recording's lead-in latency (reaction time before the first note) is
+    not a timing error, so the origin sits at the first matched onset: its
+    delta is zero and every later note is measured as drift from that start.
+    Gradual rushing therefore shows up as a *growing* delta, which is what the
+    trend and the verdict key on, and it has to stay that way — the rushing
+    fixture drifts 8 ms a beat, and anything that measures each note against
+    only its neighbour reports that as steady.
+
+    The origin is not fixed for the whole take, though. It follows the
+    musician's pulse across a break in it — see `_pulse_anchors`.
     """
     cfg = config or load_audio_config()
     detected = np.asarray(detected, dtype=float)
@@ -102,14 +164,16 @@ def compute_deltas(
     if not cleaned.matched:
         return []
 
-    first_det, first_exp = cleaned.matched[0]
-    origin_shift = detected[first_det] - timeline.onsets[first_exp]
+    offsets = np.array(
+        [detected[d] - timeline.onsets[e] for d, e in cleaned.matched], dtype=float
+    )
+    anchors = _pulse_anchors(offsets, beat_ms / 1000.0, config=cfg)
 
     deltas: list[Delta] = []
-    for det_i, exp_i in cleaned.matched:
+    for position, (det_i, exp_i) in enumerate(cleaned.matched):
         note = timeline.notes[exp_i]
         expected_ms = timeline.onsets[exp_i] * 1000.0
-        actual_ms = (detected[det_i] - origin_shift) * 1000.0
+        actual_ms = (detected[det_i] - anchors[position]) * 1000.0
         delta_ms = actual_ms - expected_ms
         delta_pct = (delta_ms / beat_ms) * 100.0 if beat_ms else 0.0
         band = classify_band(delta_pct, config=cfg)

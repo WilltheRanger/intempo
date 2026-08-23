@@ -225,3 +225,34 @@ def test_holding_one_bar_too_long_does_not_move_every_later_note() -> None:
 def test_hurrying_one_bar_does_not_move_every_later_note() -> None:
     right, wrong = _attribution(_score(), stretched_measure=13, factor=0.75)
     assert wrong == 0, f"{wrong} of {right + wrong} sounds attributed to the wrong note"
+
+
+def test_a_held_bar_is_named_and_the_bars_after_it_are_not() -> None:
+    """End to end, and the point of the whole day.
+
+    Before: `m8 +29%  m9 +99%  m10 +100%  m11 +99% … m15 +99%` — eight bars
+    named in a take where one bar was long and the rest was perfect.
+    """
+    score = _score()
+    y = _render(_perform(score, stretched_measure=8, factor=1.25))
+
+    result = analyze((y, SR), score, target_bpm=BPM, double_bass=True)
+
+    off = [m.measure_number for m in result.per_measure if m.worst_band != "on"]
+    assert 8 in off, "the bar that was actually held has to be named"
+    assert max(off) <= 9, f"bars {off} named; only 8 was played long"
+    # 9 is allowed: the last stretched interval lands on its first note.
+    assert all(m.direction.value == "drag" for m in result.per_measure
+               if m.measure_number in off)
+
+
+def test_a_hurried_bar_is_named_and_the_bars_after_it_are_not() -> None:
+    score = _score()
+    y = _render(_perform(score, stretched_measure=13, factor=0.75))
+
+    result = analyze((y, SR), score, target_bpm=BPM, double_bass=True)
+
+    off = [m.measure_number for m in result.per_measure if m.worst_band != "on"]
+    assert 13 in off
+    assert max(off) <= 14, f"bars {off} named; only 13 was hurried"
+
