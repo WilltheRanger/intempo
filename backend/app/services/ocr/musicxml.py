@@ -168,12 +168,77 @@ def _key_name(fifths: int, mode: str | None) -> str | None:
     return name
 
 
-def score_json_from_musicxml(xml: str, *, clef_fallback: str = "treble") -> ScoreJson:
+
+def _part_names(root: ET.Element) -> dict[str, str]:
+    """Part id → the name printed in `<part-list>`, e.g. `P3` → "Violoncello"."""
+    names: dict[str, str] = {}
+    for entry in root.iterfind("part-list/score-part"):
+        pid = entry.get("id")
+        if not pid:
+            continue
+        for tag in ("part-name", "part-abbreviation"):
+            text = (entry.findtext(tag) or "").strip()
+            if text:
+                names[pid] = text
+                break
+    return names
+
+
+def _choose_part(root: ET.Element, wanted: str | None) -> ET.Element:
+    """The part to read, refusing to guess when a file holds several.
+
+    An OMR engine reading one photographed staff emits one part, so taking the
+    first was always right. A file from a publisher is a different animal: a
+    downloaded orchestral score's first part is usually the piccolo, and a
+    cellist who imports it and silently gets the piccolo line has a
+    transcription that is timed, verdicted, and wrong in a way that looks
+    right. That is worse than an error message.
+    """
+    parts = root.findall("part")
+    if not parts:
+        raise MusicXMLError("no <part> element — this is not a MusicXML score")
+
+    names = _part_names(root)
+    if wanted:
+        needle = wanted.strip().lower()
+        for element in parts:
+            pid = element.get("id") or ""
+            label = names.get(pid, "")
+            if pid.lower() == needle or needle in label.lower():
+                return element
+        available = ", ".join(
+            f"{e.get('id')} ({names.get(e.get('id') or '', 'unnamed')})" for e in parts
+        )
+        raise MusicXMLError(f"no part matching {wanted!r}; this file has: {available}")
+
+    if len(parts) == 1:
+        return parts[0]
+
+    available = ", ".join(
+        f"{e.get('id')} ({names.get(e.get('id') or '', 'unnamed')})" for e in parts
+    )
+    raise MusicXMLError(
+        f"this file has {len(parts)} parts and none was chosen: {available}. "
+        "Pick the one you play."
+    )
+
+
+def score_json_from_musicxml(
+    xml: str, *, clef_fallback: str = "treble", part: str | None = None
+) -> ScoreJson:
     """Convert one MusicXML part into a `ScoreJson`.
 
-    The first part only. A camera photo of a single player's line is one part;
-    a full score is a different product problem, and quietly concatenating the
-    parts would interleave two instruments into one measure list.
+    **One part.** A camera photo of a single player's line is one part; a full
+    score is a different product problem, and quietly concatenating the parts
+    would interleave two instruments into one measure list.
+
+    Which part matters now that files arrive from a publisher rather than from
+    an OMR engine reading one staff. A downloaded orchestral score's first part
+    is usually the piccolo, and a cellist importing it and getting the piccolo
+    line — timed, verdicted, and wrong in a way that looks right — is worse
+    than a refusal. `part` names one by id (`P3`) or by the name printed in
+    `<part-list>` ("Violoncello"), case-insensitively and by prefix. With more
+    than one part and no choice made, this raises rather than guesses.
     """
     try:
         root = ET.fromstring(xml)
@@ -181,9 +246,7 @@ def score_json_from_musicxml(xml: str, *, clef_fallback: str = "treble") -> Scor
         raise MusicXMLError(f"not parseable as XML: {exc}") from exc
     _strip_namespace(root)
 
-    part = root.find("part")
-    if part is None:
-        raise MusicXMLError("no <part> element — this is not a MusicXML score")
+    chosen = _choose_part(root, part)
 
     clef: str | None = None
     time_signature: str | None = None
@@ -194,7 +257,7 @@ def score_json_from_musicxml(xml: str, *, clef_fallback: str = "treble") -> Scor
     measures: list[Measure] = []
     dropped = 0
 
-    for index, measure_el in enumerate(part.iterfind("measure"), start=1):
+    for index, measure_el in enumerate(chosen.iterfind("measure"), start=1):
         attributes = measure_el.find("attributes")
         if attributes is not None:
             if clef is None:
@@ -241,8 +304,30 @@ def score_json_from_musicxml(xml: str, *, clef_fallback: str = "treble") -> Scor
                         break
 
         notes: list[Note] = []
+        #: Every note the measure holds, before the voice filter — the fallback
+        #: if filtering leaves nothing.
+        not_filtered: list[Note] = []
         slur_starts: dict[str, int] = {}
         slurs: list[Slur] = []
+
+        # `<backup>` rewinds the clock so a second voice can be written over
+        # the same bar — normal in any divisi or piano part. Reading straight
+        # through it counts both voices as consecutive notes, so a 4/4 bar
+        # comes out as 8 beats and the beat-sum check calls a correct file
+        # broken. Only the first voice is kept: the timeline is one line of
+        # music, and a cellist recording themselves plays one of the two.
+        # Gated on `<backup>`, not on voice numbers. Audiveris assigns voice
+        # numbers freely within a single line — filtering on them alone dropped
+        # real consecutive notes and made bars that added up stop adding up.
+        # `<backup>` is the actual signal that the clock was rewound to write
+        # something over the same bar.
+        rewound = measure_el.find("backup") is not None
+        voices = [
+            (el.findtext("voice") or "").strip()
+            for el in measure_el.iterfind("note")
+        ]
+        first_voice = next((v for v in voices if v), None)
+        multi_voice = rewound and len({v for v in voices if v}) > 1
 
         for note_el in measure_el.iterfind("note"):
             # A chord member shares its predecessor's onset. The timeline is
@@ -255,6 +340,14 @@ def score_json_from_musicxml(xml: str, *, clef_fallback: str = "treble") -> Scor
             # decorate; including them has the same effect as a chord member.
             if note_el.find("grace") is not None:
                 continue
+            filtered_out = False
+            this_voice = (note_el.findtext("voice") or "").strip()
+            # An *untagged* note is not in a competing voice — it is a note.
+            # Dropping those emptied a bar outright in the bundled Audiveris
+            # fixture, which is a worse reading than the double-count this
+            # filter exists to prevent.
+            if multi_voice and this_voice and this_voice != first_voice:
+                filtered_out = True
 
             pitch = _pitch_name(note_el)
             duration = _duration_name(note_el)
@@ -268,14 +361,16 @@ def score_json_from_musicxml(xml: str, *, clef_fallback: str = "treble") -> Scor
                 tie.get("type") == "start" for tie in note_el.iterfind("notations/tied")
             )
 
-            notes.append(
-                Note(
-                    pitch=pitch,
-                    duration=duration,  # type: ignore[arg-type]
-                    articulation=_articulation(note_el),  # type: ignore[arg-type]
-                    tied_to_next=tied,
-                )
+            built = Note(
+                pitch=pitch,
+                duration=duration,  # type: ignore[arg-type]
+                articulation=_articulation(note_el),  # type: ignore[arg-type]
+                tied_to_next=tied,
             )
+            not_filtered.append(built)
+            if filtered_out:
+                continue
+            notes.append(built)
 
             for slur in note_el.iterfind("notations/slur"):
                 number = slur.get("number", "1")
@@ -295,6 +390,13 @@ def score_json_from_musicxml(xml: str, *, clef_fallback: str = "treble") -> Scor
             number = index
         # An engine that reads a pickup bar numbers it 0, and `Measure` requires
         # 1 or more. Position in the list is what everything downstream uses.
+        # Never let the voice filter empty a bar. A measure with no notes is
+        # not a reading, it is a hole — and `validate.py` reports one as a sign
+        # that something which was not a measure was counted as one. If picking
+        # a voice removed everything, the guess about voices was wrong.
+        if not notes and not_filtered:
+            notes = not_filtered
+
         measures.append(
             Measure(measure_number=number if number >= 1 else index, notes=notes, slurs=slurs)
         )

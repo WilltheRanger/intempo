@@ -245,3 +245,92 @@ def test_clef_falls_back_when_absent() -> None:
       <note><rest/><duration>4</duration><type>quarter</type></note>
     </measure></part></score-partwise>"""
     assert score_json_from_musicxml(xml, clef_fallback="bass").clef == "bass"
+
+
+# ---- files that come from a publisher rather than an OMR engine -------------
+#
+# An engine reading one photographed staff emits one part, one voice, and no
+# `<backup>`. A downloaded file has all three, and each of them silently
+# corrupts a timeline rather than failing loudly.
+
+
+def _wrap(parts_xml: str, part_list: str = '<score-part id="P1"><part-name>Cello</part-name></score-part>') -> str:
+    return f"<score-partwise><part-list>{part_list}</part-list>{parts_xml}</score-partwise>"
+
+
+def _note(step: str = "C", octave: int = 3, type_: str = "quarter", voice: str | None = None) -> str:
+    v = f"<voice>{voice}</voice>" if voice else ""
+    return f"<note><pitch><step>{step}</step><octave>{octave}</octave></pitch><type>{type_}</type>{v}</note>"
+
+
+def test_a_second_voice_does_not_double_the_bar() -> None:
+    """`<backup>` rewinds so another voice is written over the same bar.
+
+    Reading straight through counts both as consecutive notes, so a 4/4 bar
+    comes out as 8 beats and the beat-sum check calls a correct file broken.
+    """
+    bar = (
+        "<measure number='1'>"
+        "<attributes><time><beats>4</beats><beat-type>4</beat-type></time>"
+        "<clef><sign>F</sign></clef></attributes>"
+        + "".join(_note(voice="1") for _ in range(4))
+        + "<backup><duration>4</duration></backup>"
+        + "".join(_note(step="G", octave=2, voice="2") for _ in range(4))
+        + "</measure>"
+    )
+    score = score_json_from_musicxml(_wrap(f"<part id='P1'>{bar}</part>"))
+    assert len(score.measures[0].notes) == 4, "the second voice was counted as well"
+
+
+def test_a_single_voice_file_is_unaffected() -> None:
+    """The common case — an engine's output — must not change."""
+    bar = "<measure number='1'>" + "".join(_note(voice="1") for _ in range(4)) + "</measure>"
+    score = score_json_from_musicxml(_wrap(f"<part id='P1'>{bar}</part>"))
+    assert len(score.measures[0].notes) == 4
+
+
+def test_a_multi_part_file_refuses_to_guess() -> None:
+    """A downloaded orchestral score's first part is usually the piccolo.
+
+    A cellist who imports it and silently gets the piccolo line has a
+    transcription that is timed, verdicted, and wrong in a way that looks
+    right. That is worse than an error message.
+    """
+    bar = "<measure number='1'>" + _note() + "</measure>"
+    xml = _wrap(
+        f"<part id='P1'>{bar}</part><part id='P2'>{bar}</part>",
+        part_list=(
+            '<score-part id="P1"><part-name>Piccolo</part-name></score-part>'
+            '<score-part id="P2"><part-name>Violoncello</part-name></score-part>'
+        ),
+    )
+    with pytest.raises(MusicXMLError) as caught:
+        score_json_from_musicxml(xml)
+    assert "2 parts" in str(caught.value)
+    # Names the options, so the caller can offer them rather than guess.
+    assert "Piccolo" in str(caught.value) and "Violoncello" in str(caught.value)
+
+
+def test_a_part_can_be_chosen_by_name_or_by_id() -> None:
+    bar_one = "<measure number='1'>" + _note(step="C") + "</measure>"
+    bar_two = "<measure number='1'>" + _note(step="G") + "</measure>"
+    xml = _wrap(
+        f"<part id='P1'>{bar_one}</part><part id='P2'>{bar_two}</part>",
+        part_list=(
+            '<score-part id="P1"><part-name>Piccolo</part-name></score-part>'
+            '<score-part id="P2"><part-name>Violoncello</part-name></score-part>'
+        ),
+    )
+    by_id = score_json_from_musicxml(xml, part="P2")
+    assert by_id.measures[0].notes[0].pitch.startswith("G")
+    # Substring, not prefix: "cello" is what a cellist would type, and
+    # "Violoncello" is what the publisher wrote.
+    by_name = score_json_from_musicxml(xml, part="cello")
+    assert by_name.measures[0].notes[0].pitch.startswith("G")
+
+
+def test_asking_for_a_part_that_is_not_there_says_what_is() -> None:
+    bar = "<measure number='1'>" + _note() + "</measure>"
+    with pytest.raises(MusicXMLError) as caught:
+        score_json_from_musicxml(_wrap(f"<part id='P1'>{bar}</part>"), part="Trombone")
+    assert "Cello" in str(caught.value)

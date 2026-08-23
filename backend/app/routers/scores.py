@@ -28,6 +28,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from app.auth import current_user_id, current_user_id_provisioned
 from app.db import get_service_client
 from app.routers.upload import SCORE_BUCKET
+from app.services.ocr.musicxml import MusicXMLError, score_json_from_musicxml
 from app.workers.transcription_runner import run_transcription
 from app.services.score_schema import Clef, ScoreJson
 
@@ -95,6 +96,32 @@ class CreateScoreRequest(BaseModel):
 
 #: Fields that only mean something for a hand-entered piece.
 _MANUAL_FIELDS = ("clef", "time_signature", "bpm_hint")
+
+
+class ImportScoreRequest(BaseModel):
+    """A piece from a notation file rather than a photograph.
+
+    The third provenance, beside the camera and typing it in. A MusicXML file
+    carries the durations exactly — no OCR, no model, no cost — which is the
+    whole point: `alignment.py` builds its timeline from durations, and a file
+    that states them cannot misread them.
+
+    It is **not** a replacement for the camera. Plenty of music reaches a
+    musician as paper, and nothing here retires the photograph path.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    title: str = Field(min_length=1, max_length=200)
+    composer: str | None = Field(default=None, max_length=200)
+    movement: str | None = Field(default=None, max_length=200)
+    #: The MusicXML document itself. Uncompressed: `.mxl` is a zip and
+    #: unpacking one is the client's job, since it already has the file open.
+    musicxml: str = Field(min_length=1, max_length=8_000_000)
+    #: Which part to read, by id (`P3`) or by printed name ("Violoncello").
+    #: Required for a multi-part file — see `_choose_part` for why guessing is
+    #: worse than refusing.
+    part: str | None = Field(default=None, max_length=100)
 
 
 class UpdateScoreRequest(BaseModel):
@@ -376,6 +403,63 @@ async def create_score(
     # uploaded without a second request. This used to return an unsigned row,
     # which meant POST was the one response whose `image_url` was always null.
     return _with_image_urls(rows)[0]
+
+
+@router.post("/import", response_model=ScoreResponse, status_code=status.HTTP_201_CREATED)
+async def import_score(
+    body: ImportScoreRequest,
+    user_id: UUID = Depends(current_user_id_provisioned),
+) -> ScoreResponse:
+    """Create a piece from a MusicXML file.
+
+    Synchronous, unlike the camera path, and for a good reason: parsing XML is
+    milliseconds and involves no model, so there is nothing to background and
+    nothing to poll. The row comes back `done` with its notes already in it.
+
+    **`ocr_confidence` is null, not 1.0.** Every "we don't know" mechanism in
+    this app — the caveat lines, the review prompt, the accept-before-discard
+    rule — keys off that number, and a file is not *confident*, it is
+    *stated*. Writing 1.0 would quietly convert a system that admits
+    uncertainty into one that claims certainty it was never asked about. Null
+    is what the column already means for a piece that was never read.
+    """
+    try:
+        score = score_json_from_musicxml(body.musicxml, part=body.part)
+    except MusicXMLError as exc:
+        # The converter's message names the parts a multi-part file holds, so
+        # the client can offer them rather than make the musician guess.
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    if not score.measures:
+        raise HTTPException(
+            status_code=422,
+            detail="that file has no measures in it",
+        )
+
+    inserted = (
+        _service_client()
+        .table("scores")
+        .insert(
+            {
+                "user_id": str(user_id),
+                "title": body.title,
+                "composer": body.composer,
+                "movement": body.movement,
+                # Never photographed, so there is nothing to sign or discard.
+                "source_image_url": None,
+                "score_json": score.model_dump(mode="json"),
+                "ocr_confidence": None,
+                "transcription_status": "done",
+            }
+        )
+        .execute()
+    ).data or []
+    if not inserted:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="failed to persist score",
+        )
+    return _with_image_urls(inserted)[0]
 
 
 @router.get("", response_model=list[ScoreResponse])
