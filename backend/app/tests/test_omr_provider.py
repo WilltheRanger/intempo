@@ -31,6 +31,17 @@ FIXTURE = (
 )
 
 
+#: The argument shape these stubs are written against.
+#:
+#: Passed explicitly at every construction rather than left to
+#: `settings.OMR_ARGS`, which reads the environment — so a developer with a
+#: real engine configured (`OMR_ARGS='-batch -export -output {out} -- {image}'`,
+#: the Audiveris shape) had this whole file fail with `cannot create
+#: -output/score.musicxml`. Which shape a stub gets is the stub's to declare,
+#: not the machine's to supply.
+STUB_ARGS = "{image} -o {out}"
+
+
 def _stub(tmp_path: Path, body: str, name: str = "fake-omr") -> str:
     """A shell script standing in for the engine, put on PATH."""
     binary = tmp_path / name
@@ -47,10 +58,11 @@ def _restore_path():
     os.environ["PATH"] = original
 
 
+
 def test_reads_the_musicxml_the_engine_wrote(tmp_path: Path) -> None:
     xml = FIXTURE.read_text(encoding="utf-8").replace("'", "'\\''")
     name = _stub(tmp_path, f"cat > \"$3/score.musicxml\" <<'XML'\n{xml}\nXML\n")
-    response = OMRProvider(command=name).parse(b"not really an image", "image/png")
+    response = OMRProvider(command=name, args=STUB_ARGS).parse(b"not really an image", "image/png")
 
     assert response.score.clef == "bass"
     assert len(response.score.measures) == 2
@@ -63,7 +75,7 @@ def test_reads_the_musicxml_the_engine_wrote(tmp_path: Path) -> None:
 
 def test_a_missing_engine_says_how_to_install_one(tmp_path: Path) -> None:
     with pytest.raises(OCRProviderError) as caught:
-        OMRProvider(command="definitely-not-installed-omr").parse(b"x")
+        OMRProvider(command="definitely-not-installed-omr", args=STUB_ARGS).parse(b"x")
     message = str(caught.value)
     assert "pip install oemer" in message
     assert "OMR_COMMAND" in message
@@ -72,7 +84,7 @@ def test_a_missing_engine_says_how_to_install_one(tmp_path: Path) -> None:
 def test_a_non_zero_exit_carries_the_engine_s_own_words(tmp_path: Path) -> None:
     name = _stub(tmp_path, "echo 'could not find any staff lines' >&2\nexit 3\n")
     with pytest.raises(OCRProviderError) as caught:
-        OMRProvider(command=name).parse(b"x")
+        OMRProvider(command=name, args=STUB_ARGS).parse(b"x")
     assert "exited 3" in str(caught.value)
     assert "could not find any staff lines" in str(caught.value)
 
@@ -80,14 +92,14 @@ def test_a_non_zero_exit_carries_the_engine_s_own_words(tmp_path: Path) -> None:
 def test_a_hang_is_cut_off(tmp_path: Path) -> None:
     name = _stub(tmp_path, "sleep 30\n")
     with pytest.raises(OCRProviderError) as caught:
-        OMRProvider(command=name, timeout_s=1).parse(b"x")
+        OMRProvider(command=name, timeout_s=1, args=STUB_ARGS).parse(b"x")
     assert "did not finish" in str(caught.value)
 
 
 def test_exiting_zero_with_no_output_is_still_a_failure(tmp_path: Path) -> None:
     name = _stub(tmp_path, "exit 0\n")
     with pytest.raises(OCRProviderError) as caught:
-        OMRProvider(command=name).parse(b"x")
+        OMRProvider(command=name, args=STUB_ARGS).parse(b"x")
     assert "wrote no MusicXML" in str(caught.value)
 
 
@@ -104,14 +116,14 @@ def test_an_empty_score_is_refused_rather_than_returned(tmp_path: Path) -> None:
         '<score-partwise><part id="P1"></part></score-partwise>\nXML\n',
     )
     with pytest.raises(OCRProviderError) as caught:
-        OMRProvider(command=name).parse(b"x")
+        OMRProvider(command=name, args=STUB_ARGS).parse(b"x")
     assert "read no measures" in str(caught.value)
 
 
 def test_unreadable_output_is_refused(tmp_path: Path) -> None:
     name = _stub(tmp_path, 'printf \'not xml\' > "$3/score.musicxml"\n')
     with pytest.raises(OCRProviderError):
-        OMRProvider(command=name).parse(b"x")
+        OMRProvider(command=name, args=STUB_ARGS).parse(b"x")
 
 
 def test_the_argument_template_is_substituted(tmp_path: Path) -> None:
@@ -143,7 +155,7 @@ def test_a_compressed_mxl_is_read(tmp_path: Path) -> None:
         bundle.writestr("META-INF/container.xml", "<container/>")
         bundle.writestr("score.xml", FIXTURE.read_text(encoding="utf-8"))
     name = _stub(tmp_path, f'cp "{archive}" "$3/out.mxl"\n', name="fake-mxl")
-    response = OMRProvider(command=name).parse(b"x", "image/png")
+    response = OMRProvider(command=name, args=STUB_ARGS).parse(b"x", "image/png")
     assert response.score.clef == "bass"
     assert len(response.score.measures) == 2
 
@@ -151,7 +163,7 @@ def test_a_compressed_mxl_is_read(tmp_path: Path) -> None:
 def test_a_corrupt_mxl_is_refused(tmp_path: Path) -> None:
     name = _stub(tmp_path, 'printf \'not a zip\' > "$3/out.mxl"\n', name="fake-badmxl")
     with pytest.raises(OCRProviderError) as caught:
-        OMRProvider(command=name).parse(b"x")
+        OMRProvider(command=name, args=STUB_ARGS).parse(b"x")
     assert "readable .mxl" in str(caught.value)
 
 
