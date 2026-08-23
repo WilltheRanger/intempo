@@ -1,0 +1,49 @@
+# One-click deploy for the API.
+#
+# Render reads this when you point it at the repository: New → Blueprint →
+# pick this repo. Nothing here needs editing first; the secrets are marked
+# `sync: false`, which means Render prompts for them instead of storing them in
+# git. Fly and Railway both read the same Dockerfile if you prefer those — this
+# file is a convenience, not a dependency.
+#
+# The OMR second opinion is OFF here. Turning it on means building Audiveris
+# into the image (`WITH_AUDIVERIS=1`), which adds a JDK, a Gradle build and a
+# few hundred megabytes, and the free plan will not finish it. Get the API up
+# first; see docs/deploy-omr.md to add it afterwards.
+services:
+  - type: web
+    name: intempo-api
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    plan: starter
+    healthCheckPath: /v1/health
+    envVars:
+      # Secrets. Render asks for these on first deploy and keeps them out of git.
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_KEY
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+
+      # The browser refuses every response without a matching origin, so the
+      # app's own URL has to be listed here. Set it to wherever the mobile web
+      # build is served from — the Cloudflare Pages domain.
+      - key: CORS_ALLOWED_ORIGINS
+        sync: false
+
+      # No engine is installed in this image, so the second opinion is skipped:
+      # one failed lookup on PATH, a log line, and the vision chain answers as
+      # it always did. Left named rather than blanked so that adding the engine
+      # later is a rebuild and not a config hunt.
+      - key: OMR_CONFIRM
+        value: omr-local
+      - key: OMR_COMMAND
+        value: /opt/audiveris/bin/Audiveris
+      - key: OMR_ARGS
+        value: "-batch -export -output {out} -- {image}"
