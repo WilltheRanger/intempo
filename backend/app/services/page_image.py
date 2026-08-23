@@ -405,3 +405,92 @@ def _register_heif() -> None:
         pillow_heif.register_heif_opener()
     except ImportError:  # pragma: no cover
         log.info("pillow-heif is not installed; HEIC pages will not be normalised")
+
+
+# =============================================================
+# The same page, prepared for a rule-based engine instead
+# =============================================================
+#
+# A vision model and an OMR engine want opposite things, and the difference is
+# not a preference — it is the difference between a reading and a refusal.
+#
+# Measured on a 3024x4032 page with Audiveris 5.4:
+#
+#     long edge   time    peak RSS   result
+#          1568    1.4s      159 MB  FAILED — "interline value of 10 pixels …
+#                                     picture resolution is too low"
+#          2048    9.3s      517 MB  transcribed
+#          2400   10.5s      543 MB  transcribed
+#          3024   15.4s      723 MB  transcribed
+#
+# Audiveris measures staff spacing in pixels and needs roughly fifteen between
+# lines. At the 1568 px a vision model is served, a full page leaves ten, and
+# the engine stops before it reads a note. So `prepare_for_model` — which is
+# exactly right for the model — is fatal to the engine, and the two cannot
+# share one prepared image.
+#
+# 2048 is chosen over the original: it reads the same page, in 40% of the time
+# and 70% of the memory, and memory is the binding constraint on any host small
+# enough to be worth using.
+
+#: Enough pixels for the engine to resolve staff spacing, and no more.
+ENGINE_TARGET_EDGE = 2048
+
+#: Audiveris refuses a page over 20 megapixels outright. A phone shoots 12-48,
+#: so this is the first thing a real photograph hits.
+ENGINE_MAX_PIXELS = 20_000_000
+
+
+def prepare_for_engine(image_bytes: bytes) -> tuple[bytes, str]:
+    """Normalise a photograph for a rule-based OMR engine.
+
+    Same contract as `prepare_for_model` — returns `(bytes, media_type)` and
+    never raises — but a different target, for the reasons measured above.
+
+    Only ever scales *down*. Enlarging a page that is already small cannot add
+    the staff detail the engine is looking for; it only invents pixels between
+    the ones that were photographed, and costs memory to do it.
+    """
+    try:
+        from PIL import Image, ImageOps
+    except ImportError:  # pragma: no cover — Pillow is a declared dependency
+        return image_bytes, media_type_of(image_bytes, "")
+
+    _register_heif()
+
+    try:
+        with Image.open(io.BytesIO(image_bytes)) as image:
+            image = ImageOps.exif_transpose(image)
+            if image.mode != "RGB":
+                image = image.convert("RGB")
+
+            longest = max(image.size)
+            target = min(longest, ENGINE_TARGET_EDGE)
+            scale = target / longest
+            # The megapixel ceiling, applied after the edge target rather than
+            # instead of it: a very wide, short page can be under 2048 on its
+            # long edge and still over 20 MP.
+            if image.width * image.height * scale * scale > ENGINE_MAX_PIXELS:
+                scale = (ENGINE_MAX_PIXELS / (image.width * image.height)) ** 0.5
+
+            if scale < 1:
+                image = image.resize(
+                    (max(1, round(image.width * scale)), max(1, round(image.height * scale))),
+                    Image.Resampling.LANCZOS,
+                )
+
+            buffer = io.BytesIO()
+            # Higher quality than the model gets, and no subsampling. The
+            # engine is thresholding thin black lines out of a photograph;
+            # chroma subsampling smears exactly those edges, and unlike a model
+            # it has no way to read around the damage.
+            image.save(buffer, format="JPEG", quality=95, subsampling=0)
+            encoded = buffer.getvalue()
+            log.info(
+                "page prepared for the engine: %d bytes -> %d (%dx%d)",
+                len(image_bytes), len(encoded), image.width, image.height,
+            )
+            return encoded, "image/jpeg"
+    except Exception as exc:  # noqa: BLE001
+        log.warning("could not prepare the page for the engine: %s", exc)
+        return image_bytes, media_type_of(image_bytes, "")

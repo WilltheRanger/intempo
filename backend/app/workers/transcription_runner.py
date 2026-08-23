@@ -31,6 +31,7 @@ from app.services.ocr import OCRError, parse_sheet_music
 from app.services.ocr.pipeline import STAGE_CONFIRMING, STAGE_ENGINE, STAGE_READING
 from app.services.page_image import (
     download_image,
+    prepare_for_engine,
     prepare_for_model,
     readable_url,
 )
@@ -166,7 +167,19 @@ def run_transcription(score_id: str) -> None:
         # every one of which fails in a way that says nothing about the page.
         # See `prepare_for_model`.
         page, media_type = prepare_for_model(image_bytes)
-        score = parse_sheet_music(page, media_type=media_type, on_stage=report)
+        # The engine gets its own copy, at its own resolution. Prepared lazily
+        # would be tidier and is not worth it: `prepare_for_engine` is a resize
+        # and a JPEG encode, and the alternative is threading a callable
+        # through the pipeline to save it on the common path where no engine is
+        # installed and the argument is never read.
+        engine_page, engine_media = prepare_for_engine(image_bytes)
+        score = parse_sheet_music(
+            page,
+            media_type=media_type,
+            on_stage=report,
+            engine_bytes=engine_page,
+            engine_media_type=engine_media,
+        )
     except HTTPException as exc:
         # `page_image` speaks in HTTP status codes because its other caller is
         # a request handler. Here only the sentence matters.

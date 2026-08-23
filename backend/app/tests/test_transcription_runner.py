@@ -114,7 +114,7 @@ def test_the_media_type_is_sniffed_from_the_downloaded_bytes(table, monkeypatch)
     """
     seen: dict = {}
 
-    def fake_parse(image_bytes, *, media_type, on_stage=None):
+    def fake_parse(image_bytes, *, media_type, on_stage=None, **_engine):
         seen["media_type"] = media_type
         return _score()
 
@@ -127,7 +127,7 @@ def test_each_stage_is_written_as_it_happens(table, monkeypatch) -> None:
     """The whole reason the worker exists is that this takes a visible amount
     of time, so what it reports has to be what it actually did."""
 
-    def fake_parse(image_bytes, *, media_type, on_stage=None):
+    def fake_parse(image_bytes, *, media_type, on_stage=None, **_engine):
         on_stage(STAGE_ENGINE)
         on_stage(STAGE_CONFIRMING)
         on_stage("reading:claude-sonnet-4-6")
@@ -230,7 +230,7 @@ def test_a_stage_write_that_fails_does_not_lose_the_transcription(table, monkeyp
 
     table.update = flaky
 
-    def fake_parse(image_bytes, *, media_type, on_stage=None):
+    def fake_parse(image_bytes, *, media_type, on_stage=None, **_engine):
         on_stage("reading:claude-sonnet-4-6")
         return _score()
 
