@@ -8,6 +8,8 @@ hallucinates extra keys fails fast and triggers the retry path.
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
+from dataclasses import dataclass
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -205,3 +207,112 @@ class ScoreJson(_Strict):
         if not stripped:
             raise ValueError("key_signature must be non-empty when provided")
         return value
+
+
+# --- ties -------------------------------------------------------------------
+#
+# `tied_to_next` was a bare bool that nothing validated and one thing consumed:
+# `alignment.build_timeline` absorbed the next note into the previous onset, so
+# a tie *deletes an onset* from the expected timeline. A tie the model invented
+# therefore removed a note the musician actually attacked, and every onset after
+# it lined up against the wrong note — the same damage a wrong duration does,
+# with no arithmetic guard anywhere.
+#
+# A tie is a single sustained sound written across two noteheads, so the two
+# noteheads are the *same pitch* by definition. A curve joining two different
+# pitches is a slur — different mark, same shape on the page, and telling them
+# apart is exactly the kind of thing a vision model gets wrong. Pitch is the
+# discriminator, and it was sitting unused in the data.
+#
+# Decided here, once, so `alignment` and `ocr/validate` cannot disagree about
+# which ties are real — the same reason `DURATION_BEATS` lives in this module.
+
+
+@dataclass(frozen=True)
+class BrokenTie:
+    """A tie that was written but cannot be honoured."""
+
+    measure_number: int
+    #: Index of the note carrying `tied_to_next`, within its measure.
+    note_index: int
+    pitch: str
+    #: The pitch it was tied into, or None when nothing follows it at all.
+    next_pitch: str | None
+
+    def describe(self) -> str:
+        if self.next_pitch is None:
+            return (
+                f"measure {self.measure_number}: the last note is tied to a note "
+                "that isn't there"
+            )
+        return (
+            f"measure {self.measure_number}: {self.pitch} is tied to "
+            f"{self.next_pitch} — a tie joins one pitch to itself, so this is a "
+            "slur or a misread"
+        )
+
+
+@dataclass(frozen=True)
+class TieReading:
+    """How every note's incoming tie was read, across a run of measures.
+
+    Indexed by position in the flattened note sequence, because **ties cross
+    barlines** — joining a note to the first note of the next measure is the
+    commonest use of one — so this cannot be decided a measure at a time.
+    """
+
+    #: Absorbed into the previous note's onset: a real tie, no new attack.
+    absorbed: tuple[bool, ...]
+    #: A tie was written into this note and could not be honoured.
+    broken: tuple[bool, ...]
+
+
+def read_ties(measures: Sequence[Measure]) -> TieReading:
+    """Which ties are real, walking the notes as a player reads them.
+
+    A rest ends any tie: `tied_to_next` on a rest is meaningless, and so is a
+    tie into one.
+    """
+    flat = [note for measure in measures for note in measure.notes]
+    absorbed = [False] * len(flat)
+    broken = [False] * len(flat)
+
+    for index, note in enumerate(flat):
+        if not note.tied_to_next or note.pitch == "rest":
+            continue
+        following = flat[index + 1] if index + 1 < len(flat) else None
+        if following is not None and following.pitch == note.pitch:
+            absorbed[index + 1] = True
+        elif following is not None:
+            broken[index + 1] = True
+        # A tie on the very last note has nothing to absorb and nothing to
+        # mark; `broken_ties` still reports it, because it is evidence the page
+        # was misread even though it changes no onset.
+
+    return TieReading(absorbed=tuple(absorbed), broken=tuple(broken))
+
+
+def broken_ties(measures: Sequence[Measure]) -> list[BrokenTie]:
+    """Every written tie whose two notes do not share a pitch, for reporting."""
+    flat = [
+        (measure.measure_number, index, note)
+        for measure in measures
+        for index, note in enumerate(measure.notes)
+    ]
+    out: list[BrokenTie] = []
+
+    for position, (measure_number, note_index, note) in enumerate(flat):
+        if not note.tied_to_next or note.pitch == "rest":
+            continue
+        following = flat[position + 1][2] if position + 1 < len(flat) else None
+        if following is not None and following.pitch == note.pitch:
+            continue
+        out.append(
+            BrokenTie(
+                measure_number=measure_number,
+                note_index=note_index,
+                pitch=note.pitch,
+                next_pitch=None if following is None else following.pitch,
+            )
+        )
+    return out

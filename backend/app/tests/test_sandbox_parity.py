@@ -55,7 +55,14 @@ def _score(measures: list[list[str]], time_signature: str | None) -> dict:
             {
                 "measure_number": i + 1,
                 "notes": [
-                    {"pitch": "A4", "duration": d, "tied_to_next": False} for d in durations
+                    # A "!" suffix on a duration writes a tie into the next
+                    # note, so the cases can cover ties without a second helper.
+                    {
+                        "pitch": "A4" if not d.startswith("~") else "G4",
+                        "duration": d.strip("~!"),
+                        "tied_to_next": d.endswith("!"),
+                    }
+                    for d in durations
                 ],
                 "slurs": [],
             }
@@ -85,6 +92,14 @@ CASES = [
     _score([["dotted_quarter", "eighth", "sixteenth", "sixteenth", "eighth", "quarter"]], "4/4"),
     _score([["dotted_half"], ["dotted_half"], ["dotted_half"]], "6/8"),
     _score([], "4/4"),
+    # Ties. The parity suite had none, so the JS port could have gone
+    # tie-blind without anything noticing — which is how the beat tables
+    # drifted. A tie between two pitches ("~" marks the second note as G4)
+    # sums perfectly and must still be a problem in both implementations.
+    _score([["quarter!", "quarter", "quarter", "quarter"]], "4/4"),
+    _score([["quarter!", "~quarter", "quarter", "quarter"]], "4/4"),
+    _score([["quarter", "quarter", "quarter", "quarter!"], Q], "4/4"),
+    _score([["quarter", "quarter", "quarter", "quarter!"], ["~quarter", "quarter", "quarter", "quarter"]], "4/4"),
     # Triplets. The case the two implementations silently disagreed about:
     # one scored a triplet as zero beats and called a correct bar short. These
     # also pin the two languages to the same thirds — JavaScript and Python

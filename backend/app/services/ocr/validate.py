@@ -35,7 +35,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
-from app.services.score_schema import DURATION_BEATS, ScoreJson
+from app.services.score_schema import (
+    DURATION_BEATS,
+    BrokenTie,
+    ScoreJson,
+    broken_ties,
+)
 
 #: Imported, not copied — see `score_schema.DURATION_BEATS` for why.
 
@@ -260,13 +265,24 @@ class MeasureFinding:
     #: Callers that act on a finding should know which, because an inferred
     #: meter is a majority vote and a stated one is a reading.
     meter_inferred: bool = False
+    #: Ties written in this measure that cannot be honoured.
+    #:
+    #: Separate from `verdict` rather than a value of it, because the two are
+    #: independent: a measure whose beats add up perfectly can still carry a
+    #: tie between two different pitches, and that tie is what deletes an onset
+    #: from the timeline. Collapsing them would let a clean beat sum hide it.
+    broken_ties: tuple[BrokenTie, ...] = ()
 
     @property
     def is_problem(self) -> bool:
         """A pickup and an unverifiable measure are not faults."""
-        return self.verdict in {"short", "long", "empty"}
+        return bool(self.broken_ties) or self.verdict in {"short", "long", "empty"}
 
     def describe(self) -> str:
+        # A broken tie leads, because it is the fault that changes the timeline
+        # even when the arithmetic is clean.
+        if self.broken_ties:
+            return "; ".join(tie.describe() for tie in self.broken_ties)
         if self.verdict == "unverifiable":
             return f"measure {self.measure_number}: not checkable"
         source = " (meter inferred from the music)" if self.meter_inferred else ""
@@ -339,6 +355,10 @@ def validate_measures(score: ScoreJson) -> list[MeasureFinding]:
         sum(DURATION_BEATS[note.duration] for note in measure.notes)
         for measure in score.measures
     ]
+    ties_by_measure: dict[int, list[BrokenTie]] = {}
+    for tie in broken_ties(score.measures):
+        ties_by_measure.setdefault(tie.measure_number, []).append(tie)
+
     stated = beats_per_measure(score.time_signature)
     inferred = None
     if stated is None:
@@ -372,6 +392,7 @@ def validate_measures(score: ScoreJson) -> list[MeasureFinding]:
                 actual_beats=actual,
                 note_count=count,
                 meter_inferred=from_music,
+                broken_ties=tuple(ties_by_measure.get(measure.measure_number, ())),
             )
         )
     return findings
@@ -405,13 +426,30 @@ def describe_for_retry(findings: list[MeasureFinding]) -> str:
     bad = [f for f in findings if f.is_problem]
     if not bad:
         return ""
+
     lines = [f.describe() for f in bad]
-    return (
-        "Your previous transcription does not add up. In these measures the "
-        "note durations do not sum to the time signature:\n"
-        + "\n".join(f"  - {line}" for line in lines)
-        + "\n\nRe-read only those measures against the image and correct the "
-        "durations. If a passage is a triplet or other tuplet, say so in "
-        "notes_to_human and leave your best approximation — "
-        f"{TUPLET_NOTE}."
-    )
+    # Two different faults reach here now, and the instruction has to match the
+    # one the model is being shown. Telling it the durations do not sum, when
+    # what is wrong is a tie between two pitches, aims the re-read at the wrong
+    # thing entirely.
+    sums = [f for f in bad if f.verdict in {"short", "long", "empty"}]
+    ties = [f for f in bad if f.broken_ties]
+
+    header = "Your previous transcription has measures that cannot be right:"
+    body = "\n".join(f"  - {line}" for line in lines)
+
+    instructions = ["\n\nRe-read only those measures against the image."]
+    if sums:
+        instructions.append(
+            " Correct the durations. If a passage is a triplet or other tuplet, "
+            "say so in notes_to_human and leave your best approximation — "
+            f"{TUPLET_NOTE}."
+        )
+    if ties:
+        instructions.append(
+            " Where a curve joins two *different* pitches it is a slur, not a "
+            "tie: record it in `slurs` and set tied_to_next false. Only set "
+            "tied_to_next when the same pitch is written twice and held as one "
+            "sound."
+        )
+    return header + "\n" + body + "".join(instructions)

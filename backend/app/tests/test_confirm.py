@@ -67,8 +67,14 @@ def test_the_model_is_told_which_measures_do_not_add_up() -> None:
     broken = _score([[("C3", "quarter")] * 7])
     stub = _Stub(_score([FOUR]))
     retry_with_arithmetic(broken, b"img", media_type="image/png", provider=stub)
-    assert "does not add up" in stub.note
-    assert "1" in stub.note, "the offending measure has to be named"
+
+    # The substance, not the wording: which measure, what is wrong with it, and
+    # what to do about it. (This asserted the literal phrase "does not add up",
+    # which stopped being accurate once broken ties could reach the same
+    # prompt — the durations in a tie-only fault sum perfectly.)
+    assert "measure 1" in stub.note, "the offending measure has to be named"
+    assert "7 beats" in stub.note and "expected 4" in stub.note
+    assert "Correct the durations" in stub.note
 
 
 def test_a_reading_that_already_adds_up_is_not_re_read() -> None:
