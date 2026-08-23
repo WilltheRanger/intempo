@@ -6,6 +6,81 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-01 (later) — The other end of the take, and why the search had to be a grid
+
+**Branch:** `main`. `/loop` iteration, continuing the sweep the last entry
+started: play the score perfectly, vary one thing a real musician does, read
+the verdict.
+
+Four scenarios probed. **Two are already correct and stay untouched:** a repeat
+the musician didn't take drops quality to 0.494 — below `warn_quality`, above
+`broken_quality` — with the verdict still accurately "steady", which is exactly
+right; and a take stopped part-way degrades in proportion (24/24 → 0.988,
+16/24 → 0.660, 8/24 → refused) with the verdict staying accurate throughout.
+Both are the metric working.
+
+**The third is a bug, symmetric to the last one.** A sound *after* the last
+note maps to the last written note, and its residual is the whole distance
+between them:
+
+    noise 0.6 s after     0.988 → 0.766
+    noise 1.2 s after     0.988 → 0.539
+    noise 2.5 s after     0.988 → 0.029
+
+`warn_quality` is 0.7. A perfect take was one bow-down away from "results may
+be inaccurate", and two from being refused outright. All three are back to
+**0.988** with 0.0% mean delta.
+
+**Why the search is a grid, and this is the part worth remembering.** The
+obvious extension was greedy — search the front as before, then the back. That
+is wrong, and the earlier numbers had already shown it without my noticing:
+end-to-end, the 2.5 s-after case scored 0.706 while a raw alignment of the same
+onsets scored 0.029. The front search was firing to compensate for a problem at
+the *back*, because trimming either end shortens the sequence and both raise
+the score. It was throwing away a real first note — which moves the origin and
+rewrites every delta — to paper over a stray sound at the other end.
+
+Searched jointly, the correct cell simply scores higher and the trade cannot be
+made. There is a test that asserts precisely this (`trimmed_lead == 0` when the
+only noise is trailing).
+
+The cost argument is not close. Measured on a 128-note page:
+
+    onset detection      1278 ms
+    one alignment          10 ms
+    the whole 16-cell grid 17 ms
+
+The ordering artifact costs more than exhaustive search does.
+
+`align_from_first_note` is now `align_take` and reports `trimmed_lead` /
+`trimmed_tail`; ties among equal-scoring cells break toward trimming the
+**tail**, because a wrongly discarded last note only loses a note while a
+wrongly discarded first note rewrites the verdict.
+
+**All six corpus fixtures remain bit-identical** — diffed against the same
+baseline as the previous entry, on status, quality, note count, missed, extra,
+summed delta and full verdict text.
+
+**One thing I checked and did not change.** Playing at a tempo other than the
+score's target reads as rushing or dragging by a large margin (48 BPM against a
+60 target → +87.7% of a beat, "you dragged"). That is not a bug — the musician
+set the target, and playing under it *is* dragging. Noted here so the next
+sweep doesn't re-investigate it.
+
+**No three-foot test.** No UI touched.
+
+**Tests:** backend 572 (was 566; +6, and `test_leading_noise.py` renamed to
+`test_take_edges.py`). Mutation-checked both halves: with the tail search
+disabled 4 fail, with the lead search disabled 5 fail. `ruff` clean.
+
+**Known side effects:** as before, `analyze()` may report fewer detected onsets
+than the detector found. The discarded edges were not notes.
+
+**Rollback:** revert the commit. `to_timeline_base` and `align_dtw` are
+untouched.
+
+---
+
 ## 2026-09-01 — The sound before the first note was writing the verdict
 
 **Branch:** `main`. `/loop` iteration. Came out of the bass measurements: those

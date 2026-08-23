@@ -21,7 +21,7 @@ from pydantic import BaseModel, Field
 
 from app.services import audio as audio_svc
 from app.services.alignment import (
-    align_from_first_note,
+    align_take,
     AlignmentResult,
     apply_fuzzy_match,
     build_timeline,
@@ -237,10 +237,9 @@ def analyze(
     # perfect take with a five-second lead-in aligns at 0.053 and the musician
     # is told to check they are on the right piece. Without the second, a bow
     # settling on the string before the first note becomes the downbeat, and
-    # the same perfect take is told it dragged.
-    anchored = align_from_first_note(
-        onsets, expected, target_bpm=target_bpm, config=cfg
-    )
+    # the same perfect take is told it dragged; without it at the other end, a
+    # bow going down afterwards costs enough confidence to trigger a caveat.
+    anchored = align_take(onsets, expected, target_bpm=target_bpm, config=cfg)
     onsets = anchored.onsets
     raw = anchored.alignment
     if is_alignment_broken(raw.quality, config=cfg):

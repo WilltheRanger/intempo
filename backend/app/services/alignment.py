@@ -396,98 +396,127 @@ def to_timeline_base(detected: np.ndarray) -> np.ndarray:
     return detected - detected[0]
 
 
-#: How many leading detections may be discarded as pre-play noise.
+#: How many detections may be discarded from each end of a take as noise.
 #:
-#: Three covers the realistic cases — a bow settling, a chair, a page turn —
-#: without letting the search eat into a short take. It is a ceiling, not a
-#: target: `align_from_first_note` prefers trimming nothing and has to be paid
-#: to do otherwise.
-MAX_LEADING_TRIM = 3
+#: Three at each end covers the realistic cases — a bow settling, a chair, a
+#: page, putting the instrument down — without letting the search eat into a
+#: short take. It is a ceiling, not a target: `align_take` prefers discarding
+#: nothing and has to be paid to do otherwise.
+MAX_EDGE_TRIM = 3
 
 #: How much better a trimmed alignment must score before its trim is accepted.
 #:
 #: Trimming can only ever make the matching problem smaller, so a threshold of
 #: zero would discard a real note for a rounding difference. A tenth of the
-#: quality scale is far above the noise and far below the gap this actually
-#: repairs — the failures measured were 0.100 → 0.991.
+#: quality scale is far above the noise and far below the gaps this repairs —
+#: the failures measured ran 0.029 → 0.988.
 MIN_TRIM_GAIN = 0.1
 
 
 @dataclass
 class AnchoredAlignment:
-    """An alignment plus the onset sequence it was computed against."""
+    """An alignment plus the onset sequence it was actually computed against."""
 
     onsets: np.ndarray
     #: Leading detections discarded as pre-play noise.
-    trimmed: int
+    trimmed_lead: int
+    #: Trailing detections discarded as post-play noise.
+    trimmed_tail: int
     alignment: "AlignmentResult"
 
 
-def align_from_first_note(
+def align_take(
     detected: np.ndarray,
     expected: np.ndarray,
     *,
     target_bpm: float = 120.0,
     config: AudioConfig | None = None,
 ) -> AnchoredAlignment:
-    """Align, having first worked out which detection is the *first note*.
+    """Align, having first worked out which detections are the *take*.
 
-    `to_timeline_base` has to pick an origin before anything is matched, and
-    the only one available is the earliest detection. Its docstring claimed a
-    spurious lead "does not reach the verdict". Measured, on a take of eight
-    quarters played exactly on the grid at 60 BPM with one bow-settling scrape
-    added before the first note:
+    A recording is bracketed by sound that is not playing: a bow settling on
+    the string, a chair, a page, the instrument going down at the end. Both
+    ends did damage, and for different reasons.
 
-        scrape 0.5 s before   quality 0.486   "You rushed by 28 BPM"
-        scrape 1.0 s before   quality 0.604   "Steady tempo"
-        scrape 2.0 s before   quality 0.100   "check you're on the right piece"
+    **The front end moved the origin.** `to_timeline_base` has to pick one
+    before anything is matched, and the only candidate is the earliest
+    detection. On eight quarters played exactly on the grid at 60 BPM, one
+    quiet scrape before them:
 
-    Three different answers for one perfect take, and the first two are stated
-    with confidence. Setting the bow on the string before playing is not an
-    edge case; it is what every recording begins with.
+        0.5 s before   quality 0.486   "You rushed by 28 BPM"
+        1.0 s before   quality 0.604   "Steady tempo"
+        2.0 s before   quality 0.100   "check you're on the right piece"
 
-    So the origin is chosen by evidence instead of by position: align once per
-    candidate first note and keep the best. The metric already makes this safe
-    to do — `quality` is `timing_quality * coverage`, and coverage counts
+    **The back end cost confidence.** A trailing detection maps to the last
+    written note, and its residual is the whole distance between them:
+
+        0.6 s after    0.988 → 0.766
+        1.2 s after    0.988 → 0.539
+        2.5 s after    0.988 → 0.029
+
+    `warn_quality` is 0.7, so a perfect take was one stray sound away from
+    "results may be inaccurate", and two from being refused outright.
+
+    So both ends are chosen by evidence instead of by position: align once per
+    (lead, tail) candidate and keep the best. What makes that safe rather than
+    a licence to discard inconvenient data is that the metric already penalises
+    it — `quality` is `timing_quality * coverage`, and coverage counts
     *expected* notes, so discarding a real note costs coverage while discarding
-    noise costs nothing. Over-trimming is penalised by the same number that
-    rewards trimming correctly.
+    noise costs nothing. Measured on a clean take, each note trimmed costs
+    about 0.12; the same number that rewards trimming correctly punishes
+    trimming too much.
 
-    Trimming nothing wins ties, and wins anything closer than `MIN_TRIM_GAIN`.
+    **Searched jointly, not one end and then the other.** Greedy front-first
+    was tried and is wrong: with a stray sound only at the *end*, trimming the
+    front also raises the score, so the search threw away a real first note to
+    compensate for a problem at the other end. The grid is 16 alignments of
+    10 ms against onset detection's 1300 ms — the ordering artifact costs more
+    than the exhaustive search does.
     """
     detected = np.asarray(detected, dtype=float)
     base = to_timeline_base(detected)
     untrimmed = AnchoredAlignment(
         onsets=base,
-        trimmed=0,
+        trimmed_lead=0,
+        trimmed_tail=0,
         alignment=align_dtw(base, expected, target_bpm=target_bpm, config=config),
     )
-    if detected.size < 2 or expected.size == 0:
+    if detected.size < 3 or expected.size == 0:
         return untrimmed
 
     # Never search so far that the take itself disappears. Two onsets is the
     # least that can express an interval, which is the least DTW can score.
-    limit = min(MAX_LEADING_TRIM, detected.size - 2)
+    room = detected.size - 2
     candidates = [untrimmed]
-    for trim in range(1, limit + 1):
-        onsets = to_timeline_base(detected[trim:])
-        candidates.append(
-            AnchoredAlignment(
-                onsets=onsets,
-                trimmed=trim,
-                alignment=align_dtw(
-                    onsets, expected, target_bpm=target_bpm, config=config
-                ),
+    for lead in range(min(MAX_EDGE_TRIM, room) + 1):
+        for tail in range(min(MAX_EDGE_TRIM, room - lead) + 1):
+            if lead == 0 and tail == 0:
+                continue
+            kept = detected[lead : detected.size - tail]
+            onsets = to_timeline_base(kept)
+            candidates.append(
+                AnchoredAlignment(
+                    onsets=onsets,
+                    trimmed_lead=lead,
+                    trimmed_tail=tail,
+                    alignment=align_dtw(
+                        onsets, expected, target_bpm=target_bpm, config=config
+                    ),
+                )
             )
-        )
 
     best = max(c.alignment.quality for c in candidates)
     if best <= untrimmed.alignment.quality + MIN_TRIM_GAIN:
         return untrimmed
-    # The *smallest* trim that reaches the best score, not the largest. Two
-    # candidates can tie once the noise is gone, and the shorter one keeps a
-    # note the longer one would have thrown away.
-    return next(c for c in candidates if c.alignment.quality >= best - 1e-9)
+
+    # Among the candidates that reach the best score, take the one that throws
+    # away least — and break the remaining ties toward the *tail*, because a
+    # wrongly discarded first note moves the origin and rewrites every delta,
+    # while a wrongly discarded last note only loses a note.
+    return min(
+        (c for c in candidates if c.alignment.quality >= best - 1e-9),
+        key=lambda c: (c.trimmed_lead + c.trimmed_tail, c.trimmed_lead),
+    )
 
 
 def align_dtw(
