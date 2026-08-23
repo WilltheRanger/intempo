@@ -6,6 +6,86 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-25 (night) — Forty people could scan at once, and nothing stopped them
+
+**Branch:** `main`. Owner: "so the limit is 512 MB per run right — if multiple
+people are running would it work?"
+
+**No, and it was worse than the question assumed.** 512 MB is the *instance*,
+not the run, and nothing bounded how many runs there were.
+
+### What was reachable
+
+`BackgroundTasks` runs sync work in Starlette's threadpool, which holds **40
+threads**. So forty simultaneous scans was a reachable state, not a
+hypothetical one:
+
+| | per scan | ×40 |
+|---|---|---|
+| vision path in-flight | ~81 MB | 3.2 GB |
+| Audiveris run | ~328 MB | 13 GB |
+
+The 81 MB is mostly Pillow decode buffers — a 12 MP photograph is ~36 MB as RGB
+before anything copies it. Measured, not estimated.
+
+And an OOM kill takes the **whole process** down — every other musician's scan
+with it — not just the one that asked for too much. So this was not "the second
+scan is slow", it was "the second scan kills the server".
+
+### Bounded, and honestly
+
+| setting | default | sized by |
+|---|---|---|
+| `TRANSCRIPTION_MAX_CONCURRENT` | 2 | ~81 MB per in-flight scan |
+| `OMR_MAX_CONCURRENT` | 1 | ~328 MB per engine run |
+| `OMR_QUEUE_TIMEOUT_S` | 120 | how long to wait before answering without the engine |
+
+A scan waiting for a slot **stays `queued`** — which is not a euphemism, it is
+queued, and the screen already had words for that state. Better than a progress
+bar that has not moved.
+
+A scan that waits out the engine timeout loses the second opinion and nothing
+else: the vision chain answers alone, exactly as on every install with no
+engine. Blocking indefinitely would instead hold one of forty threadpool
+threads behind a queue that might never drain.
+
+### What it does to the plan answer
+
+Worst case on one instance is now one engine run plus one other scan decoding:
+328 + 81 + ~150 baseline ≈ **560 MB**.
+
+Per-system reading took the *single-scan* peak from 512 MB to 328 MB, which is
+real — but it does not make 512 MB safe once more than one person uses it.
+Forcing `TRANSCRIPTION_MAX_CONCURRENT=1` would technically fit and would mean
+the second musician waits out the first, about half a minute per page, with no
+margin if either number is off on a smaller container.
+
+**So OMR wants 2 GB.** Yesterday's answer was "2 GB"; today's is the same
+number arrived at for a better reason. Without the engine, the same limits make
+512 MB comfortable — two scans at 81 MB is 162 MB over baseline.
+
+### Tests
+
+`test_concurrency_limits.py` runs **forty real threads** at the worker and
+asserts the peak inside never exceeds the limit — without the semaphore it
+peaks at the number of threads offered. Plus: every queued page still gets
+read (a limit that dropped work would be worse than no limit), and a permit is
+returned when a page *fails* — a leaked permit is a server that quietly stops
+reading pages and looks exactly like a busy queue.
+
+### Honest status
+
+- **451 tests pass with the engine on PATH; 447 pass, 4 skipped, without it.**
+  Ruff clean.
+- The per-scan figures are from this machine, unloaded. A 512 MB container
+  under pressure will differ, and the defaults are set to be wrong in the safe
+  direction.
+- The limits are **per process**. Two Render instances have two sets, which is
+  correct — memory is per instance — but it does mean scaling out multiplies
+  the total, and nothing here coordinates across instances.
+
+---
+
 ## 2026-08-25 (later still) — Cutting the page up halves the memory
 
 **Branch:** `main`. Owner: "is there no way to optimize this — what if we cut

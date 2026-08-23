@@ -44,6 +44,7 @@ from __future__ import annotations
 import logging
 import shlex
 import shutil
+import threading
 import subprocess
 import tempfile
 import time
@@ -57,6 +58,18 @@ from app.services.ocr.musicxml import MusicXMLError, score_json_from_musicxml
 from app.services.page_image import split_systems
 
 log = logging.getLogger("intempo.omr")
+
+#: Only so many engine runs at once, process-wide.
+#:
+#: Audiveris peaks at ~328 MB on a page read system by system. Two at once is
+#: 656 MB, and an OOM kill takes the **whole instance** down rather than the
+#: scan that caused it — so an unbounded engine is the difference between a
+#: slow scan and a dead server. `BackgroundTasks` runs on a 40-thread pool, so
+#: forty simultaneous scans is a reachable state, not a hypothetical one.
+#:
+#: A module-level semaphore, which is per-process and therefore per-instance —
+#: which is the right scope, because memory is per-instance too.
+_engine_slots = threading.BoundedSemaphore(max(1, settings.OMR_MAX_CONCURRENT))
 
 # oemer takes minutes on a full page — it runs two segmentation networks and
 # then a deterministic reconstruction pass. The default is generous because the
@@ -171,6 +184,25 @@ class OMRProvider:
     def _parse_one(self, image_bytes: bytes, mime_type: str = "image/jpeg") -> OCRResponse:
         command = self._resolve_command()
         started = time.perf_counter()
+
+        # Wait for a slot, but not forever. Giving up here costs the second
+        # opinion and nothing else: the caller logs it and the vision chain
+        # answers alone, which is exactly what happens on every install with no
+        # engine at all. Blocking indefinitely would instead hold a threadpool
+        # thread — one of forty — behind a queue that may never drain.
+        if not _engine_slots.acquire(timeout=settings.OMR_QUEUE_TIMEOUT_S):
+            raise OCRProviderError(
+                f"{self.name}: the engine was busy for "
+                f"{settings.OMR_QUEUE_TIMEOUT_S:.0f}s; skipping the second opinion"
+            )
+        try:
+            return self._run(command, image_bytes, mime_type, started)
+        finally:
+            _engine_slots.release()
+
+    def _run(
+        self, command: str, image_bytes: bytes, mime_type: str, started: float
+    ) -> OCRResponse:
 
         with tempfile.TemporaryDirectory(prefix="intempo-omr-") as workdir:
             work = Path(workdir)
