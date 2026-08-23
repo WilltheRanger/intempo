@@ -93,21 +93,36 @@ export function readingNotesFor(score: ScoreJson): ReadingNotes {
  */
 const NAMED_LIMIT = 6;
 
-export function describeProblemMeasures(measures: number[]): string | null {
+export function describeProblemMeasures(
+  measures: number[],
+  /**
+   * Whether the musician still has the page to compare against.
+   *
+   * False once the transcription has been accepted and the photograph
+   * discarded. The bars still don't add up — that is a fact about the score
+   * and it still skews the verdict — but "check it against your copy" has
+   * stopped being something they can act on, and advice you cannot follow is
+   * worse than none.
+   */
+  { canCheck = true }: { canCheck?: boolean } = {},
+): string | null {
   if (measures.length === 0) {
     return null;
   }
   if (measures.length > NAMED_LIMIT) {
-    return `${measures.length} bars don't add up to the time signature. This page may need re-photographing.`;
+    return canCheck
+      ? `${measures.length} bars don't add up to the time signature. This page may need re-photographing.`
+      : `${measures.length} bars don't add up to the time signature, so timing after them may be off.`;
   }
   const list =
     measures.length === 1
       ? `Bar ${measures[0]}`
       : `Bars ${measures.slice(0, -1).join(', ')} and ${measures[measures.length - 1]}`;
   const verb = measures.length === 1 ? "doesn't" : "don't";
-  return `${list} ${verb} add up to the time signature — check ${
-    measures.length === 1 ? 'it' : 'them'
-  } against your copy.`;
+  const tail = canCheck
+    ? ` — check ${measures.length === 1 ? 'it' : 'them'} against your copy.`
+    : ', so timing after that point may be off.';
+  return `${list} ${verb} add up to the time signature${tail}`;
 }
 
 /**

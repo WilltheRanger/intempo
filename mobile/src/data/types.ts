@@ -160,6 +160,10 @@ export interface ScoreResponse {
   transcription_stage: string | null;
   /** Why the reading failed, if it did. Null at every other time. */
   transcription_error: string | null;
+  /** When the musician confirmed the reading is right. Null until they do. */
+  transcription_accepted_at: string | null;
+  /** When the photograph was deleted. Null while it is still in storage. */
+  page_image_discarded_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -319,6 +323,21 @@ export interface Piece {
   transcriptionStage: string | null;
   /** Why reading the page failed. Null unless `transcriptionStatus` is `failed`. */
   transcriptionError: string | null;
+  /**
+   * Whether the musician has confirmed this reading against the page.
+   *
+   * Once they have, the caveats stop asking them to — they did — and the
+   * photograph is gone, so there is nothing left to check against anyway.
+   */
+  transcriptionAccepted: boolean;
+  /**
+   * Whether the photograph was discarded after acceptance.
+   *
+   * Distinct from simply having no image: a piece typed in by hand never had
+   * one, and telling a musician their scanned piece "was entered by hand"
+   * would be a small lie with no upside.
+   */
+  pageImageDiscarded: boolean;
 }
 
 /**

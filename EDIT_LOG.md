@@ -6,6 +6,94 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-24 (evening) — The photograph is spent once someone has checked it
+
+**Branch:** `main`. Owner: "once we transcribe the piece why don't we save the
+transcribed piece as a different file and discard the image" — and, when asked,
+"go with [delete entirely] but it should only be after the person accepts the
+transcription."
+
+### The gate is the whole design
+
+A page arrives as several megabytes of JPEG and leaves as a few kilobytes of
+`score_json`. Once the reading has been checked, the photograph's one remaining
+purpose is over.
+
+**Discarding on a successful OCR run would be discarding on the pipeline's own
+say-so, and the pipeline is the thing the photograph exists to check.**
+`ocr_confidence` is a model marking its own homework — the bake-off had one
+provider at 0.90 and another at 0.32 on the same page — and beat sums catch
+arithmetic, not wrong notes. Neither substitutes for a musician reading the
+stave against the page. So the delete is the consequence of an explicit
+acceptance and of nothing else.
+
+`POST /v1/scores/:id/accept` refuses in both states where it would destroy
+something still needed: a reading in flight has nothing to accept, and a failed
+one needs its photograph *precisely because* there is no transcription to
+replace it with.
+
+### Two columns, because they are two events
+
+`transcription_accepted_at` is the musician's decision.
+`page_image_discarded_at` is the consequence — and storage can refuse. One
+column could not tell accepted-but-still-there from finished, and would have
+the app claiming a file was deleted that was still sitting in the bucket. The
+object is then still there to remove on a later attempt.
+
+`source_image_url` is nulled together with the discard timestamp and never
+apart: a row still naming a deleted object would sign download URLs for a file
+that 404s, which reads to the app as broken signing rather than a missing
+photograph. Nothing else needed changing — migration 004 already made the
+column nullable and every reader already copes.
+
+### What the screen says
+
+"Looks right", last on the screen and therefore nearest the thumb (§3 law 7),
+and last in reading order too — which is where a decision belongs that only
+makes sense after looking at everything above it. Under it, in small type:
+*Confirms the reading and deletes the photograph it came from, which is most of
+what this piece takes up.*
+
+The confirmation names **what survives** as well as what goes — "The
+transcription stays in your library" — because someone who thinks they are
+deleting the piece will cancel a thing they actually wanted.
+
+Two lines change once accepted. The confidence note disappears: its entire
+content was "worth checking before you record", and they have. And the
+bars-don't-add-up line drops "check it against your copy", which has stopped
+being something anyone can do — the bars still don't add up, and that still
+skews a verdict, but advice you cannot follow is worse than none.
+
+A piece whose photograph was discarded says so, so the missing Original toggle
+reads as a consequence rather than a fault. That is also why
+`page_image_discarded_at` exists rather than inferring from a null image: a
+piece typed in by hand never had one, and telling a musician their scanned
+piece "was entered by hand" would be a small lie with no upside.
+
+### Also this session
+
+The owner reported sign-in broken and the site not displaying. **Neither was a
+code fault** — it was mid-deploy, and it resolved on its own. Worth recording
+what the investigation established, since none of it was wasted: the build at
+HEAD boots cleanly with live config; Supabase had recorded a successful
+password sign-in at 04:07; and the boot watchdog in `public/index.html` does
+fire — with the bundle deleted it prints "The app bundle failed to load" and
+the URL, so a stale `index.html` can never present as a blank page.
+
+### Honest status
+
+- **392 backend tests pass, 3 skipped; ruff clean; `tsc --noEmit` clean.**
+- Migration 007 applied to `intempo-dev`.
+- Accept, the confirmation, and the accepted state are all screenshotted
+  against the fixture build. The **`canCheck: false` wording** of the
+  bars-don't-add-up line is typechecked but was not screenshotted — it needs a
+  piece that is both accepted and has a bad bar, which no fixture is.
+- The delete itself has **never run against real storage** from here. The
+  endpoint's storage call is covered by a mock; whether Supabase's `remove()`
+  behaves as expected on a live bucket is unverified.
+
+---
+
 ## 2026-08-24 (later) — "Load failed" was the upload, not the backend
 
 **Branch:** `main`. Owner reported it a third time, after the async rework was

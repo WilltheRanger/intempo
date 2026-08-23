@@ -15,7 +15,9 @@ import {
   SegmentedControl,
   Text,
 } from '../../components/primitives';
-import { usePiece } from '../../data/hooks/usePieces';
+import { ConfirmDialog } from '../../components/overlays/ConfirmDialog';
+import { PrimaryButton } from '../../components/primitives';
+import { useAcceptTranscription, usePiece } from '../../data/hooks/usePieces';
 import { spacing } from '../../design';
 import { describeOmissions, staveScoreFor } from '../../lib/notation/fromScore';
 import {
@@ -89,6 +91,10 @@ export function PieceScoreScreen() {
   const navigation = useNavigation<RootNavigation>();
   const { params } = useRoute<RouteProp<RootStackParamList, 'PieceScore'>>();
   const { data: piece, isPending, isError } = usePiece(params.pieceId);
+
+  const accept = useAcceptTranscription(params.pieceId);
+  const [confirmingAccept, setConfirmingAccept] = useState(false);
+  const [acceptError, setAcceptError] = useState<string | null>(null);
 
   const [view, setView] = useState<ScoreView>(params.view ?? 'notation');
   // The engraver needs a pixel width to wrap against, and only layout knows it.
@@ -295,9 +301,10 @@ export function PieceScoreScreen() {
             an alert, and boxing them would make the caveats louder than the
             music (§3 laws 3 and 6).
           */}
-          {reading && describeProblemMeasures(reading.problemMeasures) ? (
+          {reading &&
+          describeProblemMeasures(reading.problemMeasures, { canCheck: hasPages }) ? (
             <Text variant="metadataSmall" color="textSecondary" style={styles.caveat}>
-              {describeProblemMeasures(reading.problemMeasures)}
+              {describeProblemMeasures(reading.problemMeasures, { canCheck: hasPages })}
             </Text>
           ) : null}
 
@@ -311,7 +318,7 @@ export function PieceScoreScreen() {
             </Text>
           ) : null}
 
-          {reading && describeConfidence(reading.confidence) ? (
+          {reading && !piece.transcriptionAccepted && describeConfidence(reading.confidence) ? (
             <Text variant="metadataSmall" color="textSecondary" style={styles.caveat}>
               {describeConfidence(reading.confidence)}
             </Text>
@@ -328,6 +335,73 @@ export function PieceScoreScreen() {
       {showing === 'original' && hasPages ? (
         <ScoreThumbnail source={piece.thumbnail} style={styles.page} />
       ) : null}
+
+      {/*
+        Says which kind of "no photograph" this is. A piece typed in by hand
+        never had one; this one had one and it was spent. Without the line the
+        missing Original toggle reads as something broken.
+      */}
+      {piece.pageImageDiscarded ? (
+        <Text variant="metadataSmall" color="textTertiary" style={styles.caveat}>
+          You accepted this reading, so the photograph it came from was
+          discarded.
+        </Text>
+      ) : null}
+
+      {/*
+        The accept action, last on the screen and therefore nearest the thumb
+        (§3 law 7) — and last in reading order too, which is the right place
+        for a decision that only makes sense after looking at everything above
+        it.
+
+        Absent unless there is something to accept: a reading still in flight
+        has no notation yet, and a failed one needs its photograph precisely
+        because there is no transcription to replace it with. The backend
+        refuses both as well; this is so the control never appears in a state
+        where tapping it would be a mistake.
+      */}
+      {hasNotation && !piece.transcriptionAccepted ? (
+        <View style={styles.accept}>
+          <PrimaryButton
+            label="Looks right"
+            onPress={() => setConfirmingAccept(true)}
+            loading={accept.isPending}
+            disabled={accept.isPending}
+          />
+          <Text variant="metadataSmall" color="textTertiary" style={styles.acceptNote}>
+            Confirms the reading and deletes the photograph it came from, which
+            is most of what this piece takes up.
+          </Text>
+          {acceptError ? (
+            <Text variant="metadataSmall" color="textSecondary" style={styles.caveat}>
+              {acceptError}
+            </Text>
+          ) : null}
+        </View>
+      ) : null}
+
+      <ConfirmDialog
+        visible={confirmingAccept}
+        title="Delete the photograph?"
+        // The consequence, not the verb. Naming what survives matters as much
+        // as naming what goes: someone who thinks they are deleting the piece
+        // will cancel a thing they actually wanted.
+        message={`The transcription stays in your library. The photograph of the page is deleted and cannot be recovered — so check the notation above first.`}
+        confirmLabel="Delete photograph"
+        onConfirm={() => {
+          setConfirmingAccept(false);
+          setAcceptError(null);
+          accept.mutate(undefined, {
+            onError: (cause) =>
+              setAcceptError(
+                cause instanceof Error
+                  ? cause.message
+                  : 'That could not be saved. Try again.',
+              ),
+          });
+        }}
+        onCancel={() => setConfirmingAccept(false)}
+      />
     </ScreenContainer>
   );
 }
@@ -355,5 +429,11 @@ const styles = StyleSheet.create({
   listen: {
     marginTop: spacing.xl,
     alignSelf: 'flex-start',
+  },
+  accept: {
+    marginTop: spacing['3xl'],
+  },
+  acceptNote: {
+    marginTop: spacing.md,
   },
 });

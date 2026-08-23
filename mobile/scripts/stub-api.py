@@ -130,6 +130,8 @@ def score_row(sid, title, composer, img, _):
         "shared_with_studio": None, "ocr_confidence": confidence,
         "transcription_status": "reading" if reading else "failed" if failed else "done",
         "transcription_stage": _reading_stage() if reading else None,
+        "transcription_accepted_at": None,
+        "page_image_discarded_at": None,
         "transcription_error": (
             "The notation could not be read from this photograph. "
             "A flatter, better-lit shot of the page usually fixes it."

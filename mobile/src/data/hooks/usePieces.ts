@@ -1,5 +1,7 @@
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
 
+import { acceptTranscription } from '../api/scores';
+import { IS_LIVE_BACKEND } from '../environment';
 import { pieceSource } from '../sources';
 import type { NewPiece, PieceEdit } from '../sources/types';
 import type { Piece } from '../types';
@@ -98,6 +100,36 @@ export function useDeletePiece() {
   const queryClient = useQueryClient();
   return useMutation<void, Error, string>({
     mutationFn: (id) => pieceSource.deletePiece(id),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: pieceKeys.all });
+    },
+  });
+}
+
+/**
+ * Confirms a transcription is right, which discards the photograph.
+ *
+ * Not on `PieceSource` like the other writes, and for the same reason
+ * `useTranscribePage` isn't: there is no fixture equivalent worth having. The
+ * sample build has no storage to delete from, and faking the deletion would
+ * make a destructive action look rehearsed in the one build where it does
+ * nothing.
+ *
+ * Invalidates rather than writing the result into the cache: the piece loses
+ * its image URL, and every screen showing a thumbnail of it has to hear about
+ * that from the server rather than from a hand-patched cache entry.
+ */
+export function useAcceptTranscription(id: string) {
+  const queryClient = useQueryClient();
+  return useMutation<void, Error, void>({
+    mutationFn: async () => {
+      if (!IS_LIVE_BACKEND) {
+        throw new Error(
+          'Accepting a transcription needs the backend. This build runs on sample data.',
+        );
+      }
+      await acceptTranscription(id);
+    },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: pieceKeys.all });
     },
