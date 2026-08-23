@@ -1,8 +1,15 @@
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
 
-import { acceptTranscription, retranscribeScore, updateScore } from '../api/scores';
+import {
+  acceptTranscription,
+  importScore,
+  retranscribeScore,
+  updateScore,
+  type ImportScoreInput,
+} from '../api/scores';
 import { IS_LIVE_BACKEND } from '../environment';
 import { pieceSource } from '../sources';
+import { toPiece } from '../sources/api';
 import type { NewPiece, PieceEdit } from '../sources/types';
 import type { Piece, ScoreJson } from '../types';
 
@@ -184,6 +191,35 @@ export function useRetranscribe(id: string) {
         );
       }
       await retranscribeScore(id);
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: pieceKeys.all });
+    },
+  });
+}
+
+/**
+ * Brings in a piece from a notation file.
+ *
+ * Not on `PieceSource` like the other writes, for the reason the other
+ * server-only mutations aren't: the sample build has no backend to parse XML,
+ * and a fixture that returned a piece the file never described would make the
+ * one route whose selling point is *exactness* the one route that invents
+ * things.
+ *
+ * Returns the piece rather than void — the caller navigates straight to it,
+ * and unlike the camera path there is no reading state to wait through.
+ */
+export function useImportPiece() {
+  const queryClient = useQueryClient();
+  return useMutation<Piece, Error, ImportScoreInput>({
+    mutationFn: async (input) => {
+      if (!IS_LIVE_BACKEND) {
+        throw new Error(
+          'Importing a file needs the backend. This build runs on sample data.',
+        );
+      }
+      return toPiece(await importScore(input));
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: pieceKeys.all });

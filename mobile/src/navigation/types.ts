@@ -2,8 +2,16 @@ import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import type { CompositeNavigationProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
-/** How a piece gets into the library. */
-export type AddPieceOption = 'scan' | 'import' | 'manual';
+/**
+ * How a piece gets into the library.
+ *
+ * `import` is photographs already in the camera roll; `notation` is a
+ * MusicXML file. They read alike as words and are not alike at all — one ends
+ * in a model reading a picture, the other in durations stated outright — so
+ * the sheet labels them by what the musician has in their hand rather than by
+ * the verb.
+ */
+export type AddPieceOption = 'scan' | 'import' | 'notation' | 'manual';
 
 export type RootStackParamList = {
   Tabs: undefined;

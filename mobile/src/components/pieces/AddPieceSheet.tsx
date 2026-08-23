@@ -1,4 +1,4 @@
-import { Camera, Images, PencilLine } from 'lucide-react-native';
+import { Camera, FileMusic, Images, PencilLine } from 'lucide-react-native';
 
 import { BottomSheet } from '../overlays/BottomSheet';
 import { SheetOptionRow } from '../overlays/SheetOptionRow';
@@ -24,6 +24,12 @@ const OPTIONS = [
     description: 'Choose existing images or a PDF.',
   },
   {
+    option: 'notation' as const,
+    icon: FileMusic,
+    label: 'Open a notation file',
+    description: 'MusicXML from MuseScore, Sibelius or Finale.',
+  },
+  {
     option: 'manual' as const,
     icon: PencilLine,
     label: 'Add manually',
@@ -32,7 +38,7 @@ const OPTIONS = [
 ];
 
 /**
- * The three ways a piece enters the library.
+ * The four ways a piece enters the library.
  *
  * Shared rather than the Library's own, because Today needs it too: a new
  * account lands on Today with nothing, and until this moved, the screen told
