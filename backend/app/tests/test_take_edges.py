@@ -1,13 +1,15 @@
-"""The sound a recording starts with, before the first note.
+"""The sound a recording is bracketed by, before the first note and after the last.
 
-Every take begins with something: a bow settling on the string, a chair, a
-breath, a page. `to_timeline_base` had to pick an origin before anything was
-matched, and the only one available was the earliest detection — so that sound
-became the downbeat.
+Every take begins and ends with something that is not playing: a bow settling
+on the string, a chair, a page, the instrument going down. Both ends did
+damage, for different reasons.
 
-Its docstring claimed the damage "does not reach the verdict". Measured on
-eight quarters played exactly on the grid at 60 BPM, it reached the verdict
-every time:
+**The front moved the origin.** `to_timeline_base` has to pick one before
+anything is matched, and the only candidate is the earliest detection. Its
+docstring claimed the damage "does not reach the verdict", reasoning that
+`compute_deltas` re-derives its origin from the first *matched* pair. Wrong:
+the spurious onset is what gets matched. On eight quarters played exactly on
+the grid at 60 BPM:
 
     scrape 0.5 s before   quality 0.486   "You rushed by 28 BPM"
     scrape 1.0 s before   quality 0.604   "Steady tempo"
@@ -16,6 +18,16 @@ every time:
 Three answers for one perfect take, two of them confident and wrong. A
 confident wrong verdict is the worst thing this app can produce — worse than
 refusing to answer, because the musician has no reason to doubt it.
+
+**The back cost confidence.** A trailing detection maps to the last written
+note, and its residual is the whole distance between them:
+
+    noise 0.6 s after     0.988 → 0.766
+    noise 1.2 s after     0.988 → 0.539
+    noise 2.5 s after     0.988 → 0.029
+
+`warn_quality` is 0.7, so a perfect take was one stray sound away from
+"results may be inaccurate" and two from being refused.
 """
 
 from __future__ import annotations
@@ -24,8 +36,8 @@ import numpy as np
 import pytest
 
 from app.services.alignment import (
-    MAX_LEADING_TRIM,
-    align_from_first_note,
+    MAX_EDGE_TRIM,
+    align_take,
     build_timeline,
 )
 from app.services.analysis import analyze
@@ -73,6 +85,49 @@ def _take(*, lead_in: float, scrapes_at: tuple[float, ...] = (), notes: int = 8)
         start = int(at * SR)
         end = min(start + noise.size, y.size)
         y[start:end] += noise[: end - start]
+    return np.clip(y, -1.0, 1.0).astype(np.float32)
+
+
+
+def _cfg():
+    from app.services.audio_config import load_audio_config
+
+    return load_audio_config()
+
+
+def _onsets_of(y: np.ndarray, timeline) -> np.ndarray:
+    """The onsets `analyze()` would detect for this waveform, filter included."""
+    from app.services import audio as audio_svc
+    from app.services.alignment import closest_expected_gap
+
+    cfg = _cfg()
+    return audio_svc.detect_onsets(
+        audio_svc.pre_emphasis(
+            audio_svc.high_pass(y, SR, cfg.onset.double_bass_highpass_hz), config=cfg
+        ),
+        SR,
+        double_bass=True,
+        config=cfg,
+        min_gap_s=closest_expected_gap(timeline.onsets),
+    )
+
+
+def _take_with_trailing(
+    *,
+    after_s: float,
+    notes: int = 8,
+    lead_in: float = 1.0,
+    scrapes_at: tuple[float, ...] = (),
+) -> np.ndarray:
+    """A take with a sound after the last note, and optionally before the first."""
+    y = _take(lead_in=lead_in, scrapes_at=scrapes_at, notes=notes)
+    noise = _scrape(seconds=0.06, amplitude=0.4, seed=4)
+    start = int((lead_in + (notes - 1) * SEC_PER_BEAT + after_s) * SR)
+    if start + noise.size > y.size:
+        y = np.concatenate(
+            [y, np.zeros(start + noise.size - y.size, dtype=np.float32)]
+        )
+    y[start : start + noise.size] += noise
     return np.clip(y, -1.0, 1.0).astype(np.float32)
 
 
@@ -129,10 +184,10 @@ def test_a_clean_take_is_left_exactly_alone() -> None:
         min_gap_s=closest_expected_gap(timeline.onsets),
     )
 
-    anchored = align_from_first_note(
+    anchored = align_take(
         onsets, timeline.onsets, target_bpm=BPM, config=cfg
     )
-    assert anchored.trimmed == 0, "a clean take had its opening note thrown away"
+    assert anchored.trimmed_lead == 0, "a clean take had its opening note thrown away"
 
 
 def test_the_wrong_piece_is_not_rescued_by_trimming() -> None:
@@ -164,25 +219,88 @@ def test_a_take_shorter_than_the_search_survives_it() -> None:
     onsets = np.array([0.5, 1.5, 2.5])
     timeline = build_timeline(_score(measures=1), BPM)
 
-    anchored = align_from_first_note(onsets, timeline.onsets, target_bpm=BPM)
+    anchored = align_take(onsets, timeline.onsets, target_bpm=BPM)
 
     assert anchored.onsets.size >= 2
-    assert anchored.trimmed <= MAX_LEADING_TRIM
+    assert anchored.trimmed_lead <= MAX_EDGE_TRIM
 
 
 def test_one_onset_is_returned_untouched() -> None:
     """`05_open_e_long` is a single sustained note. It has nothing to trim."""
     timeline = build_timeline(_score(measures=1), BPM)
 
-    anchored = align_from_first_note(
+    anchored = align_take(
         np.array([0.4]), timeline.onsets, target_bpm=BPM
     )
 
-    assert anchored.trimmed == 0
+    assert anchored.trimmed_lead == 0
     assert anchored.onsets.size == 1
 
 
 def test_no_onsets_at_all_does_not_raise() -> None:
-    anchored = align_from_first_note(np.array([]), np.array([0.0, 1.0]), target_bpm=BPM)
-    assert anchored.trimmed == 0
+    anchored = align_take(np.array([]), np.array([0.0, 1.0]), target_bpm=BPM)
+    assert anchored.trimmed_lead == 0
     assert anchored.onsets.size == 0
+
+
+@pytest.mark.parametrize("gap_s", [0.6, 1.2, 2.5])
+def test_putting_the_instrument_down_does_not_cost_confidence(gap_s: float) -> None:
+    """The take is over. What happens next is not part of it.
+
+    Below `warn_quality` (0.7) the screen tells the musician the numbers may be
+    inaccurate. Earning that caveat by setting the bow down was the pipeline
+    doubting itself for a reason that had nothing to do with the playing.
+    """
+    y = _take_with_trailing(after_s=gap_s)
+
+    result = analyze((y, SR), _score(), target_bpm=BPM, double_bass=True)
+
+    assert result.status == "ok"
+    assert result.low_confidence is False
+    assert result.quality > 0.9, f"quality {result.quality} — the noise is still in the take"
+
+
+def test_a_stray_sound_at_the_end_does_not_cost_the_first_note() -> None:
+    """Why the search is a grid and not one end and then the other.
+
+    Trimming the *front* also raises the score on a take whose only problem is
+    at the back — the sequence gets shorter either way. Greedy front-first
+    therefore threw away a real first note to compensate for a problem at the
+    other end, which moves the origin and rewrites every delta. The joint
+    search cannot make that trade because the correct cell scores higher.
+    """
+    y = _take_with_trailing(after_s=2.5)
+    timeline = build_timeline(_score(), BPM)
+    anchored = align_take(
+        _onsets_of(y, timeline), timeline.onsets, target_bpm=BPM, config=_cfg()
+    )
+
+    assert anchored.trimmed_lead == 0, "a real first note was discarded"
+    assert anchored.trimmed_tail == 1
+
+
+def test_noise_at_both_ends_is_trimmed_at_both_ends() -> None:
+    y = _take_with_trailing(after_s=1.5, scrapes_at=(1.0,), lead_in=3.0)
+
+    result = analyze((y, SR), _score(), target_bpm=BPM, double_bass=True)
+
+    assert result.status == "ok"
+    assert result.quality > 0.9
+    assert abs(float(np.mean([d.delta_pct for d in result.per_note]))) < 5.0
+
+
+def test_a_clean_take_keeps_its_last_note_too() -> None:
+    """The mirror of the opening guard, and it fails for the same reason.
+
+    On a clean take each note trimmed costs about 0.12 of quality — the metric
+    pays for itself here. This asserts the outcome rather than the mechanism,
+    because the mechanism is allowed to change.
+    """
+    y = _take(lead_in=1.0)
+    timeline = build_timeline(_score(), BPM)
+
+    anchored = align_take(
+        _onsets_of(y, timeline), timeline.onsets, target_bpm=BPM, config=_cfg()
+    )
+
+    assert (anchored.trimmed_lead, anchored.trimmed_tail) == (0, 0)
