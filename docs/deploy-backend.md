@@ -82,6 +82,5 @@ at runtime, so an existing build keeps whatever it was built with.
 ## 3. Adding the OMR second opinion (optional, later)
 
 Get the API up first. Then see `docs/deploy-omr.md` — it means rebuilding the
-image with `--build-arg WITH_AUDIVERIS=1`, which adds a JDK and a Gradle build.
 Until then the step is skipped automatically: one failed lookup on `PATH`, a log
 line, and the vision chain answers exactly as before.
