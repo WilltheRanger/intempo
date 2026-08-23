@@ -46,6 +46,10 @@ router = APIRouter(prefix="/scores", tags=["scores"])
 log = logging.getLogger("intempo.scores")
 
 
+def _now_iso() -> str:
+    return datetime.now(tz=timezone.utc).isoformat()
+
+
 class CreateScoreRequest(BaseModel):
     """A new piece, from a photograph or from typing.
 
@@ -132,6 +136,12 @@ class ScoreResponse(BaseModel):
     transcription_stage: str | None = None
     #: Why the reading failed, if it did. Null at every other time.
     transcription_error: str | None = None
+    #: When the musician confirmed the reading is right. Null until they do.
+    transcription_accepted_at: datetime | None = None
+    #: When the photograph was deleted from storage. Null while it is still
+    #: there — including for an accepted score whose delete failed, which is a
+    #: real state and not the same as a finished one.
+    page_image_discarded_at: datetime | None = None
     created_at: str
     updated_at: str
 
@@ -250,6 +260,8 @@ def _row_to_response(
         transcription_status=row.get("transcription_status") or "done",
         transcription_stage=row.get("transcription_stage"),
         transcription_error=row.get("transcription_error"),
+        transcription_accepted_at=row.get("transcription_accepted_at"),
+        page_image_discarded_at=row.get("page_image_discarded_at"),
         created_at=row["created_at"],
         updated_at=row["updated_at"],
     )
@@ -458,6 +470,98 @@ async def update_score(
     # the caller's freshly-updated piece lose its thumbnail until the next
     # list fetch.
     return _with_image_urls(rows)[0]
+
+
+@router.post("/{score_id}/accept", response_model=ScoreResponse)
+async def accept_transcription(
+    score_id: UUID,
+    user_id: UUID = Depends(current_user_id),
+) -> ScoreResponse:
+    """The musician says the reading is right, and the photograph is discarded.
+
+    **The delete is the consequence of a person looking, and of nothing else.**
+    Discarding on a successful OCR run would be discarding on the pipeline's own
+    say-so, and the pipeline is the thing the photograph exists to check —
+    `ocr_confidence` is a model marking its own homework, and beat sums catch
+    arithmetic rather than wrong notes. Neither substitutes for a musician
+    reading the stave against the page.
+
+    Irreversible, and refused in every state where it would destroy something
+    still needed: a reading still in flight has nothing to accept, and a failed
+    one needs its photograph precisely because there is no transcription to
+    replace it with.
+
+    Idempotent. Accepting twice is a double tap or a retried request, not an
+    error, and the second call finds the object already gone.
+    """
+    client = _service_client()
+    rows = (
+        client.table("scores")
+        .select("*")
+        .eq("id", str(score_id))
+        .eq("user_id", str(user_id))
+        .limit(1)
+        .execute()
+    ).data or []
+    if not rows:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="score not found")
+    row = rows[0]
+
+    state = row.get("transcription_status") or "done"
+    if state != "done":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "this page is still being read; there is nothing to accept yet"
+                if state in {"queued", "reading"}
+                else "this page could not be read, so its photograph is the only "
+                "record of it and is not discarded"
+            ),
+        )
+
+    patch: dict[str, Any] = {
+        "transcription_accepted_at": _now_iso(),
+        "updated_at": _now_iso(),
+    }
+
+    key = _object_key_from(row.get("source_image_url") or "")
+    if key is not None and _remove_object(client, key):
+        # Nulled together with the discard timestamp, never apart. A row that
+        # still names an object that has been deleted would sign download URLs
+        # for a file that 404s, which reads to the app as "signing is broken"
+        # rather than "the photograph is gone".
+        patch["source_image_url"] = None
+        patch["page_image_discarded_at"] = _now_iso()
+
+    updated = (
+        client.table("scores")
+        .update(patch)
+        .eq("id", str(score_id))
+        .eq("user_id", str(user_id))
+        .execute()
+    ).data or []
+    if not updated:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="failed to record the acceptance",
+        )
+    return _with_image_urls(updated)[0]
+
+
+def _remove_object(client, key: str) -> bool:
+    """Delete one object, reporting whether it actually went.
+
+    False rather than an exception when storage refuses. The acceptance is the
+    musician's decision and it stands either way; what must not happen is the
+    row claiming a file was discarded that is still sitting in the bucket. The
+    object is then still there to be discarded on a later attempt.
+    """
+    try:
+        client.storage.from_(SCORE_BUCKET).remove([key])
+    except Exception as exc:  # noqa: BLE001 — storage down, key gone, permissions
+        log.warning("could not discard %s after acceptance: %s", key, exc)
+        return False
+    return True
 
 
 @router.delete("/{score_id}", status_code=status.HTTP_204_NO_CONTENT)
