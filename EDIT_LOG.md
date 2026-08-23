@@ -6,6 +6,128 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-24 — Reading a page stops being a request you have to sit through
+
+**Branch:** `main`. Owner: "I think the pipeline gets stuck you need to add
+like that loading bar and what the transcribed music looks like and you can
+listen to it and what not." UI gate (§2): asked, and answered — async with real
+progress; land on the engraved score; add Listen; show what OCR wasn't sure
+about.
+
+### It was never stuck
+
+It was a request held open for as long as a vision model takes to read a page.
+Ten seconds on a good day, past a minute when the free-tier host has to wake up
+first. Every failure mode of that shape only shows on a phone: backgrounding
+the app kills the fetch, losing signal loses the *work* rather than just the
+answer, and throughout it there is a spinner that looks exactly like a hang.
+
+None of it is fixed by making OCR faster, because none of it is about speed.
+So `POST /v1/scores` now writes the row and returns — the piece is real,
+titled and openable immediately — and `workers/transcription_runner.py` fills
+the notes in. The same shape `/v1/analyses` has had since Batch 4.
+
+### The progress is measured, not animated
+
+`parse_sheet_music` takes an `on_stage` callback and calls it as each step
+*begins*. The worker writes what it hears into `scores.transcription_stage`,
+and the bar moves when a stage arrives and at no other time. Nothing creeps
+forward on a timer toward a number nothing is measuring — which is precisely
+what the mocked version of this flow used to do, page by page, while performing
+no work at all.
+
+Four steps, all real: Fetching the page · Finding the staves · Checking the
+reading · Reading the notation. The middle two only happen when an OMR engine
+is installed, so the fractions are spaced by how much work is left rather than
+by step count.
+
+The stage is named in the worker's words, not the provider's. "claude-sonnet-4-6"
+tells a musician nothing they can act on; the provider name stays in the log,
+which is where the person debugging it looks.
+
+### `ScoreJson.clef` became optional
+
+A score now exists before anything has read it, and the clef is a fact printed
+on the page. A guessed clef would be *shown as though it had been read*, and a
+bass part labelled "Treble clef" is worse than no label. Same reasoning that
+already made `time_signature` and `key_signature` nullable. Providers are still
+held to naming one — a transcription with no clef falls through to the next
+provider, so nothing OCR is held to got looser.
+
+### "Load failed" was us
+
+Safari's wording for a fetch that never completed, reaching the screen verbatim
+because nothing caught it. `apiFetch` now has a 45-second deadline (long on
+purpose — the host cold-starts) and turns every network-level failure into an
+`ApiError` with status **0**: no server answered, so attributing a plausible
+502 to one would be inventing a fact about a conversation that never happened.
+
+### The screens
+
+| Screen | State |
+|---|---|
+| `PieceScore` — reading | Stage name in serif, hairline bar, the page below at reduced height |
+| `PieceScore` — failed | The backend's own sentence, "Photograph it again", and a note that the piece is still practisable |
+| `PieceScore` — done | Engraving · **Listen** · bars that don't add up · what the engraver dropped · low-confidence note · `notes_to_human` |
+
+Saving a scan now lands on `PieceScore`, not `PieceDetail`. The musician just
+photographed a page; the only question they have is what came off it, and it
+was two taps away behind a screen showing a tempo they hadn't chosen for a
+piece they hadn't seen read.
+
+`ListenButton` moved from `screens/record/` to `components/score/` — the score
+screen needs the same control for a different reason (hearing a transcription
+back is the fastest way to catch a bar OCR got wrong) and two playback buttons
+would drift.
+
+**What OCR wasn't sure about, in order of how much it matters.** Bars that
+don't add up first, because that is arithmetic and not an opinion, and it is
+the failure that corrupts a verdict — `alignment.py` builds its expected
+timeline out of those durations, so one bad bar pushes every bar after it out
+of step. `lib/notation/reading.ts` runs the same check as `ocr/validate.py` and
+names the bars rather than counting them: the numbers are printed on the
+musician's own copy, which is the difference between a warning and an
+instruction.
+
+Confidence is surfaced **only when it is low**, and with no number in the
+sentence. A percentage next to a good reading invites someone to weigh a model
+marking its own homework — the bake-off had one provider at 0.90 and another at
+0.32 for the same page.
+
+### Three-foot test
+
+*Reading:* the stage name, then the hairline moving under it, then the
+photograph. The page is deliberately shorter here than on the finished screen;
+at full height it was the first thing the eye landed on, which is the wrong
+focal point for a screen about waiting.
+
+*Failed:* the sentence, then "Photograph it again", then the reassurance that
+the piece survives. Nothing is boxed — the caveats are quiet lines, not badges,
+because none of them is an alert and boxing them would make the warnings louder
+than the music.
+
+*Done:* the stave, then Listen, then the caveats. Unchanged from before except
+for what now sits under the plate.
+
+### Honest status
+
+- **385 backend tests pass, 3 skipped; ruff clean; `tsc --noEmit` clean.**
+- Migration 006 applied to `intempo-dev`.
+- The screens are verified against the fixture build, **not** end to end. I
+  could not reach the deployed API from this session at all — the sandbox proxy
+  denies `onrender.com` (403 on CONNECT) and the Render tool that had been
+  serving logs disconnected mid-session. So the worker has never been watched
+  running against a real page from here.
+- The user reported "load failed" again *before* any of this was deployed. That
+  is consistent with the inline-OCR request timing out, which is what this
+  removes — but it is inference from the symptom, not a diagnosis from a log,
+  and it should be treated as unconfirmed until a scan is tried against this
+  build.
+- No retry endpoint. A failed page has to be re-photographed; `POST
+  /v1/scores/:id/transcribe` would be the obvious follow-up and does not exist.
+
+---
+
 ## 2026-08-23 (night) — Three bugs the first real scan from a phone found
 
 **Branch:** `main`. Owner: photographed a page on an iPhone against the live

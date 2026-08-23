@@ -37,7 +37,7 @@ import { spacing } from '../../design';
 import { formatLastPracticed } from '../../lib/format';
 import { scheduleScore, type Schedule } from '../../lib/score';
 import type { RootNavigation, RootStackParamList } from '../../navigation/types';
-import { ListenButton } from '../record/ListenButton';
+import { ListenButton } from '../../components/score/ListenButton';
 
 /** Height of the score strip across the top of the score card. */
 const BANNER_HEIGHT = 88;

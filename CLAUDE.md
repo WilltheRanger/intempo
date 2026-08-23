@@ -155,6 +155,32 @@ Conventions the redesign established — **follow these, don't re-litigate them:
     Deliberate, not a bug. `title` and `composer` are separate fields; title
     outranks composer in every listing.
 
+### The `mobile/` tree — where transcription actually stands (2026-08-24)
+
+The screen table above describes the legacy `frontend/` tree. The shipping app
+is `mobile/` (Expo, also built to web for Cloudflare Pages), and the scan flow
+there works differently as of 2026-08-24:
+
+- **Reading a page is asynchronous.** `POST /v1/scores` writes the row and
+  returns; `backend/app/workers/transcription_runner.py` fills the notes in.
+  The row carries `transcription_status` (`queued` → `reading` → `done` |
+  `failed`), the step the worker last reported, and a failure reason written
+  for a musician. `usePiece` polls while a scan is unfinished.
+- **Progress is measured, never animated toward a guess.** The bar in
+  `components/score/TranscribingPanel.tsx` moves when the worker reports a step
+  it has reached and at no other time. If you add a pipeline stage, add it to
+  `STAGE_PROGRESS` there and to `_HUMAN_STAGES` in the worker — the worker's
+  words are the contract between them.
+- **Saving a scan lands on `PieceScore`**, which owns all three states
+  (reading · failed · done). `ListenButton` lives in `components/score/` and is
+  shared by the record, warmup, piece and score screens.
+- **`ScoreJson.clef` is nullable.** A score exists before anything has read it.
+  Never default it to `treble` to simplify a component — a bass part labelled
+  "Treble clef" is worse than no label.
+- **Caveats are quiet lines, not badges.** `lib/notation/reading.ts` names the
+  bars that don't add up, and confidence is surfaced only when it is *low* and
+  with no number in the sentence.
+
 **Honest DoD status:** no batch is tagged `batch-N-done`. Every remaining gate
 (live magic-link auth, upload→OCR→save, mic→analysis) is blocked on Supabase
 keys and a real device — none of it can be closed in-session, and the screens

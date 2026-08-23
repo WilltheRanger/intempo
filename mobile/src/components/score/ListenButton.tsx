@@ -2,7 +2,7 @@ import { Pause, Play } from 'lucide-react-native';
 import { useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
-import { Text } from '../../components/primitives/Text';
+import { Text } from '../primitives/Text';
 import type { ScoreJson } from '../../data/types';
 import {
   BORDER_WIDTH,
@@ -39,6 +39,11 @@ export interface ListenButtonProps {
  * speaker while recording lands in the microphone as phantom onsets and
  * corrupts the analysis. So this disables itself the moment recording starts,
  * and stops anything already sounding.
+ *
+ * Shared rather than owned by the record screen, which is where it was built.
+ * The score screen needs the same control for a different reason — hearing
+ * what OCR read back is the fastest way to catch a bar it got wrong — and two
+ * copies of a playback button would drift.
  *
  * A progress line rather than a timer. The question being answered is "how far
  * through is it", and a line answers that without adding a second number to a

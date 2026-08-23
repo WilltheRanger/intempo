@@ -114,7 +114,16 @@ export interface ScoreJson {
   key_signature: string | null;
   tempo_marking: string | null;
   bpm_hint: number | null;
-  clef: Clef;
+  /**
+   * Null until something has read the page.
+   *
+   * A piece created from a photograph exists before its transcription does, and
+   * the clef is a fact printed on the page rather than one the app knows. A
+   * guessed clef would be shown as though it had been read — a bass part
+   * labelled "Treble clef" is worse than no label — so it stays absent until
+   * OCR names one.
+   */
+  clef: Clef | null;
   measures: ScoreMeasure[];
   repeats: ScoreRepeat[];
   ocr_confidence: number;
@@ -146,9 +155,24 @@ export interface ScoreResponse {
   score_json: ScoreJson;
   shared_with_studio: string | null;
   ocr_confidence: number | null;
+  transcription_status: TranscriptionStatus;
+  /** The step the worker last reported, or null once it has finished. */
+  transcription_stage: string | null;
+  /** Why the reading failed, if it did. Null at every other time. */
+  transcription_error: string | null;
   created_at: string;
   updated_at: string;
 }
+
+/**
+ * How far the backend has got with reading a photographed page.
+ *
+ * `done` for a piece entered by hand and for every score written before OCR
+ * moved to a worker, so "no notes and done" means "this piece has none" rather
+ * than "wait a moment" — the two look identical without this and only one of
+ * them is worth waiting on.
+ */
+export type TranscriptionStatus = 'queued' | 'reading' | 'done' | 'failed';
 
 export type AnalysisStatus =
   | 'queued'
@@ -283,6 +307,18 @@ export interface Piece {
    * notes".
    */
   score: ScoreJson | null;
+  /**
+   * Whether the notes are still coming.
+   *
+   * `done` unless a scan is in flight, which is the case for every piece in
+   * the library a moment after it is created. A listing reports it too, so a
+   * piece still being read can say so wherever it appears.
+   */
+  transcriptionStatus: TranscriptionStatus;
+  /** What the worker is doing right now, in words fit for a screen. */
+  transcriptionStage: string | null;
+  /** Why reading the page failed. Null unless `transcriptionStatus` is `failed`. */
+  transcriptionError: string | null;
 }
 
 /**

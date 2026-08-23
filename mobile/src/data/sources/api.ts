@@ -52,6 +52,12 @@ function toPiece(score: ScoreResponse, lastPracticedAt: string | null = null): P
     thumbnail: score.image_url,
     markedBpm: score.score_json?.bpm_hint ?? null,
     score: score.score_json ?? null,
+    // Defaulted rather than required: a backend that predates the column sends
+    // nothing, and treating that as "finished" is right — every score it wrote
+    // was transcribed before it was inserted at all.
+    transcriptionStatus: score.transcription_status ?? 'done',
+    transcriptionStage: score.transcription_stage ?? null,
+    transcriptionError: score.transcription_error ?? null,
   };
 }
 

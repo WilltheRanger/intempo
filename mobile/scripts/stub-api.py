@@ -37,6 +37,56 @@ SCORES = [
     ("aaaaaaaa-0000-0000-0000-000000000002", "Sonata No. 1 in G minor, BWV 1001", "J. S. Bach", "02_medium_printed.jpg", 0),
     ("aaaaaaaa-0000-0000-0000-000000000003", "Suite No. 1 in G major, BWV 1007", "J. S. Bach", "03_complex_printed.jpg", None),
     ("aaaaaaaa-0000-0000-0000-000000000004", "Caprice No. 24 in A minor", "Niccolò Paganini", "04_handwritten_clean.jpg", 12),
+    # A scan in flight and a scan that failed. Both are states the app can only
+    # reach against a real backend and both have their own screen, so without
+    # them here the only way to look at either is to photograph a page and hope
+    # it does the thing you wanted to see.
+    ("aaaaaaaa-0000-0000-0000-000000000005", "Six Suites for Cello, BWV 1010", "J. S. Bach", "02_medium_printed.jpg", None),
+    ("aaaaaaaa-0000-0000-0000-000000000006", "Études, Op. 20", "Jacques Féréol Mazas", "04_handwritten_clean.jpg", None),
+]
+
+READING_ID = "aaaaaaaa-0000-0000-0000-000000000005"
+FAILED_ID = "aaaaaaaa-0000-0000-0000-000000000006"
+
+#: The stages `transcription_runner.py` reports, in order, handed out one per
+#: request so a poll actually watches something move rather than sitting on one
+#: word for as long as you care to look.
+STAGES = [
+    "Fetching the page",
+    "Finding the staves",
+    "Checking the reading",
+    "Reading the notation",
+]
+_stage_calls = {"n": 0}
+
+
+def _reading_stage():
+    """The next stage, holding on the last one rather than finishing.
+
+    Deliberately never completes: a stub that flipped to `done` after four
+    polls would make the finished screen the thing you always ended up looking
+    at, and the reading screen the one you could never catch.
+    """
+    n = _stage_calls["n"]
+    _stage_calls["n"] = n + 1
+    return STAGES[min(n, len(STAGES) - 1)]
+
+
+def _note(pitch, duration="quarter"):
+    return {"pitch": pitch, "duration": duration, "articulation": None,
+            "tied_to_next": False, "dynamics": None}
+
+
+#: Four bars with something wrong in them, on purpose.
+#:
+#: Bar 3 holds five beats in a 4/4 bar — a missed barline, which is OCR's
+#: characteristic failure and the one the score screen has to name. A stub
+#: whose every bar added up would leave that path unrenderable.
+DEMO_MEASURES = [
+    {"measure_number": 1, "notes": [_note(p) for p in ("D4", "E4", "F4", "G4")], "slurs": []},
+    {"measure_number": 2, "notes": [_note("A4", "half"), _note("G4"), _note("F4")], "slurs": []},
+    {"measure_number": 3, "notes": [_note(p) for p in ("E4", "F4", "G4", "A4", "B4")], "slurs": []},
+    {"measure_number": 4, "notes": [_note("D4", "whole")], "slurs": []},
 ]
 
 # Keyed by score id. Only some music has movements, which is the point — the
@@ -46,15 +96,46 @@ MOVEMENTS = {
 }
 
 def score_row(sid, title, composer, img, _):
+    reading = sid == READING_ID
+    failed = sid == FAILED_ID
+    transcribed = not reading and not failed
+    confidence = 0.94 if sid != FAILED_ID else None
+    # One score reads back as uncertain, so the "wasn't confident" line has
+    # somewhere to appear. 0.62 is under the chain's own 0.7 threshold.
+    if sid == "aaaaaaaa-0000-0000-0000-000000000004":
+        confidence = 0.62
     return {
         "id": sid, "user_id": USER, "title": title, "composer": composer,
         "movement": MOVEMENTS.get(sid),
         "source_image_url": f"https://proj.supabase.co/storage/v1/object/sign/score-images/{USER}/{img}?token=expired",
         "image_url": f"{BASE}/img/{img}?token=signed",
         "image_url_expires_at": iso(NOW + timedelta(hours=1)),
-        "score_json": {"time_signature": "4/4", "clef": "treble", "measures": [],
-                       "repeats": [], "ocr_confidence": 0.94, "notes_to_human": ""},
-        "shared_with_studio": None, "ocr_confidence": 0.94,
+        "score_json": {
+            "time_signature": "4/4",
+            "key_signature": None,
+            "tempo_marking": "Andante" if transcribed else None,
+            "bpm_hint": 84 if transcribed else None,
+            # No clef until something has read the page, exactly as the backend
+            # now writes it.
+            "clef": "treble" if transcribed else None,
+            "measures": DEMO_MEASURES if transcribed else [],
+            "repeats": [],
+            "ocr_confidence": confidence or 0.0,
+            "notes_to_human": (
+                "Bar 3 was hard to read; the beaming under the third beat is a guess."
+                if sid == "aaaaaaaa-0000-0000-0000-000000000004"
+                else ""
+            ),
+        },
+        "shared_with_studio": None, "ocr_confidence": confidence,
+        "transcription_status": "reading" if reading else "failed" if failed else "done",
+        "transcription_stage": _reading_stage() if reading else None,
+        "transcription_error": (
+            "The notation could not be read from this photograph. "
+            "A flatter, better-lit shot of the page usually fixes it."
+            if failed
+            else None
+        ),
         "created_at": iso(NOW - timedelta(days=20)), "updated_at": iso(NOW - timedelta(days=20)),
     }
 

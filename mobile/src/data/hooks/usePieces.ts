@@ -27,11 +27,30 @@ export function useCurrentPiece() {
   });
 }
 
+/**
+ * How often to ask again while a page is being read.
+ *
+ * Three seconds. The whole job is tens of seconds long, so this is a handful
+ * of requests, and the stage line it refreshes is the only thing on the screen
+ * that changes — a slower poll would leave "Fetching the page" up while the
+ * model was already halfway through the notation, which is worse than no
+ * detail at all.
+ */
+const TRANSCRIPTION_POLL_MS = 3000;
+
 export function usePiece(id: string) {
   return useQuery<Piece | null>({
     queryKey: pieceKeys.detail(id),
     queryFn: () => pieceSource.getPiece(id),
     enabled: Boolean(id),
+    // Keep asking only while there is an answer coming. `queued` and `reading`
+    // are the two states a worker is going to move off; `done` and `failed`
+    // are terminal, and polling either would be asking a settled question
+    // forever.
+    refetchInterval: (query) => {
+      const status = query.state.data?.transcriptionStatus;
+      return status === 'queued' || status === 'reading' ? TRANSCRIPTION_POLL_MS : false;
+    },
   });
 }
 
