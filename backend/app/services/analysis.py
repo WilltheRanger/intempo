@@ -37,7 +37,7 @@ from app.services.classification import (
     generate_verdict,
     rolling_trend,
 )
-from app.services.score_schema import ScoreJson
+from app.services.score_schema import ScoreJson, tempo_change_spans
 
 Status = Literal["ok", "alignment_failed", "no_onsets"]
 
@@ -50,6 +50,12 @@ class PerNote(BaseModel):
     band: Band
     direction: Direction
     is_slur_interior: bool
+    #: A written tempo change covers this note's measure, so `band` and
+    #: `direction` are `on` by refusal rather than by measurement — see
+    #: `classification.Delta`.
+    under_tempo_change: bool = False
+    #: The change lurched at this note instead of flowing.
+    uneven: bool = False
 
 
 class PerMeasure(BaseModel):
@@ -58,6 +64,13 @@ class PerMeasure(BaseModel):
     avg_delta_pct: float
     worst_band: Band
     direction: Direction
+    #: A written tempo change covers this measure. A screen showing a rushing
+    #: or dragging colour here would be colouring a bar the page said would not
+    #: be steady.
+    under_tempo_change: bool = False
+    #: Somewhere in this measure the change lurched. This is what replaces the
+    #: tolerance bands under a `rit.`, not an addition to them.
+    uneven: bool = False
 
 
 class Tolerance(BaseModel):
@@ -140,6 +153,8 @@ def _summarize_measures(deltas: list[Delta]) -> list[PerMeasure]:
                 avg_delta_pct=round(avg_pct, 2),
                 worst_band=worst.band,
                 direction=direction,
+                under_tempo_change=any(d.under_tempo_change for d in group),
+                uneven=any(d.uneven for d in group),
             )
         )
     return summaries
@@ -284,7 +299,14 @@ def analyze(
     # settling on the string before the first note becomes the downbeat, and
     # the same perfect take is told it dragged; without it at the other end, a
     # bow going down afterwards costs enough confidence to trigger a caveat.
-    anchored = align_take(onsets, expected, target_bpm=target_bpm, config=cfg)
+    # Which written onsets a steady tempo is supposed to account for. Notes
+    # under a `rit.` are not among them: the page has said the beat will not be
+    # steady there, so they can say nothing about whether a steady-tempo
+    # alignment is trustworthy.
+    steady = np.array([not n.under_tempo_change for n in timeline.notes], dtype=bool)
+    anchored = align_take(
+        onsets, expected, target_bpm=target_bpm, config=cfg, steady=steady
+    )
     onsets = anchored.onsets
     raw = anchored.alignment
     if is_alignment_broken(raw.quality, config=cfg):
@@ -300,7 +322,9 @@ def analyze(
     cleaned = apply_fuzzy_match(raw, onsets, expected)
     deltas = compute_deltas(cleaned, onsets, timeline, target_bpm, config=cfg)
     trend = rolling_trend(deltas, config=cfg)
-    verdict = generate_verdict(deltas, target_bpm, config=cfg)
+    verdict = generate_verdict(
+        deltas, target_bpm, config=cfg, tempo_spans=tempo_change_spans(score)
+    )
 
     per_note = [
         PerNote(
@@ -311,6 +335,8 @@ def analyze(
             band=d.band,
             direction=d.direction,
             is_slur_interior=d.is_slur_interior,
+            under_tempo_change=d.under_tempo_change,
+            uneven=d.uneven,
         )
         for d in deltas
     ]

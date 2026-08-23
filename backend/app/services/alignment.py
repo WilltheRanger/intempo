@@ -473,6 +473,7 @@ def _residuals(
     *,
     sec_per_beat: float = 0.5,
     config: AudioConfig | None = None,
+    steady: np.ndarray | None = None,
 ) -> np.ndarray:
     """What a steady tempo, plus the musician's own pulse, cannot explain.
 
@@ -491,11 +492,28 @@ def _residuals(
     That is not luck — it is the same robustness that makes `pulse_anchors`
     safe. A wrong piece has a huge spread of interval errors, so its
     disturbance threshold is huge, so nothing is absorbed.
+
+    `steady` marks the expected onsets that a steady tempo is *supposed* to
+    explain. Notes under a written `rit.` are not among them, and including
+    them made a take played exactly as marked score 0.560 — under
+    `warn_quality`, on a reading that had named the marked bars correctly and
+    called nothing else wrong. They are dropped rather than modelled: a
+    ritardando carries no amount, so there is no curve to fit that the page
+    actually specifies, and a note the page says will not be steady can say
+    nothing about whether a steady-tempo alignment is trustworthy. They still
+    count toward coverage, because they were matched.
     """
     det = np.array([detected[d] for d, _ in mapping], dtype=float)
     exp = np.array([expected[e] for _, e in mapping], dtype=float)
     if det.size == 0:
         return np.array([], dtype=float)
+    if steady is not None:
+        keep = np.array([bool(steady[e]) for _, e in mapping], dtype=bool)
+        # Unless there is nothing left. A page that is *entirely* a rit. still
+        # has to be judged on something, and a straight line is a poor model of
+        # it rather than no model at all.
+        if keep.sum() >= 3:
+            det, exp = det[keep], exp[keep]
     settled = det - pulse_anchors(det - exp, sec_per_beat, config=config)
     if settled.size >= 2 and float(np.ptp(exp)) > 0:
         rate, offset = np.polyfit(exp, settled, 1)
@@ -653,6 +671,7 @@ def align_take(
     *,
     target_bpm: float = 120.0,
     config: AudioConfig | None = None,
+    steady: np.ndarray | None = None,
 ) -> AnchoredAlignment:
     """Align, having first worked out which detections are the *take*.
 
@@ -701,7 +720,9 @@ def align_take(
         onsets=base,
         trimmed_lead=0,
         trimmed_tail=0,
-        alignment=align_dtw(base, expected, target_bpm=target_bpm, config=config),
+        alignment=align_dtw(
+            base, expected, target_bpm=target_bpm, config=config, steady=steady
+        ),
     )
     if detected.size < 3 or expected.size == 0:
         return untrimmed
@@ -747,6 +768,7 @@ def align_dtw(
     *,
     target_bpm: float = 120.0,
     config: AudioConfig | None = None,
+    steady: np.ndarray | None = None,
 ) -> AlignmentResult:
     """Align detected onsets to expected onsets with a constrained DTW.
 
@@ -819,11 +841,29 @@ def align_dtw(
     #   every other note      0.301        0.119
     #   WRONG PIECE           0.248        0.000
     def _initial_ratio(seq: np.ndarray, reference: np.ndarray) -> float:
-        """How much to stretch `seq` toward `reference`'s pace, clamped."""
+        """How much to stretch `seq` toward `reference`'s pace, clamped.
+
+        The *written* pace is read from the steady part of the page only. A
+        page with a `rit.` in it has no single pace, and averaging across the
+        change gives a number that is wrong for both halves: on eight bars
+        slowing over the last four, the estimate landed between them and the
+        matcher slipped a note at bar 1, attributing every later sound to the
+        note before it. Detection was perfect; the pace was not.
+
+        The *played* side is left whole, because which notes were played under
+        the change is not known until after the matching this feeds.
+        """
         if seq.size < MIN_ONSETS_TO_ESTIMATE_TEMPO or reference.size < 2:
             return 1.0
+        written_gaps = np.diff(reference)
+        if steady is not None and steady.size == reference.size:
+            # Gaps between two steady notes. A gap that straddles the start of
+            # a change belongs to neither pace.
+            both = np.asarray(steady[:-1], dtype=bool) & np.asarray(steady[1:], dtype=bool)
+            if both.sum() >= 2:
+                written_gaps = written_gaps[both]
         played = typical_gap(np.diff(seq))
-        written = typical_gap(np.diff(reference))
+        written = typical_gap(written_gaps)
         if played <= 0 or written <= 0:
             return 1.0
         return _clamp_ratio(written / played)
@@ -910,7 +950,36 @@ def align_dtw(
                 best[det_i] = (exp_i, err)
         return sorted((d, e) for d, (e, _) in best.items())
 
-    mapping = _match(_initial_ratio(detected, expected))
+    ratio = _initial_ratio(detected, expected)
+    mapping = _match(ratio)
+
+    # A page with a written tempo change has no single pace, and the *played*
+    # side cannot be masked before matching — which notes were played under the
+    # change is exactly what the matching decides. So it is refined once, from
+    # the detections that landed on notes the page says are steady.
+    #
+    # Without it, a take of four steady bars and four slowing ones estimated a
+    # pace between the two, slipped a note at bar 1, and reported the opening
+    # bar as severely dragging on playing that was exact. Detection was
+    # perfect; the pace was not.
+    #
+    # Bounded by the same clamp as the first pass, and only run when the score
+    # actually marks a change — a page without one is untouched, which is why
+    # the six corpus clips do not move.
+    if steady is not None and not steady.all() and len(mapping) >= 4:
+        played_steady = np.array(
+            [detected[d] for d, e in mapping if steady[e]], dtype=float
+        )
+        written_steady = np.array(
+            [expected[e] for _, e in mapping if steady[e]], dtype=float
+        )
+        if played_steady.size >= MIN_ONSETS_TO_ESTIMATE_TEMPO:
+            played = typical_gap(np.diff(played_steady))
+            written = typical_gap(np.diff(written_steady))
+            if played > 0 and written > 0:
+                refined = _clamp_ratio(written / played)
+                if abs(refined - ratio) > 1e-6:
+                    mapping = _match(refined)
 
 
     # Quality measures how well the *shape* of the performance matches the
@@ -930,7 +999,12 @@ def align_dtw(
     # discarded — it is the verdict, and `compute_deltas` computes it from real
     # seconds further down.
     residuals = _residuals(
-        mapping, detected, expected, sec_per_beat=sec_per_beat, config=cfg
+        mapping,
+        detected,
+        expected,
+        sec_per_beat=sec_per_beat,
+        config=cfg,
+        steady=steady,
     )
     total_cost = float(residuals.sum())
     timing_quality = _quality_from_cost(total_cost, len(residuals), sec_per_beat)
