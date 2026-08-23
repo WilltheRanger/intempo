@@ -1096,3 +1096,119 @@ def test_re_reading_someone_elses_score_is_404(
     _install_storage(sb, signed=[])
     assert _retranscribe(client, uuid4(), make_token(sub=uuid4())).status_code == 404
     assert enqueued == []
+
+
+# ---- POST /v1/scores/import ------------------------------------------------
+#
+# The third provenance, beside the camera and typing it in. A MusicXML file
+# states the durations rather than being read for them, so there is no OCR, no
+# model, no cost and no variance — which matters because `alignment.py` builds
+# its whole timeline from durations.
+
+_MXL = """<score-partwise><part-list>
+<score-part id="P1"><part-name>Violoncello</part-name></score-part>
+</part-list><part id="P1"><measure number="1">
+<attributes><time><beats>4</beats><beat-type>4</beat-type></time>
+<clef><sign>F</sign></clef></attributes>
+<note><pitch><step>C</step><octave>3</octave></pitch><type>quarter</type></note>
+<note><pitch><step>D</step><octave>3</octave></pitch><type>quarter</type></note>
+<note><pitch><step>E</step><octave>3</octave></pitch><type>half</type></note>
+</measure></part></score-partwise>"""
+
+
+def test_a_musicxml_file_becomes_a_piece(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    user_id, score_id = uuid4(), uuid4()
+    sb = _install_supabase(
+        monkeypatch, returning_row=_row_for(score_id, user_id, source_image_url=None)
+    )
+    _install_storage(sb, signed=[])
+
+    res = client.post(
+        "/v1/scores/import",
+        json={"title": "Suite No. 1", "composer": "J. S. Bach", "musicxml": _MXL},
+        headers={"Authorization": f"Bearer {make_token(sub=user_id)}"},
+    )
+    assert res.status_code == 201, res.text
+
+    payload = sb.table.return_value.insert.call_args.args[0]
+    assert payload["transcription_status"] == "done", "nothing to wait for"
+    assert payload["source_image_url"] is None
+    durations = [n["duration"] for n in payload["score_json"]["measures"][0]["notes"]]
+    assert durations == ["quarter", "quarter", "half"]
+
+
+def test_an_imported_score_claims_no_confidence(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """Null, not 1.0.
+
+    Every "we don't know" mechanism in this app keys off `ocr_confidence` — the
+    caveat lines, the accept-before-discard rule. A file is not *confident*, it
+    is *stated*, and writing 1.0 would quietly convert a system that admits
+    uncertainty into one claiming certainty it was never asked about.
+    """
+    user_id = uuid4()
+    sb = _install_supabase(monkeypatch, returning_row=_row_for(uuid4(), user_id))
+    _install_storage(sb, signed=[])
+
+    client.post(
+        "/v1/scores/import",
+        json={"title": "x", "musicxml": _MXL},
+        headers={"Authorization": f"Bearer {make_token(sub=user_id)}"},
+    )
+    assert sb.table.return_value.insert.call_args.args[0]["ocr_confidence"] is None
+
+
+def test_a_multi_part_file_is_refused_with_the_parts_named(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """A downloaded orchestral score's first part is usually the piccolo. The
+    error names the options so the client can offer them."""
+    user_id = uuid4()
+    _install_supabase(monkeypatch, returning_row=_row_for(uuid4(), user_id))
+    two_parts = _MXL.replace(
+        "</part-list>",
+        '<score-part id="P2"><part-name>Piccolo</part-name></score-part></part-list>',
+    ).replace("</score-partwise>", '<part id="P2"><measure number="1"/></part></score-partwise>')
+
+    res = client.post(
+        "/v1/scores/import",
+        json={"title": "x", "musicxml": two_parts},
+        headers={"Authorization": f"Bearer {make_token(sub=user_id)}"},
+    )
+    assert res.status_code == 422
+    assert "Piccolo" in res.json()["detail"] and "Violoncello" in res.json()["detail"]
+
+
+def test_a_part_can_be_chosen_on_import(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    user_id = uuid4()
+    sb = _install_supabase(monkeypatch, returning_row=_row_for(uuid4(), user_id))
+    _install_storage(sb, signed=[])
+
+    res = client.post(
+        "/v1/scores/import",
+        json={"title": "x", "musicxml": _MXL, "part": "cello"},
+        headers={"Authorization": f"Bearer {make_token(sub=user_id)}"},
+    )
+    assert res.status_code == 201, res.text
+
+
+def test_a_file_that_is_not_musicxml_is_refused(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    user_id = uuid4()
+    _install_supabase(monkeypatch, returning_row=_row_for(uuid4(), user_id))
+    res = client.post(
+        "/v1/scores/import",
+        json={"title": "x", "musicxml": "this is not xml at all"},
+        headers={"Authorization": f"Bearer {make_token(sub=user_id)}"},
+    )
+    assert res.status_code == 422
+
+
+def test_importing_unauthenticated_is_401(client: TestClient) -> None:
+    assert client.post("/v1/scores/import", json={"title": "x", "musicxml": _MXL}).status_code == 401
