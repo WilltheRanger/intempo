@@ -6,6 +6,82 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-01 — The sound before the first note was writing the verdict
+
+**Branch:** `main`. `/loop` iteration. Came out of the bass measurements: those
+showed the detector finds the notes, so the next question was what happens to
+everything *around* them.
+
+Every recording starts with something — a bow settling on the string, a chair,
+a breath. `to_timeline_base` has to pick an origin before anything is matched,
+and the only one available is the earliest detection. So that sound became the
+downbeat.
+
+Its docstring said the damage "does not reach the verdict", reasoning that
+`compute_deltas` re-derives its origin from the first *matched* pair. That is
+wrong: the spurious onset is what gets matched. Measured on eight quarters
+played exactly on the grid at 60 BPM, one quiet scrape added before them:
+
+    scrape 0.2 s before   quality 0.918   "You dragged by 13 BPM"
+    scrape 0.5 s before   quality 0.486   "You rushed by 28 BPM"
+    scrape 1.0 s before   quality 0.604   "Steady tempo"
+    scrape 2.0 s before   quality 0.100   "check you're on the right piece"
+    scrape 3.0 s before   quality 0.123   "check you're on the right piece"
+
+Five answers for one perfect take, including two opposite verdicts stated with
+confidence. **A confident wrong verdict is the worst output this app has** —
+worse than refusing to answer, because the musician has no reason to doubt it,
+and "you rushed" is the exact thing they opened the app to find out.
+
+**The fix picks the origin by evidence rather than by position.**
+`align_from_first_note` aligns once per candidate first note — up to three —
+and keeps the best. What makes this safe rather than a licence to discard
+inconvenient data is that the metric already penalises it: `quality` is
+`timing_quality * coverage`, and coverage counts *expected* notes, so throwing
+away a real note costs coverage while throwing away noise costs nothing. The
+same number that rewards trimming correctly punishes trimming too much.
+
+Trimming nothing wins ties and wins anything closer than 0.1 quality, and among
+winners the *smallest* trim is taken, so a tie never costs a note.
+
+| scrape | before | after |
+|---|---|---|
+| none | 0.988 steady | 0.988 steady (untouched) |
+| 0.5 s | 0.486 "rushed 28 BPM" | **1.000 steady** |
+| 1.0 s | 0.604 steady | **0.990 steady** |
+| 2.0 s | 0.100 failed | **0.991 steady** |
+| 3.0 s | 0.123 failed | **0.991 steady** |
+| two scrapes | 0.198 failed | **0.991 steady** |
+
+**All six corpus fixtures are bit-identical** — diffed status, quality, note
+count, missed, extra, summed delta and verdict text. The search only fires when
+there is something to trim.
+
+**The one case still broken, and it is not this bug.** A scrape 0.2 s before
+the downbeat still reads as dragging. There is nothing to trim: the derived
+peak window at 60 BPM is ±464 ms, so two events 200 ms apart are one local
+maximum and the scrape *replaces* note 1 rather than joining it. The
+information is destroyed in detection, before alignment sees it. Recorded here
+rather than papered over — the honest fix is in the peak window or in a
+count-in, and both need real recordings.
+
+**Cost:** four alignments where there was one. A 55-second page of 128
+eighth notes analyses in **1.29 s**, against a 15-second DoD.
+
+**No three-foot test.** No UI touched.
+
+**Tests:** backend 566 (was 556; +10 in `test_leading_noise.py`). Mutation-
+checked: with the search neutered, 5 of the 10 fail. `ruff` clean.
+
+**Known side effects:** `analyze()` may now report fewer detected onsets than
+the detector found, because the discarded leads are no longer part of the take.
+That is the intent — they were not notes.
+
+**Rollback:** revert the commit. `to_timeline_base` is unchanged and still
+exported; `align_from_first_note` is additive.
+
+---
+
 ## 2026-08-31 (latest) — Nothing had ever played a bass at the pipeline
 
 **Branch:** `main`. `/loop` iteration. The parallel-implementation sweep is
