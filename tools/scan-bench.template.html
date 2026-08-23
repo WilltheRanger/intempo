@@ -755,18 +755,21 @@ function traceOpen(title, detail, meta, where) {
  * The ruler does the same for position. Asking for pixel coordinates gets a
  * guess; asking which printed number a barline sits under gets a reading.
  */
-const TILE_PROMPT = `This image is one slice of a SINGLE staff, enlarged from a photograph, with two things drawn on top of it.
+const TILE_PROMPT = `This image is one slice of a SINGLE staff, enlarged from a photograph, with three things drawn on top of it.
 
 PITCH LABELS run down both edges, one per pitch, each with a faint line across the slice at that height. Blue labels mark the five printed staff lines; red labels mark the spaces between them and the ledger positions above and below. To name a note, find which label its notehead centre lines up with and read it. Do not count staff lines yourself — the answer is printed next to the note.
 
 A NUMBERED RULER runs along the top. Those numbers are absolute positions in the whole staff and mean the same thing in every slice.
 
+GREEN DASHED LINES mark every vertical stroke that spans the staff from top to bottom, each labelled at its foot with the ruler position it stands at. Some of these are barlines and some are note stems. Image analysis cannot tell those apart — that is why you are being asked. A stem carries a notehead on it; a barline carries nothing and touches no note.
+
+So do not measure where the barlines are. Decide which of the MARKED strokes are barlines, and use the position printed on that mark. If you can see a barline the marking missed, say so in notes_to_human — but do not invent a position between the marks.
+
 Report ONLY measures whose opening AND closing barlines are both visible in this slice. A measure running off either edge is another slice's job — leave it out entirely rather than guessing at its missing half.
 
 For each measure you do report, add two extra fields:
-  "start_tick" — the ruler number its opening barline sits under
-  "end_tick"   — the ruler number its closing barline sits under
-Use one decimal place when a barline falls between two numbers.
+  "start_tick" — the printed position of the marked stroke its opening barline is
+  "end_tick"   — the printed position of the marked stroke its closing barline is
 
 Set "measure_number" to null. The tick positions identify the measures; numbering them within a slice would be wrong, because this slice does not start at the beginning of the piece.`;
 
@@ -1794,7 +1797,7 @@ $('go').addEventListener('click', async () => {
       // instead, where a wrong answer is one click to fix rather than a silent
       // transposition through every note on the staff.
       const drawer = staffDraw(gridInfo, { clef: $('gridClef').value });
-      slices = drawer.tiles({ ticksPerTile: 12, overlapTicks: 2 });
+      slices = drawer.tiles({ ticksPerTile: 12, overlapTicks: 2, barHints: gridInfo.barX });
       const tSlice = traceOpen('Annotated and cut into slices',
         `Pitch labels down both edges of every slice, so naming a note is reading the label it `
         + `lines up with rather than counting lines in a photograph. A numbered ruler along the `
