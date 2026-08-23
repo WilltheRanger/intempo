@@ -60,6 +60,37 @@ function extensionOf(uri: string): string {
   return (match?.[1] ?? 'jpg').toLowerCase();
 }
 
+/** The extension to file a blob's own type under, when it has one. */
+const EXT_BY_MIME: Record<string, string> = {
+  'image/jpeg': 'jpg',
+  'image/png': 'png',
+  'image/webp': 'webp',
+  'image/heic': 'heic',
+};
+
+/**
+ * What the bytes are, preferring the blob's own type over the URI's name.
+ *
+ * On web a captured page is a `blob:` URI with **no extension at all**, so
+ * `extensionOf` falls back to `jpg` and the upload was labelled `image/jpeg`
+ * whatever it held. A canvas capture is PNG, so the first real scan from a
+ * phone stored PNG bytes under a JPEG content type, and the vision API — which
+ * checks — rejected the page with a 400. The blob knew its own type the whole
+ * time.
+ *
+ * `blob.type` is empty for a `file:` URI on native, which is why the name is
+ * still consulted rather than replaced.
+ */
+function typeOf(bytes: Blob, uri: string): { contentType: string; ext: string } {
+  const declared = bytes.type?.split(';')[0].trim().toLowerCase() ?? '';
+  const ext = EXT_BY_MIME[declared];
+  if (ext) {
+    return { contentType: declared, ext };
+  }
+  const fromName = extensionOf(uri);
+  return { contentType: MIME_BY_EXT[fromName] ?? 'image/jpeg', ext: fromName };
+}
+
 export class ScanUploadError extends Error {
   constructor(message: string, readonly cause?: unknown) {
     super(message);
@@ -81,9 +112,6 @@ export async function uploadPage(page: CapturedPage): Promise<string> {
     throw new ScanUploadError('That page could not be read from the device.');
   }
 
-  const ext = extensionOf(uri);
-  const contentType = MIME_BY_EXT[ext] ?? 'image/jpeg';
-
   // `fetch` on a local URI is how bytes are obtained on both platforms: web
   // handles blob:/data:/http:, and native handles file:. A failure here is a
   // read failure, not a network one, and says so.
@@ -102,6 +130,7 @@ export async function uploadPage(page: CapturedPage): Promise<string> {
     throw new ScanUploadError('That page came back empty.');
   }
 
+  const { contentType, ext } = typeOf(bytes, uri);
   const signed = await requestScoreImageUpload(`page.${ext}`);
   await uploadToSignedUrl(signed.upload_url, bytes, contentType);
   return signed.upload_url;

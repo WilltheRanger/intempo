@@ -297,3 +297,79 @@ def test_a_url_with_no_extractable_key_is_left_alone(monkeypatch) -> None:
     monkeypatch.setattr(scores_module, "get_service_client", lambda: None)
     other = "https://proj.supabase.co/somewhere/else.jpg"
     assert scores_module._readable_url(other) == other
+
+
+# ---- what the bytes actually are -------------------------------------------
+#
+# The second bug the first real scan from a phone found, in the same request as
+# the upload-URL one above. Anthropic checks the declared media type against
+# the bytes and answers a mismatch with a 400 — and the type was declared from
+# the *filename*, which on the web build is `page.jpg` for a canvas capture
+# that is always PNG.
+
+_PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 32
+_JPEG = b"\xff\xd8\xff\xe0" + b"\x00" * 32
+_GIF = b"GIF89a" + b"\x00" * 32
+_WEBP = b"RIFF" + b"\x00\x00\x00\x00" + b"WEBP" + b"VP8 " + b"\x00" * 16
+_HEIC = b"\x00\x00\x00\x18" + b"ftyp" + b"heic" + b"\x00" * 32
+
+
+@pytest.mark.parametrize(
+    "body,expected",
+    [
+        (_PNG, "image/png"),
+        (_JPEG, "image/jpeg"),
+        (_GIF, "image/gif"),
+        (_WEBP, "image/webp"),
+        (_HEIC, "image/heic"),
+    ],
+)
+def test_the_bytes_decide_the_media_type(body: bytes, expected: str) -> None:
+    """Every one of these is named `.jpg` and none of them is asked about it."""
+    assert scores_module._media_type_of(body, "https://x/page.jpg") == expected
+
+
+def test_the_live_failure_png_bytes_under_a_jpg_name() -> None:
+    """The exact shape of the bug, kept as a test so it cannot come back.
+
+    A blob URI has no extension, so the upload was filed as `page.jpg`; the
+    capture is a canvas, so the bytes are PNG; the vision API rejected the
+    pair. Naming it after the failure rather than the mechanism because that is
+    what a future reader will be searching for.
+    """
+    assert scores_module._media_type_of(_PNG, "https://x/scores/u/page.jpg") == "image/png"
+
+
+def test_an_mp4_is_not_mistaken_for_a_heic() -> None:
+    """HEIF shares its container with MP4, so the brand is what separates them
+    — matching `ftyp` alone would call a video a photograph."""
+    mp4 = b"\x00\x00\x00\x18" + b"ftyp" + b"isom" + b"\x00" * 32
+    assert scores_module._media_type_of(mp4, "https://x/page.png") == "image/png"
+
+
+def test_a_riff_that_is_not_a_webp_is_not_called_one() -> None:
+    wav = b"RIFF" + b"\x00\x00\x00\x00" + b"WAVE" + b"\x00" * 16
+    assert scores_module._media_type_of(wav, "https://x/page.png") == "image/png"
+
+
+@pytest.mark.parametrize(
+    "url,expected",
+    [
+        ("https://x/page.png", "image/png"),
+        ("https://x/page.webp", "image/webp"),
+        ("https://x/page.heic", "image/heic"),
+        ("https://x/page.jpg", "image/jpeg"),
+        ("https://x/page", "image/jpeg"),
+    ],
+)
+def test_unrecognised_bytes_fall_back_to_the_name(url: str, expected: str) -> None:
+    """Rather than refusing. An exotic-but-valid format the sniffer has never
+    heard of should still reach the provider to be judged there."""
+    assert scores_module._media_type_of(b"\x00\x01\x02\x03nothing", url) == expected
+
+
+def test_an_empty_body_does_not_raise() -> None:
+    """Slicing past the end of a short `bytes` is not an error in Python, and
+    this asserts it stays that way rather than growing a length check that
+    someone later removes."""
+    assert scores_module._media_type_of(b"", "https://x/page.jpg") == "image/jpeg"
