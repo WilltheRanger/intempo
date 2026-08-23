@@ -61,11 +61,22 @@ class ClaudeProvider:
         name: str,
         input_price_per_mtok_usd: float,
         output_price_per_mtok_usd: float,
+        thinking: dict | None = None,
+        effort: str | None = None,
     ) -> None:
         self.model = model
         self.name = name
         self._input_price = input_price_per_mtok_usd
         self._output_price = output_price_per_mtok_usd
+        #: How this model should think, if at all. Explicit on every provider
+        #: because the *default* differs by model and the default is expensive
+        #: here: on Sonnet 5 and Opus 5, omitting `thinking` runs adaptive
+        #: thinking, which is billed and which counts against `max_tokens`.
+        #: Reading notes off a page is perception, not reasoning — and thinking
+        #: tokens eating the output budget is precisely how a long page came to
+        #: be reported as an unreadable photograph.
+        self._thinking = thinking
+        self._effort = effort
         self._client: Anthropic | None = None
 
     def _get_client(self) -> Anthropic:
@@ -88,9 +99,15 @@ class ClaudeProvider:
         b64 = base64.standard_b64encode(image_bytes).decode("ascii")
         start = time.monotonic()
         try:
+            extra: dict = {}
+            if self._thinking is not None:
+                extra["thinking"] = self._thinking
+            if self._effort is not None:
+                extra["output_config"] = {"effort": self._effort}
             response = self._get_client().messages.create(
                 model=self.model,
                 max_tokens=MAX_TOKENS,
+                **extra,
                 messages=[
                     {
                         "role": "user",
@@ -155,18 +172,45 @@ class ClaudeProvider:
         )
 
 
-# Pricing as of 2026-04 (https://www.anthropic.com/pricing#api).
-# Sonnet 4.6: $3 / $15 per 1M tokens. Opus 4.7: $15 / $75 per 1M tokens.
+# List pricing, checked 2026-08-24. Sonnet 5: $3 / $15 per 1M. Opus 5: $5 / $25.
+#
+# Sonnet 5 is on introductory pricing of $2 / $10 until 2026-08-31. The list
+# rate is used here on purpose: the intro rate expires in a week and a hardcoded
+# $2 would then quietly *under*-report every scan. Telemetry that overstates
+# cost is a nuisance; telemetry that understates it is a trap.
+#
+# The Opus figures this replaces were $15 / $75 — wrong by 3x, and had been
+# overstating the fallback's cost since they were written.
+
+#: The first read, and the one that does the work on nearly every page.
+#:
+#: Thinking is **off**. On Sonnet 5 omitting the parameter runs adaptive
+#: thinking, which is billed and counts against `max_tokens` — so the default
+#: would both cost more and make truncation more likely on exactly the long
+#: pages that were already truncating. Transcription is perception, not
+#: reasoning: the answer is on the page.
 claude_sonnet_provider = ClaudeProvider(
-    model="claude-sonnet-4-6",
-    name="claude-sonnet-4-6",
+    model="claude-sonnet-5",
+    name="claude-sonnet-5",
     input_price_per_mtok_usd=3.0,
     output_price_per_mtok_usd=15.0,
+    thinking={"type": "disabled"},
 )
 
+#: The fallback, reached only when the first read has already failed.
+#:
+#: Thinking stays *on* here, at low effort, rather than disabled. Anthropic
+#: documents two failure modes for disabled thinking on Opus 5 — it can leak
+#: `<thinking>` tags into the visible response, and it can write a tool call
+#: into text instead of a tool block. The first would corrupt the JSON this
+#: parses, and adaptive-at-low-effort is the documented way to avoid it while
+#: still keeping the spend down. It also runs rarely enough that the extra
+#: care is nearly free.
 claude_opus_provider = ClaudeProvider(
-    model="claude-opus-4-7",
-    name="claude-opus-4-7",
-    input_price_per_mtok_usd=15.0,
-    output_price_per_mtok_usd=75.0,
+    model="claude-opus-5",
+    name="claude-opus-5",
+    input_price_per_mtok_usd=5.0,
+    output_price_per_mtok_usd=25.0,
+    thinking={"type": "adaptive"},
+    effort="low",
 )
