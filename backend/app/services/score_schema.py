@@ -31,7 +31,54 @@ Duration = Literal[
     "eighth", "dotted_eighth",
     "sixteenth", "dotted_sixteenth",
     "thirty_second",
+    # Triplets. Added rather than modelled, deliberately.
+    #
+    # The correct model is a value plus a ratio — `{"eighth", 3:2}` — and it is
+    # a breaking change across this schema, `alignment.py`, three files in
+    # `mobile/src/lib/`, `types.ts` and every prompt. These four names cover
+    # essentially every tuplet a string player meets, and they extend a closed
+    # Literal without invalidating a single stored score.
+    #
+    # Their beats do not divide evenly: a triplet eighth is 1/3 of a quarter,
+    # so three of them sum to 1.0 only within floating-point tolerance. Every
+    # beat-sum comparison in this codebase already carries that tolerance —
+    # `validate.py` and `reading.ts` both compare with an epsilon — which is
+    # what makes adding them safe rather than a source of false "does not add
+    # up" reports.
+    "triplet_half", "triplet_quarter", "triplet_eighth", "triplet_sixteenth",
 ]
+
+#: Quarter-note beats per duration — the single table.
+#:
+#: `alignment.py` and `ocr/validate.py` each held their own copy, with a
+#: comment in one saying "deliberately the same table as" the other. They
+#: drifted the moment triplets were added: the validator scored every triplet
+#: as **zero beats** via a `.get(..., 0.0)` default and reported a correct bar
+#: as short, silently. A comment is not an invariant.
+#:
+#: It lives here because the beat value of a duration is a property of the
+#: duration, and `Duration` is defined above.
+DURATION_BEATS: dict[str, float] = {
+    "whole": 4.0,
+    "dotted_whole": 6.0,
+    "half": 2.0,
+    "dotted_half": 3.0,
+    "quarter": 1.0,
+    "dotted_quarter": 1.5,
+    "eighth": 0.5,
+    "dotted_eighth": 0.75,
+    "sixteenth": 0.25,
+    "dotted_sixteenth": 0.375,
+    "thirty_second": 0.125,
+    # Three in the time of two. Thirds are not exactly representable in binary;
+    # these particular groupings happen to sum back to their bar length exactly
+    # anyway, but that is luck in the rounding rather than a guarantee, which is
+    # why every comparison downstream carries a tolerance. See `validate.TOLERANCE`.
+    "triplet_half": 4.0 / 3.0,
+    "triplet_quarter": 2.0 / 3.0,
+    "triplet_eighth": 1.0 / 3.0,
+    "triplet_sixteenth": 1.0 / 6.0,
+}
 
 # Pitch: "rest" or scientific-pitch like "C4", "F#3", "Bb2".
 _PITCH_PATTERN = re.compile(r"^(?:rest|[A-G](?:#|b)?-?\d)$")

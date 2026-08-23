@@ -112,12 +112,14 @@
 // is that it behaves like the thing it stands for. test_sandbox_parity.py runs
 // both over the same cases and fails if they ever disagree.
 // ---------------------------------------------------------------------------
-const DURATION_BEATS = {
-  whole: 4, dotted_whole: 6, half: 2, dotted_half: 3, quarter: 1,
-  dotted_quarter: 1.5, eighth: 0.5, dotted_eighth: 0.75,
-  sixteenth: 0.25, dotted_sixteenth: 0.375, thirty_second: 0.125,
-};
-const TOLERANCE = 1e-6, MIN_AGREEMENT = 0.6, MIN_MEASURES_TO_INFER = 3;
+// These five are substituted from the backend at build time by
+// tools/sandbox_shared.py — never edit them here. A hand-copied beat table is
+// how the triplet durations came to be scored as zero beats in one of the two
+// implementations while the parity test went on passing.
+const DURATION_BEATS = __DURATION_BEATS__;
+const TOLERANCE = __TOLERANCE__, MIN_AGREEMENT = __MIN_AGREEMENT__,
+      MIN_MEASURES_TO_INFER = __MIN_MEASURES_TO_INFER__;
+const TUPLET_NOTE = __TUPLET_NOTE__;
 
 function beatsPerMeasure(ts) {
   if (!ts || ts === 'unknown') return null;
@@ -175,8 +177,7 @@ function describeForRetry(findings) {
     + bad.map((f) => '  - ' + line(f)).join('\n')
     + '\n\nRe-read only those measures against the image and correct the durations. '
     + 'If a passage is a triplet or other tuplet, say so in notes_to_human and leave '
-    + 'your best approximation — no triplet duration exists in the schema, so a tuplet '
-    + 'passage cannot sum.';
+    + 'your best approximation — ' + TUPLET_NOTE + '.';
 }
 
 // --- rendering -------------------------------------------------------------

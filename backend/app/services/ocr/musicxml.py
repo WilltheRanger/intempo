@@ -35,6 +35,15 @@ _TYPE_TO_DURATION: Final[dict[str, str]] = {
     "16th": "sixteenth",
     "32nd": "thirty_second",
 }
+#: Three in the time of two, by base value. A file states a tuplet in
+#: `<time-modification>` — `actual-notes` over `normal-notes` — so a triplet is
+#: read rather than inferred from the beam.
+_TRIPLET: Final[dict[str, str]] = {
+    "half": "triplet_half",
+    "quarter": "triplet_quarter",
+    "eighth": "triplet_eighth",
+    "sixteenth": "triplet_sixteenth",
+}
 _DOTTED: Final[dict[str, str]] = {
     "whole": "dotted_whole",
     "half": "dotted_half",
@@ -106,6 +115,17 @@ def _duration_name(note: ET.Element) -> str | None:
     base = _TYPE_TO_DURATION.get(kind)
     if base is None:
         return None
+    # A tuplet before a dot: a dotted triplet has no name in `Duration` either,
+    # and reporting the triplet is closer to the truth than reporting the dot.
+    actual = _text(note.find("time-modification/actual-notes"))
+    normal = _text(note.find("time-modification/normal-notes"))
+    if actual == "3" and normal == "2":
+        # Only the 3:2 case. A quintuplet or septuplet has no name here, and
+        # guessing the nearest triplet would put notes at times nobody played.
+        return _TRIPLET.get(base)
+    if actual is not None and actual != "1":
+        return None
+
     dots = len(note.findall("dot"))
     if dots == 0:
         return base

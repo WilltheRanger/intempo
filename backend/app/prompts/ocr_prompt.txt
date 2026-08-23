@@ -10,7 +10,7 @@ You are reading a single line of sheet music for a string instrument. Output a J
     {
       "measure_number": 1,
       "notes": [
-        {"pitch": "D3" | "rest", "duration": "quarter" | "eighth" | "half" | "whole" | "sixteenth" | "dotted_quarter" | ...},
+        {"pitch": "D3" | "rest", "duration": "quarter" | "eighth" | "half" | "whole" | "sixteenth" | "dotted_quarter" | "triplet_eighth" | ...},
         {"pitch": "F#3", "duration": "eighth", "tied_to_next": true}
       ],
       "slurs": [
@@ -50,6 +50,7 @@ Rules:
 - Do NOT invent notes. If part of the image is illegible, leave that measure empty and flag it.
 - If the time_signature or key_signature is illegible (cropped off, handwritten unclear, missing from this excerpt), use the literal string "unknown" for that field rather than guessing. Do NOT use "unknown" for any other field — those two are the only ones with this escape hatch.
 - Tempo marking: if the score says "Allegro" without a BPM, infer the conventional range and put it in bpm_hint (Allegro ~120, Andante ~76, etc.)
+- Triplets have names: triplet_half, triplet_quarter, triplet_eighth, triplet_sixteenth. Three of them fill the space of two plain ones, so a bar of six triplet_eighths is 2 beats, not 3. Use them where the score brackets a 3 — previously there was no way to write one and the measure came out long.
 - Slurs: indicate by note index within the measure, 0-indexed. These matter more than they look: the analysis excludes slurred notes from the timing verdict, because a note taken under a bow stroke is not attacked and has no onset to be early or late. Getting them wrong marks real rushing as unmeasurable, or measures a note that was never articulated.
 - Do NOT report articulation (staccato, tenuto, accent) or dynamics. Nothing reads them, and asking for them on every note costs output that a long page needs for its notes.
 - Output ONLY the JSON object, no preamble or markdown fences.

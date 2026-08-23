@@ -63,10 +63,14 @@ export function problemMeasures(score: ScoreJson): number[] {
   }
   const out: number[] = [];
   for (const measure of score.measures) {
-    const total = measure.notes.reduce(
-      (sum, note) => sum + (BEATS[note.duration] ?? 0),
-      0,
-    );
+    const total = beatsIn(measure.notes);
+    // A duration this build has never heard of means the app is older than the
+    // backend that read the page. That is a bar this version cannot count, not
+    // a bar that is wrong — it used to be counted as zero beats, which made a
+    // correct measure look short and offered the musician a fix for nothing.
+    if (total === null) {
+      continue;
+    }
     if (Math.abs(total - perBar) > TOLERANCE) {
       out.push(measure.measure_number);
     }
@@ -165,6 +169,10 @@ export const EDITABLE_DURATIONS = [
   'dotted_eighth',
   'eighth',
   'sixteenth',
+  // Offered last: a triplet is rarer than a plain value, and a musician
+  // reaching for one knows what they are looking for.
+  'triplet_quarter',
+  'triplet_eighth',
 ] as const;
 
 /** How a duration is written on a button. Not the American names — a string
@@ -182,16 +190,36 @@ export const DURATION_LABELS: Record<string, string> = {
   sixteenth: '16th',
   dotted_sixteenth: '16th ·',
   thirty_second: '32nd',
+  triplet_half: 'Half ³',
+  triplet_quarter: 'Quarter ³',
+  triplet_eighth: 'Eighth ³',
+  triplet_sixteenth: '16th ³',
 };
 
-/** Beats a duration is worth, for the live total while editing. */
-export function beatsOf(duration: string): number {
-  return BEATS[duration as keyof typeof BEATS] ?? 0;
+/**
+ * Beats a duration is worth, or null if this build does not know the duration.
+ *
+ * Nullable rather than defaulted. The two defaults this replaced disagreed with
+ * each other — `?? 0` here and `?? 1` in `schedule.ts` — so the same unknown
+ * duration made a bar look short in one place and shifted the metronome in the
+ * other, both silently.
+ */
+export function beatsOf(duration: string): number | null {
+  const beats = BEATS[duration as keyof typeof BEATS];
+  return beats === undefined ? null : beats;
 }
 
-/** What a measure's notes currently add up to. */
-export function beatsIn(notes: { duration: string }[]): number {
-  return notes.reduce((sum, note) => sum + beatsOf(note.duration), 0);
+/** What a measure's notes add up to, or null if any of them cannot be counted. */
+export function beatsIn(notes: { duration: string }[]): number | null {
+  let total = 0;
+  for (const note of notes) {
+    const beats = beatsOf(note.duration);
+    if (beats === null) {
+      return null;
+    }
+    total += beats;
+  }
+  return total;
 }
 
 /**
@@ -207,6 +235,11 @@ export function describeBeats(
 ): { text: string; balanced: boolean; expected: number | null } {
   const expected = beatsPerMeasure(timeSignature);
   const actual = beatsIn(notes);
+  if (actual === null) {
+    // Unreachable from a score this build's schema accepted, and handled anyway
+    // rather than shown as a confident wrong number.
+    return { text: 'Beats not counted', balanced: true, expected: null };
+  }
   const shown = Number.isInteger(actual) ? String(actual) : actual.toFixed(2).replace(/0+$/, '');
   if (expected === null) {
     // No time signature was read, so there is nothing to balance against.

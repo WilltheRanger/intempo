@@ -20,6 +20,9 @@ import json
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from sandbox_shared import render  # noqa: E402
+
 ROOT = Path(__file__).resolve().parent.parent
 TEMPLATE = ROOT / "tools" / "validator-sandbox.template.html"
 OUTPUT = ROOT / "tools" / "validator-sandbox.html"
@@ -48,6 +51,15 @@ def main() -> int:
     html = TEMPLATE.read_text()
     if "__FIXTURES__" not in html:
         print("template has no __FIXTURES__ placeholder", file=sys.stderr)
+        return 1
+
+    # The beat table and the thresholds come out of the backend rather than
+    # out of this file, so the sandbox cannot disagree with the validator it
+    # stands for. See tools/sandbox_shared.py.
+    try:
+        html = render(html)
+    except KeyError as exc:
+        print(exc.args[0], file=sys.stderr)
         return 1
 
     OUTPUT.write_text(html.replace("__FIXTURES__", json.dumps(cases)))

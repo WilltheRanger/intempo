@@ -6,6 +6,98 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-27 — Triplets, and the four beat tables that made them dangerous
+
+**Branch:** `main`. Owner: "fix those and improve anything else."
+
+### 1. Triplets are now writable
+
+`Duration` gained `triplet_half`, `triplet_quarter`, `triplet_eighth`,
+`triplet_sixteenth`. Additive to a closed Literal, so **no stored score is
+invalidated**. `musicxml.py` reads `<time-modification>` at 3:2 and returns
+`None` for anything else — a quintuplet is still approximated, and still says
+so, because guessing at 5:4 would put a wrong note value into a verdict rather
+than a caveat into a sentence.
+
+Propagated to `mobile/src/data/types.ts`, `lib/score/schedule.ts`,
+`lib/notation/reading.ts` (`EDITABLE_DURATIONS`, and `DURATION_LABELS` showing
+them as "Quarter ³") and the OCR prompt.
+
+### 2. The real finding: four copies of one table, three of them wrong
+
+The beat value of a duration lived in **four** places — `score_schema`,
+`alignment.py`, `ocr/validate.py`, and the JavaScript in two browser tools.
+Each carried a comment saying it was deliberately identical to the others. The
+triplets went into one of them.
+
+The failures were silent and each was different:
+
+- `validate.py` used `.get(duration, 0.0)`. Every triplet scored **zero
+  beats**, so a correct 4-beat bar reported as 2.0 and short — the pipeline
+  spent a second model call re-reading a measure it had read right.
+- `alignment.py` used `.get(duration, 1.0)`. A triplet would have counted as a
+  quarter, which does not produce a wrong beat, it produces a wrong *timeline*:
+  every onset after it shifts, and the musician is told they rushed from that
+  bar to the end of the piece.
+- `reading.ts` used `?? 0` and `schedule.ts` used `?? 1` — the same unknown
+  duration made a bar look short in one place and moved the metronome in the
+  other.
+- The two `.template.html` tools carried the old table by hand.
+
+**A comment is not an invariant.** All four now read `score_schema.DURATION_BEATS`:
+
+- Python imports it. `alignment._beats` raises on an unknown duration instead
+  of defaulting, naming the table to add it to.
+- The browser tools name a `__DURATION_BEATS__` placeholder and
+  `tools/sandbox_shared.py` substitutes the backend's values at build time.
+  The numbers are no longer copied at all.
+- `reading.beatsOf` returns `number | null`. A duration this build does not
+  know means the app is older than the backend — a bar it cannot count, not a
+  bar that is wrong — so `problemMeasures` skips it rather than offering the
+  musician a fix for nothing. `schedule.ts` keeps a fallback for *playback*
+  only, now a named `UNKNOWN_DURATION_BEATS` with the reasoning written down.
+
+### 3. The parity test was passing because it tested the stale copy
+
+`test_sandbox_parity.py` sliced the JavaScript out of the **template** and ran
+it — including the template's own hand-written table. So it compared the
+sandbox's stale numbers to the backend's current ones and reported agreement.
+It now renders through `sandbox_shared.render()` first, so the JavaScript under
+test holds production's numbers and only the port's *logic* is being checked.
+
+`BENCH_RUNNER` was worse: defined, never called, and broken. It sliced to
+`'// --- Engraving'`, a marker that does not exist in the template, so
+`indexOf` returned -1, the slice ran to the end of the file and node choked on
+the `</script>`. Nothing reported it because nothing ran it. The scan bench's
+`repeatedRuns`/`numberingGaps` port is now actually compared to its Python.
+
+Triplet cases added to the shared case list — the drift this suite exists to
+catch had no case that could catch it. Mutation-checked: rounding the emitted
+table to 3dp fails two tests.
+
+### 4. A comment I wrote that was simply false
+
+Three files claimed three triplet eighths sum to `0.9999999999999998`. They do
+not. Thirds are not exactly representable in binary, but round-to-nearest
+recovers the bar length exactly for every grouping in this table — verified
+exhaustively over every ordered combination up to six notes, and 600k random
+bars up to eighteen. Corrected in `validate.py`, `score_schema.py`,
+`schedule.ts` and the parity test. `TOLERANCE` stays: the exactness is a
+property of these particular values, not a theorem, and a beat check should not
+depend on it.
+
+**Tests:** 448 → **476 passing**, ruff clean, `tsc --noEmit` clean, both browser
+tools rebuild. New `app/tests/test_duration_beats.py` holds the invariants —
+the table covers exactly `Duration`, every module uses the same *object*, no
+duration resolves to a default, and a triplet bar survives validate, timeline
+and the retry prompt end to end.
+
+**No UI was designed or changed** — `MeasureEditScreen` gained triplet chips
+through the existing `EDITABLE_DURATIONS` list and `beatsIn` becoming nullable.
+Screens still to design (import picker) remain behind the §2 gate.
+
+---
+
 ## 2026-08-26 (later) — Everything that was on the deliberately-not-built list
 
 **Branch:** `main`. Owner: "build everything else you didn't build."

@@ -326,9 +326,10 @@ const MODELS = __MODELS__;
 
 // A literal port of backend/app/services/ocr/validate.py, held to it by
 // app/tests/test_sandbox_parity.py.
-const DURATION_BEATS = {whole:4,dotted_whole:6,half:2,dotted_half:3,quarter:1,
-  dotted_quarter:1.5,eighth:.5,dotted_eighth:.75,sixteenth:.25,dotted_sixteenth:.375,thirty_second:.125};
-const TOLERANCE=1e-6, MIN_AGREEMENT=.6, MIN_MEASURES_TO_INFER=3;
+// Substituted from the backend at build time by tools/sandbox_shared.py.
+const DURATION_BEATS = __DURATION_BEATS__;
+const TOLERANCE=__TOLERANCE__, MIN_AGREEMENT=__MIN_AGREEMENT__,
+      MIN_MEASURES_TO_INFER=__MIN_MEASURES_TO_INFER__;
 
 function beatsPerMeasure(ts){
   if(!ts||ts==='unknown')return null;

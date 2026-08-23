@@ -21,6 +21,9 @@ import json
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from sandbox_shared import render  # noqa: E402
+
 ROOT = Path(__file__).resolve().parent.parent
 TEMPLATE = ROOT / "tools" / "scan-bench.template.html"
 OUTPUT = ROOT / "tools" / "scan-bench.html"
@@ -59,6 +62,11 @@ def main() -> int:
     ]
 
     html = TEMPLATE.read_text()
+    try:
+        html = render(html)
+    except KeyError as exc:
+        print(exc.args[0], file=sys.stderr)
+        return 1
     for placeholder, value in (("__PROMPT__", PROMPT), ("__MODELS__", models)):
         if placeholder not in html:
             print(f"template has no {placeholder} placeholder", file=sys.stderr)
