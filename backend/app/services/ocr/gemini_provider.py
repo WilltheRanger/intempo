@@ -92,6 +92,21 @@ class GeminiProvider:
             raise OCRProviderError(f"{self.name}: {type(exc).__name__}: {exc}") from exc
         latency_ms = int((time.monotonic() - start) * 1000)
 
+        # The same truncation check as the Claude provider, for the same
+        # reason: a response that ran out of room is invalid JSON, and invalid
+        # JSON reported as "the model answered badly" is how a page with too
+        # many notes came to be described as an unreadable photograph.
+        # Gemini spells the reason on the candidate rather than the response.
+        candidates = getattr(response, "candidates", None) or []
+        if candidates and str(getattr(candidates[0], "finish_reason", "")).endswith(
+            "MAX_TOKENS"
+        ):
+            raise OCRProviderError(
+                f"{self.name}: the transcription was cut off at "
+                f"{MAX_OUTPUT_TOKENS} tokens — this page has more notes than "
+                "one response can hold"
+            )
+
         text = getattr(response, "text", None)
         if not text:
             raise OCRProviderError(f"{self.name}: empty response text")

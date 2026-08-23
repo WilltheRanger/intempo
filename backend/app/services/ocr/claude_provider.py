@@ -19,7 +19,22 @@ from app.services.ocr.base import (
 )
 from app.services.score_schema import ScoreJson
 
-MAX_TOKENS = 4000
+#: Output budget for one transcription.
+#:
+#: **4000 was too small for a real page, and the way it failed hid why.** A
+#: page of orchestral parts — 25 bars, ~120 notes — serialises to 4,500-6,100
+#: tokens in this schema, because every note carries five fields. Over the cap
+#: the JSON stops mid-object, `model_validate_json` raises, the pipeline counts
+#: that as the provider failing, the next provider is asked the same question
+#: and truncates in the same place, and the musician is told their photograph
+#: could not be read. The photograph was fine. Measured against a real page a
+#: cellist sent in, which is what turned this up.
+#:
+#: 16000 matches the Gemini provider and holds roughly three times that page.
+#: The cap is still a cliff, which is why `stop_reason` is now checked — a
+#: bigger number alone would only move the cliff somewhere less common and
+#: leave the misdiagnosis in place for whoever found it.
+MAX_TOKENS = 16000
 
 
 def _strip_markdown_fences(text: str) -> str:
@@ -102,6 +117,18 @@ class ClaudeProvider:
             # is precisely the situation the chain exists for.
             raise OCRProviderError(f"{self.name}: {type(exc).__name__}: {exc}") from exc
         latency_ms = int((time.monotonic() - start) * 1000)
+
+        # Truncation, named. Anthropic reports it rather than leaving it to be
+        # inferred, and inferring it is what went wrong before: a cut-off
+        # response is invalid JSON, invalid JSON is indistinguishable from a
+        # model that answered badly, and "answered badly" is what the whole
+        # chain then reported about a page it had simply run out of room to
+        # write down.
+        if getattr(response, "stop_reason", None) == "max_tokens":
+            raise OCRProviderError(
+                f"{self.name}: the transcription was cut off at {MAX_TOKENS} tokens "
+                "— this page has more notes than one response can hold"
+            )
 
         parts = getattr(response, "content", None) or []
         if not parts:

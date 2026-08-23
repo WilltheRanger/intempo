@@ -58,6 +58,10 @@ class _FakeUsage:
 class _FakeResponse:
     content: list[_FakePart]
     usage: _FakeUsage | None = None
+    #: Why the model stopped. `end_turn` on a complete answer; `max_tokens`
+    #: when it ran out of room, which the provider must refuse rather than try
+    #: to parse.
+    stop_reason: str = "end_turn"
 
 
 class _FakeMessages:
@@ -233,3 +237,52 @@ def test_a_connection_error_arrives_as_an_ocr_provider_error(monkeypatch) -> Non
     monkeypatch.setattr(claude_sonnet_provider, "_client", _Boom())
     with pytest.raises(OCRProviderError):
         claude_sonnet_provider.parse(b"<jpeg>")
+
+
+def test_a_truncated_transcription_is_named_as_one(install_fake) -> None:
+    """The bug a real page found, and the reason it stayed hidden.
+
+    A page of orchestral parts serialises to 4,500-6,100 tokens in this schema.
+    Against the old 4000-token cap the JSON stopped mid-object, parsing raised,
+    the pipeline counted it as the provider failing, the next provider truncated
+    in the same place — and the musician was told their photograph could not be
+    read. It was a perfectly sharp photograph.
+
+    Anthropic *reports* truncation rather than leaving it to be inferred, and
+    inferring it is exactly what went wrong.
+    """
+    fake = install_fake(
+        claude_sonnet_provider,
+        _FakeResponse(
+            content=[_FakePart('{"time_signature": "4/4", "measures": [{"measure_')],
+            usage=_FakeUsage(input_tokens=2000, output_tokens=16000),
+        ),
+    )
+    fake.messages._response.stop_reason = "max_tokens"
+
+    with pytest.raises(OCRProviderError) as caught:
+        claude_sonnet_provider.parse(b"<a long page>")
+    assert "cut off" in str(caught.value)
+
+
+def test_a_complete_response_is_not_mistaken_for_a_truncated_one(install_fake) -> None:
+    """`stop_reason` is `end_turn` on every normal answer, and the check has to
+    leave those alone — a false positive here refuses a good transcription."""
+    fake = install_fake(
+        claude_sonnet_provider,
+        _FakeResponse(
+            content=[_FakePart(json.dumps(GOOD_PAYLOAD))],
+            usage=_FakeUsage(input_tokens=10, output_tokens=10),
+        ),
+    )
+    fake.messages._response.stop_reason = "end_turn"
+    assert claude_sonnet_provider.parse(b"<jpeg>").score.measures
+
+
+def test_the_output_budget_holds_a_real_page() -> None:
+    """A page a cellist actually sent in needed ~6,100 tokens. The cap must
+    have room for it and then some, or this regresses the moment someone
+    photographs a busy system."""
+    from app.services.ocr.claude_provider import MAX_TOKENS
+
+    assert MAX_TOKENS >= 12000

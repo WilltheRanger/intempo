@@ -6,6 +6,66 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-24 (night) — The page was fine. The cap was too small, and the message lied about it
+
+**Branch:** `main`. Owner sent the photograph the app had refused — a sharp,
+evenly lit scan of a bass part, rehearsal marks 49–52 — and asked what was
+wrong with it. Nothing was.
+
+### What actually happened
+
+`ClaudeProvider.MAX_TOKENS` was **4000**. A page like that one — 25 bars,
+roughly 120 notes — serialises to **4,500–6,100 output tokens** in this schema,
+because every note carries five fields (`pitch`, `duration`, `articulation`,
+`tied_to_next`, `dynamics`). Measured, not estimated: a representative
+`ScoreJson` of that size is 14,906 characters compact and 20,240 indented.
+
+So the model ran out of room, the JSON stopped mid-object,
+`ScoreJson.model_validate_json` raised, `pipeline.py` counted that as *the
+provider failing*, the next provider was asked the same question and truncated
+in the same place, and `parse_sheet_music` raised `OCRError`.
+
+### The part that actually cost someone their time
+
+The worker turned every `OCRError` into one sentence:
+
+> The notation could not be read from this photograph. A flatter, better-lit
+> shot of the page usually fixes it.
+
+That is a guess presented as a diagnosis, and for this page it was wrong in the
+worst available direction — **confident, actionable and false**. Someone will
+go and re-photograph a page that was never the problem, and it will fail again
+in exactly the same place. I wrote that line earlier today.
+
+### Three changes, and why none of them alone is enough
+
+1. **`MAX_TOKENS` 4000 → 16000**, matching the Gemini provider. Holds about
+   three times that page.
+2. **Truncation is now detected rather than inferred.** Anthropic reports
+   `stop_reason == "max_tokens"` and Gemini reports `finish_reason` on the
+   candidate; both now raise a provider error that says the reading was cut
+   off. A bigger cap on its own would only move the cliff somewhere less
+   common and leave the misdiagnosis in place for whoever found it next.
+3. **The failure reason is derived from what happened.** Cut off → "photograph
+   fewer bars at a time". Rate limited → "busy, try again". No API key → "a
+   fault on our side, not with your page". Media type → "a JPEG or PNG works".
+   The photograph is blamed only when nothing more specific is known, which is
+   the one case where it is a fair guess rather than a wrong one.
+
+### Honest status
+
+- **400 backend tests pass, 3 skipped; ruff clean.** Eight new: truncation
+  detected, a complete response *not* mistaken for a truncated one (a false
+  positive here would refuse good transcriptions), the cap held to a floor, and
+  each failure reason mapped.
+- **Not verified against the real page.** I have no API key and no network from
+  this session, so the claim "16000 is enough for that page" rests on the token
+  arithmetic above, not on a successful read. The next scan of it is the test.
+- A page busier than ~3× this one will still truncate — but it will now *say*
+  so, and say what to do about it.
+
+---
+
 ## 2026-08-24 (evening) — The photograph is spent once someone has checked it
 
 **Branch:** `main`. Owner: "once we transcribe the piece why don't we save the
