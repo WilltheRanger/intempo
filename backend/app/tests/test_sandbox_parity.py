@@ -44,7 +44,12 @@ def _rendered(template: Path) -> str:
     return render(template.read_text())
 
 
-def _score(measures: list[list[str]], time_signature: str | None) -> dict:
+def _score(
+    measures: list[list[str]],
+    time_signature: str | None,
+    tuplets: dict[int, list[dict]] | None = None,
+) -> dict:
+    tuplets = tuplets or {}
     return {
         "time_signature": time_signature,
         "key_signature": "C major",
@@ -65,6 +70,7 @@ def _score(measures: list[list[str]], time_signature: str | None) -> dict:
                     for d in durations
                 ],
                 "slurs": [],
+                "tuplets": tuplets.get(i, []),
             }
             for i, durations in enumerate(measures)
         ],
@@ -112,6 +118,26 @@ CASES = [
     # And a genuinely short bar made of triplets, so "tolerant" is not
     # mistaken for "always passes".
     _score([["triplet_eighth"] * 3], "4/4"),
+    # Brackets. A 5:4 approximated as triplets sums to exactly 4.0 and must be
+    # a problem in all three implementations.
+    _score(
+        [["triplet_eighth"] * 3 + ["quarter"] * 3],
+        "4/4",
+        {0: [{"start_note_index": 0, "end_note_index": 2, "actual_notes": 3, "normal_notes": 2}]},
+    ),
+    _score(
+        [["triplet_eighth"] * 3 + ["quarter"] * 3],
+        "4/4",
+        {0: [{"start_note_index": 0, "end_note_index": 2, "actual_notes": 5, "normal_notes": 4}]},
+    ),
+    _score(
+        [["triplet_eighth"] * 2 + ["quarter"] * 3],
+        "4/4",
+        {0: [{"start_note_index": 0, "end_note_index": 1, "actual_notes": 3, "normal_notes": 2}]},
+    ),
+    # Density: a page of quarters with one bar of thirty-seconds that still
+    # sums to 4.0.
+    _score([Q, Q, ["thirty_second"] * 32, Q], "4/4"),
     # No malformed time signature here: `ScoreJson` validates it to N/N,
     # "unknown" or null, so one cannot reach `validate_measures` in production
     # and there is nothing for the two implementations to agree about. The
@@ -144,9 +170,10 @@ const from = html.indexOf('const DURATION_BEATS');
 const to = html.indexOf('// --- providers');
 if (from < 0 || to < 0) throw new Error('bench markers moved: ' + from + '/' + to);
 const cases = JSON.parse(fs.readFileSync(process.argv[3], 'utf8'));
-const fn = new Function(html.slice(from, to) + '; return { repeatedRuns, numberingGaps };')();
+const fn = new Function(html.slice(from, to) + '; return { repeatedRuns, numberingGaps, validateMeasures };')();
 console.log(JSON.stringify(cases.map((c) => ({
-  repeats: fn.repeatedRuns(c), gaps: fn.numberingGaps(c) }))));
+  repeats: fn.repeatedRuns(c), gaps: fn.numberingGaps(c),
+  findings: fn.validateMeasures(c) }))));
 """
 
 
@@ -204,6 +231,13 @@ def test_the_scan_bench_agrees_about_repeats_and_numbering() -> None:
         py_gaps = [(g.after, g.next) for g in numbering_gaps(score)]
         js_gaps = [(g["after"], g["next"]) for g in js["gaps"]]
         assert py_gaps == js_gaps, f"numbering gaps differ for {label}"
+
+        # The bench has its own `validateMeasures`, and only repeats and gaps
+        # were ever compared — so it had already drifted out of step with the
+        # backend on ties, brackets and density without anything noticing.
+        py_flags = [(f.measure_number, f.verdict, f.is_problem) for f in validate_measures(score)]
+        js_flags = [(f["measure_number"], f["verdict"], f["is_problem"]) for f in js["findings"]]
+        assert py_flags == js_flags, f"bench findings differ for {label}"
 
 
 @pytest.mark.parametrize("template", [SANDBOX, BENCH], ids=["sandbox", "bench"])

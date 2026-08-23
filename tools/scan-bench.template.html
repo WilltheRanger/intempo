@@ -330,6 +330,7 @@ const MODELS = __MODELS__;
 const DURATION_BEATS = __DURATION_BEATS__;
 const TOLERANCE=__TOLERANCE__, MIN_AGREEMENT=__MIN_AGREEMENT__,
       MIN_MEASURES_TO_INFER=__MIN_MEASURES_TO_INFER__;
+const DENSITY_MULTIPLE=__DENSITY_MULTIPLE__, DENSITY_MIN_NOTES=__DENSITY_MIN_NOTES__;
 
 function beatsPerMeasure(ts){
   if(!ts||ts==='unknown')return null;
@@ -349,24 +350,67 @@ function inferBeatsPerMeasure(sums){
   }
   return hits/votes.length<MIN_AGREEMENT?null:winner;
 }
+// The three non-arithmetic checks, kept in step with `ocr/validate.py`. Ported
+// rather than imported because this file has to run from a file:// URL.
+function brokenTiesByMeasure(score){
+  const flat=[];
+  for(const m of score.measures??[]) (m.notes??[]).forEach((n,i)=>flat.push([m.measure_number,i,n]));
+  const out=new Map();
+  flat.forEach(([num,,note],k)=>{
+    if(!note.tied_to_next||note.pitch==='rest')return;
+    const next=k+1<flat.length?flat[k+1][2]:null;
+    if(next!==null&&next.pitch===note.pitch)return;
+    if(!out.has(num))out.set(num,[]);
+    out.get(num).push({pitch:note.pitch,next_pitch:next===null?null:next.pitch});
+  });
+  return out;
+}
+function tupletFaultsByMeasure(score){
+  const TRIPLET=new Set(['triplet_half','triplet_quarter','triplet_eighth','triplet_sixteenth']);
+  const out=new Map();
+  for(const m of score.measures??[]) for(const t of m.tuplets??[]){
+    const notes=m.notes??[]; let reason=null;
+    if(t.end_note_index>=notes.length)reason='range';
+    else if(t.end_note_index-t.start_note_index+1!==t.actual_notes)reason='count';
+    else if(!(t.actual_notes===3&&t.normal_notes===2))reason='unwritable';
+    else if(notes.slice(t.start_note_index,t.end_note_index+1).some(n=>!TRIPLET.has(n.duration)))reason='durations';
+    if(reason===null)continue;
+    if(!out.has(m.measure_number))out.set(m.measure_number,[]);
+    out.get(m.measure_number).push({reason});
+  }
+  return out;
+}
+
 function validateMeasures(score){
+  const brokenTies=brokenTiesByMeasure(score);
+  const tupletFaults=tupletFaultsByMeasure(score);
   const measures=score.measures??[];
   const sums=measures.map(m=>(m.notes??[]).reduce((t,n)=>t+(DURATION_BEATS[n.duration]??0),0));
   const stated=beatsPerMeasure(score.time_signature);
   const inferred=stated===null?inferBeatsPerMeasure(sums):null;
   const expected=stated!==null?stated:inferred;
   const meterInferred=stated===null&&inferred!==null;
+  const densities=expected?measures.filter(m=>(m.notes??[]).length).map(m=>(m.notes??[]).length/expected):[];
+  const sorted=[...densities].sort((a,b)=>a-b);
+  const medianDensity=sorted.length?(sorted.length%2?sorted[(sorted.length-1)/2]
+    :(sorted[sorted.length/2-1]+sorted[sorted.length/2])/2):0;
+  const densityLimit=DENSITY_MULTIPLE*medianDensity;
   return measures.map((m,i)=>{
     const actual=sums[i],count=(m.notes??[]).length;
+    const tooDense=Boolean(expected)&&count>=DENSITY_MIN_NOTES&&count/expected>densityLimit;
     let verdict;
     if(count===0)verdict='empty';
     else if(expected===null)verdict='unverifiable';
     else if(Math.abs(actual-expected)<=TOLERANCE)verdict='ok';
     else if(i===0&&actual<expected)verdict='pickup';
     else verdict=actual<expected?'short':'long';
-    return{measure_number:m.measure_number??i+1,verdict,expected_beats:expected,
+    const number=m.measure_number??i+1;
+    const ties=brokenTies.get(number)??[], tuplets=tupletFaults.get(number)??[];
+    return{measure_number:number,verdict,expected_beats:expected,
       actual_beats:actual,note_count:count,meter_inferred:meterInferred,
-      is_problem:['short','long','empty'].includes(verdict)};
+      broken_ties:ties,tuplet_faults:tuplets,too_dense:tooDense,
+      is_problem:ties.length>0||tuplets.length>0||tooDense
+                 ||['short','long','empty'].includes(verdict)};
   });
 }
 

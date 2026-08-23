@@ -33,6 +33,7 @@ is the part that can be established for free.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from statistics import median
 from typing import Literal
 
 from app.services.score_schema import (
@@ -255,6 +256,31 @@ MIN_AGREEMENT = 0.6
 #: measures agreeing is not a majority, it is a coincidence.
 MIN_MEASURES_TO_INFER = 3
 
+#: How far above the page's own median density a measure must sit to be worth
+#: a second look.
+#:
+#: Relative, not absolute, and that is the whole design. An absolute ceiling
+#: cannot work here: `thirty_second` is the shortest duration the schema has, so
+#: **32 notes is the most a four-beat bar can hold** and any fixed
+#: notes-per-beat limit high enough to avoid flagging real thirty-second
+#: passages is a limit no correctly-summing bar can reach. The first version of
+#: this check used one, and was unreachable.
+#:
+#: What is actually suspicious is a bar out of character with its neighbours.
+DENSITY_MULTIPLE = 3.0
+
+#: ...and a floor on the note count, so "three times the median" cannot flag a
+#: three-note bar on a page of whole notes. Nothing under this is dense.
+DENSITY_MIN_NOTES = 8
+
+#: The failure these exist for: a model reading a tremolo, a trill or a turn as
+#: a run of separate notes. One half note with a mark over it becomes sixteen
+#: sixteenths — which sums to **exactly the same number of beats**, so the
+#: arithmetic check cannot see it, and `note_count` had been sitting in this
+#: dataclass unread since it was written.
+#:
+#: Starting values. Nothing here has been measured against real pages yet.
+
 
 @dataclass(frozen=True)
 class MeasureFinding:
@@ -281,6 +307,15 @@ class MeasureFinding:
     #: brackets a 5:4 quintuplet sum to exactly 1.0. The bar adds up. Only the
     #: stated ratio can see it.
     tuplet_faults: tuple[TupletFault, ...] = ()
+    #: More notes than this measure can plausibly hold, and more than the rest
+    #: of the page runs to.
+    #:
+    #: `note_count` had been populated since this dataclass existed and read by
+    #: nothing, so a measure with nineteen notes that happened to sum correctly
+    #: was trusted in silence. That is the shape of a tremolo or an ornament
+    #: read as a run of real notes — and it can sum to exactly the right number
+    #: of beats, which is why the arithmetic check cannot see it.
+    too_dense: bool = False
 
     @property
     def is_problem(self) -> bool:
@@ -288,6 +323,7 @@ class MeasureFinding:
         return (
             bool(self.broken_ties)
             or bool(self.tuplet_faults)
+            or self.too_dense
             or self.verdict in {"short", "long", "empty"}
         )
 
@@ -298,6 +334,11 @@ class MeasureFinding:
             return "; ".join(tie.describe() for tie in self.broken_ties)
         if self.tuplet_faults:
             return "; ".join(fault.describe() for fault in self.tuplet_faults)
+        if self.too_dense:
+            return (
+                f"measure {self.measure_number}: {self.note_count} notes in "
+                f"{self.expected_beats:g} beats — far more than the rest of the page"
+            )
         if self.verdict == "unverifiable":
             return f"measure {self.measure_number}: not checkable"
         source = " (meter inferred from the music)" if self.meter_inferred else ""
@@ -380,15 +421,30 @@ def validate_measures(score: ScoreJson) -> list[MeasureFinding]:
 
     stated = beats_per_measure(score.time_signature)
     inferred = None
+    densities: list[float] = []
     if stated is None:
         inferred = infer_beats_per_measure(sums)
     expected = stated if stated is not None else inferred
     from_music = stated is None and inferred is not None
     findings: list[MeasureFinding] = []
 
+    if expected:
+        densities = [
+            len(measure.notes) / expected
+            for measure in score.measures
+            if measure.notes
+        ]
+    median_density = median(densities) if densities else 0.0
+    density_limit = DENSITY_MULTIPLE * median_density
+
     for index, measure in enumerate(score.measures):
         actual = sums[index]
         count = len(measure.notes)
+        dense = (
+            bool(expected)
+            and count >= DENSITY_MIN_NOTES
+            and count / expected > density_limit
+        )
 
         if count == 0:
             verdict: Verdict = "empty"
@@ -413,6 +469,7 @@ def validate_measures(score: ScoreJson) -> list[MeasureFinding]:
                 meter_inferred=from_music,
                 broken_ties=tuple(ties_by_measure.get(measure.measure_number, ())),
                 tuplet_faults=tuple(tuplets_by_measure.get(measure.measure_number, ())),
+                too_dense=dense,
             )
         )
     return findings
@@ -455,6 +512,7 @@ def describe_for_retry(findings: list[MeasureFinding]) -> str:
     sums = [f for f in bad if f.verdict in {"short", "long", "empty"}]
     ties = [f for f in bad if f.broken_ties]
     tuplets = [f for f in bad if f.tuplet_faults]
+    dense = [f for f in bad if f.too_dense]
 
     header = "Your previous transcription has measures that cannot be right:"
     body = "\n".join(f"  - {line}" for line in lines)
@@ -478,5 +536,11 @@ def describe_for_retry(findings: list[MeasureFinding]) -> str:
             " Count the notes inside each bracket again and make `tuplets` say "
             "what is printed over it: actual_notes is the number on the bracket "
             f"and normal_notes is what it replaces. {TUPLET_NOTE}."
+        )
+    if dense:
+        instructions.append(
+            " Where a measure holds far more notes than the rest of the page, "
+            "check it is not a tremolo, a trill or a turn: those are one written "
+            "note with a mark over it, not a run of separate notes."
         )
     return header + "\n" + body + "".join(instructions)

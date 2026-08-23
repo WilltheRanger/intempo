@@ -6,6 +6,75 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-29 (later still) — Density flagged; `subseq` measured and refused
+
+**Branch:** `main`. Audit follow-up, item 3 of 5. One half shipped, one half
+measured and not shipped.
+
+### Density — shipped
+
+`note_count` had been on `MeasureFinding` since it was written and read by
+**nothing**, so a bar with nineteen notes that summed correctly was trusted in
+silence. The failure it guards is a model reading a tremolo, a trill or a turn
+as a run of separate notes: one half note with a mark over it becomes sixteen
+sixteenths, which sums to *exactly the same number of beats*. The arithmetic
+check cannot see it.
+
+**The first threshold I wrote was unreachable, and testing it is what showed
+that.** It required a bar to exceed 8 notes per quarter-beat *and* three times
+the page's median. But `thirty_second` is the shortest duration in the schema,
+so **32 notes is the most a four-beat bar can hold** — 8 per beat exactly — and
+any absolute limit high enough not to flag real thirty-second passages is one no
+correctly-summing bar can reach. It would only ever have fired on bars already
+flagged "long".
+
+So the check is relative: three times the page's own median density, with a
+floor of eight notes so "three times the median" cannot flag a four-note bar on
+a page of whole notes. A page written in sixteenths flags nothing; sixteenths
+next to quarters flag. Starting values, unmeasured against real pages.
+
+### `subseq=True` — measured, and **not** applied
+
+Setting it as specified would have made partial takes worse, not better. It is
+in direct conflict with the span normalisation that made matching
+tempo-invariant: normalising a take to its own unit span *asserts* it covers the
+whole score, so subsequence matching then stretches it across everything.
+
+Measured on a 40-note score with a distinguishable rhythm, showing which written
+notes a partial take maps to:
+
+| take | want | span (today) | span + `subseq` | IOI + `subseq` |
+|---|---|---|---|---|
+| whole piece | 0–39 | 0–39 ✓ | 0–39 ✓ | 0–39 ✓ |
+| first half | 0–19 | 0–39 | 1–38 | 0–19 ✓ |
+| middle third | 14–27 | 0–39 | 1–37 | 1–22 |
+| last quarter | 30–39 | 0–39 | 4–37 | 0–7 |
+
+`subseq` only helps once the take is in the score's *units*, which means
+replacing span normalisation with an IOI tempo ratio — and that reintroduces the
+sparse-take hazard documented on 2026-08-28: a take with every other note
+missing gets rescaled until it looks complete. Even then it locates a mid-piece
+window wrongly.
+
+**The finding underneath is worse than the framing.** A partial take today is
+not merely coverage-penalised: its notes are mapped across the *whole* score
+(0–39 for a take of 0–19), so every delta is measured against the wrong written
+note and the analysis is confidently wrong rather than cautiously poor.
+Recorded, not fixed — the fix is a design change, not a flag.
+
+### The bench had already drifted
+
+The scan bench carries its own `validateMeasures`, and the parity test only ever
+compared `repeatedRuns` and `numberingGaps` — so it was silently out of step
+with the backend on ties, brackets and density. Both browser tools now carry all
+three checks, the parity test compares findings as well, and cases covering each
+were added. Third time this session that the one guard needed widening; it is
+now comparing the thing that actually matters.
+
+**Tests:** 527 → **535**. Ruff clean, both tools rebuild.
+
+---
+
 ## 2026-08-29 (later) — Brackets now state what they are
 
 **Branch:** `main`. Audit follow-up, item 2 of 5.

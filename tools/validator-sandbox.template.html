@@ -119,6 +119,7 @@
 const DURATION_BEATS = __DURATION_BEATS__;
 const TOLERANCE = __TOLERANCE__, MIN_AGREEMENT = __MIN_AGREEMENT__,
       MIN_MEASURES_TO_INFER = __MIN_MEASURES_TO_INFER__;
+const DENSITY_MULTIPLE = __DENSITY_MULTIPLE__, DENSITY_MIN_NOTES = __DENSITY_MIN_NOTES__;
 const TUPLET_NOTE = __TUPLET_NOTE__;
 
 function beatsPerMeasure(ts) {
@@ -163,8 +164,31 @@ function brokenTiesByMeasure(score) {
   return out;
 }
 
+// Bracketed groups, kept in step with `score_schema.tuplet_faults`. Reported,
+// not repaired: the ratio is a check on the durations, never a source of them.
+function tupletFaultsByMeasure(score) {
+  const TRIPLET = new Set(['triplet_half', 'triplet_quarter', 'triplet_eighth', 'triplet_sixteenth']);
+  const out = new Map();
+  for (const m of score.measures ?? []) {
+    for (const t of m.tuplets ?? []) {
+      const notes = m.notes ?? [];
+      let reason = null;
+      if (t.end_note_index >= notes.length) reason = 'range';
+      else if (t.end_note_index - t.start_note_index + 1 !== t.actual_notes) reason = 'count';
+      else if (!(t.actual_notes === 3 && t.normal_notes === 2)) reason = 'unwritable';
+      else if (notes.slice(t.start_note_index, t.end_note_index + 1)
+                    .some((n) => !TRIPLET.has(n.duration))) reason = 'durations';
+      if (reason === null) continue;
+      if (!out.has(m.measure_number)) out.set(m.measure_number, []);
+      out.get(m.measure_number).push({ reason });
+    }
+  }
+  return out;
+}
+
 function validateMeasures(score) {
   const brokenTies = brokenTiesByMeasure(score);
+  const tupletFaults = tupletFaultsByMeasure(score);
   const measures = score.measures ?? [];
   const sums = measures.map((m) =>
     (m.notes ?? []).reduce((t, n) => t + (DURATION_BEATS[n.duration] ?? 0), 0));
@@ -173,8 +197,20 @@ function validateMeasures(score) {
   const expected = stated !== null ? stated : inferred;
   const meterInferred = stated === null && inferred !== null;
 
+  // Density, kept in step with DENSITY_MULTIPLE / DENSITY_MIN_NOTES.
+  const densities = expected
+    ? measures.filter((m) => (m.notes ?? []).length).map((m) => (m.notes ?? []).length / expected)
+    : [];
+  const sorted = [...densities].sort((a, b) => a - b);
+  const medianDensity = sorted.length
+    ? (sorted.length % 2 ? sorted[(sorted.length - 1) / 2]
+                         : (sorted[sorted.length / 2 - 1] + sorted[sorted.length / 2]) / 2)
+    : 0;
+  const densityLimit = DENSITY_MULTIPLE * medianDensity;
+
   return measures.map((m, i) => {
     const actual = sums[i], count = (m.notes ?? []).length;
+    const tooDense = Boolean(expected) && count >= DENSITY_MIN_NOTES && count / expected > densityLimit;
     let verdict;
     if (count === 0) verdict = 'empty';
     else if (expected === null) verdict = 'unverifiable';
@@ -187,9 +223,13 @@ function validateMeasures(score) {
              expected_beats: expected, actual_beats: actual,
              note_count: count, meter_inferred: meterInferred,
              broken_ties: ties,
-             // A clean beat sum must not hide a broken tie: four quarters can
-             // sum to exactly 4.0 with a slur written as a tie in the middle.
-             is_problem: ties.length > 0 || ['short', 'long', 'empty'].includes(verdict) };
+             tuplet_faults: tupletFaults.get(number) ?? [],
+             too_dense: tooDense,
+             // A clean beat sum must not hide any of these: four quarters can
+             // sum to exactly 4.0 with a slur written as a tie in the middle,
+             // and a 5:4 bracket approximated as triplets sums perfectly too.
+             is_problem: ties.length > 0 || (tupletFaults.get(number) ?? []).length > 0
+                         || tooDense || ['short', 'long', 'empty'].includes(verdict) };
   });
 }
 
