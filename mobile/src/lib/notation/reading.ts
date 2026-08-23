@@ -154,3 +154,68 @@ export function describeConfidence(confidence: number | null): string | null {
   }
   return "The reading wasn't confident about this page — worth checking against your copy before you record.";
 }
+
+/** The durations a musician can choose from, shortest last. */
+export const EDITABLE_DURATIONS = [
+  'whole',
+  'dotted_half',
+  'half',
+  'dotted_quarter',
+  'quarter',
+  'dotted_eighth',
+  'eighth',
+  'sixteenth',
+] as const;
+
+/** How a duration is written on a button. Not the American names — a string
+ *  player reads "crotchet" or "quarter" depending on where they trained, and
+ *  the note value is unambiguous to both. */
+export const DURATION_LABELS: Record<string, string> = {
+  whole: 'Whole',
+  dotted_whole: 'Whole ·',
+  half: 'Half',
+  dotted_half: 'Half ·',
+  quarter: 'Quarter',
+  dotted_quarter: 'Quarter ·',
+  eighth: 'Eighth',
+  dotted_eighth: 'Eighth ·',
+  sixteenth: '16th',
+  dotted_sixteenth: '16th ·',
+  thirty_second: '32nd',
+};
+
+/** Beats a duration is worth, for the live total while editing. */
+export function beatsOf(duration: string): number {
+  return BEATS[duration as keyof typeof BEATS] ?? 0;
+}
+
+/** What a measure's notes currently add up to. */
+export function beatsIn(notes: { duration: string }[]): number {
+  return notes.reduce((sum, note) => sum + beatsOf(note.duration), 0);
+}
+
+/**
+ * The beat total as a sentence, and whether it balances.
+ *
+ * Rounded to two places before comparing: these are sums of thirds and
+ * sevenths in tuplet-heavy music, and an exact comparison would call a
+ * correctly-fixed bar broken because of floating point.
+ */
+export function describeBeats(
+  notes: { duration: string }[],
+  timeSignature: string | null,
+): { text: string; balanced: boolean; expected: number | null } {
+  const expected = beatsPerMeasure(timeSignature);
+  const actual = beatsIn(notes);
+  const shown = Number.isInteger(actual) ? String(actual) : actual.toFixed(2).replace(/0+$/, '');
+  if (expected === null) {
+    // No time signature was read, so there is nothing to balance against.
+    // Saying "4 beats" is still useful; claiming it is right would not be.
+    return { text: `${shown} beats`, balanced: true, expected: null };
+  }
+  return {
+    text: `${shown} of ${expected} beats`,
+    balanced: Math.abs(actual - expected) < 0.01,
+    expected,
+  };
+}

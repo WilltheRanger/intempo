@@ -180,6 +180,11 @@ there works differently as of 2026-08-24:
 - **Caveats are quiet lines, not badges.** `lib/notation/reading.ts` names the
   bars that don't add up, and confidence is surfaced only when it is *low* and
   with no number in the sentence.
+- **A misread bar is fixable, not fatal.** `MeasureEditScreen` corrects
+  durations and rests on the measures `validate.py` flags, reached from the
+  caveat line on `PieceScore`. Durations and rests only, because they are the
+  only things the verdict reads — never widen it to pitch to "make it
+  complete".
 - **The photograph is deleted only when a person accepts the reading.**
   `POST /v1/scores/:id/accept` is the only thing that discards it, and it
   refuses for a page still being read or one that failed. Never wire discarding

@@ -22,6 +22,14 @@ export type RootStackParamList = {
    * read the shared capture session, so every piece showed the same thing.
    */
   PieceScore: { pieceId: string; view?: 'notation' | 'original' };
+  /**
+   * Correcting one measure of a transcription.
+   *
+   * Keyed by measure *number*, not index: the number is what
+   * `validate.py` reports as broken, what the caveat line names, and what
+   * survives a re-read that changes how many measures there are.
+   */
+  MeasureEdit: { pieceId: string; measureNumber: number };
   ChangeEmail: undefined;
   ChangePassword: undefined;
   Acknowledgements: undefined;
