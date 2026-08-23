@@ -54,6 +54,23 @@ octave ambiguity). `estimate_bpm` was reachable only from its own two tests
 while its docstring claimed to be "the §4 calibration flow" — a false signpost
 for anyone reading the audio layer. 36 lines and both tests gone.
 
+### One beat tolerance in the app, not two
+
+`problemMeasures` compared against a named `TOLERANCE = 0.01`; `describeBeats`
+asked the same question against an inline `0.01`. Two numbers in two places for
+one rule — the edit screen could call a bar balanced while the score screen
+still listed it as a problem, and nothing would have caught the divergence.
+
+Now one exported `BEAT_TOLERANCE`, set to `1e-6` to match the backend's
+`validate.TOLERANCE`. The backend decides which bars are worth re-reading and
+the app decides which bars it offers to fix; a musician told "bar 7 doesn't add
+up" with no way to open bar 7 is the app disagreeing with itself in front of
+them.
+
+Tightening from 0.01 to 1e-6 is safe: no sum of these durations lands in the
+gap. Checked over 2M random bars of up to 23 notes against every plausible
+meter — zero. `tsc --noEmit` clean.
+
 **Tests:** 478 with the new slur cases, **476** after dropping the two dead
 ones. Ruff clean.
 
