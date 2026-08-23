@@ -39,7 +39,10 @@ import type {
  * `/v1/analyses`, and `thumbnail` from the download URL the backend signs on
  * every read.
  */
-function toPiece(score: ScoreResponse, lastPracticedAt: string | null = null): Piece {
+export function toPiece(
+  score: ScoreResponse,
+  lastPracticedAt: string | null = null,
+): Piece {
   return {
     id: score.id,
     title: score.title,

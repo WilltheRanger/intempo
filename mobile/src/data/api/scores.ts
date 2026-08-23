@@ -120,3 +120,33 @@ export function acceptTranscription(id: string): Promise<ScoreResponse> {
 export function retranscribeScore(id: string): Promise<ScoreResponse> {
   return apiFetch<ScoreResponse>(`/v1/scores/${id}/transcribe`, { method: 'POST' });
 }
+
+export interface ImportScoreInput {
+  title: string;
+  composer?: string | null;
+  movement?: string | null;
+  /** The MusicXML document. Uncompressed — a `.mxl` is unzipped client-side. */
+  musicxml: string;
+  /**
+   * Which part to read, by id (`P3`) or by printed name ("Violoncello").
+   *
+   * Omitted for a single-part file. The backend refuses to guess on a
+   * multi-part one rather than silently handing a cellist the piccolo line.
+   */
+  part?: string | null;
+}
+
+/**
+ * POST /v1/scores/import — a piece from a notation file.
+ *
+ * Synchronous, unlike the camera path: parsing XML involves no model, so there
+ * is nothing to background and nothing to poll. The piece comes back with its
+ * notes already in it, and `ocr_confidence` null — a file is not *confident*,
+ * it is *stated*.
+ */
+export function importScore(input: ImportScoreInput): Promise<ScoreResponse> {
+  return apiFetch<ScoreResponse>('/v1/scores/import', {
+    method: 'POST',
+    body: input,
+  });
+}
