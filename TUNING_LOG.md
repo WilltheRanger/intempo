@@ -6,6 +6,78 @@ value, regression results across all six fixture clips, and rationale.
 
 ---
 
+## 2026-08-29 — Novelty bake-off. Flux kept. No thresholds changed.
+
+**A negative result, and the corpus could not have produced a positive one.**
+`config.toml` untouched.
+
+The audit asked whether complex-domain or phase-based novelty (FMP C6S1) beats
+librosa's spectral flux on the soft attacks a bowed double bass produces —
+replace only if it wins under the same regression clips. It does not win.
+
+Reproducible: `cd backend && uv run python ../tools/novelty-bakeoff.py`. The
+four novelty functions are the FMP reference implementations written out in that
+file rather than a `libfmp` dependency.
+
+### The six clips cannot decide it
+
+Hits / spurious against **the times the generator actually placed**, swept over
+`delta` 0.02–0.2:
+
+| clip | flux (current) | energy | phase | complex |
+|---|---|---|---|---|
+| 01 détaché clean | 32/0 | 32/0 | 6/27 | 32/0 |
+| 02 rushing | 32/0 | 32/0 | 8/25 | 32/0 |
+| 03 dragging | 32/0 | 32/0 | 3/30 | 32/0 |
+| 04 slurred | 8/0 | 8/0 | 3/13 | 8/0 |
+| 05 open E | 1/0 | 1/0 | 1/1 | 1/0 |
+| 06 pizzicato | 16/0 | 16/0 | 4/13 | 16/0 |
+
+Flux, energy and complex are **all perfect on all six**. Nothing beats 100%, and
+that is the honest reading: these are click tracks with hard attacks, and the
+comparison is about soft ones. The fixtures are at ceiling.
+
+**A methodology error caught mid-experiment, recorded because it would have
+inverted the conclusion.** The first run scored every clip against the
+*metronomic* timeline, which made flux look poor on 02 and 03 — clips that drift
+**on purpose**. It was measuring the drift, not the detector. Ground truth is
+now reconstructed from `make_synthetic.py`'s own placement.
+
+### Attack softness, which is the actual question
+
+A 41 Hz bass tone, twelve notes, attack time constant swept. Hits of 12 /
+spurious:
+
+| method | 5 ms | 20 ms | 40 ms | 80 ms | 150 ms | 250 ms |
+|---|---|---|---|---|---|---|
+| **flux (current)** | 12/5 | 12/4 | 12/4 | **12/2** | **12/2** | **12/2** |
+| energy | 12/0 | 12/1 | 12/3 | 12/3 | 12/3 | 8/7 |
+| phase | 1/4 | 1/4 | 1/4 | 0/6 | 0/6 | 0/6 |
+| complex | 12/3 | 12/3 | 11/4 | 9/6 | 6/7 | 4/9 |
+
+**The hypothesis is refuted, and by the method it was about.** Complex-domain
+novelty degrades *fastest* as the attack softens — 12 → 9 → 6 → 4 — while flux
+holds every note and sheds spurious ones. On reflection the mechanism is
+obvious: complex-domain novelty predicts steady state and measures the
+deviation, and a very slow attack **is** close to steady state frame to frame,
+so it spreads thin instead of peaking. Flux integrates magnitude increase, which
+accumulates. Phase-based novelty is unusable throughout.
+
+**Recommendation: keep `librosa.onset.onset_strength`.** No change made.
+
+### What this does not say
+
+Synthetic tone: no bow noise, no rosin, no vibrato, no room. It says which
+method degrades first on a modelled attack, not what any of them do on a bow.
+Re-run the tool when real recordings land — that is when it becomes evidence.
+
+And it points elsewhere: the sweep over `delta` moved almost nothing, which is
+consistent with the ±464 ms peak-picking window (2026-08-27 §2) being what
+actually limits detection, not the novelty function. **The window is still the
+first thing to attack with real clips.**
+
+---
+
 ## 2026-08-28 — Matching made tempo-invariant. Regression across all six. No thresholds changed.
 
 **Not a threshold change.** `config.toml` is untouched. Two correctness fixes in
