@@ -30,6 +30,9 @@ MAX_OUTPUT_TOKENS = 16000
 class GeminiProvider:
     """Provider for Gemini multimodal models."""
 
+    #: See `ClaudeProvider.api_key_setting`.
+    api_key_setting = "GEMINI_API_KEY"
+
     def __init__(
         self,
         *,

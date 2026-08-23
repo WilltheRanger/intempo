@@ -33,8 +33,17 @@ class Settings:
     SUPABASE_KEY: str = os.getenv("SUPABASE_KEY", "")
     SUPABASE_SERVICE_ROLE_KEY: str = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
     GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
+    #: Which models to try, in order, and what to do when one is not known.
+    #:
+    #: The default is spelled with current model names and has to be kept that
+    #: way: a stale name here is not a slow path, it is a crash. This shipped
+    #: reading `gemini-2.5-flash,claude-sonnet-4-6,claude-opus-4-7` — two names
+    #: from the previous Claude generation — so `_default_chain()` raised
+    #: "unknown provider" on the first scan and no photograph could be read at
+    #: all, whatever keys were set. `/v1/ready` reports it now, and the chain
+    #: skips names it does not recognise rather than taking the feature down.
     OCR_PROVIDER_CHAIN: str = os.getenv(
-        "OCR_PROVIDER_CHAIN", "claude-sonnet-5,claude-opus-5"
+        "OCR_PROVIDER_CHAIN", "gemini-2.5-flash,claude-sonnet-5,claude-opus-5"
     )
 
 

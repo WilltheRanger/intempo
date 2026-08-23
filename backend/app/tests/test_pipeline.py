@@ -201,10 +201,36 @@ def test_default_chain_uses_settings(monkeypatch: pytest.MonkeyPatch) -> None:
     assert captured == ["beta"]  # first one wins; alpha never tried
 
 
-def test_unknown_provider_in_chain_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_a_chain_with_no_usable_provider_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Nothing left to try is a configuration error with no fallback."""
     monkeypatch.setattr(pipeline_module.settings, "OCR_PROVIDER_CHAIN", "claude-sonnet-4-6,bogus")
-    with pytest.raises(OCRError, match="unknown provider"):
+    with pytest.raises(OCRError, match="no usable provider"):
         parse_sheet_music(b"<jpeg>")
+
+
+def test_a_stale_name_is_skipped_rather_than_fatal(monkeypatch: pytest.MonkeyPatch) -> None:
+    """One renamed model must cost that model, not the whole feature.
+
+    This test asserted the opposite — that any unknown name raised — and the
+    cost of that showed up in production: the shipped `OCR_PROVIDER_CHAIN`
+    default read `gemini-2.5-flash,claude-sonnet-4-6,claude-opus-4-7`, two
+    names from the previous Claude generation, so `_default_chain()` raised on
+    the first scan and **no page could be read at all**, whatever keys were
+    set. Note that this very test used `claude-sonnet-4-6` as its example of a
+    bogus name while the default shipped it as a real one.
+
+    Skipped, not swallowed: the names are logged at warning and `/v1/ready`
+    reports them.
+    """
+    monkeypatch.setattr(
+        pipeline_module.settings,
+        "OCR_PROVIDER_CHAIN",
+        "claude-sonnet-4-6,claude-sonnet-5,also-bogus",
+    )
+    chain = pipeline_module._default_chain()
+
+    assert [p.name for p in chain] == ["claude-sonnet-5"]
+    assert pipeline_module.unknown_provider_names == ["claude-sonnet-4-6", "also-bogus"]
 
 
 # ---------------------------------------------------------------------------
