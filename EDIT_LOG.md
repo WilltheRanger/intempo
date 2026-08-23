@@ -6,6 +6,69 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-28 (later still) — Rushing broke the thing that measures rushing
+
+**Branch:** `main`. Same owner instruction: make it work well enough to play
+into.
+
+Driving a bass-register take through the whole pipeline found two faults that
+between them meant the app worked properly only on a performance that needed no
+app. Numbers, and the six-clip regression the rule requires, are in
+`TUNING_LOG.md`.
+
+### DTW matched on absolute seconds
+
+A uniform tempo difference makes the absolute time gap grow along the piece, so
+the cheapest warp path slid rather than matching note to note. 64 notes played
+2% fast had **39%** of their notes attributed to the right written note; at 10%
+it was 8%. Past about 5% it gave up entirely and told the musician to check they
+were on the right piece.
+
+Matching is now tempo-invariant and measurement is not — which is the whole
+distinction: *which* onset is which note cannot depend on how fast it was
+played, and *whether it was early* must. A test pins both halves, including one
+that fails if the normalisation ever leaks downstream and the app quietly stops
+being able to say anyone rushed.
+
+### The recording beginning was heard as a note
+
+Spectral flux at the first frames compares against the STFT's own zero-padding,
+so the step into the room's noise floor read as an attack — at 0.070 s, on every
+take with any noise floor, at 41% of the envelope maximum. Being first it became
+the alignment origin, and a dead-on-time bass take came back as *"You dragged
+across measures 3–4 by an average of 59 BPM."*
+
+Only the frames the padding reaches are silenced, and a test holds that a note
+at 200 ms is still heard, because that is where the corpus's own clicks start.
+
+### End to end, on a bass-register take
+
+| played | before | after |
+|---|---|---|
+| dead on time | dragged by 59 BPM | **Steady tempo** |
+| steady 4% fast | *alignment failed* | **rushed** |
+| steady 10% fast | dragged by 16 BPM | **rushed** |
+| steady 8% slow | *alignment failed* | **dragged** |
+
+Every case now reaches a verdict with all 16 notes matched, at quality 0.99.
+
+### Honest limits
+
+A gradual accelerando still mis-reports when a noise-triggered false onset lands
+at the end of the take: one spurious onset at an *end* skews the span the
+matching normalises by. That is `delta` against a real room, which is a
+`TUNING_LOG` question and needs the recordings.
+
+**Everything above was measured on audio I synthesised.** Two of the artifacts I
+chased this session turned out to be my generator's rather than the pipeline's —
+a note that stopped mid-decay produced a click the detector read as an onset —
+and I removed them from the generator rather than designing around them. The
+six-clip regression is the real check, and it is clean.
+
+**Tests:** 496 → **502**. Ruff clean. `config.toml` untouched.
+
+---
+
 ## 2026-08-28 (later) — `/v1/ready`, and the reason no photograph could ever have been read
 
 **Branch:** `main`. Owner: "make sure it fully works so when I come back I can

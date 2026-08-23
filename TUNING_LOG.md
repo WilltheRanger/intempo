@@ -6,6 +6,98 @@ value, regression results across all six fixture clips, and rationale.
 
 ---
 
+## 2026-08-28 — Matching made tempo-invariant. Regression across all six. No thresholds changed.
+
+**Not a threshold change.** `config.toml` is untouched. Two correctness fixes in
+the alignment and onset layers, regression-checked against all six clips as the
+rule requires.
+
+### Regression, all six clips, before → after
+
+| clip | status | quality | detected | worst dev |
+|---|---|---|---|---|
+| 01 détaché clean | ok → ok | 0.988 → 0.988 | 32 → 32 | 20.1 → 20.1 ms |
+| 02 détaché **rushing** | ok → ok | 0.872 → **0.988** | 32 → 32 | 256.8 → 256.8 ms |
+| 03 détaché **dragging** | ok → ok | 0.872 → **0.988** | 32 → 32 | 233.9 → 233.9 ms |
+| 04 slurred | failed → failed | 0.247 → 0.196 | 8 → 8 | — |
+| 05 open E long | ok → ok | 1.000 → 1.000 | 1 → 1 | 0.0 → 0.0 |
+| 06 pizzicato | ok → ok | 0.988 → **0.990** | 16 → 16 | 20.1 → 20.1 ms |
+
+No status changed, no onset was gained or lost on any clip, and every worst
+deviation is identical — the *measurements* are untouched. The two clips that
+improved are exactly the two the change was aimed at.
+
+### 1. Matching ran on absolute seconds, so rushing broke it
+
+DTW compared raw times with a euclidean metric. A uniform tempo difference
+makes the absolute gap grow along the piece, so the cheapest warp path is not
+note-to-note but one that **slides** — further the deeper in. Measured on takes
+played at a steady but different tempo, fraction of notes matched to the right
+written note:
+
+| | 2% fast | 5% fast | 10% fast |
+|---|---|---|---|
+| 32 notes | 78% | 31% | 16% |
+| 64 notes | **39%** | 16% | 8% |
+
+A musician who rushes is the entire audience for this app, and their notes were
+being attributed to the wrong bars. Above ~5% the alignment failed outright and
+told them to check they were on the right piece.
+
+Each sequence is now put on its own unit span before matching. **Deciding which
+onset is which note cannot depend on how fast it was played; deciding whether it
+was early or late must** — and only the first is changed. `compute_deltas` still
+works in real seconds, so the verdict reports the rushing the matching ignores,
+which is pinned by a test.
+
+Quality now removes a best-fit *line* (offset and rate) rather than a constant
+offset. A tempo difference is a ramp, not an offset, so the old residuals grew
+with the **square** of the take's length — 64 notes at 1% drift scored 0.514 and
+quality had become a measure of how long the piece was.
+
+By span, not by a tempo ratio from median inter-onset intervals: IOI scored
+better on a wrong-piece take (0.000 vs 0.248) and much worse on the case that
+actually harms someone — a take with every other note missing gets rescaled
+until it looks complete, and a dropped-notes performance comes back as a
+confident analysis of bars that were never played. Span keeps the real
+correspondence and scores it 0.30, which fails honestly.
+
+### 2. The recording beginning was being heard as a note
+
+Onset strength is spectral flux; at the first frames the STFT compares against
+its own zero-padding, and the step from padding into the room's noise floor is a
+large positive flux. It fired at **0.070 s on every take with any noise floor at
+all** — three frames in, at 41% of the envelope maximum — and only a signal
+starting in perfect digital silence escaped it. That is why all six fixtures
+missed it and why every real recording would have had it.
+
+Being first, it became the alignment origin. On a dead-on-time bass take it
+displaced the first note and produced *"You dragged across measures 3–4 by an
+average of 59 BPM"* for someone playing perfectly.
+
+The `n_fft // hop_length` frames the padding reaches — 93 ms — are silenced.
+Bounded deliberately: the corpus's own clicks start at 200 ms, and a test holds
+that a note there is still heard.
+
+### Still open, and still needing a real instrument
+
+- **The ±464 ms peak-picking window**, unchanged, still capping quarter notes at
+  ~128 BPM. See the 2026-08-27 entry.
+- **Noise-triggered false onsets.** With the deterministic boundary artifact
+  gone, what remains is `delta` against a real room's noise floor. On a
+  synthetic take with a long noise-only tail it still fires spuriously, and one
+  spurious onset at an *end* skews the span the matching normalises by. This is
+  the first thing the recordings will settle, and `06_pizzicato` will argue
+  against raising `delta` because string ring is the opposite failure.
+- **04_slurred cannot pass as things stand.** `build_timeline` emits an expected
+  onset for every non-rest note including slur interiors, which produce no
+  attack — 8 detectable attacks against 32 expected onsets caps coverage at
+  0.25, and quality is coverage-weighted. Pre-existing, unchanged by today, and
+  a design question rather than a threshold: the timeline and the detector
+  disagree about what counts as an onset.
+
+---
+
 ## 2026-08-27 — Dry run against a real-format file. No thresholds changed.
 
 **Not a tuning result.** Preparation for one. The corpus is still six synthetic

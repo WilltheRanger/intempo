@@ -95,11 +95,41 @@ def detect_onsets(
     delta = onset.double_bass_delta if double_bass else onset.delta
     # librosa wants `wait` in frames; convert from milliseconds.
     hop_length = 512  # librosa onset default
+    n_fft = 2048  # librosa onset default
     wait_frames = max(1, int(round((onset.wait_ms / 1000.0) * sr / hop_length)))
-    times = librosa.onset.onset_detect(
-        y=y,
+
+    strength = librosa.onset.onset_strength(y=y, sr=sr, hop_length=hop_length)
+
+    # The first frames are silenced because their input is not audio.
+    #
+    # Onset strength is spectral flux: each frame compared with the one before
+    # it. At the very start there is no frame before, so the STFT compares
+    # against its own zero-padding, and the step from padding into the room's
+    # noise floor is a large positive flux — the *recording beginning* looks
+    # exactly like a note starting.
+    #
+    # It is not subtle and it is not rare. On a take with any noise floor at
+    # all it fires at 0.070 s, every time, three frames in, at 41% of the
+    # envelope's maximum. Only a signal beginning in perfect digital silence
+    # escapes it, which is why the synthetic fixtures never showed it and why
+    # every real recording will.
+    #
+    # It is the first onset, so it became the alignment origin, and everything
+    # downstream inherited the error: on a dead-on-time bass take it took the
+    # place of the first note, pushed the remaining notes onto the wrong bars
+    # and reported "you dragged by 74 BPM" to somebody playing perfectly.
+    #
+    # `n_fft // hop_length` frames — 93 ms here — is exactly the region the
+    # padding reaches and no more. Nobody starts playing within 93 ms of
+    # tapping record; a synthetic fixture that does is what the tests below
+    # cover explicitly.
+    contaminated = n_fft // hop_length
+    strength[:contaminated] = 0.0
+
+    frames = librosa.onset.onset_detect(
+        onset_envelope=strength,
         sr=sr,
-        units="time",
+        units="frames",
         hop_length=hop_length,
         delta=delta,
         pre_max=onset.pre_max,
@@ -107,4 +137,5 @@ def detect_onsets(
         wait=wait_frames,
         backtrack=False,
     )
+    times = librosa.frames_to_time(frames, sr=sr, hop_length=hop_length)
     return np.asarray(times, dtype=float)

@@ -332,8 +332,42 @@ def align_dtw(
             n_detected=int(detected.size), n_expected=int(expected.size),
         )
 
-    x = detected.reshape(1, -1)
-    y = expected.reshape(1, -1)
+    # --- matching is tempo-invariant; measurement is not -------------------
+    #
+    # DTW ran on raw seconds with a euclidean metric, and that quietly broke
+    # the thing this product exists to do. A uniform tempo difference makes the
+    # absolute time gap grow along the piece, so the cheapest path is not
+    # note-to-note but one that *slides* — and the further in, the further it
+    # slides. Measured, on takes played at a steady but different tempo:
+    #
+    #     32 notes,  5% fast → 31% of notes matched to the right written note
+    #     64 notes,  2% fast → 39%
+    #     64 notes, 10% fast →  8%
+    #
+    # A musician who rushes is the entire audience for this app, and their
+    # notes were being attributed to the wrong bars — so every per-measure
+    # verdict after the first few was about a measure they had not played.
+    #
+    # Each sequence is put on its own unit span before matching. Deciding
+    # *which* onset is which note cannot depend on how fast it was played;
+    # deciding whether it was early or late must. Only the first is done here —
+    # `compute_deltas` works in real seconds and is untouched, so the verdict
+    # still reports the rushing that this normalisation ignores.
+    #
+    # By span rather than by a tempo ratio from median inter-onset intervals,
+    # which measured better on a wrong-piece take (0.000 vs 0.248) and much
+    # worse on the case that actually harms someone: a take with every other
+    # note missing gets rescaled to look complete, matching note i to written
+    # note i instead of 2i, and a dropped-notes performance comes back as a
+    # confident analysis of the wrong bars.
+    def _unit_span(seq: np.ndarray) -> np.ndarray:
+        if seq.size < 2:
+            return seq - (seq[0] if seq.size else 0.0)
+        span = float(np.ptp(seq))
+        return (seq - seq[0]) / (span if span > 0 else 1.0)
+
+    x = _unit_span(detected).reshape(1, -1)
+    y = _unit_span(expected).reshape(1, -1)
     try:
         acc_cost, wp = librosa.sequence.dtw(
             X=x,
@@ -350,25 +384,46 @@ def align_dtw(
 
     # Collapse to one expected index per detected index: keep the closest
     # in time (handles the fan-out DTW leaves on the warp path).
+    # Tie-break in the same space the path was found in — comparing raw
+    # seconds here would reintroduce exactly the bias the normalisation above
+    # removes, on the fan-out where it matters most.
+    x_flat, y_flat = x[0], y[0]
     best: dict[int, tuple[int, float]] = {}
     for det_i, exp_i in path:
         det_i, exp_i = int(det_i), int(exp_i)
-        err = abs(detected[det_i] - expected[exp_i])
+        err = abs(x_flat[det_i] - y_flat[exp_i])
         prev = best.get(det_i)
         if prev is None or err < prev[1]:
             best[det_i] = (exp_i, err)
     mapping = sorted((d, e) for d, (e, _) in best.items())
 
     # Quality measures how well the *shape* of the performance matches the
-    # score, not the constant lead-in latency before the first note (that
-    # reaction-time offset is musically irrelevant — a player who starts
-    # 200ms after "record" but then plays perfectly is a 1.0, not a
-    # failure). So subtract the median detected-minus-expected offset
-    # before scoring the residual timing errors.
-    offsets = [detected[d] - expected[e] for d, e in mapping]
-    offset = float(np.median(offsets)) if offsets else 0.0
-    residuals = [abs((detected[d] - offset) - expected[e]) for d, e in mapping]
-    total_cost = float(sum(residuals))
+    # score — not the lead-in before the first note, and not the tempo it was
+    # played at. A player who starts 200 ms after "record" and then plays
+    # perfectly is a 1.0, and so is one who plays the whole thing steadily at
+    # 95% of the marked tempo: both are the right piece, played recognisably.
+    #
+    # This removed a constant offset only. A tempo difference is not a constant
+    # offset, it is a ramp, so the residuals it left grew with the *square* of
+    # the take's length — 64 notes at 1% drift scored 0.514, and quality became
+    # a measure of how long the piece was.
+    #
+    # A straight line is removed instead: offset *and* rate. What is left is
+    # what a steady tempo cannot explain, which is the only thing "can this
+    # alignment be trusted" should turn on. The tempo difference itself is not
+    # discarded — it is the verdict, and `compute_deltas` computes it from real
+    # seconds further down.
+    det_matched = np.array([detected[d] for d, _ in mapping], dtype=float)
+    exp_matched = np.array([expected[e] for _, e in mapping], dtype=float)
+    if det_matched.size >= 2 and float(np.ptp(exp_matched)) > 0:
+        rate, offset = np.polyfit(exp_matched, det_matched, 1)
+        residuals = np.abs(det_matched - (rate * exp_matched + offset))
+    elif det_matched.size:
+        offset = float(np.median(det_matched - exp_matched))
+        residuals = np.abs((det_matched - offset) - exp_matched)
+    else:
+        residuals = np.array([], dtype=float)
+    total_cost = float(residuals.sum())
     timing_quality = _quality_from_cost(total_cost, len(residuals), sec_per_beat)
 
     # Timing quality alone is blind to *coverage*: one perfectly-placed
