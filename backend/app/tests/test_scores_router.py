@@ -993,3 +993,106 @@ def test_a_correction_that_is_not_a_valid_score_is_refused(
         headers={"Authorization": f"Bearer {make_token(sub=user_id)}"},
     )
     assert res.status_code == 422
+
+
+# ---- POST /v1/scores/:id/transcribe ----------------------------------------
+#
+# A failed reading had no way back but the camera. The photograph was still in
+# storage and still perfectly good — the failure was a rate limit, a truncated
+# response, a model having a bad minute — and the only remedy on offer was
+# re-uploading several megabytes to solve a problem the megabytes never caused.
+
+
+def _retranscribe(client: TestClient, score_id: UUID, token: str):
+    return client.post(
+        f"/v1/scores/{score_id}/transcribe",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+
+def test_a_failed_page_can_be_read_again(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    user_id, score_id = uuid4(), uuid4()
+    enqueued = _stub_worker(monkeypatch)
+    sb = _install_supabase(
+        monkeypatch,
+        returning_row=_row_for(
+            score_id, user_id, transcription_status="failed",
+            transcription_error="The notation could not be read.",
+        ),
+    )
+    _install_storage(sb, signed=[])
+
+    res = _retranscribe(client, score_id, make_token(sub=user_id))
+    assert res.status_code == 200, res.text
+
+    patch = sb.table.return_value.update.call_args.args[0]
+    assert patch["transcription_status"] == "queued"
+    # Cleared, not left behind: a stale reason under a page being re-read would
+    # be shown as a warning about a reading that no longer exists.
+    assert patch["transcription_error"] is None
+    assert enqueued == [str(score_id)]
+
+
+def test_a_successful_reading_can_also_be_re_read(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """A musician looking at a transcription they can see is wrong should not
+    have to make it fail first to ask for another go."""
+    user_id, score_id = uuid4(), uuid4()
+    enqueued = _stub_worker(monkeypatch)
+    sb = _install_supabase(
+        monkeypatch, returning_row=_row_for(score_id, user_id, transcription_status="done")
+    )
+    _install_storage(sb, signed=[])
+
+    assert _retranscribe(client, score_id, make_token(sub=user_id)).status_code == 200
+    assert enqueued == [str(score_id)]
+
+
+def test_a_page_already_being_read_is_not_started_twice(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """Two workers on one row both write to it and the last one home wins."""
+    user_id, score_id = uuid4(), uuid4()
+    enqueued = _stub_worker(monkeypatch)
+    sb = _install_supabase(
+        monkeypatch,
+        returning_row=_row_for(score_id, user_id, transcription_status="reading"),
+    )
+    _install_storage(sb, signed=[])
+
+    res = _retranscribe(client, score_id, make_token(sub=user_id))
+    assert res.status_code == 409
+    assert "already being read" in res.json()["detail"]
+    assert enqueued == []
+
+
+def test_a_discarded_photograph_cannot_be_read_again(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """Accepting the reading deletes the page. Saying so beats queueing a
+    worker that will fail with "there was no photograph to read"."""
+    user_id, score_id = uuid4(), uuid4()
+    enqueued = _stub_worker(monkeypatch)
+    sb = _install_supabase(
+        monkeypatch,
+        returning_row=_row_for(score_id, user_id, source_image_url=None),
+    )
+    _install_storage(sb, signed=[])
+
+    res = _retranscribe(client, score_id, make_token(sub=user_id))
+    assert res.status_code == 409
+    assert "discarded" in res.json()["detail"]
+    assert enqueued == []
+
+
+def test_re_reading_someone_elses_score_is_404(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    enqueued = _stub_worker(monkeypatch)
+    sb = _install_supabase(monkeypatch, returning_row=None)
+    _install_storage(sb, signed=[])
+    assert _retranscribe(client, uuid4(), make_token(sub=uuid4())).status_code == 404
+    assert enqueued == []

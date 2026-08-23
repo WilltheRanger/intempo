@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
 
-import { acceptTranscription, updateScore } from '../api/scores';
+import { acceptTranscription, retranscribeScore, updateScore } from '../api/scores';
 import { IS_LIVE_BACKEND } from '../environment';
 import { pieceSource } from '../sources';
 import type { NewPiece, PieceEdit } from '../sources/types';
@@ -161,6 +161,29 @@ export function useCorrectScore(id: string) {
         );
       }
       await updateScore(id, { score_json: score });
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: pieceKeys.all });
+    },
+  });
+}
+
+/**
+ * Asks for the page to be read again.
+ *
+ * Invalidates rather than patching: the row goes back to `queued` and
+ * `usePiece` starts polling again, which is the state the screen keys off.
+ */
+export function useRetranscribe(id: string) {
+  const queryClient = useQueryClient();
+  return useMutation<void, Error, void>({
+    mutationFn: async () => {
+      if (!IS_LIVE_BACKEND) {
+        throw new Error(
+          'Reading a page again needs the backend. This build runs on sample data.',
+        );
+      }
+      await retranscribeScore(id);
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: pieceKeys.all });

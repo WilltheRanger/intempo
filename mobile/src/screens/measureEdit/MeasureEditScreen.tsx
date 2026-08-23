@@ -17,7 +17,9 @@ import { impact, ImpactFeedbackStyle } from '../../lib/haptics';
 import {
   DURATION_LABELS,
   EDITABLE_DURATIONS,
+  cycleAccidental,
   describeBeats,
+  stepPitch,
 } from '../../lib/notation/reading';
 import type { RootStackParamList } from '../../navigation/types';
 
@@ -30,12 +32,16 @@ import type { RootStackParamList } from '../../navigation/types';
  * will miss things. Without it every misread was terminal: one wrong duration
  * meant re-photographing the page or abandoning the piece.
  *
- * **Durations and rests only, deliberately.** They are the only things the
- * verdict reads — `alignment.py` accumulates durations to build its expected
- * timeline and asks of pitch only whether it is `"rest"`. A wrong duration
- * shifts every bar after it; a wrong pitch is visible on the stave and
- * harmless to the analysis. Fixing the harmful thing fast beats fixing
- * everything slowly.
+ * **Durations and rests lead, because they are what the verdict reads.**
+ * `alignment.py` accumulates durations to build its expected timeline and asks
+ * of pitch only whether it is `"rest"`, so a wrong duration shifts every bar
+ * after it while a wrong pitch is merely visible on the stave. Pitch is
+ * editable too — it is what makes the engraving and playback trustworthy to
+ * look at — but it sits below the durations and behind one more tap.
+ *
+ * Adding and deleting a note matters for the errors durations cannot fix: OCR
+ * inventing a notehead that is not there, or missing one entirely. Changing
+ * every duration in a bar cannot correct either.
  *
  * The beat total is the one dominant element (§3 law 4): it is what says
  * whether the work is done, and everything else on the screen is in service
@@ -90,6 +96,29 @@ export function MeasureEditScreen() {
     }
     impact(ImpactFeedbackStyle.Light);
     setNotes(working.map((note, i) => (i === selected ? { ...note, ...patch } : note)));
+  }
+
+  function addNote() {
+    if (!working) {
+      return;
+    }
+    impact(ImpactFeedbackStyle.Light);
+    // Copied from the selected note rather than invented: a new note beside a
+    // run of eighths is almost always another eighth, and a default of
+    // "quarter" would be one more thing to fix.
+    const copy = { ...working[selected] };
+    const next = [...working.slice(0, selected + 1), copy, ...working.slice(selected + 1)];
+    setNotes(next);
+    setSelected(selected + 1);
+  }
+
+  function deleteNote() {
+    if (!working || working.length <= 1) {
+      return;
+    }
+    impact(ImpactFeedbackStyle.Light);
+    setNotes(working.filter((_, i) => i !== selected));
+    setSelected(Math.max(0, selected - 1));
   }
 
   async function save() {
@@ -208,9 +237,11 @@ export function MeasureEditScreen() {
       </View>
 
       {/*
-        A rest is not a pitch, and it is the one non-duration fact the verdict
-        reads: `alignment.py` emits no onset for a rest, so getting it wrong
-        adds or removes a phantom note and shifts everything after it.
+        A rest sits with the durations, not with the pitch controls, because
+        it is read by the same thing they are: `alignment.py` emits no onset
+        for a rest, so getting it wrong adds or removes a phantom note and
+        shifts everything after it. Pitch, below, is read by nothing in the
+        analysis at all.
       */}
       <Pressable
         onPress={() =>
@@ -227,6 +258,76 @@ export function MeasureEditScreen() {
           Rest
         </Text>
       </Pressable>
+
+      {/*
+        Pitch, one row below the durations and deliberately quieter.
+
+        Stepping by *letter* rather than semitone: a musician correcting a
+        misread notehead is moving it a line or a space, so F♯ → G is one step
+        and F → F♯ is the accidental button, not the same control.
+      */}
+      {current && current.pitch !== 'rest' ? (
+        <View style={styles.pitchRow}>
+          <Pressable
+            onPress={() => change({ pitch: stepPitch(current.pitch, -1) })}
+            accessibilityRole="button"
+            accessibilityLabel="Lower this note"
+            style={styles.chip}
+          >
+            <Text variant="metadataSmall">Down</Text>
+          </Pressable>
+          <Pressable
+            onPress={() => change({ pitch: cycleAccidental(current.pitch) })}
+            accessibilityRole="button"
+            accessibilityLabel="Change the accidental"
+            style={styles.chip}
+          >
+            <Text variant="metadataSmall">{current.pitch}</Text>
+          </Pressable>
+          <Pressable
+            onPress={() => change({ pitch: stepPitch(current.pitch, 1) })}
+            accessibilityRole="button"
+            accessibilityLabel="Raise this note"
+            style={styles.chip}
+          >
+            <Text variant="metadataSmall">Up</Text>
+          </Pressable>
+        </View>
+      ) : null}
+
+      {/*
+        Adding and removing notes. The errors changing a duration cannot fix:
+        OCR inventing a notehead that is not there, or missing one entirely.
+
+        Delete is refused on the last note — a measure with no notes is not a
+        correction, it is a hole, and `validate.py` reports an empty bar as a
+        sign that something which was not a measure was counted as one.
+      */}
+      <View style={styles.pitchRow}>
+        <Pressable
+          onPress={addNote}
+          accessibilityRole="button"
+          accessibilityLabel="Add a note after this one"
+          style={styles.chip}
+        >
+          <Text variant="metadataSmall">Add note</Text>
+        </Pressable>
+        <Pressable
+          onPress={deleteNote}
+          disabled={working.length <= 1}
+          accessibilityRole="button"
+          accessibilityLabel="Delete this note"
+          style={[styles.chip, working.length <= 1 && styles.chipOff]}
+        >
+          <Text
+            variant="metadataSmall"
+            color={working.length <= 1 ? 'textTertiary' : 'textPrimary'}
+          >
+            Delete note
+          </Text>
+        </Pressable>
+      </View>
+
 
       {error ? (
         <Text variant="metadataSmall" color="textSecondary" style={styles.error}>
@@ -302,6 +403,14 @@ const styles = StyleSheet.create({
   restToggle: {
     alignSelf: 'flex-start',
     marginTop: spacing.md,
+  },
+  pitchRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginTop: spacing.md,
+  },
+  chipOff: {
+    opacity: 0.4,
   },
   error: {
     marginTop: spacing.lg,

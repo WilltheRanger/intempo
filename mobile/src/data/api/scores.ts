@@ -108,3 +108,15 @@ export function deleteScore(id: string): Promise<void> {
 export function acceptTranscription(id: string): Promise<ScoreResponse> {
   return apiFetch<ScoreResponse>(`/v1/scores/${id}/accept`, { method: 'POST' });
 }
+
+/**
+ * POST /v1/scores/:id/transcribe — read the page again.
+ *
+ * The photograph is still in storage, so a failed reading does not need
+ * re-photographing: a rate limit or a truncated response is not a problem the
+ * megabytes caused. Refused while a page is already being read, and for a page
+ * whose photograph was discarded on acceptance.
+ */
+export function retranscribeScore(id: string): Promise<ScoreResponse> {
+  return apiFetch<ScoreResponse>(`/v1/scores/${id}/transcribe`, { method: 'POST' });
+}
