@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 from app.services.alignment import (
     expand_repeats,
@@ -11,6 +12,7 @@ from app.services.alignment import (
     build_timeline,
     compute_expected_onsets,
     is_alignment_broken,
+    to_timeline_base,
 )
 from app.services.score_schema import Measure, Note, Repeat, ScoreJson, Slur
 
@@ -246,3 +248,101 @@ def test_measure_numbers_are_not_renumbered_across_passes() -> None:
     timeline = build_timeline(score, 60.0)
     twos = [n for n in timeline.notes if n.measure_number == 2]
     assert len(twos) == 8, "bar 2 should appear twice, four notes each"
+
+
+# --- the recording's clock vs the score's clock -----------------------------
+
+def test_a_lead_in_does_not_break_alignment() -> None:
+    """A perfect take is perfect whenever the player started.
+
+    `build_timeline` returns "seconds since start of the first note";
+    `detect_onsets` returns seconds since the recording started. Nothing put
+    them on the same clock before DTW, so a musician who tapped record, picked
+    up the bow and then played was compared against a score that assumed they
+    began instantly. Five seconds of that scored 0.053 — "check you're on the
+    right piece" — on a take with nothing wrong with it.
+    """
+    expected = np.arange(32, dtype=float)  # 32 quarters at 60bpm, played perfectly
+
+    for lead_in in (0.0, 0.5, 2.0, 5.0, 30.0):
+        played = expected + lead_in
+        result = align_dtw(to_timeline_base(played), expected, target_bpm=60.0)
+        assert result.quality == pytest.approx(1.0), f"lead-in {lead_in}s"
+
+
+def test_the_lead_in_was_what_broke_it() -> None:
+    """The regression this guards against, stated as the thing that used to
+    happen. If DTW ever stops caring about a constant offset on its own, this
+    test is the one that says the shift is no longer load-bearing."""
+    expected = np.arange(32, dtype=float)
+    unshifted = align_dtw(expected + 5.0, expected, target_bpm=60.0)
+    assert unshifted.quality < 0.4, "a five-second lead-in used to align fine?"
+
+
+def test_to_timeline_base_is_a_shift_and_nothing_else() -> None:
+    """Only the origin moves. Gaps carry the performance and must survive."""
+    played = np.array([4.0, 4.5, 5.1, 5.4, 6.9])
+    shifted = to_timeline_base(played)
+    assert shifted[0] == 0.0
+    assert np.allclose(np.diff(shifted), np.diff(played))
+
+
+def test_to_timeline_base_tolerates_an_empty_recording() -> None:
+    assert to_timeline_base(np.array([])).size == 0
+
+
+def test_the_verdict_does_not_depend_on_when_you_started(tmp_path) -> None:
+    """The same playing, recorded with different amounts of dead air in front,
+    has to produce the same per-note deltas — not merely the same verdict."""
+    from app.services.analysis import analyze
+    from app.tests.audio_helpers import synth_click_track, write_wav
+
+    score = ScoreJson.model_validate(
+        {
+            "time_signature": "4/4",
+            "key_signature": "C major",
+            "tempo_marking": None,
+            "bpm_hint": None,
+            "clef": "treble",
+            "measures": [
+                {
+                    "measure_number": bar + 1,
+                    "notes": [
+                        {"pitch": "A4", "duration": "quarter", "tied_to_next": False}
+                        for _ in range(4)
+                    ],
+                    "slurs": [],
+                }
+                for bar in range(2)
+            ],
+            "repeats": [],
+            "ocr_confidence": 0.9,
+            "notes_to_human": "",
+        }
+    )
+
+    results = []
+    for lead_in in (0.2, 3.0):
+        times = [lead_in + i * 0.6 for i in range(8)]  # 100bpm, target 100
+        path = write_wav(
+            tmp_path / f"lead{lead_in}.wav", synth_click_track(times, sr=22050), sr=22050
+        )
+        results.append(analyze(path, score, target_bpm=100.0))
+
+    early, late = results
+    assert early.status == "ok" and late.status == "ok"
+    assert len(early.per_note) == len(late.per_note) == 8
+    assert early.verdict_direction == late.verdict_direction
+
+    # Within one analysis frame. Onsets are reported at frame boundaries —
+    # hop 512 at 22.05 kHz is 23.2 ms — and shifting the audio by 2.8 s is not
+    # a whole number of frames, so the same click snaps to a different frame.
+    # That residue is the detector's time resolution, not the lead-in leaking
+    # through: before the fix these two takes did not both reach "ok" at all.
+    #
+    # Worth knowing when reading a verdict: 23.2 ms is 2.3% of a beat at 60 BPM
+    # and 4.6% at 120, against an "on tempo" band of ±5%. The measurement grid
+    # is roughly half the width of the tightest band it is asked to resolve.
+    one_frame_ms = 512 / 22050 * 1000
+    for a, b in zip(early.per_note, late.per_note, strict=True):
+        assert a.delta_ms == pytest.approx(b.delta_ms, abs=one_frame_ms + 1)

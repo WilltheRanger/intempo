@@ -39,13 +39,30 @@ def test_analyze_clean_recording_is_ok_and_steady(tmp_path) -> None:
 
 
 def test_analyze_rushing_recording_reports_rushed(tmp_path) -> None:
+    """A take played faster than the target reads as rushing.
+
+    Played at 110 against a target of 100, not 132 against 120. Both of those
+    are the same 10% overshoot, but 132 BPM quarter notes are 455 ms apart and
+    the peak-picking window is `pre_max`/`post_max` = 20 frames — **±464 ms** at
+    hop 512 and 22.05 kHz. A window wider than the gap means adjacent notes
+    suppress each other, so the detector found 5 of these 8 clicks and the test
+    was really measuring the peak-picker, not the verdict. It passed on quality
+    0.430 against a 0.400 broken-threshold: one nudge from red either way.
+
+    Detection is complete to 120 BPM in quarters and collapses at 132 — a
+    ceiling of roughly 64 BPM in eighth notes. That is a real limit on real
+    repertoire and it is a *threshold* question, so it is recorded for the
+    tuning session rather than fixed by moving a number here to make a test
+    green.
+    """
     score = _eight_quarter_note_score()
-    times = evenly_spaced(8, bpm=132.0)  # faster than target → rushing
+    times = evenly_spaced(8, bpm=110.0)  # 10% faster than target → rushing
     path = write_wav(tmp_path / "rush.wav", synth_click_track(times, sr=SR), sr=SR)
 
-    result = analyze(path, score, target_bpm=120.0)
+    result = analyze(path, score, target_bpm=100.0)
 
     assert result.status == "ok"
+    assert len(result.per_note) == 8, "every click should be detected at this rate"
     assert "rushed" in result.verdict
     assert result.verdict_direction.value == "rush"
 

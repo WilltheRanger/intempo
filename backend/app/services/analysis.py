@@ -25,6 +25,7 @@ from app.services.alignment import (
     apply_fuzzy_match,
     build_timeline,
     is_alignment_broken,
+    to_timeline_base,
 )
 from app.services.audio_config import AudioConfig, load_audio_config
 from app.services.classification import (
@@ -147,6 +148,11 @@ def analyze(
             n_detected_onsets=int(onsets.size),
             n_expected_onsets=int(expected.size),
         )
+
+    # Both sequences on the same clock before anything is compared. Without
+    # this a perfect take with a five-second lead-in aligns at 0.053 and the
+    # musician is told to check they are on the right piece.
+    onsets = to_timeline_base(onsets)
 
     raw = align_dtw(onsets, expected, target_bpm=target_bpm, config=cfg)
     if is_alignment_broken(raw.quality, config=cfg):

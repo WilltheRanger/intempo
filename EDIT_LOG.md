@@ -6,6 +6,86 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-28 — Prepping the tuning loop found the bug that would have wasted the session
+
+**Branch:** `main`. Owner: "prep for your recordings."
+
+The job was to make the corpus loop ready to receive real clips. Walking a
+real-format file through it — 48 kHz stereo 24-bit, which is what an interface
+or a phone produces, where all six stand-ins are 22.05 kHz mono — found three
+things. Details, numbers and the two open ones are in `TUNING_LOG.md`.
+
+### The one that matters: the recording's clock was never the score's clock
+
+`build_timeline` returns "seconds since start of the first note".
+`detect_onsets` returns seconds since the **recording** started. Nothing put
+them on the same clock before DTW ran.
+
+A **perfectly played** take, scored purely on when the player started after
+tapping record: 0.5 s → 1.000, 2 s → 0.762, 3 s → 0.566, **5 s → 0.053**, which
+is "We had trouble matching your recording to the score — check you're on the
+right piece and re-record." Through the audio path it was not even monotonic:
+0.45 s passed, 0.50 s failed, 0.75 s passed, 1.5 s failed.
+
+Five seconds is tapping record, putting the phone down and picking up the bow.
+This would have hit the first real take of the session and looked like a bad
+recording rather than a units bug.
+
+`compute_deltas` already handled it — "the recording's lead-in latency is not a
+timing error, so we set the origin at the first matched onset" — but it runs at
+the *end*, and `align_dtw` and `apply_fuzzy_match` both compare raw times
+before it. One stage implemented the intent and the two ahead of it did not.
+
+`alignment.to_timeline_base` now does the conversion, applied in `analyze()`
+and in `analyze_with_diagnostics`. The diagnostics copy keeps
+`detected_onsets` in the recording's clock, because the envelope plot is drawn
+in that clock and the marks have to sit on the waveform.
+
+Proven without audio at all — `expected + offset` against `expected` — so it
+is arithmetic rather than a fixture's opinion. Five tests, including one that
+asserts a five-second lead-in still *fails* without the shift, so the day DTW
+stops caring on its own, the test says the shift is no longer load-bearing.
+
+### A test was sitting on a cliff
+
+`test_analyze_rushing_recording_reports_rushed` played 132 BPM against a target
+of 120. `pre_max`/`post_max` are 20 frames — **±464 ms** — and 132 BPM quarters
+are 455 ms apart, so adjacent clicks suppressed each other and the detector
+found **5 of 8**. It passed at quality 0.430 against a 0.400 broken-threshold:
+it was measuring the peak-picker, not the verdict, and one nudge from red.
+
+Moved to 110 against 100 — the same 10% overshoot, inside the detector's range
+— and it now asserts all eight notes are seen. **The threshold itself was not
+touched.** It is a tuning question, it needs the six real clips and the
+regression rule, and `06_pizzicato` is the clip that will argue against
+narrowing the window.
+
+### Honest status
+
+- The lead-in fix is proven and shipped.
+- The ±464 ms window caps quarter notes at ~128 BPM — about 64 BPM in eighths.
+  Kreutzer No. 2 in the app's own demo library is continuous sixteenths.
+  **Open**, for the session with real audio.
+- A spurious onset can fire a few frames into a signal that has a noise floor,
+  ahead of the first note. It never appears on the synthetic clips because they
+  start in digital silence. It is now the alignment origin, and on the test file
+  it turned a perfect take into "dragged by 25 BPM" — a confident wrong verdict
+  where there used to be an honest failure. **Deliberately not fixed**: every
+  candidate is a heuristic, DTW quality cannot tell the right origin from the
+  wrong one (0.806 either way), and the only evidence today is a file fabricated
+  this afternoon. That file was deleted rather than left sitting in the corpus
+  looking like a recording.
+
+`fixtures/audio/README.md` now says to leave a second of room tone and why,
+drops the "mono WAV" instruction that the format check disproved, and gives the
+order to read the dashboard in: onset **count** first, stray leading mark
+second, deviation bars only after those two are right.
+
+**Tests:** 482 → **487**. Ruff clean. `config.toml` untouched — no threshold
+moved in this entry.
+
+---
+
 ## 2026-08-27 (latest) — Notation-file import, and the analysis learns the instrument
 
 **Branch:** `main`. Owner approved the import screen design under the §2 gate,

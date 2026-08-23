@@ -6,6 +6,102 @@ value, regression results across all six fixture clips, and rationale.
 
 ---
 
+## 2026-08-27 — Dry run against a real-format file. No thresholds changed.
+
+**Not a tuning result.** Preparation for one. The corpus is still six synthetic
+click tracks; nothing here was measured on an instrument.
+
+What was done: a 48 kHz **stereo 24-bit** file — the format an interface or a
+phone actually produces — was dropped in as `01_detache_clean.wav` to walk the
+path a real recording will take, then deleted. The synthetic clips are all
+22.05 kHz mono, which is exactly what the loader wants, so resampling and
+downmixing had never once been exercised. They work: librosa resolved 48k
+stereo 24-bit to 22.05k mono without complaint, and `load_corpus` picked the
+real file over the stand-in automatically.
+
+Three things surfaced. One is fixed; two are for the session with real clips.
+
+### 1. Fixed — the recording's clock was never put on the score's clock
+
+`build_timeline` returns "seconds since start of the first note".
+`detect_onsets` returns seconds since the **recording** started. Nothing
+reconciled them before DTW, so a musician who tapped record, picked up the bow
+and then played was compared against a score assuming they began instantly.
+
+Measured on a perfectly played take — pure arithmetic, no audio, no fixture:
+
+| lead-in | alignment quality |
+|---|---|
+| 0.5 s | 1.000 |
+| 1 s | 0.908 |
+| 2 s | 0.762 |
+| 3 s | 0.566 |
+| **5 s** | **0.053** — "check you're on the right piece and re-record" |
+
+Not even monotonic through the audio path: 0.45 s passed, 0.50 s failed,
+0.75 s passed, 1.5 s failed. Five seconds is tapping record, putting the phone
+down and picking up the bow. All of them are 1.000 once both sequences share a
+clock. `compute_deltas` already knew this — "the recording's lead-in latency is
+not a timing error" — but it runs last, and the two stages before it did not.
+
+Fixed in `alignment.to_timeline_base`, applied in both `analyze()` and
+`analyze_with_diagnostics`. **This is a correctness fix, not a threshold
+change; `config.toml` is untouched.**
+
+### 2. To measure — the peak-picking window caps the playable tempo
+
+`pre_max`/`post_max` are **20 frames each**. At hop 512 and 22.05 kHz a frame
+is 23.2 ms, so the window is **±464 ms**. A peak has to be the maximum across
+it, so notes closer together than that suppress one another.
+
+Measured, 12 evenly spaced clicks:
+
+| BPM (quarters) | gap | detected of 12 |
+|---|---|---|
+| 40–120 | 1500–500 ms | **12** |
+| 132 | 455 ms | 7 |
+| 160 | 375 ms | 2 |
+
+A clean cliff exactly at the window. That is a ceiling of about **128 BPM in
+quarter notes — roughly 64 BPM in eighths**. Kreutzer No. 2, in the app's own
+demo library, is continuous sixteenths and sits far above it.
+
+Untouched deliberately: it is a threshold, it needs the six real clips and the
+regression rule, and `06_pizzicato` is the clip that will argue *against*
+narrowing the window, since `wait_ms` and this window are what stop string ring
+reading as extra onsets. **Check this first when the recordings exist.** It
+also caught a test sitting on the cliff — `test_analyze_rushing_recording…` ran
+at 132 BPM, so the detector saw 5 of 8 clicks and it passed at quality 0.430
+against a 0.400 threshold. Moved to 110 against 100, where all eight are seen
+and the test measures the verdict rather than the peak-picker.
+
+### 3. To watch for — a spurious onset at the very start of a noisy recording
+
+On the 48 kHz file, the detector fired an onset at **0.070 s** — about three
+frames in, with the first real note at 0.500 s. It appears on the raw signal,
+before the high-pass or pre-emphasis, so it is `librosa`'s peak-picker: at the
+start of the signal the pre-window is truncated, so an early frame is trivially
+a local maximum.
+
+**It does not appear on the synthetic clips** and would never have been found
+with them, because it needs a noise floor and they begin in digital silence. A
+real room has a noise floor.
+
+It matters because the first onset is now the alignment origin. On that file
+the spurious mark was matched to the first written note, the *real* first note
+was discarded as an extra, and a perfectly timed take reported "dragged by
+25 BPM" — a confident wrong verdict where before there was an honest failure.
+
+**Not fixed, deliberately.** Every candidate fix is a heuristic, and the only
+evidence available today is one file fabricated this afternoon; DTW quality
+cannot even tell the right origin from the wrong one (0.806 either way). This
+is the first thing to look at on clip 01: the dashboard draws detected marks
+against the waveform, so a stray mark before the first note is visible at a
+glance. Leave about a second of room tone at the head of each take so it is
+easy to see.
+
+---
+
 ## 2026-08-16 — Tuning dashboard built. No thresholds changed.
 
 **Not a tuning result.** The appendix's step 2 — build the readout before

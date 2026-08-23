@@ -27,6 +27,7 @@ from app.services.alignment import (
     apply_fuzzy_match,
     build_timeline,
     is_alignment_broken,
+    to_timeline_base,
 )
 from app.services.audio_config import AudioConfig, load_audio_config
 from app.services.classification import Delta, compute_deltas, generate_verdict, rolling_trend
@@ -164,6 +165,12 @@ def analyze_with_diagnostics(
         base.status = "no_onsets"
         base.verdict = "No onsets to work with — nothing detected, or the score has no notes."
         return base
+
+    # `base.detected_onsets` above stays in the recording's clock, because the
+    # envelope plot is drawn in that clock and the marks have to sit on the
+    # waveform. Everything downstream of here works in the timeline's clock,
+    # exactly as `analyze()` does.
+    onsets = to_timeline_base(onsets)
 
     raw = align_dtw(onsets, expected, target_bpm=target_bpm, config=cfg)
     base.quality = round(raw.quality, 3)
