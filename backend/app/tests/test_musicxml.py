@@ -119,6 +119,67 @@ def test_unparseable_input_is_refused() -> None:
         score_json_from_musicxml("not xml at all")
 
 
+# --- real engine output ------------------------------------------------------
+
+REAL = (
+    Path(__file__).resolve().parents[3]
+    / "fixtures"
+    / "musicxml"
+    / "oemer_phone_photo.musicxml"
+)
+
+
+@pytest.fixture(scope="module")
+def oemer_score():
+    """What oemer actually produced from a phone photo of a cello part.
+
+    Kept because the hand-authored fixture above is *tidy* — it exercises the
+    awkward constructs but every one of them is well-formed. A real engine on a
+    real photograph produces something else entirely, and the converter has to
+    survive it rather than raise.
+    """
+    return score_json_from_musicxml(REAL.read_text(encoding="utf-8"), clef_fallback="bass")
+
+
+def test_real_engine_output_converts_without_raising(oemer_score) -> None:
+    assert oemer_score.measures
+
+
+def test_the_validator_catches_that_this_reading_is_wrong(oemer_score) -> None:
+    """The point of the beat-sum check, on a real failure.
+
+    The page is five systems of common-time cello music in bass clef with two
+    flats. oemer read it as five measures of C major in treble clef, one of them
+    holding forty-three beats — it found no barlines at all, so each system
+    became one measure. Nothing here compares against the page; the reading
+    contradicts itself, and that is enough to reject it.
+    """
+    beats = [
+        sum(_DURATION_BEATS[n.duration] for n in m.notes) for m in oemer_score.measures
+    ]
+    assert max(beats) > 16, "a measure holding four bars' worth is the tell"
+    assert len(oemer_score.measures) < 10, "five systems collapsed into five measures"
+
+
+_DURATION_BEATS = {
+    "whole": 4.0, "dotted_whole": 6.0, "half": 2.0, "dotted_half": 3.0,
+    "quarter": 1.0, "dotted_quarter": 1.5, "eighth": 0.5, "dotted_eighth": 0.75,
+    "sixteenth": 0.25, "dotted_sixteenth": 0.375, "thirty_second": 0.125,
+}
+
+
+def test_duplicate_measure_numbers_survive_conversion(oemer_score) -> None:
+    """oemer emitted `number="3"` three times.
+
+    `Measure.measure_number` does not have to be unique and nothing downstream
+    assumes it is — `validate.py` reports by position. Worth a test because the
+    obvious "fix" is to renumber, which would hide exactly the damage that
+    tells you the reading is broken.
+    """
+    numbers = [m.measure_number for m in oemer_score.measures]
+    assert len(numbers) != len(set(numbers))
+
+
 def test_clef_falls_back_when_absent() -> None:
     """`ScoreJson.clef` has no null. A missing clef must resolve to something,
     and the caller says to what rather than this file guessing treble."""
