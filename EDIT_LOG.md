@@ -6,6 +6,92 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-23 — A real OMR engine, and what it did to a real page
+
+**Branch:** `main`. Owner: "can you please build the omr so we can try as well."
+
+### What was built
+
+| File | What |
+|---|---|
+| `backend/app/services/ocr/musicxml.py` | MusicXML → `ScoreJson`, engine-agnostic |
+| `backend/app/services/ocr/omr_provider.py` | Runs any OMR binary as a subprocess |
+| `backend/scripts/read_page.py` | CLI — the only place a local engine can run |
+| `fixtures/musicxml/bass_excerpt.musicxml` | Hand-authored, the awkward cases |
+| `fixtures/musicxml/oemer_phone_photo.musicxml` | What a real engine actually produced |
+
+Registered as `omr-local`, **not** in the default chain: it needs installing,
+takes minutes, and is a second opinion rather than a first read.
+
+`intempo-combined.md` §"Claude Vision vs custom OMR" chose a vision model over
+Audiveris and OEmer, and this does not reverse it. Two reads from the same
+vision model agreeing tells you almost nothing — same weights, same blind
+spots. A rule-based engine is wrong in *unrelated* ways, so agreement is
+evidence and disagreement gives `validate.py` something to arbitrate.
+
+### The measurement, which is the point
+
+| | the page | oemer read |
+|---|---|---|
+| systems / measures | 5 systems, ~25 measures | **5 measures** |
+| clef | bass | **treble** |
+| key | two flats | **C major** |
+| metre | common time | **none found** |
+| worst measure | 4 beats | **43.25 beats** |
+
+It found **no barlines at all**, so each system became one measure, and every
+pitch is displaced by the wrong clef. Six minutes on a 4284×5712 page.
+
+Two more limits, found by running it rather than reading about it:
+
+- **It needs a full page.** On a single-staff crop it dies inside
+  `AgglomerativeClustering` — "Found array with 1 sample(s)" — which is the
+  exact opposite of what the slice pipeline produces.
+- **Two version pins are load-bearing**, and neither is oemer's fault:
+  `onnxruntime==1.21.1` (1.29 refuses its exported graph outright) and
+  `opencv-python-headless==4.12.0.88` (OpenCV 5 changed what `HoughLinesP`
+  returns, which surfaces as `IndexError` *twenty minutes into a run*, after
+  both segmentation networks have finished and thrown their work away).
+
+**This does not condemn rule-based OMR, only this engine on this input.** The
+provider takes any binary writing MusicXML and Java 21 is present, so Audiveris
+— the more mature engine — is a straight swap via `OMR_COMMAND`. It does say
+the vision path stays primary.
+
+### Barline marks on the slices
+
+A gap of my own: the hint-drawing existed in `staffgrid.js` and was **never
+wired up**, so slices went out unmarked and the model was left estimating
+barline positions by eye. Its own reasoning showed the cost — *"irregular
+spacing at roughly 10, 13.5, 16, 17.5, 19, 21, 22. Maybe some of these apparent
+barlines are actually note stems"* — followed by 13,000 tokens and a guess.
+
+Every full-height stroke is now drawn and labelled with its ruler position, and
+the prompt asks **which of the marked strokes are barlines** rather than where
+they are. On a real slice that becomes "of 34.0, 36.9 and 39.2, which is bare?"
+— 34.0 is a barline, the other two visibly carry noteheads.
+
+Also: thinking now gets its own token headroom (48k). It is billed against
+`max_tokens`, and 13,000 tokens of it left nothing for the answer — the next
+slice truncated outright.
+
+### Corrections
+
+- The commit `5693d5b` message says "349 tests pass". **It is 335.** Left
+  uncorrected in git rather than force-pushing over published history.
+
+### Honest status
+
+- 335 tests pass, ruff clean. The engine is never invoked in tests — a stub
+  script stands in, so they run in a second and in CI.
+- The converter is tested against **both** a tidy hand-authored fixture and the
+  real engine output, because the second is what production actually sees.
+- **Still not verified against a live model API.** No key here. Whether the
+  marked strokes actually improve the read is the open question, and only the
+  owner can answer it.
+
+---
+
 ## 2026-08-22 (evening) — Ledger lines are not a staff, and Claude needed a schema
 
 **Branch:** `main`. Owner: "what even is happening" + a screenshot of a real
