@@ -1,5 +1,17 @@
 # Hosting the API, and pointing the app at it
 
+**Live as of 2026-08-23:**
+
+| | |
+|---|---|
+| API | `https://intempo-api.onrender.com` (Render, free plan, Oregon) |
+| App | `https://idk-41z.pages.dev` (Cloudflare Pages) |
+| Database | Supabase project `<project-ref>` (`intempo-dev`) |
+
+Use the plain Pages domain, not the per-deployment ones like
+`https://a16c6845.idk-41z.pages.dev`. Those are different origins and CORS
+rejects them — which presents as a network error, not a permissions one.
+
 The app already calls this API. `POST /v1/scores` runs the whole OCR pipeline —
 OMR second opinion, vision model, beat-sum check — and the app's
 `useTranscribePage` hook already calls it. **Nothing in the app needs changing.**
