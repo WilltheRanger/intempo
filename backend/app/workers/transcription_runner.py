@@ -22,10 +22,12 @@ first, the connection ends, and this fills the notes in.
 from __future__ import annotations
 
 import logging
+import threading
 from datetime import datetime, timezone
 
 from fastapi import HTTPException
 
+from app.config import settings
 from app.db import get_service_client
 from app.services.ocr import OCRError, parse_sheet_music
 from app.services.ocr.pipeline import STAGE_CONFIRMING, STAGE_ENGINE, STAGE_READING
@@ -37,6 +39,19 @@ from app.services.page_image import (
 )
 
 log = logging.getLogger("intempo.transcription")
+
+#: How many pages may be read at once, process-wide.
+#:
+#: **A memory ceiling, not a throughput knob.** `BackgroundTasks` runs sync
+#: work in Starlette's threadpool, which holds 40 threads — so without this,
+#: forty people scanning at once means forty simultaneous transcriptions.
+#: Measured at ~81 MB per in-flight scan on the vision path alone, mostly
+#: Pillow decode buffers: a 12 MP photograph is ~36 MB as RGB before anything
+#: copies it. Forty of those is 3.2 GB, on an instance that has 512 MB.
+#:
+#: A scan waiting here stays `queued`, which is not a euphemism — it is queued,
+#: and the screen already has words for that.
+_scan_slots = threading.BoundedSemaphore(max(1, settings.TRANSCRIPTION_MAX_CONCURRENT))
 
 
 def _now_iso() -> str:
@@ -149,6 +164,15 @@ def run_transcription(score_id: str) -> None:
         _fail(client, score_id, "There was no photograph to read.")
         return
 
+    # Wait for a slot before claiming to be reading anything. The row stays
+    # `queued` while it waits, which is the truth rather than a euphemism —
+    # and it means a second person scanning during a busy minute sees "queued"
+    # rather than a progress bar that has not moved.
+    with _scan_slots:
+        _read_page(client, score_id, image_url)
+
+
+def _read_page(client, score_id: str, image_url: str) -> None:
     _update(
         client,
         score_id,

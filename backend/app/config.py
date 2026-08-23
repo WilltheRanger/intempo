@@ -56,6 +56,35 @@ class Settings:
     #:     Audiveris  -batch -export -output {out} -- {image}
     OMR_ARGS: str = os.getenv("OMR_ARGS", "{image} -o {out}")
 
+    #: How many pages may be read at once.
+    #:
+    #: **Not a throughput knob — a memory ceiling.** `BackgroundTasks` runs
+    #: sync work in Starlette's threadpool, which holds **40** threads, so
+    #: without this forty people scanning at once means forty simultaneous
+    #: transcriptions. Measured: ~81 MB per in-flight scan on the vision path
+    #: alone, mostly Pillow decode buffers — a 12 MP photograph is ~36 MB as
+    #: RGB before anything copies it. Forty of those is 3.2 GB.
+    #:
+    #: Two is sized for a 512 MB instance: ~150 MB baseline plus 2x81 leaves
+    #: headroom. Raise it on a bigger box; the arithmetic is the whole story.
+    TRANSCRIPTION_MAX_CONCURRENT: int = int(
+        os.getenv("TRANSCRIPTION_MAX_CONCURRENT", "2")
+    )
+
+    #: How many OMR engine runs may overlap. One, and deliberately.
+    #:
+    #: Audiveris peaks at ~328 MB reading a page system by system. Two at once
+    #: is 656 MB and an OOM kill takes the whole instance down, not just the
+    #: scan that caused it — so this is the difference between a slow scan and
+    #: a dead server.
+    OMR_MAX_CONCURRENT: int = int(os.getenv("OMR_MAX_CONCURRENT", "1"))
+
+    #: How long a scan waits for an engine slot before giving up on the second
+    #: opinion. The vision chain then answers alone, which is what happens on
+    #: every install with no engine at all — so this degrades to the ordinary
+    #: path rather than failing the page.
+    OMR_QUEUE_TIMEOUT_S: float = float(os.getenv("OMR_QUEUE_TIMEOUT_S", "120"))
+
     #: Provider to read the page BEFORE the vision model, whose answer the
     #: vision model is then shown and asked to check. Empty disables the step.
     #:

@@ -56,21 +56,51 @@ slicing sidesteps the resolution floor instead of fighting it.
 Pages that will not split — one system, a blank scan, or a projection that
 finds texture rather than staves — are read whole, exactly as before.
 
+## Several people scanning at once
+
+512 MB is the **instance**, not the scan. Two concurrent Audiveris runs is
+656 MB, and an OOM kill takes the whole process down — every other musician's
+scan with it — not just the one that asked for too much.
+
+`BackgroundTasks` runs sync work in Starlette's threadpool, which holds **40
+threads**, so forty simultaneous scans is a reachable state rather than a
+hypothetical one. Unbounded, that is 40 × 328 MB of engine plus 40 × 81 MB of
+image buffers. Both are now capped:
+
+| setting | default | why |
+|---|---|---|
+| `TRANSCRIPTION_MAX_CONCURRENT` | 2 | ~81 MB per in-flight scan — a 12 MP photo is ~36 MB as RGB before anything copies it |
+| `OMR_MAX_CONCURRENT` | 1 | ~328 MB per engine run |
+| `OMR_QUEUE_TIMEOUT_S` | 120 | how long to wait for an engine slot before answering without the second opinion |
+
+A scan waiting for a slot stays **`queued`**, which is not a euphemism — it is
+queued, and the screen already has words for it. A scan that waits out
+`OMR_QUEUE_TIMEOUT_S` loses the second opinion and nothing else: the vision
+chain answers alone, exactly as it does on every install with no engine.
+
+Raise the numbers on a bigger box; the arithmetic is the whole story.
+
 ## Which plan it needs
 
 With per-system reading, 328 MB alongside the ~150 MB the Python service holds
 is about 480 MB.
 
+With the limits above, the worst case on one instance is one engine run plus
+one other scan decoding: 328 + 81 + ~150 baseline ≈ **560 MB**.
+
 | Render plan | RAM | OMR |
 |---|---|---|
-| Free | 512 MB | marginal — ~480 MB of 512, no headroom |
-| Starter | 512 MB | marginal, same |
-| Standard | 2 GB | yes, comfortably |
+| Free / Starter | 512 MB | **no** — 560 MB worst case, and an OOM kills every scan |
+| Standard | 2 GB | yes, comfortably; raise both limits |
 
-Before per-system reading this was a flat no on anything under 2 GB. It is now
-close enough to try on the plan you already have, with the honest caveat that
-480 of 512 MB leaves nothing for a second concurrent scan — the worker reads
-one page at a time, so that is a real constraint rather than a theoretical one.
+Per-system reading took the *single-scan* peak from 512 MB to 328 MB, which is
+real. It does not make 512 MB safe once more than one person uses it, and
+setting `TRANSCRIPTION_MAX_CONCURRENT=1` to force it would mean the second
+musician waits for the first — about half a minute per page — with no margin
+for error if either number is off on a smaller container.
+
+**So: OMR wants 2 GB.** Without the engine, the same limits make a 512 MB
+instance comfortable — two scans at 81 MB is 162 MB over baseline.
 
 The API works without the engine — one failed lookup on PATH, a log line, and
 the vision chain answers as it always did — so this remains an upgrade bought
