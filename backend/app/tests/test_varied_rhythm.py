@@ -241,6 +241,14 @@ def test_a_held_bar_is_named_and_the_bars_after_it_are_not() -> None:
     off = [m.measure_number for m in result.per_measure if m.worst_band != "on"]
     assert 8 in off, "the bar that was actually held has to be named"
     assert max(off) <= 9, f"bars {off} named; only 8 was played long"
+    # And it must not be told to distrust the reading it just got right.
+    # This scored 0.592 — under `warn_quality` — while the residuals were
+    # fitted with one straight line across the step. It is the *only* case in
+    # the suite that exercises that, which a mutation check found the hard way:
+    # a synthetic step in the offsets does not reach it, because the matcher
+    # absorbs a clean step itself and leaves nothing behind.
+    assert result.low_confidence is False
+    assert result.quality > 0.9, f"a correct reading scored {result.quality}"
     # 9 is allowed: the last stretched interval lands on its first note.
     assert all(m.direction.value == "drag" for m in result.per_measure
                if m.measure_number in off)
@@ -255,4 +263,6 @@ def test_a_hurried_bar_is_named_and_the_bars_after_it_are_not() -> None:
     off = [m.measure_number for m in result.per_measure if m.worst_band != "on"]
     assert 13 in off
     assert max(off) <= 14, f"bars {off} named; only 13 was hurried"
+    assert result.low_confidence is False
+    assert result.quality > 0.9, f"a correct reading scored {result.quality}"
 
