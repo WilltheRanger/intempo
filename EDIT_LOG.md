@@ -6,6 +6,64 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-31 (latest) — Nothing had ever played a bass at the pipeline
+
+**Branch:** `main`. `/loop` iteration. The parallel-implementation sweep is
+finished, so this turned to the thing the loop is actually for: will the app
+work when its author records his instrument.
+
+`double_bass=True` turns on a high-pass at 80 Hz and drops `delta` from 0.07 to
+0.05. It has had tests since it was wired up — all of them plumbing: does the
+stored instrument reach `analyze()`. **No test had ever put a low-register
+signal through it.** Every audio fixture here is an 880 Hz decaying sine, five
+octaves above a double bass with an attack no bow can produce.
+
+`audio_helpers.py` gained a bowed-bass synthesiser — Helmholtz sawtooth, 35 ms
+raised-cosine attack, a 58 Hz room mode, a −60 dBFS floor — and
+`test_bass_onsets.py` uses it for seven tests. Full numbers in `TUNING_LOG.md`.
+The short version: **it works.** 8/8 on every open string including the three
+below the filter's corner, 16/16 on sixteenths at 72 BPM, 15/16 at 150 BPM, and
+the double-bass path never hears less than the default one.
+
+**The result worth keeping is the lag.** A bowed attack peaks in the flux ~50 ms
+after the note starts, so every onset is late. Constant lag is harmless —
+`to_timeline_base` cancels it. Lag that *varies with note density* is not: it
+would be reported as the musician speeding up at exactly the bar where the
+writing changes. Measured on a dead-on-the-grid passage of quarters →
+sixteenths → quarters: 46 ms vs 54 ms, a differential of **1.0% of a beat**
+against an inner tolerance band of 5%. Pinned at 3%.
+
+**Two things I nearly filed as bugs and did not.** The first pass showed 1 of 16
+sixteenths detected and I was drafting a critical-bug note. It was my generator:
+clips padded with digital silence are a step from −inf dB, the mel-flux detector
+reads that as an onset ~50× any real note, and librosa's `normalize=True` then
+divides every real onset below `delta`. With a floor the same clip is 16/16.
+That artifact has now cost this project three separate investigations, so it is
+a named constant (`MIC_NOISE_FLOOR`) with a test that pins the trap. The second
+was the same shape: a loud knock mid-take does *not* erase a recording — it
+displaces one detection, which is correct behaviour.
+
+**Honest about what the tests cannot do**, and measured rather than assumed:
+moving the high-pass corner 80 Hz → 400 Hz leaves all seven passing, because an
+idealised sawtooth carries its attack across the whole spectrum. And sweeping
+the room-mode gain 0.55 → 3.0 produces zero spurious onsets at any cutoff, so
+these cannot show the filter *helping* either. The corner, and the spec's own
+boost-vs-high-pass contradiction, still need the six real clips. Written into
+the test's docstring so nobody reads the green ticks as more than they are.
+
+**No three-foot test.** No UI touched.
+
+**Tests:** backend 556 (was 549; +7). `ruff` clean. Mobile untouched this
+entry.
+
+**Known side effects:** none. New tests and helpers only; no production code
+and no config value changed.
+
+**Rollback:** delete `app/tests/test_bass_onsets.py` and the appended block in
+`audio_helpers.py`.
+
+---
+
 ## 2026-08-31 (later) — The charts were scaled by a number the server owns
 
 **Branch:** `main`. `/loop` iteration, finishing the sweep for parallel
