@@ -6,6 +6,79 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-03 (night) — How to measure an uneven rit., measured but not built
+
+**Branch:** `main`. Recording the design for the second piece of the user's
+answer, with the numbers behind it, because the measurements are the expensive
+part and they should not have to be redone.
+
+**Nothing shipped in this entry.** The schema and timeline plumbing landed in
+`93b431f`; this is the measurement that decides what to build on top of it.
+
+### A curve separates even from lurching — mean residual after removing a fit
+
+    take                          line    curve    cubic
+    steady 60                        0        0        0
+    steady, human jitter            11        8        8
+    even rit. 60→45                175        9        1
+    rit. with a step at note 8     345       44       34
+    rit., alternating unevenly     194       25       23
+
+An even rit. under a quadratic reads **9 ms** — indistinguishable from a good
+player's jitter at 8 ms — while a lurch reads 44 ms. Cubic buys almost nothing
+and would start absorbing real unevenness, so quadratic is the fit.
+
+This is the same idea the quality metric already uses. It removes a straight
+line and calls what is left "what a steady tempo cannot explain"; under a rit.
+the page has said the tempo is not steady, so the line is the wrong reference
+and a curve is the right one.
+
+### But a global fit cannot say *where*, and that is what the user asked for
+
+Holding bar 3 back, per-bar mean residual against the quadratic:
+
+    m1=39  m2=91  m3=162  m4=213
+
+Bar 4 reads worse than bar 3, which is where the disturbance actually was. A
+global fit smears a local disturbance across the whole span — the same failure
+as fitting one line across a hesitation, two entries ago.
+
+### Localisation: how much each interval *grew*, against the take's own habit
+
+An even rit. lengthens each interval by about the same amount. A lurch is one
+interval that lengthens far more than this take usually does. That is exactly
+`pulse_anchors`, one derivative up — the second difference of onset times,
+with the same robust threshold (median plus six deviations, with a floor).
+
+    even rit. 60→45            → no bar flagged
+    steady 60, human jitter    → no bar flagged
+    held bar 3 back            → bars 3 and 4
+    hurried bar 4              → bar 4
+    one lurch at note 9        → bar 3
+
+Bar 4 appearing in the third row is the return to tempo, which is itself a
+change of rate — arguably correct, and worth checking against a real recording
+before deciding it is noise.
+
+### What still has to be decided before building it
+
+- **Where the result goes.** `Band` and `Direction` are closed unions the mobile
+  app types against, so adding a value to either breaks an older client. The
+  established pattern is `is_slur_interior`: a per-note flag, with the note
+  still carrying its numbers and the verdict choosing to ignore them. A
+  `PerMeasure.uneven` alongside `under_tempo_change` follows it.
+- **The grid band under a change must be forced to `on`.** Otherwise a screen
+  renders a rushing colour for a bar the page said would not be steady.
+- **Its own words.** "Your ritardando was uneven at bar 7" is not a rushing
+  band and cannot borrow the tolerance table or `generate_verdict`'s
+  longest-run logic.
+- **The screen.** Rendering "rit. — lurched here" is UI, so it is a §2 gate and
+  the user's call, not mine.
+
+**Tests:** backend 648, unchanged — nothing was built. `ruff` clean.
+
+---
+
 ## 2026-09-03 (evening) — Getting a written rit. off the page
 
 **Branch:** `main`. `/loop` iteration. First of the three pieces the user's
