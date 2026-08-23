@@ -336,6 +336,7 @@ export const apiInsightsSource: InsightsSource = {
             deviationPct,
             band: worstBandOf(result),
             direction: result.verdict_direction,
+            tolerance: result.tolerance ?? null,
           },
         ];
       });
@@ -372,6 +373,7 @@ export const apiInsightsSource: InsightsSource = {
           band: nearest.band,
           direction: nearest.direction,
           verdict: verdictFor(nearest.band, nearest.direction),
+          tolerance: nearest.tolerance,
         };
       })
       .sort((a, b) => Math.abs(b.meanDeviationPct) - Math.abs(a.meanDeviationPct));
@@ -393,6 +395,7 @@ export const apiInsightsSource: InsightsSource = {
       band: headline.band,
       direction: headline.direction,
       verdict: verdictFor(headline.band, headline.direction),
+      tolerance: headline.tolerance,
       pieces,
     };
   },
@@ -436,6 +439,7 @@ function toTake(
     measures,
     // Already rush-positive from the pipeline — the one field that isn't flipped.
     trend: result.trend ?? [],
+    tolerance: result.tolerance ?? null,
     missedNotes: result.n_missed_notes ?? 0,
     extraNotes: result.n_extra_notes ?? 0,
   };
@@ -473,6 +477,7 @@ function toFailedTake(
     lowConfidence: false,
     measures: [],
     trend: [],
+    tolerance: null,
     missedNotes: 0,
     extraNotes: 0,
   };

@@ -34,6 +34,7 @@ export function PieceInsightRow({ insight }: PieceInsightRowProps) {
 
       <DeviationBar
         deviationPct={insight.meanDeviationPct}
+        tolerance={insight.tolerance}
         accessibilityLabel={`${verdict} across ${insight.title}`}
         style={styles.bar}
       />

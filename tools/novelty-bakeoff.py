@@ -93,7 +93,6 @@ METHODS = {
 def against_the_corpus():
     from app.services import audio as audio_svc
     from app.services.audio_config import load_audio_config
-    from app.services.alignment import build_timeline
     from tuning_dashboard.corpus import load_corpus
 
     cfg = load_audio_config()
@@ -136,7 +135,8 @@ def against_the_corpus():
         rushing clip against a metronomic grid measures the drift, not the
         detector. Getting this wrong is what the first run of this experiment did.
         """
-        import json, importlib.util
+        import importlib.util
+        import json
         spec = importlib.util.spec_from_file_location(
             "mk", Path(__file__).resolve().parents[1] / "fixtures" / "audio" / "make_synthetic.py"
         )

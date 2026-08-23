@@ -118,3 +118,112 @@ def test_analyze_runs_well_under_15_seconds(tmp_path) -> None:
     started = time.perf_counter()
     analyze(path, score, target_bpm=120.0)
     assert time.perf_counter() - started < 15.0  # DoD: <15s per fixture pair
+
+
+def _tuned_config():
+    """A config whose bands are nothing like the defaults, and asymmetric."""
+    import dataclasses
+
+    from app.services.audio_config import ToleranceConfig, load_audio_config
+
+    cfg = load_audio_config()
+    return dataclasses.replace(
+        cfg,
+        tolerance=ToleranceConfig(
+            rushing_inner_pct=3.0,
+            rushing_mid_pct=7.0,
+            rushing_outer_pct=14.0,
+            dragging_inner_pct=4.0,
+            dragging_mid_pct=9.0,
+            dragging_outer_pct=18.0,
+        ),
+    )
+
+
+def test_the_result_records_the_thresholds_it_was_judged_by(tmp_path) -> None:
+    """Otherwise a reader has to assume they match its own copy of them.
+
+    Two places in the app draw a take against the outer threshold — the
+    deviation bar and the trend chart — and both held a hard-coded 20. The
+    moment these are tuned against real recordings, which is the entire purpose
+    of `TUNING_LOG.md`, those charts start lying about takes the pipeline judged
+    correctly. Sending the numbers with the result is what stops that.
+    """
+    score = _eight_quarter_note_score()
+    times = evenly_spaced(8, bpm=120.0)
+    path = write_wav(tmp_path / "clean.wav", synth_click_track(times, sr=SR), sr=SR)
+
+    result = analyze(path, score, target_bpm=120.0, config=_tuned_config())
+
+    assert result.tolerance is not None
+    assert result.tolerance.rushing_outer_pct == 14.0
+    assert result.tolerance.dragging_outer_pct == 18.0, (
+        "the two sides are independent — a reader that assumes one number "
+        "mis-scales whichever side it guessed wrong"
+    )
+
+
+def test_a_take_with_nothing_to_hear_still_says_what_it_would_have_used(
+    tmp_path,
+) -> None:
+    """The thresholds are a property of the run, not of its outcome.
+
+    A failed take is still drawn on a screen, and a reader that has to branch
+    on status to know whether it can trust the scale will get that branch wrong
+    exactly once.
+    """
+    import numpy as np
+
+    score = _eight_quarter_note_score()
+    path = write_wav(tmp_path / "silent.wav", np.zeros(SR * 2, dtype="float32"), sr=SR)
+
+    result = analyze(path, score, target_bpm=120.0, config=_tuned_config())
+
+    assert result.status == "no_onsets"
+    assert result.tolerance is not None
+    assert result.tolerance.rushing_inner_pct == 3.0
+
+
+def test_alignment_failure_carries_them_too(tmp_path) -> None:
+    score = _eight_quarter_note_score()
+    path = write_wav(
+        tmp_path / "partial.wav", synth_click_track([0.2, 0.7], sr=SR), sr=SR
+    )
+
+    result = analyze(path, score, target_bpm=120.0, config=_tuned_config())
+
+    assert result.status == "alignment_failed"
+    assert result.tolerance is not None
+    assert result.tolerance.dragging_mid_pct == 9.0
+
+
+def test_the_thresholds_survive_the_round_trip_into_result_json(tmp_path) -> None:
+    """`result_json` is a jsonb column, and this is what the app actually reads."""
+    score = _eight_quarter_note_score()
+    times = evenly_spaced(8, bpm=120.0)
+    path = write_wav(tmp_path / "clean.wav", synth_click_track(times, sr=SR), sr=SR)
+
+    result = analyze(path, score, target_bpm=120.0, config=_tuned_config())
+    payload = json.loads(result.model_dump_json())
+
+    assert payload["tolerance"] == {
+        "rushing_inner_pct": 3.0,
+        "rushing_mid_pct": 7.0,
+        "rushing_outer_pct": 14.0,
+        "dragging_inner_pct": 4.0,
+        "dragging_mid_pct": 9.0,
+        "dragging_outer_pct": 18.0,
+    }
+
+
+def test_a_result_stored_before_this_existed_still_loads() -> None:
+    """Rows already in the table have no `tolerance`, and must not fail to parse.
+
+    The app falls back to its own copy for those. That fallback is the reason
+    the field is nullable rather than required, and deleting it later needs a
+    backfill, not a schema edit.
+    """
+    from app.services.analysis import AnalysisResult
+
+    old = AnalysisResult(status="ok", quality=0.9, verdict="You held the tempo")
+    assert old.tolerance is None

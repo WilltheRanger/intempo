@@ -3,6 +3,7 @@ import type {
   Band,
   Direction,
   MeasureVerdict,
+  Tolerance,
   Verdict,
 } from '../data/types';
 
@@ -27,6 +28,57 @@ export function verdictFor(band: Band, direction: Direction): Verdict {
     return direction === 'rush' ? 'slight_rush' : 'slight_drag';
   }
   return direction === 'rush' ? 'rushing' : 'dragging';
+}
+
+/**
+ * The outer threshold to assume when a take doesn't carry its own.
+ *
+ * Only reachable for analyses finished before the pipeline started recording
+ * them — every new result carries the real numbers. It matches the shipped
+ * `backend/config.toml` default, which is what those takes were judged by, so
+ * it is a correct answer for exactly the rows that need it and a stale one for
+ * nothing.
+ */
+const FALLBACK_OUTER_PCT = 20;
+
+/**
+ * Where a chart's full deflection sits for one signed deviation.
+ *
+ * Full deflection means "beyond here the pipeline calls it severe", so it is
+ * the outer threshold on whichever side of the beat the deviation fell. The
+ * two sides are independent by design — the tuning appendix widens dragging
+ * because musicians tolerate it better — and a bar drawn against a single
+ * number would overstate one side and understate the other the moment they
+ * diverge.
+ */
+export function fullScaleFor(
+  tolerance: Tolerance | null,
+  deviationPct: number,
+): number {
+  if (tolerance === null) {
+    return FALLBACK_OUTER_PCT;
+  }
+  // Rush-positive, the convention everything downstream of `toTake` uses.
+  return deviationPct >= 0
+    ? tolerance.rushing_outer_pct
+    : tolerance.dragging_outer_pct;
+}
+
+/**
+ * One scale for a chart that draws both sides of the beat on a shared axis.
+ *
+ * The wider of the two, deliberately. A line crossing zero has to stay
+ * straight: scaling the halves independently would bend a steady drift at the
+ * origin, which reads as a change in the playing rather than a change in the
+ * axis. Taking the wider one keeps the geometry linear and guarantees nothing
+ * clips — the cost is that the tighter side reaches full height a little
+ * early, which is a smaller lie than a false kink.
+ */
+export function sharedFullScaleFor(tolerance: Tolerance | null): number {
+  if (tolerance === null) {
+    return FALLBACK_OUTER_PCT;
+  }
+  return Math.max(tolerance.rushing_outer_pct, tolerance.dragging_outer_pct);
 }
 
 /**

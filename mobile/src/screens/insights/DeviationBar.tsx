@@ -1,19 +1,8 @@
 import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 
 import { BORDER_WIDTH, colors, radii, type ColorToken } from '../../design';
-
-/**
- * Deviation at which the bar reaches full deflection, as a percentage of one
- * beat.
- *
- * The outer tolerance threshold from `backend/config.toml`: beyond it the
- * pipeline calls a take severe. So a pinned bar means exactly that, rather
- * than a number chosen to make the bar look right.
- *
- * Server-tunable, which this copy is not. When the API exposes the thresholds
- * it should come from there.
- */
-const FULL_SCALE_PCT = 20;
+import type { Tolerance } from '../../data/types';
+import { fullScaleFor } from '../../lib/tempo';
 
 const TRACK_HEIGHT = 4;
 const CENTRE_HEIGHT = 12;
@@ -26,6 +15,16 @@ export interface DeviationBarProps {
    * colour, which is the only place those are allowed.
    */
   fill?: ColorToken;
+  /**
+   * The thresholds this take was judged by, which set where the bar pins.
+   * Full deflection is the outer threshold — beyond it the pipeline calls a
+   * take severe — so a pinned bar means exactly that, rather than a number
+   * chosen to make the bar look right.
+   *
+   * Null for takes analysed before the pipeline recorded them; `fullScaleFor`
+   * owns that fallback.
+   */
+  tolerance: Tolerance | null;
   accessibilityLabel: string;
   style?: StyleProp<ViewStyle>;
 }
@@ -44,11 +43,13 @@ export interface DeviationBarProps {
  */
 export function DeviationBar({
   deviationPct,
+  tolerance,
   fill = 'accent',
   accessibilityLabel,
   style,
 }: DeviationBarProps) {
-  const clamped = Math.max(-1, Math.min(1, deviationPct / FULL_SCALE_PCT));
+  const fullScale = fullScaleFor(tolerance, deviationPct);
+  const clamped = Math.max(-1, Math.min(1, deviationPct / fullScale));
   // Half the track is one full deflection, so a fraction of it is that
   // fraction of 50%.
   const width = `${Math.abs(clamped) * 50}%` as const;

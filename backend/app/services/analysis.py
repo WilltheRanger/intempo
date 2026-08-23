@@ -61,12 +61,49 @@ class PerMeasure(BaseModel):
     direction: Direction
 
 
+class Tolerance(BaseModel):
+    """The band edges this take was judged by, as a % of one beat.
+
+    Recorded on the result rather than served from config, because a take was
+    judged by the thresholds in force when it ran. Once these are tuned against
+    real recordings — which is the whole point of `TUNING_LOG.md` — a chart
+    drawn against today's config would rescale every take already stored, and a
+    musician would watch last month's practice change shape for no reason they
+    did any part of.
+
+    Asymmetric by design: rushing and dragging carry independent cutoffs (§4).
+    """
+
+    rushing_inner_pct: float
+    rushing_mid_pct: float
+    rushing_outer_pct: float
+    dragging_inner_pct: float
+    dragging_mid_pct: float
+    dragging_outer_pct: float
+
+    @classmethod
+    def of(cls, config: AudioConfig) -> "Tolerance":
+        tol = config.tolerance
+        return cls(
+            rushing_inner_pct=tol.rushing_inner_pct,
+            rushing_mid_pct=tol.rushing_mid_pct,
+            rushing_outer_pct=tol.rushing_outer_pct,
+            dragging_inner_pct=tol.dragging_inner_pct,
+            dragging_mid_pct=tol.dragging_mid_pct,
+            dragging_outer_pct=tol.dragging_outer_pct,
+        )
+
+
 class AnalysisResult(BaseModel):
     status: Status
     quality: float = Field(ge=0.0, le=1.0)
     low_confidence: bool = False  # quality below warn threshold — show a caveat
     verdict: str
     verdict_direction: Direction = Direction.on
+    #: Null on rows analysed before the thresholds were recorded. A reader
+    #: has to fall back to its own copy for those, so it is not optional in
+    #: anything written from now on.
+    tolerance: Tolerance | None = None
     per_note: list[PerNote] = Field(default_factory=list)
     per_measure: list[PerMeasure] = Field(default_factory=list)
     trend: list[float] = Field(default_factory=list)
@@ -190,6 +227,7 @@ def analyze(
         return AnalysisResult(
             status="no_onsets",
             quality=0.0,
+            tolerance=Tolerance.of(cfg),
             verdict="We couldn't hear any notes to analyze — try re-recording a bit louder.",
             n_detected_onsets=int(onsets.size),
             n_expected_onsets=int(expected.size),
@@ -205,6 +243,7 @@ def analyze(
         return AnalysisResult(
             status="alignment_failed",
             quality=round(raw.quality, 3),
+            tolerance=Tolerance.of(cfg),
             verdict=_why_alignment_failed(raw, onsets, expected),
             n_detected_onsets=raw.n_detected,
             n_expected_onsets=raw.n_expected,
@@ -231,6 +270,7 @@ def analyze(
     return AnalysisResult(
         status="ok",
         quality=round(raw.quality, 3),
+        tolerance=Tolerance.of(cfg),
         low_confidence=raw.quality < cfg.alignment.warn_quality,
         verdict=verdict.text,
         verdict_direction=verdict.direction,

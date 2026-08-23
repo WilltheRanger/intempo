@@ -6,6 +6,91 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-31 (later) — The charts were scaled by a number the server owns
+
+**Branch:** `main`. `/loop` iteration, finishing the sweep for parallel
+implementations. This is the last one, and it is the same shape as the other
+four: a value the backend computes, copied into the client, with the copy free
+to go stale.
+
+Two files drew takes against a hard-coded outer threshold:
+
+    screens/insights/DeviationBar.tsx:16   const FULL_SCALE_PCT = 20;
+    screens/verdict/TrendLine.tsx:8        const FULL_SCALE_PCT = 20;
+
+`DeviationBar` said so in its own comment — *"Server-tunable, which this copy
+is not. When the API exposes the thresholds it should come from there."* It was
+right, and this is that.
+
+**Why it mattered more than the number suggests.** These six thresholds are the
+one part of the pipeline the project *plans* to change: `config.toml` calls its
+values "the symmetric spec starting values; tune per instrument/room", and
+`TUNING_LOG.md` exists to record every time they move. They are also asymmetric
+by design — the tuning appendix widens dragging because musicians tolerate it
+better — so the first real tuning pass makes a single client-side `20` wrong on
+at least one side. It would have gone wrong silently: the bar still draws, the
+word beside it still comes from the server, and only the length disagrees.
+
+**The threshold travels with the take, not with the config.** `AnalysisResult`
+now carries a `tolerance` block, filled from `cfg.tolerance` on all three
+return paths — ok, `alignment_failed`, `no_onsets` — because the thresholds are
+a property of the run, not of its outcome. An endpoint serving *current* config
+was the obvious alternative and is wrong: a take was judged by the values in
+force when it ran, and re-scaling stored takes against today's numbers would
+make last month's practice change shape on a screen the musician did nothing
+to. Written up in `DECISIONS.md`.
+
+**One place owns the fallback.** `lib/tempo.ts` gained `fullScaleFor` and
+`sharedFullScaleFor`, and the `20` survives only there, for analyses finished
+before the field existed — which is the correct answer for exactly those rows.
+The prop is **required**, not optional, so `tsc` named all five call sites
+rather than letting one keep the old behaviour by omission.
+
+**Two scales, deliberately, and this is the one judgement call here.**
+
+- `DeviationBar` is a signed bar from a centre line, drawn per measure. Full
+  deflection means "beyond this the pipeline calls it severe", so it takes the
+  outer threshold **for the side the deviation fell on**. Asymmetric.
+- `TrendLine` is a polyline crossing zero. Scaling its halves independently
+  would put a kink at the origin, so a steady drift would render bent — the
+  chart would invent a change in the playing that was really a change in the
+  axis. It takes the **wider** of the two: geometry stays linear, nothing
+  clips, and the cost is that the tighter side reaches full height slightly
+  early. A smaller lie than a false bend.
+
+**Also fixed, same drift, found on the way:** `fixtures.ts` classified its
+headline band against a hard-coded 5/10/20 ladder while reporting bands from
+elsewhere — a fixture that could disagree with itself. It now classifies
+against the thresholds it reports, and states them (`FIXTURE_TOLERANCE`, the
+shipped defaults) rather than leaving them null, so development exercises the
+same path live takes do instead of only the fallback.
+
+**No three-foot test.** Nothing about the composition changed. Under today's
+symmetric defaults every pixel is identical to before — there is a test
+asserting exactly that. This is a correctness change that becomes visible the
+first time the thresholds are tuned, which is the point.
+
+**Tests:** backend 549 (was 544; +5 in `test_analysis.py` — thresholds recorded
+on all three statuses, asymmetry preserved through `result_json`, and an old
+row with no `tolerance` still parsing). Mobile 41 (was 33; +8 in the new
+`lib/tempo.test.ts`). `ruff` and `tsc --noEmit` clean; also cleared two ruff
+findings in `tools/novelty-bakeoff.py` left from the onset experiment.
+
+**Known side effects:** none on screen today. Analyses already in the table
+have `tolerance: null` and keep drawing exactly as they do now.
+
+**Rollback:** revert the commit. The field is additive and nullable, so stored
+`result_json` needs no migration in either direction.
+
+**The sweep is finished.** Every parallel implementation found in this run is
+now either unified or fed by the server: beat tables (four copies → one),
+validator JS ports (sandbox + bench), `scheduleScore` ties, `reading.ts`
+problem measures, and these thresholds. `engrave.ts` was checked and is clean —
+it scopes itself out of ties and slurs explicitly, and reports what it cannot
+draw.
+
+---
+
 ## 2026-08-31 (last) — The app had stopped showing whole categories of fault
 
 **Branch:** `main`. `/loop` iteration, following the drift hunt from the last

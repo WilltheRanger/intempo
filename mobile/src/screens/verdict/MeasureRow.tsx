@@ -1,7 +1,7 @@
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { Text } from '../../components/primitives/Text';
-import type { MeasureVerdict } from '../../data/types';
+import type { MeasureVerdict, Tolerance } from '../../data/types';
 import { BORDER_WIDTH, colors, spacing } from '../../design';
 import { formatVerdict, verdictColorFor } from '../../lib/tempo';
 import { DeviationBar } from '../insights/DeviationBar';
@@ -19,6 +19,8 @@ export const MEASURE_COLUMNS = {
 
 export interface MeasureRowProps {
   measure: MeasureVerdict;
+  /** The take's thresholds, which set where the bar pins. */
+  tolerance: Tolerance | null;
   revealed: boolean;
   onToggle: () => void;
   /** Hairline above the row. Omit on the first in a group. */
@@ -36,6 +38,7 @@ export interface MeasureRowProps {
  */
 export function MeasureRow({
   measure,
+  tolerance,
   revealed,
   onToggle,
   divided = true,
@@ -70,6 +73,7 @@ export function MeasureRow({
 
         <DeviationBar
           deviationPct={measure.deviationPct}
+          tolerance={tolerance}
           fill={tone}
           accessibilityLabel={verdict}
           style={styles.bar}

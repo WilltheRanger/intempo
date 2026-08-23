@@ -206,6 +206,7 @@ export function VerdictScreen() {
       <Card>
         <TrendLine
           trend={take.trend}
+          tolerance={take.tolerance}
           firstMeasure={firstMeasure}
           lastMeasure={lastMeasure}
           accessibilityLabel={`Tempo drift across ${take.measures.length} measures`}
@@ -229,6 +230,7 @@ export function VerdictScreen() {
           <FadeIn key={measure.measure} index={index}>
           <MeasureRow
             measure={measure}
+            tolerance={take.tolerance}
             revealed={revealed === measure.measure}
             onToggle={() =>
               setRevealed((current) =>
