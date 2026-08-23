@@ -6,6 +6,65 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-05 (later) — The next thing after CORS, and a check that had gone stale
+
+**Branch:** `main`. Kept following the path a browser takes on the way to a
+first working session. Three gaps, and one of them was in code.
+
+### The sign-in link, which is the next thing after CORS
+
+`authRedirectUrl()` is right: it returns `window.location.origin` on web, so a
+preview build's mail comes back to the preview and production's to production.
+The half that lives outside the repo is Supabase's **Redirect URLs** allowlist
+— and Supabase rejects any redirect it has not been told about and *silently
+falls back to the Site URL*. No error, no log the app can see: the mail
+arrives, the link works, and it lands on a Supabase page. That looks exactly
+like the feature never having been built.
+
+It was documented in one place: a comment inside `authRedirect.ts`. Now in
+`docs/deploy-backend.md`, which is where someone deploying is actually looking.
+
+### `/v1/ready` was in no document at all
+
+The endpoint built specifically to answer "what is stopping this deployment"
+was mentioned in no doc, while the docs told the reader to check `/v1/health`
+— which answers "is the process alive" and returned 200 on a deployment with no
+service-role key, no model key and a missing column, while every write 500'd.
+That is the exact failure `/v1/ready` exists for.
+
+Also documented: migrations are applied **by hand** and nothing auto-applies
+them, and the free plan's cold start is a wait rather than a fault.
+
+### The stale check, which is the real find
+
+`REQUIRED_COLUMNS` carries the instruction *"add a row here whenever a
+migration adds a column the code depends on"* — and **005 added
+`scores.movement`, which `PATCH /v1/scores/:id` writes, and never got one.** A
+deployment missing that migration would 500 on any edit touching a movement
+while `/v1/ready` reported itself ready. A readiness check that is wrong is
+worse than none: it is the thing you consult *instead of* looking.
+
+Added, and then made self-maintaining: a test walks
+`backend/app/migrations/*.sql`, finds every `ADD COLUMN`, and fails if any of
+them has no entry. The comment asking a human to remember is now a test that
+does not have to.
+
+**004 is named as the exception it is.** It drops a NOT NULL rather than adding
+a column, so there is nothing to select for — detecting it needs an insert, and
+this endpoint must not write. A database missing it rejects hand-entered pieces
+with a not-null violation, which at least names its own column. Recorded so the
+next reader knows it is absent by argument and not by oversight.
+
+**No three-foot test.** No UI touched.
+
+**Tests:** backend 664 (was 663; +1). Mutation-checked with the mutation
+asserted and the file verified restored: taking `movement` back out fails 1.
+`ruff` clean.
+
+**Rollback:** revert the commit.
+
+---
+
 ## 2026-09-05 — The first request of every session was a failure
 
 **Branch:** `main`. The user is testing from Cloudflare against the deployed

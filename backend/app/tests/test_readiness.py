@@ -230,3 +230,41 @@ class TestTheOneMisconfigurationThatNamesNothing:
         )
 
         assert "something-identifiable" not in rendered
+
+
+def test_every_column_migration_has_a_readiness_check() -> None:
+    """The list goes stale silently, and it already had.
+
+    `REQUIRED_COLUMNS` carries the instruction "add a row here whenever a
+    migration adds a column the code depends on" — and 005 added
+    `scores.movement`, which `PATCH /v1/scores/:id` writes, and never got one.
+    A deployment missing it would 500 on any edit that touches a movement, and
+    `/v1/ready` would have said it was fine.
+
+    So the tree is the source of truth rather than the comment. A migration
+    that adds a column needs a row here; one that does something else does not,
+    and 004 — which drops a NOT NULL — is named as the exception it is.
+    """
+    import re
+    from pathlib import Path
+
+    from app.services.readiness import REQUIRED_COLUMNS
+
+    migrations = Path(__file__).resolve().parents[1] / "migrations"
+    checked = {number for _, _, number in REQUIRED_COLUMNS}
+
+    missing: list[str] = []
+    for path in sorted(migrations.glob("*.sql")):
+        number = path.name.split("_", 1)[0]
+        adds_column = re.search(r"ADD\s+COLUMN", path.read_text(), re.IGNORECASE)
+        if adds_column and number not in checked:
+            missing.append(path.name)
+
+    # 001 creates the tables outright; a database without it fails the
+    # `database` check long before any column is looked for.
+    missing = [name for name in missing if not name.startswith("001")]
+
+    assert missing == [], (
+        f"{missing} add columns with no entry in REQUIRED_COLUMNS — a "
+        f"deployment missing them would 500 while /v1/ready reported ready"
+    )

@@ -56,7 +56,53 @@ You will be asked for:
 same-origin, and a browser refuses every response without a matching origin —
 the failure looks like a network error rather than a permissions one.
 
-Check it: `curl https://YOUR-API.onrender.com/v1/health` → `{"status":"ok"}`.
+### Applying the schema
+
+**Nothing auto-applies `backend/app/migrations/*.sql`.** They are run by hand in
+the Supabase SQL editor, so shipping code and applying its migration are two
+separate acts, and the gap between them is invisible: the service starts fine
+and every write that touches the missing column returns a 500 that reads like a
+server bug. It has happened once already — `analyses.instrument` went live in
+code before the column existed.
+
+Run any migration you have not run, in numeric order. The check below names the
+ones that are missing.
+
+### Then ask the API what is still wrong
+
+`curl https://YOUR-API.onrender.com/v1/health` answers "is the process alive",
+which is what Render's health check needs and all it needs. It answered 200 on
+a deployment with no service-role key, no model key and a database missing a
+column — while every single write returned 500.
+
+So the one to open is:
+
+```
+curl https://YOUR-API.onrender.com/v1/ready
+```
+
+**503 with a `blocking` list** naming what is stopping it — each missing key,
+an unresolvable provider chain, each missing column — and **200** when nothing
+is. It reports only whether a setting is *present*, never its value, so it is
+safe to open in a browser on a phone.
+
+Two things it reports without blocking, because neither stops the app for
+everyone: a stale name in `OCR_PROVIDER_CHAIN` (the rest of the chain still
+runs), and an unset `CORS_ALLOWED_ORIGINS`.
+
+That second one is worth its own line. It is the **only** misconfiguration here
+whose failure names nothing anywhere: a missing key gives a 500 with a message,
+a missing column gives column-not-found, a stale model name is logged — a
+browser refused by CORS never sends the request at all, so there is no server
+log, no status code, and the only thing the client can report is "Failed to
+fetch". It looks exactly like the API being down.
+
+### The first request after a nap
+
+The free plan spins down when idle, and waking it takes 50 seconds or more.
+The app retries a repeatable request once for exactly this reason, so a cold
+start costs a wait rather than an error — but `curl` does not, so give the
+first one a generous `--max-time` and do not read a timeout as a fault.
 
 ## 2. Point the app at it
 
@@ -79,7 +125,28 @@ API's environment and nowhere else.
 Then **redeploy the Pages project**. Expo substitutes these at build time, not
 at runtime, so an existing build keeps whatever it was built with.
 
-## 3. Adding the OMR second opinion (optional, later)
+## 3. Let the sign-in link come back
+
+Supabase → Authentication → URL Configuration → **Redirect URLs**. Add the
+app's origin:
+
+```
+https://YOUR-APP.pages.dev/**
+```
+
+Add the preview domain too if previews should be able to sign in.
+
+**Supabase rejects any redirect it has not been told about and silently falls
+back to the Site URL.** No error, no log line the app can see — the mail
+arrives, the link works, and it lands on a Supabase page instead of the app.
+That looks exactly like the feature not being built.
+
+The app asks for the right thing already: `authRedirectUrl()` returns
+`window.location.origin` on web, so a preview build's mail comes back to the
+preview and production's to production. Hardcoding one would cross them. The
+allowlist is the half that lives outside the repo.
+
+## 4. Adding the OMR second opinion (optional, later)
 
 Get the API up first. Then see `docs/deploy-omr.md` — it means rebuilding the
 Until then the step is skipped automatically: one failed lookup on `PATH`, a log

@@ -55,6 +55,13 @@ class Check:
 #:
 #: Add a row here whenever a migration adds a column the code depends on.
 REQUIRED_COLUMNS: tuple[tuple[str, str, str], ...] = (
+    # **004 is not here and cannot be.** It drops a NOT NULL rather than adding
+    # a column, so there is nothing to select for — the only way to detect it
+    # is to attempt an insert, and this endpoint must not write. A database
+    # missing it rejects every hand-entered piece with a not-null violation,
+    # which at least names the column it is about. Recorded so the next reader
+    # knows it is absent by argument rather than by oversight.
+    ("scores", "movement", "005"),
     ("scores", "transcription_status", "006"),
     ("scores", "transcription_accepted_at", "007"),
     ("analyses", "instrument", "008"),
