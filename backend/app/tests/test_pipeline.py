@@ -12,6 +12,7 @@ from typing import Callable
 import pytest
 from pydantic import ValidationError
 
+from app import config as app_config
 from app.services.ocr import pipeline as pipeline_module
 from app.services.ocr.base import OCRProviderError, OCRResponse
 from app.services.ocr.pipeline import (
@@ -195,7 +196,7 @@ def test_default_chain_uses_settings(monkeypatch: pytest.MonkeyPatch) -> None:
         "beta": _Sentinel("beta"),
     }
     monkeypatch.setattr(pipeline_module, "PROVIDER_REGISTRY", fake_registry)
-    monkeypatch.setattr(pipeline_module.settings, "OCR_PROVIDER_CHAIN", "beta,alpha")
+    monkeypatch.setattr(app_config.settings, "OCR_PROVIDER_CHAIN", "beta,alpha")
 
     parse_sheet_music(b"<jpeg>")
     assert captured == ["beta"]  # first one wins; alpha never tried
@@ -203,7 +204,7 @@ def test_default_chain_uses_settings(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_a_chain_with_no_usable_provider_raises(monkeypatch: pytest.MonkeyPatch) -> None:
     """Nothing left to try is a configuration error with no fallback."""
-    monkeypatch.setattr(pipeline_module.settings, "OCR_PROVIDER_CHAIN", "claude-sonnet-4-6,bogus")
+    monkeypatch.setattr(app_config.settings, "OCR_PROVIDER_CHAIN", "claude-sonnet-4-6,bogus")
     with pytest.raises(OCRError, match="no usable provider"):
         parse_sheet_music(b"<jpeg>")
 
@@ -223,7 +224,7 @@ def test_a_stale_name_is_skipped_rather_than_fatal(monkeypatch: pytest.MonkeyPat
     reports them.
     """
     monkeypatch.setattr(
-        pipeline_module.settings,
+        app_config.settings,
         "OCR_PROVIDER_CHAIN",
         "claude-sonnet-4-6,claude-sonnet-5,also-bogus",
     )

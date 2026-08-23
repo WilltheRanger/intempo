@@ -25,7 +25,6 @@ from typing import Callable
 
 from pydantic import ValidationError
 
-from app.config import settings
 from app.services.ocr.base import OCRProvider, OCRProviderError, OCRResponse
 from app.services.ocr.claude_provider import (
     claude_opus_provider,
@@ -90,6 +89,11 @@ def _default_chain() -> list[OCRProvider]:
     report. An empty result still raises — a chain with nothing usable in it is
     a configuration error with no fallback left.
     """
+    # Read when called, not bound at import. This resolves configuration, and
+    # a snapshot taken at import time is a different thing — true in production
+    # where nothing reloads, and quietly wrong anywhere it does.
+    from app.config import settings
+
     raw = settings.OCR_PROVIDER_CHAIN.strip()
     if not raw:
         return [claude_sonnet_provider, claude_opus_provider]

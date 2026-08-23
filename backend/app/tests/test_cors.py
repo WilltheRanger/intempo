@@ -20,6 +20,30 @@ import pytest
 from fastapi.testclient import TestClient
 
 
+@pytest.fixture(autouse=True)
+def _restore_module_state():
+    """Put `app.config` and `app.main` back the way they were found.
+
+    Every test in this file rebuilds the CORS middleware by reloading those two
+    modules, which **replaces the `settings` object** — and every other module
+    in the process is still holding the old one. Nothing here noticed, because
+    the reload happens to leave this file's own view consistent; other files
+    then patched a settings object nothing read, and passed alone while failing
+    in the suite. Three tests in `test_readiness.py` did exactly that.
+
+    Reloading once more on the way out costs a few milliseconds and removes a
+    whole class of order-dependent failure.
+    """
+    yield
+    import importlib
+
+    import app.config
+    import app.main
+
+    importlib.reload(app.config)
+    importlib.reload(app.main)
+
+
 def _app_with_origins(monkeypatch: pytest.MonkeyPatch, origins: str):
     """Rebuild the app with a given origin list.
 

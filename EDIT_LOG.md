@@ -6,6 +6,54 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-04 (evening) — `/v1/ready` now names the one thing that names nothing
+
+**Branch:** `main`. Told the user to trust `/v1/ready` to say what is blocking a
+deployment, then checked whether it actually covers what I had just listed. It
+did not cover **CORS** — which is the single misconfiguration in that list whose
+failure is silent everywhere.
+
+A missing key gives a 500 with a message. A missing column gives
+column-not-found. A stale provider name is logged. A browser refused by CORS
+**never sends the request**: no server log, no status code, and the only thing
+the client can report is "Failed to fetch".
+
+Added, and deliberately **non-blocking**. Unset is correct for a local server
+and for a deployment serving only the native app, and a 503 on a working API
+would teach whoever reads this endpoint to stop reading it.
+
+### And then a whole class of order-dependent test failure
+
+The new tests passed alone and failed in the suite. `test_cors.py` rebuilds the
+CORS middleware by reloading `app.config` and `app.main` — which **replaces the
+`settings` object** — and never put it back. Every module that had bound
+`settings` at import was left holding the old one, so a later test patching
+"settings" patched something nothing read.
+
+Three fixes, and the first two are improvements in their own right:
+
+- **`readiness` and `pipeline` read settings when called**, not at import. Both
+  *resolve or report configuration*, and a snapshot taken at import is a
+  different claim — true in production where nothing reloads, quietly false
+  anywhere it does.
+- **`test_cors.py` restores what it reloads**, in an autouse fixture. Costs
+  milliseconds and removes the cause rather than the symptom.
+- The tests patch the live object rather than a module-level binding, imported
+  as `app_config` because `from app.main import app` shadows the package and
+  `app.config` then resolves to an attribute of the FastAPI instance — a very
+  confusing `AttributeError` to read.
+
+**Worth noticing about the process:** the failing test was mine and the bug it
+found was not. It would have gone on producing pass-or-fail-by-filename results
+indefinitely, and the only reason it surfaced is that I ran the whole suite
+rather than the file I was editing.
+
+**Tests:** backend 663 (was 659; +4). `ruff` clean.
+
+**Rollback:** revert the commit.
+
+---
+
 ## 2026-09-04 (later) — The retry could delete a change of metre
 
 **Branch:** `main`. Went looking for what the new fields could break, and found
