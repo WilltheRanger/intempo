@@ -370,6 +370,24 @@ const FIXTURE_SESSIONS: {
   { pieceId: 'fixture-kreutzer-02', sessions: 8, meanDeviationPct: 2.8, band: 'on' },
 ];
 
+/**
+ * The thresholds the fixtures were "judged" by: the shipped defaults from
+ * `backend/config.toml`.
+ *
+ * Stated rather than left null so the demo exercises the same path live takes
+ * do. A null here would mean every chart in development ran on the fallback in
+ * `lib/tempo.ts`, and a bug in reading the real numbers would only surface
+ * against a server.
+ */
+const FIXTURE_TOLERANCE = {
+  rushing_inner_pct: 5,
+  rushing_mid_pct: 10,
+  rushing_outer_pct: 20,
+  dragging_inner_pct: 5,
+  dragging_mid_pct: 10,
+  dragging_outer_pct: 20,
+} as const;
+
 function directionFor(deviationPct: number, band: Band): Direction {
   if (band === 'on') {
     return 'on';
@@ -389,6 +407,7 @@ function toPieceInsight(entry: (typeof FIXTURE_SESSIONS)[number]): PieceInsight 
     band: entry.band,
     direction,
     verdict: verdictFor(entry.band, direction),
+    tolerance: FIXTURE_TOLERANCE,
   };
 }
 
@@ -411,14 +430,26 @@ export const fixtureInsightsSource: InsightsSource = {
         0,
       ) / sessions;
 
-    // The headline band comes from the config defaults, stated once here.
-    // When this source is replaced the backend supplies it directly.
+    // Classified against the same thresholds this source reports, so the bar
+    // and the word beside it can't disagree. Fixture-only: live insights take
+    // the band from the take nearest the mean, because the server owns it.
+    const magnitude = Math.abs(meanDeviationPct);
+    const ahead = meanDeviationPct >= 0;
+    const inner = ahead
+      ? FIXTURE_TOLERANCE.rushing_inner_pct
+      : FIXTURE_TOLERANCE.dragging_inner_pct;
+    const mid = ahead
+      ? FIXTURE_TOLERANCE.rushing_mid_pct
+      : FIXTURE_TOLERANCE.dragging_mid_pct;
+    const outer = ahead
+      ? FIXTURE_TOLERANCE.rushing_outer_pct
+      : FIXTURE_TOLERANCE.dragging_outer_pct;
     const band: Band =
-      Math.abs(meanDeviationPct) <= 5
+      magnitude <= inner
         ? 'on'
-        : Math.abs(meanDeviationPct) <= 10
+        : magnitude <= mid
           ? 'slight'
-          : Math.abs(meanDeviationPct) <= 20
+          : magnitude <= outer
             ? 'rush_drag'
             : 'severe';
     const direction = directionFor(meanDeviationPct, band);
@@ -430,6 +461,7 @@ export const fixtureInsightsSource: InsightsSource = {
       band,
       direction,
       verdict: verdictFor(band, direction),
+      tolerance: FIXTURE_TOLERANCE,
       pieces,
     };
   },
@@ -516,6 +548,7 @@ function buildFixtureTake(): TakeResult {
     lowConfidence: false,
     measures,
     trend: measures.map((m) => m.deviationPct),
+    tolerance: FIXTURE_TOLERANCE,
     missedNotes: 1,
     extraNotes: 0,
   };

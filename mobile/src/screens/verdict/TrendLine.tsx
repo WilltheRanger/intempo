@@ -3,9 +3,8 @@ import Svg, { Line, Polyline } from 'react-native-svg';
 
 import { Text } from '../../components/primitives/Text';
 import { BORDER_WIDTH, colors, spacing } from '../../design';
-
-/** Same full scale as the deviation bar: the pipeline's outer threshold. */
-const FULL_SCALE_PCT = 20;
+import type { Tolerance } from '../../data/types';
+import { sharedFullScaleFor } from '../../lib/tempo';
 
 const HEIGHT = 96;
 const VIEW_WIDTH = 300;
@@ -16,6 +15,12 @@ const GUTTER = 54;
 export interface TrendLineProps {
   /** Rolling mean across the take, rush-positive, percent of a beat. */
   trend: number[];
+  /**
+   * The thresholds this take was judged by, which set the height of the axis.
+   * One scale for both sides here, unlike the deviation bar — see
+   * `sharedFullScaleFor`.
+   */
+  tolerance: Tolerance | null;
   /** Measure numbers at each end, so the x axis reads as the take. */
   firstMeasure: number;
   lastMeasure: number;
@@ -37,6 +42,7 @@ export interface TrendLineProps {
  */
 export function TrendLine({
   trend,
+  tolerance,
   firstMeasure,
   lastMeasure,
   accessibilityLabel,
@@ -46,10 +52,11 @@ export function TrendLine({
     return null;
   }
 
+  const fullScale = sharedFullScaleFor(tolerance);
   const points = trend
     .map((value, index) => {
       const x = (index / (trend.length - 1)) * VIEW_WIDTH;
-      const clamped = Math.max(-1, Math.min(1, value / FULL_SCALE_PCT));
+      const clamped = Math.max(-1, Math.min(1, value / fullScale));
       // SVG y grows downward, so ahead of the beat is negated to sit above.
       const y = HEIGHT / 2 - (clamped * HEIGHT) / 2;
       return `${x.toFixed(1)},${y.toFixed(1)}`;

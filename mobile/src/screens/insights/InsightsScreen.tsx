@@ -95,6 +95,7 @@ export function InsightsScreen() {
 
         <DeviationBar
           deviationPct={insights.meanDeviationPct}
+          tolerance={insights.tolerance}
           accessibilityLabel={`${formatTendency(insights.verdict)} across your recent practice`}
           style={styles.bar}
         />

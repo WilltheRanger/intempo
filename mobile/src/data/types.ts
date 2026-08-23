@@ -285,6 +285,26 @@ export interface PerMeasureResult {
   direction: Direction;
 }
 
+/**
+ * The band edges a take was judged by, as a percentage of one beat.
+ *
+ * Sent with the result rather than fetched from config, because these are
+ * tunable server-side and a take was judged by whichever values were in force
+ * when it ran. Reading today's numbers would silently rescale every take
+ * already stored.
+ *
+ * Null on analyses finished before the pipeline recorded them. `lib/tempo.ts`
+ * owns the fallback; nothing else should hard-code these.
+ */
+export interface Tolerance {
+  rushing_inner_pct: number;
+  rushing_mid_pct: number;
+  rushing_outer_pct: number;
+  dragging_inner_pct: number;
+  dragging_mid_pct: number;
+  dragging_outer_pct: number;
+}
+
 export interface AnalysisResultJson {
   status: ResultStatus;
   quality: number;
@@ -293,6 +313,8 @@ export interface AnalysisResultJson {
   /** The pipeline's own sentence, already in plain English. */
   verdict: string;
   verdict_direction: Direction;
+  /** Null on takes analysed before the pipeline recorded them. */
+  tolerance: Tolerance | null;
   per_note: PerNoteResult[];
   per_measure: PerMeasureResult[];
   /** Rolling mean, rush-positive. */
@@ -437,6 +459,8 @@ export interface PieceInsight {
   band: Band;
   direction: Direction;
   verdict: Verdict;
+  /** The thresholds behind `band` — see `PracticeInsights.tolerance`. */
+  tolerance: Tolerance | null;
 }
 
 /**
@@ -456,6 +480,12 @@ export interface PracticeInsights {
   band: Band;
   direction: Direction;
   verdict: Verdict;
+  /**
+   * The thresholds behind `band`, taken from the same take. A window can span
+   * a retune, so there is no single set covering all of it — the take that set
+   * the band is the one whose scale belongs with it.
+   */
+  tolerance: Tolerance | null;
   /** Most drift first — the pieces worth attention lead. */
   pieces: PieceInsight[];
 }
@@ -525,6 +555,8 @@ export interface TakeResult {
   measures: MeasureVerdict[];
   /** Rolling trend across the take, rush-positive. */
   trend: number[];
+  /** What this take was judged by. Null on older analyses. */
+  tolerance: Tolerance | null;
   missedNotes: number;
   extraNotes: number;
 }

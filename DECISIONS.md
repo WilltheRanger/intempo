@@ -6,6 +6,72 @@ Operating Principle #5.
 
 ---
 
+## 2026-08-31 — Record the tolerance thresholds on the analysis, not serve them from config
+
+**Context:** two charts in the app — the per-measure deviation bar and the
+take's trend line — draw a take against the pipeline's *outer* threshold, the
+point beyond which a deviation is called severe. Both held their own
+`const FULL_SCALE_PCT = 20`, copied from `backend/config.toml`. `DeviationBar`
+documented the copy as temporary: *"Server-tunable, which this copy is not.
+When the API exposes the thresholds it should come from there."*
+
+The six thresholds are the values in this system most certain to change —
+`config.toml` calls them "starting values; tune per instrument/room", and
+`TUNING_LOG.md` exists solely to record their movement. They are also
+asymmetric by design (dragging sits wider than rushing), so a single client
+number is wrong on at least one side as soon as tuning begins.
+
+**Decision:** the analysis result carries the thresholds it was judged by.
+`AnalysisResult.tolerance` is filled from the config in force during the run,
+on every status, and travels to the client inside `result_json`.
+
+### Alternatives considered
+
+**A `GET /v1/config/tolerance` endpoint, or the thresholds on `/v1/me`.** The
+obvious reading of the comment the code left, and wrong. It answers "what are
+the thresholds *now*", but every chart is drawing a take from the *past* — a
+take judged by whatever was in force when it ran. Re-scaling stored takes
+against today's numbers would redraw a musician's practice history after a
+tuning pass they had no part in and no way to see. Worse, the bar's length
+would move while the word beside it — which comes from the stored band — did
+not, so the same take would contradict itself on screen. Also a second request
+on a path that has one.
+
+**Keep the client copy, add a test asserting it matches `config.toml`.**
+Cheapest, and it would catch drift in CI. It fails for the same reason: even
+kept in sync it answers the wrong question, because "current" and "what this
+take was judged by" diverge the moment anything is tuned. It also cannot
+express asymmetry with one number.
+
+**Recompute the bands client-side from the thresholds.** Rejected on the
+existing precedent in `getInsights`, which already takes the band "of the take
+nearest the mean, rather than a band computed here: the thresholds are the
+server's and they move." Classification stays in one place; the client only
+learns the scale it should draw against.
+
+### Trade-offs accepted
+
+- **The field is nullable, and permanently.** Analyses already in the table
+  have no `tolerance`, so `lib/tempo.ts` keeps one fallback — the shipped
+  default of 20, which is genuinely what those rows were judged by. Removing
+  it later needs a backfill, not a schema edit.
+- **A tuning pass no longer redraws history**, which cuts both ways: two takes
+  in one Insights window can have been judged by different thresholds. The
+  window reports the tolerance of the take that set its headline band, matching
+  how the band itself is already chosen, rather than pretending one set covers
+  the window.
+- **The trend line takes a single scale where the bar takes two.** A polyline
+  crossing zero has to stay straight; independent half-scales would bend a
+  steady drift at the origin and read as a change in the playing. It uses the
+  wider of the two, so nothing clips and the tighter side reaches full height a
+  little early. The bar has no such constraint — it is discrete and
+  centre-anchored — so it uses the correct threshold per side.
+- **Six floats on every result.** Negligible against `per_note`, and they make
+  each row self-describing: a stored take can be re-plotted correctly years
+  later without knowing what the config said that week.
+
+---
+
 ## 2026-08-27 — Store the instrument on an analysis, not a `double_bass` flag
 
 **Context:** `services/analysis.analyze()` has taken a `double_bass` keyword
