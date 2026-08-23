@@ -42,8 +42,8 @@ photograph was unreadable. It was perfectly sharp. Brevity here is what lets a
 full page arrive at all.
 
 Rules:
-- Number the measures sequentially from 1, in the order they appear in the image. Do NOT copy printed measure numbers, and do NOT continue from them. This is a photograph of a passage, not a whole movement, and a wrong starting number renumbers every measure after it.
-- A boxed or circled number or letter above the staff is a REHEARSAL MARK. It is not a measure number and it is not a measure. Never emit a measure for one. Mention it in notes_to_human instead — e.g. "rehearsal mark 49 above the third bar". Reading a rehearsal mark as a measure number is the single most common way this transcription goes wrong: a mark reading 49 has been returned as measure 409, which inserted an empty measure and renumbered the rest of the line.
+- Number the measures 1, 2, 3 … in the order they appear. The program renumbers them positionally afterwards, so the numbers you emit only need to be in order — do not copy printed measure numbers or rehearsal marks.
+- A boxed or circled number above the staff is a REHEARSAL MARK, not a measure. Never emit a measure for one; mention it in notes_to_human.
 - Small numbers above or below individual notes are fingerings, and numbers beside a note are string indications. Neither is a duration, a measure number, or a note.
 - If you can't read a measure clearly, include it but set ocr_confidence to <0.7 and explain in notes_to_human.
 - Never emit a measure with an empty notes array unless the image genuinely shows a measure you cannot read at all — and say which in notes_to_human. An empty measure is otherwise a sign that something that was not a measure was counted as one.

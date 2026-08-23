@@ -356,7 +356,10 @@ def test_an_ordinary_failure_still_falls_through(monkeypatch) -> None:
                 input_tokens=1, output_tokens=1, cost_usd=0.0, latency_ms=1,
             )
 
-    assert parse_sheet_music(b"img", providers=[_Fails(), _Works()], retry=False) is good
+    # Content, not identity: every reading is renumbered on the way through,
+    # which returns a copy.
+    result = parse_sheet_music(b"img", providers=[_Fails(), _Works()], retry=False)
+    assert result.measures[0].notes == good.measures[0].notes
     assert asked == ["first", "second"]
 
 
@@ -375,3 +378,65 @@ def test_the_prompt_does_not_ask_for_fields_nothing_reads() -> None:
     # Still asked for, because the analysis genuinely uses them.
     assert '"slurs"' in shape
     assert '"tied_to_next"' in shape
+
+
+# ---- the program numbers the measures --------------------------------------
+
+
+def test_measures_are_renumbered_positionally() -> None:
+    """The numbers are positional — first bar on the page is 1 — so deriving
+    them is counting, and a program counts without having a bad minute."""
+    from app.services.ocr.pipeline import renumber
+    from app.services.score_schema import Measure, Note, ScoreJson
+
+    score = ScoreJson(
+        clef="bass", time_signature="4/4", ocr_confidence=0.9,
+        measures=[
+            Measure(measure_number=n, notes=[Note(pitch="C3", duration="whole")])
+            for n in (409, 414, 415)
+        ],
+    )
+    assert [m.measure_number for m in renumber(score).measures] == [1, 2, 3]
+
+
+def test_a_numbering_gap_is_reported_before_it_is_normalised() -> None:
+    """Renumbering silently would destroy the signal it exists to fix.
+
+    A boxed rehearsal mark reading 49 came back as measure 409 on a real
+    photograph, inserting an empty measure and renumbering the rest. If the
+    program just renumbers, the output runs 1..N and looks immaculate with the
+    spurious measure still in the middle of it.
+    """
+    from app.services.ocr.pipeline import renumber
+    from app.services.score_schema import Measure, Note, ScoreJson
+
+    score = ScoreJson(
+        clef="bass", time_signature="4/4", ocr_confidence=0.9,
+        measures=[
+            Measure(measure_number=n, notes=[Note(pitch="C3", duration="whole")])
+            for n in (1, 2, 409)
+        ],
+    )
+    fixed = renumber(score)
+    assert [m.measure_number for m in fixed.measures] == [1, 2, 3]
+    assert "rehearsal mark" in fixed.notes_to_human
+    assert "2→409" in fixed.notes_to_human
+
+
+def test_renumbering_a_clean_reading_says_nothing() -> None:
+    """It runs on every reading, so it must be silent when there is nothing to
+    say — otherwise every score carries a warning about itself."""
+    from app.services.ocr.pipeline import renumber
+    from app.services.score_schema import Measure, Note, ScoreJson
+
+    score = ScoreJson(
+        clef="bass", time_signature="4/4", ocr_confidence=0.9,
+        notes_to_human="Bar 3 was hard to read.",
+        measures=[
+            Measure(measure_number=n, notes=[Note(pitch="C3", duration="whole")])
+            for n in (1, 2, 3)
+        ],
+    )
+    fixed = renumber(score)
+    assert [m.measure_number for m in fixed.measures] == [1, 2, 3]
+    assert fixed.notes_to_human == "Bar 3 was hard to read."

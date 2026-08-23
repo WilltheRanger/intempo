@@ -6,6 +6,122 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-26 (later) — Everything that was on the deliberately-not-built list
+
+**Branch:** `main`. Owner: "build everything else you didn't build."
+
+Six items, each of which had been named in an earlier entry as deferred.
+
+### 1. Repeats were never played — a silent correctness bug
+
+`build_timeline` walked `score.measures` once and ignored `score.repeats`
+entirely. A musician taking an eight-bar repeat plays sixteen bars and produces
+roughly twice the onsets, against a timeline holding eight. DTW was matching a
+doubled performance to a single pass and **every delta after the repeat sign
+was meaningless** — silently, because the alignment still produced a number.
+
+`expand_repeats` writes the measures out in playing order. Endings are read the
+way a player reads them: first time through take the first ending and go back,
+second time skip it and take the second.
+
+Measure numbers are deliberately **not** renumbered across passes. The part
+says bar 5 once and the musician plays it twice, so both stay bar 5 and the
+verdict names a bar they can find on the page. The honest consequence is that
+`PerMeasure` averages the two passes — nothing downstream distinguishes them,
+and inventing bar numbers printed nowhere would be worse.
+
+### 2. A failed page had no way back but the camera
+
+`POST /v1/scores/:id/transcribe`. The photograph was still in storage and
+usually fine — a rate limit, a truncated response, a model having a bad minute
+— and the only remedy on offer was re-uploading several megabytes to solve a
+problem the megabytes never caused. The failed screen now leads with **Try
+reading it again**, with photographing again as the quieter second option.
+
+Refused while a page is already being read: two workers on one row both write
+to it and the last one home wins. Refused for a page whose photograph was
+discarded on acceptance. Allowed on a *successful* reading too — someone
+looking at a transcription they can see is wrong should not have to make it
+fail first.
+
+### 3–4. The correction screen, finished
+
+**Pitch**, stepping by letter rather than semitone: correcting a misread
+notehead is moving it a line or a space, so F♯→G is one step and F→F♯ is the
+accidental button, not the same control.
+
+**Add and delete a note**, for the errors changing a duration cannot fix — OCR
+inventing a notehead that is not there, or missing one. Delete is refused on
+the last note, because a bar with no notes is a hole rather than a correction.
+
+**"Correct another bar"** opens every measure, not only the flagged ones. Two
+compensating errors in one bar still sum correctly — an eighth read as a
+sixteenth and a sixteenth read as an eighth — so the beat check is blind to
+them and so was the only route in.
+
+Rest moved to sit with the durations rather than the pitch controls: the
+verdict reads `is_rest` and never reads pitch, and the layout should say so.
+
+### 5. MusicXML import, after hardening the converter
+
+Importing on top of a converter with the gaps the earlier verification found
+would have been worse than not importing. So:
+
+- **A multi-part file refuses to guess.** An engine reading one photographed
+  staff emits one part, so taking the first was always right. A downloaded
+  orchestral score's first part is usually the piccolo, and a cellist who
+  silently gets the piccolo line has a transcription that is timed, verdicted
+  and wrong *in a way that looks right*. The error names the parts; a part can
+  be chosen by id or by printed name as a substring, so "cello" finds
+  "Violoncello".
+- **`<backup>` no longer doubles a bar.** It rewinds the clock so a second
+  voice can be written over the same bar; reading straight through counted both
+  as consecutive notes, so a 4/4 bar came out as 8 beats and the beat check
+  called a correct file broken. Gated on `<backup>` itself rather than on voice
+  numbers — Audiveris assigns those freely within one line, and filtering on
+  them alone dropped real notes and emptied a bar in the bundled fixture.
+  Untagged notes are always kept, and a filter that would empty a bar is
+  abandoned.
+
+`ocr_confidence` is **null** on import, not 1.0. Every "we don't know"
+mechanism here keys off that number, and a file is not *confident*, it is
+*stated*.
+
+### 6. The program numbers the measures now
+
+Measure numbers are positional — first bar on the page is 1 — so deriving them
+is counting, and a program counts without having a bad minute. Asking a model
+for them bought the single most common failure this pipeline has had: a boxed
+rehearsal mark reading **49** returned as measure **409**.
+
+**The anomaly is reported before it is normalised.** Renumbering silently would
+destroy the very signal `numbering_gaps` exists to raise — the output would run
+1..N and look immaculate with a spurious measure still in the middle. So the
+gap is logged, named in `notes_to_human`, and *then* the numbering is made
+positional.
+
+That let the prompt drop the rules it spent explaining the job: **4,190 → 3,809
+characters, ~106 tokens saved on every call.**
+
+### Also
+
+A queued page now says **"Waiting for another page to finish"** rather than
+"Getting ready to read this page" — the first describes what is happening, the
+second described the app.
+
+### Honest status
+
+- **448 backend tests pass; ruff clean; `tsc --noEmit` clean.** 30 or so new.
+- The import endpoint has **no UI yet** — it is reachable only by API. That is
+  the next UI gate, and it needs a file picker, which is a different
+  conversation from a design review.
+- Tuplets are still unrepresentable in `Duration`, so a triplet passage in an
+  imported file still drops notes and says so in `notes_to_human`. Fixing that
+  widens a closed Literal across the schema, alignment, three mobile files and
+  every prompt — a batch, not a follow-up.
+
+---
+
 ## 2026-08-26 — A misread bar stops being the end of the piece
 
 **Branch:** `main`. Owner's sequencing: correction UI first, then drop
