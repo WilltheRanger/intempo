@@ -163,6 +163,16 @@ def _why_alignment_failed(
     Told apart by covering every expected onset while carrying far more
     detected ones. A wrong piece does not do that — it misses expected onsets,
     which is why `missed` has to be empty for this branch to fire.
+
+    The second case is a page that is *shorter than what was played*, and the
+    commonest cause is bars that never reached the transcription. A
+    multi-measure rest — a bar with a number over it, ordinary in any orchestral
+    part — read as a single bar of rest leaves the timeline seven or twenty
+    bars short, and the beat-sum check cannot see it: one whole rest in 4/4 adds
+    up perfectly. Measured on a page of one bar, eight bars' rest and four more
+    bars, read as one rest bar: `alignment_failed`, quality **0.000**, and the
+    validator flagged nothing. Sending that musician to look for the wrong
+    piece is sending them to look in the wrong place.
     """
     cleaned = apply_fuzzy_match(raw, onsets, expected)
     heard_everything = not cleaned.missed_expected and bool(cleaned.matched)
@@ -174,10 +184,45 @@ def _why_alignment_failed(
             "this usually means the slurs on the page aren't the ones you "
             "played. Check the slur markings on this piece."
         )
+
+    if _take_is_much_longer_than_the_page(onsets, expected):
+        return (
+            "Your recording is much longer than this page of music — that "
+            "usually means some bars are missing from it. Check for a rest bar "
+            "with a number over it, or a repeat, that didn't make it into the "
+            "transcription."
+        )
+
     return (
         "We had trouble matching your recording to the score — "
         "check you're on the right piece and re-record."
     )
+
+
+#: How much longer a take has to run than its page before the page is the suspect.
+#:
+#: A musician practising slowly is the thing this must not accuse. The tempo
+#: clamp already says the matcher will not believe a ratio beyond 1.7, so a take
+#: within that is a tempo difference by definition; past it, something is
+#: missing from the page. The smallest multi-measure rest worth printing is two
+#: bars, which on a short page is already well beyond this.
+TAKE_TOO_LONG_RATIO = 1.8
+
+
+def _take_is_much_longer_than_the_page(
+    onsets: np.ndarray, expected: np.ndarray
+) -> bool:
+    """Did the musician play for far longer than this transcription accounts for?
+
+    Compared as spans rather than note counts, because the bars that go missing
+    this way are *rests* — they carry no notes at all, so counting notes cannot
+    see them. Time is the only thing that shows a gap where nothing was played.
+    """
+    if onsets.size < 2 or expected.size < 2:
+        return False
+    page = float(expected[-1] - expected[0])
+    take = float(onsets[-1] - onsets[0])
+    return page > 0 and take > page * TAKE_TOO_LONG_RATIO
 
 
 def analyze(

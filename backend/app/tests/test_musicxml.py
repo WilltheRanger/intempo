@@ -364,3 +364,30 @@ def test_both_readers_agree_about_chords() -> None:
     assert "DOUBLE STOPS" in prompt
     assert "lowest note only" in prompt
     assert "grace note" in prompt, "grace notes have the same effect and the same fix"
+
+
+def test_the_prompt_covers_the_marks_that_change_how_many_bars_there_are() -> None:
+    """Four conventions, each of which changes the *length* of the music.
+
+    A double stop is caught by the beat check when it goes wrong. These are
+    not: a multi-measure rest read as one bar leaves the page short by every
+    bar the number stood for, and one whole rest in 4/4 adds up perfectly. The
+    validator sees nothing and the musician is told their recording doesn't
+    match the piece.
+
+    Measured on a page of one bar, eight bars' rest and four more bars, read as
+    a single rest bar: `alignment_failed`, quality 0.000, no validator finding.
+    """
+    from pathlib import Path
+
+    prompt = (
+        Path(__file__).resolve().parents[1] / "prompts" / "ocr_prompt.txt"
+    ).read_text()
+
+    assert "MULTI-MEASURE REST" in prompt
+    assert "BAR REPEAT SIGN" in prompt
+    assert "NAVIGATION MARKS" in prompt, "D.C. and D.S. cannot be represented"
+    assert "notes_to_human" in prompt.split("NAVIGATION MARKS")[1][:600], (
+        "a mark the format cannot hold has to be reported, not silently dropped"
+    )
+    assert "FERMATA" in prompt
