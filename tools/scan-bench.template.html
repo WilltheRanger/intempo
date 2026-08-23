@@ -332,6 +332,16 @@ const TOLERANCE=__TOLERANCE__, MIN_AGREEMENT=__MIN_AGREEMENT__,
       MIN_MEASURES_TO_INFER=__MIN_MEASURES_TO_INFER__;
 const DENSITY_MULTIPLE=__DENSITY_MULTIPLE__, DENSITY_MIN_NOTES=__DENSITY_MIN_NOTES__;
 
+function metersInForce(score){
+  // One entry per measure: the quarter-note beats it is expected to hold.
+  let running=beatsPerMeasure(score.time_signature);
+  return (score.measures??[]).map(m=>{
+    if(m.time_signature!==null&&m.time_signature!==undefined){
+      running=beatsPerMeasure(m.time_signature);
+    }
+    return running;
+  });
+}
 function beatsPerMeasure(ts){
   if(!ts||ts==='unknown')return null;
   const m=/^(\d+)\/(\d+)$/.exec(String(ts).trim());
@@ -386,17 +396,24 @@ function validateMeasures(score){
   const tupletFaults=tupletFaultsByMeasure(score);
   const measures=score.measures??[];
   const sums=measures.map(m=>(m.notes??[]).reduce((t,n)=>t+(DURATION_BEATS[n.duration]??0),0));
-  const stated=beatsPerMeasure(score.time_signature);
-  const inferred=stated===null?inferBeatsPerMeasure(sums):null;
-  const expected=stated!==null?stated:inferred;
+  // The meter in force at each measure. Mirrors `meters_in_force` in
+  // backend services/ocr/validate.py — any measure may state a new time
+  // signature, and it holds until the next change.
+  const meters=metersInForce(score);
+  const stated=meters.length?meters[0]:beatsPerMeasure(score.time_signature);
+  const inferred=meters.every(v=>v===null)?inferBeatsPerMeasure(sums):null;
+  const perMeasure=meters.map(v=>v!==null?v:inferred);
   const meterInferred=stated===null&&inferred!==null;
-  const densities=expected?measures.filter(m=>(m.notes??[]).length).map(m=>(m.notes??[]).length/expected):[];
+  const densities=measures.map((m,i)=>[m,perMeasure[i]])
+    .filter(([m,meter])=>(m.notes??[]).length&&meter)
+    .map(([m,meter])=>(m.notes??[]).length/meter);
   const sorted=[...densities].sort((a,b)=>a-b);
   const medianDensity=sorted.length?(sorted.length%2?sorted[(sorted.length-1)/2]
     :(sorted[sorted.length/2-1]+sorted[sorted.length/2])/2):0;
   const densityLimit=DENSITY_MULTIPLE*medianDensity;
   return measures.map((m,i)=>{
     const actual=sums[i],count=(m.notes??[]).length;
+    const expected=perMeasure[i];
     const tooDense=Boolean(expected)&&count>=DENSITY_MIN_NOTES&&count/expected>densityLimit;
     let verdict;
     if(count===0)verdict='empty';

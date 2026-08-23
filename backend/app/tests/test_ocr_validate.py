@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import pytest
 
+from app.services.score_schema import Measure, Note, ScoreJson
 from app.services.ocr.validate import (
     MIN_AGREEMENT,
     describe_numbering,
@@ -22,7 +23,6 @@ from app.services.ocr.validate import (
     problems,
     validate_measures,
 )
-from app.services.score_schema import ScoreJson
 
 
 def _score(measures: list[list[str]], time_signature: str | None = "4/4") -> ScoreJson:
@@ -369,3 +369,102 @@ def test_the_complaint_offers_the_legitimate_explanation() -> None:
 
 def test_no_complaint_without_repetition() -> None:
     assert describe_repeats(repeated_runs(_patterned([A, B, C, D]))) == ""
+
+
+class TestAMeterThatChanges:
+    """A score carries one header time signature and the repertoire ignores that.
+
+    The cost was not a missed check — it was four false ones. Four bars of 3/4
+    after four of 4/4 had every 3/4 bar reported "short", on a page written
+    correctly and read correctly, with a "Fix bar 5" control offered for each.
+    Nothing teaches a musician to ignore a caveat faster than four wrong ones.
+
+    The onset timeline never cared: it accumulates durations, so where the
+    barlines fall does not move a note. This is entirely about the beat check
+    and what the musician is told.
+    """
+
+    @staticmethod
+    def _page(shape: list[tuple[int, str | None]]) -> ScoreJson:
+        """`(beats, meter stated here or None)` per measure, all quarters."""
+        return ScoreJson(
+            clef="bass",
+            time_signature="4/4",
+            ocr_confidence=0.9,
+            measures=[
+                Measure(
+                    measure_number=i + 1,
+                    notes=[Note(pitch="E2", duration="quarter")] * beats,
+                    time_signature=meter,
+                )
+                for i, (beats, meter) in enumerate(shape)
+            ],
+        )
+
+    @staticmethod
+    def _problems(score: ScoreJson) -> list[tuple[int, str]]:
+        return [
+            (f.measure_number, f.verdict)
+            for f in validate_measures(score)
+            if f.is_problem
+        ]
+
+    def test_a_change_that_is_reported_is_not_a_problem(self) -> None:
+        page = self._page([(4, None), (4, None), (3, "3/4"), (3, None), (3, None)])
+        assert self._problems(page) == []
+
+    def test_a_change_that_is_not_reported_still_is(self) -> None:
+        """The check has not been softened, only told where the barlines are."""
+        page = self._page([(4, None), (4, None), (3, None), (3, None), (3, None)])
+        assert self._problems(page) == [(3, "short"), (4, "short"), (5, "short")]
+
+    def test_a_genuinely_short_bar_after_a_change_still_shows(self) -> None:
+        page = self._page([(4, None), (3, "3/4"), (2, None), (3, None)])
+        assert self._problems(page) == [(3, "short")]
+
+    def test_the_meter_can_change_back(self) -> None:
+        """How a borrowed bar of 3/4 inside a 4/4 piece is printed."""
+        page = self._page([(4, None), (3, "3/4"), (4, "4/4"), (4, None)])
+        assert self._problems(page) == []
+
+    def test_a_compound_meter_is_counted_in_quarter_beats(self) -> None:
+        """6/8 is three quarter-beats, not six — `target_bpm` is always
+        quarter-notes-per-minute, and the two have to agree."""
+        page = ScoreJson(
+            clef="bass",
+            time_signature="4/4",
+            ocr_confidence=0.9,
+            measures=[
+                Measure(
+                    measure_number=1,
+                    notes=[Note(pitch="E2", duration="quarter")] * 4,
+                ),
+                Measure(
+                    measure_number=2,
+                    notes=[Note(pitch="E2", duration="dotted_half")],
+                    time_signature="6/8",
+                ),
+            ],
+        )
+        assert self._problems(page) == []
+
+    def test_an_illegible_change_makes_what_follows_unverifiable(self) -> None:
+        """Worse than no change at all: something *did* happen and cannot be
+        read, so continuing with the old meter would invent a check."""
+        page = self._page([(4, None), (3, "unknown"), (5, None)])
+        verdicts = {f.measure_number: f.verdict for f in validate_measures(page)}
+        assert verdicts[2] == "unverifiable"
+        assert verdicts[3] == "unverifiable"
+
+    def test_a_score_with_no_changes_reads_exactly_as_before(self) -> None:
+        page = self._page([(4, None), (4, None), (5, None)])
+        assert self._problems(page) == [(3, "long")]
+
+
+def test_the_prompt_says_where_a_mid_piece_time_signature_goes() -> None:
+    from pathlib import Path
+
+    prompt = (
+        Path(__file__).resolve().parents[1] / "prompts" / "ocr_prompt.txt"
+    ).read_text()
+    assert "TIME SIGNATURE PRINTED MID-PIECE" in prompt

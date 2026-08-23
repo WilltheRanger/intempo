@@ -191,6 +191,29 @@ class Measure(_Strict):
     #: written before the field existed — which is why it defaults rather than
     #: being required.
     tuplets: list[Tuplet] = Field(default_factory=list)
+    #: The meter, when it *changes* at this measure. Null everywhere else.
+    #:
+    #: A single time signature for a whole piece is a simplification the
+    #: repertoire does not honour, and the cost of it was not a missed check —
+    #: it was a false one. Four bars of 3/4 after four of 4/4 had every one of
+    #: the 3/4 bars reported as "short", on a page that was written correctly
+    #: and read correctly, with a "Fix bar 5" control offered for each. Nothing
+    #: teaches a musician to ignore a caveat faster than four wrong ones.
+    #:
+    #: The onset timeline never cared: it accumulates durations, so where the
+    #: barlines fall does not move a note. This exists for the beat check.
+    time_signature: str | None = Field(default=None, max_length=20)
+
+    @field_validator("time_signature")
+    @classmethod
+    def _validate_measure_time_signature(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        if value == "unknown" or _TIME_SIG_PATTERN.match(value):
+            return value
+        raise ValueError(
+            f"time_signature must be 'N/N' (e.g. '3/4'), 'unknown', or null; got {value!r}"
+        )
 
 
 class Repeat(_Strict):

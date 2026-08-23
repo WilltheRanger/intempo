@@ -48,8 +48,11 @@ def _score(
     measures: list[list[str]],
     time_signature: str | None,
     tuplets: dict[int, list[dict]] | None = None,
+    meters: dict[int, str] | None = None,
 ) -> dict:
+    """`meters` states a *change* of time signature at those measure indices."""
     tuplets = tuplets or {}
+    meters = meters or {}
     return {
         "time_signature": time_signature,
         "key_signature": "C major",
@@ -71,6 +74,7 @@ def _score(
                 ],
                 "slurs": [],
                 "tuplets": tuplets.get(i, []),
+                "time_signature": meters.get(i),
             }
             for i, durations in enumerate(measures)
         ],
@@ -118,6 +122,21 @@ CASES = [
     # And a genuinely short bar made of triplets, so "tolerant" is not
     # mistaken for "always passes".
     _score([["triplet_eighth"] * 3], "4/4"),
+    # Meter changes. A score carries one header time signature and the
+    # repertoire does not honour that — four bars of 3/4 after four of 4/4 had
+    # every 3/4 bar called "short" on a page written and read correctly. The
+    # port had to learn the same rule, and without a case here it could have
+    # gone on reading the header for the whole piece and nothing would notice.
+    _score([Q, Q, ["quarter"] * 3, ["quarter"] * 3], "4/4", meters={2: "3/4"}),
+    # The change is real, and a genuinely short bar *after* it must still show.
+    _score([Q, ["quarter"] * 3, ["quarter"] * 2], "4/4", meters={1: "3/4"}),
+    # Back again, which is how a piece that borrows a bar of 3/4 is printed.
+    _score([Q, ["quarter"] * 3, Q], "4/4", meters={1: "3/4", 2: "4/4"}),
+    # A change into a compound meter: 6/8 is three quarter-beats, not six.
+    _score([Q, ["dotted_half"], ["dotted_half"]], "4/4", meters={1: "6/8"}),
+    # An illegible change invalidates the meter that was running rather than
+    # continuing it — the bars after it are unverifiable, not wrong.
+    _score([Q, ["quarter"] * 3, ["quarter"] * 5], "4/4", meters={1: "unknown"}),
     # Brackets. A 5:4 approximated as triplets sums to exactly 4.0 and must be
     # a problem in all three implementations.
     _score(

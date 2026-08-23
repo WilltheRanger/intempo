@@ -6,6 +6,72 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-03 (later) — Four wrong caveats on a page that was read correctly
+
+**Branch:** `main`. `/loop` iteration, continuing the same probe. This one is a
+**false positive**, which is a different and in some ways worse failure than the
+last two: a missed check is invisible, but a wrong caveat teaches the musician
+that the caveats are noise.
+
+`ScoreJson` carries **one** time signature for the whole piece. The repertoire
+does not honour that. Four bars of 3/4 after four of 4/4:
+
+    validator flags: [(5, 'short'), (6, 'short'), (7, 'short'), (8, 'short')]
+
+Four bars reported wrong on a page that is written correctly and read
+correctly, each with a "Fix bar N" control offered for it.
+
+**The timing analysis never cared.** `build_timeline` accumulates durations, so
+where the barlines fall does not move a single onset. This is entirely about
+the beat check and what the musician is told about their own scan.
+
+**`Measure.time_signature`** now states a change, holding until the next one —
+the way it is printed and the way a player reads it. `meters_in_force` walks the
+measures and hands the check the meter actually in force at each. A change to
+`"unknown"` invalidates what was running rather than continuing it: something
+happened and could not be read, so the bars after it are *unverifiable*, not
+wrong.
+
+**Ported to both browser tools in the same commit**, which is the standing
+lesson of this codebase and the reason `test_sandbox_parity.py` exists. It did
+**not** catch the drift on its own — every existing case uses one meter — so
+five new cases were added: a change, a genuinely short bar after a change, a
+change back, a change into 6/8 (three quarter-beats, not six), and an illegible
+change. Mutation-checked with the mutation asserted: reverting either port to
+read the header alone fails one case each.
+
+**Prompt rule** so a mid-piece time signature lands on the measure it belongs
+to, with its consequence stated: not a broken analysis, but every later bar
+reported wrong to a musician who did nothing wrong.
+
+**Also measured, and not fixed — a written ritardando.** The last four bars of
+an eight-bar page slowing 60 → 45 BPM, played exactly as marked:
+
+    "You dragged across measures 5–6 by an average of 24 BPM."
+
+The score says slow down and the app says you dragged. Bars 1, 5, 6, 7 and 8
+come back off-tempo with values scattered from +63% to −80%, because the pulse
+anchor absorbs part of the slowing and reports the rest as noise. `ScoreJson`
+has `tempo_marking` and `bpm_hint` for the *opening* tempo and no way at all to
+say the tempo changes at bar 5.
+
+This is the same class as the hesitation defect — a confident wrong verdict on
+correct playing — and it is bigger than a prompt rule can fix: the timeline
+would have to bend. Recorded here rather than half-fixed, because the design
+question underneath it (does a *marked* rit. count as dragging?) is the user's
+under §2, and it is the same question they already answered once for
+hesitations.
+
+**No three-foot test.** No UI touched.
+
+**Tests:** backend 632 (was 624; +8). `ruff` clean, corpus bit-identical,
+sandbox and bench rebuilt.
+
+**Rollback:** revert the commit. `Measure.time_signature` defaults to null, so
+every score written before it reads exactly as it did.
+
+---
+
 ## 2026-09-03 — The marks that change how many bars there are
 
 **Branch:** `main`. `/loop` iteration, continuing the probe of the reading side
