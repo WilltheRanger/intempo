@@ -6,6 +6,89 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-25 (later still) — Cutting the page up halves the memory
+
+**Branch:** `main`. Owner: "is there no way to optimize this — what if we cut
+up the measures so we make it easier for the OMR to read?"
+
+Right instinct, and it measures well. One correction to it: **systems, not
+measures.**
+
+### Why systems
+
+A measure crop is not readable on its own. The clef and key live at the head of
+the system, so a bar lifted out of the middle has neither and every pitch in it
+is a guess. Printed music repeats the clef and key on *every* system — which is
+exactly what makes a system the smallest piece that still means something by
+itself.
+
+Cut at **full resolution**, which is the trick: a strip keeps the interline
+spacing of the original, and interline is the measurement Audiveris refuses a
+page for lacking. Slicing sidesteps the resolution floor instead of fighting it.
+
+### Measured, on the same page, peak RSS sampled from `/proc`
+
+| approach | time | peak RSS | measures |
+|---|---|---|---|
+| whole page at 2048 px | 9.5 s | 512 MB | 10 |
+| all strips, one JVM | 19.1 s | 570 MB | 10 |
+| **per system, end to end** | **31.2 s** | **328 MB** | **10** |
+
+**Half the memory, the same measures, correctly renumbered 1–10.**
+
+Batching every strip into one invocation is the obvious optimisation and is
+worse than both — Audiveris holds them all and peaks *higher* than the whole
+page. The saving comes from the process exiting between systems, which is also
+what the extra wall-clock buys: one JVM start per strip. Since transcription is
+a background worker now, that time costs nobody's attention.
+
+`ru_maxrss` over children was useless here — it is a monotonic maximum over all
+terminated children, so every run after the largest reports zero. The first
+version of this measurement said strips used 0 MB. Sampling `/proc/<pid>/VmRSS`
+while the child runs is what produced the numbers above.
+
+### What it changes about the plan
+
+328 MB alongside the ~150 MB Python service is ~480 MB. Before this, OMR was a
+flat no on anything under 2 GB; it is now close enough to try on the 512 MB
+plan already in use — with the honest caveat that 480 of 512 leaves nothing for
+a concurrent scan. The worker reads one page at a time, so that is a real
+constraint rather than a theoretical one.
+
+### Merging
+
+Each strip is its own document to the engine and numbers from 1, so
+concatenating unchanged would give a score with five measure 1s — and
+`alignment.py` builds its expected timeline in order, so a repeated number is
+not cosmetic. `_merge` renumbers across the page, takes each header field from
+the first system that names one (the time signature is printed once, at the
+head of the piece, so a later system legitimately has none), and takes
+confidence as the **weakest** system rather than the average — a page is only
+as trustworthy as its worst-read line.
+
+A system the engine cannot read is skipped rather than fatal: four systems of
+real notation plus a gap beats losing the page over the gap.
+
+### A latent test fault, fixed on the way
+
+`test_omr_provider.py` read `OMR_ARGS` from settings, which reads the
+environment — so with a real engine configured the whole file failed with
+`cannot create -output/score.musicxml`. The stubs now pass their own argument
+shape explicitly. Which shape a stub gets is the stub's to declare, not the
+developer's machine's to supply.
+
+### Honest status
+
+- **445 tests pass with the engine on PATH; 441 pass with 4 skipped without
+  it.** Ruff clean. 12 new for splitting and merging, plus the real-engine
+  integration test.
+- The numbers above are from this machine — 16 GB, JDK 21, an unloaded box.
+  A 512 MB container under memory pressure may behave differently, and the only
+  way to know is to run it there.
+- Still nothing verified about the vision half: no API key here.
+
+---
+
 ## 2026-08-25 (later) — Audiveris actually run, and what it costs
 
 **Branch:** `main`. Owner: "can we add the OMR?"

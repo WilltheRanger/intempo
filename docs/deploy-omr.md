@@ -26,20 +26,55 @@ lines out of a photograph, and subsampling smears exactly those edges. 2048 is
 chosen over the original resolution because it reads the same page in 40% of
 the time and 70% of the memory.
 
-## It will not run on Render's free plan
+## Reading it one system at a time halves the memory
 
-**512 MB is the free and Starter allowance. One page needs about 520 MB on top
-of the ~150 MB the Python service already holds.** It will be killed.
+A page is cut into staff systems and each is read by its own engine run,
+sequentially. Same page, peak RSS sampled from `/proc`:
+
+| approach | time | peak RSS | measures |
+|---|---|---|---|
+| whole page at 2048 px | 9.5 s | 512 MB | 10 |
+| all strips, one JVM | 19.1 s | 570 MB | 10 |
+| **per system, end to end** | **31.2 s** | **328 MB** | **10** |
+
+**Half the memory, the same measures.** The saving comes from the process
+exiting between systems, which is also what the extra wall-clock buys — one JVM
+start per strip. Batching every strip into a single invocation is the obvious
+optimisation and is worse than both: Audiveris holds them all and peaks higher
+than the whole page.
+
+**Systems, not measures.** A measure crop is not readable on its own — the clef
+and key live at the head of the system, so a bar lifted out of the middle of
+one has neither and every pitch in it is a guess. Printed music repeats the
+clef and key on every system, which is exactly what makes a system the smallest
+piece that still means something by itself.
+
+Cut at **full resolution**: a strip keeps the interline spacing of the
+original, which is the measurement Audiveris refuses a page for lacking. So
+slicing sidesteps the resolution floor instead of fighting it.
+
+Pages that will not split — one system, a blank scan, or a projection that
+finds texture rather than staves — are read whole, exactly as before.
+
+## Which plan it needs
+
+With per-system reading, 328 MB alongside the ~150 MB the Python service holds
+is about 480 MB.
 
 | Render plan | RAM | OMR |
 |---|---|---|
-| Free | 512 MB | no — OOM |
-| Starter | 512 MB | no — OOM |
+| Free | 512 MB | marginal — ~480 MB of 512, no headroom |
+| Starter | 512 MB | marginal, same |
 | Standard | 2 GB | yes, comfortably |
 
-That is the whole decision. The API works without the engine — one failed
-lookup on PATH, a log line, and the vision chain answers as it always did — so
-this is a paid upgrade bought for a specific gain, not a bug to fix.
+Before per-system reading this was a flat no on anything under 2 GB. It is now
+close enough to try on the plan you already have, with the honest caveat that
+480 of 512 MB leaves nothing for a second concurrent scan — the worker reads
+one page at a time, so that is a real constraint rather than a theoretical one.
+
+The API works without the engine — one failed lookup on PATH, a log line, and
+the vision chain answers as it always did — so this remains an upgrade bought
+for a specific gain, not a bug to fix.
 
 ## What the gain actually is
 
