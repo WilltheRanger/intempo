@@ -6,6 +6,54 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-29 — A tie nobody checked was deleting onsets
+
+**Branch:** `main`. Audit follow-up, item 1 of 5.
+
+`tied_to_next` was a bare bool that nothing validated and exactly one thing
+consumed: `build_timeline` absorbed the next note into the previous onset. A tie
+therefore **deletes an onset**, so a tie the model invented removed a note the
+musician had actually attacked, and every onset after it lined up against the
+wrong written note. That is the same damage a wrong duration does, and unlike a
+wrong duration it had no arithmetic guard anywhere.
+
+A tie is one sustained sound written across two noteheads, so the two noteheads
+are the same pitch by definition. A curve joining two *different* pitches is a
+slur — same shape on the page, different meaning, and exactly the pair a vision
+model confuses. The discriminator was sitting unused in the data.
+
+**Decided once, in `score_schema.read_ties` / `broken_ties`**, for the reason
+`DURATION_BEATS` lives there: `alignment` and `ocr/validate` must not be able to
+disagree about which ties are real. The walk is over the *flattened* note
+sequence because a tie across a barline is the commonest kind and cannot be
+decided a measure at a time — and in `alignment` it runs over `expand_repeats`
+output, so a tie across a repeat's seam is read in the pass that plays it.
+
+**A broken tie is read as the slur it probably is.** The note keeps its onset,
+which is what makes the timeline right, but it is marked slur-interior so it is
+not *timed* — whether the bow was re-attacked there is precisely what is in
+doubt, and timing a note that may have no attack is how phantom "dragging" gets
+reported.
+
+**Flagged independently of the beat sum.** `broken_ties` is a field on
+`MeasureFinding`, not a `verdict` value, because the two faults are independent:
+four quarters with a slur written as a tie in the middle sum to exactly 4.0 and
+the measure is still wrong. Collapsing them would let a clean beat sum hide it.
+`is_problem` is now `broken_ties or verdict in {short, long, empty}`.
+
+The retry prompt branches on which fault it is showing. Telling a model its
+durations do not sum, when what is wrong is a tie between two pitches, aims the
+re-read at the wrong thing; it now says to record the curve in `slurs` and set
+`tied_to_next` false.
+
+**The sandbox JS port was updated in the same commit**, and four tie cases added
+to the parity suite — it had none, so the port could have gone tie-blind without
+anything noticing, which is exactly how the beat tables drifted.
+
+**Tests:** 502 → **515**. Ruff clean.
+
+---
+
 ## 2026-08-28 (later still) — Rushing broke the thing that measures rushing
 
 **Branch:** `main`. Same owner instruction: make it work well enough to play

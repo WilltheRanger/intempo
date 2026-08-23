@@ -142,7 +142,29 @@ function inferBeatsPerMeasure(sums) {
   return hits / votes.length < MIN_AGREEMENT ? null : winner;
 }
 
+// Ties, kept in step with `score_schema.read_ties` / `broken_ties`.
+//
+// A tie joins one pitch to itself; a curve between two different pitches is a
+// slur. Walked flat because a tie across a barline is the commonest kind, so
+// this cannot be decided a measure at a time.
+function brokenTiesByMeasure(score) {
+  const flat = [];
+  for (const m of score.measures ?? []) {
+    (m.notes ?? []).forEach((n, i) => flat.push([m.measure_number, i, n]));
+  }
+  const out = new Map();
+  flat.forEach(([measureNumber, , note], k) => {
+    if (!note.tied_to_next || note.pitch === 'rest') return;
+    const next = k + 1 < flat.length ? flat[k + 1][2] : null;
+    if (next !== null && next.pitch === note.pitch) return;
+    if (!out.has(measureNumber)) out.set(measureNumber, []);
+    out.get(measureNumber).push({ pitch: note.pitch, next_pitch: next === null ? null : next.pitch });
+  });
+  return out;
+}
+
 function validateMeasures(score) {
+  const brokenTies = brokenTiesByMeasure(score);
   const measures = score.measures ?? [];
   const sums = measures.map((m) =>
     (m.notes ?? []).reduce((t, n) => t + (DURATION_BEATS[n.duration] ?? 0), 0));
@@ -159,10 +181,15 @@ function validateMeasures(score) {
     else if (Math.abs(actual - expected) <= TOLERANCE) verdict = 'ok';
     else if (i === 0 && actual < expected) verdict = 'pickup';
     else verdict = actual < expected ? 'short' : 'long';
-    return { measure_number: m.measure_number ?? i + 1, verdict,
+    const number = m.measure_number ?? i + 1;
+    const ties = brokenTies.get(number) ?? [];
+    return { measure_number: number, verdict,
              expected_beats: expected, actual_beats: actual,
              note_count: count, meter_inferred: meterInferred,
-             is_problem: ['short', 'long', 'empty'].includes(verdict) };
+             broken_ties: ties,
+             // A clean beat sum must not hide a broken tie: four quarters can
+             // sum to exactly 4.0 with a slur written as a tie in the middle.
+             is_problem: ties.length > 0 || ['short', 'long', 'empty'].includes(verdict) };
   });
 }
 

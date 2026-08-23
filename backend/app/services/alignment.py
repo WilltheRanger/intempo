@@ -22,7 +22,7 @@ import librosa
 import numpy as np
 
 from app.services.audio_config import AudioConfig, load_audio_config
-from app.services.score_schema import DURATION_BEATS, Measure, ScoreJson
+from app.services.score_schema import DURATION_BEATS, Measure, ScoreJson, read_ties
 
 # Note duration → length in quarter-note beats. `target_bpm` is always
 # quarter-notes-per-minute, so a quarter note is 1.0 beats regardless of
@@ -180,9 +180,14 @@ def build_timeline(score: ScoreJson, target_bpm: float) -> ExpectedTimeline:
     notes: list[ExpectedNote] = []
     elapsed_beats = 0.0
     global_index = 0
-    tied_from_prev = False
 
-    for measure in expand_repeats(score):
+    played = expand_repeats(score)
+    # Read over the *played* order, not the written one: a repeat plays the
+    # measures again, and a tie across the repeat's seam is a tie in that pass.
+    ties = read_ties(played)
+    position = 0  # index into the flattened note sequence `ties` is keyed by
+
+    for measure in played:
         # Slur interiors/boundaries are per-measure (slur indices are
         # note offsets within the measure).
         interior: set[int] = set()
@@ -206,7 +211,11 @@ def build_timeline(score: ScoreJson, target_bpm: float) -> ExpectedTimeline:
 
         for i, note in enumerate(measure.notes):
             is_rest = note.pitch == "rest"
-            sounded = not is_rest and not tied_from_prev
+            # Absorbed only when the tie is real — same pitch on both sides.
+            # This read `tied_to_next` alone, so a tie the model invented across
+            # two different pitches deleted an onset the musician had actually
+            # attacked, and every note after it aligned against the wrong one.
+            sounded = not is_rest and not ties.absorbed[position]
             if sounded:
                 onsets.append(elapsed_beats * sec_per_beat)
                 notes.append(
@@ -215,14 +224,22 @@ def build_timeline(score: ScoreJson, target_bpm: float) -> ExpectedTimeline:
                         measure_number=measure.measure_number,
                         note_index_in_measure=i,
                         global_index=global_index,
-                        is_slur_interior=i in interior,
-                        is_slur_boundary=i in boundary,
+                        # A tie written between two pitches is a slur — the same
+                        # curve on the page, and the mark a vision model most
+                        # often confuses. So it is read as one: the note keeps
+                        # its onset, which is what makes the timeline right, but
+                        # it is not *timed*, because whether the bow was
+                        # re-attacked there is exactly what is now in doubt.
+                        # Timing a note that may have no attack is how phantom
+                        # "dragging" gets reported. The measure is flagged for
+                        # review either way — see `validate.broken_ties`.
+                        is_slur_interior=i in interior or ties.broken[position],
+                        is_slur_boundary=i in boundary and not ties.broken[position],
                     )
                 )
                 global_index += 1
             elapsed_beats += _beats(note.duration)
-            # A rest breaks any tie; otherwise carry the tie forward.
-            tied_from_prev = note.tied_to_next and not is_rest
+            position += 1
 
     return ExpectedTimeline(onsets=np.asarray(onsets, dtype=float), notes=notes)
 
