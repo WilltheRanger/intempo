@@ -6,6 +6,101 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-24 (night, later) — 64% off the cost of reading a page
+
+**Branch:** `main`. Owner: "I don't want it to burn tokens like crazy. Is there
+a solution where we can cut the token cost and over processing?"
+
+### Where the money actually is
+
+Measured, not assumed. Per page at Sonnet 4.6 pricing:
+
+| | tokens | cost |
+|---|---|---|
+| input — image (~1568px) + prompt | ~3,700 | $0.011 |
+| **output — the transcription** | **~6,100** | **$0.092** |
+
+**Output is about 89% of the bill**, so it is the only lever worth pulling
+hard. Raising `MAX_TOKENS` to 16000 earlier today did not change what a page
+*costs* — only what it is allowed to cost before being cut off — so this is the
+half of that fix that was missing.
+
+### Two of the five fields on every note were read by nothing
+
+Audited rather than guessed:
+
+- `note.articulation` — **no consumer.** The `articulation` in `schedule.ts` is
+  a `ScheduleOptions` number that scales note length; unrelated. MusicXML
+  *writes* it. Nothing reads it.
+- `note.dynamics` — **no consumer.** Same story.
+- `measure.slurs` — **load-bearing, kept.** `alignment.py:92` marks slurred
+  notes, and `classification.py` excludes them from the verdict: a note taken
+  under a bow stroke is not attacked and has no onset to be early or late.
+
+So every note carried three keys that were almost always `null`/`false`, two of
+which nothing would ever read.
+
+### What changed, and what it saves
+
+| variant | out tokens | $/page | saving |
+|---|---|---|---|
+| today: all fields, indented | 6,126 | $0.0919 | — |
+| compact JSON only | 4,510 | $0.0676 | 26% |
+| omit unused fields only | 3,290 | $0.0493 | 46% |
+| **both** | **2,219** | **$0.0333** | **64%** |
+
+1,000 pages: **$91.89 → $33.28.**
+
+The prompt now asks for compact JSON on one line, and for exactly two keys per
+note — `pitch` and `duration` — with `tied_to_next` added only when a note is
+actually tied. `articulation` and `dynamics` are no longer requested at all.
+
+**The schema is deliberately untouched.** Those fields keep their defaults, so
+a slim note validates unchanged, every row written before today still parses,
+and the MusicXML/OMR path can still populate them. Verified.
+
+The prompt says *why* it wants brevity, in the prompt itself — the real page
+that was refused for running past the limit. A model told only "be terse" trades
+it against the other instructions; one told what the terseness buys does not.
+
+### Not paying twice for a certain failure
+
+A truncated response used to fall through to the next provider, which was then
+asked the identical question about the identical image and stopped in the same
+place — a second full-price call to produce the same error. Running out of room
+is a property of the *page*, not the provider, so the chain now stops. It is
+also the failure mode of a *long* page, which is exactly when a response is
+most expensive.
+
+Ordinary failures still fall through; that is what the chain is for.
+
+### Levers considered and not taken
+
+- **Prompt caching.** The prompt is identical every call, but cache *writes*
+  cost 1.25×, and a scan is one page at a time with minutes between. It would
+  be a net loss at this usage. Worth revisiting if batch scanning ever lands.
+- **A compact note DSL** (`"Bb2/8"`). Another ~40% off output, but it needs a
+  parser, a schema change, and it gives the model a format to get wrong. Not
+  worth it on top of a 64% cut that costs nothing.
+- **Sending a smaller image.** Anthropic resizes to 1568px and bills the
+  resized dimensions, so a 12MP photo already costs the same ~1,600 tokens as a
+  1568px one. No saving available.
+
+### Honest status
+
+- **403 backend tests pass, 3 skipped; ruff clean.** Three new: the chain stops
+  on truncation, an ordinary failure still falls through, and the prompt no
+  longer asks for the two dead fields.
+- **The saving is arithmetic, not a measured bill.** No API key here, so the
+  token counts come from serialising a representative page, not from a real
+  response. The shape of the win is certain; the exact percentage will move
+  with how verbose a given model is.
+- Whether a model reliably *obeys* "omit these keys" is unverified. If it keeps
+  emitting them the transcription still parses — the saving just doesn't
+  materialise, which is a cost regression, not a correctness one.
+
+---
+
 ## 2026-08-24 (night) — The page was fine. The cap was too small, and the message lied about it
 
 **Branch:** `main`. Owner sent the photograph the app had refused — a sharp,

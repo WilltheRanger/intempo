@@ -281,3 +281,88 @@ def test_an_unreadable_meter_does_not_make_everything_suspect() -> None:
     p2 = _FakeProvider("p2", response=_scored(0.99, 4, 4, 4))
     parse_sheet_music(b"<jpeg>", providers=[p1, p2])
     assert p2.calls == 0, "a self-consistent 2/4 score should have been accepted"
+
+
+# ---- not paying twice for the same failure --------------------------------
+
+
+def test_a_truncated_page_stops_the_chain(monkeypatch) -> None:
+    """Running out of room is a property of the page, not the provider.
+
+    The second provider is asked the identical question about the identical
+    image and stops in the same place — so falling through bought a second
+    full-price failure and an identical error message. It is also the failure
+    mode of a *long* page, which is exactly when a response is most expensive.
+    """
+    from app.services.ocr.base import OCRProviderError
+    from app.services.ocr.pipeline import OCRError, parse_sheet_music
+
+    asked: list[str] = []
+
+    class _Provider:
+        def __init__(self, name: str, exc: Exception) -> None:
+            self.name, self._exc = name, exc
+
+        def parse(self, image_bytes, mime_type="image/jpeg", note=None):
+            asked.append(self.name)
+            raise self._exc
+
+    chain = [
+        _Provider("first", OCRProviderError("first: the transcription was cut off at 16000 tokens")),
+        _Provider("second", OCRProviderError("second: should never be asked")),
+    ]
+    with pytest.raises(OCRError):
+        parse_sheet_music(b"img", providers=chain, confirm=False)
+
+    assert asked == ["first"], "the second provider was billed for a certain failure"
+
+
+def test_an_ordinary_failure_still_falls_through(monkeypatch) -> None:
+    """The chain's whole point. Only truncation is hopeless for the next
+    provider; a rate limit or a bad response is exactly what it exists for."""
+    from app.services.ocr.base import OCRProviderError, OCRResponse
+    from app.services.ocr.pipeline import parse_sheet_music
+    from app.services.score_schema import Measure, Note, ScoreJson
+
+    asked: list[str] = []
+    good = ScoreJson(
+        clef="bass", time_signature="4/4", ocr_confidence=0.9,
+        measures=[Measure(measure_number=1, notes=[Note(pitch="C3", duration="quarter")] * 4)],
+    )
+
+    class _Fails:
+        name = "first"
+
+        def parse(self, image_bytes, mime_type="image/jpeg", note=None):
+            asked.append(self.name)
+            raise OCRProviderError("first: RateLimitError")
+
+    class _Works:
+        name = "second"
+
+        def parse(self, image_bytes, mime_type="image/jpeg", note=None):
+            asked.append(self.name)
+            return OCRResponse(
+                score=good, raw_text="{}", model="second",
+                input_tokens=1, output_tokens=1, cost_usd=0.0, latency_ms=1,
+            )
+
+    assert parse_sheet_music(b"img", providers=[_Fails(), _Works()], confirm=False) is good
+    assert asked == ["first", "second"]
+
+
+def test_the_prompt_does_not_ask_for_fields_nothing_reads() -> None:
+    """`articulation` and `dynamics` were emitted on every note and consumed
+    nowhere — `alignment.py` reads `slurs`, and neither of those two.
+
+    Three keys per note, on a page with over a hundred notes, is most of the
+    difference between a page that fits in one response and one that doesn't.
+    """
+    from app.services.ocr.base import PROMPT
+
+    shape = PROMPT.split("Rules:")[0]
+    assert '"articulation"' not in shape
+    assert '"dynamics"' not in shape
+    # Still asked for, because the analysis genuinely uses them.
+    assert '"slurs"' in shape
+    assert '"tied_to_next"' in shape
