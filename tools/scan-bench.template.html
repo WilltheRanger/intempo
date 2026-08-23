@@ -1138,7 +1138,11 @@ async function callGeminiStream(model, key, b64, mime, extra, think, on) {
       body: JSON.stringify({
         contents:[{parts:[{inline_data:{mime_type:mime,data:b64}},
           {text: extra ? PROMPT + '\n\n' + extra : PROMPT}]}],
-        generationConfig:{response_mime_type:'application/json', maxOutputTokens:16000,
+        // Same reasoning as the Claude caller: thinking is billed against the
+        // output budget, so it gets its own headroom rather than eating the
+        // answer's.
+        generationConfig:{response_mime_type:'application/json',
+          maxOutputTokens: think ? 48000 : 16000,
           thinkingConfig:{thinkingBudget: think ? -1 : 0, includeThoughts: !!think}},
       })});
   if (!res.ok) {
@@ -1239,7 +1243,12 @@ async function callClaudeStream(model, key, b64, mime, extra, think, on) {
       headers:{'Content-Type':'application/json','x-api-key':key,
         'anthropic-version':'2023-06-01',
         'anthropic-dangerous-direct-browser-access':'true'},
-      body: JSON.stringify({ model: model.model, max_tokens: 16000, stream: true,
+      // Thinking is billed against max_tokens, and on an annotated slice it is
+      // not cheap: 13,000 tokens went on one slice of a real page, most of it
+      // the model arguing with itself about which vertical strokes were
+      // barlines. At 16,000 the answer that follows has almost no room left and
+      // the next slice truncated outright. Thinking gets its own headroom.
+      body: JSON.stringify({ model: model.model, max_tokens: think ? 48000 : 16000, stream: true,
         ...(think ? { thinking: { type: 'adaptive', display: 'summarized' } } : {}),
         tools: [TRANSCRIPTION_TOOL],
         // Thinking and a forced tool choice cannot be combined, so when thinking

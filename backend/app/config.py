@@ -36,6 +36,18 @@ class Settings:
     OCR_PROVIDER_CHAIN: str = os.getenv(
         "OCR_PROVIDER_CHAIN", "claude-sonnet-4-6,claude-opus-4-7"
     )
+
+    #: The local OMR engine, used as a second opinion rather than a first read.
+    #:
+    #: Not in the default chain: it is not installed by default, it takes
+    #: minutes rather than seconds, and it is worse than a vision model on
+    #: handwriting. Its value is that it is wrong in *unrelated* ways, so
+    #: agreement with a vision model is evidence in a way that two vision reads
+    #: agreeing is not. Add `omr-local` to OCR_PROVIDER_CHAIN to use it.
+    #:
+    #: Any binary taking `<image> -o <dir>` and writing MusicXML will do —
+    #: oemer, homr and Audiveris all fit.
+    OMR_COMMAND: str = os.getenv("OMR_COMMAND", "oemer")
     STRIPE_SECRET_KEY: str = os.getenv("STRIPE_SECRET_KEY", "")
     STRIPE_WEBHOOK_SECRET: str = os.getenv("STRIPE_WEBHOOK_SECRET", "")
 
