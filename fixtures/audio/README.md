@@ -26,21 +26,49 @@ the playing.
 ## Before you press record
 
 **Leave about a second of room tone at the head of each take**, and don't start
-playing the instant you tap record. Two reasons, both verified 2026-08-27:
+playing the instant you tap record. Take your time settling — the bow going
+down, the chair, the breath before you play are all fine now, and this is worth
+saying because it used to be the opposite:
 
-- The lead-in itself is now harmless — it used to sink alignment (a perfect take
-  with 5 s of lead-in scored 0.053 and was told to re-record), and that is
-  fixed. So take your time settling.
-- That second of room tone is what makes the *other* problem visible. The
-  detector can fire a spurious onset a few frames into a signal that has a noise
-  floor, before any note. The dashboard draws detected marks on the waveform, so
-  with a clear head of silence a stray mark ahead of your first note is obvious.
-  See `TUNING_LOG.md` 2026-08-27 §3 — this is the first thing to check on
-  clip 01.
+- A lead-in used to sink the alignment outright (a perfect take with 5 s of it
+  scored 0.053 and was told to re-record). Fixed 2026-08-27.
+- A *sound* before the first note — the bow settling on the string — used to
+  become the downbeat, and the same perfect take was told it had rushed by
+  28 BPM. Fixed 2026-09-01: the analysis works out which detection is the first
+  note rather than assuming the earliest one is. Same at the other end, so
+  putting the instrument down no longer costs confidence.
+
+**Room tone, not digital silence.** Record the room; don't trim the head to
+exactly the first note or pad a file with zeros. A file that begins with exact
+silence is a step from −∞ dB, which the detector reads as an onset far larger
+than any note — and because the peak-picking normalises by the largest thing in
+the file, every real note then falls under the threshold and the take reads as
+empty. That is an artifact of *making* files, not of recording them, and it has
+cost this project three separate investigations. Any real microphone gives you
+a floor for free.
 
 Same room, same mic placement, same instrument across all six, and especially
 across the first three. If those change between takes you are tuning against
 the room rather than the playing.
+
+## Checking a take, before anything else is running
+
+    cd backend
+    python -m tuning_dashboard.cli ../fixtures/audio/01_detache_clean.wav
+
+The score and the tempo come from `manifest.json`, matched on the filename, so
+a clip recorded under its manifest name needs no arguments. It prints the
+verdict the app would show, the quality, how many onsets were heard against how
+many are written, and a bar per measure. `--json` prints the raw result;
+`--score take.json --bpm 72` runs anything that is not a corpus clip.
+
+This deliberately needs no Supabase keys, no deployed API and no phone. Those
+are separate problems, and none of them should have to work before you can find
+out whether the pipeline does.
+
+The dashboard (`python -m tuning_dashboard.app`) is the other half: it draws the
+waveform with the detected onsets marked, which is what you want when a number
+above looks wrong and you need to see why.
 
 ## Format
 

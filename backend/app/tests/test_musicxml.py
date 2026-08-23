@@ -334,3 +334,33 @@ def test_asking_for_a_part_that_is_not_there_says_what_is() -> None:
     with pytest.raises(MusicXMLError) as caught:
         score_json_from_musicxml(_wrap(f"<part id='P1'>{bar}</part>"), part="Trombone")
     assert "Cello" in str(caught.value)
+
+
+def test_both_readers_agree_about_chords() -> None:
+    """A page can arrive as a photograph or as a file, and they must read a
+    double stop the same way.
+
+    The MusicXML importer drops chord members, because the timeline is built by
+    accumulating durations and counting the second note of a chord makes the
+    measure overrun — the beat-sum check then calls a correctly-read bar long
+    and asks a musician to repair something that is right.
+
+    Nothing enforced the same rule on the vision path. The prompt was precise
+    about fingerings, rehearsal marks, string indications, triplets and slurs,
+    and said nothing at all about two noteheads on one stem — so the model was
+    free to emit both, and a bass part with a double stop would shift every
+    note after it.
+
+    This asserts the instruction exists rather than the model's obedience,
+    which is all a test can do here. It is the cheapest guard against the rule
+    being lost in a prompt rewrite, and that is the failure it is for.
+    """
+    from pathlib import Path
+
+    prompt = (
+        Path(__file__).resolve().parents[1] / "prompts" / "ocr_prompt.txt"
+    ).read_text()
+
+    assert "DOUBLE STOPS" in prompt
+    assert "lowest note only" in prompt
+    assert "grace note" in prompt, "grace notes have the same effect and the same fix"
