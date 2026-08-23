@@ -15,6 +15,7 @@ than not judging them — is the other half.
 
 from __future__ import annotations
 
+import numpy as np
 import pytest
 
 from app.services.alignment import build_timeline
@@ -164,3 +165,145 @@ def test_the_prompt_asks_for_them() -> None:
     assert "how long a rit. lasts" in prompt, (
         "the extent is derived, and asking the model to invent it is the failure"
     )
+
+
+# ---------------------------------------------------------------------------
+# Judging the change itself
+# ---------------------------------------------------------------------------
+
+SR = 22050
+
+
+def _take(tempos: list[float]) -> np.ndarray:
+    """A bowed take whose per-note tempo follows `tempos`."""
+    from app.tests.audio_helpers import bass_scale, synth_bowed_take
+
+    clock = 1.0
+    times: list[float] = []
+    for bpm in tempos:
+        times.append(clock)
+        clock += 60.0 / bpm
+    return synth_bowed_take(
+        times, freqs_hz=bass_scale(len(times)), note_dur_s=0.5
+    )
+
+
+STEADY = list(np.full(16, 60.0))
+EVEN_RIT = STEADY + list(np.linspace(58, 45, 16))
+LURCHING_RIT = (
+    STEADY + list(np.linspace(58, 50, 8)) + [34.0] + list(np.linspace(49, 45, 7))
+)
+RIT_AT_5 = [TempoChange(measure_number=5, kind="ritardando", text="rit.")]
+
+
+def _analyse(tempos: list[float], changes: list[TempoChange]):
+    from app.services.analysis import analyze
+
+    return analyze(
+        (_take(tempos), SR), _score(changes), target_bpm=60.0, double_bass=True
+    )
+
+
+def test_slowing_exactly_as_marked_is_not_dragging() -> None:
+    """The whole reason any of this exists.
+
+    Before the marking could be transcribed, this take — played precisely as
+    the page asks — came back *"You dragged across measures 5–6 by an average
+    of 24 BPM"*, at quality 0.560, with the caveat showing. The score says slow
+    down and the app said you dragged.
+    """
+    result = _analyse(EVEN_RIT, RIT_AT_5)
+
+    assert result.status == "ok"
+    assert result.quality > 0.9
+    assert result.low_confidence is False
+    assert [m.measure_number for m in result.per_measure if m.worst_band != "on"] == []
+    assert "dragged" not in result.verdict
+
+
+def test_the_same_take_unmarked_still_reads_as_dragging() -> None:
+    """The control, and it matters: it shows the marking is what changed the
+    answer, not a loosening of the bands. A page whose `rit.` never reached the
+    transcription is a page the app genuinely cannot read correctly, and it
+    should say the numbers are unreliable rather than quietly excuse them.
+    """
+    result = _analyse(EVEN_RIT, [])
+
+    assert result.low_confidence is True
+    assert "dragged" in result.verdict
+    assert {m.measure_number for m in result.per_measure if m.worst_band != "on"} >= {
+        5,
+        6,
+        7,
+        8,
+    }
+
+
+def test_an_uneven_change_is_named_at_the_bar_it_lurched() -> None:
+    result = _analyse(LURCHING_RIT, RIT_AT_5)
+
+    uneven = [m.measure_number for m in result.per_measure if m.uneven]
+    assert uneven == [7]
+    assert result.verdict == "Your rit. lurched at bar 7 rather than flowing."
+    # And it is still not called dragging: the bands stay refused under a change.
+    assert [m.measure_number for m in result.per_measure if m.worst_band != "on"] == []
+
+
+def test_an_even_change_is_named_too() -> None:
+    """Saying nothing would read as the app not having noticed the page."""
+    result = _analyse(EVEN_RIT, RIT_AT_5)
+    assert result.verdict == "Steady tempo, and your rit. flowed evenly."
+
+
+def test_the_page_is_quoted_rather_than_paraphrased() -> None:
+    result = _analyse(
+        LURCHING_RIT,
+        [TempoChange(measure_number=5, kind="ritardando", text="poco rall.")],
+    )
+    assert "poco rall." in result.verdict
+    assert "ritardando" not in result.verdict
+
+
+def test_drift_before_a_change_is_still_reported_alongside_it() -> None:
+    """Two things happened, and one must not hide the other."""
+    tempos = (
+        list(np.linspace(60, 72, 16))
+        + list(np.linspace(58, 50, 8))
+        + [34.0]
+        + list(np.linspace(49, 45, 7))
+    )
+    result = _analyse(tempos, RIT_AT_5)
+
+    assert "rushed" in result.verdict
+    assert "lurched at bar 7" in result.verdict
+
+
+def test_an_accelerando_works_the_same_way() -> None:
+    tempos = STEADY + list(np.linspace(62, 80, 16))
+    result = _analyse(
+        tempos, [TempoChange(measure_number=5, kind="accelerando", text="accel.")]
+    )
+
+    assert result.quality > 0.9
+    assert [m.measure_number for m in result.per_measure if m.worst_band != "on"] == []
+
+
+def test_the_notes_under_a_change_carry_the_flag_not_a_band() -> None:
+    """`band` is `on` there by refusal, not measurement — a screen must not be
+    able to paint a rushing colour on a bar the page said would not be steady."""
+    result = _analyse(EVEN_RIT, RIT_AT_5)
+
+    marked = [n for n in result.per_note if n.under_tempo_change]
+    assert len(marked) == 16
+    assert {n.band for n in marked} == {"on"}
+    assert {n.direction for n in marked} == {"on"}
+
+
+def test_a_page_with_no_marking_is_untouched() -> None:
+    """The six corpus clips have no markings, and this is why they do not move."""
+    result = _analyse(STEADY + STEADY, [])
+
+    assert result.quality > 0.95
+    assert not any(n.under_tempo_change for n in result.per_note)
+    assert not any(m.uneven for m in result.per_measure)
+    assert result.verdict.startswith("Steady tempo — you held it")

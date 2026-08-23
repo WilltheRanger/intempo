@@ -6,6 +6,96 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-04 — A ritardando is judged on how evenly you made it
+
+**Branch:** `main`. The other two-thirds of the user's answer. A take that slows
+exactly as the page asks now reads as what it is, and a take that lurches is
+told where.
+
+    take                      before                       after
+    even rit., marked         q 0.560, "dragged 5–6        q 0.990, no bar
+                              by 24 BPM", caveat shown     off-tempo, no caveat
+    rit. lurching in bar 7    same, and silent about        q 0.990, uneven [7],
+                              the lurch                    "Your rit. lurched at
+                                                            bar 7 rather than
+                                                            flowing."
+    even rit., NOT marked     unchanged                    unchanged — q 0.560,
+                                                            "dragged", caveat
+
+The last row is the control and it matters: the marking is what changed the
+answer, not a loosening of the bands. A page whose `rit.` never reached the
+transcription is one the app genuinely cannot read, and it should say the
+numbers are unreliable rather than quietly excuse them.
+
+### Four pieces, and three of them were bugs I found on the way
+
+**1. The bands are refused, not softened.** Under a written change `band` and
+`direction` are forced to `on` — they measure distance from a steady beat and
+the page has said the beat is not steady. This is also what keeps a screen from
+painting a rushing colour on a bar played exactly as marked, and what keeps
+`generate_verdict`'s run-finder away from those notes for free, since it
+already skips anything inside tolerance.
+
+**2. Evenness is the second difference, not a curve fit.** A quadratic
+separates even (9 ms, the same as a good player's jitter) from lurching (44 ms)
+— but it cannot say *where*. Holding one bar back gave per-bar residuals of 39,
+91, 162, 213: the bar *after* the fault read worse than the bar that lurched,
+because a global fit smears a local disturbance. So it measures how much each
+interval **grew** against the take's own habit — `pulse_anchors` one derivative
+up, same robust threshold, same config values.
+
+**3. Confidence was collapsing, exactly as it did for hesitations.** A correct
+reading of an even rit. scored 0.560 — under `warn_quality` — because the
+residuals were fitted with a straight line across a curve. Notes under a marked
+change are now dropped from that fit rather than modelled: a `rit.` carries no
+amount, so there is no curve the page actually specifies, and a note the page
+says will not be steady can say nothing about whether a steady-tempo alignment
+is trustworthy. They still count toward coverage, because they were matched.
+0.560 → 0.749 from this alone.
+
+**4. The tempo estimate was wrong for both halves, and I nearly shipped it.**
+Even after (3), bar 1 came back **+24.7%, "severe"** on four bars played to
+±3 ms. Detection was perfect, 32 of 32 within 14 ms — the *mapping* slipped at
+note 3, because `typical_gap` over a take that is half steady and half slowing
+lands between the two paces. The written side can be masked before matching;
+the played side cannot, because which notes were played under the change is
+what the matching decides. So it is refined once, from the detections that
+landed on notes the page calls steady, under the same clamp. 0.749 → **0.990**,
+and bar 1 goes quiet.
+
+That one is worth remembering: I had a green-looking result and a single bar
+flagged, and the bar was the bug.
+
+### The words
+
+`describe_tempo_change` quotes the printed marking rather than paraphrasing it
+— "Your **poco rall.** lurched at bar 7 rather than flowing" — which is what
+`TempoChange.text` was kept for. Verbatim including the abbreviation's own full
+stop, because "your rit lurched" is not English.
+
+**No figure in the sentence.** The page did not say how much to slow, so there
+is no target to be a number away from; the only honest claim is that it lurched
+and where. An even change is still named — *"Steady tempo, and your rit. flowed
+evenly."* — because silence would read as the app not having noticed the page.
+Drift elsewhere is reported alongside, not instead: two things happened.
+
+**All six corpus fixtures bit-identical** for the eighth commit running. None of
+them carries a marking, which is exactly why.
+
+**No three-foot test.** No UI touched. `PerMeasure.under_tempo_change` and
+`.uneven` are new fields the screens do not read yet — rendering "rit. — lurched
+here" is a §2 gate and the user's call.
+
+**Tests:** backend 657 (was 648; +9). Four mutation checks, each asserted to
+have applied *and* verified restored afterwards: refusing the bands off fails 5,
+evenness off fails 2, marked notes back in the residual fails 5, the pace not
+refined fails 5. `ruff` clean.
+
+**Rollback:** revert the commit. Every new field defaults to false or empty, so
+a stored score and a stored result both read exactly as they did.
+
+---
+
 ## 2026-09-03 (night) — How to measure an uneven rit., measured but not built
 
 **Branch:** `main`. Recording the design for the second piece of the user's
