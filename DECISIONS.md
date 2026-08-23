@@ -6,6 +6,95 @@ Operating Principle #5.
 
 ---
 
+## 2026-08-25 — Keep photograph-first transcription, and build the correction step it always assumed
+
+**Context:** after several failed scans the owner asked whether the whole
+approach was wrong — "is there any other solution, why is OMR so hard, or are
+you just being dumb?" Four alternatives were designed and then adversarially
+verified against the code. Three of the four did not survive verification, and
+the investigation found something better than any of them.
+
+### What the analysis actually consumes
+
+`pitch` appears **once** in the entire timing pipeline —
+`alignment.py:99`, as `note.pitch == "rest"`. There is no pitch detection in
+the audio layer. The spec agrees: *"onset is what we care about, not pitch"*
+(§7, line 1146), and pitch-accuracy analysis is explicitly out of scope
+(line 563).
+
+That looks like grounds for asking a model for rhythm only. It is not — see
+below.
+
+### The alternatives, and why three failed
+
+- **Rhythm-only OCR (drop pitch from the ask).** *Rejected.* The premise is
+  wrong: reading a duration means locating and segmenting every notehead, stem,
+  flag and beam, and **that localisation is the expensive part — pitch rides
+  free on it.** Once the notehead is found, its staff position is a lookup.
+  Dropping pitch removes an output field, not a perceptual step. It saves ~33%
+  of output tokens (not the 75% first estimated, and most of that was already
+  won by compacting the JSON) and costs Listen playback, the engraved stave,
+  any future note-correction editor, and chroma-augmented DTW — which the spec
+  lists as a **v1** onset-recovery mitigation (§7.5 line 1326), not a V3 idea.
+
+- **Score-free grid timing (onsets vs. a metronomic grid).** *Rejected, and
+  decisively.* Nearest-grid snapping cannot measure the thing this app
+  measures: past half a grid spacing it **assigns a large rush to the previous
+  grid point and reports it as a drag** — the sign inverts — and sustained
+  drift wraps into a confident "steady tempo". It also cannot name a measure,
+  which is the product (`build_timeline` gets `measure_number` off the score,
+  `alignment.py:107`). Worst of all its errors are *silent*: a wrong verdict
+  with no page to check it against, where OCR's errors are visible on a page
+  the musician is looking at.
+
+- **MusicXML/MIDI import.** *Worth building, but not as claimed.* The idea that
+  it yields a "perfect timeline" is **false against the converter as it
+  stands**: `musicxml.py` is first-part-only, ignores `<backup>`/`<voice>`,
+  cannot represent tuplets in the `Duration` enum, and neither reads nor
+  expands repeats. It also sets confidence to 1.0 by construction, which would
+  quietly convert a system that admits uncertainty into one that does not.
+  Hardening it is ~2–3 days; tuplets are a breaking schema change across
+  `score_schema.py`, `alignment.py` and five mobile files.
+
+### The finding that decided it
+
+**The spec's own mitigation for unreliable OCR was never built.**
+
+The spec does not claim OCR is accurate. It books the inaccuracy and answers it
+with a correction step, listed as an MVP feature (line 447):
+
+> Score preview & edit | User confirms parsed score; can tap to fix wrong
+> notes/rhythms | **OCR will miss things; user must be able to correct without
+> re-shooting**
+
+and again at line 1136 — handwriting accuracy "~70–80%… we surface low
+confidence and **rely on user correction**".
+
+That step does not exist. `PATCH /v1/scores/:id` already accepts a corrected
+`score_json` (`routers/scores.py:103`) and `UpdateScoreInput` already declares
+the field (`mobile/src/data/api/scores.ts:75`) — **the backend half is done and
+nothing in the app ever sends it.** A grep for any note-editing UI returns zero
+hits.
+
+So every misread is currently terminal. The design assumed a musician could fix
+a bar in ten seconds; without that, a single wrong duration means re-shooting
+the page or abandoning the piece.
+
+**Decision: keep photograph-first transcription, and build the score-correction
+step.** It is the smallest change that makes an admittedly-unreliable input
+usable, it is the one MVP feature the spec required and the build skipped, and
+half of it already exists. Add MusicXML import afterwards as a *third*
+provenance beside camera and manual entry — after hardening the converter, and
+without letting it claim a confidence it has not earned.
+
+**Trade-off accepted.** OCR stays imperfect and stays the primary path, so the
+correction UI must be genuinely fast — tapping a duration, not a notation
+editor. If correction turns out to be needed on most bars rather than a few,
+the spec's own open question (§13 #6, line 1866) says that is the signal the
+experience is broken, and MusicXML import becomes the primary path instead.
+
+---
+
 ## 2026-08-22 — The pipeline shows its evidence by default, not on request
 
 **Context:** the staff reader has now been wrong six times. Every one of those
