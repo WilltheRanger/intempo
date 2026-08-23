@@ -21,12 +21,11 @@ from pydantic import BaseModel, Field
 
 from app.services import audio as audio_svc
 from app.services.alignment import (
-    align_dtw,
+    align_from_first_note,
     AlignmentResult,
     apply_fuzzy_match,
     build_timeline,
     is_alignment_broken,
-    to_timeline_base,
     closest_expected_gap,
 )
 from app.services.audio_config import AudioConfig, load_audio_config
@@ -233,12 +232,17 @@ def analyze(
             n_expected_onsets=int(expected.size),
         )
 
-    # Both sequences on the same clock before anything is compared. Without
-    # this a perfect take with a five-second lead-in aligns at 0.053 and the
-    # musician is told to check they are on the right piece.
-    onsets = to_timeline_base(onsets)
-
-    raw = align_dtw(onsets, expected, target_bpm=target_bpm, config=cfg)
+    # Both sequences on the same clock before anything is compared, and the
+    # origin chosen by evidence rather than by position. Without the first, a
+    # perfect take with a five-second lead-in aligns at 0.053 and the musician
+    # is told to check they are on the right piece. Without the second, a bow
+    # settling on the string before the first note becomes the downbeat, and
+    # the same perfect take is told it dragged.
+    anchored = align_from_first_note(
+        onsets, expected, target_bpm=target_bpm, config=cfg
+    )
+    onsets = anchored.onsets
+    raw = anchored.alignment
     if is_alignment_broken(raw.quality, config=cfg):
         return AnalysisResult(
             status="alignment_failed",

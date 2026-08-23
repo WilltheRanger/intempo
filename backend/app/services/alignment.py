@@ -376,15 +376,118 @@ def to_timeline_base(detected: np.ndarray) -> np.ndarray:
     bow. Every one of those is 1.000 once both sequences are on the same clock.
 
     Shifted by the first *detected* onset, which is the only origin available
-    before anything is matched. If that first onset is spurious the whole
-    sequence shifts with it — but only by the width of one false trigger, and
-    `compute_deltas` re-derives its own origin from the first *matched* pair
-    afterwards, so a spurious lead does not reach the verdict.
+    before anything is matched.
+
+    This used to end by claiming that a spurious first onset "does not reach
+    the verdict", on the reasoning that `compute_deltas` re-derives its origin
+    from the first *matched* pair. That is wrong, and measurably so: the
+    spurious onset is what gets matched. On a take of eight quarters played
+    exactly on the grid, one bow-settling scrape a second beforehand gave
+    quality 0.604 and a steady verdict; at 0.5 s, "You rushed by 28 BPM"; at
+    2 s, "check you're on the right piece". See `test_leading_noise.py`.
+
+    So callers analysing a recording want `align_from_first_note`, which picks
+    the origin by evidence. This stays as the primitive it builds on, and as
+    the right call when the first onset is known to be a note.
     """
     detected = np.asarray(detected, dtype=float)
     if detected.size == 0:
         return detected
     return detected - detected[0]
+
+
+#: How many leading detections may be discarded as pre-play noise.
+#:
+#: Three covers the realistic cases — a bow settling, a chair, a page turn —
+#: without letting the search eat into a short take. It is a ceiling, not a
+#: target: `align_from_first_note` prefers trimming nothing and has to be paid
+#: to do otherwise.
+MAX_LEADING_TRIM = 3
+
+#: How much better a trimmed alignment must score before its trim is accepted.
+#:
+#: Trimming can only ever make the matching problem smaller, so a threshold of
+#: zero would discard a real note for a rounding difference. A tenth of the
+#: quality scale is far above the noise and far below the gap this actually
+#: repairs — the failures measured were 0.100 → 0.991.
+MIN_TRIM_GAIN = 0.1
+
+
+@dataclass
+class AnchoredAlignment:
+    """An alignment plus the onset sequence it was computed against."""
+
+    onsets: np.ndarray
+    #: Leading detections discarded as pre-play noise.
+    trimmed: int
+    alignment: "AlignmentResult"
+
+
+def align_from_first_note(
+    detected: np.ndarray,
+    expected: np.ndarray,
+    *,
+    target_bpm: float = 120.0,
+    config: AudioConfig | None = None,
+) -> AnchoredAlignment:
+    """Align, having first worked out which detection is the *first note*.
+
+    `to_timeline_base` has to pick an origin before anything is matched, and
+    the only one available is the earliest detection. Its docstring claimed a
+    spurious lead "does not reach the verdict". Measured, on a take of eight
+    quarters played exactly on the grid at 60 BPM with one bow-settling scrape
+    added before the first note:
+
+        scrape 0.5 s before   quality 0.486   "You rushed by 28 BPM"
+        scrape 1.0 s before   quality 0.604   "Steady tempo"
+        scrape 2.0 s before   quality 0.100   "check you're on the right piece"
+
+    Three different answers for one perfect take, and the first two are stated
+    with confidence. Setting the bow on the string before playing is not an
+    edge case; it is what every recording begins with.
+
+    So the origin is chosen by evidence instead of by position: align once per
+    candidate first note and keep the best. The metric already makes this safe
+    to do — `quality` is `timing_quality * coverage`, and coverage counts
+    *expected* notes, so discarding a real note costs coverage while discarding
+    noise costs nothing. Over-trimming is penalised by the same number that
+    rewards trimming correctly.
+
+    Trimming nothing wins ties, and wins anything closer than `MIN_TRIM_GAIN`.
+    """
+    detected = np.asarray(detected, dtype=float)
+    base = to_timeline_base(detected)
+    untrimmed = AnchoredAlignment(
+        onsets=base,
+        trimmed=0,
+        alignment=align_dtw(base, expected, target_bpm=target_bpm, config=config),
+    )
+    if detected.size < 2 or expected.size == 0:
+        return untrimmed
+
+    # Never search so far that the take itself disappears. Two onsets is the
+    # least that can express an interval, which is the least DTW can score.
+    limit = min(MAX_LEADING_TRIM, detected.size - 2)
+    candidates = [untrimmed]
+    for trim in range(1, limit + 1):
+        onsets = to_timeline_base(detected[trim:])
+        candidates.append(
+            AnchoredAlignment(
+                onsets=onsets,
+                trimmed=trim,
+                alignment=align_dtw(
+                    onsets, expected, target_bpm=target_bpm, config=config
+                ),
+            )
+        )
+
+    best = max(c.alignment.quality for c in candidates)
+    if best <= untrimmed.alignment.quality + MIN_TRIM_GAIN:
+        return untrimmed
+    # The *smallest* trim that reaches the best score, not the largest. Two
+    # candidates can tie once the noise is gone, and the shorter one keeps a
+    # note the longer one would have thrown away.
+    return next(c for c in candidates if c.alignment.quality >= best - 1e-9)
 
 
 def align_dtw(
