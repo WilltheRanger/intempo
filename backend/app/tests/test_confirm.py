@@ -15,7 +15,7 @@ from __future__ import annotations
 import pytest
 
 from app.services.ocr.base import OCRProviderError, OCRResponse
-from app.services.ocr.confirm import retry_with_arithmetic
+from app.services.ocr.confirm import _splice, retry_with_arithmetic
 from app.services.score_schema import Measure, Note, ScoreJson
 
 
@@ -194,3 +194,74 @@ def test_the_retry_is_on_by_default() -> None:
 def test_an_empty_setting_disables_the_step(missing: str) -> None:
     """So a deployment can turn it off without uninstalling anything."""
     assert not missing.strip()
+
+
+def test_a_retry_cannot_lose_a_change_of_metre() -> None:
+    """A change of metre belongs to the *bar*, not to the notes in it.
+
+    The retry asks about durations. A model that fixes four of them and says
+    nothing about the time signature would delete the change by omission — and
+    then every bar after it reads short too, because the metre it set was
+    running for all of them.
+
+    Measured before the fix: bar 2 carrying "3/4", re-read with its count
+    corrected, came back with the metre gone and bars 2 **and 3** newly
+    flagged. The not-worse guard happened to catch that one, which is luck: a
+    retry that also "fixed" bar 3 to four beats would have passed the guard and
+    lost the metre silently.
+    """
+    from app.services.ocr.validate import validate_measures
+
+    def bar(number: int, beats: int, meter: str | None = None) -> Measure:
+        return Measure(
+            measure_number=number,
+            notes=[Note(pitch="C3", duration="quarter")] * beats,
+            time_signature=meter,
+        )
+
+    original = ScoreJson(
+        clef="bass",
+        time_signature="4/4",
+        ocr_confidence=0.9,
+        measures=[bar(1, 4), bar(2, 5, "3/4"), bar(3, 3)],
+    )
+    # The model returns bar 2 with the count fixed and no time signature.
+    patch = ScoreJson(
+        clef="bass", time_signature="4/4", ocr_confidence=0.9, measures=[bar(2, 3)]
+    )
+
+    spliced = _splice(original, patch, [2])
+
+    assert spliced.measures[1].time_signature == "3/4"
+    assert [f.measure_number for f in validate_measures(spliced) if f.is_problem] == []
+
+
+def test_a_retry_may_still_correct_the_metre_it_reads() -> None:
+    """Carried forward by omission only. A model that *states* a time signature
+    has read one, and that reading is the point of asking again."""
+    original = ScoreJson(
+        clef="bass",
+        time_signature="4/4",
+        ocr_confidence=0.9,
+        measures=[
+            Measure(
+                measure_number=1,
+                notes=[Note(pitch="C3", duration="quarter")] * 5,
+                time_signature="3/4",
+            )
+        ],
+    )
+    patch = ScoreJson(
+        clef="bass",
+        time_signature="4/4",
+        ocr_confidence=0.9,
+        measures=[
+            Measure(
+                measure_number=1,
+                notes=[Note(pitch="C3", duration="quarter")] * 4,
+                time_signature="4/4",
+            )
+        ],
+    )
+
+    assert _splice(original, patch, [1]).measures[0].time_signature == "4/4"

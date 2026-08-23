@@ -30,7 +30,7 @@ import logging
 
 from app.services.ocr.base import OCRProvider, OCRProviderError, OCRResponse
 from app.services.ocr.validate import describe_for_retry, validate_measures
-from app.services.score_schema import ScoreJson
+from app.services.score_schema import Measure, ScoreJson
 
 log = logging.getLogger(__name__)
 
@@ -63,11 +63,30 @@ def _splice(original: ScoreJson, patch: ScoreJson, asked_for: list[int]) -> Scor
     3 rewrite bar 12.
     """
     wanted = set(asked_for)
-    replacements = {
-        measure.measure_number: measure
-        for measure in patch.measures
-        if measure.measure_number in wanted
-    }
+    held = {measure.measure_number: measure for measure in original.measures}
+    replacements: dict[int, Measure] = {}
+    for measure in patch.measures:
+        if measure.measure_number not in wanted:
+            continue
+        previous = held.get(measure.measure_number)
+        # A change of metre belongs to the *bar*, not to the notes in it, and
+        # the retry is asked about the notes. A model that fixes four durations
+        # and says nothing about the time signature would otherwise delete it —
+        # and then the bars after it read short too, because the metre it set
+        # was running for all of them. Verified: bar 2 carrying "3/4", re-read
+        # with the count corrected, came back with the metre gone and bars 2
+        # *and* 3 newly flagged.
+        #
+        # The patch can still change it. It just cannot lose it by omission.
+        if (
+            previous is not None
+            and measure.time_signature is None
+            and previous.time_signature is not None
+        ):
+            measure = measure.model_copy(
+                update={"time_signature": previous.time_signature}
+            )
+        replacements[measure.measure_number] = measure
     if not replacements:
         return original
     return original.model_copy(
