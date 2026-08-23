@@ -37,24 +37,7 @@ class Settings:
         "OCR_PROVIDER_CHAIN", "claude-sonnet-5,claude-opus-5"
     )
 
-    #: The local OMR engine, used as a second opinion rather than a first read.
-    #:
-    #: Not in the default chain: it is not installed by default, it takes
-    #: minutes rather than seconds, and it is worse than a vision model on
-    #: handwriting. Its value is that it is wrong in *unrelated* ways, so
-    #: agreement with a vision model is evidence in a way that two vision reads
-    #: agreeing is not. Add `omr-local` to OCR_PROVIDER_CHAIN to use it.
-    #:
-    #: Any binary taking `<image> -o <dir>` and writing MusicXML will do —
-    #: oemer, homr and Audiveris all fit.
-    OMR_COMMAND: str = os.getenv("OMR_COMMAND", "oemer")
 
-    #: How to invoke it. `{image}` and `{out}` are substituted; there is no
-    #: convention between engines to rely on:
-    #:
-    #:     oemer      {image} -o {out}
-    #:     Audiveris  -batch -export -output {out} -- {image}
-    OMR_ARGS: str = os.getenv("OMR_ARGS", "{image} -o {out}")
 
     #: How many pages may be read at once.
     #:
@@ -71,30 +54,7 @@ class Settings:
         os.getenv("TRANSCRIPTION_MAX_CONCURRENT", "2")
     )
 
-    #: How many OMR engine runs may overlap. One, and deliberately.
-    #:
-    #: Audiveris peaks at ~328 MB reading a page system by system. Two at once
-    #: is 656 MB and an OOM kill takes the whole instance down, not just the
-    #: scan that caused it — so this is the difference between a slow scan and
-    #: a dead server.
-    OMR_MAX_CONCURRENT: int = int(os.getenv("OMR_MAX_CONCURRENT", "1"))
 
-    #: How long a scan waits for an engine slot before giving up on the second
-    #: opinion. The vision chain then answers alone, which is what happens on
-    #: every install with no engine at all — so this degrades to the ordinary
-    #: path rather than failing the page.
-    OMR_QUEUE_TIMEOUT_S: float = float(os.getenv("OMR_QUEUE_TIMEOUT_S", "120"))
-
-    #: Provider to read the page BEFORE the vision model, whose answer the
-    #: vision model is then shown and asked to check. Empty disables the step.
-    #:
-    #: Enabled by default and harmless when the engine is not installed: the
-    #: attempt costs one failed lookup on PATH and the chain proceeds as
-    #: before. It is deliberately NOT in OCR_PROVIDER_CHAIN, because that chain
-    #: stops at the first provider that succeeds, and this engine's reading is
-    #: accurate but incomplete — returning it directly would be worse than the
-    #: vision model alone. A second opinion, not a first answer.
-    OMR_CONFIRM: str = os.getenv("OMR_CONFIRM", "omr-local")
     STRIPE_SECRET_KEY: str = os.getenv("STRIPE_SECRET_KEY", "")
     STRIPE_WEBHOOK_SECRET: str = os.getenv("STRIPE_WEBHOOK_SECRET", "")
 

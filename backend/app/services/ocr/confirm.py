@@ -1,21 +1,27 @@
-"""Have a vision model check what the OMR engine read.
+"""Give a model its own bad arithmetic back, and let it try again.
 
-The two are good at different halves of the job, measured on a real page:
+**The pieces for this were all here and never joined up.** `validate.py` has
+had `describe_for_retry` since Batch 2 — it names the measures whose durations
+do not sum to the time signature and asks for those measures to be re-read —
+and nothing has ever called it. A transcription that failed the beat-sum check
+was kept as a low-confidence fallback and shown to the musician uncorrected.
 
-  Audiveris   got the clef and the key right, found real barlines, and stopped
-              at 15 measures where the page has about 25. Structure, reliably.
-  A model     reads every measure on the page and invents notes when it cannot
-              see them, confidently. Coverage, unreliably.
+This is what replaced the OMR second opinion. That step read the page with
+Audiveris and asked a model to check it; it was removed because the engine
+needed a 2 GB host to find fewer measures than the model already found. But the
+*shape* of it was right, and it survives here with the model on both sides:
 
-So neither is asked to do the other's job. The engine reads first, and the
-model is shown the photograph *and* the engine's answer and asked to check it.
-That is a much easier question than transcribing from scratch: most of the work
-is already done and visible, and disagreeing with something concrete is easier
-than producing something from nothing.
+    read → check the arithmetic → hand back what does not add up → read again
 
-It is also the only arrangement where the two failure modes cancel. A model
-asked to transcribe alone has nothing to contradict it; a model asked to check
-has to explain away a barline that is either there or not.
+The one thing that makes it safe is the same thing that made the OMR version
+safe: **a correction is taken only if it is not worse.** A model asked to fix
+three bars can rewrite thirty, and beat sums are not an opinion.
+
+Why this is worth a second call. A bar whose durations do not sum is *known* to
+be wrong — no judgement, just arithmetic — and the model is told which bar and
+by how much, so the retry is aimed rather than a re-roll. It is also the one
+error that matters most: `alignment.py` builds its expected timeline by
+accumulating durations, so a single wrong bar shifts every bar after it.
 """
 
 from __future__ import annotations
@@ -23,72 +29,58 @@ from __future__ import annotations
 import logging
 
 from app.services.ocr.base import OCRProvider, OCRProviderError, OCRResponse
+from app.services.ocr.validate import describe_for_retry, validate_measures
 from app.services.score_schema import ScoreJson
-from app.services.ocr.validate import validate_measures
 
 log = logging.getLogger(__name__)
 
-_INSTRUCTION = """A rule-based OMR engine has already read this image. Its transcription is below.
 
-It is usually right about the CLEF, the KEY SIGNATURE and where the BARLINES are — it measures those from the image rather than guessing. It is often incomplete: it drops measures it could not resolve, and it sometimes merges two measures into one when it misses a barline.
-
-Check it against the photograph and return the corrected transcription.
-
-  - Keep its clef, key and time signature unless the image plainly contradicts them.
-  - ADD any measure that is on the page and missing from its reading.
-  - SPLIT any measure whose durations add up to more than one bar — that is a missed barline, not a long bar.
-  - Correct individual notes only where you can see that it is wrong. Do not rewrite a measure you merely would have read differently.
-  - In notes_to_human, say what you changed and why.
-
-Engine transcription:
-"""
-
-
-def confirm_reading(
+def retry_with_arithmetic(
     score: ScoreJson,
     image_bytes: bytes,
     *,
     media_type: str,
     provider: OCRProvider,
 ) -> ScoreJson:
-    """Return the model's corrected version, or the original if it cannot help.
+    """Return a corrected reading, or the original if the retry does not help.
 
-    Never raises. A confirmation pass is an improvement on something that
-    already works, so a failure here must leave the engine's reading standing
-    rather than lose the page — the caller has a usable transcription in hand
-    and would be trading it for an exception.
+    Never raises. A retry is an improvement on something that already works, so
+    a failure here must leave the first reading standing rather than lose the
+    page — the caller has a usable transcription in hand and would be trading
+    it for an exception.
     """
-    note = _INSTRUCTION + score.model_dump_json(indent=1)
+    rows = validate_measures(score)
+    note = describe_for_retry(rows)
+    if not note:
+        return score
+
+    broken_before = sum(1 for row in rows if row.is_problem)
+    log.info("%d measure(s) do not add up; asking %s to re-read them", broken_before, provider.name)
+
     try:
         response: OCRResponse = provider.parse(image_bytes, media_type, note)
     except (OCRProviderError, ValueError) as exc:
-        log.info("confirmation by %s failed, keeping the engine reading: %s", provider.name, exc)
+        log.info("retry by %s failed, keeping the first reading: %s", provider.name, exc)
         return score
 
-    confirmed = response.score
-    if not confirmed.measures:
-        log.info("confirmation by %s returned no measures, keeping the engine reading", provider.name)
+    corrected = response.score
+    if not corrected.measures:
+        log.info("retry by %s returned no measures, keeping the first reading", provider.name)
         return score
 
-    # Take the confirmed reading only if it is not *worse* by the one measure
-    # that is not an opinion. A model asked to check can also decide to rewrite,
-    # and a rewrite that breaks measures which previously added up has made the
-    # page worse while sounding more confident about it.
-    before = _broken(score)
-    after = _broken(confirmed)
-    if after > before:
+    broken_after = sum(1 for row in validate_measures(corrected) if row.is_problem)
+    if broken_after > broken_before:
+        # A model asked to fix three bars can rewrite thirty. A rewrite that
+        # breaks measures which previously added up has made the page worse
+        # while sounding more confident about it.
         log.info(
-            "%s's correction breaks more measures than it fixes (%d -> %d); keeping the engine reading",
-            provider.name, before, after,
+            "%s's retry breaks more measures than it fixes (%d -> %d); keeping the first reading",
+            provider.name, broken_before, broken_after,
         )
         return score
 
     log.info(
-        "%s confirmed the reading: %d measures -> %d, measures that do not add up %d -> %d",
-        provider.name, len(score.measures), len(confirmed.measures), before, after,
+        "%s re-read the page: measures that do not add up %d -> %d",
+        provider.name, broken_before, broken_after,
     )
-    return confirmed
-
-
-def _broken(score: ScoreJson) -> int:
-    return sum(1 for row in validate_measures(score) if row.is_problem)
+    return corrected
