@@ -22,7 +22,7 @@ import librosa
 import numpy as np
 
 from app.services.audio_config import AudioConfig, load_audio_config
-from app.services.score_schema import ScoreJson
+from app.services.score_schema import Measure, ScoreJson
 
 # Note duration → length in quarter-note beats. `target_bpm` is always
 # quarter-notes-per-minute, so a quarter note is 1.0 beats regardless of
@@ -65,6 +65,85 @@ def _beats(duration: str) -> float:
     return _DURATION_BEATS.get(duration, 1.0)
 
 
+
+def expand_repeats(score: ScoreJson) -> list[Measure]:
+    """The measures in playing order, with repeated sections written out twice.
+
+    **`build_timeline` walked `score.measures` once and ignored
+    `score.repeats` entirely.** A musician who takes an eight-bar repeat plays
+    sixteen bars and produces roughly twice the onsets, against a timeline that
+    held eight — so DTW was matching a doubled performance to a single pass and
+    every delta after the repeat sign was meaningless. Silent, because the
+    alignment still produced *a* number.
+
+    Endings are handled the way a player reads them: the first time through,
+    play the first ending and go back; the second time, skip it and take the
+    second. A `repeat` with no endings is simply the span played twice.
+
+    **Measure numbers are not renumbered.** The musician's part says bar 5 once
+    and they play it twice, so both passes stay bar 5 — the verdict then names
+    the bar they can find on the page. The consequence, which is the honest
+    one, is that `PerMeasure` averages both passes of a repeated bar: it cannot
+    say "you rushed the second time through" because nothing downstream
+    distinguishes the passes, and inventing bar numbers that are not printed
+    anywhere would be worse than averaging.
+
+    A repeat naming measures that do not exist is ignored rather than fatal —
+    OCR produces those, and losing the whole take to a mis-read repeat sign
+    would be the wrong trade.
+    """
+    if not score.repeats:
+        return list(score.measures)
+
+    by_number = {m.measure_number: m for m in score.measures}
+    order = [m.measure_number for m in score.measures]
+
+    # Only plain repeats define a span to play twice; endings modify one.
+    spans = [
+        r for r in score.repeats
+        if r.type == "repeat" and r.start_measure <= r.end_measure
+        and r.start_measure in by_number and r.end_measure in by_number
+    ]
+    if not spans:
+        return list(score.measures)
+
+    firsts = {
+        n
+        for r in score.repeats
+        if r.type == "first_ending"
+        for n in range(r.start_measure, r.end_measure + 1)
+    }
+    seconds = {
+        n
+        for r in score.repeats
+        if r.type == "second_ending"
+        for n in range(r.start_measure, r.end_measure + 1)
+    }
+
+    played: list[Measure] = []
+    consumed: set[int] = set()
+    for number in order:
+        if number in consumed:
+            continue
+        span = next((r for r in spans if r.start_measure == number), None)
+        if span is None:
+            if number in seconds and number not in consumed:
+                # A second ending reached without its repeat is just music.
+                played.append(by_number[number])
+            elif number not in seconds:
+                played.append(by_number[number])
+            continue
+
+        body = [n for n in order if span.start_measure <= n <= span.end_measure]
+        # First pass: everything up to and including the first ending.
+        played.extend(by_number[n] for n in body if n not in seconds)
+        # Second pass: the same, skipping the first ending, taking the second.
+        played.extend(by_number[n] for n in body if n not in firsts)
+        consumed.update(body)
+
+    return played or list(score.measures)
+
+
 def build_timeline(score: ScoreJson, target_bpm: float) -> ExpectedTimeline:
     """Walk the score, accumulating time, emitting one entry per *sounded* onset.
 
@@ -73,6 +152,8 @@ def build_timeline(score: ScoreJson, target_bpm: float) -> ExpectedTimeline:
       the clock but produces no onset of its own.
     - Slur interiors are marked so classification can suppress per-note
       timing there (musical license within one bow; §4 layer 2).
+    - **Repeated sections are written out twice**, because the musician plays
+      them twice. See `expand_repeats`.
     """
     if target_bpm <= 0:
         raise ValueError(f"target_bpm must be positive, got {target_bpm}")
@@ -84,7 +165,7 @@ def build_timeline(score: ScoreJson, target_bpm: float) -> ExpectedTimeline:
     global_index = 0
     tied_from_prev = False
 
-    for measure in score.measures:
+    for measure in expand_repeats(score):
         # Slur interiors/boundaries are per-measure (slur indices are
         # note offsets within the measure).
         interior: set[int] = set()

@@ -5,13 +5,14 @@ from __future__ import annotations
 import numpy as np
 
 from app.services.alignment import (
+    expand_repeats,
     align_dtw,
     apply_fuzzy_match,
     build_timeline,
     compute_expected_onsets,
     is_alignment_broken,
 )
-from app.services.score_schema import Measure, Note, ScoreJson, Slur
+from app.services.score_schema import Measure, Note, Repeat, ScoreJson, Slur
 
 
 def _score(measures: list[Measure]) -> ScoreJson:
@@ -113,3 +114,99 @@ def test_align_empty_inputs_are_broken() -> None:
     result = align_dtw(np.array([]), np.array([0.0, 0.5]), target_bpm=120.0)
     assert result.quality == 0.0
     assert is_alignment_broken(result.quality) is True
+
+
+# ---- repeats -----------------------------------------------------------------
+#
+# `build_timeline` walked `score.measures` once and ignored `score.repeats`
+# entirely. A musician taking an eight-bar repeat plays sixteen bars and
+# produces roughly twice the onsets, against a timeline holding eight — so DTW
+# matched a doubled performance to a single pass and every delta after the
+# repeat sign was meaningless. Silent, because alignment still produced *a*
+# number.
+
+
+def _bar(number: int, notes: int = 4) -> Measure:
+    return Measure(
+        measure_number=number,
+        notes=[Note(pitch="C3", duration="quarter") for _ in range(notes)],
+    )
+
+
+def _score_with(repeats: list[Repeat], bars: int = 4) -> ScoreJson:
+    return ScoreJson(
+        clef="bass",
+        time_signature="4/4",
+        ocr_confidence=0.9,
+        measures=[_bar(n) for n in range(1, bars + 1)],
+        repeats=repeats,
+    )
+
+
+def test_a_repeated_section_is_played_twice() -> None:
+    """The whole point: the expected timeline has to hold what was played."""
+    score = _score_with([Repeat(start_measure=1, end_measure=2, type="repeat")])
+    played = [m.measure_number for m in expand_repeats(score)]
+    assert played == [1, 2, 1, 2, 3, 4]
+
+
+def test_a_score_with_no_repeats_is_unchanged() -> None:
+    """The common case must cost nothing and change nothing."""
+    score = _score_with([])
+    assert [m.measure_number for m in expand_repeats(score)] == [1, 2, 3, 4]
+
+
+def test_the_timeline_doubles_when_a_section_repeats() -> None:
+    """The observable consequence, not just the measure list.
+
+    Sixteen quarter notes at 60 BPM is sixteen seconds; eight is eight. Getting
+    this wrong is what made every delta after a repeat sign meaningless.
+    """
+    plain = build_timeline(_score_with([]), 60.0)
+    repeated = build_timeline(
+        _score_with([Repeat(start_measure=1, end_measure=2, type="repeat")]), 60.0
+    )
+    assert len(repeated.onsets) == len(plain.onsets) + 8
+    assert repeated.onsets[-1] > plain.onsets[-1]
+
+
+def test_first_and_second_endings_are_read_the_way_a_player_reads_them() -> None:
+    """First time through take the first ending and go back; second time skip
+    it and take the second."""
+    score = ScoreJson(
+        clef="bass", time_signature="4/4", ocr_confidence=0.9,
+        measures=[_bar(n) for n in range(1, 5)],
+        repeats=[
+            Repeat(start_measure=1, end_measure=3, type="repeat"),
+            Repeat(start_measure=3, end_measure=3, type="first_ending"),
+            Repeat(start_measure=4, end_measure=4, type="second_ending"),
+        ],
+    )
+    # 1, 2, 3 (first ending) → back → 1, 2, 4 (second ending).
+    assert [m.measure_number for m in expand_repeats(score)] == [1, 2, 3, 1, 2, 4]
+
+
+def test_a_repeat_naming_measures_that_do_not_exist_is_ignored() -> None:
+    """OCR produces these. Losing the whole take to a mis-read repeat sign
+    would be the wrong trade."""
+    score = _score_with([Repeat(start_measure=7, end_measure=9, type="repeat")])
+    assert [m.measure_number for m in expand_repeats(score)] == [1, 2, 3, 4]
+
+
+def test_a_backwards_repeat_is_ignored() -> None:
+    score = _score_with([Repeat(start_measure=3, end_measure=1, type="repeat")])
+    assert [m.measure_number for m in expand_repeats(score)] == [1, 2, 3, 4]
+
+
+def test_measure_numbers_are_not_renumbered_across_passes() -> None:
+    """The musician's part says bar 2 once and they play it twice, so both
+    passes stay bar 2 — the verdict then names a bar they can find on the page.
+
+    The honest consequence is that a repeated bar's two passes are averaged
+    together: nothing downstream distinguishes them, and inventing bar numbers
+    printed nowhere would be worse.
+    """
+    score = _score_with([Repeat(start_measure=1, end_measure=2, type="repeat")])
+    timeline = build_timeline(score, 60.0)
+    twos = [n for n in timeline.notes if n.measure_number == 2]
+    assert len(twos) == 8, "bar 2 should appear twice, four notes each"
