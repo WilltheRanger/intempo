@@ -65,11 +65,47 @@ def test_tied_note_is_not_reattacked() -> None:
 
 
 def test_slur_interior_is_flagged() -> None:
+    """Spec: the boundaries are the first note of the slur and the first note
+    *after* it ends. Every note in between — including the slur's own last
+    note — is interior and is not timed individually.
+
+    This asserted that the slur's last note was a boundary, which is what the
+    code did and what the spec does not say. That note is played under the same
+    bow stroke as the ones before it, so it has no attack for the onset
+    detector to find, and timing it produced phantom "dragging" on the last
+    note of every slur.
+    """
     notes = [Note(pitch="A4", duration="quarter")] * 4
     measure = Measure(measure_number=1, notes=notes, slurs=[Slur(start_note_index=0, end_note_index=3)])
     timeline = build_timeline(_score([measure]), target_bpm=120.0)
     flags = [(n.is_slur_boundary, n.is_slur_interior) for n in timeline.notes]
+    assert flags == [(True, False), (False, True), (False, True), (False, True)]
+
+
+def test_the_note_after_a_slur_is_a_boundary_and_is_timed() -> None:
+    """The bow changes direction on it, so it is attacked and it counts."""
+    notes = [Note(pitch="A4", duration="quarter")] * 4
+    measure = Measure(
+        measure_number=1, notes=notes, slurs=[Slur(start_note_index=0, end_note_index=2)]
+    )
+    timeline = build_timeline(_score([measure]), target_bpm=120.0)
+    flags = [(n.is_slur_boundary, n.is_slur_interior) for n in timeline.notes]
     assert flags == [(True, False), (False, True), (False, True), (True, False)]
+
+
+def test_two_slurs_in_a_measure_each_keep_their_own_boundary() -> None:
+    notes = [Note(pitch="A4", duration="eighth")] * 6
+    measure = Measure(
+        measure_number=1,
+        notes=notes,
+        slurs=[Slur(start_note_index=0, end_note_index=1), Slur(start_note_index=3, end_note_index=4)],
+    )
+    timeline = build_timeline(_score([measure]), target_bpm=120.0)
+    # 0 starts the first slur, 1 is under it; 2 is the note after it and is
+    # timed; 3 starts the second slur, 4 is under it; 5 is after it and timed.
+    assert [n.is_slur_interior for n in timeline.notes] == [
+        False, True, False, False, True, False,
+    ]
 
 
 def test_align_dtw_perfect_is_identity() -> None:

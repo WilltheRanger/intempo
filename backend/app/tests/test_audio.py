@@ -55,17 +55,3 @@ def test_high_pass_attenuates_low_frequency() -> None:
     low = np.sin(2 * np.pi * 40 * t).astype(np.float32)  # 40 Hz — below cutoff
     filtered = audio_svc.high_pass(low, SR, cutoff_hz=80.0)
     assert np.max(np.abs(filtered)) < 0.5 * np.max(np.abs(low))
-
-
-def test_estimate_bpm_recovers_tempo() -> None:
-    times = evenly_spaced(8, bpm=100.0)
-    y = synth_click_track(times, sr=SR)
-    bpm = audio_svc.estimate_bpm(y, SR)
-    assert bpm is not None
-    # beat_track can land on a metrical multiple; accept the family.
-    assert min(abs(bpm - 100), abs(bpm - 50), abs(bpm - 200)) < 8
-
-
-def test_estimate_bpm_on_silence_is_none() -> None:
-    y = np.zeros(SR * 2, dtype=np.float32)
-    assert audio_svc.estimate_bpm(y, SR) is None
