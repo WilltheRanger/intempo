@@ -38,7 +38,31 @@ _PITCH_PATTERN = re.compile(r"^(?:rest|[A-G](?:#|b)?-?\d)$")
 
 
 class _Strict(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    """The shape of a transcription, tolerant of a model saying more than this.
+
+    **`extra="forbid"` cost whole pages.** One unexpected key anywhere — a
+    per-measure time signature on a page that changes metre, a beaming hint, a
+    rehearsal mark, a fingering — failed validation for the *entire score*.
+    The pipeline counts a validation error as the provider failing, asks the
+    next provider, which is a model with the same helpful instinct, and then
+    reports that the photograph could not be read.
+
+    The page a cellist sent in changes metre partway down. A model trying to
+    express that has nowhere in this schema to put it, and the most natural
+    thing it can do — attach it to the measure — was the one thing guaranteed
+    to lose the page.
+
+    It also gets *worse* with a better model, since a more capable one is more
+    likely to notice something this schema cannot hold.
+
+    So extras are ignored. The trade is lopsided in a way that is not close:
+    dropping a field the app has no use for costs nothing, and rejecting the
+    page costs the page. Every field this app actually reads is declared below
+    and is still validated exactly as strictly as before — an extra key cannot
+    make a wrong pitch or an impossible duration pass.
+    """
+
+    model_config = ConfigDict(extra="ignore")
 
 
 class Note(_Strict):

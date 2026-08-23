@@ -150,6 +150,13 @@ def parse_sheet_music(
     if confirm and settings.OMR_CONFIRM:
         try:
             stage(STAGE_ENGINE)
+            # Note for whoever installs an OMR engine: `image_bytes` has been
+            # normalised to 1568px on the long edge for the *vision model*,
+            # which is all a model sees anyway. A rule-based engine wants more
+            # than that — Audiveris measures staff spacing in pixels, and a
+            # full page at 1568px leaves roughly ten pixels between lines,
+            # which is tight. If the second opinion is ever switched on for
+            # real, hand it the original bytes rather than these.
             engine = get_provider(settings.OMR_CONFIRM).parse(image_bytes, media_type)
         except (ValidationError, OCRProviderError, ValueError, OCRError) as exc:
             log.info("no OMR second opinion available: %s", exc)

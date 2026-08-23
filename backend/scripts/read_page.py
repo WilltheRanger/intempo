@@ -1,15 +1,25 @@
 #!/usr/bin/env python3
-"""Read a photograph with one provider and print what it got, checked.
+"""Read a photograph the way the server does, and print exactly what happened.
 
-    cd backend
-    uv run python scripts/read_page.py ~/Desktop/part.jpg --provider omr-local
-    uv run python scripts/read_page.py ~/Desktop/part.jpg --provider gemini-2.5-flash
-    uv run python scripts/read_page.py ~/Desktop/part.jpg --provider omr-local,gemini-2.5-flash
+    cd backend                       # ANTHROPIC_API_KEY comes from backend/.env
 
-Exists because the local OMR engine has nowhere else to run. The scan bench is
-one HTML file with no server, so it cannot start a subprocess, and the API needs
-hosting. This is the shortest path from a photograph on disk to an answer you
-can judge.
+    # Reproduce a failed scan — the real chain, on the real page:
+    uv run python scripts/read_page.py ~/Desktop/part.jpg --chain
+
+    # Compare engines on the same page, each run independently:
+    uv run python scripts/read_page.py ~/Desktop/part.jpg --provider claude-sonnet-5,omr-local
+
+    # Prove whether normalisation is what fixed a page:
+    uv run python scripts/read_page.py ~/Desktop/part.jpg --chain --raw
+
+**Use this when the app says a page could not be read.** The app has one line
+of room to explain a failure and no way to show you the answer that failed; this
+prints the provider's actual error, or the schema fields it got wrong, or the
+transcription and its beat-sum verdict. It normalises the image first, exactly
+as the worker does, so what runs here is what runs on the server.
+
+The local OMR engine has nowhere else to run either: the scan bench is one HTML
+file with no server, so it cannot start a subprocess.
 
 It prints the beat-sum verdict per measure, not just the transcription. A
 transcription on its own invites reading it and nodding; the verdict is the part
@@ -28,8 +38,17 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from pydantic import ValidationError  # noqa: E402
+
+from app.config import settings  # noqa: E402
 from app.services.ocr.base import OCRProviderError  # noqa: E402
-from app.services.ocr.pipeline import PROVIDER_REGISTRY, get_provider  # noqa: E402
+from app.services.ocr.pipeline import (  # noqa: E402
+    OCRError,
+    PROVIDER_REGISTRY,
+    get_provider,
+    parse_sheet_music,
+)
+from app.services.page_image import prepare_for_model  # noqa: E402
 from app.services.ocr.validate import (  # noqa: E402
     describe_for_retry,
     validate_measures,
@@ -51,6 +70,17 @@ def _report(name: str, image: bytes, mime: str, *, dump: Path | None) -> bool:
         response = get_provider(name).parse(image, mime)
     except OCRProviderError as exc:
         print(f"  failed: {exc}")
+        return False
+    except ValidationError as exc:
+        # The failure that used to be invisible. A model answering with one key
+        # this schema does not declare used to lose the whole page, and the
+        # only trace was "the photograph could not be read". Printing which
+        # field, and how many, is the difference between a diagnosis and a
+        # guess.
+        print(f"  failed: the answer did not fit the schema ({exc.error_count()} problem(s))")
+        for error in exc.errors()[:8]:
+            where = ".".join(str(part) for part in error["loc"]) or "(root)"
+            print(f"    {where}: {error['msg']}")
         return False
 
     score = response.score
@@ -103,9 +133,23 @@ def main() -> int:
     parser.add_argument("image", type=Path)
     parser.add_argument(
         "--provider",
-        default="omr-local",
-        help="comma-separated; run independently for comparison. "
+        default=None,
+        help="comma-separated; run independently for comparison. Defaults to "
+        "the configured chain, so the default run is what the server does. "
         f"known: {', '.join(sorted(PROVIDER_REGISTRY))}",
+    )
+    parser.add_argument(
+        "--chain",
+        action="store_true",
+        help="run the real pipeline — fallthrough, beat-sum gate, OMR second "
+        "opinion — exactly as the transcription worker does, instead of each "
+        "provider independently. Use this to reproduce a failed scan.",
+    )
+    parser.add_argument(
+        "--raw",
+        action="store_true",
+        help="send the file untouched, skipping the normalisation the server "
+        "applies. For proving that normalisation is what fixed a page.",
     )
     parser.add_argument(
         "--dump",
@@ -118,13 +162,54 @@ def main() -> int:
     if not args.image.is_file():
         print(f"no such file: {args.image}", file=sys.stderr)
         return 2
-    image = args.image.read_bytes()
-    mime = mimetypes.guess_type(args.image.name)[0] or "image/png"
+    original = args.image.read_bytes()
+    if args.raw:
+        image = original
+        mime = mimetypes.guess_type(args.image.name)[0] or "image/png"
+    else:
+        # What the server actually sends. Without this the script answers a
+        # different question from the one being asked.
+        image, mime = prepare_for_model(original)
     if args.dump is not None:
         args.dump.mkdir(parents=True, exist_ok=True)
 
-    print(f"{args.image.name} · {len(image) / 1_048_576:.1f} MB · {mime}")
-    names = [n.strip() for n in args.provider.split(",") if n.strip()]
+    print(f"{args.image.name} · {len(original) / 1_048_576:.2f} MB")
+    if not args.raw:
+        # The base64 payload is what the 5 MB API limit applies to, so it is
+        # the number worth printing.
+        print(
+            f"  normalised → {len(image) / 1_048_576:.2f} MB {mime}"
+            f" · {len(image) * 4 / 3 / 1_048_576:.2f} MB as base64 (limit 5.00)"
+        )
+    else:
+        print(f"  sent untouched · {len(image) * 4 / 3 / 1_048_576:.2f} MB as base64 (limit 5.00)")
+
+    if args.chain:
+        print(f"\n\033[1mchain: {settings.OCR_PROVIDER_CHAIN}\033[0m")
+        try:
+            score = parse_sheet_music(image, media_type=mime)
+        except OCRError as exc:
+            print(f"  every provider failed:\n    {exc}")
+            return 1
+        print(
+            f"  {len(score.measures)} measures · {score.clef} clef · "
+            f"{score.time_signature or 'no metre'}"
+        )
+        rows = validate_measures(score)
+        problems = describe_for_retry(rows)
+        print(f"  {problems}" if problems else "  every measure that could be checked adds up")
+        if args.dump is not None:
+            (args.dump / "chain.json").write_text(
+                score.model_dump_json(indent=2), encoding="utf-8"
+            )
+            print(f"  wrote chain.json into {args.dump}")
+        return 0
+
+    names = [
+        n.strip()
+        for n in (args.provider or settings.OCR_PROVIDER_CHAIN).split(",")
+        if n.strip()
+    ]
     unknown = [n for n in names if n not in PROVIDER_REGISTRY]
     if unknown:
         print(
