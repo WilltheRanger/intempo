@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 
 from app.services.alignment import (
+    AlignmentResult,
     expand_repeats,
     align_dtw,
     apply_fuzzy_match,
@@ -270,13 +271,117 @@ def test_a_lead_in_does_not_break_alignment() -> None:
         assert result.quality == pytest.approx(1.0), f"lead-in {lead_in}s"
 
 
-def test_the_lead_in_was_what_broke_it() -> None:
-    """The regression this guards against, stated as the thing that used to
-    happen. If DTW ever stops caring about a constant offset on its own, this
-    test is the one that says the shift is no longer load-bearing."""
+def test_dtw_no_longer_needs_the_shift_but_fuzzy_matching_still_does() -> None:
+    """Where the lead-in still bites, now that matching is tempo-invariant.
+
+    This test used to assert that a five-second lead-in sank `align_dtw`, and
+    it was written to fire the day that stopped being true. It fired: putting
+    each sequence on its own unit span subtracts the origin, so DTW absorbs a
+    constant offset by construction.
+
+    `apply_fuzzy_match` is a different matter, and it is why
+    `to_timeline_base` stays. It breaks a many-to-one tie by "closest in time"
+    against raw expected seconds, so a large constant offset swamps the
+    comparison and it stops choosing the closest candidate and starts choosing
+    the earliest — which on a re-attacked note is the wrong one.
+    """
     expected = np.arange(32, dtype=float)
-    unshifted = align_dtw(expected + 5.0, expected, target_bpm=60.0)
-    assert unshifted.quality < 0.4, "a five-second lead-in used to align fine?"
+    assert align_dtw(expected + 5.0, expected, target_bpm=60.0).quality == pytest.approx(1.0)
+
+    # Two candidates for written note 3: one 100ms early, one 50ms late. The
+    # closest is the late one, and that must not depend on the lead-in.
+    exp = np.arange(8, dtype=float)
+    mapping = [(0, 0), (1, 1), (2, 2), (3, 3), (4, 3), (5, 4), (6, 5), (7, 6), (8, 7)]
+    played = np.array([0, 1, 2, 2.90, 3.05, 4, 5, 6, 7], dtype=float)
+    alignment = AlignmentResult(
+        mapping=mapping, cost=0.0, quality=1.0, n_detected=played.size, n_expected=exp.size
+    )
+
+    def note_three_from(detected: np.ndarray) -> int:
+        cleaned = apply_fuzzy_match(alignment, detected, exp)
+        return {written: det for det, written in cleaned.matched}[3]
+
+    assert note_three_from(played) == 4, "with no lead-in it picks the closest"
+    assert note_three_from(played + 5.0) == 3, "raw times pick the earliest instead"
+    assert note_three_from(to_timeline_base(played + 5.0)) == 4
+
+
+# --- matching must not depend on how fast it was played --------------------
+
+def test_a_steady_take_at_a_different_tempo_still_aligns() -> None:
+    """The bug that mattered most: DTW ran on raw seconds, so a uniform tempo
+    difference made the cheapest path one that *slid* rather than one that
+    matched note to note. 64 notes played 2% fast had 39% of their notes
+    attributed to the wrong written note; at 10% it was 8%. A musician who
+    rushes is the entire audience for this app."""
+    for n in (16, 32, 64):
+        expected = np.arange(n, dtype=float)
+        for drift in (0.02, 0.05, 0.10, 0.20):
+            played = to_timeline_base(expected * (1 - drift))
+            result = align_dtw(played, expected, target_bpm=60.0)
+            assert result.mapping == [(i, i) for i in range(n)], (
+                f"{n} notes at {drift:.0%} fast matched to the wrong notes"
+            )
+            assert result.quality == pytest.approx(1.0), (
+                "a steady take at a different tempo is the right piece played "
+                "recognisably, and the tempo is the verdict, not a failure"
+            )
+
+
+def test_the_tempo_difference_still_reaches_the_verdict() -> None:
+    """Matching ignores tempo; measuring must not. If this ever passes while
+    the deltas come back at zero, the normalisation has leaked downstream and
+    the app has stopped being able to say anyone rushed."""
+    from app.services.classification import compute_deltas
+
+    score = _score([
+        Measure(
+            measure_number=bar + 1,
+            notes=[Note(pitch="A4", duration="quarter") for _ in range(4)],
+        )
+        for bar in range(4)
+    ])
+    timeline = build_timeline(score, target_bpm=60.0)
+    played = to_timeline_base(timeline.onsets * 0.90)  # 10% fast, dead steady
+
+    raw = align_dtw(played, timeline.onsets, target_bpm=60.0)
+    cleaned = apply_fuzzy_match(raw, played, timeline.onsets)
+    deltas = compute_deltas(cleaned, played, timeline, 60.0)
+
+    assert raw.quality == pytest.approx(1.0), "matching should not care"
+    assert deltas[-1].delta_ms < -1000, "measuring very much should"
+    assert all(d.delta_pct <= 0 for d in deltas), "every note early, none late"
+
+
+def test_a_take_missing_every_other_note_is_not_read_as_a_slow_one() -> None:
+    """The hazard that decided *how* to normalise.
+
+    Scaling by a tempo ratio from median inter-onset intervals rescales a
+    sparse take until it looks complete — a musician who dropped half the notes
+    would get note *i* matched to written note *i*, and a confident analysis of
+    bars they never played. Normalising by span keeps the real correspondence
+    (i to 2i) and scores it poorly, which is the honest answer."""
+    expected = np.arange(32, dtype=float)
+    played = to_timeline_base(expected[::2])
+
+    result = align_dtw(played, expected, target_bpm=60.0)
+    written = [e for _, e in result.mapping]
+
+    assert result.quality < 0.4, "half a performance is not a good alignment"
+    # The claim is about correspondence, not exactness: these sixteen onsets
+    # are spread across all thirty-two written notes, not read as the first
+    # sixteen played slowly. (It tracks 0,2,4… and slips by one late on, which
+    # is DTW absorbing the gaps and is not what this test is about.)
+    assert max(written) >= 28, "a sparse take was read as a complete slow one"
+    assert written != list(range(16))
+
+
+def test_a_different_piece_is_still_rejected() -> None:
+    """Tempo-invariance must not become piece-invariance."""
+    rng = np.random.default_rng(0)
+    expected = np.arange(32, dtype=float)
+    played = to_timeline_base(np.sort(rng.uniform(0, 32, 32)))
+    assert align_dtw(played, expected, target_bpm=60.0).quality < 0.4
 
 
 def test_to_timeline_base_is_a_shift_and_nothing_else() -> None:
