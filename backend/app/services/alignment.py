@@ -268,6 +268,44 @@ def _quality_from_cost(total_cost: float, path_len: int, sec_per_beat: float) ->
     return float(np.clip(1.0 - avg_error_beats / 0.5, 0.0, 1.0))
 
 
+def to_timeline_base(detected: np.ndarray) -> np.ndarray:
+    """Detected onsets re-expressed as seconds since the first note.
+
+    `build_timeline` returns "seconds since start of the first note" — its own
+    words. `detect_onsets` returns seconds since the *recording* started. Those
+    are two different clocks, and every comparison between them was made in
+    whichever clock happened to arrive.
+
+    `compute_deltas` already knew this and corrected for it — "the recording's
+    lead-in latency (reaction time before the first note) is not a timing
+    error" — but it runs at the *end* of the pipeline, and `align_dtw` and
+    `apply_fuzzy_match` run before it in the recording's clock. So a musician
+    who tapped record, picked up the bow and then played was compared against a
+    score that assumed they began instantly.
+
+    The cost is not subtle. A **perfectly played** take, measured against the
+    band-constrained DTW:
+
+        lead-in   0.5s → quality 1.000
+        lead-in   2.0s → quality 0.762
+        lead-in   3.0s → quality 0.566
+        lead-in   5.0s → quality 0.053   ← "check you're on the right piece"
+
+    Five seconds is tapping record, putting the phone down and picking up the
+    bow. Every one of those is 1.000 once both sequences are on the same clock.
+
+    Shifted by the first *detected* onset, which is the only origin available
+    before anything is matched. If that first onset is spurious the whole
+    sequence shifts with it — but only by the width of one false trigger, and
+    `compute_deltas` re-derives its own origin from the first *matched* pair
+    afterwards, so a spurious lead does not reach the verdict.
+    """
+    detected = np.asarray(detected, dtype=float)
+    if detected.size == 0:
+        return detected
+    return detected - detected[0]
+
+
 def align_dtw(
     detected: np.ndarray,
     expected: np.ndarray,

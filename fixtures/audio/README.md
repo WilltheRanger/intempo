@@ -23,8 +23,34 @@ the playing.
 | `05_open_e_long.wav` | One open E held ~2 s, then silence | Does low-register detection fire at all on the lowest fundamental in the repertoire |
 | `06_pizzicato.wav` | ≥4 bars pizzicato | The always-should-work case. Watch for *over*-detection — string ring reading as extra onsets. |
 
-Mono WAV. Any sample rate; the pipeline loads at 22.05 kHz and the header is
-believed, so don't resample by hand.
+## Before you press record
+
+**Leave about a second of room tone at the head of each take**, and don't start
+playing the instant you tap record. Two reasons, both verified 2026-08-27:
+
+- The lead-in itself is now harmless — it used to sink alignment (a perfect take
+  with 5 s of lead-in scored 0.053 and was told to re-record), and that is
+  fixed. So take your time settling.
+- That second of room tone is what makes the *other* problem visible. The
+  detector can fire a spurious onset a few frames into a signal that has a noise
+  floor, before any note. The dashboard draws detected marks on the waveform, so
+  with a clear head of silence a stray mark ahead of your first note is obvious.
+  See `TUNING_LOG.md` 2026-08-27 §3 — this is the first thing to check on
+  clip 01.
+
+Same room, same mic placement, same instrument across all six, and especially
+across the first three. If those change between takes you are tuning against
+the room rather than the playing.
+
+## Format
+
+**Whatever your recorder gives you.** 48 kHz stereo 24-bit WAV was walked
+through the whole path end to end and works — librosa resolves it to 22.05 kHz
+mono itself. Don't resample or downmix by hand; the header is believed. Phone
+recordings in `.m4a` need `ffmpeg` present, which the deployed image has.
+
+The one thing that matters is that it is the take you actually played, uncut at
+the front — trimming the head by hand removes the evidence described above.
 
 ## Then tell the dashboard about them
 
@@ -48,6 +74,31 @@ nothing to deviate from. That lives in `manifest.json` beside the audio:
 something different from what it says, edit the manifest — a grid that doesn't
 match what you played produces deviations that are real arithmetic about the
 wrong thing.
+
+## Once you have recorded one
+
+Drop it in beside this file under the un-suffixed name — `01_detache_clean.wav`
+— and it takes over from the stand-in on the next page load. Nothing else to
+configure; `load_corpus` prefers a real file over a synthetic one and labels
+which is which.
+
+```bash
+cd backend
+uv run uvicorn tuning_dashboard.app:app --reload --port 8100
+```
+
+Then <http://127.0.0.1:8100>. Read it in this order:
+
+1. **Does the detected-onset count match the written one?** If it is short, the
+   peak-picking window is the first suspect — `pre_max`/`post_max` are ±464 ms
+   and notes closer than that suppress each other, which caps quarter notes at
+   about 128 BPM. `TUNING_LOG.md` 2026-08-27 §2.
+2. **Is there a mark before your first note?** §3 in the same entry.
+3. **Only then** look at the deviation bars. A threshold read off a clip whose
+   onsets are wrong is a number about the wrong thing.
+
+Record clip 01 first and stop there. Until deviations on the clean détaché sit
+inside ±15 ms there is nothing to learn from the other five.
 
 ## The regression rule
 
