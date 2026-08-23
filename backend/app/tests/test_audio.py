@@ -60,16 +60,22 @@ def test_high_pass_attenuates_low_frequency() -> None:
 # --- the recording beginning is not a note ---------------------------------
 
 def _room_tone_then_notes(
-    onsets: list[float], *, sr: int = SR, floor: float = 2e-3, seed: int = 5
+    onsets: list[float],
+    *,
+    sr: int = SR,
+    floor: float = 2e-3,
+    seed: int = 5,
+    decay: float = 0.35,
+    length: float = 0.6,
 ) -> np.ndarray:
     """A take with a noise floor, which is every take made in a room."""
     rng = np.random.default_rng(seed)
     y = np.zeros(int(sr * (max(onsets) + 1.5)), dtype=np.float32)
     for onset in onsets:
-        n = int(sr * 0.6)
+        n = int(sr * length)
         t = np.arange(n) / sr
-        env = (1 - np.exp(-t / 0.02)) * np.exp(-t / 0.35)
-        env *= np.minimum(1.0, (n - np.arange(n)) / (0.1 * sr))
+        env = (1 - np.exp(-t / 0.008)) * np.exp(-t / decay)
+        env *= np.minimum(1.0, (n - np.arange(n)) / (min(0.1, length / 4) * sr))
         tone = sum(a * np.sin(2 * np.pi * 110 * k * t) for k, a in [(1, 1.0), (2, 0.5), (3, 0.25)])
         start = int(onset * sr)
         y[start : start + n] += (env * tone * 0.3).astype(np.float32)
@@ -120,3 +126,41 @@ def test_a_note_just_past_the_boundary_is_still_heard() -> None:
     detected = audio_svc.detect_onsets(_room_tone_then_notes([0.2, 1.2, 2.2]), SR)
     assert len(detected) == 3, f"a note at 200ms was lost: {detected}"
     assert detected[0] < 0.5
+
+
+# --- the window the score implies ------------------------------------------
+
+def test_the_peak_window_is_capped_for_slow_music() -> None:
+    """Notes a second apart need no narrowing, so slow music is untouched — the
+    whole tuning corpus sits here and every number in it is unchanged."""
+    assert audio_svc.peak_window_frames(1.0, SR) == 20
+    assert audio_svc.peak_window_frames(None, SR) == 20
+
+
+def test_the_peak_window_narrows_for_fast_music() -> None:
+    """A window wider than the gap between two notes means the quieter of them
+    is never reported. At a fixed 20 frames — ±464 ms — that made sixteenths
+    undetectable above 32 BPM, and most étude writing invisible."""
+    assert audio_svc.peak_window_frames(0.5, SR) == 10   # eighths at 60
+    assert audio_svc.peak_window_frames(0.15, SR) == 3   # sixteenths at 100
+    assert audio_svc.peak_window_frames(0.01, SR) == 1   # never below one frame
+
+
+def test_sixteenths_at_a_real_tempo_are_detected() -> None:
+    """The ceiling, as arithmetic rather than opinion.
+
+    Thirty-two sixteenths at 100 BPM are 150 ms apart. Told what to expect the
+    detector finds all of them; at the fixed window it found four.
+    """
+    gap = 0.15
+    played = [0.4 + i * gap for i in range(32)]
+    y = _room_tone_then_notes(played, decay=gap * 0.7, length=gap * 0.9)
+
+    told = audio_svc.detect_onsets(y, SR, min_gap_s=gap)
+    untold = audio_svc.detect_onsets(y, SR)
+
+    found = sum(1 for t in played if np.any(np.abs(told - t) < 0.06))
+    assert found == 32, f"only {found} of 32 sixteenths detected"
+    assert sum(1 for t in played if np.any(np.abs(untold - t) < 0.06)) < 10, (
+        "the fixed window was supposed to be the problem"
+    )

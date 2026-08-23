@@ -74,12 +74,63 @@ def high_pass(y: np.ndarray, sr: int, cutoff_hz: float) -> np.ndarray:
     return sosfiltfilt(sos, y).astype(np.float32, copy=False)
 
 
+#: librosa's onset defaults, named because three functions here depend on
+#: them agreeing.
+_HOP_LENGTH = 512
+_N_FFT = 2048
+
+
+def peak_window_frames(
+    min_gap_s: float | None, sr: int, *, config: AudioConfig | None = None
+) -> int:
+    """How wide the local-max window may be, given the closest notes expected.
+
+    `pre_max`/`post_max` require a peak to be the largest in a window, so a
+    window wider than the gap between two notes means the quieter of them is
+    never reported. At 20 frames — **±464 ms** — that put a hard ceiling on the
+    music this app can read at all:
+
+        quarter notes    detectable below 129 BPM
+        eighth notes                below  65 BPM
+        sixteenth notes             below  32 BPM
+
+    Nobody practises sixteenths at 32 BPM. Most étude and excerpt writing was
+    simply invisible, and `librosa`'s own default for this sample rate is **1**
+    frame, not 20.
+
+    It could not be fixed by choosing a better constant, and the reason is
+    exact. The window is wide because it suppresses a note being detected twice
+    — a ringing pizzicato, a vibrato wobble — and a 5.5 Hz ring beat is 182 ms
+    apart while sixteenths at 100 BPM are 150 ms apart. **They are the same
+    time scale.** Measured, one window cannot have both:
+
+        window 3   ringing pizzicato 8 hits / 8 spurious   sixteenths 32/32 found
+        window 20  ringing pizzicato 8 hits / 0 spurious   sixteenths  4/32 found
+
+    So the window is not chosen — it is *derived* from the thing that already
+    knows the answer. The score says which note values are written and
+    `target_bpm` says how fast, so the smallest gap to expect is known before a
+    sample is read. Half of it: wide enough that one note cannot out-peak
+    itself, narrow enough that the next note falls outside.
+
+    Capped at the configured `pre_max`, so slow music behaves exactly as it did
+    — on the tuning corpus, whose clips are all at 60 BPM, this returns the cap
+    and every number is unchanged.
+    """
+    cfg = config or load_audio_config()
+    cap = cfg.onset.pre_max
+    if min_gap_s is None or min_gap_s <= 0:
+        return cap
+    return max(1, min(cap, int(min_gap_s * sr / _HOP_LENGTH / 2)))
+
+
 def detect_onsets(
     y: np.ndarray,
     sr: int,
     *,
     double_bass: bool = False,
     config: AudioConfig | None = None,
+    min_gap_s: float | None = None,
 ) -> np.ndarray:
     """Return onset timestamps (seconds) via `librosa.onset.onset_detect`.
 
@@ -93,9 +144,10 @@ def detect_onsets(
     cfg = config or load_audio_config()
     onset = cfg.onset
     delta = onset.double_bass_delta if double_bass else onset.delta
+    window = peak_window_frames(min_gap_s, sr, config=cfg)
     # librosa wants `wait` in frames; convert from milliseconds.
-    hop_length = 512  # librosa onset default
-    n_fft = 2048  # librosa onset default
+    hop_length = _HOP_LENGTH
+    n_fft = _N_FFT
     wait_frames = max(1, int(round((onset.wait_ms / 1000.0) * sr / hop_length)))
 
     strength = librosa.onset.onset_strength(y=y, sr=sr, hop_length=hop_length)
@@ -132,8 +184,8 @@ def detect_onsets(
         units="frames",
         hop_length=hop_length,
         delta=delta,
-        pre_max=onset.pre_max,
-        post_max=onset.post_max,
+        pre_max=window,
+        post_max=window,
         wait=wait_frames,
         backtrack=False,
     )

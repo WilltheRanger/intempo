@@ -335,6 +335,20 @@ MAX_TEMPO_RATIO = 1.7
 MIN_ONSETS_TO_ESTIMATE_TEMPO = 7
 
 
+def closest_expected_gap(expected: np.ndarray) -> float | None:
+    """The smallest interval between notes the score expects, in seconds.
+
+    What the onset detector needs in order to size its local-max window: it
+    must not be wider than the closest pair of notes, or the quieter of them is
+    never reported. See `audio.peak_window_frames`.
+    """
+    if expected.size < 2:
+        return None
+    gaps = np.diff(expected)
+    positive = gaps[gaps > 0]
+    return float(positive.min()) if positive.size else None
+
+
 def to_timeline_base(detected: np.ndarray) -> np.ndarray:
     """Detected onsets re-expressed as seconds since the first note.
 

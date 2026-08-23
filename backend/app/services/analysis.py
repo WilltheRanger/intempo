@@ -27,6 +27,7 @@ from app.services.alignment import (
     build_timeline,
     is_alignment_broken,
     to_timeline_base,
+    closest_expected_gap,
 )
 from app.services.audio_config import AudioConfig, load_audio_config
 from app.services.classification import (
@@ -169,12 +170,21 @@ def analyze(
         y, sr = audio_svc.load_audio(audio, sr=cfg.onset.sr)
     if double_bass:
         y = audio_svc.high_pass(y, sr, cfg.onset.double_bass_highpass_hz)
-    onsets = audio_svc.detect_onsets(
-        audio_svc.pre_emphasis(y, config=cfg), sr, double_bass=double_bass, config=cfg
-    )
 
+    # The score is read *before* the audio, so the detector can be told how
+    # close together the notes it is looking for actually are. Nothing about
+    # this depends on the recording, and it is what stops a fixed window from
+    # making fast passages undetectable.
     timeline = build_timeline(score, target_bpm)
     expected = timeline.onsets
+
+    onsets = audio_svc.detect_onsets(
+        audio_svc.pre_emphasis(y, config=cfg),
+        sr,
+        double_bass=double_bass,
+        config=cfg,
+        min_gap_s=closest_expected_gap(expected),
+    )
 
     if onsets.size == 0 or expected.size == 0:
         return AnalysisResult(
