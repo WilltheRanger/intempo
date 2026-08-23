@@ -292,6 +292,103 @@ class CleanedAlignment:
     quality: float = 1.0
 
 
+#: How far from the typical gap a gap may sit and still count toward the pace.
+#:
+#: Wide, because it is only excluding things that are not one note after
+#: another: a pause where the musician stopped, or a doubled detection on one
+#: attack. Everything a player does *within* a passage sits well inside.
+_GAP_CORE_LOW = 0.6
+_GAP_CORE_HIGH = 1.6
+
+
+def typical_gap(gaps: np.ndarray) -> float:
+    """The interval between one note and the next, as this take actually plays it.
+
+    A median, which is what this used to be, is snapped to whatever grid its
+    inputs live on — and onset times are quantised to the hop, 23.2 ms at the
+    configured rate. Eighth notes at 72 BPM are written 416.67 ms apart and
+    detected a uniform **418.0 ms** apart, which is 18 frames exactly. The
+    0.3% that rounding invents does not sound like anything and cannot be
+    played away, but it accumulates: past half a note gap the alignment has to
+    give back a whole note at once, and what is left is two parallel ramps with
+    a step between them, which no straight line can remove.
+
+        128 notes   drift 162 ms   quality 0.986
+        256 notes   drift 324 ms   quality 0.761   ← half a gap is 208 ms
+        768 notes   drift 995 ms   quality 0.759
+
+    `warn_quality` is 0.7, so any practice session past about 150 notes was
+    heading for "results may be inaccurate" on account of arithmetic.
+
+    A **mean** has no such bias — the frames above and below the true interval
+    average out — but one long pause moves it, and a musician who stops to turn
+    a page has not changed tempo. So the median picks the centre and the mean
+    of everything near it supplies the precision. Measured across eighths at
+    72 BPM, quarters at 60, and sixteenths at 100 — where the median is off by
+    7% because doubled detections drag it down — this leaves **no residual
+    drift at any length**.
+
+    A trimmed mean was tried and is wrong here: trimming by rank throws away
+    the minority of gaps that are one frame short, and those are exactly the
+    ones carrying the correction.
+    """
+    gaps = np.asarray(gaps, dtype=float)
+    if gaps.size == 0:
+        return 0.0
+    centre = float(np.median(gaps))
+    if centre <= 0:
+        return centre
+    core = gaps[(gaps > _GAP_CORE_LOW * centre) & (gaps < _GAP_CORE_HIGH * centre)]
+    return float(core.mean()) if core.size else centre
+
+
+def _clamp_ratio(ratio: float) -> float:
+    """Hold a tempo rescale inside what a musician plausibly did."""
+    return min(max(ratio, MIN_TEMPO_RATIO), MAX_TEMPO_RATIO)
+
+
+def _fit_line(
+    mapping: list[tuple[int, int]], detected: np.ndarray, expected: np.ndarray
+) -> tuple[float, float] | None:
+    """`(rate, offset)` mapping expected seconds onto detected seconds.
+
+    One home for the fit, because two callers need exactly the same line: the
+    rate refinement, which uses it to correct the scale, and the quality score,
+    which uses it to decide what a steady tempo cannot explain.
+    """
+    if not mapping:
+        return None
+    det = np.array([detected[d] for d, _ in mapping], dtype=float)
+    exp = np.array([expected[e] for _, e in mapping], dtype=float)
+    if det.size >= 2 and float(np.ptp(exp)) > 0:
+        rate, offset = np.polyfit(exp, det, 1)
+        return float(rate), float(offset)
+    return 1.0, float(np.median(det - exp))
+
+
+def _residuals(
+    mapping: list[tuple[int, int]], detected: np.ndarray, expected: np.ndarray
+) -> np.ndarray:
+    """How far each matched pair sits from the best straight line through them."""
+    line = _fit_line(mapping, detected, expected)
+    if line is None:
+        return np.array([], dtype=float)
+    rate, offset = line
+    det = np.array([detected[d] for d, _ in mapping], dtype=float)
+    exp = np.array([expected[e] for _, e in mapping], dtype=float)
+    return np.abs(det - (rate * exp + offset))
+
+
+def _residual_cost(
+    mapping: list[tuple[int, int]], detected: np.ndarray, expected: np.ndarray
+) -> float:
+    """Mean residual, so two mappings of different lengths compare fairly."""
+    residuals = _residuals(mapping, detected, expected)
+    if residuals.size == 0:
+        return float("inf")
+    return float(residuals.mean())
+
+
 def _quality_from_cost(total_cost: float, path_len: int, sec_per_beat: float) -> float:
     """Map average per-step timing error to a 0..1 quality score.
 
@@ -574,8 +671,10 @@ def align_dtw(
     # note, reported confidently. Measured on a 40-note score, a take of notes
     # 0–19 mapped to written notes 0–39.
     #
-    # A ratio of median inter-onset intervals, clamped, cannot do that. The
-    # clamp is what makes it safe rather than merely different: reading a half
+    # A ratio of *typical* inter-onset intervals, clamped, cannot do that —
+    # see `typical_gap` for what "typical" has to mean here, which is not a
+    # median. The clamp is what makes it safe rather than merely different:
+    # reading a half
     # take as a whole one needs 2×, and reading every-other-note as a complete
     # slow take needs 0.5×, and neither is reachable. What is reachable covers
     # a musician far outside the ±20% the verdict bands call severe — so the
@@ -594,48 +693,50 @@ def align_dtw(
     #   first half            0.400        0.500   ← and now maps to 0–19
     #   every other note      0.301        0.119
     #   WRONG PIECE           0.248        0.000
-    def _into_score_units(seq: np.ndarray, reference: np.ndarray) -> np.ndarray:
-        """`seq` shifted to a zero origin and scaled toward `reference`'s pace."""
-        shifted = seq - (seq[0] if seq.size else 0.0)
+    def _initial_ratio(seq: np.ndarray, reference: np.ndarray) -> float:
+        """How much to stretch `seq` toward `reference`'s pace, clamped."""
         if seq.size < MIN_ONSETS_TO_ESTIMATE_TEMPO or reference.size < 2:
-            return shifted
-        played = float(np.median(np.diff(seq)))
-        written = float(np.median(np.diff(reference)))
+            return 1.0
+        played = typical_gap(np.diff(seq))
+        written = typical_gap(np.diff(reference))
         if played <= 0 or written <= 0:
-            return shifted
-        ratio = written / played
-        return shifted * min(max(ratio, MIN_TEMPO_RATIO), MAX_TEMPO_RATIO)
+            return 1.0
+        return _clamp_ratio(written / played)
 
-    x = _into_score_units(detected, expected).reshape(1, -1)
+    def _match(ratio: float) -> tuple[list[tuple[int, int]], np.ndarray]:
+        """Run DTW at one scale, returning the mapping and the scaled sequence."""
+        x = ((detected - (detected[0] if detected.size else 0.0)) * ratio).reshape(1, -1)
+        try:
+            _, wp = librosa.sequence.dtw(
+                X=x,
+                Y=y,
+                metric="euclidean",
+                global_constraints=True,
+                band_rad=cfg.alignment.sakoe_chiba_band,
+            )
+        except Exception:  # noqa: BLE001 — band too tight for the size ratio, etc.
+            _, wp = librosa.sequence.dtw(X=x, Y=y, metric="euclidean")
+
+        # librosa returns the path from end → start; flip to ascending.
+        # Collapse to one expected index per detected index: keep the closest
+        # in time (handles the fan-out DTW leaves on the warp path).
+        # Tie-break in the same space the path was found in — comparing raw
+        # seconds here would reintroduce exactly the bias the normalisation
+        # above removes, on the fan-out where it matters most.
+        x_flat, y_flat = x[0], y[0]
+        best: dict[int, tuple[int, float]] = {}
+        for det_i, exp_i in wp[::-1]:
+            det_i, exp_i = int(det_i), int(exp_i)
+            err = abs(x_flat[det_i] - y_flat[exp_i])
+            prev = best.get(det_i)
+            if prev is None or err < prev[1]:
+                best[det_i] = (exp_i, err)
+        return sorted((d, e) for d, (e, _) in best.items()), x_flat
+
     y = (expected - (expected[0] if expected.size else 0.0)).reshape(1, -1)
-    try:
-        acc_cost, wp = librosa.sequence.dtw(
-            X=x,
-            Y=y,
-            metric="euclidean",
-            global_constraints=True,
-            band_rad=cfg.alignment.sakoe_chiba_band,
-        )
-    except Exception:  # noqa: BLE001 — band too tight for the size ratio, etc.
-        acc_cost, wp = librosa.sequence.dtw(X=x, Y=y, metric="euclidean")
+    ratio = _initial_ratio(detected, expected)
+    mapping, _ = _match(ratio)
 
-    # librosa returns the path from end → start; flip to ascending.
-    path = wp[::-1]
-
-    # Collapse to one expected index per detected index: keep the closest
-    # in time (handles the fan-out DTW leaves on the warp path).
-    # Tie-break in the same space the path was found in — comparing raw
-    # seconds here would reintroduce exactly the bias the normalisation above
-    # removes, on the fan-out where it matters most.
-    x_flat, y_flat = x[0], y[0]
-    best: dict[int, tuple[int, float]] = {}
-    for det_i, exp_i in path:
-        det_i, exp_i = int(det_i), int(exp_i)
-        err = abs(x_flat[det_i] - y_flat[exp_i])
-        prev = best.get(det_i)
-        if prev is None or err < prev[1]:
-            best[det_i] = (exp_i, err)
-    mapping = sorted((d, e) for d, (e, _) in best.items())
 
     # Quality measures how well the *shape* of the performance matches the
     # score — not the lead-in before the first note, and not the tempo it was
@@ -653,16 +754,7 @@ def align_dtw(
     # alignment be trusted" should turn on. The tempo difference itself is not
     # discarded — it is the verdict, and `compute_deltas` computes it from real
     # seconds further down.
-    det_matched = np.array([detected[d] for d, _ in mapping], dtype=float)
-    exp_matched = np.array([expected[e] for _, e in mapping], dtype=float)
-    if det_matched.size >= 2 and float(np.ptp(exp_matched)) > 0:
-        rate, offset = np.polyfit(exp_matched, det_matched, 1)
-        residuals = np.abs(det_matched - (rate * exp_matched + offset))
-    elif det_matched.size:
-        offset = float(np.median(det_matched - exp_matched))
-        residuals = np.abs((det_matched - offset) - exp_matched)
-    else:
-        residuals = np.array([], dtype=float)
+    residuals = _residuals(mapping, detected, expected)
     total_cost = float(residuals.sum())
     timing_quality = _quality_from_cost(total_cost, len(residuals), sec_per_beat)
 

@@ -6,6 +6,73 @@ Operating Principle #5.
 
 ---
 
+## 2026-09-01 — Measure the played tempo with a clipped mean, not a median
+
+**Context:** the matcher rescales a recording toward the score's pace before
+comparing them, so that deciding *which* onset is which note does not depend on
+how fast it was played. The scale was `median(diff(detected)) /
+median(diff(expected))`, clamped.
+
+Onset times are quantised to the analysis hop — 23.2 ms at the configured rate
+— so a median of intervals snaps to a multiple of it. Eighth notes written
+416.67 ms apart come back as a uniform **418.0 ms**, exactly 18 frames. The
+0.3% that rounding invents is inaudible and unplayable-around, and it
+accumulates: past half a note gap the warp path gives back a whole note at
+once, leaving two parallel ramps with a step between them — a shape no straight
+line can remove, so the residual measure of "can this be trusted" explodes.
+
+    128 notes   drift 162 ms   quality 0.986
+    256 notes   drift 324 ms   quality 0.761   ← half a gap is 208 ms
+    768 notes   drift 995 ms   quality 0.759
+
+`warn_quality` is 0.7. Any session past roughly 150 notes was heading for
+"results may be inaccurate" because of arithmetic, on a take played perfectly.
+
+**Decision:** the median picks the centre; the mean of every gap *near* it
+supplies the precision. Gaps outside 0.6×–1.6× of the median do not count.
+
+### Alternatives considered, each measured
+
+**A plain mean.** Unbiased, and it fixes the length bug completely — zero
+residual drift at every length tested. It also believes a musician who stopped
+to turn a page slowed down for the whole take: one 6-second pause in sixty
+eighth notes moves the estimate from 417 ms to 510 ms. A pause is not a tempo.
+
+**A trimmed mean, by rank.** The obvious robust average, and wrong here in a
+way worth writing down: the gaps carrying the correction *are* the minority.
+The distribution is mostly 18-frame gaps with a few 17-frame ones, and it is
+exactly those few that pull the average off the grid. Trimming 25% from each
+end restored the median's answer to five significant figures. Measured across
+eighths at 72 BPM, quarters at 60 and sixteenths at 100: median 324/209/5875 ms
+of drift, rank-trimmed 324/209/119, clipped **0/0/0**.
+
+**Refining the ratio from a second alignment pass.** Implemented, measured, and
+removed. It works, but it corrects a symptom: the first pass's mapping is
+already contaminated by the slip it is meant to detect, and it costs a second
+DTW per candidate. Fixing the estimator makes the slip not happen.
+
+**Keeping the median and widening the DTW band.** Not tried, because the drift
+is real: the sequences genuinely disagree by a note by the end, and a wider
+band lets the path wander further rather than removing the reason it must.
+
+### Trade-offs accepted
+
+- **Two more constants** (`_GAP_CORE_LOW`, `_GAP_CORE_HIGH`) that are not in
+  `config.toml`. They sit with `MIN_TEMPO_RATIO` and `MAX_TEMPO_RATIO`, which
+  are also in code, for the same reason: they bound what the *matcher* may
+  believe, rather than expressing a threshold about playing. Nothing about a
+  room or an instrument should move them.
+- **A piece of mostly-one-note-value gets a sharper estimate than a rhythmically
+  varied one**, because the core band is narrower relative to its spread. The
+  same statistic runs on the written timeline, so the ratio stays right; only
+  the precision varies.
+- **The estimate is still a single number for the whole take.** A musician who
+  genuinely changes tempo halfway is described by one pace here — which is
+  correct for *matching*, and is not the verdict: `compute_deltas` works in
+  real seconds and reports the change.
+
+---
+
 ## 2026-08-31 — Record the tolerance thresholds on the analysis, not serve them from config
 
 **Context:** two charts in the app — the per-measure deviation bar and the
