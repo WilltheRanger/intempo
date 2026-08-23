@@ -6,6 +6,88 @@ value, regression results across all six fixture clips, and rationale.
 
 ---
 
+## 2026-08-31 — First measurements on a bass-like signal. No threshold changed.
+
+**`config.toml` is untouched.** All six clips are bit-identical; nothing here
+moved a number. This is evidence, filed against the open questions below.
+
+### What had never been tested
+
+`double_bass=True` switches on two things: a 4th-order high-pass at 80 Hz and
+`delta` 0.07 → 0.05. It has had plumbing tests since it was wired up — does the
+stored instrument reach `analyze()` — and no signal tests at all. Every audio
+fixture in the repo is an 880 Hz decaying sine. That is five octaves above the
+instrument the spec names in its first paragraph, with an attack no bow can
+produce. The low-register path had never been shown a low register.
+
+`app/tests/audio_helpers.py` now synthesises one: a Helmholtz sawtooth (bowed
+strings are close to one, and the partials are what carries the attack once the
+fundamental is filtered away), a 35 ms raised-cosine rise, a resonant room mode
+at 58 Hz, and a −60 dBFS floor.
+
+### Results
+
+| clip | result |
+|---|---|
+| open E (41.2 Hz), 8 bowed notes at 60 BPM | 8/8 |
+| open A (55 Hz) | 8/8 |
+| open G (98 Hz), above the corner | 8/8 |
+| scale, sixteenths at 72 BPM (208 ms apart) | 16/16 |
+| scale, notes 100 ms apart (sixteenths at 150 BPM) | 15/16 |
+| double-bass path vs default, same clip | never fewer |
+
+**Detection lag ≈ +50 ms, and it is flat.** A bowed attack peaks in the flux
+tens of milliseconds after the note starts, so every onset is reported late.
+That is harmless if it is constant — `to_timeline_base` shifts the sequence to
+a zero origin and a uniform offset cancels — and dangerous if it varies with
+note density, because then it is reported as the musician speeding up at
+exactly the bar where the writing changes.
+
+Measured on a passage dead on the grid, quarters → sixteenths → quarters at
+72 BPM:
+
+    quarters    n=12   median lag  +46 ms   spread 21 ms   =  +5.5% of a beat
+    sixteenths  n=16   median lag  +54 ms   spread 10 ms   =  +6.5% of a beat
+    differential                    +9 ms                  =  +1.0% of a beat
+
+1.0% of a beat, against an inner tolerance band of 5%. The lag is a constant,
+and constants cancel. Pinned by a test at 3%.
+
+### What this cannot settle, measured rather than assumed
+
+**The high-pass corner is not constrained by any of it.** Moving it from 80 Hz
+to 400 Hz leaves every test passing. That is a property of the signal: an
+idealised sawtooth carries its attack across the whole spectrum, so throwing
+half of it away costs nothing. A real bass's high partials are weaker and
+noisier, which is precisely the difference that would make a wrong corner
+audible.
+
+**Nor can it show the filter helping.** The stated justification is rejecting
+room-mode ring that fakes an onset (§7.5 problem 1/3). Swept the mode gain
+0.55 → 3.0 with no filter, 80 Hz, and 400 Hz: **zero spurious onsets in all
+nine combinations.** A linear resonance ringing down smoothly produces no flux
+rise, so it never looks like an attack. A real room's early reflections are
+discrete arrivals and would; this model has none.
+
+So the high-pass remains unjustified by measurement in either direction. It is
+also still the open question below — the spec contradicts itself about whether
+the low register wants a *boost* (§1281) or a *high-pass* (§2490), and these
+tests cannot break the tie.
+
+### Standing open questions
+
+1. **Boost or high-pass for double bass?** §1281 says boost 80–300 Hz; §2490
+   says high-pass. The code high-passes. Needs the six clips and a human ear.
+2. **The corner frequency**, per above. 80 Hz is the spec's number and nothing
+   has tested it.
+3. **`delta` 0.05 for the low register.** The only parameter these tests do
+   constrain: raising it to 0.6 fails them. That is a floor, not a value.
+
+All three need `01_detache_clean.wav` and the five after it. Recording them is
+still the blocker, and no amount of synthesis substitutes for it.
+
+---
+
 ## 2026-08-30 (last) — The peak-picking ceiling, resolved without a threshold change
 
 **`config.toml` is untouched.** `pre_max` stays 20 and is now a *cap* rather
