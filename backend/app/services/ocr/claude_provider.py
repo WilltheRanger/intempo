@@ -63,7 +63,13 @@ class ClaudeProvider:
             input_tokens * self._input_price + output_tokens * self._output_price
         ) / 1_000_000
 
-    def parse(self, image_bytes: bytes, mime_type: str = "image/jpeg") -> OCRResponse:
+    def parse(
+        self,
+        image_bytes: bytes,
+        mime_type: str = "image/jpeg",
+        note: str | None = None,
+    ) -> OCRResponse:
+        prompt = f"{PROMPT}\n\n{note}" if note else PROMPT
         b64 = base64.standard_b64encode(image_bytes).decode("ascii")
         start = time.monotonic()
         response = self._get_client().messages.create(
@@ -81,7 +87,7 @@ class ClaudeProvider:
                                 "data": b64,
                             },
                         },
-                        {"type": "text", "text": PROMPT},
+                        {"type": "text", "text": prompt},
                     ],
                 }
             ],

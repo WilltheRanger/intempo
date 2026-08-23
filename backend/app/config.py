@@ -55,6 +55,17 @@ class Settings:
     #:     oemer      {image} -o {out}
     #:     Audiveris  -batch -export -output {out} -- {image}
     OMR_ARGS: str = os.getenv("OMR_ARGS", "{image} -o {out}")
+
+    #: Provider to read the page BEFORE the vision model, whose answer the
+    #: vision model is then shown and asked to check. Empty disables the step.
+    #:
+    #: Enabled by default and harmless when the engine is not installed: the
+    #: attempt costs one failed lookup on PATH and the chain proceeds as
+    #: before. It is deliberately NOT in OCR_PROVIDER_CHAIN, because that chain
+    #: stops at the first provider that succeeds, and this engine's reading is
+    #: accurate but incomplete — returning it directly would be worse than the
+    #: vision model alone. A second opinion, not a first answer.
+    OMR_CONFIRM: str = os.getenv("OMR_CONFIRM", "omr-local")
     STRIPE_SECRET_KEY: str = os.getenv("STRIPE_SECRET_KEY", "")
     STRIPE_WEBHOOK_SECRET: str = os.getenv("STRIPE_WEBHOOK_SECRET", "")
 

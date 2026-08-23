@@ -46,5 +46,17 @@ class OCRProvider(Protocol):
 
     name: str
 
-    def parse(self, image_bytes: bytes, mime_type: str = "image/jpeg") -> OCRResponse:
+    def parse(
+        self,
+        image_bytes: bytes,
+        mime_type: str = "image/jpeg",
+        note: str | None = None,
+    ) -> OCRResponse:
+        """Read the image once.
+
+        `note` is appended after the shared prompt. It exists so a caller can
+        ask a second question of the same page — "here is what another engine
+        read, check it" — without a second prompt file drifting away from this
+        one.
+        """
         ...
