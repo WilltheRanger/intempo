@@ -6,6 +6,80 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-02 (evening) — A double stop would have shifted the page, and a way to check a take
+
+**Branch:** `main`. `/loop` iteration. Two things, one found by probing the
+score side and one built for the moment a real recording exists.
+
+### The vision prompt said nothing about two noteheads on one stem
+
+`musicxml.py` drops chord members, with the reason written down: *"the timeline
+is built from durations, so counting the second note of a chord would make the
+measure overrun and the beat-sum check would call a correctly-read measure
+long."* Grace notes are dropped for the same reason.
+
+**Nothing enforced that on the vision path.** The prompt is precise about
+fingerings, rehearsal marks, string indications, boxed rehearsal numbers,
+triplet names, tuplet brackets and slur indices — and silent about double
+stops, which are ordinary in string writing and the founder's instrument.
+
+A model free to emit both noteheads shifts every note after them by one
+duration. The beat-sum check catches the overrun, so it is not silent — but the
+repair it asks for is *"measure 3 has 5 beats, expected 4, correct the
+durations"*, aimed at a bar that is written correctly and read correctly except
+for one convention nobody told the model about.
+
+Fixed in the prompt, with the reasoning included so the rule survives a
+rewrite, and a test asserting both readers carry the same instruction. It
+asserts the instruction rather than the model's obedience, which is all a test
+can do here — its job is to stop the rule being lost.
+
+### `python -m tuning_dashboard.cli`
+
+    cd backend
+    python -m tuning_dashboard.cli ../fixtures/audio/01_detache_clean.wav
+
+Score and tempo come from `manifest.json`, matched on the filename, so a clip
+recorded under its manifest name needs no arguments. It prints the verdict the
+app would show, the quality, onsets heard against onsets written, and a bar per
+measure scaled to the tolerance bands. `--json` for the raw result, `--score`
+and `--bpm` for anything that is not a corpus clip. Non-zero exit when the
+pipeline could not use the take, so it is scriptable without reading prose.
+
+The reason it exists: everything else between a musician and a verdict —
+Supabase keys, a deployed API, a phone that has granted a microphone — is a
+separate problem, and none of it should have to work before you can find out
+whether the *pipeline* does. Every one of those is currently blocked on the
+user, and this is not.
+
+On the rushing stand-in it prints a clean growing drift, −2.0% through −24.3%
+across eight bars, starred from bar 2 where it leaves the on-tempo band.
+
+### The recording README was stale in a way that mattered
+
+It told the reader to leave room tone at the head so that *"a stray mark ahead
+of your first note is obvious"* — advice for a problem that was fixed on
+2026-09-01, when the analysis started working out which detection is the first
+note instead of assuming. Rewritten: settle in, take your time, both ends are
+handled.
+
+Added the trap in its place, because it is the one thing a person *making*
+files can still do wrong: record room tone, never digital silence. A file that
+begins with exact zeros is a step from −∞ dB, the detector reads it as an onset
+far larger than any note, the peak-picking normalises by it, and the take reads
+as empty. Three separate investigations here have started by rediscovering
+that. Any real microphone gives you a floor for free.
+
+**No three-foot test.** No UI touched.
+
+**Tests:** backend 620 (was 612; +7 for the CLI, +1 for the prompt rule).
+`ruff` clean. All six corpus fixtures untouched — nothing in this entry is in
+the analysis path.
+
+**Rollback:** the CLI and its tests are additive; the prompt change is one line.
+
+---
+
 ## 2026-09-02 (correction) — The previous entry claimed coverage it did not have
 
 **Branch:** `main`. Correcting `0ee0dae`, whose message says *"putting the
