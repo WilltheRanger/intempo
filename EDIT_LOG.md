@@ -6,6 +6,89 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-02 — "One bar dragged." Done.
+
+**Branch:** `main`. `/loop` iteration, finishing what the last entry started.
+The user's answer needed two things: knowing which sound is which note (last
+entry) and measuring drift against the musician's own pulse (this one).
+
+    twenty bars, bar 8 held a beat too long
+
+    before   m8 +29%  m9 +99%  m10 +100%  m11 +99%  m12 +100%  m13 +99%
+             m14 +100%  m15 +99%
+    after    m8 +16%  m9 +11%
+
+    twenty bars, bar 13 hurried
+
+    before   m13 -30%  m14 -101%  m15 -101%  m16 -101%  m17 -100%  m18 -101%
+             m19 -100%  m20 -101%
+    after    m13 -18%  m14 -10%
+
+Bar 9 and bar 14 still appear because the last disturbed interval lands on
+their first note, which is true: that note *was* late. Eight bars became two,
+and both of them are bars the musician actually played differently.
+
+### How, and the thing that made it hard
+
+Rushing and hesitating look identical to a clock. A steady rush is a **ramp** —
+every interval slightly short, the offset growing note after note — and
+reporting it is the entire product. A hesitation is a **step** — one or two
+intervals much too long, then the pulse resumes.
+
+So the reference re-anchors across a run of intervals that departs from what
+the take otherwise does, and does not re-anchor across a drift, however large.
+The notes *inside* the run keep the drift, because a bar genuinely played slow
+is dragging and has to say so.
+
+**Two designs were rejected on arithmetic before this one.** Measuring each
+note against its neighbour (pure interval timing) is the obvious way to be
+offset-invariant and it destroys the product: `02_detache_rushing` drifts 8 ms
+a beat, which as an interval error is 0.8% of a beat — inside the "on tempo"
+band. A rushing fixture would read steady. Resetting the reference at every
+barline gives the same answer for the same reason: a bar of a steady rush
+drifts 1.2% of a beat within itself.
+
+**Re-anchoring after a *run*, not an interval**, because a bar played 25% slow
+is four stretched intervals in a row. Absorbing them one at a time reports the
+bar as clean — the opposite mistake to the one being fixed. There is a test for
+each direction, and neutering the rule either way (never re-anchor, always
+re-anchor) fails five tests each.
+
+**All six corpus fixtures bit-identical** for the fifth entry running, verdict
+text included. Steady drift is untouched, which is the whole safety argument.
+
+**The thresholds are in `config.toml`,** under `[tolerance.pulse]`, per §1.7 —
+they are claims about playing, not bounds on the matcher, so they belong where
+tuning can reach them and where `TUNING_LOG.md` governs them. Logged there with
+the behaviour table.
+
+**No three-foot test.** No UI touched — but this changes the *numbers* on the
+verdict screen, which is as close to §2 as backend work gets. It is the change
+the user chose in answer to a direct question, and the screens are unmodified.
+
+**Tests:** backend 605 (was 592; +11 in `test_pulse_anchor.py`, +2 end-to-end
+in `test_varied_rhythm.py`). `ruff` clean.
+
+**A process failure worth recording:** the commit before this one
+(`743e5af`) shipped the code without these entries — the script that writes
+them asserted on a heading that did not exist, failed, and the `git commit`
+after it ran anyway. The logs are §1 of the working agreement, not a
+formality. Chain them so a failed write blocks the commit.
+
+**Known side effects:** a take with a hesitation now reports smaller
+per-measure numbers overall, because the drift is no longer counted again in
+every subsequent bar. That is the intent.
+
+**Rollback:** revert `743e5af`. `_pulse_anchors` is one function and
+`compute_deltas` calls it in one place.
+
+**Honest status.** Everything in the last four entries is measured on
+synthesised audio. What a real hesitation looks like on a real bass — one long
+interval or a smear across three — decides whether six deviations is the right
+threshold, and only the six recordings can say. Still the same blocker.
+
+---
+
 ## 2026-09-01 (night) — The hesitation defect is fixed. Half of it.
 
 **Branch:** `main`. `/loop` iteration, acting on the user's answer to the

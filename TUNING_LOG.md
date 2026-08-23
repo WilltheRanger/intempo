@@ -6,6 +6,62 @@ value, regression results across all six fixture clips, and rationale.
 
 ---
 
+## 2026-09-02 — Two new thresholds in `[tolerance.pulse]`. Nothing existing moved.
+
+**No existing value in `config.toml` changed, and all six clips are
+bit-identical** — status, quality, note count, missed, extra, summed delta and
+full verdict text. `02_detache_rushing` still reads "rushed across measures 2–8
+by an average of 9 BPM".
+
+### What the new values are for
+
+The verdict measured every note from the first note of the take, so a musician
+who held one bar was told every later bar dragged. The user chose the other
+reading — *"one bar dragged, measure against your own pulse"* — which needs the
+reference to re-anchor across a break in the pulse and **not** across a steady
+drift. Those are a step and a ramp, and telling them apart is a threshold.
+
+    disturbance_deviations  = 6.0     robust deviations of the take's own
+                                      interval errors
+    disturbance_floor_beats = 0.1667  a floor under that, as a fraction of a beat
+
+### Why these numbers are not delicate
+
+The two things being separated are twenty-five times apart:
+
+    a steady rush (02_detache_rushing)        8 ms per beat, note after note
+    a bar held a quarter longer than written  208 ms, on one interval
+
+Six deviations sits in the middle of a very wide gap. The floor exists for a
+different reason — a take played to machine precision has a median deviation
+near zero, so a pure multiple would make the threshold zero and read *every*
+interval as a disturbance. A sixth of a beat is "a musician who broke their
+pulse by less than this did not break it".
+
+### Behaviour, measured on offset series directly
+
+    steady rush 8 / 30 ms per beat       accumulates untouched, every note
+    steady drag 50 / 120 ms per beat     accumulates untouched
+    played exactly                       zero throughout
+    one 300 ms pause                     +300 ms on that note, zero after
+    four notes held +200 ms (a slow bar) +200/+400/+600/+800, zero after
+    rush → pause → rush                  the pause on its own note, and the
+                                         rushing on both sides preserved
+    steadily accelerating                accumulates quadratically, untouched
+
+The fourth row is why the reference re-anchors after a **run** rather than a
+single interval: a bar played slow is four stretched intervals, and absorbing
+them one at a time would call the bar clean, which is the opposite mistake.
+
+### Still unmeasured
+
+Everything above is synthetic. What a real hesitation looks like on a real bass
+— whether it is one long interval or a smear across three — is the thing that
+decides whether six deviations is right, and only the six recordings can say.
+Both values are starting points.
+
+---
+
 ## 2026-08-31 — First measurements on a bass-like signal. No threshold changed.
 
 **`config.toml` is untouched.** All six clips are bit-identical; nothing here
