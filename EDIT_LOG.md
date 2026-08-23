@@ -6,6 +6,70 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-23 (evening) — The engine reads, the model checks, and both are installable
+
+**Branch:** `main`. Owner: "add audiveris to the default chain as second
+opinion, have AI confirm audiveris readings are correct… install audiveris on
+the server so we can test it."
+
+### Not the fallthrough chain, and why
+
+`OCR_PROVIDER_CHAIN` stops at the **first provider that succeeds**. Putting
+Audiveris in it would stop there — and its reading is accurate about clef, key
+and barlines but *incomplete*: 15 measures on a page with about 25. That is
+worse than the vision model alone.
+
+So it is a separate setting, `OMR_CONFIRM`, on by default. The engine reads
+first; the vision model is shown the photograph **and** the engine's answer and
+asked to check it. Each does what it is good at — structure from the engine,
+coverage from the model — and checking is a far easier question than
+transcribing from nothing.
+
+**The correction is measured, not trusted.** A model asked to check can decide
+to rewrite instead, and a rewrite that breaks measures which previously added
+up has made the page worse while sounding more confident. Beat sums are not an
+opinion, so a correction that breaks more than it fixes is refused and the
+engine reading stands. The bar is *not-worse* rather than strictly-better,
+since the model is also fixing pitches and adding measures.
+
+Harmless when no engine is installed — the normal case. One failed `which`, a
+log line, and the chain proceeds exactly as before.
+
+### Installable, since there is still no server
+
+- `backend/scripts/install-audiveris.sh` — builds it, prints the two variables.
+- `backend/Dockerfile` — an Audiveris stage behind `--build-arg WITH_AUDIVERIS=1`.
+  Without it the stage yields an empty directory, so the `COPY` still succeeds
+  and the runtime image is unchanged.
+- `docs/deploy-omr.md` — the measured comparison and the three things that bite.
+
+### Verified with the real engine
+
+`test_omr_integration.py` runs the engine subprocess, its MusicXML, the
+conversion, the beat-sum check and the pipeline wiring for real, with **only
+the vision model stubbed** — a test needing an API key is a test nobody runs.
+It skips itself when no engine is on `PATH`.
+
+- 3 skipped, 1 passed with no engine.
+- **4 passed with Audiveris on PATH.**
+- 353 passed, 3 skipped overall. Ruff clean.
+
+The confirmation test has the stub echo the engine's reading back unchanged, on
+purpose: it proves the wiring carries a real transcription through the
+confirmation path and out of `parse_sheet_music`, without the assertion
+depending on what a model said that day.
+
+### Still not done, and only the owner can do it
+
+- **No backend is hosted.** Everything above is reproducible, not running.
+- **No API key here**, so the one thing never exercised end to end is the
+  actual vision-model call inside the confirmation step. Its wiring is tested;
+  its judgement is not.
+- The measured Audiveris version is **v5.4**, a year behind current, because
+  every release from 5.9 needs Java 25 and JDK downloads are blocked here.
+
+---
+
 ## 2026-08-23 (later) — Audiveris reads the page; oemer did not
 
 **Branch:** `main`. Owner: "try audiveris instead."
