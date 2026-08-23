@@ -6,6 +6,177 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-25 — The scan pipeline had never once been run on the input it receives
+
+**Branch:** `main`. Owner: "fix the whole OCR/OMR system so it actually works."
+
+### The finding that explains the rest
+
+Every OCR test in this repo runs against `fixtures/scores/` — **five cropped
+excerpts of 30–50 KB**. The app receives something else entirely: a full sheet,
+shot handheld, 3000–4000 px on the long edge, several megabytes, carrying an
+EXIF orientation flag.
+
+Nothing had ever exercised that path. Not one test, not one script. Every green
+suite was green about a different input from the one the product uses.
+
+### Three defects that all present as "the photograph could not be read"
+
+**1. Nothing normalised the image. That step did not exist.** The photograph
+went from storage to the vision model exactly as the phone took it.
+
+- **Too large.** Anthropic caps an image at 5 MB and the cap applies to the
+  *base64* payload, which is 4/3 the file. A 4 MB photograph is a 5.3 MB
+  request and comes back 400.
+- **Sideways.** A phone writes orientation into EXIF rather than rotating
+  pixels. Viewers honour it; an API reading raw bytes need not. A staff rotated
+  90° is not sheet music to a reader expecting horizontal lines — and it looks
+  perfectly upright to whoever took it, which is the worst combination for
+  diagnosing it.
+- **Modes JPEG cannot carry.** CMYK from a scanner, palette from a PNG export,
+  RGBA from the web build's canvas capture — alpha over sheet music is a page
+  you cannot see.
+
+`prepare_for_model()` applies EXIF orientation *before* measuring the edge,
+converts to RGB, resizes the long edge to 1568 px with LANCZOS (staff lines are
+one or two pixels wide; a cheaper filter drops them in patches), and re-encodes
+JPEG against the base64 budget. Measured on a synthetic full page: **83%
+smaller**, guaranteed under the limit.
+
+It **never raises**. Anything undecodable passes through untouched, so the
+worst case is the behaviour that existed before it — a normalisation step that
+can lose a page is worse than none.
+
+**2. `extra="forbid"` cost whole pages, and got worse with better models.** One
+unexpected key anywhere failed validation for the *entire score*. The pipeline
+counts a validation error as the provider failing, asks the next provider —
+another model with the same helpful instinct — and reports an unreadable
+photograph.
+
+The page the owner sent changes metre partway down. A model with nowhere in
+this schema to say so will attach it to the measure, which was precisely fatal.
+Extras are now ignored. The trade is not close: dropping a field the app has no
+use for costs nothing; rejecting the page costs the page. Everything the app
+*does* read is validated exactly as strictly as before.
+
+**3. `read_page.py` did not reproduce the server.** It skipped normalisation,
+defaulted to an engine that is not installed, and let a `ValidationError` escape
+as a traceback rather than a diagnosis — so the one tool for investigating a
+failed scan answered a different question from the one being asked.
+
+It now normalises first, defaults to the configured chain, prints which schema
+fields a model got wrong, and takes `--chain` to run the real pipeline exactly
+as the worker does. **This is the one command that turns "it doesn't work" into
+what actually happened**, and it runs with the key already in `backend/.env`:
+
+```
+cd backend && uv run python scripts/read_page.py YOUR_PAGE.jpg --chain
+```
+
+### The test that did not exist
+
+`test_scan_end_to_end.py` runs every fixture *blown up to phone resolution*
+through the real worker — download, normalise, sniff, chain, beat-sum gate,
+validate, write the row — with only the vision API stubbed. It asserts that
+what reached the provider was a JPEG under the API limit and smaller than the
+original, which are the two things that were silently wrong. Plus the sideways
+page, the extra-keys page, and the undecodable download.
+
+### On OMR
+
+Unchanged and still inert: `OMR_CONFIRM=omr-local` with no engine installed
+means one failed `which`, a log line, and the vision chain answering as before.
+It costs nothing. Turning it on means building Audiveris into the image, which
+the free Render plan will not finish.
+
+One trap recorded in `pipeline.py`: the engine now receives the *normalised*
+1568 px page, which is right for a vision model and tight for a rule-based one
+— Audiveris measures staff spacing in pixels and a full page at that size
+leaves about ten between lines. If the second opinion is ever switched on for
+real, hand it the original bytes.
+
+### Honest status
+
+- **428 backend tests pass, 3 skipped; ruff clean.** 23 new across
+  normalisation, the schema change, and the end-to-end path.
+- New dependencies: `pillow`, `pillow-heif` (so an iPhone HEIC becomes an
+  ordinary JPEG instead of being refused by name).
+- **Still not verified against the live API.** `api.anthropic.com` is reachable
+  from this session — it answers 401, not a proxy block — but there is no
+  credential here: nothing in `backend/.env`, no environment variable, no `ant`
+  profile. Every fix above is reasoned and unit-tested, and none is proven on a
+  real model call. `--chain` is how that gets settled, by someone with the key.
+- I do not know that this fixes the owner's page. I know it removes three
+  mechanisms that would each have produced exactly the symptom they saw, on
+  exactly the kind of input they sent.
+
+---
+
+## 2026-08-24 (night, later still) — Sonnet 5, thinking off, and an honest answer about the preprocessing
+
+**Branch:** `main`. Owner: "why not use Sonnet 5 for it? … before didn't we
+make it so it converts the image so it's easier to read?"
+
+### Sonnet 5 — no reason not to, and I had none
+
+The chain was `claude-sonnet-4-6, claude-opus-4-7`. Now `claude-sonnet-5,
+claude-opus-5`. Checked against the current rates rather than recalled:
+
+| | list in/out per 1M | note |
+|---|---|---|
+| Sonnet 4.6 | $3 / $15 | what we were on |
+| **Sonnet 5** | **$3 / $15** | $2 / $10 introductory until 2026-08-31 |
+| Opus 5 | $5 / $25 | replaces Opus 4.7, same rate |
+
+A newer model at identical list price, cheaper still for a week. No trade-off to
+weigh; I simply had not looked.
+
+**The Opus pricing constants were wrong** — $15 / $75 against an actual $5 /
+$25, overstating the fallback's cost by 3× for as long as they had existed.
+Corrected to list rates, and *not* to Sonnet 5's intro rate: that expires on the
+31st, and a hardcoded $2 would then quietly under-report every scan. Telemetry
+that overstates cost is a nuisance; telemetry that understates it is a trap.
+
+### Thinking is now explicit, and off for the first read
+
+**On Sonnet 5, omitting `thinking` runs adaptive thinking.** It is billed, and
+thinking tokens count against `max_tokens` — so the default would have both
+raised the bill and made truncation *more* likely on exactly the long pages
+that were already truncating. Transcription is perception, not reasoning: the
+answer is on the page. The first read now sets `thinking: {"type": "disabled"}`.
+
+The fallback keeps thinking on at `effort: "low"` rather than disabling it.
+Anthropic documents two failure modes for disabled thinking on Opus 5 — leaked
+`<thinking>` tags in the visible response, and tool calls written into text —
+and the first would corrupt the JSON this parses.
+
+### The image preprocessing was never wired in
+
+Asked directly whether the app converts the image to make it easier to read.
+**It did not, and never had.** No `Pillow`, no `opencv`, no deskew, no
+binarisation, no staff-grid code anywhere in `backend/app` — the photograph went
+from storage to the vision model exactly as the phone took it.
+
+The staff-grid work — rigid-comb tracking, curve fitting for page curl,
+local-mean binarisation, per-measure crops — is real and lives in
+`tools/scan-bench.html`, a standalone browser bench with no server and no
+connection to the pipeline. It was built to *investigate* whether annotated
+slices improve accuracy. That question was never answered, and nothing from it
+was ever promoted into `backend/`.
+
+So the memory was half right: we built it, and it had never run on a single
+page the app has read. (The following day's entry adds the normalisation step
+that actually was missing.)
+
+### Honest status
+
+- **405 backend tests pass, 3 skipped; ruff clean.** Four new: the pricing
+  constants, and that each provider sends the thinking config intended for it.
+- **Not verified against the API.** The model IDs and rates come from the
+  current model reference, not from a successful call.
+
+---
+
 ## 2026-08-24 (night, later) — 64% off the cost of reading a page
 
 **Branch:** `main`. Owner: "I don't want it to burn tokens like crazy. Is there
