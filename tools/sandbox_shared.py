@@ -42,6 +42,8 @@ def shared_js() -> dict[str, str]:
     """Placeholder → the JavaScript literal to substitute for it."""
     sys.path.insert(0, str(ROOT / "backend"))
     from app.services.ocr.validate import (
+        DENSITY_MIN_NOTES,
+        DENSITY_MULTIPLE,
         MIN_AGREEMENT,
         MIN_MEASURES_TO_INFER,
         TOLERANCE,
@@ -57,6 +59,8 @@ def shared_js() -> dict[str, str]:
         "__TOLERANCE__": _js_number(TOLERANCE),
         "__MIN_AGREEMENT__": _js_number(MIN_AGREEMENT),
         "__MIN_MEASURES_TO_INFER__": str(int(MIN_MEASURES_TO_INFER)),
+        "__DENSITY_MULTIPLE__": _js_number(DENSITY_MULTIPLE),
+        "__DENSITY_MIN_NOTES__": str(int(DENSITY_MIN_NOTES)),
         "__TUPLET_NOTE__": json.dumps(TUPLET_NOTE),
     }
 
@@ -69,6 +73,8 @@ REQUIRED = (
     "__TOLERANCE__",
     "__MIN_AGREEMENT__",
     "__MIN_MEASURES_TO_INFER__",
+    "__DENSITY_MULTIPLE__",
+    "__DENSITY_MIN_NOTES__",
 )
 
 
