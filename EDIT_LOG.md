@@ -6,6 +6,75 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-03 (evening) — Getting a written rit. off the page
+
+**Branch:** `main`. `/loop` iteration. First of the three pieces the user's
+answer needs.
+
+Asked what the app should say when the score prints *rit.* and the musician
+slows down as marked — today it says *"You dragged across measures 5–6 by an
+average of 24 BPM"* — the user chose **"judged against your own curve"**: not
+whether you matched a grid, but whether your slowing was *smooth*. An uneven
+rit. is a real thing to practise and no metronome can tell you about it.
+
+That needs three things, and this is the first: **the score has to say where
+the marking is.** `ScoreJson` had `tempo_marking` and `bpm_hint` for the tempo
+a piece *starts* at, and nothing at all for a tempo that changes at bar 5.
+
+### `TempoChange`, and why it does not say how long
+
+    {"measure_number": 12, "kind": "ritardando", "text": "poco rit."}
+
+Three kinds — `ritardando`, `accelerando`, `a_tempo` — and the printed words,
+kept so a screen can quote the page rather than paraphrase it.
+
+**The extent is deliberately absent.** A `rit.` carries no amount and usually
+no printed end; engravers leave that to the player. Asking the model to say how
+far it runs would be asking it to invent something the page does not contain —
+the same mistake as guessing a time signature instead of writing "unknown".
+
+`tempo_change_spans` derives it instead: a change runs until the next marking,
+and failing that to the end of the music. An `a_tempo` produces no span of its
+own, because its whole job is to end the one before it. Markings arriving out
+of order are sorted first, since a model reading a page column by column can
+emit them any way round and the extent depends entirely on what comes next.
+
+### Plumbed as far as it can honestly go
+
+`ExpectedNote.under_tempo_change` marks the notes a change covers.
+**`build_timeline`'s onsets are byte-for-byte unchanged**, and there is a test
+saying so: a marking with no amount cannot move a written onset, and a timeline
+that pretended otherwise would be inventing the curve rather than measuring it.
+What changes is how the deviations are *read*, and that is the next piece.
+
+### Prompt
+
+One rule, with the reason attached: a musician who slows exactly as written is
+otherwise told they dragged, because the check measures distance from a steady
+beat and these are the marks that say the beat stops being steady. It also says
+explicitly **not** to guess how long a rit. lasts.
+
+**A process note.** The mutation-check script left the tree dirty this time —
+the background runner was killed before its `finally` restored the file, and
+`score_schema.py` sat with `if False:` in it. Caught by checking rather than by
+assuming, which is the third time in two days that checking rather than
+assuming has been the difference. The two mutations both bite: the timeline no
+longer marking fails 1, an `a_tempo` gaining a span of its own fails 3.
+
+**No three-foot test.** No UI touched. Nothing the musician sees has changed
+yet — this commit only makes the information exist.
+
+**Tests:** backend 648 (was 632; +16). `ruff` clean, corpus untouched.
+
+**Rollback:** revert the commit. `tempo_changes` defaults to empty and
+`under_tempo_change` to false, so every stored score reads exactly as it did.
+
+**Still to do:** measure evenness against a fitted curve rather than a constant
+pulse, and give it its own words — "your ritardando was uneven at bar 7" is not
+a rushing band and cannot borrow the tolerance table.
+
+---
+
 ## 2026-09-03 (later) — Four wrong caveats on a page that was read correctly
 
 **Branch:** `main`. `/loop` iteration, continuing the same probe. This one is a

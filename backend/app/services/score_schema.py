@@ -22,6 +22,9 @@ Dynamics = Literal[
     "fp", "sfz", "sf", "fz",
 ]
 RepeatType = Literal["repeat", "first_ending", "second_ending"]
+#: `a_tempo` covers "a tempo", "Tempo I" and "tempo primo" — anything whose
+#: job is to end a change rather than start one.
+TempoChangeKind = Literal["ritardando", "accelerando", "a_tempo"]
 
 # Duration: spec lists "quarter | eighth | half | sixteenth | dotted_quarter | ..."
 # The "..." means "and the obvious extensions." Closed list of the
@@ -216,6 +219,31 @@ class Measure(_Strict):
         )
 
 
+class TempoChange(_Strict):
+    """A marking that says the tempo itself changes: rit., accel., a tempo.
+
+    Not the same thing as `tempo_marking`, which is what the piece is headed
+    with. This is the thing that makes a *correct* performance stop matching a
+    steady grid — and until it existed the app told a musician who slowed down
+    exactly as marked that they had dragged. Measured on eight bars slowing
+    60 → 45 BPM over the last four, played as written: *"You dragged across
+    measures 5–6 by an average of 24 BPM."*
+
+    **The extent is deliberately not stated.** A `rit.` carries no amount and
+    usually no printed end — it runs until "a tempo", or until the phrase does,
+    and engravers leave that to the player. Guessing an end in the transcription
+    would be inventing something the page does not say. What ends a change is
+    the next change, an `a_tempo`, or the music; see `tempo_change_spans`.
+    """
+
+    #: Where the marking is printed. A change applies from this measure on.
+    measure_number: int = Field(ge=1)
+    kind: TempoChangeKind
+    #: What is actually printed — "rit.", "poco rall.", "a tempo", "Tempo I".
+    #: Carried so a screen can quote the page rather than paraphrase it.
+    text: str = Field(min_length=1, max_length=40)
+
+
 class Repeat(_Strict):
     start_measure: int = Field(ge=1)
     end_measure: int = Field(ge=1)
@@ -250,6 +278,9 @@ class ScoreJson(_Strict):
     clef: Clef | None = None
     measures: list[Measure] = Field(default_factory=list)
     repeats: list[Repeat] = Field(default_factory=list)
+    #: Empty for most music and for every score written before the field
+    #: existed, which is why it defaults rather than being required.
+    tempo_changes: list[TempoChange] = Field(default_factory=list)
     ocr_confidence: float = Field(ge=0.0, le=1.0)
     notes_to_human: str = ""
 
@@ -503,3 +534,60 @@ def tuplet_faults(measures: Sequence[Measure]) -> list[TupletFault]:
                 )
 
     return out
+
+
+@dataclass(frozen=True)
+class TempoSpan:
+    """Measures over which a written tempo change is in force."""
+
+    start_measure: int
+    #: Inclusive. The last measure the change covers.
+    end_measure: int
+    kind: TempoChangeKind
+    text: str
+
+
+def tempo_change_spans(score: ScoreJson) -> list[TempoSpan]:
+    """Where each written tempo change starts and stops applying.
+
+    A `rit.` has no printed end. What stops it is the next marking — an
+    `a_tempo`, or another change — and failing that, the music. So the extent
+    is derived here rather than transcribed, and an `a_tempo` produces no span
+    of its own: its whole job is to end the one before it.
+
+    Ordered by measure and tolerant of markings that arrive out of order, since
+    a model reading a page column by column can emit them that way.
+    """
+    changes = sorted(score.tempo_changes, key=lambda c: c.measure_number)
+    last_measure = max(
+        (m.measure_number for m in score.measures), default=0
+    )
+    spans: list[TempoSpan] = []
+    for index, change in enumerate(changes):
+        if change.kind == "a_tempo":
+            continue
+        following = next(
+            (c.measure_number for c in changes[index + 1 :]
+             if c.measure_number > change.measure_number),
+            None,
+        )
+        # Up to the measure before the next marking, or to the end of the page.
+        end = (following - 1) if following is not None else last_measure
+        if end >= change.measure_number:
+            spans.append(
+                TempoSpan(
+                    start_measure=change.measure_number,
+                    end_measure=end,
+                    kind=change.kind,
+                    text=change.text,
+                )
+            )
+    return spans
+
+
+def measures_under_tempo_change(score: ScoreJson) -> set[int]:
+    """Every measure a written tempo change covers, as measure numbers."""
+    covered: set[int] = set()
+    for span in tempo_change_spans(score):
+        covered.update(range(span.start_measure, span.end_measure + 1))
+    return covered

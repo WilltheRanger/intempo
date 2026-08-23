@@ -22,7 +22,13 @@ import librosa
 import numpy as np
 
 from app.services.audio_config import AudioConfig, load_audio_config
-from app.services.score_schema import DURATION_BEATS, Measure, ScoreJson, read_ties
+from app.services.score_schema import (
+    DURATION_BEATS,
+    Measure,
+    ScoreJson,
+    measures_under_tempo_change,
+    read_ties,
+)
 
 # Note duration → length in quarter-note beats. `target_bpm` is always
 # quarter-notes-per-minute, so a quarter note is 1.0 beats regardless of
@@ -51,6 +57,14 @@ class ExpectedNote:
     #: ending on a measure's last note puts "the first note after" in the next
     #: measure, and this is computed per measure, so that one goes unmarked.
     is_slur_boundary: bool
+    #: A written tempo change — rit., accel. — covers this note's measure.
+    #:
+    #: The tolerance bands do not apply here, and cannot: they measure distance
+    #: from a steady grid, and the page has said the grid stops being steady.
+    #: A musician who slowed exactly as marked was being told they dragged by
+    #: 24 BPM. What replaces the bands is how *evenly* the change was made,
+    #: which is a different measurement against a different reference.
+    under_tempo_change: bool = False
 
 
 @dataclass(frozen=True)
@@ -172,6 +186,7 @@ def build_timeline(score: ScoreJson, target_bpm: float) -> ExpectedTimeline:
     - **Repeated sections are written out twice**, because the musician plays
       them twice. See `expand_repeats`.
     """
+    under_tempo_change = measures_under_tempo_change(score)
     if target_bpm <= 0:
         raise ValueError(f"target_bpm must be positive, got {target_bpm}")
     sec_per_beat = 60.0 / target_bpm
@@ -235,6 +250,9 @@ def build_timeline(score: ScoreJson, target_bpm: float) -> ExpectedTimeline:
                         measure_number=measure.measure_number,
                         note_index_in_measure=i,
                         global_index=global_index,
+                        under_tempo_change=(
+                            measure.measure_number in under_tempo_change
+                        ),
                         # A tie written between two pitches is a slur — the same
                         # curve on the page, and the mark a vision model most
                         # often confuses. So it is read as one: the note keeps
