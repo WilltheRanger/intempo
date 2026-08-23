@@ -15,6 +15,7 @@ import { InsightsScreen } from '../screens/insights/InsightsScreen';
 import { WarmupScreen } from '../screens/warmup/WarmupScreen';
 import { LibraryScreen } from '../screens/library/LibraryScreen';
 import { PieceDetailScreen } from '../screens/pieceDetail/PieceDetailScreen';
+import { MeasureEditScreen } from '../screens/measureEdit/MeasureEditScreen';
 import { PieceScoreScreen } from '../screens/pieceScore/PieceScoreScreen';
 import { RecordScreen } from '../screens/record/RecordScreen';
 import { ProfileScreen } from '../screens/profile/ProfileScreen';
@@ -93,6 +94,7 @@ export function RootNavigator() {
       />
       <Stack.Screen name="PieceDetail" component={PieceDetailScreen} />
       <Stack.Screen name="PieceScore" component={PieceScoreScreen} />
+      <Stack.Screen name="MeasureEdit" component={MeasureEditScreen} />
       <Stack.Screen name="ChangeEmail" component={ChangeEmailScreen} />
       <Stack.Screen name="ChangePassword" component={ChangePasswordScreen} />
       <Stack.Screen

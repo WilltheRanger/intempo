@@ -927,3 +927,69 @@ def test_accepting_someone_elses_score_is_404(
 
 def test_accepting_unauthenticated_is_401(client: TestClient) -> None:
     assert client.post(f"/v1/scores/{uuid4()}/accept").status_code == 401
+
+
+def test_a_corrected_score_can_be_saved(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """The endpoint the correction screen writes through.
+
+    It has existed since Batch 1 and nothing has ever called it: the spec lists
+    "user must be able to correct without re-shooting" as an MVP feature
+    (intempo-combined.md:447) and the app shipped without the screen, so every
+    misread duration was terminal. This holds the wire it now depends on.
+    """
+    user_id, score_id = uuid4(), uuid4()
+    fixed = {
+        **GOOD_PAYLOAD,
+        "measures": [
+            {
+                "measure_number": 2,
+                "notes": [
+                    {"pitch": "A4", "duration": "eighth"},
+                    {"pitch": "G4", "duration": "eighth"},
+                ],
+                "slurs": [],
+            }
+        ],
+    }
+    sb = _install_supabase(
+        monkeypatch, returning_row=_row_for(score_id, user_id, score_json=fixed)
+    )
+    _install_storage(sb, signed=[])
+
+    res = client.patch(
+        f"/v1/scores/{score_id}",
+        json={"score_json": fixed},
+        headers={"Authorization": f"Bearer {make_token(sub=user_id)}"},
+    )
+    assert res.status_code == 200, res.text
+    saved = sb.table.return_value.update.call_args.args[0]["score_json"]
+    assert [n["duration"] for n in saved["measures"][0]["notes"]] == ["eighth", "eighth"]
+
+
+def test_a_correction_that_is_not_a_valid_score_is_refused(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """The schema is the guard. A duration the analysis cannot price would
+    reach `alignment.py`'s beat table and silently score as zero beats."""
+    user_id, score_id = uuid4(), uuid4()
+    _install_supabase(monkeypatch, returning_row=_row_for(score_id, user_id))
+
+    res = client.patch(
+        f"/v1/scores/{score_id}",
+        json={
+            "score_json": {
+                **GOOD_PAYLOAD,
+                "measures": [
+                    {
+                        "measure_number": 1,
+                        "notes": [{"pitch": "A4", "duration": "quaver"}],
+                        "slurs": [],
+                    }
+                ],
+            }
+        },
+        headers={"Authorization": f"Bearer {make_token(sub=user_id)}"},
+    )
+    assert res.status_code == 422

@@ -6,6 +6,87 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-26 — A misread bar stops being the end of the piece
+
+**Branch:** `main`. Owner's sequencing: correction UI first, then drop
+Audiveris, then stay on Render, and only revisit an engine once real usage
+justifies it. Steps 2 and 3 were already done; this is step 1.
+
+### The feature the spec required and the build skipped
+
+`intempo-combined.md:447` lists it as MVP:
+
+> Score preview & edit | User confirms parsed score; can tap to fix wrong
+> notes/rhythms | **OCR will miss things; user must be able to correct without
+> re-shooting**
+
+It did not exist. `PATCH /v1/scores/:id` has accepted a corrected `score_json`
+since Batch 1 and **nothing had ever called it** — the mobile client even
+declared the field. So every misread duration was terminal: re-photograph the
+page or abandon the piece, on a design that assumed you could fix a bar in ten
+seconds.
+
+That is why bad OCR has felt catastrophic rather than annoying. The engine was
+never the whole problem.
+
+### Durations and rests only, deliberately
+
+They are the only things the verdict reads. `alignment.py` accumulates
+durations to build its expected timeline and asks of pitch only whether it is
+`"rest"` — so a wrong duration shifts every bar after it, a wrong rest adds or
+removes a phantom onset, and a wrong pitch is visible on the stave and harmless
+to the analysis. Fixing the harmful thing fast beats fixing everything slowly.
+
+### The screen
+
+Entry is the caveat line that was already there and did nothing: *"Bar 2
+doesn't add up to the time signature"* is now tappable, with **Fix bar 2**
+under it.
+
+The editor's one dominant element (§3 law 4) is the beat total — **"5 of 4
+beats"**, set in the display face, in the warning colour. It is the only thing
+that answers "am I done", and it turns to ordinary ink the moment the bar
+balances, which is feedback that needs no label.
+
+Below it the bar in reading order, horizontally scrollable because a busy bar
+holds a dozen notes and wrapping them into rows would break the one thing that
+layout is for. Then the durations. Notes and durations are **grouped together**
+in the thumb zone (§3 law 7): tapping a note then a duration is one gesture
+pair, and splitting them across the screen makes the hand travel for every
+note. The empty space sits between the status and the working area, which is
+where it belongs.
+
+Hairline cells, not cards (§3 laws 3 and 6). The selected note is marked by a
+heavier rule — the least ink that reads as "this one".
+
+### Three-foot test
+
+*"5 of 4 beats"* in red, then *"Bar 2"*, then the working area at the bottom.
+The right order: the thing that says whether you are finished is dominant, and
+everything else exists to move it.
+
+### Verified by driving it
+
+Not just rendered — driven. 5 of 4 beats → tap note 5, choose Eighth → 4.5 →
+tap note 4, choose Eighth → **4 of 4 beats**, the colour goes to ink, the copy
+changes to "This bar adds up", and Save activates. Screenshotted at each step.
+
+### Honest status
+
+- **422 backend tests pass; ruff clean; `tsc --noEmit` clean.** Two new: the
+  correction endpoint saves a corrected measure, and a duration the schema does
+  not know is refused with a 422 rather than reaching `alignment.py`'s beat
+  table to silently score as zero.
+- **Never saved against the real backend.** The fixture build refuses the
+  mutation by design, so the write path is verified by unit test and by the
+  endpoint's own tests, not end to end.
+- Not built, deliberately: editing pitch, adding or deleting a note, and
+  browsing to a measure that is *not* flagged. Two compensating errors in one
+  bar still sum correctly and stay invisible — the beat check cannot catch
+  those, and neither can this screen.
+
+---
+
 ## 2026-08-25 (night, later) — The retry stops re-buying the page
 
 **Branch:** `main`. Owner, on a loop: "improve the AI pipeline so the AI uses as

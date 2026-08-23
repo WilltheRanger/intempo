@@ -1,6 +1,6 @@
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import { useMemo, useState } from 'react';
-import { StyleSheet, View, type LayoutChangeEvent } from 'react-native';
+import { Pressable, StyleSheet, View, type LayoutChangeEvent } from 'react-native';
 
 import { Stave } from '../../components/notation/Stave';
 import { ScoreThumbnail } from '../../components/pieces/ScoreThumbnail';
@@ -301,11 +301,37 @@ export function PieceScoreScreen() {
             an alert, and boxing them would make the caveats louder than the
             music (§3 laws 3 and 6).
           */}
-          {reading &&
-          describeProblemMeasures(reading.problemMeasures, { canCheck: hasPages }) ? (
-            <Text variant="metadataSmall" color="textSecondary" style={styles.caveat}>
-              {describeProblemMeasures(reading.problemMeasures, { canCheck: hasPages })}
-            </Text>
+          {/*
+            The bars that don't add up are the way in to fixing them.
+
+            Naming a problem the musician cannot act on is the failure this
+            replaces: until now a misread duration meant re-photographing the
+            page or abandoning the piece, on a design whose spec assumed you
+            could fix a bar in ten seconds (intempo-combined.md:447). The line
+            was already here; it just did nothing.
+
+            Tapping opens the first broken bar. One tap for the common case of
+            a single bad bar, and the screen names the rest as you fix them.
+          */}
+          {reading && reading.problemMeasures.length > 0 ? (
+            <Pressable
+              onPress={() =>
+                navigation.navigate('MeasureEdit', {
+                  pieceId: piece.id,
+                  measureNumber: reading.problemMeasures[0],
+                })
+              }
+              accessibilityRole="button"
+              accessibilityLabel={`Fix bar ${reading.problemMeasures[0]}`}
+              style={styles.fixRow}
+            >
+              <Text variant="metadataSmall" color="textSecondary">
+                {describeProblemMeasures(reading.problemMeasures, { canCheck: hasPages })}
+              </Text>
+              <Text variant="metadataSmall" color="accent" style={styles.fixCue}>
+                Fix bar {reading.problemMeasures[0]}
+              </Text>
+            </Pressable>
           ) : null}
 
           {describeOmissions(stave) ? (
@@ -415,6 +441,12 @@ const styles = StyleSheet.create({
   },
   caveat: {
     marginTop: spacing.lg,
+  },
+  fixRow: {
+    marginTop: spacing.lg,
+  },
+  fixCue: {
+    marginTop: spacing.xs,
   },
   page: {
     width: '100%',

@@ -1,10 +1,10 @@
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
 
-import { acceptTranscription } from '../api/scores';
+import { acceptTranscription, updateScore } from '../api/scores';
 import { IS_LIVE_BACKEND } from '../environment';
 import { pieceSource } from '../sources';
 import type { NewPiece, PieceEdit } from '../sources/types';
-import type { Piece } from '../types';
+import type { Piece, ScoreJson } from '../types';
 
 export const pieceKeys = {
   all: ['pieces'] as const,
@@ -129,6 +129,38 @@ export function useAcceptTranscription(id: string) {
         );
       }
       await acceptTranscription(id);
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: pieceKeys.all });
+    },
+  });
+}
+
+/**
+ * Saves a corrected transcription.
+ *
+ * Not on `PieceSource` like the other writes, for the same reason
+ * `useTranscribePage` isn't: the sample build has no server to correct
+ * anything on, and pretending a correction persisted when it lives in memory
+ * until reload would be a lie about the one screen whose whole job is to make
+ * the score trustworthy.
+ *
+ * Sends the **whole** `score_json`, not a patch. The backend's
+ * `UpdateScoreRequest.score_json` is a full `ScoreJson` and validates it as
+ * one, so a partial object would be rejected by Pydantic — and a
+ * measure-level PATCH API would be a second way to write scores that has to
+ * agree with the first.
+ */
+export function useCorrectScore(id: string) {
+  const queryClient = useQueryClient();
+  return useMutation<void, Error, ScoreJson>({
+    mutationFn: async (score) => {
+      if (!IS_LIVE_BACKEND) {
+        throw new Error(
+          'Correcting a score needs the backend. This build runs on sample data.',
+        );
+      }
+      await updateScore(id, { score_json: score });
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: pieceKeys.all });
