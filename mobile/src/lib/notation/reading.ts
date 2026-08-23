@@ -219,3 +219,50 @@ export function describeBeats(
     expected,
   };
 }
+
+/** Note names in order, for stepping a pitch up or down. */
+const LETTERS = ['C', 'D', 'E', 'F', 'G', 'A', 'B'] as const;
+
+/**
+ * The next pitch up or down, keeping any accidental.
+ *
+ * By letter, not by semitone. A musician correcting a misread notehead is
+ * moving it a line or a space on the staff, which is a letter step — stepping
+ * by semitone would make F♯ → G a *different* correction from F → F♯ and put
+ * the note somewhere they did not point at.
+ *
+ * Returns the pitch unchanged at the ends of the range rather than wrapping:
+ * C0 is already below anything a string instrument plays, and silently
+ * jumping eight octaves would be a worse answer than refusing.
+ */
+export function stepPitch(pitch: string, direction: 1 | -1): string {
+  const match = /^([A-G])([#b]?)(\d)$/.exec(pitch);
+  if (!match) {
+    return pitch;
+  }
+  const [, letter, accidental, octaveText] = match;
+  let index = LETTERS.indexOf(letter as (typeof LETTERS)[number]) + direction;
+  let octave = Number(octaveText);
+  if (index > 6) {
+    index = 0;
+    octave += 1;
+  } else if (index < 0) {
+    index = 6;
+    octave -= 1;
+  }
+  if (octave < 0 || octave > 8) {
+    return pitch;
+  }
+  return `${LETTERS[index]}${accidental}${octave}`;
+}
+
+/** Cycles natural → sharp → flat → natural on the note the musician selected. */
+export function cycleAccidental(pitch: string): string {
+  const match = /^([A-G])([#b]?)(\d)$/.exec(pitch);
+  if (!match) {
+    return pitch;
+  }
+  const [, letter, accidental, octave] = match;
+  const next = accidental === '' ? '#' : accidental === '#' ? 'b' : '';
+  return `${letter}${next}${octave}`;
+}

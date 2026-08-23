@@ -564,6 +564,81 @@ def _remove_object(client, key: str) -> bool:
     return True
 
 
+@router.post("/{score_id}/transcribe", response_model=ScoreResponse)
+async def retranscribe(
+    score_id: UUID,
+    background_tasks: BackgroundTasks,
+    user_id: UUID = Depends(current_user_id),
+) -> ScoreResponse:
+    """Read the page again.
+
+    **A failed reading had no way back but the camera.** The photograph was
+    still in storage and still perfectly good — the failure was a rate limit, a
+    truncated response, a model having a bad minute — and the only thing the
+    app could offer was "photograph it again", which re-uploads several
+    megabytes to solve a problem the megabytes were never the cause of.
+
+    Refused for a page still being read, so a second tap does not start a
+    second worker on the same row; both would write to it and the last one home
+    would win. Refused for a page whose photograph was discarded on acceptance,
+    because there is nothing left to read.
+
+    Allowed for a *successful* reading as well as a failed one. A musician
+    looking at a transcription they can see is wrong should not have to fail
+    first to ask for another go.
+    """
+    client = _service_client()
+    rows = (
+        client.table("scores")
+        .select("*")
+        .eq("id", str(score_id))
+        .eq("user_id", str(user_id))
+        .limit(1)
+        .execute()
+    ).data or []
+    if not rows:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="score not found")
+    row = rows[0]
+
+    state = row.get("transcription_status") or "done"
+    if state in {"queued", "reading"}:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="this page is already being read",
+        )
+    if not row.get("source_image_url"):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "the photograph for this piece was discarded when you accepted the "
+                "reading, so there is nothing left to read again"
+            ),
+        )
+
+    updated = (
+        client.table("scores")
+        .update(
+            {
+                "transcription_status": "queued",
+                "transcription_stage": None,
+                "transcription_error": None,
+                "updated_at": _now_iso(),
+            }
+        )
+        .eq("id", str(score_id))
+        .eq("user_id", str(user_id))
+        .execute()
+    ).data or []
+    if not updated:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="failed to queue the re-read",
+        )
+
+    background_tasks.add_task(run_transcription, str(score_id))
+    return _with_image_urls(updated)[0]
+
+
 @router.delete("/{score_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_score(
     score_id: UUID,

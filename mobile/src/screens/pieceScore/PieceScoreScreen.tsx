@@ -1,6 +1,12 @@
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import { useMemo, useState } from 'react';
-import { Pressable, StyleSheet, View, type LayoutChangeEvent } from 'react-native';
+import {
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  View,
+  type LayoutChangeEvent,
+} from 'react-native';
 
 import { Stave } from '../../components/notation/Stave';
 import { ScoreThumbnail } from '../../components/pieces/ScoreThumbnail';
@@ -15,10 +21,15 @@ import {
   SegmentedControl,
   Text,
 } from '../../components/primitives';
+import { BottomSheet } from '../../components/overlays/BottomSheet';
 import { ConfirmDialog } from '../../components/overlays/ConfirmDialog';
 import { PrimaryButton } from '../../components/primitives';
-import { useAcceptTranscription, usePiece } from '../../data/hooks/usePieces';
-import { spacing } from '../../design';
+import {
+  useAcceptTranscription,
+  usePiece,
+  useRetranscribe,
+} from '../../data/hooks/usePieces';
+import { BORDER_WIDTH, colors, spacing } from '../../design';
 import { describeOmissions, staveScoreFor } from '../../lib/notation/fromScore';
 import {
   describeConfidence,
@@ -93,7 +104,9 @@ export function PieceScoreScreen() {
   const { data: piece, isPending, isError } = usePiece(params.pieceId);
 
   const accept = useAcceptTranscription(params.pieceId);
+  const reread = useRetranscribe(params.pieceId);
   const [confirmingAccept, setConfirmingAccept] = useState(false);
+  const [pickingMeasure, setPickingMeasure] = useState(false);
   const [acceptError, setAcceptError] = useState<string | null>(null);
 
   const [view, setView] = useState<ScoreView>(params.view ?? 'notation');
@@ -176,15 +189,42 @@ export function PieceScoreScreen() {
           need different things from the musician, and telling someone to
           retake a photograph that was never downloaded wastes their time.
         */}
+        {/*
+          Reading again comes first, and photographing again second.
+
+          The photograph is still in storage and is usually fine — a rate
+          limit, a truncated response, a model having a bad minute. Leading
+          with "photograph it again" asked the musician to re-upload several
+          megabytes to solve a problem the megabytes never caused.
+        */}
         <EmptyState
           title="This page couldn't be read"
           description={
             piece.transcriptionError ??
-            'Something went wrong reading this page. Photographing it again usually fixes it.'
+            'Something went wrong reading this page.'
           }
-          actionLabel="Photograph it again"
-          onActionPress={() => navigation.navigate('Scanner')}
+          actionLabel={reread.isPending ? 'Reading again…' : 'Try reading it again'}
+          onActionPress={() => {
+            setAcceptError(null);
+            reread.mutate(undefined, {
+              onError: (cause) =>
+                setAcceptError(
+                  cause instanceof Error
+                    ? cause.message
+                    : 'That could not be started. Try again.',
+                ),
+            });
+          }}
         />
+        <Pressable
+          onPress={() => navigation.navigate('Scanner')}
+          accessibilityRole="button"
+          style={styles.secondaryRow}
+        >
+          <Text variant="metadataSmall" color="accent">
+            Photograph it again instead
+          </Text>
+        </Pressable>
         {/*
           The piece is still real and still practisable — it is in the library,
           it has a title and a tempo, and the metronome does not need notes.
@@ -355,6 +395,30 @@ export function PieceScoreScreen() {
               {reading.notes}
             </Text>
           ) : null}
+
+          {/*
+            Every bar, not only the ones that fail the check.
+
+            Two compensating errors in one bar still sum correctly — an eighth
+            read as a sixteenth and a sixteenth read as an eighth — so the beat
+            check is blind to them and so is the "Fix bar N" line above. This
+            is the way to a bar the arithmetic thinks is fine and the musician
+            can see is not.
+
+            A quiet row, not a second call to action: it is for the rarer case,
+            and the flagged bars are what usually needs attention.
+          */}
+          {piece.score && piece.score.measures.length > 0 ? (
+            <Pressable
+              onPress={() => setPickingMeasure(true)}
+              accessibilityRole="button"
+              style={styles.secondaryRow}
+            >
+              <Text variant="metadataSmall" color="accent">
+                Correct another bar
+              </Text>
+            </Pressable>
+          ) : null}
         </View>
       ) : null}
 
@@ -406,6 +470,44 @@ export function PieceScoreScreen() {
         </View>
       ) : null}
 
+      {/*
+        A plain list, because a bar is found by its number and nothing else.
+        Bars that do not add up are marked, so the sheet doubles as the whole
+        picture of what the reading is unsure about.
+      */}
+      <BottomSheet
+        visible={pickingMeasure}
+        onClose={() => setPickingMeasure(false)}
+        title="Which bar?"
+      >
+        <ScrollView style={styles.measureList}>
+          {(piece.score?.measures ?? []).map((measure) => {
+            const flagged = reading?.problemMeasures.includes(measure.measure_number);
+            return (
+              <Pressable
+                key={measure.measure_number}
+                onPress={() => {
+                  setPickingMeasure(false);
+                  navigation.navigate('MeasureEdit', {
+                    pieceId: piece.id,
+                    measureNumber: measure.measure_number,
+                  });
+                }}
+                accessibilityRole="button"
+                style={styles.measureRow}
+              >
+                <Text variant="body">Bar {measure.measure_number}</Text>
+                <Text variant="metadataSmall" color={flagged ? 'textSecondary' : 'textTertiary'}>
+                  {measure.notes.length}{' '}
+                  {measure.notes.length === 1 ? 'note' : 'notes'}
+                  {flagged ? " · doesn't add up" : ''}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+      </BottomSheet>
+
       <ConfirmDialog
         visible={confirmingAccept}
         title="Delete the photograph?"
@@ -444,6 +546,21 @@ const styles = StyleSheet.create({
   },
   fixRow: {
     marginTop: spacing.lg,
+  },
+  measureList: {
+    maxHeight: 380,
+  },
+  measureRow: {
+    minHeight: 56,
+    justifyContent: 'center',
+    borderBottomWidth: BORDER_WIDTH,
+    borderBottomColor: colors.border,
+  },
+  secondaryRow: {
+    alignSelf: 'center',
+    minHeight: 44,
+    justifyContent: 'center',
+    marginTop: spacing.md,
   },
   fixCue: {
     marginTop: spacing.xs,
