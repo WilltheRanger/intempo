@@ -35,6 +35,51 @@ from app.services.score_schema import ScoreJson
 log = logging.getLogger(__name__)
 
 
+
+#: Appended to the arithmetic complaint. The saving is the whole point.
+#:
+#: Re-transcribing the page to fix two bars costs the page again — measured,
+#: ~2,200 output tokens against the ~250 those two bars actually need. It also
+#: re-risks every measure that was already correct: a model given the whole
+#: page again is free to change its mind about bar 12, which nobody asked
+#: about and which was right.
+_ONLY_THESE = (
+    "\n\nReturn ONLY the measures listed above, in the same JSON shape, with "
+    "their original measure_number values. Do not return the measures that "
+    "were not listed — they are correct and will be kept as they are. Set "
+    "clef and time_signature to what you read before."
+)
+
+
+def _splice(original: ScoreJson, patch: ScoreJson, asked_for: list[int]) -> ScoreJson:
+    """Put the re-read measures back into the score, in place.
+
+    Matched by `measure_number`, not by position: the model returns a handful
+    of measures and the numbers are the only thing that says where they belong.
+
+    A measure the model returns that was *not* asked about is ignored. It has
+    not been checked against anything, the version already held was not
+    reported as broken, and quietly accepting it would let a retry aimed at bar
+    3 rewrite bar 12.
+    """
+    wanted = set(asked_for)
+    replacements = {
+        measure.measure_number: measure
+        for measure in patch.measures
+        if measure.measure_number in wanted
+    }
+    if not replacements:
+        return original
+    return original.model_copy(
+        update={
+            "measures": [
+                replacements.get(measure.measure_number, measure)
+                for measure in original.measures
+            ]
+        }
+    )
+
+
 def retry_with_arithmetic(
     score: ScoreJson,
     image_bytes: bytes,
@@ -54,20 +99,28 @@ def retry_with_arithmetic(
     if not note:
         return score
 
-    broken_before = sum(1 for row in rows if row.is_problem)
-    log.info("%d measure(s) do not add up; asking %s to re-read them", broken_before, provider.name)
+    broken = [row.measure_number for row in rows if row.is_problem]
+    broken_before = len(broken)
+    log.info(
+        "%d of %d measure(s) do not add up; asking %s to re-read only those",
+        broken_before, len(score.measures), provider.name,
+    )
 
     try:
-        response: OCRResponse = provider.parse(image_bytes, media_type, note)
+        response: OCRResponse = provider.parse(image_bytes, media_type, note + _ONLY_THESE)
     except (OCRProviderError, ValueError) as exc:
         log.info("retry by %s failed, keeping the first reading: %s", provider.name, exc)
         return score
 
-    corrected = response.score
-    if not corrected.measures:
+    if not response.score.measures:
         log.info("retry by %s returned no measures, keeping the first reading", provider.name)
         return score
 
+    # The program does the splicing. The model was asked for the broken bars
+    # and nothing else, so what comes back is a handful of measures rather
+    # than the page — and the measures that were already right are kept
+    # verbatim rather than re-transcribed and re-risked.
+    corrected = _splice(score, response.score, broken)
     broken_after = sum(1 for row in validate_measures(corrected) if row.is_problem)
     if broken_after > broken_before:
         # A model asked to fix three bars can rewrite thirty. A rewrite that

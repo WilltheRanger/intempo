@@ -6,6 +6,75 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-25 (night, later) — The retry stops re-buying the page
+
+**Branch:** `main`. Owner, on a loop: "improve the AI pipeline so the AI uses as
+little tokens as possible and the processing the AI usually does is handled by
+the program and then given to the AI to process."
+
+### Where the tokens are, measured
+
+Per page, Sonnet 5 list rates:
+
+| | tokens | $ |
+|---|---:|---:|
+| image (1568×1176) | 2,459 | 0.0074 |
+| prompt | 1,164 | 0.0035 |
+| **output** | **2,219** | **0.0333** |
+| one pass | 5,842 | **0.0442** |
+
+**Output is 75% of a pass**, so it is the only lever worth pulling hard.
+
+### The retry was re-buying the whole page to fix two bars
+
+The arithmetic re-read added yesterday sent the image again *and asked for the
+entire score again* — doubling the page to correct measures the program had
+already identified by number.
+
+Now the program does the part it is better at. `validate.py` knows exactly
+which measures fail the beat sum, the model is asked for **only those**, and
+the program splices them back by `measure_number`:
+
+| | $ per page needing a retry |
+|---|---:|
+| retry as built yesterday | 0.0883 |
+| **retry, broken bars only** | **0.0588** |
+
+**33% cheaper overall, ~89% off the retry's output** (2,219 → ~250 tokens).
+Per 1,000 such scans: $88.31 → $58.77.
+
+The saving is only half of it. A page handed back whole is a page the model is
+free to change its mind about — a retry aimed at bar 3 could rewrite bar 12,
+which nobody asked about and which was right. `_splice` therefore **ignores any
+measure that was not asked for**: it has been checked against nothing, and the
+version already held was not reported as broken.
+
+### Two things measured and deliberately not built
+
+- **Cropping the page to its ink.** A phone page is ~26% margin, so this looks
+  like free savings. It is not: Anthropic bills `(w×h)/750` *after* resizing
+  the long edge to 1568, and removing margin makes the image **squarer**, so at
+  a fixed long edge it has more area. Measured: 2,459 → **2,710** tokens, 10%
+  *worse*. It may still be an accuracy win — the same cost buys larger notation
+  — but that is a different claim and untested.
+
+- **Prompt caching.** 1,164 identical tokens on every call. A cache write costs
+  1.25× and a read 0.1×, so it pays only when a second call follows inside the
+  TTL. With a retry it saves ~757 tokens; **without one it costs 291**, and
+  most pages need no retry. Net loss on the common path, so not taken.
+
+### Honest status
+
+- **420 tests pass; ruff clean.**
+- The prices are arithmetic from measured token counts, not a bill — still no
+  API key in this session.
+- Next in the loop: the program should number the measures itself. The model is
+  currently asked to, the prompt spends ~150 tokens of rules on it, and getting
+  it wrong (a rehearsal mark read as measure 409) is the single failure those
+  rules exist to prevent — `validate.py` already detects it.
+
+---
+
 ## 2026-08-25 (night) — Forty people could scan at once, and nothing stopped them
 
 **Branch:** `main`. Owner: "so the limit is 512 MB per run right — if multiple
