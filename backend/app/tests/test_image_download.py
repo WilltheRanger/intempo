@@ -213,3 +213,87 @@ def test_an_under_declared_length_bounds_the_read_rather_than_bypassing_it(
     base = serve(respond)
     body = _download_image(f"{base}/liar.jpg")
     assert len(body) == 10
+
+
+# --- signing a readable URL --------------------------------------------------
+#
+# Found in production, on the first real scan from a phone. The upload
+# succeeded, the review screen appeared, and then: "image download returned
+# status 400". A Supabase signed *upload* URL answers `PUT` and nothing else,
+# and `upload.ts` passes that same URL on to `POST /v1/scores` as `image_url`.
+# No test could have caught it, because every test until now supplied a URL
+# that was readable by construction.
+
+
+class _FakeBucket:
+    def __init__(self, answer):
+        self.answer = answer
+        self.asked_for: list[str] = []
+
+    def create_signed_url(self, key, ttl):
+        self.asked_for.append(key)
+        if isinstance(self.answer, Exception):
+            raise self.answer
+        return self.answer
+
+
+class _FakeStorage:
+    def __init__(self, bucket):
+        self._bucket = bucket
+
+    def from_(self, _name):
+        return self._bucket
+
+
+class _FakeClient:
+    def __init__(self, bucket):
+        self.storage = _FakeStorage(bucket)
+
+
+UPLOAD_URL = (
+    "https://proj.supabase.co/storage/v1/object/upload/sign/score-images/"
+    "11111111-1111-1111-1111-111111111111/page.jpg?token=abc"
+)
+
+
+def test_an_upload_url_is_exchanged_for_a_readable_one(monkeypatch) -> None:
+    """The bug itself. A PUT-only URL must not be the one that gets fetched."""
+    bucket = _FakeBucket({"signedURL": "/object/sign/score-images/x/page.jpg?token=z"})
+    monkeypatch.setattr(scores_module, "get_service_client", lambda: _FakeClient(bucket))
+    resolved = scores_module._readable_url(UPLOAD_URL)
+
+    assert "/object/upload/sign/" not in resolved
+    assert resolved.startswith("https://")
+    # The object key is the trustworthy part of what the caller sent — the
+    # ownership guard has already vouched for it. The URL around it is not.
+    assert bucket.asked_for == ["11111111-1111-1111-1111-111111111111/page.jpg"]
+
+
+def test_an_absolute_signed_url_is_passed_through(monkeypatch) -> None:
+    """Some SDK versions return a full URL, others a path. Both have to work."""
+    absolute = "https://proj.supabase.co/storage/v1/object/sign/score-images/x?token=z"
+    bucket = _FakeBucket({"signedUrl": absolute})
+    monkeypatch.setattr(scores_module, "get_service_client", lambda: _FakeClient(bucket))
+    assert scores_module._readable_url(UPLOAD_URL) == absolute
+
+
+def test_a_signing_failure_leaves_the_url_as_given(monkeypatch) -> None:
+    """Must not break the paths that already worked.
+
+    An `/object/sign/` URL is readable as it stands, so a storage outage here
+    should cost nothing rather than fail the scan.
+    """
+    bucket = _FakeBucket(RuntimeError("storage unreachable"))
+    monkeypatch.setattr(scores_module, "get_service_client", lambda: _FakeClient(bucket))
+    assert scores_module._readable_url(UPLOAD_URL) == UPLOAD_URL
+
+
+def test_no_storage_client_leaves_the_url_as_given(monkeypatch) -> None:
+    monkeypatch.setattr(scores_module, "get_service_client", lambda: None)
+    assert scores_module._readable_url(UPLOAD_URL) == UPLOAD_URL
+
+
+def test_a_url_with_no_extractable_key_is_left_alone(monkeypatch) -> None:
+    monkeypatch.setattr(scores_module, "get_service_client", lambda: None)
+    other = "https://proj.supabase.co/somewhere/else.jpg"
+    assert scores_module._readable_url(other) == other
