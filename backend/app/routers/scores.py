@@ -19,6 +19,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.auth import current_user_id, current_user_id_provisioned
+from app.config import settings
 from app.db import get_service_client
 from app.routers.upload import SCORE_BUCKET
 from app.services.ocr import OCRError, parse_sheet_music
@@ -363,15 +364,62 @@ def _row_to_response(
     )
 
 
+def _readable_url(image_url: str) -> str:
+    """The URL to actually fetch the bytes from.
+
+    A Supabase signed **upload** URL only answers `PUT`. `GET` on one returns
+    400, which is exactly what the app hit on its first real scan: the upload
+    succeeded, the score screen appeared, and then "image download returned
+    status 400" — because `upload.ts` passes the upload URL on to
+    `POST /v1/scores` as `image_url`, and this fetched it as given.
+
+    Signing a fresh download URL from the object key fixes it and is better
+    regardless: `_assert_image_url_owned_by` has already established which
+    object the caller is allowed to read, so the key is the trustworthy part of
+    what was sent, and the URL around it is not.
+
+    Falls back to the URL as given when a key cannot be extracted or nothing
+    can sign one — a `/object/sign/` or `/object/public/` URL is already
+    readable, and this must not break the paths that were working.
+    """
+    key = _object_key_from(image_url)
+    if key is None:
+        return image_url
+    client = get_service_client()
+    if client is None:
+        return image_url
+    try:
+        signed = client.storage.from_(SCORE_BUCKET).create_signed_url(
+            key, SIGNED_DOWNLOAD_TTL_SECONDS
+        )
+    except Exception as exc:  # storage unreachable, key gone, permissions
+        log.info("could not sign a download URL for %s, using it as given: %s", key, exc)
+        return image_url
+    if isinstance(signed, dict):
+        fresh = (
+            signed.get("signedURL")
+            or signed.get("signedUrl")
+            or signed.get("signed_url")
+        )
+        if fresh:
+            # Supabase returns a path on some SDK versions and an absolute URL
+            # on others.
+            if fresh.startswith("http"):
+                return fresh
+            return f"{settings.SUPABASE_URL.rstrip('/')}/storage/v1{fresh}"
+    return image_url
+
+
 def _transcribe(image_url: str, user_id: UUID) -> ScoreJson:
     """Photograph → notes. The original path, unchanged."""
     _assert_image_url_owned_by(image_url, user_id)
+    fetch_url = _readable_url(image_url)
     # The endpoint the guard above just approved. Passed on so a redirect
     # cannot move the fetch somewhere the guard never saw. `httpx.URL.port`
     # fills in the scheme default, so this is compared against the same.
-    approved = httpx.URL(image_url)
+    approved = httpx.URL(fetch_url)
     image_bytes = _download_image(
-        image_url, expected_origin=f"{approved.host}:{approved.port}"
+        fetch_url, expected_origin=f"{approved.host}:{approved.port}"
     )
     try:
         return parse_sheet_music(image_bytes, media_type=_media_type_for(image_url))
