@@ -208,11 +208,18 @@ there works differently as of 2026-08-24:
   a slur written as a tie, a 5:4 bracket approximated as triplets, a tremolo
   read as sixteen sixteenths. Keep them separate from `verdict`; collapsing
   them lets a clean beat sum hide them.
-- **Three implementations of that validator exist**, and they must agree:
-  `ocr/validate.py`, the port in `tools/validator-sandbox.template.html`, and
-  another in `tools/scan-bench.template.html`. `test_sandbox_parity.py` is the
-  only thing holding them together — when you add a check, port it and add a
-  case, or the browser tools will quietly call a bad page clean.
+- **The validator has one home and two ports**, and they must agree:
+  `ocr/validate.py`, plus `tools/validator-sandbox.template.html` and
+  `tools/scan-bench.template.html`. `test_sandbox_parity.py` is the only thing
+  holding them together — when you add a check, port it and add a case, or the
+  browser tools will quietly call a bad page clean.
+- **The app does not have a fourth copy, and must not grow one.** It reads
+  `ScoreResponse.concerns`, which the server computes. It had its own beat-sum
+  check, which was fine while beat sums were the only test — then three checks
+  arrived that fire on measures whose beats add up *exactly*, and the app went
+  silent on all of them. `notation/reading.ts` keeps a local beat-sum check for
+  live editing and as a fallback for an older backend; it is a subset on
+  purpose. Add a check to `validate.py`, not to the app.
 - **The photograph is deleted only when a person accepts the reading.**
   `POST /v1/scores/:id/accept` is the only thing that discards it, and it
   refuses for a page still being read or one that failed. Never wire discarding

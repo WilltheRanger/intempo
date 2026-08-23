@@ -1212,3 +1212,71 @@ def test_a_file_that_is_not_musicxml_is_refused(
 
 def test_importing_unauthenticated_is_401(client: TestClient) -> None:
     assert client.post("/v1/scores/import", json={"title": "x", "musicxml": _MXL}).status_code == 401
+
+
+def test_a_score_carries_the_measures_it_cannot_vouch_for() -> None:
+    """The server does the arithmetic once and says what it found.
+
+    The app had its own beat-sum check, which was enough while beat sums were
+    the only test. Three more have since been added, and each can fire on a
+    measure whose beats add up **exactly** — a slur written as a tie sums to
+    4.0 — so whole categories of fault were invisible in the app and offered no
+    way to reach the editor. Porting them would have been a fifth copy of a
+    validator that has drifted three times in a week.
+    """
+    from app.routers.scores import _concerns_for
+
+    clean = {
+        "time_signature": "4/4", "key_signature": "C major", "clef": "bass",
+        "ocr_confidence": 0.9,
+        "measures": [{
+            "measure_number": 1,
+            "notes": [{"pitch": "E2", "duration": "quarter"} for _ in range(4)],
+            "slurs": [],
+        }],
+    }
+    assert _concerns_for(clean) == []
+
+    tied_to_a_different_pitch = {
+        **clean,
+        "measures": [{
+            "measure_number": 1,
+            "slurs": [],
+            "notes": [
+                {"pitch": "E2", "duration": "quarter", "tied_to_next": True},
+                {"pitch": "G2", "duration": "quarter"},
+                {"pitch": "E2", "duration": "quarter"},
+                {"pitch": "E2", "duration": "quarter"},
+            ],
+        }],
+    }
+    (concern,) = _concerns_for(tied_to_a_different_pitch)
+    assert concern.kind == "tie"
+    assert concern.measure_number == 1
+    assert "tie joins one pitch to itself" in concern.detail
+
+
+def test_a_short_measure_is_reported_as_a_beat_concern() -> None:
+    short = {
+        "time_signature": "4/4", "key_signature": "C major", "clef": "bass",
+        "ocr_confidence": 0.9,
+        "measures": [
+            {"measure_number": 1, "slurs": [],
+             "notes": [{"pitch": "E2", "duration": "quarter"} for _ in range(4)]},
+            {"measure_number": 2, "slurs": [],
+             "notes": [{"pitch": "E2", "duration": "quarter"} for _ in range(3)]},
+        ],
+    }
+    from app.routers.scores import _concerns_for
+    (concern,) = _concerns_for(short)
+    assert (concern.kind, concern.measure_number) == ("beats", 2)
+
+
+def test_an_unreadable_score_column_has_no_concerns_rather_than_raising() -> None:
+    """A listing of the whole library must not fail because one row predates a
+    schema change."""
+    from app.routers.scores import _concerns_for
+
+    assert _concerns_for(None) == []
+    assert _concerns_for({}) == []
+    assert _concerns_for({"measures": "not a list"}) == []

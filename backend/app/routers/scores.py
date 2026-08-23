@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import urlparse
 from uuid import UUID
 
@@ -24,6 +24,8 @@ from fastapi import (
     status,
 )
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from app.services.ocr.validate import validate_measures
 
 from app.auth import current_user_id, current_user_id_provisioned
 from app.db import get_service_client
@@ -133,6 +135,30 @@ class UpdateScoreRequest(BaseModel):
     movement: str | None = Field(default=None, max_length=200)
 
 
+class MeasureConcern(BaseModel):
+    """One measure the reading cannot vouch for, and why, in a musician's terms.
+
+    **Computed here and sent, rather than recomputed by the client.** The app
+    had its own beat-sum check in `notation/reading.ts`, which was fine while
+    beat sums were the only test. Three more have since been added — broken
+    ties, tuplet ratios that contradict their bracket, and note density far
+    above the page — and every one of them can fire on a measure whose beats add
+    up **exactly**. So the app silently stopped showing whole categories of
+    fault: a slur written as a tie sums to 4.0, the backend flags it, and
+    nothing appeared on the screen or offered a way to fix it.
+
+    Porting the checks would have made a fifth implementation of a validator
+    that has already drifted three times in a week. This is the other direction:
+    the server does the arithmetic once and says what it found.
+    """
+
+    measure_number: int
+    #: Which test failed, for a client that wants to group or filter.
+    kind: Literal["beats", "tie", "tuplet", "density"]
+    #: A sentence fit to show a musician, not an exception string.
+    detail: str
+
+
 class ScoreResponse(BaseModel):
     id: UUID
     user_id: UUID
@@ -155,6 +181,9 @@ class ScoreResponse(BaseModel):
     #: entered by hand, and for every score written before OCR moved to a
     #: worker — so a client can treat "no notes and status done" as the honest
     #: "this piece has none" rather than "wait a moment".
+    #: Measures the reading cannot vouch for. Empty for a clean page, and for a
+    #: piece with no notes yet — there is nothing to check until it is read.
+    concerns: list[MeasureConcern] = Field(default_factory=list)
     transcription_status: str = "done"
     #: The step the worker last reported, in words fit to put on screen, or
     #: null once it has finished. Free text on purpose: the steps follow the
@@ -262,6 +291,40 @@ def _service_client():
     return client
 
 
+def _concerns_for(score_json: Any) -> list[MeasureConcern]:
+    """Run the validator over a stored score, tolerating anything in the column.
+
+    Never raises. A row that cannot be validated is a row with nothing to say
+    about it, and a listing of the whole library must not fail because one score
+    predates a schema change.
+    """
+    try:
+        score = ScoreJson.model_validate(score_json or {})
+    except Exception:  # noqa: BLE001 — an unreadable row simply has no concerns
+        return []
+
+    out: list[MeasureConcern] = []
+    for finding in validate_measures(score):
+        if not finding.is_problem:
+            continue
+        if finding.broken_ties:
+            kind = "tie"
+        elif finding.tuplet_faults:
+            kind = "tuplet"
+        elif finding.too_dense:
+            kind = "density"
+        else:
+            kind = "beats"
+        out.append(
+            MeasureConcern(
+                measure_number=finding.measure_number,
+                kind=kind,
+                detail=finding.describe(),
+            )
+        )
+    return out
+
+
 def _row_to_response(
     row: dict[str, Any],
     *,
@@ -280,6 +343,7 @@ def _row_to_response(
         score_json=row["score_json"],
         shared_with_studio=row.get("shared_with_studio"),
         ocr_confidence=row.get("ocr_confidence"),
+        concerns=_concerns_for(row.get("score_json")),
         # Defaulted rather than indexed: a row read back from a database that
         # has not run migration 006 yet has no such column, and a library that
         # 500s during a deploy is a worse failure than one that says every
