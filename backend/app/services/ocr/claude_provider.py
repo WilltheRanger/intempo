@@ -10,7 +10,7 @@ from __future__ import annotations
 import base64
 import time
 
-from anthropic import Anthropic
+from anthropic import Anthropic, AnthropicError
 
 from app.services.ocr.base import (
     PROMPT,
@@ -72,26 +72,35 @@ class ClaudeProvider:
         prompt = f"{PROMPT}\n\n{note}" if note else PROMPT
         b64 = base64.standard_b64encode(image_bytes).decode("ascii")
         start = time.monotonic()
-        response = self._get_client().messages.create(
-            model=self.model,
-            max_tokens=MAX_TOKENS,
-            messages=[
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "image",
-                            "source": {
-                                "type": "base64",
-                                "media_type": mime_type,
-                                "data": b64,
+        try:
+            response = self._get_client().messages.create(
+                model=self.model,
+                max_tokens=MAX_TOKENS,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "image",
+                                "source": {
+                                    "type": "base64",
+                                    "media_type": mime_type,
+                                    "data": b64,
+                                },
                             },
-                        },
-                        {"type": "text", "text": prompt},
-                    ],
-                }
-            ],
-        )
+                            {"type": "text", "text": prompt},
+                        ],
+                    }
+                ],
+            )
+        except AnthropicError as exc:
+            # The contract in `base.py` says an SDK error is an
+            # `OCRProviderError`, and until a real scan hit one this did not
+            # honour it: a 400 from the API escaped the pipeline's `except`,
+            # skipped every remaining provider, and reached the client as a
+            # 500 with a stack trace. One provider being unable to read a page
+            # is precisely the situation the chain exists for.
+            raise OCRProviderError(f"{self.name}: {type(exc).__name__}: {exc}") from exc
         latency_ms = int((time.monotonic() - start) * 1000)
 
         parts = getattr(response, "content", None) or []

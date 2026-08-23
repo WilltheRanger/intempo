@@ -9,6 +9,7 @@ from __future__ import annotations
 import time
 
 from google import genai
+from google.genai import errors as genai_errors
 from google.genai import types
 
 from app.config import settings
@@ -65,23 +66,30 @@ class GeminiProvider:
     ) -> OCRResponse:
         prompt = f"{PROMPT}\n\n{note}" if note else PROMPT
         start = time.monotonic()
-        response = self._get_client().models.generate_content(
-            model=self.model,
-            contents=[
-                types.Part.from_bytes(data=image_bytes, mime_type=mime_type),
-                prompt,
-            ],
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json",
-                max_output_tokens=MAX_OUTPUT_TOKENS,
-                # Gemini 2.5 enables thinking by default; thinking tokens
-                # are billed and counted against max_output_tokens. For
-                # OCR we don't need internal reasoning, so disable it.
-                # Per Google docs: thinking_budget=0 turns thinking off
-                # for 2.5 Flash. Pro has a non-zero minimum but accepts 0.
-                thinking_config=types.ThinkingConfig(thinking_budget=0),
-            ),
-        )
+        try:
+            response = self._get_client().models.generate_content(
+                model=self.model,
+                contents=[
+                    types.Part.from_bytes(data=image_bytes, mime_type=mime_type),
+                    prompt,
+                ],
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    max_output_tokens=MAX_OUTPUT_TOKENS,
+                    # Gemini 2.5 enables thinking by default; thinking tokens
+                    # are billed and counted against max_output_tokens. For
+                    # OCR we don't need internal reasoning, so disable it.
+                    # Per Google docs: thinking_budget=0 turns thinking off
+                    # for 2.5 Flash. Pro has a non-zero minimum but accepts 0.
+                    thinking_config=types.ThinkingConfig(thinking_budget=0),
+                ),
+            )
+        except genai_errors.APIError as exc:
+            # Same reason as the Claude provider: an SDK error is a provider
+            # failure, and the chain can only route around it if it arrives as
+            # one. Being last in the chain makes this worse, not better — the
+            # message here is the last thing the caller gets.
+            raise OCRProviderError(f"{self.name}: {type(exc).__name__}: {exc}") from exc
         latency_ms = int((time.monotonic() - start) * 1000)
 
         text = getattr(response, "text", None)

@@ -6,6 +6,83 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-23 (night) — Three bugs the first real scan from a phone found
+
+**Branch:** `main`. Owner: photographed a page on an iPhone against the live
+Render backend. Nothing here was findable in tests, because all three are about
+what a *real* client sends and a *real* vendor API checks.
+
+### 1. The app sent an upload URL and the server tried to GET it
+
+**Symptom:** `image download returned status 400`.
+
+`uploadPage` returns the signed **upload** URL — `POST /v1/scores` has always
+taken that form — and `_transcribe` fetched it as given. A Supabase upload URL
+only answers `PUT`; `GET` on one is a 400.
+
+**Fix:** `_readable_url()` in `scores.py` pulls the object key out and signs a
+fresh **download** URL. Better than repairing the fetch, because
+`_assert_image_url_owned_by` has already established which object the caller
+may read — the key is the trustworthy part of what was sent, the URL around it
+is not. Falls back to the URL as given when no key can be extracted, so the
+`/object/sign/` and `/object/public/` paths that were working are untouched.
+
+Committed separately as `354869f`; logged here with the two it uncovered.
+
+### 2. The media type was read off the filename, and the filename was a guess
+
+**Symptom:** `Load failed` on the phone; a 500 in the Render log carrying
+Anthropic's `messages.0.content.0.image.source.base64: The image was specified
+using the image/jpeg media type, but the image appears to be a image/png image`.
+
+The download fix worked and the request reached the model — this is the next
+thing along. `_media_type_for()` guessed from the URL's extension, and on the
+web build **there is no extension**: a captured page is a `blob:` URI, so
+`extensionOf` fell back to `jpg` while the canvas capture is always PNG. The
+page was stored as `page.jpg`, declared `image/jpeg`, and contained PNG.
+
+**Fix, both ends:**
+
+- `_media_type_of(image_bytes, url)` reads the magic bytes — PNG, JPEG, GIF,
+  WebP (`RIFF`+`WEBP`, not `RIFF` alone) and HEIF (`ftyp` **plus** an image
+  brand, since the container is shared with MP4). Falls back to the name only
+  for bytes it does not recognise, so an exotic-but-valid format still reaches
+  the provider to be judged there. This is the fix that holds: the bytes are in
+  hand, so there is no reason to ask a filename what they are.
+- `uploadPage` now prefers `blob.type` over the URI's name, so storage stops
+  holding objects labelled wrong in the first place. `blob.type` is empty for a
+  `file:` URI on native, which is why the name is still consulted.
+
+### 3. A vendor SDK error ended the request instead of moving to the next provider
+
+Found while reading the traceback for #2. `base.py` says an SDK error is an
+`OCRProviderError` and `pipeline.py` catches exactly that to fall through — but
+neither provider wrapped one. Anthropic's `BadRequestError` is not in that
+`except`, so it escaped the loop, **skipped Gemini entirely**, and arrived as a
+500 with a stack trace, for a page the next provider might well have read.
+
+**Fix:** `ClaudeProvider` wraps `AnthropicError` and `GeminiProvider` wraps
+`google.genai.errors.APIError`. The whole error family, not just status errors
+— a provider that cannot be reached is the plainest case of one to skip.
+
+### Tests
+
+17 new. `test_image_download.py` covers each format sniffed under a `.jpg`
+name, the two container collisions (MP4 vs HEIC, WAV vs WebP), the fallback
+table, and the live failure itself kept as a named test. The provider tests
+raise real SDK exception types rather than stand-ins, because the point is
+which classes are caught.
+
+**375 passed, 3 skipped. `ruff check` clean. `tsc --noEmit` clean.**
+
+### Honest status
+
+Still not verified end to end — the fix for #2 is deployed by this commit and
+the next real scan is the test. #3 changes what happens *after* a failure, and
+the only way to see it is another vendor error.
+
+---
+
 ## 2026-08-23 (evening) — The engine reads, the model checks, and both are installable
 
 **Branch:** `main`. Owner: "add audiveris to the default chain as second

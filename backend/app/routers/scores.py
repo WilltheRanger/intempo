@@ -117,7 +117,13 @@ class ScoreResponse(BaseModel):
 
 
 def _media_type_for(url: str) -> str:
-    """Best-effort image media type from the URL's path extension."""
+    """Best-effort image media type from the URL's path extension.
+
+    The last resort only. A filename is a claim about the bytes, and on the
+    web build there is no filename at all — a captured page arrives as a
+    `blob:` URI with no extension, so this answers `image/jpeg` for everything.
+    Prefer `_media_type_of`, which reads the bytes.
+    """
     path = urlparse(url).path.lower()
     if path.endswith(".png"):
         return "image/png"
@@ -126,6 +132,52 @@ def _media_type_for(url: str) -> str:
     if path.endswith(".heic"):
         return "image/heic"
     return "image/jpeg"
+
+
+#: What each image format puts at the front of the file. Enough of each
+#: signature to be unambiguous, and no more — the point is identification, not
+#: validation, and a truncated or corrupt file is the provider's error to give.
+_MAGIC: tuple[tuple[bytes, str], ...] = (
+    (b"\x89PNG\r\n\x1a\n", "image/png"),
+    (b"\xff\xd8\xff", "image/jpeg"),
+    (b"GIF87a", "image/gif"),
+    (b"GIF89a", "image/gif"),
+)
+
+#: ISO base-media brands that mean HEIF. The container is shared with MP4, so
+#: the brand at offset 8 is what distinguishes a photograph from a video.
+_HEIF_BRANDS = frozenset(
+    {b"heic", b"heix", b"heim", b"heis", b"hevc", b"hevm", b"hevs", b"mif1", b"msf1"}
+)
+
+
+def _media_type_of(image_bytes: bytes, url: str) -> str:
+    """What the bytes actually are, falling back to what the URL called them.
+
+    Vision APIs check this. Anthropic answers a mismatch with
+    `The image was specified using the image/jpeg media type, but the image
+    appears to be a image/png image` and a 400 — which is what the first real
+    scan from a phone got, because the web build captures to a canvas (PNG)
+    and hands over a `blob:` URI with no extension for `_media_type_for` to
+    guess `image/jpeg` from.
+
+    The client is fixed too, but this is the fix that holds: the bytes are in
+    hand here, so there is no reason to ask a filename what they are.
+    """
+    for signature, media_type in _MAGIC:
+        if image_bytes.startswith(signature):
+            return media_type
+    if (
+        len(image_bytes) >= 12
+        and image_bytes[4:8] == b"ftyp"
+        and image_bytes[8:12] in _HEIF_BRANDS
+    ):
+        return "image/heic"
+    if image_bytes[:4] == b"RIFF" and image_bytes[8:12] == b"WEBP":
+        return "image/webp"
+    # Unrecognised: pass on the name's guess rather than inventing one, so an
+    # exotic-but-valid format still reaches the provider to be judged there.
+    return _media_type_for(url)
 
 
 #: The shapes a Supabase storage URL takes for one object, as path prefixes
@@ -421,8 +473,9 @@ def _transcribe(image_url: str, user_id: UUID) -> ScoreJson:
     image_bytes = _download_image(
         fetch_url, expected_origin=f"{approved.host}:{approved.port}"
     )
+    media_type = _media_type_of(image_bytes, image_url)
     try:
-        return parse_sheet_music(image_bytes, media_type=_media_type_for(image_url))
+        return parse_sheet_music(image_bytes, media_type=media_type)
     except OCRError as exc:
         raise HTTPException(status_code=422, detail=f"OCR failed: {exc}") from exc
 

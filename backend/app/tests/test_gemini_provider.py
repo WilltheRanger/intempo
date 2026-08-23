@@ -168,3 +168,27 @@ def test_missing_api_key_raises_provider_error(monkeypatch: pytest.MonkeyPatch) 
     monkeypatch.setattr(gp.settings, "GEMINI_API_KEY", "")
     with pytest.raises(OCRProviderError, match="GEMINI_API_KEY is not configured"):
         fresh.parse(b"<jpeg>")
+
+
+def test_an_sdk_error_arrives_as_an_ocr_provider_error(monkeypatch) -> None:
+    """Gemini is last in the chain, which makes this matter more, not less.
+
+    Whatever it raises is the last thing between the caller and a 500, so it
+    has to arrive as the failure the pipeline knows how to report.
+    """
+    from google.genai import errors as genai_errors
+
+    class _Models:
+        @staticmethod
+        def generate_content(**_kwargs):
+            raise genai_errors.ClientError(
+                400, {"error": {"message": "unsupported media type"}}
+            )
+
+    class _Boom:
+        models = _Models()
+
+    monkeypatch.setattr(gemini_flash_provider, "_client", _Boom())
+    with pytest.raises(OCRProviderError) as caught:
+        gemini_flash_provider.parse(b"<heic bytes>")
+    assert gemini_flash_provider.name in str(caught.value)

@@ -6,6 +6,7 @@ import json
 from dataclasses import dataclass
 from typing import Any
 
+import httpx
 import pytest
 
 from app.services.ocr.base import OCRProviderError, OCRResponse
@@ -179,3 +180,56 @@ def test_pricing_constants_match_spec() -> None:
     assert claude_sonnet_provider._output_price == 15.0
     assert opus._input_price == 15.0
     assert opus._output_price == 75.0
+
+
+# ---- SDK errors ------------------------------------------------------------
+
+
+def test_an_sdk_error_arrives_as_an_ocr_provider_error(monkeypatch) -> None:
+    """So the chain can route around it.
+
+    Found live. Anthropic answered a real scan with
+    `messages.0.content.0.image.source.base64: The image was specified using
+    the image/jpeg media type, but the image appears to be a image/png image`
+    and a 400. `BadRequestError` is not one of the exceptions `pipeline.py`
+    catches, so it escaped the loop, skipped Gemini entirely, and reached the
+    phone as a 500 with a traceback — for a page the next provider might well
+    have read.
+    """
+    from anthropic import BadRequestError
+
+    class _Boom:
+        class messages:  # noqa: N801 - mirrors the SDK's attribute shape
+            @staticmethod
+            def create(**_kwargs):
+                raise BadRequestError(
+                    "media type mismatch",
+                    response=httpx.Response(
+                        400, request=httpx.Request("POST", "https://api.anthropic.com")
+                    ),
+                    body=None,
+                )
+
+    monkeypatch.setattr(claude_sonnet_provider, "_client", _Boom())
+    with pytest.raises(OCRProviderError) as caught:
+        claude_sonnet_provider.parse(b"<png bytes named jpeg>")
+    assert "BadRequestError" in str(caught.value)
+    assert claude_sonnet_provider.name in str(caught.value)
+
+
+def test_a_connection_error_arrives_as_an_ocr_provider_error(monkeypatch) -> None:
+    """Not only status errors — `AnthropicError` is the whole family, and a
+    provider that cannot be reached is the plainest case of one to skip."""
+    from anthropic import APIConnectionError
+
+    class _Boom:
+        class messages:  # noqa: N801
+            @staticmethod
+            def create(**_kwargs):
+                raise APIConnectionError(
+                    request=httpx.Request("POST", "https://api.anthropic.com")
+                )
+
+    monkeypatch.setattr(claude_sonnet_provider, "_client", _Boom())
+    with pytest.raises(OCRProviderError):
+        claude_sonnet_provider.parse(b"<jpeg>")
