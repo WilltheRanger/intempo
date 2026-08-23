@@ -342,6 +342,31 @@ def typical_gap(gaps: np.ndarray) -> float:
     return float(core.mean()) if core.size else centre
 
 
+#: How much a detection's distance from where the score expects it counts,
+#: relative to how well its interval matches.
+#:
+#: Position is the tie-breaker, not the decision. Its job is to order a plateau
+#: of equal intervals so the path through a uniform passage is the right one;
+#: anything from 0.25 to 2.0 does that equally well in measurement, so this
+#: sits in the middle of a flat region rather than on a tuned point.
+POSITION_WEIGHT = 0.5
+
+#: How far from its written place a detection may be before distance stops
+#: counting against it, in written note gaps.
+#:
+#: The whole point of the cap. Past it, a musician who hesitated is not made to
+#: look more and more like a musician who skipped ahead. Measured on twenty
+#: bars with one bar held a beat too long, as sounds attributed to the wrong
+#: written note out of 96:
+#:
+#:     cap  0.12 gaps   0 wrong, but a genuinely dropped note costs one
+#:     cap  0.15 gaps   0 wrong, every case, at 0.7x and 1.4x the tempo
+#:     cap  0.25 gaps   7 wrong
+#:     cap  1.00 gaps  27 wrong
+#:     no cap          48 wrong
+POSITION_CAP_GAPS = 0.15
+
+
 def _clamp_ratio(ratio: float) -> float:
     """Hold a tempo rescale inside what a musician plausibly did."""
     return min(max(ratio, MIN_TEMPO_RATIO), MAX_TEMPO_RATIO)
@@ -703,39 +728,89 @@ def align_dtw(
             return 1.0
         return _clamp_ratio(written / played)
 
-    def _match(ratio: float) -> tuple[list[tuple[int, int]], np.ndarray]:
-        """Run DTW at one scale, returning the mapping and the scaled sequence."""
-        x = ((detected - (detected[0] if detected.size else 0.0)) * ratio).reshape(1, -1)
+    def _cost_matrix(ratio: float) -> np.ndarray:
+        """What it costs to call detection *i* the note written at *j*.
+
+        **Two questions, and absolute time can only answer one of them.**
+
+        Comparing instants answers "where in the piece is this" and gets note
+        identity wrong the moment a musician hesitates. Holding one bar a beat
+        too long leaves the take offset from the written grid for everything
+        after it, so explaining the remainder as "they skipped two notes" costs
+        two steps while the truth costs 0.83 s on each of 88 pairs — the shift
+        is not a failure of the search, it is the cheaper answer. Measured on
+        twenty bars with bar 8 held: **48 of 96 sounds attributed to the wrong
+        written note**, and eight bars named as off-tempo in a take where one
+        bar was long and the rest was perfect.
+
+        Comparing *intervals* answers "which note is this" and is invariant to
+        offset by construction — a hesitation is one long interval rather than
+        a permanent shift, and a dropped note merges two intervals, which is
+        DTW's native many-to-one. On its own it fixes identity completely and
+        is unusable: a passage of equal intervals is a plateau of equal cost,
+        so the path through it is arbitrary. Quality then wanders — a take at a
+        steady 110% of the written pace scored 0.682 where 125% scored 1.000.
+
+        So intervals decide and position breaks ties, with position's
+        contribution **saturated**. Past a sixth of a note gap, being further
+        from where the score expects you stops costing more — which is enough
+        for absolute time to order a plateau and pick the right note, and not
+        enough for it to insist a hesitating musician skipped ahead.
+
+            cost                wrong notes (hesitation / hurry)   unsafe takes
+            absolute                     48        29              first half 0.50
+            intervals only                0         0              all refused
+            saturated hybrid              0         0              all refused
+
+        Verified unchanged on the six corpus clips, on takes from 64 to 1536
+        notes, and with everything scaled to 0.7× and 1.4× the tempo — the cap
+        is in written gaps, so it carries no tempo of its own.
+        """
+        origin = detected[0] if detected.size else 0.0
+        played = (detected - origin) * ratio
+        written = expected - (expected[0] if expected.size else 0.0)
+        position = np.abs(played[:, None] - written[None, :])
+        if played.size < 2 or written.size < 2:
+            # Nothing has an interval before it. One sustained note is a real
+            # take (`05_open_e_long`), and position is all there is to go on.
+            return position
+        gap = typical_gap(np.diff(written))
+        # The interval leading into each onset. The first borrows the second's,
+        # so index 0 is comparable rather than a special case.
+        played_gaps = np.diff(played, prepend=played[0] - (played[1] - played[0]))
+        written_gaps = np.diff(written, prepend=written[0] - (written[1] - written[0]))
+        return np.abs(played_gaps[:, None] - written_gaps[None, :]) + (
+            POSITION_WEIGHT * np.minimum(position, POSITION_CAP_GAPS * gap)
+        )
+
+    def _match(ratio: float) -> list[tuple[int, int]]:
+        """Run DTW at one scale and return one written note per detection."""
+        cost = _cost_matrix(ratio)
         try:
             _, wp = librosa.sequence.dtw(
-                X=x,
-                Y=y,
-                metric="euclidean",
+                C=cost,
                 global_constraints=True,
                 band_rad=cfg.alignment.sakoe_chiba_band,
             )
         except Exception:  # noqa: BLE001 — band too tight for the size ratio, etc.
-            _, wp = librosa.sequence.dtw(X=x, Y=y, metric="euclidean")
+            _, wp = librosa.sequence.dtw(C=cost)
 
         # librosa returns the path from end → start; flip to ascending.
-        # Collapse to one expected index per detected index: keep the closest
-        # in time (handles the fan-out DTW leaves on the warp path).
-        # Tie-break in the same space the path was found in — comparing raw
-        # seconds here would reintroduce exactly the bias the normalisation
-        # above removes, on the fan-out where it matters most.
-        x_flat, y_flat = x[0], y[0]
+        # Collapse to one expected index per detected index: keep the cheapest
+        # (handles the fan-out DTW leaves on the warp path). Tie-broken by the
+        # same cost the path was found with — comparing raw seconds here would
+        # reintroduce exactly the bias the cost above removes, on the fan-out
+        # where it matters most.
         best: dict[int, tuple[int, float]] = {}
         for det_i, exp_i in wp[::-1]:
             det_i, exp_i = int(det_i), int(exp_i)
-            err = abs(x_flat[det_i] - y_flat[exp_i])
+            err = float(cost[det_i, exp_i])
             prev = best.get(det_i)
             if prev is None or err < prev[1]:
                 best[det_i] = (exp_i, err)
-        return sorted((d, e) for d, (e, _) in best.items()), x_flat
+        return sorted((d, e) for d, (e, _) in best.items())
 
-    y = (expected - (expected[0] if expected.size else 0.0)).reshape(1, -1)
-    ratio = _initial_ratio(detected, expected)
-    mapping, _ = _match(ratio)
+    mapping = _match(_initial_ratio(detected, expected))
 
 
     # Quality measures how well the *shape* of the performance matches the

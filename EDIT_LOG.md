@@ -6,6 +6,82 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-01 (night) — The hesitation defect is fixed. Half of it.
+
+**Branch:** `main`. `/loop` iteration, acting on the user's answer to the
+question the last entry raised: when you hold a bar and carry on, **"one bar
+dragged — measure against your own pulse."**
+
+That answer needs two things and this entry delivers the first: **which sound
+is which note**. Until now the app was wrong about that after any hesitation,
+so both readings of the verdict were being computed from the wrong notes.
+
+    take                    wrong notes, of 96      quality
+    bar 8 held a beat        48  →  **0**         0.517 → 0.592
+    bar 13 hurried           29  →  **0**         0.625 → 0.559
+    played perfectly          0  →     0          0.985 → 0.985
+    a note dropped            0  →     0          0.975 → 0.975
+    an extra note             0  →     0          0.973 → 0.972
+
+Both hesitation takes now match **96 of 96 notes with nothing missed and
+nothing extra**, where before they lost nine of each to a phantom slip.
+
+**How.** The cost between a detection and a written note is now the difference
+between their *intervals* plus a *saturated* term for how far apart they are in
+the piece. Intervals decide; position breaks ties and then stops arguing.
+`DECISIONS.md` has the alternatives, all measured — intervals alone (fixes
+identity, quality wanders 0.682/1.000 between adjacent tempi), an unsaturated
+hybrid (position wins at every weight from 0.25 to 2.0), a per-skip penalty
+(48 → 44, rejected on arithmetic).
+
+**Verified unchanged:** the six corpus clips, bit-identical for the fourth
+entry running. Takes from 64 to 1536 notes, still 0.986 — and *faster*, 83 ms
+against 145 ms at the top end, because the explicit cost matrix skips librosa's
+feature path. Everything scaled to 0.7× and 1.4× the tempo: 0 wrong notes, so
+the cap carries no tempo of its own.
+
+**Refusal got stronger, not weaker.** Random onsets over the right span, 60
+seeds: over `broken_quality` 4/60 → **1/60** at 40 notes, 2/60 → **0/60** at 96.
+
+**The trade-off, stated rather than buried.** A take whose rhythm rescales onto
+the written one is now analysed instead of refused — long-short-short against
+straight eighths 0.000 → 0.700, dotted pairs 0.000 → 0.754. It is the same
+tolerance that lets a hesitating musician keep their bar numbers and cannot be
+had separately. I think it is the better answer (someone playing dotted where
+straight is written played the right notes and wants to know where the rhythm
+went, not that the app could not hear them) but that needs a recording and an
+ear. Pinned by a test in either direction so it cannot drift silently.
+
+**Two of my own test premises were wrong and are recorded as such.** The
+wrong-piece test asserted `quality < 0.05` on a *single* random seed — that was
+over-fitted; it now measures 60 draws against `broken_quality`, which is what
+the product actually needs. And my first "different piece" was forty quarters
+against forty eighths, which scored 1.000 — correctly, because that is the same
+uniform stream played half as fast, which is practising slowly.
+
+**What is still not done.** The verdict still reads against a grid anchored at
+the first note, so a hesitation still reports every later bar as dragging:
+
+    bar 8 held → m8(+29%) m9(+99%) m10(+100%) m11(+99%) … m15(+99%)
+
+The bar numbers are now right, and the monotone shape is now coherent (before,
+bars *3, 4 and 7* were flagged and bar 8 itself showed −5%). But "one bar
+dragged" needs `compute_deltas` to measure against a local pulse instead, and
+that is the second half. Next.
+
+**No three-foot test.** No UI touched.
+
+**Tests:** backend 592 (was 590). The two strict xfails from the last entry
+flipped to passing and their markers are gone — the reason text stayed, because
+it is the most useful documentation in that file. `ruff` clean.
+
+**Known side effects:** the rhythm tolerance above. Nothing else measured.
+
+**Rollback:** revert the commit. `_cost_matrix` is one function inside
+`align_dtw`.
+
+---
+
 ## 2026-09-01 (evening) — One hesitation renames eight bars. Measured, not fixed.
 
 **Branch:** `main`. `/loop` iteration. Two findings: rhythmically varied music
