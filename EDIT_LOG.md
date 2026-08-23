@@ -6,6 +6,60 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-02 (later) — Confidence was still reading the take the old way
+
+**Branch:** `main`. `/loop` iteration, and the last piece of the same bug.
+
+With the verdict measuring against the musician's pulse, a take with one
+hesitation was analysed **correctly** — every note matched, the two disturbed
+bars named exactly, the headline reading *"You dragged across measures 8–9 by
+an average of 26 BPM"* — and then labelled **"results may be inaccurate"**.
+
+Quality 0.592, under `warn_quality`. The residuals were still fitted with one
+straight line across a genuine step, so a take was told to distrust itself for
+the very reason it was right.
+
+    bar 8 held a beat     0.592 → **0.954**
+    bar 13 hurried        0.559 → **0.950**
+    played perfectly      0.985 → 0.985
+    a note dropped        0.975 → 0.975
+    an extra note         0.972 → 0.972
+
+**The obvious worry is that this makes a wrong piece look fine.** It does not,
+and not by luck — it is the same robustness that makes the anchor safe. A wrong
+piece has an enormous spread of interval errors, so its own disturbance
+threshold is enormous, so nothing is absorbed. Measured: every other note, the
+last third, a swung rhythm, note values drawn at random, and sixty seeds of
+uniform noise all stay at **0.000**, and a take of the first half still reads
+0.500 mapped to written notes 0–19, exactly as documented.
+
+`pulse_anchors` moved from `classification.py` to `alignment.py` — two callers
+now, and classification already imports from alignment, so that is the
+direction the dependency has to run.
+
+**Two of my own test assertions were wrong again and are recorded as such.**
+I asserted the hesitation take should score above 0.9; it scores 0.794, because
+two notes are lost at the discontinuity and coverage caps it. The line that
+matters is `warn_quality`, which is what the screen draws, so that is what it
+now asserts. And I put "first half" in the list of takes that must be *refused*
+— it must not be. It maps to the right twenty notes and scores 0.500: under
+`warn_quality` so the caveat shows, over `broken_quality` so a real practice
+session is still analysed. Asserting the refusal would have thrown that away.
+
+**All six corpus fixtures bit-identical** for the sixth entry running.
+
+**No three-foot test.** No UI touched.
+
+**Tests:** backend 612 (was 605; +7). Mutation-checked: with the residuals put
+back on one line, 2 fail. `ruff` clean.
+
+**Known side effects:** takes containing a hesitation now show the caveat less
+often. That is the point.
+
+**Rollback:** revert the commit; `_residuals` is one function.
+
+---
+
 ## 2026-09-02 — "One bar dragged." Done.
 
 **Branch:** `main`. `/loop` iteration, finishing what the last entry started.

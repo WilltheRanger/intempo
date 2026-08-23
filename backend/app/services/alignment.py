@@ -372,6 +372,63 @@ def _clamp_ratio(ratio: float) -> float:
     return min(max(ratio, MIN_TEMPO_RATIO), MAX_TEMPO_RATIO)
 
 
+def pulse_anchors(
+    offsets: np.ndarray, beat_s: float, *, config: AudioConfig | None = None
+) -> np.ndarray:
+    """The reference each note's drift is measured from, note by note.
+
+    **Two things look identical to a clock and are opposite to a musician.**
+    Playing steadily a little fast is a *ramp*: every interval is slightly
+    short, the offset grows note after note, and it must be reported — that is
+    the entire product. Hesitating is a *step*: one or two intervals are much
+    too long and then the pulse resumes, and reporting it as "every bar after
+    this one dragged" is false. It was false, and it named eight bars in a take
+    where one bar was long.
+
+    Measured on twenty bars with bar 8 held a beat too long, the app said:
+
+        m8 +29%  m9 +99%  m10 +100%  m11 +99%  m12 +100%  …  m15 +99%
+
+    So the reference re-anchors after a *run* of intervals that departs from
+    what this take otherwise does. The notes inside the run keep the drift —
+    a bar genuinely played slow is dragging and has to say so — and the notes
+    after it start again from where the musician actually is.
+
+    A run, not a single interval, because a bar played 25% slow is four
+    stretched intervals in a row, not one. Absorbing them individually would
+    report the bar as clean, which is the opposite mistake.
+
+    The two thresholds live in `[tolerance.pulse]`. They are far apart from
+    what they have to separate — the rushing fixture drifts 8 ms a beat, note
+    after note, while a bar held a quarter longer moves an interval by 208 ms —
+    so neither sits near a decision, and both are starting values that want a
+    real recording and an ear.
+    """
+    cfg = config or load_audio_config()
+    anchors = np.empty(offsets.size, dtype=float)
+    if offsets.size == 0:
+        return anchors
+    steps = np.diff(offsets, prepend=offsets[0])
+    # The take's own habit, robustly: what a typical interval error looks like
+    # here, immune to the handful that are the disturbance.
+    centre = float(np.median(steps))
+    spread = float(np.median(np.abs(steps - centre)))
+    limit = max(
+        cfg.tolerance.disturbance_deviations * spread,
+        cfg.tolerance.disturbance_floor_beats * beat_s,
+    )
+    disturbed = np.abs(steps - centre) > limit
+
+    anchor = offsets[0]
+    for i in range(offsets.size):
+        anchors[i] = anchor
+        # Re-anchor once the run ends, so the last note of the disturbance
+        # still carries it and the next note starts from where the player is.
+        if disturbed[i] and (i + 1 >= offsets.size or not disturbed[i + 1]):
+            anchor = offsets[i]
+    return anchors
+
+
 def _fit_line(
     mapping: list[tuple[int, int]], detected: np.ndarray, expected: np.ndarray
 ) -> tuple[float, float] | None:
@@ -392,16 +449,41 @@ def _fit_line(
 
 
 def _residuals(
-    mapping: list[tuple[int, int]], detected: np.ndarray, expected: np.ndarray
+    mapping: list[tuple[int, int]],
+    detected: np.ndarray,
+    expected: np.ndarray,
+    *,
+    sec_per_beat: float = 0.5,
+    config: AudioConfig | None = None,
 ) -> np.ndarray:
-    """How far each matched pair sits from the best straight line through them."""
-    line = _fit_line(mapping, detected, expected)
-    if line is None:
-        return np.array([], dtype=float)
-    rate, offset = line
+    """What a steady tempo, plus the musician's own pulse, cannot explain.
+
+    Quality asks whether an alignment can be trusted, and it has to ask that
+    the same way the verdict reads the take — otherwise a take is analysed
+    correctly and then labelled inaccurate for the reason it was correct.
+
+    A hesitation is a step in the offset series. Fitting one straight line
+    across it leaves large residuals everywhere, so a take whose every note
+    matched and whose two disturbed bars were named exactly scored **0.592**,
+    under `warn_quality`. The same take reads 0.954 once the step is taken out
+    first, and everything that must be refused still is: half a take, every
+    other note, the last third, a swung rhythm, note values drawn at random,
+    and sixty seeds of uniform noise all stay at 0.000.
+
+    That is not luck — it is the same robustness that makes `pulse_anchors`
+    safe. A wrong piece has a huge spread of interval errors, so its
+    disturbance threshold is huge, so nothing is absorbed.
+    """
     det = np.array([detected[d] for d, _ in mapping], dtype=float)
     exp = np.array([expected[e] for _, e in mapping], dtype=float)
-    return np.abs(det - (rate * exp + offset))
+    if det.size == 0:
+        return np.array([], dtype=float)
+    settled = det - pulse_anchors(det - exp, sec_per_beat, config=config)
+    if settled.size >= 2 and float(np.ptp(exp)) > 0:
+        rate, offset = np.polyfit(exp, settled, 1)
+    else:
+        rate, offset = 1.0, float(np.median(settled - exp))
+    return np.abs(settled - (rate * exp + offset))
 
 
 def _residual_cost(
@@ -829,7 +911,9 @@ def align_dtw(
     # alignment be trusted" should turn on. The tempo difference itself is not
     # discarded — it is the verdict, and `compute_deltas` computes it from real
     # seconds further down.
-    residuals = _residuals(mapping, detected, expected)
+    residuals = _residuals(
+        mapping, detected, expected, sec_per_beat=sec_per_beat, config=cfg
+    )
     total_cost = float(residuals.sum())
     timing_quality = _quality_from_cost(total_cost, len(residuals), sec_per_beat)
 

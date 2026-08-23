@@ -24,7 +24,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from app.services.classification import _pulse_anchors
+from app.services.alignment import pulse_anchors as _pulse_anchors
 
 BEAT_S = 1.0
 
@@ -128,3 +128,133 @@ def test_a_perfect_take_does_not_read_as_all_disturbance() -> None:
 
 def test_an_empty_take_does_not_raise() -> None:
     assert _pulse_anchors(np.array([]), BEAT_S).size == 0
+
+
+class TestConfidenceAsksTheSameQuestionAsTheVerdict:
+    """Quality has to read a take the way the verdict does.
+
+    Once the verdict measured against the musician's pulse, a take with a
+    hesitation was analysed *correctly* — every note matched, the two disturbed
+    bars named exactly — and then labelled "results may be inaccurate", because
+    the residuals were still fitted with one straight line across a genuine
+    step. It scored 0.592, under `warn_quality`.
+
+    Making the residuals pulse-relative fixes that, and the obvious worry is
+    that it also makes a wrong piece look fine. It does not, and not by luck:
+    a wrong piece has an enormous spread of interval errors, so its own
+    disturbance threshold is enormous, so nothing is absorbed.
+    """
+
+    BPM = 72.0
+
+    @staticmethod
+    def _score(measures: int = 5) -> object:
+        from app.services.score_schema import Measure, Note, ScoreJson
+
+        return ScoreJson(
+            clef="bass",
+            time_signature="4/4",
+            ocr_confidence=0.9,
+            measures=[
+                Measure(
+                    measure_number=m + 1,
+                    notes=[Note(pitch="E2", duration="eighth")] * 8,
+                )
+                for m in range(measures)
+            ],
+        )
+
+    def _expected(self) -> np.ndarray:
+        from app.services.alignment import build_timeline
+
+        return build_timeline(self._score(), self.BPM).onsets
+
+    def _quality(self, detected: np.ndarray) -> float:
+        from app.services.alignment import align_dtw
+
+        return align_dtw(
+            detected - detected[0], self._expected(), target_bpm=self.BPM
+        ).quality
+
+    def test_a_take_with_one_hesitation_is_not_flagged_inaccurate(self) -> None:
+        """Against `warn_quality`, which is the line the screen actually draws.
+
+        Not against a round number: two notes are lost at the discontinuity, so
+        coverage caps this below 1.0 however good the timing is. What matters
+        is that the musician is not told to distrust a reading that named their
+        hesitation exactly.
+        """
+        from app.services.audio_config import load_audio_config
+
+        expected = self._expected()
+        held = expected.copy()
+        held[20:] += 0.8  # a beat lost at note 20, then the pulse resumes
+
+        assert self._quality(held) > load_audio_config().alignment.warn_quality
+
+    def test_a_steadily_rushing_take_is_still_trusted(self) -> None:
+        """It always was. This is here so a change to the anchor rule that
+        broke it would be caught by the confidence tests as well."""
+        expected = self._expected()
+        rushed = np.cumsum(
+            np.concatenate([[0.0], np.diff(expected) * 0.94])
+        )
+        assert self._quality(rushed) > 0.9
+
+    def test_half_a_take_is_reported_with_a_caveat_not_refused(self) -> None:
+        """The documented contract, and it did not move.
+
+        A take of the first twenty notes maps to written notes 0–19 — the right
+        ones — and scores 0.500: under `warn_quality` so the screen says the
+        numbers may be inaccurate, over `broken_quality` so what *was* played
+        is still analysed. Both are correct and this test exists because an
+        earlier draft of it asserted the take should be refused, which would
+        have thrown away a real practice session.
+        """
+        expected = self._expected()
+        detected = expected[: expected.size // 2]
+
+        from app.services.alignment import align_dtw
+
+        result = align_dtw(detected - detected[0], expected, target_bpm=self.BPM)
+
+        assert max(e for _, e in result.mapping) <= 21
+        assert 0.4 < result.quality < 0.7
+
+    @pytest.mark.parametrize(
+        "name",
+        ["every other note", "last third", "a rhythm of its own"],
+    )
+    def test_the_takes_that_must_be_refused_still_are(self, name: str) -> None:
+        expected = self._expected()
+        detected = {
+            "first half": expected[: expected.size // 2],
+            "every other note": expected[::2],
+            "last third": expected[2 * expected.size // 3 :],
+            "a rhythm of its own": np.concatenate(
+                [
+                    [0.0],
+                    np.cumsum(
+                        np.array([0.55, 0.28] * expected.size)[: expected.size - 1]
+                    ),
+                ]
+            ),
+        }[name]
+
+        assert self._quality(detected) < 0.4
+
+    def test_noise_is_refused_across_seeds(self) -> None:
+        expected = self._expected()
+        qualities = np.array(
+            [
+                self._quality(
+                    np.sort(
+                        np.random.default_rng(seed).uniform(
+                            0, float(expected[-1]), expected.size
+                        )
+                    )
+                )
+                for seed in range(60)
+            ]
+        )
+        assert int((qualities > 0.4).sum()) <= 2
