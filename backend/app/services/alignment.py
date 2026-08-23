@@ -211,11 +211,22 @@ def build_timeline(score: ScoreJson, target_bpm: float) -> ExpectedTimeline:
 
         for i, note in enumerate(measure.notes):
             is_rest = note.pitch == "rest"
+            # A note under a bow stroke is not attacked, so there is no onset to
+            # expect and none will be detected. Emitting one anyway was not a
+            # cosmetic error: `04_slurred` writes 32 notes of which 8 are bow
+            # changes, the detector found all 8 — a **perfect** reading — and
+            # the pipeline scored it 0.196 and reported `alignment_failed`,
+            # because quality is weighted by coverage and coverage could not
+            # exceed 8/32. Slurred playing could never be analysed at all.
+            #
+            # The clock still advances for these notes; only the expectation of
+            # hearing them is dropped.
+            under_the_bow = i in interior
             # Absorbed only when the tie is real — same pitch on both sides.
             # This read `tied_to_next` alone, so a tie the model invented across
             # two different pitches deleted an onset the musician had actually
             # attacked, and every note after it aligned against the wrong one.
-            sounded = not is_rest and not ties.absorbed[position]
+            sounded = not is_rest and not ties.absorbed[position] and not under_the_bow
             if sounded:
                 onsets.append(elapsed_beats * sec_per_beat)
                 notes.append(
@@ -233,7 +244,18 @@ def build_timeline(score: ScoreJson, target_bpm: float) -> ExpectedTimeline:
                         # Timing a note that may have no attack is how phantom
                         # "dragging" gets reported. The measure is flagged for
                         # review either way — see `validate.broken_ties`.
-                        is_slur_interior=i in interior or ties.broken[position],
+                        # Reaching here means the note *is* expected to sound.
+                        # The flag now carries the narrower claim its name has
+                        # always implied downstream: sounded, but we cannot
+                        # vouch for the attack, so do not time it.
+                        #
+                        # Only a broken tie is in that position — a slur mark
+                        # misread as a tie, where whether the bow was
+                        # re-attacked is exactly what is in doubt. It keeps its
+                        # onset, which is what stops the timeline losing a note,
+                        # and is excluded from the verdict. A *genuine* slur
+                        # interior never reaches here; it has no onset to keep.
+                        is_slur_interior=ties.broken[position],
                         is_slur_boundary=i in boundary and not ties.broken[position],
                     )
                 )

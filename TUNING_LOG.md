@@ -6,6 +6,62 @@ value, regression results across all six fixture clips, and rationale.
 
 ---
 
+## 2026-08-30 — The whole corpus passes for the first time. No thresholds changed.
+
+`config.toml` untouched. One correctness fix in `build_timeline`.
+
+### Regression, all six clips, before → after
+
+| clip | status | quality | expected | detected | worst dev |
+|---|---|---|---|---|---|
+| 01 détaché clean | ok → ok | 0.988 → 0.988 | 32 → 32 | 32 | 20.1 ms |
+| 02 rushing | ok → ok | 0.988 → 0.988 | 32 → 32 | 32 | 256.8 ms |
+| 03 dragging | ok → ok | 0.988 → 0.988 | 32 → 32 | 32 | 233.9 ms |
+| **04 slurred** | **failed → ok** | **0.196 → 0.990** | **32 → 8** | 8 | — → 18.5 ms |
+| 05 open E | ok → ok | 1.000 → 1.000 | 1 → 1 | 1 | 0.0 |
+| 06 pizzicato | ok → ok | 0.990 → 0.990 | 16 → 16 | 16 | 20.1 ms |
+
+Five clips are bit-identical. The sixth had never passed.
+
+### Why it could never pass
+
+`build_timeline` emitted an expected onset for every non-rest note, **including
+the notes inside a slur**. A slur is one bow stroke: the notes under it are not
+attacked and no onset will ever be detected for them.
+
+`04_slurred` writes 32 notes, 8 of which are bow changes. The detector found
+**all 8** — a perfect reading — and quality is weighted by coverage, so it could
+not exceed 8/32 = 0.25. It scored 0.196 and reported `alignment_failed`.
+
+Slurred playing could not be analysed at all, and slurring is not an edge case
+on a bowed instrument. The clock still advances for those notes; only the
+expectation of hearing them is dropped.
+
+### The trade, stated plainly
+
+A musician who bows every note separately against written slurs now produces 32
+attacks against 8 expected, and **fails** where it previously produced a
+verdict. Same for a page whose slurs the model invented.
+
+That is a real cost and it is accepted for two reasons. It is a genuine
+mismatch between the page and the playing — the spec files detecting those as
+V2 — and the alternative was that the correct, common case never worked. The
+failure is now told apart from a wrong page and says so: *"We heard every note
+the score expects, and a lot more besides — this usually means the slurs on the
+page aren't the ones you played."* Sending someone to re-photograph a score that
+is fine would have been the worse error.
+
+### An alternative measured and rejected
+
+Computing quality *after* fuzzy matching, over the pairs that survive it, would
+have removed the cost — détaché-against-slurs recovers from 0.000 to 0.750. It
+also lets a **wrong piece** through: 32 random onsets scored 0.100 before and
+**0.698** after, above the 0.4 broken threshold and nearly at the 0.7 warn line.
+Fuzzy matching discards whatever does not fit, and eight points that fit a line
+can always be found among thirty-two random ones. Not adopted.
+
+---
+
 ## 2026-08-29 — Novelty bake-off. Flux kept. No thresholds changed.
 
 **A negative result, and the corpus could not have produced a positive one.**

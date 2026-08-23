@@ -22,6 +22,7 @@ from pydantic import BaseModel, Field
 from app.services import audio as audio_svc
 from app.services.alignment import (
     align_dtw,
+    AlignmentResult,
     apply_fuzzy_match,
     build_timeline,
     is_alignment_broken,
@@ -107,6 +108,41 @@ def _summarize_measures(deltas: list[Delta]) -> list[PerMeasure]:
     return summaries
 
 
+def _why_alignment_failed(
+    raw: AlignmentResult, onsets: np.ndarray, expected: np.ndarray
+) -> str:
+    """Say which failure this is, when it can be told apart.
+
+    "Check you're on the right piece" is the right advice for a wrong page and
+    the wrong advice for the case that produces it most often now: every note
+    the score expects was found, and a great many more besides.
+
+    That is what playing détaché against written slurs looks like. A slur means
+    one bow stroke, so the timeline expects an onset for the bow change and not
+    for the notes under it — and a musician who bows each note separately, or a
+    page whose slurs were never really there, produces an attack for every one.
+    Nothing is wrong with the recording; it does not match the marks.
+
+    Told apart by covering every expected onset while carrying far more
+    detected ones. A wrong piece does not do that — it misses expected onsets,
+    which is why `missed` has to be empty for this branch to fire.
+    """
+    cleaned = apply_fuzzy_match(raw, onsets, expected)
+    heard_everything = not cleaned.missed_expected and bool(cleaned.matched)
+    far_too_many = len(cleaned.extra_detected) > len(cleaned.matched)
+
+    if heard_everything and far_too_many:
+        return (
+            "We heard every note the score expects, and a lot more besides — "
+            "this usually means the slurs on the page aren't the ones you "
+            "played. Check the slur markings on this piece."
+        )
+    return (
+        "We had trouble matching your recording to the score — "
+        "check you're on the right piece and re-record."
+    )
+
+
 def analyze(
     audio: str | Path | tuple[np.ndarray, int],
     score: ScoreJson,
@@ -159,10 +195,7 @@ def analyze(
         return AnalysisResult(
             status="alignment_failed",
             quality=round(raw.quality, 3),
-            verdict=(
-                "We had trouble matching your recording to the score — "
-                "check you're on the right piece and re-record."
-            ),
+            verdict=_why_alignment_failed(raw, onsets, expected),
             n_detected_onsets=raw.n_detected,
             n_expected_onsets=raw.n_expected,
         )

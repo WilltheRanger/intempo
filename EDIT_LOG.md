@@ -6,6 +6,44 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-30 (later) — Slurred music could not be analysed at all
+
+**Branch:** `main`. `/loop` iteration.
+
+`build_timeline` expected an onset for every non-rest note, including the notes
+*inside* a slur. A slur is one bow stroke — those notes are not attacked, and no
+onset will ever be detected for them.
+
+On the corpus's own slurred clip that meant 32 expected against 8 that can
+physically occur. The detector found **all 8**, a perfect reading, and because
+quality is coverage-weighted it could not exceed 0.25. It scored 0.196 and
+reported `alignment_failed`. **All six clips now pass; five are bit-identical.**
+Numbers and the full regression are in `TUNING_LOG.md`.
+
+Two things had to stay straight while doing it. The clock still advances for a
+note under the bow — dropping the expectation must not drop the time — and a
+**broken tie** keeps its onset, because that is the case where whether the bow
+was re-attacked is precisely what is in doubt. `is_slur_interior` now carries
+only that narrower claim: sounded, but we cannot vouch for the attack.
+
+**The cost, taken deliberately.** Playing détaché against written slurs now
+fails, where it used to produce a verdict — and so does a page whose slurs the
+model invented. Accepted because the correct, common case previously never
+worked at all, and because the failure is now told apart from a wrong page:
+*"We heard every note the score expects, and a lot more besides."* Told apart by
+covering every expected onset while carrying far more detected ones — a wrong
+piece misses expected onsets, which is what keeps the two distinct.
+
+**An alternative was measured and rejected.** Computing quality after fuzzy
+matching removes the cost (0.000 → 0.750) and also lets a wrong piece through
+(0.100 → **0.698**, past the 0.4 failure threshold). Fuzzy matching discards
+what does not fit, and eight points that fit a line can always be found among
+thirty-two random ones.
+
+**Tests:** 535 → **538**. Ruff clean.
+
+---
+
 ## 2026-08-30 — Slurs stopped following the notes they were drawn over
 
 **Branch:** `main`. The defect reported at the end of the audit follow-up.

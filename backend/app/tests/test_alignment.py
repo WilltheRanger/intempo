@@ -67,36 +67,51 @@ def test_tied_note_is_not_reattacked() -> None:
     assert np.allclose(onsets, [0.0, 1.0])
 
 
-def test_slur_interior_is_flagged() -> None:
-    """Spec: the boundaries are the first note of the slur and the first note
-    *after* it ends. Every note in between — including the slur's own last
-    note — is interior and is not timed individually.
+def test_a_note_under_the_bow_is_not_expected_at_all() -> None:
+    """A slur is one bow stroke, so the notes inside it are never attacked and
+    no onset will ever be detected for them. Expecting one anyway is not a
+    cosmetic error — quality is weighted by coverage, so on the corpus's own
+    slurred clip the detector found **all 8** attacks that exist, a perfect
+    reading, and the pipeline scored it 0.196 and called it `alignment_failed`.
+    Slurred playing could not be analysed at all.
 
-    This asserted that the slur's last note was a boundary, which is what the
-    code did and what the spec does not say. That note is played under the same
-    bow stroke as the ones before it, so it has no attack for the onset
-    detector to find, and timing it produced phantom "dragging" on the last
-    note of every slur.
+    This asserted the opposite: that all four notes appeared with the middle
+    two flagged.
     """
     notes = [Note(pitch="A4", duration="quarter")] * 4
     measure = Measure(measure_number=1, notes=notes, slurs=[Slur(start_note_index=0, end_note_index=3)])
     timeline = build_timeline(_score([measure]), target_bpm=120.0)
-    flags = [(n.is_slur_boundary, n.is_slur_interior) for n in timeline.notes]
-    assert flags == [(True, False), (False, True), (False, True), (False, True)]
+
+    assert [n.note_index_in_measure for n in timeline.notes] == [0], (
+        "only the bow change is attacked"
+    )
+    assert not timeline.notes[0].is_slur_interior
 
 
-def test_the_note_after_a_slur_is_a_boundary_and_is_timed() -> None:
-    """The bow changes direction on it, so it is attacked and it counts."""
+def test_the_clock_still_advances_for_notes_under_the_bow() -> None:
+    """Dropping the expectation must not drop the time. The note after a
+    four-quarter slur is four beats in, not one."""
+    slurred = Measure(
+        measure_number=1,
+        notes=[Note(pitch="A4", duration="quarter")] * 4,
+        slurs=[Slur(start_note_index=0, end_note_index=2)],
+    )
+    timeline = build_timeline(_score([slurred]), target_bpm=60.0)
+    assert np.allclose(timeline.onsets, [0.0, 3.0])
+
+
+def test_the_note_after_a_slur_is_attacked_and_expected() -> None:
+    """The bow changes on it, so it sounds and it counts."""
     notes = [Note(pitch="A4", duration="quarter")] * 4
     measure = Measure(
         measure_number=1, notes=notes, slurs=[Slur(start_note_index=0, end_note_index=2)]
     )
     timeline = build_timeline(_score([measure]), target_bpm=120.0)
-    flags = [(n.is_slur_boundary, n.is_slur_interior) for n in timeline.notes]
-    assert flags == [(True, False), (False, True), (False, True), (True, False)]
+    assert [n.note_index_in_measure for n in timeline.notes] == [0, 3]
+    assert [n.is_slur_boundary for n in timeline.notes] == [True, True]
 
 
-def test_two_slurs_in_a_measure_each_keep_their_own_boundary() -> None:
+def test_two_slurs_in_a_measure_expect_two_bow_changes() -> None:
     notes = [Note(pitch="A4", duration="eighth")] * 6
     measure = Measure(
         measure_number=1,
@@ -104,11 +119,9 @@ def test_two_slurs_in_a_measure_each_keep_their_own_boundary() -> None:
         slurs=[Slur(start_note_index=0, end_note_index=1), Slur(start_note_index=3, end_note_index=4)],
     )
     timeline = build_timeline(_score([measure]), target_bpm=120.0)
-    # 0 starts the first slur, 1 is under it; 2 is the note after it and is
-    # timed; 3 starts the second slur, 4 is under it; 5 is after it and timed.
-    assert [n.is_slur_interior for n in timeline.notes] == [
-        False, True, False, False, True, False,
-    ]
+    # 0 starts the first slur; 1 is under it. 2 is attacked. 3 starts the
+    # second; 4 is under it. 5 is attacked.
+    assert [n.note_index_in_measure for n in timeline.notes] == [0, 2, 3, 5]
 
 
 def test_align_dtw_perfect_is_identity() -> None:
@@ -451,3 +464,59 @@ def test_the_verdict_does_not_depend_on_when_you_started(tmp_path) -> None:
     one_frame_ms = 512 / 22050 * 1000
     for a, b in zip(early.per_note, late.per_note, strict=True):
         assert a.delta_ms == pytest.approx(b.delta_ms, abs=one_frame_ms + 1)
+
+
+# --- slurred music, end to end ---------------------------------------------
+
+def _slurred_score(notes_per_bar: int = 8, bars: int = 4) -> ScoreJson:
+    """Eighths slurred in fours: two bow changes a bar, six notes under them."""
+    return _score([
+        Measure(
+            measure_number=bar + 1,
+            notes=[Note(pitch="E2", duration="eighth") for _ in range(notes_per_bar)],
+            slurs=[
+                Slur(start_note_index=0, end_note_index=3),
+                Slur(start_note_index=4, end_note_index=7),
+            ],
+        )
+        for bar in range(bars)
+    ])
+
+
+def test_a_slurred_passage_played_as_written_aligns_perfectly() -> None:
+    """The clip the corpus keeps for this could not pass before: 32 written
+    notes, 8 of them attacked, and coverage-weighted quality capped at 8/32."""
+    timeline = build_timeline(_slurred_score(), target_bpm=60.0)
+    assert len(timeline.notes) == 8, "eight bow changes in four bars"
+
+    played = to_timeline_base(timeline.onsets.copy())
+    result = align_dtw(played, timeline.onsets, target_bpm=60.0)
+    assert result.quality == pytest.approx(1.0)
+
+
+def test_playing_detache_against_written_slurs_is_told_apart_from_a_wrong_piece() -> None:
+    """The cost of the change above, and the one thing that makes it bearable.
+
+    A musician who bows every note separately produces an attack for each one,
+    against a timeline expecting only the bow changes — so it fails. That is a
+    real mismatch between the page and the playing, but "check you're on the
+    right piece" is the wrong advice for it, and would send someone to
+    re-photograph a score that is fine.
+
+    Told apart by covering *every* expected onset while carrying far more
+    detected ones. A wrong piece misses expected onsets, which is why the
+    branch requires none missing.
+    """
+    from app.services.analysis import _why_alignment_failed
+
+    timeline = build_timeline(_slurred_score(), target_bpm=60.0)
+    expected = timeline.onsets
+
+    detache = to_timeline_base(np.arange(32, dtype=float) * (expected[1] - expected[0]) / 4)
+    raw = align_dtw(detache, expected, target_bpm=60.0)
+    assert _why_alignment_failed(raw, detache, expected).startswith("We heard every note")
+
+    rng = np.random.default_rng(1)
+    wrong = to_timeline_base(np.sort(rng.uniform(0, float(expected[-1]), 8)))
+    other = align_dtw(wrong, expected, target_bpm=60.0)
+    assert "right piece" in _why_alignment_failed(other, wrong, expected)
