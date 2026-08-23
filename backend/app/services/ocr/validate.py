@@ -405,6 +405,32 @@ def infer_beats_per_measure(sums: list[float]) -> float | None:
     return winner
 
 
+def meters_in_force(score: ScoreJson) -> list[float | None]:
+    """Quarter-note beats expected in each measure, meter changes included.
+
+    A score carries one header time signature and the repertoire does not
+    honour that. Any measure may state a new one, and it holds until the next
+    change — the way it is printed, and the way a player reads it.
+
+    Returns None for a measure whose meter cannot be known, which is the
+    ordinary case for a phone photo of an inner page: the header is cropped off
+    and `infer_beats_per_measure` takes over. Inference is deliberately *not*
+    done here, because it looks at the whole piece at once and a piece that
+    changes meter has no single answer to give it.
+    """
+    running = beats_per_measure(score.time_signature)
+    out: list[float | None] = []
+    for measure in score.measures:
+        if measure.time_signature is not None:
+            changed = beats_per_measure(measure.time_signature)
+            # "unknown" on a measure means the change is visible but illegible,
+            # which is worse than no change at all — it invalidates the meter
+            # that was running rather than continuing it.
+            running = changed
+        out.append(running)
+    return out
+
+
 def validate_measures(score: ScoreJson) -> list[MeasureFinding]:
     """One finding per measure, in order."""
     sums = [
@@ -419,25 +445,32 @@ def validate_measures(score: ScoreJson) -> list[MeasureFinding]:
     for fault in tuplet_faults(score.measures):
         tuplets_by_measure.setdefault(fault.measure_number, []).append(fault)
 
-    stated = beats_per_measure(score.time_signature)
+    # The meter in force at each measure, which is not one number for the piece.
+    # A change of meter is ordinary — a 3/4 bar after four of 4/4 — and reading
+    # it against the header called every one of those bars short, on a page
+    # written and read correctly. See `Measure.time_signature`.
+    meters = meters_in_force(score)
+    stated = meters[0] if meters else beats_per_measure(score.time_signature)
     inferred = None
     densities: list[float] = []
-    if stated is None:
+    if all(m is None for m in meters):
         inferred = infer_beats_per_measure(sums)
-    expected = stated if stated is not None else inferred
     from_music = stated is None and inferred is not None
+    expected_per_measure = [
+        meter if meter is not None else inferred for meter in meters
+    ]
     findings: list[MeasureFinding] = []
 
-    if expected:
-        densities = [
-            len(measure.notes) / expected
-            for measure in score.measures
-            if measure.notes
-        ]
+    densities = [
+        len(measure.notes) / meter
+        for measure, meter in zip(score.measures, expected_per_measure)
+        if measure.notes and meter
+    ]
     median_density = median(densities) if densities else 0.0
     density_limit = DENSITY_MULTIPLE * median_density
 
     for index, measure in enumerate(score.measures):
+        expected = expected_per_measure[index]
         actual = sums[index]
         count = len(measure.notes)
         dense = (
