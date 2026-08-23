@@ -380,12 +380,13 @@ def test_a_take_missing_every_other_note_is_not_read_as_a_slow_one() -> None:
     result = align_dtw(played, expected, target_bpm=60.0)
     written = [e for _, e in result.mapping]
 
-    assert result.quality < 0.4, "half a performance is not a good alignment"
-    # The claim is about correspondence, not exactness: these sixteen onsets
-    # are spread across all thirty-two written notes, not read as the first
-    # sixteen played slowly. (It tracks 0,2,4… and slips by one late on, which
-    # is DTW absorbing the gaps and is not what this test is about.)
-    assert max(written) >= 28, "a sparse take was read as a complete slow one"
+    # The guarantee is rejection, and it got stronger when the matcher stopped
+    # being allowed to stretch without limit: 0.301 under span normalisation,
+    # 0.119 now.
+    assert result.quality < 0.2, "half a performance is not a good alignment"
+    # And it is not read as a complete performance played slowly. Reading it
+    # that way needs a 0.5x rescale, which `MIN_TEMPO_RATIO` puts out of reach —
+    # that is the whole reason the bound exists, and this is what it buys.
     assert written != list(range(16))
 
 

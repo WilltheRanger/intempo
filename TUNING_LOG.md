@@ -6,6 +6,69 @@ value, regression results across all six fixture clips, and rationale.
 
 ---
 
+## 2026-08-30 (later) — Matching bounded. No thresholds changed, corpus unmoved.
+
+`config.toml` untouched. All six clips identical to the entry below —
+0.988 / 0.988 / 0.988 / 0.990 / 1.000 / 0.990, same onset counts, same worst
+deviations. Every one of them is a full take at its target tempo, which is
+exactly the case this change leaves alone.
+
+### What it fixes
+
+Matching normalised each sequence onto its own unit span. That is *unbounded*:
+it stretches whatever it is given until the two ends line up, so it **asserts**
+that the take covers the score. A musician who played the first half of a piece
+had those notes smeared across all of it — every delta measured against the
+wrong written note, reported confidently. On a 40-note score, a take of notes
+0–19 mapped to written notes 0–39.
+
+A clamped ratio of median inter-onset intervals cannot do that. The bound is
+what makes it safe rather than merely different: reading a half take as a whole
+one needs **2×**, reading every-other-note as a complete slow take needs
+**0.5×**, and neither is reachable at [0.6, 1.7].
+
+| case | span (was) | bounded (now) |
+|---|---|---|
+| perfect | 1.000 | 1.000 |
+| 5% fast | 1.000 | 1.000 |
+| 20% fast | 1.000 | 1.000 |
+| gradual rush 13% | 0.725 | 0.725 |
+| first half | 0.400 | **0.500**, and maps to 0–19 not 0–39 |
+| every other note | 0.301 | **0.119** |
+| WRONG PIECE | 0.248 | **0.000** |
+
+Better or equal everywhere. Wrong-piece rejection improves most.
+
+### Why there is a minimum take length
+
+A median over two intervals is not a median, and a *missed* note inflates one —
+`[0.5, 1.0]` medians to 0.75 and compresses a take that was played evenly. That
+showed up as a real regression on a four-note test before the minimum went in.
+
+It is also unnecessary below that length, and for the same reason it is
+unreliable. The sliding error scaling exists to prevent grows with the take, so
+at 20% fast:
+
+| notes | unscaled | scaled |
+|---|---|---|
+| 3–6 | **1.00** | 1.00 |
+| 8 | 0.38 | 1.00 |
+| 32 | 0.09 | 1.00 |
+
+Six notes or fewer match perfectly with no scaling at all. `expected` is built
+at `target_bpm`, so below the crossover the score's own units are simply used.
+
+### An alternative measured and rejected
+
+Estimating the rate from a first DTW pass and refitting — more robust to a
+missed note than a median, and it does fix the four-note case. It also **breaks
+tempo-invariance**, which is the property the whole normalisation exists for: a
+32-note take played 20% fast mapped to written notes 0–26 instead of 0–31,
+because the first pass is exactly the sliding match the second pass is supposed
+to be estimating from. Not adopted.
+
+---
+
 ## 2026-08-30 — The whole corpus passes for the first time. No thresholds changed.
 
 `config.toml` untouched. One correctness fix in `build_timeline`.
