@@ -20,6 +20,26 @@ class MetronomeMode(str, Enum):
     audio_with_headphones = "audio_with_headphones"
 
 
+class Instrument(str, Enum):
+    """What the musician plays.
+
+    The four bowed strings, matching the app's own `Instrument` type. It is
+    what the recording *is*, and the pipeline reads it to decide how to look
+    for note onsets — the low register of a double bass needs a lower detection
+    threshold than a violin, because the note swells in rather than snapping in
+    and most of its energy sits where the detector is weakest.
+
+    Deliberately the instrument and not a `double_bass: bool`. How each
+    instrument should be treated is still being tuned against real recordings;
+    a flag would freeze today's answer into the data.
+    """
+
+    violin = "violin"
+    viola = "viola"
+    cello = "cello"
+    double_bass = "double_bass"
+
+
 class AnalysisStatus(str, Enum):
     queued = "queued"
     processing = "processing"

@@ -205,6 +205,8 @@ export interface AnalysisResponse {
   target_bpm: number;
   bpm_source: string;
   metronome_mode: MetronomeMode;
+  /** Null for takes submitted before the app started sending it. */
+  instrument: Instrument | null;
   result_json: Record<string, unknown> | null;
   failure_reason: string | null;
   alignment_quality: number | null;

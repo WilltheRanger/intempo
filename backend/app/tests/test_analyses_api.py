@@ -316,3 +316,132 @@ def test_sweeper_recovers_stuck_rows(monkeypatch: pytest.MonkeyPatch) -> None:
     assert by_id["2"]["status"] == "failed_recoverable"
     assert by_id["3"]["status"] == "processing"
     assert by_id["4"]["status"] == "done"
+
+
+def _submit(
+    client: TestClient,
+    token: str,
+    user_id: UUID,
+    score_id: UUID,
+    **extra: object,
+) -> str:
+    res = client.post(
+        "/v1/analyses",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "score_id": str(score_id),
+            "audio_url": _audio_url(user_id),
+            "target_bpm": 120,
+            "bpm_source": "manual",
+            **extra,
+        },
+    )
+    assert res.status_code == 202, res.text
+    return res.json()["analysis_id"]
+
+
+@pytest.mark.parametrize(
+    ("instrument", "expected_flag"),
+    [
+        ("double_bass", True),
+        ("cello", False),
+        ("violin", False),
+        (None, False),
+    ],
+)
+def test_the_instrument_decides_the_double_bass_setting(
+    monkeypatch: pytest.MonkeyPatch,
+    client: TestClient,
+    make_token: Callable[..., str],
+    instrument: str | None,
+    expected_flag: bool,
+) -> None:
+    """`analyze()`'s `double_bass` flag had no caller that ever set it.
+
+    It turns on a high-pass filter and a lower onset threshold for the register
+    where attacks are softest — and every bass player was analysed without it,
+    in an app whose spec names double bass as its initial instrument focus.
+    This is the test that the flag is reachable at all.
+
+    Cello is here deliberately: it reads bass clef and it is *not* a double
+    bass. Its low C is around 65 Hz, under the 80 Hz high-pass, so treating the
+    two alike would filter away the fundamental of the notes a cellist most
+    needs heard.
+    """
+    user_id = uuid4()
+    score_id = uuid4()
+    fake = FakeSupabase()
+    fake.seed(
+        "scores",
+        [{"id": str(score_id), "user_id": str(user_id), "score_json": GOOD_SCORE_JSON}],
+    )
+    _install(monkeypatch, fake)
+    monkeypatch.setattr(analysis_runner, "download_audio", lambda _url: _wav_bytes())
+
+    seen: list[bool] = []
+    real = analysis_runner.analyze
+
+    def spy(audio, score, target_bpm, **kwargs):
+        seen.append(bool(kwargs.get("double_bass")))
+        return real(audio, score, target_bpm, **kwargs)
+
+    monkeypatch.setattr(analysis_runner, "analyze", spy)
+
+    token = make_token(sub=user_id)
+    extra = {} if instrument is None else {"instrument": instrument}
+    _submit(client, token, user_id, score_id, **extra)
+
+    assert seen == [expected_flag]
+
+
+def test_the_instrument_is_stored_and_read_back(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """Stored as the instrument, not as a derived flag — how each instrument
+    should be treated is still being tuned, and a column holding today's
+    conclusion could never answer "how did the cellists do"."""
+    user_id = uuid4()
+    score_id = uuid4()
+    fake = FakeSupabase()
+    fake.seed(
+        "scores",
+        [{"id": str(score_id), "user_id": str(user_id), "score_json": GOOD_SCORE_JSON}],
+    )
+    _install(monkeypatch, fake)
+    monkeypatch.setattr(analyses_module, "run_analysis", lambda _id: None)
+
+    token = make_token(sub=user_id)
+    analysis_id = _submit(client, token, user_id, score_id, instrument="double_bass")
+
+    got = client.get(
+        f"/v1/analyses/{analysis_id}", headers={"Authorization": f"Bearer {token}"}
+    )
+    assert got.status_code == 200
+    assert got.json()["instrument"] == "double_bass"
+
+
+def test_an_unknown_instrument_is_refused_rather_than_ignored(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """A closed enum, so a typo cannot quietly become "not stated"."""
+    user_id = uuid4()
+    score_id = uuid4()
+    fake = FakeSupabase()
+    fake.seed(
+        "scores",
+        [{"id": str(score_id), "user_id": str(user_id), "score_json": GOOD_SCORE_JSON}],
+    )
+    _install(monkeypatch, fake)
+
+    res = client.post(
+        "/v1/analyses",
+        headers={"Authorization": f"Bearer {make_token(sub=user_id)}"},
+        json={
+            "score_id": str(score_id),
+            "audio_url": _audio_url(user_id),
+            "target_bpm": 120,
+            "bpm_source": "manual",
+            "instrument": "theremin",
+        },
+    )
+    assert res.status_code == 422
