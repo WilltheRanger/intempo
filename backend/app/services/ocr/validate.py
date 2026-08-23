@@ -39,7 +39,9 @@ from app.services.score_schema import (
     DURATION_BEATS,
     BrokenTie,
     ScoreJson,
+    TupletFault,
     broken_ties,
+    tuplet_faults,
 )
 
 #: Imported, not copied — see `score_schema.DURATION_BEATS` for why.
@@ -272,17 +274,30 @@ class MeasureFinding:
     #: tie between two different pitches, and that tie is what deletes an onset
     #: from the timeline. Collapsing them would let a clean beat sum hide it.
     broken_ties: tuple[BrokenTie, ...] = ()
+    #: Bracketed groups whose contents contradict the ratio printed over them.
+    #:
+    #: Separate from the beat sum for the same reason as `broken_ties`, and with
+    #: a sharper example: three `triplet_eighth`s written where the page
+    #: brackets a 5:4 quintuplet sum to exactly 1.0. The bar adds up. Only the
+    #: stated ratio can see it.
+    tuplet_faults: tuple[TupletFault, ...] = ()
 
     @property
     def is_problem(self) -> bool:
         """A pickup and an unverifiable measure are not faults."""
-        return bool(self.broken_ties) or self.verdict in {"short", "long", "empty"}
+        return (
+            bool(self.broken_ties)
+            or bool(self.tuplet_faults)
+            or self.verdict in {"short", "long", "empty"}
+        )
 
     def describe(self) -> str:
         # A broken tie leads, because it is the fault that changes the timeline
         # even when the arithmetic is clean.
         if self.broken_ties:
             return "; ".join(tie.describe() for tie in self.broken_ties)
+        if self.tuplet_faults:
+            return "; ".join(fault.describe() for fault in self.tuplet_faults)
         if self.verdict == "unverifiable":
             return f"measure {self.measure_number}: not checkable"
         source = " (meter inferred from the music)" if self.meter_inferred else ""
@@ -359,6 +374,10 @@ def validate_measures(score: ScoreJson) -> list[MeasureFinding]:
     for tie in broken_ties(score.measures):
         ties_by_measure.setdefault(tie.measure_number, []).append(tie)
 
+    tuplets_by_measure: dict[int, list[TupletFault]] = {}
+    for fault in tuplet_faults(score.measures):
+        tuplets_by_measure.setdefault(fault.measure_number, []).append(fault)
+
     stated = beats_per_measure(score.time_signature)
     inferred = None
     if stated is None:
@@ -393,6 +412,7 @@ def validate_measures(score: ScoreJson) -> list[MeasureFinding]:
                 note_count=count,
                 meter_inferred=from_music,
                 broken_ties=tuple(ties_by_measure.get(measure.measure_number, ())),
+                tuplet_faults=tuple(tuplets_by_measure.get(measure.measure_number, ())),
             )
         )
     return findings
@@ -434,6 +454,7 @@ def describe_for_retry(findings: list[MeasureFinding]) -> str:
     # thing entirely.
     sums = [f for f in bad if f.verdict in {"short", "long", "empty"}]
     ties = [f for f in bad if f.broken_ties]
+    tuplets = [f for f in bad if f.tuplet_faults]
 
     header = "Your previous transcription has measures that cannot be right:"
     body = "\n".join(f"  - {line}" for line in lines)
@@ -451,5 +472,11 @@ def describe_for_retry(findings: list[MeasureFinding]) -> str:
             "tie: record it in `slurs` and set tied_to_next false. Only set "
             "tied_to_next when the same pitch is written twice and held as one "
             "sound."
+        )
+    if tuplets:
+        instructions.append(
+            " Count the notes inside each bracket again and make `tuplets` say "
+            "what is printed over it: actual_notes is the number on the bracket "
+            f"and normal_notes is what it replaces. {TUPLET_NOTE}."
         )
     return header + "\n" + body + "".join(instructions)

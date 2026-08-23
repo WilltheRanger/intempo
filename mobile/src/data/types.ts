@@ -96,10 +96,28 @@ export interface ScoreSlur {
   end_note_index: number;
 }
 
+/**
+ * A bracketed group and the ratio printed over it.
+ *
+ * `actual_notes` in the time of `normal_notes` — MusicXML's own vocabulary, so
+ * a scanned page and an imported file describe a tuplet the same way. It is a
+ * check rather than a source of durations: the beats come from `duration`, and
+ * the ratio is what catches the misread the beat sum cannot see, since three
+ * triplet eighths written for a bracketed 5 sum to exactly the right number.
+ */
+export interface ScoreTuplet {
+  start_note_index: number;
+  end_note_index: number;
+  actual_notes: number;
+  normal_notes: number;
+}
+
 export interface ScoreMeasure {
   measure_number: number;
   notes: ScoreNote[];
   slurs: ScoreSlur[];
+  /** Absent on scores written before brackets were recorded. */
+  tuplets?: ScoreTuplet[];
 }
 
 export interface ScoreRepeat {
