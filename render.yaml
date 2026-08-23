@@ -16,7 +16,16 @@ services:
     runtime: docker
     dockerfilePath: ./backend/Dockerfile
     dockerContext: ./backend
-    plan: starter
+    # `free`, not `starter`. `starter` is a paid instance, and a blueprint that
+    # names one makes Render demand a card before it will deploy anything at
+    # all — which is a poor first impression of a project you are only trying
+    # to see working.
+    #
+    # What free costs instead: the service sleeps after about 15 minutes idle
+    # and the next request pays a cold start of roughly a minute, and there is
+    # far less memory. Fine for trying the thing out; change this line to
+    # `starter` when the first real user would otherwise be the one waiting.
+    plan: free
     healthCheckPath: /v1/health
     envVars:
       # Secrets. Render asks for these on first deploy and keeps them out of git.
