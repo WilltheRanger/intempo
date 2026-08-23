@@ -17,6 +17,7 @@ would be more moving parts than the wart costs. The worker catches it and reads
 
 from __future__ import annotations
 
+import io
 import logging
 from urllib.parse import urlparse
 
@@ -274,3 +275,133 @@ def readable_url(image_url: str) -> str:
                 return fresh
             return f"{settings.SUPABASE_URL.rstrip('/')}/storage/v1{fresh}"
     return image_url
+
+
+# =============================================================
+# Getting a phone photograph into a shape a vision model accepts
+# =============================================================
+#
+# **This step did not exist, and its absence is the likeliest reason real
+# scans kept failing.** Everything upstream was built and tuned against
+# `fixtures/scores/`, which is five cropped excerpts of 30-50 KB. The app
+# receives something else entirely: a full page, shot handheld, 3000-4000 px
+# on the long edge and several megabytes, carrying an EXIF orientation flag.
+# The pipeline had never once been exercised on that input.
+#
+# Three ways it fails, none of which says anything useful about the page:
+#
+#   * **Too large.** Anthropic caps an image at 5 MB, and the limit applies to
+#     the *base64* payload, which is 4/3 the size of the file. A 4 MB
+#     photograph is a 5.3 MB request and comes back 400.
+#   * **Sideways.** A phone writes orientation into EXIF rather than rotating
+#     the pixels. Viewers honour it; an API reading raw bytes need not. A
+#     staff rotated 90 degrees is not sheet music to a reader that expects
+#     horizontal lines.
+#   * **Too many pixels to be worth sending.** Anthropic resizes anything over
+#     1568 px before it reaches the model, so the extra pixels buy no accuracy
+#     — they are paid for in upload time and in the size limit above.
+
+#: Anthropic's own recommended maximum edge. Larger images are downsampled
+#: server-side before the model sees them, so sending more is spending more to
+#: deliver the same picture.
+MODEL_MAX_EDGE = 1568
+
+#: The hard API ceiling on one image, applied to the base64 payload.
+MODEL_MAX_BYTES = 5 * 1024 * 1024
+
+#: Base64 inflates by 4/3. Budget against the encoded size, not the file size —
+#: budgeting against the file is how a 4 MB photograph becomes a 5.3 MB
+#: request that is refused.
+_B64_RATIO = 4 / 3
+
+#: Re-encode quality, then the fallbacks if the first pass is still too big.
+#: 88 is visually indistinguishable on engraved notation; below about 60 the
+#: thin lines of a staff start to break up, which is the one thing that must
+#: survive.
+_QUALITY_STEPS = (88, 75, 60)
+
+
+def prepare_for_model(image_bytes: bytes) -> tuple[bytes, str]:
+    """Normalise a photograph into something a vision model will accept.
+
+    Returns `(bytes, media_type)`. Always JPEG on success.
+
+    **Never raises.** A page that cannot be decoded is returned untouched with
+    its sniffed media type, so this can only ever improve matters: the worst
+    case is the behaviour that existed before this function did. An
+    unrecognised format is the provider's to refuse, with the provider's own
+    message, rather than something for this to guess about.
+    """
+    try:
+        from PIL import Image, ImageOps
+    except ImportError:  # pragma: no cover — Pillow is a declared dependency
+        log.warning("Pillow is not installed; sending the page as it arrived")
+        return image_bytes, media_type_of(image_bytes, "")
+
+    _register_heif()
+
+    try:
+        with Image.open(io.BytesIO(image_bytes)) as image:
+            # Orientation first, and before anything reads the dimensions:
+            # rotating afterwards would fit the long edge to the wrong axis.
+            image = ImageOps.exif_transpose(image)
+            # A page can arrive as CMYK from a scanner, palette from a PNG
+            # export, or RGBA from a canvas capture. JPEG encodes none of
+            # those, and an alpha channel over white sheet music is a
+            # transparent page.
+            if image.mode != "RGB":
+                image = image.convert("RGB")
+
+            longest = max(image.size)
+            if longest > MODEL_MAX_EDGE:
+                scale = MODEL_MAX_EDGE / longest
+                image = image.resize(
+                    (max(1, round(image.width * scale)), max(1, round(image.height * scale))),
+                    # LANCZOS, not the default. Staff lines are one or two
+                    # pixels wide and a cheaper filter drops them in patches —
+                    # which produces exactly the "unreadable page" this whole
+                    # step exists to prevent.
+                    Image.Resampling.LANCZOS,
+                )
+
+            for quality in _QUALITY_STEPS:
+                buffer = io.BytesIO()
+                image.save(buffer, format="JPEG", quality=quality, optimize=True)
+                encoded = buffer.getvalue()
+                if len(encoded) * _B64_RATIO <= MODEL_MAX_BYTES:
+                    log.info(
+                        "page normalised: %d bytes -> %d (%dx%d, q%d)",
+                        len(image_bytes), len(encoded), image.width, image.height, quality,
+                    )
+                    return encoded, "image/jpeg"
+
+            # Every quality step still too big. Vanishingly unlikely at
+            # 1568 px, and if it happens the smallest attempt is still a far
+            # better bet than the original.
+            log.warning("page still over the size limit after re-encoding; sending the smallest")
+            return encoded, "image/jpeg"
+    except Exception as exc:  # noqa: BLE001 — decode failures of every kind
+        log.warning("could not normalise the page, sending it as it arrived: %s", exc)
+        return image_bytes, media_type_of(image_bytes, "")
+
+
+_heif_registered = False
+
+
+def _register_heif() -> None:
+    """Teach Pillow to open HEIC, which is what an iPhone shoots by default.
+
+    Optional: without it a HEIC page falls through to the untouched path and
+    the provider refuses it by name, which is the behaviour that existed
+    before. With it, the same page becomes an ordinary JPEG.
+    """
+    global _heif_registered
+    if _heif_registered:
+        return
+    _heif_registered = True
+    try:
+        import pillow_heif
+
+        pillow_heif.register_heif_opener()
+    except ImportError:  # pragma: no cover
+        log.info("pillow-heif is not installed; HEIC pages will not be normalised")

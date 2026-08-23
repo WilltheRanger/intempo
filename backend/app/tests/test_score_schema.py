@@ -83,19 +83,55 @@ def test_ocr_confidence_outside_range_rejected(conf: float) -> None:
         ScoreJson.model_validate({**MINIMAL_PAYLOAD, "ocr_confidence": conf})
 
 
-def test_extra_fields_rejected() -> None:
+def test_extra_fields_are_ignored_rather_than_losing_the_page() -> None:
+    """`extra="forbid"` cost whole pages, and got worse with better models.
+
+    One unexpected key anywhere failed validation for the entire score; the
+    pipeline read that as the provider failing, asked the next one, and then
+    told the musician their photograph was unreadable. A page that changes
+    metre partway down invites exactly this — the model has nowhere in the
+    schema to say so, and attaching it to the measure was fatal.
+    """
     payload = {**MINIMAL_PAYLOAD, "unexpected": "nope"}
-    with pytest.raises(ValidationError):
-        ScoreJson.model_validate(payload)
+    score = ScoreJson.model_validate(payload)
+    assert score.clef == MINIMAL_PAYLOAD["clef"]
+    assert not hasattr(score, "unexpected")
 
 
-def test_measure_extra_field_rejected() -> None:
+def test_a_measure_carrying_something_extra_still_parses() -> None:
+    """The realistic version: a page that changes metre, and a model that
+    attaches the new one to the measure because there is nowhere else."""
     payload = {
         **MINIMAL_PAYLOAD,
-        "measures": [{"measure_number": 1, "notes": [], "extra": True}],
+        "measures": [
+            {
+                "measure_number": 1,
+                "notes": [
+                    {"pitch": "C3", "duration": "quarter", "beam": "start", "fingering": 2}
+                ],
+                "slurs": [],
+                "time_signature": "3/4",
+                "rehearsal_mark": "49",
+            }
+        ],
     }
-    with pytest.raises(ValidationError):
-        ScoreJson.model_validate(payload)
+    score = ScoreJson.model_validate(payload)
+    assert score.measures[0].notes[0].pitch == "C3"
+    assert score.measures[0].notes[0].duration == "quarter"
+
+
+def test_ignoring_extras_does_not_loosen_what_is_declared() -> None:
+    """The fields the app reads are validated exactly as strictly as before —
+    an extra key cannot smuggle in an impossible duration or a bad pitch."""
+    for bad in (
+        {"pitch": "H9", "duration": "quarter"},
+        {"pitch": "C3", "duration": "demisemiquaver"},
+    ):
+        with pytest.raises(ValidationError):
+            ScoreJson.model_validate(
+                {**MINIMAL_PAYLOAD,
+                 "measures": [{"measure_number": 1, "notes": [bad], "slurs": []}]}
+            )
 
 
 def test_invalid_time_signature_rejected() -> None:
