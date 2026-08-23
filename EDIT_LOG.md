@@ -6,6 +6,56 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-30 — Slurs stopped following the notes they were drawn over
+
+**Branch:** `main`. The defect reported at the end of the audit follow-up.
+
+`slurs` and `tuplets` address notes **by index**. The correction screen saved a
+measure as `{...m, notes: working}` — replacing the notes and carrying the old
+indices across untouched — so adding or deleting a note left every mark after
+that point pointing one note out of place, silently. True of slurs since the
+editor shipped; brackets inherited it the day they were added.
+
+**These are not decoration.** `build_timeline` reads slur interiors to decide
+which notes are *timed at all*, so a misplaced slur is a timing fault. Measured
+on nine eighths with a slur drawn over the last four, after inserting a note at
+index 1:
+
+    timed notes, before:  [0, 1, 2, 3, 4, 8]
+    timed notes, after:   [0, 1, 2, 3, 4, 5]
+
+Wrong in both directions at once. Note 5 — the slur's real first note, which
+*is* attacked — was dropped from timing, and note 8 — a slur interior with no
+attack — was timed instead. The second half of that is the phantom-"dragging"
+failure the slur handling exists to prevent.
+
+The arithmetic lives in `lib/notation/spans.ts`, pure and out of the component,
+because the interesting part is the edges: a mark that starts exactly where the
+note lands, one that ends there, one that collapses to nothing.
+
+Two calls worth naming:
+
+- **A note inserted inside a mark extends it**, including at the mark's last
+  index — an insert at the end of a slur is inside the phrase, not the start of
+  the next one. For a bracket that means a triplet gaining a fourth note becomes
+  a bracket over four notes, which is wrong and which `tuplet_faults` will now
+  say so about. Reindexing keeps the mark honest; it does not make the edit
+  correct, and it should not pretend to.
+- **A mark is dropped only when its end falls before its start** — that is a
+  broken span, not a shrunken one. A mark left over a single note is inert
+  (`build_timeline` computes its interior as empty) and not worth a special
+  case.
+
+**`mobile/` had no test runner**, which is the third time this session that
+mattered. Added `vitest` as a dev dependency with `npm test`; 16 tests cover the
+index arithmetic. Verified across the language boundary too — the mobile module
+produced the corrected measure, the backend's `build_timeline` read it, and the
+numbers above are that comparison rather than an assertion about it.
+
+**Tests:** backend 535 unchanged; mobile **0 → 16**. Ruff and `tsc` clean.
+
+---
+
 ## 2026-08-29 (last) — Two docs that had stopped being true
 
 **Branch:** `main`. Audit follow-up, item 5 of 5.

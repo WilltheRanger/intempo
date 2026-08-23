@@ -21,6 +21,12 @@ import {
   describeBeats,
   stepPitch,
 } from '../../lib/notation/reading';
+import {
+  marksAfterDelete,
+  marksAfterInsert,
+  marksOf,
+  type MeasureMarks,
+} from '../../lib/notation/spans';
 import type { RootStackParamList } from '../../navigation/types';
 
 /**
@@ -60,12 +66,17 @@ export function MeasureEditScreen() {
   );
 
   const [notes, setNotes] = useState<ScoreNote[] | null>(null);
+  // Slurs and brackets address notes by index, so they have to move whenever a
+  // note is added or removed. Held here rather than read back from the score at
+  // save time, which is what left them pointing at the wrong notes.
+  const [marks, setMarks] = useState<MeasureMarks | null>(null);
   const [selected, setSelected] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
   // Seeded from the score the first time it arrives, then owned locally so a
   // background refetch cannot discard edits in progress.
   const working = notes ?? original?.notes ?? null;
+  const workingMarks = marks ?? (original ? marksOf(original) : null);
 
   if (isPending) {
     return (
@@ -107,9 +118,10 @@ export function MeasureEditScreen() {
     // run of eighths is almost always another eighth, and a default of
     // "quarter" would be one more thing to fix.
     const copy = { ...working[selected] };
-    const next = [...working.slice(0, selected + 1), copy, ...working.slice(selected + 1)];
-    setNotes(next);
-    setSelected(selected + 1);
+    const at = selected + 1;
+    setNotes([...working.slice(0, at), copy, ...working.slice(at)]);
+    setMarks(marksAfterInsert(workingMarks ?? { slurs: [], tuplets: [] }, at));
+    setSelected(at);
   }
 
   function deleteNote() {
@@ -118,6 +130,7 @@ export function MeasureEditScreen() {
     }
     impact(ImpactFeedbackStyle.Light);
     setNotes(working.filter((_, i) => i !== selected));
+    setMarks(marksAfterDelete(workingMarks ?? { slurs: [], tuplets: [] }, selected));
     setSelected(Math.max(0, selected - 1));
   }
 
@@ -129,7 +142,14 @@ export function MeasureEditScreen() {
     const corrected: ScoreJson = {
       ...piece.score,
       measures: piece.score.measures.map((m) =>
-        m.measure_number === params.measureNumber ? { ...m, notes: working } : m,
+        m.measure_number === params.measureNumber
+          // The marks go back with the notes. Spreading the measure and
+          // replacing only `notes` kept the *original* indices, so a bar that
+          // gained or lost a note came back with every slur after that point
+          // pointing one note out of place — and a slur decides which notes are
+          // timed at all.
+          ? { ...m, notes: working, ...(workingMarks ?? {}) }
+          : m,
       ),
     };
     try {
