@@ -10,13 +10,8 @@ You are reading a single line of sheet music for a string instrument. Output a J
     {
       "measure_number": 1,
       "notes": [
-        {
-          "pitch": "D3" | "rest",
-          "duration": "quarter" | "eighth" | "half" | "sixteenth" | "dotted_quarter" | ...,
-          "articulation": "staccato" | "tenuto" | "accent" | null,
-          "tied_to_next": false,
-          "dynamics": "f" | "p" | "mf" | null
-        }
+        {"pitch": "D3" | "rest", "duration": "quarter" | "eighth" | "half" | "whole" | "sixteenth" | "dotted_quarter" | ...},
+        {"pitch": "F#3", "duration": "eighth", "tied_to_next": true}
       ],
       "slurs": [
         {"start_note_index": 0, "end_note_index": 3}
@@ -30,6 +25,22 @@ You are reading a single line of sheet music for a string instrument. Output a J
   "notes_to_human": "Any uncertainties — list specific measures or symbols you're unsure about."
 }
 
+Write it as compact JSON on one line — no indentation, no line breaks between fields.
+
+A note has TWO required keys, "pitch" and "duration". Add "tied_to_next": true
+only for a note actually tied into the next one; omit it otherwise. Do not emit
+any other key on a note.
+
+Both of those instructions exist for the same reason, and it is not tidiness.
+Every note you write costs output, and a page of orchestral parts has well over
+a hundred of them. Indented JSON carrying three keys that are almost always
+null or false runs a page to roughly 6,100 tokens; the same page written this
+way is about 2,200. That is not a saving in the abstract — a real page of a
+bass part was refused outright because the transcription ran past the response
+limit before it reached the last bar, and the musician was told their
+photograph was unreadable. It was perfectly sharp. Brevity here is what lets a
+full page arrive at all.
+
 Rules:
 - Number the measures sequentially from 1, in the order they appear in the image. Do NOT copy printed measure numbers, and do NOT continue from them. This is a photograph of a passage, not a whole movement, and a wrong starting number renumbers every measure after it.
 - A boxed or circled number or letter above the staff is a REHEARSAL MARK. It is not a measure number and it is not a measure. Never emit a measure for one. Mention it in notes_to_human instead — e.g. "rehearsal mark 49 above the third bar". Reading a rehearsal mark as a measure number is the single most common way this transcription goes wrong: a mark reading 49 has been returned as measure 409, which inserted an empty measure and renumbered the rest of the line.
@@ -39,5 +50,6 @@ Rules:
 - Do NOT invent notes. If part of the image is illegible, leave that measure empty and flag it.
 - If the time_signature or key_signature is illegible (cropped off, handwritten unclear, missing from this excerpt), use the literal string "unknown" for that field rather than guessing. Do NOT use "unknown" for any other field — those two are the only ones with this escape hatch.
 - Tempo marking: if the score says "Allegro" without a BPM, infer the conventional range and put it in bpm_hint (Allegro ~120, Andante ~76, etc.)
-- Slurs: indicate by note index within the measure, 0-indexed.
+- Slurs: indicate by note index within the measure, 0-indexed. These matter more than they look: the analysis excludes slurred notes from the timing verdict, because a note taken under a bow stroke is not attacked and has no onset to be early or late. Getting them wrong marks real rushing as unmeasurable, or measures a note that was never articulated.
+- Do NOT report articulation (staccato, tenuto, accent) or dynamics. Nothing reads them, and asking for them on every note costs output that a long page needs for its notes.
 - Output ONLY the JSON object, no preamble or markdown fences.

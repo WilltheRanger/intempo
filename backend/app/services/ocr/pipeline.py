@@ -91,6 +91,19 @@ STAGE_CONFIRMING = "confirming"
 STAGE_READING = "reading"
 
 
+
+def _is_truncation(exc: Exception) -> bool:
+    """Whether a provider failed by running out of output room.
+
+    Matched on the providers' own phrase rather than an exception type, because
+    both of them raise plain `OCRProviderError` and adding a subclass would put
+    the knowledge in two places. `claude_provider` and `gemini_provider` both
+    say "cut off"; that string is the contract and the tests hold all three to
+    it.
+    """
+    return "cut off" in str(exc).lower()
+
+
 def parse_sheet_music(
     image_bytes: bytes,
     *,
@@ -169,6 +182,16 @@ def parse_sheet_music(
             response: OCRResponse = provider.parse(image_bytes, mime_type=media_type)
         except (ValidationError, OCRProviderError, ValueError) as exc:
             failures.append(f"{provider.name}: {type(exc).__name__}: {exc}")
+            if _is_truncation(exc):
+                # Stop, rather than fall through. Running out of room is a
+                # property of the *page*, not of the provider: the next one is
+                # asked the identical question about the identical image and
+                # stops in the same place. Falling through bought a second
+                # full-price failure and an identical error message, and this
+                # is the failure mode of a long page, which is exactly when
+                # the response was most expensive to begin with.
+                log.info("%s ran out of room; the rest of the chain would too", provider.name)
+                break
             continue
 
         if response.score.clef is None:
