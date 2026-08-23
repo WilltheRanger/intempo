@@ -87,7 +87,7 @@ export async function apiFetch<T>(
     requestHeaders.Authorization = `Bearer ${token}`;
   }
 
-  const response = await fetch(`${API_BASE_URL}${path}`, {
+  const response = await send(path, {
     ...init,
     headers: requestHeaders,
     body: body === undefined ? undefined : JSON.stringify(body),
@@ -113,6 +113,59 @@ export async function apiFetch<T>(
   }
 
   return (await response.json()) as T;
+}
+
+/**
+ * How long to wait before deciding the request is not coming back.
+ *
+ * Forty-five seconds, which is far longer than any endpoint should need and
+ * deliberately so: the API is on a host that sleeps when idle, and the first
+ * request after a nap pays a cold start of about a minute before a single line
+ * of application code runs. A shorter timeout would abort perfectly healthy
+ * requests and report it as a failure.
+ *
+ * This is a backstop against a connection that has died silently, not a
+ * latency budget. Long work — reading a photographed page — is not held on a
+ * connection at all any more; it is a row the app polls.
+ */
+const REQUEST_TIMEOUT_MS = 45_000;
+
+/**
+ * `fetch`, with a deadline and an error a person can read.
+ *
+ * A `fetch` that never completes rejects with the platform's own wording, and
+ * on iOS Safari that wording is **"Load failed"** — which is what a musician
+ * saw when a scan hit a request that had been held open too long. It names no
+ * cause and suggests no remedy, and it was reaching the screen verbatim
+ * because nothing here caught it.
+ *
+ * Every network-level failure now arrives as an `ApiError` with status 0.
+ * Zero rather than a plausible 502: no server answered, so attributing a
+ * status to one would be inventing a fact about a conversation that never
+ * happened.
+ */
+async function send(path: string, init: RequestInit): Promise<Response> {
+  const controller = new AbortController();
+  const deadline = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  try {
+    return await fetch(`${API_BASE_URL}${path}`, { ...init, signal: controller.signal });
+  } catch (cause) {
+    if (controller.signal.aborted) {
+      throw new ApiError(
+        0,
+        path,
+        'The server took too long to answer. It may be waking up — try again in a moment.',
+      );
+    }
+    throw new ApiError(
+      0,
+      path,
+      'Could not reach the server. Check your connection and try again.',
+      cause,
+    );
+  } finally {
+    clearTimeout(deadline);
+  }
 }
 
 /**

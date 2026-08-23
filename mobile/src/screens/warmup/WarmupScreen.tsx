@@ -20,7 +20,7 @@ import { usePreferences } from '../../data/preferences';
 import { BORDER_WIDTH, colors, spacing } from '../../design';
 import { INSTRUMENT_LABELS, warmupFor, warmupScore } from '../../lib/warmup';
 import type { RootNavigation } from '../../navigation/types';
-import { ListenButton } from '../record/ListenButton';
+import { ListenButton } from '../../components/score/ListenButton';
 
 /**
  * The warmup, in full.

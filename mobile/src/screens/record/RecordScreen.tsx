@@ -38,7 +38,7 @@ import { beatsPerBar, useMetronome } from '../../lib/metronome';
 import { describeTierLimit } from '../../lib/tierLimit';
 import type { RootNavigation, RootStackParamList } from '../../navigation/types';
 import { BeatIndicator } from './BeatIndicator';
-import { ListenButton } from './ListenButton';
+import { ListenButton } from '../../components/score/ListenButton';
 
 const METRONOME_LABELS = {
   off: 'Metronome off',

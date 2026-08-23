@@ -119,7 +119,11 @@ export function TranscriptionReviewScreen() {
             // Undefined on a cold start, which is honestly "no tab chosen yet".
             state: activeTab ? { index: 0, routes: [{ name: activeTab }] } : undefined,
           },
-          { name: 'PieceDetail', params: { pieceId: piece.id } },
+          // The score, not the piece screen. The musician just photographed a
+          // page and the only question they have is what came off it — which
+          // was two taps away, behind a screen showing a tempo they hadn't
+          // chosen yet for a piece they hadn't seen read.
+          { name: 'PieceScore', params: { pieceId: piece.id } },
         ],
       });
     } catch (cause) {
@@ -153,7 +157,8 @@ export function TranscriptionReviewScreen() {
       />
 
       <Text variant="body" color="textSecondary" style={styles.lede}>
-        Reading the notation takes about ten seconds once you save.
+        Saving adds the piece straight away. Reading the notation happens after
+        that, and you can watch it or leave it running.
       </Text>
 
       <Input
@@ -227,6 +232,11 @@ export function TranscriptionReviewScreen() {
         </Text>
       ) : null}
 
+      {/*
+        No longer the ten-to-sixty-second wait it used to be. The request now
+        creates the row and returns; reading the page happens in a worker and
+        is watched on the score screen this lands on.
+      */}
       <PrimaryButton
         label="Save piece"
         onPress={() => void save()}

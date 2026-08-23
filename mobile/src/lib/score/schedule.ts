@@ -15,7 +15,7 @@ import type { Duration, ScoreJson, ScoreNote } from '../../data/types';
  */
 
 /** Beats per note value, at any tempo. A dot adds half again. */
-const BEATS: Record<Duration, number> = {
+export const BEATS: Record<Duration, number> = {
   whole: 4,
   dotted_whole: 6,
   half: 2,

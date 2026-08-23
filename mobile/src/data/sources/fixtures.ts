@@ -30,10 +30,27 @@ import type {
  * `fixtures/scores/` — each thumbnail is genuinely the piece it claims to be.
  * Provenance and licensing: `fixtures/scores/SOURCES.md`.
  */
-interface FixturePiece extends Omit<Piece, 'lastPracticedAt'> {
+interface FixturePiece
+  extends Omit<
+    Piece,
+    'lastPracticedAt' | 'transcriptionStatus' | 'transcriptionStage' | 'transcriptionError'
+  > {
   /** Resolved to an ISO timestamp at read time so it never goes stale. */
   practicedDaysAgo: number | null;
 }
+
+/**
+ * Sample pieces are always finished being read.
+ *
+ * There is no backend in this build, so there is no worker and nothing to
+ * wait for. Filled in here rather than repeated on every fixture, which would
+ * be eight copies of a constant.
+ */
+const TRANSCRIBED = {
+  transcriptionStatus: 'done',
+  transcriptionStage: null,
+  transcriptionError: null,
+} as const;
 
 
 /**
@@ -162,11 +179,11 @@ const FIXTURE_PIECES: FixturePiece[] = [
 
 function toPiece({ practicedDaysAgo, ...piece }: FixturePiece): Piece {
   if (practicedDaysAgo === null) {
-    return { ...piece, lastPracticedAt: null };
+    return { ...piece, ...TRANSCRIBED, lastPracticedAt: null };
   }
   const practicedAt = new Date();
   practicedAt.setDate(practicedAt.getDate() - practicedDaysAgo);
-  return { ...piece, lastPracticedAt: practicedAt.toISOString() };
+  return { ...piece, ...TRANSCRIBED, lastPracticedAt: practicedAt.toISOString() };
 }
 
 /**

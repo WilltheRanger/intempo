@@ -24,9 +24,13 @@ export interface TranscribeInput {
  * misleading thing this app could produce. A build with no backend refuses
  * instead — see below.
  *
- * Takes 10–14 seconds against the real backend (EDIT_LOG, Batch 2), because OCR
- * runs inline inside `POST /v1/scores`. The caller needs a real pending state,
- * which is why this is a mutation rather than a fire-and-forget.
+ * **Returns as soon as the piece exists, not when it has been read.** OCR used
+ * to run inside `POST /v1/scores` and this used to be pending for the ten to
+ * sixty seconds that took — a request held open across a screen the musician
+ * could background, which is how "the pipeline gets stuck" happened. The
+ * backend now writes the row and reads the page in a worker, so this resolves
+ * in the ordinary time a request takes and the piece it returns has
+ * `transcriptionStatus: 'queued'`. Watching the rest is `usePiece`'s job.
  */
 export function useTranscribePage() {
   const queryClient = useQueryClient();
@@ -52,6 +56,9 @@ export function useTranscribePage() {
         thumbnail: score.image_url,
         markedBpm: score.score_json?.bpm_hint ?? null,
         score: score.score_json ?? null,
+        transcriptionStatus: score.transcription_status ?? 'done',
+        transcriptionStage: score.transcription_stage ?? null,
+        transcriptionError: score.transcription_error ?? null,
       };
     },
     onSuccess: () => {

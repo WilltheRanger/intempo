@@ -4,6 +4,8 @@ import { StyleSheet, View, type LayoutChangeEvent } from 'react-native';
 
 import { Stave } from '../../components/notation/Stave';
 import { ScoreThumbnail } from '../../components/pieces/ScoreThumbnail';
+import { ListenButton } from '../../components/score/ListenButton';
+import { TranscribingPanel } from '../../components/score/TranscribingPanel';
 import {
   EmptyState,
   LoadingState,
@@ -16,8 +18,13 @@ import {
 import { usePiece } from '../../data/hooks/usePieces';
 import { spacing } from '../../design';
 import { describeOmissions, staveScoreFor } from '../../lib/notation/fromScore';
+import {
+  describeConfidence,
+  describeProblemMeasures,
+  readingNotesFor,
+} from '../../lib/notation/reading';
 import type { Clef } from '../../data/types';
-import type { RootStackParamList } from '../../navigation/types';
+import type { RootNavigation, RootStackParamList } from '../../navigation/types';
 
 /** Read from a stand, not glanced at — the same size the warmup page uses. */
 const STAVE_SCALE = 1.25;
@@ -37,6 +44,26 @@ const CLEF_LABELS: Record<Clef, string> = {
 
 /** Tall enough that a page of sheet music is legible rather than indicated. */
 const PAGE_HEIGHT = 420;
+
+/**
+ * The same page while it is still being read.
+ *
+ * Shorter, because the screen is about the reading at that moment and a
+ * full-height photograph would be the first thing the eye lands on — two
+ * focal points, and the wrong one dominant (§3 law 4). It stays on screen
+ * rather than being removed because confirming the right page went up is a
+ * real thing to want while waiting.
+ */
+const PAGE_HEIGHT_WHILE_READING = 240;
+
+/**
+ * The tempo to hear the transcription at when the page named none.
+ *
+ * A study tempo, not a claim about the music. Slow enough that a wrong bar is
+ * audible as a wrong bar rather than a blur, which is the entire reason to
+ * play a transcription back.
+ */
+const FALLBACK_LISTEN_BPM = 72;
 
 type ScoreView = 'notation' | 'original';
 
@@ -59,7 +86,7 @@ type ScoreView = 'notation' | 'original';
  * instead.
  */
 export function PieceScoreScreen() {
-  const navigation = useNavigation();
+  const navigation = useNavigation<RootNavigation>();
   const { params } = useRoute<RouteProp<RootStackParamList, 'PieceScore'>>();
   const { data: piece, isPending, isError } = usePiece(params.pieceId);
 
@@ -69,6 +96,11 @@ export function PieceScoreScreen() {
 
   const stave = useMemo(
     () => (piece?.score ? staveScoreFor(piece.score) : null),
+    [piece?.score],
+  );
+
+  const reading = useMemo(
+    () => (piece?.score ? readingNotesFor(piece.score) : null),
     [piece?.score],
   );
 
@@ -99,6 +131,69 @@ export function PieceScoreScreen() {
 
   const hasNotation = (stave?.notes.length ?? 0) > 0;
   const hasPages = piece.thumbnail !== null;
+
+  // Still being read. Distinguished from "has no notes" by the status and only
+  // by the status: an empty transcription looks identical either way, and one
+  // of the two is worth waiting on.
+  const stillReading =
+    piece.transcriptionStatus === 'queued' || piece.transcriptionStatus === 'reading';
+
+  if (stillReading) {
+    return (
+      <ScreenContainer>
+        <PageHeader
+          eyebrow={piece.composer}
+          title={piece.title}
+          onBack={() => navigation.goBack()}
+          backLabel="Back to piece"
+        />
+        <TranscribingPanel piece={piece} />
+        {hasPages ? (
+          <ScoreThumbnail source={piece.thumbnail} style={styles.pageWhileReading} />
+        ) : null}
+      </ScreenContainer>
+    );
+  }
+
+  if (piece.transcriptionStatus === 'failed') {
+    return (
+      <ScreenContainer>
+        <PageHeader
+          eyebrow={piece.composer}
+          title={piece.title}
+          onBack={() => navigation.goBack()}
+          backLabel="Back to piece"
+        />
+        {/*
+          The backend's sentence, not a generic one. It knows which half failed
+          — a page that could not be fetched and a page that could not be read
+          need different things from the musician, and telling someone to
+          retake a photograph that was never downloaded wastes their time.
+        */}
+        <EmptyState
+          title="This page couldn't be read"
+          description={
+            piece.transcriptionError ??
+            'Something went wrong reading this page. Photographing it again usually fixes it.'
+          }
+          actionLabel="Photograph it again"
+          onActionPress={() => navigation.navigate('Scanner')}
+        />
+        {/*
+          The piece is still real and still practisable — it is in the library,
+          it has a title and a tempo, and the metronome does not need notes.
+          Saying so stops a failed read reading as a lost piece.
+        */}
+        <Text variant="metadataSmall" color="textTertiary" style={styles.caveat}>
+          The piece is still in your library. You can practise it with the
+          metronome; only the verdict needs the notation.
+        </Text>
+        {hasPages ? (
+          <ScoreThumbnail source={piece.thumbnail} style={styles.pageWhileReading} />
+        ) : null}
+      </ScreenContainer>
+    );
+  }
 
   // Both halves exist only when the piece was photographed *and* transcribed.
   // A piece entered by hand has neither, and a toggle between two absences
@@ -171,6 +266,41 @@ export function PieceScoreScreen() {
             />
           )}
 
+          {/*
+            Hear what was read, at the tempo the page marked.
+
+            The fastest way to catch a bar OCR got wrong is to listen to it:
+            a misread rhythm is obvious in two seconds of playback and nearly
+            invisible on a stave you are reading for the first time. Sits with
+            the notation rather than in the header because it plays *this*,
+            not the piece.
+          */}
+          <View style={styles.listen}>
+            <ListenButton
+              score={piece.score}
+              bpm={piece.markedBpm ?? FALLBACK_LISTEN_BPM}
+            />
+          </View>
+
+          {/*
+            What the reading is unsure about, in order of how much it matters.
+
+            Bars that don't add up first: that is arithmetic, not an opinion,
+            and it is the failure that corrupts a verdict — `alignment.py`
+            builds its expected timeline from these durations, so one bad bar
+            pushes every bar after it out of step.
+
+            Then what the engraver could not draw, then whatever the model
+            chose to say. Three quiet lines, not three badges: none of them is
+            an alert, and boxing them would make the caveats louder than the
+            music (§3 laws 3 and 6).
+          */}
+          {reading && describeProblemMeasures(reading.problemMeasures) ? (
+            <Text variant="metadataSmall" color="textSecondary" style={styles.caveat}>
+              {describeProblemMeasures(reading.problemMeasures)}
+            </Text>
+          ) : null}
+
           {describeOmissions(stave) ? (
             <Text
               variant="metadataSmall"
@@ -178,6 +308,18 @@ export function PieceScoreScreen() {
               style={styles.caveat}
             >
               {describeOmissions(stave)}
+            </Text>
+          ) : null}
+
+          {reading && describeConfidence(reading.confidence) ? (
+            <Text variant="metadataSmall" color="textSecondary" style={styles.caveat}>
+              {describeConfidence(reading.confidence)}
+            </Text>
+          ) : null}
+
+          {reading?.notes ? (
+            <Text variant="metadataSmall" color="textTertiary" style={styles.caveat}>
+              {reading.notes}
             </Text>
           ) : null}
         </View>
@@ -204,5 +346,14 @@ const styles = StyleSheet.create({
     width: '100%',
     height: PAGE_HEIGHT,
     marginTop: spacing.xl,
+  },
+  pageWhileReading: {
+    width: '100%',
+    height: PAGE_HEIGHT_WHILE_READING,
+    marginTop: spacing['3xl'],
+  },
+  listen: {
+    marginTop: spacing.xl,
+    alignSelf: 'flex-start',
   },
 });
