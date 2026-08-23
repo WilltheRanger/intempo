@@ -6,6 +6,47 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-31 (last) — The app had stopped showing whole categories of fault
+
+**Branch:** `main`. `/loop` iteration, following the drift hunt from the last
+one. There was a fourth parallel validator, and `CLAUDE.md` counted three.
+
+`notation/reading.ts` decides which bars `PieceScore` flags and which the "Fix
+bar N" control opens. It checks **beat sums only**. The backend now checks four
+things, and three of them — broken ties, tuplet ratios, note density — fire on
+measures whose beats add up **exactly**.
+
+Measured on a bar of four quarters with a slur written as a tie:
+
+    backend : is_problem = True   "measure 1: E2 is tied to G2 — a tie joins
+                                   one pitch to itself, so this is a slur or a
+                                   misread"
+    app     : problemMeasures = []
+
+Nothing on the screen, and no way to reach the editor for it.
+
+**Not fixed by porting the checks.** That would have been a fifth
+implementation of a validator that has drifted three times in a week — ties,
+brackets and density each had to be ported to two browser tools already, and
+the app was missed every time. The server does the arithmetic once and sends
+what it found: `ScoreResponse.concerns`, one entry per measure, carrying the
+kind and a sentence already written in a musician's terms.
+
+`reading.ts` prefers the server's list and keeps the local beat-sum check as a
+fallback — for a backend that predates the field, and for a score being edited
+before it is saved. It is a subset on purpose, and `CLAUDE.md` now says so.
+
+**A copy change that had become a correctness one.** The caveat line reads "Bar
+3 doesn't add up to the time signature". For a tie or a bracket fault that is
+simply false — those bars add up. It now says the arithmetic sentence only for
+beat faults and otherwise shows the server's own reason. Minimal edit, no
+redesign: an unchanged beat fault renders exactly the same sentence it did
+before. **Flagged for the owner** under §2, since it is user-facing copy.
+
+**Tests:** backend 541 → **544**, mobile 25 → **33**. Ruff and `tsc` clean.
+
+---
+
 ## 2026-08-31 (later) — The app played a different piece from the one it graded
 
 **Branch:** `main`. `/loop` iteration. Checking whether the mobile side had

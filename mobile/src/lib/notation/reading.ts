@@ -1,4 +1,4 @@
-import type { ScoreJson } from '../../data/types';
+import type { MeasureConcern, ScoreJson } from '../../data/types';
 import { BEATS } from '../score/schedule';
 
 /**
@@ -15,8 +15,13 @@ import { BEATS } from '../score/schedule';
  * opinion — whether each bar's durations add up to its time signature.
  */
 export interface ReadingNotes {
-  /** Measure numbers whose durations do not fill the bar. */
+  /** Measure numbers the reading cannot vouch for. */
   problemMeasures: number[];
+  /**
+   * Why, when the server said. Empty when falling back to the local beat-sum
+   * check, which knows the measures but not the reasons.
+   */
+  concerns: MeasureConcern[];
   /** The model's own estimate of its reading, 0–1, or null if it gave none. */
   confidence: number | null;
   /** What the model chose to say about this page. Empty string when nothing. */
@@ -90,9 +95,27 @@ export function problemMeasures(score: ScoreJson): number[] {
   return out;
 }
 
-export function readingNotesFor(score: ScoreJson): ReadingNotes {
+/**
+ * What to tell the musician about how this page was read.
+ *
+ * `concerns` come from the server, which is the only place all four checks
+ * live: beat sums, broken ties, tuplet ratios and note density. The last three
+ * can each fire on a measure whose beats add up **exactly** — a slur written as
+ * a tie sums to 4.0 — so the local beat-sum check silently showed nothing for
+ * whole categories of fault, and offered no way to reach the editor for them.
+ *
+ * The local check remains as the fallback, for a backend that predates the
+ * field and for a score being edited before it has been saved. It is a subset
+ * and is meant to be.
+ */
+export function readingNotesFor(
+  score: ScoreJson,
+  concerns?: MeasureConcern[],
+): ReadingNotes {
+  const fromServer = concerns?.map((c) => c.measure_number) ?? null;
   return {
-    problemMeasures: problemMeasures(score),
+    problemMeasures: fromServer ?? problemMeasures(score),
+    concerns: concerns ?? [],
     confidence: typeof score.ocr_confidence === 'number' ? score.ocr_confidence : null,
     notes: score.notes_to_human ?? '',
   };
@@ -109,8 +132,23 @@ export function readingNotesFor(score: ScoreJson): ReadingNotes {
  */
 const NAMED_LIMIT = 6;
 
+/** "measure 3: …" reads better as "Measure 3: …" at the start of a sentence. */
+function capitalise(sentence: string): string {
+  return sentence.charAt(0).toUpperCase() + sentence.slice(1);
+}
+
+
 export function describeProblemMeasures(
   measures: number[],
+  /**
+   * Why each bar was flagged, when the server said.
+   *
+   * The sentence below claims the bars "don't add up to the time signature".
+   * That was true while beat sums were the only check. Three of the four now
+   * fire on measures whose beats add up **exactly** — a slur written as a tie
+   * sums to 4.0 — so for those it states a falsehood about the musician's
+   * score, and the server has already written the true reason in their terms.
+   */
   /**
    * Whether the musician still has the page to compare against.
    *
@@ -120,10 +158,20 @@ export function describeProblemMeasures(
    * stopped being something they can act on, and advice you cannot follow is
    * worse than none.
    */
-  { canCheck = true }: { canCheck?: boolean } = {},
+  { canCheck = true, concerns = [] }: { canCheck?: boolean; concerns?: MeasureConcern[] } = {},
 ): string | null {
   if (measures.length === 0) {
     return null;
+  }
+
+  // Only the beat-sum wording can promise arithmetic. Anything else says what
+  // the server found, which is already a sentence written for a musician.
+  const others = concerns.filter((c) => c.kind !== 'beats');
+  if (others.length > 0) {
+    const tail = canCheck ? ' Check it against your copy.' : '';
+    return others.length === 1
+      ? `${capitalise(others[0].detail)}.${tail}`
+      : `${others.length} bars need a second look. ${capitalise(others[0].detail)}.${tail}`;
   }
   if (measures.length > NAMED_LIMIT) {
     return canCheck

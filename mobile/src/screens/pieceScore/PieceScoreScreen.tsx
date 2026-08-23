@@ -119,8 +119,8 @@ export function PieceScoreScreen() {
   );
 
   const reading = useMemo(
-    () => (piece?.score ? readingNotesFor(piece.score) : null),
-    [piece?.score],
+    () => (piece?.score ? readingNotesFor(piece.score, piece.concerns) : null),
+    [piece?.score, piece?.concerns],
   );
 
   function measure(event: LayoutChangeEvent) {
@@ -366,7 +366,10 @@ export function PieceScoreScreen() {
               style={styles.fixRow}
             >
               <Text variant="metadataSmall" color="textSecondary">
-                {describeProblemMeasures(reading.problemMeasures, { canCheck: hasPages })}
+                {describeProblemMeasures(reading.problemMeasures, {
+                  canCheck: hasPages,
+                  concerns: reading.concerns,
+                })}
               </Text>
               <Text variant="metadataSmall" color="accent" style={styles.fixCue}>
                 Fix bar {reading.problemMeasures[0]}

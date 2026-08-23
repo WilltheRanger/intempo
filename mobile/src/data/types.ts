@@ -112,6 +112,22 @@ export interface ScoreTuplet {
   normal_notes: number;
 }
 
+/**
+ * A measure the reading cannot vouch for, as the server found it.
+ *
+ * Sent rather than recomputed. The app has its own beat-sum check, which was
+ * enough while beat sums were the only test; the server now also checks broken
+ * ties, tuplet ratios and note density, and **every one of those can fire on a
+ * measure whose beats add up exactly**. Recomputing them here would be a fifth
+ * copy of a validator that has already drifted three times.
+ */
+export interface MeasureConcern {
+  measure_number: number;
+  kind: 'beats' | 'tie' | 'tuplet' | 'density';
+  /** A sentence fit to show a musician. */
+  detail: string;
+}
+
 export interface ScoreMeasure {
   measure_number: number;
   notes: ScoreNote[];
@@ -175,6 +191,8 @@ export interface ScoreResponse {
   image_url: string | null;
   image_url_expires_at: string | null;
   score_json: ScoreJson;
+  /** Measures the server could not vouch for. Absent on an older backend. */
+  concerns?: MeasureConcern[];
   shared_with_studio: string | null;
   ocr_confidence: number | null;
   transcription_status: TranscriptionStatus;
@@ -335,6 +353,14 @@ export interface Piece {
    * notes".
    */
   score: ScoreJson | null;
+  /**
+   * Measures the server could not vouch for, and why.
+   *
+   * Empty for a clean page and for a piece with nothing read yet. Absent when
+   * the backend predates the field, which is what makes the local beat-sum
+   * check still worth keeping as a fallback.
+   */
+  concerns?: MeasureConcern[];
   /**
    * Whether the notes are still coming.
    *
