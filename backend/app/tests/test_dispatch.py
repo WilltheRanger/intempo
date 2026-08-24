@@ -6,6 +6,8 @@ is that the choice is made in one place — so the tests can make it too.
 
 from __future__ import annotations
 
+import os
+
 
 from app.workers import dispatch
 
@@ -310,3 +312,98 @@ def test_the_modal_function_name_matches_what_is_deployed() -> None:
 
     assert f"def {dispatch.MODAL_TRANSCRIBE_FUNCTION_NAME}(" in source
     assert f"def {dispatch.MODAL_FUNCTION_NAME}(" in source
+
+
+# ---- a token that was pasted with a newline ---------------------------------
+#
+# Reported as "the scan made something up", and it is four failures deep.
+#
+# `MODAL_TOKEN_ID` on the API host ended in `\n`. Modal sends both halves of
+# the token as gRPC metadata, and `grpclib` refuses a metadata value containing
+# a newline — so `fn.spawn()` raised `ValueError: Invalid metadata value` from
+# six frames down, on every call, since the day the value was pasted.
+#
+# Nothing above it treated that as serious, and each layer was individually
+# reasonable. The spawn failure is caught so it cannot 500 the request. The
+# fallback to reading in-process is deliberate, because a musician who has just
+# photographed a page should not lose it to a deployment setting. And
+# `/v1/ready` tested the tokens for presence, which they had.
+#
+# Together they meant no page ever reached Modal, which is the only place homr
+# is installed, so an orchestral bass part was read by the vision chain alone
+# and returned at confidence 0.40 — its own `notes_to_human` calling it
+# "approximate reconstructions" — and the app displayed that as the score.
+
+
+def test_a_token_pasted_with_a_newline_is_trimmed_before_it_is_sent(monkeypatch) -> None:
+    monkeypatch.setenv("MODAL_TOKEN_ID", "ak-example\n")
+    monkeypatch.setenv("MODAL_TOKEN_SECRET", "  as-example  ")
+
+    assert dispatch.clean_modal_credentials() == ["MODAL_TOKEN_ID", "MODAL_TOKEN_SECRET"]
+
+    assert os.environ["MODAL_TOKEN_ID"] == "ak-example"
+    assert os.environ["MODAL_TOKEN_SECRET"] == "as-example"
+
+
+def test_a_clean_token_is_left_exactly_as_it_is(monkeypatch) -> None:
+    """Whitespace inside a value would be Modal's business, not this
+    function's. Only the ends are touched."""
+    monkeypatch.setenv("MODAL_TOKEN_ID", "ak-example")
+    monkeypatch.setenv("MODAL_TOKEN_SECRET", "as-example")
+
+    assert dispatch.clean_modal_credentials() == []
+    assert os.environ["MODAL_TOKEN_ID"] == "ak-example"
+
+
+def test_an_unset_token_is_not_invented(monkeypatch) -> None:
+    """A missing credential must stay missing — `/v1/ready` reports that case
+    separately, and an empty string would make it look configured."""
+    monkeypatch.delenv("MODAL_TOKEN_ID", raising=False)
+    monkeypatch.delenv("MODAL_TOKEN_SECRET", raising=False)
+
+    assert dispatch.clean_modal_credentials() == []
+    assert "MODAL_TOKEN_ID" not in os.environ
+
+
+def test_the_value_never_reaches_the_log(monkeypatch, caplog) -> None:
+    """It is a credential. The real one reached the logs already, inside the
+    traceback grpclib raised — which is its own problem and the reason this
+    says only which variable was wrong."""
+    monkeypatch.setenv("MODAL_TOKEN_ID", "ak-hunter2\n")
+
+    with caplog.at_level("WARNING"):
+        dispatch.clean_modal_credentials()
+
+    assert caplog.records, "a repaired credential is worth one line"
+    said = " ".join(r.getMessage() for r in caplog.records)
+    assert "ak-hunter2" not in said
+    assert "MODAL_TOKEN_ID" in said
+
+
+def test_both_spawns_repair_the_token_before_building_a_client(monkeypatch) -> None:
+    """Repairing it in only one of the two would leave the other raising.
+
+    Reading a page and analysing a take are separate runtimes on purpose
+    (`TRANSCRIPTION_RUNTIME` and `ANALYSIS_RUNTIME`), and both hand work to
+    Modal through a client built from these same two variables.
+    """
+    import re
+    from pathlib import Path
+
+    source = Path(dispatch.__file__).read_text()
+    # Discovered, not listed. A third way to hand work to Modal added later is
+    # covered by this without anyone remembering to add it here — and the
+    # first version of this test named a function that does not exist and
+    # checked nothing.
+    spawners = re.findall(r"^def (_spawn\w*on_modal)\(", source, re.MULTILINE)
+    assert len(spawners) >= 2, f"expected the analysis and page spawners, found {spawners}"
+
+    for fn in spawners:
+        body = source.split(f"def {fn}(")[1].split("\ndef ")[0]
+        code = re.sub(r"#[^\n]*", "", body)
+        assert "clean_modal_credentials()" in code, f"{fn} does not repair the token"
+        # Before `import modal`, not merely somewhere in the function: the
+        # client reads the environment when it is constructed.
+        assert code.index("clean_modal_credentials()") < code.index("import modal"), (
+            f"{fn} repairs the token after the client was already built"
+        )

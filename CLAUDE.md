@@ -280,6 +280,32 @@ there works differently as of 2026-08-24:
   because they cover the page's margin; an interior one may not.
   Do not fit these constants to one photograph — the measured passing range, and
   the tidier pocket I declined to take, are in `EDIT_LOG.md`, 2026-09-17.
+- **A page too small to read is refused, not read.** `staff_space_px` measures
+  staff-line spacing from the autocorrelation of the ink profile in each band;
+  `too_small_to_read` refuses under **8 source pixels**, and refuses when no
+  band yields a staff period at all. Checked before any provider sees the page
+  and on the photograph as downloaded, never the prepared copy — the crops are
+  cut from the photograph, so the prepared page understates what the reader
+  gets. This exists because a webcam capture at 480×640 passed every stage:
+  the systems were found, all eight were cropped and sent, and a reading came
+  back at 0.40 confidence describing itself as "approximate reconstructions",
+  which the app drew as a score. Every mechanism for doubt fired and none
+  helped, because they all say *this reading might be wrong* when the true
+  statement is *there was nothing here to read*. Three rules inside it each
+  exist because removing them flips a real page from refused to read: a band
+  may not report a staff taller than itself (the real page reports a confident
+  28 px without that cap); the statistic is the **25th percentile**, because
+  autocorrelation peaks only at *multiples* so harmonics bias any average
+  upward, while the strict minimum lets one cue staff veto a good page; and a
+  period under 3 rows is halftone, not a staff. Do not refit the floor to one
+  photograph — the two measurement series are in `EDIT_LOG.md`, 2026-08-24.
+- **Anything Modal turns into gRPC metadata must be stripped.**
+  `clean_modal_credentials()` trims the token before either spawn builds a
+  client. A newline in `MODAL_TOKEN_ID` made `fn.spawn()` raise from six frames
+  down on **every** call, so no page ever reached Modal — the only place homr
+  is installed — and pages were read by the vision chain alone for as long as
+  nobody looked. `/v1/ready` reported the credentials fine throughout, because
+  it tested them for presence and a value ending in `\n` is present.
 - **The photograph is deleted only when a person accepts the reading.**
   `POST /v1/scores/:id/accept` is the only thing that discards it, and it
   refuses for a page still being read or one that failed. Never wire discarding
