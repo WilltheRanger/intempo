@@ -410,3 +410,154 @@ def test_the_padding_cannot_span_the_gap_the_detector_leaves() -> None:
     from app.services.page_image import _SYSTEM_PADDING
 
     assert 0 < _SYSTEM_PADDING < 1.0
+
+
+# ---------------------------------------------------------------------------
+# A real page, and the shape of how it failed
+#
+# Measured on a photographed String Bass part with eleven staves on it — the
+# first real orchestral page this repository has seen. The detector returned
+# **two** bands, of 9 and 2 staff lines, and `crop_systems` handed the pipeline
+# two crops covering a fraction of the music. Nothing raised: the other nine
+# staves were simply never sent to any model, and the musician would have got a
+# short transcription that looked fine.
+#
+# The photograph is not in the repository — it is a copyrighted part — so these
+# reproduce the two things that were actually wrong with it: the dark desk
+# visible around the paper, and staves whose lines are too faint to register.
+# ---------------------------------------------------------------------------
+
+
+def _with_a_dark_edge(page: bytes, *, rows: int = 40) -> bytes:
+    """The desk, at the top of the photograph.
+
+    A full-width dark run, which is exactly what a staff line looks like to a
+    horizontal projection — except that it also drags the median gap up and then
+    merges with the staves nearest it.
+    """
+    from PIL import Image, ImageDraw
+
+    with Image.open(io.BytesIO(page)) as image:
+        shot = image.convert("RGB")
+    ImageDraw.Draw(shot).rectangle([0, 0, shot.width, rows], fill=(28, 26, 24))
+    buffer = io.BytesIO()
+    shot.save(buffer, format="JPEG", quality=95, subsampling=0)
+    return buffer.getvalue()
+
+
+def test_a_band_holding_two_staves_stops_the_page_being_cut_up() -> None:
+    """The guard, on the failure that was measured rather than imagined.
+
+    A stave is five lines. When a band holds nine, the detector has merged
+    things that are not one system, and cutting the page on that detection
+    drops every staff it missed — silently, because nothing failed. Reading the
+    page whole is worse at reading; this is worse at not losing the music.
+    """
+    from app.services.page_image import _bands_are_staves, _systems_and_runs, crop_systems
+
+    page, pasted = _phone_page(FIXTURES / "01_simple_printed.jpg")
+    shot = _with_a_dark_edge(page)
+
+    systems, runs = _systems_and_runs(shot)
+    lines = [
+        sum(1 for run_top, run_bottom in runs if run_top >= top and run_bottom <= bottom)
+        for top, bottom in systems
+    ]
+    # On this page the desk stands alone as a one-line band rather than merging
+    # into a staff, because the pasted bands are far apart. On the real page it
+    # merged, giving 9. Either way it is a band that is not a stave, which is
+    # what the guard is for; the merged case is covered directly, on runs, by
+    # `test_every_band_has_to_be_a_stave_not_most_of_them` — reproducing it
+    # exactly needs the photograph, which is not in the repository.
+    assert len(systems) == pasted + 1 and 1 in lines, (
+        f"the dark edge did not disturb the detector ({lines}), so this page is "
+        "not reproducing the failure it was written for"
+    )
+    assert not _bands_are_staves(systems, runs)
+    assert crop_systems(shot) == [], (
+        "the page was cut on a detection that had found something that is not "
+        "a stave, so the music it missed would never have been read"
+    )
+
+
+@pytest.mark.parametrize("name", sorted(p.name for p in FIXTURES.glob("0*.jpg")))
+def test_a_page_the_detector_reads_properly_is_still_cut_up(name: str) -> None:
+    """The other side of the guard, and the one that makes it a guard rather
+    than a switch. Every band on every fixture holds five staff lines — six
+    where a hand-ruled staff adds a run of its own — so every one of these pages
+    still splits."""
+    from app.services.page_image import _bands_are_staves, _systems_and_runs, crop_systems
+
+    page, pasted = _phone_page(FIXTURES / name)
+    systems, runs = _systems_and_runs(page)
+
+    assert _bands_are_staves(systems, runs)
+    assert len(crop_systems(page)) == pasted
+
+
+def test_every_band_has_to_be_a_stave_not_most_of_them() -> None:
+    """All-or-nothing, and the reason is the whole point of the guard.
+
+    Keeping the bands that pass and dropping the ones that do not leaves a page
+    with holes in it — which is the thing being prevented. `alignment.py`
+    accumulates durations, so a missing line shifts every bar after it and the
+    musician is told they rushed a passage they played correctly.
+    """
+    from app.services.page_image import _bands_are_staves
+
+    five = [(0, 4), (10, 14), (20, 24), (30, 34), (40, 44)]
+    second = [(t + 100, b + 100) for t, b in five]
+    runs = five + second
+    good = [(0, 44), (100, 144)]
+
+    assert _bands_are_staves(good, runs)
+    # One band that swallowed both staves, alongside nothing else wrong.
+    assert not _bands_are_staves([(0, 144)], runs)
+    # One good band and one fragment: the fragment's staff is the music lost.
+    assert not _bands_are_staves([(0, 44), (100, 114)], runs)
+
+
+def test_a_hand_ruled_staff_with_a_sixth_run_still_counts_as_a_stave() -> None:
+    """`05_handwritten_messy` gives 6 runs for half its bands, so the slack is
+    not decoration — a check of exactly five would refuse to split the messiest
+    real-looking page in the corpus."""
+    from app.services.page_image import _STAFF_LINES, _STAFF_LINE_SLACK, _bands_are_staves
+
+    six = [(0, 2), (8, 10), (16, 18), (24, 26), (32, 34), (36, 38)]
+    assert _bands_are_staves([(0, 38)], six)
+    assert _STAFF_LINE_SLACK >= 1
+    assert _STAFF_LINES == 5, "a stave is five lines; this is not a knob"
+
+
+def test_a_dense_page_is_not_the_problem() -> None:
+    """Eleven staves is not what defeated the detector, and it matters that this
+    is written down: the obvious explanation for a real page failing was that it
+    holds more systems than a fixture does, and it is wrong. A page carrying
+    eleven bands at real spacing is detected exactly.
+
+    What defeated it was the desk in the photograph and staves too faint to
+    register — neither of which is a property of how much music is on the page.
+    """
+    from PIL import Image
+
+    from app.services.page_image import crop_systems
+
+    strip = Image.open(FIXTURES / "01_simple_printed.jpg").convert("RGB")
+    width, height = 3024, 4032
+    page = Image.new("RGB", (width, height), "white")
+    band = strip.resize(
+        (int(width * 0.92), max(1, int(strip.height * (width * 0.92) / strip.width))),
+        Image.Resampling.LANCZOS,
+    )
+    # 1.15x the band's own height, which is roughly how a real part is set —
+    # `_phone_page` uses 1.9x and gets seven systems onto a page.
+    y, pasted = int(height * 0.03), 0
+    while y + band.height < height:
+        page.paste(band, (int(width * 0.04), y))
+        y += int(band.height * 1.15)
+        pasted += 1
+    buffer = io.BytesIO()
+    page.save(buffer, format="JPEG", quality=95, subsampling=0)
+
+    assert pasted >= 11, f"only {pasted} bands fitted; this is not a dense page"
+    assert len(crop_systems(buffer.getvalue())) == pasted

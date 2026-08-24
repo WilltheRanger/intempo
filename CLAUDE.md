@@ -240,6 +240,18 @@ there works differently as of 2026-08-24:
   silent on all of them. `notation/reading.ts` keeps a local beat-sum check for
   live editing and as a fallback for an older backend; it is a subset on
   purpose. Add a check to `validate.py`, not to the app.
+- **The staff detector does not work on a real photograph, and the guard is what
+  makes that safe.** Measured on a photographed String Bass part with eleven
+  staves: `find_systems` returned two bands holding 9 and 2 staff lines, and
+  without `_bands_are_staves` the page would have been cut on that and the music
+  on nine staves never sent to any model — silently, because nothing failed. A
+  stave is five lines; a band holding anything else means the detection is
+  unreliable and the page is read whole. Not skew (swept ±4°), not resolution,
+  not the number of systems (a synthetic eleven-band page is detected exactly).
+  The threshold `mean - std` is inflated by the desk in shot and lands at 112
+  where the ink needs ~160. Do **not** nudge that constant — it cannot be
+  validated against a corpus where every fixture is a single-staff strip. See
+  `EDIT_LOG.md`, 2026-09-17.
 - **The photograph is deleted only when a person accepts the reading.**
   `POST /v1/scores/:id/accept` is the only thing that discards it, and it
   refuses for a page still being read or one that failed. Never wire discarding
