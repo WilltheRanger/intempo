@@ -6,6 +6,54 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-12 — The one sign in the client, finally tested
+
+**Branch:** `main`.
+
+`per_note` and `per_measure` come off the pipeline as `actual - expected`, so
+**early reads negative** — drag-positive. The app shows rush-positive. That
+flip happens in exactly one function in `data/sources/api.ts`, whose own
+comment calls getting it wrong "the one mistake this app cannot make": every
+take would be reported on the wrong side of the beat, consistently, and a
+musician who rushes would be told to speed up.
+
+**Nothing tested it.** `api.ts` is 547 lines and had no tests at all.
+
+Twelve now, from the outside — through `getInsights`, which is where a musician
+actually reads the number. A take the pipeline scored `+8` (eight percent of a
+beat *late*) has to surface as `-8`, and one scored `-8` as `+8`. A third case
+checks the per-piece row against the headline, because two separate means are
+computed and a flip in only one would have a piece row disagreeing with the
+summary directly above it.
+
+Also covered: the thirty-day window, a run with no measures, the worst band in
+a take rather than the first, `BAND_SEVERITY`'s ordering, a piece the library
+no longer names still appearing (losing the row would hide practice that
+happened), and `toPiece` reading a missing `transcription_status` as `done`.
+
+**Mocking `api.ts` at all** needed `vi.hoisted`: `vi.mock` is lifted above
+every declaration in the file, so a plain `const` above it is still in its
+temporal dead zone when the factory runs. Worth writing down — it is the
+obvious way to write it and it fails with an error about the module under test
+rather than about the mock.
+
+**One of my own tests could not fail.** The "ignores a failed run" case used a
+`no_onsets` payload with an empty `per_measure`, so it was dropped for having
+nothing to average and said nothing about the status check — deleting that
+check survived it. There is now a second case with a failed status *and*
+numbers in it, which only the status can exclude. Whether the pipeline emits
+such a payload today is beside the point: the guard exists so a take the
+analysis did not stand behind cannot be averaged into somebody's practice
+summary.
+
+Mutations caught, all eight: the sign flip removed, only the headline flipping,
+the window dropped, a non-ok result averaged, the worst band becoming the
+first, severity order scrambled, a missing transcription column reading as
+`queued`, and an unnamed piece being dropped.
+
+**Tests run:** mobile 173 (161 + 12), typecheck clean; backend 754 unchanged.
+**Rollback:** revert.
+
 ## 2026-09-11 (night) — The five vocabularies the app declares a second time
 
 **Branch:** `main`.
