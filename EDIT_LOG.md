@@ -6,6 +6,40 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-12 (night) — Every upload failure, and whether its advice is possible
+
+**Branch:** `main`. Eleven tests for `data/api/upload.ts`.
+
+Every branch here is a different instruction to a musician, and one of them was
+wrong: a **413** fell through to the generic "Try again", which is the one
+thing that cannot work — the same file is refused every time, so the advice was
+an instruction to repeat a failure. That branch now says the photograph is too
+large and names what *would* work (a smaller camera size, or importing the file
+instead), and there is a test asserting the message does **not** contain "try
+again".
+
+A general property test alongside it: every failure branch says something, and
+ends in a full stop. Not much on its own — the point is that it iterates the
+statuses, so a new branch with an empty or half-written message is caught.
+
+**A mutation survived, and it found a real gap.** Widening the success window
+from `< 300` to `< 400` — which is the obvious way to write "not an error" —
+stayed green, because nothing covered a 3xx. A 302 resolving as success means
+the page or take is simply *missing* while every screen reports it stored.
+There are three redirect cases now.
+
+Also locked: PUT to the signed URL with the content type it was handed rather
+than a generic one; the two-minute timeout, which exists because this is the
+one request in the app that sends a large body and it is made from wherever the
+musician happens to be practising; progress reported only when there is a total
+to report against; and timeout, dropped connection and cancellation reading
+differently from each other, since they need different things from the person.
+
+Mutations caught, all nine after the fix.
+
+**Tests run:** mobile 202 (191 + 11), typecheck clean; backend 754 unchanged.
+**Rollback:** revert.
+
 ## 2026-09-12 (evening) — The scan upload, and the content type that was wrong once
 
 **Branch:** `main`. Thirteen tests for `lib/scan/uploadPage.ts`, which had
