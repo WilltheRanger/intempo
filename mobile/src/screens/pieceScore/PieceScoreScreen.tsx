@@ -28,8 +28,9 @@ import {
   useAcceptTranscription,
   usePiece,
   useRetranscribe,
+  useSetClef,
 } from '../../data/hooks/usePieces';
-import { BORDER_WIDTH, colors, spacing } from '../../design';
+import { BORDER_WIDTH, colors, MIN_TOUCH_TARGET, spacing } from '../../design';
 import {
   describeOmissions,
   describeUndrawnScore,
@@ -58,6 +59,29 @@ const CLEF_LABELS: Record<Clef, string> = {
   alto: 'Alto clef',
   tenor: 'Tenor clef',
 };
+
+/** The four, in the order a string player meets them. */
+const CLEF_ORDER: Clef[] = ['treble', 'bass', 'alto', 'tenor'];
+
+/**
+ * Where noteheads go while nothing has said which clef the part is in.
+ *
+ * `ScoreJson.clef` is nullable on purpose — a score exists before anything has
+ * read it, an imported MusicXML file need not state one, and `PATCH` accepts an
+ * explicit null as a real answer. This screen used to write `?? 'treble'` in
+ * two places, which did two different wrong things at once: it **captioned**
+ * the part "Treble clef", indistinguishably from a clef that had actually been
+ * read, and it handed the same guess to the engraver, so every note of an
+ * unlabelled bass part was placed a seventh off its real pitch.
+ *
+ * A stave has to put its noteheads somewhere, so the guess cannot be avoided —
+ * but it can be *declared*. The caption says the clef was not read, and the
+ * caveat below the stave says the notes are placed as though in treble and
+ * offers to be told better. Naming it here rather than inlining `'treble'`
+ * again is the point: there is exactly one place left that assumes, and it says
+ * out loud that it is assuming.
+ */
+const UNREAD_CLEF_PLACEMENT: Clef = 'treble';
 
 /** Tall enough that a page of sheet music is legible rather than indicated. */
 const PAGE_HEIGHT = 420;
@@ -109,8 +133,10 @@ export function PieceScoreScreen() {
 
   const accept = useAcceptTranscription(params.pieceId);
   const reread = useRetranscribe(params.pieceId);
+  const setClef = useSetClef(params.pieceId);
   const [confirmingAccept, setConfirmingAccept] = useState(false);
   const [pickingMeasure, setPickingMeasure] = useState(false);
+  const [pickingClef, setPickingClef] = useState(false);
   const [acceptError, setAcceptError] = useState<string | null>(null);
 
   const [view, setView] = useState<ScoreView>(params.view ?? 'notation');
@@ -208,6 +234,11 @@ export function PieceScoreScreen() {
             'Something went wrong reading this page.'
           }
           actionLabel={reread.isPending ? 'Reading again…' : 'Try reading it again'}
+          // The label said it was working; the button carried on accepting
+          // taps, and each one started another reading of the same page. The
+          // server refuses the second now, but a musician should not have to
+          // meet that refusal to learn the first tap landed.
+          actionDisabled={reread.isPending}
           onActionPress={() => {
             setAcceptError(null);
             reread.mutate(undefined, {
@@ -220,6 +251,20 @@ export function PieceScoreScreen() {
             });
           }}
         />
+        {/*
+          This branch returns early, and `acceptError` was only rendered far
+          below in the branch that has notation — so a "Try reading it again"
+          that failed wrote its reason into state that this screen never
+          showed. What a musician saw was the button say "Reading again…",
+          go back to "Try reading it again", and nothing else: the same screen,
+          no error, no progress, and no way to tell a refused request from one
+          that had quietly worked.
+        */}
+        {acceptError ? (
+          <Text variant="metadataSmall" color="textSecondary" style={styles.caveat}>
+            {acceptError}
+          </Text>
+        ) : null}
         <Pressable
           onPress={() => navigation.navigate('Scanner')}
           accessibilityRole="button"
@@ -269,7 +314,7 @@ export function PieceScoreScreen() {
         <MetadataRow
           variant="metadataSmall"
           items={[
-            CLEF_LABELS[piece.score?.clef ?? 'treble'],
+            piece.score?.clef ? CLEF_LABELS[piece.score.clef] : 'Clef not read',
             piece.score?.time_signature && piece.score.time_signature !== 'unknown'
               ? piece.score.time_signature
               : null,
@@ -304,7 +349,7 @@ export function PieceScoreScreen() {
           {width === null ? null : (
             <Stave
               notes={stave.notes}
-              clef={piece.score?.clef ?? 'treble'}
+              clef={piece.score?.clef ?? UNREAD_CLEF_PLACEMENT}
               maxWidth={width}
               scale={STAVE_SCALE}
               justify
@@ -404,6 +449,31 @@ export function PieceScoreScreen() {
           ) : null}
 
           {/*
+            The clef, when nothing read one.
+
+            A quiet line rather than a badge, like every other caveat here —
+            but this one carries a cue, because unlike the others it is not a
+            thing the musician has to go and look at. They already know the
+            answer; the app is the one that doesn't.
+          */}
+          {!piece.score?.clef ? (
+            <Pressable
+              onPress={() => setPickingClef(true)}
+              accessibilityRole="button"
+              accessibilityLabel="Set the clef"
+              style={styles.fixRow}
+            >
+              <Text variant="metadataSmall" color="textSecondary">
+                The clef wasn&apos;t read from this page, so the notes above are
+                placed as though in {CLEF_LABELS[UNREAD_CLEF_PLACEMENT].toLowerCase()}.
+              </Text>
+              <Text variant="metadataSmall" color="accent" style={styles.fixCue}>
+                Set the clef
+              </Text>
+            </Pressable>
+          ) : null}
+
+          {/*
             Every bar, not only the ones that fail the check.
 
             Two compensating errors in one bar still sum correctly — an eighth
@@ -425,6 +495,39 @@ export function PieceScoreScreen() {
                 Correct another bar
               </Text>
             </Pressable>
+          ) : null}
+
+          {/*
+            Only once something has read one — an unread clef has its own line
+            above, and two rows offering the same sheet would be one too many.
+
+            Quiet, because a clef that was read is usually right. It is here at
+            all because reading it correctly is not the same as it being the
+            clef this player reads: a double bass **solo** part is written in
+            treble, and a bass or cello part goes into tenor for a high
+            passage.
+          */}
+          {piece.score?.clef ? (
+            <Pressable
+              onPress={() => setPickingClef(true)}
+              accessibilityRole="button"
+              style={styles.secondaryRow}
+            >
+              <Text variant="metadataSmall" color="accent">
+                Change the clef
+              </Text>
+            </Pressable>
+          ) : null}
+
+          {/*
+            The sheet closes on the tap, so this is the only thing that says
+            the write did not land. Without it a failed correction looks
+            exactly like a successful one until the row is read again.
+          */}
+          {setClef.error ? (
+            <Text variant="metadataSmall" color="textSecondary" style={styles.caveat}>
+              {setClef.error.message}
+            </Text>
           ) : null}
         </View>
       ) : null}
@@ -534,6 +637,62 @@ export function PieceScoreScreen() {
         </ScrollView>
       </BottomSheet>
 
+      {/*
+        Four rows and no explanation of what a clef is. Anyone reading a part
+        on a stand knows; anyone who doesn't is not helped by a sentence here.
+
+        "Not stated" is last and is a real choice, not a cancel — a part can
+        honestly carry no clef, and clearing it back to that has to be possible
+        or a wrong tap becomes permanent. The sheet closes on the tap rather
+        than waiting for the round trip: the write is one field, and holding a
+        sheet open over a spinner for it would make a correction feel like a
+        transaction.
+      */}
+      <BottomSheet
+        visible={pickingClef}
+        onClose={() => setPickingClef(false)}
+        title="Which clef?"
+      >
+        <View style={styles.clefList}>
+          {CLEF_ORDER.map((clef) => (
+            <Pressable
+              key={clef}
+              onPress={() => {
+                setPickingClef(false);
+                setClef.mutate(clef);
+              }}
+              accessibilityRole="button"
+              accessibilityState={{ selected: piece.score?.clef === clef }}
+              style={styles.clefRow}
+            >
+              <Text
+                variant="body"
+                color={piece.score?.clef === clef ? 'accent' : 'textPrimary'}
+              >
+                {CLEF_LABELS[clef]}
+              </Text>
+            </Pressable>
+          ))}
+
+          <Pressable
+            onPress={() => {
+              setPickingClef(false);
+              setClef.mutate(null);
+            }}
+            accessibilityRole="button"
+            accessibilityState={{ selected: !piece.score?.clef }}
+            style={styles.clefRow}
+          >
+            <Text
+              variant="body"
+              color={piece.score?.clef ? 'textTertiary' : 'accent'}
+            >
+              Not stated
+            </Text>
+          </Pressable>
+        </View>
+      </BottomSheet>
+
       <ConfirmDialog
         visible={confirmingAccept}
         title="Delete the photograph?"
@@ -578,6 +737,16 @@ const styles = StyleSheet.create({
   },
   measureRow: {
     minHeight: 56,
+    justifyContent: 'center',
+    borderBottomWidth: BORDER_WIDTH,
+    borderBottomColor: colors.border,
+  },
+  clefList: {
+    // Five rows fit; the sheet needs no scroller and gets none.
+    paddingBottom: spacing.xs,
+  },
+  clefRow: {
+    minHeight: MIN_TOUCH_TARGET,
     justifyContent: 'center',
     borderBottomWidth: BORDER_WIDTH,
     borderBottomColor: colors.border,

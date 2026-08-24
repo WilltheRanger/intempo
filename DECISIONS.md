@@ -6,6 +6,45 @@ Operating Principle #5.
 
 ---
 
+## 2026-08-24 — Put screen *rules* in testable modules, over adding a React Native testing library
+
+**Context:** A capture-path audit found nine defects, and the four that cost a
+musician real work all lived in the same place: a decision taken inside a React
+component. Where a photograph goes when the shutter fires. Whether a finished
+drag commits. Which page a retake replaces. Every one of them was a branch in a
+`.tsx` file, and **not one had a test**, because the mobile tree has vitest and
+nothing that can render a component. Twenty-one test files, all of them pure
+logic, and the entire capture path — `captureSession`, the scanner, the review
+list, the upload screen — with zero.
+
+**Alternative considered: add `@testing-library/react-native`.** It is the
+obvious answer and it would test the components as they are. It also means a
+jest-vs-vitest decision (RNTL's preset assumes jest; running it under vitest
+means a custom environment and a react-native transform), a react-test-renderer
+pinned against React 19.2.3, and a mocking surface for `expo-camera`,
+`expo-image-picker`, `react-navigation` and `react-native-svg` before the first
+assertion runs. The tests it then buys are largely *rendering* tests, and the
+defects here were not rendering defects.
+
+**Decision:** the rule moves out of the component into a module with a name, and
+the component keeps only what a component is for — layout, and calling the rule.
+`captureSession.capture()` decides where a photograph goes; `drag.ts` decides
+whether a gesture commits; `transcriptionProgress.ts` already did this for the
+progress bar, which is the precedent this follows rather than invents.
+
+**What we accept:** navigation is still untested. `handleRetake` navigating to
+the scanner instead of going back is argued in a comment and verified by hand,
+not by a test — and that is a real gap, not a solved problem. The wager is that
+the *decisions* are where the bugs are and the *wiring* is where they are
+visible, which is what these nine findings say: eight of them were decisions.
+
+**What would reverse it:** a defect that a rendering test would have caught and
+a rule test would not — a control that stays pressable while its action is in
+flight is exactly that shape, and one of the nine (`EmptyState` ignoring
+`disabled`) already is. If a second lands, the library is worth the setup.
+
+---
+
 ## 2026-09-08 — Mirror `uv.lock`'s versions into the Modal image, over installing from the lock itself
 
 **Context:** `modal_app.py` built its image with the same lower bounds as

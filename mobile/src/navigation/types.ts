@@ -17,7 +17,19 @@ export type RootStackParamList = {
   Tabs: undefined;
   /** Scan has its own screen; this covers the other two options. */
   AddPiece: { option: Exclude<AddPieceOption, 'scan'> };
-  Scanner: undefined;
+  /**
+   * `adding` is set only when the scan is already in progress — "Add page"
+   * from the review list.
+   *
+   * The viewfinder resets the capture session when it opens, because opening
+   * it is normally how a scan *starts*. It is not the only way back into one:
+   * pages that arrived through Import have no scanner beneath the review list
+   * at all, so "Add page" there pushed a fresh viewfinder whose mount wiped
+   * the whole import. This says which of the two it is, rather than leaving
+   * the screen to guess from a session that looks the same either way — a
+   * lingering scan someone abandoned looks exactly like one they are adding to.
+   */
+  Scanner: { adding?: boolean } | undefined;
   /** Pages live in the shared capture session, not in params. */
   CapturedPages: undefined;
   Transcribe: undefined;

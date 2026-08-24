@@ -11,7 +11,7 @@ import { IS_LIVE_BACKEND } from '../environment';
 import { pieceSource } from '../sources';
 import { toPiece } from '../sources/api';
 import type { NewPiece, PieceEdit } from '../sources/types';
-import type { Piece, ScoreJson } from '../types';
+import type { Clef, Piece, ScoreJson } from '../types';
 
 export const pieceKeys = {
   all: ['pieces'] as const,
@@ -168,6 +168,40 @@ export function useCorrectScore(id: string) {
         );
       }
       await updateScore(id, { score_json: score });
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: pieceKeys.all });
+    },
+  });
+}
+
+/**
+ * Sets — or clears — the clef, without touching the notes.
+ *
+ * Whoever read the page can be wrong about this in either direction, and no
+ * amount of reading settles it: a double bass **solo** part is written in
+ * treble, and a bass or cello part goes into tenor for a high passage. Nor does
+ * the instrument settle it, which is why nothing here derives one — a cello
+ * reads bass clef too. The player knows and nothing else does.
+ *
+ * `null` is a real value, not a way of saying "unchanged": a part can honestly
+ * be unlabelled, and `ScoreJson.clef` is nullable so that it can be. Sending
+ * `undefined` is what leaves it alone, and that is `updateScore`'s contract
+ * rather than this hook's — the key drops out of the JSON body.
+ *
+ * Not on `PieceSource`, like the other server-only writes. A sample build has
+ * nothing to write to.
+ */
+export function useSetClef(id: string) {
+  const queryClient = useQueryClient();
+  return useMutation<void, Error, Clef | null>({
+    mutationFn: async (clef) => {
+      if (!IS_LIVE_BACKEND) {
+        throw new Error(
+          'Setting the clef needs the backend. This build runs on sample data.',
+        );
+      }
+      await updateScore(id, { clef });
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: pieceKeys.all });
