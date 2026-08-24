@@ -6,6 +6,63 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-05 (evening) — Running the whole chain on pages nobody chose
+
+**Branch:** `main`. Two checks, one negative and one that became a test.
+
+**The web build still works.** `npm run build:web` after a session of changes to
+types, the API client and the score schema: exported clean, 3.5 MB main bundle,
+the vendor-asset flattener happy. Worth confirming rather than assuming —
+`tsc` and vitest both pass on code a bundler can still refuse.
+
+**The web recorder already handles the thing I went looking for.** Safari hands
+back a *suspended* `AudioContext` even from inside a tap, and a recorder that
+does not resume it captures silence — which the analysis would report as "we
+couldn't hear any notes", a confusing way to learn about an autoplay policy. It
+resumes explicitly, with the reason written down. Nothing to do.
+
+### The one that mattered
+
+Everything this session was validated against six audio clips of uniform
+quarter notes and a handful of scores I wrote myself. That is a narrow place to
+stand while changing the matcher, the tempo estimate, the confidence measure
+and the verdict.
+
+`fixtures/ocr_responses/` holds what models actually returned for photographs of
+real pages — printed, handwritten, and two whose header was illegible so the
+metre reads `"unknown"` and has to be inferred from the music. Nothing had ever
+run them through the analysis. Ran each one, performed exactly as written:
+
+    093d2a6a1d   4 bars   8 onsets  4/4        ok  q 0.992  8/8    no bar off-tempo
+    80336ff5e9   3 bars   3 onsets  unknown    ok  q 0.988  3/3    no bar off-tempo
+    bcf3ac293f   4 bars  20 onsets  4/4        ok  q 0.985  20/20  no bar off-tempo
+    c786b0e043   8 bars  32 onsets  unknown    ok  q 0.986  32/32  no bar off-tempo
+
+    96197472c4   an empty read — a real outcome, nothing to analyse
+
+Every note matched, nothing missed, nothing extra, no false flag from the beat
+check. Kept as `test_real_transcriptions.py`, because it is the only test that
+runs the chain end to end — model output → beat check → expected timeline →
+onset detection → matching → verdict — on shapes nobody picked.
+
+It also guards the shape of the suite itself: one test asserts there *are*
+pages to test against, because a glob that matches nothing is a suite that
+passes for the wrong reason.
+
+**Honest about what it does not claim.** These readings have not been checked
+against the photographs bar by bar, so this is not a claim that they are
+correct. It is a claim that the checks do not fire on them — which is exactly
+what a false-positive regression would break, and false positives are what the
+metre-change bug turned out to be.
+
+**No three-foot test.** No UI touched.
+
+**Tests:** backend 673 (was 664; +9). `ruff` clean, mobile 45, web build clean.
+
+**Rollback:** delete the new test file.
+
+---
+
 ## 2026-09-05 (later) — The next thing after CORS, and a check that had gone stale
 
 **Branch:** `main`. Kept following the path a browser takes on the way to a
