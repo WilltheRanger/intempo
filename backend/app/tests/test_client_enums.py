@@ -99,3 +99,35 @@ def test_the_app_sends_a_bpm_source_this_api_accepts() -> None:
         f"only the server accepts {sorted(server - app)}; "
         f"only the app sends {sorted(app - server)}"
     )
+
+
+def test_the_app_knows_which_analysis_states_are_final() -> None:
+    """`waitForAnalysis` polls until the status is in a local `FINISHED` set.
+
+    A terminal status missing from it is not an error anywhere — the app simply
+    keeps asking, forty times, and then tells the musician the analysis is
+    "taking longer than expected" about a run that finished before the first
+    poll. The verdict is sitting in the row the whole time.
+
+    So every state this API can put a row in has to be accounted for on the
+    client: either final, or one of the two it is willing to wait through.
+    """
+    from app.models.analysis import AnalysisStatus
+
+    source = (MOBILE / "practice" / "submitTake.ts").read_text()
+    match = re.search(r"const FINISHED = new Set\(\[(.*?)\]\)", source, re.DOTALL)
+    assert match, "the app no longer names the finished states"
+    final = set(re.findall(r"'([^']+)'", match.group(1)))
+
+    #: The states the app deliberately keeps waiting through. Named here rather
+    #: than read out of the client, because "not final" is the *absence* of a
+    #: mention and an absence cannot be parsed.
+    waited_through = {"queued", "processing"}
+    server = {member.value for member in AnalysisStatus}
+
+    assert final <= server, f"the app waits for states this API never sets: {sorted(final - server)}"
+    assert server == final | waited_through, (
+        f"unaccounted for on the client: {sorted(server - final - waited_through)} — "
+        "a final one is forty wasted polls and a wrong message; a new "
+        "in-progress one belongs in `waited_through` here"
+    )
