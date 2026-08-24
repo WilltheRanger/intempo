@@ -250,12 +250,25 @@ def _read_any_music(score: ScoreJson) -> bool:
 
 #: The most systems worth reading one at a time.
 #:
-#: A page is ten; a part on a large sheet might be sixteen. Beyond that the
-#: detector has almost certainly split something that is not a system, and a
-#: wrong split costs one model call *per phantom band* — so the ceiling is
-#: there to bound the bill on a page that was misread, not to bound honest
-#: pages.
-_MAX_SYSTEMS_TO_READ = 16
+#: **A bill ceiling, and nothing else any more.** It used to carry the argument
+#: that beyond sixteen bands the detector had almost certainly split something
+#: that is not a system. That job now belongs to `_cuts_are_quiet`, which asks
+#: whether the page can be cut at all rather than counting how many times.
+#:
+#: Sixteen was too low, and the cost of being over it changed. Falling back
+#: means reading the page whole, which on the one real page measured here is the
+#: read that finds two systems out of ten. Meanwhile the crops **tile** the
+#: photograph, so a page carries two bands the music does not — the margin above
+#: the first system and below the last. Measured by pasting one fixture band
+#: down a page at closing spacings, the detector tracks exactly: 7, 10, 11, 13,
+#: 15 and 16 systems, never over-counting. A part with fifteen systems on it
+#: therefore produces seventeen bands and, at the old ceiling, silently went
+#: back to the read that does not work.
+#:
+#: Twenty-four covers any single-staff part that is still legible on one sheet,
+#: with both margins, and bounds a pathological detection — a photograph of
+#: something that is not music at all — at twenty-four calls.
+_MAX_SYSTEMS_TO_READ = 24
 
 #: How many systems are read at the same time.
 #:

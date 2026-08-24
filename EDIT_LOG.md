@@ -6,6 +6,88 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-17 — A dense page fell off the ceiling, and an idea that measurement killed
+
+**Branch:** `main`. Thirteenth iteration of *fix the OMR system till it works*.
+Two questions at the edges of the rewritten detector. One was a real cliff; the
+other was a saving I was about to build and should not have.
+
+### The ceiling was binding, and being over it is now much worse
+
+`_MAX_SYSTEMS_TO_READ` was 16, and it carried the argument that beyond sixteen
+bands the detector had almost certainly split something that is not a system.
+That job now belongs to `_cuts_are_quiet`, which asks whether the page can be
+cut at all rather than counting how many times. So the ceiling is a bill
+ceiling and nothing else.
+
+Two things moved under it:
+
+- **Being over it costs more than it did.** Falling back means reading the page
+  whole, which on the one real page measured here is the read that finds two
+  systems out of ten.
+- **The crops tile the photograph**, so a page carries two bands the music does
+  not: the margin above the first system and below the last.
+
+Pasting one fixture band down a page at closing spacings, the detector tracks
+exactly and never over-counts:
+
+| spacing | systems | bands | crops |
+|---|---|---|---|
+| 1.90 | 7 | 7 | 7 |
+| 1.40 | 10 | 10 | 10 |
+| 1.15 | 11 | 11 | 11 |
+| 1.00 | 13 | 13 | 13 |
+| 0.90 | 15 | 15 | 15 |
+| 0.80 | 16 | 16 | 16 |
+
+A part with fifteen systems produces seventeen bands with its margins and, at
+sixteen, silently went back to the read that does not work. **What was binding
+was the ceiling, not the detection.** Now 24: enough for any single-staff part
+still legible on one sheet, with both margins, and a bound of twenty-four calls
+on a photograph of something that is not music.
+
+`fixtures/stages/parity.json` carried `16 of 16` as its ceiling case and
+`test_stage_parity.py` failed on the change without being asked — which is what
+that file is for.
+
+### The idea measurement killed
+
+Two of the twelve crops of the real page hold no music — the desk above the
+sheet and a sliver below the last system — and each costs a model call. I was
+going to skip a crop with no *paper* in it, on the argument that music is
+printed on paper, so a crop containing no page cannot contain music. Provably
+safe, and it saves 17% of the per-page bill.
+
+Measured, with the page's own Otsu split at grey 125:
+
+```
+crop  1: 75.4% paper      crop  7: 93.4%
+crop  2: 90.2%            crop  8: 92.9%
+crop  3: 91.9%            crop  9: 92.3%
+crop  4: 92.6%            crop 10: 89.5%
+crop  5: 92.2%            crop 11: 64.9%
+crop  6: 92.4%            crop 12: 28.5%
+```
+
+**Crop 1 is three-quarters paper.** It holds no music and plenty of page — it is
+the top margin of the sheet, which is exactly where a title and a composer's
+name live. No paper-fraction threshold separates it from a system, and any that
+tried would eventually skip a crop with music on it, which puts a hole in the
+page. Dropped, and written down so it is not rebuilt from the same reasoning.
+
+The two wasted calls stay. `NoMusicFound` already makes them harmless, and they
+cost cents.
+
+**Tests:** 1 new case, the fixture ceiling updated. Three mutations — the
+ceiling back to sixteen, no ceiling, and the comparison inverted — all killed.
+
+Backend 895 tests green (894 before), ruff clean.
+
+**Still blocked on the same thing.** No model key in this container, so what
+comes back from these crops is still unmeasured.
+
+---
+
 ## 2026-09-17 — The crops were being cut out of the shrunken page
 
 **Branch:** `main`. Twelfth iteration of *fix the OMR system till it works*.

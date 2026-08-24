@@ -38,7 +38,7 @@
     { "pipeline_stage": "reading:system 4 of 7", "words": "Reading stave 4 of 7" },
     { "pipeline_stage": "reading:system 7 of 7", "words": "Reading stave 7 of 7" },
     { "pipeline_stage": "reading:system 1 of 1", "words": "Reading stave 1 of 1" },
-    { "pipeline_stage": "reading:system 16 of 16", "words": "Reading stave 16 of 16" }
+    { "pipeline_stage": "reading:system 24 of 24", "words": "Reading stave 24 of 24" }
   ],
   "_whole_page_why": [
     "A page read whole reports the provider's name, which is deliberately never",
