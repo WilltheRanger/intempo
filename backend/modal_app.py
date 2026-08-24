@@ -183,7 +183,7 @@ transcription_image = (
     #
     # An image default rather than a hard-coding: a value in the secret still
     # overrides it, because Modal injects secrets over the image environment.
-    .env({"OCR_PROVIDER_CHAIN": "homr,gemini-2.5-flash,claude-sonnet-5,claude-opus-5"})
+    .env({"OCR_PROVIDER_CHAIN": "homr"})
     .add_local_dir(
         "app",
         remote_path="/root/app",

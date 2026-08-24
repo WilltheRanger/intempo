@@ -139,6 +139,13 @@ _FAILURE_REASONS: tuple[tuple[str, str], ...] = (
     #: will do it, and it will fail again, and again. Measured against the
     #: running service: three of these four reached the default.
     (
+        "not installed",
+        "This page could not be read because the machine that reads them could "
+        "not be reached. That is a fault on our side, not with your "
+        "photograph — the photograph is still here, so try reading it again "
+        "in a few minutes.",
+    ),
+    (
         "api key",
         "The transcription service is not configured. This is a fault on our "
         "side, not with your page.",
@@ -229,7 +236,60 @@ def run_transcription(score_id: str) -> None:
         _read_page(client, score_id, image_url)
 
 
+#: Said when this process has no reader in it at all.
+#:
+#: The chain is homr alone, and homr is installed **only in the Modal
+#: container** — so on the API host there is now nothing that can read a page.
+#: That is the accepted cost of dropping the vision backup, and the one thing
+#: it must not do is arrive as `_UNKNOWN_REASON`: "a flatter, better-lit shot
+#: of the page usually fixes it" is a confident wrong reason that sends a
+#: musician to re-photograph a page for a fault that is entirely ours, and this
+#: project has shipped that sentence for a server fault twice already.
+_NO_READER_HERE = (
+    "This page could not be read because the machine that reads them could not "
+    "be reached. That is a fault on our side, not with your photograph — the "
+    "photograph is still here, so try reading it again in a few minutes."
+)
+
+
+def _nothing_here_can_read() -> bool:
+    """True when not one provider in the configured chain exists in this process.
+
+    Checked **before the page is downloaded**. The alternative is to fetch
+    several megabytes, prepare them, and then discover that the only provider
+    named is not installed — paying for the download to arrive at a worse
+    error, since "homr is not installed in this container" matches no entry in
+    `_FAILURE_REASONS` and lands on the sentence that blames the photograph.
+    """
+    from app.services.ocr.pipeline import _default_chain
+
+    try:
+        chain = _default_chain()
+    except Exception:  # noqa: BLE001 — an unresolvable chain is reported elsewhere
+        return False
+
+    if not chain:
+        return True
+    for provider in chain:
+        available = getattr(provider, "available", None)
+        # A provider that does not declare availability is one reached over the
+        # network with a key, and whether *that* works is not knowable from
+        # here. Only a provider that says outright it is absent counts.
+        if not callable(available) or available():
+            return False
+    return True
+
+
 def _read_page(client, score_id: str, image_url: str) -> None:
+    if _nothing_here_can_read():
+        log.error(
+            "transcription %s: no provider in the chain is installed in this "
+            "process; refusing before the page is fetched",
+            score_id,
+        )
+        _fail(client, score_id, _NO_READER_HERE)
+        return
+
     _update(
         client,
         score_id,

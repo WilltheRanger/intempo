@@ -24,9 +24,7 @@ import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Callable
 
-from pydantic import ValidationError
-
-from app.services.ocr.base import OCRProvider, OCRProviderError, OCRResponse
+from app.services.ocr.base import OCRProvider, OCRResponse
 from app.services.ocr.claude_provider import (
     claude_opus_provider,
     claude_sonnet_provider,
@@ -127,7 +125,11 @@ def _default_chain() -> list[OCRProvider]:
 
     raw = settings.OCR_PROVIDER_CHAIN.strip()
     if not raw:
-        return [claude_sonnet_provider, claude_opus_provider]
+        # An explicitly empty setting means the same as an unset one, and both
+        # mean homr — the models are no longer a backup for it (see
+        # `settings.OCR_PROVIDER_CHAIN`). A deployment that wants them has to
+        # name them.
+        return [homr_provider]
 
     names = [n.strip() for n in raw.split(",") if n.strip()]
     chain: list[OCRProvider] = []

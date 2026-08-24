@@ -6,6 +6,117 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-24 — "The app crashed while starting" — it hadn't, and homr is now the only reader
+
+**Branch:** `main`. Two things the owner asked for: a screenshot of the app
+showing a full-screen crash, and *"run homr only, no backup AI."*
+
+### 1. The app did not crash
+
+The screenshot read **"The app crashed while starting." / "unknown error"** —
+on one bar of cellular signal. The app had started, mounted, and was running
+underneath the whole time.
+
+Two faults in `public/index.html`'s boot watchdog, and they compound:
+
+1. The `error` listener runs in the **capture phase** so it can see a `<script>`
+   that 404s. It therefore also sees every `<img>` that fails — and both
+   `expo-image` and react-native-web mount real in-document `<img>` elements,
+   so every score thumbnail is one. A resource failure dispatches a plain
+   `Event` at the element, which has no `.error` and no `.message`, so it fell
+   through to the literal string `'unknown error'`.
+2. `report()` replaced **all** of `#root`'s inline style with `display:block`.
+   The stylesheet gives `#root` `display:flex; height:100%; flex:1`, and
+   react-native-web's container is `flex:1 1 0%` inside it.
+
+So a dropped thumbnail request on a weak connection looked exactly like a
+crash, and then collapsed the running app to nothing.
+
+**Measured, in a browser, against the build that shipped** — the app mounted,
+then one image request was refused:
+
+    before:  #root display: block  |  app container height:   0   crash text shown
+    after:   #root display: flex   |  app container height: 844   app survived
+
+The fix: resource failures are collected and named rather than reported, and
+they no longer latch — a dropped thumbnail used to spend the watchdog's single
+shot and hide whatever came next. `report()` refuses outright once `#root` has
+children, because past the mount the app has its own error boundary and
+blanking the screen is worse than anything it could be reporting. And an error
+carrying nothing now prints what *is* knowable: which resources failed first,
+the bundle URL, the origin, whether the context is secure, and the user agent.
+
+`'unknown error'` was true and useless. It named neither what failed nor where.
+
+**Not a §2 change.** The screen is unchanged in look and in intent; what
+changed is that the detail line says something. Same reasoning as "Delete page
+0?" — that was `findIndex` returning -1 rendered to the screen, and this was a
+string constant standing in for the one fact needed.
+
+### 2. homr only
+
+Chain is `homr` and nothing else: `config.py`'s default, the Modal image's
+`.env`, and the empty-setting fallback, which used to be two Claude models —
+the backup being removed.
+
+The models stay in `PROVIDER_REGISTRY`, so a deployment that wants them back
+sets one variable. Deleting them would make reversing this a code change and a
+deploy, and the decision being reversible is part of why it is safe to make.
+
+**The cost, stated plainly.** homr is installed only in the Modal container, so
+the API host can no longer read a page at all. `run_transcription` refuses up
+front — *before the page is downloaded* — because the alternative is paying for
+several megabytes to arrive at a worse error: "homr is not installed in this
+container" matches no entry in `_FAILURE_REASONS` and lands on
+`_UNKNOWN_REASON`, *"a flatter, better-lit shot of the page usually fixes it"*,
+which sends a musician to re-photograph a page for a fault that is entirely
+ours. This project has shipped that sentence for a server fault twice, and this
+is the third time it was one line away.
+
+`_nothing_here_can_read()` counts only providers that say outright they are
+absent. A model is reached over the network with a key and whether that call
+will work is not knowable from here — guessing would refuse pages that would
+have read. An unresolvable chain is left alone too: that is a different fault,
+reported by `/v1/ready`.
+
+### Tests
+
+- `mobile/src/lib/bootWatchdog.test.ts` — 8 tests. The watchdog is plain ES5 in
+  an HTML file on purpose, so it has no natural seam; these evaluate the IIFE
+  against a hand-built DOM stub. Imported with Vite's `?raw` rather than
+  `readFileSync`, because this project has no `@types/node`.
+- `backend/app/tests/test_homr_only_chain.py` — 14 tests.
+- Mobile **267 passed**, backend **1067 passed**, ruff and tsc clean.
+- Fourteen mutations, all caught, no survivors — including both halves of the
+  reported bug (the mounted-app guard removed; resource errors reporting and
+  latching again) and the reason going back to blaming the photograph.
+
+One test was wrong before it was right: `test_the_shipped_default_is_homr`
+constructed `Settings()` and passed against my own `backend/.env`, which pinned
+the old chain — reporting the local machine rather than the shipped default. It
+reads the default out of `config.py` now.
+
+### Found, verified, and NOT fixed
+
+The web bundle has **no transpile target at all** — no browserslist, no
+`babel.config.js`, no `metro.config.js`, and `@babel/preset-env` is not
+installed. Counted in the shipped bundle: `??=` ×3, `findLast` ×2,
+`crypto.randomUUID` ×1, and 8 lines of ES2022 private class fields. That puts
+the floor at roughly **iOS Safari 15.4**, undeclared and unreviewed.
+
+Not this crash — the screenshot shows 5G, so an iPhone 12 or later, which is
+long past 15.4 — and not fixed here, because changing the build target is its
+own change with its own risk and wants measuring rather than bundling into a
+diagnosis. It needs a decision about the floor and a `browserslist` to make it
+reviewable.
+
+### Not verified
+
+The fix is measured in Chromium against the real build, not on the owner's
+iPhone. homr has still never read a page in production.
+
+---
+
 ## 2026-08-24 — The deployment could not see that it had never once used Modal
 
 **Branch:** `main`. Item (2) of the root cause, and the reason the other three
