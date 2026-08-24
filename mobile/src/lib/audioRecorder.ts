@@ -2,7 +2,7 @@ import { AudioModule } from 'expo-audio';
 
 import {
   EmptyRecordingError,
-  MAX_TAKE_SECONDS,
+  maxTakeSamples,
   MicrophonePermissionError,
   takeFilename,
   type Recorder,
@@ -62,7 +62,7 @@ export async function startRecording(): Promise<Recorder> {
 
   const chunks: Int16Array[] = [];
   let truncated = false;
-  let maxSamples = REQUESTED_SAMPLE_RATE * CHANNELS * MAX_TAKE_SECONDS;
+  let maxSamples = maxTakeSamples(REQUESTED_SAMPLE_RATE, CHANNELS);
   let samples = 0;
 
   const subscription = stream.addListener(
@@ -92,7 +92,7 @@ export async function startRecording(): Promise<Recorder> {
   // the ones we asked for.
   const sampleRate = stream.sampleRate || REQUESTED_SAMPLE_RATE;
   const channels = stream.channels || CHANNELS;
-  maxSamples = sampleRate * channels * MAX_TAKE_SECONDS;
+  maxSamples = maxTakeSamples(sampleRate, channels);
 
   let finished = false;
 

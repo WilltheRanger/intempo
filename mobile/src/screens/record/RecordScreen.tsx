@@ -19,7 +19,6 @@ import { takeSubmissionSource } from '../../data/sources';
 import type { MetronomeMode } from '../../data/types';
 import {
   EmptyRecordingError,
-  MAX_TAKE_SECONDS,
   MicrophonePermissionError,
   MicrophoneUnavailableError,
   type Recorder,
@@ -85,6 +84,12 @@ export function RecordScreen() {
   const [elapsedMs, setElapsedMs] = useState(0);
   const [problem, setProblem] = useState<string | null>(null);
   const [truncated, setTruncated] = useState(false);
+  // How much was actually kept. The cap is bytes, not minutes — a device at
+  // 44.1 kHz fits nearly a minute more music into the same file than one at 48
+  // — so the number in the sentence below has to come from the take rather
+  // than from a constant. It used to be `MAX_TAKE_SECONDS / 60`, which stopped
+  // being the truth the moment the upload limit turned out to bind first.
+  const [keptSeconds, setKeptSeconds] = useState(0);
   const startedAt = useRef(0);
 
   // The live recorder, held outside state: nothing renders from it, and a
@@ -151,6 +156,7 @@ export function RecordScreen() {
     impact(ImpactFeedbackStyle.Medium);
     setProblem(null);
     setTruncated(false);
+    setKeptSeconds(0);
     // A new take supersedes the held one. Without this, "Send it again" stayed
     // on screen through the new recording and would have sent the *previous*
     // take — the same silent substitution this whole change exists to stop,
@@ -195,6 +201,7 @@ export function RecordScreen() {
     }
 
     setTruncated(recording.truncated);
+    setKeptSeconds(recording.seconds);
     await send(recording);
   }
 
@@ -282,7 +289,7 @@ export function RecordScreen() {
           <Text variant="heroTitle">Listening back</Text>
           <Text variant="body" color="textSecondary" style={styles.subtitle}>
             {truncated
-              ? `Only the first ${MAX_TAKE_SECONDS / 60} minutes were kept. Matching them against the score.`
+              ? `Only the first ${Math.floor(keptSeconds / 60)} minutes were kept. Matching them against the score.`
               : 'Matching what you played against the score.'}
           </Text>
         </View>

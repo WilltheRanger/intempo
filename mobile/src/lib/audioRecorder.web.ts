@@ -1,6 +1,6 @@
 import {
   EmptyRecordingError,
-  MAX_TAKE_SECONDS,
+  maxTakeSamples,
   MicrophonePermissionError,
   MicrophoneUnavailableError,
   takeFilename,
@@ -166,7 +166,7 @@ export async function startRecording(): Promise<Recorder> {
   }
 
   const sampleRate = context.sampleRate;
-  const maxSamples = sampleRate * CHANNELS * MAX_TAKE_SECONDS;
+  const maxSamples = maxTakeSamples(sampleRate, CHANNELS);
 
   const source = context.createMediaStreamSource(media);
   const node = new AudioWorkletNode(context, 'pcm-recorder', {
