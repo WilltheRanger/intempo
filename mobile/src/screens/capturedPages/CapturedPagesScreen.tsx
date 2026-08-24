@@ -32,7 +32,18 @@ export function CapturedPagesScreen() {
   // A captured page can't be recovered — the photo is gone with it — and the
   // bin sits a thumb's width from the drag handle.
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
-  const pendingPosition = pages.findIndex((page) => page.id === pendingDelete) + 1;
+  // Remembered when the dialog opens rather than derived from `pendingDelete`,
+  // and deliberately *not* cleared with it. `ConfirmDialog` is a fading modal
+  // that keeps rendering its title through the dismiss animation, so a derived
+  // title fell to `findIndex` returning -1 the instant the id went null — and
+  // the last thing anyone read, every time they confirmed or cancelled a
+  // deletion, was "Delete page 0?" on its way out.
+  const [pendingPosition, setPendingPosition] = useState(1);
+
+  function askToDelete(id: string) {
+    setPendingPosition(pages.findIndex((page) => page.id === id) + 1);
+    setPendingDelete(id);
+  }
 
   function handleRetake(id: string) {
     // **Nothing is deleted here.** The page is marked as the one the next
@@ -105,7 +116,7 @@ export function CapturedPagesScreen() {
         pages={pages}
         onReorder={(id, toIndex) => captureSession.moveTo(id, toIndex)}
         onRetake={(page) => handleRetake(page.id)}
-        onDelete={(id) => setPendingDelete(id)}
+        onDelete={askToDelete}
         onNudge={(id, direction) => captureSession.move(id, direction)}
       />
 

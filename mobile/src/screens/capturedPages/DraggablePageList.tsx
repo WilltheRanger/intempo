@@ -9,6 +9,7 @@ import {
 
 import type { CapturedPage } from '../../data/captureSession';
 import { motion, spacing } from '../../design';
+import { reorderTarget, slotOffsetFor, type DragOutcome } from '../../lib/scan/drag';
 import { useReducedMotion } from '../../lib/useReducedMotion';
 import { PageRow } from './PageRow';
 
@@ -67,18 +68,13 @@ export function DraggablePageList({
             setSlotOffset(0);
           }}
           onDragMove={(dy) => {
-            const raw = Math.round(dy / pitch.current);
-            const clamped = Math.max(
-              -index,
-              Math.min(pages.length - 1 - index, raw),
-            );
-            setSlotOffset((current) =>
-              current === clamped ? current : clamped,
-            );
+            const next = slotOffsetFor(dy, pitch.current, index, pages.length);
+            setSlotOffset((current) => (current === next ? current : next));
           }}
-          onDragEnd={() => {
-            if (slotOffset !== 0) {
-              onReorder(page.id, index + slotOffset);
+          onDragEnd={(outcome) => {
+            const to = reorderTarget(outcome, index, slotOffset);
+            if (to !== null) {
+              onReorder(page.id, to);
             }
             setActiveIndex(null);
             setSlotOffset(0);
@@ -103,7 +99,7 @@ interface DraggableRowProps {
   onLayout?: (event: LayoutChangeEvent) => void;
   onDragStart: () => void;
   onDragMove: (dy: number) => void;
-  onDragEnd: () => void;
+  onDragEnd: (outcome: DragOutcome) => void;
   onRetake: () => void;
   onDelete: () => void;
   onMoveUp: () => void;
@@ -146,13 +142,21 @@ function DraggableRow({
           dragY.setValue(gesture.dy);
           handlers.current.onDragMove(gesture.dy);
         },
+        // A drag in progress is not up for grabs. Without this the default
+        // applies and the responder is surrendered on request — and this list
+        // sits inside `ScreenContainer`'s ScrollView, which asks.
+        onPanResponderTerminationRequest: () => false,
         onPanResponderRelease: () => {
           dragY.setValue(0);
-          handlers.current.onDragEnd();
+          handlers.current.onDragEnd('released');
         },
+        // Terminate is the gesture being taken away, not finished: refusing
+        // the request above does not cover the app going to the background or
+        // a call arriving. The row goes back where it was rather than
+        // committing a move the musician never completed.
         onPanResponderTerminate: () => {
           dragY.setValue(0);
-          handlers.current.onDragEnd();
+          handlers.current.onDragEnd('cancelled');
         },
       }),
     [dragY],
