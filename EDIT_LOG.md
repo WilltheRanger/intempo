@@ -6,6 +6,46 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-13 — What the app sends, against what the API will accept
+
+**Branch:** `main`. Ten tests, `test_request_shapes.py`.
+
+Every request model in `routers/scores.py` and `routers/analyses.py` is
+`extra="forbid"`. That is the right setting — a body with a field nobody reads
+is a caller believing something untrue — but it turns the app's TypeScript
+request types into a **contract**: one field the API does not declare and the
+request is a flat 422.
+
+The failures are lopsided and neither is visible from one side. A field the app
+sends that the API refuses is a 422 on the one request a musician makes after
+photographing a page or finishing a take, naming a field rather than a fix. A
+field the API *requires* that the app has no way to send is the same 422 for
+the opposite reason. The app compiles, the API starts, and the two only meet
+over the wire.
+
+Four bodies checked in both directions — create-from-photograph,
+create-by-typing, import-a-file, and create-an-analysis — with the two create
+shapes treated as a union, since a body assembled from a union only has to
+satisfy the API from one of them. Plus a test that `title`, which the API
+requires whatever the provenance, is mandatory on **both** client shapes: if
+either made it optional, the app would compile a body without one and the
+musician would lose the piece at the last step.
+
+And the usual guard: `_interface` raises on a name that does not exist,
+because every test here compares two sets and two empty sets are equal — this
+file's own failure mode, wearing it as a disguise.
+
+**Two of my own mistakes, both found by the tests rather than by reading.** I
+guessed `CreateAnalysisBody` for the analysis interface; it is
+`CreateAnalysisInput`, and the guard above turned that into a named failure
+rather than a silent pass. And a mutation "survived" that had not actually
+applied — inserting `title?: string` above an existing `title: string` leaves
+the required one last, so the parser still saw it as required. Rewritten to
+change the existing line, it is caught.
+
+**Tests run:** backend 764 (754 + 10), ruff clean; mobile 202 unchanged.
+**Rollback:** revert.
+
 ## 2026-09-12 (night) — Every upload failure, and whether its advice is possible
 
 **Branch:** `main`. Eleven tests for `data/api/upload.ts`.
