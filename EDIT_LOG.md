@@ -6,6 +6,52 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-15 (evening) — Three tests guarding a safety property, none of which reached it
+
+**Branch:** `main`. The worst instance of this pattern found so far, and
+coverage is the only reason it surfaced: `confirm.py` sat at **84%**, and the
+missing lines were its three guards — while `test_confirm.py` contained a test
+named after each one, all green.
+
+`retry_with_arithmetic` hands a model its own bad bars back and asks it to
+re-read them. The module's docstring says what makes that safe: **"a correction
+is taken only if it is not worse. A model asked to fix three bars can rewrite
+thirty, and beat sums are not an opinion."**
+
+**All three tests used a page that adds up.** `FOUR` is four quarters in 4/4, so
+`describe_for_retry` found nothing to complain about, `retry_with_arithmetic`
+returned before the provider was ever called, and each test's `is engine`
+assertion held for the wrong reason. Delete the not-worse check and every test
+stays green.
+
+Fixed, and it took a second correction: a page of one short bar is not wrong
+either. `validate_measures` infers the metre from the music when it can — seven
+bars of two beats mean the piece is in 2/4 and the eighth is the error — so a
+lone three-beat bar *is* the metre. It has to be outnumbered, and it must not be
+the first bar, which is allowed to be a pickup. The tests now use four bars with
+exactly one bad one, and each asserts the provider was actually asked, so they
+cannot go back to passing early.
+
+**The not-worse test needed rebuilding entirely**, because a splice cannot
+normally make a page worse: only the bars that were asked about are replaced, so
+a patch cannot break a bar it was never handed. The one thing it *can* do is
+restate the **metre**, and a metre runs until the next one — so re-reading bar 2
+as 4/4 breaks bars 3 and 4, which were correct in the 3/4 it used to carry.
+That is the case the guard exists for and it is now the case the test uses.
+
+`confirm.py` is at **100%**. Mutations caught: a worse rewrite accepted, a
+rewrite that doubles the damage accepted, a failing model taking the page down,
+and the splice taking measures nobody asked about.
+
+**One honest survival, recorded in the code rather than tested around.**
+Removing the empty-response guard changes no outcome — `_splice` already
+returns the original untouched when nothing in the patch matches. Two guards
+for one property. The comment now says so, so the next reader does not add a
+test for a branch that cannot fail.
+
+**Tests run:** backend 792, ruff clean; mobile 225 unchanged. **Rollback:**
+revert.
+
 ## 2026-09-15 (later) — Putting a hard page in the corpus
 
 **Branch:** `main`. The blind spot has come up three days running — the
