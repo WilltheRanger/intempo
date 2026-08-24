@@ -45,13 +45,27 @@ What the note says, and why each line is in it:
   is not, and that difference is what a time signature at the left edge means.
 - **Ignore the sliver.** `_SYSTEM_PADDING` is 55% of a system's height above
   and below, deliberately, so the crop keeps the dynamics and bowings that sit
-  off the staff. On a densely set page that also catches the notehead tips of
-  the neighbours. A bar read from the line above is read **twice**, once here
+  off the staff. A bar read from the line above is read **twice**, once here
   and once when that line is read, and the page comes out longer than the
   music — which shifts every bar after it against the recording. The
-  2026-08-20 entry noticed this on the bench fixtures ("#02, #03 include a
-  partial second staff") and relied on the prompt's "single line" to handle it.
-  It is now said outright.
+  2026-08-20 entry hit this on the bench fixtures ("#02, #03 include a partial
+  second staff") and relied on the prompt's "single line" to handle it. It is
+  now said outright.
+
+  **Correction, measured after I wrote the note.** I claimed here that on a
+  densely set page the padding "catches the notehead tips of the neighbours".
+  I had not measured it, and on all five fixtures at phone resolution no crop
+  reaches the next detected band — gaps of 192–625px against padding of
+  59–87px. There is a structural reason: `find_systems` merges any two bands
+  closer than the page's median staff height, so every surviving gap is at
+  least a staff tall while the padding is 0.55 of one. A band much taller than
+  the median could still cross, so the instruction stays as a guard against
+  something undemonstrated rather than a description of these crops — the
+  failure it guards against is silent, and it costs a line of prompt.
+  `test_the_padding_does_not_reach_the_next_staff` records the measurement,
+  and `test_the_padding_cannot_span_the_gap_the_detector_leaves` pins the
+  coupling: past 1.0 the padding could swallow a whole neighbour, and the merge
+  rule would have to change with it.
 - **Read every bar; there is room.** The point of the split.
 - **Number from 1 within the line**, because the program joins and renumbers.
 - **Say "unknown" rather than working a metre out from the bars.** This one is
@@ -74,7 +88,7 @@ catch; it now keys off text only `_ONLY_THESE` carries. And my sliver mutation
 deleted one string fragment of a five-fragment bullet, leaving the asserted
 sentence intact — the mutation was wrong, not the test.
 
-Backend 850 tests green (846 before), ruff clean.
+Backend 852 tests green (846 before), ruff clean.
 
 **Left alone deliberately:** `intempo-combined.md` §"The OCR prompt" holds a
 verbatim copy of this prompt from before roughly twenty rules were added to it.

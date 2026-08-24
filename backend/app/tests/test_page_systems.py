@@ -352,3 +352,61 @@ def test_a_phone_photograph_crops_to_one_staff_each(name: str) -> None:
             f"crop {index} holds {len(substantial)} staves, so the model is "
             "being asked the same question the whole page was failing"
         )
+
+
+@pytest.mark.parametrize("name", sorted(p.name for p in FIXTURES.glob("0*.jpg")))
+def test_the_padding_does_not_reach_the_next_staff(name: str) -> None:
+    """How far the deliberate overlap actually goes — measured, not argued.
+
+    `crop_systems` pads by `_SYSTEM_PADDING` of a system's own height on
+    purpose, so a note hanging below a staff lands in both neighbouring crops
+    rather than in the seam between them. The prompt note sent with each crop
+    tells the model to read only the complete staff in the middle, and I wrote
+    that having *asserted* the padding catches the notehead tips of the
+    neighbours on a densely set page rather than having measured it.
+
+    On these pages it does not reach the next band at all, and there is a
+    reason it structurally almost cannot: `find_systems` merges any two bands
+    closer than the page's median staff height, so every surviving gap is at
+    least that, while the padding is 0.55 of one band's height. A band much
+    taller than the median could still cross — which is why this measures
+    rather than reasons.
+
+    So the instruction in the note is a guard against something not
+    demonstrated here, not a description of these crops. It costs a line of
+    prompt and the failure it guards against — the same bars read twice, once
+    per crop, lengthening the page and shifting every later bar against the
+    recording — is silent, so it stays.
+    """
+    from app.services.page_image import _SYSTEM_PADDING
+
+    page, _pasted = _phone_page(FIXTURES / name)
+    systems = find_systems(page)
+    assert len(systems) > 1
+
+    for index, (top, bottom) in enumerate(systems[:-1]):
+        pad = max(8, int((bottom - top) * _SYSTEM_PADDING))
+        next_top = systems[index + 1][0]
+        assert bottom + pad <= next_top, (
+            f"crop {index + 1} reaches {bottom + pad - next_top}px into the "
+            "next staff; the same bars would be read twice, once per crop, and "
+            "the page would come out longer than the music"
+        )
+
+
+def test_the_padding_cannot_span_the_gap_the_detector_leaves() -> None:
+    """The coupling between the two numbers, which is not obvious from either.
+
+    `find_systems` merges bands closer together than the median staff height,
+    so every gap it leaves is at least one staff tall. `crop_systems` then pads
+    by `_SYSTEM_PADDING` of a staff. At 1.0 or above a crop could swallow the
+    whole of its neighbour, and a system read twice is invisible downstream —
+    the bars add up, the page is simply longer than the music, and every bar
+    after the duplicate is compared against the wrong moment of the recording.
+
+    Raising the padding is a reasonable thing to want; doing it past 1.0
+    without changing the merge rule is not.
+    """
+    from app.services.page_image import _SYSTEM_PADDING
+
+    assert 0 < _SYSTEM_PADDING < 1.0
