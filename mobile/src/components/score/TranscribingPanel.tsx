@@ -4,36 +4,9 @@ import { Animated, StyleSheet, View } from 'react-native';
 import { Text } from '../primitives/Text';
 import type { Piece } from '../../data/types';
 import { colors, spacing } from '../../design';
+import { QUEUED_PROGRESS, progressFor } from '../../lib/transcriptionProgress';
 import { useReducedMotion } from '../../lib/useReducedMotion';
 
-/**
- * How far along each reported step is.
- *
- * **This is a position, not a prediction.** The bar moves when the worker
- * reports a step it has actually reached and at no other time — nothing here
- * creeps forward on a timer toward a number nobody is measuring, which is what
- * the mocked version of the scan flow used to do while performing no work at
- * all.
- *
- * The fractions are spaced by how much of the job is left after each step
- * rather than evenly, because the steps are not evenly sized: fetching a file
- * is quick and reading a page of notation is most of the wait. Two of the four
- * are skipped entirely when no OMR engine is installed, so a bar that divided
- * by the step count would jump differently depending on a server setting.
- *
- * Keyed on the worker's own words. They are the contract between
- * `transcription_runner.py` and this screen, and an unrecognised one simply
- * leaves the bar where it was — a new stage should never move it backwards.
- */
-const STAGE_PROGRESS: Record<string, number> = {
-  'Fetching the page': 0.15,
-  'Finding the staves': 0.35,
-  'Checking the reading': 0.6,
-  'Reading the notation': 0.7,
-};
-
-/** Before the worker has said anything: accepted, not yet started. */
-const QUEUED_PROGRESS = 0.05;
 
 export interface TranscribingPanelProps {
   /** The piece being read. Only its transcription fields are consulted. */
@@ -54,9 +27,11 @@ export interface TranscribingPanelProps {
  */
 export function TranscribingPanel({ piece }: TranscribingPanelProps) {
   const reducedMotion = useReducedMotion();
-  const target =
-    (piece.transcriptionStage ? STAGE_PROGRESS[piece.transcriptionStage] : undefined) ??
-    QUEUED_PROGRESS;
+  // Where the bar goes, and the rule for a stage this build does not know:
+  // hold, never fall back. See `progressFor`.
+  const held = useRef(QUEUED_PROGRESS);
+  const target = progressFor(piece.transcriptionStage, held.current);
+  held.current = target;
 
   // Held in a ref so a re-render for any other reason doesn't restart the
   // animation from zero, which would read as the job starting over.

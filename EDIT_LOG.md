@@ -6,6 +6,95 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-17 — The progress bar collapsed to 5% partway through every doubtful read
+
+**Branch:** `main`. Seventh iteration of *fix the OMR system till it works*.
+Went looking for whether per-system reading could outrun the stuck-transcription
+sweeper — it cannot, because every stage report refreshes `updated_at` — and
+found something live and worse on the way.
+
+**`TranscribingPanel` and the worker had drifted, and the panel's own docstring
+says why that matters:** *"Keyed on the worker's own words. They are the
+contract between `transcription_runner.py` and this screen."* Nothing held them
+to it.
+
+- The worker says **"Checking the bar counts"**. The map said **"Checking the
+  reading"**. So the one stage that fires late in every read with a doubtful bar
+  in it was unrecognised.
+- An unrecognised stage fell through to `QUEUED_PROGRESS`. The docstring says an
+  unknown stage *"simply leaves the bar where it was — a new stage should never
+  move it backwards"*; the code was `?? QUEUED_PROGRESS`, which is the furthest
+  backwards it can go. Together: the bar sat at 70%, the confirm stage fired,
+  and it snapped to **5%** — while the read was working. A scan that is working
+  looking like one that restarted is the exact failure this panel exists to
+  prevent.
+- The map also had **"Finding the staves"**, which nothing had emitted since the
+  Audiveris engine was removed (DECISIONS.md, 2026-08-25). A dead key is
+  indistinguishable from a live one by reading either file, which is how the two
+  that had drifted went unnoticed.
+- Even with the key matched, "Checking the bar counts" sat at **0.6** against
+  reading's **0.7**. Reaching the later step would still have walked the bar
+  back.
+
+**Fixed on the side that was wrong in each case, not the side that was easier.**
+The worker's words are the contract, so the app adopts them. The positions are
+now in the order the worker reaches them and increase: fetching 0.15, finding
+the staves 0.3, reading 0.7, checking the bar counts 0.85. An unknown stage
+holds, as documented.
+
+**"Finding the staves" is live again**, because `parse_sheet_music` genuinely
+does that now — `STAGE_SPLITTING` is reported *before* `crop_systems`, which is
+the slow part: decoding a 12-megapixel photograph, projecting it and re-encoding
+a crop per system. Reported after it, the screen would say "Fetching the page"
+for the whole of that. Reported once per page and not once per crop, and
+reported whether or not the page turns out to split — every fixture here is a
+single system, so keying it on the answer would make the common case the silent
+one.
+
+**`STAGE_PROGRESS` moved out of the component** to `lib/transcriptionProgress.ts`.
+Not tidying: there is no way to render a React Native component in this test
+setup, so the rule was four lines inside a component with one of them wrong and
+nothing able to check it. It is now `progressFor(stage, held)` with five cases
+around it.
+
+**The parity test is the actual fix.** `test_stage_parity.py` parses
+`STAGE_PROGRESS` out of the TypeScript — rather than keeping a third copy, which
+is the failure being tested for — and holds it in **both** directions: every
+word the worker can say has a position, and every position corresponds to a word
+something says. Plus the ordering. This is the sixth instance of parallel
+implementations drifting in this repository and the pattern is now unmistakable:
+two files that have to agree, agreeing by inspection.
+
+**Also checked and cleared:** whether a per-system read can outrun
+`STUCK_AFTER = 10 minutes`. It cannot — `report()` calls `_update`, which writes
+`updated_at`, and the sweeper compares against that, so a twelve-system page
+refreshes its own liveness twelve times. Only a single system taking ten minutes
+would trip it.
+
+**Tests:** 4 parity cases, 5 vitest cases, 3 pipeline cases. Eleven mutations
+across all three files, all killed — one survived first: reporting the splitting
+step *after* `crop_systems` instead of before, which no assertion could see
+because the step still appeared first in the list. The test now records what the
+screen said *while* the cutting was happening.
+
+Backend 863 tests green (856 before), ruff clean. Mobile 230 tests (225 before),
+typecheck clean.
+
+**Not done, and it needs the §2 gate.** Per-system reading turned a ~30-second
+read into several minutes, and every crop reports the same stage, so the bar
+now holds at 0.7 for minutes. Real measured per-line progress is available — the
+worker knows it is on system 3 of 7 — but it changes copy a musician reads and
+how the bar behaves, which is the human's call. Reading the systems concurrently
+is the other half and is backend-only. Both are the next thing here.
+
+**A blocked measurement, recorded so it is not retried blindly.** I tried to run
+the detector over the photographs the owner actually took, which is the one
+thing no fixture can stand in for. `SUPABASE_SERVICE_ROLE_KEY` is empty in this
+container — correctly, it is a secret — so storage cannot be read from here and
+the per-system path still has never seen a real page.
+
+---
+
 ## 2026-09-17 — The prompt asked for one line and got a page for five weeks
 
 **Branch:** `main`. Sixth iteration of *fix the OMR system till it works*. This
@@ -88,7 +177,7 @@ catch; it now keys off text only `_ONLY_THESE` carries. And my sliver mutation
 deleted one string fragment of a five-fragment bullet, leaving the asserted
 sentence intact — the mutation was wrong, not the test.
 
-Backend 852 tests green (846 before), ruff clean.
+Backend 856 tests green (846 before), ruff clean.
 
 **Left alone deliberately:** `intempo-combined.md` §"The OCR prompt" holds a
 verbatim copy of this prompt from before roughly twenty rules were added to it.

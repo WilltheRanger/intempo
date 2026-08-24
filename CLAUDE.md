@@ -176,11 +176,15 @@ there works differently as of 2026-08-24:
   The row carries `transcription_status` (`queued` → `reading` → `done` |
   `failed`), the step the worker last reported, and a failure reason written
   for a musician. `usePiece` polls while a scan is unfinished.
-- **Progress is measured, never animated toward a guess.** The bar in
-  `components/score/TranscribingPanel.tsx` moves when the worker reports a step
-  it has reached and at no other time. If you add a pipeline stage, add it to
-  `STAGE_PROGRESS` there and to `_HUMAN_STAGES` in the worker — the worker's
-  words are the contract between them.
+- **Progress is measured, never animated toward a guess.** The bar moves when
+  the worker reports a step it has reached and at no other time. The map lives
+  in `lib/transcriptionProgress.ts` (out of the component so the rule can be
+  tested); if you add a pipeline stage, add it there **and** to `_HUMAN_STAGES`
+  in the worker — the worker's words are the contract between them, and
+  `backend/app/tests/test_stage_parity.py` enforces it in both directions.
+  A stage this build does not recognise **holds** the bar; it must never fall
+  back to the queued position, which threw a read at 70% back to 5%. Positions
+  are listed in the order the worker reaches them and must not decrease.
 - **Saving a scan lands on `PieceScore`**, which owns all three states
   (reading · failed · done). `ListenButton` lives in `components/score/` and is
   shared by the record, warmup, piece and score screens.

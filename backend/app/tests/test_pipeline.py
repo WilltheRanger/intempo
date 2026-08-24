@@ -1159,3 +1159,71 @@ def test_the_arithmetic_retry_is_still_told_it_is_looking_at_one_line(
         "about a line"
     )
     assert "line 2 of 2" in retries[1], "every line's retry carries its own number"
+
+
+def test_cutting_the_page_up_is_reported_as_a_step(monkeypatch) -> None:
+    """Decoding a 12-megapixel photograph, projecting it and re-encoding a crop
+    per system takes real time, and until it was reported the screen said
+    "Fetching the page" throughout it. `TranscribingPanel` has had a position
+    for "Finding the staves" since the OMR engine that used to report it was
+    removed; nothing emitted it, and `test_stage_parity.py` holds the words
+    together but cannot know whether either side ever speaks.
+    """
+    seen: list[str] = []
+    when: list[list[str]] = []
+
+    def _crops(_image_bytes):
+        # What the screen said *while* the cutting was happening. Asserting the
+        # step appears somewhere in the list does not distinguish reporting it
+        # before the work from reporting it after — and reporting it after is
+        # the bug, because then the screen says "Fetching the page" for the
+        # whole of the decode, projection and re-encode.
+        when.append(list(seen))
+        return [b"a", b"b"]
+
+    monkeypatch.setattr(pipeline_module, "crop_systems", _crops)
+
+    parse_sheet_music(
+        b"<page>", providers=[_Recorder()], retry=False, on_stage=seen.append
+    )
+
+    assert when == [[pipeline_module.STAGE_SPLITTING]], (
+        f"the page was cut up before the screen was told: {when}"
+    )
+    assert seen.index(pipeline_module.STAGE_SPLITTING) == 0, seen
+
+
+def test_looking_for_the_staves_is_reported_even_when_there_is_one(monkeypatch) -> None:
+    """A page that turns out not to need splitting has still been through the
+    step: `find_systems` decoded it and projected it, which is the slow part,
+    and found one system. Reporting it only on the pages that *do* split would
+    make the step's appearance depend on the answer rather than on the work —
+    and every fixture in this repository is a single system, so the common case
+    would be the silent one.
+    """
+    monkeypatch.setattr(pipeline_module, "crop_systems", lambda _b: [])
+    seen: list[str] = []
+
+    parse_sheet_music(
+        b"<page>", providers=[_Recorder()], retry=False, on_stage=seen.append
+    )
+
+    assert seen[0] == pipeline_module.STAGE_SPLITTING, seen
+    assert seen.count(pipeline_module.STAGE_SPLITTING) == 1, seen
+
+
+def test_a_single_system_is_not_searched_for_systems(monkeypatch) -> None:
+    """Each crop goes back through `parse_sheet_music`, and a crop is one line.
+    Reporting the splitting step from inside that recursion would say "finding
+    the staves" once per system, in the middle of the reading — the bar would
+    walk backwards from 0.7 to 0.3 on every line of the page."""
+    monkeypatch.setattr(pipeline_module, "crop_systems", lambda _b: [b"a", b"b", b"c"])
+    seen: list[str] = []
+
+    parse_sheet_music(
+        b"<page>", providers=[_Recorder()], retry=False, on_stage=seen.append
+    )
+
+    assert seen.count(pipeline_module.STAGE_SPLITTING) == 1, (
+        f"the splitting step was reported once per system: {seen}"
+    )

@@ -30,7 +30,11 @@ from fastapi import HTTPException
 from app.config import settings
 from app.db import get_service_client
 from app.services.ocr import OCRError, parse_sheet_music
-from app.services.ocr.pipeline import STAGE_CONFIRMING, STAGE_READING
+from app.services.ocr.pipeline import (
+    STAGE_CONFIRMING,
+    STAGE_READING,
+    STAGE_SPLITTING,
+)
 from app.services.page_image import download_image, prepare_for_model, readable_url
 
 log = logging.getLogger("intempo.transcription")
@@ -60,6 +64,7 @@ def _now_iso() -> str:
 #: want to know is that something is happening and roughly what. The provider
 #: is in the log line either way, which is where the person debugging it looks.
 _HUMAN_STAGES = {
+    STAGE_SPLITTING: "Finding the staves",
     STAGE_CONFIRMING: "Checking the bar counts",
 }
 
