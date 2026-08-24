@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import os
 
+import pytest
+
 
 from app.workers import dispatch
 
@@ -407,3 +409,93 @@ def test_both_spawns_repair_the_token_before_building_a_client(monkeypatch) -> N
         assert code.index("clean_modal_credentials()") < code.index("import modal"), (
             f"{fn} repairs the token after the client was already built"
         )
+
+
+# ---- what actually happened to the pages ------------------------------------
+#
+# The fact nobody could see. `TRANSCRIPTION_RUNTIME=modal` was set and every
+# page was read in this process instead, without homr, for the entire life of
+# the deployment. Nothing was broken enough to notice: the spawn failure is
+# caught so it cannot 500 the request, the fallback is deliberately quiet so a
+# musician does not lose a page to a deployment setting, and `/v1/ready`
+# reported the configuration — which was correct. A single counter would have
+# shown it on the first scan.
+
+
+class _Tasks:
+    """Stands in for FastAPI's BackgroundTasks."""
+
+    def __init__(self) -> None:
+        self.added: list = []
+
+    def add_task(self, fn, *args) -> None:
+        self.added.append((fn, args))
+
+
+@pytest.fixture(autouse=True)
+def _fresh_counters():
+    dispatch.transcription_dispatches.to_modal = 0
+    dispatch.transcription_dispatches.fell_back = 0
+    dispatch.transcription_dispatches.last_failure_type = None
+    yield
+
+
+def test_a_page_that_fell_back_is_counted(monkeypatch) -> None:
+    monkeypatch.setattr(dispatch, "TRANSCRIPTION_RUNTIME", "modal")
+    monkeypatch.setattr(dispatch, "_spawn_transcription_on_modal", lambda _id: False)
+    tasks = _Tasks()
+
+    dispatch.start_transcription("s1", tasks)
+
+    assert dispatch.transcription_dispatches.fell_back == 1
+    assert dispatch.transcription_dispatches.to_modal == 0
+    # And it was still read. The counter records the fallback, it does not
+    # replace it — a musician who has just photographed a page must not lose it
+    # to a deployment setting.
+    assert len(tasks.added) == 1
+
+
+def test_a_page_that_reached_modal_is_counted(monkeypatch) -> None:
+    monkeypatch.setattr(dispatch, "TRANSCRIPTION_RUNTIME", "modal")
+    monkeypatch.setattr(dispatch, "_spawn_transcription_on_modal", lambda _id: True)
+    tasks = _Tasks()
+
+    dispatch.start_transcription("s1", tasks)
+
+    assert dispatch.transcription_dispatches.to_modal == 1
+    assert dispatch.transcription_dispatches.fell_back == 0
+    assert tasks.added == [], "it was read twice"
+
+
+def test_in_process_deployments_are_not_counted_as_falling_back(monkeypatch) -> None:
+    """Reading here is not a fallback when here is where it was meant to run.
+    Counting it would make every correctly-configured local deployment report
+    a problem, which is how a warning stops being read."""
+    monkeypatch.setattr(dispatch, "TRANSCRIPTION_RUNTIME", "inprocess")
+    tasks = _Tasks()
+
+    dispatch.start_transcription("s1", tasks)
+
+    assert dispatch.transcription_dispatches.fell_back == 0
+    assert len(tasks.added) == 1
+
+
+def test_the_failure_type_is_kept_and_the_message_is_not(monkeypatch) -> None:
+    """`grpclib` raises `ValueError: Invalid metadata value: '<the token>'`, so
+    the message is where the credential is. It reached the Render logs once
+    inside a traceback; `/v1/ready` is served over HTTP and read in a browser,
+    which is the last place it should be able to reach."""
+    secret = "ak-not-a-real-token"
+
+    class _Boom:
+        @staticmethod
+        def from_name(*_a, **_k):
+            raise ValueError(f"Invalid metadata value: {secret!r}")
+
+    monkeypatch.setitem(__import__("sys").modules, "modal", type("m", (), {"Function": _Boom}))
+
+    assert dispatch._spawn_transcription_on_modal("s1") is False
+
+    recorded = dispatch.transcription_dispatches.last_failure_type
+    assert recorded == "ValueError"
+    assert secret not in (recorded or "")

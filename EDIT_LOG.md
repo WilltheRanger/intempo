@@ -6,6 +6,67 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-24 — The deployment could not see that it had never once used Modal
+
+**Branch:** `main`. Item (2) of the root cause, and the reason the other three
+survived as long as they did.
+
+`TRANSCRIPTION_RUNTIME=modal` was set on the deployment. **Every page was read
+in the API process instead, without homr, for the entire life of it.** Nothing
+was broken enough to notice, and each piece was individually right:
+
+- the spawn failure is caught, so it cannot 500 the request;
+- the fallback is deliberately quiet, so a musician does not lose a page they
+  have just photographed to a deployment setting;
+- `/v1/ready` reported the **configuration**, and the configuration was
+  correct — a token with a trailing newline is present, and it names a
+  function that is deployed.
+
+So every check passed while every spawn raised. What nobody could see was the
+*behaviour*, and a single counter would have shown it on the first scan.
+
+### What changed
+
+`dispatch.transcription_dispatches` counts pages handed to Modal against pages
+read here, and keeps the **type** of the last spawn failure. `/v1/ready` gains
+`transcription_dispatch`, which reports "N of M pages handed over since this
+process started were read here instead — without homr, by the vision models
+alone."
+
+Three deliberate details:
+
+- **The type, never the message.** `grpclib` raises
+  `ValueError: Invalid metadata value: '<the token>'` — the message is where
+  the credential is, and it reached the Render logs once already inside a
+  traceback. A readiness detail is served over HTTP and read in a browser,
+  which is the last place it should be able to reach.
+- **Not blocking.** The fallback is a real reading and the app works. It works
+  in the place that moving to Modal was meant to empty, with the engine that
+  reads pages properly left out.
+- **Process-local, and it says so before the first page.** A fresh process
+  genuinely does not know yet, and "nothing to report yet" beats reporting
+  healthy on the strength of no evidence. An in-process deployment is not
+  asked the question at all — reading here is not a fallback when here is
+  where it was meant to run, and counting it would make every correct local
+  setup report a problem, which is how a warning stops being read.
+
+### Tests
+
+Four in `test_dispatch.py`, six in `test_readiness.py`. Backend **1053 passed**,
+ruff clean. Eight mutations, all caught, no survivors — including the two that
+matter most: the fallback not being counted (which *is* the production state
+this replaces), and the check never being added to the report, which is the
+failure mode this whole entry is about.
+
+### Not verified
+
+As with the two entries below: nothing here has been through the deployed
+pipeline. This one is at least self-demonstrating — if the token fix works,
+`transcription_dispatch` stays quiet; if it does not, it will say so on the
+first scan instead of after a page of invented notes.
+
+---
+
 ## 2026-08-24 — The next link: a missing key threw away a reading that had worked
 
 **Branch:** `main`. Surfaced by an adversarial audit of the capture path while

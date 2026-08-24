@@ -722,3 +722,83 @@ def test_an_engine_that_is_not_installed_is_reported_rather_than_assumed(
     assert checks["ocr:homr"].ok is False
     assert "not installed in this container" in checks["ocr:homr"].detail
     assert "Modal" in checks["ocr:homr"].detail, "it does not say where it does run"
+
+
+# ---- what actually happened to the pages ------------------------------------
+
+
+def _dispatch_check(monkeypatch, *, runtime="modal", to_modal=0, fell_back=0, failure=None):
+    from app.services import readiness as readiness_module
+    from app.workers import dispatch
+
+    monkeypatch.setattr(dispatch, "TRANSCRIPTION_RUNTIME", runtime)
+    monkeypatch.setattr(dispatch.transcription_dispatches, "to_modal", to_modal)
+    monkeypatch.setattr(dispatch.transcription_dispatches, "fell_back", fell_back)
+    monkeypatch.setattr(dispatch.transcription_dispatches, "last_failure_type", failure)
+    return readiness_module._transcription_dispatch_check()
+
+
+def test_pages_read_here_while_configured_for_modal_are_reported(monkeypatch) -> None:
+    """The check that would have caught the whole thing on the first scan.
+
+    Every *configuration* check passed: a token with a trailing newline is
+    present, and it names a function that is deployed. What nobody could see
+    was that `fn.spawn()` raised on every call and the pages were being read
+    here, without homr — one of them coming back as invented notes the app
+    displayed as a transcription.
+    """
+    (check,) = _dispatch_check(monkeypatch, fell_back=3, failure="ValueError")
+
+    assert not check.ok
+    assert "3" in check.detail
+    assert "homr" in check.detail
+    # Not blocking: the fallback is a real reading and the app works.
+    assert not check.blocking
+
+
+def test_the_report_names_the_failure_type_and_never_its_message(monkeypatch) -> None:
+    """`grpclib` puts the credential in the message. A readiness detail is
+    served over HTTP and read in a browser."""
+    (check,) = _dispatch_check(monkeypatch, fell_back=1, failure="ValueError")
+
+    assert "ValueError" in check.detail
+    assert "Invalid metadata value" not in check.detail
+    assert "ak-" not in check.detail
+
+
+def test_a_deployment_that_is_reaching_modal_is_quiet(monkeypatch) -> None:
+    """It has to be able to pass, or it is a warning nobody reads."""
+    (check,) = _dispatch_check(monkeypatch, to_modal=5)
+
+    assert check.ok
+
+
+def test_nothing_is_claimed_before_a_page_has_been_handed_over(monkeypatch) -> None:
+    """A fresh process genuinely does not know. Saying so beats reporting
+    healthy on the strength of no evidence."""
+    (check,) = _dispatch_check(monkeypatch)
+
+    assert check.ok
+    assert "nothing to report" in check.detail.lower()
+
+
+def test_an_in_process_deployment_is_not_asked_the_question(monkeypatch) -> None:
+    """Reading here is not a fallback when here is where it was meant to run."""
+    assert _dispatch_check(monkeypatch, runtime="inprocess") == []
+
+
+def test_it_is_wired_into_the_readiness_report() -> None:
+    """A check nobody calls reports nothing — which is the failure mode this
+    whole entry is about."""
+    import re
+    from pathlib import Path
+
+    from app.services import readiness as readiness_module
+
+    source = Path(readiness_module.__file__).read_text()
+    code = re.sub(r"#[^\n]*", "", source)
+    assert "_transcription_dispatch_check()" in code.split("def readiness(")[-1] or (
+        "_transcription_dispatch_check()" in code
+    )
+    # Specifically: extended into the result, not merely defined.
+    assert "checks.extend(_transcription_dispatch_check())" in code
