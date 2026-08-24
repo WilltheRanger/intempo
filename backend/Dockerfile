@@ -20,6 +20,20 @@ RUN uv sync --frozen --no-install-project --no-dev || uv sync --no-install-proje
 
 COPY app ./app
 
+# The tuning config, and it is not optional.
+#
+# `audio_config.CONFIG_PATH` is `parents[2]` of `app/services/audio_config.py`,
+# which in this image is `/app` — so the loader looks for `/app/config.toml`
+# and this line is the only thing that puts one there. Without it the API boots
+# cleanly, passes its health check, signs people in and reads photographed
+# pages, and then **fails every single analysis** with `internal_error`: the
+# config is read lazily, inside the pipeline, and a missing one raises rather
+# than falling back to built-in defaults. Calibration goes with it.
+#
+# It was missing. The Modal image had a test asserting this exact placement and
+# the image that has been in production all along had nothing.
+COPY config.toml ./config.toml
+
 
 EXPOSE 8000
 

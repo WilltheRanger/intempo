@@ -238,3 +238,112 @@ def test_nothing_is_installed_by_a_lower_bound() -> None:
         "a lower bound in the image resolves to whatever PyPI has that day; "
         "pin it to the version in uv.lock instead"
     )
+
+
+# ---------------------------------------------------------------------------
+# The *other* image
+#
+# Everything above is about the Modal container. `backend/Dockerfile` builds
+# the API — the image that has been in production since Batch 1 — and it had no
+# test at all, which is how it went to Render without `config.toml` in it.
+#
+# The failure was silent in the worst way. The API booted, passed its health
+# check, signed people in and read photographed pages; the tuning config is
+# read lazily, inside the pipeline, so nothing touched it until a musician
+# finished playing. Then `FileNotFoundError`, caught by the runner's catch-all,
+# and `internal_error` on the verdict screen. Every take. Calibration too.
+#
+# A test asserting exactly this placement existed for the container that has
+# never run a real analysis, and nothing for the one serving requests.
+# ---------------------------------------------------------------------------
+
+
+def _image_layout(dockerfile: str) -> dict[str, str]:
+    """Absolute path inside the image -> the source it was copied from.
+
+    Reads the `COPY` instructions rather than matching a string, so a change to
+    `WORKDIR`, or to where `app/` lands, is followed rather than missed. Only
+    the forms this Dockerfile uses are handled; anything else would be a change
+    worth noticing here anyway.
+    """
+    import posixpath
+
+    workdir = "/"
+    placed: dict[str, str] = {}
+    for raw in dockerfile.splitlines():
+        line = raw.strip()
+        if line.startswith("WORKDIR "):
+            workdir = line.split(None, 1)[1].strip()
+        elif line.startswith("COPY ") and "--from=" not in line:
+            *sources, destination = line.split()[1:]
+            for source in sources:
+                # `uv.lock*` is a glob for an optional file; the name is the
+                # part before the star.
+                name = posixpath.basename(source.rstrip("*"))
+                if destination.endswith("/") or len(sources) > 1:
+                    target = posixpath.join(workdir, destination, name)
+                else:
+                    target = posixpath.join(workdir, destination)
+                placed[posixpath.normpath(target)] = source
+    return placed
+
+
+def test_the_api_image_carries_the_tuning_config() -> None:
+    """Derived from where the loader actually looks, not from a literal path.
+
+    `CONFIG_PATH` is `parents[2]` of `app/services/audio_config.py`. Wherever
+    the Dockerfile puts `app/`, the config has to sit two levels above the
+    services directory — so this computes the answer from the image's own
+    layout and the loader's own rule, and fails if either moves without the
+    other.
+    """
+    import posixpath
+
+    from app.services import audio_config
+
+    dockerfile = (BACKEND / "Dockerfile").read_text()
+    placed = _image_layout(dockerfile)
+
+    app_root = next(
+        (path for path, source in placed.items() if source.rstrip("/") == "app"),
+        None,
+    )
+    assert app_root, "the Dockerfile no longer copies app/; this test is guessing"
+
+    # `<app_root>/services/audio_config.py`.parents[2] — the same arithmetic
+    # the loader does, spelled in the image's paths.
+    levels_up = (
+        Path(audio_config.__file__).resolve().parents[2],
+        Path(audio_config.__file__).resolve(),
+    )
+    depth = len(levels_up[1].parts) - len(levels_up[0].parts)
+    module_in_image = posixpath.join(app_root, "services", "audio_config.py")
+    expected = posixpath.normpath(
+        posixpath.join(module_in_image, *([".."] * depth), "config.toml")
+    )
+
+    assert expected in placed, (
+        f"the loader will read {expected} in this image and nothing copies a "
+        "config.toml there. The API boots, passes its health check and fails "
+        f"every analysis with internal_error. Copied paths: {sorted(placed)}"
+    )
+
+
+def test_neither_image_ships_without_a_config() -> None:
+    """One loader, one rule, two images.
+
+    The placement is checked properly above and in
+    `test_the_tuning_config_lands_where_the_loader_looks`. This is the blunter
+    question those two cannot ask together: does each image carry a config at
+    all. They have only ever disagreed by omission — the Modal one was written
+    with this in mind, the API one was not — and omission is what this catches.
+    """
+    dockerfile_sources = set(_image_layout((BACKEND / "Dockerfile").read_text()).values())
+    modal_source = (BACKEND / "modal_app.py").read_text()
+
+    assert "config.toml" in dockerfile_sources, (
+        f"the API image copies {sorted(dockerfile_sources)} and no config.toml"
+    )
+    assert 'add_local_file("config.toml"' in modal_source, (
+        "the Modal image does not add config.toml at all"
+    )

@@ -6,6 +6,67 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-08 (night, later) — The API image had no `config.toml`, so every analysis failed
+
+**Branch:** `main`. Worse than the last one, and found by pulling the same
+thread.
+
+**What was wrong.** `backend/Dockerfile` copies `pyproject.toml`, `uv.lock*`
+and `app/`. That is all. `audio_config.CONFIG_PATH` is `parents[2]` of
+`app/services/audio_config.py`, which in that image is `/app` — so the loader
+reads `/app/config.toml`, and nothing ever put one there.
+
+Every analysis threshold lives in that file and it is read **lazily**, inside
+the pipeline. So the container starts cleanly. Health check green. Sign-in
+works. A photographed page is read and saved. Then a musician finishes playing
+and `load_audio_config()` raises `FileNotFoundError`, the runner's catch-all
+turns it into `internal_error`, and the verdict screen says something went
+wrong. Every take. Calibration too, on the same read.
+
+**Proven, not inferred.** I reproduced the image's layout from its own `COPY`
+lines and ran the real loader against it:
+
+    CONFIG_PATH: <image root>/config.toml
+    load_audio_config() raises FileNotFoundError: ... '/config.toml'
+
+and again after the fix, which loads and reports 22050 Hz.
+
+**The shape of it.** `test_worker_image.py` has had
+`test_the_tuning_config_lands_where_the_loader_looks` since the Modal image was
+written — a test asserting exactly this placement, for the container that has
+never run a real analysis. The image that has been serving requests since Batch
+1 had no test at all. I wrote the careful one for the new thing and assumed the
+old thing.
+
+**What changed.**
+
+1. `COPY config.toml ./config.toml` in the Dockerfile, with the consequence
+   written above it so nobody trims it as clutter.
+2. **A test that derives the layout instead of matching a string.** It reads
+   the `COPY` and `WORKDIR` instructions, works out where `app/` lands,
+   applies the loader's own `parents[2]` rule to that, and asserts a config is
+   copied to the result. Moving `app/` without moving the config fails it;
+   moving `WORKDIR` correctly does *not*, because both move together and the
+   rule still resolves — a mutation I ran specifically to check the test was
+   following the rule rather than a path.
+3. **`/v1/ready` reports `tuning_config`**, blocking. A deployment that cannot
+   analyse a take cannot do the thing the app is for. A missing file and an
+   unparseable one are reported differently, because they send you to different
+   places — the Dockerfile, or the file.
+
+Mutations caught: the COPY removed, `app/` moved without the config, the config
+copied to the wrong directory; plus, on the readiness side, the check made
+non-blocking, the path dropped from the message, a parse failure reported as a
+missing file, and the check not actually loading anything.
+
+**Tests run:** 725 passed (720 + 5), ruff clean. **Rollback:** revert; note
+that reverting the Dockerfile line re-breaks every analysis on Render.
+
+**What this does not prove.** No image was built — there is no Docker daemon in
+this environment. The layout was reconstructed from the Dockerfile's own
+instructions and the loader was run against it, which is the same arithmetic
+the test now does, but it is not `docker build`.
+
 ## 2026-09-08 (night) — `ANALYSIS_RUNTIME=modal` could not have worked
 
 **Branch:** `main`. The worst find of the day, and mine.
