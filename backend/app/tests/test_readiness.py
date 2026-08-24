@@ -596,3 +596,39 @@ def test_a_present_config_says_nothing() -> None:
 
     assert check.ok
     assert check.detail == ""
+
+
+def test_a_passing_check_says_nothing_in_the_response() -> None:
+    """Found by reading a real deployment's answer as a table.
+
+        name           ok     detail
+        supabase_url   True   SUPABASE_URL is not set — there is no project…
+
+    Every word of that is wrong except the name. `detail` describes the
+    *failure*, so printing it beside a passing check states the opposite of the
+    truth — and it did so on every row, which means the rows that were
+    genuinely broken looked exactly like the ones that were not.
+    """
+    passing = Check(name="x", ok=True, detail="X is not set, so nothing works.")
+    failing = Check(name="y", ok=False, detail="Y is not set, so nothing works.")
+
+    assert passing.as_dict()["detail"] == ""
+    assert failing.as_dict()["detail"] == "Y is not set, so nothing works."
+
+
+def test_the_endpoint_only_explains_what_is_wrong(monkeypatch, unconfigured) -> None:
+    """End to end, because `as_dict` is not what anybody reads — the JSON is."""
+    res = client.get("/v1/ready")
+    body = res.json()
+
+    for check in body["checks"]:
+        if check["ok"]:
+            assert check["detail"] == "", (
+                f"{check['name']} passed and still explained a failure: "
+                f"{check['detail']!r}"
+            )
+
+    assert any(not c["ok"] for c in body["checks"]), (
+        "this deployment has nothing wrong with it, so the assertion above "
+        "checked nothing"
+    )
