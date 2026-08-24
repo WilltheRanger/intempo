@@ -73,16 +73,52 @@ jobs:
         run: pip install modal
 
       - name: Deploy
+        shell: bash
         env:
           # From modal.com → Settings → API Tokens. Added to this repository
           # under Settings → Secrets and variables → Actions.
           MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
           MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
         run: |
+          set -eo pipefail
+
+          # **A skip and a deploy are both a green tick.** That is deliberate —
+          # a red cross on every push in a repository nobody has set up yet is
+          # noise, and noise on a signal is how the signal stops being read —
+          # but it leaves the run page unable to answer the only question
+          # anybody opens it to ask. The first real deploy here was told apart
+          # from the four skips before it by *timing the Deploy step*: 36
+          # seconds against zero.
+          #
+          # So each branch says which one happened, in words, at the top of the
+          # run page. Same failure this project keeps finding otherwise: a
+          # thing that did not happen, reported as a thing that did.
           if [ -z "$MODAL_TOKEN_ID" ] || [ -z "$MODAL_TOKEN_SECRET" ]; then
-            echo "MODAL_TOKEN_ID / MODAL_TOKEN_SECRET are not set in this"
-            echo "repository's Actions secrets, so there is nothing to deploy to."
-            echo "See docs/deploy-modal.md. Skipping rather than failing."
+            {
+              echo "### Skipped — nothing to deploy to"
+              echo
+              echo "\`MODAL_TOKEN_ID\` / \`MODAL_TOKEN_SECRET\` are not set in this"
+              echo "repository's Actions secrets, so \`modal deploy\` did not run."
+              echo "The analysis keeps running inside the API process."
+              echo
+              echo "See \`docs/deploy-modal.md\`."
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "MODAL_TOKEN_ID / MODAL_TOKEN_SECRET are not set; skipping."
             exit 0
           fi
-          modal deploy modal_app.py
+
+          # Modal's own output rather than a sentence restating it. A summary
+          # that says "deployed" in this file's words would be one more thing
+          # able to disagree with what actually happened.
+          modal deploy modal_app.py 2>&1 | tee /tmp/modal-deploy.log
+          {
+            echo "### Deployed"
+            echo
+            echo '```'
+            tail -n 20 /tmp/modal-deploy.log
+            echo '```'
+            echo
+            echo "Next: \`ANALYSIS_RUNTIME=modal\` plus both token halves on the"
+            echo "API host, then check \`GET /v1/ready\` reports"
+            echo "\`analysis_runtime:modal\` as ok. Until then takes still run there."
+          } >> "$GITHUB_STEP_SUMMARY"
