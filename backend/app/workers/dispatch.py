@@ -41,6 +41,56 @@ ANALYSIS_RUNTIME: Runtime = (
     "modal" if os.getenv("ANALYSIS_RUNTIME", "").strip().lower() == "modal" else "inprocess"
 )
 
+#: The env vars Modal turns into gRPC metadata on every call.
+_MODAL_CREDENTIAL_VARS = ("MODAL_TOKEN_ID", "MODAL_TOKEN_SECRET")
+
+
+def clean_modal_credentials() -> list[str]:
+    """Strip whitespace off the Modal token. Returns the names it had to fix.
+
+    gRPC metadata values may not contain a newline, and `grpclib` raises
+    ``ValueError: Invalid metadata value`` from six frames inside `spawn()`
+    when one does. A token pasted into a hosting dashboard carries a trailing
+    newline more often than not.
+
+    **What that cost, on 2026-08-24.** Every `spawn` raised, so no page ever
+    reached Modal — and Modal is the only place homr is installed. Reading
+    fell back to this process, where the chain's first provider is a homr that
+    is not there, so an orchestral bass part was read by vision models alone.
+    They returned a transcription at confidence 0.40 whose own
+    `notes_to_human` called it "approximate reconstructions", and the app
+    showed it to a musician as their score.
+
+    None of the three layers that should have caught it did. `/v1/ready`
+    tested the tokens for *presence*, and a value ending in a newline is
+    present. The spawn failure was logged and swallowed, by design, so the
+    request would not 500. And the fallback is deliberately quiet, because a
+    musician who has just photographed a page should not lose it to a
+    deployment setting.
+
+    So the value is repaired here rather than merely reported. A trailing
+    newline is not a configuration decision anyone made, and there is no
+    reading of it under which the untrimmed value is the one that was meant.
+    """
+    import os
+
+    fixed = []
+    for name in _MODAL_CREDENTIAL_VARS:
+        value = os.environ.get(name)
+        if value is not None and value != value.strip():
+            os.environ[name] = value.strip()
+            fixed.append(name)
+    if fixed:
+        # Never the value. This one reached the logs already, inside a
+        # traceback, which is its own problem.
+        log.warning(
+            "%s had surrounding whitespace and would have been rejected by "
+            "gRPC; using the trimmed value",
+            " and ".join(fixed),
+        )
+    return fixed
+
+
 #: The deployed Modal app and function names. Must match `modal_app.py`.
 MODAL_APP_NAME = os.getenv("MODAL_APP_NAME", "intempo")
 MODAL_FUNCTION_NAME = "run_analysis"
@@ -72,6 +122,7 @@ def _spawn_on_modal(analysis_id: str) -> bool:
     understands — the same failure the in-process path has always had, and the
     same recovery.
     """
+    clean_modal_credentials()
     try:
         import modal
     except ImportError:
@@ -104,6 +155,7 @@ def _spawn_transcription_on_modal(score_id: str) -> bool:
     on both sides, and `sweep_stuck_transcriptions` already understands a read
     that never finished.
     """
+    clean_modal_credentials()
     try:
         import modal
     except ImportError:

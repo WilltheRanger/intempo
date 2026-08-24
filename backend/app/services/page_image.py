@@ -514,6 +514,207 @@ def _ink_profile(image_bytes: bytes):
     return profile, smoothed
 
 
+#: The smallest staff-line spacing, in source pixels, a page can be read from.
+#:
+#: **Measured, on 2026-08-24, against every page in the repository plus the one
+#: that provoked this.** A staff is five lines and four spaces; telling a
+#: notehead sitting *on* a line from one sitting *in* a space needs the space
+#: resolved, and below this it simply is not there.
+#:
+#:     the Gershwin contrabass part, downscaled   4284px wide -> 35 px  ✓
+#:                                                1568        -> 13 px  ✓
+#:                                                1200        -> 10 px  ✓
+#:                                                 900        ->  7.5px ✗
+#:                                                 640        ->  5.5px ✗
+#:                                                 480        -> nothing measurable
+#:     01/02/03_printed.jpg   (read correctly)                -> 11 px  ✓
+#:     04_handwritten_clean.jpg (read correctly)              -> 15 px  ✓
+#:     05_handwritten_messy.jpg (**yields zero measures**)    ->  5 px  ✗
+#:
+#: So 8 sits in the gap between every page in the corpus that reads and the one
+#: that does not, and the corpus agrees with the downscale series about where
+#: the gap is. It is not fitted to a single photograph.
+_MIN_STAFF_SPACE_PX = 8
+
+#: A staff period must be at least this many rows, or it is pixel noise.
+_MIN_STAFF_PERIOD = 3
+#: How strong the autocorrelation peak must be to be believed as a staff.
+#:
+#: **Measured, and it started at 0.15 and was wrong there.** At 0.15 a
+#: handwritten fixture that the pipeline reads correctly was refused: its true
+#: period is found, at the right lag, with a correlation of 0.136. Handwriting
+#: puts a far larger share of a system's ink outside the five lines than
+#: engraving does, so the ruling is a quieter part of the signal without being
+#: any less present.
+#:
+#: The strongest peak each band reports, across everything available:
+#:
+#:     01/02/03_printed, phone resolution   0.75  0.64  0.38   read
+#:     05_handwritten_messy, phone res      0.36                read
+#:     04_handwritten_clean, phone res      0.136               read  <- weakest true signal
+#:     the real page's staff bands          0.37 - 0.68         read
+#:     the real page's title and desk bands 0.074 - 0.082       not staves
+#:     the same page at webcam resolution   no local maxima at all
+#:
+#: So this sits between the quietest real staff and the loudest thing that is
+#: not one. It is deliberately *not* what refuses the webcam page — that page
+#: has no peak at any threshold — so lowering it does not weaken the check it
+#: exists inside.
+_STAFF_PERIOD_STRENGTH = 0.10
+
+
+def _band_staff_space(profile_segment) -> int | None:
+    """The staff-line period within one band, or None if there isn't one.
+
+    Five evenly spaced lines make the ink profile periodic, so the first
+    prominent peak in its autocorrelation is the spacing. Capped at a quarter
+    of the band's height because the four spaces have to fit inside the band
+    the lines were found in — without that cap a 480px page returned a
+    confident 28, which would have put a staff 112 rows tall inside an 80-row
+    band, and that single spurious value was enough to pass a page with no
+    resolvable notation on it at all.
+    """
+    import numpy as np
+
+    segment = np.asarray(profile_segment, dtype=np.float64)
+    if segment.size < 30:
+        return None
+    highest = int(segment.size / 4)
+    if highest <= _MIN_STAFF_PERIOD + 1:
+        return None
+
+    centred = segment - segment.mean()
+    correlation = np.correlate(centred, centred, mode="full")[segment.size - 1:]
+    if correlation[0] <= 0:
+        return None
+    correlation = correlation / correlation[0]
+
+    for lag in range(_MIN_STAFF_PERIOD, min(highest, correlation.size - 1)):
+        if (
+            correlation[lag] > correlation[lag - 1]
+            and correlation[lag] >= correlation[lag + 1]
+            and correlation[lag] > _STAFF_PERIOD_STRENGTH
+        ):
+            return lag
+    return None
+
+
+#: Which of the per-band periods to believe, as a percentile.
+#:
+#: **Not the median, and not the minimum.** Autocorrelation peaks at every
+#: *multiple* of a period and never at a divisor, so a band that locks onto the
+#: second harmonic reports double the truth and there is no error in the other
+#: direction — which biases any central statistic upward. Measured: a page of
+#: eight stacked fixture strips reports `[11, 11, 11, 33, 11, 11, 11, 33]` at
+#: full size, where 11 is right and 33 is a harmonic of a 15 px band. At webcam
+#: resolution the same page reports `[4, 13, 4, 13]`, and its median of 8.5
+#: cleared the floor — passing a page with nothing readable on it.
+#:
+#: The strict minimum fixes that and introduces its own failure: orchestral
+#: parts print cue staves and ossias smaller than the main staff, and one of
+#: those would veto a page that reads perfectly. A low percentile is below
+#: every harmonic and above a single small system.
+_SPACING_PERCENTILE = 25
+
+
+def _representative_spacing(spacings: list[int]) -> float:
+    import numpy as np
+
+    return float(np.percentile(spacings, _SPACING_PERCENTILE))
+
+
+def staff_space_px(image_bytes: bytes) -> float | None:
+    """How many pixels apart this page's staff lines are. None if unreadable.
+
+    None means *no band on the page had a staff period in it* — not that the
+    page is empty. A photograph of music taken from too far away still has
+    systems in it, because `_bands` finds them by ink density and a row of
+    notation is dense whatever size it is. What it no longer has is five
+    distinguishable lines.
+
+    That distinction is the whole point. On 2026-08-24 a musician photographed
+    an orchestral contrabass part with a laptop webcam; it arrived as a
+    480x640 PNG, this page's eight systems were found correctly, every one was
+    cropped and sent, and the reading that came back was invented — its own
+    `notes_to_human` called it "approximate reconstructions". Nothing in the
+    pipeline could tell that page from a good one, because at every stage that
+    looked, it *was* one.
+
+    Only bands that yield a period are counted. Half of a real page's bands do
+    not — a title block, a desk, a system of nothing but multi-bar rests — and
+    requiring all of them would refuse pages that read perfectly well.
+    """
+    read = _ink_profile(image_bytes)
+    if read is None:
+        return None
+
+    profile, smoothed = read
+    spacings = [
+        space
+        for top, bottom in _bands(smoothed)
+        if (space := _band_staff_space(profile[top:bottom])) is not None
+    ]
+    if not spacings:
+        return None
+    return _representative_spacing(spacings)
+
+
+def too_small_to_read(image_bytes: bytes) -> str | None:
+    """Why this page cannot be read, in a sentence, or None if it can be.
+
+    Checked **before** any provider sees the page, and on the photograph as it
+    arrived rather than on the prepared copy — resizing a page up to
+    `MODEL_MAX_EDGE` adds pixels and no detail, so the question is only ever
+    about what was photographed.
+
+    The alternative to refusing is what happened before this existed: the page
+    goes to the models, they return something, and a musician is shown notes
+    nobody read off a page. A scan that fails is a scan they can retake. A
+    scan that invents is one they might practise against.
+    """
+    read = _ink_profile(image_bytes)
+    if read is None:
+        # Not a judgement this can make. The page did not decode at all, and
+        # `prepare_for_model` deliberately passes such bytes through untouched
+        # so the provider refuses them by name. "Too small to read" would be a
+        # confident wrong reason, which this project has shipped before.
+        return None
+
+    profile, smoothed = read
+    bands = _bands(smoothed)
+    if not bands:
+        # Decodes, but carries no band of ink anywhere — blank, or a
+        # photograph of something that is not sheet music. Not a resolution
+        # problem, and the reader's own "nothing was read from this page" says
+        # it better than a sentence about staff lines would.
+        return None
+
+    spacings = [
+        space
+        for top, bottom in bands
+        if (space := _band_staff_space(profile[top:bottom])) is not None
+    ]
+    if not spacings:
+        return (
+            "The staff lines in this photograph are too small to read — the app "
+            "can find the systems on the page but not the five lines in them. "
+            "A photo taken with a phone camera, close enough that one system "
+            "fills the width of the frame, reads reliably; a laptop webcam "
+            "usually does not have the resolution for a page of music."
+        )
+
+    space = _representative_spacing(spacings)
+    if space < _MIN_STAFF_SPACE_PX:
+        return (
+            "This photograph is too small to read the notation from — the staff "
+            "lines are about "
+            f"{space:.0f} pixels apart and the app needs {_MIN_STAFF_SPACE_PX}. "
+            "Photographing the page again from closer, or with a phone rather "
+            "than a webcam, is what fixes it."
+        )
+    return None
+
+
 def _bands(smoothed) -> list[tuple[int, int]]:
     """The runs of rows carrying more ink than the page's own midpoint.
 

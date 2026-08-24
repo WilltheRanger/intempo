@@ -19,6 +19,7 @@ import logging
 from dataclasses import dataclass, field
 
 from app.db import get_service_client
+from app.workers.dispatch import _MODAL_CREDENTIAL_VARS
 
 log = logging.getLogger(__name__)
 
@@ -339,6 +340,43 @@ def _analysis_runtime_checks() -> list[Check]:
                     "this API cannot hand a take to Modal and every one falls back to "
                     "running in this process. They are the same token pair the deploy "
                     "workflow uses."
+                ),
+                blocking=False,
+            )
+        ]
+
+    # Set is not the same as usable, and this check could not fail until it
+    # said so. Modal sends both values as gRPC metadata, which may not contain
+    # a newline; a token pasted into a hosting dashboard carries one often
+    # enough that it happened here. `grpclib` then raised from inside every
+    # `spawn`, no page ever reached Modal — the only place homr is installed —
+    # and pages were read by the vision chain alone and shown to a musician as
+    # transcriptions. Meanwhile this reported the credentials present, because
+    # they were.
+    #
+    # `clean_modal_credentials` repairs the value, so by the time anything
+    # spawns it is usable. This still reports it: a deployment whose token
+    # needs repairing on every call should be corrected at the source, and the
+    # next thing pasted into that field will have the same newline.
+    untrimmed = [
+        name
+        for name in _MODAL_CREDENTIAL_VARS
+        if (raw := os.getenv(name)) is not None and raw != raw.strip()
+    ]
+    if untrimmed:
+        return [
+            Check(
+                name="modal_credentials",
+                ok=False,
+                detail=(
+                    f"{' and '.join(untrimmed)} "
+                    + ("carry" if len(untrimmed) > 1 else "carries")
+                    + " leading or trailing whitespace — usually a newline picked up "
+                    "when the value was pasted into the hosting dashboard. Modal sends "
+                    "these as gRPC metadata, which rejects a newline, so every spawn "
+                    "fails and the work silently falls back to this process. It is "
+                    "trimmed before use, so this is not currently breaking anything; "
+                    "re-paste the value without the newline to fix it at the source."
                 ),
                 blocking=False,
             )

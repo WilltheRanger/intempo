@@ -454,6 +454,47 @@ def test_half_a_token_is_not_a_token(monkeypatch) -> None:
     assert not _runtime_checks(monkeypatch, runtime="modal")["modal_credentials"].ok
 
 
+def test_a_token_with_a_trailing_newline_is_reported(monkeypatch) -> None:
+    """The check that could not fail.
+
+    It tested the tokens for presence, and a value ending in `\n` is present.
+    Modal sends both halves as gRPC metadata, which rejects a newline, so every
+    `spawn` raised while this reported the credentials fine — for as long as it
+    took someone to notice that pages were being read by the wrong thing.
+
+    Not blocking, because `clean_modal_credentials` trims the value before it
+    is used, so nothing is broken by the time anything spawns. It is reported
+    because the next value pasted into that dashboard field will have the same
+    newline.
+    """
+    monkeypatch.setenv("MODAL_TOKEN_ID", "ak-something\n")
+    monkeypatch.setenv("MODAL_TOKEN_SECRET", "as-something")
+
+    check = _runtime_checks(monkeypatch, runtime="modal")["modal_credentials"]
+
+    assert not check.ok
+    assert "MODAL_TOKEN_ID" in check.detail
+    assert "whitespace" in check.detail or "newline" in check.detail
+    assert "as-something" not in check.detail and "ak-something" not in check.detail, (
+        "a readiness detail is shown in a browser; it must not carry the credential"
+    )
+    assert not check.blocking
+
+
+def test_a_clean_token_does_not_trip_the_whitespace_check(monkeypatch) -> None:
+    """It has to be able to pass, or it is the same broken check the other way
+    round."""
+    monkeypatch.setenv("MODAL_TOKEN_ID", "ak-something")
+    monkeypatch.setenv("MODAL_TOKEN_SECRET", "as-something")
+
+    checks = _runtime_checks(monkeypatch, runtime="modal")
+    credentials = checks.get("modal_credentials")
+    assert credentials is None or credentials.ok, (
+        f"a well-formed token pair was reported as a problem: "
+        f"{credentials.detail if credentials else ''}"
+    )
+
+
 def test_an_undeployed_function_is_reported_by_name(monkeypatch) -> None:
     """`Function.from_name` is documented as lazy — it defers the lookup until
     first use — so a check that only called it would pass against an account

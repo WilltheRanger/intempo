@@ -6,6 +6,169 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-24 — "It made something up": four faults, and homr never ran once
+
+**Branch:** `main`. The owner photographed an orchestral contrabass part —
+*An American in Paris*, Gershwin Critical Edition — and the app returned notes
+that were not on the page. Traced end to end through the Render logs for score
+`969c3aa5`, rather than guessed at.
+
+### What actually happened
+
+1. **`MODAL_TOKEN_ID` on Render ends in a newline.** Modal sends both halves of
+   the token as gRPC metadata, and `grpclib` rejects a metadata value
+   containing one: `ValueError: Invalid metadata value`, raised six frames
+   inside `fn.spawn()`. **Every spawn has failed since the value was pasted**,
+   so no page has ever reached Modal — and Modal is the only place homr is
+   installed.
+2. **The fallback then did what it is designed to do**, quietly: read the page
+   in-process. In-process the chain's first provider is a homr that is not
+   there (`homr is not installed in this container`), so the page went to the
+   vision models alone.
+3. **`GEMINI_API_KEY` is not configured** on that host either, so the first of
+   those was skipped too.
+4. **The page was a 480×640 PNG** — a laptop webcam capture, not the phone
+   photograph. Every stage still succeeded: the eight systems were found, all
+   eight cropped and sent, and a reading came back at confidence **0.40** whose
+   own `notes_to_human` said *"most pitches and rhythms in the pizzicato
+   passages are approximate reconstructions."* It was stored and drawn as a
+   score. Measures 11 and 12 came back byte-identical, which is the shape of
+   invention.
+
+Three separate layers should have caught the first fault and each was
+individually reasonable: the spawn failure is swallowed so it cannot 500 the
+request, the fallback is deliberately quiet so a musician does not lose a page
+to a deployment setting, and `/v1/ready` tested the tokens for **presence** — and
+a value ending in a newline is present.
+
+### Fix 1 — the token
+
+`clean_modal_credentials()` trims `MODAL_TOKEN_ID`/`MODAL_TOKEN_SECRET` before
+either spawn builds a client. A trailing newline is not a configuration
+decision anyone made and there is no reading under which the untrimmed value is
+the one meant. `/v1/ready` now reports the whitespace as well, non-blocking,
+because the next value pasted into that field will have the same newline. The
+test that pins the wiring **discovers** the spawn functions by regex rather
+than listing them — the first version named a function that does not exist and
+therefore checked nothing.
+
+### Fix 2 — refuse a page that cannot be read
+
+The reasoning is in today's `DECISIONS.md` entry. Briefly: the machinery for
+doubt all fired and none of it helped, because every part of it says "this
+reading might be wrong" when the true statement is "there was nothing here to
+read".
+
+`staff_space_px` measures staff-line spacing from the autocorrelation of the
+ink profile inside each detected band. `too_small_to_read` refuses below
+**8 source pixels**, and refuses when no band yields a staff period at all —
+the actual webcam case. Checked in `_read_page` before any provider sees the
+page, and on the photograph as downloaded rather than the prepared copy.
+
+**Measured, not picked.** The real page, downscaled:
+
+| width | staff space | verdict |
+|---|---|---|
+| 4284 (as shot) | 34 px | read |
+| 1568 | 12.75 | read |
+| 1200 | 10 | read |
+| 900 | 7 | refused |
+| 640 | 5.25 | refused |
+| **480 (what was uploaded)** | **nothing measurable** | **refused** |
+
+and the corpus: `01/02/03_printed` 11 px, `04_handwritten_clean` 15 px — all
+read correctly today; `05_handwritten_messy` **5 px**, and it is the one
+fixture that yields **zero** measures through the whole pipeline. The floor
+sits in that gap and the two independent series agree on where the gap is.
+
+### Two estimator bugs the mutation testing found, not me
+
+- **The cap.** A band may not report a staff taller than the band it was found
+  in. Without it the real page reports a confident **28 px** — five lines
+  across 112 rows inside an 80-row band — and that single spurious value was
+  enough to clear the floor. Removing the cap flips the real page from
+  *refused* to *read*, measured.
+- **The statistic.** It was the median. Autocorrelation peaks at every
+  *multiple* of a period and never at a divisor, so a band that locks onto a
+  harmonic reports double and the error only ever runs upward. A page of eight
+  stacked fixture strips at webcam resolution reports `[4, 13, 4, 13]`, whose
+  median of 8.5 cleared the floor with nothing readable on the page. The strict
+  minimum fixes that and breaks orchestral parts, which print cue staves and
+  ossias smaller than the main staff — one of those would veto a good page. It
+  is the 25th percentile: below every harmonic, above one small system.
+
+### The false refusal it shipped with, caught by the full suite
+
+`04_handwritten_clean` at phone resolution reads correctly through the whole
+pipeline and was **refused**. Its true period is found, at the right lag, with
+a correlation of **0.136** — against a cutoff of 0.15 I had picked without
+measuring. Handwriting puts far more of a system's ink outside the five lines
+than engraving does, so the ruling is a quieter part of the signal without
+being any less present.
+
+The strongest peak each band reports, across everything available:
+
+| | strongest peak | |
+|---|---|---|
+| `01/02/03_printed`, phone res | 0.75 · 0.64 · 0.38 | read |
+| `05_handwritten_messy`, phone res | 0.36 | read |
+| **`04_handwritten_clean`, phone res** | **0.136** | read — weakest true signal |
+| the real page's staff bands | 0.37 – 0.68 | read |
+| the real page's title and desk bands | 0.074 – 0.082 | not staves |
+| **the same page at webcam resolution** | **no local maxima at all** | refused |
+
+So the cutoff is **0.10**, between the quietest real staff and the loudest
+thing that is not one. It is deliberately *not* what refuses the webcam page —
+that page has no peak at any threshold — so lowering it does not weaken the
+check it sits inside. This is the third constant in the estimator that was
+wrong on first guess and right only after measuring.
+
+### Tests
+
+`test_page_legibility.py` — 22 tests. Backend **1038 passed**, ruff clean.
+
+Thirteen mutations, **all caught, no survivors**: no floor; an unmeasurable page
+allowed through; the floor raised past pages that read; the cap dropped; median
+instead of percentile; strict minimum instead of percentile; a one-pixel period
+believed; an undecodable page called "too small"; the numbers dropped from the
+message; the runner not calling the check; the check run on the prepared copy instead
+of the photograph; and the strength cutoff moved in **either** direction. Five
+were **survivors on the first pass** and each needed a test written for it.
+
+Synthetic staves were the first test subject and were the wrong one — a
+generator's realism is the thing under test, so a page it draws proves whatever
+the generator happens to do. The tests scale a real fixture by a known factor
+instead, which is ground truth for free and is the same operation a camera
+performs by standing further away. The rules that are one-dimensional are
+tested on arrays directly, because the page that proves each of them matters is
+a copyrighted critical edition and cannot be checked in.
+
+### Still wrong, and not mine to fix in code
+
+- **The token needs re-pasting in the Render dashboard** without the newline.
+  It is trimmed before use now, so nothing is broken by it; `/v1/ready` will
+  keep reporting it until it is fixed at source. The token *id* also appeared
+  in a Render traceback, so rotating the pair is worth doing.
+- **`GEMINI_API_KEY` is not set** on the API host.
+- **A laptop webcam cannot photograph a page of music.** 480×640 is roughly
+  3 px between staff lines. The app now says so instead of inventing; the route
+  that works is a phone photograph, imported.
+
+### Not verified
+
+Nothing here has been through the deployed pipeline. homr has **still never
+read a page in production** — the token fix should be the thing that lets it,
+and that is a prediction, not a result. The next real scan is the test.
+
+### Noted in passing, not fixed
+
+`_ink_profile`'s blur radius scales with the page's *shorter* side, so a very
+wide page gets a radius larger than its staff spacing and the lines stop
+registering as ink at all. Found while building a test fixture; it needs its
+own measurement before anything is changed.
+
+---
+
 ## 2026-08-24 — The upload: a filename the server refuses, no size cap, and advice that led nowhere
 
 **Branch:** `main`. Same capture-path loop, the upload slice.

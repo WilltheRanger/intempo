@@ -36,7 +36,13 @@ from app.services.ocr.pipeline import (
     STAGE_READING,
     STAGE_SPLITTING,
 )
-from app.services.page_image import download_image, prepare_for_model, readable_url
+from app.services.page_image import (
+    download_image,
+    prepare_for_model,
+    readable_url,
+    staff_space_px,
+    too_small_to_read,
+)
 
 log = logging.getLogger("intempo.transcription")
 
@@ -241,6 +247,24 @@ def _read_page(client, score_id: str, image_url: str) -> None:
         # long edge — none of which any provider was ever tested against, and
         # every one of which fails in a way that says nothing about the page.
         # See `prepare_for_model`.
+        # Before any provider sees it, and on the photograph as it arrived
+        # rather than the prepared copy — resizing up to `MODEL_MAX_EDGE` adds
+        # pixels and no detail, so the only question is what was photographed.
+        #
+        # A page whose staff lines cannot be resolved is not a hard page, it is
+        # not a page. Every stage below this one would still succeed on it: the
+        # systems are found by ink density and a row of notation is dense at any
+        # size, so eight crops go out and something comes back. What comes back
+        # is invented, and there is nothing further down that can tell.
+        unreadable = too_small_to_read(image_bytes)
+        if unreadable:
+            log.info(
+                "transcription %s: refusing a page with %s px staff spacing",
+                score_id,
+                staff_space_px(image_bytes),
+            )
+            _fail(client, score_id, unreadable)
+            return
         page, media_type = prepare_for_model(image_bytes)
         # The prepared page is what gets *read* whole and what the systems are
         # detected on; the crops are cut from the photograph itself, so each

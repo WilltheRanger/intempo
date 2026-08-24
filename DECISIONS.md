@@ -6,6 +6,61 @@ Operating Principle #5.
 
 ---
 
+## 2026-08-24 — Refuse a page the app cannot read, over reading it and marking the result uncertain
+
+**Context:** A musician photographed an orchestral contrabass part with a
+laptop webcam. It reached the backend as a 480×640 PNG. Every stage succeeded:
+the eight systems were found, all eight were cropped and sent, and a
+transcription came back — 67 measures, confidence 0.40, with its own
+`notes_to_human` saying *"most pitches and rhythms in the pizzicato passages
+are approximate reconstructions."* The app stored it and drew it as their
+score. Their words for this were "it made something up", and that is exactly
+what happened.
+
+The machinery for doubt already existed and all of it fired. The chain saw
+0.40, below `CONFIDENCE_THRESHOLD`, and tried every remaining provider. It
+logged `returning low-confidence transcription`. `describeConfidence` puts a
+quiet line on the piece screen when confidence is low. None of it helped,
+because **every one of those says "this reading might be wrong" and the true
+statement is "there was nothing here to read."**
+
+**Alternative considered: make the doubt louder.** Refuse to draw a stave below
+some confidence, or lead the screen with a warning. It is the smaller change
+and it is available today. Rejected for two reasons. The number is
+self-reported by the model that invented the notes, and a model confident in
+its reconstruction reports a high one — the floor would be enforced against the
+least reliable witness. And a warning still leaves invented notes in the
+library, attached to a title the musician chose, ready to be practised
+against and to be compared with a recording.
+
+**Decision:** measure whether the page *can* be read, before anything reads it,
+and fail the scan when it cannot. `staff_space_px` measures the staff-line
+spacing from the autocorrelation of the ink profile within each detected band;
+`too_small_to_read` refuses below `_MIN_STAFF_SPACE_PX = 8` source pixels, and
+refuses when no band yields a staff period at all — which is the actual webcam
+case.
+
+**Why this measurement rather than the page's size:** pixel dimensions do not
+say how much notation is in them. A one-system strip at 1200 px reads perfectly
+and a ten-system page at 1200 px does not, and staff spacing is the quantity
+that separates them. It is also the quantity every OMR engine cares about;
+homr's own preprocessing normalises to a standard staff height.
+
+**Trade-off accepted:** a scan can now fail that previously produced *something*.
+That is the point — a failed scan can be retaken, and the photograph is kept so
+retaking means pressing a button rather than finding the music again. The risk
+that matters is the opposite one, refusing a page that would have read, and the
+floor is set from measurement against every page in the repository plus the
+downscale series of the real one (the table is on `_MIN_STAFF_SPACE_PX`). The
+corpus's own unreadable fixture, `05_handwritten_messy.jpg`, measures 5 px and
+yields zero measures; everything that reads measures 10–15.
+
+**What would reverse it:** a real page that measures under 8 and reads
+correctly anyway. `test_every_readable_fixture_in_the_repository_survives` is
+the guard, and the floor is one constant.
+
+---
+
 ## 2026-08-24 — Put screen *rules* in testable modules, over adding a React Native testing library
 
 **Context:** A capture-path audit found nine defects, and the four that cost a
