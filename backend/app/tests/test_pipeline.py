@@ -797,8 +797,15 @@ def test_one_unreadable_system_sends_the_whole_page_instead_of_leaving_a_hole(
 
     score = parse_sheet_music(b"<page>", providers=[_PerCrop()], retry=False)
 
-    assert calls["n"] == 2, "it kept reading systems after one failed"
     assert len(score.measures) == 9, "a page with a hole in it was returned"
+    # This used to also assert the reading *stopped* at the failure —
+    # `calls["n"] == 2` — which was true while the systems were read one after
+    # another and is not true now they are read four at a time. Unstarted work
+    # is cancelled, so a twelve-system page failing on its first line does not
+    # pay for the other eleven; work already in flight is not saved, and with
+    # instant stubs every crop starts before the first result is collected.
+    # Asserting a call count here would be asserting the scheduler's timing.
+    assert calls["n"] >= 2, "the failing system was never reached"
 
 
 def test_a_page_split_into_more_systems_than_a_page_has_is_read_whole(monkeypatch) -> None:
@@ -1227,3 +1234,186 @@ def test_a_single_system_is_not_searched_for_systems(monkeypatch) -> None:
     assert seen.count(pipeline_module.STAGE_SPLITTING) == 1, (
         f"the splitting step was reported once per system: {seen}"
     )
+
+
+def test_the_systems_are_read_at_the_same_time(monkeypatch) -> None:
+    """Concurrency, asserted rather than assumed — and without a timing test.
+
+    Every crop's read waits at a barrier wide enough for `_SYSTEMS_AT_ONCE`. If
+    the systems were read one after another the first one would sit there until
+    the barrier's timeout and the whole page would fail; passing means that
+    many reads were genuinely in flight together.
+
+    Sequential is not a style preference here. A twelve-system page read one
+    line at a time turns a thirty-second job into five minutes, in a
+    `BackgroundTasks` thread inside a web process that a free instance spins
+    down after fifteen minutes idle — an order of magnitude more time for the
+    read to be interrupted, which is the failure this whole path exists to fix.
+    """
+    import threading
+
+    width = pipeline_module._SYSTEMS_AT_ONCE
+    crops = [f"crop-{i}".encode() for i in range(width)]
+    monkeypatch.setattr(pipeline_module, "crop_systems", lambda _b: crops)
+    barrier = threading.Barrier(width, timeout=10)
+
+    class _AtTheSameTime:
+        name = "concurrent"
+
+        def parse(self, image_bytes, mime_type="image/jpeg", note=None):
+            barrier.wait()
+            return _system("concurrent", bars=2)
+
+    score = parse_sheet_music(b"<page>", providers=[_AtTheSameTime()], retry=False)
+
+    assert len(score.measures) == 2 * width, (
+        "the barrier broke, so the systems were not read together"
+    )
+
+
+def test_more_systems_than_can_run_at_once_still_all_get_read(monkeypatch) -> None:
+    """The pool is a width, not a limit on the page. Twelve systems with four
+    threads is three rounds, and every crop has to come back — a page short by
+    the systems that queued behind the pool would be a page with a hole in it,
+    silently, which is the one outcome this path must never produce."""
+    total = pipeline_module._SYSTEMS_AT_ONCE * 3
+    crops = [f"crop-{i}".encode() for i in range(total)]
+    monkeypatch.setattr(pipeline_module, "crop_systems", lambda _b: crops)
+    seen: list[bytes] = []
+    lock = __import__("threading").Lock()
+
+    class _Counting:
+        name = "counting"
+
+        def parse(self, image_bytes, mime_type="image/jpeg", note=None):
+            with lock:
+                seen.append(image_bytes)
+            return _system("counting", bars=2)
+
+    score = parse_sheet_music(b"<page>", providers=[_Counting()], retry=False)
+
+    assert sorted(seen) == sorted(crops), "not every system was read"
+    assert len(score.measures) == 2 * total
+    numbers = [m.measure_number for m in score.measures]
+    assert numbers == list(range(1, len(numbers) + 1))
+
+
+def test_the_systems_are_joined_in_page_order_not_completion_order(monkeypatch) -> None:
+    """The one thing concurrency can break that sequential reading could not.
+
+    `as_completed` yields whichever system finishes first, and a page assembled
+    in that order is a page whose bars are shuffled — the notes are all there,
+    every bar adds up, and the timeline compared against the recording is
+    nonsense. Nothing downstream can notice. So results go into a list by
+    index, never appended.
+    """
+    import threading
+
+    crops = [b"first", b"second", b"third"]
+    monkeypatch.setattr(pipeline_module, "crop_systems", lambda _b: crops)
+    # The last crop finishes first, the first crop finishes last.
+    order = {b"first": 0.06, b"second": 0.03, b"third": 0.0}
+    pitches = {b"first": "C3", b"second": "D3", b"third": "E3"}
+
+    class _OutOfOrder:
+        name = "out-of-order"
+
+        def parse(self, image_bytes, mime_type="image/jpeg", note=None):
+            threading.Event().wait(order[image_bytes])
+            payload = {
+                **GOOD_PAYLOAD,
+                "clef": "bass", "time_signature": "4/4", "ocr_confidence": 0.9,
+                "repeats": [], "tempo_changes": [],
+                "measures": [{
+                    "measure_number": 1,
+                    "notes": [{"pitch": pitches[image_bytes], "duration": "quarter"}] * 4,
+                    "slurs": [],
+                }],
+            }
+            return OCRResponse(
+                score=ScoreJson.model_validate(payload), raw_text="{}",
+                model="out-of-order", input_tokens=1, output_tokens=1,
+                cost_usd=0.0, latency_ms=1,
+            )
+
+    score = parse_sheet_music(b"<page>", providers=[_OutOfOrder()], retry=False)
+
+    assert [m.notes[0].pitch for m in score.measures] == ["C3", "D3", "E3"], (
+        "the systems were joined in the order they came back, so the page is "
+        "in the wrong order and every bar still adds up"
+    )
+
+
+def test_a_page_that_fails_early_does_not_pay_for_the_systems_behind_it(
+    monkeypatch,
+) -> None:
+    """Cancellation, and it is money rather than correctness.
+
+    A twelve-system page whose first line cannot be read is going to fall back
+    to being read whole, so the eleven systems still queued behind the pool are
+    eleven vision calls billed for a result that will be thrown away. Only
+    *unstarted* work can be saved: the three lines already in flight alongside
+    the failure are finished and discarded, which is why this waits on a
+    quarter-second rather than asserting a call count on instant stubs.
+    """
+    import threading
+
+    total = pipeline_module._SYSTEMS_AT_ONCE * 3
+    crops = [f"crop-{i}".encode() for i in range(total)]
+    monkeypatch.setattr(pipeline_module, "crop_systems", lambda _b: crops)
+    started: list[bytes] = []
+    lock = threading.Lock()
+
+    class _FailsFirstAndSlowlyOtherwise:
+        name = "slow"
+
+        def parse(self, image_bytes, mime_type="image/jpeg", note=None):
+            if image_bytes not in crops:
+                return _system("slow", bars=9)  # the whole-page fallback
+            with lock:
+                started.append(image_bytes)
+            if image_bytes == crops[0]:
+                raise OCRProviderError("rate limited")
+            threading.Event().wait(0.25)
+            return _system("slow", bars=2)
+
+    score = parse_sheet_music(
+        b"<page>", providers=[_FailsFirstAndSlowlyOtherwise()], retry=False
+    )
+
+    assert len(score.measures) == 9, "the page was not read whole after the failure"
+    # One more than the pool is wide, not exactly the pool: the failing read
+    # returns instantly and frees its slot, and the pool hands that slot the
+    # next crop before the main thread has collected the exception and
+    # cancelled anything. That one extra is the race, and it is bounded —
+    # everything that starts then blocks for a quarter-second, so no further
+    # slot frees before the cancellation lands.
+    assert len(started) <= pipeline_module._SYSTEMS_AT_ONCE + 1, (
+        f"{len(started)} of {total} systems were read for a page that was "
+        "going to be read whole anyway"
+    )
+
+
+def test_every_finished_system_moves_the_reported_step(monkeypatch) -> None:
+    """Two jobs, and the second one is why this is not cosmetic.
+
+    A musician watching a five-minute read needs the screen to keep saying
+    something. And `transcription_runner._update` writes `updated_at` on every
+    stage report, which is the column `sweep_stuck_transcriptions` compares
+    against `STUCK_AFTER` — so these reports are what stop a long read being
+    swept to `failed` while it is working. A page reporting once at the start
+    would be killed at ten minutes with nothing wrong with it.
+    """
+    crops = [b"a", b"b", b"c", b"d", b"e"]
+    monkeypatch.setattr(pipeline_module, "crop_systems", lambda _b: crops)
+    seen: list[str] = []
+
+    parse_sheet_music(
+        b"<page>", providers=[_Recorder()], retry=False, on_stage=seen.append
+    )
+
+    counts = [s for s in seen if s.startswith(f"{pipeline_module.STAGE_READING}:system ")]
+    assert counts == [
+        f"{pipeline_module.STAGE_READING}:system {n} of {len(crops)}"
+        for n in range(1, len(crops) + 1)
+    ], counts

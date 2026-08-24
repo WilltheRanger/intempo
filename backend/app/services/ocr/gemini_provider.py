@@ -6,6 +6,7 @@ should give cleaner output than Claude (no markdown fences to strip).
 
 from __future__ import annotations
 
+import threading
 import time
 
 from google import genai
@@ -46,14 +47,18 @@ class GeminiProvider:
         self._input_price = input_price_per_mtok_usd
         self._output_price = output_price_per_mtok_usd
         self._client: genai.Client | None = None
+        #: See `claude_provider`: systems are read concurrently.
+        self._client_lock = threading.Lock()
 
     def _get_client(self) -> genai.Client:
         if self._client is None:
-            if not settings.GEMINI_API_KEY:
-                raise OCRProviderError(
-                    f"{self.name}: GEMINI_API_KEY is not configured"
-                )
-            self._client = genai.Client(api_key=settings.GEMINI_API_KEY)
+            with self._client_lock:
+                if self._client is None:
+                    if not settings.GEMINI_API_KEY:
+                        raise OCRProviderError(
+                            f"{self.name}: GEMINI_API_KEY is not configured"
+                        )
+                    self._client = genai.Client(api_key=settings.GEMINI_API_KEY)
         return self._client
 
     def _cost(self, input_tokens: int, output_tokens: int) -> float:
