@@ -1,0 +1,110 @@
+{
+  "why": "One score, one tempo, and the note times both implementations must produce. See backend/app/tests/test_timeline_parity.py and mobile/src/lib/score/schedule.parity.test.ts \u2014 each side checks itself against this file, so a walk that drifts fails in its own suite rather than as a musician being told they rushed a bar they played on time.",
+  "excluded_on_purpose": "No repeats and no slurs. The two walks differ on both, deliberately and with a reason written on each side: the server writes repeats out because the musician plays them twice, while playback plays straight through because a preview that doubles in length is more surprising than useful; and the server suppresses onsets under a bow stroke because there is no attack to hear, while playback sounds those notes because you want to hear them. Those differences are decisions. Everything in this file is arithmetic, and arithmetic has to match.",
+  "bpm": 96,
+  "expected_onsets_s": [
+    0.0,
+    0.625,
+    1.25,
+    2.1875,
+    2.5,
+    2.916666667,
+    3.333333333,
+    3.75,
+    6.875,
+    7.5,
+    8.125,
+    8.75
+  ],
+  "score": {
+    "clef": "bass",
+    "time_signature": "4/4",
+    "key_signature": "C",
+    "tempo_bpm": 96,
+    "measures": [
+      {
+        "measure_number": 1,
+        "notes": [
+          {
+            "pitch": "E2",
+            "duration": "quarter"
+          },
+          {
+            "pitch": "G2",
+            "duration": "eighth"
+          },
+          {
+            "pitch": "rest",
+            "duration": "eighth"
+          },
+          {
+            "pitch": "A2",
+            "duration": "dotted_quarter"
+          },
+          {
+            "pitch": "B2",
+            "duration": "eighth"
+          }
+        ]
+      },
+      {
+        "measure_number": 2,
+        "notes": [
+          {
+            "pitch": "C3",
+            "duration": "triplet_quarter"
+          },
+          {
+            "pitch": "D3",
+            "duration": "triplet_quarter"
+          },
+          {
+            "pitch": "E3",
+            "duration": "triplet_quarter"
+          },
+          {
+            "pitch": "F3",
+            "duration": "half",
+            "tied_to_next": true
+          }
+        ]
+      },
+      {
+        "measure_number": 3,
+        "notes": [
+          {
+            "pitch": "F3",
+            "duration": "quarter"
+          },
+          {
+            "pitch": "rest",
+            "duration": "half"
+          },
+          {
+            "pitch": "G3",
+            "duration": "quarter",
+            "tied_to_next": true
+          }
+        ]
+      },
+      {
+        "measure_number": 4,
+        "notes": [
+          {
+            "pitch": "A3",
+            "duration": "quarter"
+          },
+          {
+            "pitch": "B3",
+            "duration": "quarter"
+          },
+          {
+            "pitch": "C4",
+            "duration": "half"
+          }
+        ]
+      }
+    ],
+    "ocr_confidence": 0.95
+  }
+}

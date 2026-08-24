@@ -6,6 +6,64 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-09 (night) — The app's note times, checked against the server's
+
+**Branch:** `main`. The level above yesterday's beat table.
+
+Holding `BEATS` to `DURATION_BEATS` says a dotted quarter is 1.5 beats in both
+places. It says nothing about whether the two **walks** put note 9 at the same
+second. `alignment.build_timeline` builds what the analysis expects to hear;
+`mobile/src/lib/score/schedule.ts` builds what the app plays. Different
+languages, no way to share the code, and a comment on each saying it matches
+the other — the exact arrangement that failed with the beat table.
+
+If they drift, nothing looks broken from either side: the app plays the piece,
+the analysis judges the recording, and a musician who played along with what
+the app sounded is told they rushed.
+
+**A fixture is the contract.** `fixtures/timeline/parity.json` holds one score,
+one tempo, and the onset times. `test_timeline_parity.py` fails if the server
+stops producing them; `schedule.parity.test.ts` fails if the app does. Whichever
+side drifts goes red in its own suite, and regenerating the fixture is a
+deliberate act that immediately reddens the other.
+
+**The fixture contains** a rest that advances the clock and sounds nothing; a
+*real* tie across a barline, folding into one onset of three beats; a **fake**
+tie between two different pitches — a slur written badly — which must still
+sound twice, because folding it deletes an onset the musician actually
+attacked; triplets, whose thirds are not exactly representable; and a dotted
+value. A second test asserts the fixture still contains all of those, since one
+that quietly became a run of quarter notes would still pass the first.
+
+**What it leaves out, and why that is not a hole.** The two walks differ on
+repeats and slurs, deliberately, with reasons written on both sides: the server
+writes repeats out because the musician plays them twice, while playback plays
+straight through because a preview that doubles in length is more surprising
+than useful; and the server emits no onset under a bow stroke because there is
+no attack to detect, while playback sounds the note because you want to hear
+it. Those are decisions. Everything in the fixture is arithmetic.
+
+**They already agreed** — twelve onsets, identical to nine decimal places,
+first run. This is a fence around a thing that is currently right.
+
+Mutation-checked on both sides. App: a rest that no longer advances the clock,
+ties re-struck instead of folded, and a tempo conversion 0.1% off — all caught
+by vitest. Contract: shifting every expected time by 10 ms reddens **both**
+suites, which is what proves each is really reading the file.
+
+**A detour worth recording.** The app-side test first read the fixture with
+`node:fs`, and `tsc` refused it — expo's base config sets
+`customConditions: ["react-native"]`, so node builtins do not resolve even with
+`@types/node` installed. The right answer was not to add a type package: the
+base config already sets `resolveJsonModule`, so the fixture is a plain
+`import`, which the bundler resolves at build time rather than a path string
+failing at run time in whichever suite ran first. `@types/node` was installed,
+found unnecessary, and removed; `package.json` and the lockfile are unchanged.
+
+**Tests run:** backend 739 (736 + 3), mobile 55 (52 + 3), typecheck clean, web
+build clean, ruff clean. **Rollback:** revert; the fixture is only read by
+these two tests.
+
 ## 2026-09-09 (evening) — A skipped deploy and a real one looked identical
 
 **Branch:** `main`.
