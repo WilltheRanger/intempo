@@ -199,14 +199,32 @@ def _configuration_checks() -> list[Check]:
     usable = []
     for provider in chain:
         setting = getattr(provider, "api_key_setting", "")
-        present = bool(getattr(settings, setting, ""))
+        if setting:
+            present = bool(getattr(settings, setting, ""))
+            detail = f"{setting} is not set, so {provider.name} cannot be used."
+        else:
+            # **A provider without an API key is not a provider without a
+            # requirement.** homr is an engine that lives *in this container*,
+            # not a service reached with a key, so "is the key set" is the wrong
+            # question and asking it reported `ocr:homr` unusable with an empty
+            # setting name in the message. The failure this prevents is quiet: a
+            # chain naming `homr` on a host that does not have it falls through
+            # to the vision models and reads every page the slower, worse way,
+            # while appearing to work.
+            available = getattr(provider, "available", None)
+            present = bool(available()) if callable(available) else False
+            detail = (
+                f"{provider.name} is not installed in this container, so pages "
+                "will be read by the models in the chain instead. It runs on "
+                "Modal — see TRANSCRIPTION_RUNTIME."
+            )
         if present:
             usable.append(provider.name)
         checks.append(
             Check(
                 name=f"ocr:{provider.name}",
                 ok=present,
-                detail=f"{setting} is not set, so {provider.name} cannot be used.",
+                detail=detail,
                 blocking=False,
             )
         )

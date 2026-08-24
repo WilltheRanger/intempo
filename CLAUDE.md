@@ -240,6 +240,24 @@ there works differently as of 2026-08-24:
   silent on all of them. `notation/reading.ts` keeps a local beat-sum check for
   live editing and as a fallback for an older backend; it is a subset on
   purpose. Add a check to `validate.py`, not to the app.
+- **A page is read by `homr` first, and by the vision models behind it.** homr is
+  an OMR engine — it segments the page, finds the staves, **dewarps each one**,
+  and emits MusicXML, which `musicxml.py` has imported since Batch 2. On the one
+  real page measured: 74 measures and 267 notes with 73 of 74 bars adding up,
+  against the vision chain's 59 and 112. Dewarping is why, and it is not
+  something a prompt can fix.
+  It is a **provider** in the same registry as the models, declaring
+  `reads_whole_page = True` — so it is handed the page, never a crop, because
+  its own staff-finding is better than the crops here and that is the reason to
+  run it. A confident reading from it is the answer; a doubtful one is kept
+  while the models take their turn on crops, and returned only if nothing
+  betters it. Its `ocr_confidence` is the **share of bars that add up**, computed
+  here — the importer's number is conversion loss and reads 1.0 on real output,
+  which would claim certainty about a photograph.
+  It runs **only on Modal** (`transcribe_score`): 1350 MB peak, measured, on a
+  512 MB host. `TRANSCRIPTION_RUNTIME=modal` sends pages there and is separate
+  from `ANALYSIS_RUNTIME` on purpose. AGPL-3.0, used unmodified, accepted
+  deliberately by the owner.
 - **Staff systems are found by ink density, not by darkness, and the crops tile
   the page.** Both were rewritten after the first real photograph this project
   has seen — a String Bass part with ten systems — where the old projection of

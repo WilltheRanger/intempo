@@ -103,6 +103,14 @@ class HomrProvider:
     #: works and pay for it in wall-clock as well.
     reads_whole_page = True
 
+    #: No API key. This is the odd one out in the chain and `/v1/ready` has to
+    #: ask it a different question: every other provider is usable when a key is
+    #: set, and this one when the engine is installed *in this container*.
+    api_key_setting = ""
+
+    def available(self) -> bool:
+        return homr_available()
+
     def parse(
         self,
         image_bytes: bytes,
