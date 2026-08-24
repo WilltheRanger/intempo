@@ -145,6 +145,14 @@ Stage = str
 STAGE_CONFIRMING = "rereading"
 #: Reading with a named provider, e.g. `reading:claude-sonnet-4-6`.
 STAGE_READING = "reading"
+#: Cutting the page into its staff systems, before any of them is read.
+#:
+#: Reported because it is now a real step that takes real time — decoding a
+#: 12-megapixel photograph, projecting it, and re-encoding a crop per system —
+#: and because `TranscribingPanel` has had a position for "Finding the staves"
+#: since the OMR engine that used to report it was removed. Nothing has emitted
+#: it since. The pipeline genuinely finds staves now.
+STAGE_SPLITTING = "splitting"
 
 
 
@@ -521,6 +529,7 @@ def parse_sheet_music(
     # line shifts every bar after it and the musician is told they rushed a
     # passage they played correctly.
     if _by_system:
+        stage(STAGE_SPLITTING)
         crops = crop_systems(image_bytes)
         if crops and len(crops) <= _MAX_SYSTEMS_TO_READ:
             parts: list[ScoreJson] = []
