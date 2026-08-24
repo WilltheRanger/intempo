@@ -188,7 +188,12 @@ def test_default_chain_uses_settings(monkeypatch: pytest.MonkeyPatch) -> None:
         def __init__(self, name: str) -> None:
             self.name = name
 
-        def parse(self, image_bytes: bytes, mime_type: str = "image/jpeg") -> OCRResponse:
+        def parse(
+            self,
+            image_bytes: bytes,
+            mime_type: str = "image/jpeg",
+            note: str | None = None,
+        ) -> OCRResponse:
             captured.append(self.name)
             return _response(self.name, conf=0.95)
 
@@ -1049,3 +1054,108 @@ def test_a_line_that_splits_evenly_between_two_metres_does_not_switch_the_page()
         "the two short bars in the ambiguous line are the problem; the 4/4 "
         f"line after it is not, and {sorted(flagged)} says otherwise"
     )
+
+
+# ---- what a model is told when it is handed one line ----------------------
+
+
+class _Recorder:
+    """A provider that keeps every prompt note it was sent."""
+
+    name = "recorder"
+
+    def __init__(self, answer: OCRResponse | None = None) -> None:
+        self.answer = answer
+        self.notes: list[str | None] = []
+
+    def parse(self, image_bytes, mime_type="image/jpeg", note=None):
+        self.notes.append(note)
+        return self.answer or _system("recorder", bars=2)
+
+
+def test_each_line_is_told_which_line_of_the_page_it_is(monkeypatch) -> None:
+    """The shared prompt is written for a page — "read the page straight
+    through, top to bottom, once", "the header field is the metre the piece
+    *starts* in". Handed one system, a model has no way to know any of that is
+    now wrong. Which line it is decides what a time signature at the left edge
+    means, so the number is in the note and not just the fact of the crop."""
+    monkeypatch.setattr(
+        pipeline_module, "crop_systems", lambda _b: [b"crop-1", b"crop-2", b"crop-3"]
+    )
+    recorder = _Recorder()
+
+    parse_sheet_music(b"<page>", providers=[recorder], retry=False)
+
+    assert len(recorder.notes) == 3
+    for index, note in enumerate(recorder.notes, start=1):
+        assert note is not None
+        assert f"line {index} of 3" in note, note
+
+
+def test_a_line_is_told_not_to_read_the_staff_the_crop_clips(monkeypatch) -> None:
+    """`_SYSTEM_PADDING` is 55% of a system's height above and below, so on a
+    densely set page a crop shows the notehead tips of its neighbours. A bar
+    read from the line above is read twice — once here and once when that line
+    is read — and the page comes out longer than the music. Every bar after it
+    is then compared against the wrong moment in the recording."""
+    monkeypatch.setattr(pipeline_module, "crop_systems", lambda _b: [b"a", b"b"])
+    recorder = _Recorder()
+
+    parse_sheet_music(b"<page>", providers=[recorder], retry=False)
+
+    assert "ONLY the complete staff in the middle" in (recorder.notes[0] or "")
+
+
+def test_a_page_read_whole_is_asked_the_question_it_always_was(monkeypatch) -> None:
+    """No note on the whole-page path. That path is the fallback for everything
+    the splitter cannot handle, and it has to keep working exactly as it did."""
+    monkeypatch.setattr(pipeline_module, "crop_systems", lambda _b: [])
+    recorder = _Recorder()
+
+    parse_sheet_music(b"<page>", providers=[recorder], retry=False)
+
+    assert recorder.notes == [None]
+
+
+def test_the_arithmetic_retry_is_still_told_it_is_looking_at_one_line(
+    monkeypatch,
+) -> None:
+    """The retry names the bars to re-read by number, and a system's bars are
+    numbered from 1. Ask it without the context and it is a different question
+    about a different thing: a model that believes it can see the whole page
+    goes looking for the third bar of the *piece*, and whatever it sends back
+    is spliced onto the third bar of this line.
+    """
+    monkeypatch.setattr(pipeline_module, "crop_systems", lambda _b: [b"a", b"b"])
+
+    short = ScoreJson.model_validate(
+        {
+            **GOOD_PAYLOAD,
+            "clef": "bass",
+            "time_signature": "4/4",
+            "ocr_confidence": 0.95,
+            "repeats": [],
+            "tempo_changes": [],
+            "measures": _bars(2, 4) + _bars(1, 3),
+        }
+    )
+    recorder = _Recorder(
+        OCRResponse(
+            score=short, raw_text="{}", model="recorder",
+            input_tokens=1, output_tokens=1, cost_usd=0.0, latency_ms=1,
+        )
+    )
+
+    parse_sheet_music(b"<page>", providers=[recorder], retry=True)
+
+    # Keyed off text only the retry carries. Matching on "measure" instead
+    # matched the *first* reading's note, which says "number this line's
+    # measures", so the assertion passed with the context stripped off the
+    # retry — the exact thing it was written to catch.
+    retries = [n for n in recorder.notes if n and "Return ONLY the measures listed above" in n]
+    assert len(retries) == 2, f"the retry did not fire per line: {recorder.notes}"
+    assert "line 1 of 2" in retries[0], (
+        "the retry was asked about a page while the first reading was asked "
+        "about a line"
+    )
+    assert "line 2 of 2" in retries[1], "every line's retry carries its own number"

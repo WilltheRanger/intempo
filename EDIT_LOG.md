@@ -6,6 +6,87 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-17 — The prompt asked for one line and got a page for five weeks
+
+**Branch:** `main`. Sixth iteration of *fix the OMR system till it works*. This
+one is a prompt change, and the reason it matters is in this log already.
+
+**2026-08-20, on a real cello part, five staves:** *"The prompt's first line is
+'You are reading a single line of sheet music.' That is the whole story. The
+model was asked for one line, given five, tried to do all of them, and lost its
+place: measures 11–16 came back visually identical, 17–20 identical, several
+with nothing but stacked ledger lines."*
+
+The answer that day was to make the input match the prompt — a drag-select crop
+box in the scan bench, one staff at a time, *"not a limitation to work around,
+it is what the thing is built to do."* But the bench is a tool. The **app** went
+on sending whole pages to a prompt asking for one line, and that sentence has
+been there ever since. It is the best explanation I have for "Bro": 59
+measures, 112 notes, under two notes a bar, on a page holding six to eight.
+Asked for a line and shown a page, a model does a shallow pass over all of it.
+
+Iteration four finally made the app do the cropping. So the sentence can stop
+being the prompt's job:
+
+- **The shared prompt** now says what it actually meant — *"a single-staff
+  part, one note sounding at a time, not a piano score"*. That is the real
+  constraint (no grand staff, no chords), and it no longer tells a model
+  reading a whole page to read one line of it. The whole-page loop is still the
+  fallback for every page the splitter cannot cut, so it has to be asked the
+  best question available, not a question about a crop.
+- **A crop carries a note instead.** `_one_system_note(index, total)`, appended
+  through the `note` argument `OCRProvider.parse` already had for exactly this
+  — a second question about the same image without a second prompt file
+  drifting away from the first.
+
+What the note says, and why each line is in it:
+
+- **Which line of how many.** Line one *is* the top of the page and line five
+  is not, and that difference is what a time signature at the left edge means.
+- **Ignore the sliver.** `_SYSTEM_PADDING` is 55% of a system's height above
+  and below, deliberately, so the crop keeps the dynamics and bowings that sit
+  off the staff. On a densely set page that also catches the notehead tips of
+  the neighbours. A bar read from the line above is read **twice**, once here
+  and once when that line is read, and the page comes out longer than the
+  music — which shifts every bar after it against the recording. The
+  2026-08-20 entry noticed this on the bench fixtures ("#02, #03 include a
+  partial second staff") and relied on the prompt's "single line" to handle it.
+  It is now said outright.
+- **Read every bar; there is room.** The point of the split.
+- **Number from 1 within the line**, because the program joins and renumbers.
+- **Say "unknown" rather than working a metre out from the bars.** This one is
+  new leverage from the last commit: `_fits_better` checks a stated metre
+  against what the bars add up to, so a guess that happens to fit is
+  indistinguishable from a real change of metre and gets written into the score
+  as one. Honest silence is now strictly better than a good guess.
+
+**The retry had to be told too.** `retry_with_arithmetic` takes a `context`
+argument and prepends it. Without it the second question is about a different
+thing: the retry names bars by number, a system's bars are numbered from 1, and
+a model that believes it can see the whole page goes looking for the third bar
+of the *piece* — then the patch is spliced onto the third bar of the line.
+
+**Tests:** four new cases. Seven mutations, all killed — but two of them
+survived first. The retry test matched on the word "measure", which appears in
+the *first* reading's note ("number this line's measures"), so it passed with
+the context stripped off the retry, which is the only thing it was written to
+catch; it now keys off text only `_ONLY_THESE` carries. And my sliver mutation
+deleted one string fragment of a five-fragment bullet, leaving the asserted
+sentence intact — the mutation was wrong, not the test.
+
+Backend 850 tests green (846 before), ruff clean.
+
+**Left alone deliberately:** `intempo-combined.md` §"The OCR prompt" holds a
+verbatim copy of this prompt from before roughly twenty rules were added to it.
+It is illustrative and is already many edits behind; nothing holds the two
+together, and it is the human's document. Do not "restore" the prompt from it.
+
+**Still unmeasured.** Whether any of this gets more notes out of a real page.
+Every claim above is about what the model is *asked*, and no real page has been
+through the per-system path.
+
+---
+
 ## 2026-09-17 — A metre change printed on a later line survives the join
 
 **Branch:** `main`. Fifth iteration of *fix the OMR system till it works*, and

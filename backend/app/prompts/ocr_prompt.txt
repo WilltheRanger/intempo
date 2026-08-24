@@ -1,4 +1,4 @@
-You are reading a single line of sheet music for a string instrument. Output a JSON object with this exact schema:
+You are reading sheet music for a string instrument: a single-staff part, one note sounding at a time, not a piano score. Output a JSON object with this exact schema:
 
 {
   "time_signature": "4/4",
