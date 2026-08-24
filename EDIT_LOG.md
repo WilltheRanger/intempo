@@ -6,6 +6,100 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-17 — A real orchestral part, and the detector found 2 staves out of 11
+
+**Branch:** `main`. Tenth iteration of *fix the OMR system till it works*. The
+owner sent a photograph of a real part — String Bass – 2, bass clef, **eleven
+staves**, bars 80–159, variations, multi-bar rests, rehearsal boxes, `rit.`,
+`rall.`, a cut-time change, handwriting on it. The first real repertoire this
+repository has ever seen. Every fixture here is a 40 KB exercise-book strip.
+
+**`find_systems` returned two bands, holding 9 and 2 staff lines.** `crop_systems`
+accepted them and handed the pipeline two crops. Nothing raised, so the
+never-worse guard in `parse_sheet_music` never fired — it only triggers on an
+*error* — and the music on the nine staves the detector missed would simply
+never have been sent to any model. The musician gets a short transcription that
+looks fine. **That is strictly worse than the whole-page read this replaced**,
+and it was live.
+
+### The guard, and why the constant is not a knob
+
+A stave is five lines. Every band on every fixture here holds 5, or 6 where a
+hand-ruled staff adds a run of its own (`05_handwritten_messy` gives 6 for half
+of them). This page gave **9 and 2**. Nothing landed in between, on any page, so
+the check is a count rather than a tolerance: `_bands_are_staves` refuses to cut
+a page where any band holds fewer than 4 or more than 6 dark runs.
+
+All-or-nothing, deliberately. Dropping only the bands that fail leaves a page
+with holes in it, which is the thing being prevented — `alignment.py`
+accumulates durations, so a missing line shifts every bar after it.
+
+The page now falls back to being read whole, which is what happened before
+per-system reading existed. Worse at reading; not losing the music.
+
+### What is actually wrong with the detector, measured
+
+Written down in full because three plausible explanations were wrong and I want
+the next pass to start from the numbers rather than re-derive them.
+
+- **The page is sideways in the photograph, and that is already handled.** EXIF
+  orientation 6; `exif_transpose` turns 5712×4284 into 4284×5712 upright. Not
+  the problem. *(Rotating it further gives 0 systems, so the projection axis is
+  right.)*
+- **It is not skew.** Swept ±4° in 0.5° steps: the best angle gives 15 runs
+  against the ~55 that eleven staves should produce. No angle helps.
+- **It is not the resolution, and it is not how much music is on the page.** A
+  synthetic page carrying eleven bands at real spacing (1.15× the band height,
+  against `_phone_page`'s 1.9×) is detected exactly — eleven systems, five lines
+  each. There is a test for this, because "a real page has more systems than a
+  fixture" was the obvious explanation and it is false.
+- **Illumination normalisation alone does not fix it.** Dividing out a
+  box-blurred background and thresholding on local contrast gives 16–17 runs
+  instead of 15.
+- **Finding the paper by brightness does not work either.** The page is densely
+  inked and unevenly lit, so "rows that are mostly bright" locate 33% of the
+  height — a sparse patch of the music, not the sheet.
+
+**What the numbers do say.** The threshold is `mean - std` over the whole
+photograph, which here is **112**. The desk visible at the bottom of the frame
+is a large black region, so it *inflates the standard deviation* and drags the
+threshold down; the ink on the well-lit paper sits above it and stops counting.
+Row-darkness maxima by twenty-fourths of the page, at that threshold:
+
+```
+1.00 0.12 0.67 0.49 0.58 0.54 0.50 0.35 0.28 0.29 0.29 0.21
+0.18 0.23 0.29 0.37 0.24 0.31 0.30 0.30 0.29 0.43 0.87 0.88
+```
+
+Only the upper third clears `_STAFF_ROW_DARKNESS` (0.45). The 1.00 at the start
+and the 0.87/0.88 at the end are the desk, not music. Raising the threshold to
+160 doubles the run count to 30 — still not 55, so it would not change the
+outcome on this page, which is why **no threshold change was shipped**: a
+constant fitted to one photograph, unvalidatable against a corpus of
+single-staff strips, is how this got here.
+
+### Consequence to be honest about
+
+The guard fires on this page, and the reason it fires — a dark band in the
+photograph that is not a stave — is present in most phone photographs of paper
+on a desk. So the per-system path is likely **inert on real input** until the
+detector is fixed. That is the correct trade for now (inert beats silently
+lossy) and it makes the detector the critical path: find the sheet within the
+photograph, then threshold locally, then group runs into fives rather than
+splitting on a multiple of the median gap.
+
+**The photograph is not in the repository** — it is a copyrighted part. The
+tests reproduce the two things measurably wrong with it: a dark edge, and a band
+that is not a stave.
+
+**Tests:** 6 new cases in `test_page_systems.py`. Eight mutations of the guard —
+both bounds, the slack in both directions, dropping bad bands instead of
+refusing, the run-containment test, and removing the guard entirely — all killed.
+
+Backend 880 tests green (871 before), ruff clean.
+
+---
+
 ## 2026-09-17 — "Reading stave 3 of 7"
 
 **Branch:** `main`. Ninth iteration of *fix the OMR system till it works*.

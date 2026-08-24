@@ -427,8 +427,26 @@ _SYSTEM_PADDING = 0.55
 #: of the whole thing is the same picture with an extra decode.
 _MIN_SYSTEMS_TO_SPLIT = 2
 
+#: How many dark runs a band has to hold to be a stave.
+#:
+#: **Not a tuned constant — the definition of a stave.** Five lines, and the
+#: tolerance is one either way: two lines can merge into a single run at low
+#: resolution, and a hand-ruled staff can put an extra run of ink inside its
+#: own band (`05_handwritten_messy` gives 6 for half its staves).
+#:
+#: Measured on the first real orchestral part this repository has seen — a
+#: photographed String Bass part, eleven staves — where the detector returned
+#: **two** bands holding **9 and 2** runs: the first had swallowed the dark
+#: desk at the top of the photograph and two staves with it, the second was a
+#: fragment. Every fixture here gives 5 or 6 for every band. Nothing in between
+#: occurred, which is why the check is a count and not a tolerance.
+_STAFF_LINES = 5
+_STAFF_LINE_SLACK = 1
 
-def find_systems(image_bytes: bytes) -> list[tuple[int, int]]:
+
+def _systems_and_runs(
+    image_bytes: bytes,
+) -> tuple[list[tuple[int, int]], list[tuple[int, int]]]:
     """The `(top, bottom)` of each staff system on the page, in pixels.
 
     **Why this exists.** `MODEL_MAX_EDGE` squeezes a page onto a 1568 px edge,
@@ -449,12 +467,23 @@ def find_systems(image_bytes: bytes) -> list[tuple[int, int]]:
     a word — so rows that are mostly dark are staff lines and nothing else is.
     No training, no dependency, and it degrades to "one system" rather than to
     a wrong answer.
+
+    **It does not, in fact, degrade to "one system" on a real page.** Measured
+    on a photographed String Bass part with eleven staves on it: two bands, of
+    9 and 2 staff lines, because the dark desk visible around the paper is a
+    full-width dark run that both skews the median gap and merges with the
+    staves next to it, and because only about three of the eleven staves have
+    any row reaching `_STAFF_ROW_DARKNESS` at all — a phone photograph of paper
+    is unevenly lit and slightly skewed, and a staff line spread over a few
+    rows by skew is never mostly dark in any one of them. Returns both the
+    bands and the runs they were built from so `_bands_are_staves` can refuse a
+    detection this unreliable.
     """
     try:
         import numpy as np
         from PIL import Image, ImageOps
     except ImportError:  # pragma: no cover — both are declared dependencies
-        return []
+        return [], []
 
     _register_heif()
     try:
@@ -462,10 +491,10 @@ def find_systems(image_bytes: bytes) -> list[tuple[int, int]]:
             image = ImageOps.exif_transpose(image).convert("L")
             pixels = np.asarray(image, dtype=np.float32)
     except Exception:  # noqa: BLE001 — an unreadable page is the caller's problem
-        return []
+        return [], []
 
     if pixels.size == 0 or pixels.shape[0] < 8:
-        return []
+        return [], []
 
     # Dark relative to *this* photograph. An absolute threshold fails on the
     # two things phone photographs of paper always are: unevenly lit, and grey
@@ -485,7 +514,7 @@ def find_systems(image_bytes: bytes) -> list[tuple[int, int]]:
         runs.append((start, len(staff_rows)))
 
     if not runs:
-        return []
+        return [], []
 
     # The five lines of one staff are five separate runs, and the page has no
     # idea how far apart they should be — it depends on the engraving, the
@@ -539,7 +568,52 @@ def find_systems(image_bytes: bytes) -> list[tuple[int, int]]:
                 merged.append((top, bottom))
         systems = merged
 
-    return systems
+    return systems, runs
+
+
+def find_systems(image_bytes: bytes) -> list[tuple[int, int]]:
+    """The `(top, bottom)` of each staff system on the page, in pixels.
+
+    A measurement, and it reports what it found rather than judging it — see
+    `_bands_are_staves`, which is where a detection too unreliable to cut a page
+    on gets refused.
+    """
+    return _systems_and_runs(image_bytes)[0]
+
+
+def _bands_are_staves(
+    systems: list[tuple[int, int]], runs: list[tuple[int, int]]
+) -> bool:
+    """Whether every detected band actually looks like one stave.
+
+    **The check that stops a bad split silently eating the page.** A wrong split
+    raises nothing: `crop_systems` returns crops, the pipeline reads them, and
+    the music on every staff the detector missed is never sent to any model. The
+    musician gets a short transcription that looks fine. That is strictly worse
+    than the whole-page read this replaced, and the never-worse guard in
+    `parse_sheet_music` cannot see it, because nothing failed.
+
+    A stave is five lines. Every band on every fixture in this repository holds
+    5 of them, or 6 where a hand-ruled staff adds a run of its own. The first
+    real orchestral part measured here — a photographed String Bass part with
+    eleven staves — produced two bands holding **9 and 2**: one had merged the
+    dark desk at the top of the photograph with two staves, the other was a
+    fragment. Nothing landed in between, on any page.
+
+    All-or-nothing, deliberately. Dropping only the bands that fail would leave
+    a page with holes in it, which is the thing being prevented.
+    """
+    low, high = _STAFF_LINES - _STAFF_LINE_SLACK, _STAFF_LINES + _STAFF_LINE_SLACK
+    for top, bottom in systems:
+        lines = sum(1 for run_top, run_bottom in runs if run_top >= top and run_bottom <= bottom)
+        if not low <= lines <= high:
+            log.info(
+                "a band of %d px holds %d staff line(s), not %d; the page will "
+                "be read whole rather than cut on a detection this unreliable",
+                bottom - top, lines, _STAFF_LINES,
+            )
+            return False
+    return True
 
 
 def crop_systems(image_bytes: bytes) -> list[bytes]:
@@ -562,8 +636,10 @@ def crop_systems(image_bytes: bytes) -> list[bytes]:
     every bar after it in `alignment.py`'s timeline. Duplication is visible to
     the caller and correctable; a hole is neither.
     """
-    systems = find_systems(image_bytes)
+    systems, runs = _systems_and_runs(image_bytes)
     if len(systems) < _MIN_SYSTEMS_TO_SPLIT:
+        return []
+    if not _bands_are_staves(systems, runs):
         return []
 
     try:
