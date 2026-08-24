@@ -6,6 +6,61 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-24 — A drag that was interrupted still moved the page
+
+**Branch:** `main`. Second defect out of the capture-path audit, in the same
+screen as the first and with the same consequence.
+
+`DraggableRow` gave `onPanResponderTerminate` the identical body as
+`onPanResponderRelease`. Terminate is not a finished gesture — it is the
+responder being **taken away**: the enclosing `ScrollView` claiming the touch,
+the app going to the background, a call arriving. So a musician who pressed the
+grip on page 1 of a six-page scan, dragged down two rows and then got a call
+came back to find page 1 sitting at position 3. And because `TranscribeScreen`
+uploads `pages[0]`, a reorder nobody completed also changed **which page the app
+transcribed**.
+
+There was no `onPanResponderTerminationRequest` either, so the default applied
+and the ScrollView this list sits inside could simply ask for the touch and get
+it mid-drag.
+
+### What changed
+
+- `onPanResponderTerminationRequest: () => false` — a drag in progress is not up
+  for grabs. That removes the common case rather than merely handling it.
+- `onDragEnd` now takes an outcome. Terminate reports `cancelled` and the row
+  goes back where it was; only `released` can commit.
+- The two rules moved to `src/lib/scan/drag.ts`, where they can be tested:
+  `slotOffsetFor` (rounding, clamped to the ends of the list, and a guard for
+  the pitch before the first row has reported its height — zero divides to
+  Infinity, which clamped to the bottom of the list, so the very first drag of a
+  session would have thrown the page to the end) and `reorderTarget`, which
+  returns null for a cancelled gesture and for a drop where it started.
+
+Also in the same file: the delete dialog read **"Delete page 0?"** every time it
+was dismissed. The position was derived from `findIndex(...) + 1`, and
+`ConfirmDialog` is a fading modal that keeps rendering its title through the
+dismiss animation — so the moment the id went null the title fell to -1 + 1. The
+position is remembered when the dialog opens now, and not cleared with the id.
+
+### Tests
+
+`src/lib/scan/drag.test.ts` — 7 tests. Six mutations, all caught: cancelled
+committing like a release (the bug), a no-op drop writing a reorder, truncation
+instead of rounding, the clamp removed, the clamp off by one, and the unmeasured
+pitch used anyway.
+
+Mobile suite 251 passed, `tsc --noEmit` clean.
+
+### Honest note on the dialog
+
+That one is copy a musician reads, so it is worth saying why it did not go
+through the §2 gate: nothing about the design changed. "Delete page 0?" was
+never a decision anyone made — it is `findIndex` returning -1 rendered to the
+screen.
+
+---
+
 ## 2026-08-24 — Retake did not retake: it deleted the page and appended a new one somewhere else
 
 **Branch:** `main`. Looping on the capture path, as asked. An audit of the six
