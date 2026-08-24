@@ -6,6 +6,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.models.analysis import MAX_TARGET_BPM, MIN_TARGET_BPM
+
 
 class AssignmentStatus(str, Enum):
     assigned = "assigned"
@@ -30,7 +32,7 @@ class Assignment(BaseModel):
     teacher_user_id: UUID
     student_user_id: UUID
     score_id: UUID
-    target_bpm: float = Field(ge=20, le=300)
+    target_bpm: float = Field(ge=MIN_TARGET_BPM, le=MAX_TARGET_BPM)
     due_at: datetime | None = None
     teacher_instructions: str | None = None
     status: AssignmentStatus = AssignmentStatus.assigned

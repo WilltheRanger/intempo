@@ -48,6 +48,22 @@ class AnalysisStatus(str, Enum):
     failed_recoverable = "failed_recoverable"
 
 
+#: The tempo range this app will judge a performance against, in BPM.
+#:
+#: **One definition, because it is a contract with the client.** The app has to
+#: know it too — a stepper that offers 310 produces a 422 the musician cannot
+#: act on, and one that stops at 200 refuses a tempo the analysis would have
+#: handled. It was written out three times here (`Analysis`, `Assignment`,
+#: `CreateAnalysisRequest`) and mirrored a fourth time in
+#: `mobile/src/data/practiceTempo.ts`, each with nothing pointing at the
+#: others; `test_tempo_range.py` now holds all four together.
+#:
+#: Distinct from `config.toml [calibration] bpm_min/bpm_max`, which is the
+#: range the tempo *detector* searches when nobody has typed a number. That is
+#: narrower on purpose and answers a different question.
+MIN_TARGET_BPM = 20
+MAX_TARGET_BPM = 300
+
 class Analysis(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -55,7 +71,7 @@ class Analysis(BaseModel):
     user_id: UUID
     score_id: UUID
     audio_url: str
-    target_bpm: float = Field(ge=20, le=300)
+    target_bpm: float = Field(ge=MIN_TARGET_BPM, le=MAX_TARGET_BPM)
     bpm_source: BpmSource
     metronome_mode: MetronomeMode = MetronomeMode.off
     result_json: dict[str, Any] | None = None

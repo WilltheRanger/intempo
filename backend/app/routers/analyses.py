@@ -19,7 +19,13 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.auth import current_user_id, current_user_id_provisioned
 from app.services.tier_limits import tier_of, usage_for
 from app.db import get_service_client
-from app.models.analysis import BpmSource, Instrument, MetronomeMode
+from app.models.analysis import (
+    MAX_TARGET_BPM,
+    MIN_TARGET_BPM,
+    BpmSource,
+    Instrument,
+    MetronomeMode,
+)
 from app.routers.upload import AUDIO_BUCKET
 from app.workers.dispatch import start_analysis
 
@@ -31,7 +37,7 @@ class CreateAnalysisRequest(BaseModel):
 
     score_id: UUID
     audio_url: str = Field(min_length=1, max_length=2048)
-    target_bpm: float = Field(ge=20, le=300)
+    target_bpm: float = Field(ge=MIN_TARGET_BPM, le=MAX_TARGET_BPM)
     bpm_source: BpmSource
     metronome_mode: MetronomeMode = MetronomeMode.off
     #: What the musician plays, so onset detection can be set for it.
