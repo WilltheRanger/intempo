@@ -6,6 +6,45 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-07 (later) — The same check, on the other bucket, and an impossible instruction
+
+**Branch:** `main`. Walked the image path looking for the audio bug's twin.
+
+**It is not there, and that is worth recording.** `MAX_IMAGE_BYTES` is 12 MB
+against a `score-images` bucket of 10, with a comment saying *"Matches the
+score-images bucket's 10 MB limit, with headroom"* — the safe direction, and
+someone reasoned about it. Which is exactly how the audio side should have been
+and was not.
+
+So the check now covers both. Checking only the bucket that happened to be
+broken would leave the correct one free to become the broken one, and the
+correct one is only correct because of a comment.
+
+**And a message that told the musician to do something that cannot work.** A
+photograph too large for the bucket comes back 413, which fell through to
+`Storage refused the page (413). Try again.` The same file will be refused
+every time. Named, with advice that can actually succeed — retake it smaller,
+or import the page as a file.
+
+That is the third message this week whose problem was not the wording but the
+*advice*: `audio_unavailable` on a recording that was fine, "check you're on
+the right piece" on a page that was short, and now "try again" on a file that
+never will.
+
+**Not fixed, and named rather than guessed at:** the picker asks for
+`quality: 1`, so nothing downscales before upload and a large phone photograph
+can reach the bucket's limit. Downscaling is a real option and it trades
+against OCR accuracy on small print, which is not a trade to make without
+looking at what it costs a reading.
+
+**No three-foot test.** No UI touched beyond the error branch above.
+
+**Tests:** backend 692 (was 691; +1). Mobile 52, `tsc` clean.
+
+**Rollback:** revert.
+
+---
+
 ## 2026-09-07 — Three limits on one recording, and the smallest was a lie
 
 **Branch:** `main`. Went to verify the spec's claim that moving the analysis

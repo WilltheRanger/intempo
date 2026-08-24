@@ -107,6 +107,19 @@ export function uploadToSignedUrl(
         );
         return;
       }
+      // Too large for the bucket. "Try again" is the one thing that cannot
+      // work here — the same file will be refused every time — and that was
+      // the advice this used to give, because 413 fell through to the generic
+      // branch below.
+      if (request.status === 413) {
+        reject(
+          new UploadError(
+            'That photograph is too large to send. Photograph the page again ' +
+              'with your camera set to a smaller size, or import it as a file.',
+          ),
+        );
+        return;
+      }
       reject(new UploadError(`Storage refused the page (${request.status}). Try again.`));
     };
 
