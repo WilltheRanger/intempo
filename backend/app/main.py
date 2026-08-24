@@ -70,6 +70,9 @@ app = FastAPI(title="InTempo API", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
+    # Covers the hostname Cloudflare gives each deployment, which is not the
+    # production alias and is the one its dashboard shows you after a build.
+    allow_origin_regex=settings.cors_origin_regex,
     allow_credentials=False,
     allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type"],

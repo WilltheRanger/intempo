@@ -50,11 +50,36 @@ You will be asked for:
 | `SUPABASE_SERVICE_ROLE_KEY` | same page, the **service role** key — server only, never in the app |
 | `ANTHROPIC_API_KEY` | console.anthropic.com |
 | `GEMINI_API_KEY` | aistudio.google.com/apikey |
-| `CORS_ALLOWED_ORIGINS` | the app's own URL, e.g. `https://intempo.pages.dev` |
+| `CORS_ALLOWED_ORIGINS` | the app's own origins — see below |
 
 `CORS_ALLOWED_ORIGINS` is not optional. The app and the API are never
 same-origin, and a browser refuses every response without a matching origin —
 the failure looks like a network error rather than a permissions one.
+
+**Cloudflare gives your project more than one hostname**, and the exact list
+does not cover them all. There is the production alias
+`https://project.pages.dev`, and then a *different* one for every deployment,
+`https://a16c6845.project.pages.dev`, plus a branch alias. The dashboard shows
+the deployment-specific URL most prominently right after a build, so it is the
+one you are most likely to click — and it will fail.
+
+Listing them is hopeless; a new one exists after every push. Use a subdomain
+wildcard alongside the exact alias:
+
+```
+CORS_ALLOWED_ORIGINS=https://project.pages.dev,https://*.project.pages.dev,http://localhost:8081,http://127.0.0.1:8081,http://localhost:8899,http://127.0.0.1:8899,http://localhost:19006,http://127.0.0.1:19006
+```
+
+The `*` stands for **one hostname label**. It cannot cross a dot, cannot appear
+in the scheme, and cannot be the whole host — `https://*` would let every site
+on the internet read this API with a musician's token, so it is rejected and
+logged rather than honoured. `project.pages.dev.evil.com` is a domain anyone
+can register, and is refused.
+
+**Once you set this, the localhost defaults stop applying.** The fallback only
+covers the case where the variable is empty, so a deployment that names its own
+origin has to name the development ones too if it wants them — hence the tail
+of that example.
 
 ### Applying the schema
 
