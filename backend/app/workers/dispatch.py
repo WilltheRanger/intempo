@@ -12,6 +12,13 @@ and `BackgroundTasks` runs in the web process, so it takes sign-in down with
 it rather than just the analysis. An OMR model alongside that does not fit at
 any size.
 
+**What this host needs to use the remote runtime.** The `modal` client
+library, which is a dependency of the API for this reason alone — nothing
+imports it at module level, so it reads as unused — and a Modal API token in
+`MODAL_TOKEN_ID`/`MODAL_TOKEN_SECRET`. Without either, every take falls back to
+running here, quietly and correctly, which is exactly the failure that is hard
+to notice. `/v1/ready` reports both.
+
 **Why in-process stays the default.** 692 tests, the six-clip corpus
 regression and `python -m tuning_dashboard.cli` all run `analyze()` locally
 with no network. If the remote runtime were the only path, tuning thresholds
@@ -62,6 +69,12 @@ def _spawn_on_modal(analysis_id: str) -> bool:
         fn = modal.Function.from_name(MODAL_APP_NAME, MODAL_FUNCTION_NAME)
         fn.spawn(analysis_id)
     except Exception:  # noqa: BLE001 — any failure here must not 500 the request
+        # Most often one of three, in falling order of how easy it is to miss:
+        # `MODAL_TOKEN_ID`/`MODAL_TOKEN_SECRET` not set on *this* host (the
+        # container's own secret is a different thing on a different
+        # dashboard), the app never deployed, or Modal unreachable.
+        # `/v1/ready` separates them; this only has to not take the request
+        # down with it.
         log.exception("analysis %s: could not be started on Modal", analysis_id)
         return False
     return True

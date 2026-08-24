@@ -369,3 +369,177 @@ def test_both_buckets_are_checked() -> None:
     names = {c.name for c in _storage_checks(_Client())}
     assert names == {"storage:audio-uploads", "storage:score-images"}
     assert all(c.ok for c in _storage_checks(_Client()))
+
+
+# ---------------------------------------------------------------------------
+# Where the analysis runs
+#
+# The dispatcher falls back to in-process when Modal refuses, on purpose: a
+# musician who has just finished playing should not lose the take to a
+# deployment setting. The cost is that "it fell back" and "it worked" look
+# identical from outside, and a deployment quietly analysing everything on the
+# 512 MB web box looks perfectly healthy until two people record at once.
+# ---------------------------------------------------------------------------
+
+
+def _runtime_checks(monkeypatch, *, runtime: str) -> dict[str, Check]:
+    from app.workers import dispatch
+
+    monkeypatch.setattr(dispatch, "ANALYSIS_RUNTIME", runtime)
+    return {c.name: c for c in readiness._analysis_runtime_checks()}
+
+
+def test_in_process_is_reported_without_reaching_for_modal(monkeypatch) -> None:
+    """The default has nothing to check and must not pay for checking it —
+    importing modal costs ~39 MB on a box with 512."""
+    import builtins
+
+    real = builtins.__import__
+
+    def _watch(name, *args, **kwargs):
+        assert name != "modal", "the in-process path must not import modal"
+        return real(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", _watch)
+
+    checks = _runtime_checks(monkeypatch, runtime="inprocess")
+
+    assert "analysis_runtime:inprocess" in checks
+    assert checks["analysis_runtime:inprocess"].ok
+
+
+def test_asking_for_modal_without_the_package_is_reported(monkeypatch) -> None:
+    """The state this shipped in.
+
+    `modal` was in no `pyproject.toml` anywhere, so `ANALYSIS_RUNTIME=modal` on
+    Render meant `ImportError` on every take, a fallback, and an app that
+    worked — on the box the setting existed to get the work off.
+    """
+    import builtins
+
+    real = builtins.__import__
+
+    def _no_modal(name, *args, **kwargs):
+        if name == "modal":
+            raise ImportError("no modal here")
+        return real(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", _no_modal)
+
+    check = _runtime_checks(monkeypatch, runtime="modal")["analysis_runtime:modal"]
+
+    assert not check.ok
+    assert "falls back" in check.detail
+    assert not check.blocking, "the app still works; it just works in the wrong place"
+
+
+def test_modal_without_credentials_is_reported(monkeypatch) -> None:
+    """Easy to miss, because the container's own secret is a *different* thing
+    set up on a different dashboard. This host does not run the analysis under
+    `ANALYSIS_RUNTIME=modal` — it asks Modal to, and asking needs a token."""
+    monkeypatch.delenv("MODAL_TOKEN_ID", raising=False)
+    monkeypatch.delenv("MODAL_TOKEN_SECRET", raising=False)
+
+    check = _runtime_checks(monkeypatch, runtime="modal")["modal_credentials"]
+
+    assert not check.ok
+    assert "MODAL_TOKEN_ID" in check.detail
+    assert not check.blocking
+
+
+def test_half_a_token_is_not_a_token(monkeypatch) -> None:
+    monkeypatch.setenv("MODAL_TOKEN_ID", "ak-something")
+    monkeypatch.delenv("MODAL_TOKEN_SECRET", raising=False)
+
+    assert not _runtime_checks(monkeypatch, runtime="modal")["modal_credentials"].ok
+
+
+def test_an_undeployed_function_is_reported_by_name(monkeypatch) -> None:
+    """`Function.from_name` is documented as lazy — it defers the lookup until
+    first use — so a check that only called it would pass against an account
+    with nothing deployed at all. `hydrate()` is the part that asks."""
+    import sys
+    import types
+
+    from app.workers import dispatch
+
+    monkeypatch.setenv("MODAL_TOKEN_ID", "ak-something")
+    monkeypatch.setenv("MODAL_TOKEN_SECRET", "as-something")
+
+    hydrated: list[bool] = []
+
+    class _Handle:
+        def hydrate(self):
+            hydrated.append(True)
+            raise RuntimeError("app not found")
+
+    fake = types.ModuleType("modal")
+    fake.Function = type("Function", (), {"from_name": staticmethod(lambda *a, **k: _Handle())})
+    monkeypatch.setitem(sys.modules, "modal", fake)
+
+    check = _runtime_checks(monkeypatch, runtime="modal")["analysis_runtime:modal"]
+
+    assert hydrated, "from_name alone proves nothing; the lookup has to be forced"
+    assert not check.ok
+    assert dispatch.MODAL_APP_NAME in check.detail
+    assert dispatch.MODAL_FUNCTION_NAME in check.detail
+
+
+def test_a_working_modal_deployment_says_nothing(monkeypatch) -> None:
+    import sys
+    import types
+
+    monkeypatch.setenv("MODAL_TOKEN_ID", "ak-something")
+    monkeypatch.setenv("MODAL_TOKEN_SECRET", "as-something")
+
+    fake = types.ModuleType("modal")
+    fake.Function = type(
+        "Function",
+        (),
+        {"from_name": staticmethod(lambda *a, **k: type("H", (), {"hydrate": lambda self: None})())},
+    )
+    monkeypatch.setitem(sys.modules, "modal", fake)
+
+    check = _runtime_checks(monkeypatch, runtime="modal")["analysis_runtime:modal"]
+
+    assert check.ok
+    assert check.detail == "", "a passing check says nothing; there is nothing to say"
+
+
+def test_nothing_about_the_runtime_blocks_readiness(monkeypatch) -> None:
+    """A deployment that fell back to in-process is degraded, not broken. If
+    these blocked, `/v1/ready` would answer 503 on an app a musician can use
+    perfectly well — and a 503 that does not mean "unusable" stops being read.
+    """
+    import builtins
+
+    real = builtins.__import__
+
+    def _no_modal(name, *args, **kwargs):
+        if name == "modal":
+            raise ImportError("no modal here")
+        return real(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", _no_modal)
+
+    checks = list(_runtime_checks(monkeypatch, runtime="modal").values())
+
+    assert checks
+    assert not any(c.blocking for c in checks)
+
+
+def test_the_api_declares_the_package_its_own_dispatcher_imports() -> None:
+    """Nothing imports `modal` at module level, so it reads as an unused
+    dependency to anybody tidying `pyproject.toml` — and removing it does not
+    break a single test, because every test that touches the Modal path fakes
+    the module. It breaks one thing: `ANALYSIS_RUNTIME=modal` in production,
+    silently, into a fallback.
+    """
+    from pathlib import Path
+
+    pyproject = (Path(__file__).resolve().parents[2] / "pyproject.toml").read_text()
+
+    assert '"modal>=' in pyproject, (
+        "app/workers/dispatch.py imports modal at spawn time; the API host has "
+        "to have it or ANALYSIS_RUNTIME=modal quietly does nothing"
+    )

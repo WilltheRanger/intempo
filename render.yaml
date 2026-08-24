@@ -40,6 +40,18 @@ services:
       - key: GEMINI_API_KEY
         sync: false
 
+      # Where the analysis runs. Unset means in this process, which is the
+      # right answer until Modal is deployed — see docs/deploy-modal.md. Set it
+      # to `modal` only once the Deploy Modal workflow has run, and set the two
+      # token halves below with it: without them this service cannot hand a
+      # take over and silently analyses every one here instead.
+      - key: ANALYSIS_RUNTIME
+        sync: false
+      - key: MODAL_TOKEN_ID
+        sync: false
+      - key: MODAL_TOKEN_SECRET
+        sync: false
+
       # The browser refuses every response without a matching origin, so the
       # app's own URL has to be listed here. Set it to wherever the mobile web
       # build is served from — the Cloudflare Pages domain.
