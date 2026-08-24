@@ -6,6 +6,78 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-08 — The analysis can run on Modal, and by default still does not
+
+**Branch:** `main`. The user chose Modal, for the analysis and for HOMR when it
+lands. This is the migration, behind a flag that is off.
+
+**The argument, in one number.** The API instance has 512 MB for the whole
+application and one analysis peaks near 460 — *after* the previous entries cut
+the filter from 377 MB to 90 and the onset envelope from 540 to 52. Two
+musicians finishing within a few seconds of each other is an out-of-memory kill,
+and `BackgroundTasks` runs in the web process, so it takes sign-in with it. An
+OMR model alongside that does not fit at any size. It is not a tuning problem;
+it is a box too small for two jobs.
+
+### Three pieces
+
+**`workers/dispatch.py`** — where the work runs, decided in one place. The
+enqueue endpoint no longer names `run_analysis`; it asks for the work to happen.
+Where that happens is a deployment fact, and deployment facts in request
+handlers are how you become unable to change them.
+
+**`modal_app.py`** — the image, the secret, the function. The image is narrow on
+purpose: no `fastapi`, no `uvicorn`, no model SDKs. This is the second place the
+service-role key lives, and a container that can only reach Supabase is a
+smaller thing to hold it.
+
+**Modal runs the same `run_analysis`, imported.** Not a copy with the same name.
+This project has been bitten four times by a second implementation that drifted
+from the first, and two analysis runners would be the worst of them: they would
+disagree about a musician's timing and nothing would say which produced a given
+result. There is a test asserting the import line, and another asserting the
+function name the dispatcher looks up still exists.
+
+### The judgement call
+
+**A refused spawn falls back to in-process rather than losing the take.** Not
+deployed, secret missing, unreachable, package absent — all of it lands in the
+same place, and a musician who has just finished playing should not lose the
+recording to a deployment setting. A slow analysis on a tight box beats none.
+
+The cost of that is a deployment which *thinks* it is on Modal and is quietly
+running everything locally, looking fine until two people record at once. So the
+fallback logs a warning naming the analysis, and the doc says which line to
+look for.
+
+**In-process stays the default**, and the comparison is exact: `MODAL`, `true`,
+`yes` and a stray space all mean in-process. A typo must not silently move where
+the work runs. 700 tests, the corpus regression and the tuning CLI all run
+`analyze()` locally with no network, and that has to keep working — tuning
+against real recordings is the thing that most needs a fast loop, and a loop
+that goes through a deploy is not one.
+
+### A test that could not fail, again
+
+Three mutations; one passed. Removing the runtime condition entirely — so
+in-process mode also tried Modal — left the tests green, because a box with no
+`modal` package refuses either way and the take runs locally regardless. The
+test could not tell "did not try" from "tried and fell back". It asserts the
+attempt now, and fails under that mutation.
+
+Second time this week a mutation check has found a test that was being counted
+without being able to fail.
+
+**No three-foot test.** No UI touched.
+
+**Tests:** backend 700 (was 692; +8). `ruff` clean. Nothing about the analysis
+changed, so the corpus is untouched by construction.
+
+**Rollback:** revert. Without `ANALYSIS_RUNTIME=modal` set, the only behavioural
+difference is one function call between the endpoint and the runner.
+
+---
+
 ## 2026-09-07 (later) — The same check, on the other bucket, and an impossible instruction
 
 **Branch:** `main`. Walked the image path looking for the audio bug's twin.

@@ -21,7 +21,7 @@ from app.services.tier_limits import tier_of, usage_for
 from app.db import get_service_client
 from app.models.analysis import BpmSource, Instrument, MetronomeMode
 from app.routers.upload import AUDIO_BUCKET
-from app.workers.analysis_runner import run_analysis
+from app.workers.dispatch import start_analysis
 
 router = APIRouter(prefix="/analyses", tags=["analyses"])
 
@@ -181,10 +181,8 @@ async def create_analysis(
         raise HTTPException(status_code=500, detail="failed to enqueue analysis")
 
     analysis_id = rows[0]["id"]
-    # Runs after the response is sent. run_analysis is sync, so FastAPI
-    # executes it in a worker thread — the CPU-bound analyze() never
-    # blocks the event loop.
-    background_tasks.add_task(run_analysis, str(analysis_id))
+    # Where this runs is `dispatch`'s business, not this endpoint's.
+    start_analysis(str(analysis_id), background_tasks)
     return CreateAnalysisResponse(analysis_id=analysis_id, status="queued")
 
 
