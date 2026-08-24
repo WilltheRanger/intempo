@@ -192,3 +192,61 @@ def test_an_sdk_error_arrives_as_an_ocr_provider_error(monkeypatch) -> None:
     with pytest.raises(OCRProviderError) as caught:
         gemini_flash_provider.parse(b"<heic bytes>")
     assert gemini_flash_provider.name in str(caught.value)
+
+
+@pytest.mark.parametrize(
+    "wrapper",
+    [
+        "```json\n{body}\n```",
+        "```\n{body}\n```",
+        "Here is the transcription:\n{body}",
+        "{body}\n\nLet me know if you need anything else.",
+    ],
+)
+def test_a_response_wrapped_in_prose_or_fences_is_still_read(install_fake, wrapper) -> None:
+    """The provider that claimed to be defensive and was not.
+
+    This code carried the comment *"JSON mode means no markdown fences are
+    expected — but parse defensively"* above a bare `.strip()`. Gemini is first
+    in the configured chain, so the one that said it was careful was the one
+    with nothing behind it — and the running service has logged `json_invalid`
+    from both providers on a single page.
+
+    JSON mode makes a fence unlikely, not impossible: the setting can be changed,
+    and a model that decides to explain itself first produces exactly this.
+    """
+    install_fake(
+        gemini_flash_provider,
+        _FakeResponse(
+            text=wrapper.format(body=json.dumps(GOOD_PAYLOAD)),
+            usage_metadata=_FakeUsage(prompt_token_count=10, candidates_token_count=10),
+        ),
+    )
+
+    result = gemini_flash_provider.parse(b"<jpeg>")
+
+    assert result.score.tempo_marking == "Allegro"
+    assert result.score.measures[0].notes[0].pitch == "G3"
+
+
+def test_a_truncated_response_still_fails(install_fake) -> None:
+    """And must. A page that stopped mid-object would otherwise be presented to
+    the musician as the whole piece, with every bar after the cut simply absent
+    — and `alignment.py` accumulates durations, so the timeline it builds would
+    end early against a recording that does not."""
+    body = json.dumps(GOOD_PAYLOAD)
+    install_fake(
+        gemini_flash_provider,
+        _FakeResponse(text=body[: len(body) // 2], usage_metadata=_FakeUsage()),
+    )
+    with pytest.raises(ValueError):
+        gemini_flash_provider.parse(b"<jpeg>")
+
+
+def test_both_providers_read_a_response_the_same_way() -> None:
+    """One extractor, not two. The two providers drifted once — a fence-stripper
+    on one and a comment about one on the other — and the difference was
+    invisible until a page was lost to it."""
+    from app.services.ocr import claude_provider, gemini_provider
+
+    assert claude_provider.json_object_in is gemini_provider.json_object_in

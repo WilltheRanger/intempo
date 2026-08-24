@@ -17,6 +17,7 @@ from app.services.ocr.base import (
     PROMPT,
     OCRProviderError,
     OCRResponse,
+    json_object_in,
 )
 from app.services.score_schema import ScoreJson
 
@@ -36,20 +37,6 @@ from app.services.score_schema import ScoreJson
 #: bigger number alone would only move the cliff somewhere less common and
 #: leave the misdiagnosis in place for whoever found it.
 MAX_TOKENS = 16000
-
-
-def _strip_markdown_fences(text: str) -> str:
-    """Claude sometimes wraps JSON in ``` fences despite the prompt forbidding it."""
-    text = text.strip()
-    if not text.startswith("```"):
-        return text
-    inner = text.split("```", 2)
-    if len(inner) < 2:
-        return text
-    body = inner[1]
-    if body.startswith("json"):
-        body = body[4:]
-    return body.strip()
 
 
 class ClaudeProvider:
@@ -167,7 +154,7 @@ class ClaudeProvider:
         if text is None:
             raise OCRProviderError(f"{self.name}: first content part has no text")
 
-        cleaned = _strip_markdown_fences(text)
+        cleaned = json_object_in(text)
         score = ScoreJson.model_validate_json(cleaned)
 
         usage = getattr(response, "usage", None)

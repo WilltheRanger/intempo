@@ -6,6 +6,79 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-17 — The provider that said it parsed defensively did not
+
+**Branch:** `main`. Fifteenth iteration of *fix the OMR system till it works*,
+chasing the second failure in the production logs: `json_invalid` from **both**
+providers on one page.
+
+I had put that down to truncation and moved on. Checking rather than assuming:
+`claude_provider` carried a `_strip_markdown_fences`, and `gemini_provider`
+carried this, directly above a bare `.strip()`:
+
+```python
+# JSON mode means no markdown fences are expected — but parse defensively.
+score = ScoreJson.model_validate_json(text.strip())
+```
+
+It is not defensive. It is a comment about defensiveness. **Gemini is first in
+the configured chain**, so the provider that claimed to be careful was the one
+with nothing behind it — the eleventh instance in this repository of a number or
+a claim whose prose outlived the code under it.
+
+`json_object_in` in `base.py` now serves both, and a test asserts they are
+literally the same function object rather than two that agree today.
+
+### What it handles, and the one thing it must not
+
+A fence, a sentence before the object, a sentence after it. All three arrive as
+`json_invalid` and each costs the whole score.
+
+**Truncation still fails.** A response that stopped mid-object has no matching
+close for its first brace, so slicing to the last `}` leaves JSON that is still
+invalid; the parse raises and `_is_truncation` still stops the chain rather than
+paying for the next provider. Repairing a half-read page would be worse than
+failing on it — the bars that did arrive would be presented as the whole piece,
+and `alignment.py` accumulates durations, so the timeline would end early
+against a recording that does not.
+
+### Mutation testing deleted two thirds of the function
+
+The first version kept the fence-stripper and put brace-slicing after it. Two
+mutations survived — disabling the fence branch, and dropping the `json` label —
+because **taking the first `{` to the last `}` removes a fence exactly as it
+removes a preamble: a fence is prose that happens to be punctuation.** Nothing
+could reach the stripper that the slice had not already handled.
+
+Then `text.strip()` survived too, for the same reason: the slice discards
+surrounding whitespace on its own, and in the no-object case returning the text
+*untrimmed* is closer to what the docstring promises — the error a caller
+reports quotes what the model actually said.
+
+What is left is four lines, and every one of them is killable:
+
+```python
+start = text.find("{")
+end = text.rfind("}")
+if start != -1 and end > start:
+    return text[start : end + 1]
+return text
+```
+
+Deleting code because no test could fail on it is the same discipline as writing
+a test that can: an unkillable branch is either wrong or unnecessary, and this
+one was unnecessary.
+
+**Tests:** 12 new cases across both providers, parametrised on fences with and
+without a label, a preamble, a suffix, and a fence plus a suffix. Five mutations
+after the deletions — the slice removed, the first closing brace instead of the
+last, the no-object case mangled, and each provider reverted to a bare strip —
+all killed.
+
+Backend 929 tests green (917 before), ruff clean.
+
+---
+
 ## 2026-09-17 — Two scans died over the word "dim."
 
 **Branch:** `main`. Fourteenth iteration of *fix the OMR system till it works*,
