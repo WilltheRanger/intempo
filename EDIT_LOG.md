@@ -6,6 +6,48 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-09 — The Modal app definition is now executed, not pattern-matched
+
+**Branch:** `main`. Small, and timed: the user is setting Modal up right now,
+and the next thing they do is click **Run workflow**.
+
+Every test in `test_worker_image.py` reads `modal_app.py` as *text*, because
+for its whole life no box running these tests had `modal` installed. That
+changed when the API gained it as a dependency, so the definition can be built
+for real — and a deploy that would fail on somebody clicking a button fails in
+CI instead.
+
+**Verified honestly, in both directions.**
+
+*Caught:* a parameter modal has renamed or removed. There is a precedent in
+this exact file — `keep_warm` became `min_containers` — and a checkout written
+against the old name raises `DeprecationError` the moment the decorator runs.
+`ignore=` → `exclude=` on `add_local_dir` fails too, as does renaming
+`run_analysis` out from under the dispatcher.
+
+*Not caught:* wrong **values**. `memory="two gigs"`, `timeout="ten minutes"`
+and `Secret.from_name(None)` all import happily; modal validates those
+server-side. The test says so, so nobody reads it as more than it is.
+
+**A probe that could not have failed, caught mid-run.** The first pass at this
+reported "fails at import" for a `memory` mutation it had never actually run.
+`memory=2048,` and `memory="2GB",` are the same number of characters and were
+written within the same second, so Python's `(mtime, size)` check served the
+`.pyc` from the *previous* probe. Re-run with `-B` and the cache cleared, the
+honest answer was the opposite. Every probe here now clears `__pycache__`.
+
+No network: `App`, `Image` and `Secret.from_name` are local until something is
+run. The deploy workflow already runs this file before deploying, so a modal
+version bump that renames a parameter now stops the deploy rather than being
+found by it.
+
+**Tests run:** 728 passed (727 + 1), ruff clean. **Rollback:** revert.
+
+**Deployment note.** Render shows `0fac1d7` — the `config.toml` fix — **live**
+as of 01:35. I could not confirm it from the outside: this sandbox's proxy
+refuses egress to `intempo-api.onrender.com` with a 403 on CONNECT, so
+`/v1/ready` has to be checked from a machine that can reach it.
+
 ## 2026-09-08 (night, later still) — Finding the next missing file automatically
 
 **Branch:** `main`. The generalisation of the entry below.

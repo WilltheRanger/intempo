@@ -444,3 +444,36 @@ def test_the_modal_image_carries_every_file_the_worker_opens() -> None:
             f"{reader} opens {relative} at runtime and the Modal image does "
             "not add it"
         )
+
+
+def test_the_modal_app_is_valid_for_the_installed_client() -> None:
+    """Build the image spec for real, against the real `modal` package.
+
+    Everything else in this file reads `modal_app.py` as text, because for most
+    of its life no box running these tests had `modal` on it. That changed when
+    the API gained it as a dependency — the dispatcher imports it to spawn — so
+    the definition can now be *executed* rather than pattern-matched, and a
+    deploy that would fail on somebody clicking "Run workflow" fails here
+    instead.
+
+    **What this catches**: a parameter modal has renamed or removed. That is
+    the realistic failure and it has a precedent in this very file — `keep_warm`
+    became `min_containers`, and a checkout written against the old name raises
+    `DeprecationError` the moment the decorator runs. Verified by mutation:
+    `min_containers` → `keep_warm` and `ignore=` → `exclude=` both fail here.
+
+    **What it does not catch**: wrong *values*. `memory="two gigs"`,
+    `timeout="ten minutes"` and `Secret.from_name(None)` all import happily —
+    modal validates those server-side at deploy. Also verified, and stated so
+    nobody reads this test as more than it is.
+
+    No network: `App`, `Image` and `Secret.from_name` are all local until
+    something is actually run.
+    """
+    import modal_app
+
+    assert modal_app.app.name == modal_app.APP_NAME
+    assert "run_analysis" in modal_app.app.registered_functions, (
+        "the dispatcher looks this function up by name; if it is not registered "
+        "here, analyses are enqueued and never run"
+    )
