@@ -145,8 +145,8 @@ def test_a_full_page_photograph_of_each_fixture_reaches_the_model(
     monkeypatch.setattr(
         runner,
         "parse_sheet_music",
-        lambda b, *, media_type, on_stage=None: parse_sheet_music(
-            b, media_type=media_type, providers=[model], retry=False
+        lambda b, *, media_type, on_stage=None, source=None: parse_sheet_music(
+            b, media_type=media_type, providers=[model], retry=False, source=source
         ),
     )
 
@@ -189,8 +189,8 @@ def test_a_sideways_photograph_arrives_upright(wired, monkeypatch) -> None:
     monkeypatch.setattr(
         runner,
         "parse_sheet_music",
-        lambda b, *, media_type, on_stage=None: parse_sheet_music(
-            b, media_type=media_type, providers=[model], retry=False
+        lambda b, *, media_type, on_stage=None, source=None: parse_sheet_music(
+            b, media_type=media_type, providers=[model], retry=False, source=source
         ),
     )
     runner.run_transcription(SCORE_ID)
@@ -224,8 +224,8 @@ def test_a_model_answering_with_extra_keys_does_not_lose_the_page(wired, monkeyp
     monkeypatch.setattr(
         runner,
         "parse_sheet_music",
-        lambda b, *, media_type, on_stage=None: parse_sheet_music(
-            b, media_type=media_type, providers=[model], retry=False
+        lambda b, *, media_type, on_stage=None, source=None: parse_sheet_music(
+            b, media_type=media_type, providers=[model], retry=False, source=source
         ),
     )
     runner.run_transcription(SCORE_ID)
@@ -247,11 +247,41 @@ def test_an_undecodable_download_still_reaches_the_provider(wired, monkeypatch) 
     monkeypatch.setattr(
         runner,
         "parse_sheet_music",
-        lambda b, *, media_type, on_stage=None: parse_sheet_music(
-            b, media_type=media_type, providers=[model], retry=False
+        lambda b, *, media_type, on_stage=None, source=None: parse_sheet_music(
+            b, media_type=media_type, providers=[model], retry=False, source=source
         ),
     )
     runner.run_transcription(SCORE_ID)
 
     assert model.seen["bytes"] == len(b"not an image")
     assert wired.patches[-1]["transcription_status"] == "failed"
+
+
+def test_the_worker_hands_the_photograph_to_the_crop_step(wired, monkeypatch) -> None:
+    """End to end, on a real fixture at phone resolution: what the worker passes
+    as `source` has to be the bytes it downloaded, not the copy it prepared.
+
+    Getting this wrong costs nothing visible — the page still splits, the crops
+    are still crops, and every one of them carries a third fewer pixels per
+    system than it should. The whole cut is then pointless.
+    """
+    photo = _phone_photo(FIXTURES / "01_simple_printed.jpg")
+    monkeypatch.setattr(runner, "download_image", lambda url: photo)
+
+    seen: dict = {}
+    real = runner.parse_sheet_music
+
+    def _spy(image_bytes, *, media_type, on_stage=None, source=None):
+        seen["prepared"] = image_bytes
+        seen["source"] = source
+        return real(
+            image_bytes, media_type=media_type, providers=[_Model()], retry=False,
+            source=source,
+        )
+
+    monkeypatch.setattr(runner, "parse_sheet_music", _spy)
+    runner.run_transcription(SCORE_ID)
+
+    assert seen["source"] == photo, "the worker cut the reduced page, not the photograph"
+    assert seen["prepared"] != photo, "the page was never prepared for reading"
+    assert wired.patches[-1]["transcription_status"] == "done"

@@ -776,7 +776,7 @@ def test_one_unreadable_system_sends_the_whole_page_instead_of_leaving_a_hole(
     played correctly. Reading the page whole is merely *worse at reading*.
     """
     monkeypatch.setattr(
-        pipeline_module, "crop_systems", lambda _b: [b"crop-1", b"crop-2", b"crop-3"]
+        pipeline_module, "crop_systems", lambda _b, *, source=None: [b"crop-1", b"crop-2", b"crop-3"]
     )
 
     answers = [_system("p", bars=3), OCRProviderError("rate limited"), _system("p", bars=3)]
@@ -814,7 +814,10 @@ def test_a_page_split_into_more_systems_than_a_page_has_is_read_whole(monkeypatc
     monkeypatch.setattr(
         pipeline_module,
         "crop_systems",
-        lambda _b: [f"crop-{i}".encode() for i in range(pipeline_module._MAX_SYSTEMS_TO_READ + 1)],
+        lambda _b, *, source=None: [
+            f"crop-{i}".encode()
+            for i in range(pipeline_module._MAX_SYSTEMS_TO_READ + 1)
+        ],
     )
     whole = _FakeProvider("p", response=_system("p", bars=5))
 
@@ -1087,7 +1090,7 @@ def test_each_line_is_told_which_line_of_the_page_it_is(monkeypatch) -> None:
     now wrong. Which line it is decides what a time signature at the left edge
     means, so the number is in the note and not just the fact of the crop."""
     monkeypatch.setattr(
-        pipeline_module, "crop_systems", lambda _b: [b"crop-1", b"crop-2", b"crop-3"]
+        pipeline_module, "crop_systems", lambda _b, *, source=None: [b"crop-1", b"crop-2", b"crop-3"]
     )
     recorder = _Recorder()
 
@@ -1105,7 +1108,7 @@ def test_a_line_is_told_not_to_read_the_staff_the_crop_clips(monkeypatch) -> Non
     read from the line above is read twice — once here and once when that line
     is read — and the page comes out longer than the music. Every bar after it
     is then compared against the wrong moment in the recording."""
-    monkeypatch.setattr(pipeline_module, "crop_systems", lambda _b: [b"a", b"b"])
+    monkeypatch.setattr(pipeline_module, "crop_systems", lambda _b, *, source=None: [b"a", b"b"])
     recorder = _Recorder()
 
     parse_sheet_music(b"<page>", providers=[recorder], retry=False)
@@ -1116,7 +1119,7 @@ def test_a_line_is_told_not_to_read_the_staff_the_crop_clips(monkeypatch) -> Non
 def test_a_page_read_whole_is_asked_the_question_it_always_was(monkeypatch) -> None:
     """No note on the whole-page path. That path is the fallback for everything
     the splitter cannot handle, and it has to keep working exactly as it did."""
-    monkeypatch.setattr(pipeline_module, "crop_systems", lambda _b: [])
+    monkeypatch.setattr(pipeline_module, "crop_systems", lambda _b, *, source=None: [])
     recorder = _Recorder()
 
     parse_sheet_music(b"<page>", providers=[recorder], retry=False)
@@ -1133,7 +1136,7 @@ def test_the_arithmetic_retry_is_still_told_it_is_looking_at_one_line(
     goes looking for the third bar of the *piece*, and whatever it sends back
     is spliced onto the third bar of this line.
     """
-    monkeypatch.setattr(pipeline_module, "crop_systems", lambda _b: [b"a", b"b"])
+    monkeypatch.setattr(pipeline_module, "crop_systems", lambda _b, *, source=None: [b"a", b"b"])
 
     short = ScoreJson.model_validate(
         {
@@ -1179,7 +1182,7 @@ def test_cutting_the_page_up_is_reported_as_a_step(monkeypatch) -> None:
     seen: list[str] = []
     when: list[list[str]] = []
 
-    def _crops(_image_bytes):
+    def _crops(_image_bytes, *, source=None):
         # What the screen said *while* the cutting was happening. Asserting the
         # step appears somewhere in the list does not distinguish reporting it
         # before the work from reporting it after — and reporting it after is
@@ -1208,7 +1211,7 @@ def test_looking_for_the_staves_is_reported_even_when_there_is_one(monkeypatch) 
     and every fixture in this repository is a single system, so the common case
     would be the silent one.
     """
-    monkeypatch.setattr(pipeline_module, "crop_systems", lambda _b: [])
+    monkeypatch.setattr(pipeline_module, "crop_systems", lambda _b, *, source=None: [])
     seen: list[str] = []
 
     parse_sheet_music(
@@ -1224,7 +1227,7 @@ def test_a_single_system_is_not_searched_for_systems(monkeypatch) -> None:
     Reporting the splitting step from inside that recursion would say "finding
     the staves" once per system, in the middle of the reading — the bar would
     walk backwards from 0.7 to 0.3 on every line of the page."""
-    monkeypatch.setattr(pipeline_module, "crop_systems", lambda _b: [b"a", b"b", b"c"])
+    monkeypatch.setattr(pipeline_module, "crop_systems", lambda _b, *, source=None: [b"a", b"b", b"c"])
     seen: list[str] = []
 
     parse_sheet_music(
@@ -1254,7 +1257,7 @@ def test_the_systems_are_read_at_the_same_time(monkeypatch) -> None:
 
     width = pipeline_module._SYSTEMS_AT_ONCE
     crops = [f"crop-{i}".encode() for i in range(width)]
-    monkeypatch.setattr(pipeline_module, "crop_systems", lambda _b: crops)
+    monkeypatch.setattr(pipeline_module, "crop_systems", lambda _b, *, source=None: crops)
     barrier = threading.Barrier(width, timeout=10)
 
     class _AtTheSameTime:
@@ -1278,7 +1281,7 @@ def test_more_systems_than_can_run_at_once_still_all_get_read(monkeypatch) -> No
     silently, which is the one outcome this path must never produce."""
     total = pipeline_module._SYSTEMS_AT_ONCE * 3
     crops = [f"crop-{i}".encode() for i in range(total)]
-    monkeypatch.setattr(pipeline_module, "crop_systems", lambda _b: crops)
+    monkeypatch.setattr(pipeline_module, "crop_systems", lambda _b, *, source=None: crops)
     seen: list[bytes] = []
     lock = __import__("threading").Lock()
 
@@ -1310,7 +1313,7 @@ def test_the_systems_are_joined_in_page_order_not_completion_order(monkeypatch) 
     import threading
 
     crops = [b"first", b"second", b"third"]
-    monkeypatch.setattr(pipeline_module, "crop_systems", lambda _b: crops)
+    monkeypatch.setattr(pipeline_module, "crop_systems", lambda _b, *, source=None: crops)
     # The last crop finishes first, the first crop finishes last.
     order = {b"first": 0.06, b"second": 0.03, b"third": 0.0}
     pitches = {b"first": "C3", b"second": "D3", b"third": "E3"}
@@ -1360,7 +1363,7 @@ def test_a_page_that_fails_early_does_not_pay_for_the_systems_behind_it(
 
     total = pipeline_module._SYSTEMS_AT_ONCE * 3
     crops = [f"crop-{i}".encode() for i in range(total)]
-    monkeypatch.setattr(pipeline_module, "crop_systems", lambda _b: crops)
+    monkeypatch.setattr(pipeline_module, "crop_systems", lambda _b, *, source=None: crops)
     started: list[bytes] = []
     lock = threading.Lock()
 
@@ -1405,7 +1408,7 @@ def test_every_finished_system_moves_the_reported_step(monkeypatch) -> None:
     would be killed at ten minutes with nothing wrong with it.
     """
     crops = [b"a", b"b", b"c", b"d", b"e"]
-    monkeypatch.setattr(pipeline_module, "crop_systems", lambda _b: crops)
+    monkeypatch.setattr(pipeline_module, "crop_systems", lambda _b, *, source=None: crops)
     seen: list[str] = []
 
     parse_sheet_music(
@@ -1432,7 +1435,7 @@ def test_the_first_and_last_crop_may_hold_no_music(monkeypatch) -> None:
     edge in shot, which is nearly all of them.
     """
     crops = [b"desk", b"one", b"two", b"three", b"sliver"]
-    monkeypatch.setattr(pipeline_module, "crop_systems", lambda _b: crops)
+    monkeypatch.setattr(pipeline_module, "crop_systems", lambda _b, *, source=None: crops)
 
     class _EdgesAreBlank:
         name = "edges"
@@ -1462,7 +1465,7 @@ def test_a_crop_in_the_middle_with_no_music_sends_the_whole_page(monkeypatch) ->
     told they rushed a passage they played correctly.
     """
     crops = [b"one", b"two", b"three", b"four"]
-    monkeypatch.setattr(pipeline_module, "crop_systems", lambda _b: crops)
+    monkeypatch.setattr(pipeline_module, "crop_systems", lambda _b, *, source=None: crops)
 
     class _MiddleIsBlank:
         name = "middle"
@@ -1486,7 +1489,7 @@ def test_a_page_where_nothing_reads_still_falls_back(monkeypatch) -> None:
     anywhere, so `_read_systems` has nothing to return and the page goes through
     the whole-page loop — which is the path that reports an unreadable page in
     the provider's own words."""
-    monkeypatch.setattr(pipeline_module, "crop_systems", lambda _b: [b"a", b"b"])
+    monkeypatch.setattr(pipeline_module, "crop_systems", lambda _b, *, source=None: [b"a", b"b"])
 
     class _AllBlank:
         name = "blank"
@@ -1540,3 +1543,42 @@ def test_no_music_is_a_different_answer_from_could_not_read() -> None:
         "first crop would be accepted as a page edge"
     )
     assert issubclass(pipeline_module.NoMusicFound, pipeline_module.OCRError)
+
+
+def test_the_photograph_is_what_gets_cut_up(monkeypatch) -> None:
+    """The pipeline has to hand the crop step the photograph, not the copy it is
+    about to read. Detection is on the reduced page — cheap, and where every
+    constant in the detector was measured — but a crop carved out of that page
+    carries no more detail per system than the page did, which is the entire
+    reason for cutting it up."""
+    seen: dict = {}
+
+    def _crops(image_bytes, *, source=None):
+        seen["detected_on"] = image_bytes
+        seen["cut_from"] = source
+        return [b"a", b"b"]
+
+    monkeypatch.setattr(pipeline_module, "crop_systems", _crops)
+
+    parse_sheet_music(
+        b"<reduced page>", providers=[_Recorder()], retry=False, source=b"<photograph>"
+    )
+
+    assert seen == {"detected_on": b"<reduced page>", "cut_from": b"<photograph>"}
+
+
+def test_a_caller_with_only_the_prepared_page_still_works(monkeypatch) -> None:
+    """`source` is optional, and its absence has to mean "cut what you were
+    given" rather than "cut nothing"."""
+    seen: dict = {}
+
+    def _crops(image_bytes, *, source=None):
+        seen["source"] = source
+        return [b"a", b"b"]
+
+    monkeypatch.setattr(pipeline_module, "crop_systems", _crops)
+
+    score = parse_sheet_music(b"<page>", providers=[_Recorder()], retry=False)
+
+    assert seen == {"source": None}
+    assert score.measures, "the page was not read at all"

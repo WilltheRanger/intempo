@@ -667,3 +667,104 @@ def test_a_dense_page_is_not_the_problem() -> None:
 
     assert pasted >= 11, f"only {pasted} bands fitted; this is not a dense page"
     assert len(crop_systems(buffer.getvalue())) == pasted
+
+
+# ---------------------------------------------------------------------------
+# Cutting the photograph, not the reduced copy of it
+# ---------------------------------------------------------------------------
+
+
+def test_a_crop_carries_more_detail_than_the_page_it_came_from() -> None:
+    """The entire reason a page is cut up, and it was being thrown away one
+    step before the cut.
+
+    `MODEL_MAX_EDGE` squeezes a photograph onto 1568px. Cutting *that* into
+    systems gives each one a slice of a budget already spent — on the real page,
+    1176×165 with about ten pixels between staff lines, which is no more detail
+    per system than sending the whole page. Cutting the photograph and preparing
+    each crop separately spends the whole budget on one system: 1568×220,
+    fourteen pixels between staff lines, 1.8× the pixels.
+    """
+    from PIL import Image
+
+    from app.services.page_image import MODEL_MAX_EDGE, crop_systems, prepare_for_model
+
+    page, _pasted = _phone_page(FIXTURES / "02_medium_printed.jpg")
+    prepared, _media = prepare_for_model(page)
+
+    def sizes(**kwargs):
+        out = []
+        for crop in crop_systems(prepared, **kwargs):
+            with Image.open(io.BytesIO(crop)) as image:
+                out.append((image.width, image.height))
+        return out
+
+    reduced = sizes()
+    full = sizes(source=page)
+
+    assert len(reduced) == len(full)
+    assert all(f[0] > r[0] and f[1] > r[1] for r, f in zip(reduced, full)), (
+        f"cutting the photograph gained nothing: {reduced} vs {full}"
+    )
+    assert full[0][0] == MODEL_MAX_EDGE, (
+        f"a crop's long edge is {full[0][0]}, not the {MODEL_MAX_EDGE} budget "
+        "it is entitled to on its own"
+    )
+    gained = (full[0][0] * full[0][1]) / (reduced[0][0] * reduced[0][1])
+    assert gained > 1.5, f"only {gained:.2f}x the pixels"
+
+
+def test_the_systems_are_the_same_ones_whichever_image_is_cut() -> None:
+    """Detection happens on the reduced page and the cut happens on the
+    photograph, so the two coordinate spaces have to be mapped, and getting the
+    ratio wrong would slide every crop down the page — each one holding the
+    bottom half of one system and the top of the next, with every bar split."""
+
+    from app.services.page_image import crop_systems, prepare_for_model
+
+    page, pasted = _phone_page(FIXTURES / "01_simple_printed.jpg")
+    prepared, _media = prepare_for_model(page)
+
+    crops = crop_systems(prepared, source=page)
+    assert len(crops) == pasted
+
+    for index, crop in enumerate(crops):
+        found = find_systems(crop)
+        heights = sorted((bottom - top for top, bottom in found), reverse=True)
+        assert heights, f"crop {index} holds nothing at all"
+        substantial = [h for h in heights if h > heights[0] * 0.5]
+        assert len(substantial) == 1, (
+            f"crop {index} holds {len(substantial)} comparable bands {heights}: "
+            "the boxes were mapped onto the photograph at the wrong scale"
+        )
+
+
+def test_every_crop_of_the_photograph_is_still_small_enough_to_send() -> None:
+    """More pixels per system is only worth having if it still arrives. Each
+    crop goes through `prepare_for_model` individually, so the cap applies to
+    each of them — but the cap is on the *encoded* size and a crop of the
+    photograph is a bigger picture than a crop of the reduced page."""
+    from app.services.page_image import MODEL_MAX_BYTES, crop_systems, prepare_for_model
+
+    page, _pasted = _phone_page(FIXTURES / "03_complex_printed.jpg")
+    prepared, _media = prepare_for_model(page)
+
+    for index, crop in enumerate(crop_systems(prepared, source=page)):
+        assert crop[:3] == b"\xff\xd8\xff", f"crop {index} is not a JPEG"
+        assert len(crop) * 4 / 3 <= MODEL_MAX_BYTES, f"crop {index} is over the limit"
+
+
+def test_without_the_photograph_the_reduced_page_is_cut_as_before() -> None:
+    """`source` is optional and its absence is not a failure: a caller holding
+    only the prepared page — which is every caller that existed before this —
+    gets exactly what it got before."""
+    from app.services.page_image import crop_systems, prepare_for_model
+
+    page, pasted = _phone_page(FIXTURES / "02_medium_printed.jpg")
+    prepared, _media = prepare_for_model(page)
+
+    assert len(crop_systems(prepared)) == pasted
+    assert crop_systems(prepared) == crop_systems(prepared, source=prepared), (
+        "passing the same image as the source changed the answer, so the scale "
+        "mapping is not the identity when the two images are the same size"
+    )
