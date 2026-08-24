@@ -768,3 +768,49 @@ def test_without_the_photograph_the_reduced_page_is_cut_as_before() -> None:
         "passing the same image as the source changed the answer, so the scale "
         "mapping is not the identity when the two images are the same size"
     )
+
+
+def test_a_page_of_the_densest_music_a_part_can_hold_still_splits() -> None:
+    """The ceiling has to clear a real page, margins included.
+
+    `_MAX_SYSTEMS_TO_READ` bounds the bill on a pathological detection, and
+    being over it means reading the page whole — which on the one real page
+    measured here is the read that finds two systems out of ten. Since the crops
+    tile the photograph, a page also carries two bands the music does not: the
+    margin above the first system and below the last. A part with fifteen
+    systems therefore needs a ceiling of seventeen, and it used to be sixteen.
+
+    The detector itself keeps up: pasting one fixture band down a page at
+    closing spacings gives 7, 10, 11, 13, 15 and 16 systems and never
+    over-counts, so what was binding was the ceiling and not the detection.
+    """
+    from PIL import Image
+
+    from app.services.ocr.pipeline import _MAX_SYSTEMS_TO_READ
+    from app.services.page_image import crop_systems, prepare_for_model
+
+    strip = Image.open(FIXTURES / "01_simple_printed.jpg").convert("RGB")
+    width, height = 3024, 4032
+    page = Image.new("RGB", (width, height), "white")
+    band = strip.resize(
+        (int(width * 0.92), max(1, int(strip.height * (width * 0.92) / strip.width))),
+        Image.Resampling.LANCZOS,
+    )
+    # 0.8x the band's own height: as close as systems can be set and still be
+    # separate lines of music.
+    y, pasted = int(height * 0.03), 0
+    while y + band.height < height:
+        page.paste(band, (int(width * 0.04), y))
+        y += int(band.height * 0.8)
+        pasted += 1
+    buffer = io.BytesIO()
+    page.save(buffer, format="JPEG", quality=95, subsampling=0)
+
+    assert pasted >= 15, f"only {pasted} systems fitted; this is not a dense page"
+    crops = crop_systems(prepare_for_model(buffer.getvalue())[0])
+    assert len(crops) == pasted
+    assert len(crops) + 2 <= _MAX_SYSTEMS_TO_READ, (
+        f"{pasted} systems plus the two margin bands a photograph adds is over "
+        f"the ceiling of {_MAX_SYSTEMS_TO_READ}, so a page like this goes back "
+        "to being read whole"
+    )
