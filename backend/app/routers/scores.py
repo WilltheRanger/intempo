@@ -872,6 +872,26 @@ async def delete_score(
 ) -> Response:
     client = _service_client()
 
+    # Read the photograph's key *before* the row goes, because the row is the
+    # only thing that knows it.
+    #
+    # **Deleting a score used to leak its page image forever.** The single
+    # storage deletion in the backend is reached from `POST /:id/accept`, keyed
+    # off an existing row — so once the row was gone the object had no row, no
+    # accept path and no delete path, and nothing anywhere could ever reach it
+    # again. That contradicts the rule the rest of this file states plainly:
+    # the photograph is discarded when a person is done with it. Deleting the
+    # piece is a person being done with it.
+    existing = (
+        client.table("scores")
+        .select("source_image_url")
+        .eq("id", str(score_id))
+        .eq("user_id", str(user_id))
+        .limit(1)
+        .execute()
+    ).data or []
+    key = _object_key_from((existing[0].get("source_image_url") or "")) if existing else None
+
     # The schema declares analyses.score_id with ON DELETE RESTRICT, so a
     # delete with dependent analyses will surface as a Postgres FK error.
     # Convert that to 409 with a clear message rather than the SDK's 500.
@@ -894,5 +914,13 @@ async def delete_score(
 
     if not (deleted.data or []):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="score not found")
+
+    # After the row, never before. A storage outage must not block someone
+    # deleting a piece — the row is what the app reads, and an object left
+    # behind by a failed removal is exactly what this is trying to stop, so it
+    # is logged rather than swallowed. `_remove_object` already refuses to
+    # raise for that reason.
+    if key is not None and not _remove_object(client, key):
+        log.warning("score %s was deleted but its page image %s was not", score_id, key)
 
     return Response(status_code=status.HTTP_204_NO_CONTENT)

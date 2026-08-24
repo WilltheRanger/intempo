@@ -1523,3 +1523,157 @@ def test_a_whole_score_sent_with_a_clef_keeps_its_own(
     )
     assert res.status_code == 200, res.text
     assert sb.table.return_value.update.call_args.args[0]["score_json"]["clef"] == "alto"
+
+
+# ---- deleting a score used to leak its photograph forever -------------------
+#
+# The single storage deletion in this file is reached from `POST /:id/accept`,
+# keyed off an existing row. So once the row was gone the object had no row, no
+# accept path and no delete path — permanent and unreachable, in a bucket
+# nobody was ever going to look in. That contradicts the rule this file states
+# plainly: the photograph is discarded when a person is done with it, and
+# deleting the piece is a person being done with it.
+
+
+def _deleted_keys(sb: MagicMock) -> list[str]:
+    """Every object key handed to storage.remove()."""
+    return [
+        call.args[0][0]
+        for call in sb.storage.from_.return_value.remove.call_args_list
+        if call.args and call.args[0]
+    ]
+
+
+def test_deleting_a_score_takes_its_photograph_with_it(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    user_id, score_id = uuid4(), uuid4()
+    sb = _install_supabase(monkeypatch, returning_row=_row_for(score_id, user_id))
+    _install_storage(sb, signed=[])
+
+    res = client.delete(
+        f"/v1/scores/{score_id}",
+        headers={"Authorization": f"Bearer {make_token(sub=user_id)}"},
+    )
+    assert res.status_code == 204, res.text
+
+    removed = _deleted_keys(sb)
+    assert removed, "the row went and the page image stayed in the bucket"
+    assert removed[0].endswith(".jpg")
+
+
+def test_the_key_is_read_before_the_row_is_deleted(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """The row is the only thing that knows where the photograph is.
+
+    Reading it afterwards finds nothing, and the object is then unreachable —
+    which is the bug, arrived at by a different route.
+    """
+    user_id, score_id = uuid4(), uuid4()
+    sb = _install_supabase(monkeypatch, returning_row=_row_for(score_id, user_id))
+    _install_storage(sb, signed=[])
+
+    client.delete(
+        f"/v1/scores/{score_id}",
+        headers={"Authorization": f"Bearer {make_token(sub=user_id)}"},
+    )
+
+    # A select on `scores` happened, and it asked for the column that carries
+    # the key. Without it there is nothing to delete from storage.
+    selected = [c.args[0] for c in sb.table.return_value.select.call_args_list if c.args]
+    assert any("source_image_url" in s or s == "*" for s in selected), (
+        f"the page image's key was never read; selects were {selected}"
+    )
+
+
+def test_a_score_that_does_not_exist_deletes_nothing_from_storage(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """404 before anything is removed. Someone else's score id must not be a
+    way to delete their photograph."""
+    sb = _install_supabase(monkeypatch, returning_row=None)
+    _install_storage(sb, signed=[])
+
+    res = client.delete(
+        f"/v1/scores/{uuid4()}",
+        headers={"Authorization": f"Bearer {make_token(sub=uuid4())}"},
+    )
+
+    assert res.status_code == 404
+    assert _deleted_keys(sb) == []
+
+
+def test_storage_being_down_does_not_block_deleting_a_piece(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """The row is what the app reads. A musician deleting a piece they no
+    longer want must not be told no because a bucket is unreachable — the
+    object is logged and left, which is no worse than the behaviour this
+    replaces."""
+    user_id, score_id = uuid4(), uuid4()
+    sb = _install_supabase(monkeypatch, returning_row=_row_for(score_id, user_id))
+    _install_storage(sb, signed=[])
+    sb.storage.from_.return_value.remove.side_effect = RuntimeError("storage unreachable")
+
+    res = client.delete(
+        f"/v1/scores/{score_id}",
+        headers={"Authorization": f"Bearer {make_token(sub=user_id)}"},
+    )
+
+    assert res.status_code == 204
+
+
+def test_a_hand_entered_piece_has_no_photograph_to_delete(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """`source_image_url` is null for a piece typed in, and for one whose page
+    was already discarded on acceptance. Neither is a key."""
+    user_id, score_id = uuid4(), uuid4()
+    sb = _install_supabase(
+        monkeypatch, returning_row=_row_for(score_id, user_id, source_image_url=None)
+    )
+    _install_storage(sb, signed=[])
+
+    res = client.delete(
+        f"/v1/scores/{score_id}",
+        headers={"Authorization": f"Bearer {make_token(sub=user_id)}"},
+    )
+
+    assert res.status_code == 204
+    assert _deleted_keys(sb) == []
+
+
+def test_nothing_is_removed_until_the_row_is_actually_gone(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """Removal strictly after the delete succeeded, not merely after it ran.
+
+    The case that separates the two: the select finds a row and the delete
+    matches none — a race with another request, or a filter that did not line
+    up. Removing on the strength of the *read* would take the photograph away
+    from a score that is still there, and then answer 404 as if nothing had
+    happened. The row is what the app reads, so the object must never outlive
+    it in the other direction either.
+
+    The earlier 404 test cannot catch this: its select returns nothing, so
+    there is no key to remove and the ordering is untested by it. A mutation
+    moving the removal above the 404 check survived that test.
+    """
+    user_id, score_id = uuid4(), uuid4()
+    sb = _install_supabase(monkeypatch, returning_row=_row_for(score_id, user_id))
+    _install_storage(sb, signed=[])
+    # The select still finds the row; the delete matches nothing.
+    sb.table.return_value.delete.return_value.eq.return_value.eq.return_value.execute.return_value = MagicMock(
+        data=[]
+    )
+
+    res = client.delete(
+        f"/v1/scores/{score_id}",
+        headers={"Authorization": f"Bearer {make_token(sub=user_id)}"},
+    )
+
+    assert res.status_code == 404
+    assert _deleted_keys(sb) == [], (
+        "the photograph was removed for a score that was not deleted"
+    )
