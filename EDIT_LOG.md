@@ -6,6 +6,50 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-14 (evening) — Measuring the engraver, and what the corpus cannot see
+
+**Branch:** `main`. Follow-on from the blank screen: before proposing engraver
+work, find out whether its range is a real problem or a rare one.
+
+`tools/engraver-coverage.py` counts, for every score checked into `fixtures/` —
+five OCR responses and three MusicXML files — how many notes the app could
+actually put on a stave.
+
+```
+02_medium_printed.jpg     36 notes   78% drawn
+04_handwritten_clean.jpg  24 notes  100%
+03_complex_printed.jpg    32 notes  100%
+01_simple_printed.jpg     32 notes  100%
+audiveris_phone_photo     56 notes   82%
+bass_excerpt              6 notes   67%
+oemer_phone_photo         75 notes   99%
+
+14 of 261 notes have no glyph (5%).  worst page: 67%
+```
+
+**Which is the finding, and it is not the 5%.** Against everything in this
+repository the engraver looks fine. Every fixture is a simple exercise-book
+page. The first part out of a real orchestral folder scored **0%** and rendered
+as a title and a photograph, and no test here could have predicted it, because
+nothing here looks like one.
+
+So the number to read is the **worst page**, not the average — and the corpus
+does not contain a bad one. The tool prints that sentence itself, and a test
+asserts it still prints it: a tool that stops working is a measurement that
+quietly becomes a memory.
+
+The durations that would buy the most, in order: `sixteenth` (8),
+`triplet_eighth` (3), `dotted_quarter` (2), `dotted_eighth` (1) — and that
+ordering is itself corpus-shaped, so it is a starting point rather than a plan.
+A real part is mostly sixteenths and dotted values.
+
+Recorded in `CLAUDE.md` as a numbered convention rather than left in a commit
+message, because the next person to look at `engrave.ts` needs the measurement
+and the warning about the average in the same place as the rule.
+
+**Tests run:** backend 782 (781 + 1), mobile 225 unchanged. **Rollback:**
+delete the tool and its test.
+
 ## 2026-09-14 (later) — A scanned page that rendered as a title and a photograph
 
 **Branch:** `main`. **Reported from a real device**, with a screenshot: a

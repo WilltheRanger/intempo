@@ -477,3 +477,29 @@ def test_the_modal_app_is_valid_for_the_installed_client() -> None:
         "the dispatcher looks this function up by name; if it is not registered "
         "here, analyses are enqueued and never run"
     )
+
+
+def test_the_engraver_coverage_tool_still_runs() -> None:
+    """The measurement behind the engraver decision, kept runnable.
+
+    `tools/engraver-coverage.py` answers "how much of a real page can the app
+    put on a stave", and its answer is the reason the engraver's range is a
+    known limitation rather than an assumption. A tool that stops working is a
+    measurement that quietly becomes a memory.
+    """
+    import subprocess
+    import sys
+
+    result = subprocess.run(
+        [sys.executable, str(BACKEND.parent / "tools" / "engraver-coverage.py")],
+        capture_output=True,
+        text=True,
+        cwd=BACKEND.parent,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "no glyph" in result.stdout
+    assert "worst page" in result.stdout, (
+        "the tool stopped reporting the worst page, which is the number that "
+        "matters — the average hid this problem until a musician found it"
+    )
