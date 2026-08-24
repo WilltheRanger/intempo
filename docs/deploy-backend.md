@@ -111,7 +111,19 @@ an unresolvable provider chain, each missing column — and **200** when nothing
 is. It reports only whether a setting is *present*, never its value, so it is
 safe to open in a browser on a phone.
 
-Two things it reports without blocking, because neither stops the app for
+`tuning_config` is one of the blocking ones, and worth knowing about because
+its failure is invisible until the worst moment. Every analysis threshold lives
+in `backend/config.toml` and is read *lazily*, inside the pipeline — so a build
+without it starts cleanly, passes the health check, signs people in and reads
+photographed pages, and then fails every take with `internal_error`. The API
+image shipped that way; the Dockerfile copies it now, and this line is what
+would have said so.
+
+Where a take will run is reported too — `analysis_runtime:inprocess`,
+`modal_credentials`, `analysis_runtime:modal` — see `docs/deploy-modal.md`.
+None of those block: falling back to in-process is degraded, not broken.
+
+Two other things it reports without blocking, because neither stops the app for
 everyone: a stale name in `OCR_PROVIDER_CHAIN` (the rest of the chain still
 runs), and an unset `CORS_ALLOWED_ORIGINS`.
 

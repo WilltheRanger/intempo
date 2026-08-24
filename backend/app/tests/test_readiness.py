@@ -543,3 +543,56 @@ def test_the_api_declares_the_package_its_own_dispatcher_imports() -> None:
         "app/workers/dispatch.py imports modal at spawn time; the API host has "
         "to have it or ANALYSIS_RUNTIME=modal quietly does nothing"
     )
+
+
+def test_a_build_without_its_thresholds_is_reported_as_unready(monkeypatch) -> None:
+    """The failure the API image actually shipped with.
+
+    `config.toml` was not in `backend/Dockerfile`. The container booted, passed
+    its health check, signed people in and read photographed pages — the config
+    is read lazily, inside the pipeline — and then failed every analysis with
+    `internal_error` the moment somebody finished playing.
+
+    Blocking, unlike the runtime checks: a deployment that cannot analyse a
+    take cannot do the thing the app is for.
+    """
+    from pathlib import Path
+
+    from app.services import audio_config
+
+    monkeypatch.setattr(audio_config, "CONFIG_PATH", Path("/nowhere/config.toml"))
+    audio_config.load_audio_config.cache_clear()
+
+    check = readiness._tuning_config_check()
+
+    assert not check.ok
+    assert check.blocking, "an app that cannot analyse a take is not ready"
+    assert "/nowhere/config.toml" in check.detail, "say which file is missing"
+
+    audio_config.load_audio_config.cache_clear()
+
+
+def test_a_malformed_config_is_reported_differently_from_a_missing_one(monkeypatch, tmp_path) -> None:
+    """Two different fixes. "Nothing is at this path" sends you to the
+    Dockerfile; "could not be parsed" sends you to the file."""
+    from app.services import audio_config
+
+    broken = tmp_path / "config.toml"
+    broken.write_text("[onset]\nsr = 22050\n")  # valid TOML, missing everything else
+    monkeypatch.setattr(audio_config, "CONFIG_PATH", broken)
+    audio_config.load_audio_config.cache_clear()
+
+    check = readiness._tuning_config_check()
+
+    assert not check.ok
+    assert "could not be parsed" in check.detail
+    assert "missing from this build" not in check.detail
+
+    audio_config.load_audio_config.cache_clear()
+
+
+def test_a_present_config_says_nothing() -> None:
+    check = readiness._tuning_config_check()
+
+    assert check.ok
+    assert check.detail == ""

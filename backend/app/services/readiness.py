@@ -205,6 +205,45 @@ def _configuration_checks() -> list[Check]:
     return checks
 
 
+def _tuning_config_check() -> Check:
+    """That `config.toml` is in the image at all.
+
+    Every threshold the analysis uses lives there and is read **lazily**, deep
+    inside the pipeline, so a container built without it starts cleanly, passes
+    its health check, signs people in and reads photographed pages — and then
+    fails every analysis with `internal_error` the moment somebody finishes
+    playing. That is exactly what the API image did: `backend/Dockerfile`
+    copied `app/`, `pyproject.toml` and the lock, and no config.
+
+    Blocking, unlike the runtime checks below. A deployment that cannot analyse
+    a take cannot do the thing the app is for.
+    """
+    from app.services.audio_config import CONFIG_PATH, load_audio_config
+
+    try:
+        load_audio_config()
+    except OSError:
+        return Check(
+            name="tuning_config",
+            ok=False,
+            detail=(
+                f"The analysis thresholds are missing from this build — nothing is at "
+                f"{CONFIG_PATH}. Recording works and every take then fails. The image "
+                "has to carry backend/config.toml."
+            ),
+        )
+    except Exception as exc:  # noqa: BLE001 — a malformed config is a config error
+        return Check(
+            name="tuning_config",
+            ok=False,
+            detail=(
+                f"The analysis thresholds could not be parsed ({type(exc).__name__}), "
+                "so every take will fail. Check backend/config.toml."
+            ),
+        )
+    return Check(name="tuning_config", ok=True, detail="")
+
+
 def _analysis_runtime_checks() -> list[Check]:
     """Whether a take will actually run where the deployment says it will.
 
@@ -388,6 +427,7 @@ def _storage_checks(client) -> list[Check]:
 def check() -> Readiness:
     """Everything, configuration first so a missing key explains a dead database."""
     result = Readiness(checks=_configuration_checks())
+    result.checks.append(_tuning_config_check())
     # Before the database, and not behind it. Where the analysis runs is a
     # configuration fact, and the two early returns below would otherwise
     # swallow it on exactly the deployment most likely to be half-configured.
