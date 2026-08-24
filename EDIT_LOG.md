@@ -6,6 +6,65 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-16 — A read that stopped happening, and nothing to notice
+
+**Branch:** `main`. **Reported from a phone**, with a screenshot: a bass excerpt
+scanned, the musician left the screen, and came back to "Reading the notation"
+with the progress bar part-filled. Permanently. Nothing was reading it and
+nothing was ever going to.
+
+**Analyses have had a stuck-row sweeper since Batch 4. Scores never got one.**
+I built and tested the analysis sweeper two days ago and did not think to ask
+whether the other worker had the same hole. It did.
+
+`run_transcription` runs in `BackgroundTasks`, which is to say *in the web
+process*, so anything that ends the process ends the read: a deploy, the OOM
+reaper, or — the one that actually happened — a free-tier instance spinning
+down after fifteen minutes idle. **Leaving the screen is what brings that
+about**, because the polling keeping the service awake stops with you. The row
+stays `reading` and `usePiece` polls it for as long as the app is open.
+
+The failure is worse here than for an analysis. A take can be recorded again in
+a minute; a scan that dies has already spent the photograph, the upload and the
+model call.
+
+`sweep_stuck_transcriptions` mirrors the analysis one — ten minutes, `queued`
+and `reading`, contained so one bad sweep costs one sweep — and runs from both
+places the analysis sweeper does: startup, for the crash you restart after, and
+the periodic loop, for the crash you do not. Swept to **`failed`**, not back to
+`queued`: nothing would pick a requeued row up, since the only thing that
+starts a read is the request that created the score. `failed` is a state the
+app already renders, with "Try reading it again" on it.
+
+The message says the photograph survived, which is the one thing that makes
+"try again" actionable rather than a request to go and re-photograph the page.
+
+**Nine tests, and two of them could not fail until a mutation said so.**
+
+- *"It is quiet without a database."* Asserting the return value was not
+  enough: delete the `client is None` guard and `None.table(...)` raises, the
+  catch-all swallows it, and 0 comes back anyway — while a traceback is logged
+  every five minutes about something that was never going to work. The
+  assertion is about the **log** now.
+- *"It is wired into the periodic sweep."* The loop carries a comment naming
+  the function, so replacing the *call* with `pass` left the name in the file
+  and the test went on passing. It strips comments and looks for the call form
+  now, and checks the startup site separately.
+
+Mutations caught, all eight: queued scans never swept, finished pages swept,
+the delay set to zero, the stage left on a failed row, the message dropping the
+photograph, a broken sweep raising, and either call site removed.
+
+**It also broke an existing test, correctly.**
+`test_sweeper.py::test_the_loop_keeps_sweeping_and_stops_when_cancelled` stubs
+only the analysis sweep, so the loop's new second call reached for a real
+Supabase client and failed on a proxy 403 — a network error, in a unit test,
+about something unrelated to sweeping. Stubbed, with a note saying why it is
+there.
+
+**Tests run:** backend 801 (792 + 9), ruff clean; mobile 225 unchanged.
+**Rollback:** revert — and note that reverting reopens the stuck-forever state.
+
 ## 2026-09-15 (evening) — Three tests guarding a safety property, none of which reached it
 
 **Branch:** `main`. The worst instance of this pattern found so far, and

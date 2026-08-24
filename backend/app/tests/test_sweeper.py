@@ -82,6 +82,11 @@ def test_the_loop_keeps_sweeping_and_stops_when_cancelled(
 
     monkeypatch.setattr(main_module, "SWEEP_INTERVAL_SECONDS", 0.01)
     monkeypatch.setattr(main_module, "sweep_once", counted)
+    # The loop sweeps scores as well as analyses. Left unstubbed this reaches
+    # for a real Supabase client and a real network call — which is how the
+    # transcription sweeper being added to the loop was noticed here: this test
+    # started failing on a proxy 403 rather than on anything about sweeping.
+    monkeypatch.setattr(main_module, "sweep_stuck_transcriptions", lambda: 0)
 
     async def drive() -> bool:
         task = asyncio.create_task(main_module._sweep_periodically())
