@@ -30,6 +30,45 @@ jobs:
       - name: Run pytest
         run: uv run pytest -q
 
+  # The app that actually ships. `mobile/` is the Expo tree, built to web for
+  # Cloudflare Pages — and until this job existed nothing in CI touched it:
+  # 52 vitest tests, a `tsc --noEmit` and the web build all ran only on
+  # somebody's laptop, while the job below built the *legacy* `frontend/` tree
+  # that nobody deploys.
+  #
+  # Pages builds it too, on the same push. That is not a substitute: a failed
+  # Pages build leaves the last good version serving, so the site looks fine
+  # and the change is simply not there.
+  mobile-check:
+    name: Mobile (vitest, tsc, web build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: mobile/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Tests
+        run: npm test
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      # The last step on purpose: a type error should be reported as a type
+      # error, not as a bundler failure thirty seconds later.
+      - name: Web build
+        run: npm run build:web
+
   frontend-build:
     name: Frontend build (vite)
     runs-on: ubuntu-latest

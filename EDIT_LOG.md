@@ -6,6 +6,43 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-08 (last) — CI was building the tree nobody ships
+
+**Branch:** `main`.
+
+**What was wrong.** `.github/workflows/ci.yml` had two jobs: backend pytest,
+and a vite build of `frontend/`. `frontend/` is the legacy tree — CLAUDE.md has
+said so since the mobile rebuild, and nothing deploys it. The app that goes to
+Cloudflare Pages is `mobile/`, and CI did not touch it at all.
+
+So `mobile/` had 52 vitest tests, a `tsc --noEmit` and a web build that ran
+only when somebody remembered to run them. A type error, a broken import or a
+failing test could be pushed, merged and deployed with every check green.
+
+Cloudflare Pages does build it on the same push, which is why this has not bitten
+yet — but a *failed* Pages build leaves the previous version serving. The site
+looks fine and the change is simply not there, which is a worse signal than a
+red cross.
+
+**What changed.** A `mobile-check` job: `npm ci`, `npm test`, `npm run
+typecheck`, `npm run build:web`. In that order deliberately — a type error
+should be reported as a type error, not as a bundler failure thirty seconds
+later.
+
+**Verified locally, all four**: `npm ci --dry-run` resolves (the lockfile is in
+sync, and `patch-package`'s `expo-audio` patch is present), 52 tests pass,
+`tsc --noEmit` is silent, and `expo export --platform web` plus the
+vendor-asset flatten completes in **27 seconds** — cheap enough to run on every
+push.
+
+**What I did not do:** remove the `frontend-build` job. It builds a tree
+nobody deploys and costs CI time on every push, but deleting the only automated
+check on a tree that still exists is a separate call and not mine to make
+quietly.
+
+**Tests run:** mobile 52 passed, typecheck clean, web build clean; backend
+untouched at 712. **Rollback:** delete the job.
+
 ## 2026-09-08 (latest) — The container was installing whatever PyPI had that day
 
 **Branch:** `main`.
