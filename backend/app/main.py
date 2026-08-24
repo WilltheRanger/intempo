@@ -12,6 +12,7 @@ from app.workers.analysis_runner import (
     sweep_once,
     sweep_stuck_analyses,
 )
+from app.workers.transcription_runner import sweep_stuck_transcriptions
 
 log = logging.getLogger("intempo")
 
@@ -30,6 +31,13 @@ async def _sweep_periodically() -> None:
     while True:
         await asyncio.sleep(SWEEP_INTERVAL_SECONDS)
         await asyncio.to_thread(sweep_once)
+        # Scores as well as analyses, and for the same reason twice over. A
+        # read runs in this process too, so anything that ends the process ends
+        # it — including a free-tier instance spinning down, which is what
+        # leaving the scan screen brings about, since the polling keeping it
+        # awake stops with you. `sweep_stuck_transcriptions` contains its own
+        # failure, so one bad sweep costs one sweep.
+        await asyncio.to_thread(sweep_stuck_transcriptions)
 
 
 @asynccontextmanager
@@ -40,6 +48,10 @@ async def lifespan(_app: FastAPI):
         sweep_stuck_analyses()
     except Exception:  # noqa: BLE001 — never let recovery block startup
         log.exception("stuck-analysis sweep failed on startup")
+    try:
+        sweep_stuck_transcriptions()
+    except Exception:  # noqa: BLE001 — never let recovery block startup
+        log.exception("stuck-transcription sweep failed on startup")
 
     sweeper = asyncio.create_task(_sweep_periodically())
     try:

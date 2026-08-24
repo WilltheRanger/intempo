@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import logging
 import threading
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi import HTTPException
 
@@ -258,3 +258,70 @@ def _fail(client, score_id: str, reason: str) -> None:
             "transcription_error": reason,
         },
     )
+
+
+#: How long a read may sit before it is presumed dead.
+#:
+#: Generous on purpose. A page is read in ten to fifteen seconds, but a scan
+#: can wait behind `TRANSCRIPTION_MAX_CONCURRENT` — legitimately, and for as
+#: long as the queue ahead of it takes — and a sweeper that cannot tell waiting
+#: from dead would fail a page that was about to be read.
+STUCK_AFTER = timedelta(minutes=10)
+
+
+def sweep_stuck_transcriptions(client=None, *, now: datetime | None = None) -> int:
+    """Fail reads that stopped happening. Returns how many were swept.
+
+    **The hole this fills, reported from a phone.** A musician photographed a
+    page, left the screen, and came back to "Reading the notation" with the
+    progress bar part-filled — permanently. Nothing was reading it. Nothing was
+    ever going to.
+
+    `run_transcription` runs in `BackgroundTasks`, which is to say *in the web
+    process*, so anything that ends the process ends the read: a deploy, the
+    OOM reaper, or — the one that actually happened — a free-tier instance
+    spinning down after fifteen minutes idle, which is exactly what leaving the
+    screen brings about, because the polling that was keeping it awake stops
+    with you.
+
+    The row is left `reading` and `usePiece` polls it forever. Analyses have
+    had a sweeper for this since Batch 4; scores never got one, and the failure
+    is worse here — an analysis can be recorded again in a minute, while a
+    scan that dies has already spent the photograph, the upload and the model
+    call.
+
+    Swept to `failed` rather than back to `queued`: nothing would pick a
+    requeued row up, since the only thing that starts a read is the request
+    that created the score. `failed` is a state the app already renders, with
+    "Try reading it again" on it, which starts a new one.
+    """
+    client = client or get_service_client()
+    if client is None:
+        return 0
+    cutoff = ((now or datetime.now(tz=timezone.utc)) - STUCK_AFTER).isoformat()
+    try:
+        res = (
+            client.table("scores")
+            .update(
+                {
+                    "transcription_status": "failed",
+                    "transcription_stage": None,
+                    "transcription_error": (
+                        "Reading this page stopped before it finished — the "
+                        "server restarted while it was working. The photograph "
+                        "is still here; try reading it again."
+                    ),
+                    "updated_at": _now_iso(),
+                }
+            )
+            .in_("transcription_status", ["queued", "reading"])
+            .lt("updated_at", cutoff)
+            .execute()
+        )
+    except Exception:  # noqa: BLE001 — one sweep, not every sweep
+        log.exception("stuck-transcription sweep failed")
+        return 0
+    swept = len(res.data or [])
+    if swept:
+        log.info("swept %d stuck transcription(s) to failed", swept)
+    return swept
