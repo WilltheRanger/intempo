@@ -6,6 +6,65 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-16 (evening) — Finding the systems on a page, and a diagnosis I got wrong first
+
+**Branch:** `main`. Second iteration of *fix the OMR system till it works*,
+aimed at the scan that came back with **59 measures and 112 notes** — under two
+notes a bar for a page holding six to eight.
+
+**The first diagnosis was wrong, and it was wrong because I guessed a number
+instead of measuring it.** `MODEL_MAX_EDGE = 1568` squeezes a page onto a 1568
+px edge, and I claimed a real page therefore gives each staff 40–60 px against
+the 124–168 px of the fixtures — three to four times less. Measured properly,
+for a 3024×4032 photograph of ten systems:
+
+```
+whole page in one image     staff gets 157px
+one system, full width      staff gets 209px   (1.3x)
+half a system               staff gets 403px   (2.6x)
+```
+
+157 px is **inside** the 72–168 px the fixtures give a single staff. Resolution
+is not the main thing wrong.
+
+**What the evidence actually says.** That scan returned 59 measures — it *found*
+the systems and the bar structure — and then emitted 112 notes, stopping
+normally well inside a 16,000-token budget with `stop_reason` checked. That is
+not a reader that could not see the page. It is a reader that did not enumerate
+it. A fixture asks for about thirty notes in one response; a page asks for four
+hundred.
+
+So the page still has to be cut up, but **per system and for scope**, with the
+1.3× resolution a bonus rather than the reason. That difference matters: it says
+cut at systems rather than halving them, and it says the win comes from asking
+for less per answer.
+
+**`find_systems`** locates them by horizontal projection — staff lines are the
+longest horizontal runs of ink on any page, longer than a beam, a slur or a
+word — so no model, no dependency, and it degrades to "found nothing", which
+the caller reads as "send the page whole".
+
+Two mistakes of mine along the way, both caught by running it rather than
+reading it: the darkness threshold has to be relative to *this* photograph,
+because a phone picture of paper is unevenly lit and grey rather than white;
+and the gap that separates systems has to be keyed to the spacing the page
+itself shows, not to page height — keyed to page height it landed below one
+staff's own line spacing and returned every one of the five lines as a separate
+system.
+
+**Ten tests, on real photographs rather than drawings.** Each fixture is one
+system; five of them stacked into a page split back into five, in reading order,
+with no overlap — because bars numbered from a page read bottom-up would put
+the end of the piece at the beginning.
+
+Mutations caught, all six.
+
+**Not wired in yet.** Nothing calls `find_systems`; cropping and transcribing
+per system is the next iteration.
+
+**Tests run:** backend 815 (805 + 10), ruff clean; mobile 225 unchanged.
+**Rollback:** revert; nothing depends on it.
+
 ## 2026-09-16 (later) — "done" on a page with no notes on it
 
 **Branch:** `main`. First iteration of *fix the OMR system till it works*, and
