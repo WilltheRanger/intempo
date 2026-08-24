@@ -6,6 +6,55 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-16 (later) — "done" on a page with no notes on it
+
+**Branch:** `main`. First iteration of *fix the OMR system till it works*, and
+it starts by looking at what the OMR system actually did rather than at the
+code. Six scans in the live library:
+
+| title | status | confidence | measures | notes |
+|---|---|---|---|---|
+| Bass Except | failed (swept) | – | 0 | 0 |
+| This | **done** | 0.2 | 1 | **0** |
+| Bro | done | 0.4 | 59 | 112 |
+| B | failed | – | 0 | 0 |
+| Gm | failed | – | 0 | 0 |
+| DC | **done** | 0.2 | 1 | 4 |
+
+**Two of six were reported as finished pieces with no music in them.** That is
+the blank screen, and its cause is not the engraver after all — those readings
+contained nothing to draw.
+
+The stuck-transcription sweeper shipped an hour earlier did its job: "Bass
+Except" is `failed` with the message it writes.
+
+**Why an empty reading passed.** Nothing in the provider loop asks whether the
+transcription contains a note. The clef is present, so the clef check passes. A
+measure with no notes contradicts no metre it can establish, so the beat check
+passes. The confidence is low, so it is kept as `first_low_confidence` — and
+the low-confidence fallback exists for a **bad** reading, which beats none, not
+an **absent** one, which is worse: `done` denies the musician the "try reading
+it again" that `failed` offers.
+
+`_read_any_music` now refuses it and the page goes to the next provider; if
+none reads anything, `OCRError` → `failed` → "A flatter, better-lit shot of the
+page usually fixes it", which is at least true.
+
+**The bar is "did it read anything", not "did it read enough."** A test pins
+that: one note in two measures is accepted. Judging sufficiency here would
+throw away a correct transcription of a page that really does hold four bars of
+whole notes — and a mutation demanding eight notes is caught.
+
+Mutations caught, all five.
+
+**Still open, and the reason this loop continues.** "Bro" read 59 measures and
+**112 notes** — under two notes a bar for a page holding six to eight. It is
+not empty, so nothing here catches it, and 0.4 confidence says the model knew.
+That is the next thing to look at.
+
+**Tests run:** backend 805 (801 + 4), ruff clean; mobile 225 unchanged.
+**Rollback:** revert — and note that reverting restores "done" on empty pages.
+
 ## 2026-09-16 — A read that stopped happening, and nothing to notice
 
 **Branch:** `main`. **Reported from a phone**, with a screenshot: a bass excerpt

@@ -556,3 +556,109 @@ def test_an_unset_chain_falls_back_to_models_this_build_knows(monkeypatch) -> No
     assert chain, "an unset chain produced no providers, so no page can be read"
     for provider in chain:
         assert pipeline_module.get_provider(provider.name) is provider
+
+
+# ---- a page with nothing on it --------------------------------------------
+#
+# Found in a real library rather than by reading the code. Of six scans, two
+# came back `done` — one with a single empty measure, one with four notes for a
+# whole page — both at 0.2 confidence, and both were shown to the musician as a
+# finished piece with nothing on the screen.
+
+
+def _empty_reading(name: str, *, measures: int = 1) -> OCRResponse:
+    """What a model returns when it has not read the page: structure, no music."""
+    payload = {
+        **GOOD_PAYLOAD,
+        "ocr_confidence": 0.2,
+        "measures": [
+            {"measure_number": i + 1, "notes": [], "slurs": []} for i in range(measures)
+        ],
+    }
+    return OCRResponse(
+        score=ScoreJson.model_validate(payload),
+        raw_text="{}",
+        model=name,
+        input_tokens=1,
+        output_tokens=1,
+        cost_usd=0.0,
+        latency_ms=1,
+    )
+
+
+def test_a_reading_with_no_notes_is_handed_to_the_next_provider() -> None:
+    """Not a page read badly — a page not read.
+
+    Nothing else in the loop catches it: the clef is there so the clef check
+    passes, and a measure with no notes contradicts no metre it can establish
+    so the beat check passes.
+    """
+    nothing = _FakeProvider("p1", response=_empty_reading("p1"))
+    real = _FakeProvider("p2", response=_response("p2", conf=0.95))
+
+    score = parse_sheet_music(b"<jpeg>", providers=[nothing, real])
+
+    assert nothing.calls == 1
+    assert real.calls == 1, "the page was never handed on"
+    assert any(m.notes for m in score.measures)
+
+
+def test_a_page_nobody_could_read_fails_rather_than_looking_finished() -> None:
+    """The state two of six real scans were left in.
+
+    An empty score cannot be corrected, practised against, or told apart from a
+    scan that never ran — and being `done` denies the musician the "try reading
+    it again" that `failed` offers. Refusing costs a retry; accepting costs the
+    piece.
+    """
+    with pytest.raises(OCRError, match="no notes"):
+        parse_sheet_music(
+            b"<jpeg>",
+            providers=[
+                _FakeProvider("p1", response=_empty_reading("p1")),
+                _FakeProvider("p2", response=_empty_reading("p2", measures=40)),
+            ],
+        )
+
+
+def test_an_empty_reading_never_becomes_the_low_confidence_fallback() -> None:
+    """The fallback is for a *bad* reading, which beats none, not an *absent*
+    one, which is worse. A page of forty empty measures looks like a serious
+    transcription and contains nothing."""
+    empty = _FakeProvider("p1", response=_empty_reading("p1", measures=40))
+    poor = _FakeProvider("p2", response=_response("p2", conf=0.3))
+
+    score = parse_sheet_music(b"<jpeg>", providers=[empty, poor])
+
+    assert score.ocr_confidence == 0.3, "the empty reading was preferred"
+    assert any(m.notes for m in score.measures)
+
+
+def test_one_note_is_enough_to_be_a_reading() -> None:
+    """The bar is "did it read anything", not "did it read enough". Judging
+    sufficiency here would throw away a correct transcription of a page that
+    genuinely holds four bars of whole notes."""
+    sparse_payload = {
+        **GOOD_PAYLOAD,
+        "ocr_confidence": 0.95,
+        "measures": [
+            {"measure_number": 1, "notes": [], "slurs": []},
+            {
+                "measure_number": 2,
+                "notes": [{"pitch": "D3", "duration": "whole"}],
+                "slurs": [],
+            },
+        ],
+    }
+    sparse = _FakeProvider(
+        "p1",
+        response=OCRResponse(
+            score=ScoreJson.model_validate(sparse_payload),
+            raw_text="{}", model="p1", input_tokens=1, output_tokens=1,
+            cost_usd=0.0, latency_ms=1,
+        ),
+    )
+
+    score = parse_sheet_music(b"<jpeg>", providers=[sparse])
+
+    assert sum(len(m.notes) for m in score.measures) == 1

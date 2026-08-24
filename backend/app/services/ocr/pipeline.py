@@ -192,6 +192,25 @@ def renumber(score: ScoreJson) -> ScoreJson:
     return score.model_copy(update={"measures": renumbered, "notes_to_human": note})
 
 
+def _read_any_music(score: ScoreJson) -> bool:
+    """Whether this transcription contains a single note.
+
+    **A page with no notes on it is not a reading, and it used to count as
+    one.** Measured against a real library: of six scans, two came back
+    `done` — one with a single empty measure and one with four notes for a
+    whole page — both at 0.2 confidence, and both were shown to the musician
+    as a finished piece. The screen had nothing to draw, so it drew nothing.
+
+    Nothing else in the loop catches it. The clef is present, so the clef check
+    passes. A measure with no notes contradicts no time signature it can
+    establish, so the beat check passes. The confidence is low, so it is kept
+    as the fallback — and the fallback exists for a *bad* reading, which is
+    better than none, not for an *absent* one, which is worse: it costs the
+    musician the "try reading it again" they would otherwise be offered.
+    """
+    return any(measure.notes for measure in score.measures)
+
+
 def parse_sheet_music(
     image_bytes: bytes,
     *,
@@ -285,6 +304,19 @@ def parse_sheet_music(
             # either, and the next provider deserves the page.
             failures.append(f"{provider.name}: no clef")
             log.info("%s: returned no clef, trying the next provider", provider.name)
+            continue
+
+        if not _read_any_music(response.score):
+            # Not a page this provider read badly — a page it did not read.
+            # Handing it on costs another call; accepting it costs the musician
+            # the piece, because a score with no notes cannot be corrected,
+            # practised against or told apart from a scan that never ran.
+            failures.append(f"{provider.name}: no notes")
+            log.info(
+                "%s: returned %d measure(s) and no notes, trying the next provider",
+                provider.name,
+                len(response.score.measures),
+            )
             continue
 
         # Arithmetic before self-assessment.
