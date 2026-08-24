@@ -6,6 +6,77 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-08 (night) — `ANALYSIS_RUNTIME=modal` could not have worked
+
+**Branch:** `main`. The worst find of the day, and mine.
+
+**What was wrong.** `dispatch._spawn_on_modal` does `import modal`. **`modal`
+was in no `pyproject.toml` in this repository.** So on Render, setting
+`ANALYSIS_RUNTIME=modal` — the last step of the setup guide I wrote, and the
+one I gave the user in chat — raises `ImportError`, logs, falls back, and runs
+the analysis in the web process. Every take. Forever.
+
+And it *works*. That is the whole problem. The app is fine, the takes get
+verdicts, nothing is red. The 512 MB box the switch exists to empty is doing
+all the work, and the only evidence is one line in a Render log.
+
+Then a second one underneath it: even with the package, this host needs a Modal
+**API token** to spawn anything — `MODAL_TOKEN_ID` and `MODAL_TOKEN_SECRET`,
+confirmed in modal's own `config.py`. I had documented the `intempo-backend`
+secret and nothing else, and that secret is a different thing on a different
+dashboard: it is what the *container* reads once running, not what lets the API
+ask for a container. Same silent fallback.
+
+Three tests, a mutation-checked dispatcher and a deploy workflow that runs on a
+real runner, and none of them could see this — because every test that touches
+the Modal path fakes the module, and the deploy job installs `modal` itself
+with `pip install modal`. The one host that needed it was the one nothing
+tested.
+
+**What changed.**
+
+1. `modal>=1.5.4` is a dependency of the backend. Measured import cost:
+   **39 MB**. Real on a 512 MB box, and paid only on the first spawn because
+   the import is inside the function — against 460 MB saved per concurrent
+   analysis, which is not a close call.
+2. `render.yaml` declares `ANALYSIS_RUNTIME`, `MODAL_TOKEN_ID` and
+   `MODAL_TOKEN_SECRET`.
+3. **`/v1/ready` now reports where a take will actually run**, which is the
+   part that stops this class of thing rather than fixing one instance of it:
+   `analysis_runtime:inprocess` when the setting is not exactly `modal`;
+   `modal_credentials` when the tokens are absent; `analysis_runtime:modal`
+   failing when Modal has no `run_analysis` in an app named `intempo`. Nothing
+   blocks — a deployment that fell back is degraded, not broken, and a 503 that
+   does not mean "unusable" stops being read.
+4. `docs/deploy-modal.md` step 5 is three variables rather than one, says why
+   the token is not the secret, and step 6 is confirming it on `/v1/ready`
+   rather than assuming.
+
+**The lazy-lookup trap.** `modal.Function.from_name` is documented as deferring
+the lookup until first use, so a readiness check that only called it would pass
+against an account with nothing deployed at all — a check that cannot fail.
+`.hydrate()` forces it. There is a test asserting the hydrate happens, and
+removing it is one of the mutations below.
+
+**Tests** (`app/tests/test_readiness.py`, +8): the in-process path is reported
+without importing modal at all (39 MB is not free); a missing package, a
+missing token, half a token and an undeployed function are each reported and
+none of them blocks; a working deployment says nothing; and `pyproject.toml`
+declares `modal`, because nothing imports it at module level so it reads as an
+unused dependency to anybody tidying up — and removing it breaks no test at
+all, only production.
+
+Mutation-checked, all five caught: accepting half a token, leaving the lookup
+lazy, making a fallback blocking, importing modal on the in-process path, and
+dropping the app name from the message.
+
+**Tests run:** 720 passed (712 + 8), ruff clean. **Rollback:** revert; note
+that reverting the `pyproject.toml` line re-breaks the feature silently.
+
+**Still true and still unverified:** none of this has been run against a real
+Modal account. What it now does is tell the operator which of the four states
+they are in, rather than looking identical in all four.
+
 ## 2026-09-08 (last) — CI was building the tree nobody ships
 
 **Branch:** `main`.

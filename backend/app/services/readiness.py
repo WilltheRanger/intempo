@@ -205,6 +205,98 @@ def _configuration_checks() -> list[Check]:
     return checks
 
 
+def _analysis_runtime_checks() -> list[Check]:
+    """Whether a take will actually run where the deployment says it will.
+
+    **Because "it fell back" is indistinguishable from "it worked".** The
+    dispatcher deliberately runs the analysis in this process when Modal
+    refuses — a musician who has just finished playing should not lose the take
+    to a deployment setting. The cost of that kindness is that a deployment
+    which *thinks* it is on Modal and is quietly analysing everything locally
+    looks completely healthy until two people record at once and the box is
+    killed for memory.
+
+    Nothing here blocks. Every one of these being false leaves an app that
+    works; it just works in the place that moving to Modal was meant to empty.
+    """
+    import os
+
+    from app.workers import dispatch
+
+    if dispatch.ANALYSIS_RUNTIME != "modal":
+        return [
+            Check(
+                name="analysis_runtime:inprocess",
+                ok=True,
+                detail="",
+                blocking=False,
+            )
+        ]
+
+    try:
+        import modal
+    except ImportError:
+        return [
+            Check(
+                name="analysis_runtime:modal",
+                ok=False,
+                detail=(
+                    "ANALYSIS_RUNTIME is modal, but the modal package is not installed "
+                    "on this host, so every take falls back to running inside the web "
+                    "process. Add it to backend/pyproject.toml and redeploy."
+                ),
+                blocking=False,
+            )
+        ]
+
+    # The two halves of a Modal API token. This host does not run the analysis
+    # under `ANALYSIS_RUNTIME=modal` — it *asks* Modal to — and asking requires
+    # credentials, which is easy to miss because the container's own secret is
+    # a separate thing set up on a separate dashboard.
+    if not (os.getenv("MODAL_TOKEN_ID") and os.getenv("MODAL_TOKEN_SECRET")):
+        return [
+            Check(
+                name="modal_credentials",
+                ok=False,
+                detail=(
+                    "MODAL_TOKEN_ID and MODAL_TOKEN_SECRET are not both set here, so "
+                    "this API cannot hand a take to Modal and every one falls back to "
+                    "running in this process. They are the same token pair the deploy "
+                    "workflow uses."
+                ),
+                blocking=False,
+            )
+        ]
+
+    try:
+        # `from_name` is documented as lazy — it defers the lookup until first
+        # use — so it proves nothing on its own. `hydrate()` is what actually
+        # asks Modal whether this function exists, which is the only version of
+        # this check worth having.
+        modal.Function.from_name(
+            dispatch.MODAL_APP_NAME, dispatch.MODAL_FUNCTION_NAME
+        ).hydrate()
+    except Exception as exc:  # noqa: BLE001 — report, never raise out of a health route
+        log.warning("readiness: Modal function not resolvable: %s", exc)
+        return [
+            Check(
+                name="analysis_runtime:modal",
+                ok=False,
+                detail=(
+                    f"Modal has no function '{dispatch.MODAL_FUNCTION_NAME}' in an app "
+                    f"named '{dispatch.MODAL_APP_NAME}', so every take falls back to "
+                    "running in this process. Run the Deploy Modal workflow. "
+                    f"({type(exc).__name__})"
+                ),
+                blocking=False,
+            )
+        ]
+
+    return [
+        Check(name="analysis_runtime:modal", ok=True, detail="", blocking=False)
+    ]
+
+
 def _schema_checks(client) -> list[Check]:
     """That the database has the columns this build writes to.
 
@@ -296,6 +388,10 @@ def _storage_checks(client) -> list[Check]:
 def check() -> Readiness:
     """Everything, configuration first so a missing key explains a dead database."""
     result = Readiness(checks=_configuration_checks())
+    # Before the database, and not behind it. Where the analysis runs is a
+    # configuration fact, and the two early returns below would otherwise
+    # swallow it on exactly the deployment most likely to be half-configured.
+    result.checks.extend(_analysis_runtime_checks())
 
     client = get_service_client()
     if client is None:

@@ -86,13 +86,38 @@ a red cross on every push in a repo that has not been set up yet is noise.
 **4. Check it worked.** modal.com → Apps → `intempo` should list a deployed
 `run_analysis`. The Action's log says the same thing.
 
-**5. Turn it on** — on Render, under Environment:
+**5. Turn it on** — on Render, under Environment. **Three variables, not
+one:**
 
 ```
 ANALYSIS_RUNTIME=modal
+MODAL_TOKEN_ID=            the same token id from step 1
+MODAL_TOKEN_SECRET=        the same token secret
 ```
 
-Saving it redeploys the API, which is when the switch takes effect.
+Saving redeploys the API, which is when the switch takes effect.
+
+The token is easy to skip, because the secret in step 1 looks like it was the
+credential part. It is not the same thing. That secret is what the *container*
+reads once it is running; the token is what lets **this API ask Modal to run
+it at all**. Without the token the API cannot hand a take over, so it analyses
+every one in its own process — which works, which is the problem: nothing about
+the app looks wrong, and the 512 MB box the switch existed to empty is doing
+all the work anyway.
+
+**6. Confirm it, rather than assuming it.** `GET /v1/ready` on the API now
+reports where an analysis will actually run:
+
+- `analysis_runtime:inprocess` — the setting is not `modal`, or is misspelled.
+  Only an exact `modal` counts.
+- `modal_credentials` failing — `ANALYSIS_RUNTIME=modal` but no token on
+  Render. Every take falls back.
+- `analysis_runtime:modal` failing — token accepted, but Modal has no
+  `run_analysis` in an app called `intempo`. Step 3 has not run, or it skipped.
+- `analysis_runtime:modal` passing — a take really will run on Modal.
+
+None of these block readiness. A deployment that fell back is degraded, not
+broken, and a 503 that does not mean "unusable" stops being read.
 
 ### If you do have a terminal
 
