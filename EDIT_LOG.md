@@ -6,6 +6,44 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-08 (night, later still) — Finding the next missing file automatically
+
+**Branch:** `main`. The generalisation of the entry below.
+
+The `config.toml` omission was found by reading one Dockerfile carefully.
+That does not scale, and it did not work the first time — the file had been
+missing since Batch 1.
+
+**What changed.** Two tests that discover the question instead of restating the
+answer. Any module-level `Path` constant under `app/` that points at a file
+which exists in the checkout is, by construction, a file the running process
+opens; anything the running process opens has to be in the image or it is a
+crash waiting for the first person to reach that code path. The tests find
+those constants by importing the modules that build a path from `__file__`,
+make each path repo-relative, and check it against the `COPY` set of
+`Dockerfile` and the `add_local_*` calls of `modal_app.py`.
+
+Two today: `config.toml` and `app/prompts/ocr_prompt.txt` (which was always
+fine — it lives *inside* `app/`, so `COPY app ./app` carried it). The point is
+the third one.
+
+The Modal side asks a narrower question, because that image ships `app/` minus
+`routers/`: a data file added under `app/routers/` would be copied into the API
+and silently dropped from the worker.
+
+**Verified it catches an unknown case, not just the known ones.** I added a
+throwaway `app/services/newthing.py` with a `DATA_PATH` pointing at a new
+`thresholds.json`, ran the suite, and it failed with
+
+    app.services.newthing.DATA_PATH opens thresholds.json at runtime and the
+    API image does not copy it.
+
+then removed both. Mutations also caught: the config `COPY` removed, `app/`
+narrowed so the prompt falls outside it, and the Modal `add_local_file`
+pointed at the wrong file.
+
+**Tests run:** 727 passed (725 + 2), ruff clean. **Rollback:** revert.
+
 ## 2026-09-08 (night, later) — The API image had no `config.toml`, so every analysis failed
 
 **Branch:** `main`. Worse than the last one, and found by pulling the same
