@@ -181,9 +181,78 @@ this is dollars, and the free credit covers the early months.
 import, and the take is already asynchronous: the musician is watching a
 progress screen, not a spinner on a request.
 
-## Adding HOMR
+## Reading pages with homr
 
-Another `@app.function` in `modal_app.py`, with its own image and its own
-memory. It does not touch the analysis, and the API reaches it the same way —
-through `dispatch`, which exists so that no request handler knows where work
-runs. That is the whole reason the shape is worth having.
+`homr` is an optical music recognition engine — it segments the page, finds the
+staves, **dewarps each one**, and runs a transformer over the staff image. It is
+in `modal_app.py` as `transcribe_score`, with its own image and its own memory,
+reached through `dispatch` exactly as the analysis is.
+
+### Why it is not on the API host
+
+Measured on a real photographed String Bass part, ten systems:
+
+| | |
+|---|---|
+| peak memory | **1350 MB** |
+| wall clock | 21 s |
+| CPU time | 63 s |
+| model weights | 151 MB of ONNX |
+
+The API instance has 512 MB for the whole application. This is not a preference.
+
+### Why it is worth it
+
+Same page, against the vision chain's best real result:
+
+| | vision chain | homr |
+|---|---|---|
+| measures | 59 | **74** (the page holds 80) |
+| notes | 112 | **267** |
+| bars that add up | — | **73 of 74** |
+
+Dewarping is the reason. Each system on that page slopes by more than its own
+height, the slope grows down the page, and no single rotation straightens them
+because every system tilts differently — which defeats a horizontal projection
+outright and is not something a prompt can fix.
+
+### Turning it on
+
+    modal deploy modal_app.py
+
+The build fetches homr's weights, so the first deploy is slower than the
+analysis one. Then, on the API host:
+
+    TRANSCRIPTION_RUNTIME=modal
+    OCR_PROVIDER_CHAIN=homr,gemini-2.5-flash,claude-sonnet-5,claude-opus-5
+
+`TRANSCRIPTION_RUNTIME` is separate from `ANALYSIS_RUNTIME` on purpose. An
+analysis peaks near 460 MB and merely wants headroom; a page does not fit on the
+API host at all. A deployment can sensibly put one here and one there.
+
+`homr` first in the chain and the models behind it: a page it cannot read — too
+dark, or not music — still reaches them, and a reading it is not confident in is
+kept while they try. Leaving `homr` out of the chain turns it off without
+touching anything else.
+
+Check it landed:
+
+    GET /v1/ready   →  ocr:homr  true
+
+That check asks whether the **engine is installed in this container**, not
+whether a key is set — homr has no key. On the API host it will read `false`,
+which is correct and is what `TRANSCRIPTION_RUNTIME=modal` is for.
+
+### Cost, on a free account
+
+No GPU — homr ships ONNX and runs on CPU. `min_containers=0`, so nothing is kept
+warm. 21 s at 2.5 GB per page, billed by the second, scaled to zero in between.
+The weights are baked into the image rather than downloaded per container, which
+is what stops a cold start pulling 151 MB while a musician watches the progress
+screen.
+
+### Licence
+
+homr is **AGPL-3.0**. It is used unmodified, in a container that does one job,
+imported across a process boundary. Nothing in this repository is derived from
+it.

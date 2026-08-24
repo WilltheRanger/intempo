@@ -632,3 +632,52 @@ def test_the_endpoint_only_explains_what_is_wrong(monkeypatch, unconfigured) -> 
         "this deployment has nothing wrong with it, so the assertion above "
         "checked nothing"
     )
+
+
+def test_an_engine_is_asked_whether_it_is_installed_not_for_a_key(monkeypatch) -> None:
+    """homr is the odd one out in the chain and needs a different question.
+
+    Every other provider is usable when an API key is set. homr is an engine
+    that lives *in this container* — asking for its key reported `ocr:homr`
+    unusable, with an empty setting name in the message, on a container where it
+    was working.
+    """
+    from app.services import readiness
+    from app.services.ocr import homr_provider as module
+    from app.services.ocr import pipeline
+
+    # Patched on `pipeline`, not on `readiness`: the import happens inside the
+    # function, so a name bound on the caller is never looked at.
+    monkeypatch.setattr(pipeline, "_default_chain", lambda: [module.homr_provider])
+    monkeypatch.setattr(module, "homr_available", lambda: True)
+    monkeypatch.setattr(module.HomrProvider, "available", lambda self: True)
+
+    checks = {c.name: c for c in readiness._configuration_checks()}
+
+    assert checks["ocr:homr"].ok is True
+    assert "is not set" not in checks["ocr:homr"].detail
+    assert checks["sheet_music_reading"].ok is True, (
+        "an installed engine does not count as being able to read a page"
+    )
+
+
+def test_an_engine_that_is_not_installed_is_reported_rather_than_assumed(
+    monkeypatch,
+) -> None:
+    """The failure this prevents is quiet: a chain naming `homr` on a host
+    without it falls through to the vision models and reads every page the
+    slower, worse way, while appearing to work."""
+    from app.services import readiness
+    from app.services.ocr import homr_provider as module
+    from app.services.ocr import pipeline
+
+    # Patched on `pipeline`, not on `readiness`: the import happens inside the
+    # function, so a name bound on the caller is never looked at.
+    monkeypatch.setattr(pipeline, "_default_chain", lambda: [module.homr_provider])
+    monkeypatch.setattr(module.HomrProvider, "available", lambda self: False)
+
+    checks = {c.name: c for c in readiness._configuration_checks()}
+
+    assert checks["ocr:homr"].ok is False
+    assert "not installed in this container" in checks["ocr:homr"].detail
+    assert "Modal" in checks["ocr:homr"].detail, "it does not say where it does run"

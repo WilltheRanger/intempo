@@ -6,6 +6,57 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-17 — `/v1/ready` asked the engine for an API key
+
+**Branch:** `main`. Finishing the homr switch: the readiness check, the deploy
+document, and `CLAUDE.md`.
+
+**The bug the previous commit introduced.** `_configuration_checks` loops the
+chain doing `getattr(provider, "api_key_setting", "")` and then
+`bool(getattr(settings, setting, ""))`. homr has no key — it is an engine that
+lives in the container, not a service reached with one. So `setting` was `""`,
+the lookup answered falsy, and `ocr:homr` reported **unusable with an empty
+setting name in the message**, on a container where it was working.
+
+A provider without an API key is not a provider without a requirement. homr's
+question is *is it installed here*, so it answers `available()` and the check
+asks that instead. The failure this prevents is the quiet one: a chain naming
+`homr` on a host that does not have it falls through to the vision models and
+reads every page the slower, worse way while appearing to work — and on the API
+host that is exactly what happens, correctly, which is what
+`TRANSCRIPTION_RUNTIME=modal` is for.
+
+**Two of my own test mistakes**, both the same shape as the code bug: patching
+`readiness._default_chain` when the import happens *inside* the function so the
+name is never looked at, and calling a `_ocr_checks` that does not exist — the
+checks live in `_configuration_checks`. Neither test could have passed against
+correct code, which is at least the right direction to be wrong in.
+
+`docs/deploy-modal.md` had a section headed *"Adding HOMR"* describing what to
+do one day. It now says how to turn it on, what it measured, and what it costs
+on a free account.
+
+**Tests:** 2 new cases. Three mutations — the engine asked for a key again, an
+installed engine not counted as usable, a missing one reported as fine — all
+killed.
+
+Backend 997 tests green (995 before), ruff clean.
+
+### What is actually left for this to work
+
+Nothing in code. Two commands and two settings, both the owner's:
+
+    modal deploy modal_app.py
+
+    TRANSCRIPTION_RUNTIME=modal
+    OCR_PROVIDER_CHAIN=homr,gemini-2.5-flash,claude-sonnet-5,claude-opus-5
+
+Then `GET /v1/ready` reads `ocr:homr false` on the API host — correct, it runs on
+Modal — and the first real page through `transcribe_score` is the measurement
+that has been missing all session.
+
+---
+
 ## 2026-09-17 — homr is in, as a provider that reads whole pages
 
 **Branch:** `main`. The owner: *"yes add homr, dont make it paid itll run on
