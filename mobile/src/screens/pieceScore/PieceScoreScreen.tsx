@@ -30,7 +30,11 @@ import {
   useRetranscribe,
 } from '../../data/hooks/usePieces';
 import { BORDER_WIDTH, colors, spacing } from '../../design';
-import { describeOmissions, staveScoreFor } from '../../lib/notation/fromScore';
+import {
+  describeOmissions,
+  describeUndrawnScore,
+  staveScoreFor,
+} from '../../lib/notation/fromScore';
 import {
   describeConfidence,
   describeProblemMeasures,
@@ -427,6 +431,25 @@ export function PieceScoreScreen() {
 
       {showing === 'original' && hasPages ? (
         <ScoreThumbnail source={piece.thumbnail} style={styles.page} />
+      ) : null}
+
+      {/*
+        The state this screen had no answer for.
+
+        Everything above — the stave, the clef row, the caveats, the way in to
+        fixing a bar — is gated on there being something drawable. `DRAWABLE`
+        holds four note values, so a part written in sixteenths and dotted
+        eighths loses every note, and what a musician got was the title, the
+        photograph, and nothing else: no explanation, no action, no sign that
+        anything had been read at all. It usually had been.
+
+        A line rather than a panel. The photograph is the music and should stay
+        the thing you look at; this only has to account for the missing stave.
+      */}
+      {!hasNotation && stave && describeUndrawnScore(stave) ? (
+        <Text variant="metadataSmall" color="textTertiary" style={styles.caveat}>
+          {describeUndrawnScore(stave)}
+        </Text>
       ) : null}
 
       {/*
