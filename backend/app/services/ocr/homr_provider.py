@@ -39,6 +39,7 @@ import logging
 import os
 import tempfile
 import time
+from collections import Counter
 from pathlib import Path
 
 from app.services.ocr.base import OCRProviderError, OCRResponse
@@ -74,9 +75,21 @@ def _confidence_from_arithmetic(score: ScoreJson) -> float:
     which is what the number is used for. A page whose bars mostly do not add up
     drops below `CONFIDENCE_THRESHOLD` and the vision chain gets its turn.
 
-    **It is not a claim that the notes are right.** A wrong note of the right
-    length still sums. Nothing here substitutes for the musician looking, which
-    is why `POST /scores/:id/accept` exists and why nothing else may discard the
+    **It is not a claim that the notes are right, and the blind spot is bigger
+    than "a wrong note of the right length".** A bar of four quarters adds up in
+    4/4 whether or not the page shows eight eighths — so a reading that
+    quantised an entire page would score **1.0** here, and be wrong in every bar
+    in the way that matters most: `alignment.py` accumulates durations, so the
+    musician is told they rushed every passage the page writes short.
+
+    Measured on the first real page: 55 of its 74 bars are exactly four
+    quarters, no sixteenth appears anywhere, and 73 of 74 bars add up. That may
+    be a correct reading of a march. Nothing in this number can say.
+
+    So it is a floor, not a grade: it *falls* when a reading is visibly broken,
+    which is what the gate needs, and it never rises above what arithmetic can
+    see. Nothing here substitutes for the musician looking, which is why
+    `POST /scores/:id/accept` exists and why nothing else may discard the
     photograph.
     """
     from app.services.ocr.validate import validate_measures
@@ -145,13 +158,31 @@ class HomrProvider:
         score = score.model_copy(
             update={"ocr_confidence": _confidence_from_arithmetic(score)}
         )
+        # The duration mix, not just the totals.
+        #
+        # **Because the beat check cannot see the failure that matters most
+        # here.** A bar of four quarters adds up perfectly in 4/4 whether or not
+        # the page shows eight eighths, so "73 of 74 bars add up" — the number
+        # this engine earned on the first real page — says nothing at all about
+        # whether the rhythms are right. Measured on that page: 230 quarters, 20
+        # eighths, 9 wholes, 8 halves, and **no sixteenths anywhere**. That may
+        # be correct; a march in quarter notes looks exactly like that. It is
+        # also what a reading that quantised everything would look like, and
+        # nothing downstream can tell the two apart.
+        #
+        # `alignment.py` accumulates durations, so if it is the second one a
+        # musician is told they rushed every passage the page writes in eighths.
+        # This line is what makes the shape of a reading visible without
+        # anybody having to guess it from a confidence number.
+        mix = Counter(n.duration for m in score.measures for n in m.notes)
         log.info(
-            "%s: %d measures, %d notes, %d%% of bars add up, %d ms",
+            "%s: %d measures, %d notes, %d%% of bars add up, %d ms; durations %s",
             self.name,
             len(score.measures),
             sum(len(m.notes) for m in score.measures),
             round(score.ocr_confidence * 100),
             latency_ms,
+            dict(mix.most_common()),
         )
         return OCRResponse(
             score=score,
