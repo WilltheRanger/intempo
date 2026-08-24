@@ -213,7 +213,14 @@ def _read_page(client, score_id: str, image_url: str) -> None:
         # every one of which fails in a way that says nothing about the page.
         # See `prepare_for_model`.
         page, media_type = prepare_for_model(image_bytes)
-        score = parse_sheet_music(page, media_type=media_type, on_stage=report)
+        # The prepared page is what gets *read* whole and what the systems are
+        # detected on; the crops are cut from the photograph itself, so each
+        # system spends the whole size budget on its own long edge. See
+        # `crop_systems`' `source` — without it a crop carries no more detail
+        # than the page it came from, which is the entire point of the cut.
+        score = parse_sheet_music(
+            page, media_type=media_type, on_stage=report, source=image_bytes
+        )
     except HTTPException as exc:
         # `page_image` speaks in HTTP status codes because its other caller is
         # a request handler. Here only the sentence matters.

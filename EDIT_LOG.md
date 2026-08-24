@@ -6,6 +6,66 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-17 — The crops were being cut out of the shrunken page
+
+**Branch:** `main`. Twelfth iteration of *fix the OMR system till it works*.
+
+**The entire reason a page is cut up was being thrown away one step before the
+cut.** `prepare_for_model` squeezes a photograph onto a 1568 px edge, and the
+worker handed *that* to the pipeline, which then cut it into systems. So every
+crop was carved out of an image already reduced 3.6×, and a system arrived at
+1176×165 with about ten pixels between its staff lines — no more detail per
+system than sending the whole page had given.
+
+Cutting the photograph and preparing each crop separately spends the whole size
+budget on one system. Measured on the real page:
+
+| | per system |
+|---|---|
+| cut from the reduced page | 1176×165, ~10 px between staff lines |
+| cut from the photograph | **1568×220**, ~14 px between staff lines |
+
+1.8× the pixels, 714 KB across twelve crops against 448 KB. Every crop is still
+a JPEG under the 5 MB limit, because each one goes through `prepare_for_model`
+individually — the cap applies per crop, which is the point.
+
+**Detection stays on the reduced page.** It is cheap there and every constant in
+the detector was measured at that scale. Only the *cut* moves to the photograph,
+with the boxes scaled by the height ratio between the two. Getting that ratio
+wrong would slide every crop down the page — each holding the bottom half of one
+system and the top of the next, with every bar split — so there is a test that
+re-runs the detector on each crop and demands exactly one substantial band.
+
+`crop_systems(image_bytes, *, source=None)`, `parse_sheet_music(..., source=...)`
+and the worker passing what it downloaded. `source` is optional and its absence
+means "cut what you were given", so a caller holding only the prepared page —
+which is every caller that existed before this — gets exactly what it got.
+
+**A note on why this survived so long.** Two entries ago I *disproved* a
+resolution hypothesis: reading the fixtures at phone resolution showed a whole
+page giving 157 px per staff against the fixtures' 124–168, so I concluded that
+resolution was not the problem and scope was. That was right about the whole-page
+read and it stopped me looking at the crops, which are a different measurement
+entirely. A hypothesis disproved in one place is not disproved everywhere.
+
+**Tests:** 6 new cases. Seven mutations — the source ignored, the scale dropped,
+inverted, and applied to one edge of the box only, the pipeline not forwarding
+it, and the worker passing the prepared page or nothing — all killed. Fifteen
+existing `crop_systems` stubs across two test files had to grow the keyword,
+which is its own small signal: that many hand-written stubs of one function is a
+lot of places for a signature to drift.
+
+Backend 894 tests green (887 before), ruff clean. Mobile 233, typecheck clean.
+
+**Still unmeasured, and now blocked on a key rather than on code.**
+`ANTHROPIC_API_KEY` and `GEMINI_API_KEY` are empty in this container, so no
+model can be called from here and whether these crops actually yield more music
+than the whole page cannot be answered. Everything in the last three entries is
+geometry: proof that the right pixels get sent, not proof of what comes back.
+The next real signal is a scan from the deployed app.
+
+---
+
 ## 2026-09-17 — The detector rewritten against the real page: 2 systems to 10
 
 **Branch:** `main`. Eleventh iteration of *fix the OMR system till it works*.

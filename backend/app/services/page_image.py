@@ -622,6 +622,14 @@ def _cuts_are_quiet(bands: list[tuple[int, int]], cuts: list[int], smoothed) -> 
     return True
 
 
+def _page_height(image_bytes: bytes) -> int:
+    """The height, upright, of the image the crop boxes were measured on."""
+    from PIL import Image, ImageOps
+
+    with Image.open(io.BytesIO(image_bytes)) as image:
+        return ImageOps.exif_transpose(image).height
+
+
 def _crop_boxes(image_bytes: bytes) -> list[tuple[int, int]]:
     """The `(top, bottom)` source rows of each crop, in reading order.
 
@@ -669,7 +677,7 @@ def _crop_boxes(image_bytes: bytes) -> list[tuple[int, int]]:
     ]
 
 
-def crop_systems(image_bytes: bytes) -> list[bytes]:
+def crop_systems(image_bytes: bytes, *, source: bytes | None = None) -> list[bytes]:
     """The page cut into one JPEG per staff system, top to bottom.
 
     Empty when the page holds fewer than `_MIN_SYSTEMS_TO_SPLIT` bands, could
@@ -693,6 +701,18 @@ def crop_systems(image_bytes: bytes) -> list[bytes]:
     the next. Duplication is visible to the caller and correctable; a hole is
     neither — `alignment.py` accumulates durations, so a dropped note shifts
     every bar after it.
+
+    **`source` is the photograph before `prepare_for_model` squeezed it**, and
+    passing it is the difference between cropping being worth doing and not.
+    Systems are *detected* on the prepared page — cheap, and every constant here
+    was measured at that scale — but the pixels sent to the model should be the
+    ones the camera captured. Without it a crop is carved out of an image already
+    reduced 3.6×, so each system arrives at 1176×165 with about ten pixels
+    between staff lines. Cut from the original and prepared individually, the
+    same system arrives at 1568×220 — **1.8× the pixels**, and fourteen pixels
+    between staff lines — because `MODEL_MAX_EDGE` is then spent on one system
+    instead of on a whole page. That is the entire reason a page is cut up, and
+    it was being thrown away one step before the cut.
     """
     boxes = _crop_boxes(image_bytes)
     if not boxes:
@@ -706,12 +726,19 @@ def crop_systems(image_bytes: bytes) -> list[bytes]:
     _register_heif()
     crops: list[bytes] = []
     try:
-        with Image.open(io.BytesIO(image_bytes)) as image:
+        with Image.open(io.BytesIO(source if source is not None else image_bytes)) as image:
             image = ImageOps.exif_transpose(image)
             if image.mode != "RGB":
                 image = image.convert("RGB")
 
-            for top, bottom in boxes:
+            # The boxes were found on `image_bytes`, which is the page squeezed
+            # onto `MODEL_MAX_EDGE`; the pixels being cut are the photograph as
+            # it arrived. See the docstring — this ratio is the whole point.
+            scale = image.height / _page_height(image_bytes) if source is not None else 1.0
+
+            for box_top, box_bottom in boxes:
+                top = int(box_top * scale)
+                bottom = min(image.height, int(box_bottom * scale))
                 box = (0, top, image.width, bottom)
                 buffer = io.BytesIO()
                 # Lossless out of Pillow, then through `prepare_for_model` —

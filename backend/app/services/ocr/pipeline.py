@@ -601,6 +601,7 @@ def parse_sheet_music(
     providers: list[OCRProvider] | None = None,
     retry: bool = True,
     on_stage: Callable[[Stage], None] | None = None,
+    source: bytes | None = None,
     _by_system: bool = True,
     _note: str | None = None,
 ) -> ScoreJson:
@@ -616,6 +617,16 @@ def parse_sheet_music(
     Both the parameter and the engine went with the OMR removal (DECISIONS.md,
     2026-08-25); the second opinion it fed is now `confirm.retry_with_arithmetic`,
     which has a model on both sides and needs no second copy of the page.
+
+    `source` is the photograph as it arrived, before `prepare_for_model`
+    squeezed it onto a 1568 px edge. Systems are detected on `image_bytes` —
+    cheap, and every constant in the detector was measured at that scale — but
+    the crops are cut from `source`, so each system gets the whole size budget
+    on its own long edge instead of a slice of the page's. Measured on the real
+    page: 1568×220 per system instead of 1176×165, which is 1.8× the pixels and
+    fourteen pixels between staff lines instead of ten. Omitting it cuts the
+    crops out of the reduced page, which is what happened until it existed and
+    which throws away the entire reason for cutting the page up.
 
     `on_stage` is called as each step begins, for a caller that has to tell a
     human what is happening — this takes tens of seconds and a musician
@@ -672,7 +683,7 @@ def parse_sheet_music(
     # passage they played correctly.
     if _by_system:
         stage(STAGE_SPLITTING)
-        crops = crop_systems(image_bytes)
+        crops = crop_systems(image_bytes, source=source)
         if crops and len(crops) <= _MAX_SYSTEMS_TO_READ:
             parts = _read_systems(crops, chain, retry=retry, stage=stage)
             if parts:
