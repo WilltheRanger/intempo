@@ -55,6 +55,25 @@ class _Stub:
 
 
 FOUR = [("C3", "quarter")] * 4
+#: Three quarters where the page is in four.
+#:
+#: Only short *against a majority*. `validate_measures` infers the metre from
+#: the music when it can — seven bars of two beats mean the piece is in 2/4 and
+#: the eighth bar is the error — so a lone three-beat bar is not wrong, it is
+#: the metre. It has to be outnumbered to be a mistake, and it must not be the
+#: first bar, which is allowed to be a pickup.
+SHORT = [("C3", "quarter")] * 3
+
+#: A page with exactly one bar that does not add up: the third.
+#:
+#: Three tests here used a page of `FOUR`s for the score being corrected, so
+#: `describe_for_retry` found nothing to complain about,
+#: `retry_with_arithmetic` returned before calling the provider, and each
+#: test's `is engine` assertion held for the wrong reason — the three guards
+#: they are named for were never reached. Coverage found it: those lines sat
+#: at 0 while the tests were green.
+def _one_bad_bar():
+    return [FOUR, FOUR, SHORT, FOUR]
 
 
 def test_the_model_is_told_which_measures_do_not_add_up() -> None:
@@ -137,9 +156,23 @@ def test_a_correction_that_breaks_more_measures_is_refused() -> None:
     A rewrite that breaks measures which previously added up has made the page
     worse while sounding more confident about it, so it is measured rather than
     trusted — and beat sums are not an opinion.
+
+    **Through a change of metre**, because that is the only way a splice can
+    make the page worse: only the bars that were asked about are replaced, so a
+    patch cannot break a bar it was never handed. What it *can* do is restate
+    the metre — and a metre runs until the next one, so re-reading bar 2 as 4/4
+    breaks bars 3 and 4, which were correct in the 3/4 it used to carry.
     """
-    engine = _score([FOUR, FOUR])
-    worse = _score([FOUR, [("C3", "quarter")] * 7])
+    engine = _score([FOUR, SHORT, SHORT, SHORT])
+    engine.measures[1].time_signature = "3/4"
+    engine.measures[1].notes = list(_score([FOUR]).measures[0].notes) + [
+        Note(pitch="C3", duration="quarter")
+    ]  # five quarters in 3/4: bar 2 is the one that does not add up
+
+    worse = _score([FOUR])
+    worse.measures[0].measure_number = 2
+    worse.measures[0].time_signature = "4/4"  # "fixes" bar 2, breaks 3 and 4
+
     assert retry_with_arithmetic(
         engine, b"img", media_type="image/png", provider=_Stub(worse)
     ) is engine
@@ -163,19 +196,27 @@ def test_an_equally_broken_reread_is_still_taken() -> None:
 def test_a_failing_model_leaves_the_engine_reading_standing() -> None:
     """Never raises. The caller already has a usable transcription and would be
     trading it for an exception."""
-    engine = _score([FOUR])
+    engine = _score(_one_bad_bar())
     stub = _Stub(OCRProviderError("rate limited"))
+
     assert retry_with_arithmetic(
         engine, b"img", media_type="image/png", provider=stub
     ) is engine
+    assert stub.note is not None, "the provider was never asked, so this proved nothing"
 
 
 def test_an_empty_correction_leaves_the_engine_reading_standing() -> None:
-    engine = _score([FOUR])
+    engine = _score(_one_bad_bar())
     empty = ScoreJson(clef="bass", ocr_confidence=0.5, measures=[])
+    stub = _Stub(empty)
+
     assert retry_with_arithmetic(
-        engine, b"img", media_type="image/png", provider=_Stub(empty)
+        engine, b"img", media_type="image/png", provider=stub
     ) is engine
+    assert stub.note is not None, (
+        "the provider was never asked, so this proved nothing — the score has "
+        "to be one that does not add up or the retry returns early"
+    )
 
 
 def test_the_retry_is_on_by_default() -> None:

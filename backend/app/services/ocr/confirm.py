@@ -131,6 +131,11 @@ def retry_with_arithmetic(
         log.info("retry by %s failed, keeping the first reading: %s", provider.name, exc)
         return score
 
+    # Belt and braces, and it is the braces. `_splice` returns the original
+    # untouched when nothing in the patch matches a measure that was asked
+    # about, so removing this changes no outcome — verified by mutation, which
+    # is why there is no test for it and this comment instead. What it buys is
+    # the log line and not running the validator over a page nobody corrected.
     if not response.score.measures:
         log.info("retry by %s returned no measures, keeping the first reading", provider.name)
         return score
