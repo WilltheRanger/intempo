@@ -6,6 +6,44 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-13 (later) — The take submission, and a sixth mirrored vocabulary
+
+**Branch:** `main`. Twelve tests for `data/practice/submitTake.ts`, plus one
+more on the server side.
+
+**The instrument.** `submitTake` reads it from preferences rather than taking
+it from the recording screen, and it decides how the pipeline looks for onsets
+— a double bass needs a lower threshold, because the note swells in rather than
+snapping in. If it stopped being sent, every bassist would be analysed as a
+violinist and the only symptom would be *worse verdicts*. Nothing catches that.
+Two tests now do, including the case where nobody has changed it from the
+default, because sending it then is reporting what Profile already says about
+them rather than guessing.
+
+**The order of the three calls.** The row must not be created until the upload
+has landed: a row pointing at audio that was never stored is a take that fails
+in the worker minutes later, reported as `audio_unavailable`. A mutation that
+fires the upload without awaiting it is caught.
+
+**`FINISHED` is a sixth local copy of a server enum**, and the quietest one so
+far. `waitForAnalysis` polls until the status is in that set. A terminal status
+missing from it is an error nowhere: the app just keeps asking, forty times,
+then tells the musician the analysis is "taking longer than expected" about a
+run that finished before the first poll — with the verdict sitting in the row
+the whole time. `test_client_enums.py` now requires every `AnalysisStatus` to
+be either final on the client or one of the two it deliberately waits through,
+with the waited-through pair named in the test because "not final" is an
+*absence* and an absence cannot be parsed.
+
+Also locked: the poll giving up rather than running forever, an aborted wait
+making no request at all, and the upload being labelled `audio/wav` — the same
+content-type coupling that was already wrong once on the scan path.
+
+Mutations caught, all seven.
+
+**Tests run:** backend 765 (764 + 1), mobile 214 (202 + 12), typecheck clean,
+ruff clean. **Rollback:** revert.
+
 ## 2026-09-13 — What the app sends, against what the API will accept
 
 **Branch:** `main`. Ten tests, `test_request_shapes.py`.
