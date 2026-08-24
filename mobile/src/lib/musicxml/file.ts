@@ -46,6 +46,51 @@ function decode(bytes: Uint8Array): string {
   return text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
 }
 
+/** The five XML names every document may use without declaring them. */
+const NAMED_ENTITIES: Record<string, string> = {
+  amp: '&',
+  lt: '<',
+  gt: '>',
+  quot: '"',
+  apos: "'",
+};
+
+/**
+ * Turn an XML text fragment into the string a musician should read.
+ *
+ * Tags out, entities in, trimmed. All three matter and the middle one was
+ * missing: titles, composers and part names went to the screen exactly as the
+ * file spelled them, so a piece called "Rondo &amp; Variations" was listed
+ * under that name, and a part called `Tromb&#243;n` was offered as `Tromb&#243;n`.
+ *
+ * `&` is not optional in XML — a name containing one *must* arrive encoded —
+ * so this is required by the format rather than a nicety for accented
+ * languages, though it fixes those too.
+ *
+ * One pass over the original, not a chain of replacements. Decoding `&amp;`
+ * first and `&lt;` second turns the correctly-escaped `&amp;lt;` into `<`;
+ * a single scan leaves it as the `&lt;` the file meant.
+ */
+function plainText(fragment: string): string {
+  return fragment
+    .replace(/<[^>]*>/g, '')
+    .replace(/&(#x?[0-9a-f]+|[a-z]+);/gi, (whole, body: string) => {
+      if (body[0] !== '#') {
+        return NAMED_ENTITIES[body.toLowerCase()] ?? whole;
+      }
+      const hex = body[1] === 'x' || body[1] === 'X';
+      const code = parseInt(hex ? body.slice(2) : body.slice(1), hex ? 16 : 10);
+      // Leave anything outside Unicode as it was written. A malformed entity
+      // is not worth throwing over, and showing it raw at least says what the
+      // file contained.
+      if (!Number.isFinite(code) || code <= 0 || code > 0x10ffff) {
+        return whole;
+      }
+      return String.fromCodePoint(code);
+    })
+    .trim();
+}
+
 function scoreEntryName(files: Record<string, Uint8Array>): string {
   const container = files[CONTAINER];
   if (container) {
@@ -123,24 +168,37 @@ export function partsIn(xml: string): MusicXMLPart[] {
   while (match !== null) {
     const [, id, body] = match;
     const named = /<part-name\b[^>]*>([\s\S]*?)<\/part-name>/i.exec(body);
-    const name = named ? named[1].replace(/<[^>]*>/g, '').trim() : '';
+    const name = named ? plainText(named[1]) : '';
     parts.push({ id, name: name || id });
     match = entry.exec(list[0]);
   }
   return parts;
 }
 
-/** The `<work-title>`, or the `<movement-title>` when there is no work title. */
+/**
+ * The `<work-title>`, or the `<movement-title>` when there is no work title.
+ *
+ * "No work title" means **no title**, not no element. Exporters write
+ * `<work><work-title></work-title></work>` for a piece whose work title was
+ * never filled in, and preferring the element over the text threw away the
+ * only name the file had — a movement called "Allemande" imported as
+ * untitled.
+ */
 export function titleIn(xml: string): string | null {
   const work = /<work-title\b[^>]*>([\s\S]*?)<\/work-title>/i.exec(xml);
   const movement = /<movement-title\b[^>]*>([\s\S]*?)<\/movement-title>/i.exec(xml);
-  const text = (work ?? movement)?.[1]?.replace(/<[^>]*>/g, '').trim();
-  return text || null;
+  for (const match of [work, movement]) {
+    const text = match ? plainText(match[1]) : '';
+    if (text) {
+      return text;
+    }
+  }
+  return null;
 }
 
 /** The `<creator type="composer">`, which is where every exporter puts it. */
 export function composerIn(xml: string): string | null {
   const match = /<creator\b[^>]*type\s*=\s*["']composer["'][^>]*>([\s\S]*?)<\/creator>/i.exec(xml);
-  const text = match?.[1]?.replace(/<[^>]*>/g, '').trim();
+  const text = match ? plainText(match[1]) : '';
   return text || null;
 }

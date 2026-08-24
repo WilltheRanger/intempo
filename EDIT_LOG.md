@@ -6,6 +6,54 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-10 — Two real bugs in the import path, found by writing its first tests
+
+**Branch:** `main`.
+
+`mobile/src/lib/musicxml/file.ts` turns a file a musician picked into the
+MusicXML the backend parses — unzipping `.mxl`, reading the container, and
+pulling out the title, composer and part list. 146 lines, **no tests**. It is
+also the route CLAUDE.md calls "the one whose timeline cannot be wrong",
+because the durations are stated in the file rather than read off a photograph.
+A strange place for the trustworthy path to be.
+
+The zip handling turned out to be solid — container lookup, fallback, `__MACOSX`
+junk, magic-byte sniffing, BOM stripping, all correct. Two things were not.
+
+**1. XML entities were never decoded.** Titles, composers and part names went
+to the screen exactly as the file spelled them. `&` is not optional in XML — a
+name containing one *must* arrive encoded — so "Rondo &amp;amp; Variations" was
+listed under that name, a part called `Tromb&amp;#243;n` was offered as
+`Tromb&amp;#243;n`, and `Dvo&amp;#x159;&amp;#xe1;k` was a composer.
+
+Fixed with one `plainText` helper — strip tags, decode entities, trim — used by
+all three functions, replacing three copies of `.replace(/<[^>]*>/g, '').trim()`.
+**One pass**, not a chain: replacing `&amp;amp;` and then `&amp;lt;` in sequence turns
+the correctly-escaped `&amp;amp;lt;` into `<`, so the file says one thing and the
+screen shows another. There is a test for that specific case, and for hex
+entities, and for leaving a malformed one exactly as written rather than
+throwing.
+
+**2. An empty `<work-title>` hid the movement title.** The code preferred the
+*element* over the *text*, and exporters write
+`<work><work-title></work-title></work>` for a piece whose work title was never
+filled in. A movement called "Allemande" imported as untitled. Now it takes the
+first non-empty of the two, which is what the docstring always claimed.
+
+**A test of mine that could not fail, caught by mutation.** The case named
+"reads the container rather than guessing at the entry" passed whether the
+container was consulted or not: the zip held no *other* non-`META-INF` XML, so
+the fallback landed on the same file. Removing the container lookup entirely
+stayed green. The zip now carries a decoy `appearance.xml` added before the
+score, and the mutation is caught.
+
+Mutations caught: entities left encoded, the empty work-title winning again,
+tags stripped after decoding instead of before, an unchecked code point reaching
+`String.fromCodePoint`, and the container lookup removed.
+
+**Tests run:** mobile 78 (55 + 23), typecheck clean; backend 741 unchanged.
+**Rollback:** revert.
+
 ## 2026-09-09 (night, later) — `/v1/ready` explained failures that had not happened
 
 **Branch:** `main`. Found by the user running the endpoint against the live API
