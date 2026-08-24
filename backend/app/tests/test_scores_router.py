@@ -8,6 +8,7 @@ on `parse_sheet_music`. Supabase is mocked via the chained
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from typing import Any, Callable
 from unittest.mock import MagicMock
 from uuid import UUID, uuid4
@@ -1280,3 +1281,162 @@ def test_an_unreadable_score_column_has_no_concerns_rather_than_raising() -> Non
     assert _concerns_for(None) == []
     assert _concerns_for({}) == []
     assert _concerns_for({"measures": "not a list"}) == []
+
+
+# ---- naming the clef when the source has it wrong -------------------------
+
+
+#: A file that states its clef **readably** — `<sign>F</sign><line>4</line>`.
+#:
+#: `_MXL` writes `<sign>F</sign>` with no `<line>`, which
+#: `_CLEF_BY_SIGN_LINE` cannot place, so the file names no clef this importer
+#: can use. Passing `clef` against *that* file exercises the fallback and the
+#: override identically, and the first version of the test below could not fail.
+_MXL_BASS = _MXL.replace("<clef><sign>F</sign></clef>", "<clef><sign>F</sign><line>4</line></clef>")
+
+
+def test_a_clef_given_on_import_beats_what_the_file_says(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """The person holding the page outranks the file.
+
+    The case, exactly: a double bass **solo** part is written in *treble*, and
+    a part exported from an engine or another program can simply carry the
+    wrong clef. `clef_fallback` alone only fills a gap; this is for a file that
+    states the wrong thing.
+    """
+    user_id = uuid4()
+    sb = _install_supabase(
+        monkeypatch, returning_row=_row_for(uuid4(), user_id, source_image_url=None)
+    )
+    _install_storage(sb, signed=[])
+
+    res = client.post(
+        "/v1/scores/import",
+        json={"title": "Solo", "musicxml": _MXL_BASS, "clef": "treble"},
+        headers={"Authorization": f"Bearer {make_token(sub=user_id)}"},
+    )
+    assert res.status_code == 201, res.text
+    assert sb.table.return_value.insert.call_args.args[0]["score_json"]["clef"] == "treble"
+
+
+def test_a_file_that_states_its_clef_is_believed_when_nothing_overrides_it(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """The other direction. The override is optional, and without it the file
+    is authoritative — a bass part stays bass."""
+    user_id = uuid4()
+    sb = _install_supabase(
+        monkeypatch, returning_row=_row_for(uuid4(), user_id, source_image_url=None)
+    )
+    _install_storage(sb, signed=[])
+
+    res = client.post(
+        "/v1/scores/import",
+        json={"title": "Excerpt", "musicxml": _MXL_BASS},
+        headers={"Authorization": f"Bearer {make_token(sub=user_id)}"},
+    )
+    assert res.status_code == 201, res.text
+    assert sb.table.return_value.insert.call_args.args[0]["score_json"]["clef"] == "bass"
+
+
+def test_a_file_that_names_no_clef_is_unlabelled_rather_than_guessed(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """No clef given and none in the file means `null`. It used to mean treble,
+    which is a label a musician reads and believes."""
+    user_id = uuid4()
+    sb = _install_supabase(
+        monkeypatch, returning_row=_row_for(uuid4(), user_id, source_image_url=None)
+    )
+    _install_storage(sb, signed=[])
+    without_clef = _MXL.replace("<clef>", "<ignored>").replace("</clef>", "</ignored>")
+
+    res = client.post(
+        "/v1/scores/import",
+        json={"title": "Unlabelled", "musicxml": without_clef},
+        headers={"Authorization": f"Bearer {make_token(sub=user_id)}"},
+    )
+    assert res.status_code == 201, res.text
+    assert sb.table.return_value.insert.call_args.args[0]["score_json"]["clef"] is None
+
+
+def test_the_clef_can_be_corrected_without_resending_the_whole_score(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """A double bass **solo** part is written in treble, and a bass or cello
+    part goes into tenor for a high passage — so neither the engine nor the
+    instrument settles this and the player does.
+
+    One field, not the whole transcription: sending the score back to change a
+    word means writing hundreds of notes and losing every concurrent edit in
+    between.
+    """
+    user_id, score_id = uuid4(), uuid4()
+    stored = {**GOOD_PAYLOAD, "clef": "bass"}
+    sb = _install_supabase(
+        monkeypatch,
+        returning_row=_row_for(score_id, user_id, score_json={**stored, "clef": "treble"}),
+    )
+    sb.table.return_value.select.return_value.eq.return_value.eq.return_value.limit.return_value.execute.return_value = SimpleNamespace(  # noqa: E501
+        data=[{"score_json": stored}]
+    )
+
+    res = client.patch(
+        f"/v1/scores/{score_id}",
+        json={"clef": "treble"},
+        headers={"Authorization": f"Bearer {make_token(sub=user_id)}"},
+    )
+    assert res.status_code == 200, res.text
+
+    written = sb.table.return_value.update.call_args.args[0]["score_json"]
+    assert written["clef"] == "treble"
+    assert written["measures"] == stored["measures"], "the notes were rewritten too"
+
+
+def test_the_clef_can_be_cleared(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """`null` is a real answer, not a missing one: unlabelled beats mislabelled,
+    which is the whole reason `ScoreJson.clef` is nullable."""
+    user_id, score_id = uuid4(), uuid4()
+    stored = {**GOOD_PAYLOAD, "clef": "bass"}
+    sb = _install_supabase(
+        monkeypatch,
+        returning_row=_row_for(score_id, user_id, score_json={**stored, "clef": None}),
+    )
+    sb.table.return_value.select.return_value.eq.return_value.eq.return_value.limit.return_value.execute.return_value = SimpleNamespace(  # noqa: E501
+        data=[{"score_json": stored}]
+    )
+
+    res = client.patch(
+        f"/v1/scores/{score_id}",
+        json={"clef": None},
+        headers={"Authorization": f"Bearer {make_token(sub=user_id)}"},
+    )
+    assert res.status_code == 200, res.text
+    assert sb.table.return_value.update.call_args.args[0]["score_json"]["clef"] is None
+
+
+def test_a_whole_score_sent_with_a_clef_keeps_its_own(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """Two sources for one field is how they disagree.
+
+    A caller sending a whole `score_json` has already put a clef in it. The
+    shortcut is for changing that one field *without* the round trip, so when
+    both arrive the score wins and no read-modify-write happens at all.
+    """
+    user_id, score_id = uuid4(), uuid4()
+    sent = {**GOOD_PAYLOAD, "clef": "alto"}
+    sb = _install_supabase(
+        monkeypatch, returning_row=_row_for(score_id, user_id, score_json=sent)
+    )
+
+    res = client.patch(
+        f"/v1/scores/{score_id}",
+        json={"score_json": sent, "clef": "treble"},
+        headers={"Authorization": f"Bearer {make_token(sub=user_id)}"},
+    )
+    assert res.status_code == 200, res.text
+    assert sb.table.return_value.update.call_args.args[0]["score_json"]["clef"] == "alto"

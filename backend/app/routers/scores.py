@@ -120,6 +120,21 @@ class ImportScoreRequest(BaseModel):
     #: The MusicXML document itself. Uncompressed: `.mxl` is a zip and
     #: unpacking one is the client's job, since it already has the file open.
     musicxml: str = Field(min_length=1, max_length=8_000_000)
+    #: The clef this part is actually in, when the caller knows better than the
+    #: file does.
+    #:
+    #: **Optional, and it wins.** A notation file usually states its clef and
+    #: is then authoritative — but not always: an engine's output can be wrong,
+    #: and plenty of files state nothing at all, in which case the reading is
+    #: `null` rather than a guess.
+    #:
+    #: Not a way to force a part into the clef its instrument "should" use.
+    #: A double bass **solo** part is written in *treble*, and a bass or cello
+    #: part drops into tenor for a high passage — reading treble on a bass
+    #: player's page is frequently the correct answer, not a mistake to
+    #: override. This exists for when the person holding the page knows the
+    #: reading is wrong, which is the only thing that beats what the file says.
+    clef: Clef | None = None
     #: Which part to read, by id (`P3`) or by printed name ("Violoncello").
     #: Required for a multi-part file — see `_choose_part` for why guessing is
     #: worse than refusing.
@@ -133,6 +148,21 @@ class UpdateScoreRequest(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=200)
     composer: str | None = Field(default=None, max_length=200)
     movement: str | None = Field(default=None, max_length=200)
+    #: Correct the clef without resending the whole transcription.
+    #:
+    #: The clef lives inside `score_json`, so this was already *possible* by
+    #: sending the entire score back — which means reading it, editing one
+    #: field, and writing hundreds of notes to change a word, with every
+    #: concurrent edit in between lost. This changes the one field.
+    #:
+    #: An explicit `null` clears it, which is a real answer: `ScoreJson.clef` is
+    #: nullable precisely so a part can be unlabelled rather than mislabelled.
+    #:
+    #: Whoever reads the page can be wrong about this in either direction. A
+    #: double bass solo part is written in *treble*, and a bass or cello part
+    #: goes into tenor for a high passage — so neither the engine nor the
+    #: instrument settles it, and the player does.
+    clef: Clef | None = None
 
 
 class MeasureConcern(BaseModel):
@@ -489,6 +519,13 @@ async def import_score(
     """
     try:
         score = score_json_from_musicxml(body.musicxml, part=body.part)
+        if body.clef is not None:
+            # Stated by the person, so it outranks the file — which covers the
+            # missing case as well as the wrong one, so it is the only rule
+            # here. Passing it as `clef_fallback` too was a second mechanism
+            # for the same job: mutation testing could not kill it, because
+            # nothing reaches it that this line has not already settled.
+            score = score.model_copy(update={"clef": body.clef})
     except MusicXMLError as exc:
         # The converter's message names the parts a multi-part file holds, so
         # the client can offer them rather than make the musician guess.
@@ -597,6 +634,26 @@ async def update_score(
     # make that indistinguishable from omitting the field.
     if "movement" in sent:
         update["movement"] = body.movement
+    if "clef" in sent and body.score_json is None:
+        # Read-modify-write of the one field, and only when the caller has not
+        # sent a whole `score_json` — if they have, theirs already carries a
+        # clef and two sources for one field is how they disagree.
+        current = (
+            _service_client()
+            .table("scores")
+            .select("score_json")
+            .eq("id", str(score_id))
+            .eq("user_id", str(user_id))
+            .limit(1)
+            .execute()
+        )
+        rows = current.data or []
+        if not rows:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="score not found"
+            )
+        stored = rows[0].get("score_json") or {}
+        update["score_json"] = {**stored, "clef": body.clef}
     if not update:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

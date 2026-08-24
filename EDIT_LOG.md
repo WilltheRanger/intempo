@@ -6,6 +6,61 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-17 — The clef is the player's to state, in both directions
+
+**Branch:** `main`. The owner, on the previous entry: *"have an optional option
+just in case the actual clef is a different one. For example bass solos
+sometimes have treble."*
+
+Correct, and it is the case that breaks every assumption an instrument-based
+rule would make. **A double bass solo part is written in treble clef.** A bass
+or cello part drops into tenor for a high passage and comes back. So reading
+treble on a bass player's page is frequently the *right* answer, and nothing
+about the instrument settles it.
+
+Two optional fields, and neither guesses:
+
+- **`POST /v1/scores/import` takes a `clef`** which outranks the file. A
+  notation file usually states its clef and is then authoritative — but an
+  engine's output can be wrong, and a part exported from another program can
+  simply carry someone else's clef.
+- **`PATCH /v1/scores/{id}` takes a `clef`** so a misread one is corrected
+  without resending the transcription. It was already *possible* — the clef
+  lives inside `score_json` and that endpoint accepts a whole score — which
+  meant reading it, editing one word, and writing hundreds of notes back, with
+  every concurrent edit in between lost. An explicit `null` clears it, because
+  unlabelled genuinely beats mislabelled and that is why the field is nullable.
+
+Sending both a `score_json` and a `clef` keeps the score's own: two sources for
+one field is how they disagree, and the shortcut exists precisely to avoid the
+round trip, so when the round trip has happened there is nothing to shortcut.
+
+### Two tests that could not fail, and one mechanism that was not needed
+
+`_MXL` — the fixture every import test uses — writes `<clef><sign>F</sign></clef>`
+with **no `<line>`**, which `_CLEF_BY_SIGN_LINE` cannot place. So the file names
+no clef this importer can use, and passing `clef` against it exercises the
+override and the fallback identically. Both mutations survived. `_MXL_BASS`
+states `<line>4</line>`, and the test now says what it means: file says bass,
+caller says treble, treble wins.
+
+Then `clef_fallback=body.clef` survived mutation on its own — because
+`model_copy` already settles every case where a clef was given. A second
+mechanism for one job. Removed, same as the fence-stripper two entries ago: an
+unkillable branch is either wrong or unnecessary.
+
+**Not done, and it needs the §2 gate.** There is no control in the app for this
+yet. The backend accepts it; the screen does not offer it. That is a change to
+what a musician sees and it is the owner's call.
+
+**Tests:** 6 new cases. Six mutations — the override ignored, not winning over
+the file, the patch ignoring clef, an explicit null unable to clear it, the
+patch overwriting the notes, and a sent score overridden — all killed.
+
+Backend 973 tests green (968 before), ruff clean.
+
+---
+
 ## 2026-09-17 — homr run on the real page, and the three importer bugs it found
 
 **Branch:** `main`. The owner asked to switch to the HOMR engine — *"that's what
