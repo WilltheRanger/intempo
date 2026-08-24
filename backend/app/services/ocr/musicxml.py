@@ -278,7 +278,7 @@ def _choose_part(root: ET.Element, wanted: str | None) -> ET.Element:
 
 
 def score_json_from_musicxml(
-    xml: str, *, clef_fallback: str = "treble", part: str | None = None
+    xml: str, *, clef_fallback: str | None = None, part: str | None = None
 ) -> ScoreJson:
     """Convert one MusicXML part into a `ScoreJson`.
 
@@ -312,31 +312,53 @@ def score_json_from_musicxml(
     dropped = 0
 
     for index, measure_el in enumerate(chosen.iterfind("measure"), start=1):
-        attributes = measure_el.find("attributes")
-        if attributes is not None:
-            if clef is None:
-                clef_el = attributes.find("clef")
-                if clef_el is not None:
-                    sign = _text(clef_el.find("sign")) or ""
-                    line = _text(clef_el.find("line")) or ""
-                    clef = _CLEF_BY_SIGN_LINE.get((sign, line))
-            if time_signature is None:
-                time_el = attributes.find("time")
-                beats = _text(time_el.find("beats")) if time_el is not None else None
-                beat_type = (
-                    _text(time_el.find("beat-type")) if time_el is not None else None
-                )
-                if beats and beat_type:
-                    time_signature = f"{beats}/{beat_type}"
-            if key_signature is None:
-                key_el = attributes.find("key")
-                if key_el is not None:
-                    raw = _text(key_el.find("fifths"))
-                    if raw is not None:
-                        try:
-                            key_signature = _key_name(int(raw), _text(key_el.find("mode")))
-                        except ValueError:
-                            key_signature = None
+        # **Every** `<attributes>` block in the measure, not the first.
+        #
+        # A measure may carry more than one, and the first is often only
+        # `<divisions>`. homr writes exactly that: measure 1 holds
+        # `<attributes><divisions>2</divisions></attributes>` and then a second
+        # block with the clef and the key. Reading `find("attributes")` saw the
+        # divisions, found no clef, and fell through to `clef_fallback` — which
+        # defaulted to *treble*, on a bass part, which is the one thing
+        # `ScoreJson.clef` is documented never to do.
+        #
+        # The metre and key were wrong in a subtler way: the loop kept looking
+        # until it found one, so it picked up the **change** at measure 23 and
+        # presented 2/2 and F major as the page's header, on a page that starts
+        # in cut-common somewhere else entirely.
+        measure_time: str | None = None
+        for attributes in measure_el.iterfind("attributes"):
+            clef_el = attributes.find("clef")
+            if clef is None and clef_el is not None:
+                sign = _text(clef_el.find("sign")) or ""
+                line = _text(clef_el.find("line")) or ""
+                clef = _CLEF_BY_SIGN_LINE.get((sign, line))
+
+            time_el = attributes.find("time")
+            beats = _text(time_el.find("beats")) if time_el is not None else None
+            beat_type = (
+                _text(time_el.find("beat-type")) if time_el is not None else None
+            )
+            if beats and beat_type:
+                stated = f"{beats}/{beat_type}"
+                if time_signature is None:
+                    time_signature = stated
+                elif stated != time_signature:
+                    # A metre printed mid-piece is a change of metre, and it
+                    # belongs on the measure — which is where `meters_in_force`
+                    # reads changes from. Overwriting the header instead
+                    # reports every bar before it as having the wrong number of
+                    # beats, on a file that states both correctly.
+                    measure_time = stated
+
+            key_el = attributes.find("key")
+            if key_signature is None and key_el is not None:
+                raw = _text(key_el.find("fifths"))
+                if raw is not None:
+                    try:
+                        key_signature = _key_name(int(raw), _text(key_el.find("mode")))
+                    except ValueError:
+                        key_signature = None
 
         for direction in measure_el.iterfind("direction"):
             words = _text(direction.find("direction-type/words"))
@@ -482,6 +504,7 @@ def score_json_from_musicxml(
                 notes=notes,
                 slurs=slurs,
                 tuplets=tuplets,
+                time_signature=measure_time,
             )
         )
 

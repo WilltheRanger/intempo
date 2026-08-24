@@ -459,3 +459,149 @@ def test_a_triple_dot_is_still_dropped_rather_than_guessed() -> None:
       </measure>'''))
 
     assert score.measures[0].notes == []
+
+
+# ---------------------------------------------------------------------------
+# What an OMR engine's output actually looks like
+#
+# Found by running homr 0.7.0 over the first real page this project has seen —
+# a photographed String Bass part — and putting its MusicXML through this
+# importer. The engine read the page well: 74 measures, 267 notes, and 73 of the
+# 74 bars add up. The importer got the *header* wrong three ways, and all three
+# came from `find("attributes")` reading only the first block in a measure.
+#
+# The shapes are reproduced here rather than the file: the notes are a
+# transcription of copyrighted music, and none of these bugs needs them.
+# ---------------------------------------------------------------------------
+
+
+def test_a_second_attributes_block_in_the_same_measure_is_read() -> None:
+    """homr writes `<attributes><divisions/></attributes>` and *then* a second
+    block with the clef and key. Reading only the first found no clef and fell
+    through to `clef_fallback` — which defaulted to treble, on a bass part,
+    which is the one thing `ScoreJson.clef` is documented never to do.
+    """
+    score = score_json_from_musicxml(_partwise('''
+      <measure number="1">
+        <attributes><divisions>2</divisions></attributes>
+        <attributes>
+          <key><fifths>2</fifths></key>
+          <clef><sign>F</sign><line>4</line></clef>
+        </attributes>
+        <note><pitch><step>D</step><octave>3</octave></pitch>
+          <duration>2</duration><type>quarter</type></note>
+      </measure>'''))
+
+    assert score.clef == "bass"
+    assert score.key_signature == "D major"
+
+
+def test_the_header_is_the_metre_the_piece_starts_in() -> None:
+    """The loop kept looking until it found a metre, so on a file that states
+    one only at its *change* it presented that as the header — and every bar
+    before the change is then reported as having the wrong number of beats, on
+    a file that states both correctly.
+    """
+    score = score_json_from_musicxml(_partwise('''
+      <measure number="1">
+        <attributes><divisions>2</divisions>
+          <time><beats>4</beats><beat-type>4</beat-type></time>
+          <clef><sign>F</sign><line>4</line></clef>
+        </attributes>
+        <note><pitch><step>D</step><octave>3</octave></pitch>
+          <duration>8</duration><type>whole</type></note>
+      </measure>
+      <measure number="2">
+        <attributes><time><beats>3</beats><beat-type>4</beat-type></time></attributes>
+        <note><pitch><step>E</step><octave>3</octave></pitch>
+          <duration>6</duration><type>half</type><dot/></note>
+      </measure>'''))
+
+    assert score.time_signature == "4/4", "the change was promoted to the header"
+    assert score.measures[0].time_signature is None
+    assert score.measures[1].time_signature == "3/4", (
+        "the change was dropped, so every bar after it is judged against 4/4"
+    )
+    # And the validator reads it from there, which is the whole point.
+    #
+    # 3/4 rather than the 2/2 this was written with first: `beats_per_measure`
+    # answers in *quarter* beats, so 2/2 and 4/4 are both 4.0 and the assertion
+    # could not have failed whatever the code did.
+    assert validate_measures(score)[1].expected_beats == 3.0
+    assert validate_measures(score)[0].expected_beats == 4.0
+
+
+def test_a_metre_restated_unchanged_is_not_a_change() -> None:
+    """Engines repeat the metre at a system break. Treating each restatement as
+    a change would put a `time_signature` on measures that do not have one, and
+    `meters_in_force` would carry it as an event."""
+    score = score_json_from_musicxml(_partwise('''
+      <measure number="1">
+        <attributes><divisions>2</divisions>
+          <time><beats>4</beats><beat-type>4</beat-type></time>
+          <clef><sign>F</sign><line>4</line></clef>
+        </attributes>
+        <note><pitch><step>D</step><octave>3</octave></pitch>
+          <duration>8</duration><type>whole</type></note>
+      </measure>
+      <measure number="2">
+        <attributes><time><beats>4</beats><beat-type>4</beat-type></time></attributes>
+        <note><pitch><step>E</step><octave>3</octave></pitch>
+          <duration>8</duration><type>whole</type></note>
+      </measure>'''))
+
+    assert [m.time_signature for m in score.measures] == [None, None]
+
+
+def test_a_clef_that_cannot_be_read_is_none_rather_than_treble() -> None:
+    """`ScoreJson.clef`: "a bass part labelled 'Treble clef' is a worse answer
+    than no label". The importer defaulted to treble anyway, and the only real
+    caller never passed anything else."""
+    score = score_json_from_musicxml(_partwise('''
+      <measure number="1">
+        <attributes><divisions>2</divisions>
+          <clef><sign>TAB</sign><line>5</line></clef>
+        </attributes>
+        <note><pitch><step>D</step><octave>3</octave></pitch>
+          <duration>2</duration><type>quarter</type></note>
+      </measure>'''))
+
+    assert score.clef is None
+
+
+def test_a_caller_may_still_name_the_clef_it_knows() -> None:
+    """The parameter stays, because a caller that *does* know — the import
+    screen asks which part you play — is different from one that guesses."""
+    xml = _partwise('''
+      <measure number="1">
+        <attributes><divisions>2</divisions></attributes>
+        <note><pitch><step>D</step><octave>3</octave></pitch>
+          <duration>2</duration><type>quarter</type></note>
+      </measure>''')
+
+    assert score_json_from_musicxml(xml, clef_fallback="bass").clef == "bass"
+    assert score_json_from_musicxml(xml).clef is None
+
+
+def test_a_clef_change_mid_piece_does_not_relabel_the_part() -> None:
+    """A bass or cello part goes into tenor clef for a high passage and comes
+    back — it is one of the most ordinary things in the repertoire this app is
+    for. The header is the clef the part *starts* in; a later one is a change,
+    and `ScoreJson` has nowhere to put it, so it must not overwrite the label a
+    musician reads.
+    """
+    score = score_json_from_musicxml(_partwise('''
+      <measure number="1">
+        <attributes><divisions>2</divisions>
+          <clef><sign>F</sign><line>4</line></clef>
+        </attributes>
+        <note><pitch><step>D</step><octave>2</octave></pitch>
+          <duration>2</duration><type>quarter</type></note>
+      </measure>
+      <measure number="2">
+        <attributes><clef><sign>C</sign><line>4</line></clef></attributes>
+        <note><pitch><step>A</step><octave>3</octave></pitch>
+          <duration>2</duration><type>quarter</type></note>
+      </measure>'''))
+
+    assert score.clef == "bass", "a tenor-clef passage relabelled the whole part"
