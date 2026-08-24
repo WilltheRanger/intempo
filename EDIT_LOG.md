@@ -6,6 +6,49 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-09 (later) — There was a fifth copy of the beat table, and it is the one you hear
+
+**Branch:** `main`.
+
+`test_duration_beats.py` opens with the best-documented near-miss in this
+repository: four copies of "how many beats is a dotted quarter", each carrying
+a comment saying it was deliberately the same as the others, three of which
+went stale the day triplets were added — `validate.py` silently scoring every
+triplet as **zero** beats and reporting correct bars as short.
+
+That file counts `score_schema`, `alignment`, `ocr/validate` and the two
+browser tools, and holds all of them together. **It has never counted
+`mobile/src/lib/score/schedule.ts`,** which has a `BEATS` table of its own and
+a comment saying it is "kept deliberately parallel" — the same sentence the
+other four were carrying on the day they drifted.
+
+**It is the copy that matters most**, because it is the only one a musician
+*hears*. `schedule.ts` turns the score into note times for playback and the
+metronome. If it disagrees with the server's table, the app sounds the piece
+one way and the analysis judges it another — and the person is told they rushed
+a bar they played exactly along with what the app itself played. There is no
+way to discover that from inside the app; both halves are behaving.
+
+**What changed.** Two tests in `test_duration_beats.py`:
+
+- the app's `BEATS`, parsed out of the TypeScript and **evaluated**, equals
+  `DURATION_BEATS` exactly. Evaluated rather than compared as text because the
+  interesting values are written as arithmetic — `4 / 3`, not a decimal — and
+  comparing text would pass a table that had rounded a third. A rounded triplet
+  is precisely the drift that accumulates past `validate.TOLERANCE` across a
+  bar.
+- the app's `Duration` union covers exactly the durations the schema can send.
+  Contained rather than catastrophic if it does not — `reading.beatsOf` returns
+  null and refuses to count the bar — but "the app quietly stopped checking
+  bars containing this note" is not something to learn from a musician.
+
+They agree today. Mutation-checked in both directions, all five caught: a
+rounded third in the app, a dotted value typed wrong, a duration dropped from
+the app's table, one dropped from its union, and the server growing a
+`sixty_fourth` the app never learns.
+
+**Tests run:** 730 passed (728 + 2), ruff clean. **Rollback:** revert.
+
 ## 2026-09-09 — The Modal app definition is now executed, not pattern-matched
 
 **Branch:** `main`. Small, and timed: the user is setting Modal up right now,
