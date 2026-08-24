@@ -159,8 +159,25 @@ describe('what the musician is told', () => {
 
     expect(message).toMatch(/too large/i);
     expect(message).not.toMatch(/try again/i);
-    // And it says what would actually work.
-    expect(message).toMatch(/smaller|import/i);
+  });
+
+  it('does not send someone to a route that cannot take a photograph', async () => {
+    // The second version of this message was worse than "try again", because
+    // it was specific and wrong. It said to photograph the page "with your
+    // camera set to a smaller size" — `ScannerScreen` hardcodes `quality: 0.8`
+    // and has no size control — "or import it as a file", which is
+    // `ImportFileScreen`, a MusicXML-only picker that refuses a JPEG outright.
+    //
+    // The old assertion here was `toMatch(/smaller|import/i)`, checking that
+    // *some* advice was given rather than that it was advice anyone could
+    // follow, so it passed the whole time.
+    const message = await messageFor(413);
+
+    expect(message).not.toMatch(/import/i);
+    expect(message).not.toMatch(/camera set to|settings|resolution/i);
+    // The one route that genuinely makes a smaller file, because the scanner
+    // re-encodes at `quality: 0.8` while the picker hands over the original.
+    expect(message).toMatch(/photograph/i);
   });
 
   it('names the status for anything it has no specific advice about', async () => {

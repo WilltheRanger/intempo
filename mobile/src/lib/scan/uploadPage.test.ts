@@ -9,7 +9,7 @@ const { requestScoreImageUpload, uploadToSignedUrl, fromModule } = vi.hoisted(()
 vi.mock('../../data/api/upload', () => ({ requestScoreImageUpload, uploadToSignedUrl }));
 vi.mock('expo-asset', () => ({ Asset: { fromModule } }));
 
-import { ScanUploadError, uploadPage, uriFor } from './uploadPage';
+import { MAX_PAGE_BYTES, ScanUploadError, uploadPage, uriFor } from './uploadPage';
 
 /**
  * Getting a photographed page into storage.
@@ -91,6 +91,118 @@ describe('what the bytes are called', () => {
     await uploadPage({ source: 'file:///tmp/scan.tiff' } as never);
 
     expect(uploadToSignedUrl.mock.calls[0][2]).toBe('image/jpeg');
+    // **And files it under the name it just declared.** This assertion is the
+    // fix. The content type had a fallback and the extension did not, so an
+    // unrecognised name was sent through as `page.tiff` — and
+    // `POST /v1/upload/score-image` answers anything outside its five
+    // spellings with a 400 whose detail, `extension 'tiff' is not allowed`,
+    // is shown to the musician unchanged. The old test asserted only the
+    // content type, so it passed the whole time the filename was wrong.
+    expect(requestScoreImageUpload).toHaveBeenCalledWith('page.jpg');
+  });
+
+  it('files a .heif page as heic, which is the same format spelled differently', async () => {
+    // Android's picker copies to cache keeping the source extension, and
+    // `blob.type` is empty for the `file:` URI it hands back — so this was
+    // every HEIF page picked on Android, refused before a byte left the phone.
+    respondWith(new Blob([new Uint8Array([1])]));
+
+    await uploadPage({ source: 'file:///data/user/0/app/cache/ImagePicker/x.heif' } as never);
+
+    expect(requestScoreImageUpload).toHaveBeenCalledWith('page.heic');
+    expect(uploadToSignedUrl.mock.calls[0][2]).toBe('image/heic');
+  });
+
+  it('never asks storage for an extension the server refuses', async () => {
+    // The rule, rather than four examples of it. `_extract_ext` in
+    // `routers/upload.py` allows exactly these; anything else is a 400 before
+    // the upload starts, and the client has no business proposing one.
+    const ALLOWED = ['jpg', 'jpeg', 'png', 'heic', 'webp'];
+
+    for (const name of ['x.gif', 'x.bmp', 'x.tif', 'x.tiff', 'x.heif', 'x.avif', 'x']) {
+      vi.clearAllMocks();
+      respondWith(new Blob([new Uint8Array([1])]));
+
+      await uploadPage({ source: `file:///tmp/${name}` } as never);
+
+      const sent = requestScoreImageUpload.mock.calls[0][0] as string;
+      expect(ALLOWED, `${name} was filed as ${sent}`).toContain(
+        sent.split('.').pop(),
+      );
+    }
+  });
+});
+
+describe('a page too large for the bucket', () => {
+  /** The message `uploadPage` refused with. Fails the test if it resolved. */
+  async function refusalFor(uri: string): Promise<string> {
+    try {
+      await uploadPage({ source: uri } as never);
+    } catch (thrown) {
+      return (thrown as Error).message;
+    }
+    throw new Error('uploadPage resolved when it should have refused');
+  }
+
+  /** A blob that claims a size without allocating it. */
+  function ofSize(size: number): Blob {
+    const blob = new Blob([new Uint8Array([1])]);
+    Object.defineProperty(blob, 'size', { value: size });
+    return blob;
+  }
+
+  it('is refused before a byte is sent, not after', async () => {
+    // The difference is the whole upload. `UPLOAD_TIMEOUT_MS` is an XHR
+    // *total* timeout rather than an idle one, so a weak uplink is cut off at
+    // exactly two minutes however much progress it made — with no resume and
+    // no retry, every attempt starting from zero and meeting the same wall.
+    // Finding out from a 413 means paying that first.
+    respondWith(ofSize(MAX_PAGE_BYTES + 1));
+
+    await expect(uploadPage({ source: 'file:///tmp/page.jpg' } as never)).rejects.toThrow(
+      ScanUploadError,
+    );
+    expect(requestScoreImageUpload).not.toHaveBeenCalled();
+    expect(uploadToSignedUrl).not.toHaveBeenCalled();
+  });
+
+  it('says how large it is and how large it may be', async () => {
+    // "Too large" alone leaves someone guessing whether they missed by a
+    // little or by a lot, which decides whether trying a different page is
+    // worth anything.
+    respondWith(ofSize(13 * 1024 * 1024));
+
+    const message = await refusalFor('file:///tmp/page.jpg');
+
+    expect(message).toContain('13.0 MB');
+    expect(message).toContain('10.0 MB');
+  });
+
+  it('does not send someone to a route that cannot take a photograph', async () => {
+    // The same property the 413 message has to hold: `ImportFileScreen` is a
+    // MusicXML-only picker and refuses a JPEG, and the scanner has no size
+    // control to turn down. The only true remedy is that the scanner
+    // re-encodes at `quality: 0.8` while the picker hands over the original.
+    respondWith(ofSize(MAX_PAGE_BYTES * 2));
+
+    const message = await refusalFor('file:///tmp/page.jpg');
+
+    expect(message).not.toMatch(/import/i);
+    expect(message).toMatch(/photograph/i);
+  });
+
+  it('sends a page exactly at the limit', async () => {
+    // Off-by-one here is a page refused for being precisely allowed.
+    respondWith(ofSize(MAX_PAGE_BYTES));
+
+    await uploadPage({ source: 'file:///tmp/page.jpg' } as never);
+    expect(uploadToSignedUrl).toHaveBeenCalled();
+  });
+
+  it('matches the bucket the pages actually go to', () => {
+    // The server keeps a larger figure with headroom (`MAX_IMAGE_BYTES`, 12
+    // MB). This one is the bucket's, because the bucket is what answers 413.
+    expect(MAX_PAGE_BYTES).toBe(10 * 1024 * 1024);
   });
 });
 
