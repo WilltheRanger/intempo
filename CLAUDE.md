@@ -306,6 +306,15 @@ there works differently as of 2026-08-24:
   is installed — and pages were read by the vision chain alone for as long as
   nobody looked. `/v1/ready` reported the credentials fine throughout, because
   it tested them for presence and a value ending in `\n` is present.
+- **A configuration check is not a behaviour check.** Every readiness check
+  passed while every spawn raised, because they asked whether Modal *could* be
+  reached, not what happened when a page was actually handed over.
+  `dispatch.transcription_dispatches` counts pages sent against pages read
+  here, and `/v1/ready` reports the ratio — so a deployment that has never once
+  used the runtime it is configured for says so on the first scan instead of
+  after a page of invented notes. It keeps the failure **type** and never the
+  message: `grpclib` puts the credential in the message, and a readiness detail
+  is served over HTTP.
 - **The photograph is deleted only when a person accepts the reading.**
   `POST /v1/scores/:id/accept` is the only thing that discards it, and it
   refuses for a page still being read or one that failed. Never wire discarding
