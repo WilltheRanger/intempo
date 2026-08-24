@@ -268,3 +268,76 @@ def test_every_column_migration_has_a_readiness_check() -> None:
         f"{missing} add columns with no entry in REQUIRED_COLUMNS — a "
         f"deployment missing them would 500 while /v1/ready reported ready"
     )
+
+
+class TestTheWorkerWillFetchWhatStorageAccepted:
+    """Two numbers in two systems, and nothing ever compared them.
+
+    The worker's download cap was **25 MB**, with a comment describing a client
+    that no longer exists — "~2 MB AAC / ~10 MB WAV". The app records
+    uncompressed WAV now, so 25 MB is 4.6 minutes, while the `audio-uploads`
+    bucket accepts 50. A six-minute take uploaded successfully, sat in storage,
+    and was refused by the thing meant to read it — reported to the musician as
+    `audio_unavailable`, which was not true. The audio was fine and reachable.
+    """
+
+    class _Bucket:
+        def __init__(self, limit):
+            self.file_size_limit = limit
+
+    class _Storage:
+        def __init__(self, limit, raises=False):
+            self._limit, self._raises = limit, raises
+
+        def get_bucket(self, _name):
+            if self._raises:
+                raise RuntimeError("nope")
+            return TestTheWorkerWillFetchWhatStorageAccepted._Bucket(self._limit)
+
+    class _Client:
+        def __init__(self, limit, raises=False):
+            self.storage = TestTheWorkerWillFetchWhatStorageAccepted._Storage(
+                limit, raises
+            )
+
+    @staticmethod
+    def _check(client):
+        from app.services.readiness import _storage_checks
+
+        (check,) = _storage_checks(client)
+        return check
+
+    def test_the_real_bucket_limit_is_covered(self) -> None:
+        """50 MB is what the project is actually configured with."""
+        assert self._check(self._Client(50 * 1024 * 1024)).ok is True
+
+    def test_a_bucket_bigger_than_the_worker_is_reported(self) -> None:
+        check = self._check(self._Client(200 * 1024 * 1024))
+
+        assert check.ok is False
+        assert "200 MB" in check.detail
+        assert "uploads and is then reported as unavailable" in check.detail
+
+    def test_no_limit_set_is_not_a_failure(self) -> None:
+        """A bucket with no explicit limit takes the project default, which
+        this cannot see. Guessing would be worse than saying nothing."""
+        assert self._check(self._Client(None)).ok is True
+
+    def test_a_bucket_that_cannot_be_read_is_a_failure(self) -> None:
+        """If the bucket is unreachable, a recording may not be storable at
+        all — which is worth saying before a musician finds out by recording."""
+        check = self._check(self._Client(None, raises=True))
+
+        assert check.ok is False
+        assert "could not be read" in check.detail
+
+    def test_the_cap_covers_the_longest_take_the_app_will_record(self) -> None:
+        """The chain has three limits and the smallest one binds.
+
+        The recorder caps by bytes at the bucket's 50 MB; the bucket holds 50;
+        this must fetch 50. A number here below either of those is a hole with
+        a wrong error message in it.
+        """
+        from app.workers.analysis_runner import MAX_AUDIO_BYTES
+
+        assert MAX_AUDIO_BYTES >= 50 * 1024 * 1024

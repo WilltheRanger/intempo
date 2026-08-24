@@ -6,6 +6,64 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-07 — Three limits on one recording, and the smallest was a lie
+
+**Branch:** `main`. Went to verify the spec's claim that moving the analysis
+off this box will be small "because we structured the code right from day one".
+The claim holds — `analyze()` is a pure function and `run_analysis` is fetch,
+compute, write, in that order. Found something else on the way.
+
+**A recording passes three limits, and each was set by someone looking at a
+different thing:**
+
+    the recorder    15 minutes   because that is when a phone's memory is at risk
+    the bucket      50 MB        `file_size_limit`, checked against the project
+    the worker      25 MB        "~2 MB AAC / ~10 MB WAV", per its comment
+
+The last comment describes **a client that no longer exists**. The app records
+uncompressed WAV — every codec MediaRecorder offers smears the note attacks
+this pipeline measures — so 25 MB is **4.6 minutes**.
+
+So a six-minute take uploaded successfully, sat in storage, and was refused by
+the thing meant to read it. The musician was told `audio_unavailable`, which is
+**not true**: the audio was fine and reachable. That is the worst shape of
+error message — one that sends you to look somewhere nothing is wrong.
+
+The previous entry fixed the recorder against the bucket. This fixes the worker
+against the bucket, and the download timeout with it: 20 seconds needed 2.5 MB/s
+to pull 50 MB, which is fine from a datacentre and not a thing to depend on.
+
+### And made it self-checking, because the comment was the problem
+
+Two numbers in two systems and nothing ever compared them. `/v1/ready` now
+reads the bucket's real `file_size_limit` and says so when the worker would
+refuse something storage accepted. It reports a mismatch the other way too —
+that means the true limit is somewhere the code does not mention, which is
+worth knowing even though nothing breaks.
+
+An unreadable bucket is a failure in its own right: a recording may not be
+storable at all, and finding that out before a musician records is the whole
+point of the endpoint.
+
+**Verified against the live project** rather than assumed: `audio-uploads` is
+52428800 bytes, `score-images` 10485760.
+
+**A pattern worth naming.** This is the third limit in three days that was set
+against a stale mental model — the client's cold-start timeout, the recorder's
+cap, and now the worker's. In every case the number was defensible when written
+and the *comment* was what went out of date. Numbers derived from something
+checkable survive; numbers with a rationale in prose do not.
+
+**No three-foot test.** No UI touched.
+
+**Tests:** backend 691 (was 686; +5). Mutation-checked, asserted and verified
+restored: the storage check always passing fails 1, the cap back at 25 MB fails
+2. `ruff` clean.
+
+**Rollback:** revert. Both constants and one readiness check.
+
+---
+
 ## 2026-09-06 (later) — A practice session longer than three minutes was an OOM
 
 **Branch:** `main`. The deploy doc has warned since Batch 4 that *"audio
