@@ -512,3 +512,61 @@ def find_systems(image_bytes: bytes) -> list[tuple[int, int]]:
     systems.append((top, bottom))
 
     return systems
+
+
+def crop_systems(image_bytes: bytes) -> list[bytes]:
+    """The page cut into one JPEG per staff system, top to bottom.
+
+    Empty when the page holds fewer than `_MIN_SYSTEMS_TO_SPLIT` systems or
+    could not be read at all — both of which mean "send it whole", which is
+    what the caller did before this existed.
+
+    **Padded generously**, because a system is not only its staff lines. Above
+    them sit rehearsal marks, dynamics, bowings and the tempo text that says
+    `Meno mosso`; below them sit more dynamics and the occasional fingering.
+    The pipeline reads a page for its markings as much as its notes, and a crop
+    crushed to the lines throws away the half that tells a musician what to do.
+
+    **Overlap is deliberate and small.** Neighbouring crops share their
+    padding, so a low note hanging under one staff appears at the bottom of its
+    own crop and the top of the next. Better than the alternative: a note that
+    falls in the seam belongs to no crop at all, and a dropped note shifts
+    every bar after it in `alignment.py`'s timeline. Duplication is visible to
+    the caller and correctable; a hole is neither.
+    """
+    systems = find_systems(image_bytes)
+    if len(systems) < _MIN_SYSTEMS_TO_SPLIT:
+        return []
+
+    try:
+        from PIL import Image, ImageOps
+    except ImportError:  # pragma: no cover — Pillow is a declared dependency
+        return []
+
+    _register_heif()
+    crops: list[bytes] = []
+    try:
+        with Image.open(io.BytesIO(image_bytes)) as image:
+            image = ImageOps.exif_transpose(image)
+            if image.mode != "RGB":
+                image = image.convert("RGB")
+            height = image.height
+
+            for top, bottom in systems:
+                pad = max(8, int((bottom - top) * _SYSTEM_PADDING))
+                box = (0, max(0, top - pad), image.width, min(height, bottom + pad))
+                buffer = io.BytesIO()
+                # Lossless out of Pillow, then through `prepare_for_model` —
+                # so a crop obeys exactly the same size cap, quality ladder and
+                # format the whole page does, rather than a second set of
+                # numbers that could drift from it. PNG in between because
+                # encoding to JPEG twice puts ringing on staff lines that are
+                # one pixel wide, and those are the thing being read.
+                image.crop(box).save(buffer, format="PNG")
+                prepared, _media_type = prepare_for_model(buffer.getvalue())
+                crops.append(prepared)
+    except Exception:  # noqa: BLE001 — a page that will not crop is sent whole
+        log.warning("could not cut the page into systems; sending it whole", exc_info=True)
+        return []
+
+    return crops
