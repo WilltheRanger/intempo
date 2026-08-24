@@ -24,16 +24,18 @@ from typing import Final
 
 from app.services.score_schema import Measure, Note, ScoreJson, Slur, Tuplet
 
-# MusicXML type names → ours. Anything longer than a whole note (breve, long)
-# and anything shorter than a 32nd is absent from `Duration`, and a piece of
-# string music that needs them is outside what this product reads.
+# MusicXML type names → ours. `long` and `maxima` are still absent, and a piece
+# of string music that needs them is outside what this product reads; `breve`
+# and `64th` are not, and used to be dropped along with them.
 _TYPE_TO_DURATION: Final[dict[str, str]] = {
+    "breve": "double_whole",
     "whole": "whole",
     "half": "half",
     "quarter": "quarter",
     "eighth": "eighth",
     "16th": "sixteenth",
     "32nd": "thirty_second",
+    "64th": "sixty_fourth",
 }
 #: Three in the time of two, by base value. A file states a tuplet in
 #: `<time-modification>` — `actual-notes` over `normal-notes` — so a triplet is
@@ -50,6 +52,13 @@ _DOTTED: Final[dict[str, str]] = {
     "quarter": "dotted_quarter",
     "eighth": "dotted_eighth",
     "sixteenth": "dotted_sixteenth",
+    "thirty_second": "dotted_thirty_second",
+}
+#: A second dot adds half the first again: base × 1.75.
+_DOUBLE_DOTTED: Final[dict[str, str]] = {
+    "half": "double_dotted_half",
+    "quarter": "double_dotted_quarter",
+    "eighth": "double_dotted_eighth",
 }
 
 # `<clef>` gives a sign and the staff line it sits on. Sign alone is ambiguous:
@@ -151,9 +160,14 @@ def _duration_name(note: ET.Element) -> str | None:
         return base
     if dots == 1:
         return _DOTTED.get(base)
-    # Double-dotted notes have no name in `Duration`. Returning the undotted
-    # name would silently shorten the measure by three eighths of the value,
-    # and the beat-sum check would then blame the wrong measure.
+    if dots == 2:
+        # These used to have no name in `Duration`, and the note was dropped
+        # rather than shortened — on the reasoning that reporting the undotted
+        # value "would silently shorten the measure". A dropped note shortens
+        # it by the whole value instead, and `alignment.py` accumulates
+        # durations, so it moves every bar after it as well. Now they have
+        # names. A triple dot still does not, and is genuinely rare.
+        return _DOUBLE_DOTTED.get(base)
     return None
 
 

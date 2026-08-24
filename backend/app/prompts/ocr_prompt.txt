@@ -10,7 +10,7 @@ You are reading sheet music for a string instrument: a single-staff part, one no
     {
       "measure_number": 1,
       "notes": [
-        {"pitch": "D3" | "rest", "duration": "quarter" | "eighth" | "half" | "whole" | "sixteenth" | "dotted_quarter" | "triplet_eighth" | ...},
+        {"pitch": "D3" | "rest", "duration": one of the DURATION NAMES listed below},
         {"pitch": "F#3", "duration": "eighth", "tied_to_next": true}
       ],
       "slurs": [
@@ -43,6 +43,21 @@ bass part was refused outright because the transcription ran past the response
 limit before it reached the last bar, and the musician was told their
 photograph was unreadable. It was perfectly sharp. Brevity here is what lets a
 full page arrive at all.
+
+DURATION NAMES — the complete list. There is no other value:
+
+  double_whole  whole  half  quarter  eighth  sixteenth  thirty_second  sixty_fourth
+  dotted_whole  dotted_half  dotted_quarter  dotted_eighth  dotted_sixteenth  dotted_thirty_second
+  double_dotted_half  double_dotted_quarter  double_dotted_eighth
+  triplet_half  triplet_quarter  triplet_eighth  triplet_sixteenth
+
+This list used to end in "…", which read as an invitation to coin a name for
+anything not shown — and a name not on this list is rejected for the WHOLE
+page, not for the note. A correctly-read march came back with a duration this
+program had no word for and the musician was told their photograph could not be
+read. If a note's value genuinely is not here, write the nearest name that IS
+here and say so in notes_to_human; a slightly wrong length in one bar is a
+problem someone can see and correct, and a rejected page is not.
 
 Rules:
 - Number the measures 1, 2, 3 … in the order they appear. The program renumbers them positionally afterwards, so the numbers you emit only need to be in order — do not copy printed measure numbers or rehearsal marks.

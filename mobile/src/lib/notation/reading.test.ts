@@ -53,8 +53,12 @@ describe('counting a bar', () => {
     // — `?? 0` here and `?? 1` in schedule.ts — so the same unknown duration
     // made a bar look short in one place and shifted the metronome in the
     // other, both silently.
-    expect(beatsOf('sixty_fourth')).toBeNull();
-    expect(beatsIn([{ duration: 'quarter' }, { duration: 'sixty_fourth' }])).toBeNull();
+    // 'long' rather than a value that might later ship: musicxml.py names
+    // `long` and `maxima` as the values deliberately outside what this product
+    // reads. This used to say 'sixty_fourth', which then shipped — the test was
+    // right and its example expired.
+    expect(beatsOf('long')).toBeNull();
+    expect(beatsIn([{ duration: 'quarter' }, { duration: 'long' }])).toBeNull();
   });
 });
 
@@ -75,7 +79,7 @@ describe('problemMeasures', () => {
     // An unknown duration means the app is older than the backend that read
     // the page — a bar this version cannot count, not a bar that is wrong.
     // Counting it as zero offered the musician a fix for nothing.
-    const score = scoreOf('4/4', ['whole'], ['sixty_fourth']);
+    const score = scoreOf('4/4', ['whole'], ['long']);
 
     expect(problemMeasures(score)).toEqual([]);
   });
@@ -129,7 +133,7 @@ describe('describeBeats', () => {
   });
 
   it('does not show a confident wrong number for an uncountable bar', () => {
-    expect(describeBeats([{ duration: 'sixty_fourth' }], '4/4')).toEqual({
+    expect(describeBeats([{ duration: 'long' }], '4/4')).toEqual({
       text: 'Beats not counted',
       balanced: true,
       expected: null,

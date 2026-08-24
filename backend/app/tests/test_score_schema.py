@@ -234,9 +234,15 @@ def test_an_articulation_this_schema_does_not_hold_is_dropped_not_fatal() -> Non
     ).articulation == "staccato"
 
 
-@pytest.mark.parametrize("duration", ["sixty_fourth", "breve", "quintuplet_eighth", ""])
+@pytest.mark.parametrize("duration", ["long", "maxima", "quintuplet_eighth", ""])
 def test_a_duration_this_schema_cannot_express_is_still_fatal(duration: str) -> None:
     """The line this tolerance stops at, and it is not arbitrary.
+
+    `long` and `maxima` rather than a value that might later ship: `musicxml.py`
+    names those two as the values deliberately outside what this product reads.
+    This used to say `sixty_fourth` and `breve`, both of which then shipped —
+    the test was right and its examples expired.
+
 
     A dynamic nothing reads can be dropped for free. A *duration* cannot: it is
     the note's length, `alignment.py` accumulates durations to build the

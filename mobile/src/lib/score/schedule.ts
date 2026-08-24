@@ -28,6 +28,15 @@ export const BEATS: Record<Duration, number> = {
   sixteenth: 0.25,
   dotted_sixteenth: 0.375,
   thirty_second: 0.125,
+  dotted_thirty_second: 0.1875,
+  sixty_fourth: 0.0625,
+  double_whole: 8,
+  // A double dot adds half the dot again: base x 1.75. Ordinary notation, and
+  // how a march is written — see score_schema.py for what leaving them out
+  // cost on both the import and the OCR side.
+  double_dotted_half: 3.5,
+  double_dotted_quarter: 1.75,
+  double_dotted_eighth: 0.875,
   // Three in the time of two. Thirds are not exactly representable in binary,
   // which is why every beat-sum comparison carries a tolerance rather than
   // testing equality — see TOLERANCE in backend services/ocr/validate.py.

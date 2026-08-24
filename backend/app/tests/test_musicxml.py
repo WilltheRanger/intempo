@@ -391,3 +391,71 @@ def test_the_prompt_covers_the_marks_that_change_how_many_bars_there_are() -> No
         "a mark the format cannot hold has to be reported, not silently dropped"
     )
     assert "FERMATA" in prompt
+
+
+def _partwise(measures_xml: str) -> str:
+    """A minimal single-part document wrapping the measures given."""
+    return (
+        '<score-partwise version="4.0"><part-list>'
+        '<score-part id="P1"><part-name>Bass</part-name></score-part>'
+        "</part-list><part id=\"P1\">" + measures_xml + "</part></score-partwise>"
+    )
+
+
+def test_a_double_dotted_note_is_read_rather_than_dropped() -> None:
+    """It used to be dropped, on the reasoning that reporting the undotted value
+    "would silently shorten the measure". A dropped note shortens it by the
+    *whole* value instead, and `alignment.py` accumulates durations, so it moves
+    every bar after it as well. Avoiding a wrong length by producing a missing
+    note is not avoiding anything.
+
+    A double-dotted quarter plus a sixteenth fills 2 beats — the march rhythm
+    the first real page this project has seen is written in.
+    """
+    score = score_json_from_musicxml(_partwise('''
+      <measure number="1">
+        <attributes><divisions>16</divisions>
+          <time><beats>2</beats><beat-type>4</beat-type></time>
+          <clef><sign>F</sign><line>4</line></clef>
+        </attributes>
+        <note><pitch><step>D</step><octave>3</octave></pitch>
+          <duration>28</duration><type>quarter</type><dot/><dot/></note>
+        <note><pitch><step>E</step><octave>3</octave></pitch>
+          <duration>4</duration><type>16th</type></note>
+      </measure>'''))
+
+    notes = score.measures[0].notes
+    assert [n.duration for n in notes] == ["double_dotted_quarter", "sixteenth"]
+    assert sum(_DURATION_BEATS[n.duration] for n in notes) == 2.0
+
+
+def test_a_breve_and_a_sixty_fourth_are_read() -> None:
+    """Both were listed in this module's own comment as "outside what this
+    product reads", alongside `long` and `maxima` — which genuinely are."""
+    score = score_json_from_musicxml(_partwise('''
+      <measure number="1">
+        <attributes><divisions>16</divisions>
+          <clef><sign>F</sign><line>4</line></clef>
+        </attributes>
+        <note><pitch><step>C</step><octave>2</octave></pitch>
+          <duration>128</duration><type>breve</type></note>
+        <note><pitch><step>D</step><octave>2</octave></pitch>
+          <duration>1</duration><type>64th</type></note>
+      </measure>'''))
+
+    assert [n.duration for n in score.measures[0].notes] == ["double_whole", "sixty_fourth"]
+
+
+def test_a_triple_dot_is_still_dropped_rather_than_guessed() -> None:
+    """The line stays somewhere. A triple dot has no name here and is genuinely
+    rare; writing the double-dotted value would be a length nobody played."""
+    score = score_json_from_musicxml(_partwise('''
+      <measure number="1">
+        <attributes><divisions>16</divisions>
+          <clef><sign>F</sign><line>4</line></clef>
+        </attributes>
+        <note><pitch><step>D</step><octave>3</octave></pitch>
+          <duration>30</duration><type>quarter</type><dot/><dot/><dot/></note>
+      </measure>'''))
+
+    assert score.measures[0].notes == []

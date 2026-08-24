@@ -1,4 +1,4 @@
-import type { MeasureConcern, ScoreJson } from '../../data/types';
+import type { Duration, MeasureConcern, ScoreJson } from '../../data/types';
 import { BEATS } from '../score/schedule';
 
 /**
@@ -244,7 +244,7 @@ export const EDITABLE_DURATIONS = [
 /** How a duration is written on a button. Not the American names — a string
  *  player reads "crotchet" or "quarter" depending on where they trained, and
  *  the note value is unambiguous to both. */
-export const DURATION_LABELS: Record<string, string> = {
+export const DURATION_LABELS: Record<Duration, string> = {
   whole: 'Whole',
   dotted_whole: 'Whole ·',
   half: 'Half',
@@ -256,6 +256,12 @@ export const DURATION_LABELS: Record<string, string> = {
   sixteenth: '16th',
   dotted_sixteenth: '16th ·',
   thirty_second: '32nd',
+  dotted_thirty_second: '32nd ·',
+  sixty_fourth: '64th',
+  double_whole: 'Breve',
+  double_dotted_half: 'Half ··',
+  double_dotted_quarter: 'Quarter ··',
+  double_dotted_eighth: 'Eighth ··',
   triplet_half: 'Half ³',
   triplet_quarter: 'Quarter ³',
   triplet_eighth: 'Eighth ³',
