@@ -6,6 +6,45 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-14 — Every way a take can fail after the response was sent
+
+**Branch:** `main`. Same method as yesterday — `pytest --cov` put
+`analysis_runner.py` at **79%**, and the missing lines were, without exception,
+the failure paths.
+
+That is the worst place for a gap here. By the time any of this runs the
+musician has finished playing and is watching a progress screen. There is no
+request left to fail, so the `analyses` row is the only way to tell them
+anything, and a path that does not end in a finished row is a screen that never
+resolves.
+
+Nine tests. The download's three failures — a network error, a refused status,
+and a body over the cap — plus the two properties of the fetch that are silent
+when wrong: it **follows redirects** (a signed storage URL redirects, and
+without this the worker would hand a few hundred bytes of redirect HTML to the
+decoder) and it uses the long timeout.
+
+**The cap is tested at the boundary, inclusively**, because it has been wrong
+before: it was 25 MB while the bucket accepted 50, so a six-minute take
+uploaded successfully, sat in storage, and was refused *here* — reported to the
+musician as `audio_unavailable`, which was not true. Exactly `MAX_AUDIO_BYTES`
+must be fetched; one byte more must not.
+
+Then the branches inside the run: any pipeline error becoming a **finished**
+row rather than one left `processing` (the branch a missing `config.toml` came
+through, and a row left running is a progress screen the sweeper does not touch
+for ten minutes); a score that has gone missing failing the take instead of
+hanging; the row marked `processing` **before** the work starts, which is what
+makes a crash mid-analysis distinguishable from one that never began; and the
+sweep being a quiet no-op on a deployment with no service-role key rather than
+a log line every five minutes about something that was never going to work.
+
+Mutations caught, all nine. `analysis_runner.py` is at **98%** now and
+`app/main.py` at **97%**.
+
+**Tests run:** backend 781 (772 + 9), ruff clean; mobile 214 unchanged.
+**Rollback:** revert.
+
 ## 2026-09-13 (evening) — The sweeper nobody was watching, and a test that hung instead of failing
 
 **Branch:** `main`. Chosen by measurement rather than guesswork: `pytest --cov`
