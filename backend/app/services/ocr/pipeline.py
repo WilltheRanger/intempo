@@ -31,14 +31,24 @@ from app.services.ocr.claude_provider import (
     claude_sonnet_provider,
 )
 from app.services.page_image import crop_systems
-from app.services.ocr.validate import numbering_gaps
+from app.services.ocr.validate import (
+    TOLERANCE,
+    beats_per_measure,
+    numbering_gaps,
+)
 from app.services.ocr.validate import problems as beat_problems
 from app.services.ocr.gemini_provider import (
     gemini_flash_provider,
     gemini_pro_provider,
 )
 from app.services.ocr.confirm import retry_with_arithmetic
-from app.services.score_schema import Measure, Repeat, ScoreJson, TempoChange
+from app.services.score_schema import (
+    DURATION_BEATS,
+    Measure,
+    Repeat,
+    ScoreJson,
+    TempoChange,
+)
 
 log = logging.getLogger("intempo.ocr")
 
@@ -222,6 +232,102 @@ def _read_any_music(score: ScoreJson) -> bool:
 _MAX_SYSTEMS_TO_READ = 16
 
 
+def _fits_better(measures: list[Measure], stated: float, running: float | None) -> bool:
+    """Do these bars add up to `stated` more often than to `running`?
+
+    The arbiter for whether a metre printed at the top of a line is a real
+    change or a model's guess, and it is arithmetic rather than judgement for
+    the same reason `confirm.retry_with_arithmetic` is: the durations are
+    already on the page, so the metre that more of them add up to is the metre
+    that was printed. A measure the model could not read holds no notes, sums
+    to zero and so votes for neither.
+
+    **Strictly better, and a tie is not a draw.** The metre already running is
+    the one the page has been printing for however many lines; a line whose
+    bars split evenly between two metres is a line that does not say, and
+    switching on it hands the rest of the page to a metre half of one system
+    voted for.
+    """
+    sums = [
+        sum(DURATION_BEATS[note.duration] for note in measure.notes)
+        for measure in measures
+    ]
+    if not sums:
+        return False
+
+    def fits(beats: float | None) -> int:
+        if beats is None:
+            return 0
+        return sum(1 for total in sums if abs(total - beats) <= TOLERANCE)
+
+    return fits(stated) > fits(running)
+
+
+def _restate_meter_changes(parts: list[ScoreJson]) -> list[ScoreJson]:
+    """A metre printed at the top of a *later* system is a change of metre.
+
+    **This is the cost of reading a page one line at a time.** A model handed
+    one system cannot know whether it is the first, so a 3/4 printed where the
+    music changes to 3/4 comes back in that system's *header* field — exactly
+    where the header of the page belongs. `_combine` keeps the first header and
+    would drop it, and the page would be checked against its opening metre all
+    the way to the last bar. The prompt's own rule says what happens then:
+    "every bar after an unreported change is reported to the musician as having
+    the wrong number of beats, on a page that is written and read correctly,
+    with a control offered to 'fix' each one." Reading the page whole never had
+    this problem, because a model that can see the whole page knows which
+    metre is the first one.
+
+    So a stated metre that differs from the one running into that system is
+    moved onto the system's first measure, which is where `meters_in_force`
+    reads changes from — but **only when the bars agree**. A model asked for a
+    metre will often supply one whether or not the line prints it, and a guess
+    promoted to a metre change is worse than a dropped one: it invalidates a
+    correct reading from that bar onwards. `_fits_better` is the gate.
+
+    Nothing is moved when the system states a metre on **any** of its measures.
+    That means the model saw a change printed mid-line and reported it the
+    documented way, and its header is then just the metre it read somewhere on
+    the line — writing that onto the first bar puts the change a bar or two
+    early and calls the bars in between wrong. The guard used to be "the first
+    measure states nothing", which lets exactly that through.
+
+    Nothing is moved for the first metre anyone states, either — there is
+    nothing for it to be a change *from*, so it is the page's header and
+    `_combine` picks it up. This is the ordinary case for a photograph that
+    cuts the top of the page off.
+    """
+    out: list[ScoreJson] = []
+    running: float | None = None
+
+    for part in parts:
+        stated = beats_per_measure(part.time_signature)
+        if stated is not None and stated != running:
+            if running is None:
+                running = stated
+            elif (
+                part.measures
+                and all(m.time_signature is None for m in part.measures)
+                and _fits_better(part.measures, stated, running)
+            ):
+                head = part.measures[0].model_copy(
+                    update={"time_signature": part.time_signature}
+                )
+                part = part.model_copy(update={"measures": [head, *part.measures[1:]]})
+                running = stated
+
+        # Advance through the changes this system states on its own measures,
+        # mirroring `meters_in_force` exactly — including that an "unknown"
+        # metre on a measure clears the running one rather than continuing it.
+        for measure in part.measures:
+            if measure.time_signature is not None:
+                running = beats_per_measure(measure.time_signature)
+
+        out.append(part)
+
+    return out
+
+
 def _combine(parts: list[ScoreJson]) -> ScoreJson:
     """Several systems' transcriptions, joined into one page.
 
@@ -240,7 +346,14 @@ def _combine(parts: list[ScoreJson]) -> ScoreJson:
     single thing to the musician, and one line the reader was unsure of is a
     line of wrong notes wherever it sits — averaging it against nine confident
     ones hides exactly the page that most needs checking.
+
+    A later system that states a *different* metre is not disagreeing about the
+    header either — it is reading a change of metre it has no way to recognise
+    as one, because it cannot see that it is not the first line. See
+    `_restate_meter_changes`, which runs first.
     """
+    parts = _restate_meter_changes(parts)
+
     measures: list[Measure] = []
     repeats: list[Repeat] = []
     tempo_changes: list[TempoChange] = []

@@ -15,6 +15,7 @@ from pydantic import ValidationError
 from app import config as app_config
 from app.services.ocr import pipeline as pipeline_module
 from app.services.ocr.base import OCRProviderError, OCRResponse
+from app.services.ocr.validate import problems as beat_problems
 from app.services.ocr.pipeline import (
     CONFIDENCE_THRESHOLD,
     OCRError,
@@ -809,3 +810,242 @@ def test_a_page_split_into_more_systems_than_a_page_has_is_read_whole(monkeypatc
 
     assert whole.calls == 1, "it read the phantom bands one by one"
     assert len(score.measures) == 5
+
+
+# ---- a metre change printed at the top of a line --------------------------
+
+
+def _bars(count: int, beats_each: int, *, meter_on_first: str | None = None) -> list[dict]:
+    """`count` measures of `beats_each` quarter notes, numbered from 1."""
+    out = []
+    for i in range(count):
+        measure = {
+            "measure_number": i + 1,
+            "notes": [{"pitch": "D3", "duration": "quarter"}] * beats_each,
+            "slurs": [],
+        }
+        if i == 0 and meter_on_first is not None:
+            measure["time_signature"] = meter_on_first
+        out.append(measure)
+    return out
+
+
+def _line(meter: str | None, measures: list[dict], *, conf: float = 0.9) -> ScoreJson:
+    """One system's transcription, as a model reading one crop would answer."""
+    return ScoreJson.model_validate(
+        {
+            **GOOD_PAYLOAD,
+            "clef": "bass",
+            "time_signature": meter,
+            "ocr_confidence": conf,
+            "repeats": [],
+            "tempo_changes": [],
+            "measures": measures,
+        }
+    )
+
+
+def test_a_metre_change_printed_on_a_later_line_survives_the_join() -> None:
+    """The bug reading a page one system at a time introduces, and the reason
+    `_restate_meter_changes` exists.
+
+    A model handed one crop cannot tell it is not the first line, so a 2/4
+    printed where the music changes to 2/4 arrives in that system's *header*.
+    `_combine` keeps the first header, so without this the page is checked
+    against 4/4 to the last bar — and the prompt's own rule says what that
+    does: every bar after the change is reported as having the wrong number of
+    beats, on a page written and read correctly, with a control offered to
+    "fix" each one.
+    """
+    combined = pipeline_module._combine(
+        [
+            _line("4/4", _bars(3, 4)),
+            _line("2/4", _bars(3, 2)),
+        ]
+    )
+
+    assert combined.time_signature == "4/4", "the page's opening metre moved"
+    assert combined.measures[3].time_signature == "2/4", (
+        "the change of metre was dropped when the systems were joined"
+    )
+    # The check that actually reaches the musician: every bar adds up.
+    assert beat_problems(combined) == []
+
+
+def test_a_metre_the_bars_do_not_support_is_not_promoted_to_a_change() -> None:
+    """The other half, and the reason arithmetic decides rather than the model.
+
+    A model asked for a time signature will often supply one whether or not
+    the line prints it. Promoting a guess to a metre change is worse than
+    dropping a real one — it invalidates a correct reading from that bar to
+    the end of the page — so the bars have to agree first.
+    """
+    combined = pipeline_module._combine(
+        [
+            _line("4/4", _bars(3, 4)),
+            _line("3/4", _bars(3, 4)),  # says 3/4, plays four quarters a bar
+        ]
+    )
+
+    assert combined.measures[3].time_signature is None, (
+        "a metre nothing on the line adds up to was written in as a change"
+    )
+    assert beat_problems(combined) == []
+
+
+def test_a_change_the_model_put_on_the_measure_is_not_moved_to_the_top_of_it() -> None:
+    """A change printed *inside* a line, reported the documented way.
+
+    The model saw 2/4 come in at the second bar of the crop and said so on that
+    measure — and then answered 2/4 for the crop's header too, because that is
+    the time signature it read. Taking the header as the change would put it a
+    bar early and call bar 3, which is right, a bar with too many beats.
+
+    The guard is "this system states a metre on **any** measure", not "on its
+    first". Written the second way this scenario walks straight through it.
+    """
+    combined = pipeline_module._combine(
+        [
+            _line("4/4", _bars(2, 4)),
+            _line(
+                "2/4",
+                [
+                    {
+                        "measure_number": 1,
+                        "notes": [{"pitch": "D3", "duration": "quarter"}] * 4,
+                        "slurs": [],
+                    },
+                    {
+                        "measure_number": 2,
+                        "notes": [{"pitch": "D3", "duration": "quarter"}] * 2,
+                        "slurs": [],
+                        "time_signature": "2/4",
+                    },
+                    {
+                        "measure_number": 3,
+                        "notes": [{"pitch": "D3", "duration": "quarter"}] * 2,
+                        "slurs": [],
+                    },
+                ],
+            ),
+        ]
+    )
+
+    written = [
+        (m.measure_number, m.time_signature)
+        for m in combined.measures
+        if m.time_signature is not None
+    ]
+    assert written == [(4, "2/4")], "the change moved to the top of the line"
+    assert beat_problems(combined) == [], "bar 3 of the page was called wrong"
+
+
+def test_the_metre_keeps_running_across_a_line_that_does_not_print_one() -> None:
+    """Only the first line of a page prints the metre, so the third system
+    stating 4/4 again after a 2/4 section is a change *back* — not a repeat of
+    the header, and not something to ignore because the header already says
+    4/4."""
+    combined = pipeline_module._combine(
+        [
+            _line("4/4", _bars(2, 4)),
+            _line("2/4", _bars(2, 2)),
+            _line(None, _bars(2, 2)),
+            _line("4/4", _bars(2, 4)),
+        ]
+    )
+
+    written = [
+        (m.measure_number, m.time_signature)
+        for m in combined.measures
+        if m.time_signature is not None
+    ]
+    assert written == [(3, "2/4"), (7, "4/4")]
+    assert beat_problems(combined) == []
+
+
+def test_a_page_whose_first_line_never_states_a_metre_takes_the_next_one() -> None:
+    """Nothing to change *from* is not a change. The first metre anyone states
+    is the page's header — which is what `_combine` already did, and the case
+    where a phone photograph cuts the top of the page off."""
+    combined = pipeline_module._combine(
+        [
+            _line(None, _bars(2, 3)),
+            _line("3/4", _bars(2, 3)),
+        ]
+    )
+
+    assert combined.time_signature == "3/4"
+    assert all(m.time_signature is None for m in combined.measures), (
+        "the header was written in as a change of metre halfway down the page"
+    )
+
+
+def test_a_change_back_is_judged_against_the_metre_the_line_before_left_running() -> None:
+    """The running metre has to survive a change printed *inside* a system.
+
+    Line two goes into 2/4 at its second bar and reports it on that measure, so
+    nothing is moved. What matters is what the metre is when line three starts:
+    2/4. Line three prints 4/4 and is a change back.
+
+    Read against the page header instead — 4/4, because the running metre never
+    advanced — line three's 4/4 looks like no change at all, so nothing is
+    written, the page stays in 2/4 to the end, and every bar of a correctly
+    read line is reported as having twice the beats it should.
+    """
+    combined = pipeline_module._combine(
+        [
+            _line("4/4", _bars(2, 4)),
+            _line(
+                "4/4",
+                [
+                    {"measure_number": 1, "notes": [{"pitch": "D3", "duration": "quarter"}] * 4, "slurs": []},
+                    {"measure_number": 2, "notes": [{"pitch": "D3", "duration": "quarter"}] * 2, "slurs": [], "time_signature": "2/4"},
+                    {"measure_number": 3, "notes": [{"pitch": "D3", "duration": "quarter"}] * 2, "slurs": []},
+                ],
+            ),
+            _line("4/4", _bars(2, 4)),
+        ]
+    )
+
+    written = [
+        (m.measure_number, m.time_signature)
+        for m in combined.measures
+        if m.time_signature is not None
+    ]
+    assert written == [(4, "2/4"), (6, "4/4")], "the change back to 4/4 was dropped"
+    assert beat_problems(combined) == []
+
+
+def test_a_line_that_splits_evenly_between_two_metres_does_not_switch_the_page() -> None:
+    """A tie is not evidence, and the cost of treating it as evidence is not
+    confined to the line that tied.
+
+    Whatever metre is written in runs from that bar to the end of the page. So
+    a system whose bars vote two-all hands every later line to a metre half of
+    one line supported — here that is the last two bars, which are 4/4, read
+    correctly, and would be reported as a bar too long each.
+    """
+    combined = pipeline_module._combine(
+        [
+            _line("4/4", _bars(2, 4)),
+            _line(
+                "3/4",
+                [
+                    {"measure_number": 1, "notes": [{"pitch": "D3", "duration": "quarter"}] * 4, "slurs": []},
+                    {"measure_number": 2, "notes": [{"pitch": "D3", "duration": "quarter"}] * 3, "slurs": []},
+                    {"measure_number": 3, "notes": [{"pitch": "D3", "duration": "quarter"}] * 4, "slurs": []},
+                    {"measure_number": 4, "notes": [{"pitch": "D3", "duration": "quarter"}] * 3, "slurs": []},
+                ],
+            ),
+            _line(None, _bars(2, 4)),
+        ]
+    )
+
+    assert all(m.time_signature is None for m in combined.measures), (
+        "a two-all vote switched the metre for the rest of the page"
+    )
+    flagged = {f.measure_number for f in beat_problems(combined)}
+    assert flagged == {4, 6}, (
+        "the two short bars in the ambiguous line are the problem; the 4/4 "
+        f"line after it is not, and {sorted(flagged)} says otherwise"
+    )
