@@ -6,6 +6,39 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-12 (evening) — The scan upload, and the content type that was wrong once
+
+**Branch:** `main`. Thirteen tests for `lib/scan/uploadPage.ts`, which had
+none.
+
+The interesting part is the content type, and it has already been wrong in
+production. On web a captured page is a `blob:` URI with **no extension at
+all**, so the name says nothing; a canvas capture is PNG. Labelling the upload
+from the name meant the first real scan from a phone stored PNG bytes under
+`image/jpeg`, and the vision API — which checks — rejected the page with a 400.
+The blob knew its own type the whole time.
+
+The tests hold that from both sides: the blob's declared type wins when it has
+one, and the name is still consulted when it does not, because `blob.type` is
+empty for a `file:` URI on native. Plus the two parsing details that are easy
+to get wrong and invisible when you do — parameters stripped off
+`image/PNG; charset=binary`, and the extension read from the **path** rather
+than the whole URI, since a signed URL's token contains dots.
+
+Also covered: an empty page refused rather than stored (storing it produces a
+score whose transcription fails later, with an error about the reading rather
+than about the photograph); a non-ok read treated as a read failure rather than
+a network one; the read failure keeping its cause; the upload layer's own
+message reaching the musician un-rewrapped, because it names *which* of the
+several ways this can fail actually happened; and `uriFor` resolving a bundled
+asset through `expo-asset` rather than `Image.resolveAssetSource`, which does
+not exist on react-native-web and is how that was found the first time.
+
+Mutations caught, all eight.
+
+**Tests run:** mobile 191 (178 + 13), typecheck clean; backend 754 unchanged.
+CI green on the last five pushes, checked. **Rollback:** revert.
+
 ## 2026-09-12 (later) — The sign-in link, and a Supabase list that is one line short
 
 **Branch:** `main`.
