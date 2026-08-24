@@ -166,3 +166,70 @@ def test_it_is_wired_into_the_periodic_sweep() -> None:
     assert "sweep_stuck_transcriptions()" in startup, (
         "nothing recovers the reads that were in flight when the process died"
     )
+
+
+# ---- a page being read on another machine ---------------------------------
+
+
+def test_a_read_on_modal_is_given_longer_before_it_is_declared_dead(monkeypatch) -> None:
+    """"Nothing has happened yet" is not the same fact on both sides.
+
+    In-process, ten minutes of no progress means the process reading the page is
+    gone — `BackgroundTasks` runs here, so there is nothing else it could be
+    waiting for. On Modal the row sits `queued` for the whole of a cold start,
+    and Modal builds images **lazily, on first invocation**: this one installs
+    homr and 151 MB of ONNX weights. At ten minutes the sweeper would fail the
+    first page ever read on Modal while Modal was still building the container
+    to read it.
+    """
+    from app.workers import dispatch, transcription_runner
+
+    monkeypatch.setattr(dispatch, "TRANSCRIPTION_RUNTIME", "modal")
+    assert transcription_runner._stuck_after() == transcription_runner.STUCK_AFTER_REMOTE
+
+    monkeypatch.setattr(dispatch, "TRANSCRIPTION_RUNTIME", "inprocess")
+    assert transcription_runner._stuck_after() == transcription_runner.STUCK_AFTER
+
+    assert (
+        transcription_runner.STUCK_AFTER_REMOTE > transcription_runner.STUCK_AFTER
+    ), "the remote cutoff is not actually longer"
+
+
+def test_a_page_mid_cold_start_is_left_alone(monkeypatch) -> None:
+    """The failure this prevents, end to end: a row twelve minutes old, on a
+    deployment that reads on Modal, is a container still being built — not a
+    dead read."""
+    from app.workers import dispatch
+
+    monkeypatch.setattr(dispatch, "TRANSCRIPTION_RUNTIME", "modal")
+    fake = _scores(_row("s1", "queued", age=STUCK_AFTER + timedelta(minutes=2)))
+
+    assert sweep_stuck_transcriptions(fake, now=NOW) == 0, (
+        "a container still being built was failed as a dead read"
+    )
+    assert fake.table("scores").rows[0]["transcription_status"] == "queued"
+
+
+def test_a_page_that_really_is_dead_is_still_swept_on_modal(monkeypatch) -> None:
+    """Longer is not forever. Past the remote cutoff nothing is coming."""
+    from app.workers import dispatch
+    from app.workers.transcription_runner import STUCK_AFTER_REMOTE
+
+    monkeypatch.setattr(dispatch, "TRANSCRIPTION_RUNTIME", "modal")
+    fake = _scores(_row("s1", "reading", age=STUCK_AFTER_REMOTE + timedelta(minutes=1)))
+
+    assert sweep_stuck_transcriptions(fake, now=NOW) == 1
+
+
+def test_the_message_no_longer_names_a_cause_it_cannot_know() -> None:
+    """It said "the server restarted while it was working". On a read handed to
+    Modal that is not even the right kind of explanation, and a confident wrong
+    reason is worse than none — this project has been here before with "a
+    flatter, better-lit shot of the page usually fixes it"."""
+    fake = _scores(_row("s1", "reading", age=STUCK_AFTER * 4))
+
+    sweep_stuck_transcriptions(fake, now=NOW)
+
+    said = fake.table("scores").rows[0]["transcription_error"]
+    assert "server restarted" not in said
+    assert "try reading it again" in said

@@ -6,6 +6,54 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-17 — The sweeper would have failed the first page ever read on Modal
+
+**Branch:** `main`. The owner has set `TRANSCRIPTION_RUNTIME=modal` and
+`OCR_PROVIDER_CHAIN=homr,…` on the API host. This is the thing that would have
+broken the first scan.
+
+**Modal builds images lazily — on first invocation, not at deploy.** The
+GitHub Actions run for `92a54d4` finished in 1.2 seconds and reported
+`Created function transcribe_score`, which is the *definition* being published;
+the container that runs it gets built when something calls it. That build
+installs homr and pulls 151 MB of ONNX weights. Minutes.
+
+`sweep_stuck_transcriptions` fails any `queued` or `reading` row untouched for
+**ten minutes**. A page dispatched to Modal sits `queued` for the whole of that
+build, because nothing updates the row until the container starts. So the very
+first page read on Modal would have been marked **failed**, while Modal was
+still building the container to read it, and the musician told the server had
+restarted.
+
+**"Nothing has happened yet" is not the same fact on both sides.** In-process it
+means the process reading the page is gone — `BackgroundTasks` runs here, there
+is nothing else it could be waiting for. On Modal it is an ordinary cold start.
+So the cutoff is now `STUCK_AFTER_REMOTE = 30 minutes` when
+`TRANSCRIPTION_RUNTIME=modal`, and ten otherwise.
+
+Thirty means a genuinely dead read lingers twenty minutes longer than it used
+to. That is the right side to be wrong on: a dead row costs a musician a retry
+they can see, and killing a live one costs them the photograph, the upload, the
+wait, and their belief that the thing works.
+
+**And the message stopped naming a cause it cannot know.** It said "the server
+restarted while it was working" — on a read handed to Modal that is not even the
+right *kind* of explanation. A confident wrong reason is worse than none, which
+is the lesson this project already learned from "a flatter, better-lit shot of
+the page usually fixes it".
+
+**Tests:** 4 new cases. Five mutations — the remote cutoff ignored, applied
+everywhere, made shorter than the local one, the sweeper reverted to the fixed
+cutoff, and the wrong cause restored — all killed.
+
+Backend 1003 tests green (999 before), ruff clean.
+
+**Verified from production:** the Actions log shows `transcribe_score` deployed
+to `modal.com/apps/aryamshah2/main/deployed/intempo`. I first read the two-second
+Deploy step as the *skip* branch and was wrong; the log settles it.
+
+---
+
 ## 2026-09-17 — "73 of 74 bars add up" is weaker evidence than it reads
 
 **Branch:** `main`. A correction to the two entries above, and to what I told
