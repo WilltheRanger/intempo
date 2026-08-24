@@ -57,9 +57,23 @@ class Settings:
     #: "unknown provider" on the first scan and no photograph could be read at
     #: all, whatever keys were set. `/v1/ready` reports it now, and the chain
     #: skips names it does not recognise rather than taking the feature down.
-    OCR_PROVIDER_CHAIN: str = os.getenv(
-        "OCR_PROVIDER_CHAIN", "gemini-2.5-flash,claude-sonnet-5,claude-opus-5"
-    )
+    #: **homr alone, by the owner's decision on 2026-08-24: "run homr only, no
+    #: backup AI".**
+    #:
+    #: The vision models were the backup and they were the thing inventing
+    #: notes. On the one page measured against both, homr read 74 measures and
+    #: 267 notes with 73 of 74 bars adding up, against the vision chain's 59
+    #: and 112 — and when homr never ran at all, the chain returned a page of
+    #: notes nobody had read, at 0.40 confidence, which the app displayed as a
+    #: transcription.
+    #:
+    #: What this costs, stated plainly: homr is installed **only in the Modal
+    #: container**, so a host without it can no longer read a page at all. That
+    #: is the intended trade — a scan that fails can be retaken, and the
+    #: photograph is kept so retaking is a button rather than finding the music
+    #: again. `run_transcription` refuses up front and says which it is, rather
+    #: than spending the download and blaming the photograph.
+    OCR_PROVIDER_CHAIN: str = os.getenv("OCR_PROVIDER_CHAIN", "homr")
 
 
 

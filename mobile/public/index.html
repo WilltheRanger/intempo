@@ -82,12 +82,71 @@
        */
       (function () {
         var reported = false;
+        // Resources that failed. Collected rather than reported, because one
+        // failing image is not a crash — but if the app never mounts, the list
+        // is the most useful thing on the page.
+        var resourceFailures = [];
+
+        /*
+         * What to say when an error event carries nothing at all.
+         *
+         * It used to say 'unknown error' and stop, which is true and useless.
+         * Everything below is knowable without the error object, and each line
+         * has been the answer at least once: which resources had already
+         * failed, whether the page is being served somewhere the browser
+         * treats as insecure (`crypto.randomUUID` and storage are both absent
+         * on a non-secure origin), and which build is actually running — a
+         * stale index.html pinned to a deleted bundle looks exactly like a
+         * crash.
+         */
+        function describeNothing(event) {
+          var lines = ['The error carried no message.'];
+          if (resourceFailures.length) {
+            lines.push('', 'Resources that failed first:');
+            for (var i = 0; i < resourceFailures.length && i < 8; i += 1) {
+              lines.push('  ' + resourceFailures[i]);
+            }
+          }
+          var tag = document.querySelector('script[src*="_expo"]');
+          lines.push('', 'bundle: ' + (tag ? tag.src : '(none in page)'));
+          lines.push('origin: ' + location.origin);
+          lines.push('secure context: ' + (window.isSecureContext ? 'yes' : 'NO'));
+          lines.push('agent: ' + navigator.userAgent);
+          if (event && event.filename) {
+            lines.push('at: ' + event.filename + ':' + (event.lineno || '?'));
+          }
+          return lines.join('\n');
+        }
 
         function report(title, detail) {
           if (reported) return;
-          reported = true;
           var root = document.getElementById('root');
           if (!root) return;
+
+          /*
+           * **Never over a running app.** This is a boot watchdog and the
+           * `error` listener is attached for the life of the page, so it fires
+           * just as readily ten minutes into a practice session.
+           *
+           * When it did, it took the app off the screen. The stylesheet gives
+           * `#root` `display:flex; height:100%; flex:1`, and the line below
+           * replaces *all* inline style with `display:block` — dropping the
+           * height and the flex that react-native-web's container
+           * (`flex:1 1 0%`) needs. The mounted tree collapsed to zero height
+           * and the only thing left visible was this message.
+           *
+           * That is what a musician sent in on 2026-08-24: a full screen
+           * reading "The app crashed while starting." over "unknown error",
+           * on one bar of cellular signal, from an app that had started
+           * perfectly well and was still running underneath.
+           *
+           * Children in `#root` mean React has mounted. After that, whatever
+           * went wrong, blanking the app is worse than the thing it is
+           * reporting — the app has its own error boundary for the rest.
+           */
+          if (root.childElementCount > 0) return;
+
+          reported = true;
           root.style.cssText =
             'display:block;padding:24px;background:#FBFAF7;color:#14110E;' +
             'font:13px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace;' +
@@ -103,19 +162,49 @@
           root.appendChild(p);
         }
 
-        // A <script> that 404s fires an error event that doesn't bubble, so
-        // this listens in the capture phase.
+        /*
+         * A <script> that 404s fires an error event that doesn't bubble, so
+         * this listens in the capture phase.
+         *
+         * **A resource error and a thrown error are not the same event.** An
+         * <img> or <link> that fails dispatches a plain Event at the element:
+         * no `error`, and no `message`, because only an ErrorEvent has one. So
+         * both fell through to the literal string `'unknown error'` — and
+         * because `report` latches on the first call, a font or an image that
+         * failed could take the screen and hide the real crash behind it.
+         *
+         * That is not hypothetical. It is what a musician sent in on
+         * 2026-08-24: a full screen reading "The app crashed while starting."
+         * over "unknown error", which named neither what failed nor where, and
+         * left nothing to work from at all.
+         *
+         * So: resource failures name the element and the URL, and they no
+         * longer latch — a page that recovers should be allowed to.
+         */
         window.addEventListener(
           'error',
           function (event) {
-            if (event.target && event.target.tagName === 'SCRIPT') {
-              report('The app bundle failed to load.', String(event.target.src));
+            var target = event.target;
+            var tag = target && target.tagName;
+
+            if (tag === 'SCRIPT') {
+              report('The app bundle failed to load.', String(target.src));
               return;
             }
+
+            // A resource, not a thrown error: an Event, never an ErrorEvent.
+            if (tag && target !== window) {
+              var url = target.src || target.href || '(no url)';
+              resourceFailures.push(tag + ' ' + url);
+              return;
+            }
+
             var error = event.error;
             report(
               'The app crashed while starting.',
-              (error && (error.stack || error.message)) || event.message || 'unknown error',
+              (error && (error.stack || error.message)) ||
+                event.message ||
+                describeNothing(event),
             );
           },
           true,
@@ -139,6 +228,11 @@
 
           var tag = document.querySelector('script[src*="_expo"]');
           var src = tag ? tag.src : '(no bundle script in the page)';
+          if (resourceFailures.length) {
+            // Nothing threw and nothing mounted, but things failed to load.
+            // Say which: a font that 404s has cost this project a day before.
+            src += '\n\nResources that failed:\n  ' + resourceFailures.join('\n  ');
+          }
           if (!tag || !window.fetch) {
             report('The app did not start.', src);
             return;

@@ -325,6 +325,23 @@ def test_the_runner_refuses_before_it_spends_a_provider_call(monkeypatch) -> Non
         ],
     )
 
+    # A reader has to exist for this to be about legibility at all. `_read_page`
+    # refuses even earlier when nothing in the chain is installed in this
+    # process — which, since the chain became homr alone, is true on every
+    # machine that is not the Modal container. That refusal is a different
+    # question with its own file (`test_homr_only_chain.py`), and its ordering
+    # is right: "we cannot read anything here" outranks "this page is too
+    # small to read".
+    class _Installed:
+        name = "homr"
+
+        def available(self) -> bool:
+            return True
+
+    monkeypatch.setattr(
+        "app.services.ocr.pipeline._default_chain", lambda: [_Installed()]
+    )
+
     asked = []
     monkeypatch.setattr(runner, "get_service_client", lambda: fake)
     monkeypatch.setattr(runner, "readable_url", lambda url: url)

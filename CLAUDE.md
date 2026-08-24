@@ -280,6 +280,27 @@ there works differently as of 2026-08-24:
   because they cover the page's margin; an interior one may not.
   Do not fit these constants to one photograph — the measured passing range, and
   the tidier pocket I declined to take, are in `EDIT_LOG.md`, 2026-09-17.
+- **The chain is `homr` and nothing else** (owner's call, 2026-08-24: *"run
+  homr only, no backup AI"*). The vision models were the backup and they were
+  what invented notes. They stay in `PROVIDER_REGISTRY`, so a deployment turns
+  them back on with one variable — do not delete them, because the decision
+  being reversible is part of why it was safe to make. The cost is real: homr
+  lives only in the Modal container, so the API host can read nothing, and
+  `_read_page` refuses **before downloading the page** rather than paying for
+  megabytes to reach a worse error. "homr is not installed in this container"
+  matches no `_FAILURE_REASONS` needle and lands on *"a flatter, better-lit
+  shot of the page usually fixes it"* — a server fault blamed on the musician,
+  for the third time.
+- **The boot watchdog must never fire over a mounted app.** It reported *"The
+  app crashed while starting. / unknown error"* for a **dropped image request**
+  — `expo-image` and react-native-web both mount real `<img>` elements, a
+  resource error is a plain `Event` with no `.message`, and `report()` replaced
+  `#root`'s `display:flex; height:100%; flex:1` with `display:block`, collapsing
+  the running app to zero height. Measured before/after: app container height
+  `0` → `844`. Resource failures are now collected and named, never latched;
+  `report()` returns early once `#root` has children. If you touch
+  `public/index.html`, `src/lib/bootWatchdog.test.ts` evaluates that IIFE
+  against a DOM stub.
 - **A page too small to read is refused, not read.** `staff_space_px` measures
   staff-line spacing from the autocorrelation of the ink profile in each band;
   `too_small_to_read` refuses under **8 source pixels**, and refuses when no

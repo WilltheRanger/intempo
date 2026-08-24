@@ -32,6 +32,34 @@ SCORE_ID = "22222222-2222-2222-2222-222222222222"
 IMAGE_URL = "https://p.supabase.co/storage/v1/object/upload/sign/score-images/u/page.jpg"
 
 
+@pytest.fixture(autouse=True)
+def _a_reader_is_installed(monkeypatch):
+    """These tests stub the reading pipeline, so give the pre-flight a reader.
+
+    `_read_page` now refuses **before downloading the page** when not one
+    provider in the chain exists in this process — the chain is homr alone and
+    homr lives only in the Modal container, so on a developer's machine, and on
+    the API host, there genuinely is nothing here that can read. Without this
+    every test below would stop at that refusal instead of reaching the stub it
+    installed.
+
+    Faking availability rather than deleting the check: what these tests are
+    about is what happens *given* a reader. The refusal has its own file,
+    `test_homr_only_chain.py`, including the test that nothing is downloaded
+    before it fires.
+    """
+
+    class _Installed:
+        name = "homr"
+
+        def available(self) -> bool:
+            return True
+
+    monkeypatch.setattr(
+        "app.services.ocr.pipeline._default_chain", lambda: [_Installed()]
+    )
+
+
 def _phone_photo(source: Path, width: int = 3024, height: int = 4032) -> bytes:
     """A fixture excerpt blown up into the shape a phone actually produces.
 
