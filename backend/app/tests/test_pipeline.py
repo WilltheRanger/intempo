@@ -662,3 +662,150 @@ def test_one_note_is_enough_to_be_a_reading() -> None:
     score = parse_sheet_music(b"<jpeg>", providers=[sparse])
 
     assert sum(len(m.notes) for m in score.measures) == 1
+
+
+# ---- reading a page one system at a time ----------------------------------
+
+
+def _system(
+    name: str,
+    *,
+    bars: int = 2,
+    conf: float = 0.9,
+    clef: str | None = "bass",
+    meter: str | None = "4/4",
+    repeats: list[dict] | None = None,
+    tempo_changes: list[dict] | None = None,
+) -> OCRResponse:
+    """One system's worth of transcription, numbered from 1 as a system is."""
+    payload = {
+        **GOOD_PAYLOAD,
+        "clef": clef,
+        "time_signature": meter,
+        "ocr_confidence": conf,
+        "repeats": repeats or [],
+        "tempo_changes": tempo_changes or [],
+        "measures": [
+            {
+                "measure_number": i + 1,
+                "notes": [{"pitch": "D3", "duration": "quarter"}] * 4,
+                "slurs": [],
+            }
+            for i in range(bars)
+        ],
+    }
+    return OCRResponse(
+        score=ScoreJson.model_validate(payload),
+        raw_text="{}", model=name, input_tokens=1, output_tokens=1,
+        cost_usd=0.0, latency_ms=1,
+    )
+
+
+def test_a_bar_number_from_the_last_system_is_shifted_to_where_it_belongs() -> None:
+    """The whole job of joining systems.
+
+    Each system comes back numbered from one, and `repeats` and
+    `tempo_changes` point at *those* numbers. Joining without shifting them
+    attaches a `rit.` printed in the last line to the second bar of the piece —
+    and `measures_under_tempo_change` then suppresses the verdict for the wrong
+    passage, on a page where the musician did slow down and was told nothing.
+    """
+    combined = pipeline_module._combine(
+        [
+            _system("s1", bars=4).score,
+            _system(
+                "s2",
+                bars=4,
+                tempo_changes=[{"measure_number": 2, "kind": "ritardando", "text": "rit."}],
+                repeats=[{"start_measure": 1, "end_measure": 3, "type": "repeat"}],
+            ).score,
+        ]
+    )
+
+    assert [m.measure_number for m in combined.measures] == list(range(1, 9))
+    assert combined.tempo_changes[0].measure_number == 6, "the rit. moved to bar 2"
+    assert (combined.repeats[0].start_measure, combined.repeats[0].end_measure) == (5, 7)
+
+
+def test_the_page_is_only_as_confident_as_its_worst_line() -> None:
+    """Lowest, not mean. The page is one thing to the musician, and a line the
+    reader was unsure of is a line of wrong notes wherever it sits — averaging
+    it against nine confident ones hides the page that most needs checking."""
+    combined = pipeline_module._combine(
+        [_system("s1", conf=0.95).score, _system("s2", conf=0.3).score]
+    )
+
+    assert combined.ocr_confidence == pytest.approx(0.3)
+
+
+def test_the_header_comes_from_the_line_that_prints_it() -> None:
+    """A page prints its clef and metre on the first system and never again.
+    Later systems answering `None` are not disagreeing — they are reading a
+    line that does not say."""
+    # The systems have to *disagree*, or first and last give the same answer
+    # and the test proves nothing — which is how it was written first. A later
+    # line printing 2/4 after a metre change is the real case: the page's
+    # header is what system one prints, and per-measure `time_signature`
+    # carries the change.
+    combined = pipeline_module._combine(
+        [
+            _system("s1", clef="bass", meter="3/4").score,
+            _system("s2", clef="treble", meter="2/4").score,
+            _system("s3", clef=None, meter="unknown").score,
+        ]
+    )
+
+    assert combined.clef == "bass", "the page was labelled with a later line's clef"
+    assert combined.time_signature == "3/4"
+
+
+def test_one_unreadable_system_sends_the_whole_page_instead_of_leaving_a_hole(
+    monkeypatch,
+) -> None:
+    """The judgement call in this path, and it is not close.
+
+    A page transcribed with one system out of ten missing is the worst outcome
+    available: `alignment.py` accumulates durations, so a missing line shifts
+    every bar after it and the musician is told they rushed a passage they
+    played correctly. Reading the page whole is merely *worse at reading*.
+    """
+    monkeypatch.setattr(
+        pipeline_module, "crop_systems", lambda _b: [b"crop-1", b"crop-2", b"crop-3"]
+    )
+
+    answers = [_system("p", bars=3), OCRProviderError("rate limited"), _system("p", bars=3)]
+    calls = {"n": 0}
+
+    class _PerCrop:
+        name = "p"
+
+        def parse(self, image_bytes, mime_type="image/jpeg", note=None):
+            # The whole page is the one that is not a crop.
+            if image_bytes not in (b"crop-1", b"crop-2", b"crop-3"):
+                return _system("p", bars=9)
+            answer = answers[calls["n"]]
+            calls["n"] += 1
+            if isinstance(answer, Exception):
+                raise answer
+            return answer
+
+    score = parse_sheet_music(b"<page>", providers=[_PerCrop()], retry=False)
+
+    assert calls["n"] == 2, "it kept reading systems after one failed"
+    assert len(score.measures) == 9, "a page with a hole in it was returned"
+
+
+def test_a_page_split_into_more_systems_than_a_page_has_is_read_whole(monkeypatch) -> None:
+    """A wrong split costs a model call per phantom band. The ceiling bounds
+    the bill on a page that was misread, not on an honest one."""
+    monkeypatch.setattr(
+        pipeline_module,
+        "crop_systems",
+        lambda _b: [f"crop-{i}".encode() for i in range(pipeline_module._MAX_SYSTEMS_TO_READ + 1)],
+    )
+    whole = _FakeProvider("p", response=_system("p", bars=5))
+
+    score = parse_sheet_music(b"<page>", providers=[whole], retry=False)
+
+    assert whole.calls == 1, "it read the phantom bands one by one"
+    assert len(score.measures) == 5

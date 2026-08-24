@@ -511,6 +511,34 @@ def find_systems(image_bytes: bytes) -> list[tuple[int, int]]:
             top, bottom = run_top, run_bottom
     systems.append((top, bottom))
 
+    # Second pass: put back together anything that is one staff in pieces.
+    #
+    # The rule above splits on a multiple of the *median* gap, which is right
+    # for evenly engraved music and wrong for handwriting: a hand-ruled staff
+    # has uneven line spacing, so one wide gap inside it clears the threshold
+    # and the staff comes back as two systems. Measured on
+    # `05_handwritten_messy` at phone resolution — twelve bands on the page,
+    # twenty-four "systems" found.
+    #
+    # Half a staff is not readable, so this is not a cosmetic miscount: it
+    # would send the model the top three lines of a staff and ask what the
+    # notes are.
+    #
+    # The test that separates the two cases is height. Systems on a page are
+    # separated by *more* than a staff is tall — that is what a margin is —
+    # while fragments of one staff are separated by less than its own height by
+    # definition.
+    if len(systems) > 1:
+        heights = sorted(bottom - top for top, bottom in systems)
+        staff_height = heights[len(heights) // 2]
+        merged: list[tuple[int, int]] = [systems[0]]
+        for top, bottom in systems[1:]:
+            if top - merged[-1][1] < staff_height:
+                merged[-1] = (merged[-1][0], bottom)
+            else:
+                merged.append((top, bottom))
+        systems = merged
+
     return systems
 
 
