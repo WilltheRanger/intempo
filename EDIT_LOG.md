@@ -6,6 +6,67 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-08 (late) — A worker that cannot reach the database now crashes
+
+**Branch:** `main`. Follow-on from the Modal deploy, and a hole I had just
+made myself.
+
+**What was wrong.** `run_analysis` opened with two guards that logged and
+returned: no service-role client, and no such row. Both were written when the
+analysis only ever ran inside the web process, where either one meant Supabase
+was unconfigured — in which case the request that created the analysis could
+not have authenticated either, so neither branch was reachable in practice.
+
+Modal made them reachable. The service-role key now lives in **two** places:
+Render's environment and a Modal secret typed by hand into a dashboard. Get the
+second one wrong — one of two key names misspelled, a `SUPABASE_URL` for a
+different project — and everything else keeps working. Sign-in works. Scanning
+works. The upload works. Only the analysis is dead, and it died *quietly*:
+
+- the function returned without raising, so Modal recorded the call as
+  **succeeded** — green, on the one screen anybody checks while setting Modal up
+- the `analyses` row stayed `queued`
+- ten minutes later the stuck-row sweeper marked it `failed_recoverable` with
+  "server restarted while analyzing — please retry"
+- which is not true, and retrying does the same thing, forever
+
+Four signals, all of them either silent or wrong, on a state a person creates
+by typing.
+
+**What changed.** Both guards raise `WorkerMisconfigured` instead. There is
+nothing to write the failure into — that is precisely the problem — so the only
+honest thing left is to crash where somebody is looking. The message names the
+take, the two settings, and the Modal secret by name.
+
+The missing-row branch raises for a reason worth stating: nothing deletes an
+analysis, and the row is written before the work is asked for, so its absence is
+not a race. It means this worker is reading a *different* Supabase project from
+the one the API wrote to — the same cause as the branch above, one config field
+along.
+
+**Tests** (`app/tests/test_dispatch.py`, +3): no client crashes and the message
+carries the take id and both settings; an empty-result client crashes too; and
+the secret name in the error message is checked against the one
+`modal_app.py` actually deploys with — an error telling you to fix a secret
+that no longer exists by that name is worse than no error, because it sends the
+one person trying to fix this to a dashboard page that is not there.
+
+Mutation-checked, all four caught: reverting either guard to log-and-return,
+dropping the secret name from the message, dropping the take id.
+
+**What this does not fix.** The musician still gets the sweeper's "server
+restarted while analyzing" — wrong, in this case. Fixing that means either a
+new `failure_reason` the app renders or a rewrite of that string, and both are
+user-visible copy behind the §2 gate. The operator-facing half is what moved.
+
+**Tests run:** 709 passed (706 + 3), ruff clean. **Rollback:** revert the
+commit; the guards go back to logging and returning.
+
+**Docs:** `docs/deploy-modal.md` — "What happens when it goes wrong" gained the
+wrong-secret case, which is distinct from the refused-spawn case already there:
+a refused spawn falls back to in-process and the take survives, a wrong secret
+does not fall back because nothing refused anything.
+
 ## 2026-09-08 (evening) — Deploying Modal without a terminal
 
 **Branch:** `main`. The user asked where the `modal deploy` command is supposed

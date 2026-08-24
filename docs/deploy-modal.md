@@ -117,6 +117,26 @@ the line that says so.
 sweeper marks it `failed_recoverable` — the same failure the in-process path has
 always had, and the same recovery. Nothing new to build.
 
+**If the `intempo-backend` secret holds the wrong thing**, the job does not die
+— and that is the case worth reading twice, because it is the one you can
+create by typing. The secret is two key names entered by hand into a dashboard.
+Misspell `SUPABASE_SERVICE_ROLE_KEY`, or paste a `SUPABASE_URL` for a different
+project, and *everything else still works*: sign-in, scanning, the upload. Only
+the analysis is dead.
+
+The worker now **crashes** in both of those cases rather than returning. That
+is deliberate. Returning cleanly is indistinguishable from a clean run, so
+Modal marked the call **succeeded** — the one screen anybody looks at while
+setting this up showed green while no analysis had ever run, the row sat
+`queued`, and ten minutes later the musician was told the server had restarted.
+None of that was true and retrying did the same thing forever.
+
+So: a red call in **Modal → Apps → intempo → recent calls**, with a message
+naming the take and the setting to fix. The musician still gets the sweeper's
+"please retry" — there is no database to write a better reason into, which is
+the whole problem — but the person who can actually fix it is now looking at
+the fix.
+
 ## Cost
 
 An analysis is 1.5–4.5 seconds at 2 GB. Modal bills per second of container
