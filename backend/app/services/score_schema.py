@@ -38,7 +38,30 @@ Duration = Literal[
     "quarter", "dotted_quarter",
     "eighth", "dotted_eighth",
     "sixteenth", "dotted_sixteenth",
-    "thirty_second",
+    "thirty_second", "dotted_thirty_second",
+    "sixty_fourth",
+    # A breve, and the double dots.
+    #
+    # **Both were named as known gaps in `musicxml.py` and both cost notes.**
+    # Its comment said anything longer than a whole note "is outside what this
+    # product reads", and that a double-dotted note has no name here so
+    # returning the undotted one "would silently shorten the measure" — so it
+    # returns nothing, and the note is *dropped*. A dropped note shortens the
+    # measure too, and `alignment.py` accumulates durations, so it also moves
+    # every bar after it. Avoiding a wrong length by producing a missing note
+    # is not avoiding anything.
+    #
+    # On the OCR side the same gap costs the whole page rather than one note:
+    # `Duration` is closed and load-bearing, so a model reading a march
+    # correctly and writing `double_dotted_quarter` failed validation for the
+    # entire score.
+    #
+    # These are ordinary notation. A double dot adds three quarters of the base
+    # value and is how a march is written; the first real page this project has
+    # seen is headed *Alla marcia*. Every value here is exactly representable
+    # in binary, unlike the triplets below.
+    "double_whole",
+    "double_dotted_half", "double_dotted_quarter", "double_dotted_eighth",
     # Triplets. Added rather than modelled, deliberately.
     #
     # The correct model is a value plus a ratio — `{"eighth", 3:2}` — and it is
@@ -78,6 +101,13 @@ DURATION_BEATS: dict[str, float] = {
     "sixteenth": 0.25,
     "dotted_sixteenth": 0.375,
     "thirty_second": 0.125,
+    "dotted_thirty_second": 0.1875,
+    "sixty_fourth": 0.0625,
+    "double_whole": 8.0,
+    # A double dot adds half the dot again: base × 1.75.
+    "double_dotted_half": 3.5,
+    "double_dotted_quarter": 1.75,
+    "double_dotted_eighth": 0.875,
     # Three in the time of two. Thirds are not exactly representable in binary;
     # these particular groupings happen to sum back to their bar length exactly
     # anyway, but that is luck in the rounding rather than a guarantee, which is

@@ -6,6 +6,103 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-17 — The prompt asked for a duration that would destroy the answer
+
+**Branch:** `main`. Eighteenth iteration of *fix the OMR system till it works*.
+
+The schema shape of the last-but-one entry, one field further along. `Dynamics`
+was a closed list on a field nothing reads, so an unknown value could be dropped
+for free. **`Duration` is closed and load-bearing**, so an unknown value cannot
+be dropped — and until now it cost the whole page.
+
+And the prompt was *asking* for one. The note schema read:
+
+```
+"duration": "quarter" | "eighth" | "half" | "whole" | "sixteenth" | "dotted_quarter" | "triplet_eighth" | ...
+```
+
+That `| ...` is an invitation to coin a name for anything not shown. A name the
+schema does not hold is rejected for the entire score. **Asking a model for a
+value that destroys the answer is a fault in the question**, and it has been in
+every prompt this project has ever sent.
+
+### Two gaps the codebase had already written down
+
+`musicxml.py` named both, in its own comments:
+
+- *"Anything longer than a whole note (breve, long) … is outside what this
+  product reads."* A breve is not; nor is a 64th.
+- *"Double-dotted notes have no name in `Duration`. Returning the undotted name
+  would silently shorten the measure"* — so it returns `None`, and the note is
+  **dropped**. A dropped note shortens the measure by the *whole* value instead,
+  and `alignment.py` accumulates durations, so it moves every bar after it too.
+  Avoiding a wrong length by producing a missing note is not avoiding anything.
+
+Added: `double_whole`, `double_dotted_half`, `double_dotted_quarter`,
+`double_dotted_eighth`, `dotted_thirty_second`, `sixty_fourth`. All ordinary
+notation — a double dot adds three quarters of the base and is how a march is
+written, and the first real page this project has seen is headed **Alla
+marcia**. All exactly representable in binary, unlike the triplets, so they add
+no rounding risk. Extending a closed Literal invalidates no stored score, which
+is the precedent the triplets set.
+
+The prompt now names the complete list with no `...`, and says what to do when a
+value genuinely is not on it: write the nearest name that *is*, and say so in
+`notes_to_human`. A slightly wrong length in one bar is a problem someone can
+see and correct; a rejected page is not.
+
+### Two more copies of the same table, and neither was held
+
+`test_duration_beats.py` opens by counting the copies of "how many beats is a
+dotted quarter". It has now been wrong three times. Beyond the five it knows
+about there are two more, and they were missed because **neither is a beat
+table**:
+
+- **The prompt.** It decides what the model writes. Held now in both directions:
+  a name it offers that the schema rejects loses pages, and a name the schema
+  accepts that it never mentions is a value the model is never told it may use.
+- **`DURATION_LABELS`** in `reading.ts`, which is what a musician reads while
+  correcting a bar. It was typed `Record<string, string>`, so a missing entry
+  was *not* a typecheck error — the app would show `undefined` beside a note, on
+  the one screen whose whole job is letting someone check what was read. It is
+  `Record<Duration, string>` now and tested against the schema.
+
+The existing parity tests did their job: adding the durations to Python alone
+failed `test_the_app_counts_a_beat_the_way_the_server_does` and
+`test_the_app_knows_every_duration_the_schema_can_send` immediately.
+
+### Two of my own tests expired, correctly
+
+`test_a_duration_this_schema_cannot_express_is_still_fatal` used `sixty_fourth`
+and `breve` as its examples of unexpressible values, and three tests in
+`reading.test.ts` used `sixty_fourth` as "a duration this build does not know".
+Both shipped in this commit, so both tests failed — the assertions were right
+and the *examples* expired. Re-anchored to `long` and `maxima`, which
+`musicxml.py` names as deliberately outside what this product reads, rather than
+to a value that might later arrive.
+
+**Tests:** 8 new cases. Eleven mutations — a double dot worth only one dot, a
+breve worth a whole note, each table losing a name, the prompt losing a name and
+the prompt offering one the schema rejects, a double dot dropped again, a triple
+dot read as a double, a breve and a 64th dropped again, and the app losing a
+label — all killed.
+
+Backend 961 tests green (948 before), ruff clean. Mobile 233, typecheck clean.
+
+### The deploy, and a channel that closed
+
+`63aec01` stalled: Render stopped the old instance at 09:03:27 and no new one
+ever logged. Before assuming my change was the cause I ran the app exactly as
+the Dockerfile does, with a deliberately stale `OCR_PROVIDER_CHAIN` and no
+Supabase key — **startup completes, `/v1/health` returns 200, and the new
+diagnostic lines print**, WARNING and ERROR both. The stall is not this code.
+
+The Render MCP server has since disconnected, so I can neither read those logs
+nor trigger a redeploy from here any more. That was the only diagnostic channel
+into production that worked all session, and it is closed.
+
+---
+
 ## 2026-09-17 — Every log.info in the service was being thrown away
 
 **Branch:** `main`. Seventeenth iteration of *fix the OMR system till it works*,

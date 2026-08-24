@@ -260,3 +260,106 @@ def test_the_app_knows_every_duration_the_schema_can_send() -> None:
         f"only the server knows: {sorted(DURATIONS - app_durations)}; "
         f"only the app knows: {sorted(app_durations - DURATIONS)}"
     )
+
+
+# ---------------------------------------------------------------------------
+# The two copies nothing was holding
+#
+# The docstring at the top of this file counts the copies of "how many beats is
+# a dotted quarter" and has been wrong twice. There are two more, and neither is
+# a beat table — which is exactly why they were missed. One is the *prompt*,
+# which tells the model what names exist, and one is `DURATION_LABELS`, which
+# tells a musician what they are looking at.
+# ---------------------------------------------------------------------------
+
+PROMPT = (
+    __import__("pathlib").Path(__file__).resolve().parents[1]
+    / "prompts" / "ocr_prompt.txt"
+)
+READING_TS = REPO / "mobile" / "src" / "lib" / "notation" / "reading.ts"
+
+
+def _prompt_duration_names() -> set[str]:
+    """The list the prompt gives the model, parsed out of the prompt itself."""
+    import re
+
+    text = PROMPT.read_text()
+    block = re.search(
+        r"^DURATION NAMES — the complete list\. There is no other value:\n\n(.*?)\n\n",
+        text,
+        re.DOTALL | re.MULTILINE,
+    )
+    assert block, "the DURATION NAMES block is no longer where this test looks"
+    return set(block.group(1).split())
+
+
+def test_the_prompt_offers_exactly_the_durations_the_schema_accepts() -> None:
+    """The copy that decides what the model writes, and it was open-ended.
+
+    The list used to end in `| ...`, which reads as an invitation to coin a name
+    for anything not shown — and a name the schema does not hold is rejected for
+    the **whole page**, not for the note. Asking a model for a value that
+    destroys the answer is a fault in the question.
+
+    Both directions. A name in the prompt but not the schema loses pages; a name
+    in the schema but not the prompt is a value the model is never told it may
+    use, so a correctly-read note gets written as something else.
+    """
+    offered = _prompt_duration_names()
+    assert offered == DURATIONS, {
+        "in the prompt but not the schema": sorted(offered - DURATIONS),
+        "in the schema but not the prompt": sorted(DURATIONS - offered),
+    }
+
+
+def test_every_duration_has_a_label_a_musician_can_read() -> None:
+    """`DURATION_LABELS` is what a person sees while correcting a bar.
+
+    It was typed `Record<string, string>`, so a missing entry was not a
+    typecheck error — the app would show `undefined` next to a note, in the one
+    screen whose whole job is letting someone check what was read. It is
+    `Record<Duration, string>` now, and this holds the other direction: a label
+    for a duration that no longer exists is a name nothing can produce.
+    """
+    import re
+
+    source = READING_TS.read_text()
+    body = source[
+        source.index("DURATION_LABELS") : source.index("};", source.index("DURATION_LABELS"))
+    ]
+    labelled = set(re.findall(r"^\s*([a-z_]+):\s*'", body, re.MULTILINE))
+
+    assert labelled == DURATIONS, {
+        "labelled but not a duration": sorted(labelled - DURATIONS),
+        "a duration with no label": sorted(DURATIONS - labelled),
+    }
+
+
+def test_the_new_values_are_exactly_representable() -> None:
+    """Unlike the triplets, these divide evenly in binary, so they carry no
+    rounding risk at all — a double dot is base × 1.75 and a breve is 8."""
+    assert DURATION_BEATS["double_whole"] == 8.0
+    assert DURATION_BEATS["double_dotted_half"] == 3.5
+    assert DURATION_BEATS["double_dotted_quarter"] == 1.75
+    assert DURATION_BEATS["double_dotted_eighth"] == 0.875
+    assert DURATION_BEATS["dotted_thirty_second"] == 0.1875
+    assert DURATION_BEATS["sixty_fourth"] == 0.0625
+
+    for name in (
+        "double_whole", "double_dotted_half", "double_dotted_quarter",
+        "double_dotted_eighth", "dotted_thirty_second", "sixty_fourth",
+    ):
+        beats = DURATION_BEATS[name]
+        assert beats * 16 == int(beats * 16), f"{name} does not land on a 64th grid"
+
+
+def test_a_double_dot_is_the_base_value_and_three_quarters_again() -> None:
+    """The arithmetic, stated once. A dot adds half; a second dot adds half of
+    the dot. Getting this wrong is invisible in a beat sum only when it happens
+    to cancel, and wrong in the timeline always."""
+    for base, doubled in (
+        ("half", "double_dotted_half"),
+        ("quarter", "double_dotted_quarter"),
+        ("eighth", "double_dotted_eighth"),
+    ):
+        assert DURATION_BEATS[doubled] == DURATION_BEATS[base] * 1.75, doubled
