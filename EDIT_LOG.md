@@ -6,6 +6,61 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-13 (evening) — The sweeper nobody was watching, and a test that hung instead of failing
+
+**Branch:** `main`. Chosen by measurement rather than guesswork: `pytest --cov`
+put `app/main.py` at **74%**, and the uncovered lines were the periodic sweeper
+and the whole lifespan.
+
+That is the half that matters while the app is running. The startup sweep
+handles the crash you restart after; the periodic one handles the crash you do
+not — a worker thread killed by the OOM reaper on a server that keeps serving,
+a write to `done` that failed, a task that never returned. Nothing about it
+fails loudly: if it stops, rows simply stay `processing`, every request keeps
+working, and the only symptom is a verdict that never arrives.
+
+Seven tests: it keeps sweeping; it sweeps **off the event loop** (a synchronous
+Supabase call on the loop would stall every request, every five minutes,
+forever); it goes through `sweep_once` rather than the raw
+`sweep_stuck_analyses`, checked by replacing the raw one with a landmine —
+because `sweep_once` swallowing its own failure is what stops one transient
+Supabase error ending recovery for the lifetime of the process; and the real
+containment holds for three failures in a row. Plus startup sweeping once,
+a failing startup sweep not stopping the server, and the sweeper not outliving
+the app.
+
+**The leak test was wrong in both directions and it took three goes.** The
+obvious version — `async with main.lifespan(...)` under `asyncio.timeout` — is
+defeated by the code under test: `lifespan` ends with
+`suppress(CancelledError): await sweeper`, so the timeout's cancellation is
+*swallowed*. Alone, the test **passed with the leak present**. In a full-file
+run it **hung**. A hang is a worse signal than a red test and it takes CI down
+with it.
+
+It drives `__aexit__` as its own task with a deadline now, and asks the
+question directly: did shutdown finish, and is the sweeper actually stopped.
+The two startup tests go through a shared `_running_app` helper for the same
+reason, so no test in the file can hang on a lifespan that will not close.
+
+**One honest survival.** Removing `await sweeper` while keeping `sweeper.cancel()`
+is not caught. The task is still cancelled — shutdown just does not wait for
+the cancellation to settle — and the observable property, nothing left
+sweeping, still holds. Recorded rather than papered over with a test that
+asserts an implementation detail.
+
+**And a process fix.** The mutation script that found the hang was killed by
+its own timeout mid-run and **left the tree dirty** — `app/main.py` still
+carried the mutation. Caught by checking `git status` rather than by anything
+automatic. Every subprocess call in a mutation script now passes `timeout=`, so
+a hang costs one mutation instead of the script's `finally`.
+
+Mutations caught: the periodic sweep dropped, moved onto the event loop,
+pointed at the uncontained sweep, made to run once, the startup sweep dropped,
+a failing startup sweep taking the server down, and the sweeper left running.
+
+**Tests run:** backend 772 (765 + 7), ruff clean; mobile 214 unchanged.
+**Rollback:** revert.
+
 ## 2026-09-13 (later) — The take submission, and a sixth mirrored vocabulary
 
 **Branch:** `main`. Twelve tests for `data/practice/submitTake.ts`, plus one
