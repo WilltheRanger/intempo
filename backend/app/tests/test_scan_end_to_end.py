@@ -285,3 +285,58 @@ def test_the_worker_hands_the_photograph_to_the_crop_step(wired, monkeypatch) ->
     assert seen["source"] == photo, "the worker cut the reduced page, not the photograph"
     assert seen["prepared"] != photo, "the page was never prepared for reading"
     assert wired.patches[-1]["transcription_status"] == "done"
+
+
+def test_a_marking_the_schema_cannot_hold_does_not_lose_the_page(wired, monkeypatch) -> None:
+    """The failure that actually happened, end to end.
+
+    From the running service's own logs, two of a musician's six scans:
+
+        all providers failed: claude-sonnet-4-6: ValidationError: 3 validation
+        errors for ScoreJson
+          Input should be 'ppp', 'pp', 'p', ... [type=literal_error,
+          input_value='poco_dim'] ... input_value='dim' ... input_value='marcato'
+
+    `dim.`, `poco dim.` and `marcato` are printed on the page and were read
+    correctly. `Dynamics` is a closed list of static marks, and nothing in this
+    app reads the field. The page was thrown away, both providers in turn were
+    asked and answered the same way, and the musician was told their photograph
+    could not be read.
+    """
+    payload = {
+        "time_signature": "4/4", "clef": "bass", "ocr_confidence": 0.9,
+        "measures": [
+            {
+                "measure_number": 1,
+                "notes": [
+                    {"pitch": "C3", "duration": "quarter", "dynamics": "poco_dim"},
+                    {"pitch": "D3", "duration": "quarter", "dynamics": "dim"},
+                    {"pitch": "E3", "duration": "quarter", "articulation": "marcato"},
+                    {"pitch": "F3", "duration": "quarter", "dynamics": "ff"},
+                ],
+                "slurs": [],
+            }
+        ],
+    }
+    model = _Model(ScoreJson.model_validate(payload))
+    monkeypatch.setattr(
+        runner, "download_image", lambda url: _phone_photo(FIXTURES / "01_simple_printed.jpg")
+    )
+    monkeypatch.setattr(
+        runner,
+        "parse_sheet_music",
+        lambda b, *, media_type, on_stage=None, source=None: parse_sheet_music(
+            b, media_type=media_type, providers=[model], retry=False, source=source
+        ),
+    )
+    runner.run_transcription(SCORE_ID)
+
+    final = wired.patches[-1]
+    assert final["transcription_status"] == "done", (
+        f"the page was lost over a marking nothing reads: {final.get('transcription_error')}"
+    )
+    notes = final["score_json"]["measures"][0]["notes"]
+    assert [n["pitch"] for n in notes] == ["C3", "D3", "E3", "F3"]
+    assert notes[0]["dynamics"] is None and notes[1]["dynamics"] is None
+    assert notes[2]["articulation"] is None
+    assert notes[3]["dynamics"] == "ff", "a marking the schema does hold was dropped too"

@@ -6,6 +6,97 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-17 — Two scans died over the word "dim."
+
+**Branch:** `main`. Fourteenth iteration of *fix the OMR system till it works*,
+and the first one driven by production rather than by a fixture. No model key in
+this container and the deployed API is unreachable from here — the agent proxy
+answers 403 to CONNECT for `intempo-api.onrender.com`, an org policy denial, not
+retried — but **Render's logs are reachable through the MCP**, and the service
+logs its own failures.
+
+### What the running service actually said
+
+```
+transcription 343855af…: all providers failed:
+  claude-sonnet-4-6: ValidationError: 3 validation errors for ScoreJson
+    Input should be 'ppp', 'pp', 'p', 'mp', 'mf', 'f', 'ff', 'fff', 'fp',
+    'sfz', 'sf' or 'fz' [type=literal_error, input_value='poco_dim']
+    … input_value='dim'  … input_value='marcato'
+  claude-opus-4-7: ValidationError: 1 validation error for ScoreJson
+```
+
+`dim.`, `poco dim.` and `marcato` are ordinary markings, printed on the page and
+**read correctly**. `Dynamics` is a closed list of *static* marks with no room
+for a hairpin's name. So the whole score was rejected, the pipeline counted that
+as the provider failing, asked the next model — which has the same instinct and
+answered the same way — and told the musician their photograph could not be read.
+
+**Nothing in this app reads that field.** The prompt says so in as many words:
+"Do NOT report articulation or dynamics. Nothing reads them." A musician's page
+was thrown away, twice, over a word with no consumer.
+
+### This is `extra="ignore"` left half-finished
+
+`_Strict` already carries the argument, for extra *keys*:
+
+> dropping a field the app has no use for costs nothing, and rejecting the page
+> costs the page
+
+An unexpected **value** in a declared field is the identical failure one level
+down, and the argument applies to it word for word. It was never carried
+through.
+
+`_one_of(allowed, field)` keeps a marking this schema knows and drops one it
+does not, and `_tidy` first folds case, a trailing full stop, a space for an
+underscore and a trailing "clef" — `Bass`, `MF`, `bass clef` and `dim.` are how
+models write things, not disagreements about the music. Applied to `dynamics`,
+`articulation` and `clef`.
+
+**`clef` becomes `None` rather than raising**, which is the answer that field's
+own docstring already prefers — "a bass part labelled 'Treble clef' is a worse
+answer than no label" — and which the pipeline already handles by trying the
+next provider instead of reporting an unreadable photograph.
+
+### Where the tolerance stops, and why it is not arbitrary
+
+`duration` and `pitch` stay strict, and there are tests named for it. A dynamic
+nothing reads can be dropped for free. A duration cannot: `alignment.py`
+accumulates durations to build the timeline it compares a recording against, so
+a note quietly given no length moves every bar after it. Losing the page is the
+better failure there, because it is the one the musician is told about. A pitch
+is the same — a tie is validated by two noteheads sharing a pitch, so a dropped
+pitch can delete an onset.
+
+The mutation "make duration optional" **survived the first pass**: every test
+fed it a *wrong* duration string, which still fails against `Duration | None`,
+and none fed it a missing one. Rejecting a wrong value and requiring a value are
+different properties.
+
+### The other production failure, and what already covers it
+
+The same logs show `json_invalid` from **both** providers on one page — the
+output was not parseable JSON at all, which is what running out of room looks
+like. `_is_truncation` stops the chain on that rather than paying for the next
+provider, and reading a page one system at a time is the fix for the cause: each
+crop asks for a handful of bars instead of four hundred notes in one answer.
+
+### Also checked
+
+Deploys are landing: every commit this session built and went live, `9f6cb7b`
+included. No scan has been attempted since, so the logs say nothing yet about
+the rewritten detector.
+
+**Tests:** 22 new cases, several parametrised on the exact strings from the
+logs. Ten mutations — the guard removed from each of the three fields, an
+unknown marking fatal again, kept verbatim, no tidying, case not folded, the
+full stop kept, "clef" not dropped, and the tolerance leaking onto `duration` —
+all killed.
+
+Backend 917 tests green (895 before), ruff clean. Mobile 233, typecheck clean.
+
+---
+
 ## 2026-09-17 — A dense page fell off the ceiling, and an idea that measurement killed
 
 **Branch:** `main`. Thirteenth iteration of *fix the OMR system till it works*.
