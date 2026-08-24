@@ -347,3 +347,100 @@ def test_neither_image_ships_without_a_config() -> None:
     assert 'add_local_file("config.toml"' in modal_source, (
         "the Modal image does not add config.toml at all"
     )
+
+
+# ---------------------------------------------------------------------------
+# Every file the running app reads, in both images
+#
+# The `config.toml` omission was found by reading one Dockerfile carefully.
+# That does not scale and did not work the first time. What follows finds the
+# files automatically: any module-level `Path` constant that points at a
+# checked-in file is something the app opens at runtime, and anything the app
+# opens at runtime has to be in the image or it is a crash waiting for the
+# first person who triggers that code path.
+#
+# Today that is `config.toml` and the OCR prompt. The point is the next one.
+# ---------------------------------------------------------------------------
+
+
+def _modules_that_resolve_paths() -> list[str]:
+    """Dotted names of modules under `app/` that build a path from `__file__`."""
+    import re
+
+    names = []
+    for path in sorted((BACKEND / "app").rglob("*.py")):
+        if "tests" in path.parts:
+            continue
+        if re.search(r"Path\(__file__\)", path.read_text()):
+            relative = path.relative_to(BACKEND).with_suffix("")
+            names.append(".".join(relative.parts))
+    return names
+
+
+def _runtime_data_files() -> dict[str, str]:
+    """Repo-relative path of each checked-in file the app opens -> who reads it.
+
+    Discovered, not listed. A constant that points at a file which exists in
+    the checkout is a file the running process expects to find; one that points
+    at a path which does not exist is an output or a test hook and is not this
+    test's business.
+    """
+    import importlib
+
+    found: dict[str, str] = {}
+    for name in _modules_that_resolve_paths():
+        module = importlib.import_module(name)
+        for attribute, value in vars(module).items():
+            if not isinstance(value, Path) or not value.is_file():
+                continue
+            try:
+                relative = value.resolve().relative_to(BACKEND)
+            except ValueError:
+                continue  # outside the build context; not shipped from here
+            found[relative.as_posix()] = f"{name}.{attribute}"
+    return found
+
+
+def test_the_api_image_carries_every_file_the_app_opens() -> None:
+    """`COPY app ./app` covers anything under `app/`. Anything outside it needs
+    a line of its own, and `config.toml` did not have one — which is how the
+    API went to production unable to analyse a single take."""
+    layout = _image_layout((BACKEND / "Dockerfile").read_text())
+    copied = {source.rstrip("/") for source in layout.values()}
+
+    files = _runtime_data_files()
+    assert files, "no runtime data files found; the discovery above has broken"
+
+    for relative, reader in sorted(files.items()):
+        covered = any(
+            relative == source or relative.startswith(f"{source}/") for source in copied
+        )
+        assert covered, (
+            f"{reader} opens {relative} at runtime and the API image does not "
+            f"copy it. The container starts, and the first request that reaches "
+            f"that code path fails. Copied: {sorted(copied)}"
+        )
+
+
+def test_the_modal_image_carries_every_file_the_worker_opens() -> None:
+    """The same question of the other image.
+
+    Narrower on purpose — the Modal image ships `app/` *minus* the routers, so
+    a data file living under `app/routers/` would be copied into the API and
+    silently dropped here. Nothing does today. The check is what makes that
+    still true tomorrow.
+    """
+    source = (BACKEND / "modal_app.py").read_text()
+
+    for relative, reader in sorted(_runtime_data_files().items()):
+        if relative.startswith("app/routers/"):
+            raise AssertionError(
+                f"{reader} opens {relative}, which the Modal image ignores — "
+                "the worker would crash on it"
+            )
+        if relative.startswith("app/"):
+            continue  # covered by add_local_dir("app", ...)
+        assert f'add_local_file("{relative}"' in source, (
+            f"{reader} opens {relative} at runtime and the Modal image does "
+            "not add it"
+        )
