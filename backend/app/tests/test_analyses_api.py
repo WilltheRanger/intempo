@@ -124,7 +124,9 @@ def test_post_enqueues_and_returns_202(
 
     # Spy on the background worker instead of running it here.
     called: list[str] = []
-    monkeypatch.setattr(analyses_module, "run_analysis", lambda aid: called.append(aid))
+    monkeypatch.setattr(
+        analyses_module, "start_analysis", lambda aid, _tasks: called.append(aid)
+    )
 
     res = client.post(
         "/v1/analyses",
@@ -408,7 +410,7 @@ def test_the_instrument_is_stored_and_read_back(
         [{"id": str(score_id), "user_id": str(user_id), "score_json": GOOD_SCORE_JSON}],
     )
     _install(monkeypatch, fake)
-    monkeypatch.setattr(analyses_module, "run_analysis", lambda _id: None)
+    monkeypatch.setattr(analyses_module, "start_analysis", lambda _id, _tasks: None)
 
     token = make_token(sub=user_id)
     analysis_id = _submit(client, token, user_id, score_id, instrument="double_bass")
