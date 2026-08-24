@@ -6,6 +6,51 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-09 (evening) — A skipped deploy and a real one looked identical
+
+**Branch:** `main`.
+
+**It deployed.** The user added both token halves to GitHub and to Render and
+ran the workflow; run 6 succeeded, `run_analysis` is live in the Modal app. I
+could only establish that by **timing the Deploy step** — 36 seconds against
+zero on the four runs before it. That is the whole problem.
+
+The skip-rather-than-fail behaviour is right and stays: a red cross on every
+push in a repository nobody has set up yet is noise, and noise on a signal is
+how the signal stops being read. But it leaves the run page unable to answer
+the one question anybody opens it to ask, which is the same shape as every
+other thing found this week — something that did not happen, reported as
+something that did.
+
+**What changed.** Each branch writes to `$GITHUB_STEP_SUMMARY`, so the run page
+says which one it took in words. The deploy branch quotes **modal's own
+output** rather than a sentence of ours restating it; a summary written here
+would be one more thing able to disagree with what actually happened.
+
+**And the trap that came with it.** `modal deploy | tee` exits with `tee`'s
+status, which is always zero. Piping the output to build the summary would have
+made a *failed* deploy into a green job announcing "Deployed" — the summary
+lying in exactly the way it was added to stop. `set -eo pipefail` fixes it, and
+that is what the new test file is mostly for.
+
+**Tests** (`app/tests/test_deploy_workflow.py`, new, 6): the step's script is
+pulled out of the YAML and **executed in bash** against a stand-in `modal` —
+not pattern-matched. No tokens exits 0 and says "Skipped" and names what is
+missing; a real deploy exits 0 and carries modal's words; **a failed deploy
+exits non-zero and never says "Deployed"**. Plus a guard that the script still
+sets `pipefail` while it still pipes, so removing the pipe and the protection
+in one edit does not leave a trap for whoever adds the next pipe.
+
+Mutation-checked, all five caught: `pipefail` dropped, either branch made
+silent, the summary restating instead of quoting, and the skip no longer naming
+the missing setting.
+
+`pyyaml` is now a declared **dev** dependency. It was already importable in the
+venv as somebody's transitive, and relying on that is the same class of mistake
+as everything above.
+
+**Tests run:** 736 passed (730 + 6), ruff clean. **Rollback:** revert.
+
 ## 2026-09-09 (later) — There was a fifth copy of the beat table, and it is the one you hear
 
 **Branch:** `main`.
