@@ -1675,6 +1675,98 @@ def test_a_low_confidence_engine_reading_still_defers_to_the_models(monkeypatch)
     assert score.ocr_confidence > 0.2, "the doubtful reading was kept unchallenged"
 
 
+def test_an_unexpected_failure_moves_to_the_next_provider(monkeypatch) -> None:
+    """The chain's own resilience, with no engine reading to fall back on.
+
+    The catch here named three exception types, and a provider raised a
+    fourth: a missing `ANTHROPIC_API_KEY` surfaces as `TypeError` from inside
+    the SDK. That escaped the loop, so **every remaining provider was skipped**
+    — the chain stopped at its first surprise rather than doing the one thing
+    it exists to do.
+    """
+    monkeypatch.setattr(
+        pipeline_module, "crop_systems", lambda b, *, source=None: []
+    )
+
+    class _Surprising:
+        name = "unconfigured"
+
+        def parse(self, image_bytes, mime_type="image/jpeg", note=None):
+            raise TypeError("Could not resolve authentication method")
+
+    good = _Recorder()
+
+    score = parse_sheet_music(
+        b"<page>", providers=[_Surprising(), good], retry=False
+    )
+
+    assert score.measures, "the chain stopped at the first surprise"
+    assert good.notes, "the provider after the failure was never asked"
+
+
+def test_an_engine_reading_survives_a_failure_outside_the_provider_loop(
+    monkeypatch,
+) -> None:
+    """The second layer, pinned on its own.
+
+    Both guards independently save the case above, which is defence worth
+    having and means neither is tested by it. This one raises where the
+    provider loop cannot catch it — cutting the page into systems — so only
+    the branch that keeps the engine's reading can save it.
+    """
+    engine = _WholePage(answer=_system("engine", bars=8, conf=0.2))
+
+    def _explode(image_bytes, *, source=None):
+        raise MemoryError("cutting the page ran the box out of memory")
+
+    monkeypatch.setattr(pipeline_module, "crop_systems", _explode)
+
+    score = parse_sheet_music(
+        b"<page>", providers=[engine, _Recorder()], retry=False
+    )
+
+    assert len(score.measures) == 8, "the engine's reading was thrown away"
+    assert score.ocr_confidence == pytest.approx(0.2)
+
+
+def test_a_doubtful_engine_reading_survives_an_unexpected_failure(monkeypatch) -> None:
+    """The sibling below covers a provider failing the way providers are
+    *supposed* to fail. This covers the way one actually did.
+
+    A missing `ANTHROPIC_API_KEY` raises `TypeError` from inside the SDK —
+    "Could not resolve authentication method" — which is not an
+    `AnthropicError` and was therefore not an `OCRProviderError` and therefore
+    not an `OCRError`. It unwound straight past the branch whose entire job is
+    "a doubtful reading beats none", discarding a usable engine reading; the
+    runner's outermost `except Exception` then told the musician "Something
+    went wrong reading this page." about a page that had been read.
+
+    On a deployment whose Modal secret carries only Supabase credentials —
+    which is the documented arrangement — this is not an edge case. It is
+    every scan whose engine reading falls under the gate, and a handheld
+    photograph normally does.
+    """
+    monkeypatch.setattr(
+        pipeline_module, "crop_systems", lambda b, *, source=None: [b"a", b"b"]
+    )
+    engine = _WholePage(answer=_system("engine", bars=8, conf=0.2))
+
+    class _RaisesSomethingNobodyPlannedFor:
+        name = "models"
+
+        def parse(self, image_bytes, mime_type="image/jpeg", note=None):
+            raise TypeError("Could not resolve authentication method")
+
+    score = parse_sheet_music(
+        b"<page>",
+        providers=[engine, _RaisesSomethingNobodyPlannedFor()],
+        retry=False,
+    )
+
+    assert len(score.measures) == 8, "the engine's reading was thrown away"
+    assert score.ocr_confidence == pytest.approx(0.2)
+
+
 def test_a_doubtful_engine_reading_is_kept_when_nothing_betters_it(monkeypatch) -> None:
     """A doubtful reading beats none, which is what the low-confidence fallback
     has always meant here. The engine's turn is not wasted just because the

@@ -750,11 +750,16 @@ def parse_sheet_music(
                     on_stage=on_stage,
                     source=source,
                 )
-            except OCRError:
+            except Exception:  # noqa: BLE001 — a reading in hand outranks it
                 if engine_read is None:
                     raise
                 # A doubtful reading beats none, which is what the low-confidence
                 # fallback has always meant here.
+                #
+                # `except OCRError` was too narrow for the sentence above it to
+                # be true: an exception nobody planned for is exactly when a
+                # reading already in hand is most worth keeping, and it was the
+                # one case that threw it away.
                 log.info("nothing bettered the engine's reading; keeping it")
                 return engine_read
 
@@ -793,7 +798,21 @@ def parse_sheet_music(
             # it: everything downstream keys off measure numbers, and the
             # program can derive them more reliably than a model can read them.
             response = response.model_copy(update={"score": renumber(response.score)})
-        except (ValidationError, OCRProviderError, ValueError) as exc:
+        except Exception as exc:  # noqa: BLE001 — see below
+            # Anything at all. The three named types were what providers were
+            # expected to raise, and a provider raised something else: a
+            # missing `ANTHROPIC_API_KEY` surfaces as `TypeError` from inside
+            # the SDK, which escaped this, skipped every remaining provider,
+            # and — worse — unwound past the branch that keeps a doubtful
+            # engine reading when nothing betters it. A usable transcription
+            # was discarded and the musician told "Something went wrong
+            # reading this page."
+            #
+            # A provider raising *is* that provider failing to read the page,
+            # whatever it raised, and continuing to the next one is the whole
+            # reason there is a chain. The type and message go into `failures`,
+            # so a genuine bug in a provider still says what it was rather
+            # than hiding as "could not read".
             failures.append(f"{provider.name}: {type(exc).__name__}: {exc}")
             if _is_truncation(exc):
                 # Stop, rather than fall through. Running out of room is a

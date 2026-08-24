@@ -6,6 +6,77 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-24 — The next link: a missing key threw away a reading that had worked
+
+**Branch:** `main`. Surfaced by an adversarial audit of the capture path while
+the previous entry's fixes were landing, and verified against the SDK before
+being believed.
+
+`Anthropic()` constructs perfectly well with no key and defers the complaint to
+the first request, where it arrives as a **`TypeError`** — *"Could not resolve
+authentication method"*. Measured, not assumed:
+
+    >>> Anthropic().messages.create(...)
+    TypeError: Could not resolve authentication method...
+    isinstance(exc, AnthropicError) -> False
+
+So it was not an `AnthropicError`, and `claude_provider` did not wrap it; not
+an `OCRProviderError`, and the chain's per-provider catch did not hold it; not
+an `OCRError`, and the branch whose entire job is *"a doubtful reading beats
+none"* did not hold it either.
+
+**What that costs once the token fix lets homr run.** homr reads a page and
+scores below `CONFIDENCE_THRESHOLD` — which a handheld photograph normally
+does, because the score is the share of bars that add up. The pipeline asks the
+models as well, as designed. Claude raises `TypeError`. It unwinds past
+`return engine_read`, **discarding a usable transcription**, and the runner's
+outermost `except Exception` writes "Something went wrong reading this page."
+On a deployment whose Modal secret carries only Supabase credentials — the
+documented arrangement, and the owner's — that is not an edge case. It is every
+scan.
+
+### Four changes
+
+- **`ClaudeProvider` checks its key**, as the Gemini provider always has, and
+  raises a named `OCRProviderError`. That asymmetry was the root of it: one
+  sibling checked and the other let the SDK complain later, in a currency
+  nothing understood. It also makes `_FAILURE_REASONS`' "The transcription
+  service is not configured" reachable for Claude at last.
+- **The provider's catch is `Exception`.** The narrow one has now been wrong
+  twice for the same reason in different costumes — an API 400 the first time,
+  a `TypeError` this time. A provider raising *is* that provider failing to
+  read the page, whatever it raised. The type and message travel into the
+  failure list, so a genuine bug still says what it was.
+- **The chain's per-provider catch is `Exception`**, for the same reason:
+  it named three types, met a fourth, and **skipped every remaining provider**
+   — stopping at its first surprise rather than doing the one thing it exists
+  to do.
+- **The whole-page fallback catches `Exception`.** `except OCRError` was too
+  narrow for the sentence above it to be true. An exception nobody planned for
+  is exactly when a reading already in hand is most worth keeping, and it was
+  the one case that threw it away.
+
+### Tests
+
+Two in `test_claude_provider.py`, three in `test_pipeline.py`. Backend
+**1043 passed**, ruff clean.
+
+Four mutations, all caught — but **two survived the first pass**, and the
+reason is worth recording: the per-provider catch and the whole-page fallback
+each independently rescue the original scenario, so a single test could not
+tell which one was doing the work. Defence in depth is worth having and it
+hides itself from testing. They are pinned separately now: one chain with no
+engine reading at all, and one failure raised where the provider loop cannot
+reach it (`crop_systems`).
+
+### Not verified
+
+Same as the entry below: none of this has been through the deployed pipeline.
+It is the failure the owner would have hit *next*, found by reading, and it is
+fixed on the same evidence.
+
+---
+
 ## 2026-08-24 — "It made something up": four faults, and homr never ran once
 
 **Branch:** `main`. The owner photographed an orchestral contrabass part —

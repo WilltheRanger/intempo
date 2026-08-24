@@ -377,3 +377,65 @@ def test_the_output_budget_holds_a_real_page() -> None:
     from app.services.ocr.claude_provider import MAX_TOKENS
 
     assert MAX_TOKENS >= 12000
+
+
+# ---- a key that is not there ----------------------------------------------
+#
+# `Anthropic()` constructs perfectly well without one and defers the complaint
+# to the first request, where it arrives as a **TypeError** — "Could not
+# resolve authentication method". Not an `AnthropicError`, so this provider did
+# not wrap it; not an `OCRProviderError`, so the chain did not catch it; not an
+# `OCRError`, so the branch that keeps a doubtful engine reading did not catch
+# it either. It discarded a usable homr transcription and the musician was told
+# "Something went wrong reading this page."
+#
+# The Gemini provider has always checked its own key. This one did not.
+
+
+def _provider() -> ClaudeProvider:
+    return ClaudeProvider(
+        model="claude-sonnet-4-5",
+        name="claude-test",
+        input_price_per_mtok_usd=3.0,
+        output_price_per_mtok_usd=15.0,
+    )
+
+
+def test_a_missing_key_is_a_named_provider_failure(monkeypatch) -> None:
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", "")
+
+    with pytest.raises(OCRProviderError) as raised:
+        _provider().parse(b"\xff\xd8\xff")
+
+    # Named, so `/v1/ready` and `_why_it_failed` can both say which key, the
+    # way they already can for Gemini.
+    assert "ANTHROPIC_API_KEY" in str(raised.value)
+    assert "claude-test" in str(raised.value)
+
+
+def test_anything_the_sdk_raises_becomes_a_provider_failure(monkeypatch) -> None:
+    """The narrow catch has been wrong twice — first for an API 400, then for
+    a TypeError from a missing key. A provider raising *is* that provider
+    failing to read the page, whatever it raised, and the chain exists to
+    carry on past it."""
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", "sk-ant-stand-in")
+
+    class _Boom:
+        class messages:
+            @staticmethod
+            def create(**_kwargs):
+                raise RuntimeError("something nobody planned for")
+
+    provider = _provider()
+    provider._client = _Boom()
+
+    with pytest.raises(OCRProviderError) as raised:
+        provider.parse(b"\xff\xd8\xff")
+
+    # The type survives, so a real bug in here still says what it was rather
+    # than hiding as "could not read the page".
+    assert "RuntimeError" in str(raised.value)
