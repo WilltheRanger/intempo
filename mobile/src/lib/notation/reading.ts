@@ -291,9 +291,19 @@ export function beatsIn(notes: { duration: string }[]): number | null {
 /**
  * The beat total as a sentence, and whether it balances.
  *
- * Rounded to two places before comparing: these are sums of thirds and
- * sevenths in tuplet-heavy music, and an exact comparison would call a
- * correctly-fixed bar broken because of floating point.
+ * **Rounded to two places for showing, `BEAT_TOLERANCE` for deciding.** Two
+ * different jobs, and this docstring used to describe rounding as the
+ * comparison — left over from the inline `0.01` that `BEAT_TOLERANCE`
+ * replaced.
+ *
+ * Rounding is safe for display because the smallest note this schema knows is
+ * a thirty-second, so a *real* error is never within 0.005 of correct. Anything
+ * that close is floating point: an ordinary bar of half + quarter + eighth +
+ * three triplet-sixteenths sums to 3.9999999999999996, and a musician editing
+ * it should read "4 of 4 beats".
+ *
+ * That bar used to read "**4. of 4 beats**" — `toFixed(2)` gave "4.00" and
+ * stripping trailing zeros left the decimal point behind.
  */
 export function describeBeats(
   notes: { duration: string }[],
@@ -306,7 +316,9 @@ export function describeBeats(
     // rather than shown as a confident wrong number.
     return { text: 'Beats not counted', balanced: true, expected: null };
   }
-  const shown = Number.isInteger(actual) ? String(actual) : actual.toFixed(2).replace(/0+$/, '');
+  // `parseFloat` rather than a trailing-zero strip: "4.00" -> 4 -> "4", where
+  // `.replace(/0+$/, '')` left "4." on the screen.
+  const shown = String(parseFloat(actual.toFixed(2)));
   if (expected === null) {
     // No time signature was read, so there is nothing to balance against.
     // Saying "4 beats" is still useful; claiming it is right would not be.

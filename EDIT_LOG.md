@@ -6,6 +6,43 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-11 — "4. of 4 beats", and the rest of `reading.ts`
+
+**Branch:** `main`.
+
+**A visible bug, in the screen a musician opens to fix a misread bar.**
+`describeBeats` rendered the total with
+`actual.toFixed(2).replace(/0+$/, '')` — which strips the trailing zeros and
+leaves the decimal point behind. An ordinary 4/4 bar of half + quarter +
+eighth + three triplet-sixteenths sums to **3.9999999999999996**, so
+`toFixed(2)` gives "4.00" and the editor read "**4. of 4 beats**".
+
+Found by looking for a near-integer sum reachable from real note values, not by
+reading the regex. `String(parseFloat(actual.toFixed(2)))` now, which collapses
+the integer special case too.
+
+**A stale docstring beside it.** It said the total was "rounded to two places
+before comparing" — describing the inline `0.01` that `BEAT_TOLERANCE`
+replaced. Rounding is for *showing*; `BEAT_TOLERANCE` decides. The rewrite says
+why rounding is safe for display: the smallest duration this schema knows is a
+thirty-second, so a real error is never within 0.005 of correct and anything
+that close is floating point.
+
+**Twenty tests for the rest of the file** — `beatsOf`, `beatsIn`,
+`problemMeasures`, `describeBeats`, `stepPitch`, `cycleAccidental`,
+`describeConfidence`. The editor controls are the ones worth having: a tie is
+only real when two noteheads share a pitch, so correcting one is repairing the
+timeline, and a `stepPitch` that moved by semitone would put the note somewhere
+the musician did not point at.
+
+Mutations caught, all seven: the trailing dot back, an unknown duration counted
+as zero, `stepPitch` by semitone, `stepPitch` wrapping at the ends instead of
+refusing, the accidental cycle skipping flat, an unreadable meter assumed 4/4,
+and a confidence percentage quoted at the musician.
+
+**Tests run:** mobile 113 (93 + 20), typecheck clean; backend 748 unchanged.
+**Rollback:** revert.
+
 ## 2026-09-10 (night) — Two meter parsers, one disagreement, found by running both
 
 **Branch:** `main`.
