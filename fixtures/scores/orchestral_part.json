@@ -1,0 +1,604 @@
+{
+  "what": "A score fixture shaped like a real orchestral part. Synthetic \u2014 not a transcription of any page.",
+  "why": "Every other fixture here is a simple exercise-book page: quarters and eighths, one metre, almost no rests. Measured by tools/engraver-coverage.py they made the engraver look adequate at 95% coverage, right up until the first part out of a real folder rendered as nothing at all. This is what such a page is made of \u2014 sections in different metres, runs of sixteenths, dotted march rhythms, a multi-bar rest, triplets and a written rit. What it is for is having something in the corpus that the corpus was missing.",
+  "score": {
+    "clef": "bass",
+    "time_signature": "2/4",
+    "key_signature": "G major",
+    "tempo_marking": "Theme and variations",
+    "bpm_hint": 96,
+    "measures": [
+      {
+        "measure_number": 1,
+        "notes": [
+          {
+            "pitch": "E2",
+            "duration": "eighth",
+            "articulation": null,
+            "tied_to_next": false,
+            "dynamics": null
+          },
+          {
+            "pitch": "G2",
+            "duration": "eighth",
+            "articulation": null,
+            "tied_to_next": false,
+            "dynamics": null
+          },
+          {
+            "pitch": "B2",
+            "duration": "eighth",
+            "articulation": null,
+            "tied_to_next": false,
+            "dynamics": null
+          },
+          {
+            "pitch": "G2",
+            "duration": "eighth",
+            "articulation": null,
+            "tied_to_next": false,
+            "dynamics": null
+          }
+        ],
+        "slurs": [],
+        "time_signature": "2/4"
+      },
+      {
+        "measure_number": 2,
+        "notes": [
+          {
+            "pitch": "A2",
+            "duration": "eighth",
+            "articulation": null,
+            "tied_to_next": false,
+            "dynamics": null
+          },
+          {
+            "pitch": "C3",
+            "duration": "eighth",
+            "articulation": null,
+            "tied_to_next": false,
+            "dynamics": null
+          },
+          {
+            "pitch": "E3",
+            "duration": "eighth",
+            "articulation": null,
+            "tied_to_next": false,
+            "dynamics": null
+          },
+          {
+            "pitch": "C3",
+            "duration": "eighth",
+            "articulation": null,
+            "tied_to_next": false,
+            "dynamics": null
+          }
+        ],
+        "slurs": []
+      },
+      {
+        "measure_number": 3,
+        "notes": [
+          {
+            "pitch": "B2",
+            "duration": "eighth",
+            "articulation": null,
+            "tied_to_next": false,
+            "dynamics": null
+          },
+          {
+            "pitch": "D3",
+            "duration": "eighth",
+            "articulation": null,
+            "tied_to_next": false,
+            "dynamics": null
+          },
+          {
+            "pitch": "F#3",
+            "duration": "eighth",
+            "articulation": null,
+            "tied_to_next": false,
+            "dynamics": null
+          },
+          {
+            "pitch": "D3",
+            "duration": "eighth",
+            "articulation": null,
+            "tied_to_next": false,
+            "dynamics": null
+          }
+        ],
+        "slurs": []
+      },
+      {
+        "measure_number": 4,
+        "notes": [
+          {
+            "pitch": "E2",
+            "duration": "eighth",
+            "articulation": null,
+            "tied_to_next": false,
+            "dynamics": null
+          },
+          {
+            "pitch": "G2",
+            "duration": "eighth",
+            "articulation": null,
+            "tied_to_next": false,
+            "dynamics": null
+          },
+          {
+            "pitch": "B2",
+            "duration": "eighth",
+            "articulation": null,
+            "tied_to_next": false,
+            "dynamics": null
+          },
+          {
+            "pitch": "G2",
+            "duration": "eighth",
+            "articulation": null,
+            "tied_to_next": false,
+            "dynamics": null
+          }
+        ],
+        "slurs": []
+      },
+      {
+        "measure_number": 5,
+        "notes": [
+          {
+            "pitch": "rest",
+            "duration": "half",
+            "articulation": null,
+            "tied_to_next": false,
+            "dynamics": null
+          }
+        ],
+        "slurs": []
+      },
+      {
+        "measure_number": 6,
+        "notes": [
+          {
+            "pitch": "rest",
+            "duration": "half",
+            "articulation": null,
+            "tied_to_next": false,
+            "dynamics": null
+          }
+        ],
+        "slurs": []
+      },
+      {
+        "measure_number": 7,
+        "notes": [
+          {
+            "pitch": "E2",
+            "duration": "sixteenth",
+            "articulation": null,
+            "tied_to_next": false,
+            "dynamics": null
+          },
+          {
+            "pitch": "F#2",
+            "duration": "sixteenth",
+            "articulation": null,
+            "tied_to_next": false,
+            "dynamics": null
+          },
+          {
+            "pitch": "G2",
+            "duration": "sixteenth",
+            "articulation": null,
+            "tied_to_next": false,
+            "dynamics": null
+          },
+          {
+            "pitch": "A2",
+            "duration": "sixteenth",
+            "articulation": null,
+            "tied_to_next": false,
+            "dynamics": null
+          },
+          {
+            "pitch": "B2",
+            "duration": "sixteenth",
+            "articulation": null,
+            "tied_to_next": false,
+            "dynamics": null
+          },
+          {
+            "pitch": "C3",
+            "duration": "sixteenth",
+            "articulation": null,
+            "tied_to_next": false,
+            "dynamics": null
+          },
+          {
+            "pitch": "D3",
+            "duration": "sixteenth",
+            "articulation": null,
+            "tied_to_next": false,
+            "dynamics": null
+          },
+          {
+            "pitch": "E3",
+            "duration": "sixteenth",
+            "articulation": null,
+            "tied_to_next": false,
+            "dynamics": null
+          }
+        ],
+        "slurs": [],
+        "time_signature": "2/4"
+      },
+      {
+        "measure_number": 8,
+        "notes": [
+          {
+            "pitch": "F#3",
+            "duration": "sixteenth",
+            "articulation": null,
+            "tied_to_next": false,
+            "dynamics": null
+          },
+          {
+            "pitch": "E3",
+            "duration": "sixteenth",
+            "articulation": null,
+            "tied_to_next": false,
+            "dynamics": null
+          },
+          {
+            "pitch": "D3",
+            "duration": "sixteenth",
+            "articulation": null,
+            "tied_to_next": false,
+            "dynamics": null
+          },
+          {
+            "pitch": "C3",
+            "duration": "sixteenth",
+            "articulation": null,
+            "tied_to_next": false,
+            "dynamics": null
+          },
+          {
+            "pitch": "B2",
+            "duration": "sixteenth",
+            "articulation": null,
+            "tied_to_next": false,
+            "dynamics": null
+          },
+          {
+            "pitch": "A2",
+            "duration": "sixteenth",
+            "articulation": null,
+            "tied_to_next": false,
+            "dynamics": null
+          },
+          {
+            "pitch": "G2",
+            "duration": "sixteenth",
+            "articulation": null,
+            "tied_to_next": false,
+            "dynamics": null
+          },
+          {
+            "pitch": "F#2",
+            "duration": "sixteenth",
+            "articulation": null,
+            "tied_to_next": false,
+            "dynamics": null
+          }
+        ],
+        "slurs": []
+      },
+      {
+        "measure_number": 9,
+        "notes": [
+          {
+            "pitch": "G2",
+            "duration": "dotted_eighth",
+            "articulation": null,
+            "tied_to_next": false,
+            "dynamics": null
+          },
+          {
+            "pitch": "A2",
+            "duration": "sixteenth",
+            "articulation": null,
+            "tied_to_next": false,
+            "dynamics": null
+          },
+          {
+            "pitch": "B2",
+            "duration": "dotted_eighth",
+            "articulation": null,
+            "tied_to_next": false,
+            "dynamics": null
+          },
+          {
+            "pitch": "C3",
+            "duration": "sixteenth",
+            "articulation": null,
+            "tied_to_next": false,
+            "dynamics": null
+          }
+        ],
+        "slurs": []
+      },
+      {
+        "measure_number": 10,
+        "notes": [
+          {
+            "pitch": "D3",
+            "duration": "quarter",
+            "articulation": null,
+            "tied_to_next": false,
+            "dynamics": null
+          },
+          {
+            "pitch": "rest",
+            "duration": "quarter",
+            "articulation": null,
+            "tied_to_next": false,
+            "dynamics": null
+          }
+        ],
+        "slurs": []
+      },
+      {
+        "measure_number": 11,
+        "notes": [
+          {
+            "pitch": "E2",
+            "duration": "dotted_eighth",
+            "articulation": null,
+            "tied_to_next": false,
+            "dynamics": null
+          },
+          {
+            "pitch": "E2",
+            "duration": "sixteenth",
+            "articulation": null,
+            "tied_to_next": false,
+            "dynamics": null
+          },
+          {
+            "pitch": "rest",
+            "duration": "eighth",
+            "articulation": null,
+            "tied_to_next": false,
+            "dynamics": null
+          },
+          {
+            "pitch": "E2",
+            "duration": "eighth",
+            "articulation": null,
+            "tied_to_next": false,
+            "dynamics": null
+          },
+          {
+            "pitch": "B2",
+            "duration": "dotted_eighth",
+            "articulation": null,
+            "tied_to_next": false,
+            "dynamics": null
+          },
+          {
+            "pitch": "B2",
+            "duration": "sixteenth",
+            "articulation": null,
+            "tied_to_next": false,
+            "dynamics": null
+          },
+          {
+            "pitch": "rest",
+            "duration": "eighth",
+            "articulation": null,
+            "tied_to_next": false,
+            "dynamics": null
+          },
+          {
+            "pitch": "B2",
+            "duration": "eighth",
+            "articulation": null,
+            "tied_to_next": false,
+            "dynamics": null
+          }
+        ],
+        "slurs": [],
+        "time_signature": "4/4"
+      },
+      {
+        "measure_number": 12,
+        "notes": [
+          {
+            "pitch": "A2",
+            "duration": "dotted_eighth",
+            "articulation": null,
+            "tied_to_next": false,
+            "dynamics": null
+          },
+          {
+            "pitch": "A2",
+            "duration": "sixteenth",
+            "articulation": null,
+            "tied_to_next": false,
+            "dynamics": null
+          },
+          {
+            "pitch": "rest",
+            "duration": "eighth",
+            "articulation": null,
+            "tied_to_next": false,
+            "dynamics": null
+          },
+          {
+            "pitch": "A2",
+            "duration": "eighth",
+            "articulation": null,
+            "tied_to_next": false,
+            "dynamics": null
+          },
+          {
+            "pitch": "E2",
+            "duration": "dotted_eighth",
+            "articulation": null,
+            "tied_to_next": false,
+            "dynamics": null
+          },
+          {
+            "pitch": "E2",
+            "duration": "sixteenth",
+            "articulation": null,
+            "tied_to_next": false,
+            "dynamics": null
+          },
+          {
+            "pitch": "rest",
+            "duration": "eighth",
+            "articulation": null,
+            "tied_to_next": false,
+            "dynamics": null
+          },
+          {
+            "pitch": "E2",
+            "duration": "eighth",
+            "articulation": null,
+            "tied_to_next": false,
+            "dynamics": null
+          }
+        ],
+        "slurs": []
+      },
+      {
+        "measure_number": 13,
+        "notes": [
+          {
+            "pitch": "E2",
+            "duration": "triplet_quarter",
+            "articulation": null,
+            "tied_to_next": false,
+            "dynamics": null
+          },
+          {
+            "pitch": "G2",
+            "duration": "triplet_quarter",
+            "articulation": null,
+            "tied_to_next": false,
+            "dynamics": null
+          },
+          {
+            "pitch": "B2",
+            "duration": "triplet_quarter",
+            "articulation": null,
+            "tied_to_next": false,
+            "dynamics": null
+          },
+          {
+            "pitch": "E3",
+            "duration": "triplet_quarter",
+            "articulation": null,
+            "tied_to_next": false,
+            "dynamics": null
+          },
+          {
+            "pitch": "B2",
+            "duration": "triplet_quarter",
+            "articulation": null,
+            "tied_to_next": false,
+            "dynamics": null
+          },
+          {
+            "pitch": "G2",
+            "duration": "triplet_quarter",
+            "articulation": null,
+            "tied_to_next": false,
+            "dynamics": null
+          }
+        ],
+        "slurs": [],
+        "time_signature": "4/4"
+      },
+      {
+        "measure_number": 14,
+        "notes": [
+          {
+            "pitch": "A2",
+            "duration": "quarter",
+            "articulation": null,
+            "tied_to_next": false,
+            "dynamics": null
+          },
+          {
+            "pitch": "C3",
+            "duration": "quarter",
+            "articulation": null,
+            "tied_to_next": false,
+            "dynamics": null
+          },
+          {
+            "pitch": "E3",
+            "duration": "half",
+            "articulation": null,
+            "tied_to_next": false,
+            "dynamics": null
+          }
+        ],
+        "slurs": []
+      },
+      {
+        "measure_number": 15,
+        "notes": [
+          {
+            "pitch": "E2",
+            "duration": "whole",
+            "articulation": null,
+            "tied_to_next": false,
+            "dynamics": null
+          }
+        ],
+        "slurs": []
+      },
+      {
+        "measure_number": 16,
+        "notes": [
+          {
+            "pitch": "A2",
+            "duration": "half",
+            "articulation": null,
+            "tied_to_next": false,
+            "dynamics": null
+          },
+          {
+            "pitch": "B2",
+            "duration": "half",
+            "articulation": null,
+            "tied_to_next": false,
+            "dynamics": null
+          }
+        ],
+        "slurs": []
+      }
+    ],
+    "repeats": [],
+    "tempo_changes": [
+      {
+        "measure_number": 7,
+        "kind": "a_tempo",
+        "text": "Meno mosso"
+      },
+      {
+        "measure_number": 15,
+        "kind": "ritardando",
+        "text": "rit."
+      }
+    ],
+    "ocr_confidence": 0.71,
+    "notes_to_human": ""
+  }
+}

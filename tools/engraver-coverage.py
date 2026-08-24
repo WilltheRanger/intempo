@@ -54,6 +54,15 @@ def _pages():
         ]
         yield raw["fixture_filename"], notes
 
+    for path in sorted((REPO / "fixtures" / "scores").glob("*.json")):
+        raw = json.loads(path.read_text())
+        score = raw["score"]
+        yield path.name, [
+            (n.get("pitch"), n.get("duration"))
+            for m in score.get("measures", [])
+            for n in m.get("notes", [])
+        ]
+
     from app.services.ocr.musicxml import score_json_from_musicxml
 
     for path in sorted((REPO / "fixtures" / "musicxml").glob("*.musicxml")):
@@ -94,8 +103,10 @@ def main() -> int:
     print(f"\n{missing} of {everything} notes have no glyph ({100 * missing / everything:.0f}%)")
     print(f"worst page: {worst[1]} at {worst[0]:.0f}% drawn")
     print(
-        "\nRead the worst page, not the average. The page that started this "
-        "would score 0%,\nand nothing in this corpus resembles it."
+        "\nRead the worst page, not the average. Until `orchestral_part.json` "
+        "was added the\nworst here was 67% and every fixture was an "
+        "exercise-book page, which is why a real\npart rendering as nothing "
+        "came as a surprise."
     )
     return 0
 
