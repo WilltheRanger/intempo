@@ -6,6 +6,68 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-17 — The container built to run homr had no homr in its chain
+
+**Branch:** `main`. Tracing what actually happens on the owner's first scan now
+that `TRANSCRIPTION_RUNTIME=modal` is set. Two things would have stopped it dead,
+and both are the same mistake: **assuming a setting made on the API host reaches
+the container.**
+
+### 1. The chain
+
+`_default_chain()` reads `OCR_PROVIDER_CHAIN` from *its own process's*
+environment. On Modal that is the `intempo-backend` secret — documented as
+carrying `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`, and nothing else.
+Unset, the default is:
+
+    ['claude-sonnet-5', 'claude-opus-5']
+
+So the container built specifically to run homr **would not have had homr in its
+chain at all**. It would have failed every page on a missing API key, with the
+engine installed and idle beside it. Setting the variable on Render — which is
+exactly where it looks like it belongs, and where the owner set it — changes
+nothing in there.
+
+The image now carries the chain as an image environment default, homr first.
+A value in the secret still wins, because Modal injects secrets over the image
+environment, so this is a default and not a hard-coding.
+
+### 2. The logs
+
+`configure_logging()` lived in `app/main.py`. The transcription image does not
+install FastAPI, so **the one process whose logs are the only window onto what
+an OMR engine did to a page could not import the function that makes logging
+work.** Everything it said would have been dropped at WARNING — including the
+line added an hour ago specifically to make a reading's shape visible.
+
+It is `app/logging_config.py` now, and both Modal entrypoints call it. Three
+tests hold that: the module imports neither FastAPI nor `app.main`, and each
+entrypoint turns logging on.
+
+### The bug I introduced doing it
+
+Moving the function took `from app.config import settings` to module level with
+it. `test_cors` reloads `app.config`, which builds a **new** settings object; this
+module kept the old one and silently ignored every change to `LOG_LEVEL`. It
+surfaced as three failures in a different file, only in the order those two ran
+— which is not a signal anybody should have to decode.
+
+The codebase already states the rule, in `_default_chain`: *"Read when called,
+not bound at import. This resolves configuration, and a snapshot taken at import
+time is a different thing."* Now pinned directly rather than by cross-file
+ordering: reload the settings object, and the next call has to see it.
+
+**Tests:** 4 new cases. Six mutations — the container naming no chain, homr not
+first, a chain naming a provider this build skips, either entrypoint not turning
+logging on, and settings bound at import — all killed.
+
+Backend 1007 tests green (1003 before), ruff clean.
+
+**What is left before the first scan can work:** nothing I can do from here. This
+deploys on push; Modal builds the image on first invocation.
+
+---
+
 ## 2026-09-17 — The sweeper would have failed the first page ever read on Modal
 
 **Branch:** `main`. The owner has set `TRANSCRIPTION_RUNTIME=modal` and

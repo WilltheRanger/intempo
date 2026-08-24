@@ -87,6 +87,12 @@ app = modal.App(APP_NAME, image=image)
 #:     modal secret create intempo-backend \
 #:         SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=...
 #:
+#: Model keys are **optional** and only buy the fallback: this container reads
+#: pages with homr, which needs none. Adding `ANTHROPIC_API_KEY` here is what
+#: lets `parse_sheet_music` fall through to the vision models on a page homr
+#: cannot read. Without it, such a page fails — with the reason said plainly,
+#: which is the point of `_why_it_failed`.
+#:
 #: This is the second place that key lives, and it is the reason to keep the
 #: image narrow: a container that cannot make an outbound call to anything but
 #: Supabase is a smaller thing to hold a service-role key.
@@ -118,8 +124,10 @@ def run_analysis(analysis_id: str) -> None:
     first, and an analysis runner that exists twice would be the worst of them:
     the two would disagree about a musician's timing and nothing would say so.
     """
+    from app.logging_config import configure_logging
     from app.workers.analysis_runner import run_analysis as run
 
+    configure_logging()
     run(analysis_id)
 
 
@@ -163,6 +171,19 @@ transcription_image = (
         "python -c 'from homr.main import download_weights; "
         "download_weights(False, False, False)'"
     )
+    # **The chain this container exists to run.**
+    #
+    # `_default_chain()` reads `OCR_PROVIDER_CHAIN` from *this process's*
+    # environment, and on Modal that comes from the `intempo-backend` secret —
+    # which carries Supabase credentials and nothing else. Unset, the default is
+    # `claude-sonnet-5,claude-opus-5`: so a container built specifically to run
+    # homr would not have had homr in its chain at all, and would have failed
+    # every page on a missing API key. Setting it on the API host, which is
+    # where it looks like it belongs, changes nothing here.
+    #
+    # An image default rather than a hard-coding: a value in the secret still
+    # overrides it, because Modal injects secrets over the image environment.
+    .env({"OCR_PROVIDER_CHAIN": "homr,gemini-2.5-flash,claude-sonnet-5,claude-opus-5"})
     .add_local_dir(
         "app",
         remote_path="/root/app",
@@ -195,8 +216,15 @@ def transcribe_score(score_id: str) -> None:
     implementation that drifted from the first, and a transcription runner that
     exists twice would have two ideas about what is on a musician's page.
     """
+    from app.logging_config import configure_logging
     from app.workers.transcription_runner import run_transcription
 
+    # Nothing else in this process does it. `configure_logging` runs in the
+    # API's `lifespan`, and there is no lifespan here — so without this the
+    # container's own account of what it read ("homr: 74 measures, 267 notes,
+    # durations {...}") is thrown away at WARNING, and Modal's log page, which
+    # is the only window into this container, shows nothing.
+    configure_logging()
     run_transcription(score_id)
 
 

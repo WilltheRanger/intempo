@@ -562,3 +562,68 @@ def test_the_engraver_coverage_tool_still_runs() -> None:
         "the tool stopped reporting the worst page, which is the number that "
         "matters — the average hid this problem until a musician found it"
     )
+
+
+def test_the_reading_container_names_a_chain_that_holds_the_engine() -> None:
+    """The bug that would have made the whole thing pointless.
+
+    `_default_chain()` reads `OCR_PROVIDER_CHAIN` from *its own* process's
+    environment. On Modal that is the `intempo-backend` secret, which carries
+    Supabase credentials and nothing else — so unset, the default is
+    `claude-sonnet-5,claude-opus-5`, and a container built specifically to run
+    homr would not have had homr in its chain at all. It would have failed every
+    page on a missing API key while the engine sat installed beside it.
+
+    Setting the variable on the API host, which is where it looks like it
+    belongs, changes nothing inside this container.
+    """
+    import re
+
+    source = (BACKEND / "modal_app.py").read_text()
+    env = re.search(r'\.env\(\{"OCR_PROVIDER_CHAIN": "([^"]+)"\}\)', source)
+
+    assert env, "the reading image no longer names a provider chain"
+    names = [n.strip() for n in env.group(1).split(",")]
+    assert names[0] == "homr", f"homr is not first in the container's chain: {names}"
+
+    from app.services.ocr.pipeline import PROVIDER_REGISTRY
+
+    unknown = [n for n in names if n not in PROVIDER_REGISTRY]
+    assert not unknown, f"the image's chain names {unknown}, which this build skips"
+
+
+def test_both_modal_entrypoints_turn_logging_on() -> None:
+    """There is no `lifespan` in a Modal container, so nothing else does it.
+
+    Without this the container's own account of what it read — "homr: 74
+    measures, 267 notes, durations {...}" — is dropped at WARNING, and Modal's
+    log page, the only window into that container, shows nothing at all.
+    """
+    source = (BACKEND / "modal_app.py").read_text()
+
+    for entrypoint in ("def run_analysis(", "def transcribe_score("):
+        start = source.index(entrypoint)
+        body = source[start : source.index("\n\n\n", start)]
+        assert "configure_logging()" in body, f"{entrypoint} does not turn logging on"
+
+
+def test_the_logging_setup_does_not_need_fastapi() -> None:
+    """It lived in `app/main.py`, and the reading image does not install
+    FastAPI — so the one process whose logs matter most could not import the
+    function that makes logging work."""
+    import ast
+
+    tree = ast.parse((BACKEND / "app" / "logging_config.py").read_text())
+    imported = {
+        node.module
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ImportFrom) and node.module
+    } | {
+        alias.name
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Import)
+        for alias in node.names
+    }
+
+    assert not any(name.startswith("fastapi") for name in imported), imported
+    assert not any(name.startswith("app.main") for name in imported), imported

@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
+from app.logging_config import configure_logging
 from app.routers import analyses, calibration, corrections, health, me, scores, upload
 from app.workers.analysis_runner import (
     SWEEP_INTERVAL_SECONDS,
@@ -16,40 +17,6 @@ from app.services.ocr.pipeline import _default_chain, unknown_provider_names
 from app.workers.transcription_runner import sweep_stuck_transcriptions
 
 log = logging.getLogger("intempo")
-
-
-def configure_logging() -> None:
-    """Let this service's own log lines out of the process.
-
-    **Nothing configured logging at all**, so the effective level was Python's
-    default of WARNING and every `log.info` in the codebase — twenty-seven of
-    them — was discarded in production. That is not a cosmetic gap: those lines
-    are the only account of what the reader actually did, and the hosting logs
-    are the only diagnostic channel that works when the API itself cannot be
-    reached. "read 10 systems separately: 78 measures, 431 notes" is the single
-    line that says whether reading a page a stave at a time is working, and it
-    never left the process.
-
-    Only this service's logger is raised. Root stays where uvicorn put it, so
-    request logs and library chatter are unchanged — the goal is to hear what
-    this code says, not everything.
-
-    A handler is added **only when nothing else has one**. Under uvicorn the
-    root logger already has one and these records propagate to it; adding a
-    second would print every line twice. Without uvicorn — a script, a test, a
-    worker — there is no handler at all, and `logging.lastResort` carries
-    WARNING and above only, so INFO would still vanish.
-    """
-    level = logging.getLevelName(settings.LOG_LEVEL.strip().upper())
-    if not isinstance(level, int):
-        level = logging.INFO
-    log.setLevel(level)
-    if not logging.getLogger().handlers and not log.handlers:
-        handler = logging.StreamHandler()
-        handler.setFormatter(
-            logging.Formatter("%(levelname)s %(name)s: %(message)s")
-        )
-        log.addHandler(handler)
 
 
 async def _sweep_periodically() -> None:
