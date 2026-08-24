@@ -304,3 +304,120 @@ def test_reporting_the_configuration_never_stops_the_server(monkeypatch, caplog)
 
     assert any("on fire" in r.getMessage() for r in caplog.records)
     assert pipeline is not None
+
+
+# ---- letting this service's own log lines out of the process --------------
+
+
+def test_the_readers_own_account_reaches_the_log(monkeypatch, capsys) -> None:
+    """The gap this closes, and it is not cosmetic.
+
+    Nothing configured logging, so the effective level was Python's default of
+    WARNING and all twenty-seven `log.info` calls in this codebase were
+    discarded in production. Those lines are the only account of what the reader
+    actually did, and the hosting logs are the only diagnostic channel that
+    works when the API itself cannot be reached — "read 10 systems separately:
+    78 measures, 431 notes" is the one line that says whether reading a page a
+    stave at a time works, and it never left the process.
+    """
+    from app.main import configure_logging
+
+    root = logging.getLogger()
+    service = logging.getLogger("intempo")
+    monkeypatch.setattr(root, "handlers", [])
+    monkeypatch.setattr(service, "handlers", [])
+    monkeypatch.setattr(service, "level", logging.NOTSET)
+
+    configure_logging()
+    logging.getLogger("intempo.ocr").info("read 10 systems separately")
+
+    assert "read 10 systems separately" in capsys.readouterr().err
+
+
+def test_a_handler_is_not_added_on_top_of_one_that_exists(monkeypatch) -> None:
+    """Under uvicorn the root logger already has a handler and these records
+    propagate to it. A second one prints every line twice, which is worse than
+    the silence it replaces — a log nobody can skim is a log nobody reads."""
+    from app.main import configure_logging
+
+    root = logging.getLogger()
+    service = logging.getLogger("intempo")
+    monkeypatch.setattr(root, "handlers", [logging.NullHandler()])
+    monkeypatch.setattr(service, "handlers", [])
+
+    configure_logging()
+
+    assert service.handlers == []
+    assert service.level == logging.INFO
+
+
+def test_only_this_service_is_made_louder(monkeypatch) -> None:
+    """Root stays where uvicorn put it. The goal is to hear what this code says,
+    not every library it imports."""
+    from app.main import configure_logging
+
+    root = logging.getLogger()
+    monkeypatch.setattr(root, "handlers", [logging.NullHandler()])
+    monkeypatch.setattr(root, "level", logging.WARNING)
+    monkeypatch.setattr(logging.getLogger("intempo"), "handlers", [])
+
+    configure_logging()
+
+    assert root.level == logging.WARNING
+
+
+@pytest.mark.parametrize(
+    ("configured", "expected"),
+    [("DEBUG", logging.DEBUG), ("warning", logging.WARNING), (" Error ", logging.ERROR)],
+)
+def test_the_level_can_be_set_from_the_environment(
+    monkeypatch, configured, expected
+) -> None:
+    from app import config
+    from app.main import configure_logging
+
+    monkeypatch.setattr(config.settings, "LOG_LEVEL", configured)
+    monkeypatch.setattr(logging.getLogger("intempo"), "handlers", [])
+    configure_logging()
+
+    assert logging.getLogger("intempo").level == expected
+
+
+def test_an_unusable_level_falls_back_to_info_rather_than_silence(monkeypatch) -> None:
+    """`logging.getLevelName` answers a *string* for a name it does not know, so
+    a typo would have set the level to something that is not a level at all.
+    Failing quiet is the one thing this must not do — it is the state it was
+    written to end."""
+    from app import config
+    from app.main import configure_logging
+
+    monkeypatch.setattr(config.settings, "LOG_LEVEL", "verbose-please")
+    monkeypatch.setattr(logging.getLogger("intempo"), "handlers", [])
+    configure_logging()
+
+    assert logging.getLogger("intempo").level == logging.INFO
+
+
+def test_starting_the_app_configures_logging(monkeypatch) -> None:
+    """Asserted through `lifespan`, not by calling `configure_logging` directly.
+
+    Every test above calls it directly, so removing the call from `lifespan`
+    changed nothing any of them could see — the function was correct and never
+    ran. A configuration step nobody invokes is the same as no configuration
+    step, which is exactly the state this replaced.
+    """
+    service = logging.getLogger("intempo")
+    monkeypatch.setattr(service, "level", logging.NOTSET)
+    monkeypatch.setattr(main, "sweep_stuck_analyses", lambda: None)
+    monkeypatch.setattr(main, "sweep_stuck_transcriptions", lambda: None)
+
+    assert service.getEffectiveLevel() > logging.INFO, (
+        "the logger is already at INFO, so this test cannot tell whether "
+        "starting the app is what put it there"
+    )
+
+    async def body() -> None:
+        async with _running_app():
+            assert service.level == logging.INFO
+
+    asyncio.run(body())

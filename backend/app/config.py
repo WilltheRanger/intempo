@@ -37,6 +37,17 @@ class Settings:
     SUPABASE_KEY: str = os.getenv("SUPABASE_KEY", "")
     SUPABASE_SERVICE_ROLE_KEY: str = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
     GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
+    #: How much this service says about what it is doing.
+    #:
+    #: **INFO, because WARNING is what it was and nobody chose that.** Nothing
+    #: configured logging at all, so the effective level was Python's default of
+    #: WARNING and the root logger had no handler of its own — uvicorn's is what
+    #: carried anything through. Twenty-seven `log.info` calls were thrown away
+    #: in production, including the pipeline's own account of what it read:
+    #: "read 10 systems separately: 78 measures, 431 notes" is the one line that
+    #: says whether reading a page a stave at a time works, and it never left
+    #: the process.
+    LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
     #: Which models to try, in order, and what to do when one is not known.
     #:
     #: The default is spelled with current model names and has to be kept that
