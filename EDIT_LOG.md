@@ -6,6 +6,43 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-09 (night, later) — `/v1/ready` explained failures that had not happened
+
+**Branch:** `main`. Found by the user running the endpoint against the live API
+and pasting the table back.
+
+    name           ok     detail
+    supabase_url   True   SUPABASE_URL is not set — there is no project to
+                          talk to.
+
+Every word of that is wrong except the name. The setting **is** set; that is
+why the check passed. `detail` describes the *failure*, and `as_dict` returned
+it unconditionally — so the endpoint whose entire job is to say what is broken
+was printing a broken-sounding sentence beside every healthy row, and the rows
+that genuinely were broken looked exactly the same. Anyone scanning it has to
+read the `ok` column and mentally discard the prose, on every line.
+
+Worse, the two checks written most recently (`tuning_config`,
+`analysis_runtime`) already returned `""` when they passed, so half the list
+behaved one way and half the other. That inconsistency is what made it visible
+at all.
+
+**A passing check now says nothing.** One line in `as_dict`, plus two tests:
+the unit case, and an end-to-end one over the actual JSON that also asserts the
+deployment under test has at least one failing check — otherwise it would be
+checking an empty loop.
+
+Mutation-checked: returning the detail unconditionally, and blanking it on
+failures too, are both caught.
+
+**What the same output told us about the deployment**, recorded because it is
+the answer to a question asked all evening: `tuning_config` **True** — the
+`config.toml` fix is live and working. `analysis_runtime:` **inprocess** — so
+`ANALYSIS_RUNTIME` is not reaching the API, and every take is still analysed on
+the 512 MB box. The tokens are there; the switch itself is not.
+
+**Tests run:** 741 passed (739 + 2), ruff clean. **Rollback:** revert.
+
 ## 2026-09-09 (night) — The app's note times, checked against the server's
 
 **Branch:** `main`. The level above yesterday's beat table.

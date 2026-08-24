@@ -36,10 +36,29 @@ class Check:
     blocking: bool = True
 
     def as_dict(self) -> dict:
+        """The check, with its detail only when the detail is true.
+
+        **`detail` describes the failure**, so reporting it next to a passing
+        check states the opposite of the truth. Read back from a real
+        deployment, in a table:
+
+            supabase_url   True   SUPABASE_URL is not set — there is no
+                                  project to talk to.
+
+        Every word of that is wrong except the name. The setting *is* set;
+        that is why the check passed. Somebody scanning the list for what is
+        broken has to notice that the `ok` column contradicts the sentence
+        beside it, on every single row, and the rows that genuinely are broken
+        look exactly the same.
+
+        Two checks written later already returned `""` when they passed, which
+        is what made the inconsistency visible. This makes it the rule: a
+        passing check has nothing to say.
+        """
         return {
             "name": self.name,
             "ok": self.ok,
-            "detail": self.detail,
+            "detail": "" if self.ok else self.detail,
             "blocking": self.blocking,
         }
 
