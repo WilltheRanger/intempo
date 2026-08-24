@@ -6,6 +6,110 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-24 — The upload: a filename the server refuses, no size cap, and advice that led nowhere
+
+**Branch:** `main`. Same capture-path loop, the upload slice.
+
+### 1. An extension the server rejects, sent anyway
+
+`typeOf` in `uploadPage.ts` had a fallback for the content type and **none for
+the extension**. When the blob carried no type — which is every `file:` URI on
+native, as the file's own comment says — and the URI's extension was not one of
+the five it knew, it declared `image/jpeg` and then filed the object under the
+raw extension regardless: `page.heif`.
+
+`POST /v1/upload/score-image`'s `_extract_ext` allows `{jpg, jpeg, png, heic,
+webp}` and answers anything else with a 400 whose detail is
+`extension 'heif' is not allowed`. That detail is a plain string, so `readError`
+puts it in `ApiError.message` and `describeScanFailure` shows it unchanged — a
+server rule string naming a constraint the musician was never shown, for a page
+that never left the phone. Android's picker copies to cache keeping the source
+extension, so **this was every HEIF page picked on Android.**
+
+Two changes: `heif` maps to `image/heic`, because it is not a different format —
+same container, two spellings, and the server's allow-list holds one of them.
+And the extension now follows the **type** rather than the filename it was read
+from, so the two halves cannot disagree again. Filing unknown bytes as JPEG is
+safe because nothing downstream trusts the name: `media_type_of` sniffs magic
+numbers and the HEIF brands from the bytes themselves.
+
+The existing test asserted only the content type — `sends jpeg for a name it
+does not recognise` — so it passed the whole time the filename was wrong. It
+asserts the filename now, and a third test walks `gif/bmp/tif/tiff/heif/avif`
+and a name with no extension at all against the server's allow-list, which is
+the rule rather than four examples of it.
+
+### 2. No size cap on the client
+
+The only pre-flight check was `bytes.size === 0`. Three numbers existed and the
+client enforced none: the bucket takes 10 MB, the worker refuses over 12 MB, the
+client accepted anything. The audio sibling does the opposite — `MAX_UPLOAD_BYTES`
+in `lib/audio/types.ts` is matched to the audio bucket and enforced by the
+recorder, precisely so a take is not lost after the playing.
+
+`MAX_PAGE_BYTES = 10 MB`, checked with the bytes already in hand. The cost of
+not checking is not a wasted request: `UPLOAD_TIMEOUT_MS` is an XHR **total**
+timeout rather than an idle one, so anything under roughly 550 kbps is killed at
+exactly two minutes however much progress it made, with no resume and no retry —
+every attempt restarting from zero and meeting the same wall. And the server
+downsamples whatever arrives to 1568 px anyway, so the megabytes buy no accuracy.
+
+### 3. Advice that led nowhere
+
+The 413 message said: *"Photograph the page again with your camera set to a
+smaller size, or import it as a file."* Both are dead ends **in this app**. The
+only camera is `ScannerScreen`, which hardcodes `quality: 0.8` and exposes no
+size control, so re-photographing produces the same file and fails identically;
+`ImportFileScreen` is a MusicXML-only picker that refuses a JPEG outright, and
+the nearer-sounding "Import score" re-sends the same bytes. Confident, specific,
+and wrong in both directions — which is worse than the generic "Try again" it
+replaced.
+
+It now says what happened and names the one route that genuinely produces a
+smaller file: the scanner re-encodes at `quality: 0.8` while the picker hands
+over the original.
+
+**The test was part of the problem.** It asserted `toMatch(/smaller|import/i)` —
+that *some* advice was given, not that anyone could follow it — so it locked the
+bad advice in. Replaced with assertions that the message does not send anyone to
+the file importer or to a camera setting that does not exist.
+
+### Tests
+
+Mobile **259 passed** (was 251), `tsc --noEmit` clean. Eight mutations, all
+caught: extension from the filename again (both branches), `heif` dropped from
+the map, the size check removed, the check off by one at exactly the limit, the
+cap set to the server's headroom figure instead of the bucket's, the numbers
+dropped from the message, and the 413 message pointing at the file importer
+again.
+
+### Not done
+
+**Downscaling before upload**, which is the fix that would make the cap almost
+never fire. It needs `expo-image-manipulator` — a dependency I can add but
+cannot build for native or test on a device from here, so adding it would mean
+claiming something I have not verified. The cap and the honest message are what
+can be landed without it; the downscale is the next thing in this slice.
+
+**Orphaned uploads.** Every upload that never becomes a score row is permanent
+and unreachable: `uploadPage` mints a fresh object key and writes immediately,
+the only reference is `captureSession.uploadedImageUrl()` in memory, and the one
+storage deletion in the backend is reached solely from `POST /:id/accept` keyed
+off an existing row. Back out of the naming screen, or fail the save, or retry
+the transcribe — the photograph stays in the bucket with no row, no accept path
+and no delete path. This contradicts the rule the codebase states plainly, that
+the photograph is discarded when a person accepts the reading, because for those
+copies acceptance can never happen. It needs a lifecycle decision (a sweeper
+over unreferenced keys, or a delete on abandon) rather than a patch.
+
+### Housekeeping
+
+Removed `src/lib/scan/__tmp_ext.test.ts` — a scratch file an audit agent left
+behind while proving the extension finding. Never committed; checked before
+deleting.
+
+---
+
 ## 2026-08-24 — A clef nobody read was captioned "Treble clef", and three more capture-path fixes
 
 **Branch:** `main`. Continuing the capture-path loop.

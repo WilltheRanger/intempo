@@ -111,11 +111,26 @@ export function uploadToSignedUrl(
       // work here — the same file will be refused every time — and that was
       // the advice this used to give, because 413 fell through to the generic
       // branch below.
+      //
+      // The replacement was no better, and worse in a particular way: it named
+      // two remedies that **do not exist in this app**. "Set your camera to a
+      // smaller size" — the only camera here is `ScannerScreen`, which
+      // hardcodes `quality: 0.8` and exposes no size control, so
+      // re-photographing produces the same file and fails identically. "Import
+      // it as a file" — `ImportFileScreen`'s picker is MusicXML-only and
+      // refuses a JPEG outright, while "Import score" re-sends the same bytes.
+      // Confident, specific, and a dead end in both directions.
+      //
+      // `uploadPage` now refuses an oversized page before sending it, so this
+      // is the case where the client's figure and the bucket's disagree. It
+      // says what happened and offers the one route that genuinely produces a
+      // smaller file, and nothing else.
       if (request.status === 413) {
         reject(
           new UploadError(
-            'That photograph is too large to send. Photograph the page again ' +
-              'with your camera set to a smaller size, or import it as a file.',
+            'Storage refused the page for being too large. Photographing it ' +
+              "with this app's camera makes a smaller file than the original " +
+              'from your camera roll.',
           ),
         );
         return;
