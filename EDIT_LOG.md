@@ -6,6 +6,75 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-17 — "Reading stave 3 of 7"
+
+**Branch:** `main`. Ninth iteration of *fix the OMR system till it works*.
+**Asked first** (§2) — this changes copy a musician reads and how the bar
+behaves. The answer was to show the count.
+
+**A five-minute read reporting once is the failure this reporting exists to
+prevent.** The panel's whole premise is that a spinner and a hang are
+indistinguishable, so the step gets named. Reading a page one stave at a time
+made the read minutes long and every stave reported the same words, so the bar
+held at 0.7 throughout — a still bar for minutes, which is the thing the panel
+was built to stop. The worker knows it has finished 3 of 7. Nothing here
+estimates anything.
+
+`_human_stage` now turns `reading:system 3 of 7` into **"Reading stave 3 of 7"**.
+"Stave" rather than "line", to sit with "Finding the staves" one step earlier.
+The provider's name is still never shown.
+
+**The count is in the words, so the app interpolates rather than looking up.**
+There is no static position for "3 of 7" — a page has as many staves as it has
+and the app is not told in advance. The reading band runs from where "Finding
+the staves" leaves the bar (0.3) to where "Reading the notation" sits (0.8).
+
+**The band ends *at* 0.8 rather than below it, and that is the subtle one.** A
+page read stave by stave that then fails falls back to being read whole, so
+"Reading the notation" arrives *after* "Reading stave 7 of 7". A lower band end
+would retreat the bar on a page that is still working — and falling back is
+exactly when someone is most likely to be watching. There is a test named for
+this.
+
+**An impossible count holds the bar.** `0 of 0` divides by zero and `9 of 7` is
+a server saying something that cannot be; NaN on an `Animated.Value` is worse
+than a bar that does not move.
+
+**`fixtures/stages/parity.json` is now the contract**, replacing "the worker's
+words" as a convention nothing enforced. It holds the static positions, the
+queued position, the reading band, the exact strings the worker emits for a
+stave count, and the two whole-page forms. `test_stage_parity.py` holds the
+server to it; `transcriptionProgress.test.ts` holds the app. The app's positions
+are still *parsed* out of the TypeScript rather than restated in Python — a
+third copy of the answer is the failure being tested for.
+
+**One copy change beyond the stage words.** The caption said "Reading a page
+usually takes under a minute." That was true when a page was one model call.
+Four staves at a time still means three rounds on a dense page, so it now reads
+"usually takes under a minute, longer for a dense one" — softened rather than
+left to be wrong on exactly the pages that take longest.
+
+**Three-foot test**, on the composition rather than a screenshot, because
+nothing structural moved — same single label, hairline rule and caption. First:
+"Reading stave 3 of 7", at `pieceTitle` size. Second: the 2px rule with the
+ochre fill about half across. Third: the small grey caption. One dominant focal
+point, and it is now the sentence that carries the new information rather than a
+label that says the same thing for four minutes.
+
+**Tests:** 7 parity cases (was 4), 8 vitest cases (was 5). Eight mutations
+across the worker, the app and the fixture — the count reversed, the count
+collapsed, the provider name leaking onto the screen, the band ending low, an
+impossible count placed, the interpolation bypassed, the ordering inverted, the
+hold removed — all killed, and each by the side that owns the rule.
+
+Backend 871 tests green (868 before), ruff clean. Mobile 233 (230 before),
+typecheck clean.
+
+**Not measured.** Whether a real page produces a stave count at all. Everything
+above is a string and a fraction.
+
+---
+
 ## 2026-09-17 — Four systems at a time, not twelve one after another
 
 **Branch:** `main`. Eighth iteration of *fix the OMR system till it works*, and

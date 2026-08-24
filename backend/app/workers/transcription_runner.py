@@ -22,6 +22,7 @@ first, the connection ends, and this fills the notes in.
 from __future__ import annotations
 
 import logging
+import re
 import threading
 from datetime import datetime, timedelta, timezone
 
@@ -73,8 +74,30 @@ _HUMAN_STAGES = {
 STAGE_FETCHING = "Fetching the page"
 STAGE_READING_HUMAN = "Reading the notation"
 
+#: What the pipeline says when it has finished a stave, e.g.
+#: `reading:system 3 of 7`. Matched rather than string-compared because the two
+#: numbers are the point.
+_SYSTEM_COUNT = re.compile(rf"^{re.escape(STAGE_READING)}:system (\d+) of (\d+)$")
+
 
 def _human_stage(stage: str) -> str:
+    """The words that go on the screen for one pipeline stage.
+
+    **A stave count is real measured progress and is said out loud.** A page is
+    read one stave at a time now, so a five-minute read reports seven times
+    instead of once, and collapsing all of it to "Reading the notation" left a
+    musician watching a still bar for minutes — which is the failure this
+    reporting exists to prevent, not a cosmetic shortfall. The worker knows it
+    has finished 3 of 7; nothing here estimates anything.
+
+    The provider's name is still never shown. "claude-sonnet-5" tells a
+    musician nothing they can act on and quite a lot they did not ask about,
+    and it is in the log line either way, which is where the person debugging
+    it looks.
+    """
+    counted = _SYSTEM_COUNT.match(stage)
+    if counted:
+        return f"Reading stave {counted.group(1)} of {counted.group(2)}"
     if stage.startswith(f"{STAGE_READING}:"):
         return STAGE_READING_HUMAN
     return _HUMAN_STAGES.get(stage, STAGE_READING_HUMAN)

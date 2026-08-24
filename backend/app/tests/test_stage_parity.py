@@ -1,10 +1,10 @@
 """The stage names the worker says, and the stage names the app draws.
 
 `transcription_runner._human_stage` produces the words that go in
-`scores.transcription_stage`. `mobile/src/components/score/TranscribingPanel.tsx`
-looks each one up in `STAGE_PROGRESS` to decide where the bar sits. The
-component's own docstring calls those words "the contract between
-`transcription_runner.py` and this screen" — and nothing held them to it.
+`scores.transcription_stage`. `mobile/src/lib/transcriptionProgress.ts` places
+each one on the bar. The component's docstring has always called those words
+"the contract between `transcription_runner.py` and this screen" — and nothing
+held them to it.
 
 They had drifted both ways:
 
@@ -16,13 +16,15 @@ They had drifted both ways:
 - The map had **"Finding the staves"**, which nothing had emitted since the
   Audiveris engine was removed (DECISIONS.md, 2026-08-25).
 
-This file is the thing that was missing. It parses the map out of the TSX
-rather than duplicating it, for the same reason `test_meter_parity.py` parses
-`reading.ts`: a second copy of the answer is the failure being tested for.
+`fixtures/stages/parity.json` is now the single statement of the contract. This
+file holds the server to it and `transcriptionProgress.test.ts` holds the app —
+and the app's positions are *parsed* out of the TypeScript rather than restated
+here, because a third copy of the answer is the failure being tested for.
 """
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
@@ -33,14 +35,17 @@ from app.workers.transcription_runner import (
     _human_stage,
 )
 
+REPO = Path(__file__).resolve().parents[3]
+FIXTURE = REPO / "fixtures" / "stages" / "parity.json"
 #: The app's side of the contract. It moved out of `TranscribingPanel.tsx` so
 #: the hold-on-unknown rule could be tested — there is no way to render a React
 #: Native component in that test setup, and the rule was four lines inside the
 #: component with one of them wrong.
-PANEL = (
-    Path(__file__).resolve().parents[3]
-    / "mobile" / "src" / "lib" / "transcriptionProgress.ts"
-)
+PANEL = REPO / "mobile" / "src" / "lib" / "transcriptionProgress.ts"
+
+
+def _contract() -> dict:
+    return json.loads(FIXTURE.read_text())
 
 
 def _panel_stages() -> dict[str, float]:
@@ -56,64 +61,96 @@ def _panel_stages() -> dict[str, float]:
     return {name: float(value) for name, value in pairs}
 
 
-#: Every stage the pipeline can report, in the order it reaches them, paired
-#: with the words the worker turns each into. `STAGE_READING` carries a suffix
-#: in practice (`reading:claude-sonnet-4-6`, `reading:system 3 of 7`); the
-#: suffix is deliberately not shown to anyone, so both forms are checked.
-WORKER_WORDS = [
-    STAGE_FETCHING,
-    _human_stage(STAGE_SPLITTING),
-    _human_stage(f"{STAGE_READING}:claude-sonnet-4-6"),
-    _human_stage(f"{STAGE_READING}:system 3 of 7"),
-    _human_stage(STAGE_CONFIRMING),
-]
+def test_the_app_places_exactly_the_stages_the_fixture_names() -> None:
+    """The failure this file exists for, in both directions at once.
 
-
-def test_every_word_the_worker_says_is_a_word_the_app_can_place() -> None:
-    """The failure this file exists for. A stage the app cannot place is not a
-    stage that quietly does nothing — the bar moves to wherever the fallback
-    is, and the musician sees a read that appears to have started over."""
-    placed = _panel_stages()
-    missing = [word for word in WORKER_WORDS if word not in placed]
-    assert not missing, (
-        f"the worker reports {missing} and the panel has no position for it; "
-        f"the panel knows {sorted(placed)}"
-    )
-
-
-def test_the_app_has_no_position_for_a_stage_nothing_reports() -> None:
-    """The other direction, and it is not tidiness.
-
-    "Finding the staves" sat in the map for weeks after the engine that
-    reported it was removed. A dead key is indistinguishable from a live one by
-    reading either file, so the next person to wire a stage up has no way to
-    know which words are real — and the two that had drifted apart were exactly
-    the ones nobody could check.
+    A stage the app cannot place is not a stage that quietly does nothing — the
+    bar moves to wherever the fallback is. And a position for a stage nothing
+    reports is indistinguishable, by reading either file, from a live one, so
+    the next person to wire a stage up has no way to know which words are real.
     """
-    placed = _panel_stages()
-    unreachable = [word for word in placed if word not in WORKER_WORDS]
-    assert not unreachable, (
-        f"the panel has positions for {unreachable}, which nothing reports"
+    assert _panel_stages() == _contract()["static"]
+
+
+def test_the_worker_says_exactly_the_static_words_the_fixture_lists() -> None:
+    """The server half. Every static position in the contract has to be
+    something `_human_stage` can actually produce."""
+    said = {
+        STAGE_FETCHING,
+        _human_stage(STAGE_SPLITTING),
+        _human_stage(f"{STAGE_READING}:claude-sonnet-5"),
+        _human_stage(STAGE_CONFIRMING),
+    }
+    assert said == set(_contract()["static"]), (
+        f"the worker says {sorted(said)}; the contract lists "
+        f"{sorted(_contract()['static'])}"
     )
+
+
+def test_a_finished_stave_is_reported_with_its_count() -> None:
+    """Real measured progress, and it is said out loud.
+
+    A page is read one stave at a time, so a five-minute read reports seven
+    times instead of once. Collapsing all of it to "Reading the notation" left
+    a musician watching a still bar for minutes, which is the failure this
+    reporting exists to prevent rather than a cosmetic shortfall. The worker
+    knows it has finished 3 of 7; nothing estimates anything.
+    """
+    for case in _contract()["per_stave"]:
+        assert _human_stage(case["pipeline_stage"]) == case["words"], case
+
+
+def test_a_page_read_whole_never_names_the_engine_that_read_it() -> None:
+    """The provider's name tells a musician nothing they can act on and quite a
+    lot they did not ask about. It is in the log line, which is where the person
+    debugging it looks."""
+    for case in _contract()["whole_page"]:
+        assert _human_stage(case["pipeline_stage"]) == case["words"], case
+        assert case["words"] == STAGE_READING_HUMAN
 
 
 def test_the_bar_never_walks_backwards() -> None:
-    """The stages are listed in the order the worker reaches them, so their
-    positions have to increase. "Checking the bar counts" sat at 0.6 under
+    """The static stages are listed in the order the worker reaches them, so
+    their positions have to increase. "Checking the bar counts" sat at 0.6 under
     "Reading the notation"'s 0.7 — so even once the key matched, reaching the
     later step would have moved the bar back."""
+    contract = _contract()
     placed = _panel_stages()
-    positions = [placed[word] for word in WORKER_WORDS if word in placed]
+    positions = [placed[word] for word in contract["_static_order"]]
     assert positions == sorted(positions), (
-        f"positions {positions} for stages {WORKER_WORDS} are out of order"
+        f"positions {positions} for {contract['_static_order']} are out of order"
     )
-    assert 0 < positions[0] and positions[-1] <= 1.0
+    assert contract["queued_progress"] < positions[0]
+    assert positions[-1] <= 1.0
 
 
-def test_reading_a_system_at_a_time_says_the_same_thing_as_reading_a_page() -> None:
-    """Per-system reading multiplied the number of stage reports by the number
-    of systems, and every one of them has to land on the same position — a bar
-    that stepped per line would be reporting a fraction nobody measures, since
-    the systems are not the same size and the count is not known to the app."""
-    assert _human_stage(f"{STAGE_READING}:system 1 of 9") == STAGE_READING_HUMAN
-    assert _human_stage(f"{STAGE_READING}:gemini-2.5-flash") == STAGE_READING_HUMAN
+def test_reading_a_stave_ends_where_reading_a_whole_page_sits() -> None:
+    """Why the reading band ends at 0.8 rather than below it.
+
+    A page read stave by stave that then fails falls back to being read whole,
+    so "Reading the notation" arrives *after* "Reading stave 7 of 7". If the
+    band ended lower the bar would retreat on a page that is still working —
+    and falling back is exactly when a musician is most likely to be watching.
+    """
+    contract = _contract()
+    start, end = contract["_reading_band"]
+    placed = _panel_stages()
+    assert start == placed["Finding the staves"]
+    assert end == placed["Reading the notation"]
+    assert start < end < placed["Checking the bar counts"]
+
+
+def test_the_fixture_covers_the_counts_that_actually_occur() -> None:
+    """A single stave, a full page, and the ceiling. `_MAX_SYSTEMS_TO_READ` is
+    16, so `16 of 16` is the widest count the worker can emit; a fixture that
+    only held `3 of 7` would say nothing about either end."""
+    from app.services.ocr.pipeline import _MAX_SYSTEMS_TO_READ
+
+    totals = {
+        int(case["pipeline_stage"].rsplit(" ", 1)[1])
+        for case in _contract()["per_stave"]
+    }
+    assert 1 in totals, "a page with one stave on it is the common case here"
+    assert _MAX_SYSTEMS_TO_READ in totals, (
+        f"the ceiling is {_MAX_SYSTEMS_TO_READ} and the fixture stops short of it"
+    )

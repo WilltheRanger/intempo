@@ -177,14 +177,20 @@ there works differently as of 2026-08-24:
   `failed`), the step the worker last reported, and a failure reason written
   for a musician. `usePiece` polls while a scan is unfinished.
 - **Progress is measured, never animated toward a guess.** The bar moves when
-  the worker reports a step it has reached and at no other time. The map lives
-  in `lib/transcriptionProgress.ts` (out of the component so the rule can be
-  tested); if you add a pipeline stage, add it there **and** to `_HUMAN_STAGES`
-  in the worker — the worker's words are the contract between them, and
-  `backend/app/tests/test_stage_parity.py` enforces it in both directions.
-  A stage this build does not recognise **holds** the bar; it must never fall
-  back to the queued position, which threw a read at 70% back to 5%. Positions
-  are listed in the order the worker reaches them and must not decrease.
+  the worker reports a step it has reached and at no other time.
+  `fixtures/stages/parity.json` is the contract; `lib/transcriptionProgress.ts`
+  holds the app's side (out of the component so the rules can be tested) and
+  `_HUMAN_STAGES` / `_human_stage` the worker's. Adding a pipeline stage means
+  editing the fixture **and** both sides —
+  `backend/app/tests/test_stage_parity.py` and
+  `transcriptionProgress.test.ts` fail otherwise, in both directions.
+  Three rules that each exist because they were once broken: a stage this build
+  does not recognise **holds** the bar (falling back threw a read at 70% down to
+  5%); positions increase in the order the worker reaches them; and the reading
+  band ends exactly where "Reading the notation" sits, so a stave-by-stave page
+  that falls back to being read whole does not retreat.
+  A stave count (`Reading stave 3 of 7`) is measured progress and is shown; the
+  provider's name never is.
 - **Saving a scan lands on `PieceScore`**, which owns all three states
   (reading · failed · done). `ListenButton` lives in `components/score/` and is
   shared by the record, warmup, piece and score screens.

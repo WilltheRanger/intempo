@@ -76,9 +76,16 @@ export function TranscribingPanel({ piece }: TranscribingPanelProps) {
         <Animated.View style={[styles.fill, { width }]} />
       </View>
 
+      {/*
+        "Under a minute" was true when a page was one model call. It is read a
+        stave at a time now — four at once, but a dense page is still three
+        rounds of that — so the claim is softened rather than left to be wrong
+        on exactly the pages that take longest.
+      */}
       <Text variant="metadataSmall" color="textTertiary" style={styles.caption}>
-        Reading a page usually takes under a minute. You can leave this screen —
-        it carries on without you, and the piece is already in your library.
+        Reading a page usually takes under a minute, longer for a dense one. You
+        can leave this screen — it carries on without you, and the piece is
+        already in your library.
       </Text>
     </View>
   );
