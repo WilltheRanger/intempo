@@ -6,6 +6,77 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-17 — A metre change printed on a later line survives the join
+
+**Branch:** `main`. Fifth iteration of *fix the OMR system till it works*, and
+it fixes something the fourth one introduced.
+
+**A model handed one crop cannot tell it is not the first line.** So a 2/4
+printed where the music changes to 2/4 comes back in that system's *header*
+field — which is exactly where the header of a page belongs, and the model is
+not wrong to put it there. `_combine` keeps the first system's header and drops
+the rest, so the change vanished. The prompt's own rule says what that costs:
+"every bar after an unreported change is reported to the musician as having the
+wrong number of beats, on a page that is written and read correctly, with a
+control offered to 'fix' each one." Reading a page whole never had this
+problem, because a model that can see the whole page knows which metre is the
+first one.
+
+`_restate_meter_changes` runs before `_combine` joins anything. A stated metre
+that differs from the one running into that system is moved onto the system's
+first measure, where `meters_in_force` reads changes from.
+
+**Arithmetic decides, not the model.** A model asked for a time signature will
+supply one whether or not the line prints it, and a guess promoted to a metre
+change is worse than a dropped one — it invalidates a correct reading from that
+bar to the end of the page. `_fits_better` counts how many of the system's bars
+add up to each candidate and keeps the stated one only if it wins outright. A
+tie is not evidence: the metre already running is what the page has been
+printing for however many lines, and a line that splits two-all hands every
+later line to a metre half of one system voted for.
+
+Two guards, and the second was wrong the first time I wrote it:
+
+- Nothing is moved for the **first** metre anyone states. There is nothing for
+  it to be a change from, so it is the page's header — the ordinary case for a
+  photograph that cuts the top of the page off.
+- Nothing is moved when the system states a metre on **any** of its measures.
+  That means the model saw a change printed mid-line and reported it the
+  documented way, and its header is then just the metre it read somewhere on
+  the line. The guard started as "the first measure states nothing", which lets
+  a header of 2/4 write itself onto bar 1 of a line that changes at bar 2 —
+  putting the change a bar early and calling bar 1, which is right, too long.
+
+The running metre also has to advance through changes a system reports on its
+own measures, or a change *back* to 4/4 on the next line looks like no change
+at all against a stale page header, and the page stays in 2/4 to the end.
+
+**Tests:** seven new cases in `test_pipeline.py`. Eight mutations of the new
+code — both guards, both directions of `_fits_better`, the tie, the
+running-metre advance, and removing the restatement entirely — all killed. The
+first draft of the mid-line-change test could not fail: the header agreed with
+the running metre, so the guard it was named for was never reached.
+`if measure.notes` came out of `_fits_better` in the process — an unreadable
+bar sums to zero, which matches no metre, so filtering it changed nothing and
+no test could tell.
+
+Backend 846 tests green (839 before), ruff clean.
+
+**What is still unmeasured.** All of it. No real page has been through the
+per-system path at all, so this fixes a failure I can demonstrate on
+constructed systems and have not seen happen. The one thing the fixtures can
+say is that they cannot say much: not one of them changes metre.
+
+**Known gap, deliberately left.** When the *first* system states no metre and a
+later one does, that later metre still becomes the page header and applies
+backwards to the lines above it. That is the existing behaviour and it is right
+for the common case — a photograph with the top cropped off — but a page that
+both loses its header and changes metre will get it wrong. Deciding needs the
+same arithmetic run over the earlier systems, and there is no fixture to check
+it against.
+
+---
+
 ## 2026-09-17 — The page is read one system at a time
 
 **Branch:** `main`. Fourth iteration of *fix the OMR system till it works*, and
