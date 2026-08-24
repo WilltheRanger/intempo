@@ -1,0 +1,52 @@
+{
+  "_why": [
+    "The words the transcription worker writes into scores.transcription_stage,",
+    "and where the app puts the bar for each. They are the contract between",
+    "backend/app/workers/transcription_runner.py and",
+    "mobile/src/lib/transcriptionProgress.ts, and they had drifted twice: the",
+    "worker said 'Checking the bar counts' while the app keyed on 'Checking the",
+    "reading', and the app held a position for 'Finding the staves' that nothing",
+    "had emitted since the Audiveris engine was removed. An unrecognised stage",
+    "threw the bar from 70% back to 5% in the middle of a working read.",
+    "backend/app/tests/test_stage_parity.py holds the server to this file;",
+    "mobile/src/lib/transcriptionProgress.test.ts holds the app to it."
+  ],
+  "queued_progress": 0.05,
+  "static": {
+    "Fetching the page": 0.15,
+    "Finding the staves": 0.3,
+    "Reading the notation": 0.8,
+    "Checking the bar counts": 0.9
+  },
+  "_static_order": [
+    "Fetching the page",
+    "Finding the staves",
+    "Reading the notation",
+    "Checking the bar counts"
+  ],
+  "_reading_band": [0.3, 0.8],
+  "_per_stave_why": [
+    "A page is read one stave at a time, so the reading step has real measured",
+    "progress inside it — the worker knows it has finished 3 of 7. There is no",
+    "static key for that: the count is in the words, and the app places them by",
+    "interpolating across _reading_band. 'Reading the notation' sits at the top",
+    "of that band, not below it, so a split page that falls back to being read",
+    "whole does not walk the bar backwards."
+  ],
+  "per_stave": [
+    { "pipeline_stage": "reading:system 1 of 7", "words": "Reading stave 1 of 7" },
+    { "pipeline_stage": "reading:system 4 of 7", "words": "Reading stave 4 of 7" },
+    { "pipeline_stage": "reading:system 7 of 7", "words": "Reading stave 7 of 7" },
+    { "pipeline_stage": "reading:system 1 of 1", "words": "Reading stave 1 of 1" },
+    { "pipeline_stage": "reading:system 16 of 16", "words": "Reading stave 16 of 16" }
+  ],
+  "_whole_page_why": [
+    "A page read whole reports the provider's name, which is deliberately never",
+    "shown: it tells a musician nothing they can act on and quite a lot they did",
+    "not ask about. Both forms collapse to the same words."
+  ],
+  "whole_page": [
+    { "pipeline_stage": "reading:claude-sonnet-5", "words": "Reading the notation" },
+    { "pipeline_stage": "reading:gemini-2.5-flash", "words": "Reading the notation" }
+  ]
+}
