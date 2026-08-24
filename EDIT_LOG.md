@@ -6,6 +6,58 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-10 (evening) — Holding the daily warmups to what their own docstrings claim
+
+**Branch:** `main`.
+
+`mobile/src/lib/warmup.ts` is 297 lines of music typed out by a person — four
+instruments, three exercises each — with a docstring making claims about it:
+every exercise sits in first position; a scale comes to "four bars of four"
+(it works the arithmetic out in prose: fifteen notes, so the last one is a
+half); the warmup is the same all day on every device. **No tests.** Nothing
+else in the codebase reads these notes, so a wrong pitch or a bar of three
+beats stays invisible until a musician is standing there with the instrument.
+
+Eleven tests, holding the file to its own claims: every note inside the range
+that instrument's docstring states; every bar four beats by the shared `BEATS`
+table; every instrument with its own set rather than the `?? VIOLIN` fallback
+(a bassist handed violin exercises gets notes that are not on the instrument,
+and nothing says so); every exercise stating what it trains; `warmupScore`
+dividing the score into the bars the exercise is written in and carrying a
+duration the shared table knows.
+
+All eleven passed first run — the authored data is correct.
+
+**Two of my own tests could not fail, and mutation found both.**
+
+The local-time one was the interesting one. `dayIndex` builds from local
+calendar components on purpose — a UTC index rolls over mid-afternoon for a
+musician far enough west, so "today's warmup" would change while they were
+working on it. Swapping it to `getUTCDate` **stayed green**, because the
+sandbox and CI both run in UTC, where the two are the same thing. It now sets
+`process.env.TZ` to `America/Los_Angeles` for the duration, and asserts the
+runner actually honoured it before asserting anything else — otherwise it would
+go back to passing vacuously on a platform that ignores `TZ`.
+
+The range test was a loop over authored data with no floor, so a `warmupFor`
+that returned nothing would have made it and several others green. It counts
+now, and requires more than a hundred notes.
+
+**And one honest survival, recorded rather than fixed.** Rewriting the cello D
+major scale an octave down leaves everything green: D2–D3 is still inside the
+cello's first position and the bars still add up. It is a legitimate place to
+play those notes, just not the exercise that was written. Catching it would
+mean encoding which octave each exercise *ought* to sit in — taste, not
+arithmetic, and a test asserting taste is one somebody edits to agree with
+them. The docstring says so.
+
+Mutations caught: a note needing a shift, a bar losing a beat, bassists routed
+to violin exercises, an exercise with no stated focus, a UTC day index, a
+warmup that rerolls during the day, and a score that loses its clef.
+
+**Tests run:** mobile 89 (78 + 11), typecheck clean; backend 745 unchanged.
+**Rollback:** revert.
+
 ## 2026-09-10 (later) — The tempo range, in the four places that had to agree
 
 **Branch:** `main`.
