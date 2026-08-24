@@ -28,9 +28,29 @@ from app.services.score_schema import ScoreJson
 
 log = logging.getLogger("intempo.analysis")
 
-# Audio for a 4-min take is ~2 MB AAC / ~10 MB WAV; cap with headroom.
-MAX_AUDIO_BYTES = 25 * 1024 * 1024
-AUDIO_DOWNLOAD_TIMEOUT = 20.0
+#: The largest recording this will fetch, which must be at least what storage
+#: agreed to hold.
+#:
+#: **It was 25 MB, and its comment said "~2 MB AAC / ~10 MB WAV" — describing a
+#: client that no longer exists.** The app records uncompressed WAV now (every
+#: codec MediaRecorder offers smears the note attacks this pipeline measures),
+#: so 25 MB is **4.6 minutes**. The `audio-uploads` bucket accepts 50 MB. A
+#: six-minute take therefore uploaded successfully, sat in storage, and was
+#: then refused here — reported to the musician as `audio_unavailable`, which
+#: is not true: the audio is fine and reachable.
+#:
+#: So this tracks the bucket rather than an estimate of what a take weighs.
+#: Anything storage accepted, this has to be able to fetch; a cap below the
+#: bucket's is a hole with a wrong error message in it, and `/v1/ready` now
+#: compares the two against the live bucket so they cannot drift apart again.
+MAX_AUDIO_BYTES = 50 * 1024 * 1024
+
+#: Long enough to pull the largest file the bucket will hold.
+#:
+#: 20 seconds needed 2.5 MB/s to fetch 50 MB, which is fine from a datacentre
+#: and is not something to depend on. The body is read whole, so this is the
+#: only thing standing between a slow read and a take reported as unavailable.
+AUDIO_DOWNLOAD_TIMEOUT = 60.0
 
 
 class AudioFetchError(Exception):

@@ -228,6 +228,60 @@ def _schema_checks(client) -> list[Check]:
     return checks
 
 
+def _storage_checks(client) -> list[Check]:
+    """That the worker will fetch anything the bucket agreed to hold.
+
+    Two numbers in two systems, and nothing ever compared them. The worker's
+    cap was 25 MB against a bucket that accepts 50, so a six-minute take
+    uploaded, sat in storage, and was refused by the thing meant to read it —
+    reported as `audio_unavailable`, which was not true.
+
+    A mismatch in the other direction is harmless and still worth saying: it
+    means the worker would happily fetch something the musician can never get
+    into storage in the first place, so the real limit is somewhere the code
+    does not mention.
+    """
+    from app.routers.upload import AUDIO_BUCKET
+    from app.workers.analysis_runner import MAX_AUDIO_BYTES
+
+    try:
+        bucket = client.storage.get_bucket(AUDIO_BUCKET)
+        limit = getattr(bucket, "file_size_limit", None)
+    except Exception as exc:  # noqa: BLE001 — any failure is "cannot tell"
+        return [
+            Check(
+                name="storage:audio-uploads",
+                ok=False,
+                detail=(
+                    f"the `{AUDIO_BUCKET}` bucket could not be read, so a "
+                    f"recording may not be storable at all. "
+                    f"({type(exc).__name__})"
+                ),
+            )
+        ]
+
+    if not limit:
+        # No limit set is a valid configuration — the project default applies,
+        # and this cannot see what that is.
+        return [Check(name="storage:audio-uploads", ok=True, detail="")]
+
+    ok = MAX_AUDIO_BYTES >= limit
+    return [
+        Check(
+            name="storage:audio-uploads",
+            ok=ok,
+            detail=""
+            if ok
+            else (
+                f"the `{AUDIO_BUCKET}` bucket accepts files up to "
+                f"{limit // (1024 * 1024)} MB, but the analysis worker refuses "
+                f"anything over {MAX_AUDIO_BYTES // (1024 * 1024)} MB. A take "
+                f"between the two uploads and is then reported as unavailable."
+            ),
+        )
+    ]
+
+
 def check() -> Readiness:
     """Everything, configuration first so a missing key explains a dead database."""
     result = Readiness(checks=_configuration_checks())
@@ -263,4 +317,5 @@ def check() -> Readiness:
         return result
 
     result.checks.extend(_schema_checks(client))
+    result.checks.extend(_storage_checks(client))
     return result
