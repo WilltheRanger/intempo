@@ -6,6 +6,85 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-17 — Four systems at a time, not twelve one after another
+
+**Branch:** `main`. Eighth iteration of *fix the OMR system till it works*, and
+the other half of the previous entry's "not done" list — the half that needs no
+gate.
+
+**Reading a page one system at a time made it ten times slower, and slowness
+here is the original bug.** `run_transcription` runs in `BackgroundTasks`, which
+is to say in the web process, so anything that ends the process ends the read —
+and the one that actually happened is a free instance spinning down after
+fifteen minutes idle, which is exactly what leaving the screen brings about,
+because the polling keeping it awake stops with you. A twelve-system page read
+sequentially is five minutes instead of thirty seconds: an order of magnitude
+more time to be interrupted in.
+
+`_read_systems` reads them four at a time. **Four, not twelve**, and the ceiling
+is the provider's rate limit rather than memory — a prepared crop is a couple of
+hundred kilobytes against the ~81 MB the page decode already costs, but twelve
+simultaneous vision calls from one scan is how a token bucket empties, and a
+rate limit on one system discards every other system's work. Four cuts five
+minutes to about one and leaves room for other people's scans.
+
+**Three things concurrency can break, and what holds each:**
+
+- **Order.** `as_completed` yields whichever line finishes first, and a page
+  assembled that way has its bars shuffled — every bar still adds up, the notes
+  are all there, and the timeline compared against the recording is nonsense
+  with nothing able to notice. Results go into a list by index, never appended,
+  and a test makes the last crop finish first.
+- **Holes.** Unchanged and non-negotiable: any failure returns nothing and the
+  page goes through the whole-page loop. The old test asserted the reading
+  *stopped* at the failing system, which was true sequentially and is not now;
+  that assertion is replaced rather than weakened, because what it was really
+  protecting is "no hole", and that is asserted directly.
+- **Which line is which.** The per-crop prompt note is indexed by page
+  position, not by completion.
+
+**Cancellation is money, not correctness.** A twelve-system page failing on its
+first line was going to fall back anyway, so the eleven still queued are eleven
+calls billed for a discarded result. Only *unstarted* work can be saved — and
+the bound is the pool width **plus one**, because the failing read frees its
+slot and the pool fills it before the main thread has collected the exception.
+That race is in the test, with the reason.
+
+**On failure it still waits for the lines already in flight.** Leaving the pool
+to finish in the background would put five vision calls out at once from one
+scan while the fallback reads the page whole, which is how a rate limit is
+reached — and a rate limit is the likeliest reason it got there. The cost is one
+system's duration on a page that is falling back anyway.
+
+**Both providers' lazy client construction is now locked.** First use happens on
+four threads at once. Two threads constructing a client is harmless in itself;
+the lock is there so nobody has to work that out again.
+
+**Progress reports come from the coordinating thread**, counting completions, so
+they stay single-threaded and monotonic. The crops' own internal stages are no
+longer forwarded — they would arrive from four threads at once, and "checking
+the bar counts" for one line would walk the bar backwards while three other
+lines are still being read. This matters beyond the screen:
+`transcription_runner._update` writes `updated_at` on every report, and that is
+the column `sweep_stuck_transcriptions` compares against `STUCK_AFTER`. A page
+reporting once at the start would be swept to `failed` at ten minutes with
+nothing wrong with it.
+
+**Tests:** 5 new cases. A `threading.Barrier` proves the reads are genuinely
+simultaneous without a timing assertion — sequential reading would sit at the
+barrier until it broke. Six mutations, all killed, but two survived first: the
+cancellation and the per-system progress reports were both untested, and the
+cancellation test then had to be corrected from "at most the pool width" to
+"plus one" after it failed for the race described above.
+
+Backend 868 tests green (863 before), ruff clean.
+
+**Still unmeasured, and it is the same sentence every time.** No real page has
+been through any of this. The five-minutes-to-one figure is arithmetic on an
+assumed per-system latency, not a measurement.
+
+---
+
 ## 2026-09-17 — The progress bar collapsed to 5% partway through every doubtful read
 
 **Branch:** `main`. Seventh iteration of *fix the OMR system till it works*.

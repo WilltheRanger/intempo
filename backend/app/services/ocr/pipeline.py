@@ -21,6 +21,7 @@ Provider chain semantics:
 from __future__ import annotations
 
 import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Callable
 
 from pydantic import ValidationError
@@ -239,6 +240,27 @@ def _read_any_music(score: ScoreJson) -> bool:
 #: pages.
 _MAX_SYSTEMS_TO_READ = 16
 
+#: How many systems are read at the same time.
+#:
+#: **A latency fix for a bug that was never about speed, and then became
+#: about speed.** `run_transcription` runs in `BackgroundTasks`, which is to
+#: say in the web process, so anything that ends the process ends the read —
+#: and the one that actually happened is a free-tier instance spinning down
+#: after fifteen minutes idle, which is exactly what leaving the screen brings
+#: about, because the polling that was keeping it awake stops with you. Reading
+#: twelve systems one after another turns a thirty-second job into five
+#: minutes, which is an order of magnitude more time to be interrupted in.
+#:
+#: **Four, not twelve.** The ceiling is the provider's rate limit, not memory:
+#: a prepared crop is a couple of hundred kilobytes, so twelve in flight is
+#: nothing next to the ~81 MB the page decode already costs. Twelve
+#: simultaneous vision calls from one scan is how a rate limit is reached, and
+#: a rate limit on one system discards every other system's work — the page
+#: falls back to being read whole. Four is enough to cut a five-minute read to
+#: about a minute while leaving room for other people's scans in the same
+#: token bucket.
+_SYSTEMS_AT_ONCE = 4
+
 
 def _one_system_note(index: int, total: int) -> str:
     """What the shared prompt cannot know: this image is one line of a page.
@@ -452,6 +474,79 @@ def _combine(parts: list[ScoreJson]) -> ScoreJson:
     )
 
 
+def _read_systems(
+    crops: list[bytes],
+    chain: list[OCRProvider],
+    *,
+    retry: bool,
+    stage: Callable[[Stage], None],
+) -> list[ScoreJson]:
+    """Read every crop and return them in page order, or nothing at all.
+
+    **Concurrent, because sequential turned a thirty-second read into five
+    minutes** and the failure this pipeline was fixing is a read being
+    interrupted — see `_SYSTEMS_AT_ONCE`.
+
+    **Nothing at all, on any failure.** A page transcribed with one system of
+    ten missing is the worst outcome available: `alignment.py` accumulates
+    durations, so a missing line shifts every bar after it and the musician is
+    told they rushed a passage they played correctly. An empty list sends the
+    page through the whole-page loop, which is merely *worse at reading*. The
+    futures that have not started are cancelled, so a page that fails on its
+    first system does not pay for the other nine.
+
+    Progress is reported from **this** thread, counting completions, so the
+    reports stay single-threaded and monotonic. The crops' own internal stages
+    are not forwarded: they would arrive from four threads at once, and
+    "checking the bar counts" for one line would walk the bar backwards while
+    three other lines are still being read.
+
+    **On failure this still waits for the systems already in flight**, because
+    leaving the pool to finish in the background would have five vision calls
+    out at once from one scan while the fallback reads the page whole — which
+    is how a rate limit is reached, and a rate limit is the likeliest reason it
+    got here. The cost is bounded by one system's duration, paid on a page
+    that is falling back anyway.
+    """
+    total = len(crops)
+    results: list[ScoreJson | None] = [None] * total
+    done = 0
+
+    with ThreadPoolExecutor(
+        max_workers=min(_SYSTEMS_AT_ONCE, total), thread_name_prefix="system"
+    ) as pool:
+        pending = {
+            pool.submit(
+                parse_sheet_music,
+                crop,
+                media_type="image/jpeg",
+                providers=chain,
+                retry=retry,
+                on_stage=None,
+                _by_system=False,
+                _note=_one_system_note(index + 1, total),
+            ): index
+            for index, crop in enumerate(crops)
+        }
+        for future in as_completed(pending):
+            index = pending[future]
+            try:
+                results[index] = future.result()
+            except Exception as exc:  # noqa: BLE001 — any failure falls back
+                log.info(
+                    "system %d of %d could not be read (%s: %s); "
+                    "reading the page whole",
+                    index + 1, total, type(exc).__name__, exc,
+                )
+                for other in pending:
+                    other.cancel()
+                return []
+            done += 1
+            stage(f"{STAGE_READING}:system {done} of {total}")
+
+    return [part for part in results if part is not None]
+
+
 def parse_sheet_music(
     image_bytes: bytes,
     *,
@@ -532,28 +627,7 @@ def parse_sheet_music(
         stage(STAGE_SPLITTING)
         crops = crop_systems(image_bytes)
         if crops and len(crops) <= _MAX_SYSTEMS_TO_READ:
-            parts: list[ScoreJson] = []
-            for index, crop in enumerate(crops, start=1):
-                stage(f"{STAGE_READING}:system {index} of {len(crops)}")
-                try:
-                    parts.append(
-                        parse_sheet_music(
-                            crop,
-                            media_type="image/jpeg",
-                            providers=chain,
-                            retry=retry,
-                            on_stage=on_stage,
-                            _by_system=False,
-                            _note=_one_system_note(index, len(crops)),
-                        )
-                    )
-                except OCRError as exc:
-                    log.info(
-                        "system %d of %d could not be read (%s); reading the page whole",
-                        index, len(crops), exc,
-                    )
-                    parts = []
-                    break
+            parts = _read_systems(crops, chain, retry=retry, stage=stage)
             if parts:
                 combined = _combine(parts)
                 log.info(

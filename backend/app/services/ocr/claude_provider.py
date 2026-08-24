@@ -8,6 +8,7 @@ real SDK constructor and CI never needs `ANTHROPIC_API_KEY`.
 from __future__ import annotations
 
 import base64
+import threading
 import time
 
 from anthropic import Anthropic, AnthropicError
@@ -83,10 +84,17 @@ class ClaudeProvider:
         self._thinking = thinking
         self._effort = effort
         self._client: Anthropic | None = None
+        #: A page is read one system at a time, and the systems are read
+        #: concurrently, so first use of a provider now happens on several
+        #: threads at once. Two of them constructing a client is harmless in
+        #: itself; the lock is here so nobody has to work that out again.
+        self._client_lock = threading.Lock()
 
     def _get_client(self) -> Anthropic:
         if self._client is None:
-            self._client = Anthropic()
+            with self._client_lock:
+                if self._client is None:
+                    self._client = Anthropic()
         return self._client
 
     def _cost(self, input_tokens: int, output_tokens: int) -> float:
