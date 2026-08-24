@@ -6,6 +6,45 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-15 (later) — Putting a hard page in the corpus
+
+**Branch:** `main`. The blind spot has come up three days running — the
+engraver looked adequate, the pipeline's hard-page branches were untested, and
+both because **every score checked in here is a simple exercise-book page**.
+So: add one that is not.
+
+`fixtures/scores/orchestral_part.json` is shaped like a part out of a real
+folder — sections in 2/4 and 4/4, runs of sixteenths, dotted march rhythms, a
+multi-bar rest, triplets and a written `rit.` It is **synthetic and says so in
+the file**; it is not a transcription of anybody's music. Sixteen bars, 68
+notes.
+
+**What it immediately showed.** Engraver coverage across the corpus went from
+5% undrawable to **15%**, and the worst page from 67% to **40%** — which is the
+number that matters and was previously flattering by a factor of nearly two.
+
+**What it did not show, which is the good news.** The validator flags nothing:
+every bar adds up, including the triplet bars whose thirds do not sum exactly
+in binary and the ones in a different metre from the header. The timeline
+builds, 61 onsets in order. The `rit.` is found and bounded. The pipeline
+handles this page fine — it is the *drawing* that cannot.
+
+**Six tests, split into two halves that are easy to confuse.** Three check the
+pipeline handles the page. Three check the page **still contains what it claims
+to** — at least eight sixteenths, a dotted rhythm, a tuplet, four rests, a
+tempo change, more than one metre, and under 60% drawable. A fixture that
+quietly became simple would make every test above it pass while measuring
+nothing, which is precisely how the corpus got into this state.
+
+Mutations caught, all six, including flattening it to quarters, removing the
+sixteenth runs, putting every bar in one metre, and dropping the line that says
+it is synthetic — because a fixture that stopped saying so would eventually be
+cited as evidence about a real page.
+
+**Tests run:** backend 792 (786 + 6), ruff clean; mobile 225 unchanged.
+**Rollback:** delete the fixture, its test, and the `fixtures/scores/*.json`
+branch of the coverage tool.
+
 ## 2026-09-15 — The branches only a difficult page reaches
 
 **Branch:** `main`. `pipeline.py` was at **89%**, and every missing line was a
