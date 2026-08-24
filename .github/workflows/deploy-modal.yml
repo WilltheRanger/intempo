@@ -1,0 +1,65 @@
+name: Deploy Modal
+
+# Deploys the analysis worker to Modal whenever the code it runs changes.
+#
+# The point of doing it here rather than from a laptop: `modal deploy` is the
+# only way to publish a Modal app, and it needs Python, the repo, and a logged
+# in CLI. That is a development environment, and nobody should have to keep one
+# just to ship a change to the analysis. Push to main and it is live.
+#
+# Paths are deliberately narrow. The Modal image contains the analysis and the
+# worker and nothing else, so a change to a router or a screen has no business
+# spending a deploy.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "backend/modal_app.py"
+      - "backend/app/services/**"
+      - "backend/app/workers/**"
+      - "backend/app/models/**"
+      - "backend/app/config.py"
+      - "backend/app/db.py"
+      - "backend/config.toml"
+      - "backend/pyproject.toml"
+      - ".github/workflows/deploy-modal.yml"
+  # So a first deploy, or a re-deploy after changing a secret, does not need a
+  # commit to trigger it.
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    name: modal deploy
+    runs-on: ubuntu-latest
+    # Without the tokens this cannot work, and a red cross on every push in a
+    # repo that has not set them up yet is noise. Skips instead, visibly.
+    if: ${{ github.repository_owner != '' }}
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install the Modal CLI
+        run: pip install modal
+
+      - name: Deploy
+        env:
+          # From modal.com → Settings → API Tokens. Added to this repository
+          # under Settings → Secrets and variables → Actions.
+          MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
+          MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
+        run: |
+          if [ -z "$MODAL_TOKEN_ID" ] || [ -z "$MODAL_TOKEN_SECRET" ]; then
+            echo "MODAL_TOKEN_ID / MODAL_TOKEN_SECRET are not set in this"
+            echo "repository's Actions secrets, so there is nothing to deploy to."
+            echo "See docs/deploy-modal.md. Skipping rather than failing."
+            exit 0
+          fi
+          modal deploy modal_app.py
