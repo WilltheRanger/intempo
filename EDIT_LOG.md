@@ -6,6 +6,59 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-08 (latest) — The container was installing whatever PyPI had that day
+
+**Branch:** `main`.
+
+**What was wrong.** `modal_app.py` built its image with `librosa>=0.11.0`,
+`numpy>=2.4.6`, `scipy>=1.18.0` — and asserted, in the comment directly above
+them, that "a version that changes an onset by a frame cannot arrive here
+without arriving in the tests too."
+
+Lower bounds do not pin anything. The tests, the corpus regression and Render
+all run what `uv.lock` resolved. A `>=` image resolves to whatever PyPI holds
+on the morning it is built. The two agree today only because the lock has not
+moved off the bounds yet, which is why this looked fine — and the first librosa
+point release would have given a musician a verdict from an onset detector
+nothing in this repository had ever run. Same code, same `config.toml`,
+different arithmetic, no error anywhere.
+
+Third instance in a week of the same shape: **a number with a prose rationale,
+where the prose describes a guarantee the code does not provide.** The client's
+45 s timeout against a 50 s cold start, the worker's 25 MB cap with an
+"~2 MB AAC" comment, and now a lower bound described as a pin.
+
+**What changed.** Exact versions, mirrored from `uv.lock`, plus `soxr`,
+`soundfile` and `numba` — librosa's, named nowhere in `pyproject.toml`, and the
+three places the samples actually move: `soxr` resamples every take to
+22.05 kHz, `soundfile` decodes it, `numba` compiles the paths that find the
+onsets. Pinning librosa and letting its resampler float is a fence with the
+gate open.
+
+Reasoning and the alternatives are in `DECISIONS.md` — the main one being
+`uv sync` in the image, which pins the transitive closure properly and was
+rejected because the lock resolves the whole backend and the point of this
+image is that it carries none of it.
+
+**Tests** (`app/tests/test_worker_image.py`, +3): every pin matches `uv.lock`;
+the six packages that can move an onset are all pinned; no `>=` survives in the
+list. Mutation-checked, all five caught: a bound sneaking back in, a pin
+drifting from the lock either way, and dropping `soxr` or `numba`.
+
+**The deploy now runs those tests before deploying**, and `backend/uv.lock` is
+in its path filter. CI checks them on the same push, but CI going red does not
+stop the deploy job — only the deploy job does.
+
+**Honest limits.** Everything those nine packages themselves pull in still
+floats; this is a fence around the arithmetic, not a reproducible build, and
+`modal_app.py` says that rather than overclaiming a second time. And no image
+has actually been built from this file — the versions are known mutually
+consistent only because the lock resolved them together on 3.12, which is what
+the image uses.
+
+**Tests run:** 712 passed (709 + 3), ruff clean. **Rollback:** revert the
+commit; the image goes back to lower bounds.
+
 ## 2026-09-08 (late) — A worker that cannot reach the database now crashes
 
 **Branch:** `main`. Follow-on from the Modal deploy, and a hole I had just

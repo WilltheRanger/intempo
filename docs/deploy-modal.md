@@ -36,6 +36,15 @@ four times: two implementations disagreeing about a musician's timing, with
 nothing to say which produced a given result. There is a test asserting the
 import.
 
+It also runs the same *versions*. The image pins exact ones taken from
+`uv.lock` — including `soxr`, `soundfile` and `numba`, which belong to librosa
+rather than to us and are where the samples actually move — and a test reads the
+lock and checks every pin still matches. Before that the image installed by
+lower bound, which resolves to whatever PyPI holds on the day it is built: the
+same code and the same config, quietly doing different arithmetic from every
+test that says what a musician's timing was. `uv lock` upgrading librosa now
+fails CI, and the deploy runs those tests before it deploys.
+
 ## Setting it up without a development environment
 
 `modal deploy` is the only way to publish a Modal app, and it needs Python, the
