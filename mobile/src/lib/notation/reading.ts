@@ -33,7 +33,13 @@ export function beatsPerMeasure(timeSignature: string | null): number | null {
   if (!timeSignature) {
     return null;
   }
-  const match = /^(\d+)\/(\d+)$/.exec(timeSignature.trim());
+  // Spaces around the slash are tolerated because the backend tolerates them
+  // — `int(" 4 ")` strips, so `ocr/validate.beats_per_measure` reads " 4 / 4 "
+  // as 4 beats. This regex did not, so a meter OCR happened to read with
+  // spaces switched the app's beat check off while the server went on
+  // reporting the same bars as short. Found by running both over the same
+  // cases; see `fixtures/meters/parity.json`.
+  const match = /^(\d+)\s*\/\s*(\d+)$/.exec(timeSignature.trim());
   if (!match) {
     // Includes the literal "unknown", which the OCR prompt authorises when a
     // score's header is illegible. Not an error — just nothing to check against.

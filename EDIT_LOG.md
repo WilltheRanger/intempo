@@ -6,6 +6,50 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-10 (night) — Two meter parsers, one disagreement, found by running both
+
+**Branch:** `main`.
+
+`ocr/validate.beats_per_measure` and `reading.beatsPerMeasure` answer the same
+question — how many quarter-note beats a bar should hold — and the app keeps
+its own copy so a musician editing a measure sees the count move as they type.
+
+**They disagreed on `" 4 / 4 "`.** The server takes it, because `int(" 4 ")`
+strips whitespace; the app's `/^(\d+)\/(\d+)$/` did not. So a meter OCR
+happened to read with spaces switched the app's beat check **off** while the
+server went on reporting the same bars as short — the app disagreeing with
+itself in front of the person trying to fix the bar. The app's regex now
+tolerates the spaces, which is the direction that checks more rather than less.
+
+Found by running both over 35 cases, not by reading either.
+
+**The probe that found it very nearly didn't.** The first version logged
+divergences with `console.log` inside a vitest test, which vitest swallowed. It
+reported "no divergences" and passed. Rewritten to assert on a `diffs` array
+*and* on the number of cases compared, it failed immediately and named the one.
+Both guards are in the shipped test.
+
+**`fixtures/meters/parity.json`** holds the server's answers for all 35, and a
+test on each side is held to it. A second test asserts the fixture still
+contains the shapes that actually break — a compound meter, a whitespace case,
+a multi-slash, a zero, a null, and the literal `"unknown"` the OCR prompt
+authorises — because a fixture of well-formed meters would agree trivially and
+prove nothing.
+
+**And a third stated mirror closed.** `BEAT_TOLERANCE` says of itself that it
+matches `validate.TOLERANCE`, and now a test says so too. That one governs
+which bars a musician is told are broken; the docstring already spelled out the
+failure — "a musician seeing 'bar 7 doesn't add up' with no way to open bar 7
+is the app disagreeing with itself in front of them" — with nothing enforcing
+it.
+
+Mutations caught, all six: 6/8 counted as six notated beats, either tolerance
+drifting, the app rejecting spaced meters again, the app inventing 4/4 for an
+unknown meter, and the fixture gutted to five cases (which reddens both sides).
+
+**Tests run:** backend 748 (745 + 3), mobile 93 (89 + 4), typecheck clean, ruff
+clean. **Rollback:** revert.
+
 ## 2026-09-10 (evening) — Holding the daily warmups to what their own docstrings claim
 
 **Branch:** `main`.
