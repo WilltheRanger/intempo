@@ -302,10 +302,13 @@ class TestTheWorkerWillFetchWhatStorageAccepted:
 
     @staticmethod
     def _check(client):
+        """The audio bucket's check. There is one per bucket now — the same
+        mismatch is possible for photographs, and `score-images` is 10 MB."""
         from app.services.readiness import _storage_checks
 
-        (check,) = _storage_checks(client)
-        return check
+        return next(
+            c for c in _storage_checks(client) if c.name.endswith("audio-uploads")
+        )
 
     def test_the_real_bucket_limit_is_covered(self) -> None:
         """50 MB is what the project is actually configured with."""
@@ -341,3 +344,28 @@ class TestTheWorkerWillFetchWhatStorageAccepted:
         from app.workers.analysis_runner import MAX_AUDIO_BYTES
 
         assert MAX_AUDIO_BYTES >= 50 * 1024 * 1024
+
+
+def test_both_buckets_are_checked() -> None:
+    """The same mismatch is possible for photographs.
+
+    `score-images` is 10 MB and `MAX_IMAGE_BYTES` is 12 — the *safe* direction,
+    with a comment saying so, which is how it should have been on the audio
+    side and was not. Checking only the bucket that happened to be broken
+    would leave the correct one free to drift into being the broken one.
+    """
+    from app.services.readiness import _storage_checks
+
+    class _Bucket:
+        file_size_limit = 10 * 1024 * 1024
+
+    class _Storage:
+        def get_bucket(self, _name):
+            return _Bucket()
+
+    class _Client:
+        storage = _Storage()
+
+    names = {c.name for c in _storage_checks(_Client())}
+    assert names == {"storage:audio-uploads", "storage:score-images"}
+    assert all(c.ok for c in _storage_checks(_Client()))

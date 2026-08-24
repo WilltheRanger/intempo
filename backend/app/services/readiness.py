@@ -241,45 +241,56 @@ def _storage_checks(client) -> list[Check]:
     into storage in the first place, so the real limit is somewhere the code
     does not mention.
     """
-    from app.routers.upload import AUDIO_BUCKET
+    from app.routers.upload import AUDIO_BUCKET, SCORE_BUCKET
+    from app.services.page_image import MAX_IMAGE_BYTES
     from app.workers.analysis_runner import MAX_AUDIO_BYTES
 
-    try:
-        bucket = client.storage.get_bucket(AUDIO_BUCKET)
-        limit = getattr(bucket, "file_size_limit", None)
-    except Exception as exc:  # noqa: BLE001 — any failure is "cannot tell"
-        return [
+    checks: list[Check] = []
+    for bucket_name, cap, what in (
+        (AUDIO_BUCKET, MAX_AUDIO_BYTES, "recording"),
+        (SCORE_BUCKET, MAX_IMAGE_BYTES, "photograph"),
+    ):
+        name = f"storage:{bucket_name}"
+        try:
+            bucket = client.storage.get_bucket(bucket_name)
+            limit = getattr(bucket, "file_size_limit", None)
+        except Exception as exc:  # noqa: BLE001 — any failure is "cannot tell"
+            checks.append(
+                Check(
+                    name=name,
+                    ok=False,
+                    detail=(
+                        f"the `{bucket_name}` bucket could not be read, so a "
+                        f"{what} may not be storable at all. "
+                        f"({type(exc).__name__})"
+                    ),
+                )
+            )
+            continue
+
+        if not limit:
+            # No limit set is a valid configuration — the project default
+            # applies, and this cannot see what that is.
+            checks.append(Check(name=name, ok=True, detail=""))
+            continue
+
+        ok = cap >= limit
+        checks.append(
             Check(
-                name="storage:audio-uploads",
-                ok=False,
-                detail=(
-                    f"the `{AUDIO_BUCKET}` bucket could not be read, so a "
-                    f"recording may not be storable at all. "
-                    f"({type(exc).__name__})"
+                name=name,
+                ok=ok,
+                detail=""
+                if ok
+                else (
+                    f"the `{bucket_name}` bucket accepts files up to "
+                    f"{limit // (1024 * 1024)} MB, but this build refuses to "
+                    f"fetch anything over {cap // (1024 * 1024)} MB. A {what} "
+                    f"between the two uploads and is then reported as "
+                    f"unavailable."
                 ),
             )
-        ]
-
-    if not limit:
-        # No limit set is a valid configuration — the project default applies,
-        # and this cannot see what that is.
-        return [Check(name="storage:audio-uploads", ok=True, detail="")]
-
-    ok = MAX_AUDIO_BYTES >= limit
-    return [
-        Check(
-            name="storage:audio-uploads",
-            ok=ok,
-            detail=""
-            if ok
-            else (
-                f"the `{AUDIO_BUCKET}` bucket accepts files up to "
-                f"{limit // (1024 * 1024)} MB, but the analysis worker refuses "
-                f"anything over {MAX_AUDIO_BYTES // (1024 * 1024)} MB. A take "
-                f"between the two uploads and is then reported as unavailable."
-            ),
         )
-    ]
+    return checks
 
 
 def check() -> Readiness:
