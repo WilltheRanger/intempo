@@ -31,7 +31,7 @@ from app.auth import current_user_id, current_user_id_provisioned
 from app.db import get_service_client
 from app.routers.upload import SCORE_BUCKET
 from app.services.ocr.musicxml import MusicXMLError, score_json_from_musicxml
-from app.workers.transcription_runner import run_transcription
+from app.workers.dispatch import start_transcription
 from app.services.score_schema import Clef, ScoreJson
 
 # Fetching the page lives in `services/page_image.py` so the transcription
@@ -491,7 +491,7 @@ async def create_score(
         # After the insert, so the worker cannot look for a row that is not
         # there yet, and after the response is sent, which is what
         # `BackgroundTasks` guarantees.
-        background_tasks.add_task(run_transcription, str(rows[0]["id"]))
+        start_transcription(str(rows[0]["id"]), background_tasks)
 
     # Signed like every other read, so a client can render the page it just
     # uploaded without a second request. This used to return an unsigned row,
@@ -840,7 +840,7 @@ async def retranscribe(
             detail="failed to queue the re-read",
         )
 
-    background_tasks.add_task(run_transcription, str(score_id))
+    start_transcription(str(score_id), background_tasks)
     return _with_image_urls(updated)[0]
 
 

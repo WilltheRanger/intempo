@@ -160,14 +160,40 @@ def _pins_in_the_image() -> dict[str, str]:
     """
     import re
 
-    source = (BACKEND / "modal_app.py").read_text()
-    block = source.split(".pip_install(", 1)[1].split(")", 1)[0]
     found: dict[str, str] = {}
-    for name, version in re.findall(
-        r'"([A-Za-z0-9._-]+)(?:\[[^\]]*\])?==([^"]+)"', block
-    ):
-        found[name.lower().replace("_", "-")] = version
+    for block in _pip_install_blocks():
+        for name, version in re.findall(
+            r'"([A-Za-z0-9._-]+)(?:\[[^\]]*\])?==([^"]+)"', block
+        ):
+            found[name.lower().replace("_", "-")] = version
     return found
+
+
+#: Pinned in an image and deliberately absent from `uv.lock`.
+#:
+#: `homr` is the OMR engine, and it runs **only** on Modal: 1350 MB peak on a
+#: real page against the API host's 512 MB, and 150 MB of ONNX weights. Making
+#: it a backend dependency would put all of that into every developer's
+#: environment and into the Render image, to be imported by nothing.
+#:
+#: A set rather than a blanket exemption, because the point of the check is that
+#: a version nothing has run cannot reach a container by accident.
+_ONLY_ON_MODAL = {"homr"}
+
+
+def _pip_install_blocks() -> list[str]:
+    """Every `.pip_install(...)` in the file, not the first.
+
+    There are two images now — one for analysing a take, one for reading a page
+    — and this read `split(".pip_install(", 1)` and checked the first. The
+    second image was pinned entirely unchecked, which is the same failure this
+    file exists to prevent, in the file that exists to prevent it.
+    """
+    source = (BACKEND / "modal_app.py").read_text()
+    blocks = []
+    for chunk in source.split(".pip_install(")[1:]:
+        blocks.append(chunk.split(")", 1)[0])
+    return blocks
 
 
 def _locked_versions() -> dict[str, str]:
@@ -203,7 +229,7 @@ def test_the_image_installs_the_versions_the_tests_were_run_against() -> None:
     wrong = {
         name: (version, locked.get(name))
         for name, version in pins.items()
-        if locked.get(name) != version
+        if name not in _ONLY_ON_MODAL and locked.get(name) != version
     }
     assert not wrong, (
         "modal_app.py pins versions the lock does not hold, so the container "
@@ -229,10 +255,43 @@ def test_everything_the_arithmetic_runs_through_is_pinned() -> None:
         assert name in pins, f"{name} can change an onset time and is not pinned"
 
 
+def test_both_images_are_checked_not_just_the_first() -> None:
+    """There are two images, and this file used to read one.
+
+    `_pins_in_the_image` split on the first `.pip_install(` and stopped, so the
+    page-reading container could pin anything at all and nothing would say so —
+    the same failure this file was written to prevent, in the file that prevents
+    it. Named as a test rather than left to the others to imply, because a third
+    image would slip past an implication.
+    """
+    blocks = _pip_install_blocks()
+    assert len(blocks) >= 2, "an image lost its pins, or this stopped finding them"
+
+    pins = _pins_in_the_image()
+    # One from each: librosa only exists in the analysis image, homr only in the
+    # transcription one.
+    assert "librosa" in pins
+    assert "homr" in pins
+
+
+def test_the_engine_that_only_runs_on_modal_is_still_pinned() -> None:
+    """`homr` is exempt from `uv.lock` and not from pinning.
+
+    It is the one thing here whose version can change what a musician is told is
+    on their page, and it is installed by a container nobody watches build.
+    """
+    assert _pins_in_the_image()["homr"], "homr is not pinned"
+    for name in _ONLY_ON_MODAL:
+        assert name in _pins_in_the_image(), f"{name} is exempt but no longer pinned"
+        assert name not in _locked_versions(), (
+            f"{name} is in uv.lock now, so it should be checked against it "
+            "rather than exempted"
+        )
+
+
 def test_nothing_is_installed_by_a_lower_bound() -> None:
-    """A single `>=` in the list is the whole hole back."""
-    source = (BACKEND / "modal_app.py").read_text()
-    block = source.split(".pip_install(", 1)[1].split(")", 1)[0]
+    """A single `>=` in the list is the whole hole back, in either image."""
+    block = "".join(_pip_install_blocks())
 
     assert ">=" not in block, (
         "a lower bound in the image resolves to whatever PyPI has that day; "

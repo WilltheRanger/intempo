@@ -1582,3 +1582,117 @@ def test_a_caller_with_only_the_prepared_page_still_works(monkeypatch) -> None:
 
     assert seen == {"source": None}
     assert score.measures, "the page was not read at all"
+
+
+# ---- a provider that reads whole pages ------------------------------------
+
+
+class _WholePage:
+    """Stands in for homr: reads a page, refuses nothing, never sees a crop."""
+
+    name = "engine"
+    reads_whole_page = True
+
+    def __init__(self, answer=None) -> None:
+        self.answer = answer
+        self.seen: list[bytes] = []
+
+    def parse(self, image_bytes, mime_type="image/jpeg", note=None):
+        self.seen.append(image_bytes)
+        if isinstance(self.answer, Exception):
+            raise self.answer
+        return self.answer or _system("engine", bars=8)
+
+
+def test_an_engine_gets_the_whole_page_and_never_a_crop(monkeypatch) -> None:
+    """The routing that makes an OMR engine worth having.
+
+    Everything else here is given one system at a time, because a
+    vision-language model asked for four hundred notes in one answer returns a
+    fraction of them. An engine has the opposite property — it finds and
+    *dewarps* the staves itself, which is the reason to run it — so a crop
+    throws away the part that works and pays for it in wall-clock too.
+    """
+    crops_cut: list[int] = []
+    monkeypatch.setattr(
+        pipeline_module,
+        "crop_systems",
+        lambda b, *, source=None: crops_cut.append(1) or [b"a", b"b", b"c"],
+    )
+    engine = _WholePage()
+
+    score = parse_sheet_music(b"<the whole page>", providers=[engine], retry=False)
+
+    assert engine.seen == [b"<the whole page>"], "it was handed something else"
+    assert not crops_cut, "the page was cut up for an engine that reads pages"
+    assert len(score.measures) == 8
+
+
+def test_an_engine_that_cannot_read_the_page_hands_it_to_the_models(monkeypatch) -> None:
+    """Never worse. homr finding no staves is a real outcome — a photograph too
+    dark, or of something that is not music — and it must not cost the page.
+    The vision chain still gets its turn, on crops, exactly as before.
+    """
+    monkeypatch.setattr(
+        pipeline_module, "crop_systems", lambda b, *, source=None: [b"a", b"b"]
+    )
+    engine = _WholePage(answer=OCRProviderError("engine: found no staves"))
+    models = _Recorder()
+
+    score = parse_sheet_music(b"<page>", providers=[engine, models], retry=False)
+
+    assert score.measures, "the page was lost when the engine could not read it"
+    assert engine.seen == [b"<page>"]
+
+
+def test_an_engine_alone_that_fails_reports_it_rather_than_reading_nothing(
+    monkeypatch,
+) -> None:
+    """With nothing behind it there is nothing to fall back to, and the failure
+    is the answer — not an empty page dressed up as one."""
+    monkeypatch.setattr(
+        pipeline_module, "crop_systems", lambda b, *, source=None: [b"a", b"b"]
+    )
+    engine = _WholePage(answer=OCRProviderError("engine: found no staves"))
+
+    with pytest.raises(pipeline_module.OCRError, match="no staves"):
+        parse_sheet_music(b"<page>", providers=[engine], retry=False)
+
+
+def test_a_low_confidence_engine_reading_still_defers_to_the_models(monkeypatch) -> None:
+    """`ocr_confidence` from homr is the share of its bars that add up, so a
+    page it read badly falls under the gate — and the point of the gate is that
+    something else then tries."""
+    monkeypatch.setattr(
+        pipeline_module, "crop_systems", lambda b, *, source=None: [b"a", b"b"]
+    )
+    doubtful = _system("engine", bars=8, conf=0.2)
+    engine = _WholePage(answer=doubtful)
+    models = _Recorder()
+
+    score = parse_sheet_music(b"<page>", providers=[engine, models], retry=False)
+
+    assert score.ocr_confidence > 0.2, "the doubtful reading was kept unchallenged"
+
+
+def test_a_doubtful_engine_reading_is_kept_when_nothing_betters_it(monkeypatch) -> None:
+    """A doubtful reading beats none, which is what the low-confidence fallback
+    has always meant here. The engine's turn is not wasted just because the
+    models could not improve on it."""
+    monkeypatch.setattr(
+        pipeline_module, "crop_systems", lambda b, *, source=None: [b"a", b"b"]
+    )
+    engine = _WholePage(answer=_system("engine", bars=8, conf=0.2))
+
+    class _AllFail:
+        name = "models"
+
+        def parse(self, image_bytes, mime_type="image/jpeg", note=None):
+            raise OCRProviderError("models: rate limited")
+
+    score = parse_sheet_music(
+        b"<page>", providers=[engine, _AllFail()], retry=False
+    )
+
+    assert len(score.measures) == 8
+    assert score.ocr_confidence == pytest.approx(0.2)

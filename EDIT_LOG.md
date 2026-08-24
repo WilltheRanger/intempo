@@ -6,6 +6,104 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-17 — homr is in, as a provider that reads whole pages
+
+**Branch:** `main`. The owner: *"yes add homr, dont make it paid itll run on
+free version of modal."*
+
+### Where it sits
+
+A **provider**, in the same registry as the vision models, named `homr`. Not a
+new pipeline and not a flag — `OCR_PROVIDER_CHAIN=homr,gemini-2.5-flash,…` and
+the chain does what it has always done: try them in order, fall through on
+failure, gate on confidence.
+
+One thing is new, and it is the whole point: **a provider may declare that it
+reads whole pages.** Everything else here is handed one system at a time,
+because a vision-language model asked for four hundred notes in one answer
+returns a fraction of them. homr has the opposite property — it finds and
+*dewarps* the staves itself, better than the crops this repo cuts — so a crop
+throws away the part that works and pays for it in wall clock too.
+
+### The gate still means what it means
+
+The first version ran the whole-page providers in their own sub-call and
+returned whatever came back. That gave the engine its own low-confidence
+fallback, so **a reading it was not confident in came straight back and the
+vision chain never ran** — precisely what `CONFIDENCE_THRESHOLD` exists to
+prevent. Caught by a test written before the code was right.
+
+Now: a confident engine reading is the answer; a doubtful one is *kept* while
+the models get their turn on crops, and returned only if nothing betters it. A
+doubtful reading beats none, which is what the low-confidence fallback has
+always meant here.
+
+### Confidence is measured, not inherited
+
+`score_json_from_musicxml` reports the fraction of notes that survived
+conversion — **1.0** on the real homr output. That says the XML parsed, not that
+the page was read right, and handing it on would claim certainty about a
+photograph. `import_score` refuses to do exactly that: *"a file is not
+confident, it is stated."*
+
+homr states nothing, so the provider computes the share of bars that **add up**.
+Real evidence, from our checks rather than the engine marking its own homework,
+and it falls when a reading goes wrong — which is what the number is for. A
+pickup counts as fine, because a short opening measure is an anacrusis and
+`validate_measures` already says so.
+
+### Modal, sized from measurement and kept free
+
+`transcribe_score`, its own image, its own memory. Measured on the real page:
+**1350 MB peak, 21 s wall clock, 63 s CPU.** The API host has 512 MB for the
+whole application, so this is not a preference. No GPU — homr ships ONNX — one
+container, nothing kept warm, `min_containers=0`.
+
+The **151 MB of weights are fetched at build time**. homr downloads them into
+its own package directory on first use; left to run time that is a cold start
+downloading 151 MB before it can look at anything, on a scan a musician is
+watching, and again on every new container — which at `min_containers=0` is most
+of them.
+
+The vision providers ride along in that image because they are the fallback, and
+a fallback that needs a different container is not a fallback.
+
+`TRANSCRIPTION_RUNTIME` is separate from `ANALYSIS_RUNTIME` on purpose: an
+analysis peaks near 460 MB and merely wants headroom, a page does not fit at
+all, so a deployment can sensibly put one here and one there. In-process still
+reads pages — with the vision chain, since homr is not installed on the API
+host. Worse at reading, and not nothing.
+
+### Two bugs found on the way
+
+**`test_worker_image.py` checked one image.** `_pins_in_the_image` did
+`split(".pip_install(", 1)` and took the first, so the new container could pin
+anything at all and nothing would say so — the same failure that file exists to
+prevent, in the file that prevents it. It reads every block now, and `homr` is
+exempt from `uv.lock` by name and with a reason, not by a blanket rule.
+
+**My own pins were guesses.** anthropic, google-genai, pillow and pillow-heif
+were all wrong against the lock. The extended test caught every one.
+
+### The licence
+
+homr is **AGPL-3.0**, used unmodified, imported into a container that does one
+job. The owner has accepted this deliberately. Nothing here is derived from it.
+
+**Tests:** 16 new cases across the provider, the routing and the dispatch.
+Twelve mutations — an engine handed crops, a doubtful reading short-circuiting
+or being thrown away, an engine failure losing the page, confidence taken from
+the importer, a pickup counted against the reading, a missing output file
+unnoticed, the media type unchecked, the whole-page flag flipped, a page read
+twice, and a refused spawn losing it — all killed.
+
+Backend 995 tests green (973 before), ruff clean.
+
+**Not yet true:** nothing has been deployed. `modal deploy modal_app.py` builds
+the image, and the first real page through it is the measurement that matters.
+
+---
+
 ## 2026-09-17 — The clef is the player's to state, in both directions
 
 **Branch:** `main`. The owner, on the previous entry: *"have an optional option
