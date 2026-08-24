@@ -85,7 +85,28 @@ export async function hydratePracticeTempos(): Promise<void> {
   }
 }
 
+/**
+ * A number this app is allowed to offer, from any number at all.
+ *
+ * **`NaN` used to pass straight through.** `Math.round(NaN)` is `NaN`, and so
+ * are `Math.max` and `Math.min` of it, so the one function whose stated job is
+ * that "the UI can't offer an invalid one" returned the most invalid value
+ * there is. It would have reached `target_bpm`, become `null` in the JSON, and
+ * come back as a 422 on the one request a musician makes after playing.
+ *
+ * Not reachable today — `markedBpm` is read straight from JSON, which has no
+ * `NaN` — so this is a contract being kept rather than a bug being fixed. The
+ * contract is worth keeping because every caller believes it.
+ *
+ * `FALLBACK_BPM` for `NaN`, because "no usable tempo" is exactly the situation
+ * the fallback exists for. **Only `NaN`** — an infinity still says which
+ * direction it went, and `Math.max`/`Math.min` already turn it into the bound
+ * it was heading for, which is a better answer than a default.
+ */
 export function clampBpm(bpm: number): number {
+  if (Number.isNaN(bpm)) {
+    return FALLBACK_BPM;
+  }
   return Math.min(MAX_BPM, Math.max(MIN_BPM, Math.round(bpm)));
 }
 
