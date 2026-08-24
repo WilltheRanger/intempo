@@ -166,9 +166,109 @@ def test_empty_string_key_signature_rejected() -> None:
         ScoreJson.model_validate({**MINIMAL_PAYLOAD, "key_signature": "   "})
 
 
-def test_invalid_clef_rejected() -> None:
+def test_a_clef_this_schema_cannot_place_becomes_none_rather_than_losing_the_score() -> None:
+    """It used to raise, which cost the whole page for one word.
+
+    `None` is the answer this field is documented to prefer over a wrong one —
+    "a bass part labelled 'Treble clef' is a worse answer than no label" — and
+    the pipeline already treats a score with no clef as a reason to try the next
+    provider rather than as an unreadable photograph.
+    """
+    assert ScoreJson.model_validate({**MINIMAL_PAYLOAD, "clef": "guitar"}).clef is None
+
+
+@pytest.mark.parametrize(
+    ("written", "expected"),
+    [
+        ("Bass", "bass"),
+        ("BASS", "bass"),
+        ("bass clef", "bass"),
+        ("  Treble  ", "treble"),
+        ("Alto.", "alto"),
+    ],
+)
+def test_a_clef_spelled_a_models_way_is_still_the_clef(written: str, expected: str) -> None:
+    """Case, a trailing full stop and the word "clef" are not disagreements
+    about the music. Before this they were the difference between a page being
+    read and a page being reported unreadable."""
+    assert ScoreJson.model_validate({**MINIMAL_PAYLOAD, "clef": written}).clef == expected
+
+
+@pytest.mark.parametrize("written", ["poco_dim", "dim", "marcato", "poco dim.", "cresc."])
+def test_a_marking_this_schema_does_not_hold_never_costs_the_page(written: str) -> None:
+    """The exact values that killed two of a musician's six scans, taken from
+    the running service's logs:
+
+        Input should be 'ppp', 'pp', 'p', ... [type=literal_error,
+        input_value='poco_dim'] ... input_value='dim' ... input_value='marcato'
+
+    `Dynamics` is a closed list of static marks with no room for a hairpin's
+    name, and **nothing reads the field** — the prompt says so itself. A whole
+    page of a correctly-read part was thrown away over a word with no consumer,
+    and reported as a photograph that could not be read.
+    """
+    note = Note.model_validate(
+        {"pitch": "C3", "duration": "quarter", "dynamics": written}
+    )
+    assert note.dynamics is None
+    assert note.pitch == "C3" and note.duration == "quarter"
+
+
+@pytest.mark.parametrize(("written", "expected"), [("MF", "mf"), ("ff ", "ff"), ("p.", "p")])
+def test_a_dynamic_this_schema_does_hold_survives_a_models_spelling(
+    written: str, expected: str
+) -> None:
+    """Dropping the unknown ones must not drop the known ones written oddly."""
+    assert Note.model_validate(
+        {"pitch": "C3", "duration": "quarter", "dynamics": written}
+    ).dynamics == expected
+
+
+def test_an_articulation_this_schema_does_not_hold_is_dropped_not_fatal() -> None:
+    note = Note.model_validate(
+        {"pitch": "C3", "duration": "quarter", "articulation": "marcato"}
+    )
+    assert note.articulation is None
+    assert Note.model_validate(
+        {"pitch": "C3", "duration": "quarter", "articulation": "Staccato"}
+    ).articulation == "staccato"
+
+
+@pytest.mark.parametrize("duration", ["sixty_fourth", "breve", "quintuplet_eighth", ""])
+def test_a_duration_this_schema_cannot_express_is_still_fatal(duration: str) -> None:
+    """The line this tolerance stops at, and it is not arbitrary.
+
+    A dynamic nothing reads can be dropped for free. A *duration* cannot: it is
+    the note's length, `alignment.py` accumulates durations to build the
+    timeline it compares a recording against, and a note quietly given no length
+    — or given the wrong one — moves every bar after it. Losing the page is the
+    better failure, because it is the one the musician is told about.
+    """
     with pytest.raises(ValidationError):
-        ScoreJson.model_validate({**MINIMAL_PAYLOAD, "clef": "guitar"})
+        Note.model_validate({"pitch": "C3", "duration": duration})
+
+
+def test_a_note_with_no_duration_at_all_is_still_fatal() -> None:
+    """Rejecting a *wrong* duration is not the same as requiring one, and only
+    one of the two stops a note being given no length. A note with no length is
+    a note `alignment.py` cannot place, and it would sit in the timeline
+    contributing nothing while every bar around it moved."""
+    with pytest.raises(ValidationError):
+        Note.model_validate({"pitch": "C3"})
+    with pytest.raises(ValidationError):
+        Note.model_validate({"pitch": "C3", "duration": None})
+
+
+def test_a_note_with_no_pitch_at_all_is_still_fatal() -> None:
+    with pytest.raises(ValidationError):
+        Note.model_validate({"duration": "quarter"})
+
+
+def test_a_pitch_this_schema_cannot_read_is_still_fatal() -> None:
+    """Same line. A tie is validated by two noteheads sharing a pitch, so a
+    pitch silently dropped can delete an onset."""
+    with pytest.raises(ValidationError):
+        Note.model_validate({"pitch": "H4", "duration": "quarter"})
 
 
 @pytest.mark.parametrize(

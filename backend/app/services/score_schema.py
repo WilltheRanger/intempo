@@ -7,12 +7,15 @@ hallucinates extra keys fails fast and triggers the retry path.
 
 from __future__ import annotations
 
+import logging
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Literal
+from typing import Literal, get_args
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+log = logging.getLogger("intempo.score")
 
 # Closed enums per spec §6.
 Clef = Literal["treble", "bass", "alto", "tenor"]
@@ -117,12 +120,80 @@ class _Strict(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
 
+def _tidy(value: str) -> str:
+    """A marking as a model wrote it, in the form this schema spells it.
+
+    Models answer `"Bass"`, `"MF"`, `"dim."` and `"bass clef"` for values this
+    schema spells `bass`, `mf` and (deliberately) not at all. Case, a trailing
+    full stop and a space instead of an underscore are not disagreements about
+    the music.
+    """
+    tidied = value.strip().rstrip(".").strip().lower().replace(" ", "_")
+    return tidied[: -len("_clef")] if tidied.endswith("_clef") else tidied
+
+
+def _one_of(allowed: frozenset[str], field: str):
+    """Keep a marking this schema knows; drop one it does not. Never reject.
+
+    **This is `extra="ignore"` finished.** That stopped an unexpected *key*
+    costing the page and left an unexpected *value* in a declared field doing
+    exactly the same thing — the identical failure, one level down, and the
+    argument above applies to it word for word.
+
+    Taken from the running service's own logs. Two of a musician's six scans
+    died here, and this is the whole reason:
+
+        Input should be 'ppp', 'pp', 'p', 'mp', 'mf', 'f', 'ff', 'fff', 'fp',
+        'sfz', 'sf' or 'fz' [type=literal_error, input_value='poco_dim']
+        ... input_value='dim' ... input_value='marcato'
+
+    `dim.`, `poco dim.` and `marcato` are ordinary markings, printed on the
+    page, correctly read. `Dynamics` is a closed list of *static* marks with no
+    room for a hairpin's name, and **nothing reads the field** — the prompt
+    itself says "Do NOT report articulation or dynamics. Nothing reads them."
+    So a musician's page was thrown away, twice, over a word in a field with no
+    consumer, and the pipeline reported it as a photograph it could not read.
+
+    Only for fields the app does not act on. `duration` and `pitch` stay strict:
+    a duration this schema cannot express is not a detail to drop, it is a hole
+    in the timeline, and `alignment.py` accumulates durations so a wrong one
+    moves every bar after it.
+    """
+
+    def check(value):
+        if value is None or not isinstance(value, str):
+            return value
+        tidied = _tidy(value)
+        if tidied in allowed:
+            return tidied
+        log.info(
+            "%s=%r is not a %s this schema holds; dropping it rather than "
+            "losing the page",
+            field, value, field,
+        )
+        return None
+
+    return check
+
+
+_DYNAMICS = frozenset(get_args(Dynamics))
+_ARTICULATIONS = frozenset(get_args(Articulation))
+_CLEFS = frozenset(get_args(Clef))
+
+
 class Note(_Strict):
     pitch: str = Field(min_length=1, max_length=8)
     duration: Duration
     articulation: Articulation | None = None
     tied_to_next: bool = False
     dynamics: Dynamics | None = None
+
+    _keep_known_articulation = field_validator("articulation", mode="before")(
+        _one_of(_ARTICULATIONS, "articulation")
+    )
+    _keep_known_dynamics = field_validator("dynamics", mode="before")(
+        _one_of(_DYNAMICS, "dynamics")
+    )
 
     @field_validator("pitch")
     @classmethod
@@ -277,6 +348,13 @@ class ScoreJson(_Strict):
     #: this never loosens what OCR is held to.
     clef: Clef | None = None
     measures: list[Measure] = Field(default_factory=list)
+
+    #: `Bass`, `bass clef` and `BASS` are this schema's `bass`, not
+    #: disagreements about the music. A clef it still cannot place becomes
+    #: `None` rather than rejecting the score — which is the answer this field
+    #: is documented to prefer, and which the pipeline already handles by
+    #: trying the next provider instead of losing the page.
+    _keep_known_clef = field_validator("clef", mode="before")(_one_of(_CLEFS, "clef"))
     repeats: list[Repeat] = Field(default_factory=list)
     #: Empty for most music and for every score written before the field
     #: existed, which is why it defaults rather than being required.
