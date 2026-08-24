@@ -6,6 +6,80 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-06 (later) — A practice session longer than three minutes was an OOM
+
+**Branch:** `main`. The deploy doc has warned since Batch 4 that *"audio
+analysis may run out of memory on the free plan"*. Measured it, and it is
+worse than a warning: on the 512 MB instance this deploys to, a take much over
+three minutes killed the worker. The row is then swept up as stuck and the
+musician is told something went wrong.
+
+    take        peak RSS (worker path, fresh process)
+    3½ min      396 MB
+    7 min       450 MB
+    14 min      572 MB
+
+Two allocations, both of which hold the whole recording and throw nearly all of
+it away:
+
+    high-pass filter    377 MB   to filter 75 MB of audio
+    onset envelope      540 MB   to produce 0.15 MB of output
+    matching             122 MB   ← not the problem, despite being the new code
+
+The envelope is the striking one. It is *one float per frame* — 0.15 MB for
+fourteen minutes — and it costs 540 MB because the STFT behind it is 302 MB of
+complex64 and the power spectrogram another 151.
+
+### Both are computed a block at a time now, and neither answer changed
+
+**The filter is bit-identical.** An IIR filter forgets: the slowest pole here
+sits at radius 0.991, so its impulse response is down to a millionth within
+about 70 ms, and the overlap is a second. Measured against filtering the whole
+signal at once, on real audio: **exactly zero difference** at one second of
+overlap, 6e-22 at a quarter. 377 MB → 90.
+
+**The envelope needed two global references, and both are easy to miss.**
+`power_to_db` defaults to `ref=np.max` *and then* clips to `top_db` below the
+maximum of whatever it was handed — so taken per block, every block lands on its
+own scale. That showed up as a 0.13 difference on an envelope whose maximum is
+14, which is enough to move onsets. The peak is now found in a first pass that
+keeps nothing, and the floor applied by hand against it. Agreement with librosa
+went 1.3e-01 → **1.9e-06**, and the detected onsets are identical on all six
+corpus clips even with pathologically small 64-frame blocks. 540 MB → 52.
+
+**One path, not two.** A short signal takes a single block through the same
+code. A `len(y) < threshold` branch would have been the fifth parallel
+implementation this project has had to unpick.
+
+### Result
+
+    take        before    after
+    3½ min      396 MB    ~330 MB
+    7 min       450 MB    ~390 MB
+    14 min      572 MB    ~460 MB
+
+**All six corpus fixtures bit-identical**, and the analysis is slightly faster.
+
+### A weak test, caught by the mutation check rather than by me
+
+Three mutations; two failed as they should and **one passed**. Taking the fixed
+dB reference back out left the envelope test green — because the corpus clip
+fits in a single block, so every reference is trivially global and the test
+could not fail. Forcing the test into many blocks fixes it, and it now fails
+under that mutation.
+
+The check was worth running for that alone: a test that cannot fail is worse
+than a missing one, because it is counted.
+
+**No three-foot test.** No UI touched.
+
+**Tests:** backend 686 (was 682; +4). `ruff` clean.
+
+**Rollback:** revert. Both functions fall back to the whole-signal path for any
+signal under one block.
+
+---
+
 ## 2026-09-06 — One Pages project, many hostnames
 
 **Branch:** `main`. The user shared the origin list they had set:

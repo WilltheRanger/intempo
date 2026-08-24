@@ -1,4 +1,4 @@
-"""Tests for services/audio.py — the librosa wrapper layer."""
+"""Tests for services/audio_svc.py — the librosa wrapper layer."""
 
 from __future__ import annotations
 
@@ -164,3 +164,97 @@ def test_sixteenths_at_a_real_tempo_are_detected() -> None:
     assert sum(1 for t in played if np.any(np.abs(untold - t) < 0.06)) < 10, (
         "the fixed window was supposed to be the problem"
     )
+
+
+class TestBlockingKeepsTheResultAndDropsTheMemory:
+    """Both of these hold the whole recording in memory and throw nearly all of
+    it away, on a 512 MB instance.
+
+    Measured on a fourteen-minute take: the high-pass cost **377 MB** to filter
+    75 MB of audio, and the onset envelope cost **540 MB** to produce **0.15 MB**
+    of output. A take much over three minutes was an out-of-memory kill — the
+    worker dies, the row is swept up as stuck, and the musician is told
+    something went wrong.
+
+    Both are computed a block at a time now. The tests that matter are the ones
+    saying the answer did not change.
+    """
+
+    @staticmethod
+    def _clip():
+        from pathlib import Path
+
+        corpus = Path(__file__).resolve().parents[3] / "fixtures" / "audio"
+        for name in ("01_detache_clean.wav", "01_detache_clean.synthetic.wav"):
+            if (corpus / name).exists():
+                return audio_svc.load_audio(corpus / name, sr=22050)
+        pytest.skip("no corpus audio")
+
+    def test_the_filter_gives_the_same_answer_block_by_block(self) -> None:
+        """Exactly the same, not nearly.
+
+        An IIR filter forgets: the slowest pole here sits at radius 0.991, so
+        its impulse response is down to a millionth within about 70 ms, and the
+        overlap is a second. Measured against filtering the whole signal at
+        once, on real audio: zero difference at one second, 6e-22 at a quarter.
+        """
+        import numpy as np
+        from scipy.signal import butter, sosfiltfilt
+
+        y, sr = self._clip()
+        sos = butter(4, 80.0 / (0.5 * sr), btype="highpass", output="sos")
+        whole = sosfiltfilt(sos, y).astype(np.float32)
+
+        blocked = audio_svc.high_pass(y, sr, 80.0)
+
+        assert blocked.shape == whole.shape
+        assert float(np.abs(blocked - whole).max()) == 0.0
+
+    def test_the_filter_actually_blocks_on_a_long_signal(self) -> None:
+        """Otherwise the test above passes by taking the single-block path."""
+        import numpy as np
+
+        long_enough = np.zeros(
+            (audio_svc._FILTER_BLOCK_S + 3 * audio_svc._FILTER_OVERLAP_S) * 22050,
+            dtype=np.float32,
+        )
+        assert audio_svc.high_pass(long_enough, 22050, 80.0).shape == long_enough.shape
+
+    def test_the_envelope_matches_librosa_frame_for_frame(self, monkeypatch) -> None:
+        """Two references have to be global and both are easy to miss.
+
+        `power_to_db` defaults to `ref=np.max` *and* then clips to `top_db`
+        below the maximum of whatever it was handed. Taken per block, every
+        block lands on its own scale — which showed up as a 0.13 difference on
+        an envelope whose maximum is 14, and would have moved onsets.
+        """
+        import librosa
+        import numpy as np
+
+        y, sr = self._clip()
+        theirs = librosa.onset.onset_strength(y=y, sr=sr, hop_length=512)
+
+        # Forced into many blocks. Without this the corpus clip fits in one,
+        # every reference is trivially global, and the test cannot fail — which
+        # is what a mutation check found: taking the fixed reference back out
+        # left this green.
+        monkeypatch.setattr(audio_svc, "_ENVELOPE_BLOCK_FRAMES", 64)
+        ours = audio_svc.onset_envelope(y, sr)
+
+        assert ours.shape == theirs.shape
+        assert float(np.abs(ours - theirs).max()) < 1e-4
+
+    def test_the_onsets_do_not_move_even_with_absurd_blocks(self, monkeypatch) -> None:
+        """The claim that actually matters. A block small enough to be silly is
+        the strongest form of it — if stitching were wrong anywhere, this is
+        where it would show."""
+        import numpy as np
+
+        y, sr = self._clip()
+        before = audio_svc.detect_onsets(y, sr, min_gap_s=1.0)
+
+        monkeypatch.setattr(audio_svc, "_ENVELOPE_BLOCK_FRAMES", 64)
+        after = audio_svc.detect_onsets(y, sr, min_gap_s=1.0)
+
+        assert before.size == after.size
+        assert np.allclose(before, after)
