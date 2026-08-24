@@ -6,6 +6,71 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-17 — "73 of 74 bars add up" is weaker evidence than it reads
+
+**Branch:** `main`. A correction to the two entries above, and to what I told
+the owner twice.
+
+I have been quoting **74 measures, 267 notes, 73 of 74 bars adding up** as
+evidence that homr reads this page well, and the owner is about to flip a switch
+on the strength of it. Looking at what the reading actually contains:
+
+```
+notes per measure : {0: 1, 1: 9, 2: 4, 4: 55, 6: 5}
+durations         : 230 quarter, 20 eighth, 9 whole, 8 half
+sixteenths        : none, anywhere
+```
+
+**Fifty-five of the seventy-four bars are exactly four quarters**, and there is
+not one sixteenth on a page whose systems visibly carry beamed runs.
+
+**A bar of four quarters adds up in 4/4 whether or not the page shows eight
+eighths.** So the arithmetic cannot distinguish a correct reading of a march
+from a reading that quantised the page, and 73-of-74 says nothing whatever
+about which one this is. It is not evidence of quality; it is evidence of
+*internal consistency*, and I presented it as the former.
+
+**Why it would matter if it is the second one.** `alignment.py` accumulates
+durations to build the timeline it compares a recording against. A page read
+entirely in quarters tells a musician they rushed every passage the page writes
+short — confidently, with a number beside it.
+
+**What I am not claiming.** homr may well be right. Bars 115–151 of that page
+*are* largely quarter-note patterns with accents, and the raw output reads
+`note_4, note_4, note_8, note_8, note_8, note_8` for a bar that visibly holds
+two accented quarters and four eighths — which is correct. I do not have a
+ground-truth transcription and I am not going to pretend the crops settle it.
+
+### What changed in the code
+
+`_confidence_from_arithmetic` now says all of this in its own docstring: it is a
+**floor, not a grade** — it falls when a reading is visibly broken, which is what
+the gate needs, and it never rises above what arithmetic can see. A test pins
+the blind spot with a fixture that is uniform on purpose.
+
+The provider logs the **duration mix**, not just the totals. "74 measures, 267
+notes" reads as a good page; "230 quarters, 20 eighths, no sixteenths" is the
+same reading with the question visible in it. That is the line to look at after
+the first real scan.
+
+### Also measured: the engraver is not the binding constraint here
+
+I expected `engrave.ts` to be the next wall, since it draws four note values and
+no rests. Against homr's actual reading of the real page: **every duration it
+produced is drawable**, and 87% of notes have a glyph. The 13% gap is entirely
+**rests** — 36 of them — and three measures would draw nothing at all.
+
+So the engraver work I assumed was next is narrower than I thought and pointed
+somewhere else: rests, not sixteenths. That is a screen change and it is the
+owner's call (§2).
+
+**Tests:** 2 new cases. Two mutations — the mix unlogged, and counted over
+measures rather than notes — both killed.
+
+Backend 999 tests green (997 before), ruff clean.
+
+---
+
 ## 2026-09-17 — `/v1/ready` asked the engine for an API key
 
 **Branch:** `main`. Finishing the homr switch: the readiness check, the deploy

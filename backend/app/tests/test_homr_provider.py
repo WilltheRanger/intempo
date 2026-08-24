@@ -216,3 +216,45 @@ def test_a_pickup_is_not_counted_against_the_reading(homr) -> None:
     assert score.ocr_confidence == 1.0, (
         "a piece starting on an upbeat was reported as a doubtful reading"
     )
+
+
+def test_arithmetic_cannot_see_a_page_read_entirely_in_quarters(homr) -> None:
+    """The blind spot, pinned so nobody reads the confidence as a grade.
+
+    A bar of four quarters adds up in 4/4 whether or not the page shows eight
+    eighths. So a reading that quantised an entire page scores **1.0** here and
+    is wrong in every bar in the way that matters most — `alignment.py`
+    accumulates durations, so the musician is told they rushed every passage the
+    page writes short.
+
+    Measured on the first real page: 55 of its 74 bars are exactly four
+    quarters, no sixteenth appears anywhere, and 73 of 74 bars add up. That may
+    be a correct reading of a march; this number cannot say, and the docstring
+    it lives under must not imply otherwise.
+    """
+    four_bars_of_quarters = ("</measure><measure>".join([_FOUR_QUARTERS] * 4))
+    homr(MUSICXML.format(notes=four_bars_of_quarters))
+
+    score = HomrProvider().parse(b"<page>").score
+
+    assert score.ocr_confidence == 1.0
+    assert {n.duration for m in score.measures for n in m.notes} == {"quarter"}, (
+        "this fixture is meant to be uniform — it is the point of the test"
+    )
+
+
+def test_the_shape_of_a_reading_is_logged_not_just_its_size(homr, caplog) -> None:
+    """Totals hide the failure above; the duration mix does not.
+
+    "74 measures, 267 notes" reads as a good page. "230 quarters, 20 eighths, no
+    sixteenths" is the same reading with the question visible in it.
+    """
+    import logging
+
+    homr(MUSICXML.format(notes=_FOUR_QUARTERS))
+    with caplog.at_level(logging.INFO, logger="intempo.ocr"):
+        HomrProvider().parse(b"<page>")
+
+    said = " ".join(r.getMessage() for r in caplog.records)
+    assert "quarter" in said, f"the durations were not reported: {said}"
+    assert "'quarter': 4" in said or "quarter': 4" in said, said
