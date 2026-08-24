@@ -23,7 +23,7 @@ from PIL import Image
 
 from app.services.ocr.base import OCRProviderError, OCRResponse
 from app.services.ocr.pipeline import parse_sheet_music
-from app.services.page_image import MODEL_MAX_BYTES, prepare_for_model
+from app.services.page_image import MODEL_MAX_BYTES, find_systems, prepare_for_model
 from app.services.score_schema import Measure, Note, ScoreJson
 from app.workers import transcription_runner as runner
 
@@ -75,9 +75,14 @@ class _Model:
     def __init__(self, answer=READING) -> None:
         self.answer = answer
         self.seen: dict = {}
+        #: Every call, not just the last. A page is read one system at a time
+        #: now, so "what the model was handed" is a list — and checking only
+        #: the last one would miss a first crop sent unshrunk or as a PNG.
+        self.calls: list[dict] = []
 
     def parse(self, image_bytes, mime_type="image/jpeg", note=None) -> OCRResponse:
         self.seen = {"bytes": len(image_bytes), "mime": mime_type, "head": image_bytes[:4]}
+        self.calls.append(self.seen)
         if isinstance(self.answer, Exception):
             raise self.answer
         return OCRResponse(
@@ -126,6 +131,13 @@ def test_a_full_page_photograph_of_each_fixture_reaches_the_model(
     It is that what reached the provider was a JPEG under the API limit, and
     that the notes landed in the row. Those are the two things that were
     silently wrong.
+
+    **`_phone_photo` pastes the band down the page repeatedly**, so this is a
+    real multi-system page and the reader now takes it one system at a time.
+    That is why the stub is called several times and why the measures multiply:
+    it answers the same 24 bars to every crop. What is worth checking is that
+    every crop was prepared properly — not just the last — and that the
+    concatenation numbers the result 1..N.
     """
     photo = _phone_photo(fixture)
     model = _Model()
@@ -140,15 +152,25 @@ def test_a_full_page_photograph_of_each_fixture_reaches_the_model(
 
     runner.run_transcription(SCORE_ID)
 
-    # What the model was handed.
-    assert model.seen["mime"] == "image/jpeg"
-    assert model.seen["head"][:3] == b"\xff\xd8\xff", "not a JPEG"
-    assert model.seen["bytes"] * 4 / 3 <= MODEL_MAX_BYTES, "over the API's 5 MB limit"
-    assert model.seen["bytes"] < len(photo), "the photograph was sent unshrunk"
+    # What the model was handed — every time, not just the last.
+    systems = find_systems(photo)
+    assert len(model.calls) == len(systems) > 1, (
+        f"{len(model.calls)} call(s) for {len(systems)} system(s)"
+    )
+    for index, call in enumerate(model.calls):
+        assert call["mime"] == "image/jpeg", index
+        assert call["head"][:3] == b"\xff\xd8\xff", f"crop {index} is not a JPEG"
+        assert call["bytes"] * 4 / 3 <= MODEL_MAX_BYTES, f"crop {index} over the 5 MB limit"
+        assert call["bytes"] < len(photo), f"crop {index} was sent unshrunk"
 
     final = wired.patches[-1]
     assert final["transcription_status"] == "done"
-    assert len(final["score_json"]["measures"]) == 24
+    assert len(final["score_json"]["measures"]) == 24 * len(model.calls)
+    numbers = [m["measure_number"] for m in final["score_json"]["measures"]]
+    assert numbers == list(range(1, len(numbers) + 1)), (
+        "the systems were joined without renumbering, so bar 1 appears once "
+        "per system and every reference to a bar points at the wrong one"
+    )
     assert final["ocr_confidence"] == pytest.approx(0.86)
 
 

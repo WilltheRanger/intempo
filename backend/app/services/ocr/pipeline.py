@@ -30,6 +30,7 @@ from app.services.ocr.claude_provider import (
     claude_opus_provider,
     claude_sonnet_provider,
 )
+from app.services.page_image import crop_systems
 from app.services.ocr.validate import numbering_gaps
 from app.services.ocr.validate import problems as beat_problems
 from app.services.ocr.gemini_provider import (
@@ -37,7 +38,7 @@ from app.services.ocr.gemini_provider import (
     gemini_pro_provider,
 )
 from app.services.ocr.confirm import retry_with_arithmetic
-from app.services.score_schema import ScoreJson
+from app.services.score_schema import Measure, Repeat, ScoreJson, TempoChange
 
 log = logging.getLogger("intempo.ocr")
 
@@ -211,6 +212,80 @@ def _read_any_music(score: ScoreJson) -> bool:
     return any(measure.notes for measure in score.measures)
 
 
+#: The most systems worth reading one at a time.
+#:
+#: A page is ten; a part on a large sheet might be sixteen. Beyond that the
+#: detector has almost certainly split something that is not a system, and a
+#: wrong split costs one model call *per phantom band* — so the ceiling is
+#: there to bound the bill on a page that was misread, not to bound honest
+#: pages.
+_MAX_SYSTEMS_TO_READ = 16
+
+
+def _combine(parts: list[ScoreJson]) -> ScoreJson:
+    """Several systems' transcriptions, joined into one page.
+
+    **Measure numbers are the whole job.** Each system comes back numbered from
+    one, and `repeats` and `tempo_changes` point at those numbers — so joining
+    without shifting them would attach a `rit.` printed in the last system to
+    the second bar of the piece. `renumber` fixes the measures themselves and
+    would say nothing about the two lists that reference them.
+
+    The header is taken from the first system that states one, because that is
+    where a page prints it: the clef and metre appear on system one and are not
+    repeated. Later systems answering `None` are not disagreeing, they are
+    reading a line that does not say.
+
+    Confidence is the **lowest** of the systems, not the mean. The page is a
+    single thing to the musician, and one line the reader was unsure of is a
+    line of wrong notes wherever it sits — averaging it against nine confident
+    ones hides exactly the page that most needs checking.
+    """
+    measures: list[Measure] = []
+    repeats: list[Repeat] = []
+    tempo_changes: list[TempoChange] = []
+    offset = 0
+
+    for part in parts:
+        for measure in part.measures:
+            measures.append(measure.model_copy(update={"measure_number": len(measures) + 1}))
+        for repeat in part.repeats:
+            repeats.append(
+                repeat.model_copy(
+                    update={
+                        "start_measure": repeat.start_measure + offset,
+                        "end_measure": repeat.end_measure + offset,
+                    }
+                )
+            )
+        for change in part.tempo_changes:
+            tempo_changes.append(
+                change.model_copy(update={"measure_number": change.measure_number + offset})
+            )
+        offset += len(part.measures)
+
+    def first(attribute: str):
+        for part in parts:
+            value = getattr(part, attribute)
+            if value and value != "unknown":
+                return value
+        return None
+
+    return parts[0].model_copy(
+        update={
+            "measures": measures,
+            "repeats": repeats,
+            "tempo_changes": tempo_changes,
+            "clef": first("clef"),
+            "time_signature": first("time_signature"),
+            "key_signature": first("key_signature"),
+            "tempo_marking": first("tempo_marking"),
+            "bpm_hint": first("bpm_hint"),
+            "ocr_confidence": min(part.ocr_confidence for part in parts),
+        }
+    )
+
+
 def parse_sheet_music(
     image_bytes: bytes,
     *,
@@ -218,6 +293,7 @@ def parse_sheet_music(
     providers: list[OCRProvider] | None = None,
     retry: bool = True,
     on_stage: Callable[[Stage], None] | None = None,
+    _by_system: bool = True,
 ) -> ScoreJson:
     """Run the image through the configured provider chain.
 
@@ -271,6 +347,59 @@ def parse_sheet_music(
     # be meaningless. `ocr_confidence` is each model's own estimate of its own
     # work; a 0.5 from one provider and a 0.4 from another are not the same
     # quantity and ranking them would be reading a number that does not exist.
+    # One system at a time, when the page has more than one on it.
+    #
+    # **Because of how much is being asked for in one answer, not how many
+    # pixels there are.** A real scan came back with 59 measures and 112 notes
+    # — under two a bar — having found every system and every barline, then
+    # stopped normally well inside a 16,000-token budget. A fixture in this
+    # repository asks for about thirty notes; a page asks for four hundred.
+    #
+    # **Never worse than reading it whole.** If any system cannot be read, the
+    # whole attempt is discarded and the page goes through the loop below
+    # exactly as before. A page missing one system out of ten is the worst
+    # outcome available: `alignment.py` accumulates durations, so a missing
+    # line shifts every bar after it and the musician is told they rushed a
+    # passage they played correctly.
+    if _by_system:
+        crops = crop_systems(image_bytes)
+        if crops and len(crops) <= _MAX_SYSTEMS_TO_READ:
+            parts: list[ScoreJson] = []
+            for index, crop in enumerate(crops, start=1):
+                stage(f"{STAGE_READING}:system {index} of {len(crops)}")
+                try:
+                    parts.append(
+                        parse_sheet_music(
+                            crop,
+                            media_type="image/jpeg",
+                            providers=chain,
+                            retry=retry,
+                            on_stage=on_stage,
+                            _by_system=False,
+                        )
+                    )
+                except OCRError as exc:
+                    log.info(
+                        "system %d of %d could not be read (%s); reading the page whole",
+                        index, len(crops), exc,
+                    )
+                    parts = []
+                    break
+            if parts:
+                combined = _combine(parts)
+                log.info(
+                    "read %d systems separately: %d measures, %d notes",
+                    len(parts),
+                    len(combined.measures),
+                    sum(len(m.notes) for m in combined.measures),
+                )
+                return combined
+        elif len(crops) > _MAX_SYSTEMS_TO_READ:
+            log.info(
+                "found %d systems, which is more than a page has; reading it whole",
+                len(crops),
+            )
+
     # The chain order encodes which provider is trusted more, so the first one
     # to produce anything usable is the one to keep.
     first_low_confidence: ScoreJson | None = None

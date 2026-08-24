@@ -6,6 +6,72 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-17 — The page is read one system at a time
+
+**Branch:** `main`. Fourth iteration of *fix the OMR system till it works*, and
+the one that wires it up. `parse_sheet_music` now cuts a multi-system page into
+crops and reads each on its own, joining the results.
+
+**Because of how much is asked for in one answer, not how many pixels there
+are.** The scan that started this returned 59 measures and 112 notes — under
+two a bar — having found every system and every barline, then stopped normally
+well inside a 16,000-token budget. A fixture here asks for about thirty notes;
+a page asks for four hundred.
+
+**The design question, answered the way the arithmetic retry answers it: never
+worse.** If any system cannot be read, the whole attempt is discarded and the
+page goes through the old loop unchanged. A page transcribed with one system of
+ten missing is the worst outcome available — `alignment.py` accumulates
+durations, so a missing line shifts every bar after it and the musician is told
+they rushed a passage they played correctly. Reading the page whole is merely
+*worse at reading*.
+
+A ceiling of sixteen systems, because a wrong split costs a model call per
+phantom band; above it the page is read whole.
+
+**Joining is mostly bar numbers.** Each system is numbered from one, and
+`repeats` and `tempo_changes` point at *those* numbers — so joining without
+shifting them attaches a `rit.` printed in the last line to the second bar of
+the piece, and `measures_under_tempo_change` then suppresses the verdict for
+the wrong passage. The header comes from the first system that states one,
+because that is where a page prints it. Confidence is the **lowest**, not the
+mean: a line the reader was unsure of is a line of wrong notes wherever it
+sits, and averaging it against nine confident ones hides the page that most
+needs checking.
+
+**A real detection bug, found by running it at phone resolution.** On
+`05_handwritten_messy` blown up to 3024×4032, twelve pasted bands came back as
+**twenty-four** systems: a hand-ruled staff has uneven line spacing, so one wide
+gap inside it cleared the split threshold and every staff came back as two.
+Half a staff is not readable — it would be sent to the model and asked what the
+notes are on the top three lines. A second pass merges anything separated by
+less than a staff's own height, which is the test that tells the two cases
+apart: systems on a page are separated by more than a staff is tall, and that
+is what a margin is. All five fixtures now count exactly right at phone
+resolution: 7, 5, 5, 6, 12.
+
+**The system cap earned its place immediately** — it is what stopped the
+twenty-four-band misread from becoming twenty-four model calls, before the
+merging pass existed to prevent the misread.
+
+**Three of my own tests could not fail.** "Every crop is one system" run on a
+*padded* crop is not well posed — the padding deliberately reaches into
+neighbours so a low note under a staff appears in both crops rather than
+neither, and a five-pixel sliver of the next line is the feature working; it
+asks for one *substantial* staff now. And the header test had its two systems
+agreeing, so first and last gave the same answer: they disagree now, which is
+the real case of a later line printing a metre change.
+
+Mutations caught, all eight, including a page returned with a hole in it.
+
+**Tests run:** backend 839 (824 + 15), ruff clean; mobile 225 unchanged.
+**Rollback:** revert `pipeline.py`; the splitter is inert without its caller.
+
+**What is still unmeasured:** no real page has been through this. Everything
+above is fixtures, stubs and stacked photographs. Whether reading a system at a
+time actually gets more notes out of the model is the one thing only a live
+scan can say.
+
 ## 2026-09-16 (night) — The page, cut into systems
 
 **Branch:** `main`. Third iteration of *fix the OMR system till it works*.

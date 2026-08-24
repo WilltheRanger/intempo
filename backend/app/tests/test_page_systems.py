@@ -272,3 +272,83 @@ def test_a_page_that_fails_halfway_through_cropping_is_sent_whole(monkeypatch) -
         "with a system missing and nothing would say so"
     )
     assert done >= 3, "the failure never happened, so this proved nothing"
+
+
+# ---------------------------------------------------------------------------
+# At the size a phone actually produces
+#
+# Everything above works on the fixture strips and on pages stacked from them,
+# which are 1200 px wide. A phone sends 3024x4032, the bands are blown up to
+# match, and the detector behaves differently there — which is where the
+# fragment-merging pass came from.
+# ---------------------------------------------------------------------------
+
+
+def _phone_page(source: Path, width: int = 3024, height: int = 4032) -> tuple[bytes, int]:
+    """The fixture band pasted down a page, at the resolution a phone sends."""
+    from PIL import Image
+
+    strip = Image.open(source).convert("RGB")
+    page = Image.new("RGB", (width, height), "white")
+    band = strip.resize(
+        (int(width * 0.92), max(1, int(strip.height * (width * 0.92) / strip.width))),
+        Image.Resampling.LANCZOS,
+    )
+    y, pasted = int(height * 0.06), 0
+    while y + band.height < height:
+        page.paste(band, (int(width * 0.04), y))
+        y += int(band.height * 1.9)
+        pasted += 1
+    buffer = io.BytesIO()
+    page.save(buffer, format="JPEG", quality=95, subsampling=0)
+    return buffer.getvalue(), pasted
+
+
+@pytest.mark.parametrize("name", sorted(p.name for p in FIXTURES.glob("0*.jpg")))
+def test_it_counts_the_systems_on_a_phone_photograph(name: str) -> None:
+    """Exactly, not approximately.
+
+    One too many means half a staff is sent to the model on its own, and half a
+    staff is not readable — it would be asked what the notes are on the top
+    three lines. One too few means two systems in one crop, which is the
+    question the whole page was already failing to answer.
+
+    `05_handwritten_messy` is why the merging pass exists: a hand-ruled staff
+    has uneven line spacing, so one wide gap inside it cleared the split
+    threshold and every staff came back as two. Twelve bands, twenty-four
+    systems.
+    """
+    page, pasted = _phone_page(FIXTURES / name)
+
+    assert len(find_systems(page)) == pasted
+
+
+@pytest.mark.parametrize("name", sorted(p.name for p in FIXTURES.glob("0*.jpg")))
+def test_a_phone_photograph_crops_to_one_staff_each(name: str) -> None:
+    """One *substantial* staff per crop, not one run of ink.
+
+    Re-running the detector on a padded crop and demanding exactly one answer
+    is not a well-posed check, and asserting it was my mistake: the padding
+    deliberately reaches into the neighbouring systems so that a low note
+    hanging under a staff appears in both crops rather than in neither. A
+    5-pixel sliver of the next line is the feature working.
+
+    What has to be true is that each crop holds **one** thing worth reading —
+    so fragments much shorter than the tallest run are the padding doing its
+    job, and two comparable staves in one crop would be the failure.
+    """
+    from app.services.page_image import crop_systems
+
+    page, pasted = _phone_page(FIXTURES / name)
+    crops = crop_systems(page)
+
+    assert len(crops) == pasted
+    for index, crop in enumerate(crops):
+        runs = find_systems(crop)
+        assert runs, f"crop {index} holds no staff at all"
+        tallest = max(bottom - top for top, bottom in runs)
+        substantial = [r for r in runs if (r[1] - r[0]) > tallest / 2]
+        assert len(substantial) == 1, (
+            f"crop {index} holds {len(substantial)} staves, so the model is "
+            "being asked the same question the whole page was failing"
+        )
