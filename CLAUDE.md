@@ -240,18 +240,28 @@ there works differently as of 2026-08-24:
   silent on all of them. `notation/reading.ts` keeps a local beat-sum check for
   live editing and as a fallback for an older backend; it is a subset on
   purpose. Add a check to `validate.py`, not to the app.
-- **The staff detector does not work on a real photograph, and the guard is what
-  makes that safe.** Measured on a photographed String Bass part with eleven
-  staves: `find_systems` returned two bands holding 9 and 2 staff lines, and
-  without `_bands_are_staves` the page would have been cut on that and the music
-  on nine staves never sent to any model — silently, because nothing failed. A
-  stave is five lines; a band holding anything else means the detection is
-  unreliable and the page is read whole. Not skew (swept ±4°), not resolution,
-  not the number of systems (a synthetic eleven-band page is detected exactly).
-  The threshold `mean - std` is inflated by the desk in shot and lands at 112
-  where the ink needs ~160. Do **not** nudge that constant — it cannot be
-  validated against a corpus where every fixture is a single-staff strip. See
-  `EDIT_LOG.md`, 2026-09-17.
+- **Staff systems are found by ink density, not by darkness, and the crops tile
+  the page.** Both were rewritten after the first real photograph this project
+  has seen — a String Bass part with ten systems — where the old projection of
+  "rows that are mostly dark are staff lines" found **two**. A page held in the
+  hand is not flat: each system slopes by more than its own height across the
+  width, so no row is mostly anything, and no rotation fixes it because every
+  system slopes differently. `_ink_profile` measures each pixel against the
+  paper immediately around it and smooths by a fraction of the page **width**
+  (height would depend on how many systems are on the page — a single-staff
+  strip then returns its five lines as five bands). That page now gives its ten
+  systems plus the desk above and below.
+  `crop_systems` **tiles**: every row belongs to a crop, boundaries at the
+  quietest row between bands. Cropping the bands and discarding the rest is how
+  that page lost eight systems silently, and padded bands still hold only 85% of
+  its ink. The overlap comes from the *median* band, never each band's own height
+  — the desk band is three times a system tall and padding from it made the last
+  system appear in two crops.
+  `_cuts_are_quiet` is the remaining guard: a cut through a system splits a bar
+  between two crops. `NoMusicFound` lets the first and last crop hold no music,
+  because they cover the page's margin; an interior one may not.
+  Do not fit these constants to one photograph — the measured passing range, and
+  the tidier pocket I declined to take, are in `EDIT_LOG.md`, 2026-09-17.
 - **The photograph is deleted only when a person accepts the reading.**
   `POST /v1/scores/:id/accept` is the only thing that discards it, and it
   refuses for a page still being read or one that failed. Never wire discarding

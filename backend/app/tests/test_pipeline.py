@@ -1417,3 +1417,126 @@ def test_every_finished_system_moves_the_reported_step(monkeypatch) -> None:
         f"{pipeline_module.STAGE_READING}:system {n} of {len(crops)}"
         for n in range(1, len(crops) + 1)
     ], counts
+
+
+# ---- a crop with no music on it ------------------------------------------
+
+
+def test_the_first_and_last_crop_may_hold_no_music(monkeypatch) -> None:
+    """The crops tile the whole photograph, so the ones at the ends cover the
+    page's margin, its title block and whatever the page was lying on.
+
+    Measured on the real page: twelve crops, ten holding one system each and the
+    first and last holding the desk. Treating those as failures sent the page
+    back to be read whole — the fallback firing on every photograph with any
+    edge in shot, which is nearly all of them.
+    """
+    crops = [b"desk", b"one", b"two", b"three", b"sliver"]
+    monkeypatch.setattr(pipeline_module, "crop_systems", lambda _b: crops)
+
+    class _EdgesAreBlank:
+        name = "edges"
+
+        def parse(self, image_bytes, mime_type="image/jpeg", note=None):
+            if image_bytes in (b"desk", b"sliver"):
+                return _system("edges", bars=0)
+            return _system("edges", bars=2)
+
+    score = parse_sheet_music(b"<page>", providers=[_EdgesAreBlank()], retry=False)
+
+    assert len(score.measures) == 6, (
+        "the page fell back to being read whole because its margin had no "
+        f"notes on it: {len(score.measures)} measures"
+    )
+    numbers = [m.measure_number for m in score.measures]
+    assert numbers == list(range(1, 7))
+
+
+def test_a_crop_in_the_middle_with_no_music_sends_the_whole_page(monkeypatch) -> None:
+    """The other half, and it is the difference between a margin and a hole.
+
+    An interior crop has music above it and music below it, so one that comes
+    back with no notes is a read that failed rather than an empty margin.
+    Accepting it puts a hole in the page, and `alignment.py` accumulates
+    durations — a missing line shifts every bar after it and the musician is
+    told they rushed a passage they played correctly.
+    """
+    crops = [b"one", b"two", b"three", b"four"]
+    monkeypatch.setattr(pipeline_module, "crop_systems", lambda _b: crops)
+
+    class _MiddleIsBlank:
+        name = "middle"
+
+        def parse(self, image_bytes, mime_type="image/jpeg", note=None):
+            if image_bytes not in crops:
+                return _system("middle", bars=9)  # the whole-page fallback
+            if image_bytes == b"three":
+                return _system("middle", bars=0)
+            return _system("middle", bars=2)
+
+    score = parse_sheet_music(b"<page>", providers=[_MiddleIsBlank()], retry=False)
+
+    assert len(score.measures) == 9, (
+        "a page with a hole in the middle of it was returned"
+    )
+
+
+def test_a_page_where_nothing_reads_still_falls_back(monkeypatch) -> None:
+    """Two crops, both at the edge by definition, both blank. There is no music
+    anywhere, so `_read_systems` has nothing to return and the page goes through
+    the whole-page loop — which is the path that reports an unreadable page in
+    the provider's own words."""
+    monkeypatch.setattr(pipeline_module, "crop_systems", lambda _b: [b"a", b"b"])
+
+    class _AllBlank:
+        name = "blank"
+
+        def parse(self, image_bytes, mime_type="image/jpeg", note=None):
+            if image_bytes in (b"a", b"b"):
+                return _system("blank", bars=0)
+            return _system("blank", bars=4)
+
+    score = parse_sheet_music(b"<page>", providers=[_AllBlank()], retry=False)
+
+    assert len(score.measures) == 4, "the whole-page fallback did not run"
+
+
+def test_no_music_is_a_different_answer_from_could_not_read() -> None:
+    """Why `NoMusicFound` is a subclass rather than a flag.
+
+    A caller that does not know about it — every caller before the crops tiled
+    the page — treats it exactly as the failure it is. And a *rate limit* on the
+    first crop must not be mistaken for a blank margin: only "no notes" from
+    every provider raises the subclass.
+    """
+    blank = ScoreJson.model_validate({
+        **GOOD_PAYLOAD, "clef": "bass", "time_signature": "4/4",
+        "ocr_confidence": 0.9, "repeats": [], "tempo_changes": [],
+        "measures": [{"measure_number": 1, "notes": [], "slurs": []}],
+    })
+
+    class _Blank:
+        name = "blank"
+
+        def parse(self, image_bytes, mime_type="image/jpeg", note=None):
+            return OCRResponse(
+                score=blank, raw_text="{}", model="blank", input_tokens=1,
+                output_tokens=1, cost_usd=0.0, latency_ms=1,
+            )
+
+    class _RateLimited:
+        name = "limited"
+
+        def parse(self, image_bytes, mime_type="image/jpeg", note=None):
+            raise OCRProviderError("limited: rate limit reached")
+
+    with pytest.raises(pipeline_module.NoMusicFound):
+        parse_sheet_music(b"<jpeg>", providers=[_Blank()], retry=False)
+
+    with pytest.raises(pipeline_module.OCRError) as failed:
+        parse_sheet_music(b"<jpeg>", providers=[_RateLimited()], retry=False)
+    assert not isinstance(failed.value, pipeline_module.NoMusicFound), (
+        "a rate limit was reported as an empty margin, so a failed read of the "
+        "first crop would be accepted as a page edge"
+    )
+    assert issubclass(pipeline_module.NoMusicFound, pipeline_module.OCRError)

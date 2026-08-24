@@ -2,7 +2,7 @@
 
 Public API:
 - `parse_sheet_music(image_bytes, *, media_type, providers) -> ScoreJson`
-- `OCRError`
+- `OCRError`, `NoMusicFound`
 
 Built-in providers:
 - `claude_sonnet_provider`, `claude_opus_provider`
@@ -22,6 +22,7 @@ from app.services.ocr.gemini_provider import (
 )
 from app.services.ocr.pipeline import (
     CONFIDENCE_THRESHOLD,
+    NoMusicFound,
     OCRError,
     PROVIDER_REGISTRY,
     get_provider,
@@ -30,6 +31,7 @@ from app.services.ocr.pipeline import (
 
 __all__ = [
     "CONFIDENCE_THRESHOLD",
+    "NoMusicFound",
     "OCRError",
     "OCRProvider",
     "OCRProviderError",

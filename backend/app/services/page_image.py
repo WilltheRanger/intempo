@@ -407,18 +407,13 @@ def _register_heif() -> None:
         log.info("pillow-heif is not installed; HEIC pages will not be normalised")
 
 
-#: How dark a row has to be, as a fraction of its width, to look like a staff
-#: line. Staff lines are the longest horizontal runs of ink on a page — longer
-#: than any beam, slur or word — which is what makes them findable without
-#: knowing anything else about the music.
-_STAFF_ROW_DARKNESS = 0.45
-
-#: Vertical padding around a system, as a multiple of its own height.
+#: Vertical overlap between neighbouring crops, as a multiple of the page's
+#: typical band height.
 #:
 #: Generous on purpose, and asymmetric would be better still: what sits above a
 #: staff is rehearsal marks, dynamics, bowings and the tempo text that says
 #: `Meno mosso`, and what sits below is more dynamics and the occasional
-#: fingering. Cropping tight to the staff lines throws all of it away, and the
+#: fingering. Cropping tight to the staff throws all of it away, and the
 #: pipeline reads a page for its markings as well as its notes.
 _SYSTEM_PADDING = 0.55
 
@@ -427,219 +422,280 @@ _SYSTEM_PADDING = 0.55
 #: of the whole thing is the same picture with an extra decode.
 _MIN_SYSTEMS_TO_SPLIT = 2
 
-#: How many dark runs a band has to hold to be a stave.
+#: Radius of the blur that estimates the page's own brightness, as a fraction
+#: of the shorter edge.
 #:
-#: **Not a tuned constant — the definition of a stave.** Five lines, and the
-#: tolerance is one either way: two lines can merge into a single run at low
-#: resolution, and a hand-ruled staff can put an extra run of ink inside its
-#: own band (`05_handwritten_messy` gives 6 for half its staves).
+#: Ink is decided against the paper immediately around it, not against the
+#: photograph's average. A phone photograph of paper is unevenly lit — the real
+#: page measured here runs from 193 down to 146 across its own height — and a
+#: global threshold therefore finds the ink in the shadow and misses the ink in
+#: the light. Wide enough to be the *page* rather than the notes: at 2.5% of the
+#: shorter edge it spans several staff lines, so a staff cannot mistake itself
+#: for its own background.
+_INK_BLUR_FRACTION = 0.025
+
+#: How much darker than the paper around it a pixel has to be to count as ink.
+_INK_RATIO = 0.90
+
+#: Width of the moving average over the row-ink profile, as a fraction of the
+#: page **width**.
 #:
-#: Measured on the first real orchestral part this repository has seen — a
-#: photographed String Bass part, eleven staves — where the detector returned
-#: **two** bands holding **9 and 2** runs: the first had swallowed the dark
-#: desk at the top of the photograph and two staves with it, the second was a
-#: fragment. Every fixture here gives 5 or 6 for every band. Nothing in between
-#: occurred, which is why the check is a count and not a tolerance.
-_STAFF_LINES = 5
-_STAFF_LINE_SLACK = 1
+#: **This is what replaced "rows that are mostly dark are staff lines."** That
+#: was true of every fixture in this repository and false of the first real page
+#: it saw: on a photograph held in the hand, each system slopes by *more than
+#: its own height* across the width of the page, so no row is mostly anything
+#: and the detector found two systems where there were ten. Ink density survives
+#: the slope — a band of rows holding a system carries several times the ink of
+#: the gap above it however tilted it is — and smoothing over roughly a system's
+#: height turns five sharp lines into one hill.
+#:
+#: **Of the width, not the height, and that is the whole reason this constant is
+#: written down.** A fraction of the height was the obvious choice and it is
+#: wrong: page height depends on how many systems are on the page, so a
+#: single-staff strip — which is what every fixture here is — got a window of
+#: three rows and returned each of its five staff lines as its own band. Staff
+#: size scales with the *width*, because a system spans the page and holds a
+#: broadly fixed number of bars.
+#:
+#: Measured across eleven pages (five fixtures as bare strips, the same five
+#: stacked into multi-system pages, and the real part) the values that get every
+#: one of them right run from 0.032 to 0.042. This sits in the middle. There is
+#: a second pocket at 0.046–0.050 where the real page's two desk bands merge
+#: away and it returns exactly its ten systems — tempting, and not taken: three
+#: samples wide, chosen because it gives a tidy number on the only real page in
+#: hand, is how a constant gets fitted to one photograph.
+_BAND_SMOOTH_FRACTION = 0.036
+
+#: How quiet a cut has to be, against the quietest band, to be a gap.
+#:
+#: The one way tiling crops can still damage a page: a cut placed *inside* a
+#: system splits a bar across two crops and both halves come back short.
+#: Measured — on the real page the loudest cut carries 0.044 of a row's width
+#: in ink against 0.20 for the quietest band, a factor of 4.5, and on every
+#: fixture the cuts are at exactly zero. Half is far outside both.
+_CUT_QUIET_RATIO = 0.5
 
 
-def _systems_and_runs(
-    image_bytes: bytes,
-) -> tuple[list[tuple[int, int]], list[tuple[int, int]]]:
-    """The `(top, bottom)` of each staff system on the page, in pixels.
+def _ink_profile(image_bytes: bytes):
+    """How much ink each row of the page holds, and the smoothed version.
 
-    **Why this exists.** `MODEL_MAX_EDGE` squeezes a page onto a 1568 px edge,
-    and the comment above it is right about the reason — Anthropic downsamples
-    anything larger, so more pixels in *one* image buy nothing. The conclusion
-    that followed was wrong: it is only true if the page has to be one image.
-
-    Measured against this repository's own fixtures, which are the material the
-    reader was tuned on: every one of them is a **single staff strip**, 1200 px
-    wide and 72–168 px tall, and none is downscaled at all. A photographed page
-    is ten systems in portrait; at 1568 px tall each system gets about 150 px
-    *including its margins*, so the staff itself lands at 40–60 px — three to
-    four times less than anything the reader was ever shown. That is why a real
-    orchestral part comes back with 59 measures and 112 notes.
-
-    Found by horizontal projection rather than a model: staff lines are the
-    longest horizontal runs of ink on any page — longer than a beam, a slur or
-    a word — so rows that are mostly dark are staff lines and nothing else is.
-    No training, no dependency, and it degrades to "one system" rather than to
-    a wrong answer.
-
-    **It does not, in fact, degrade to "one system" on a real page.** Measured
-    on a photographed String Bass part with eleven staves on it: two bands, of
-    9 and 2 staff lines, because the dark desk visible around the paper is a
-    full-width dark run that both skews the median gap and merges with the
-    staves next to it, and because only about three of the eleven staves have
-    any row reaching `_STAFF_ROW_DARKNESS` at all — a phone photograph of paper
-    is unevenly lit and slightly skewed, and a staff line spread over a few
-    rows by skew is never mostly dark in any one of them. Returns both the
-    bands and the runs they were built from so `_bands_are_staves` can refuse a
-    detection this unreliable.
+    Returns `(profile, smoothed)` or `None` if the page cannot be read.
     """
     try:
         import numpy as np
-        from PIL import Image, ImageOps
+        from PIL import Image, ImageFilter, ImageOps
     except ImportError:  # pragma: no cover — both are declared dependencies
-        return [], []
+        return None
 
     _register_heif()
     try:
         with Image.open(io.BytesIO(image_bytes)) as image:
-            image = ImageOps.exif_transpose(image).convert("L")
-            pixels = np.asarray(image, dtype=np.float32)
+            grey = ImageOps.exif_transpose(image).convert("L")
+            radius = max(4, int(min(grey.size) * _INK_BLUR_FRACTION))
+            background = np.asarray(
+                grey.filter(ImageFilter.BoxBlur(radius)), dtype=np.float32
+            )
+            pixels = np.asarray(grey, dtype=np.float32)
     except Exception:  # noqa: BLE001 — an unreadable page is the caller's problem
-        return [], []
+        return None
 
     if pixels.size == 0 or pixels.shape[0] < 8:
-        return [], []
+        return None
 
-    # Dark relative to *this* photograph. An absolute threshold fails on the
-    # two things phone photographs of paper always are: unevenly lit, and grey
-    # rather than white.
-    dark = pixels < (pixels.mean() - pixels.std())
-    staff_rows = dark.mean(axis=1) > _STAFF_ROW_DARKNESS
+    profile = (pixels < np.maximum(background, 1.0) * _INK_RATIO).mean(axis=1)
 
-    runs: list[tuple[int, int]] = []
+    # Scaled by the page's width — see `_BAND_SMOOTH_FRACTION`. Using the
+    # height makes the window depend on how many systems are on the page.
+    window = max(3, int(pixels.shape[1] * _BAND_SMOOTH_FRACTION) | 1)
+    pad = window // 2
+    kernel = np.ones(window, dtype=np.float32) / window
+    padded = np.pad(profile, pad, mode="edge")
+    smoothed = np.convolve(padded, kernel, mode="same")[pad:pad + len(profile)]
+    return profile, smoothed
+
+
+def _bands(smoothed) -> list[tuple[int, int]]:
+    """The runs of rows carrying more ink than the page's own midpoint.
+
+    The midpoint is between the profile's own floor and ceiling — 5th and 95th
+    percentiles rather than min and max, so one very dark row cannot set the
+    scale for the page.
+    """
+    import numpy as np
+
+    low, high = np.percentile(smoothed, 5), np.percentile(smoothed, 95)
+    if high - low < 1e-6:
+        return []
+    middle = low + (high - low) * 0.5
+
+    bands: list[tuple[int, int]] = []
     start: int | None = None
-    for row, is_staff in enumerate(staff_rows):
-        if is_staff and start is None:
+    for row, loud in enumerate(smoothed > middle):
+        if loud and start is None:
             start = row
-        elif not is_staff and start is not None:
-            runs.append((start, row))
+        elif not loud and start is not None:
+            bands.append((start, row))
             start = None
     if start is not None:
-        runs.append((start, len(staff_rows)))
-
-    if not runs:
-        return [], []
-
-    # The five lines of one staff are five separate runs, and the page has no
-    # idea how far apart they should be — it depends on the engraving, the
-    # photograph's distance and the crop. So the page is asked: the gaps
-    # *within* a staff are all much the same, and the gap *between* systems is
-    # several times larger. Splitting on a multiple of the median gap needs no
-    # constant that could be wrong for a different page.
-    #
-    # Keyed to page height instead at first, which put the threshold below one
-    # staff's own line spacing and returned every line as its own system.
-    gaps = [
-        runs[i + 1][0] - runs[i][1] for i in range(len(runs) - 1)
-    ]
-    typical = sorted(gaps)[len(gaps) // 2] if gaps else 0
-    gap = max(4, typical * 3)
-    systems: list[tuple[int, int]] = []
-    top, bottom = runs[0]
-    for run_top, run_bottom in runs[1:]:
-        if run_top - bottom <= gap:
-            bottom = run_bottom
-        else:
-            systems.append((top, bottom))
-            top, bottom = run_top, run_bottom
-    systems.append((top, bottom))
-
-    # Second pass: put back together anything that is one staff in pieces.
-    #
-    # The rule above splits on a multiple of the *median* gap, which is right
-    # for evenly engraved music and wrong for handwriting: a hand-ruled staff
-    # has uneven line spacing, so one wide gap inside it clears the threshold
-    # and the staff comes back as two systems. Measured on
-    # `05_handwritten_messy` at phone resolution — twelve bands on the page,
-    # twenty-four "systems" found.
-    #
-    # Half a staff is not readable, so this is not a cosmetic miscount: it
-    # would send the model the top three lines of a staff and ask what the
-    # notes are.
-    #
-    # The test that separates the two cases is height. Systems on a page are
-    # separated by *more* than a staff is tall — that is what a margin is —
-    # while fragments of one staff are separated by less than its own height by
-    # definition.
-    if len(systems) > 1:
-        heights = sorted(bottom - top for top, bottom in systems)
-        staff_height = heights[len(heights) // 2]
-        merged: list[tuple[int, int]] = [systems[0]]
-        for top, bottom in systems[1:]:
-            if top - merged[-1][1] < staff_height:
-                merged[-1] = (merged[-1][0], bottom)
-            else:
-                merged.append((top, bottom))
-        systems = merged
-
-    return systems, runs
+        bands.append((start, len(smoothed)))
+    return bands
 
 
 def find_systems(image_bytes: bytes) -> list[tuple[int, int]]:
     """The `(top, bottom)` of each staff system on the page, in pixels.
 
+    **Found by ink density, not by darkness.** The earlier version projected
+    rows and called the mostly-dark ones staff lines, on the reasoning that a
+    staff line is the longest horizontal run of ink on any page. That is true,
+    and it worked on every fixture here — all of which are flat scans of a
+    single staff strip. On the first real page it saw, a photographed String
+    Bass part with **ten** systems, it found **two**: a page held in the hand
+    is not flat, each system slopes by more than its own height across the
+    width, and a staff line spread over eighty rows is not mostly dark in any
+    one of them. Rotation does not fix it, because every system slopes by a
+    different amount. Measured: no angle in ±4° gives more than 15 of the ~55
+    line-runs ten staves should produce.
+
+    What survives a slope is that a band of rows holding a system carries
+    several times the ink of the gap above it. Smoothed over roughly half a
+    system's height, that makes each system one hill in a profile with clear
+    valleys between. The same page now gives twelve bands — its ten systems, plus the desk visible above and below the sheet, and every fixture
+    still gives exactly its own count.
+
     A measurement, and it reports what it found rather than judging it — see
-    `_bands_are_staves`, which is where a detection too unreliable to cut a page
-    on gets refused.
+    `_cuts_are_quiet`, which is where a split too unreliable to make gets
+    refused.
     """
-    return _systems_and_runs(image_bytes)[0]
+    read = _ink_profile(image_bytes)
+    if read is None:
+        return []
+    return _bands(read[1])
 
 
-def _bands_are_staves(
-    systems: list[tuple[int, int]], runs: list[tuple[int, int]]
-) -> bool:
-    """Whether every detected band actually looks like one stave.
+def _cut_rows(bands: list[tuple[int, int]], smoothed) -> list[int]:
+    """The whitest row between each pair of bands — where to cut the page.
 
-    **The check that stops a bad split silently eating the page.** A wrong split
-    raises nothing: `crop_systems` returns crops, the pipeline reads them, and
-    the music on every staff the detector missed is never sent to any model. The
-    musician gets a short transcription that looks fine. That is strictly worse
-    than the whole-page read this replaced, and the never-worse guard in
-    `parse_sheet_music` cannot see it, because nothing failed.
-
-    A stave is five lines. Every band on every fixture in this repository holds
-    5 of them, or 6 where a hand-ruled staff adds a run of its own. The first
-    real orchestral part measured here — a photographed String Bass part with
-    eleven staves — produced two bands holding **9 and 2**: one had merged the
-    dark desk at the top of the photograph with two staves, the other was a
-    fragment. Nothing landed in between, on any page.
-
-    All-or-nothing, deliberately. Dropping only the bands that fail would leave
-    a page with holes in it, which is the thing being prevented.
+    Not the midpoint of the gap. A gap between two systems is not uniformly
+    empty: a low note hangs under one staff and a rehearsal mark sits above the
+    next, so the quietest row is off-centre, and it is the one place a cut
+    cannot take a notehead with it.
     """
-    low, high = _STAFF_LINES - _STAFF_LINE_SLACK, _STAFF_LINES + _STAFF_LINE_SLACK
-    for top, bottom in systems:
-        lines = sum(1 for run_top, run_bottom in runs if run_top >= top and run_bottom <= bottom)
-        if not low <= lines <= high:
-            log.info(
-                "a band of %d px holds %d staff line(s), not %d; the page will "
-                "be read whole rather than cut on a detection this unreliable",
-                bottom - top, lines, _STAFF_LINES,
-            )
-            return False
+    import numpy as np
+
+    cuts: list[int] = []
+    for index in range(len(bands) - 1):
+        gap_top, gap_bottom = bands[index][1], bands[index + 1][0]
+        if gap_bottom <= gap_top:
+            cuts.append(gap_top)
+        else:
+            cuts.append(gap_top + int(np.argmin(smoothed[gap_top:gap_bottom])))
+    return cuts
+
+
+def _cuts_are_quiet(bands: list[tuple[int, int]], cuts: list[int], smoothed) -> bool:
+    """Whether every cut falls in a gap rather than through a system.
+
+    **The one way tiling crops can still damage a page.** Because the crops
+    cover the whole page, nothing can be silently dropped any more — that class
+    of failure is gone by construction. What is left is a cut placed *inside* a
+    system: the bar it lands in is split between two crops, both halves come
+    back short, and the bar count for the page is wrong from there on.
+
+    So a cut has to be quiet. Measured: on the real page the loudest cut
+    carries 0.044 of a row's width in ink against 0.20 for the quietest band,
+    and on every fixture here the cuts are at exactly zero ink. Anything
+    approaching a band's own density is not a gap.
+    """
+    if not cuts:
+        return True
+
+    quietest_band = min(float(smoothed[top:bottom].mean()) for top, bottom in bands)
+    loudest_cut = max(float(smoothed[cut]) for cut in cuts)
+    if loudest_cut >= quietest_band * _CUT_QUIET_RATIO:
+        log.info(
+            "the quietest row between two bands still carries %.3f ink against "
+            "%.3f inside a band; the page will be read whole rather than cut "
+            "through a system",
+            loudest_cut, quietest_band,
+        )
+        return False
     return True
+
+
+def _crop_boxes(image_bytes: bytes) -> list[tuple[int, int]]:
+    """The `(top, bottom)` source rows of each crop, in reading order.
+
+    Separate from `crop_systems` because these are the numbers that decide
+    whether a page survives being cut up, and they are worth being able to look
+    at directly. Three properties have to hold, and each of them was once wrong:
+
+    - **They tile the page.** The first starts at row 0, the last ends at the
+      last row. Cropping the bands and discarding what lay between them is how
+      the real page lost the music on eight of its ten systems.
+    - **They overlap rather than abut**, by the same amount everywhere, so a low
+      note hanging under a staff appears in both crops rather than in neither.
+    - **The overlap comes from the page's typical band**, not each band's own
+      height. On the real page the bottom band is the desk and is three times a
+      system tall; padded by its own height it reached a whole system upward and
+      that system came back in two crops — read twice, which lengthens the page
+      and shifts every bar after it against the recording.
+
+    Empty when the page cannot be read, holds fewer than
+    `_MIN_SYSTEMS_TO_SPLIT` bands, or cannot be cut without going through a
+    system.
+    """
+    read = _ink_profile(image_bytes)
+    if read is None:
+        return []
+    _profile, smoothed = read
+    height = len(smoothed)
+
+    bands = _bands(smoothed)
+    if len(bands) < _MIN_SYSTEMS_TO_SPLIT:
+        return []
+
+    cuts = _cut_rows(bands, smoothed)
+    if not _cuts_are_quiet(bands, cuts, smoothed):
+        return []
+
+    band_heights = sorted(bottom - top for top, bottom in bands)
+    typical = band_heights[len(band_heights) // 2]
+    pad = max(8, int(typical * _SYSTEM_PADDING))
+
+    edges = [0, *cuts, height]
+    return [
+        (max(0, top - (pad if top else 0)), min(height, bottom + (pad if bottom < height else 0)))
+        for top, bottom in zip(edges, edges[1:])
+    ]
 
 
 def crop_systems(image_bytes: bytes) -> list[bytes]:
     """The page cut into one JPEG per staff system, top to bottom.
 
-    Empty when the page holds fewer than `_MIN_SYSTEMS_TO_SPLIT` systems or
-    could not be read at all — both of which mean "send it whole", which is
-    what the caller did before this existed.
+    Empty when the page holds fewer than `_MIN_SYSTEMS_TO_SPLIT` bands, could
+    not be read at all, or could not be cut without going through a system —
+    all of which mean "send it whole", which is what the caller did before this
+    existed.
 
-    **Padded generously**, because a system is not only its staff lines. Above
-    them sit rehearsal marks, dynamics, bowings and the tempo text that says
-    `Meno mosso`; below them sit more dynamics and the occasional fingering.
-    The pipeline reads a page for its markings as much as its notes, and a crop
-    crushed to the lines throws away the half that tells a musician what to do.
+    **The crops tile the page.** Every row belongs to exactly one crop: the
+    first runs from the top of the image, the last to the bottom, and the
+    boundaries are the quietest rows between bands. This is a change of
+    principle from cropping the bands and discarding what lay between them,
+    and it is the fix for the worst failure this pipeline has had. On the first
+    real page it saw, the detector found two bands out of eleven systems and
+    the music on the rest was never sent to any model — silently, because
+    nothing failed. Even with the detector rewritten, padded bands hold 85% of
+    that page's ink; tiling holds all of it, by construction.
 
-    **Overlap is deliberate and small.** Neighbouring crops share their
-    padding, so a low note hanging under one staff appears at the bottom of its
-    own crop and the top of the next. Better than the alternative: a note that
-    falls in the seam belongs to no crop at all, and a dropped note shifts
-    every bar after it in `alignment.py`'s timeline. Duplication is visible to
-    the caller and correctable; a hole is neither.
+    **The overlap is still deliberate.** Neighbouring crops share
+    `_SYSTEM_PADDING` of a band's height either side of the cut, so a low note
+    hanging under one staff appears at the bottom of its own crop and the top of
+    the next. Duplication is visible to the caller and correctable; a hole is
+    neither — `alignment.py` accumulates durations, so a dropped note shifts
+    every bar after it.
     """
-    systems, runs = _systems_and_runs(image_bytes)
-    if len(systems) < _MIN_SYSTEMS_TO_SPLIT:
-        return []
-    if not _bands_are_staves(systems, runs):
+    boxes = _crop_boxes(image_bytes)
+    if not boxes:
         return []
 
     try:
@@ -654,11 +710,9 @@ def crop_systems(image_bytes: bytes) -> list[bytes]:
             image = ImageOps.exif_transpose(image)
             if image.mode != "RGB":
                 image = image.convert("RGB")
-            height = image.height
 
-            for top, bottom in systems:
-                pad = max(8, int((bottom - top) * _SYSTEM_PADDING))
-                box = (0, max(0, top - pad), image.width, min(height, bottom + pad))
+            for top, bottom in boxes:
+                box = (0, top, image.width, bottom)
                 buffer = io.BytesIO()
                 # Lossless out of Pillow, then through `prepare_for_model` —
                 # so a crop obeys exactly the same size cap, quality ladder and

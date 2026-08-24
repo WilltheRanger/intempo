@@ -60,6 +60,23 @@ class OCRError(Exception):
     """Raised when every provider in the chain fails to produce a usable parse."""
 
 
+class NoMusicFound(OCRError):
+    """Every provider read the image and found no notes on it.
+
+    Distinct from the general failure because it means something different for
+    one crop of a page than for a page. A page with no notes on it is a failed
+    read — `_read_any_music` exists because two real scans came back `done`
+    with nothing on them. **A crop can legitimately hold no music**: the crops
+    tile the whole photograph, so the first and last of them cover the page's
+    margin, its title block, and whatever the page was lying on. Measured on
+    the real page: twelve crops, ten holding one system each and the first and
+    last holding the desk.
+
+    A subclass rather than a flag, so a caller that does not know about it
+    treats it exactly as the failure it is.
+    """
+
+
 # Built-in registry — bake-off and pipeline both look providers up here.
 PROVIDER_REGISTRY: dict[str, OCRProvider] = {
     claude_sonnet_provider.name: claude_sonnet_provider,
@@ -532,6 +549,36 @@ def _read_systems(
             index = pending[future]
             try:
                 results[index] = future.result()
+            except NoMusicFound as exc:
+                # The crops tile the whole photograph, so the first and last of
+                # them cover the page's margin, its title block and whatever
+                # the page was lying on. Measured on the real page: twelve
+                # crops, the first holding the desk above the sheet and the
+                # last a sliver below the final system. Neither is a failure,
+                # and treating them as one sent the whole page back to be read
+                # whole — the fallback firing on every photograph that has any
+                # edge in shot, which is nearly all of them.
+                #
+                # **Only the first and last.** An interior crop has music above
+                # it and music below it, so one that comes back with no notes is
+                # a read that failed, and accepting it would put a hole in the
+                # page — which shifts every bar after it against the recording.
+                if index in (0, total - 1):
+                    log.info(
+                        "crop %d of %d holds no music, which is what the edge of "
+                        "a page looks like; carrying on",
+                        index + 1, total,
+                    )
+                    results[index] = None
+                else:
+                    log.info(
+                        "system %d of %d holds no music but is not at the edge "
+                        "of the page (%s); reading the page whole",
+                        index + 1, total, exc,
+                    )
+                    for other in pending:
+                        other.cancel()
+                    return []
             except Exception as exc:  # noqa: BLE001 — any failure falls back
                 log.info(
                     "system %d of %d could not be read (%s: %s); "
@@ -763,4 +810,8 @@ def parse_sheet_music(
         )
         return first_low_confidence
 
+    # "Nothing on it" is not the same answer as "could not read it", and only
+    # the caller cutting a page into crops can tell whether that matters.
+    if failures and all(reason.endswith(": no notes") for reason in failures):
+        raise NoMusicFound("no notes found: " + "; ".join(failures))
     raise OCRError("all providers failed: " + "; ".join(failures))
