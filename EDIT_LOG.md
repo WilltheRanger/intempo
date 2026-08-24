@@ -6,6 +6,58 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-14 (later) — A scanned page that rendered as a title and a photograph
+
+**Branch:** `main`. **Reported from a real device**, with a screenshot: a
+String Bass part, scanned, and the piece screen showed the title, the
+photograph, and nothing else. No progress, no error, no notation, no action.
+
+**The chain, exactly.** `staveScoreFor` drops every rest and every note whose
+duration is not in `DRAWABLE` — which holds four values: whole, half, quarter,
+eighth. That page is sixteenths, dotted eighths, triplets and multi-bar rests,
+so **every note was dropped** and `stave.notes.length` came out 0.
+
+`hasNotation` is computed from the *engraved* notes, not from the
+transcription, and line 298 of `PieceScoreScreen` gates the entire content
+block on it — the stave, the clef and metre row, the way in to fixing a bar,
+the confidence caveat, and **`describeOmissions`**, which is the one sentence
+that exists to say what was left out. Meanwhile the "No score to show" empty
+state is gated on `!hasPages`, and there *was* a page. So every element on the
+screen was switched off by one flag or the other, and the reading had probably
+worked.
+
+**Fixed as the user chose: stop it going blank, nothing more.** A new
+`describeUndrawnScore` says which of the two states it is, because they need
+different things from the person — a page that was read and cannot be *drawn*
+is finished and usable, and one that yielded nothing is not. The screen renders
+it under the photograph as a line, not a panel.
+
+**Three-foot test.** *Before:* first the photograph, second the title, third
+nothing — there is no third thing. The screen has one element and no account of
+itself. *After:* first the photograph, still dominant and correct because it is
+the music; second the title; third a quiet line beneath it. The explanation
+recedes and no container was added — type only, per laws 6 and 8.
+
+**Eleven tests** for `fromScore.ts`, which had none, including the rule the
+module exists for: nothing is rounded. A sixteenth drawn as an eighth is a
+rhythmically wrong line of music presented as a right one, and rhythm is the
+entire subject of this app. Mutations caught, all six — including rounding
+undrawables to eighths, drawing rests, and a dropped bar handing its barline to
+the next bar's opening note.
+
+**Not fixed, deliberately, and it is the underlying cause.** `engrave.ts` still
+cannot draw sixteenths, dotted values or triplets, so that bass part still has
+no stave — it now says so instead of showing nothing. Widening the engraver is
+flags, dots, beaming and tuplet brackets, and the user chose the small fix
+first.
+
+**Also unverified:** no screenshot of the fixed screen. Reproducing this state
+needs a live score whose every note is undrawable, and the seed data has none.
+The logic is tested; the rendering is not.
+
+**Tests run:** mobile 225 (214 + 11), typecheck clean, web build clean; backend
+781 unchanged. **Rollback:** revert.
+
 ## 2026-09-14 — Every way a take can fail after the response was sent
 
 **Branch:** `main`. Same method as yesterday — `pytest --cov` put

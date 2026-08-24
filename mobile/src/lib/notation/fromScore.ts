@@ -80,6 +80,37 @@ export function staveScoreFor(score: ScoreJson): StaveScore {
  * "some notes aren't shown" tells a musician looking at a stave with a hole in
  * it nothing they can act on.
  */
+/**
+ * What to say when the stave came out **empty**.
+ *
+ * `describeOmissions` is written for a stave with a hole in it. This is the
+ * case where there is no stave at all, and it is not rare: `DRAWABLE` holds
+ * four note values, so an ordinary part written in sixteenths and dotted
+ * eighths loses every note, and the screen had nothing left to render.
+ *
+ * What a musician saw was the title, the photograph, and nothing else — no
+ * explanation, no action, no sign that anything had been read. The reading was
+ * usually fine. The app simply could not draw it and did not say so.
+ *
+ * Two different sentences, because they need different things from the person:
+ * a page that was read and cannot be drawn is finished and usable, and a page
+ * that yielded nothing is not.
+ */
+export function describeUndrawnScore({
+  notes,
+  rests,
+  undrawable,
+}: StaveScore): string | null {
+  if (notes.length > 0) {
+    return null;
+  }
+  if (rests + undrawable === 0) {
+    return "Nothing was read from this page. The photograph is below — try reading it again, or photograph the page closer and straighter.";
+  }
+  const values = undrawable > 0 ? 'note values' : 'rests';
+  return `This page is written in ${values} the app can't draw yet, so there is no stave to show. The reading is stored and recording will use it — the photograph is below.`;
+}
+
 export function describeOmissions({ rests, undrawable }: StaveScore): string | null {
   const parts: string[] = [];
   if (rests > 0) {
