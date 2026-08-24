@@ -57,6 +57,28 @@ class AudioFetchError(Exception):
     """Raised when the recording can't be pulled from storage."""
 
 
+class WorkerMisconfigured(RuntimeError):
+    """The worker cannot reach the database it was asked to work on.
+
+    Raised rather than logged-and-returned, and the distinction matters now
+    that the analysis can run somewhere other than the web process.
+
+    The service-role key lives in **two** places since Modal: Render's
+    environment and a Modal secret typed by hand into a dashboard. Get the
+    Modal one wrong — one of the two key names misspelled, a URL for a
+    different project — and everything else still works. Scanning works,
+    sign-in works, the upload works. Only the analysis is dead, and it dies
+    *quietly*: the call returns without raising, so Modal records it as
+    **succeeded**, the row stays `queued`, and ten minutes later the stuck-row
+    sweeper tells the musician "server restarted while analyzing — please
+    retry". None of that is true, retrying does the same thing, and the one
+    screen anybody would check to set Modal up is showing green.
+
+    There is nothing to write the failure into — that is the whole problem —
+    so the only honest thing left is to crash where somebody is looking.
+    """
+
+
 def _now_iso() -> str:
     return datetime.now(tz=timezone.utc).isoformat()
 
@@ -84,13 +106,24 @@ def run_analysis(analysis_id: str) -> None:
     """
     client = get_service_client()
     if client is None:
-        log.error("analysis %s: no service-role client configured", analysis_id)
-        return
+        raise WorkerMisconfigured(
+            f"analysis {analysis_id}: no service-role client. SUPABASE_URL and "
+            "SUPABASE_SERVICE_ROLE_KEY must both be set wherever this runs — "
+            "the Render environment for the in-process runtime, the Modal "
+            "secret named 'intempo-backend' for ANALYSIS_RUNTIME=modal."
+        )
 
     row = _fetch_analysis(client, analysis_id)
     if row is None:
-        log.error("analysis %s: row missing", analysis_id)
-        return
+        # The row is written before the work is asked for and nothing deletes
+        # one, so its absence is not a race — it means this worker is reading a
+        # *different* Supabase project from the one the API wrote to. Same
+        # cause as the branch above, one config field along.
+        raise WorkerMisconfigured(
+            f"analysis {analysis_id}: row missing. The API wrote it, so this "
+            "worker is pointed at a different Supabase project — check "
+            "SUPABASE_URL matches the one the API uses."
+        )
 
     _update(client, analysis_id, {"status": "processing", "updated_at": _now_iso()})
 

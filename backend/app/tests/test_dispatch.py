@@ -146,3 +146,103 @@ def test_modal_runs_the_same_runner_not_a_copy() -> None:
     source = (Path(__file__).resolve().parents[2] / "modal_app.py").read_text()
 
     assert "from app.workers.analysis_runner import run_analysis as run" in source
+
+
+# ---------------------------------------------------------------------------
+# The worker's own configuration
+#
+# Moving the analysis to Modal put the service-role key in a *second* place: a
+# secret typed by hand into a dashboard, next to the one already in Render's
+# environment. Everything else keeps working when that second copy is wrong —
+# sign-in, scanning, the upload — so the only thing that reports it is the
+# analysis, and until now the analysis reported it by returning quietly.
+# ---------------------------------------------------------------------------
+
+
+def _misconfigured_message(monkeypatch, *, client) -> str:
+    import pytest
+
+    from app.workers import analysis_runner
+
+    monkeypatch.setattr(analysis_runner, "get_service_client", lambda: client)
+    with pytest.raises(analysis_runner.WorkerMisconfigured) as caught:
+        analysis_runner.run_analysis("take-42")
+    return str(caught.value)
+
+
+def test_a_worker_with_no_database_crashes_rather_than_returning(monkeypatch) -> None:
+    """Because a clean return is indistinguishable from a clean run.
+
+    `spawn` succeeded, the function returned, so Modal marks the call
+    **succeeded** — and the one screen anybody looks at while setting Modal up
+    shows green while no analysis has ever run. The row stays `queued` and the
+    musician is told, ten minutes later, that the server restarted.
+    """
+    message = _misconfigured_message(monkeypatch, client=None)
+
+    assert "take-42" in message, "the crash has to name the take it lost"
+    assert "SUPABASE_SERVICE_ROLE_KEY" in message
+    assert "SUPABASE_URL" in message
+
+
+def test_the_crash_names_the_secret_the_deployment_actually_uses() -> None:
+    """The message tells you which Modal secret to go and fix. If that secret
+    is ever renamed in `modal_app.py`, an error message pointing at the old
+    name is worse than no message — it sends the one person trying to fix this
+    to a dashboard page that does not exist."""
+    from pathlib import Path
+
+    from app.workers import analysis_runner
+
+    source = (Path(__file__).resolve().parents[2] / "modal_app.py").read_text()
+    named = [
+        line for line in source.splitlines() if "Secret.from_name(" in line
+    ]
+    assert named, "modal_app.py no longer names a secret"
+    secret_name = named[0].split('Secret.from_name("')[1].split('"')[0]
+
+    doc_and_message = (
+        analysis_runner.WorkerMisconfigured.__doc__ or ""
+    ) + _source_of(analysis_runner.run_analysis)
+    assert secret_name in doc_and_message, (
+        f"modal_app.py deploys with the secret {secret_name!r}, but the worker's "
+        "misconfiguration message points somewhere else"
+    )
+
+
+def _source_of(fn) -> str:
+    import inspect
+
+    return inspect.getsource(fn)
+
+
+def test_a_worker_reading_the_wrong_project_crashes_too(monkeypatch) -> None:
+    """A `SUPABASE_URL` for a different project passes every check the worker
+    has — the client builds, the call succeeds — and returns no rows. Nothing
+    deletes an analysis, so a row that the API wrote and this cannot see is not
+    a race; it is two halves of the deployment looking at different databases.
+    """
+
+    class _Empty:
+        def table(self, _name):
+            return self
+
+        def select(self, *_a, **_k):
+            return self
+
+        def eq(self, *_a, **_k):
+            return self
+
+        def limit(self, *_a, **_k):
+            return self
+
+        def execute(self):
+            class _Res:
+                data: list = []
+
+            return _Res()
+
+    message = _misconfigured_message(monkeypatch, client=_Empty())
+
+    assert "take-42" in message
+    assert "SUPABASE_URL" in message
