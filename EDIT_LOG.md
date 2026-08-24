@@ -6,6 +6,42 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-12 (later) — The sign-in link, and a Supabase list that is one line short
+
+**Branch:** `main`.
+
+`authRedirectUrl()` is 36 lines and decides where an emailed link comes back
+to. **Supabase rejects any redirect it has not been told about and silently
+falls back to the Site URL** — no error, no log line the app can see. The mail
+arrives, the link works, and it lands on a Supabase page instead of the app,
+which is exactly what "this feature was never built" looks like.
+
+**The deployment gap.** `docs/deploy-backend.md` said to add
+`https://YOUR-APP.pages.dev/**` and then "add the preview domain too if
+previews should be able to sign in". That is vague in the one way that matters:
+Cloudflare Pages gives a project **a new hostname for every deployment** —
+`https://a16c6845.YOUR-APP.pages.dev` — and the dashboard shows that URL most
+prominently after a build, so it is the one you are most likely to open.
+`authRedirectUrl()` returns whatever origin the page is actually served from,
+so a sign-in started there asks for a redirect the allow-list does not cover.
+
+The same lesson CORS already taught this project, in the same week, about the
+same hostnames. The doc now says to add both lines, with
+`https://*.YOUR-APP.pages.dev/**` second and the reason under it.
+
+**Five tests.** The web branch returns the live origin rather than a hardcoded
+one (a fixed value would send a preview build's mail to production, and the
+person clicking it would land in the wrong app with no sign anything had
+happened); a prerendered build with no `window` returns `undefined` rather than
+the *string* "undefined"; and the native branch uses the app's own scheme even
+when a `window` exists — React Native has one, and reading it would hand
+Supabase an origin no phone can open.
+
+Mutations caught, all four.
+
+**Tests run:** mobile 178 (173 + 5), typecheck clean; backend 754 unchanged.
+**Rollback:** revert.
+
 ## 2026-09-12 — The one sign in the client, finally tested
 
 **Branch:** `main`.

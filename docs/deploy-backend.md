@@ -164,14 +164,22 @@ at runtime, so an existing build keeps whatever it was built with.
 
 ## 3. Let the sign-in link come back
 
-Supabase → Authentication → URL Configuration → **Redirect URLs**. Add the
-app's origin:
+Supabase → Authentication → URL Configuration → **Redirect URLs**. Add
+**both** of these:
 
 ```
 https://YOUR-APP.pages.dev/**
+https://*.YOUR-APP.pages.dev/**
 ```
 
-Add the preview domain too if previews should be able to sign in.
+The second line is not optional in practice, and it is the same lesson CORS
+already taught this project. Cloudflare Pages gives a project **a new hostname
+for every deployment** — `https://a16c6845.YOUR-APP.pages.dev` — plus a branch
+alias, and the dashboard shows the deployment-specific URL most prominently
+after a build, so it is the one you are most likely to open. `authRedirectUrl()`
+returns whatever origin the page is actually being served from, so a sign-in
+started from that URL asks Supabase to redirect back to it, and a list holding
+only the production alias does not cover it.
 
 **Supabase rejects any redirect it has not been told about and silently falls
 back to the Site URL.** No error, no log line the app can see — the mail
