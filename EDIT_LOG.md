@@ -6,6 +6,46 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-11 (later) — `format.ts`, and two DST dates I got wrong
+
+**Branch:** `main`. Twenty tests for the "how long ago" labels. No bug in the
+code this time — the interesting part is that **two of my own tests could not
+fail**, and both were about the same thing: a test that pins nothing proves
+nothing.
+
+**The DST one.** `calendarDaysBetween` rounds rather than floors, and that is
+load-bearing: in a zone that observes DST there are 23 hours between two local
+midnights once a year, and 23/24 floors to **0** — "Practiced today" for
+something practised yesterday, for one day, only for the people it happens to.
+In UTC, where these tests run, nothing catches it.
+
+So the test sets `TZ=America/Los_Angeles`. **And I picked the wrong dates.** US
+DST starts at 02:00 on 8 March 2026, so local midnight on the 7th and on the
+8th are *both still PST* — 24 hours apart, and the floor mutation survived. The
+short day is between midnight on the **8th** and the **9th**. Same correction
+on the November side.
+
+**The future-timestamp one.** `formatLastPracticed` takes no `now`, so without
+a fake timer my "later" date was compared against the real clock and was in the
+*past*. The test passed and checked nothing; narrowing `days <= 0` to
+`days === 0` survived it. Pinned now.
+
+Both helpers also assert the runner actually honoured `TZ` before asserting
+anything else, so they cannot quietly go back to being vacuous on a platform
+that ignores it.
+
+Also covered: the two labels agreeing at every boundary (0, 1, 3, 6, 7, 14, 27,
+30, 90 days), never saying "1 days" anywhere in four hundred, null rather than
+a placeholder, an unknown tier showing its raw value rather than reading
+"Free", and `joinMetadata` dropping empty fragments with their separators.
+
+Mutations caught, all seven: floor and truncate across DST, either label going
+negative, "1 weeks ago", an unknown tier silently reading Free, empty fragments
+keeping their separators, and an unparseable timestamp becoming a number.
+
+**Tests run:** mobile 133 (113 + 20), typecheck clean; backend 748 unchanged.
+**Rollback:** revert.
+
 ## 2026-09-11 — "4. of 4 beats", and the rest of `reading.ts`
 
 **Branch:** `main`.
