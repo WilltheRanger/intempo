@@ -246,3 +246,67 @@ def test_a_worker_reading_the_wrong_project_crashes_too(monkeypatch) -> None:
 
     assert "take-42" in message
     assert "SUPABASE_URL" in message
+
+
+# ---- where a page is read -------------------------------------------------
+
+
+def test_a_page_goes_to_modal_when_the_deployment_says_so(monkeypatch) -> None:
+    """Reading a page with homr peaks at 1350 MB, measured. The API host has
+    512 MB for the whole application, so this is not a preference."""
+    spawned: list[str] = []
+    monkeypatch.setattr(dispatch, "TRANSCRIPTION_RUNTIME", "modal")
+    monkeypatch.setattr(
+        dispatch, "_spawn_transcription_on_modal", lambda sid: spawned.append(sid) or True
+    )
+    tasks = _Tasks()
+
+    dispatch.start_transcription("score-1", tasks)
+
+    assert spawned == ["score-1"]
+    assert tasks.added == [], "it was read here as well as there"
+
+
+def test_a_page_is_still_read_here_when_modal_refuses(monkeypatch) -> None:
+    """Falls back to a real reading, not a stub: no homr on this host, so the
+    vision chain reads it instead. Worse at reading, and not nothing — a
+    musician who has just photographed a page should not lose it to a
+    deployment setting.
+    """
+    monkeypatch.setattr(dispatch, "TRANSCRIPTION_RUNTIME", "modal")
+    monkeypatch.setattr(dispatch, "_spawn_transcription_on_modal", lambda sid: False)
+    tasks = _Tasks()
+
+    dispatch.start_transcription("score-2", tasks)
+
+    assert [args for _fn, args in tasks.added] == [("score-2",)]
+
+
+def test_reading_a_page_and_analysing_a_take_are_settled_separately(monkeypatch) -> None:
+    """Two switches, on purpose. An analysis peaks near 460 MB and merely wants
+    headroom; reading a page does not fit on the host at all. A deployment can
+    sensibly run one here and one there, and one switch would force a choice
+    nobody needs to make."""
+    assert dispatch.ANALYSIS_RUNTIME is not dispatch.TRANSCRIPTION_RUNTIME or True
+    monkeypatch.setenv("ANALYSIS_RUNTIME", "modal")
+    monkeypatch.delenv("TRANSCRIPTION_RUNTIME", raising=False)
+    import importlib
+
+    reloaded = importlib.reload(dispatch)
+    try:
+        assert reloaded.ANALYSIS_RUNTIME == "modal"
+        assert reloaded.TRANSCRIPTION_RUNTIME == "inprocess"
+    finally:
+        monkeypatch.delenv("ANALYSIS_RUNTIME", raising=False)
+        importlib.reload(dispatch)
+
+
+def test_the_modal_function_name_matches_what_is_deployed() -> None:
+    """`spawn` on a name the app does not define fails at run time, on a page a
+    musician is waiting for. `modal_app.py` is right there."""
+    source = (
+        __import__("pathlib").Path(__file__).resolve().parents[2] / "modal_app.py"
+    ).read_text()
+
+    assert f"def {dispatch.MODAL_TRANSCRIBE_FUNCTION_NAME}(" in source
+    assert f"def {dispatch.MODAL_FUNCTION_NAME}(" in source

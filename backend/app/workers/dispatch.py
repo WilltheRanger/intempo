@@ -44,6 +44,23 @@ ANALYSIS_RUNTIME: Runtime = (
 #: The deployed Modal app and function names. Must match `modal_app.py`.
 MODAL_APP_NAME = os.getenv("MODAL_APP_NAME", "intempo")
 MODAL_FUNCTION_NAME = "run_analysis"
+MODAL_TRANSCRIBE_FUNCTION_NAME = "transcribe_score"
+
+#: Where a *page* is read. Separate from `ANALYSIS_RUNTIME` on purpose.
+#:
+#: The two jobs have different reasons to move. An analysis peaks near 460 MB
+#: and merely wants headroom; reading a page with homr peaks at **1350 MB**,
+#: measured, which does not fit on the API host at all. So a deployment can
+#: sensibly run analyses in-process and pages on Modal, and saying so with one
+#: switch would force a choice nobody needs to make.
+#:
+#: `inprocess` still works and still reads pages — with the vision chain, since
+#: homr is not installed on the API host. That is the fallback, not a failure.
+TRANSCRIPTION_RUNTIME: Runtime = (
+    "modal"
+    if os.getenv("TRANSCRIPTION_RUNTIME", "").strip().lower() == "modal"
+    else "inprocess"
+)
 
 
 def _spawn_on_modal(analysis_id: str) -> bool:
@@ -78,6 +95,55 @@ def _spawn_on_modal(analysis_id: str) -> bool:
         log.exception("analysis %s: could not be started on Modal", analysis_id)
         return False
     return True
+
+
+def _spawn_transcription_on_modal(score_id: str) -> bool:
+    """Hand the page to Modal. True if it was accepted.
+
+    Fire and forget, exactly as for an analysis: the `scores` row is the state
+    on both sides, and `sweep_stuck_transcriptions` already understands a read
+    that never finished.
+    """
+    try:
+        import modal
+    except ImportError:
+        log.error(
+            "TRANSCRIPTION_RUNTIME=modal but the modal package is not "
+            "installed; score %s was not started",
+            score_id,
+        )
+        return False
+
+    try:
+        fn = modal.Function.from_name(MODAL_APP_NAME, MODAL_TRANSCRIBE_FUNCTION_NAME)
+        fn.spawn(score_id)
+    except Exception:  # noqa: BLE001 — any failure here must not 500 the request
+        log.exception("score %s: could not be started on Modal", score_id)
+        return False
+    return True
+
+
+def start_transcription(score_id: str, background_tasks) -> None:
+    """Read the page, wherever it runs.
+
+    **Falls back to in-process, which is a real reading and not a stub.** The
+    API host has no homr — 150 MB of weights and 1350 MB of peak for a job it
+    cannot hold — so the fallback reads with the vision chain instead. That is
+    worse at reading and it is not nothing, and a musician who has just
+    photographed a page should not lose it to a deployment setting.
+    """
+    from app.workers.transcription_runner import run_transcription
+
+    if TRANSCRIPTION_RUNTIME == "modal" and _spawn_transcription_on_modal(score_id):
+        log.info("score %s: being read on Modal", score_id)
+        return
+
+    if TRANSCRIPTION_RUNTIME == "modal":
+        log.warning(
+            "score %s: falling back to reading in-process, without homr", score_id
+        )
+
+    background_tasks.add_task(run_transcription, score_id)
 
 
 def start_analysis(analysis_id: str, background_tasks) -> None:

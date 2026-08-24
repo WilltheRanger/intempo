@@ -126,7 +126,15 @@ def _stub_worker(monkeypatch: pytest.MonkeyPatch) -> list[str]:
     one is `test_transcription_runner.py`'s subject.
     """
     enqueued: list[str] = []
-    monkeypatch.setattr(scores_module, "run_transcription", enqueued.append)
+    # The dispatcher, not the runner: where a page is *read* is a deployment
+    # fact now — this host or a Modal container — and the router asks for the
+    # work rather than naming the machine. `test_dispatch.py` is that choice's
+    # subject; this file's is that the right score id is handed over.
+    monkeypatch.setattr(
+        scores_module,
+        "start_transcription",
+        lambda score_id, _background_tasks: enqueued.append(score_id),
+    )
     return enqueued
 
 

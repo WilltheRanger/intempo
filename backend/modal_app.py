@@ -20,8 +20,8 @@ plain function. 692 tests, the six-clip corpus regression and
 to keep working: tuning thresholds against real recordings is the thing that
 most needs a fast loop, and a loop that goes through a deploy is not one.
 
-**Adding HOMR later** is another `@app.function` in this file with its own
-image and its own memory — that is the whole point of the shape. It does not
+**HOMR is here now**, as `transcribe_score` — another `@app.function` with its
+own image and its own memory, exactly as this said it would be. It does not
 touch the analysis, and the API reaches it the same way.
 """
 
@@ -121,6 +121,93 @@ def run_analysis(analysis_id: str) -> None:
     from app.workers.analysis_runner import run_analysis as run
 
     run(analysis_id)
+
+
+#: Reading a page, which needs a different container from analysing a take.
+#:
+#: **Measured on the first real page this project has seen** — a photographed
+#: String Bass part, ten systems: homr peaks at **1350 MB** and takes 21 s wall
+#: clock, 63 s of CPU. The API instance has 512 MB for the whole application,
+#: which is why this is here and not there.
+#:
+#: The vision providers ride along because `parse_sheet_music` falls back to
+#: them when homr finds no staves, and a fallback that needs a different
+#: container is not a fallback. They are small — SDK clients, no models.
+#:
+#: **No GPU.** homr ships ONNX and runs on CPU, and this is deliberately sized
+#: to stay inside a free Modal account: one container, no GPU, nothing kept
+#: warm.
+transcription_image = (
+    modal.Image.debian_slim(python_version="3.12")
+    # opencv-python-headless still wants these two at import time.
+    .apt_install("libglib2.0-0", "libgl1")
+    .pip_install(
+        "homr==0.7.0",
+        "anthropic==0.97.0",
+        "google-genai==1.73.1",
+        "httpx==0.28.1",
+        "numpy==2.4.6",
+        "pillow==12.3.0",
+        "pillow-heif==1.5.0",
+        "pydantic[email]==2.13.3",
+        "supabase==2.29.0",
+    )
+    # **Fetch the weights at build time, not on the first page.**
+    #
+    # homr downloads ~151 MB of ONNX into its own package directory the first
+    # time it runs. Left to happen at run time that is a cold start which
+    # downloads 151 MB before it can look at anything — on a scan a musician is
+    # watching — and it happens again on every new container, which on
+    # `min_containers=0` is most of them.
+    .run_commands(
+        "python -c 'from homr.main import download_weights; "
+        "download_weights(False, False, False)'"
+    )
+    .add_local_dir(
+        "app",
+        remote_path="/root/app",
+        ignore=["**/tests/**", "**/__pycache__/**", "**/routers/**"],
+    )
+    .add_local_file("config.toml", remote_path="/root/config.toml")
+)
+
+
+@app.function(
+    image=transcription_image,
+    secrets=secrets,
+    # 1350 MB measured, and a denser page will want more. Room rather than a
+    # target: a read that dies of memory costs a musician the photograph, the
+    # upload and the wait.
+    memory=2560,
+    # homr is 21 s on a ten-system page. This is a backstop against a hang.
+    timeout=900,
+    # A cold start imports onnxruntime and loads 151 MB of weights from the
+    # image. Keeping one warm would cost money around the clock to save that on
+    # the first scan of a session, and the scan is already asynchronous — the
+    # musician is watching a progress screen that says what it is doing.
+    min_containers=0,
+)
+def transcribe_score(score_id: str) -> None:
+    """One page, start to finish.
+
+    The *same* function the in-process path runs, for the same reason
+    `run_analysis` is: this project has been bitten repeatedly by a second
+    implementation that drifted from the first, and a transcription runner that
+    exists twice would have two ideas about what is on a musician's page.
+    """
+    from app.workers.transcription_runner import run_transcription
+
+    run_transcription(score_id)
+
+
+@app.local_entrypoint()
+def read_page(score_id: str) -> None:
+    """Read one page by id, from a terminal.
+
+        modal run modal_app.py::read_page --score-id <uuid>
+    """
+    transcribe_score.remote(score_id)
+    print(f"score {score_id}: read")
 
 
 @app.local_entrypoint()

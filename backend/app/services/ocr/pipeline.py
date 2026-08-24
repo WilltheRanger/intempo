@@ -38,6 +38,7 @@ from app.services.ocr.validate import (
     numbering_gaps,
 )
 from app.services.ocr.validate import problems as beat_problems
+from app.services.ocr.homr_provider import homr_provider
 from app.services.ocr.gemini_provider import (
     gemini_flash_provider,
     gemini_pro_provider,
@@ -83,6 +84,7 @@ PROVIDER_REGISTRY: dict[str, OCRProvider] = {
     claude_opus_provider.name: claude_opus_provider,
     gemini_flash_provider.name: gemini_flash_provider,
     gemini_pro_provider.name: gemini_pro_provider,
+    homr_provider.name: homr_provider,
 }
 
 
@@ -694,6 +696,68 @@ def parse_sheet_music(
     # outcome available: `alignment.py` accumulates durations, so a missing
     # line shifts every bar after it and the musician is told they rushed a
     # passage they played correctly.
+    # A provider that reads whole pages gets the whole page, before anything is
+    # cut up — and if one of them reads it, that is the answer.
+    #
+    # The splitting below exists because a vision-language model asked for four
+    # hundred notes in one answer returns a fraction of them. An OMR engine has
+    # the opposite property: it finds and *dewarps* the staves itself, better
+    # than the crops here can, and that is the whole reason to run it. Handing
+    # it a crop would throw away the part that works.
+    if _by_system:
+        whole_page = [p for p in chain if getattr(p, "reads_whole_page", False)]
+        rest = [p for p in chain if not getattr(p, "reads_whole_page", False)]
+        if whole_page:
+            engine_read: ScoreJson | None = None
+            try:
+                engine_read = parse_sheet_music(
+                    image_bytes,
+                    media_type=media_type,
+                    providers=whole_page,
+                    retry=retry,
+                    on_stage=on_stage,
+                    _by_system=False,
+                )
+            except OCRError as exc:
+                if not rest:
+                    raise
+                log.info(
+                    "%s could not read the page (%s); falling back to %s",
+                    ", ".join(p.name for p in whole_page),
+                    exc, ", ".join(p.name for p in rest),
+                )
+            else:
+                if engine_read.ocr_confidence >= CONFIDENCE_THRESHOLD or not rest:
+                    return engine_read
+                # **The gate still means what it means.** Running the engine in
+                # its own sub-call gave it its own fallback, so a reading it
+                # was not confident in came straight back and the rest of the
+                # chain never ran — the one thing `CONFIDENCE_THRESHOLD` exists
+                # to prevent. It is kept, and it is not the answer yet.
+                log.info(
+                    "%s read the page at %.2f confidence; asking %s as well",
+                    ", ".join(p.name for p in whole_page),
+                    engine_read.ocr_confidence,
+                    ", ".join(p.name for p in rest),
+                )
+
+            try:
+                return parse_sheet_music(
+                    image_bytes,
+                    media_type=media_type,
+                    providers=rest,
+                    retry=retry,
+                    on_stage=on_stage,
+                    source=source,
+                )
+            except OCRError:
+                if engine_read is None:
+                    raise
+                # A doubtful reading beats none, which is what the low-confidence
+                # fallback has always meant here.
+                log.info("nothing bettered the engine's reading; keeping it")
+                return engine_read
+
     if _by_system:
         stage(STAGE_SPLITTING)
         crops = crop_systems(image_bytes, source=source)
