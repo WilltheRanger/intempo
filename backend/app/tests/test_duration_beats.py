@@ -2,7 +2,9 @@
 
 Four separate copies of "how many beats is a dotted quarter" existed across
 this repo: `score_schema`, `alignment`, `ocr/validate`, and the JavaScript in
-two browser tools. Each carried a comment saying it was deliberately the same
+two browser tools. There is a fifth — `mobile/src/lib/score/schedule.ts` — and
+it went uncounted here until long after it was written; see the section at the
+bottom of this file. Each carried a comment saying it was deliberately the same
 as the others. When triplet durations were added, three of the four were
 missed, and the failure was silent in the worst possible way — `validate.py`
 defaulted an unrecognised duration to **zero beats** and reported correct bars
@@ -151,3 +153,110 @@ def test_a_triplet_measure_asked_about_is_asked_about_by_name() -> None:
     assert [f.verdict for f in findings] == ["ok", "short"]
     text = validate.describe_for_retry(findings)
     assert "triplets can be written" in text
+
+
+# ---------------------------------------------------------------------------
+# The fifth copy
+#
+# The docstring above counts four: `score_schema`, `alignment`, `ocr/validate`
+# and the two browser tools. It has been wrong since the Expo app was written.
+# `mobile/src/lib/score/schedule.ts` holds a `BEATS` table of its own, and its
+# own comment says it is "kept deliberately parallel" — the same sentence the
+# other four carried on the day three of them went stale.
+#
+# It is also the copy that matters most, because it is the only one a musician
+# *hears*. `schedule.ts` turns the score into note times for playback and the
+# metronome. If it disagrees with the server's table, the app sounds the piece
+# one way and the analysis judges it another, and the person is told they
+# rushed a bar they played exactly along with what the app itself played.
+# ---------------------------------------------------------------------------
+
+REPO = __import__("pathlib").Path(__file__).resolve().parents[3]
+SCHEDULE_TS = REPO / "mobile" / "src" / "lib" / "score" / "schedule.ts"
+TYPES_TS = REPO / "mobile" / "src" / "data" / "types.ts"
+
+
+def _js_object(source: str, name: str) -> dict[str, float]:
+    """The numeric object literal assigned to `name`, evaluated.
+
+    Values are evaluated rather than read as text because the interesting ones
+    are written as arithmetic — `4 / 3`, not `1.3333333333333333`. Comparing
+    the *text* would pass a table that had rounded a third, which is the one
+    way these two could drift far enough to matter: a rounded triplet accrues
+    across a bar until it exceeds `validate.TOLERANCE`.
+    """
+    import ast
+    import re
+
+    start = source.index(f"{name}")
+    body = source[source.index("{", start) : source.index("};", start)]
+
+    def value_of(expression: str) -> float:
+        tree = ast.parse(expression, mode="eval").body
+
+        def walk(node):
+            if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):
+                return float(node.value)
+            if isinstance(node, ast.BinOp) and isinstance(
+                node.op, (ast.Div, ast.Mult, ast.Add, ast.Sub)
+            ):
+                left, right = walk(node.left), walk(node.right)
+                return {
+                    ast.Div: lambda: left / right,
+                    ast.Mult: lambda: left * right,
+                    ast.Add: lambda: left + right,
+                    ast.Sub: lambda: left - right,
+                }[type(node.op)]()
+            raise AssertionError(f"unexpected expression in {name}: {expression!r}")
+
+        return walk(tree)
+
+    found = {}
+    for line in body.splitlines():
+        line = line.split("//", 1)[0].strip()
+        match = re.match(r"^([A-Za-z_][A-Za-z0-9_]*)\s*:\s*(.+?),?$", line)
+        if match:
+            found[match.group(1)] = value_of(match.group(2))
+    return found
+
+
+def test_the_app_counts_a_beat_the_way_the_server_does() -> None:
+    """The table the app plays from, against the table the server judges with.
+
+    Exact equality, not `pytest.approx`. Both write thirds as `4 / 3` and
+    `1 / 3`, so the same IEEE double comes out of both languages; a difference
+    here means somebody typed a rounded decimal, and a rounded triplet is
+    precisely the drift that accumulates past `TOLERANCE` over a bar.
+    """
+    app_beats = _js_object(SCHEDULE_TS.read_text(), "BEATS")
+
+    assert app_beats == DURATION_BEATS, (
+        "the app and the server disagree about how long a note is. The app "
+        "would sound the piece one way and the analysis judge it another: "
+        + ", ".join(
+            f"{name}: app {app_beats.get(name)}, server {DURATION_BEATS.get(name)}"
+            for name in sorted(set(app_beats) | set(DURATION_BEATS))
+            if app_beats.get(name) != DURATION_BEATS.get(name)
+        )
+    )
+
+
+def test_the_app_knows_every_duration_the_schema_can_send() -> None:
+    """A duration added to the Python `Literal` and not to the app's union.
+
+    Contained rather than catastrophic — `reading.beatsOf` returns null for an
+    unknown duration and refuses to count the bar, and playback falls back to a
+    quarter — but "the app quietly stops checking bars containing this note" is
+    not something to discover from a musician.
+    """
+    import re
+
+    union = TYPES_TS.read_text()
+    union = union[union.index("export type Duration =") :]
+    union = union[: union.index(";")]
+    app_durations = set(re.findall(r"'([a-z_]+)'", union))
+
+    assert app_durations == DURATIONS, (
+        f"only the server knows: {sorted(DURATIONS - app_durations)}; "
+        f"only the app knows: {sorted(app_durations - DURATIONS)}"
+    )
