@@ -126,10 +126,33 @@ _FAILURE_REASONS: tuple[tuple[str, str], ...] = (
         "The transcription service is busy. This usually clears in a minute or "
         "two; the piece is in your library and can be read again.",
     ),
+    #: Every way the *server* can be wrong, before the photograph is blamed.
+    #:
+    #: These are the ones that matter most, because the default answer sends a
+    #: musician back to re-photograph a page — and on a configuration fault they
+    #: will do it, and it will fail again, and again. Measured against the
+    #: running service: three of these four reached the default.
     (
         "api key",
         "The transcription service is not configured. This is a fault on our "
         "side, not with your page.",
+    ),
+    (
+        "authentication",
+        "The transcription service rejected our credentials. This is a fault "
+        "on our side, not with your page.",
+    ),
+    (
+        "no usable provider",
+        "The transcription service is not configured correctly. This is a "
+        "fault on our side — your page is fine, and re-photographing it will "
+        "not help.",
+    ),
+    (
+        "chain is empty",
+        "The transcription service is not configured correctly. This is a "
+        "fault on our side — your page is fine, and re-photographing it will "
+        "not help.",
     ),
     (
         "media type",
@@ -150,13 +173,19 @@ _UNKNOWN_REASON = (
 def _why_it_failed(detail: str) -> str:
     """Turn the pipeline's own account into something worth acting on.
 
-    Underscores are flattened to spaces before matching: these strings come
-    from several places — exception text, environment variable names, SDK error
-    classes — and `GEMINI_API_KEY` and "api key" are the same fact written two
-    ways. Matching the prose form only would have silently missed the one that
-    actually appears in the log.
+    Underscores **and hyphens** are flattened to spaces before matching: these
+    strings come from several places — exception text, environment variable
+    names, SDK error classes, HTTP header names — and `GEMINI_API_KEY`,
+    `x-api-key` and "api key" are the same fact written three ways. Matching the
+    prose form only would have silently missed the one that actually appears in
+    the log.
+
+    The hyphen was the half of that argument that never got written down, and it
+    cost exactly what the argument predicts: an Anthropic `AuthenticationError:
+    invalid x-api-key` — a wrong or expired key, entirely our fault — fell
+    through to "a flatter, better-lit shot of the page usually fixes it".
     """
-    haystack = detail.lower().replace("_", " ")
+    haystack = detail.lower().replace("_", " ").replace("-", " ")
     for needle, reason in _FAILURE_REASONS:
         if needle in haystack:
             return reason

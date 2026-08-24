@@ -12,6 +12,7 @@ from app.workers.analysis_runner import (
     sweep_once,
     sweep_stuck_analyses,
 )
+from app.services.ocr.pipeline import _default_chain, unknown_provider_names
 from app.workers.transcription_runner import sweep_stuck_transcriptions
 
 log = logging.getLogger("intempo")
@@ -40,8 +41,48 @@ async def _sweep_periodically() -> None:
         await asyncio.to_thread(sweep_stuck_transcriptions)
 
 
+def _report_reader_configuration() -> None:
+    """Say, at startup, whether this build can read a page at all.
+
+    **A misconfiguration here is invisible until someone scans**, and then it
+    does not look like a misconfiguration. `_default_chain` skips a provider
+    name this build has never heard of — which is right, a renamed model should
+    cost that model and not the feature — but it only says so when a scan runs,
+    and if *every* name is stale the musician is simply told their page could
+    not be read.
+
+    That is not hypothetical. The shipped default once read
+    `claude-sonnet-4-6,claude-opus-4-7`, both names from the previous Claude
+    generation, and the service's own logs still show those names being used in
+    August. `OCR_PROVIDER_CHAIN` lives in the hosting dashboard, so nothing in
+    this repository can tell whether it was ever updated — but one line at
+    startup puts the answer in the logs, where it can be read without a scan and
+    without shell access.
+
+    Never raises. A server that cannot read a page can still serve every other
+    route, and refusing to start would take the app down instead of one feature.
+    """
+    try:
+        chain = [provider.name for provider in _default_chain()]
+    except Exception as exc:  # noqa: BLE001 — reporting must not block startup
+        log.error(
+            "SHEET MUSIC READING IS OFF: %s. Set OCR_PROVIDER_CHAIN to names "
+            "this build knows; every scan will otherwise fail.", exc,
+        )
+        return
+    if unknown_provider_names:
+        log.warning(
+            "reader chain %s; ignoring unknown name(s) %s in "
+            "OCR_PROVIDER_CHAIN", chain, unknown_provider_names,
+        )
+    else:
+        log.info("reader chain %s", chain)
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    _report_reader_configuration()
+
     # BackgroundTasks don't survive a crash/restart, so recover any job
     # orphaned mid-analysis before we start serving (spec Batch 4 §4).
     try:

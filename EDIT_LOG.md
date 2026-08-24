@@ -6,6 +6,86 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-17 — A server misconfiguration told the musician to re-take the photograph
+
+**Branch:** `main`. Sixteenth iteration of *fix the OMR system till it works*.
+
+The production logs name two providers: `claude-sonnet-4-6` and
+`claude-opus-4-7`. Neither exists in this build — commit `791a7cb` moved to
+Sonnet 5 and Opus 5. `OCR_PROVIDER_CHAIN` lives in the hosting dashboard, so
+nothing in this repository can say whether it was ever updated, and the API is
+unreachable from here (agent proxy answers 403 to CONNECT: an org policy denial,
+not retried).
+
+So I asked what happens if it was not:
+
+```
+_default_chain -> OCRError: OCR_PROVIDER_CHAIN has no usable provider;
+                  unknown: ['claude-sonnet-4-6', 'claude-opus-4-7']
+musician is told: "The notation could not be read from this photograph.
+                   A flatter, better-lit shot of the page usually fixes it."
+```
+
+That is the exact sentence `_FAILURE_REASONS` was written to abolish, and its
+own docstring says why:
+
+> Sending someone back to re-photograph a page that was never the problem is
+> worse than saying nothing: it is confident, actionable and wrong, and they
+> will do it, and it will fail again the same way.
+
+The rule was right and three of the four ways the *server* can be at fault
+walked straight past it.
+
+### Including a wrong API key, over one character
+
+`_why_it_failed` flattens underscores before matching, and its docstring
+explains exactly why: these strings arrive from exception text, environment
+variable names and SDK error classes, and `GEMINI_API_KEY` and "api key" are the
+same fact written two ways.
+
+SDKs write it a third way — `x-api-key`, an HTTP header name. Only underscores
+were flattened, so an Anthropic `AuthenticationError: invalid x-api-key` — a
+wrong or expired key, entirely our fault — blamed the page. **The hyphen was the
+half of that argument that never got written down, and it cost precisely what
+the argument predicts.**
+
+Now: hyphens flattened too, and entries for `authentication`, `no usable
+provider` and `chain is empty`. All five configuration failures say it is our
+fault and that re-photographing will not help. The honest answers are unchanged
+and tested — a page too long, a busy service, an unreadable photograph are three
+different things and stay three different sentences.
+
+### And it is now visible without a scan
+
+`_default_chain` already skips a stale name and logs it, which is right — a
+renamed model should cost that model, not the feature. But it only speaks when a
+scan runs, so a chain that is entirely stale is silent until a musician tries,
+and then it does not look like a misconfiguration.
+
+`_report_reader_configuration()` runs in `lifespan` and puts the answer in the
+logs on every deploy: the working chain at info, a stale name among working ones
+at warning, and nothing usable at **error**, in capitals. Those logs are readable
+through the Render MCP without a scan, without shell access and without reaching
+the API — which is the only diagnostic channel that has worked from here all
+session.
+
+Never raises. A server that cannot read a page can still serve every other
+route; refusing to start would take the app down instead of one feature.
+
+**Tests:** 7 new cases. Ten mutations — each of the three new reasons removed,
+hyphens and underscores unflattened separately, the whole table bypassed, the
+report removed, a broken chain reported as fine, an unknown name silenced, and
+the startup guard narrowed so a failure would propagate — all killed.
+
+Backend 940 tests green (929 before), ruff clean.
+
+**For the owner.** If a scan still fails after this, the log line says which of
+the two it is, in words: `SHEET MUSIC READING IS OFF` means
+`OCR_PROVIDER_CHAIN` needs the current names — `gemini-2.5-flash`,
+`claude-sonnet-5`, `claude-opus-5`.
+
+---
+
 ## 2026-09-17 — The provider that said it parsed defensively did not
 
 **Branch:** `main`. Fifteenth iteration of *fix the OMR system till it works*,

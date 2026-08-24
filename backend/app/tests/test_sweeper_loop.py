@@ -19,6 +19,7 @@ a plugin to the suite, and the bodies read the same either way.
 from __future__ import annotations
 
 import asyncio
+import logging
 import threading
 from contextlib import asynccontextmanager, suppress
 
@@ -221,3 +222,85 @@ def test_the_sweeper_does_not_outlive_the_app(monkeypatch) -> None:
                     await task
 
     asyncio.run(body())
+
+
+# ---- saying at startup whether a page can be read at all ------------------
+
+
+def test_a_stale_provider_chain_is_reported_at_startup(monkeypatch, caplog) -> None:
+    """A misconfiguration here is invisible until someone scans, and then it
+    does not look like a misconfiguration — the musician is simply told their
+    page could not be read.
+
+    Not hypothetical: the shipped default once read
+    `claude-sonnet-4-6,claude-opus-4-7`, both names from the previous Claude
+    generation, and the service's own logs still show those names in August.
+    `OCR_PROVIDER_CHAIN` lives in the hosting dashboard, so nothing in this
+    repository can tell whether it was ever updated — one line at startup puts
+    the answer in the logs, readable without a scan and without shell access.
+    """
+    from app import config
+    from app.main import _report_reader_configuration
+
+    monkeypatch.setattr(
+        config.settings, "OCR_PROVIDER_CHAIN", "claude-sonnet-4-6,claude-opus-4-7"
+    )
+    with caplog.at_level(logging.ERROR, logger="intempo"):
+        _report_reader_configuration()
+
+    messages = [r.getMessage() for r in caplog.records]
+    assert any("SHEET MUSIC READING IS OFF" in m for m in messages), messages
+    assert any("claude-sonnet-4-6" in m for m in messages), messages
+
+
+def test_a_chain_that_works_says_so_once(monkeypatch, caplog) -> None:
+    """Quiet when it is fine, so the loud line means something."""
+    from app import config
+    from app.main import _report_reader_configuration
+
+    monkeypatch.setattr(
+        config.settings, "OCR_PROVIDER_CHAIN", "gemini-2.5-flash,claude-sonnet-5"
+    )
+    with caplog.at_level(logging.INFO, logger="intempo"):
+        _report_reader_configuration()
+
+    messages = [r.getMessage() for r in caplog.records]
+    assert any("reader chain" in m and "gemini-2.5-flash" in m for m in messages), messages
+    assert not any("OFF" in m for m in messages), messages
+
+
+def test_one_stale_name_among_working_ones_is_a_warning_not_a_failure(
+    monkeypatch, caplog
+) -> None:
+    """A renamed model should cost that model, not the feature — which is what
+    `_default_chain` already does. The startup line has to agree with it, or the
+    log would say a page cannot be read when it can."""
+    from app import config
+    from app.main import _report_reader_configuration
+
+    monkeypatch.setattr(
+        config.settings, "OCR_PROVIDER_CHAIN", "claude-sonnet-5,claude-opus-4-7"
+    )
+    with caplog.at_level(logging.INFO, logger="intempo"):
+        _report_reader_configuration()
+
+    messages = [r.getMessage() for r in caplog.records]
+    assert not any("OFF" in m for m in messages), messages
+    assert any("claude-opus-4-7" in m for m in messages), messages
+
+
+def test_reporting_the_configuration_never_stops_the_server(monkeypatch, caplog) -> None:
+    """A server that cannot read a page can still serve every other route.
+    Refusing to start would take the app down instead of one feature."""
+    from app.main import _report_reader_configuration
+    from app.services.ocr import pipeline
+
+    def _explodes():
+        raise RuntimeError("the registry is on fire")
+
+    monkeypatch.setattr("app.main._default_chain", _explodes)
+    with caplog.at_level(logging.ERROR, logger="intempo"):
+        _report_reader_configuration()  # must not raise
+
+    assert any("on fire" in r.getMessage() for r in caplog.records)
+    assert pipeline is not None
