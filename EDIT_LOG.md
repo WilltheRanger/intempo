@@ -39,8 +39,13 @@ makes a crash mid-analysis distinguishable from one that never began; and the
 sweep being a quiet no-op on a deployment with no service-role key rather than
 a log line every five minutes about something that was never going to work.
 
-Mutations caught, all nine. `analysis_runner.py` is at **98%** now and
-`app/main.py` at **97%**.
+Mutations caught, all nine. `analysis_runner.py` and `app/main.py` are both at
+**100%** across the suite.
+
+(The commit message for this change says 98% and 97%. Those were measured from
+a four-file subset while the full run was still going; across the whole suite
+both reach 100%. Recorded rather than quietly corrected, because a number in
+this log is meant to be one somebody can reproduce.)
 
 **Tests run:** backend 781 (772 + 9), ruff clean; mobile 214 unchanged.
 **Rollback:** revert.
