@@ -34,19 +34,40 @@ APP_NAME = "intempo"
 #: Everything `analyze()` and the worker need, and nothing the web app needs.
 #:
 #: No `fastapi`, no `uvicorn`, no `anthropic`, no `google-genai`: this container
-#: never serves a request or reads a page. Pinned by the same lower bounds as
-#: `pyproject.toml` so a version that changes an onset by a frame cannot arrive
-#: here without arriving in the tests too.
+#: never serves a request or reads a page.
+#:
+#: **Exact versions, taken from `uv.lock`, and a test that keeps them there.**
+#: This said `>=` and claimed in the same breath that "a version that changes an
+#: onset by a frame cannot arrive here without arriving in the tests too". Lower
+#: bounds do not pin anything. The tests, the six-clip corpus regression and
+#: Render all run the *locked* versions; a `>=` image resolves to whatever PyPI
+#: has on the day it is built. The two agree today only because the lock has not
+#: moved off the bounds yet — the first librosa point release would have made
+#: this container quietly disagree with every test that says what a musician's
+#: timing was.
+#:
+#: `test_worker_image.py` reads `uv.lock` and asserts each pin still matches, so
+#: `uv lock` upgrading librosa fails CI here rather than shipping.
+#:
+#: The three below the line are librosa's, not ours, and are pinned because they
+#: are where the samples actually move: `soxr` resamples every take to 22.05 kHz,
+#: `soundfile` decodes it, `numba` compiles the paths that find the onsets.
+#: Everything *they* pull in still floats — this is a fence around the arithmetic,
+#: not a reproducible build.
 image = (
     modal.Image.debian_slim(python_version="3.12")
     .apt_install("libsndfile1")  # soundfile's C library; not in slim
     .pip_install(
-        "httpx>=0.28.1",
-        "librosa>=0.11.0",
-        "numpy>=2.4.6",
-        "pydantic[email]>=2.13.3",
-        "scipy>=1.18.0",
-        "supabase>=2.29.0",
+        "httpx==0.28.1",
+        "librosa==0.11.0",
+        "numpy==2.4.6",
+        "pydantic[email]==2.13.3",
+        "scipy==1.18.0",
+        "supabase==2.29.0",
+        # librosa's, pinned for the reason above.
+        "numba==0.66.0",
+        "soundfile==0.14.0",
+        "soxr==1.1.0",
     )
     # The application code, minus the parts a worker has no business running.
     .add_local_dir(

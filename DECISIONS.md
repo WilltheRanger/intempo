@@ -6,6 +6,67 @@ Operating Principle #5.
 
 ---
 
+## 2026-09-08 — Mirror `uv.lock`'s versions into the Modal image, over installing from the lock itself
+
+**Context:** `modal_app.py` built its image with the same lower bounds as
+`pyproject.toml` — `librosa>=0.11.0`, `numpy>=2.4.6`, `scipy>=1.18.0` — and the
+comment above them claimed that "a version that changes an onset by a frame
+cannot arrive here without arriving in the tests too."
+
+That is not what a lower bound does. The tests, the six-clip corpus regression
+and Render all run what `uv.lock` resolved; a `>=` image resolves to whatever
+PyPI holds on the morning it is built. They agree today only because the lock
+has not moved off the bounds yet. The first librosa point release would have
+given a musician a verdict from an onset detector nothing in this repository
+had ever run, and the divergence would have been invisible: same code, same
+config, different arithmetic, no error anywhere.
+
+This is not a general reproducibility concern. It is specific to what this
+container computes. The whole product is one number per bar — how far a note
+sat from where it was written — and that number goes through a resampler, a
+decoder, an STFT and a JIT compiler before anybody sees it.
+
+**Decision:** `modal_app.py` pins exact versions, and `test_worker_image.py`
+reads `uv.lock` and asserts each pin still matches. `uv lock` upgrading librosa
+fails CI rather than shipping. The pinned set is the six direct dependencies
+plus **`soxr`, `soundfile` and `numba`** — librosa's, not ours, named nowhere
+in `pyproject.toml`, and the three places the samples actually move: `soxr`
+resamples every take to 22.05 kHz, `soundfile` decodes it, `numba` compiles the
+paths that find the onsets. Pinning librosa and letting its resampler float is
+a fence with the gate open.
+
+### Alternatives considered
+
+**Install from the lock — `uv sync` in the image, or an exported
+`requirements.txt`.** Strictly more correct: it pins the transitive closure,
+not a hand-chosen subset. Rejected on what it costs against what it buys here.
+The lock resolves the *whole* backend — `fastapi`, `uvicorn`, `anthropic`,
+`google-genai`, `pillow` — and the point of this image is that the container
+holding the second copy of the service-role key carries none of that. Getting a
+subset out of a full lock means either an export step with its own group
+filtering, or a second lockfile for the worker, and a second lockfile is a
+second thing that drifts. The mirrored pins keep the image definition a single
+readable list, and the test is the part that makes it hold.
+
+**Pin only the direct dependencies.** Simpler, and wrong for the reason above:
+`soxr` is not in `pyproject.toml` and moves every sample in the take.
+
+**Leave the bounds and delete the comment's claim.** Honest, and no better —
+the drift would still happen, it would just no longer be contradicted in
+writing.
+
+### Trade-offs accepted
+
+- **The transitive closure still floats.** Everything `numba`, `soxr` and
+  `soundfile` themselves pull in resolves at build time. This is a fence around
+  the arithmetic, not a reproducible build, and `modal_app.py` says so in those
+  words rather than claiming otherwise a second time.
+- **Upgrading a dependency now takes two edits**, `uv.lock` and `modal_app.py`.
+  That is the cost of the fence and the test names it explicitly when it fires.
+- **Nothing here is verified against a real Modal build.** The versions are
+  known mutually consistent because the lock resolved them together on 3.12,
+  which is what the image uses — but no image has been built from this file.
+
 ## 2026-09-01 (later) — Match on intervals, with position as a saturated tie-break
 
 **Context:** the previous entry in `EDIT_LOG.md` measured a defect in the

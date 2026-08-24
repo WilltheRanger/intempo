@@ -23,6 +23,8 @@ on:
       - "backend/app/db.py"
       - "backend/config.toml"
       - "backend/pyproject.toml"
+      # The lock is what the pinned image is checked against.
+      - "backend/uv.lock"
       - ".github/workflows/deploy-modal.yml"
   # So a first deploy, or a re-deploy after changing a secret, does not need a
   # commit to trigger it.
@@ -45,6 +47,27 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+
+      # The image definition is a set of claims about the container: which
+      # versions it installs, which files land where, what the worker is
+      # allowed to import. Every one of those is checked by a test, and a
+      # deploy that ships an image the tests say is wrong is a deploy that
+      # goes green while a musician's verdict comes from an onset detector
+      # nothing in this repository has run.
+      #
+      # CI checks these too, on the same push. This is here because CI going
+      # red does not stop this job — only this does.
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: "0.11.7"
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --all-extras --dev
+
+      - name: Check the image definition
+        run: uv run pytest app/tests/test_worker_image.py app/tests/test_dispatch.py -q
 
       - name: Install the Modal CLI
         run: pip install modal

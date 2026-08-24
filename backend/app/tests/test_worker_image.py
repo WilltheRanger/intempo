@@ -148,3 +148,93 @@ def test_a_missing_tuning_config_is_loud() -> None:
 
     with pytest.raises(OSError):
         load_audio_config_from(Path("/nowhere/at/all/config.toml"))
+
+
+def _pins_in_the_image() -> dict[str, str]:
+    """Every `name==version` the image installs, keyed by distribution name.
+
+    Read out of the source rather than by importing `modal_app`, because
+    importing it needs the `modal` package, which no box running these tests
+    has. The image definition is a literal list of strings; a literal list of
+    strings can be read.
+    """
+    import re
+
+    source = (BACKEND / "modal_app.py").read_text()
+    block = source.split(".pip_install(", 1)[1].split(")", 1)[0]
+    found: dict[str, str] = {}
+    for name, version in re.findall(
+        r'"([A-Za-z0-9._-]+)(?:\[[^\]]*\])?==([^"]+)"', block
+    ):
+        found[name.lower().replace("_", "-")] = version
+    return found
+
+
+def _locked_versions() -> dict[str, str]:
+    import tomllib
+
+    lock = tomllib.loads((BACKEND / "uv.lock").read_text())
+    return {
+        package["name"].lower().replace("_", "-"): package["version"]
+        for package in lock["package"]
+    }
+
+
+def test_the_image_installs_the_versions_the_tests_were_run_against() -> None:
+    """The fence this file's docstring claims, actually built.
+
+    `modal_app.py` used to say `>=` and assert, in the comment directly above
+    it, that "a version that changes an onset by a frame cannot arrive here
+    without arriving in the tests too". Lower bounds do not pin anything. The
+    tests, the six-clip corpus regression and Render all run what `uv.lock`
+    resolved; a `>=` image resolves to whatever PyPI holds on the morning it is
+    built.
+
+    The two agreed only because the lock had not yet moved off the bounds. The
+    first librosa point release would have given a musician a verdict from an
+    onset detector no test in this repository had ever run — and nothing,
+    anywhere, would have said so.
+    """
+    pins = _pins_in_the_image()
+    locked = _locked_versions()
+
+    assert pins, "the image no longer pins anything"
+
+    wrong = {
+        name: (version, locked.get(name))
+        for name, version in pins.items()
+        if locked.get(name) != version
+    }
+    assert not wrong, (
+        "modal_app.py pins versions the lock does not hold, so the container "
+        "would analyse with something no test has run: "
+        + ", ".join(
+            f"{name} pinned {pinned}, locked {held or 'absent'}"
+            for name, (pinned, held) in sorted(wrong.items())
+        )
+    )
+
+
+def test_everything_the_arithmetic_runs_through_is_pinned() -> None:
+    """Not just the direct dependencies.
+
+    `soxr` resamples every take to 22.05 kHz, `soundfile` decodes it and
+    `numba` compiles the paths that find the onsets — none of them named in
+    `pyproject.toml`, all of them able to move a note. Pinning librosa while
+    letting its resampler float would be a fence with the gate open.
+    """
+    pins = _pins_in_the_image()
+
+    for name in ("librosa", "numpy", "scipy", "numba", "soundfile", "soxr"):
+        assert name in pins, f"{name} can change an onset time and is not pinned"
+
+
+def test_nothing_is_installed_by_a_lower_bound() -> None:
+    """A single `>=` in the list is the whole hole back."""
+    source = (BACKEND / "modal_app.py").read_text()
+    block = source.split(".pip_install(", 1)[1].split(")", 1)[0]
+
+    assert ">=" not in block, (
+        "a lower bound in the image resolves to whatever PyPI has that day; "
+        "pin it to the version in uv.lock instead"
+    )
