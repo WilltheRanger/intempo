@@ -168,3 +168,77 @@ def test_credentials_are_not_requested(pages_client: TestClient) -> None:
     """
     res = pages_client.get("/v1/health", headers={"Origin": ORIGIN})
     assert "access-control-allow-credentials" not in res.headers
+
+
+class TestASubdomainWildcard:
+    """Cloudflare Pages gives a project more than one hostname.
+
+    There is the production alias, `https://project.pages.dev` — and a distinct
+    one for every deployment, `https://a16c6845.project.pages.dev`, plus a
+    branch alias. The dashboard shows the deployment-specific URL most
+    prominently after a build, so it is the one you are most likely to open,
+    and an exact list does not cover it. The request is refused before it is
+    sent and the browser can only say "Failed to fetch", which looks exactly
+    like the API being down.
+
+    Listing them one by one is not an option: a new one exists after every push.
+    """
+
+    @staticmethod
+    def _allowed(monkeypatch: pytest.MonkeyPatch, configured: str, origin: str) -> bool:
+        client = TestClient(_app_with_origins(monkeypatch, configured))
+        res = client.get("/v1/health", headers={"Origin": origin})
+        return res.headers.get("access-control-allow-origin") == origin
+
+    def test_it_covers_every_deployment_of_that_project(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        configured = "https://proj.pages.dev,https://*.proj.pages.dev"
+        assert self._allowed(monkeypatch, configured, "https://proj.pages.dev")
+        assert self._allowed(monkeypatch, configured, "https://a16c6845.proj.pages.dev")
+        assert self._allowed(monkeypatch, configured, "https://main.proj.pages.dev")
+
+    def test_the_star_stands_for_one_label_and_cannot_cross_a_dot(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Otherwise a wildcard for one project quietly covers things under it."""
+        assert not self._allowed(
+            monkeypatch, "https://*.proj.pages.dev", "https://a.b.proj.pages.dev"
+        )
+
+    def test_a_host_that_merely_starts_the_same_is_refused(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """`proj.pages.dev.evil.com` is a domain anyone can register, and a
+        pattern anchored only at the front would hand it a musician's token."""
+        assert not self._allowed(
+            monkeypatch, "https://*.proj.pages.dev", "https://proj.pages.dev.evil.com"
+        )
+        assert not self._allowed(
+            monkeypatch, "https://*.proj.pages.dev", "https://x.proj.pages.dev.evil.com"
+        )
+
+    def test_the_scheme_has_to_match(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        assert not self._allowed(
+            monkeypatch, "https://*.proj.pages.dev", "http://x.proj.pages.dev"
+        )
+
+    @pytest.mark.parametrize(
+        "entry", ["https://*", "*", "https://*.*.dev", "*.proj.pages.dev"]
+    )
+    def test_a_wildcard_it_cannot_make_safe_is_dropped(
+        self, monkeypatch: pytest.MonkeyPatch, entry: str
+    ) -> None:
+        """`https://*` would let every site on the internet read this API with a
+        musician's token. Dropped rather than guessed at."""
+        assert not self._allowed(monkeypatch, entry, "https://anything.example.com")
+        assert not self._allowed(monkeypatch, entry, "https://proj.pages.dev")
+
+    def test_an_exact_list_is_unaffected(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """No pattern is built when nothing asks for one."""
+        assert self._allowed(
+            monkeypatch, "https://proj.pages.dev", "https://proj.pages.dev"
+        )
+        assert not self._allowed(
+            monkeypatch, "https://proj.pages.dev", "https://a16c.proj.pages.dev"
+        )

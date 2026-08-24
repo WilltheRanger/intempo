@@ -6,6 +6,65 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-06 — One Pages project, many hostnames
+
+**Branch:** `main`. The user shared the origin list they had set:
+
+    https://idk-41z.pages.dev,http://localhost:8081,http://127.0.0.1:8081,
+    http://localhost:8899,http://127.0.0.1:8899,http://localhost:19006,
+    http://127.0.0.1:19006
+
+That is a careful list — the localhost entries match `_DEV_ORIGINS` exactly,
+which is right, because setting the variable at all turns the fallback off. And
+it will still fail on the URL they are most likely to open.
+
+**Cloudflare gives a Pages project more than one hostname.** The production
+alias `https://idk-41z.pages.dev`, a *different* one for every deployment
+(`https://a16c6845.idk-41z.pages.dev` — this repo's own deploy doc quotes that
+exact shape), and a branch alias. The dashboard puts the deployment-specific
+URL in front of you right after a build. `allow_origins` is an exact-match
+list, so that one is refused before the request is sent, and the browser can
+only say "Failed to fetch" — which looks exactly like the API being down.
+
+Listing them is hopeless: a new one exists after every push.
+
+**A subdomain wildcard**, and only that shape:
+
+    CORS_ALLOWED_ORIGINS=https://idk-41z.pages.dev,https://*.idk-41z.pages.dev,…
+
+The `*` stands for **one hostname label**. It cannot cross a dot, cannot appear
+in the scheme, and cannot be the whole host. `https://*` would let every site on
+the internet read this API with a musician's token, so anything that is not
+`scheme://*.rest.of.host` is dropped and logged rather than guessed at.
+
+Anchored at both ends, which is the part that would be easy to get wrong:
+`idk-41z.pages.dev.evil.com` is a domain anyone can register, and a pattern
+anchored only at the front would hand it a session. There is a test for it, and
+one for `a.b.idk-41z.pages.dev` — a wildcard for one project must not quietly
+cover everything beneath it.
+
+**Verified against the real list:**
+
+    ALLOW  https://idk-41z.pages.dev
+    ALLOW  https://a16c6845.idk-41z.pages.dev
+    ALLOW  https://main.idk-41z.pages.dev
+    deny   https://evil.com
+    deny   https://idk-41z.pages.dev.evil.com
+    deny   https://a.b.idk-41z.pages.dev
+
+Documented in `docs/deploy-backend.md`, including the thing the user got right
+and most people would not: setting the variable turns the localhost fallback
+off, so a deployment naming its own origin has to name the development ones too.
+
+**No three-foot test.** No UI touched.
+
+**Tests:** backend 682 (was 673; +9). `ruff` clean.
+
+**Rollback:** revert. An exact-only list behaves exactly as before — no pattern
+is built when nothing asks for one, and there is a test for that.
+
+---
+
 ## 2026-09-05 (evening) — Running the whole chain on pages nobody chose
 
 **Branch:** `main`. Two checks, one negative and one that became a test.
