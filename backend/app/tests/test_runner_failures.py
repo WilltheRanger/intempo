@@ -209,3 +209,60 @@ def test_the_sweep_is_a_no_op_without_a_database(monkeypatch) -> None:
 
     assert analysis_runner.sweep_stuck_analyses() == 0
     assert analysis_runner.sweep_once() == 0
+
+
+# ---- what a musician is told when the fault is ours -----------------------
+
+
+@pytest.mark.parametrize(
+    "detail",
+    [
+        "gemini-2.5-flash: GEMINI_API_KEY is not configured",
+        "claude-sonnet-5: AuthenticationError: invalid x-api-key",
+        "claude-sonnet-5: PermissionDeniedError: authentication failed",
+        "OCR_PROVIDER_CHAIN has no usable provider; unknown: ['claude-sonnet-4-6']",
+        "provider chain is empty",
+    ],
+)
+def test_a_fault_on_our_side_never_asks_for_a_better_photograph(detail: str) -> None:
+    """The rule `_FAILURE_REASONS` was written for, applied to the cases that
+    slipped past it.
+
+    Three of these five reached the default answer — "a flatter, better-lit shot
+    of the page usually fixes it" — for a page that was never the problem. On a
+    configuration fault a musician will do exactly that, and it will fail again,
+    and again, because nothing about the photograph was ever wrong.
+    """
+    from app.workers.transcription_runner import _UNKNOWN_REASON, _why_it_failed
+
+    reason = _why_it_failed(detail)
+    assert reason != _UNKNOWN_REASON, f"{detail!r} still blames the photograph"
+    assert "our side" in reason or "fault on our" in reason, reason
+    assert "photograph" not in reason.lower() or "not help" in reason
+
+
+def test_a_hyphen_is_flattened_like_an_underscore() -> None:
+    """The half of that argument that was never written down.
+
+    `_why_it_failed`'s docstring says these strings arrive from several places
+    and that `GEMINI_API_KEY` and "api key" are the same fact written two ways.
+    SDKs write it a third: `x-api-key`, in an HTTP header name. Only underscores
+    were flattened, so an Anthropic `invalid x-api-key` — a wrong or expired
+    key, entirely our fault — fell through to blaming the page.
+    """
+    from app.workers.transcription_runner import _why_it_failed
+
+    assert _why_it_failed("invalid x-api-key") == _why_it_failed("invalid API_KEY")
+    assert _why_it_failed("invalid x-api-key") == _why_it_failed("invalid api key")
+
+
+def test_a_page_that_really_is_the_problem_is_still_said_to_be() -> None:
+    """The tolerance must not swallow the honest answers. A page too long for
+    one response, a busy service and an unreadable photograph are three
+    different things and stay three different sentences."""
+    from app.workers.transcription_runner import _UNKNOWN_REASON, _why_it_failed
+
+    assert "fewer bars" in _why_it_failed("the response was cut off")
+    assert "busy" in _why_it_failed("claude-sonnet-5: rate limit reached")
+    assert "JPEG or PNG" in _why_it_failed("unsupported media type")
+    assert _why_it_failed("all providers failed: something odd") == _UNKNOWN_REASON
