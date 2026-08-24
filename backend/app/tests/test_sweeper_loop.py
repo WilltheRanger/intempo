@@ -421,3 +421,36 @@ def test_starting_the_app_configures_logging(monkeypatch) -> None:
             assert service.level == logging.INFO
 
     asyncio.run(body())
+
+
+def test_the_level_is_read_when_called_not_bound_at_import(monkeypatch) -> None:
+    """The rule `_default_chain` already states, applied to this.
+
+    `configure_logging` moved into its own module and took
+    `from app.config import settings` with it, at module level. `test_cors`
+    reloads `app.config`, which builds a *new* settings object — and this module
+    kept the old one, so every change to `LOG_LEVEL` was silently ignored. It
+    showed up as three failures in another file, only when the two ran in that
+    order, which is not a signal anybody should have to decode.
+
+    Asserted here directly: rebuild the settings object and the next call has to
+    see it.
+    """
+    import importlib
+
+    from app import config
+    from app.logging_config import configure_logging
+
+    monkeypatch.setattr(logging.getLogger("intempo"), "handlers", [])
+    monkeypatch.setenv("LOG_LEVEL", "DEBUG")
+    try:
+        importlib.reload(config)
+        configure_logging()
+        assert logging.getLogger("intempo").level == logging.DEBUG, (
+            "a reloaded settings object was ignored, so the level came from a "
+            "snapshot taken at import"
+        )
+    finally:
+        monkeypatch.delenv("LOG_LEVEL", raising=False)
+        importlib.reload(config)
+        logging.getLogger("intempo").setLevel(logging.INFO)
