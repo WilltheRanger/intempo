@@ -287,6 +287,61 @@ there works differently as of 2026-08-24:
   the photograph exists to check, so it cannot be the thing that authorises
   throwing it away.
 
+### The capture path (2026-08-24) — what an audit of it found
+
+Nine defects between the shutter and a saved score, in a path that had **zero
+tests**. Read these as rules, not history — each one is a mistake that was
+actually made here.
+
+- **A photograph enters a session only through `captureSession.capture()`.**
+  `add` and `replace` are not exported, deliberately: a shutter that *can*
+  append is one that can append past a pending retake, which is exactly what
+  happened. Retake used to `remove` the page and let the shutter append the
+  replacement, so retaking page 1 of a four-page scan put the new page 1 at
+  position 4 and promoted page 2 — and the upload sends `pages[0]`, so the app
+  transcribed a page nobody chose while the re-shot one was never sent.
+- **A retake is a pending swap, never a delete followed by a capture.**
+  `beginRetake` removes nothing. Closing the viewfinder or a shutter that
+  returns no image must leave the scan exactly as it was.
+- **`Scanner` takes `{ adding?: boolean }` and the caller says which it is.**
+  The viewfinder resets the session on mount because opening it is normally how
+  a scan *starts* — but it is not the only way back into one, and pages that
+  came through Import have no scanner beneath the review list at all. Do not
+  replace this by asking the session whether it has pages: an abandoned scan
+  looks exactly like one being added to, and appending a new piece's first page
+  to it is the failure the reset exists to prevent.
+- **Screen rules live in modules, not components.** There is no React Native
+  testing library here (see `DECISIONS.md`, 2026-08-24) — a rule inside a `.tsx`
+  is a rule nothing checks, and eight of the nine findings were rules inside
+  `.tsx` files. `captureSession`, `lib/scan/drag.ts` and
+  `lib/transcriptionProgress.ts` are the pattern. Navigation is the part still
+  untested, and that is a known gap rather than a solved problem.
+- **A cancelled gesture is not a finished one.** `onPanResponderTerminate` ran
+  the release body, so a drag interrupted by a call or by the enclosing
+  ScrollView committed a reorder nobody completed — and changed which page was
+  transcribed.
+- **`ScoreJson.clef` null is captioned "Clef not read".** The stave must place
+  noteheads somewhere, so `UNREAD_CLEF_PLACEMENT` is the one named assumption
+  and the screen declares it. Never `?? 'treble'` — it captions a guess
+  identically to a reading *and* places every note of a bass part a seventh off.
+  A clef control on `PieceScoreScreen` sets it; **"Not stated" is a real choice**,
+  not a cancel.
+- **The upload's extension follows the *type*, never the filename.** They had
+  separate fallbacks, so an unrecognised name declared `image/jpeg` and filed
+  the object as `page.heif` — which `_extract_ext` refuses, showing the musician
+  a server rule string for a page that never left the phone. `MAX_PAGE_BYTES`
+  is checked before sending, because `UPLOAD_TIMEOUT_MS` is a *total* timeout.
+- **Advice must be followable in this app.** The 413 message named a camera size
+  setting the scanner does not have and a file importer that refuses JPEGs. Its
+  test asserted that *some* advice was given, which is how it survived. When
+  writing an error, name a route that exists.
+- **Known hole, unfixed: orphaned uploads.** An upload that never becomes a
+  score row is permanent and unreachable — the only storage deletion is reached
+  from `POST /:id/accept` keyed off an existing row, so backing out of the
+  naming screen, a failed save, or a retried transcribe each leave a photograph
+  in the bucket forever. This contradicts the rule above it; it needs a
+  lifecycle decision, not a patch.
+
 **Honest DoD status:** no batch is tagged `batch-N-done`. Every remaining gate
 (live magic-link auth, upload→OCR→save, mic→analysis) is blocked on Supabase
 keys and a real device — none of it can be closed in-session, and the screens
