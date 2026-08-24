@@ -6,6 +6,52 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-11 (evening) — `clampBpm(NaN)` was `NaN`
+
+**Branch:** `main`.
+
+`practiceTempo.ts` is where `target_bpm` comes from — the number the whole
+verdict is measured against — and it had no tests. `clampBpm` is documented as
+mirroring "the range the backend accepts, **so the UI can't offer an invalid
+one**", and it returned `NaN` for `NaN`: `Math.round(NaN)` is `NaN`, and so are
+`Math.max` and `Math.min` of it. `tempoFor(id, NaN)` came back `NaN` too, since
+`??` only catches null and undefined.
+
+**Not reachable today**, and I checked rather than assumed: `markedBpm` is
+`score.score_json?.bpm_hint ?? null`, straight from JSON, which has no `NaN`.
+The other route is a stepper handing `set` a bad number, and none does. So this
+is a contract being kept, not a bug being fixed — worth keeping because every
+caller believes it, and because the value it would have produced is
+`target_bpm: null` in the JSON and a 422 on the one request a musician makes
+after playing.
+
+**Only `NaN` falls back.** My first version used `!Number.isFinite`, which sent
+the infinities to `FALLBACK_BPM` too. An infinity still says which direction it
+went, and `Math.max`/`Math.min` already turn it into the bound it was heading
+for — a better answer than a default. Caught by my own test failing.
+
+**Testing the `data/` layer at all** needed `vi.mock` on
+`@react-native-async-storage/async-storage`: the real package cannot resolve
+outside Metro, and a plain import fails before any test runs. Mocking it ahead
+of the import works, which opens the rest of `data/` up.
+
+**Two of my own tests were wrong, again in the informative direction.** The
+`clear` case stored one piece, so a mutation replacing the whole map with `{}`
+was indistinguishable from clearing the right entry; it stores two now. And the
+`beforeEach` cleared storage and re-hydrated, which does *not* reset the
+in-memory map — `hydratePracticeTempos` returns early when storage holds
+nothing, correct for its documented use (once at startup, when the map is
+already empty) and the reason the previous test's tempos leaked into the next.
+It hands hydrate an empty object now.
+
+Mutations caught, all eight: `NaN` passing through, an infinity falling back
+instead of clamping, the tempo not rounded, `set` or `hydrate` not clamping,
+`hydrate` trusting non-numbers, the marked tempo outranking the musician's own
+choice, and `clear` forgetting everything.
+
+**Tests run:** mobile 147 (133 + 14), typecheck clean; backend 748 unchanged.
+**Rollback:** revert.
+
 ## 2026-09-11 (later) — `format.ts`, and two DST dates I got wrong
 
 **Branch:** `main`. Twenty tests for the "how long ago" labels. No bug in the
