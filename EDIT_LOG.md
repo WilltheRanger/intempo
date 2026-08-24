@@ -6,6 +6,43 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-15 — The branches only a difficult page reaches
+
+**Branch:** `main`. `pipeline.py` was at **89%**, and every missing line was a
+path a *hard* page takes. A simple exercise sheet never reaches one of them,
+and simple exercise sheets are the entire corpus — the same blind spot the
+engraver measurement turned up yesterday, one layer down.
+
+Four tests, 89% → **99%**.
+
+**A progress callback that throws must not take the reading down.** The scan
+screen's progress bar is a callback into this loop, and it crosses into the
+worker, the row and eventually a phone, so it has more ways to fail than the
+reading does. Losing a page — the expensive thing that just happened — because
+the thing *describing* it threw would be absurd. The test asserts the callback
+actually fired, so it cannot pass by never calling it.
+
+**A provider that did not read the clef is not believed.** `ScoreJson.clef` is
+optional so a score can exist before anything has read it; a *provider*
+answering without one has not read the page either, and the next provider
+deserves it. Accepting it would put a bass part on screen with no clef, and the
+same notehead is a different pitch to a violist than to a violinist.
+
+**An unknown provider name is refused, by name.** This is the failure that took
+sheet-music reading down once already: the shipped default named two models
+from the previous Claude generation, so the chain raised on the first scan and
+no photograph could be read at all, whatever keys were set.
+
+**An unset chain falls back to models this build actually knows** — checked
+against the registry rather than trusted, so a default that goes stale fails
+here instead of on somebody's first scan.
+
+Mutations caught, all six, including a default that names a model this build
+has lost.
+
+**Tests run:** backend 786 (782 + 4), ruff clean; mobile 225 unchanged.
+**Rollback:** revert.
+
 ## 2026-09-14 (evening) — Measuring the engraver, and what the corpus cannot see
 
 **Branch:** `main`. Follow-on from the blank screen: before proposing engraver

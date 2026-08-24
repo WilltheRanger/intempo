@@ -467,3 +467,92 @@ def test_renumbering_a_clean_reading_says_nothing() -> None:
     fixed = renumber(score)
     assert [m.measure_number for m in fixed.measures] == [1, 2, 3]
     assert fixed.notes_to_human == "Bar 3 was hard to read."
+
+
+# ---- the branches nothing reached -----------------------------------------
+#
+# Found by coverage rather than by reading: `pipeline.py` sat at 89% and every
+# missing line was a path a *difficult* page takes. A simple exercise sheet
+# never reaches any of them, and simple exercise sheets are the whole corpus.
+
+
+def test_progress_reporting_cannot_take_the_reading_down() -> None:
+    """The scan screen's progress bar is a callback into this loop.
+
+    A page is read once and it is the expensive thing that happened; losing it
+    because the thing *describing* it threw would be absurd — and the callback
+    crosses into the worker, the row and eventually a phone, so it has more
+    ways to fail than the reading does.
+    """
+    calls: list[str] = []
+
+    def _explodes(stage) -> None:
+        calls.append(stage)
+        raise RuntimeError("the progress row went away")
+
+    good = _FakeProvider("p1", response=_response("p1", conf=0.95))
+
+    score = parse_sheet_music(b"<jpeg>", providers=[good], on_stage=_explodes)
+
+    assert score.ocr_confidence == 0.95
+    assert calls, "the callback was never called, so this proved nothing"
+
+
+def test_a_provider_that_did_not_read_the_clef_is_not_believed() -> None:
+    """`ScoreJson.clef` is optional so a score can exist before it has been
+    read. A *provider* answering without one has not read the page either, and
+    the next provider deserves it — silently accepting the reading would put a
+    bass part on screen labelled with no clef at all, and the same notehead is
+    a different pitch to a violist than to a violinist.
+    """
+    clefless = ScoreJson.model_validate({**GOOD_PAYLOAD, "clef": None})
+    first = _FakeProvider(
+        "p1",
+        response=OCRResponse(
+            score=clefless,
+            raw_text="{}",
+            model="p1",
+            input_tokens=1,
+            output_tokens=1,
+            cost_usd=0.0,
+            latency_ms=1,
+        ),
+    )
+    second = _FakeProvider("p2", response=_response("p2", conf=0.95))
+
+    score = parse_sheet_music(b"<jpeg>", providers=[first, second])
+
+    assert first.calls == 1
+    assert second.calls == 1, "the page was never handed on"
+    assert score.clef == "treble"
+
+
+def test_an_unknown_provider_name_is_refused_by_name() -> None:
+    """The failure that took sheet-music reading down once already: the shipped
+    default named two models from the previous Claude generation, so the chain
+    raised on the first scan and no photograph could be read at all, whatever
+    keys were set. The message has to name what it did not recognise.
+    """
+    with pytest.raises(OCRError, match="unknown provider"):
+        pipeline_module.get_provider("gemini-1.0-ultra")
+
+    with pytest.raises(OCRError, match="known:"):
+        pipeline_module.get_provider("")
+
+
+def test_an_unset_chain_falls_back_to_models_this_build_knows(monkeypatch) -> None:
+    """An empty `OCR_PROVIDER_CHAIN` must not mean an empty chain.
+
+    The default is spelled with current model names and has to stay that way —
+    a stale name here is not a slow path, it is a feature that cannot run. So
+    whatever it falls back to has to be in the registry *now*, checked rather
+    than trusted.
+    """
+    settings = app_config.settings
+    monkeypatch.setattr(settings, "OCR_PROVIDER_CHAIN", "   ")
+
+    chain = pipeline_module._default_chain()
+
+    assert chain, "an unset chain produced no providers, so no page can be read"
+    for provider in chain:
+        assert pipeline_module.get_provider(provider.name) is provider
