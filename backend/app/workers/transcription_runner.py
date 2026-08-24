@@ -332,6 +332,34 @@ def _fail(client, score_id: str, reason: str) -> None:
 #: from dead would fail a page that was about to be read.
 STUCK_AFTER = timedelta(minutes=10)
 
+#: How long to wait before failing a read that was handed to Modal.
+#:
+#: **Because "nothing has happened yet" is not the same fact on both sides.**
+#: In-process, a row with no progress for ten minutes means the process that was
+#: reading it is gone — `BackgroundTasks` runs here, so there is nothing else it
+#: could be waiting for. On Modal the row sits `queued` for the whole of a cold
+#: start, and a cold start is not a hang: Modal builds an image lazily, on first
+#: invocation, and this one installs homr and 151 MB of ONNX weights. That is
+#: minutes.
+#:
+#: At ten minutes the sweeper would fail the **first page ever read on Modal**,
+#: while Modal was still building the container to read it, and tell the
+#: musician the server had restarted — which is both wrong and the worst
+#: possible first impression of a system that is working.
+#:
+#: Thirty is a real dead read lingering twenty minutes longer than it used to.
+#: That is the right side to be wrong on: a dead row costs a musician a retry
+#: they can see, and killing a live one costs them the photograph, the upload,
+#: the wait, and their belief that the thing works.
+STUCK_AFTER_REMOTE = timedelta(minutes=30)
+
+
+def _stuck_after() -> timedelta:
+    """The cutoff for however this deployment reads pages."""
+    from app.workers.dispatch import TRANSCRIPTION_RUNTIME
+
+    return STUCK_AFTER_REMOTE if TRANSCRIPTION_RUNTIME == "modal" else STUCK_AFTER
+
 
 def sweep_stuck_transcriptions(client=None, *, now: datetime | None = None) -> int:
     """Fail reads that stopped happening. Returns how many were swept.
@@ -362,7 +390,7 @@ def sweep_stuck_transcriptions(client=None, *, now: datetime | None = None) -> i
     client = client or get_service_client()
     if client is None:
         return 0
-    cutoff = ((now or datetime.now(tz=timezone.utc)) - STUCK_AFTER).isoformat()
+    cutoff = ((now or datetime.now(tz=timezone.utc)) - _stuck_after()).isoformat()
     try:
         res = (
             client.table("scores")
@@ -371,9 +399,8 @@ def sweep_stuck_transcriptions(client=None, *, now: datetime | None = None) -> i
                     "transcription_status": "failed",
                     "transcription_stage": None,
                     "transcription_error": (
-                        "Reading this page stopped before it finished — the "
-                        "server restarted while it was working. The photograph "
-                        "is still here; try reading it again."
+                        "Reading this page stopped before it finished. The "
+                        "photograph is still here; try reading it again."
                     ),
                     "updated_at": _now_iso(),
                 }
