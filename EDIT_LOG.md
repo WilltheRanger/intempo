@@ -6,6 +6,56 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-08 (later) — Making the container's assumptions fail here instead of there
+
+**Branch:** `main`. The Modal image ships `app/` **minus `routers/` and
+`tests/`**, and puts `config.toml` at a specific path. Both are decisions that
+are correct today and enforced by nothing — and the cost of getting either
+wrong has terrible timing: it fails **inside a container, on a deploy**, long
+after the change that caused it looked fine. Every test runs green locally in
+that situation, because locally the file is right there.
+
+So they are enforced now. Four assumptions, each with a test that fails when it
+stops being true:
+
+**The worker imports no routers.** Checked by importing it in a fresh
+interpreter with `app.routers` made unimportable — a subprocess, because the
+import graph is process-wide and this suite has already imported them by the
+time it runs. Only a clean interpreter can answer honestly.
+
+**The dispatcher imports no `modal`.** It is imported by the router on every
+startup, so a top-level `import modal` would stop the API booting on the one
+machine that has to keep working when the remote runtime is off.
+
+**The image still excludes what these tests assume it does.** Without this,
+shipping the routers would leave three tests guarding a rule that no longer
+exists — which is worse than not guarding, because they still pass.
+
+**`config.toml` lands where the loader looks.** `CONFIG_PATH` is `parents[2]`
+from `app/services/audio_config.py`; in the container that resolves to
+`/root/config.toml`, and the image has to put it there. Two paths in two files
+that must agree, and nothing but this said so.
+
+**A missing config raises, and that is the right behaviour**, so it is pinned
+too. Falling back to built-in defaults would let a container analyse with
+*different thresholds from the ones every test and the whole corpus regression
+were run against*, and say nothing about it. Two musicians, two verdicts, one
+recording.
+
+Four mutations, all caught: the worker importing a router fails 1, the
+dispatcher importing `modal` fails 1, the image shipping everything fails 1,
+and `config.toml` in the wrong place fails 1.
+
+**No three-foot test.** No UI touched. No production code changed at all — this
+entry is entirely tests, which is the point: nothing behaves differently, four
+things can no longer break quietly.
+
+**Tests:** backend 706 (was 700; +6). `ruff` clean.
+
+**Rollback:** delete `app/tests/test_worker_image.py`.
+
+---
+
 ## 2026-09-08 — The analysis can run on Modal, and by default still does not
 
 **Branch:** `main`. The user chose Modal, for the analysis and for HOMR when it
