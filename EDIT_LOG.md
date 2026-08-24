@@ -6,6 +6,45 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-10 (later) — The tempo range, in the four places that had to agree
+
+**Branch:** `main`.
+
+`target_bpm` is the number the entire verdict is measured against, and its
+accepted range was written out **three times** in the backend — `Analysis`,
+`Assignment`, `CreateAnalysisRequest`, each a literal `Field(ge=20, le=300)` —
+and mirrored a **fourth** time in `mobile/src/data/practiceTempo.ts`, whose
+comment reads "the range the backend accepts, mirrored so the UI can't offer an
+invalid one". Nothing pointed at anything else. The same arrangement as the
+beat table, on the number that decides whether a musician rushed.
+
+They agree today. The two ways that ends:
+
+- **The app allows more.** A stepper reaching 310 produces a 422 on the one
+  request a musician makes after playing, naming a field rather than a fix.
+- **The app allows less.** A tempo the analysis would have handled cannot be
+  chosen, and nothing reports it — it is just a number the app will not reach.
+
+**What changed.** `MIN_TARGET_BPM` / `MAX_TARGET_BPM` in `app/models/analysis.py`,
+imported by the other two. Four tests: every model enforces the one range —
+read off the *built* models rather than the source, so a `Field` that imports
+the constant and then overrides it is caught where a grep would miss it; the
+app's `MIN_BPM`/`MAX_BPM` equal them; the app's `FALLBACK_BPM` sits inside
+them; and `config.toml`'s calibration range stays a **subset**.
+
+That last one is a distinction worth keeping written down: `[calibration]
+bpm_min = 40, bpm_max = 240` is where the tempo *detector* searches when nobody
+typed a number, not what a musician may ask for. Narrower on purpose. The two
+look alike enough that someone will eventually try to unify them, and the test
+says why not — while still refusing to let the detector return a tempo the API
+would then reject.
+
+Mutation-checked, all six caught: the app offering more, offering less, a
+fallback outside the range, one model overriding the shared constant, the range
+moving without the app following, and the detector widened past the API.
+
+**Tests run:** 745 passed (741 + 4), ruff clean. **Rollback:** revert.
+
 ## 2026-09-10 — Two real bugs in the import path, found by writing its first tests
 
 **Branch:** `main`.
