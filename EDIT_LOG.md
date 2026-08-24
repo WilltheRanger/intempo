@@ -6,6 +6,58 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-16 (night) — The page, cut into systems
+
+**Branch:** `main`. Third iteration of *fix the OMR system till it works*.
+`find_systems` located them; `crop_systems` turns them into images.
+
+**Padded generously**, because a system is not only its staff lines. Above them
+sit rehearsal marks, dynamics, bowings and the tempo text that says
+`Meno mosso`; below them sit more dynamics and the occasional fingering. The
+pipeline reads a page for its markings as much as its notes, and a crop crushed
+to the lines throws away the half that tells a musician what to do.
+
+**Neighbouring crops overlap slightly**, on purpose. A low note hanging under
+one staff appears at the bottom of its own crop and the top of the next.
+Duplication is visible to the caller and correctable; a note falling in the
+seam belongs to no crop at all, and a dropped note shifts every bar after it in
+`alignment.py`'s timeline.
+
+**PNG in between, JPEG out.** The crop leaves Pillow lossless and goes through
+`prepare_for_model`, so it obeys exactly the same size cap, quality ladder and
+format the whole page does rather than a second set of numbers that could drift
+from it. Encoding to JPEG twice puts ringing on staff lines one pixel wide, and
+those are the thing being read.
+
+**It refuses rather than half-answers.** A page with one system, an unreadable
+page, or a crop that fails partway all return `[]`, which the caller reads as
+"send it whole" — the behaviour that existed before any of this. Returning a
+*partial* set would be the worst outcome available: the page transcribed with a
+system missing and nothing saying so.
+
+**Three of my own tests could not fail, and mutation found all three.**
+
+- *"Every crop is small enough to send"* passed whether or not the crop went
+  through the shared preparation, because a single system is small anyway. It
+  checks the **format** now — the intermediate is PNG, so a JPEG on the way out
+  can only have come from that step.
+- *"A page that cannot be read is left whole"* never reached the guard around
+  the crop loop; `find_systems` turns those pages away earlier. There is a test
+  that fails *inside* the loop now.
+- And that test failed on the **first** crop, which leaves the partial list
+  empty — so returning it and returning `[]` were the same answer. It fails on
+  the third now, and asserts the failure actually happened.
+
+Nineteen tests, on pages built from the real fixture photographs rather than
+drawings. Mutations caught, all seven.
+
+**Still not wired in.** Nothing calls `crop_systems`; reading each crop and
+concatenating the measures is the next iteration, and it is the one with the
+real design question in it — what to do when one system out of ten fails.
+
+**Tests run:** backend 824 (815 + 9), ruff clean; mobile 225 unchanged.
+**Rollback:** revert; nothing depends on it.
+
 ## 2026-09-16 (evening) — Finding the systems on a page, and a diagnosis I got wrong first
 
 **Branch:** `main`. Second iteration of *fix the OMR system till it works*,

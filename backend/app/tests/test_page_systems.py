@@ -114,3 +114,161 @@ def test_blank_paper_has_no_systems_on_it() -> None:
     Image.new("L", (1200, 900), 255).save(buffer, "JPEG")
 
     assert find_systems(buffer.getvalue()) == []
+
+
+# ---------------------------------------------------------------------------
+# Cutting the page up
+# ---------------------------------------------------------------------------
+
+
+def _stacked(order: list, gap: int = 60) -> bytes:
+    from PIL import Image
+
+    width = max(s.width for s in order)
+    page = Image.new("RGB", (width, sum(s.height for s in order) + gap * (len(order) - 1)), "white")
+    y = 0
+    for strip in order:
+        page.paste(strip.convert("RGB"), (0, y))
+        y += strip.height + gap
+    buffer = io.BytesIO()
+    page.save(buffer, "JPEG", quality=92)
+    return buffer.getvalue()
+
+
+def test_one_crop_per_system() -> None:
+    from app.services.page_image import crop_systems
+
+    strips = _strips()
+
+    assert len(crop_systems(_stacked(strips))) == len(strips)
+
+
+def test_every_crop_is_one_system() -> None:
+    """The property that makes the whole idea work. A crop holding two systems
+    asks the model the same question the page did, only smaller."""
+    from app.services.page_image import crop_systems
+
+    for crop in crop_systems(_stacked(_strips())):
+        assert len(find_systems(crop)) == 1
+
+
+def test_the_crops_come_back_in_reading_order() -> None:
+    """Reversing the page has to reverse the crops.
+
+    Checked by *rebuilding the page the other way up* rather than by reading
+    coordinates back, because coordinates are what the function returns and a
+    test that re-derives them from the same source proves nothing. The two
+    strips are chosen to be very different heights, so which one came first is
+    visible in the answer.
+    """
+    from app.services.page_image import crop_systems
+
+    strips = sorted(_strips(), key=lambda s: s.height)
+    short, tall = strips[0], strips[-1]
+
+    def heights(page: bytes) -> list[int]:
+        from PIL import Image
+
+        out = []
+        for crop in crop_systems(page):
+            with Image.open(io.BytesIO(crop)) as image:
+                out.append(image.height)
+        return out
+
+    tall_first = heights(_stacked([tall, short]))
+    short_first = heights(_stacked([short, tall]))
+
+    assert len(tall_first) == len(short_first) == 2
+    assert tall_first[0] > tall_first[1]
+    assert short_first[0] < short_first[1]
+
+
+def test_a_crop_keeps_the_markings_around_the_staff() -> None:
+    """A system is not only its staff lines. Above them sit rehearsal marks,
+    dynamics, bowings and the text that says `Meno mosso`; the pipeline reads a
+    page for those as much as for its notes."""
+    from PIL import Image
+
+    from app.services.page_image import crop_systems
+
+    strips = _strips()
+    page = _stacked(strips)
+    systems = find_systems(page)
+
+    for crop, (top, bottom) in zip(crop_systems(page), systems):
+        with Image.open(io.BytesIO(crop)) as image:
+            assert image.height > bottom - top, "cropped tight to the staff lines"
+
+
+def test_a_page_with_one_system_is_left_whole() -> None:
+    """Cutting it up would be the same picture with an extra decode, and every
+    fixture in this repository is exactly this case."""
+    from app.services.page_image import crop_systems
+
+    for path in sorted(FIXTURES.glob("*.jpg")):
+        assert crop_systems(path.read_bytes()) == [], path.name
+
+
+def test_a_page_that_cannot_be_read_is_left_whole() -> None:
+    """Degrading to the behaviour that existed before this function is the
+    whole safety story: it can only ever improve matters."""
+    from app.services.page_image import crop_systems
+
+    assert crop_systems(b"not an image") == []
+    assert crop_systems(b"") == []
+
+
+def test_every_crop_is_small_enough_to_send() -> None:
+    from app.services.page_image import MODEL_MAX_BYTES, crop_systems
+
+    for crop in crop_systems(_stacked(_strips())):
+        assert len(crop) * 1.34 <= MODEL_MAX_BYTES, "a crop is too big for the request"
+
+
+def test_every_crop_is_a_jpeg_the_model_will_take() -> None:
+    """Proves the crop went through `prepare_for_model` rather than straight
+    out of Pillow.
+
+    Checked by *format*, not by size: the intermediate is PNG, so a JPEG on the
+    way out can only have come from the shared preparation step. The obvious
+    assertion — that each crop is under the request cap — passes whether or not
+    that step ran, because a single system is small anyway. A mutation skipping
+    it survived exactly that test.
+    """
+    from app.services.page_image import crop_systems
+
+    for crop in crop_systems(_stacked(_strips())):
+        assert crop[:3] == b"\xff\xd8\xff", "not a JPEG, so the size cap was skipped too"
+
+
+def test_a_page_that_fails_halfway_through_cropping_is_sent_whole(monkeypatch) -> None:
+    """The guard around the crop loop, which the unreadable-page cases never
+    reach — they are turned away earlier, by `find_systems` finding nothing.
+
+    Returning a partial set of crops would be the worst outcome available: the
+    page would be transcribed with a system missing and nothing would say so,
+    and a missing system shifts every bar after it in `alignment.py`'s
+    timeline.
+    """
+    from app.services import page_image
+
+    real = page_image.prepare_for_model
+    done = 0
+
+    def _explodes_partway(image_bytes):
+        # On the *third* crop, not the first. Failing on the first leaves the
+        # partial list empty, so `return crops` and `return []` are the same
+        # answer and the mutation survives — which it did.
+        nonlocal done
+        done += 1
+        if done >= 3:
+            raise RuntimeError("out of memory decoding the crop")
+        return real(image_bytes)
+
+    monkeypatch.setattr(page_image, "prepare_for_model", _explodes_partway)
+
+    assert page_image.crop_systems(_stacked(_strips())) == [], (
+        "a partial set of crops was returned; the page would be transcribed "
+        "with a system missing and nothing would say so"
+    )
+    assert done >= 3, "the failure never happened, so this proved nothing"
