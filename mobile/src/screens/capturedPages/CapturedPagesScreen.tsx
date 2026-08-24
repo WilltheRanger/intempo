@@ -35,15 +35,27 @@ export function CapturedPagesScreen() {
   const pendingPosition = pages.findIndex((page) => page.id === pendingDelete) + 1;
 
   function handleRetake(id: string) {
-    // Drops the page and returns to the viewfinder, which is the only thing
-    // "retake" can honestly mean now that capture is real. It used to swap in a
-    // different bundled image — visible motion standing in for a photograph.
+    // **Nothing is deleted here.** The page is marked as the one the next
+    // photograph replaces, and `captureSession.capture` swaps it in where it
+    // already sits. Both halves of that are fixes:
     //
-    // `goBack` rather than `navigate`: the scanner is still mounted underneath,
-    // so this returns to it without remounting — and remounting would fire its
-    // `captureSession.reset()` and discard every other page.
-    captureSession.remove(id);
-    navigation.goBack();
+    // It used to `remove` first, so closing the viewfinder — or a shutter that
+    // returned no image — left the page gone with nothing in its place, no
+    // confirmation and no undo, on a screen whose delete button asks first.
+    //
+    // And the replacement used to be *appended*, because the shutter called
+    // `add`. Retaking page 1 of a four-page scan put the new page 1 at
+    // position 4 and promoted page 2 into its place — and since the upload
+    // sends `pages[0]`, the app then transcribed page 2 while the page just
+    // re-shot was never sent at all.
+    //
+    // `navigate` rather than `goBack`: on the scanner route the viewfinder is
+    // below this screen and navigating pops back to it, unmounted-effect and
+    // all. Pages that arrived through Import have no scanner below them, and
+    // `goBack` there dropped the musician onto the Today tab with the scan
+    // unreachable.
+    captureSession.beginRetake(id);
+    navigation.navigate('Scanner');
   }
 
   if (pages.length === 0) {

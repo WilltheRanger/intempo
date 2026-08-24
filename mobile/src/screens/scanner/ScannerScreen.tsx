@@ -64,8 +64,16 @@ export function ScannerScreen() {
 
   // Opening the scanner starts a new session. Coming back from review to add
   // another page doesn't remount this screen, so the pages survive that.
+  //
+  // **Unless it was opened to retake one page**, in which case resetting would
+  // destroy the very scan the retake belongs to. Not hypothetical: pages that
+  // arrived through Import have no scanner under the review list at all, so a
+  // retake there pushes a *fresh* viewfinder, and this effect used to wipe the
+  // whole import on its way in.
   useEffect(() => {
-    captureSession.reset();
+    if (!captureSession.retaking()) {
+      captureSession.reset();
+    }
   }, []);
 
   // Asked once, on arrival, rather than behind a button: the screen is a
@@ -99,7 +107,13 @@ export function ScannerScreen() {
         throw new Error('The camera returned no image.');
       }
       impact(ImpactFeedbackStyle.Medium);
-      captureSession.add(photo.uri);
+      // Where it lands is the session's decision, not this screen's — see
+      // `capture`. A retake swaps the new photograph in where the old one sat
+      // and you are finished; an ordinary capture leaves you here for the next
+      // page.
+      if (captureSession.capture(photo.uri) === 'replaced') {
+        navigation.navigate('CapturedPages');
+      }
     } catch (cause) {
       setError(
         cause instanceof Error ? cause.message : 'That photo could not be taken.',
@@ -113,6 +127,19 @@ export function ScannerScreen() {
     navigation.navigate('CapturedPages');
   }
 
+  function handleClose() {
+    // Abandoning a retake goes back to the pages, not out of the flow. The
+    // rest of the scan is still in the session, and this screen is the only
+    // one that clears it — leaving by the front door would strand every other
+    // page with nothing able to reach them again.
+    if (captureSession.retaking()) {
+      captureSession.cancelRetake();
+      navigation.navigate('CapturedPages');
+      return;
+    }
+    navigation.goBack();
+  }
+
   return (
     <View style={styles.screen}>
       {/* Light status bar content over the dark viewport. */}
@@ -120,7 +147,7 @@ export function ScannerScreen() {
 
       <View style={[styles.topBar, { paddingTop: insets.top + spacing.md }]}>
         <Pressable
-          onPress={() => navigation.goBack()}
+          onPress={handleClose}
           accessibilityRole="button"
           accessibilityLabel="Close scanner"
           style={styles.iconButton}

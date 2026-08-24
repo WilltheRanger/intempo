@@ -65,10 +65,7 @@ export function ImportPagesScreen() {
 
       // A fresh session, exactly as opening the scanner does — importing is
       // starting a new piece, not adding to whatever was photographed earlier.
-      captureSession.reset();
-      for (const asset of assets) {
-        captureSession.add(asset.uri);
-      }
+      captureSession.importAll(assets.map((asset) => asset.uri));
       navigation.replace('CapturedPages');
     } catch (cause) {
       setError(

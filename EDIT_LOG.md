@@ -6,6 +6,103 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-24 — Retake did not retake: it deleted the page and appended a new one somewhere else
+
+**Branch:** `main`. Looping on the capture path, as asked. An audit of the six
+slices between the shutter and the saved score turned up nine candidate defects;
+the two worst were the same mechanism seen from two sides, and both start in the
+same place — **the screen decided what happened to a photograph, and decided
+wrong.**
+
+`CapturedPagesScreen.handleRetake` did `captureSession.remove(id)` and then went
+back to the viewfinder. `ScannerScreen`'s shutter did `captureSession.add(uri)`.
+So:
+
+1. **The page was gone before anything replaced it.** Close the viewfinder with
+   the X, or have `takePictureAsync` return no image — it can, and the screen
+   already handles that — and the photograph was deleted with no confirmation
+   and no undo. The delete button two rows away asks first, and warns that "the
+   photo goes with it."
+2. **The replacement landed at the end.** Retake page 1 of a four-page scan and
+   the new page 1 sat at position 4, with page 2 silently promoted into first
+   place. `TranscribeScreen` uploads `pages[0]`, so the app then transcribed
+   page 2 of the piece and the page just carefully re-shot **was never sent at
+   all** — under a title the musician chose, into their library, with nothing
+   anywhere saying so. The screen's own hint reads "Drag to reorder — pages
+   transcribe in this order," which its retake button broke.
+3. **On the import route, retake was purely a silent delete.** `ImportPages`
+   does `navigation.replace('CapturedPages')`, so there is no scanner in the
+   stack beneath the review list; `goBack()` dropped the musician onto the Today
+   tab with the scan unreachable — the only screen that can return to it is the
+   scanner, whose mount runs `captureSession.reset()`.
+
+`captureSession.replace(id, source)` had existed since the session store was
+written, documented as "Replaces one page's image, standing in for re-shooting
+it", **with zero callers anywhere in the tree.**
+
+### What changed
+
+The decision moved out of the screens and into the store, the same move
+`transcriptionProgress.ts` made for the progress bar and for the same reason:
+this project has no React Native testing library, so a rule that lives in a
+component cannot be tested at all.
+
+- `captureSession.capture(source)` is now the only way a photograph enters a
+  session. It replaces the pending page in place if a retake is in flight and
+  appends otherwise, and returns which it did. `add` and `replace` are no longer
+  exported — a shutter that *can* append is a shutter that can append past a
+  pending retake.
+- `beginRetake(id)` marks the target and **removes nothing**. Whatever happens
+  next — a photograph, a closed viewfinder, a failed shutter, a phone call — the
+  page is still there until something actually replaces it. `cancelRetake()`
+  abandons it.
+- A photograph taken for a page that has since gone is **appended, not dropped**.
+  An extra page at the end is visible and removable; a discarded one is neither,
+  and the musician has already put the page on the stand and taken the shot.
+- `ScannerScreen` no longer resets on mount when a retake is in flight. That is
+  what makes the import route work: the retake pushes a *fresh* viewfinder
+  there, and the mount effect used to wipe the whole import on the way in.
+- Closing the viewfinder mid-retake returns to the pages rather than out of the
+  flow, for the same reason — the rest of the scan is still in the session and
+  this is the only screen that clears it.
+- `importAll(sources)` replaces `reset()` + a loop of `add`s, so subscribers see
+  the pages once instead of an empty session first and then one page at a time.
+
+### Tests
+
+`src/data/captureSession.test.ts` — 11 tests, the capture path's first. Seven
+mutations, each restoring one half of the old behaviour, every one caught:
+appending instead of replacing (2 tests), removing on `beginRetake` (4),
+leaving the retake pending after a shot (1), dropping an orphaned photograph
+(1), `reset` leaving a retake pointed into a dead scan (1), `importAll`
+publishing incrementally (1), and `importAll` keeping the previous scan's
+signed URL (1).
+
+Mobile suite 244 passed (was 233), `tsc --noEmit` clean.
+
+### Not done, and why
+
+**No UI or copy changed**, so §2 did not apply — this is the screen keeping the
+promise it already makes. Two things found in the same file are left, and the
+first has a design question in it that is the owner's to answer:
+
+- **"Add page" and the header back button still `goBack()`**, which on the
+  import route means the Today tab and a destroyed import. The back button is
+  also labelled "Back to the scanner" when there is no scanner. What those two
+  controls *should* do when the pages came from the photo library — reopen the
+  picker, offer the camera, or something else — is a design call, not a bug fix.
+- A drag that is **cancelled** rather than released still commits the reorder
+  (`onPanResponderTerminate` runs the release body). Next.
+
+### Still not verified
+
+None of this has been through a real device. The retake path is proven at the
+store, and the navigation around it is argued in comments, not tested — there is
+no renderer in this project to test it with. A real scan on a phone remains the
+gate, along with everything else waiting on Supabase keys.
+
+---
+
 ## 2026-09-17 — The container built to run homr had no homr in its chain
 
 **Branch:** `main`. Tracing what actually happens on the owner's first scan now
