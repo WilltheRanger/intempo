@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import logging
 import os
+from dataclasses import dataclass
 from typing import Literal
 
 log = logging.getLogger("intempo.analysis")
@@ -148,6 +149,42 @@ def _spawn_on_modal(analysis_id: str) -> bool:
     return True
 
 
+@dataclass
+class _Dispatches:
+    """How pages have actually been read since this process started.
+
+    **The fact that was invisible.** `TRANSCRIPTION_RUNTIME=modal` was set on
+    the deployment, and every page was read in this process instead, without
+    homr, for the entire life of it. Nothing was broken enough to notice: the
+    spawn failure is caught so it cannot 500 the request, the fallback is
+    deliberately quiet so a musician does not lose a page to a deployment
+    setting, and `/v1/ready` reported the *configuration* — which was correct.
+    What nobody could see was the **behaviour**, and a single counter would
+    have shown it on the first scan.
+
+    Process-local and reset by a restart. That is the right scope: it answers
+    "is this instance doing what it was configured to do", not "has this ever
+    worked", and a fresh process genuinely does not know yet.
+    """
+
+    #: Pages handed to Modal successfully.
+    to_modal: int = 0
+    #: Pages read here because Modal could not be reached.
+    fell_back: int = 0
+    #: The **type** of the last spawn failure. Never the message.
+    #:
+    #: The message is where the credential was: `grpclib` raises
+    #: `ValueError: Invalid metadata value: 'ak-...'`, which put a token into
+    #: the Render logs inside a traceback. `/v1/ready` is served over HTTP and
+    #: read in a browser, and a readiness detail is the last place a secret
+    #: should be able to reach.
+    last_failure_type: str | None = None
+
+
+#: Recorded by `start_transcription`, read by `/v1/ready`.
+transcription_dispatches = _Dispatches()
+
+
 def _spawn_transcription_on_modal(score_id: str) -> bool:
     """Hand the page to Modal. True if it was accepted.
 
@@ -169,7 +206,8 @@ def _spawn_transcription_on_modal(score_id: str) -> bool:
     try:
         fn = modal.Function.from_name(MODAL_APP_NAME, MODAL_TRANSCRIBE_FUNCTION_NAME)
         fn.spawn(score_id)
-    except Exception:  # noqa: BLE001 — any failure here must not 500 the request
+    except Exception as exc:  # noqa: BLE001 — must not 500 the request
+        transcription_dispatches.last_failure_type = type(exc).__name__
         log.exception("score %s: could not be started on Modal", score_id)
         return False
     return True
@@ -187,10 +225,15 @@ def start_transcription(score_id: str, background_tasks) -> None:
     from app.workers.transcription_runner import run_transcription
 
     if TRANSCRIPTION_RUNTIME == "modal" and _spawn_transcription_on_modal(score_id):
+        transcription_dispatches.to_modal += 1
         log.info("score %s: being read on Modal", score_id)
         return
 
     if TRANSCRIPTION_RUNTIME == "modal":
+        # Counted as well as logged. The warning was already here and was true
+        # every single time; a line in a log nobody is watching is how this
+        # went unnoticed for the life of the deployment.
+        transcription_dispatches.fell_back += 1
         log.warning(
             "score %s: falling back to reading in-process, without homr", score_id
         )

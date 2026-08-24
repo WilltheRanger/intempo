@@ -282,6 +282,72 @@ def _tuning_config_check() -> Check:
     return Check(name="tuning_config", ok=True, detail="")
 
 
+def _transcription_dispatch_check() -> list[Check]:
+    """Whether pages are being read where the deployment says they are.
+
+    `_analysis_runtime_checks` below asks whether Modal *could* be reached —
+    credentials present, function deployed. This asks the different and more
+    useful question: **when a page was actually handed over, what happened?**
+
+    The two came apart badly. A token with a trailing newline is present, and
+    names a function that is deployed, so every configuration check passed
+    while `fn.spawn()` raised on every call. Pages were read in this process,
+    without homr, for the entire life of the deployment, and one of them came
+    back as invented notes that the app displayed as a transcription.
+
+    Not blocking. The fallback is a real reading and the app works; it works in
+    the place that moving to Modal was meant to empty, and with the engine that
+    reads pages properly left out of it.
+    """
+    from app.workers import dispatch
+
+    if dispatch.TRANSCRIPTION_RUNTIME != "modal":
+        return []
+
+    seen = dispatch.transcription_dispatches
+    if seen.to_modal == 0 and seen.fell_back == 0:
+        return [
+            Check(
+                name="transcription_dispatch",
+                ok=True,
+                detail=(
+                    "No page has been handed over since this process started, so "
+                    "there is nothing to report yet."
+                ),
+                blocking=False,
+            )
+        ]
+
+    if seen.fell_back == 0:
+        return [
+            Check(name="transcription_dispatch", ok=True, detail="", blocking=False)
+        ]
+
+    # The failure type, never its message: `grpclib` puts the credential *in*
+    # the message, and a readiness detail is served over HTTP and read in a
+    # browser.
+    because = (
+        f" The last failure was a {seen.last_failure_type}; the logs have the "
+        "traceback."
+        if seen.last_failure_type
+        else ""
+    )
+    return [
+        Check(
+            name="transcription_dispatch",
+            ok=False,
+            detail=(
+                f"TRANSCRIPTION_RUNTIME is modal, but {seen.fell_back} of "
+                f"{seen.fell_back + seen.to_modal} pages handed over since this "
+                "process started were read here instead — without homr, by the "
+                "vision models alone, which is materially worse at reading a "
+                f"page.{because}"
+            ),
+            blocking=False,
+        )
+    ]
+
+
 def _analysis_runtime_checks() -> list[Check]:
     """Whether a take will actually run where the deployment says it will.
 
@@ -507,6 +573,7 @@ def check() -> Readiness:
     # configuration fact, and the two early returns below would otherwise
     # swallow it on exactly the deployment most likely to be half-configured.
     result.checks.extend(_analysis_runtime_checks())
+    result.checks.extend(_transcription_dispatch_check())
 
     client = get_service_client()
     if client is None:
