@@ -6,6 +6,98 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-17 — homr run on the real page, and the three importer bugs it found
+
+**Branch:** `main`. The owner asked to switch to the HOMR engine — *"that's what
+we originally planned"* — and they are right: `modal_app.py` says so in its own
+docstring, *"Adding HOMR later is another `@app.function` in this file with its
+own image and its own memory — that is the whole point of the shape."*
+
+This entry is step one: **homr actually run**, against the real String Bass
+page, and the importer bugs that surfaced the moment its output met this
+codebase. The Modal function follows.
+
+### It works, and it is not what I expected
+
+`homr==0.7.0`, installed clean into a scratch venv. **onnxruntime, not PyTorch** —
+the dependency list is Pillow, numpy, onnxruntime, opencv-headless, rapidocr,
+requests. Nothing that needs a GPU.
+
+On the photograph:
+
+- It found and **dewarped staves 0 through 9** — ten, exactly the number my own
+  detector settled on, arrived at independently. Dewarping is the thing I
+  concluded the vision path could not do: each system on that page slopes by
+  more than its own height and no single rotation fixes it.
+- TrOMR inference per staff: 0.44 s to 2.3 s.
+- It caught the **key change** — `fifths 2` then `fifths -1`, D major into F
+  major, which is exactly what the page does at bar 108.
+- Output is MusicXML, and this repo has had a tested importer for MusicXML
+  since Batch 2.
+
+Through `score_json_from_musicxml`: **74 measures, 267 notes, and 73 of the 74
+bars add up.** The one that does not is a multi-bar rest read as an empty
+measure. The page is bars 80–159, so 74 measures against 80.
+
+Against the vision chain on a comparable page: 59 measures, 112 notes, 1.9 notes
+per bar. This is 3.6.
+
+### What the importer got wrong, and it was all one cause
+
+`measure_el.find("attributes")` reads the **first** `<attributes>` block in a
+measure. homr writes two in measure 1: `<divisions>` alone, and then the clef
+and key. So:
+
+| | reported | correct |
+|---|---|---|
+| clef | **treble** | bass |
+| key | F major | D major |
+| metre | 2/2 (the change) | the opening |
+
+**The clef is the serious one.** `ScoreJson.clef` is documented as nullable
+precisely so this cannot happen — *"a bass part labelled 'Treble clef' is a
+worse answer than no label"* — and the importer defaulted `clef_fallback` to
+`"treble"`, which the only real caller never overrode. A bass part came back
+labelled treble, from a file that states `<sign>F</sign><line>4</line>`.
+
+The metre was wrong more subtly: the loop kept looking until it found one, so it
+took the **change** at measure 23 and presented it as the page's header — which
+reports every bar before the change as having the wrong number of beats, on a
+file that states both correctly. Now the header is the first metre stated and a
+later, *different* one goes on its measure, where `meters_in_force` reads it.
+A metre restated unchanged at a system break is not a change.
+
+Same for the clef: a later one no longer overwrites the first, because a bass or
+cello part going into tenor clef for a high passage is one of the most ordinary
+things in this repertoire.
+
+**These are bugs in the existing `.mxl` import path too.** Anyone who imported a
+bass part written by a program that splits its attributes has had it labelled
+treble since Batch 2.
+
+### A test of mine that could not fail
+
+`test_the_header_is_the_metre_the_piece_starts_in` first used 4/4 changing to
+2/2. `beats_per_measure` answers in **quarter** beats, so both are 4.0 and the
+assertion held whatever the code did. Rewritten with 3/4.
+
+### The licence, and it needs a decision
+
+**homr is AGPL-3.0.** Running it as a network service is what §13 is written
+about. Keeping it unmodified in its own Modal container, invoked across a
+process boundary, is the standard isolation and is what the architecture here
+already does — but this is a paid product and it is worth a deliberate answer
+rather than my assumption. Flagged to the owner.
+
+**Tests:** 7 new cases. Seven mutations — only the first attributes block read,
+a later metre overwriting the header, a restatement counted as a change, the
+change not attached or not carried, the treble fallback restored, and a later
+clef overwriting the first — all killed.
+
+Backend 968 tests green (961 before), ruff clean.
+
+---
+
 ## 2026-09-17 — The prompt asked for a duration that would destroy the answer
 
 **Branch:** `main`. Eighteenth iteration of *fix the OMR system till it works*.
