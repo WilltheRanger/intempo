@@ -6,6 +6,84 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-24 — Deleting a piece left its photograph in the bucket forever
+
+**Branch:** `main`. One iteration; the every-minute cron had queued ~80 identical
+firings behind the long ones, so it is now every two hours, which is roughly
+what an iteration actually takes.
+
+### The leak
+
+The only storage deletion in the backend is reached from `POST /:id/accept`,
+keyed off an existing row. `delete_score` removed the row and nothing else — so
+the moment it returned, the object had **no row, no accept path and no delete
+path**. Permanent, unreachable, in a bucket nobody was going to look in.
+
+That contradicts the rule the same file states plainly: the photograph is
+discarded when a person is done with it. Deleting the piece is a person being
+done with it.
+
+`_remove_object` already existed and is already careful — it returns False
+rather than raising, so storage being down cannot take a request with it.
+`delete_score` simply never called it.
+
+### Two orderings, both load-bearing
+
+- **The key is read before the row is deleted.** The row is the only thing that
+  knows where the photograph is; reading afterwards finds nothing and the
+  object is unreachable — the same bug by a different route.
+- **The object is removed strictly after the delete *succeeded*.** Not merely
+  after it ran. The case that separates the two is a select that finds a row
+  and a delete that matches none — a race, or filters that did not line up.
+  Removing on the strength of the read takes the photograph from a score that
+  is still there and then answers 404 as though nothing happened.
+
+A storage outage does not block the delete. The row is what the app reads, and
+a musician deleting a piece they no longer want must not be refused because a
+bucket is unreachable. The orphan is logged; that is no worse than the
+behaviour this replaces, which orphaned it every time.
+
+### Tests
+
+Six in `test_scores_router.py`. Backend **1073 passed**, ruff clean.
+
+Five mutations, all caught — but **one survived the first pass and the reason
+is worth keeping**: moving the removal above the 404 check. The existing 404
+test could not catch it, because its select returns nothing, so there is no key
+and the ordering is untested by it. A test whose fixture makes the mutated code
+inert is not a test of that code. The new case gives the select a row and the
+delete none, which is the only shape that tells the two orderings apart.
+
+### Checked and NOT a real risk — recorded so nobody chases it
+
+I suspected the legibility check shipped earlier today could falsely refuse a
+**wide** page, because `_ink_profile`'s blur radius scales with the page's
+shorter side and `_BAND_SMOOTH_FRACTION` scales with its width. Measured, on
+pages tiled from a real fixture whose staves are a known 11 px:
+
+| page | aspect | verdict |
+|---|---|---|
+| 1200×1240 | 0.97 | read |
+| 1200×496 | 2.4 | read |
+| 2400×744 | 3.2 | read |
+| 3600×496 | 7.3 | read |
+| **4800×372** | **12.9** | **refused** |
+| **4800×248** | **19.4** | **refused** |
+| 6000×248 | 24.2 | read |
+
+So it is real, and it starts somewhere past **7:1** — which no photograph of a
+page has. A two-page spread is about 3:1 and reads. Not worth fitting the
+constants to; worth knowing the boundary rather than guessing at it, and worth
+recording that the failure is not monotonic in aspect ratio, so anyone who does
+chase it should measure rather than reason.
+
+### Not verified
+
+homr has still never read a page in production. Nothing in today's commits has
+been through the deployed pipeline.
+
+---
+
 ## 2026-08-24 — "The app crashed while starting" — it hadn't, and homr is now the only reader
 
 **Branch:** `main`. Two things the owner asked for: a screenshot of the app

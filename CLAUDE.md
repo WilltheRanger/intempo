@@ -336,6 +336,14 @@ there works differently as of 2026-08-24:
   after a page of invented notes. It keeps the failure **type** and never the
   message: `grpclib` puts the credential in the message, and a readiness detail
   is served over HTTP.
+- **Deleting a piece deletes its photograph too.** `delete_score` removed the
+  row and left the object, and the only storage deletion is reached from
+  `POST /:id/accept` keyed off an existing row — so the object then had no row,
+  no accept path and no delete path, forever. Two orderings hold it together:
+  the key is read **before** the row goes (the row is the only thing that knows
+  it), and the object is removed strictly after the delete **succeeded**, never
+  merely after it ran — a select that finds a row and a delete that matches
+  none must not cost a photograph. Storage being down never blocks the delete.
 - **The photograph is deleted only when a person accepts the reading.**
   `POST /v1/scores/:id/accept` is the only thing that discards it, and it
   refuses for a page still being read or one that failed. Never wire discarding
