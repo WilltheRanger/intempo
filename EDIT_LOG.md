@@ -6,6 +6,73 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-17 — Every log.info in the service was being thrown away
+
+**Branch:** `main`. Seventeenth iteration of *fix the OMR system till it works*,
+and it was found by checking my own work rather than by looking for it.
+
+The previous entry added a startup line reporting the reader's chain, so a stale
+`OCR_PROVIDER_CHAIN` would be visible in the hosting logs. It deployed, went
+live — and **nothing appeared**. Not the healthy line, not the warning.
+
+```
+logging level for "intempo": WARNING
+handlers on root:            []
+isEnabledFor(INFO):          False
+```
+
+**Nothing in this service configures logging at all.** The effective level was
+Python's default of WARNING, and the only reason anything reached the hosting
+logs is that uvicorn installs a root handler. So `log.warning` and `log.error`
+got out and **twenty-seven `log.info` calls did not**, in production, since the
+first deploy.
+
+That is not a cosmetic gap, and the list of what was silent says why:
+
+- `read %d systems separately: %d measures, %d notes` — the one line that says
+  whether reading a page a stave at a time works at all
+- `system %d of %d could not be read (%s); reading the page whole`
+- `a band of %d px holds %d staff line(s)` — why a page refused to split
+- `crop %d of %d holds no music, which is what the edge of a page looks like`
+- `%d of %d measure(s) do not add up; asking %s to re-read only those`
+- `%s: returned no clef, trying the next provider`
+
+I have spent this session reading the hosting logs because the API is
+unreachable from here, and drawing conclusions from what was there. **What was
+there was every failure and no successes** — the shape of the evidence was set
+by the log level, not by the system.
+
+`configure_logging()` raises this service's own logger to `LOG_LEVEL`, default
+INFO. Two deliberate limits:
+
+- **Only `intempo`.** Root stays where uvicorn put it, so request logs and
+  library chatter are unchanged. The goal is to hear what this code says, not
+  everything it imports.
+- **A handler only when nothing else has one.** Under uvicorn root already has
+  one and these records propagate to it; a second prints every line twice, and a
+  log nobody can skim is a log nobody reads. Without uvicorn — a script, a
+  worker, a test — there is no handler at all and `logging.lastResort` carries
+  WARNING and above only, so INFO would still vanish.
+- An unusable `LOG_LEVEL` falls back to INFO. `logging.getLevelName` answers a
+  *string* for a name it does not know, so a typo would have set the level to
+  something that is not a level. Failing quiet is the one thing this must not
+  do; it is the state it was written to end.
+
+**The mutation that mattered.** "Remove the call from `lifespan`" survived the
+first pass, because every test called `configure_logging()` directly. The
+function was correct and never ran — which is exactly the same as no
+configuration at all, and exactly the bug being fixed. It is now asserted
+through `lifespan`, with a precondition that fails if the logger is already at
+INFO for some other reason.
+
+**Tests:** 7 new cases. Seven mutations — the call removed from startup, the
+level never raised, a handler always or never added, root made louder instead,
+a bad level left as a string, the name not normalised — all killed.
+
+Backend 948 tests green (940 before), ruff clean.
+
+---
+
 ## 2026-09-17 — A server misconfiguration told the musician to re-take the photograph
 
 **Branch:** `main`. Sixteenth iteration of *fix the OMR system till it works*.
