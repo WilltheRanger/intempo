@@ -145,11 +145,23 @@ def test_one_crop_per_system() -> None:
 
 def test_every_crop_is_one_system() -> None:
     """The property that makes the whole idea work. A crop holding two systems
-    asks the model the same question the page did, only smaller."""
+    asks the model the same question the page did, only smaller.
+
+    One *substantial* band, not exactly one band: the crops overlap on purpose,
+    so a crop shows a sliver of its neighbour — a few rows of notehead tips. A
+    fragment a fraction of the tallest band's height is that overlap working;
+    two comparable bands in one crop would be the failure.
+    """
     from app.services.page_image import crop_systems
 
-    for crop in crop_systems(_stacked(_strips())):
-        assert len(find_systems(crop)) == 1
+    for index, crop in enumerate(crop_systems(_stacked(_strips()))):
+        found = find_systems(crop)
+        heights = sorted((bottom - top for top, bottom in found), reverse=True)
+        assert heights, f"crop {index} holds nothing"
+        substantial = [h for h in heights if h > heights[0] * 0.5]
+        assert len(substantial) == 1, (
+            f"crop {index} holds {len(substantial)} comparable bands: {heights}"
+        )
 
 
 def test_the_crops_come_back_in_reading_order() -> None:
@@ -415,25 +427,27 @@ def test_the_padding_cannot_span_the_gap_the_detector_leaves() -> None:
 # ---------------------------------------------------------------------------
 # A real page, and the shape of how it failed
 #
-# Measured on a photographed String Bass part with eleven staves on it — the
-# first real orchestral page this repository has seen. The detector returned
-# **two** bands, of 9 and 2 staff lines, and `crop_systems` handed the pipeline
-# two crops covering a fraction of the music. Nothing raised: the other nine
-# staves were simply never sent to any model, and the musician would have got a
-# short transcription that looked fine.
+# Measured on a photographed String Bass part with **ten** systems on it — the
+# first real orchestral page this repository has seen. The old detector returned
+# **two** bands, and `crop_systems` handed the pipeline two crops covering a
+# fraction of the music. Nothing raised: the other eight systems were simply
+# never sent to any model, and the musician would have got a short
+# transcription that looked fine. It now returns twelve crops: its ten systems,
+# and the desk above and below the sheet.
 #
 # The photograph is not in the repository — it is a copyrighted part — so these
-# reproduce the two things that were actually wrong with it: the dark desk
-# visible around the paper, and staves whose lines are too faint to register.
+# reproduce what was measurably wrong with it: the desk in shot, a cut that
+# would go through a system, and a band far taller than a system.
 # ---------------------------------------------------------------------------
 
 
 def _with_a_dark_edge(page: bytes, *, rows: int = 40) -> bytes:
     """The desk, at the top of the photograph.
 
-    A full-width dark run, which is exactly what a staff line looks like to a
-    horizontal projection — except that it also drags the median gap up and then
-    merges with the staves nearest it.
+    A full-width dark run. To a projection of mostly-dark rows this was
+    indistinguishable from a staff line, and worse than that: it inflated the
+    standard deviation the threshold was derived from, so the ink on the
+    well-lit paper stopped counting.
     """
     from PIL import Image, ImageDraw
 
@@ -445,98 +459,190 @@ def _with_a_dark_edge(page: bytes, *, rows: int = 40) -> bytes:
     return buffer.getvalue()
 
 
-def test_a_band_holding_two_staves_stops_the_page_being_cut_up() -> None:
-    """The guard, on the failure that was measured rather than imagined.
+def test_a_dark_edge_no_longer_stops_the_page_being_cut_up() -> None:
+    """The desk in the photograph, which is what defeated the old detector.
 
-    A stave is five lines. When a band holds nine, the detector has merged
-    things that are not one system, and cutting the page on that detection
-    drops every staff it missed — silently, because nothing failed. Reading the
-    page whole is worse at reading; this is worse at not losing the music.
+    A full-width dark band looked exactly like a staff line to a projection of
+    mostly-dark rows: it merged with the staves nearest it and it inflated the
+    standard deviation the threshold was derived from, so the ink on the
+    well-lit paper stopped counting. Ink density measured against the paper
+    immediately around each pixel does not care — a uniform dark region has the
+    same brightness as its own background, so it is not ink.
+
+    The desk still becomes a band of its own, and that is deliberate: it gets a
+    crop, and a crop with no music on it is what `NoMusicFound` is for at the
+    first and last position. What must not happen is the page failing to split.
     """
-    from app.services.page_image import _bands_are_staves, _systems_and_runs, crop_systems
+    from app.services.page_image import crop_systems
 
     page, pasted = _phone_page(FIXTURES / "01_simple_printed.jpg")
     shot = _with_a_dark_edge(page)
 
-    systems, runs = _systems_and_runs(shot)
-    lines = [
-        sum(1 for run_top, run_bottom in runs if run_top >= top and run_bottom <= bottom)
-        for top, bottom in systems
-    ]
-    # On this page the desk stands alone as a one-line band rather than merging
-    # into a staff, because the pasted bands are far apart. On the real page it
-    # merged, giving 9. Either way it is a band that is not a stave, which is
-    # what the guard is for; the merged case is covered directly, on runs, by
-    # `test_every_band_has_to_be_a_stave_not_most_of_them` — reproducing it
-    # exactly needs the photograph, which is not in the repository.
-    assert len(systems) == pasted + 1 and 1 in lines, (
-        f"the dark edge did not disturb the detector ({lines}), so this page is "
-        "not reproducing the failure it was written for"
-    )
-    assert not _bands_are_staves(systems, runs)
-    assert crop_systems(shot) == [], (
-        "the page was cut on a detection that had found something that is not "
-        "a stave, so the music it missed would never have been read"
+    crops = crop_systems(shot)
+    assert len(crops) >= pasted, (
+        f"a dark edge cost the page {pasted - len(crops)} crop(s); the music on "
+        "those systems would never have been read"
     )
 
 
 @pytest.mark.parametrize("name", sorted(p.name for p in FIXTURES.glob("0*.jpg")))
 def test_a_page_the_detector_reads_properly_is_still_cut_up(name: str) -> None:
     """The other side of the guard, and the one that makes it a guard rather
-    than a switch. Every band on every fixture holds five staff lines — six
-    where a hand-ruled staff adds a run of its own — so every one of these pages
-    still splits."""
-    from app.services.page_image import _bands_are_staves, _systems_and_runs, crop_systems
+    than a switch. Every one of these pages still splits into exactly its own
+    systems."""
+    from app.services.page_image import crop_systems
 
     page, pasted = _phone_page(FIXTURES / name)
-    systems, runs = _systems_and_runs(page)
 
-    assert _bands_are_staves(systems, runs)
     assert len(crop_systems(page)) == pasted
 
 
-def test_every_band_has_to_be_a_stave_not_most_of_them() -> None:
-    """All-or-nothing, and the reason is the whole point of the guard.
+def test_the_crops_tile_the_page() -> None:
+    """The property that retires an entire class of failure.
 
-    Keeping the bands that pass and dropping the ones that do not leaves a page
-    with holes in it — which is the thing being prevented. `alignment.py`
-    accumulates durations, so a missing line shifts every bar after it and the
-    musician is told they rushed a passage they played correctly.
+    Cropping the *bands* and discarding what lay between them is how the real
+    page lost its music: the detector found two bands out of ten systems and
+    nothing raised, so the rest was never sent to any model. Even with the
+    detector rewritten, padded bands hold 85% of that page's ink.
+
+    The crops tile it instead. Asserted on the source rows rather than on crop
+    heights, because heights include the overlap and therefore sum to more than
+    the page whether or not there is a gap in the middle — an assertion on the
+    total passed with the tiling removed.
     """
-    from app.services.page_image import _bands_are_staves
+    from PIL import Image
 
-    five = [(0, 4), (10, 14), (20, 24), (30, 34), (40, 44)]
-    second = [(t + 100, b + 100) for t, b in five]
-    runs = five + second
-    good = [(0, 44), (100, 144)]
+    from app.services.page_image import _crop_boxes, prepare_for_model
 
-    assert _bands_are_staves(good, runs)
-    # One band that swallowed both staves, alongside nothing else wrong.
-    assert not _bands_are_staves([(0, 144)], runs)
-    # One good band and one fragment: the fragment's staff is the music lost.
-    assert not _bands_are_staves([(0, 44), (100, 114)], runs)
+    page, pasted = _phone_page(FIXTURES / "02_medium_printed.jpg")
+    prepared, _media = prepare_for_model(page)
+    with Image.open(io.BytesIO(prepared)) as image:
+        height = image.height
+
+    boxes = _crop_boxes(prepared)
+
+    assert len(boxes) == pasted
+    assert boxes[0][0] == 0, f"rows 0..{boxes[0][0]} belong to no crop"
+    assert boxes[-1][1] == height, (
+        f"rows {boxes[-1][1]}..{height} belong to no crop"
+    )
+    for index, ((_top, bottom), (next_top, _next_bottom)) in enumerate(
+        zip(boxes, boxes[1:])
+    ):
+        assert next_top < bottom, (
+            f"crops {index} and {index + 1} leave rows {bottom}..{next_top} "
+            "in no crop at all"
+        )
 
 
-def test_a_hand_ruled_staff_with_a_sixth_run_still_counts_as_a_stave() -> None:
-    """`05_handwritten_messy` gives 6 runs for half its bands, so the slack is
-    not decoration — a check of exactly five would refuse to split the messiest
-    real-looking page in the corpus."""
-    from app.services.page_image import _STAFF_LINES, _STAFF_LINE_SLACK, _bands_are_staves
+def test_the_overlap_is_the_same_everywhere() -> None:
+    """Which is what "padding from the page's typical band" means, stated as a
+    property rather than as an implementation.
 
-    six = [(0, 2), (8, 10), (16, 18), (24, 26), (32, 34), (36, 38)]
-    assert _bands_are_staves([(0, 38)], six)
-    assert _STAFF_LINE_SLACK >= 1
-    assert _STAFF_LINES == 5, "a stave is five lines; this is not a knob"
+    Padding each crop by its own band's height makes the overlap vary — and on
+    the real page the odd band is the desk, three times a system tall, whose
+    padding reached a whole system upward so that system came back in two crops.
+    Read twice, the page is longer than the music and every bar after it is
+    compared against the wrong moment of the recording.
+    """
+    from app.services.page_image import _crop_boxes, prepare_for_model
+
+    # On a page of identical pasted strips every band is the same height, so
+    # per-band padding and median padding agree and this proves nothing — which
+    # is how it was written first. The dark edge is what makes the heights
+    # differ, the same way the desk does on a real photograph.
+    page, _pasted = _phone_page(FIXTURES / "01_simple_printed.jpg")
+    prepared, _media = prepare_for_model(_with_a_dark_edge(page, rows=140))
+    boxes = _crop_boxes(prepared)
+
+    from app.services.page_image import _bands, _ink_profile
+
+    heights = [bottom - top for top, bottom in _bands(_ink_profile(prepared)[1])]
+    assert len(set(heights)) > 1, (
+        f"every band is {heights[0]}px tall, so per-band padding cannot differ "
+        "from the median and this test cannot fail"
+    )
+
+    overlaps = [bottom - next_top for (_t, bottom), (next_top, _b) in zip(boxes, boxes[1:])]
+    assert len(set(overlaps)) == 1, (
+        f"the overlap between crops varies: {overlaps} for bands {heights}"
+    )
+    assert overlaps[0] > 0
+
+
+def test_a_gap_is_cut_at_its_quietest_row_not_its_middle() -> None:
+    """A gap between two systems is not uniformly empty: a low note hangs under
+    one staff and a rehearsal mark sits above the next, so the quietest row is
+    off-centre. Cutting at the midpoint takes a notehead with it, and the bar it
+    belonged to comes back short in both crops.
+
+    Asserted on a profile rather than on a page, because every gap on every
+    fixture here is uniformly white — midpoint and minimum coincide, and the
+    difference is invisible on all of them.
+    """
+    import numpy as np
+
+    from app.services.page_image import _cut_rows
+
+    # Two bands with a gap from 40 to 100. The gap is not empty: something
+    # hangs under the first staff, so its quietest row is at 90, not 70.
+    smoothed = np.zeros(200, dtype=np.float32)
+    smoothed[0:40] = 0.30
+    smoothed[100:140] = 0.30
+    smoothed[40:88] = 0.05
+    smoothed[88:100] = 0.001
+
+    assert _cut_rows([(0, 40), (100, 140)], smoothed) == [88]
+
+
+def test_a_cut_that_would_go_through_a_system_stops_the_page_being_cut_up() -> None:
+    """The one way tiling crops can still damage a page.
+
+    A cut inside a system splits the bar it lands in between two crops, both
+    halves come back short, and the bar count is wrong from there to the end.
+    So a cut has to be quiet: measured, the loudest cut on the real page carries
+    0.044 of a row's width in ink against 0.20 inside the quietest band, and on
+    every fixture here the cuts are at exactly zero.
+    """
+    import numpy as np
+
+    from app.services.page_image import _cuts_are_quiet
+
+    bands = [(0, 40), (100, 140)]
+    quiet = np.zeros(200, dtype=np.float32)
+    quiet[0:40] = 0.3
+    quiet[100:140] = 0.3
+    assert _cuts_are_quiet(bands, [70], quiet)
+
+    # The same two bands, but the gap between them is nearly as inky as they
+    # are — which is what a cut aimed at the middle of a system looks like.
+    loud = quiet.copy()
+    loud[40:100] = 0.2
+    assert not _cuts_are_quiet(bands, [70], loud)
+
+
+def test_a_page_with_no_gaps_at_all_is_read_whole() -> None:
+    """A profile with no valleys is not a page of systems — it is one block of
+    ink, or a photograph of something that is not music. Cutting it anywhere
+    goes through the middle of whatever it is."""
+    import numpy as np
+
+    from app.services.page_image import _cuts_are_quiet
+
+    solid = np.full(200, 0.3, dtype=np.float32)
+    assert not _cuts_are_quiet([(0, 90), (110, 200)], [100], solid)
 
 
 def test_a_dense_page_is_not_the_problem() -> None:
-    """Eleven staves is not what defeated the detector, and it matters that this
-    is written down: the obvious explanation for a real page failing was that it
-    holds more systems than a fixture does, and it is wrong. A page carrying
-    eleven bands at real spacing is detected exactly.
+    """How much music is on the page is not what defeated the detector, and it
+    matters that this is written down: "a real page holds more systems than a
+    fixture" was the obvious explanation and it is wrong. A page carrying eleven
+    bands at real spacing was detected exactly even by the old projection.
 
-    What defeated it was the desk in the photograph and staves too faint to
-    register — neither of which is a property of how much music is on the page.
+    What defeated it was that a page held in the hand is not flat — each system
+    slopes by more than its own height across the width — and that the desk in
+    shot dragged the darkness threshold below the ink. Neither is a property of
+    how much music is on the page.
     """
     from PIL import Image
 

@@ -6,21 +6,159 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-17 — The detector rewritten against the real page: 2 systems to 10
+
+**Branch:** `main`. Eleventh iteration of *fix the OMR system till it works*.
+The previous entry shipped a guard so a page the detector could not read was
+read whole instead of silently losing most of its music, and said plainly that
+this probably left the split path **inert on real input**. It did. This is the
+detector.
+
+### The measurement that changed the design
+
+Looking at the page itself rather than at thresholds: **the systems are
+individually sloped, and the slope grows down the page.** The first three are
+near-horizontal — exactly the three the old detector found — and by bars
+136–151 a staff drops by more than its own height across the width. That is
+page curl and camera angle, not rotation, which is why the ±4° sweep found
+nothing: every system slopes by a *different* amount, so no single angle
+straightens them.
+
+That kills the premise. "Staff lines are the longest horizontal runs of ink, so
+rows that are mostly dark are staff lines" is true of a flat scan and false of a
+photograph held in the hand. A line spread over eighty rows is not mostly dark
+in any of them. Removing the desk from the frame and trying every threshold from
+`mean-std` to `mean-0.3std`, and local illumination normalisation on top, moved
+the count from 15 line-runs to at best 41 where ten staves need about fifty. No
+threshold was ever going to work.
+
+### What replaced it
+
+**Ink density, not darkness.** A band of rows holding a system carries several
+times the ink of the gap above it *however tilted it is*. Smoothed over roughly
+a system's height, each system becomes one hill with a clear valley either side.
+
+- Ink is measured against the paper immediately around each pixel — a box blur
+  of 2.5% of the shorter edge — because the page runs from 193 down to 146 grey
+  across its own height, so a global threshold finds the ink in the shadow and
+  misses the ink in the light.
+- **The smoothing window scales with the page *width*, not its height.** Height
+  was the obvious choice and it is wrong: page height depends on how many
+  systems are on the page, so a single-staff strip — which is every fixture here
+  — got a window of three rows and returned its five staff lines as five bands.
+  Staff size scales with the width, because a system spans the page and holds a
+  broadly fixed number of bars.
+- The constant was chosen from a **sweep across eleven pages** — five fixtures
+  as bare strips, the same five stacked into multi-system pages, and the real
+  part. Everything from 0.032 to 0.042 gets all eleven right; 0.036 is the
+  middle. There is a second pocket at 0.046–0.050 where the real page's two desk
+  bands merge away and it returns exactly ten. Three samples wide, and tidy on
+  the only real page in hand: not taken. That is how a constant gets fitted to
+  one photograph.
+
+**Result.** The real page: **2 bands → 12**, being its ten systems plus the desk
+above and below the sheet. Every fixture still gives exactly its own count, as a
+bare strip *and* stacked. Ten of the twelve crops hold one complete legible
+system — bar numbers, the multi-bar rest at 82–88, `rit.`, `ff`, the bowings.
+
+### The crops tile the page now
+
+The deeper fix, and it retires a whole class of failure rather than detecting
+it. Cropping the *bands* and discarding what lay between them is how the page
+lost eight systems with nothing raising. Even with the detector rewritten,
+padded bands hold **85%** of that page's ink — a system's worth still missing.
+
+So every row belongs to a crop: the first starts at row 0, the last ends at the
+last row, and the boundaries are the **quietest row between two bands**, not the
+midpoint of the gap. A gap is not uniformly empty — a low note hangs under one
+staff and a rehearsal mark sits above the next — and the quietest row is the one
+place a cut cannot take a notehead with it.
+
+`_crop_boxes` exists so those numbers can be asserted directly. An assertion on
+summed crop *heights* passed with the tiling removed, because the overlap makes
+them exceed the page height either way.
+
+**The overlap comes from the median band, never each band's own height.** On the
+real page the bottom band is the desk and is three times a system tall; padded
+by its own height it reached a whole system upward and the last system came back
+in two crops — read twice, so the page is longer than the music and every bar
+after it is compared against the wrong moment of the recording. Fixed and
+visible in the before/after crops.
+
+### `_bands_are_staves` is gone, and what replaced it
+
+The five-line count guarded a detector that found crisp line runs. Ink bands
+have no such runs, and with tiling the failure it guarded against cannot happen.
+Two things replace it:
+
+- **`_cuts_are_quiet`** — the one way tiling can still damage a page is a cut
+  placed inside a system, splitting a bar between two crops so both halves come
+  back short and the bar count is wrong from there on. Measured: the loudest cut
+  on the real page carries 0.044 of a row's width in ink against 0.20 inside the
+  quietest band, and on every fixture the cuts are at exactly zero.
+- **`NoMusicFound`**, a subclass of `OCRError`. Because the crops tile the whole
+  photograph, the first and last cover the page's margin, its title block and
+  whatever the page was lying on — on the real page, the desk. Treating those as
+  failures sent the page back to be read whole, which is the fallback firing on
+  every photograph with any edge in shot. An *interior* crop with no notes is
+  still fatal: it has music above and below it, so an empty one is a read that
+  failed, and accepting it puts a hole in the page. A subclass rather than a
+  flag so a caller that does not know about it treats it as the failure it is,
+  and so a rate limit on the first crop is never mistaken for a blank margin.
+
+### Corrections
+
+The previous entry said the page carries **eleven** staves. Counted off the
+crops, it is **ten** — bars 80–92, 93–99, 100–106, 107–114, 115–121, 122–128,
+129–135, 136–143, 144–151, 152–159. Two of ten, not two of eleven. Corrected in
+that entry, in `CLAUDE.md` and here.
+
+The same entry attributed the failure partly to the desk inflating the standard
+deviation and dragging the threshold to 112. That is true and it is not the main
+cause: with the desk cropped out entirely the count only went from 15 to 16.
+The slope is the cause.
+
+### Tests
+
+17 mutations across both files — the window's basis, the smoothing in both
+directions, ink against the photograph instead of the paper, cropping bands
+instead of tiling, abutting instead of overlapping, cutting at the midpoint and
+at the top of the gap, the quiet guard in both directions, padding from the
+tallest band and padding per-crop, the band threshold at the floor, and all four
+`NoMusicFound` behaviours — every one killed. Three survived the first pass:
+the tiling and the cut placement had no assertion that could see them (fixed by
+`_crop_boxes` and by a synthetic profile with an off-centre valley), and the
+overlap test used a page of identical pasted strips, where per-band and median
+padding are the same number and nothing could differ.
+
+Backend 887 tests green (880 before), ruff clean. Mobile 233, typecheck clean.
+
+**Still unmeasured.** Whether the model reads more music out of these crops than
+out of the whole page. Everything above is geometry — that the right pixels get
+sent. What comes back is a live scan away.
+
+---
+
 ## 2026-09-17 — A real orchestral part, and the detector found 2 staves out of 11
 
 **Branch:** `main`. Tenth iteration of *fix the OMR system till it works*. The
-owner sent a photograph of a real part — String Bass – 2, bass clef, **eleven
-staves**, bars 80–159, variations, multi-bar rests, rehearsal boxes, `rit.`,
+owner sent a photograph of a real part — String Bass – 2, bass clef, **ten
+systems**, bars 80–159, variations, multi-bar rests, rehearsal boxes, `rit.`,
 `rall.`, a cut-time change, handwriting on it. The first real repertoire this
 repository has ever seen. Every fixture here is a 40 KB exercise-book strip.
 
 **`find_systems` returned two bands, holding 9 and 2 staff lines.** `crop_systems`
 accepted them and handed the pipeline two crops. Nothing raised, so the
 never-worse guard in `parse_sheet_music` never fired — it only triggers on an
-*error* — and the music on the nine staves the detector missed would simply
+*error* — and the music on the eight systems the detector missed would simply
 never have been sent to any model. The musician gets a short transcription that
 looks fine. **That is strictly worse than the whole-page read this replaced**,
 and it was live.
+
+**Correction (same day).** This entry first said the page carries *eleven*
+staves. Counted off the crops the rewritten detector produces, it is **ten**:
+bars 80–92, 93–99, 100–106, 107–114, 115–121, 122–128, 129–135, 136–143,
+144–151, 152–159. Two of ten, not two of eleven. Nothing else here changes.
 
 ### The guard, and why the constant is not a knob
 
@@ -47,7 +185,7 @@ the next pass to start from the numbers rather than re-derive them.
   the problem. *(Rotating it further gives 0 systems, so the projection axis is
   right.)*
 - **It is not skew.** Swept ±4° in 0.5° steps: the best angle gives 15 runs
-  against the ~55 that eleven staves should produce. No angle helps.
+  against the ~50 that ten staves should produce. No angle helps.
 - **It is not the resolution, and it is not how much music is on the page.** A
   synthetic page carrying eleven bands at real spacing (1.15× the band height,
   against `_phone_page`'s 1.9×) is detected exactly — eleven systems, five lines
