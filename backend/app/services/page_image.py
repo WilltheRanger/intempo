@@ -405,3 +405,110 @@ def _register_heif() -> None:
         pillow_heif.register_heif_opener()
     except ImportError:  # pragma: no cover
         log.info("pillow-heif is not installed; HEIC pages will not be normalised")
+
+
+#: How dark a row has to be, as a fraction of its width, to look like a staff
+#: line. Staff lines are the longest horizontal runs of ink on a page — longer
+#: than any beam, slur or word — which is what makes them findable without
+#: knowing anything else about the music.
+_STAFF_ROW_DARKNESS = 0.45
+
+#: Vertical padding around a system, as a multiple of its own height.
+#:
+#: Generous on purpose, and asymmetric would be better still: what sits above a
+#: staff is rehearsal marks, dynamics, bowings and the tempo text that says
+#: `Meno mosso`, and what sits below is more dynamics and the occasional
+#: fingering. Cropping tight to the staff lines throws all of it away, and the
+#: pipeline reads a page for its markings as well as its notes.
+_SYSTEM_PADDING = 0.55
+
+#: Below this, splitting is not worth doing: the page is already a single
+#: system — which is what every fixture in this repository is — and one crop
+#: of the whole thing is the same picture with an extra decode.
+_MIN_SYSTEMS_TO_SPLIT = 2
+
+
+def find_systems(image_bytes: bytes) -> list[tuple[int, int]]:
+    """The `(top, bottom)` of each staff system on the page, in pixels.
+
+    **Why this exists.** `MODEL_MAX_EDGE` squeezes a page onto a 1568 px edge,
+    and the comment above it is right about the reason — Anthropic downsamples
+    anything larger, so more pixels in *one* image buy nothing. The conclusion
+    that followed was wrong: it is only true if the page has to be one image.
+
+    Measured against this repository's own fixtures, which are the material the
+    reader was tuned on: every one of them is a **single staff strip**, 1200 px
+    wide and 72–168 px tall, and none is downscaled at all. A photographed page
+    is ten systems in portrait; at 1568 px tall each system gets about 150 px
+    *including its margins*, so the staff itself lands at 40–60 px — three to
+    four times less than anything the reader was ever shown. That is why a real
+    orchestral part comes back with 59 measures and 112 notes.
+
+    Found by horizontal projection rather than a model: staff lines are the
+    longest horizontal runs of ink on any page — longer than a beam, a slur or
+    a word — so rows that are mostly dark are staff lines and nothing else is.
+    No training, no dependency, and it degrades to "one system" rather than to
+    a wrong answer.
+    """
+    try:
+        import numpy as np
+        from PIL import Image, ImageOps
+    except ImportError:  # pragma: no cover — both are declared dependencies
+        return []
+
+    _register_heif()
+    try:
+        with Image.open(io.BytesIO(image_bytes)) as image:
+            image = ImageOps.exif_transpose(image).convert("L")
+            pixels = np.asarray(image, dtype=np.float32)
+    except Exception:  # noqa: BLE001 — an unreadable page is the caller's problem
+        return []
+
+    if pixels.size == 0 or pixels.shape[0] < 8:
+        return []
+
+    # Dark relative to *this* photograph. An absolute threshold fails on the
+    # two things phone photographs of paper always are: unevenly lit, and grey
+    # rather than white.
+    dark = pixels < (pixels.mean() - pixels.std())
+    staff_rows = dark.mean(axis=1) > _STAFF_ROW_DARKNESS
+
+    runs: list[tuple[int, int]] = []
+    start: int | None = None
+    for row, is_staff in enumerate(staff_rows):
+        if is_staff and start is None:
+            start = row
+        elif not is_staff and start is not None:
+            runs.append((start, row))
+            start = None
+    if start is not None:
+        runs.append((start, len(staff_rows)))
+
+    if not runs:
+        return []
+
+    # The five lines of one staff are five separate runs, and the page has no
+    # idea how far apart they should be — it depends on the engraving, the
+    # photograph's distance and the crop. So the page is asked: the gaps
+    # *within* a staff are all much the same, and the gap *between* systems is
+    # several times larger. Splitting on a multiple of the median gap needs no
+    # constant that could be wrong for a different page.
+    #
+    # Keyed to page height instead at first, which put the threshold below one
+    # staff's own line spacing and returned every line as its own system.
+    gaps = [
+        runs[i + 1][0] - runs[i][1] for i in range(len(runs) - 1)
+    ]
+    typical = sorted(gaps)[len(gaps) // 2] if gaps else 0
+    gap = max(4, typical * 3)
+    systems: list[tuple[int, int]] = []
+    top, bottom = runs[0]
+    for run_top, run_bottom in runs[1:]:
+        if run_top - bottom <= gap:
+            bottom = run_bottom
+        else:
+            systems.append((top, bottom))
+            top, bottom = run_top, run_bottom
+    systems.append((top, bottom))
+
+    return systems
