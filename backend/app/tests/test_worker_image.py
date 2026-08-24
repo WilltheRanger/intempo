@@ -1,0 +1,150 @@
+"""What the analysis worker is allowed to need.
+
+`modal_app.py` ships `app/` **minus `routers/` and `tests/`** — deliberately,
+because a container that never serves a request has no business carrying
+FastAPI, and because that container is the second place the service-role key
+lives, so the smaller it is the better.
+
+The cost of that decision is a failure mode with terrible timing: an import the
+worker reaches for that is not in the image fails **inside a container, on a
+deploy**, long after the change that caused it looked fine. Every test here
+runs green locally in that situation, because locally the file is right there.
+
+So the constraint is enforced rather than remembered.
+"""
+
+from __future__ import annotations
+
+import subprocess
+import sys
+from pathlib import Path
+
+BACKEND = Path(__file__).resolve().parents[2]
+
+
+def _import_with_routers_hidden(module: str) -> subprocess.CompletedProcess:
+    """Import `module` in a fresh interpreter where `app.routers` does not exist.
+
+    A subprocess rather than a fixture: the import graph is process-wide, and
+    this test suite has already imported the routers by the time it runs. Only
+    a clean interpreter can answer the question honestly.
+    """
+    script = f"""
+import sys, importlib.abc, importlib.machinery
+
+class Absent(importlib.abc.MetaPathFinder):
+    def find_spec(self, name, path=None, target=None):
+        if name == "app.routers" or name.startswith("app.routers."):
+            raise ModuleNotFoundError(
+                f"{{name}} is not in the Modal image (see modal_app.py `ignore`)"
+            )
+        return None
+
+sys.meta_path.insert(0, Absent())
+import {module}
+print("ok")
+"""
+    return subprocess.run(
+        [sys.executable, "-c", script],
+        cwd=BACKEND,
+        capture_output=True,
+        text=True,
+    )
+
+
+def test_the_worker_imports_without_the_routers() -> None:
+    result = _import_with_routers_hidden("app.workers.analysis_runner")
+
+    assert result.returncode == 0, (
+        "the analysis worker reached for something the Modal image does not "
+        f"ship, which would fail on deploy rather than here:\n{result.stderr}"
+    )
+
+
+def test_the_analysis_itself_imports_without_the_routers() -> None:
+    """Belt and braces: `analyze()` is what Modal is really there to run, and
+    it is also what the tuning CLI and the corpus regression run locally."""
+    result = _import_with_routers_hidden("app.services.analysis")
+
+    assert result.returncode == 0, result.stderr
+
+
+def test_the_dispatcher_imports_without_modal_installed() -> None:
+    """The API box does not have `modal` and must not need it.
+
+    `dispatch` is imported by the router on every startup. If it imported
+    `modal` at module level, an API without the package would refuse to boot —
+    which is exactly the machine that has to keep working when the remote
+    runtime is off.
+    """
+    script = """
+import sys, importlib.abc
+
+class Absent(importlib.abc.MetaPathFinder):
+    def find_spec(self, name, path=None, target=None):
+        if name == "modal" or name.startswith("modal."):
+            raise ModuleNotFoundError("modal is not installed on the API box")
+        return None
+
+sys.meta_path.insert(0, Absent())
+import app.workers.dispatch
+print("ok")
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", script], cwd=BACKEND, capture_output=True, text=True
+    )
+
+    assert result.returncode == 0, result.stderr
+
+
+def test_the_image_still_excludes_what_this_assumes_it_does() -> None:
+    """If `modal_app.py` starts shipping the routers, these tests are guarding
+    a rule that no longer exists — which is worse than not guarding, because
+    they still pass."""
+    source = (BACKEND / "modal_app.py").read_text()
+
+    assert '"**/routers/**"' in source
+    assert '"**/tests/**"' in source
+    assert 'add_local_dir(\n        "app"' in source
+
+
+def test_the_tuning_config_lands_where_the_loader_looks() -> None:
+    """Two paths that have to agree, written in two files.
+
+    `audio_config.CONFIG_PATH` is `parents[2] / "config.toml"` relative to
+    `app/services/audio_config.py`. In the container that module is at
+    `/root/app/services/`, so it will look at `/root/config.toml` — and the
+    image has to put it exactly there. `add_local_dir("app", "/root/app")` and
+    `add_local_file("config.toml", "/root/config.toml")` satisfy that, and
+    nothing but this test says so.
+
+    Getting it wrong is not subtle — the first analysis on Modal raises
+    `FileNotFoundError` — but it is invisible until then, and "the deploy
+    worked and the first take failed" is an expensive way to find out.
+    """
+    from app.services import audio_config
+
+    module = Path(audio_config.__file__).resolve()
+    assert audio_config.CONFIG_PATH == module.parents[2] / "config.toml", (
+        "the loader's layout rule changed; the image has to change with it"
+    )
+
+    source = (BACKEND / "modal_app.py").read_text()
+    assert 'remote_path="/root/app"' in source
+    assert 'add_local_file("config.toml", remote_path="/root/config.toml")' in source
+
+
+def test_a_missing_tuning_config_is_loud() -> None:
+    """The alternative would be worse than a crash.
+
+    Falling back to built-in defaults would let a container analyse with
+    *different thresholds from the ones every test and the whole corpus
+    regression were run against* — and say nothing. Two musicians, two
+    verdicts, one recording. It raises instead.
+    """
+    import pytest
+
+    from app.services.audio_config import load_audio_config_from
+
+    with pytest.raises(OSError):
+        load_audio_config_from(Path("/nowhere/at/all/config.toml"))
