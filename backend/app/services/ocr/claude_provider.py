@@ -11,7 +11,7 @@ import base64
 import threading
 import time
 
-from anthropic import Anthropic, AnthropicError
+from anthropic import Anthropic
 
 from app.services.ocr.base import (
     PROMPT,
@@ -19,6 +19,7 @@ from app.services.ocr.base import (
     OCRResponse,
     json_object_in,
 )
+from app.config import settings
 from app.services.score_schema import ScoreJson
 
 #: Output budget for one transcription.
@@ -81,6 +82,25 @@ class ClaudeProvider:
         if self._client is None:
             with self._client_lock:
                 if self._client is None:
+                    # Checked here, as the Gemini provider has always checked
+                    # its own. `Anthropic()` constructs perfectly well without
+                    # a key and defers the complaint to the first request,
+                    # where it arrives as a **TypeError** — "Could not resolve
+                    # authentication method" — which is not an `AnthropicError`
+                    # and so was caught by nothing in the chain.
+                    #
+                    # What that cost: on a deployment whose Modal secret
+                    # carries only Supabase credentials, homr reads a page,
+                    # scores below `CONFIDENCE_THRESHOLD` (which a handheld
+                    # photograph normally does), the pipeline asks the models
+                    # as well, and the TypeError unwinds straight past the
+                    # branch whose entire job is "a doubtful reading beats
+                    # none" — discarding a usable transcription and telling
+                    # the musician "Something went wrong reading this page."
+                    if not settings.ANTHROPIC_API_KEY:
+                        raise OCRProviderError(
+                            f"{self.name}: ANTHROPIC_API_KEY is not configured"
+                        )
                     self._client = Anthropic()
         return self._client
 
@@ -125,13 +145,24 @@ class ClaudeProvider:
                     }
                 ],
             )
-        except AnthropicError as exc:
+        except Exception as exc:  # noqa: BLE001 — see below
             # The contract in `base.py` says an SDK error is an
             # `OCRProviderError`, and until a real scan hit one this did not
             # honour it: a 400 from the API escaped the pipeline's `except`,
             # skipped every remaining provider, and reached the client as a
             # 500 with a stack trace. One provider being unable to read a page
             # is precisely the situation the chain exists for.
+            #
+            # This caught `AnthropicError` alone and was wrong a second time,
+            # for the same reason in a different costume: a missing key raises
+            # `TypeError` from inside the SDK, which is not an `AnthropicError`
+            # and escaped again. The narrow catch has now failed twice, so the
+            # boundary is what it should always have been — **anything raised
+            # while trying to read a page is this provider failing to read the
+            # page**, and the chain exists to carry on past that. The type and
+            # message travel with it, so a bug in here still says what it was.
+            if isinstance(exc, OCRProviderError):
+                raise
             raise OCRProviderError(f"{self.name}: {type(exc).__name__}: {exc}") from exc
         latency_ms = int((time.monotonic() - start) * 1000)
 
