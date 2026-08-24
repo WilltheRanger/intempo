@@ -36,45 +36,64 @@ four times: two implementations disagreeing about a musician's timing, with
 nothing to say which produced a given result. There is a test asserting the
 import.
 
-## Setting it up
+## Setting it up without a development environment
 
-**1. Install and log in.**
+`modal deploy` is the only way to publish a Modal app, and it needs Python, the
+repo and a logged-in CLI — a development environment, kept solely to ship a
+change to the analysis. So a GitHub Action does it instead
+(`.github/workflows/deploy-modal.yml`): push to `main` and it is live. Nothing
+below needs a terminal.
+
+**1. On modal.com** — sign up, then two things in the dashboard.
+
+*Secrets → Create new secret → Custom.* Name it exactly `intempo-backend`, with
+two keys:
 
 ```
-uv pip install modal
-modal setup
-```
-
-**2. Give it the two things it needs.** The worker talks to Supabase and
-nothing else.
-
-```
-modal secret create intempo-backend \
-    SUPABASE_URL=... \
-    SUPABASE_SERVICE_ROLE_KEY=...
+SUPABASE_URL                 https://YOUR-PROJECT.supabase.co
+SUPABASE_SERVICE_ROLE_KEY    the service_role key
 ```
 
 This is the **second place that key lives**. It is why the image is narrow — no
 `fastapi`, no `uvicorn`, no model SDKs — a container that can only reach
 Supabase is a smaller thing to hold a service-role key.
 
-**3. Deploy.**
+*Settings → API Tokens → New token.* You get a token **id** and a token
+**secret**. Copy both now; the secret is shown once.
+
+**2. On GitHub** — the repository → Settings → Secrets and variables → Actions
+→ New repository secret. Add them under exactly these names:
 
 ```
-cd backend
-modal deploy modal_app.py
+MODAL_TOKEN_ID
+MODAL_TOKEN_SECRET
 ```
 
-**4. Check it against a real row**, without a phone:
+**3. Run the deploy.** The repository → Actions → **Deploy Modal** → Run
+workflow. (It also runs by itself whenever anything the worker contains
+changes.) Without the two secrets it skips with a note rather than failing —
+a red cross on every push in a repo that has not been set up yet is noise.
 
-```
-modal run modal_app.py --analysis-id <uuid>
-```
+**4. Check it worked.** modal.com → Apps → `intempo` should list a deployed
+`run_analysis`. The Action's log says the same thing.
 
-**5. Turn it on** — set on Render, under Environment:
+**5. Turn it on** — on Render, under Environment:
 
 ```
 ANALYSIS_RUNTIME=modal
+```
+
+Saving it redeploys the API, which is when the switch takes effect.
+
+### If you do have a terminal
+
+The same three steps, faster:
+
+```
+pip install modal && modal setup
+modal secret create intempo-backend SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=...
+cd backend && modal deploy modal_app.py
+modal run modal_app.py --analysis-id <uuid>   # one real row, no phone needed
 ```
 
 Anything else, including unset, keeps the work in-process. The comparison is

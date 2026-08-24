@@ -6,6 +6,50 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-08 (evening) — Deploying Modal without a terminal
+
+**Branch:** `main`. The user asked where the `modal deploy` command is supposed
+to be run, having said plainly that they want the app to work and are testing
+from Cloudflare rather than a laptop.
+
+Fair question, bad answer as things stood. `modal deploy` is the only way to
+publish a Modal app, and it needs Python, the repository and a logged-in CLI —
+a development environment, kept solely to ship a change to the analysis. The
+setup doc I wrote assumed one without noticing.
+
+**A GitHub Action deploys it instead.** Push to `main` and it is live. The paths
+are narrow — the image contains the analysis and the worker and nothing else, so
+a change to a router or a screen has no business spending a deploy — and
+`workflow_dispatch` is on, so a first deploy, or a re-deploy after changing a
+secret, does not need a commit to trigger it.
+
+**Without the tokens it skips with a note rather than failing.** A red cross on
+every push in a repository that has not been set up yet is noise, and noise on a
+signal is how the signal stops being read.
+
+**Everything else is dashboard work**, which is the point:
+
+- modal.com → Secrets → a custom secret named `intempo-backend`, holding
+  `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`
+- modal.com → Settings → API Tokens → the id and the secret
+- GitHub → Settings → Secrets → `MODAL_TOKEN_ID`, `MODAL_TOKEN_SECRET`
+- GitHub → Actions → Deploy Modal → Run workflow
+- Render → Environment → `ANALYSIS_RUNTIME=modal`
+
+The terminal version is still in the doc, below the one that does not need one.
+
+**Worth noticing.** I wrote a setup guide opening with `uv pip install modal`
+for someone who has been deploying from dashboards all week and told me so. The
+instruction was correct and unusable, which is its own kind of wrong.
+
+**No three-foot test.** No UI touched.
+
+**Tests:** backend 706, unchanged — nothing here is code.
+
+**Rollback:** delete the workflow.
+
+---
+
 ## 2026-09-08 (later) — Making the container's assumptions fail here instead of there
 
 **Branch:** `main`. The Modal image ships `app/` **minus `routers/` and
