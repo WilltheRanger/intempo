@@ -45,6 +45,27 @@ export function CapturedPagesScreen() {
     setPendingDelete(id);
   }
 
+  // Whether the viewfinder is underneath us.
+  //
+  // It is on the scan route and it is not on the import route, where
+  // `ImportPages` *replaces* itself with this screen. Four controls here need
+  // to know: three of them called `goBack()` regardless, which on the import
+  // route meant the Today tab — with the pages still in the session and
+  // nothing able to reach them, since the only screens that navigate here both
+  // start a new one.
+  const scannerBelow =
+    navigation.getState()?.routes.some((route) => route.name === 'Scanner') ?? false;
+
+  // "Add page" means the viewfinder either way. `adding` is what stops a
+  // freshly pushed one resetting the scan it was opened to extend.
+  function addPage() {
+    if (scannerBelow) {
+      navigation.goBack();
+      return;
+    }
+    navigation.navigate('Scanner', { adding: true });
+  }
+
   function handleRetake(id: string) {
     // **Nothing is deleted here.** The page is marked as the one the next
     // photograph replaces, and `captureSession.capture` swaps it in where it
@@ -75,14 +96,14 @@ export function CapturedPagesScreen() {
         <PageHeader
           title="Review pages"
           onBack={() => navigation.goBack()}
-          backLabel="Back to the scanner"
+          backLabel={scannerBelow ? 'Back to the scanner' : 'Back'}
         />
         <EmptyState
           icon={Layers}
           title="No pages left"
           description="You've removed every page. Capture at least one to continue."
           actionLabel="Add page"
-          onActionPress={() => navigation.goBack()}
+          onActionPress={addPage}
         />
       </ScreenContainer>
     );
@@ -105,7 +126,8 @@ export function CapturedPagesScreen() {
         eyebrow={pageCountLabel(pages.length)}
         title="Review pages"
         onBack={() => navigation.goBack()}
-        backLabel="Back to the scanner"
+        // It said "Back to the scanner" on a route with no scanner on it.
+        backLabel={scannerBelow ? 'Back to the scanner' : 'Back'}
       />
 
       <Text variant="metadataSmall" color="textTertiary" style={styles.hint}>
@@ -123,7 +145,7 @@ export function CapturedPagesScreen() {
       <SecondaryButton
         label="Add page"
         icon={Plus}
-        onPress={() => navigation.goBack()}
+        onPress={addPage}
         style={styles.addPage}
       />
 

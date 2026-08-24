@@ -11,6 +11,16 @@ export interface EmptyStateProps {
   icon?: LucideIcon;
   actionLabel?: string;
   onActionPress?: () => void;
+  /**
+   * Refuse further taps while the action is in flight.
+   *
+   * `SecondaryButton` has always taken this; nothing passed it. So a caller
+   * that changed the label to say it was working — "Try reading it again"
+   * becoming "Reading again…" — changed only the words, and the button stayed
+   * pressable underneath them. Double-tapping the re-read on a failed scan
+   * started two readings of the same page.
+   */
+  actionDisabled?: boolean;
 }
 
 /** Shown when a screen has nothing to display. Plain and unapologetic. */
@@ -20,6 +30,7 @@ export function EmptyState({
   icon: Icon,
   actionLabel,
   onActionPress,
+  actionDisabled = false,
 }: EmptyStateProps) {
   return (
     <View style={styles.container}>
@@ -46,6 +57,7 @@ export function EmptyState({
         <SecondaryButton
           label={actionLabel}
           onPress={onActionPress}
+          disabled={actionDisabled}
           style={styles.action}
         />
       ) : null}

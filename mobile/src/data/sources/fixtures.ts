@@ -105,6 +105,18 @@ const DEMO_SCORE: ScoreJson = {
   notes_to_human: 'Fixture score. Not OCR output.',
 };
 
+/**
+ * The same music, with nothing having read a clef off the page.
+ *
+ * A real state, not a broken one: `ScoreJson.clef` is nullable because an
+ * imported MusicXML file need not state one, `PATCH` accepts an explicit null
+ * as an answer, and a page can simply be photographed from the middle of a
+ * part. The fixture build had no piece in it, so the screen that handles the
+ * case could not be looked at without a live backend — which is how it came to
+ * caption the guess "Treble clef" for as long as it did.
+ */
+const UNREAD_CLEF_SCORE: ScoreJson = { ...DEMO_SCORE, clef: null };
+
 const FIXTURE_PIECES: FixturePiece[] = [
   {
     id: 'fixture-bach-bwv1001',
@@ -170,7 +182,8 @@ const FIXTURE_PIECES: FixturePiece[] = [
     practicedDaysAgo: 19,
     thumbnail: require('../../../assets/fixtures/01_simple_printed.jpg'),
     markedBpm: MARKED_BPM,
-    score: DEMO_SCORE,
+    // The one piece whose clef nobody read — see `UNREAD_CLEF_SCORE`.
+    score: UNREAD_CLEF_SCORE,
   },
   {
     // Just added, never recorded against. Exercises the "Start practice" label

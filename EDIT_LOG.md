@@ -6,6 +6,128 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-24 — A clef nobody read was captioned "Treble clef", and three more capture-path fixes
+
+**Branch:** `main`. Continuing the capture-path loop.
+
+### 1. The clef (§2: the control was approved earlier this session)
+
+CLAUDE.md says it in as many words — *"`ScoreJson.clef` is nullable. Never
+default it to `treble` to simplify a component — a bass part labelled 'Treble
+clef' is worse than no label"* — and `PieceScoreScreen` had `?? 'treble'` twice.
+
+Two different wrongs from one fallback. The metadata row **captioned** the part
+"Treble clef", indistinguishably from a clef that had been read; and the same
+guess went to the engraver, so every note of an unlabelled bass part was placed
+a seventh off its real pitch. Both states are reachable today: `POST
+/v1/scores/import` of a MusicXML file that states no clef, and `PATCH` with an
+explicit `{"clef": null}`, which the endpoint documents as "a real answer".
+
+- The caption is now **"Clef not read"** when nothing read one.
+- The stave still has to put noteheads somewhere, so the guess remains — but as
+  `UNREAD_CLEF_PLACEMENT`, one named constant that says out loud that it is
+  assuming, with a caveat line under the stave declaring it in the musician's
+  own terms.
+- **The control the owner asked for** ("have an optional option just in case the
+  actual clef is a different one — bass solos sometimes have treble"), on the
+  piece screen, where they chose to put it. A bottom sheet of the four clefs
+  plus **"Not stated"**, which is a real choice and not a cancel: a part can
+  honestly carry no clef, and clearing back to that has to be possible or a
+  wrong tap is permanent.
+- Backend was already done. Mobile gained `UpdateScoreInput.clef` and
+  `useSetClef` — `undefined` omits, `null` clears, matching the server's
+  `"clef" in sent`.
+
+**Why a sheet and not a segmented control:** `SegmentedControl` is documented
+for "two or three mutually exclusive *views* of the same thing… where the point
+is comparison", and there is already one on this screen. Four clefs in a second
+track would be two competing focal points (§3 law 4) and a misuse of the
+component.
+
+**Three-foot test**, on `02-score-unread-clef.png` at 390×844: **the title, then
+the stave, then the black "Looks right" button.** Everything added here sits in
+the recessive band and is not noticed until the third pass — correct, because it
+is a caveat, not a call to action. `Clef not read` reads as a quiet fact in the
+metadata line; `Set the clef` follows the `Fix bar N` pattern already on the
+screen (accent cue, left-aligned, attached to its explanation).
+
+### 2. Two silent failures
+
+- A failed **"Try reading it again"** wrote its reason into `acceptError` — which
+  is only rendered in the branch that *has* notation. The failed branch returns
+  early, so nothing was ever shown: the button said "Reading again…", went back
+  to "Try reading it again", and that was all a musician got. Now rendered where
+  it can happen.
+- `EmptyState` never passed `disabled` to its button, so that same retry stayed
+  pressable while in flight. Two taps started **two readings of one page** (see
+  below). `actionDisabled` now exists and the screen uses it.
+- A **failed clef write** would have looked exactly like a successful one, since
+  the sheet closes on the tap. Surfaced beside the row that offered it.
+
+### 3. The re-read race (backend, no gate)
+
+`POST /v1/scores/:id/transcribe` promised in its own docstring that a second tap
+would not start a second worker. It was a SELECT followed by an **unconditional
+UPDATE** — a guard that only holds if no second request arrives inside the round
+trip, which the un-disabled button above made easy. Both taps read `failed`,
+both passed the check, both wrote `queued`, both spawned a worker: one page read
+twice, in parallel, two containers and two model bills, interleaved writes to
+one row. The worse ending is not the money — run A finishes `done` with good
+notes, run B hits a rate limit a minute later and `_fail` stamps the row
+`failed`, burying a reading that had worked.
+
+Now a compare-and-set: `.in_("transcription_status", ["done", "failed"])`, with
+zero rows updated treated as the same 409 the pre-check gives. Those two values
+are the exact complement of "already being read" — the column is NOT NULL with a
+CHECK over four values (migration 006), so nothing falls through the filter.
+
+### 4. "Add page" finished
+
+The previous entry fixed `handleRetake` and left its three siblings — the header
+back button (twice) and both "Add page" controls — calling `goBack()`, which on
+the import route is the Today tab with the scan unreachable. An adversarial
+check on my own commit is what caught that, and it was right: fixing one of four
+call sites is not fixing the defect.
+
+`Scanner` now takes `{ adding?: boolean }`. "Add page" navigates with it, and
+the viewfinder's reset-on-mount skips when it is set. Asking the *session*
+whether it has pages would not do — an abandoned scan nobody came back to looks
+exactly like one being added to, and appending a new piece's first page to it is
+the failure that reset exists to prevent. Only the caller knows, so the caller
+says. The back label no longer reads "Back to the scanner" on a route with no
+scanner.
+
+### Tests
+
+- `test_scores_router.py` +2: the update carries the compare-and-set, and a tap
+  that loses the race is refused rather than started. Three mutations, all
+  caught (filter dropped — the original bug; the 409 back to a 500; the filter
+  widened to let `queued` through).
+- Backend **1009 passed**; mobile **251 passed**; `tsc --noEmit` clean.
+- `fixtures.ts` gained `UNREAD_CLEF_SCORE`, because the fixture build had no
+  piece with an unread clef — which is *why* the screen could caption a guess
+  for as long as it did. Nobody could look at the state without a live backend.
+
+### Honest status
+
+- One flake seen: `test_sweeper_loop.py::test_it_keeps_sweeping_for_as_long_as_the_server_is_up`
+  failed once under `-x` and passes standalone and in the full 1009-test run.
+  Timing-sensitive; unrelated to anything here; **not investigated**.
+- Navigation is still argued in comments, not tested — see today's
+  `DECISIONS.md` entry for what that buys and what it costs.
+- Still nothing verified on a real device, and no batch tagged.
+
+### Left, from the same audit
+
+Two findings needing the owner, both about the recording flow rather than
+capture: **practice can be started against a page that has not been read yet**
+(the take is analysed against `measures: []`, comes back "we couldn't hear any
+notes", and a free-tier account has spent one of its three for the month), and
+uploads — no client-side size cap, an extension the server rejects sent anyway,
+and every abandoned upload leaving an orphan in storage.
+
+---
+
 ## 2026-08-24 — A drag that was interrupted still moved the page
 
 **Branch:** `main`. Second defect out of the capture-path audit, in the same

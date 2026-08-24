@@ -73,6 +73,22 @@ export interface UpdateScoreInput {
   composer?: string | null;
   movement?: string | null;
   score_json?: ScoreJson;
+  /**
+   * Correct the clef without resending the whole transcription.
+   *
+   * The clef lives inside `score_json`, so this was already possible by
+   * sending the entire score back — reading it, changing one word, and writing
+   * hundreds of notes, losing every concurrent edit in between. The backend
+   * does a read-modify-write of the single field instead, and refuses to do it
+   * at all alongside a `score_json`, because two sources for one field is how
+   * they come to disagree.
+   *
+   * **Omit to leave it alone; send `null` to clear it.** `undefined` drops out
+   * of the JSON body, which is what the server reads as "not sent" — an
+   * explicit null is a real answer, because a part can honestly be unlabelled
+   * and `ScoreJson.clef` is nullable for that reason.
+   */
+  clef?: Clef | null;
 }
 
 /** PATCH /v1/scores/:id — at least one field required. */

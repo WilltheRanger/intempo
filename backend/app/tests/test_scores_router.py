@@ -101,7 +101,13 @@ def _install_supabase(monkeypatch: pytest.MonkeyPatch, *, returning_row: dict | 
         data=[returning_row] if returning_row else []
     )
     # update(...).eq(...).eq(...).execute()
-    table.update.return_value.eq.return_value.eq.return_value.execute.return_value = MagicMock(
+    update_scoped = table.update.return_value.eq.return_value.eq.return_value
+    update_scoped.execute.return_value = MagicMock(
+        data=[returning_row] if returning_row else []
+    )
+    # update(...).eq(...).eq(...).in_(...).execute() — the compare-and-set the
+    # re-read uses. Matches by default; `_lose_the_race` makes it match nothing.
+    update_scoped.in_.return_value.execute.return_value = MagicMock(
         data=[returning_row] if returning_row else []
     )
     # delete(...).eq(...).eq(...).execute()
@@ -1095,6 +1101,75 @@ def test_a_discarded_photograph_cannot_be_read_again(
     assert res.status_code == 409
     assert "discarded" in res.json()["detail"]
     assert enqueued == []
+
+
+def _lose_the_race(sb: MagicMock) -> None:
+    """Make the conditional update match no rows — another request got there
+    first and the row is no longer `done` or `failed`."""
+    (
+        sb.table.return_value.update.return_value.eq.return_value.eq.return_value.in_.return_value.execute.return_value
+    ) = MagicMock(data=[])
+
+
+def test_the_guard_is_on_the_write_not_only_the_read_before_it(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """It was a SELECT and then an unconditional UPDATE.
+
+    That holds only if no second request arrives inside the round trip, and one
+    does: the retry sits on `EmptyState`'s button, which has no `disabled` prop
+    and stays pressable while the first request is in flight. Two taps both
+    read `failed`, both passed the check above, both wrote `queued`, and both
+    spawned a worker — one page read twice, in parallel, on two containers and
+    two model bills, the two runs interleaving writes to the same row.
+    """
+    user_id, score_id = uuid4(), uuid4()
+    _stub_worker(monkeypatch)
+    sb = _install_supabase(
+        monkeypatch,
+        returning_row=_row_for(score_id, user_id, transcription_status="failed"),
+    )
+    _install_storage(sb, signed=[])
+
+    assert _retranscribe(client, score_id, make_token(sub=user_id)).status_code == 200
+
+    scoped = sb.table.return_value.update.return_value.eq.return_value.eq.return_value
+    assert scoped.in_.called, (
+        "the update is unconditional, so the check above only narrows the "
+        "window it loses in"
+    )
+    column, allowed = scoped.in_.call_args.args
+    assert column == "transcription_status"
+    # The complement of {queued, reading}, stated rather than negated: the
+    # column is NOT NULL with a CHECK over exactly these four values
+    # (migration 006), so there is no other state to fall through the filter.
+    assert set(allowed) == {"done", "failed"}
+
+
+def test_a_tap_that_loses_the_race_is_refused_rather_than_started(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """The second of two taps, arriving after the first has queued the row.
+
+    The worse ending is not the duplicated bill. Run A finishes `done` with
+    good notes; run B hits a rate limit a minute later and `_fail` stamps the
+    row `failed` — burying a reading that had worked, under a message telling
+    the musician their page could not be read.
+    """
+    user_id, score_id = uuid4(), uuid4()
+    enqueued = _stub_worker(monkeypatch)
+    sb = _install_supabase(
+        monkeypatch,
+        returning_row=_row_for(score_id, user_id, transcription_status="failed"),
+    )
+    _install_storage(sb, signed=[])
+    _lose_the_race(sb)
+
+    res = _retranscribe(client, score_id, make_token(sub=user_id))
+    assert res.status_code == 409
+    # The same sentence the pre-check gives, because it is the same fact.
+    assert "already being read" in res.json()["detail"]
+    assert enqueued == [], "a second worker was started on a row already queued"
 
 
 def test_re_reading_someone_elses_score_is_404(

@@ -788,6 +788,18 @@ async def retranscribe(
     would win. Refused for a page whose photograph was discarded on acceptance,
     because there is nothing left to read.
 
+    **The refusal is the write, not the read before it.** It was a SELECT
+    followed by an unconditional UPDATE, which only holds if no second request
+    arrives inside the round trip — and one does: the retry sits on
+    ``EmptyState``'s button, which stays pressable while the first request is
+    in flight. Two taps both read ``failed``, both passed this check, both
+    wrote ``queued`` and both spawned a worker, so one page was read twice, in
+    parallel, on two containers and two model bills, with the two runs
+    interleaving their writes to the same row. The worse ending is not the
+    money: run A finishes ``done`` with good notes and run B, a minute later,
+    hits a rate limit and stamps the row ``failed`` — burying a reading that
+    had worked.
+
     Allowed for a *successful* reading as well as a failed one. A musician
     looking at a transcription they can see is wrong should not have to fail
     first to ask for another go.
@@ -820,6 +832,11 @@ async def retranscribe(
             ),
         )
 
+    # Compare-and-set: the same condition the check above states, applied where
+    # it actually settles the race. `transcription_status` is NOT NULL with a
+    # CHECK over the four values (migration 006), so these two are exactly the
+    # complement of "already being read" — there is no null or unknown state to
+    # fall through the filter.
     updated = (
         client.table("scores")
         .update(
@@ -832,12 +849,16 @@ async def retranscribe(
         )
         .eq("id", str(score_id))
         .eq("user_id", str(user_id))
+        .in_("transcription_status", ["done", "failed"])
         .execute()
     ).data or []
     if not updated:
+        # The row was found a moment ago and is scoped by id and user, so the
+        # only thing that can have changed is the status: another request got
+        # here first. Same answer as the check above, for the same reason.
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="failed to queue the re-read",
+            status_code=status.HTTP_409_CONFLICT,
+            detail="this page is already being read",
         )
 
     start_transcription(str(score_id), background_tasks)

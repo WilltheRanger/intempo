@@ -1,4 +1,4 @@
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { StatusBar } from 'expo-status-bar';
 import { Images, X, Zap, ZapOff } from 'lucide-react-native';
@@ -19,7 +19,7 @@ import {
   radii,
   spacing,
 } from '../../design';
-import type { RootNavigation } from '../../navigation/types';
+import type { RootNavigation, RootStackParamList } from '../../navigation/types';
 import { ViewfinderPage } from './ViewfinderPage';
 
 const CAPTURE_BUTTON_SIZE = 68;
@@ -54,6 +54,7 @@ const CAPTURE_BUTTON_SIZE = 68;
  */
 export function ScannerScreen() {
   const navigation = useNavigation<RootNavigation>();
+  const route = useRoute<RouteProp<RootStackParamList, 'Scanner'>>();
   const insets = useSafeAreaInsets();
   const pages = useCapturedPages();
   const [flashOn, setFlashOn] = useState(false);
@@ -65,13 +66,19 @@ export function ScannerScreen() {
   // Opening the scanner starts a new session. Coming back from review to add
   // another page doesn't remount this screen, so the pages survive that.
   //
-  // **Unless it was opened to retake one page**, in which case resetting would
-  // destroy the very scan the retake belongs to. Not hypothetical: pages that
-  // arrived through Import have no scanner under the review list at all, so a
-  // retake there pushes a *fresh* viewfinder, and this effect used to wipe the
-  // whole import on its way in.
+  // **Unless it was opened to retake a page, or to add one to a scan already
+  // in progress** — in both cases resetting would destroy the very scan the
+  // photograph is joining. Not hypothetical: pages that arrived through
+  // Import have no scanner under the review list at all, so both routes push
+  // a *fresh* viewfinder, and this effect used to wipe the whole import on
+  // its way in.
+  //
+  // Asking the session whether it has pages would not do. An abandoned scan
+  // nobody came back to looks exactly like one being added to, and appending
+  // a new piece's first page to it is the failure this reset exists to
+  // prevent. Only the caller knows which it is, so the caller says.
   useEffect(() => {
-    if (!captureSession.retaking()) {
+    if (!captureSession.retaking() && !route.params?.adding) {
       captureSession.reset();
     }
   }, []);
