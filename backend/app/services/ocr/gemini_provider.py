@@ -18,6 +18,7 @@ from app.services.ocr.base import (
     PROMPT,
     OCRProviderError,
     OCRResponse,
+    json_object_in,
 )
 from app.services.score_schema import ScoreJson
 
@@ -119,8 +120,10 @@ class GeminiProvider:
         if not text:
             raise OCRProviderError(f"{self.name}: empty response text")
 
-        # JSON mode means no markdown fences are expected — but parse defensively.
-        score = ScoreJson.model_validate_json(text.strip())
+        # JSON mode means no markdown fences are *expected*. This used to say
+        # "but parse defensively" above a bare `.strip()`, which was not. See
+        # `json_object_in`, which both providers now share.
+        score = ScoreJson.model_validate_json(json_object_in(text))
 
         usage = getattr(response, "usage_metadata", None)
         input_tokens = int(getattr(usage, "prompt_token_count", 0) or 0)

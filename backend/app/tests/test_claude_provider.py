@@ -1,4 +1,4 @@
-"""Tests for `ClaudeProvider` and the markdown-fence stripper."""
+"""Tests for `ClaudeProvider` and the shared JSON-object extractor."""
 
 from __future__ import annotations
 
@@ -9,10 +9,9 @@ from typing import Any
 import httpx
 import pytest
 
-from app.services.ocr.base import OCRProviderError, OCRResponse
+from app.services.ocr.base import OCRProviderError, OCRResponse, json_object_in
 from app.services.ocr.claude_provider import (
     ClaudeProvider,
-    _strip_markdown_fences,
     claude_sonnet_provider,
 )
 
@@ -98,22 +97,55 @@ def install_fake(monkeypatch: pytest.MonkeyPatch):
     return _install
 
 
-# ---- _strip_markdown_fences ------------------------------------------------
+# ---- json_object_in --------------------------------------------------------
+#
+# One copy, shared with `gemini_provider`. It used to live here as
+# `_strip_markdown_fences` while Gemini carried the comment "JSON mode means no
+# markdown fences are expected — but parse defensively" above a bare `.strip()`,
+# which is not defensive at all. Gemini is first in the configured chain, so the
+# provider that claimed to be careful was the one with nothing behind it.
 
 
-def test_strip_no_fence() -> None:
-    raw = '{"a": 1}'
-    assert _strip_markdown_fences(raw) == raw
+def test_a_clean_response_is_left_alone() -> None:
+    assert json_object_in('{"a": 1}') == '{"a": 1}'
 
 
-def test_strip_with_json_label() -> None:
-    raw = '```json\n{"a": 1}\n```'
-    assert _strip_markdown_fences(raw) == '{"a": 1}'
+@pytest.mark.parametrize(
+    "raw",
+    [
+        '```json\n{"a": 1}\n```',
+        '```\n{"a": 1}\n```',
+        'Here is the transcription:\n{"a": 1}',
+        '{"a": 1}\n\nHope that helps!',
+        '```json\n{"a": 1}\n```\nLet me know if you need anything else.',
+        '  \n {"a": 1} \n ',
+    ],
+)
+def test_the_object_is_found_inside_whatever_the_model_actually_sent(raw: str) -> None:
+    """A fence, a sentence before, a sentence after. All three arrive as
+    `json_invalid` from `model_validate_json`, which the running service has
+    logged from **both** providers on one page, and each costs the whole score."""
+    assert json_object_in(raw) == '{"a": 1}'
 
 
-def test_strip_without_label() -> None:
-    raw = '```\n{"a": 1}\n```'
-    assert _strip_markdown_fences(raw) == '{"a": 1}'
+def test_a_truncated_response_is_still_invalid() -> None:
+    """The line this must not cross.
+
+    A response that stopped mid-object has no matching closing brace for its
+    first one, so slicing to the last `}` leaves JSON that is still invalid. The
+    parse still raises and `_is_truncation` still stops the chain rather than
+    paying for the next provider. Repairing a half-read page would be worse than
+    failing on it: the bars that did arrive would be presented as the whole piece.
+    """
+    truncated = '{"measures": [{"measure_number": 1}, {"measure_number": 2'
+    with pytest.raises(json.JSONDecodeError):
+        json.loads(json_object_in(truncated))
+
+
+def test_a_response_with_no_object_in_it_is_returned_as_it_came() -> None:
+    """So the error the caller reports is about what the model actually said,
+    not about a slice of it."""
+    assert json_object_in("I cannot read this image.") == "I cannot read this image."
 
 
 # ---- ClaudeProvider.parse --------------------------------------------------
