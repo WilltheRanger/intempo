@@ -6,6 +6,55 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-11 (night) — The five vocabularies the app declares a second time
+
+**Branch:** `main`.
+
+`preferences.ts` validates a stored instrument against a local `INSTRUMENTS`
+array and a metronome mode against `METRONOME_MODES`. Both are typed
+`Instrument[]` / `MetronomeMode[]`, which stops a *wrong* member going in and
+does nothing about a **missing** one — drop `double_bass` from the array and it
+still compiles.
+
+What that costs is specific. `analyses.instrument` is what the pipeline reads
+to decide how to look for onsets; a bassist whose stored preference silently
+reset to violin on every launch would be analysed with settings tuned for a
+treble string, and nothing anywhere would report it.
+
+**Fourteen tests through storage rather than reading the arrays** — every
+member of each union has to survive a round trip, driven from a
+`Record<Instrument, true>` that TypeScript rejects if the union gains or loses
+a member. Plus per-field fallback (one bad field must not reset the record, or
+upgrading would return a bassist to violin), a saved `false` surviving (a
+`||` default is the switch that will not stay off), and unreadable storage.
+
+**And the server side of it.** `test_client_enums.py` holds `Instrument`,
+`MetronomeMode`, `Band` and `Direction` to the app's `types.ts` by name, both
+directions. `Band` and `Direction` are what the verdict screen switches on: a
+value the app has never heard of is a branch nothing matches — a bar with no
+colour and no word, on the screen the whole app exists to show.
+
+`BpmSource` turned out to live somewhere else. `types.ts` says
+`bpm_source: string` on the *response*, deliberately loose because no screen
+switches on it; the closed union is on the **request**, in `api/analyses.ts`,
+where it has to be closed — a value this API does not accept is a 422 on the
+one request a musician makes after playing. Found by the test failing and
+looking rather than assuming, and it has its own case now.
+
+A last test asserts `_union` raises on a type that does not exist, because a
+regex quietly matching nothing would make every comparison above two empty sets
+and pass — this file's own failure mode, wearing the file as a disguise.
+
+**One of my own tests could not fail, again.** "Setting one preference leaves
+the others alone" called `setInstrument` *first*, when everything else was
+still at its default — so a mutation replacing `...current` with `...DEFAULTS`
+was invisible. The non-default settings go in before the one under test now.
+
+Mutations caught, all twelve across both files.
+
+**Tests run:** backend 754 (748 + 6), mobile 161 (147 + 14), typecheck clean,
+ruff clean. **Rollback:** revert.
+
 ## 2026-09-11 (evening) — `clampBpm(NaN)` was `NaN`
 
 **Branch:** `main`.
