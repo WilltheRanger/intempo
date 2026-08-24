@@ -232,6 +232,51 @@ def _read_any_music(score: ScoreJson) -> bool:
 _MAX_SYSTEMS_TO_READ = 16
 
 
+def _one_system_note(index: int, total: int) -> str:
+    """What the shared prompt cannot know: this image is one line of a page.
+
+    The prompt is written for a page — "read the page straight through, top to
+    bottom, once", "the header field is the metre the piece *starts* in", a
+    token budget argued from "well over a hundred notes". Handed a single
+    system, every one of those framings is either wrong or over-cautious, and
+    the model has no way to tell. `OCRProvider.parse` already takes a `note`
+    for exactly this: a second question of the same page without a second
+    prompt file drifting away from the first.
+
+    The index is in it because line one *is* the top of the page and lines two
+    onward are not, and that difference decides what a time signature printed
+    at the left edge means.
+    """
+    return (
+        f"ADDITIONAL CONTEXT: this image is ONE SYSTEM — line {index} of "
+        f"{total} — cut out of a larger page. It is not the whole piece.\n"
+        "\n"
+        "- The crop is padded, so it may show a sliver of the staff above or "
+        "below: a row of notehead tips, the ends of some stems, part of a "
+        "barline. Read ONLY the complete staff in the middle. A bar picked up "
+        "from a neighbouring line is read twice, once here and once when that "
+        "line is read, and the page ends up longer than the music.\n"
+        "- Read every bar on this line. There are only a handful, so there is "
+        "room to look at each one properly — that is the entire reason the "
+        "page was cut up. A whole page asked for four hundred notes in one "
+        "answer and came back with a hundred.\n"
+        "- Number this line's measures 1, 2, 3 … The program joins the lines "
+        "in order and renumbers the whole page afterwards, so these numbers "
+        "only have to be in order within this line.\n"
+        "- A clef, key signature or time signature printed at the start of "
+        "this line goes in the header fields as usual. The program decides "
+        "whether it is the page's own header or a change of metre partway "
+        "down — you cannot tell that from one line and are not being asked "
+        "to.\n"
+        "- If this line does not print a time signature or key signature, "
+        "answer \"unknown\" for it. Do not work one out from the bars. The "
+        "program checks a stated metre against what the bars add up to, so a "
+        "guess that happens to fit is indistinguishable from a real change of "
+        "metre and will be written into the score as one.\n"
+        "- \"notes_to_human\" is about this line only."
+    )
+
+
 def _fits_better(measures: list[Measure], stated: float, running: float | None) -> bool:
     """Do these bars add up to `stated` more often than to `running`?
 
@@ -407,6 +452,7 @@ def parse_sheet_music(
     retry: bool = True,
     on_stage: Callable[[Stage], None] | None = None,
     _by_system: bool = True,
+    _note: str | None = None,
 ) -> ScoreJson:
     """Run the image through the configured provider chain.
 
@@ -489,6 +535,7 @@ def parse_sheet_music(
                             retry=retry,
                             on_stage=on_stage,
                             _by_system=False,
+                            _note=_one_system_note(index, len(crops)),
                         )
                     )
                 except OCRError as exc:
@@ -521,7 +568,9 @@ def parse_sheet_music(
     for provider in chain:
         try:
             stage(f"{STAGE_READING}:{provider.name}")
-            response: OCRResponse = provider.parse(image_bytes, mime_type=media_type)
+            response: OCRResponse = provider.parse(
+                image_bytes, mime_type=media_type, note=_note
+            )
             # Before the beat check, the retry or the confidence gate look at
             # it: everything downstream keys off measure numbers, and the
             # program can derive them more reliably than a model can read them.
@@ -588,7 +637,11 @@ def parse_sheet_music(
             if retry:
                 stage(STAGE_CONFIRMING)
                 corrected = retry_with_arithmetic(
-                    response.score, image_bytes, media_type=media_type, provider=provider
+                    response.score,
+                    image_bytes,
+                    media_type=media_type,
+                    provider=provider,
+                    context=_note,
                 )
                 if not beat_problems(corrected):
                     return corrected

@@ -105,6 +105,7 @@ def retry_with_arithmetic(
     *,
     media_type: str,
     provider: OCRProvider,
+    context: str | None = None,
 ) -> ScoreJson:
     """Return a corrected reading, or the original if the retry does not help.
 
@@ -112,6 +113,13 @@ def retry_with_arithmetic(
     a failure here must leave the first reading standing rather than lose the
     page — the caller has a usable transcription in hand and would be trading
     it for an exception.
+
+    `context` is whatever the first reading was told about this image beyond
+    the shared prompt — currently that it is one system cut from a page. It has
+    to be repeated here or the retry is a *different question about a different
+    thing*: told to renumber a page it thinks it can see all of, a model asked
+    to re-read "measure 3" will look for the third bar of the piece rather than
+    the third bar of the line, and the correction is spliced onto the wrong bar.
     """
     rows = validate_measures(score)
     note = describe_for_retry(rows)
@@ -126,7 +134,10 @@ def retry_with_arithmetic(
     )
 
     try:
-        response: OCRResponse = provider.parse(image_bytes, media_type, note + _ONLY_THESE)
+        ask = note + _ONLY_THESE
+        if context:
+            ask = f"{context}\n\n{ask}"
+        response: OCRResponse = provider.parse(image_bytes, media_type, ask)
     except (OCRProviderError, ValueError) as exc:
         log.info("retry by %s failed, keeping the first reading: %s", provider.name, exc)
         return score
