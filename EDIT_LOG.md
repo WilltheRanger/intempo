@@ -6,6 +6,103 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-24 — Onboarding, part 1: the profile a musician owns
+
+**Branch:** `main`. New work, asked for by the owner: an onboarding step at
+first sign-up for name, instrument and a profile picture. §2 gate observed —
+three decisions put to them before anything was built, and one of my three
+recommendations was overruled (the profile picture, which I proposed deferring
+until the teacher tier gives it a purpose; building it now is their call).
+
+Settled:
+
+- **One screen, skippable.** Not a wizard. Name and instrument, with Skip;
+  everything else stays in Profile.
+- **The instrument moves from the device to the account.**
+- **The profile picture is built now.**
+
+This entry is the backend half. No UI yet, so no §3 pass here — that comes with
+the screen.
+
+### Why the instrument had to move
+
+It has lived in AsyncStorage since `preferences.ts` was written, defaulting to
+violin, with a deliberate and well-argued justification: the warmup names the
+instrument it is written for, so a violist sees at once that it needs changing.
+That reasoning holds on one device and fails on two. Sign in on a phone after
+setting up on the web and you are silently back on violin — a double bassist
+gets a treble warmup with no clue why. It is also the value
+`analyses.instrument` records for every take (008), so the server has been
+trusting the client to tell it something the account should have known.
+
+### The one rule this leans on hardest
+
+**`users.instrument` is nullable and never defaulted.** NULL means *nobody has
+been asked yet*, which is not any of the four answers. This is the rule
+`ScoreJson.clef` already follows and it is written down for the same reason:
+an assumed value that looks identical to a stated one is worse than an absent
+one. A row saying `violin` has to mean a person chose violin — otherwise the
+onboarding screen has nothing to key off, and the app cannot tell "not asked"
+from "asked, plays violin".
+
+`onboarded_at` is a timestamp rather than a boolean for the neighbouring
+reason: *were they asked* and *did they answer* are different questions, and
+only the first decides whether to show the screen. **Someone who skips is
+onboarded.** They were asked and declined; asking again every launch is how a
+skippable screen stops being skippable. The API accepts only `onboarded: true`
+— there is no route back to "never asked", because a client that could send
+false would put the screen back over someone who had already dealt with it.
+
+`avatar_key` stores an **object key, not a URL**, and `/v1/me` signs a fresh
+one per response. That is the lesson `scores.source_image_url` taught: a signed
+URL expires, so a stored one is a value that stops working, and nothing notices
+until a picture quietly stops loading. Signing never raises either — `/v1/me`
+is also first-touch provisioning, and failing it over decoration would lock
+someone out of the app on the first request they make.
+
+### What shipped
+
+- **Migration 009** — `users.instrument` (CHECK over the four), `display_name`,
+  `avatar_key`, `onboarded_at`; and an `avatars` bucket with owner-scoped RLS
+  in the same shape as `score-images`, keyed on the user-id prefix so one
+  account cannot overwrite another's picture by guessing a key.
+- **`PATCH /v1/me`** — omitted leaves alone, explicit null clears, the same
+  contract `PATCH /v1/scores/:id` uses. `extra="forbid"`, so a client cannot
+  offer `tier` or `role` and have it quietly ignored. The id comes from the
+  verified token and is never in the body.
+- `_to_response` is shared by GET and PATCH, because two builders drift and the
+  field that drifts is the one nobody notices — a PATCH returning the row
+  without a freshly signed avatar looks fine until a client trusts it.
+
+### A guard I did not know about caught me
+
+`test_every_column_migration_has_a_readiness_check` failed on the full run:
+migration 009 adds columns and had no entry in `REQUIRED_COLUMNS`. That test
+exists because the list had already gone stale once — 005 added
+`scores.movement`, `PATCH` writes it, and a deployment missing it would 500
+while `/v1/ready` said everything was fine.
+
+Four rows added, one per column rather than one per migration, because a
+deployment can be half-applied and each column fails differently. `instrument`
+is the one that changes behaviour rather than decoration: without it every
+account looks un-onboarded and the screen never stops appearing.
+
+Worth recording that the *repo* caught this, not me. I ran the `test_me.py`
+subset and it was green; only the full suite knew about the rule.
+
+### Tests
+
+18 in `test_me.py`. Ten mutations, all caught, no survivors — including the two
+that matter most: defaulting a missing instrument to violin, and letting
+`onboarded` be un-done.
+
+### Not verified
+
+The migration has not been run against the live database. Nothing here has been
+exercised by a real client — the screen does not exist yet.
+
+---
+
 ## 2026-08-24 — Deleting a piece left its photograph in the bucket forever
 
 **Branch:** `main`. One iteration; the every-minute cron had queued ~80 identical

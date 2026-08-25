@@ -85,6 +85,15 @@ REQUIRED_COLUMNS: tuple[tuple[str, str, str], ...] = (
     ("scores", "transcription_status", "006"),
     ("scores", "transcription_accepted_at", "007"),
     ("analyses", "instrument", "008"),
+    # 009. One row per column the code reads, not one per migration: a
+    # deployment can be half-applied, and each of these fails differently.
+    # `instrument` is the one that changes behaviour rather than decoration —
+    # without it every account looks un-onboarded and the screen never stops
+    # appearing.
+    ("users", "instrument", "009"),
+    ("users", "display_name", "009"),
+    ("users", "avatar_key", "009"),
+    ("users", "onboarded_at", "009"),
 )
 
 
