@@ -178,6 +178,121 @@ staleness test fails when `WAKE_GOES_STALE_AFTER_MS` is made infinite.
 
 ---
 
+## 2026-08-25 — The scan's black hole: a Modal read that dies before its first write
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg` (realigned onto `main`
+after PR #4 merged; the two trees were byte-identical, so nothing was lost).
+Backend only.
+
+**Files:** `backend/app/migrations/010_transcription_call_id.sql` (new),
+`backend/app/workers/dispatch.py`, `backend/app/workers/transcription_runner.py`,
+`backend/app/services/readiness.py`, and their tests.
+
+### What the data said
+
+    id        title  status  stage  error                                   conf
+    4aca7734  TV     failed  null   "Reading this page stopped before…"     null
+    8a7631d7  B      failed  null   "Reading this page stopped before…"     null
+    969c3aa5  Gershwin  done  null  null                                    0.42
+    6633d0bb  In     done    null   null                                    0.40
+    ffb35a65  This   done    null   null                                    0.20
+
+**Every `done` row is 0.2–0.42.** homr's `ocr_confidence` is the *share of bars
+that add up*, and on the one real page measured it read 73 of 74. Those numbers
+are the vision chain. **No page has ever been read by homr through this path**,
+and both scans since `TRANSCRIPTION_RUNTIME=modal` was set hung until the
+sweeper gave up.
+
+The Render log for the last one:
+
+    16:15:42  instance -lqc9b : score 4aca7734: being read on Modal
+    16:39:20  instance -z7xhd : reader chain [...]        ← different instance
+    16:49:23  instance -z7xhd : swept 1 stuck transcription(s) to failed
+
+### The hole
+
+`fn.spawn()` is fire-and-forget, and **Modal writes the row itself**. So a
+container that dies *before its first write* — a bad secret, an image that will
+not import, an OOM at start-up — leaves no trace anywhere. No stage, no error,
+nothing on the API side beyond "being read on Modal", which was true.
+
+The row is then indistinguishable from a page that is merely slow, and the
+sweeper writes the only sentence it has: *"Reading this page stopped before it
+finished."* **That sentence has now been shown to a musician twice, for two
+entirely different faults, and neither was diagnosed.** It is a guess presented
+as a finding, which is the same failure mode as `_UNKNOWN_REASON` blaming the
+photograph.
+
+### The thread back
+
+`fn.spawn()` returns a call id, and Modal answers questions about it long after
+the container is gone. Migration 010 stores it on the row; the sweeper asks
+before it fails anything:
+
+- **still running** → left alone. The cutoff is a guess about elapsed time and
+  Modal knows better; failing a read that is about to succeed costs the
+  photograph, the upload and the wait.
+- **raised** → reported with Modal's own reason, routed through
+  `_why_it_failed`, which already knows how to turn "not installed" into *this
+  is our fault, not your photograph*.
+- **finished but wrote nothing** → its own sentence, and emphatically not the
+  re-photograph advice.
+- **nothing to ask** (read in-process, a pre-010 row, Modal unreachable) → the
+  old sentence, unchanged.
+
+**It never leaves a row stuck.** Every uncertain path falls back to sweeping.
+A musician on a progress bar is not helped by our being unsure, and a row that
+is never swept is the exact bug the sweeper was written to fix.
+
+`_is_still_running` matches on the exception's **name**, not its class: Modal's
+exception module path has moved between versions, and importing it to compare
+would let a version bump silently reclassify every in-flight read as a failure.
+
+### A bug the mutation run found in my own change
+
+`_spawn_transcription_on_modal` returned `str | None`, with
+`getattr(call, "object_id", None) or None` — so a spawn that succeeded but gave
+no handle back returned `None`, which `_decide_and_read` reads as *refused* and
+falls back to reading **in-process, without homr, by the vision models the
+owner removed**. A missing diagnostic would have quietly become a scan that
+invents notes. My own comment three lines above said the opposite.
+
+Now `""` means "spawned, no handle" and `None` means "not spawned". Two
+mutants guard the distinction.
+
+### Also changed
+
+`OCR_PROVIDER_CHAIN` on Render was still
+`['homr','gemini-2.5-flash','claude-sonnet-5','claude-opus-5']` — visible in
+every startup log line. Set to `homr` via the Render API with the owner's
+approval. It only matters when a Modal dispatch fails, which is exactly when it
+would have mattered most.
+
+### Tests
+
+12 new across `test_dispatch.py` and `test_transcription_runner.py`; full suite
+**1134 passed**. Mutation-tested, 12 mutants, 12 killed — including the four
+that found the `or None` bug above.
+
+Migration 010 applied to `intempo-dev` and verified.
+
+### Honest status: this diagnoses, it does not fix
+
+**The scan still does not work, and I have not found out why.** What is now
+true is that the next failure will say what happened instead of guessing. The
+Modal secret points at the right project (owner confirmed), the spawn is
+accepted, the deploy is green — and the container still produces nothing. The
+next scan's `transcription_error` should name it.
+
+I cannot see Modal from here: no token in this sandbox, no Modal MCP server,
+and the agent proxy refuses `modal.com`.
+
+### Rollback
+
+`git revert`, and the column can stay — nothing breaks if it is unread.
+
+---
+
 ## 2026-08-25 — Seven preflights and not one GET: why the skeleton never ended
 
 **Branch:** `main`. Mobile only, no UI change. The Render MCP server reconnected

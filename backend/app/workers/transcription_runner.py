@@ -445,6 +445,79 @@ def _stuck_after() -> timedelta:
     return STUCK_AFTER_REMOTE if TRANSCRIPTION_RUNTIME == "modal" else STUCK_AFTER
 
 
+#: A read Modal says is still in flight. Not an error string, so it can never
+#: be written into `transcription_error` by accident.
+_STILL_RUNNING = object()
+
+#: What the sweeper says when it has nothing better. Unchanged, and now only
+#: reached when there is genuinely nothing to ask: a page read in-process, a row
+#: from before `transcription_call_id` existed, or a Modal that will not answer.
+_SWEPT_WITHOUT_A_REASON = (
+    "Reading this page stopped before it finished. The photograph is still "
+    "here; try reading it again."
+)
+
+
+def _modal_verdict(call_id: str | None):
+    """What Modal says became of this read.
+
+    Returns `_STILL_RUNNING`, or the sentence to put in `transcription_error`.
+
+    **The whole point is the middle case.** A container that dies before its
+    first write — a bad secret, an image that will not import, an OOM at
+    start-up — leaves the row exactly as a slow read leaves it, and the sweeper
+    has been reporting both as "stopped before it finished". Modal remembers the
+    exception long after the container is gone, and asking costs one call.
+
+    **Fails to the old guess, never to leaving a row stuck.** If Modal is
+    unreachable, or the client is a version whose API differs, this returns the
+    sentence it always returned. A musician waiting on a progress bar is not
+    helped by our being unsure, and a row that is never swept is the bug the
+    sweeper was written to fix.
+    """
+    if not call_id:
+        return _SWEPT_WITHOUT_A_REASON
+    try:
+        import modal
+
+        from app.workers.dispatch import clean_modal_credentials
+
+        clean_modal_credentials()
+        # `timeout=0` asks without waiting: a call still running raises rather
+        # than blocking the sweep behind somebody else's page.
+        modal.FunctionCall.from_id(call_id).get(timeout=0)
+    except ImportError:
+        return _SWEPT_WITHOUT_A_REASON
+    except Exception as exc:  # noqa: BLE001 — every outcome arrives as one
+        if _is_still_running(exc):
+            return _STILL_RUNNING
+        # The remote failure, named. `_why_it_failed` already knows how to turn
+        # "not installed", "api key" and the rest into something a musician can
+        # act on — and how to say "this is our fault, not your photograph"
+        # rather than sending them to re-shoot a page that was never wrong.
+        return _why_it_failed(f"{type(exc).__name__}: {exc}")
+    # It finished, and did not write the row. Nothing here can produce the
+    # notes, so the read is over — but the reason is emphatically not the
+    # photograph, and saying so would send someone to re-shoot a good page.
+    return (
+        "This page was read but the result never arrived. That is a fault on "
+        "our side, not with your photograph — try reading it again."
+    )
+
+
+def _is_still_running(exc: BaseException) -> bool:
+    """Whether this exception means "not finished yet" rather than "failed".
+
+    Matched on the **name**, not the class, because the class lives in a Modal
+    module whose path has moved between versions and importing it to compare
+    would make a version bump silently reclassify every in-flight read as a
+    failure. A name that says timeout is Modal declining to wait, which is what
+    `timeout=0` asked for.
+    """
+    name = type(exc).__name__.lower()
+    return "timeout" in name or "notfinished" in name
+
+
 def sweep_stuck_transcriptions(client=None, *, now: datetime | None = None) -> int:
     """Fail reads that stopped happening. Returns how many were swept.
 
@@ -470,33 +543,54 @@ def sweep_stuck_transcriptions(client=None, *, now: datetime | None = None) -> i
     requeued row up, since the only thing that starts a read is the request
     that created the score. `failed` is a state the app already renders, with
     "Try reading it again" on it, which starts a new one.
+
+    **A row that names a Modal call is asked about before it is failed.**
+    Sweeping is a guess — "it stopped happening" — and that guess has now been
+    shown to a musician for two entirely different faults without either being
+    diagnosed. Modal keeps the outcome of a call long after the container is
+    gone, so where there is a call id there is a real answer: still running,
+    or a named exception. Only a row with no answer available gets the guess.
     """
     client = client or get_service_client()
     if client is None:
         return 0
     cutoff = ((now or datetime.now(tz=timezone.utc)) - _stuck_after()).isoformat()
     try:
-        res = (
+        stuck = (
             client.table("scores")
-            .update(
-                {
-                    "transcription_status": "failed",
-                    "transcription_stage": None,
-                    "transcription_error": (
-                        "Reading this page stopped before it finished. The "
-                        "photograph is still here; try reading it again."
-                    ),
-                    "updated_at": _now_iso(),
-                }
-            )
+            .select("id, transcription_call_id")
             .in_("transcription_status", ["queued", "reading"])
             .lt("updated_at", cutoff)
             .execute()
-        )
+        ).data or []
     except Exception:  # noqa: BLE001 — one sweep, not every sweep
         log.exception("stuck-transcription sweep failed")
         return 0
-    swept = len(res.data or [])
+
+    swept = 0
+    for row in stuck:
+        verdict = _modal_verdict(row.get("transcription_call_id"))
+        if verdict is _STILL_RUNNING:
+            # Not stuck — working, and slower than the cutoff. Failing this
+            # would throw away a read that is about to succeed, which is worse
+            # than leaving the progress screen up a little longer.
+            continue
+        try:
+            client.table("scores").update(
+                {
+                    "transcription_status": "failed",
+                    "transcription_stage": None,
+                    "transcription_error": verdict,
+                    "updated_at": _now_iso(),
+                }
+            ).eq("id", row["id"]).in_(
+                "transcription_status", ["queued", "reading"]
+            ).execute()
+        except Exception:  # noqa: BLE001 — one row, not the whole sweep
+            log.exception("score %s: could not be swept", row.get("id"))
+            continue
+        swept += 1
+
     if swept:
         log.info("swept %d stuck transcription(s) to failed", swept)
     return swept

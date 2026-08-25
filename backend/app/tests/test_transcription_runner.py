@@ -319,3 +319,219 @@ def test_an_unrecognised_failure_still_says_something_useful(table, monkeypatch)
     )
     runner.run_transcription(SCORE_ID)
     assert "better-lit" in _final(table)["transcription_error"]
+
+
+# ---------------------------------------------------------------------------
+# Asking Modal what became of a read, instead of guessing
+#
+# A page dispatched to Modal leaves no trace except the `scores` row, and Modal
+# is what writes that row. So a container that dies *before its first write* —
+# a bad secret, an image that will not import, an OOM at start-up — leaves the
+# row exactly as a slow read leaves it. The sweeper reported both as "stopped
+# before it finished", and that sentence was shown to a musician twice for two
+# entirely different faults without either being diagnosed.
+#
+# `fn.spawn()` returns a call id. Modal answers questions about it long after
+# the container is gone.
+# ---------------------------------------------------------------------------
+
+
+class _SweepClient:
+    """A Supabase stand-in that hands back stuck rows and records the updates."""
+
+    def __init__(self, rows):
+        self._rows = rows
+        self.updates: list[tuple[dict, str]] = []
+        self._pending: dict | None = None
+        self._id: str | None = None
+
+    def table(self, _name):
+        return self
+
+    def select(self, *_a, **_k):
+        return self
+
+    def in_(self, *_a, **_k):
+        return self
+
+    def lt(self, *_a, **_k):
+        return self
+
+    def eq(self, _col, value):
+        self._id = value
+        return self
+
+    def update(self, payload):
+        self._pending = payload
+        return self
+
+    def execute(self):
+        if self._pending is not None:
+            self.updates.append((self._pending, self._id))
+            self._pending = None
+            return type("R", (), {"data": [{"id": self._id}]})()
+        return type("R", (), {"data": self._rows})()
+
+
+def _sweep(monkeypatch, rows, verdict):
+    from app.workers import transcription_runner as runner
+
+    monkeypatch.setattr(runner, "_modal_verdict", lambda call_id: verdict)
+    client = _SweepClient(rows)
+    swept = runner.sweep_stuck_transcriptions(client)
+    return swept, client.updates
+
+
+def test_a_read_modal_says_is_still_running_is_not_failed(monkeypatch) -> None:
+    """The cutoff is a guess about elapsed time; Modal knows.
+
+    Failing a read that is about to succeed costs the photograph, the upload
+    and the wait — for the sake of a progress bar that would have finished.
+    """
+    from app.workers.transcription_runner import _STILL_RUNNING
+
+    swept, updates = _sweep(
+        monkeypatch, [{"id": "s1", "transcription_call_id": "fc-1"}], _STILL_RUNNING
+    )
+
+    assert swept == 0
+    assert updates == [], "a running read must not be touched at all"
+
+
+def test_modals_reason_is_reported_rather_than_ours(monkeypatch) -> None:
+    """The whole point. "Stopped before it finished" is what we say when we do
+    not know; when Modal knows, it says."""
+    swept, updates = _sweep(
+        monkeypatch,
+        [{"id": "s1", "transcription_call_id": "fc-1"}],
+        "The transcription service is not configured.",
+    )
+
+    assert swept == 1
+    payload, row_id = updates[0]
+    assert row_id == "s1"
+    assert payload["transcription_status"] == "failed"
+    assert payload["transcription_error"] == "The transcription service is not configured."
+    assert "stopped before it finished" not in payload["transcription_error"]
+
+
+def test_a_row_with_no_call_id_is_swept_exactly_as_before(monkeypatch) -> None:
+    """Read in-process, or written before the column existed. There is nothing
+    to ask, so the old sentence is still the honest one."""
+    from app.workers.transcription_runner import _SWEPT_WITHOUT_A_REASON
+
+    swept, updates = _sweep(
+        monkeypatch, [{"id": "s1", "transcription_call_id": None}],
+        _SWEPT_WITHOUT_A_REASON,
+    )
+
+    assert swept == 1
+    assert updates[0][0]["transcription_error"] == _SWEPT_WITHOUT_A_REASON
+
+
+def test_one_running_read_does_not_hold_up_the_others(monkeypatch) -> None:
+    """The sweep is per row now. A single call Modal will not answer about must
+    not leave every other stuck scan un-swept."""
+    from app.workers import transcription_runner as runner
+
+    monkeypatch.setattr(
+        runner,
+        "_modal_verdict",
+        lambda call_id: runner._STILL_RUNNING if call_id == "fc-1" else "gone",
+    )
+    client = _SweepClient(
+        [
+            {"id": "s1", "transcription_call_id": "fc-1"},
+            {"id": "s2", "transcription_call_id": "fc-2"},
+            {"id": "s3", "transcription_call_id": None},
+        ]
+    )
+
+    assert runner.sweep_stuck_transcriptions(client) == 2
+    assert {row_id for _, row_id in client.updates} == {"s2", "s3"}
+
+
+def test_the_verdict_falls_back_to_the_old_sentence_when_modal_cannot_answer() -> None:
+    """**Never leaves a row stuck.** A musician waiting on a progress bar is
+    not helped by our being unsure, and a row that is never swept is the exact
+    bug the sweeper was written to fix."""
+    from app.workers.transcription_runner import (
+        _SWEPT_WITHOUT_A_REASON,
+        _modal_verdict,
+    )
+
+    # No id to ask about at all.
+    assert _modal_verdict(None) == _SWEPT_WITHOUT_A_REASON
+    assert _modal_verdict("") == _SWEPT_WITHOUT_A_REASON
+
+
+def test_a_finished_call_that_wrote_nothing_does_not_blame_the_photograph(
+    monkeypatch,
+) -> None:
+    """Modal says it succeeded and the row never changed. Whatever went wrong,
+    it was not the page — and the default sentence would send someone out to
+    re-shoot a photograph that was fine."""
+    import sys
+    import types
+
+    from app.workers.transcription_runner import _modal_verdict
+
+    fake = types.ModuleType("modal")
+
+    class _Call:
+        @staticmethod
+        def from_id(_id):
+            return type("C", (), {"get": staticmethod(lambda **_k: None)})()
+
+    fake.FunctionCall = _Call
+    monkeypatch.setitem(sys.modules, "modal", fake)
+
+    reason = _modal_verdict("fc-1")
+
+    assert "our side" in reason
+    assert "flatter" not in reason, "that is the re-photograph advice"
+
+
+def test_a_call_that_raised_is_reported_with_that_reason(monkeypatch) -> None:
+    """And routed through `_why_it_failed`, which already knows how to turn
+    "not installed" into a sentence that says this is our fault."""
+    import sys
+    import types
+
+    from app.workers.transcription_runner import _modal_verdict
+
+    fake = types.ModuleType("modal")
+
+    class _Call:
+        @staticmethod
+        def from_id(_id):
+            def _get(**_k):
+                raise RuntimeError("homr is not installed in this container")
+
+            return type("C", (), {"get": staticmethod(_get)})()
+
+    fake.FunctionCall = _Call
+    monkeypatch.setitem(sys.modules, "modal", fake)
+
+    reason = _modal_verdict("fc-1")
+
+    assert "not with your photograph" in reason
+
+
+def test_a_still_running_call_is_recognised_by_name_not_by_class() -> None:
+    """Matched on the exception's *name* because Modal's exception module path
+    has moved between versions, and importing it to compare would make a
+    version bump silently reclassify every in-flight read as a failure."""
+    from app.workers.transcription_runner import _is_still_running
+
+    class FunctionTimeoutError(Exception):
+        pass
+
+    class OutputNotFinished(Exception):
+        pass
+
+    assert _is_still_running(TimeoutError())
+    assert _is_still_running(FunctionTimeoutError())
+    assert _is_still_running(OutputNotFinished())
+    assert not _is_still_running(RuntimeError("homr is not installed"))
+    assert not _is_still_running(ValueError("Invalid metadata value"))

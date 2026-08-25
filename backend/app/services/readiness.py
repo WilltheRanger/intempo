@@ -95,6 +95,12 @@ REQUIRED_COLUMNS: tuple[tuple[str, str, str], ...] = (
     ("users", "display_name", "009"),
     ("users", "avatar_key", "009"),
     ("users", "onboarded_at", "009"),
+    # 010. Without it a read dispatched to Modal is anonymous, so a container
+    # that dies before its first write is indistinguishable from a slow page
+    # and the sweeper reports a guess. Not blocking would be wrong: the column
+    # is written on every Modal dispatch, so a missing one is an error logged
+    # on every single scan.
+    ("scores", "transcription_call_id", "010"),
 )
 
 
