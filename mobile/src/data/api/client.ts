@@ -288,13 +288,40 @@ const REPEATABLE = new Set(['GET', 'HEAD', 'OPTIONS']);
  * repeated, only when nothing was heard back at all — a request that got a 500
  * is answered and is not tried again.
  */
-/**
- * The wake, started at most once and shared by everything waiting on it.
- *
- * Cleared when it fails, so a later request tries again rather than inheriting
- * one bad result for the life of the process.
- */
+/** The wake currently in flight, shared by everything waiting on it. */
 let waking: Promise<void> | null = null;
+
+/**
+ * When the API was last known to be awake.
+ *
+ * Any response proves it — a 500 as much as a 200 — so this is set from
+ * `send`, on headers arriving, and not from whether the request succeeded.
+ */
+let lastContactAt = 0;
+
+/**
+ * How long a wake is worth anything for.
+ *
+ * **The host goes back to sleep, and the wake was only ever done once.** It
+ * sleeps after about fifteen minutes idle, and `waking` was a promise that
+ * resolved once and then stood for the life of the process — so the wake
+ * protected the first screen of a session and nothing after it. Leave the app
+ * open through a lesson, come back, and the first request is the one thing the
+ * wake exists to prevent: an authenticated request, with a preflight in front
+ * of it, queued behind a seventy-five second cold start. We abort ours at
+ * `REQUEST_TIMEOUT_MS`, so the browser never sends the real request at all, and
+ * the retry queues another preflight and abandons that too. Ninety seconds of a
+ * screen that looks frozen, ending in an error, exactly as before the wake was
+ * added.
+ *
+ * Ten minutes, under the fifteen the host allows, so the question is asked
+ * again while the answer can still be "yes". Anything that keeps the app busy
+ * — the three-second poll of a page being read, a screen being opened —
+ * refreshes `lastContactAt`, so this never fires during use and never costs a
+ * request. It fires after a pause, which is exactly when the host has been
+ * doing the same thing.
+ */
+const WAKE_GOES_STALE_AFTER_MS = 10 * 60 * 1000;
 
 /**
  * Wakes the host, and never fails.
@@ -305,19 +332,36 @@ let waking: Promise<void> | null = null;
  * every failed request is worse than the cold start it was added for. The same
  * rule `shouldOnboard` follows, for the same reason.
  *
+ * Costs nothing when the API has been heard from recently, which is the common
+ * case — every request refreshes that, so during use this returns an
+ * already-resolved promise without touching the network.
+ *
  * Exported so the app can start it at launch instead of at the first query —
  * the wake is the long pole, and beginning it a second earlier is a second
  * off every screen behind it.
  */
 export function warmApi(): Promise<void> {
-  waking ??= withDeadline(
+  // One at a time. Everything that arrives while a wake is in flight waits on
+  // that one rather than starting a second — the host is being woken once, and
+  // a queue of identical health checks would only lengthen the cold start they
+  // are all waiting for.
+  if (waking) {
+    return waking;
+  }
+  if (Date.now() - lastContactAt < WAKE_GOES_STALE_AFTER_MS) {
+    return Promise.resolve();
+  }
+  waking = withDeadline(
     apiFetch<unknown>('/v1/health', { authenticated: false }),
     WAKE_TIMEOUT_MS,
     () => new Error('wake timed out'),
   )
     .then(() => undefined)
-    .catch(() => {
-      // Try again on the next request rather than holding this answer.
+    // Never rejects, and never holds a bad answer: cleared either way below, so
+    // the next request after a failed wake asks again rather than inheriting
+    // this one for the life of the process.
+    .catch(() => undefined)
+    .finally(() => {
       waking = null;
     });
   return waking;
@@ -345,6 +389,11 @@ async function send(path: string, init: RequestInit): Promise<Sent> {
         ...init,
         signal: controller.signal,
       });
+      // Headers arrived, so the host is awake — whatever it went on to say.
+      // Recorded here rather than on success because a 500 is as much proof of
+      // a running server as a 200, and `warmApi` is asking about the server,
+      // not about this request.
+      lastContactAt = Date.now();
       // **The deadline is not cleared here**, which is the whole point of
       // handing `release` back. `fetch` resolves when the *headers* arrive, so
       // clearing it at this line — which is what this used to do, in a

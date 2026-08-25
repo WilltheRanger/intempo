@@ -1,7 +1,9 @@
 import { Asset } from 'expo-asset';
 
 import {
+  CANCELLED,
   requestScoreImageUpload,
+  UploadError,
   uploadToSignedUrl,
   type UploadOptions,
 } from '../../data/api/upload';
@@ -176,14 +178,26 @@ export async function uploadPage(
   // `fetch` on a local URI is how bytes are obtained on both platforms: web
   // handles blob:/data:/http:, and native handles file:. A failure here is a
   // read failure, not a network one, and says so.
+  //
+  // The signal is passed here too. Reading a twelve-megapixel photograph off
+  // the device is not instant, and leaving the screen during it should stop
+  // the scan rather than let it run on to ask the API for somewhere to put a
+  // page nobody is waiting for.
   let bytes: Blob;
   try {
-    const response = await fetch(uri);
+    const response = await fetch(uri, { signal: options.signal });
     if (!response.ok) {
       throw new Error(`reading the image returned ${response.status}`);
     }
     bytes = await response.blob();
   } catch (cause) {
+    // A cancelled read is not a device that could not be read. Saying it was
+    // would put "That page could not be read from the device" on screen for
+    // someone who had just pressed Cancel, blaming their phone for their own
+    // decision.
+    if (options.signal?.aborted) {
+      throw new UploadError(CANCELLED);
+    }
     throw new ScanUploadError('That page could not be read from the device.', cause);
   }
 
@@ -206,6 +220,14 @@ export async function uploadPage(
   }
 
   const { contentType, ext } = typeOf(bytes, uri);
+  // Checked between the two network calls. Asking for a signed URL commits the
+  // musician to nothing, but it is an authenticated round trip that can sit
+  // behind a cold start — long enough to leave the screen in — and issuing a
+  // link with a five-minute life for a scan that has been abandoned is work
+  // nobody will collect.
+  if (options.signal?.aborted) {
+    throw new UploadError(CANCELLED);
+  }
   const signed = await requestScoreImageUpload(`page.${ext}`);
   // Not wrapped in a `ScanUploadError`. `uploadToSignedUrl` already throws an
   // `UploadError` whose message is written for the musician and names which of

@@ -161,7 +161,7 @@ def _assert_within_quota(client: Any, user_id: UUID) -> None:
 
 
 @router.post("", response_model=CreateAnalysisResponse, status_code=status.HTTP_202_ACCEPTED)
-async def create_analysis(
+def create_analysis(
     body: CreateAnalysisRequest,
     background_tasks: BackgroundTasks,
     user_id: UUID = Depends(current_user_id_provisioned),
@@ -193,7 +193,7 @@ async def create_analysis(
 
 
 @router.get("", response_model=list[AnalysisResponse])
-async def list_analyses(
+def list_analyses(
     user_id: UUID = Depends(current_user_id),
     score_id: UUID | None = Query(
         default=None, description="Only analyses of this score."
@@ -232,7 +232,7 @@ async def list_analyses(
 
 
 @router.get("/{analysis_id}", response_model=AnalysisResponse)
-async def get_analysis(
+def get_analysis(
     analysis_id: UUID,
     user_id: UUID = Depends(current_user_id),
 ) -> AnalysisResponse:

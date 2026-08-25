@@ -6,6 +6,178 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-25 — The API served one request at a time, and the app waited on it
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Backend and mobile. No UI
+change: no screen, component, style or copy was touched. The one screen file
+edited (`TranscribeScreen`) got a behavioural fix — its Cancel button now
+cancels — and renders exactly what it did before.
+
+**Files:** `backend/app/routers/{scores,analyses,me,upload,corrections,calibration}.py`,
+`backend/app/auth.py`, `backend/app/db.py`, `backend/app/main.py`,
+`backend/app/workers/dispatch.py`, `backend/app/tests/test_no_blocking_handlers.py`
+(new), `backend/app/tests/{test_dispatch,test_scores_router}.py`,
+`mobile/src/data/api/{client,upload}.ts`, `mobile/src/lib/scan/uploadPage.ts`,
+`mobile/src/screens/transcribe/TranscribeScreen.tsx`, `mobile/src/App.tsx`,
+and the three test files beside them.
+
+Reported as: the image upload for OCR hangs, the whole app takes a long time to
+load, and it gets stuck.
+
+### The measurement
+
+Every request handler in the API was `async def`. Not one of them contained an
+`await` — `grep -rn "await " app/routers/ app/auth.py` returned nothing — and
+every one of them called Supabase through its **synchronous** client.
+
+Starlette runs an `async def` endpoint on the event loop and a plain `def` one
+in a worker thread. So every handler blocked the loop on a socket, and the
+server served exactly one request at a time.
+
+Measured against the real app, with the Supabase client made to take 1s and six
+requests fired at once (`backend/scripts/concurrency_probe.py`, committed — a cited measurement
+nobody can re-run is a claim):
+
+| | `async def` (as shipped) | `def` |
+|---|---|---|
+| six 1s requests, wall clock | **6.02 s** | **1.01 s** |
+| `/v1/health` while those are in flight | **5.86 s** | **0.002 s** |
+
+The second row is the whole app, not one endpoint. The client blocks every
+screen on `/v1/health` while it wakes the host (the 2026-08-25 entry above), so
+one slow database call did not delay one screen — it delayed all of them.
+
+Three things made it worse than an ordinary queue:
+
+* `POST /v1/calibration` downloads a take and runs librosa in the handler.
+  Seconds of CPU with no `await` in it, during which nothing else was served
+  at all, including the health check Render uses to decide this instance is
+  alive.
+* `POST /v1/scores` handed the page to Modal over gRPC **inside the handler** —
+  a blocking network call to a third party in front of a response that does not
+  depend on its answer. When Modal was unreachable the scan waited on somebody
+  else's timeout.
+* The auth dependencies were coroutines too, so the cheapest request in the app
+  could stall the loop before its handler started: `current_user_id_provisioned`
+  writes a row, and `_decode_token` can fetch the JWKS over the network.
+
+### What changed, and why each
+
+**Handlers and dependencies are plain `def`.** Enforced by
+`test_no_blocking_handlers.py` rather than left as a convention. Mutation-checked:
+putting `async` back on `calibrate_tempo` fails it by name. The reason it is a
+test and not a comment is that the failure is invisible in development — one
+person clicking around never has two requests in flight, so a server with no
+concurrency behaves exactly like a fast one.
+
+**Supabase gets a 10s timeout** (`postgrest_client_timeout`), storage 15s.
+The library default is **120 seconds**, verified from `SyncClientOptions`. With
+handlers now on threads, an unanswered call does not fail — it parks a thread
+for two minutes, and Starlette's pool holds forty. A Supabase incident would
+not have degraded this API, it would have removed it. Verified the setting
+reaches the transport: `client.postgrest.session.timeout` reads `Timeout(10)`.
+
+**The JWKS fetch gets 5s and a 10-minute cache.** PyJWT's default is 30s, and
+that call sits in front of every authenticated request; at the default, one
+unreachable auth endpoint turns every request into a half-minute wait ending in
+a 401, which the app renders as "your session has ended" and sends the musician
+to sign in against the same unreachable endpoint.
+
+**Reading a page dispatches off the request.** `start_transcription` puts the
+id on a queue drained by `TRANSCRIPTION_MAX_CONCURRENT` daemon threads. Two
+reasons, and the second one is new: the Modal spawn leaves the request path,
+**and** a full read queue can no longer park request-serving threads.
+`run_transcription` waits for `_scan_slots` by blocking, which was harmless
+while that thread came from BackgroundTasks and nothing else, but the handlers
+now draw from that same pool — moving them off the event loop and then letting
+a scan queue starve them would have been the same outage with more steps.
+
+**Daemon threads rather than a `ThreadPoolExecutor`, which is what this was
+first written as.** The executor registers an `atexit` hook that **joins its
+workers**, so a process asked to exit while a page is being read blocks until
+the read finishes — measured, before merging: a task sleeping eight seconds
+delayed `sys.exit(0)` by eight seconds; the shipped shape exits in zero with a
+page mid-read. That would have been a deploy or restart hanging for the length
+of a transcription, which is a stuck shutdown introduced while removing stuck
+requests. A process that goes down mid-read leaves the row `reading`, and
+`sweep_stuck_transcriptions` has always recovered exactly that.
+
+### The app side, same symptom from the other end
+
+**The wake is re-armed once the host has had time to sleep.** `waking` was a
+promise resolved once and held for the life of the process, so the wake
+protected the first screen of a session and nothing after it. The host sleeps
+after ~15 minutes; leave the app open through a lesson and the first request
+back is exactly what the wake exists to prevent. Now any response refreshes
+`lastContactAt`, and a wake older than ten minutes with nothing heard since is
+armed again. Costs nothing during use — every request refreshes it.
+
+**A failed query no longer costs three minutes.** `send` already gives a GET two
+45-second attempts before it reports anything; React Query's `retry: 1` then ran
+the whole `queryFn` again, wake and all. Ninety seconds became a hundred and
+eighty, on a skeleton. An `ApiError` is never retried now — anything with a
+status was answered, and a 404 will not become a 200.
+
+**Queries get a 30s `staleTime`.** The default is zero, so every screen refetched
+on every mount: Library → Today → Library was three round trips and three
+skeletons for a repertoire that had not changed. Checked that this does not
+silence the scan poll, which would have been a hang I introduced —
+`queryObserver.js:214` calls `#executeFetch()` from the interval with no
+staleness gate, so `refetchInterval` is unaffected, and a with/without
+comparison in a harness agreed.
+
+**Cancel stops the upload.** `TranscribeScreen` set `live = false`, which made
+the *result* be ignored while the transfer went on pushing megabytes at storage
+from a screen that no longer existed — and nothing stopped a second attempt
+starting beside it. On a phone that is the entire uplink, so the scan started
+instead had to share the line with the one the musician thought they had
+stopped: cancelling a slow upload made the app slower. `uploadToSignedUrl` now
+takes an `AbortSignal`, and `uploadPage` checks it at the two points before the
+transfer as well — reading a twelve-megapixel photograph into memory and
+claiming a five-minute signed URL are both things worth not doing for a scan
+nobody is waiting for. A cancelled read says it was cancelled rather than "that
+page could not be read from the device", which would blame the phone for the
+musician's own decision.
+
+### Tests
+
+Backend `1114 → 1120 passed` (+3 for the handler guard, +3 for dispatch).
+Mobile `300 → 309 passed`, `tsc --noEmit` clean.
+
+Mutation-checked, each failing by name when reverted: the `async def` guard
+(`calibrate_tempo`), the pre-signing cancel checkpoint, the XHR abort. The wake
+staleness test fails when `WAKE_GOES_STALE_AFTER_MS` is made infinite.
+
+### Known side effects
+
+* `start_transcription` no longer takes `background_tasks`; two call sites and
+  five tests updated. `start_analysis` keeps it — `POST /v1/analyses` answers
+  202 with an id and nothing the musician is looking at, so the Modal round trip
+  there costs nobody a screen.
+* A read now starts fractionally *before* the response is flushed rather than
+  after. The row is already written and returned from memory, so there is
+  nothing to race.
+* Sync handlers draw from Starlette's 40-thread pool. Forty concurrent requests
+  is now the ceiling rather than one; on this instance the memory ceiling binds
+  first, which is what `TRANSCRIPTION_MAX_CONCURRENT` is for.
+
+### Not done, and honestly not done
+
+* **The vision providers have no explicit timeout.** The Anthropic SDK defaults
+  to 600s. They are off (`homr` alone, owner's call 2026-08-24) and they run on
+  the bounded transcription pool with the sweeper behind them, so nothing hangs
+  a musician — but if that chain is ever turned back on, a provider call is the
+  longest unbounded wait left in the system.
+* **`waitForAnalysis` sleeps unabortably** between polls, and does not pass its
+  signal to `getAnalysis`. Bounded at 40 polls, so it terminates; a cancel just
+  takes up to 1.5s longer than it should.
+* **None of this is verified against the deployment.** The measurements above
+  are local, against the real app with a stubbed database. Whether the reported
+  hang is *fully* gone can only be settled by scanning a page on the deployed
+  build, which still needs Supabase keys and a device.
+
+---
+
 ## 2026-08-25 — Seven preflights and not one GET: why the skeleton never ended
 
 **Branch:** `main`. Mobile only, no UI change. The Render MCP server reconnected

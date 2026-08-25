@@ -430,7 +430,7 @@ def _hand_entered(body: CreateScoreRequest) -> ScoreJson:
 
 
 @router.post("", response_model=ScoreResponse, status_code=status.HTTP_201_CREATED)
-async def create_score(
+def create_score(
     body: CreateScoreRequest,
     background_tasks: BackgroundTasks,
     user_id: UUID = Depends(current_user_id_provisioned),
@@ -491,7 +491,7 @@ async def create_score(
         # After the insert, so the worker cannot look for a row that is not
         # there yet, and after the response is sent, which is what
         # `BackgroundTasks` guarantees.
-        start_transcription(str(rows[0]["id"]), background_tasks)
+        start_transcription(str(rows[0]["id"]))
 
     # Signed like every other read, so a client can render the page it just
     # uploaded without a second request. This used to return an unsigned row,
@@ -500,7 +500,7 @@ async def create_score(
 
 
 @router.post("/import", response_model=ScoreResponse, status_code=status.HTTP_201_CREATED)
-async def import_score(
+def import_score(
     body: ImportScoreRequest,
     user_id: UUID = Depends(current_user_id_provisioned),
 ) -> ScoreResponse:
@@ -564,7 +564,7 @@ async def import_score(
 
 
 @router.get("", response_model=list[ScoreResponse])
-async def list_scores(
+def list_scores(
     user_id: UUID = Depends(current_user_id),
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
@@ -582,7 +582,7 @@ async def list_scores(
 
 
 @router.get("/{score_id}", response_model=ScoreResponse)
-async def get_score(
+def get_score(
     score_id: UUID,
     user_id: UUID = Depends(current_user_id),
 ) -> ScoreResponse:
@@ -602,7 +602,7 @@ async def get_score(
 
 
 @router.patch("/{score_id}", response_model=ScoreResponse)
-async def update_score(
+def update_score(
     score_id: UUID,
     body: UpdateScoreRequest,
     user_id: UUID = Depends(current_user_id),
@@ -678,7 +678,7 @@ async def update_score(
 
 
 @router.post("/{score_id}/accept", response_model=ScoreResponse)
-async def accept_transcription(
+def accept_transcription(
     score_id: UUID,
     user_id: UUID = Depends(current_user_id),
 ) -> ScoreResponse:
@@ -770,7 +770,7 @@ def _remove_object(client, key: str) -> bool:
 
 
 @router.post("/{score_id}/transcribe", response_model=ScoreResponse)
-async def retranscribe(
+def retranscribe(
     score_id: UUID,
     background_tasks: BackgroundTasks,
     user_id: UUID = Depends(current_user_id),
@@ -861,12 +861,12 @@ async def retranscribe(
             detail="this page is already being read",
         )
 
-    start_transcription(str(score_id), background_tasks)
+    start_transcription(str(score_id))
     return _with_image_urls(updated)[0]
 
 
 @router.delete("/{score_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_score(
+def delete_score(
     score_id: UUID,
     user_id: UUID = Depends(current_user_id),
 ) -> Response:

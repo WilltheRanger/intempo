@@ -35,6 +35,31 @@ bearer = HTTPBearer(auto_error=False)
 _ALLOWED_ALGORITHMS = ["ES256", "RS256"]
 
 
+#: How long to wait for Supabase's public keys before giving up.
+#:
+#: **PyJWT's default is 30 seconds, and this call is in front of every
+#: authenticated request.** `get_signing_key_from_jwt` fetches the JWKS
+#: whenever the token's key id is not already cached — a cold process, a key
+#: rotation, or simply the first request after a deploy — and it fetches it
+#: with a blocking `urlopen`. At the default, one unreachable auth endpoint
+#: turns every request in the app into a half-minute wait that ends in a 401,
+#: which reaches the musician as "your session has ended" and sends them to
+#: sign in again against the same unreachable endpoint.
+#:
+#: Five seconds. This is a small JSON document from the same provider the app
+#: just authenticated against; if it has not arrived by then, waiting longer
+#: does not change the outcome, it only decides how long the app looks frozen
+#: first.
+_JWKS_TIMEOUT_SECONDS = 5
+
+#: How long a fetched key set stays good before it is fetched again.
+#:
+#: Ten minutes rather than PyJWT's five. The keys rotate on the order of
+#: months, and each expiry is a blocking network call standing in front of
+#: whichever request happens to arrive next.
+_JWKS_LIFESPAN_SECONDS = 600
+
+
 @lru_cache
 def _get_jwks_client() -> PyJWKClient:
     """Module-level JWKS client. PyJWKClient caches keys internally."""
@@ -44,7 +69,13 @@ def _get_jwks_client() -> PyJWKClient:
             detail="SUPABASE_URL is not configured",
         )
     jwks_url = f"{settings.SUPABASE_URL.rstrip('/')}/auth/v1/.well-known/jwks.json"
-    return PyJWKClient(jwks_url, cache_keys=True)
+    return PyJWKClient(
+        jwks_url,
+        cache_keys=True,
+        cache_jwk_set=True,
+        lifespan=_JWKS_LIFESPAN_SECONDS,
+        timeout=_JWKS_TIMEOUT_SECONDS,
+    )
 
 
 # Test-suite hook: tests monkeypatch `_jwks` to a stub that returns
@@ -75,7 +106,7 @@ def _decode_token(token: str) -> dict[str, Any]:
         ) from exc
 
 
-async def current_user_id(
+def current_user_id(
     creds: HTTPAuthorizationCredentials | None = Depends(bearer),
 ) -> UUID:
     """FastAPI dependency: returns the JWT subject as a UUID."""
@@ -100,7 +131,7 @@ async def current_user_id(
         ) from exc
 
 
-async def current_jwt_payload(
+def current_jwt_payload(
     creds: HTTPAuthorizationCredentials | None = Depends(bearer),
 ) -> dict[str, Any]:
     """FastAPI dependency: returns the full decoded JWT payload.
@@ -116,7 +147,7 @@ async def current_jwt_payload(
     return _decode_token(creds.credentials)
 
 
-async def current_user_id_provisioned(
+def current_user_id_provisioned(
     payload: dict[str, Any] = Depends(current_jwt_payload),
 ) -> UUID:
     """The JWT subject, with its `public.users` row guaranteed to exist.
