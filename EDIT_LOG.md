@@ -178,6 +178,127 @@ staleness test fails when `WAKE_GOES_STALE_AFTER_MS` is made infinite.
 
 ---
 
+## 2026-08-25 — A page held sideways was refused for being "too small"
+
+**Branch:** `main`. Backend only.
+
+**Files:** `backend/app/services/page_image.py`,
+`backend/app/tests/test_page_legibility.py`.
+
+### What the first real scans said
+
+With the Modal image fixed, three scans went through in as many minutes and
+**failed with reasons instead of hanging** — the call-id work doing its job:
+
+    19:01:44  "Elijiah Is Jewish"  failed 17s  → staff lines too small to read
+    19:02:28  "R"                  failed 17s  → staff lines too small to read
+    19:03:14  "Fb"                 failed  2.6s → (the default guess)
+
+Two different faults, and the "too small" one is measurably wrong.
+
+### The bug
+
+`homr_page.jpg` — the String Bass part `CLAUDE.md` records homr reading **74
+measures and 267 notes** from — is refused by `too_small_to_read`. It is
+4284x5712. It is not small.
+
+It is photographed **sideways**: the staves run down the image, not across it.
+`_ink_profile` builds a **row-wise** profile, so on that page it found no
+systems at all — the bands it reported were 31 to 118 rows of handwriting and
+paper edge, too narrow to contain a staff, so every one was vetoed by the cap
+in `_band_staff_space`. The measurement returned `None`, and `None` is what the
+gate refuses on.
+
+So a full-resolution photograph of a page homr reads perfectly was turned away
+with *"the staff lines in this photograph are too small to read"* — a wrong
+diagnosis carrying advice that cannot work. Re-shooting it at the same angle
+changes nothing, and homr dewarps and finds its own staves; it was never
+troubled by the rotation this check could not survive.
+
+### The fix
+
+Staff lines are parallel, so exactly one axis carries their period. The
+measurement now tries both. Measured on `01_simple_printed` at phone
+resolution:
+
+    upright   rows: 7 bands @ 26px  ←correct    cols: 1 band @ 72px  ←spurious
+    sideways  rows: 1 band  @ 72px  ←spurious   cols: 7 bands @ 26px ←correct
+
+**Two wrong ways to choose between them, both tried:**
+
+- *Whichever answered first* returned 72 for the sideways page — over the floor
+  for a reason that has nothing to do with staff lines, which is worse than the
+  refusal, because this gate exists to keep unread pages out of a library.
+- *The smaller* dragged `page-upright.jpg` from 34px to 19 and failed two
+  corpus tests. A gate that refuses good pages is the bug being fixed.
+
+**How many bands agreed** is the signal: a page has systems and every one
+carries the same period, while the cross-axis has no systems and produces one
+blob and one number. Seven against one. Ties go to the rows, so every page
+already measured correctly is measured *identically* — all three corpus
+readings (34, 25.5, 22.5) are unchanged.
+
+`staff_space_px` and `too_small_to_read` each walked the bands themselves, so
+the rule lived twice — and when the measurement learned about columns, the gate
+did not, and went on refusing a page the measurement could now read. Both go
+through `_legibility` now. That is `validate.py`'s "one home and two ports"
+note, in a new place.
+
+### What I tried, broke, and reverted
+
+Chasing the last case I added two more changes, and they went too far:
+
+- **`_MAX_BAND_PERIODS`** — rejecting bands tens of periods tall, which is
+  physically right (real staff bands measured 5.1–5.9 periods; every spurious
+  one 14–147). But it moved three *calibrated* corpus measurements: 25.5→35.75,
+  22.5→31.75, and `05_handwritten_messy` from **5px refused to 13.5px
+  accepted** — that page is 1200x72 and is the corpus's own example of a page
+  too small to read.
+- **`_UNMEASURABLE_BELOW_PX`** — treating "could not measure" as different from
+  "too small" above a size floor. Sound in principle, and it depended on the
+  change above.
+
+`CLAUDE.md` is explicit that these constants are not to be refitted without the
+full measurement series, and I do not have it. Both reverted. **Recording this
+because the reasoning is right and the next person should not have to
+rediscover it** — with the original series in hand, that is the better fix.
+
+`homr_page.jpg` therefore still passes for a slightly wrong reason: its only
+surviving reading comes from a whole-music-area band. The *outcome* is right —
+a readable page is no longer refused — and by this project's own stated
+priority ("a scan that fails is a scan they can retake; a scan that invents is
+one they might practise against"), a page passing to homr is the safer error.
+
+### The known limit, recorded rather than hidden
+
+`test_a_page_below_the_floor_is_still_refused_when_turned` is a **strict
+xfail**: a sideways page shrunk past the floor still has one whole-area band on
+the wrong axis whose peak lands at exactly 8px. Strict, so a later fix cannot
+land without deleting the note. The upright webcam case that provoked this gate
+is covered by the corpus tests and still refused.
+
+### Tests
+
+5 new, 1 xfail; full suite **1145 passed**. Mutation-tested: 6 mutants, 6
+killed — rows-only, first-orientation-wins, fewest-bands-wins, ties-go-to-
+columns, the gate not sharing the measurement, and the smoothing window on the
+wrong axis.
+
+### Honest status
+
+**This may not be the musician's bug.** Their photographs look upright in the
+screenshot, and the failing uploads are 3.9 MB and 4.9 MB — full resolution. I
+have fixed a real, demonstrable false refusal, measured against a page in this
+repository. I have not seen their page, and `Fb` failed differently again in
+2.6 seconds with the default reason, which is a third fault still undiagnosed.
+
+### Rollback
+
+`git revert`. The orientation fallback is additive; reverting restores
+rows-only measurement.
+
+---
+
 ## 2026-08-25 — The scan has never worked: the Modal container could not import its own worker
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`, merged to `main` at the

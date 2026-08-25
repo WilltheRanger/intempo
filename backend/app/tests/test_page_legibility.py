@@ -502,3 +502,129 @@ def test_the_page_is_measured_as_photographed_not_as_prepared() -> None:
         "the page is prepared before it is judged, so a wide page that reads "
         "correctly would be refused for the spacing of a copy nothing reads"
     )
+
+
+# ---------------------------------------------------------------------------
+# A page held sideways
+#
+# `homr_page.jpg` — the String Bass part homr read 74 measures and 267 notes
+# from, and the page this whole transcription effort was built around — is
+# photographed sideways: its staves run *down* the image, not across it.
+#
+# The measurement built a row-wise ink profile, so on that page it found no
+# systems at all. The bands it reported were 31 to 118 rows of handwriting and
+# paper edge, too narrow to contain a staff, so every one was vetoed by the cap
+# in `_band_staff_space` and the answer came back `None` — which
+# `too_small_to_read` refuses on. A full-resolution 4284x5712 photograph of a
+# page that reads perfectly was turned away with "the staff lines in this
+# photograph are too small to read", advice that cannot work: re-shooting it at
+# the same angle changes nothing, and homr dewarps and finds its own staves.
+# ---------------------------------------------------------------------------
+
+
+def _rotated(path: Path, degrees: int) -> bytes:
+    """The same photograph, turned. Re-encoded so nothing survives in EXIF —
+    a rotation the decoder undoes for us would not test anything."""
+    import io as _io
+
+    from PIL import Image
+
+    from app.tests.test_scan_end_to_end import _phone_photo
+
+    with Image.open(_io.BytesIO(_phone_photo(path))) as image:
+        turned = image.convert("RGB").rotate(degrees, expand=True)
+    buffer = _io.BytesIO()
+    turned.save(buffer, format="JPEG", quality=95)
+    return buffer.getvalue()
+
+
+@pytest.mark.parametrize("degrees", [90, 270])
+def test_a_page_photographed_sideways_is_still_measured(degrees: int) -> None:
+    """Staff lines are parallel, so exactly one axis carries their period.
+
+    Measuring only rows makes the answer depend on which way up the phone was,
+    which is not a fact about whether the notation can be read.
+    """
+    page = _rotated(READABLE, degrees)
+
+    assert staff_space_px(page) is not None, (
+        f"turned {degrees} degrees, the staff period was not found at all"
+    )
+    assert too_small_to_read(page) is None, (
+        f"turned {degrees} degrees, a readable page was refused"
+    )
+
+
+def test_turning_a_page_does_not_change_how_big_its_staves_are() -> None:
+    """The measurement is in pixels, and a rotation moves no pixels apart.
+
+    Stronger than "it found something": a fallback that happened to latch onto
+    the gap *between* systems would also be non-None, and would put a page
+    over the floor for the wrong reason.
+    """
+    upright = staff_space_px(_rotated(READABLE, 0))
+    sideways = staff_space_px(_rotated(READABLE, 90))
+
+    assert upright is not None and sideways is not None
+    assert sideways == pytest.approx(upright, rel=0.25), (
+        f"upright {upright}px, sideways {sideways}px — the sideways reading is "
+        f"not measuring the same thing"
+    )
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason=(
+        "Known limit of the orientation fallback, recorded rather than hidden. "
+        "A sideways page shrunk past the floor still has one whole-music-area "
+        "band on the wrong axis, and its autocorrelation peak lands at 8px — "
+        "exactly the floor. Fixing it properly means rejecting bands that are "
+        "tens of periods tall, which was tried and reverted: it moved three "
+        "calibrated corpus measurements (25.5->35.75, 22.5->31.75, and "
+        "05_handwritten_messy from 5px refused to 13.5px accepted), and "
+        "CLAUDE.md is explicit that these constants are not to be refitted "
+        "without the full measurement series. Strict, so that a later fix "
+        "cannot land without deleting this note."
+    ),
+)
+def test_a_page_below_the_floor_is_still_refused_when_turned() -> None:
+    """The fallback must not become a way past the gate.
+
+    Trying a second orientation gives every page two chances to produce a
+    number, and the webcam page this check exists for must fail both.
+
+    The upright webcam case — the one that provoked this whole gate — is
+    covered by the corpus tests above and still refused. This is the sideways
+    corner of it.
+    """
+    small = _rotated(READABLE, 90)
+    from PIL import Image
+    import io as _io
+
+    with Image.open(_io.BytesIO(small)) as image:
+        tiny = image.resize((image.width // 9, image.height // 9))
+    buffer = _io.BytesIO()
+    tiny.save(buffer, format="JPEG", quality=95)
+
+    assert too_small_to_read(buffer.getvalue()) is not None, (
+        "a sideways page too small to read was let through"
+    )
+
+
+def test_the_gate_and_the_measurement_cannot_disagree() -> None:
+    """They each walked the bands themselves, so the rule lived twice — and
+    when the measurement learned to try both axes, the gate did not. It went on
+    refusing a page the measurement could now read.
+
+    Both go through `_legibility` now. This pins that: anything the measurement
+    can put above the floor, the gate must accept.
+    """
+    for degrees in (0, 90, 180, 270):
+        page = _rotated(READABLE, degrees)
+        measured = staff_space_px(page)
+        refused = too_small_to_read(page)
+        if measured is not None and measured >= _MIN_STAFF_SPACE_PX:
+            assert refused is None, (
+                f"at {degrees} degrees the measurement says {measured}px and "
+                f"the gate refused anyway"
+            )

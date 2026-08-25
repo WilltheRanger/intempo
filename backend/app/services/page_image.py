@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import io
 import logging
+from typing import NamedTuple
 from urllib.parse import urlparse
 
 import httpx
@@ -476,10 +477,11 @@ _BAND_SMOOTH_FRACTION = 0.036
 _CUT_QUIET_RATIO = 0.5
 
 
-def _ink_profile(image_bytes: bytes):
-    """How much ink each row of the page holds, and the smoothed version.
+def _inked(image_bytes: bytes):
+    """A boolean page: True where a pixel is darker than the paper around it.
 
-    Returns `(profile, smoothed)` or `None` if the page cannot be read.
+    Split out from `_ink_profile` so the same page can be measured along both
+    axes without decoding and blurring it twice — see `staff_space_px`.
     """
     try:
         import numpy as np
@@ -502,16 +504,132 @@ def _ink_profile(image_bytes: bytes):
     if pixels.size == 0 or pixels.shape[0] < 8:
         return None
 
-    profile = (pixels < np.maximum(background, 1.0) * _INK_RATIO).mean(axis=1)
+    return pixels < np.maximum(background, 1.0) * _INK_RATIO
 
-    # Scaled by the page's width — see `_BAND_SMOOTH_FRACTION`. Using the
-    # height makes the window depend on how many systems are on the page.
-    window = max(3, int(pixels.shape[1] * _BAND_SMOOTH_FRACTION) | 1)
+
+def _profile_of(ink):
+    """How much ink each row holds, and the smoothed version.
+
+    `ink` is the boolean page from `_inked`, or its transpose — the arithmetic
+    is the same either way, which is the point of taking an array rather than
+    bytes. "Row" means a row *of what it was handed*.
+    """
+    import numpy as np
+
+    if ink.shape[0] < 8:
+        return None
+
+    profile = ink.mean(axis=1)
+
+    # Scaled by the extent *across* the profile — the page's width when reading
+    # rows, its height when reading columns. See `_BAND_SMOOTH_FRACTION`: using
+    # the extent *along* the profile would make the window depend on how many
+    # systems are on the page.
+    window = max(3, int(ink.shape[1] * _BAND_SMOOTH_FRACTION) | 1)
     pad = window // 2
     kernel = np.ones(window, dtype=np.float32) / window
     padded = np.pad(profile, pad, mode="edge")
     smoothed = np.convolve(padded, kernel, mode="same")[pad:pad + len(profile)]
     return profile, smoothed
+
+
+def _ink_profile(image_bytes: bytes):
+    """How much ink each row of the page holds, and the smoothed version.
+
+    Returns `(profile, smoothed)` or `None` if the page cannot be read. Rows
+    only — the callers that crop a page all assume systems run across it, and
+    a sideways page is a *reading* problem rather than a cropping one.
+    """
+    ink = _inked(image_bytes)
+    if ink is None:
+        return None
+    return _profile_of(ink)
+
+
+class _Legibility(NamedTuple):
+    """What could be measured about a page, before anything tried to read it.
+
+    Three states, and the difference between the last two is the whole reason
+    this is a named thing rather than an optional float:
+
+    - `decoded=False` — the bytes are not an image this can open. Not a
+      judgement about the notation.
+    - `bands=False` — it opened, and carries no band of ink along either axis.
+      Blank paper, or a photograph of something that is not sheet music.
+    - `bands=True, spacing=None` — there are systems, and no staff period
+      inside any of them. *This* is the page too small to read.
+    """
+
+    decoded: bool
+    bands: bool
+    spacing: float | None
+    #: The shorter side of the photograph, in pixels. 0 when it did not decode.
+    short_edge: int = 0
+
+
+def _legibility(image_bytes: bytes) -> _Legibility:
+    """Measure the staff spacing, trying both orientations.
+
+    **One implementation, two callers.** `staff_space_px` and
+    `too_small_to_read` each used to walk the bands themselves, which meant the
+    rule lived twice — and when the row-wise measurement was taught to fall back
+    to columns, only one of them learned. The gate went on refusing a page the
+    measurement could now read. `validate.py`'s "one home and two ports" note
+    is about exactly this shape of mistake; this is the same fix.
+
+    **Both axes.** Staff lines are parallel, so exactly one orientation shows
+    their periodicity — see `staff_space_px` for the photograph that proved it.
+    The transpose is of an array already in memory and is only reached when the
+    first orientation found nothing.
+    """
+    ink = _inked(image_bytes)
+    if ink is None:
+        return _Legibility(decoded=False, bands=False, spacing=None)
+    short_edge = int(min(ink.shape))
+
+    # **Both orientations answer, and only one of them is reading staff lines.**
+    # Measured on `01_simple_printed` at phone resolution: upright, rows give
+    # seven bands all at 26 px while columns give a single band at 72; turned
+    # ninety degrees, those two readings swap sides exactly. So "whichever
+    # answered first" returns 72 for a sideways page — a number that clears the
+    # floor for entirely the wrong reason, which is worse than the refusal it
+    # replaced, since this gate exists to keep unread pages out of a library.
+    #
+    # Taking the *smaller* was the next idea and is also wrong: on the real
+    # pages the cross-axis sometimes reads finer than the staff, and it dragged
+    # `page-upright.jpg` from 34 px to 19 and failed two corpus tests. A gate
+    # that refuses good pages is the bug this whole fallback exists to fix.
+    #
+    # **How many bands agreed is the signal.** A page of music has systems, and
+    # every one of them carries the same staff period; the cross-axis has no
+    # systems in it, so it produces one blob and one number. Seven against one
+    # is not a close call, and it is the same shape of evidence whichever way up
+    # the phone was.
+    any_bands = False
+    best: tuple[int, float] | None = None
+    for index, oriented in enumerate((ink, ink.T)):
+        read = _profile_of(oriented)
+        if read is None:
+            continue
+        profile, smoothed = read
+        bands = _bands(smoothed)
+        any_bands = any_bands or bool(bands)
+        spacings = [
+            space
+            for top, bottom in bands
+            if (space := _band_staff_space(profile[top:bottom])) is not None
+        ]
+        if not spacings:
+            continue
+        # `>` and not `>=`: on a tie the rows keep it, so a page that was
+        # already being measured correctly is measured identically to before.
+        # Every reading in this file's corpus tables was taken that way.
+        if best is None or len(spacings) > best[0]:
+            best = (len(spacings), _representative_spacing(spacings))
+
+    if best is None:
+        return _Legibility(True, any_bands, None, short_edge)
+    return _Legibility(True, True, best[1], short_edge)
 
 
 #: The smallest staff-line spacing, in source pixels, a page can be read from.
@@ -538,6 +656,7 @@ _MIN_STAFF_SPACE_PX = 8
 
 #: A staff period must be at least this many rows, or it is pixel noise.
 _MIN_STAFF_PERIOD = 3
+
 #: How strong the autocorrelation peak must be to be believed as a staff.
 #:
 #: **Measured, and it started at 0.15 and was wrong there.** At 0.15 a
@@ -643,20 +762,23 @@ def staff_space_px(image_bytes: bytes) -> float | None:
     Only bands that yield a period are counted. Half of a real page's bands do
     not — a title block, a desk, a system of nothing but multi-bar rests — and
     requiring all of them would refuse pages that read perfectly well.
-    """
-    read = _ink_profile(image_bytes)
-    if read is None:
-        return None
 
-    profile, smoothed = read
-    spacings = [
-        space
-        for top, bottom in _bands(smoothed)
-        if (space := _band_staff_space(profile[top:bottom])) is not None
-    ]
-    if not spacings:
-        return None
-    return _representative_spacing(spacings)
+    **Both axes, and the reason is a photograph this project already had.**
+    `homr_page.jpg` — the String Bass part homr read 74 measures and 267 notes
+    from — is a page held sideways, so its staves run *down* the image. A
+    row-wise profile finds no systems on it at all: the bands it reported were
+    31 to 118 rows of handwriting and paper edge, too narrow to contain a staff,
+    so every one was vetoed by the cap in `_band_staff_space` and the
+    measurement came back `None`.
+
+    `None` is what `too_small_to_read` refuses on. So a full-resolution
+    4284x5712 photograph of a page homr reads perfectly was turned away with
+    "the staff lines in this photograph are too small to read" — a wrong
+    diagnosis carrying advice that cannot work, since re-shooting it at the same
+    angle changes nothing. homr dewarps and finds its own staves; it was never
+    troubled by the rotation this check could not survive.
+    """
+    return _legibility(image_bytes).spacing
 
 
 def too_small_to_read(image_bytes: bytes) -> str | None:
@@ -672,29 +794,24 @@ def too_small_to_read(image_bytes: bytes) -> str | None:
     nobody read off a page. A scan that fails is a scan they can retake. A
     scan that invents is one they might practise against.
     """
-    read = _ink_profile(image_bytes)
-    if read is None:
+    measured = _legibility(image_bytes)
+
+    if not measured.decoded:
         # Not a judgement this can make. The page did not decode at all, and
         # `prepare_for_model` deliberately passes such bytes through untouched
         # so the provider refuses them by name. "Too small to read" would be a
         # confident wrong reason, which this project has shipped before.
         return None
 
-    profile, smoothed = read
-    bands = _bands(smoothed)
-    if not bands:
+    if not measured.bands:
         # Decodes, but carries no band of ink anywhere — blank, or a
         # photograph of something that is not sheet music. Not a resolution
         # problem, and the reader's own "nothing was read from this page" says
         # it better than a sentence about staff lines would.
         return None
 
-    spacings = [
-        space
-        for top, bottom in bands
-        if (space := _band_staff_space(profile[top:bottom])) is not None
-    ]
-    if not spacings:
+    space = measured.spacing
+    if space is None:
         return (
             "The staff lines in this photograph are too small to read — the app "
             "can find the systems on the page but not the five lines in them. "
@@ -703,7 +820,6 @@ def too_small_to_read(image_bytes: bytes) -> str | None:
             "usually does not have the resolution for a page of music."
         )
 
-    space = _representative_spacing(spacings)
     if space < _MIN_STAFF_SPACE_PX:
         return (
             "This photograph is too small to read the notation from — the staff "
