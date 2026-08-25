@@ -21,54 +21,70 @@ import {
   ICON_STROKE_WIDTH,
   spacing,
 } from '../../design';
-import { profileUpdateFor } from '../../lib/onboarding';
+import {
+  describeMissing,
+  missingFromOnboarding,
+  profileUpdateFor,
+} from '../../lib/onboarding';
 
 /**
  * The one screen between signing up and using the app.
  *
- * **One screen, and skippable** — the owner's decision on 2026-08-24, over a
- * multi-step wizard. Someone who has just signed up opened this app to
- * practise, and four screens of questions before they can is a toll on the
- * thing they came for.
+ * **One screen** — the owner's decision on 2026-08-24, over a multi-step
+ * wizard. Someone who has just signed up opened this app to practise, and four
+ * screens of questions before they can is a toll on the thing they came for.
  *
- * ## What it asks for, and what each is worth
+ * **All three answers are required** — the owner's decision on 2026-08-25,
+ * *"dont make name profile and instrument optional"*, reversing the skippable
+ * version shipped earlier the same day. There is no Skip.
+ *
+ * ## What each answer is worth, and what requiring it costs
  *
  * Only the **instrument** changes what the app does: it sets the clef and
- * range of the daily excerpt, and it reaches `analyze(..., double_bass=)` on
+ * range of the daily warmup, and it reaches `analyze(..., double_bass=)` on
  * every take. The **name** changes a greeting. The **photograph** currently
  * changes nothing at all — there is no screen in the app where another person
- * appears — and it is here because the owner asked for it, over a
- * recommendation to wait for the teacher tier to give it a reason.
+ * appears.
  *
- * That ordering is the composition. The instrument is the weightiest control
- * on the screen and the photograph is a small circle beside the name, because
- * a large one at the top would make the least consequential field the dominant
- * element (§3 law 4) and it would be lying about what matters.
+ * The photograph is therefore the expensive requirement, and the cost is worth
+ * stating plainly: it is the only answer that cannot be given by thinking.
+ * Someone signing up away from a picture they are happy with has to stop, find
+ * one, and until they do the app is shut. That is the owner's call and it is
+ * made — recorded here so whoever reads this next sees the trade rather than
+ * only the rule.
+ *
+ * ## The composition
+ *
+ * Requiring all three does not make them equally important, and the screen
+ * does not pretend it does. The instrument grid is still the weightiest block
+ * and the photograph is still a circle beside the name, because a large one at
+ * the top would make the least consequential field the dominant element
+ * (§3 law 4). What requiring it changes is not the size of the control but
+ * whether a blocked musician can tell **why** — hence the line above Continue
+ * naming what is still missing. A disabled button with no reason beside it is
+ * a tap that did nothing.
  *
  * ## The three-foot test, run before this was written
  *
  * 1. **"Who's playing?"** — one serif line, the screen's only editorial moment.
  * 2. **The four instruments** — the answer that changes the app.
- * 3. **Continue**, in the thumb zone, with Skip receding below it.
- *
- * ## Skipping is an answer
- *
- * Skip writes `onboarded: true` and nothing else. Being asked is what the
- * server records, so someone who declines is not asked again — a skippable
- * screen that reappears is not skippable. The instrument then stays on the
- * device preference, which is where it has always lived and which has a
- * sensible default; the app is no worse off than it was before this screen
- * existed.
+ * 3. **Continue**, in the thumb zone, with the still-needed line under it.
  *
  * ## Nothing is written until Continue
  *
- * The photograph uploads when it is chosen, because that is slow and the
- * bytes may as well be moving while a name is typed — but the account is not
- * pointed at it until the save. Someone who picks a picture and then backs out
- * leaves an orphan in the bucket rather than a profile they did not agree to,
- * which is the right way round. (Orphaned uploads are a known, unfixed hole —
- * see the capture-path notes in `CLAUDE.md`. This screen adds a second way to
- * make one; it does not add a new problem.)
+ * The photograph uploads when it is chosen, because that is slow and the bytes
+ * may as well be moving while a name is typed — but the account is not pointed
+ * at it until the save. Someone who picks a picture and then backs out leaves
+ * an orphan in the bucket rather than a profile they did not agree to, which
+ * is the right way round. (Orphaned uploads are a known, unfixed hole — see
+ * the capture-path notes in `CLAUDE.md`. This screen adds a second way to make
+ * one; it does not add a new problem.)
+ *
+ * **The upload, not the preview, is the requirement.** The circle fills the
+ * moment a picture is picked, from the local file. If the upload then fails
+ * there is no object key, nothing the account can be pointed at, and Continue
+ * stays shut — so the failure says to try again rather than offering to carry
+ * on without it.
  *
  * ## It navigates nowhere
  *
@@ -79,8 +95,9 @@ import { profileUpdateFor } from '../../lib/onboarding';
  * screen can be wrong about — which matters, because navigation is the part of
  * this app nothing tests.
  *
- * What the screen *sends* and whether it is *shown* are both real rules, so
- * both live in `lib/onboarding.ts` where they can be.
+ * Everything this screen can get wrong lives in `lib/onboarding.ts`, where it
+ * is tested: what it must have, what it sends, what it says is missing, and
+ * whether it is shown at all.
  */
 export function OnboardingScreen() {
   const save = useUpdateProfile();
@@ -113,6 +130,10 @@ export function OnboardingScreen() {
 
     const asset = result.assets[0];
     setPreview(asset.uri);
+    // Cleared before the attempt, not only on failure: a second pick that
+    // fails must not leave the first picture's key behind, or Continue would
+    // save a photograph the musician has already replaced on screen.
+    setAvatarKey(null);
     try {
       setAvatarKey(
         await upload.mutateAsync({
@@ -124,24 +145,21 @@ export function OnboardingScreen() {
       // The preview stays. The picture they chose is still the picture they
       // chose, and clearing it would read as the app rejecting the photograph
       // rather than failing to send it.
-      setAvatarKey(null);
       setError(
         cause instanceof Error
-          ? cause.message
-          : 'That photo could not be uploaded. You can carry on without it.',
+          ? `${cause.message} Tap the circle to try again.`
+          : 'That photo could not be sent. Tap the circle to try again.',
       );
     }
   }
 
-  async function finish(skipping: boolean) {
+  async function finish() {
     setError(null);
     try {
       // The mutation resolves only once `me` has been refetched, so the button
       // stays in its loading state right up to the moment the gate lifts —
       // rather than going idle for a frame under a screen that hasn't moved.
-      await save.mutateAsync(
-        profileUpdateFor({ name, instrument, avatarKey }, { skipping }),
-      );
+      await save.mutateAsync(profileUpdateFor({ name, instrument, avatarKey }));
     } catch (cause) {
       setError(
         cause instanceof Error
@@ -151,7 +169,9 @@ export function OnboardingScreen() {
     }
   }
 
-  const busy = save.isPending;
+  const missing = missingFromOnboarding({ name, instrument, avatarKey });
+  const stillNeeded = describeMissing(missing);
+  const busy = save.isPending || upload.isPending;
 
   return (
     <ScreenContainer
@@ -159,26 +179,25 @@ export function OnboardingScreen() {
         <View>
           <PrimaryButton
             label="Continue"
-            onPress={() => void finish(false)}
-            loading={busy}
-            disabled={busy || upload.isPending}
+            onPress={() => void finish()}
+            loading={save.isPending}
+            disabled={busy || missing.length > 0}
           />
           {/*
-            Quieter than Continue and below it, because it is the lesser of two
-            real choices rather than a way out of a mistake. Someone who does
-            not want to answer should be able to leave without hunting.
+            Under the button, not above it: it is a caption on why that control
+            is shut, and it reads in the order the eye arrives — button first,
+            reason second. Absent entirely once nothing is missing, rather than
+            an empty line holding space (`describeMissing` returns null).
           */}
-          <Pressable
-            onPress={() => void finish(true)}
-            disabled={busy}
-            accessibilityRole="button"
-            accessibilityLabel="Skip for now"
-            style={styles.skip}
-          >
-            <Text variant="metadataSmall" color="textSecondary">
-              Skip for now
+          {stillNeeded ? (
+            <Text
+              variant="metadataSmall"
+              color="textSecondary"
+              style={styles.stillNeeded}
+            >
+              {stillNeeded}
             </Text>
-          </Pressable>
+          ) : null}
         </View>
       }
     >
@@ -186,46 +205,52 @@ export function OnboardingScreen() {
         Who&apos;s playing?
       </Text>
       <Text variant="body" color="textSecondary" style={styles.lede}>
-        Your instrument sets the daily warmup and how your playing is read. All
-        of it can be changed later.
+        Your instrument sets the daily warmup and how your playing is read.
       </Text>
 
       {/*
-        The photograph sits beside the name because they are the same question
-        — who you are — and because a large circle at the top would make the
-        one field that changes nothing the first thing anyone saw.
+        Two labelled fields side by side, because they are the same question —
+        who you are. The photograph carries its own label now that it is
+        required: without one it read as decoration on the name field, and a
+        required field nobody recognises as a field is how someone ends up
+        staring at a disabled button.
       */}
       <View style={styles.identity}>
-        <Pressable
-          onPress={() => void pickPhoto()}
-          accessibilityRole="button"
-          accessibilityLabel={preview ? 'Change photo' : 'Add a photo'}
-        >
-          {/*
-            An empty slot, not the brand mark. `Avatar`'s placeholder is the
-            charcoal-and-gold device, and it was the only saturated colour on
-            this screen — so from three feet the least consequential field was
-            the thing that pulled the eye (§3 law 4). It is also the wrong
-            statement: there is no picture here, and the mark reads as one.
-          */}
-          {preview ? (
-            <Avatar source={preview} size={PHOTO_SIZE} />
-          ) : (
-            <View style={styles.emptyPhoto}>
-              <Camera
-                size={ICON_SIZE.md}
-                strokeWidth={ICON_STROKE_WIDTH}
-                color={colors.textTertiary}
-              />
-            </View>
-          )}
-        </Pressable>
+        <View>
+          <Text variant="sectionLabel" color="textSecondary" style={styles.photoLabel}>
+            Photo
+          </Text>
+          <Pressable
+            onPress={() => void pickPhoto()}
+            accessibilityRole="button"
+            accessibilityLabel={preview ? 'Change photo' : 'Add a photo'}
+          >
+            {/*
+              An empty slot, not the brand mark. `Avatar`'s placeholder is the
+              charcoal-and-gold device, and it was the only saturated colour on
+              this screen — so from three feet the least consequential field was
+              the thing that pulled the eye (§3 law 4). It is also the wrong
+              statement: there is no picture here, and the mark reads as one.
+            */}
+            {preview ? (
+              <Avatar source={preview} size={PHOTO_SIZE} />
+            ) : (
+              <View style={styles.emptyPhoto}>
+                <Camera
+                  size={ICON_SIZE.md}
+                  strokeWidth={ICON_STROKE_WIDTH}
+                  color={colors.textTertiary}
+                />
+              </View>
+            )}
+          </Pressable>
+        </View>
 
         <Input
           label="Name"
           value={name}
           onChangeText={setName}
-          placeholder="Optional"
+          placeholder="What should we call you?"
           autoCapitalize="words"
           autoComplete="name"
           style={styles.name}
@@ -239,18 +264,17 @@ export function OnboardingScreen() {
         onChange={setInstrument}
       />
 
-      {error ? (
-        <Text variant="metadataSmall" color="textSecondary" style={styles.error}>
-          {error}
-        </Text>
-      ) : null}
-
       {upload.isPending ? (
-        <Text variant="metadataSmall" color="textTertiary" style={styles.error}>
+        <Text variant="metadataSmall" color="textTertiary" style={styles.note}>
           Sending your photo…
         </Text>
       ) : null}
 
+      {error ? (
+        <Text variant="metadataSmall" color="textSecondary" style={styles.note}>
+          {error}
+        </Text>
+      ) : null}
     </ScreenContainer>
   );
 }
@@ -267,9 +291,14 @@ const styles = StyleSheet.create({
   },
   identity: {
     flexDirection: 'row',
-    alignItems: 'center',
+    // Top-aligned so the two labels sit on one line and the controls start
+    // together. Centring would stagger the labels, which reads as a mistake.
+    alignItems: 'flex-start',
     gap: spacing.lg,
     marginTop: spacing['3xl'],
+  },
+  photoLabel: {
+    marginBottom: spacing.sm,
   },
   emptyPhoto: {
     width: PHOTO_SIZE,
@@ -287,13 +316,11 @@ const styles = StyleSheet.create({
   section: {
     marginTop: spacing['3xl'],
   },
-  error: {
+  note: {
     marginTop: spacing.lg,
   },
-  skip: {
+  stillNeeded: {
     alignSelf: 'center',
-    minHeight: 44,
-    justifyContent: 'center',
-    marginTop: spacing.sm,
+    marginTop: spacing.md,
   },
 });

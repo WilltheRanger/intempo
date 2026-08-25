@@ -311,6 +311,16 @@ def test_a_name_of_spaces_is_no_name(
     assert sb.table.return_value.update.call_args.args[0]["display_name"] is None
 
 
+def _finished(user_id: Any) -> dict[str, Any]:
+    """A body that answers all three, which is the only kind that finishes."""
+    return {
+        "onboarded": True,
+        "display_name": "Aryam",
+        "instrument": "double_bass",
+        "avatar_key": f"{user_id}/face.jpg",
+    }
+
+
 def test_finishing_onboarding_stamps_the_time(
     monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
 ) -> None:
@@ -318,28 +328,129 @@ def test_finishing_onboarding_stamps_the_time(
     sb = _profile_mock(row=_row(id=str(user_id)))
     monkeypatch.setattr(me_module, "get_service_client", lambda: sb)
 
-    _patch(client, make_token(sub=user_id), {"onboarded": True})
+    res = _patch(client, make_token(sub=user_id), _finished(user_id))
 
+    assert res.status_code == 200
     assert sb.table.return_value.update.call_args.args[0].get("onboarded_at")
 
 
-def test_skipping_counts_as_onboarded(
+def test_onboarding_is_refused_until_all_three_are_answered(
     monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
 ) -> None:
-    """Being asked is what it records. Someone who skips was asked and
-    declined — asking again every launch is how a skippable screen stops being
-    skippable."""
+    """The owner's call, 2026-08-25: *"dont make name profile and instrument
+    optional"*.
+
+    Enforced here and not only in the app, because a requirement only the
+    client checks is a convention — this endpoint is reachable without the
+    screen, and the screen is the thing being replaced when someone writes a
+    second client.
+    """
     user_id = uuid4()
     sb = _profile_mock(row=_row(id=str(user_id)))
     monkeypatch.setattr(me_module, "get_service_client", lambda: sb)
 
     res = _patch(client, make_token(sub=user_id), {"onboarded": True})
 
+    assert res.status_code == 400
+    detail = res.json()["detail"]
+    assert "display_name" in detail and "instrument" in detail and "avatar_key" in detail
+    # And nothing was written. A refused finish must not half-onboard anyone.
+    sb.table.return_value.update.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "withheld", ["display_name", "instrument", "avatar_key"]
+)
+def test_any_one_missing_answer_refuses_the_finish(
+    monkeypatch: pytest.MonkeyPatch,
+    client: TestClient,
+    make_token: Callable[..., str],
+    withheld: str,
+) -> None:
+    """Each field on its own, because "all three" is three rules and a check
+    that only looked at one would pass a two-thirds test."""
+    user_id = uuid4()
+    sb = _profile_mock(row=_row(id=str(user_id)))
+    monkeypatch.setattr(me_module, "get_service_client", lambda: sb)
+
+    body = _finished(user_id)
+    body.pop(withheld)
+
+    res = _patch(client, make_token(sub=user_id), body)
+
+    assert res.status_code == 400
+    assert withheld in res.json()["detail"]
+
+
+def test_an_answer_already_on_the_row_counts(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """The check reads the **resulting** row, not the request body.
+
+    Someone whose name was set on another device and who answers the rest here
+    is finishing onboarding. A check that looked only at the body would refuse
+    them and there would be no way through the screen at all.
+    """
+    user_id = uuid4()
+    sb = _profile_mock(row=_row(id=str(user_id), display_name="Aryam"))
+    monkeypatch.setattr(me_module, "get_service_client", lambda: sb)
+
+    res = _patch(
+        client,
+        make_token(sub=user_id),
+        {
+            "onboarded": True,
+            "instrument": "double_bass",
+            "avatar_key": f"{user_id}/face.jpg",
+        },
+    )
+
     assert res.status_code == 200
-    written = sb.table.return_value.update.call_args.args[0]
-    assert written.get("onboarded_at")
-    # Nothing else was set — a skip answers no questions.
-    assert "instrument" not in written and "display_name" not in written
+    assert sb.table.return_value.update.call_args.args[0].get("onboarded_at")
+
+
+def test_an_empty_name_on_the_row_does_not_count(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """Null and "" are both missing. A row written before the column had a
+    length check can carry an empty string, and an account whose greeting is
+    blank has not answered the question."""
+    user_id = uuid4()
+    sb = _profile_mock(row=_row(id=str(user_id), display_name=""))
+    monkeypatch.setattr(me_module, "get_service_client", lambda: sb)
+
+    res = _patch(
+        client,
+        make_token(sub=user_id),
+        {
+            "onboarded": True,
+            "instrument": "double_bass",
+            "avatar_key": f"{user_id}/face.jpg",
+        },
+    )
+
+    assert res.status_code == 400
+
+
+def test_finishing_twice_is_a_no_op_rather_than_an_error(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """A retried request, a second tap, an app that lost the response.
+
+    It must not 400 — the caller did nothing wrong — must not re-stamp the
+    time, which would make "when were they asked" a lie, and must not run the
+    completeness check against an account that is already through.
+    """
+    user_id = uuid4()
+    sb = _profile_mock(
+        row=_row(id=str(user_id), onboarded_at="2026-08-24T00:00:00Z")
+    )
+    monkeypatch.setattr(me_module, "get_service_client", lambda: sb)
+
+    res = _patch(client, make_token(sub=user_id), {"onboarded": True})
+
+    assert res.status_code == 200
+    sb.table.return_value.update.assert_not_called()
 
 
 def test_onboarding_cannot_be_un_done(
