@@ -6,6 +6,128 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-25 — Seven preflights and not one GET: why the skeleton never ended
+
+**Branch:** `main`. Mobile only, no UI change. The Render MCP server reconnected
+mid-session, which is what finally made this measurable.
+
+**Files:** `mobile/src/data/api/client.ts`, `mobile/src/data/api/client.test.ts`,
+`mobile/src/App.tsx`.
+
+### The measurement
+
+Second report of the same stuck skeleton, screenshotted at 15:40 UTC. The
+Render log for that minute:
+
+    15:41:42  Started server process [1]
+    15:41:45  Application startup complete.
+    15:41:47  OPTIONS /v1/analyses?limit=200&offset=0&status=done   200
+    15:41:47  OPTIONS /v1/analyses?limit=1&offset=0                 200
+    15:41:47  OPTIONS /v1/scores?limit=200&offset=0                 200
+    15:41:47  OPTIONS /v1/me                                        200
+    15:41:47  OPTIONS /v1/scores?limit=200&offset=0                 200
+    15:41:47  OPTIONS /v1/analyses?limit=200&offset=0&status=done   200
+    15:41:47  OPTIONS /v1/analyses?limit=200&offset=0               200
+
+**Seven preflights and not one GET**, over a ten-minute window. The control, at
+06:58 with the host already warm:
+
+    06:58:35.86  OPTIONS /v1/me    200
+    06:58:37.86  GET     /v1/me    200
+    06:58:38.53  GET     /v1/scores  200
+
+### What it means
+
+**Every authenticated request costs two serial round trips.** `Authorization`
+is not a CORS-safelisted header, so the browser sends an `OPTIONS` preflight
+and waits for the answer before sending anything else. Warm, the two land two
+seconds apart and the screen loads in four.
+
+Cold, the preflight is queued behind the whole boot — 15:40 to 15:41:45, about
+**75 seconds**. `REQUEST_TIMEOUT_MS` is 45, so the client aborts while the
+*preflight* is still in the queue, and the browser therefore never sends the
+real request at all. Render's router delivers the orphaned preflights anyway
+once the instance is up, which is exactly what the log shows.
+
+**`send`'s retry cannot fix this, and the reason is worth writing down.** Its
+docstring says "the attempt that times out is also the attempt that wakes the
+host. Asking again lands on a running server." That is true of *our* request.
+It is not true of the browser's preflight: aborting our fetch is precisely what
+stops the browser proceeding, so the retry queues a second preflight and kills
+that one too. The strategy was correct for the request it was written about and
+silently wrong for the one the browser inserts in front of it.
+
+The duplicate preflights in the log are that retry — `/v1/scores` and
+`/v1/analyses?…status=done` each appear twice, from different router IPs.
+
+### The fix
+
+`warmApi()` — `GET /v1/health`, unauthenticated, therefore **no
+`Authorization`, therefore a simple request with no preflight**. One round
+trip, nothing for the browser to give up on. Every authenticated request awaits
+it once, in parallel with the token read since one is local and the other is
+not, and `App.tsx` starts it at launch so the wake begins at t≈0 rather than
+when the first screen asks.
+
+`WAKE_TIMEOUT_MS` is 90 seconds — measured against a documented cold start
+rather than chosen as a latency budget, and nothing is held open on it that was
+not already waiting.
+
+**It fails open.** A wake that cannot be confirmed must not stop the request
+behind it: the server may be awake and the health check merely unlucky, and a
+gate that turns one failed request into every failed request is worse than the
+cold start it was added for. Same rule as `shouldOnboard`, same reason. A
+failed wake is also not cached — holding one bad answer for the life of the
+process would make a single bad moment cost every cold start after it.
+
+**This is the only one of the candidate fixes that helps a POST.** Lengthening
+the timeout, or retrying harder, both leave a non-idempotent request with one
+attempt against a sleeping host — and submitting a take immediately after
+opening the app is the case that matters most in this product.
+
+### Tests
+
+6 new in `client.test.ts` (19 total), 300 mobile tests, typecheck and web build
+green. Each wake test re-imports the module (`vi.resetModules`), because the
+wake is cached across calls on purpose and without that the first test in the
+file would decide the rest.
+
+Mutation-tested: 6 mutants, 6 killed. **Two survived the first pass, and both
+survived for the same reason — the assertion could not feel the change:**
+
+- **"a failed wake is cached forever."** `/v1/health` is a GET, so `send`
+  retries it on its own. The test failed only the *first* attempt, the retry
+  succeeded, the wake was cached as a success, and a mutation that never clears
+  the cache changed nothing. Both attempts of the first wake now fail, and the
+  test asserts the second wake happened at all.
+- **"the wake gets the ordinary 45-second deadline."** The test advanced 70
+  seconds and checked the result — but the wake fails open, so a wake cut short
+  at 45 seconds still lets the request through and still resolves. It just lets
+  it through into the same queue the preflight died in, which is the whole bug.
+  Now asserted on the *ordering*: at 50 seconds the request must not yet have
+  gone out.
+
+### What this does not do
+
+**It does not make a cold start fast.** It turns "never completes" into
+"completes in about 80 seconds", which is a fix in the sense that the app works
+and not in any sense a musician would call fast. The thing that actually fixes
+it is not letting the host sleep — Render Starter, or a scheduled ping — and
+that is the owner's call, still open. The wake is what makes the free tier
+survivable in the meantime, and it is worth keeping either way for the first
+open after any deploy.
+
+Also still open, and now more clearly worth doing: telling the musician the
+server is waking, instead of showing a skeleton for eighty seconds. That is
+user-visible copy, so §2.
+
+### Rollback
+
+`git revert`. Removing `warmApi` restores the previous behaviour; nothing else
+depends on it.
+
+---
+
 ## 2026-08-25 — Two awaits with no deadline on them, and the skeleton that never ended
 
 **Branch:** `main`. Mobile only, no UI change.

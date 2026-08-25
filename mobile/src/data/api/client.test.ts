@@ -145,7 +145,9 @@ describe('a request that never settles', () => {
     // the network when the token is near expiry. Unbounded, it hangs before
     // the request is sent: nothing on the wire, nothing to time out.
     session.token = () => new Promise(() => {});
-    const fetching = vi.fn();
+    const fetching = vi.fn((url: string) =>
+      Promise.resolve(new Response(JSON.stringify({ status: 'ok' }), { status: 200 })),
+    );
     vi.stubGlobal('fetch', fetching);
 
     const pending = apiFetch('/v1/scores');
@@ -153,15 +155,23 @@ describe('a request that never settles', () => {
     await vi.advanceTimersByTimeAsync(11_000);
     await settled;
 
-    // And it never reached the network, so nothing was sent twice.
-    expect(fetching).not.toHaveBeenCalled();
+    // The wake goes out — it is unauthenticated and does not need the token.
+    // The request that needed one never does, so nothing was sent twice and
+    // nothing was sent without a credential.
+    const asked = fetching.mock.calls.map(([url]) => String(url));
+    expect(asked.every((url) => url.endsWith('/v1/health'))).toBe(true);
   });
 
   it('says the session was unreadable rather than that it ended', async () => {
     // Signing someone out here would throw away a session that is probably
     // fine and merely unreachable.
     session.token = () => new Promise(() => {});
-    vi.stubGlobal('fetch', vi.fn());
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() =>
+        Promise.resolve(new Response(JSON.stringify({ status: 'ok' }), { status: 200 })),
+      ),
+    );
 
     const pending = apiFetch('/v1/scores');
     const settled = expect(pending).rejects.toThrow(/could not read your session/i);
@@ -306,5 +316,166 @@ describe('the deadlines themselves', () => {
     await expect(apiFetch('/v1/scores')).rejects.toBeInstanceOf(ApiError);
 
     expect(vi.getTimerCount()).toBe(0);
+  });
+});
+
+/**
+ * Waking a host that sleeps, before anything that needs a preflight.
+ *
+ * Measured against the deployment on 2026-08-25. Every authenticated request
+ * costs **two serial round trips**: `Authorization` is not CORS-safelisted, so
+ * the browser sends an `OPTIONS` preflight and waits for it before sending
+ * anything else. Warm, the Render log shows them 2 seconds apart, all 200, the
+ * whole screen in 4 seconds.
+ *
+ * Cold, the log for a musician opening the app shows **seven `OPTIONS` and not
+ * one `GET`**. The preflights queued behind a 75-second boot, the client's
+ * 45-second deadline expired while they were still queued, and the browser
+ * therefore never sent the real requests at all. `send`'s retry cannot help:
+ * the thing stuck in the queue is the browser's preflight, not our request,
+ * and aborting ours is what stops the browser proceeding.
+ *
+ * `/v1/health` is unauthenticated, so it is a *simple* request — one round
+ * trip, no preflight, nothing for the browser to give up on.
+ *
+ * Own module instance per test: the wake is cached across calls on purpose, so
+ * without this the first test in the file would decide the rest.
+ */
+describe('waking the host', () => {
+  let mod: typeof import('./client');
+
+  beforeEach(async () => {
+    vi.resetModules();
+    vi.useFakeTimers();
+    mod = await import('./client');
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+    session.token = () => Promise.resolve('token');
+  });
+
+  function answering() {
+    return vi.fn((_url: string) =>
+      Promise.resolve(new Response(JSON.stringify({ ok: true }), { status: 200 })),
+    );
+  }
+
+  it('wakes on a request that carries no credential, so no preflight is needed', async () => {
+    const fetching = answering();
+    vi.stubGlobal('fetch', fetching);
+
+    await mod.apiFetch('/v1/scores');
+
+    const asked = fetching.mock.calls.map(([url]) => String(url));
+    expect(asked[0], 'the wake must go first, and must be the unauthenticated one')
+      .toMatch(/\/v1\/health$/);
+    expect(asked[1]).toMatch(/\/v1\/scores$/);
+  });
+
+  it('wakes once, however many screens ask at the same time', async () => {
+    // Today fires five queries on mount. Five wakes would be five cold starts'
+    // worth of queueing to save one.
+    const fetching = answering();
+    vi.stubGlobal('fetch', fetching);
+
+    await Promise.all([
+      mod.apiFetch('/v1/scores'),
+      mod.apiFetch('/v1/analyses'),
+      mod.apiFetch('/v1/me'),
+    ]);
+
+    const wakes = fetching.mock.calls.filter(([url]) =>
+      String(url).endsWith('/v1/health'),
+    );
+    expect(wakes).toHaveLength(1);
+  });
+
+  it('does not wake for an unauthenticated request, which never needed one', async () => {
+    // It carries no `Authorization`, so it has no preflight to be queued
+    // behind — and waking from inside the wake would not terminate.
+    const fetching = answering();
+    vi.stubGlobal('fetch', fetching);
+
+    await mod.apiFetch('/v1/health', { authenticated: false });
+
+    expect(fetching).toHaveBeenCalledTimes(1);
+  });
+
+  it('lets the request through even when the wake fails', async () => {
+    // **Fails open.** The server may be perfectly awake and the health check
+    // merely unlucky. A gate that turns one failed request into every failed
+    // request is worse than the cold start it was added for.
+    const fetching = vi.fn((url: string) =>
+      String(url).endsWith('/v1/health')
+        ? Promise.reject(new TypeError('Failed to fetch'))
+        : Promise.resolve(new Response(JSON.stringify({ ok: true }), { status: 200 })),
+    );
+    vi.stubGlobal('fetch', fetching);
+
+    await expect(mod.apiFetch('/v1/scores')).resolves.toEqual({ ok: true });
+  });
+
+  it('tries the wake again after one that failed', async () => {
+    // Holding a failed answer for the life of the process would mean one bad
+    // moment costs every cold start afterwards.
+    // `/v1/health` is a GET, so `send` tries it twice on its own. Both of the
+    // first wake's attempts have to fail for the *wake* to have failed —
+    // failing only the first lets the retry succeed, the wake is cached, and a
+    // mutation that never clears the cache survives. That is what happened.
+    let health = 0;
+    const fetching = vi.fn((url: string) => {
+      if (String(url).endsWith('/v1/health')) {
+        health += 1;
+        return health <= 2
+          ? Promise.reject(new TypeError('Failed to fetch'))
+          : Promise.resolve(new Response(JSON.stringify({ status: 'ok' }), { status: 200 }));
+      }
+      return Promise.resolve(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+    });
+    vi.stubGlobal('fetch', fetching);
+
+    await mod.apiFetch('/v1/scores');
+    expect(health, 'both attempts of the first wake should have run').toBe(2);
+
+    await mod.apiFetch('/v1/scores');
+    expect(health, 'the failed wake was cached instead of retried').toBe(3);
+  });
+
+  it('gives the wake longer than a normal request, because a cold start is longer', async () => {
+    // The measured boot was 75 seconds. A wake held to the ordinary 45 would
+    // abort in the same place the preflight did, which is the whole bug.
+    let resolveHealth: ((r: Response) => void) | undefined;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string) =>
+        String(url).endsWith('/v1/health')
+          ? new Promise<Response>((resolve) => {
+              resolveHealth = resolve;
+            })
+          : Promise.resolve(new Response(JSON.stringify({ ok: true }), { status: 200 })),
+      ),
+    );
+
+    const pending = mod.apiFetch('/v1/scores');
+
+    // Past the ordinary 45-second deadline and still waiting. Asserted on the
+    // *ordering*, not on the eventual result: the wake fails open, so a wake
+    // held to 45 seconds still lets the request through and still resolves —
+    // it just lets it through into the same queue the preflight died in, which
+    // is the entire bug. A mutation shortening this survived a test that only
+    // checked the result.
+    await vi.advanceTimersByTimeAsync(50_000);
+    const early = (fetch as unknown as ReturnType<typeof vi.fn>).mock.calls.map(
+      (call) => String(call[0]),
+    );
+    expect(
+      early.some((url) => url.endsWith('/v1/scores')),
+      'the request went out before the host had finished waking',
+    ).toBe(false);
+
+    resolveHealth?.(new Response(JSON.stringify({ status: 'ok' }), { status: 200 }));
+    await expect(pending).resolves.toEqual({ ok: true });
   });
 });
