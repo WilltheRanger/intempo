@@ -11,7 +11,8 @@ import { View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { ErrorBoundary } from './components/ErrorBoundary';
-import { describeFixtureReason } from './data/environment';
+import { warmApi } from './data/api/client';
+import { describeFixtureReason, IS_LIVE_BACKEND } from './data/environment';
 import { hydratePracticeTempos } from './data/practiceTempo';
 import { hydratePreferences } from './data/preferences';
 import { colors, fontsToLoad } from './design';
@@ -77,6 +78,18 @@ export default function App() {
   useEffect(() => {
     void hydratePreferences();
     void hydratePracticeTempos();
+    // Start waking the host now rather than when the first screen asks.
+    //
+    // The API sleeps when idle and takes about 75 seconds to come back, and
+    // every authenticated request has to wait for a CORS preflight before it
+    // is even sent — so the wake is the long pole in front of every screen.
+    // `warmApi` is the one request that needs no preflight, it is awaited by
+    // the first authenticated call anyway, and it never rejects. Beginning it
+    // here rather than a second and a half later, after the fonts and the
+    // first render, is a second and a half off everything behind it.
+    if (IS_LIVE_BACKEND) {
+      void warmApi();
+    }
   }, []);
 
   // Say once, at boot, whether this build is talking to a backend.

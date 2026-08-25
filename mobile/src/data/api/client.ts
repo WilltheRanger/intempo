@@ -66,11 +66,17 @@ export async function apiFetch<T>(
   }
 
   if (authenticated) {
-    const token = await withDeadline(
-      getAccessToken(),
-      TOKEN_TIMEOUT_MS,
-      () => new ApiError(0, path, SESSION_UNREADABLE),
-    );
+    // Both at once: the session read is local and the wake is not, so there is
+    // nothing to gain from doing them in order. `warmApi` never rejects, so
+    // the only thing this can throw is the token deadline.
+    const [, token] = await Promise.all([
+      warmApi(),
+      withDeadline(
+        getAccessToken(),
+        TOKEN_TIMEOUT_MS,
+        () => new ApiError(0, path, SESSION_UNREADABLE),
+      ),
+    ]);
     // No token means the session is gone — expired past refresh, or signed out
     // in another tab. Sending the request anyway is what this used to do, and
     // the backend answered "Missing bearer token", which screens rendered as
@@ -148,6 +154,34 @@ export async function apiFetch<T>(
  * connection at all any more; it is a row the app polls.
  */
 const REQUEST_TIMEOUT_MS = 45_000;
+
+/**
+ * How long to give the host to wake up, once, before the first authenticated
+ * request of the session.
+ *
+ * **Every authenticated request costs two serial round trips.** `Authorization`
+ * is not a CORS-safelisted header, so the browser sends a preflight `OPTIONS`
+ * and waits for it before sending anything else. Measured against the
+ * deployment on 2026-08-25: warm, preflight and request land 2 seconds apart
+ * and the whole screen loads in 4.
+ *
+ * Cold, it is fatal, and `send`'s retry cannot help. The thing queued behind
+ * the host's 75-second boot is the **browser's** preflight, not our request —
+ * we abort it at `REQUEST_TIMEOUT_MS`, so the browser never sends the real one
+ * at all, and the retry queues another preflight and aborts that too. The
+ * Render log for a cold open is seven `OPTIONS` and not one `GET`.
+ *
+ * `/v1/health` is unauthenticated, so it carries no `Authorization`, so it is
+ * a *simple* request with no preflight — one round trip instead of two, and
+ * nothing for the browser to give up on. Waking on that and letting the
+ * authenticated traffic follow turns "never completes" into "completes
+ * slowly".
+ *
+ * Long, because it is measured against a documented cold start rather than a
+ * latency budget, and because nothing is holding a screen open on it: it is
+ * awaited once, and the request it gates was going to wait anyway.
+ */
+const WAKE_TIMEOUT_MS = 90_000;
 
 /**
  * How long to wait for the bearer token before giving up on the request.
@@ -254,6 +288,41 @@ const REPEATABLE = new Set(['GET', 'HEAD', 'OPTIONS']);
  * repeated, only when nothing was heard back at all — a request that got a 500
  * is answered and is not tried again.
  */
+/**
+ * The wake, started at most once and shared by everything waiting on it.
+ *
+ * Cleared when it fails, so a later request tries again rather than inheriting
+ * one bad result for the life of the process.
+ */
+let waking: Promise<void> | null = null;
+
+/**
+ * Wakes the host, and never fails.
+ *
+ * **Fails open, deliberately.** A wake that could not be confirmed must not
+ * stop the request that follows: the server may be perfectly awake and the
+ * health check merely unlucky, and a gate that turns one failed request into
+ * every failed request is worse than the cold start it was added for. The same
+ * rule `shouldOnboard` follows, for the same reason.
+ *
+ * Exported so the app can start it at launch instead of at the first query —
+ * the wake is the long pole, and beginning it a second earlier is a second
+ * off every screen behind it.
+ */
+export function warmApi(): Promise<void> {
+  waking ??= withDeadline(
+    apiFetch<unknown>('/v1/health', { authenticated: false }),
+    WAKE_TIMEOUT_MS,
+    () => new Error('wake timed out'),
+  )
+    .then(() => undefined)
+    .catch(() => {
+      // Try again on the next request rather than holding this answer.
+      waking = null;
+    });
+  return waking;
+}
+
 interface Sent {
   response: Response;
   /** Armed until `release`, so a body that stalls is aborted too. */
