@@ -6,6 +6,50 @@ Operating Principle #5.
 
 ---
 
+## 2026-08-25 — The onboarding gate fails open, over holding the app until `/v1/me` answers
+
+**Context:** Onboarding is shown when the account says nobody has been asked
+yet. That fact lives on the server (`users.onboarded_at`, migration 009), so
+the app cannot know it until `/v1/me` comes back. Something has to be on screen
+in the meantime, and the two candidates are the app or a holding screen.
+
+**Alternative considered: hold, the way the sign-in gate holds.**
+`RootNavigator` already renders a bare ivory rectangle while `useAuthStatus` is
+`loading`, and extending that to cover `useMe` is two lines. It has the
+property the flash version lacks: someone signing up never sees Today appear
+and then be taken away.
+
+Rejected. That hold is a **local storage read**; this one would be a network
+request. Every cold start, for everyone, forever, would put an unbounded
+network wait between a musician and an app they already have an account for —
+to serve a screen each account sees exactly once. This project has shipped a
+blank screen over a working app once already (the boot watchdog, 2026-08-24)
+and the same reasoning applies: signing in again is a recoverable annoyance, a
+screen with nothing on it is an outage. `useAuthStatus` carries an 8-second
+`SESSION_TIMEOUT_MS` for precisely this hazard, on a read that never touches
+the network.
+
+**Decision:** `shouldOnboard(me)` returns true only on a definite
+`onboarded === false`. `undefined` — the query in flight, or failed — opens the
+app.
+
+**What it costs, stated plainly:** on the one launch after signing up, Today
+renders for as long as `/v1/me` takes and is then replaced by the onboarding
+screen. A flash, on one launch, on one screen.
+
+**What it buys beyond the launch path:** the gate cannot lock anyone out. A
+`/v1/me` that 500s, a backend that has not run migration 009 and sends no
+`onboarded_at` at all, an offline start — none of them can hold the app shut,
+because none of them produce `false`. Failing closed would turn every one of
+those into an app that will not open, and the screen behind the gate is a name
+and an instrument.
+
+**Where it is written down:** `mobile/src/lib/onboarding.ts`, with the rule
+tested in `onboarding.test.ts` — including the `undefined` case, which is the
+whole decision and is otherwise invisible in a component.
+
+---
+
 ## 2026-08-24 — Refuse a page the app cannot read, over reading it and marking the result uncertain
 
 **Context:** A musician photographed an orchestral contrabass part with a

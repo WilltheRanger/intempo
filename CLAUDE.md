@@ -351,6 +351,21 @@ there works differently as of 2026-08-24:
   the photograph exists to check, so it cannot be the thing that authorises
   throwing it away.
 
+- **Onboarding is one screen, it is skippable, and it fails open.**
+  `users.onboarded_at` (009) records *being asked*, not answering — someone who
+  skips is onboarded, because a skippable screen that comes back is not
+  skippable. `shouldOnboard` gates only on a definite `onboarded === false`: a
+  slow, failed or pre-009 `/v1/me` opens the app rather than holding it behind a
+  network request (`DECISIONS.md`, 2026-08-25). The screen is held in front of
+  the app by `RootNavigator`, not pushed as a route, so it needs no `reset` and
+  has no route to be wrong about.
+  **`users.instrument` is nullable and never defaulted**, the same rule as
+  `ScoreJson.clef` and for the same reason — `instrumentInUse()` falls back to
+  the device preference, which always has a value, so no screen needs a "no
+  instrument" branch.
+  Both rules the screen can get wrong live in `lib/onboarding.ts` where they are
+  tested, not in the `.tsx`.
+
 ### The capture path (2026-08-24) — what an audit of it found
 
 Nine defects between the shutter and a saved score, in a path that had **zero

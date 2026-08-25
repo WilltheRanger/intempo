@@ -24,6 +24,30 @@ export function requestScoreImageUpload(
   });
 }
 
+/**
+ * POST /v1/upload/avatar — the same flow, for a profile picture.
+ *
+ * Its own bucket rather than a folder in `score-images`: a page photograph is
+ * transient and deleted when the reading is accepted, an avatar lives as long
+ * as the account.
+ *
+ * **The server refuses HEIC here**, unlike a score page, and the asymmetry is
+ * deliberate: a page is decoded by Pillow on the way through, an avatar is
+ * handed straight to an `<img>` from a signed URL, and Chrome and Firefox
+ * cannot display HEIC. An iPhone shoots HEIC by default, so ask
+ * `expo-image-picker` for a quality — that re-encodes to JPEG — rather than
+ * discovering it at the upload.
+ *
+ * The `object_key` it returns is what `updateMe` wants. Never the URL: a
+ * signed URL expires, and `/v1/me` signs a fresh one on every read.
+ */
+export function requestAvatarUpload(filename: string): Promise<UploadResponse> {
+  return apiFetch<UploadResponse>('/v1/upload/avatar', {
+    method: 'POST',
+    body: { filename },
+  });
+}
+
 /** POST /v1/upload/audio — same flow, for practice recordings. */
 export function requestAudioUpload(filename: string): Promise<UploadResponse> {
   return apiFetch<UploadResponse>('/v1/upload/audio', {

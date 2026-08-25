@@ -6,6 +6,130 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-25 — Onboarding, part 3: the screen, and the gate that puts it there
+
+**Branch:** `main`. **UI/UX — built under the §2 go-ahead** the owner gave on
+2026-08-24 ("One screen, skippable", and "Build it now" for the profile
+picture, overriding a recommendation to defer it until the teacher tier gives
+it a reason).
+
+**Files:** `mobile/src/screens/onboarding/OnboardingScreen.tsx` (new),
+`components/profile/InstrumentChoice.tsx` (new), `lib/onboarding.ts` +
+`.test.ts` (new), `data/hooks/useProfile.ts`, `data/api/me.ts`,
+`data/api/upload.ts`, `data/types.ts`, `data/sources/api.ts`,
+`data/sources/fixtures.ts`, `navigation/RootNavigator.tsx`.
+
+### The three-foot test, before writing
+
+1. **"Who's playing?"** — one serif line, the screen's only editorial moment.
+2. **The four instruments** — the answer that actually changes the app.
+3. **Continue**, in the thumb zone, with Skip receding below it.
+
+The photograph was deliberately *not* placed. It changes nothing in the app
+today — there is no screen where another person appears — so a large circle at
+the top would have made the least consequential field the dominant one (§3
+law 4).
+
+### The three-foot test, on the screenshot — and what it caught
+
+First build, 390×844, fixture data. What I actually noticed, in order:
+
+1. "Who's playing?" — as intended.
+2. **The ink Continue bar.** Not the instruments.
+3. The instruments, last, and faintly.
+
+Two real faults, both invisible in the code and obvious in the picture:
+
+- **The instrument cells were hairline borders on the ivory ground and read as
+  nothing at all.** The one answer that changes what the app does was the
+  weakest thing on the screen, weaker than a button that does nothing until it
+  is answered. Fixed by putting the cells on `colors.surface` — the same
+  white-on-ivory the `Input` beside them already uses, so it is the app's
+  existing "you can act on this" language, not a new one — and giving them
+  `CONTROL_HEIGHT` instead of `MIN_TOUCH_TARGET`.
+- **The empty photo slot used `Avatar`'s brand mark**, the charcoal-and-gold
+  device, which was the only saturated colour on the screen and pulled the eye
+  straight to the field that matters least. It was also untrue: there is no
+  picture, and the mark reads as one. Replaced with a quiet `surface` circle,
+  hairline border, neutral camera icon — an empty slot that looks like an empty
+  slot.
+
+The lede was cut from four lines to two in the same pass; a four-line grey
+block was competing with the heading it was supposed to sit under.
+
+Second screenshot, re-run: **1.** "Who's playing?" **2.** the block of four
+instrument cells **3.** Continue. That is the intended order, and it is the
+recorded result.
+
+### Known and not fixed: desktop
+
+At 1280px the screen stretches edge to edge — a 1200px-wide Continue button and
+1000px instrument cells. **This is not specific to this screen.** Nothing in
+`mobile/` constrains width: `ScreenContainer` has a gutter and no `maxWidth`,
+so every screen in the app does this on a wide viewport. Fixing it means
+changing the shared shell, which changes every screen — a §2 change to existing
+UI, so it is raised with the owner rather than smuggled in here. Screenshot
+kept alongside the phone one.
+
+### The rules live outside the component
+
+`lib/onboarding.ts`, following the capture-path rule in `CLAUDE.md`: there is
+no React Native testing library here, so a rule inside a `.tsx` is a rule
+nothing checks — which is how eight of the nine capture-path defects survived.
+Two rules on this screen can be wrong, and both moved out:
+
+- `profileUpdateFor` — what a save sends. `UpdateMeInput` reads an omitted
+  field as "leave it" and an explicit `null` as "clear it", so sending
+  `display_name: null` for a name nobody typed is a request to **erase** a
+  name. On this screen there is nothing to erase, but the account may already
+  carry one from elsewhere. Skip sends `{onboarded: true}` and nothing else,
+  even if something was filled in first — Skip is not a quiet save.
+- `shouldOnboard` — whether the screen appears at all. See `DECISIONS.md`,
+  2026-08-25: only a definite `false` gates, so a `/v1/me` that is slow, that
+  fails, or that comes from a backend without migration 009 opens the app
+  instead of locking it.
+
+### The screen navigates nowhere
+
+`RootNavigator` holds it in front of the app the way the sign-in and
+password-reset screens are held, in a new `SignedInApp` component so `useMe`
+runs only when there is a session to answer it. Saving invalidates `me`,
+`onboarded` flips, the gate falls away. No route, no `reset`, nothing this
+screen can be wrong about — which matters, because navigation is the one part
+of this app nothing tests.
+
+`useUpdateProfile` now **returns** the invalidation from `onSuccess` instead of
+firing it and forgetting it. react-query awaits a promise returned there before
+`mutateAsync` resolves, so the button stays loading right up to the moment the
+gate lifts, rather than going idle for a frame under a screen that has not
+moved.
+
+### Tests
+
+9 new in `onboarding.test.ts`; 276 mobile tests green, typecheck clean, web
+build green. Mutation-tested `lib/onboarding.ts` — 8 mutants, 8 killed:
+skip-saves-anyway, name-sent-when-blank, name-not-trimmed,
+instrument-nulled-when-unanswered, avatar-key-nulled-when-none,
+onboarded-dropped, gate-treats-unknown-as-not-onboarded, gate-never-fires.
+
+### Honest DoD status
+
+The screen is verified **visually**, against fixture data, in a browser. Not
+verified: a real sign-up reaching it (needs Supabase keys and migration 009 run
+against the live database), the photo picker on a device, and the upload →
+`avatar_key` → signed-URL round trip. Migration 009 has **not** been run
+against the live database — until it is, `/v1/me` returns no `onboarded_at`,
+which `toMusician` reads as onboarded, and the screen correctly never appears.
+Nothing here has been seen working end to end.
+
+### Rollback
+
+`git revert` the commit. The gate is one `if` in `RootNavigator`; removing it
+restores the previous behaviour exactly, and nothing else reads
+`Musician.onboarded`.
+
+---
+
 ## 2026-08-24 — Onboarding, part 2: the avatar upload, and two holes it would have opened
 
 **Branch:** `main`. Backend still — the screen is next. `POST /v1/upload/avatar`
