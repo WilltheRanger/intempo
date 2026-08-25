@@ -30,8 +30,11 @@ from __future__ import annotations
 
 import logging
 import os
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Literal
+
+from app.config import settings
 
 log = logging.getLogger("intempo.analysis")
 
@@ -213,14 +216,40 @@ def _spawn_transcription_on_modal(score_id: str) -> bool:
     return True
 
 
-def start_transcription(score_id: str, background_tasks) -> None:
-    """Read the page, wherever it runs.
+#: Where a page is read when it is read here, and the queue in front of it.
+#:
+#: **Its own pool, not Starlette's.** Reading a page takes tens of seconds and
+#: a scan that arrives while the pool is full waits by *blocking a thread*
+#: (`_scan_slots` in the runner). Starlette's threadpool is where every request
+#: handler in this API now runs, so borrowing threads from it to hold a queue
+#: would trade the event loop the handlers were just taken off for a thread
+#: pool they can be starved out of — the same outage with more steps.
+#:
+#: Sized by the same memory ceiling `_scan_slots` enforces, so the queue is a
+#: queue rather than a crowd of parked threads: work waits in
+#: `ThreadPoolExecutor`'s own backlog, holding nothing.
+#:
+#: Never `shutdown()`. A process going down mid-read leaves the row `reading`,
+#: which `sweep_stuck_transcriptions` already understands and recovers — and
+#: blocking shutdown on a vision model finishing would hold the deployment open
+#: for minutes.
+_transcription_pool = ThreadPoolExecutor(
+    max_workers=max(1, settings.TRANSCRIPTION_MAX_CONCURRENT),
+    thread_name_prefix="transcribe",
+)
 
-    **Falls back to in-process, which is a real reading and not a stub.** The
-    API host has no homr — 150 MB of weights and 1350 MB of peak for a job it
-    cannot hold — so the fallback reads with the vision chain instead. That is
-    worse at reading and it is not nothing, and a musician who has just
-    photographed a page should not lose it to a deployment setting.
+
+def _decide_and_read(score_id: str) -> None:
+    """Send the page to Modal, or read it here. Runs off the request.
+
+    **The decision is a network call, which is why it is no longer in the
+    handler.** `fn.spawn()` is a gRPC round trip to Modal, and it used to sit
+    between the musician pressing the shutter and the app admitting the piece
+    existed — a third party's latency in front of a response that does not
+    depend on its answer, since the row is written and returned either way.
+    When Modal was unreachable it was worse than latency: the scan waited for
+    somebody else's timeout to decide something the musician was not waiting to
+    hear.
     """
     from app.workers.transcription_runner import run_transcription
 
@@ -238,7 +267,37 @@ def start_transcription(score_id: str, background_tasks) -> None:
             "score %s: falling back to reading in-process, without homr", score_id
         )
 
-    background_tasks.add_task(run_transcription, score_id)
+    run_transcription(score_id)
+
+
+def start_transcription(score_id: str) -> None:
+    """Get the page read, wherever it runs, without holding up the response.
+
+    Returns the moment the work is queued. Nothing about the reply to the
+    musician depends on where the page goes or whether it got there: the row
+    exists, it says `queued`, and the app polls it.
+
+    **Falls back to in-process, which is a real reading and not a stub.** The
+    API host has no homr — 150 MB of weights and 1350 MB of peak for a job it
+    cannot hold — so the fallback reads with the vision chain instead. That is
+    worse at reading and it is not nothing, and a musician who has just
+    photographed a page should not lose it to a deployment setting.
+    """
+    _transcription_pool.submit(_read_and_never_raise, score_id)
+
+
+def _read_and_never_raise(score_id: str) -> None:
+    """`_decide_and_read`, with its exceptions in the log instead of nowhere.
+
+    An exception inside a `ThreadPoolExecutor` task is stored on a `Future`
+    nobody holds, so it vanishes in silence — unlike a `BackgroundTasks`
+    failure, which Starlette logs. The row would stay `queued` and the screen
+    would poll a question that has already been answered badly.
+    """
+    try:
+        _decide_and_read(score_id)
+    except Exception:  # noqa: BLE001 — a queued read must not die unrecorded
+        log.exception("score %s: reading it could not be started", score_id)
 
 
 def start_analysis(analysis_id: str, background_tasks) -> None:
@@ -248,6 +307,12 @@ def start_analysis(analysis_id: str, background_tasks) -> None:
     has just finished playing should not lose the take because a deployment
     setting is wrong — a slow analysis on a tight box is a far better outcome
     than none, and the failure is in the log where it belongs.
+
+    Unlike a page, the Modal decision stays in the request here, and the
+    difference is what the caller is waiting for: `POST /v1/analyses` answers
+    202 with an id and nothing else, so it is already the cheapest request in
+    the app, while `POST /v1/scores` answers with a row the musician is looking
+    at.
     """
     from app.workers.analysis_runner import run_analysis
 

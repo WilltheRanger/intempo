@@ -57,7 +57,7 @@ def _assert_audio_url_owned_by(audio_url: str, user_id: UUID) -> None:
 
 
 @router.post("", response_model=CalibrationResponse)
-async def calibrate_tempo(
+def calibrate_tempo(
     body: CalibrationRequest,
     user_id: UUID = Depends(current_user_id),
 ) -> CalibrationResponse:

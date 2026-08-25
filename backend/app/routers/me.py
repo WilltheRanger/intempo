@@ -80,7 +80,7 @@ def _provision_user(client: Any, user_id: UUID, email: str) -> dict[str, Any]:
 
 
 @router.get("/me", response_model=MeResponse)
-async def get_me(payload: dict[str, Any] = Depends(current_jwt_payload)) -> MeResponse:
+def get_me(payload: dict[str, Any] = Depends(current_jwt_payload)) -> MeResponse:
     sub = payload.get("sub")
     email = payload.get("email")
     if not sub or not email:
@@ -181,7 +181,7 @@ def _to_response(
 
 
 @router.patch("/me", response_model=MeResponse)
-async def update_me(
+def update_me(
     body: UpdateMeRequest,
     payload: dict[str, Any] = Depends(current_jwt_payload),
 ) -> MeResponse:

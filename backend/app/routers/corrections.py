@@ -104,7 +104,7 @@ def _assert_owns_analysis(analysis_id: UUID, user_id: UUID) -> None:
     response_model=list[CorrectionResponse],
     status_code=status.HTTP_201_CREATED,
 )
-async def create_corrections(
+def create_corrections(
     analysis_id: UUID,
     body: CreateCorrectionsRequest,
     user_id: UUID = Depends(current_user_id_provisioned),
@@ -142,7 +142,7 @@ async def create_corrections(
 
 
 @router.get("/{analysis_id}/corrections", response_model=list[CorrectionResponse])
-async def list_corrections(
+def list_corrections(
     analysis_id: UUID,
     user_id: UUID = Depends(current_user_id),
     limit: int = Query(default=200, ge=1, le=500),

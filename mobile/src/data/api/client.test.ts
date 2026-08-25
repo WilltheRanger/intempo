@@ -424,23 +424,71 @@ describe('waking the host', () => {
     // first wake's attempts have to fail for the *wake* to have failed —
     // failing only the first lets the retry succeed, the wake is cached, and a
     // mutation that never clears the cache survives. That is what happened.
+    //
+    // Nothing reaches the host here, the request behind the wake included.
+    // That matters: a request that *does* get through is itself proof the host
+    // is awake, and the next wake is then skipped rather than cached — see the
+    // test below. Only a run in which nothing was heard from leaves the
+    // question genuinely unanswered.
     let health = 0;
     const fetching = vi.fn((url: string) => {
       if (String(url).endsWith('/v1/health')) {
         health += 1;
-        return health <= 2
-          ? Promise.reject(new TypeError('Failed to fetch'))
-          : Promise.resolve(new Response(JSON.stringify({ status: 'ok' }), { status: 200 }));
       }
-      return Promise.resolve(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+      return Promise.reject(new TypeError('Failed to fetch'));
     });
     vi.stubGlobal('fetch', fetching);
 
-    await mod.apiFetch('/v1/scores');
+    await expect(mod.apiFetch('/v1/scores')).rejects.toThrow();
     expect(health, 'both attempts of the first wake should have run').toBe(2);
 
+    await expect(mod.apiFetch('/v1/scores')).rejects.toThrow();
+    expect(health, 'the failed wake was cached instead of retried').toBe(4);
+  });
+
+  it('does not wake again while the API has just been heard from', async () => {
+    // The wake answers "might the host be asleep". A request that came back a
+    // moment ago answers it better than a health check can, so asking costs a
+    // round trip in front of a screen to learn something already known.
+    const fetching = answering();
+    vi.stubGlobal('fetch', fetching);
+
     await mod.apiFetch('/v1/scores');
-    expect(health, 'the failed wake was cached instead of retried').toBe(3);
+    await mod.apiFetch('/v1/analyses');
+    await mod.apiFetch('/v1/me');
+
+    const wakes = fetching.mock.calls.filter(([url]) =>
+      String(url).endsWith('/v1/health'),
+    );
+    expect(wakes, 'the host was awake throughout').toHaveLength(1);
+  });
+
+  it('wakes again once the host has been idle long enough to sleep', async () => {
+    // **The bug this is here for.** The wake used to be a promise that
+    // resolved once and stood for the life of the process, so it protected the
+    // first screen of a session and nothing after it. The host sleeps after
+    // about fifteen minutes; leave the app open through a lesson and come
+    // back, and the first request is exactly what the wake exists to prevent —
+    // an authenticated request with a preflight in front of it, queued behind
+    // a cold start, abandoned at the deadline before the browser ever sends
+    // the real one.
+    const fetching = answering();
+    vi.stubGlobal('fetch', fetching);
+
+    await mod.apiFetch('/v1/scores');
+    expect(
+      fetching.mock.calls.filter(([url]) => String(url).endsWith('/v1/health')),
+    ).toHaveLength(1);
+
+    // Long enough for the host to have gone back to sleep, and nothing asked
+    // in between to keep it up.
+    await vi.advanceTimersByTimeAsync(11 * 60 * 1000);
+    await mod.apiFetch('/v1/scores');
+
+    expect(
+      fetching.mock.calls.filter(([url]) => String(url).endsWith('/v1/health')),
+      'a host that has had time to sleep must be woken again',
+    ).toHaveLength(2);
   });
 
   it('gives the wake longer than a normal request, because a cold start is longer', async () => {

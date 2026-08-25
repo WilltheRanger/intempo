@@ -139,7 +139,7 @@ def _stub_worker(monkeypatch: pytest.MonkeyPatch) -> list[str]:
     monkeypatch.setattr(
         scores_module,
         "start_transcription",
-        lambda score_id, _background_tasks: enqueued.append(score_id),
+        lambda score_id: enqueued.append(score_id),
     )
     return enqueued
 
