@@ -6,6 +6,66 @@ Operating Principle #5.
 
 ---
 
+## 2026-08-25 — Sync handlers on Starlette's threadpool, over an async Supabase client
+
+**Context:** Every request handler in the API was `async def`, contained no
+`await`, and called Supabase through its synchronous client. Starlette runs a
+coroutine endpoint on the event loop, so each of those blocked it: the server
+served one request at a time. Measured on the real app with a 1s database call
+— six concurrent requests took 6.02s, and `/v1/health` answered in 5.86s while
+they ran. The app blocks every screen on that health check while it wakes the
+host, so the cost was not one endpoint's latency, it was the whole app's.
+
+**Decision:** drop `async` from the twenty handlers and the three auth
+dependencies. FastAPI then runs each in a worker thread, and the blocking calls
+inside them stop mattering. Same six requests: 1.01s, health check 0.002s.
+
+**Alternative considered: an async Supabase client (`acreate_client`).**
+The principled fix — genuinely non-blocking I/O, no thread per request, and a
+ceiling set by sockets rather than by a 40-thread pool.
+
+Rejected for now, on the size of the change against the size of the problem.
+It means `await` on every query in six routers, two workers, `provisioning`,
+`tier_limits` and `readiness`; it splits the Supabase client in two, because
+`analysis_runner` and `transcription_runner` are sync functions called directly
+by the Modal container and by `sweep_once` from a thread — so those would keep
+the sync client and the codebase would carry both. That is a large diff through
+every data path in the application, to fix a problem whose entire cause is a
+keyword that was never doing anything. The measurement says a thread per
+request is not the constraint here: this instance has 512 MB and
+`TRANSCRIPTION_MAX_CONCURRENT` is 2, so memory binds long before forty threads
+do.
+
+**Alternative considered: more uvicorn workers.** Cheapest possible change, and
+it would have raised concurrency from one to *n*. Rejected because it treats
+the symptom: each worker still serves one request at a time, and on a 512 MB
+instance there is not room for enough of them to matter. It also multiplies the
+in-process transcription and analysis memory ceilings by the worker count,
+which is the thing that OOM-kills this box.
+
+**Trade-offs accepted:**
+
+* Forty concurrent requests is now the ceiling (Starlette's default pool), and
+  that pool is shared with sync background work. Handled by giving the
+  transcription runner its own executor, so a full read queue cannot park
+  request-serving threads — the reason a scan queue waits by *blocking* a
+  thread (`_scan_slots`) is a memory ceiling, and moving handlers into that
+  same pool without separating them would have re-created the outage in a new
+  place.
+* A thread per in-flight request costs stack space. Immaterial next to a
+  vision-model read.
+* The rule now has to be *kept*. `async def` in front of a handler is a
+  one-word change that silently returns the server to serving one request at a
+  time, and a reviewer cannot see it in a diff — so it is asserted by
+  `test_no_blocking_handlers.py` rather than written down as a convention. That
+  test is the durable half of this decision; the keyword removal is the cheap
+  half.
+
+**What would reverse this:** an endpoint that genuinely needs to await async
+I/O, or a deployment where thread count rather than memory is the binding
+constraint. The test has an `_ASYNC_BY_DESIGN` set for the first, deliberately
+empty, so adding an entry requires naming the async I/O it awaits.
+
 ## 2026-08-25 — The onboarding gate fails open, over holding the app until `/v1/me` answers
 
 **Context:** Onboarding is shown when the account says nobody has been asked
