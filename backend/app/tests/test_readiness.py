@@ -346,29 +346,74 @@ class TestTheWorkerWillFetchWhatStorageAccepted:
         assert MAX_AUDIO_BYTES >= 50 * 1024 * 1024
 
 
-def test_both_buckets_are_checked() -> None:
+def _bucket_client(limit: int | None = 10 * 1024 * 1024, missing: set[str] | None = None):
+    """A storage client whose buckets report `limit`, and which raises for any
+    bucket named in `missing`."""
+
+    class _Bucket:
+        file_size_limit = limit
+
+    class _Storage:
+        def get_bucket(self, name):
+            if missing and name in missing:
+                raise RuntimeError("Bucket not found")
+            return _Bucket()
+
+    class _Client:
+        storage = _Storage()
+
+    return _Client()
+
+
+def test_every_bucket_the_app_writes_to_is_checked() -> None:
     """The same mismatch is possible for photographs.
 
     `score-images` is 10 MB and `MAX_IMAGE_BYTES` is 12 — the *safe* direction,
     with a comment saying so, which is how it should have been on the audio
     side and was not. Checking only the bucket that happened to be broken
     would leave the correct one free to drift into being the broken one.
+
+    `avatars` joined them with migration 009. It has no reader and therefore no
+    cap to compare against, which is exactly why it was missed: the check was
+    written as a size-mismatch check and a bucket with no size looks like
+    nothing to check. What it still has is existence.
     """
     from app.services.readiness import _storage_checks
 
-    class _Bucket:
-        file_size_limit = 10 * 1024 * 1024
+    names = {c.name for c in _storage_checks(_bucket_client())}
+    assert names == {
+        "storage:audio-uploads",
+        "storage:score-images",
+        "storage:avatars",
+    }
+    assert all(c.ok for c in _storage_checks(_bucket_client()))
 
-    class _Storage:
-        def get_bucket(self, _name):
-            return _Bucket()
 
-    class _Client:
-        storage = _Storage()
+def test_a_bucket_that_does_not_exist_is_reported() -> None:
+    """Migration 009 adds four columns *and* a bucket. The columns have their
+    own `schema:` checks, so a deployment that applied the column half and not
+    the bucket half reported entirely ready — and every onboarding attempt died
+    at the upload with nothing anywhere saying why.
+    """
+    from app.services.readiness import _storage_checks
 
-    names = {c.name for c in _storage_checks(_Client())}
-    assert names == {"storage:audio-uploads", "storage:score-images"}
-    assert all(c.ok for c in _storage_checks(_Client()))
+    checks = {c.name: c for c in _storage_checks(_bucket_client(missing={"avatars"}))}
+
+    assert checks["storage:avatars"].ok is False
+    assert "profile picture" in checks["storage:avatars"].detail
+    # And only that one. A single missing bucket is not a broken storage layer.
+    assert checks["storage:score-images"].ok is True
+
+
+def test_a_bucket_with_no_reader_is_not_judged_on_its_size() -> None:
+    """`avatars` has no cap of its own to disagree with — the picture goes from
+    storage straight to an `<img>`. A limit-comparison branch reached with no
+    limit to compare would either invent one or read `None` as zero."""
+    from app.services.readiness import _storage_checks
+
+    for limit in (1, 10 * 1024 * 1024, 500 * 1024 * 1024, None):
+        checks = {c.name: c for c in _storage_checks(_bucket_client(limit=limit))}
+        assert checks["storage:avatars"].ok is True, limit
 
 
 # ---------------------------------------------------------------------------
@@ -721,6 +766,9 @@ def test_an_engine_that_is_not_installed_is_reported_rather_than_assumed(
 
     assert checks["ocr:homr"].ok is False
     assert "not installed in this container" in checks["ocr:homr"].detail
+    # And it must not promise a fallback: the shipped chain is homr alone, so
+    # naming "the models in the chain" described a rescue that no longer exists.
+    assert "will be read by the models" not in checks["ocr:homr"].detail
     assert "Modal" in checks["ocr:homr"].detail, "it does not say where it does run"
 
 

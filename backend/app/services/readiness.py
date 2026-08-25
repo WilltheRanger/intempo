@@ -225,9 +225,12 @@ def _configuration_checks() -> list[Check]:
             available = getattr(provider, "available", None)
             present = bool(available()) if callable(available) else False
             detail = (
-                f"{provider.name} is not installed in this container, so pages "
-                "will be read by the models in the chain instead. It runs on "
-                "Modal — see TRANSCRIPTION_RUNTIME."
+                f"{provider.name} is not installed in this container. It runs "
+                "on Modal, so this is expected and harmless when "
+                "TRANSCRIPTION_RUNTIME=modal — check `transcription_dispatch` "
+                "for whether pages are actually getting there. If they are "
+                "not, a page reaching the chain here is read by whichever "
+                "other provider is usable, and refused outright if none is."
             )
         if present:
             usable.append(provider.name)
@@ -523,14 +526,22 @@ def _storage_checks(client) -> list[Check]:
     into storage in the first place, so the real limit is somewhere the code
     does not mention.
     """
-    from app.routers.upload import AUDIO_BUCKET, SCORE_BUCKET
+    from app.routers.upload import AUDIO_BUCKET, AVATAR_BUCKET, SCORE_BUCKET
     from app.services.page_image import MAX_IMAGE_BYTES
     from app.workers.analysis_runner import MAX_AUDIO_BYTES
 
     checks: list[Check] = []
+    # `cap` is the limit of the thing that later *reads* the object, which is
+    # what the mismatch above is about. Avatars have no reader — the picture
+    # goes straight from storage to an `<img>` — so there is no second number
+    # and `None` says so. The bucket is still checked, because it is created by
+    # migration 009 and a deployment that ran the column half of that migration
+    # and not the bucket half has an onboarding screen nobody can finish, with
+    # nothing anywhere reporting why.
     for bucket_name, cap, what in (
         (AUDIO_BUCKET, MAX_AUDIO_BYTES, "recording"),
         (SCORE_BUCKET, MAX_IMAGE_BYTES, "photograph"),
+        (AVATAR_BUCKET, None, "profile picture"),
     ):
         name = f"storage:{bucket_name}"
         try:
@@ -550,9 +561,11 @@ def _storage_checks(client) -> list[Check]:
             )
             continue
 
-        if not limit:
-            # No limit set is a valid configuration — the project default
-            # applies, and this cannot see what that is.
+        if cap is None or not limit:
+            # Nothing to compare. Either no reader has a limit of its own, or
+            # no limit is set on the bucket and the project default applies,
+            # which this cannot see. Reaching here at all means the bucket was
+            # read, which is the part that matters for a bucket with no cap.
             checks.append(Check(name=name, ok=True, detail=""))
             continue
 
