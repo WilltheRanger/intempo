@@ -6,6 +6,78 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-24 — Onboarding, part 2: the avatar upload, and two holes it would have opened
+
+**Branch:** `main`. Backend still — the screen is next. `POST /v1/upload/avatar`
+mirrors `/score-image`: signed PUT straight to storage, key prefixed with the
+owner's id, five-minute TTL.
+
+Two things differ from the score path, and both are the point of this entry.
+
+### HEIC is refused, though a photographed page may be one
+
+Not an oversight, and the asymmetry is deliberate. A page is downloaded by the
+worker and decoded by Pillow, which reads HEIC through `pillow-heif`. **An
+avatar is never decoded by anything** — it goes straight to an `<img>` from a
+signed URL, and Chrome and Firefox cannot display HEIC. Accepting one would
+store a picture that most browsers render as a broken image, with nothing
+anywhere reporting a problem.
+
+An iPhone shoots HEIC by default, so this is the common case, not the exotic
+one. The client controls it: `expo-image-picker` re-encodes to JPEG when a
+quality is given.
+
+### The key comes from the client, and the server bypasses RLS
+
+The storage policies in 009 protect the bucket from a client acting
+**directly**. They do nothing about a client handing the server someone else's
+key — `/v1/me` signs the URL with the service role, which bypasses RLS
+entirely. Without a check,
+`PATCH /v1/me {"avatar_key": "<stranger-id>/face.jpg"}` returns a working
+signed URL for a stranger's photograph.
+
+`_build_object_key` puts the owner's id first precisely so this is checkable,
+so the check is the prefix — **and the rest of the key**, because
+`<me>/../<stranger>/face.jpg` starts with the right prefix and is not this
+account's object. An audit of this codebase already found the same class of
+hole in the score `image_url` check, which looked at the path and not the host.
+
+### Replacing a picture removes the one it replaced
+
+The same bug `delete_score` had until this morning, in a new place: without
+this, every change of picture leaks the previous one forever. Same two
+orderings, for the same reasons — the old key is read **before** the write
+because the row is the only thing that knows it, and the removal happens
+**after** the write succeeded.
+
+### The mutation that found a real bug
+
+Two mutations survived the first pass. One was harmless: removing the guard
+that skips reading the old key when the patch does not mention the picture
+costs a wasted query and changes no behaviour, because the `!=` comparison
+still decides. Recorded rather than papered over with a contorted test.
+
+**The other was a genuine defect I had written.** Mutating
+`if superseded and superseded != row.get("avatar_key")` to `if superseded:`
+survived — meaning nothing tested a client re-sending the key it already has.
+A retry, a form that submits every field, a save with nothing changed: the
+picture would be read as superseded and deleted while the row went on pointing
+at it, and the next `/v1/me` would sign a URL for an object that no longer
+exists. The comparison against the row *after* the write is what prevents it,
+and now a test says so.
+
+### Tests
+
+26 in `test_me.py`, 10 in `test_upload.py`. Nine mutations, eight caught, one
+recorded as behaviour-neutral.
+
+### Not verified
+
+The migration has still not been run against the live database, and no client
+has exercised any of this — the screen does not exist yet.
+
+---
+
 ## 2026-08-24 — Onboarding, part 1: the profile a musician owns
 
 **Branch:** `main`. New work, asked for by the owner: an onboarding step at

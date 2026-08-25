@@ -200,6 +200,21 @@ async def update_me(
             detail="Supabase service-role client is not configured",
         )
 
+    # The picture being replaced, so it can be removed once the row no longer
+    # points at it. Read before the update for the reason `delete_score`
+    # learned this morning: the row is the only thing that knows the key, and
+    # after the write it knows a different one.
+    superseded: str | None = None
+    if "avatar_key" in body.model_fields_set:
+        current = (
+            client.table("users")
+            .select("avatar_key")
+            .eq("id", str(user_id))
+            .limit(1)
+            .execute()
+        ).data or []
+        superseded = current[0].get("avatar_key") if current else None
+
     sent = body.model_fields_set
     update: dict[str, Any] = {}
     if "instrument" in sent:
@@ -211,7 +226,7 @@ async def update_me(
         cleaned = (body.display_name or "").strip()
         update["display_name"] = cleaned or None
     if "avatar_key" in sent:
-        update["avatar_key"] = body.avatar_key
+        update["avatar_key"] = _own_avatar_key(user_id, body.avatar_key)
     if body.onboarded:
         # Only ever forward. There is no route back to "never asked", and a
         # client that could send false would make the screen reappear.
@@ -236,4 +251,49 @@ async def update_me(
         )
 
     row = updated[0]
+
+    # Strictly after the write succeeded, and only when the row has actually
+    # stopped pointing at it. Otherwise a failed update would cost a picture
+    # that is still the current one.
+    if superseded and superseded != row.get("avatar_key"):
+        _remove_avatar(client, superseded)
+
     return _to_response(user_id, row, UserTier(row.get("tier", UserTier.free.value)), None)
+
+
+def _own_avatar_key(user_id: UUID, key: str | None) -> str | None:
+    """Refuse a key that is not this account's.
+
+    **The client chooses this value, and the server reads it with the service
+    role, which bypasses RLS.** The storage policies in migration 009 protect
+    the bucket from a client acting directly; they do nothing about a client
+    handing us someone else's key and having us sign a URL for it. Without this
+    check, `PATCH /v1/me {"avatar_key": "<other-user-id>/face.jpg"}` makes
+    `/v1/me` hand back a working signed URL for a stranger's photograph.
+
+    `_build_object_key` puts the owner's id first for exactly this reason, so
+    the check is the prefix. An audit of this codebase already found the same
+    class of hole in the score `image_url` check, which looked at the path and
+    not the host.
+    """
+    if key is None:
+        return None
+    prefix = f"{user_id}/"
+    if not key.startswith(prefix) or "/" in key[len(prefix):]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="avatar_key does not belong to this account",
+        )
+    return key
+
+
+def _remove_avatar(client: Any, key: str) -> None:
+    """Delete a picture the account no longer points at.
+
+    Never raises. Replacing a photograph must not fail because a bucket is
+    unreachable — the row is what the app reads, and the orphan is logged.
+    """
+    try:
+        client.storage.from_(AVATAR_BUCKET).remove([key])
+    except Exception as exc:  # noqa: BLE001 — storage down, key gone, permissions
+        log.warning("could not remove the replaced avatar %s: %s", key, exc)
