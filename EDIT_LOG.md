@@ -178,6 +178,131 @@ staleness test fails when `WAKE_GOES_STALE_AFTER_MS` is made infinite.
 
 ---
 
+## 2026-08-25 — The scan has never worked: the Modal container could not import its own worker
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`, merged to `main` at the
+owner's request. Backend only.
+
+**Files:** `backend/modal_app.py`, `backend/app/services/buckets.py` (new),
+`backend/app/services/page_image.py`, `backend/app/routers/upload.py`,
+`backend/app/tests/test_modal_images.py` (new).
+
+### The measurement that ended a week of guessing
+
+The owner opened the Modal dashboard:
+
+    transcribe_score
+    Enqueued          Started           Startup   Execution   Status
+    Aug 25, 09:15:42  Aug 25, 09:15:45  3.13s     11ms        Failed
+    Aug 24, 13:09:25  Aug 24, 13:09:29  2.40s     9ms         Failed
+
+**Execution 11 milliseconds.** The container boots cleanly and the function
+raises before it can download anything, read anything or touch the database.
+That is an import, and only an import.
+
+### Three of them
+
+`transcribe_score`'s first statement is
+`from app.workers.transcription_runner import run_transcription`. Walking that
+module's import graph against what the image actually installs:
+
+- **`fastapi`** — `services/page_image` raises `HTTPException` six times and the
+  runner catches it. Its own docstring called this "one wart, kept
+  deliberately". Not installed.
+- **`python-dotenv`** — `app/config` reads a `.env` at import. Not installed.
+- **`app.routers.upload`** — `page_image` imported `SCORE_BUCKET` from it, and
+  the image deliberately ships **without** `app/routers/`, because a container
+  that reads photographs has no HTTP API to serve. No `pip_install` can fix
+  that one.
+
+So **every page ever dispatched to Modal failed in about ten milliseconds**,
+and had done since the path existed. That is why every `done` row in the
+database is confidence 0.2–0.42: those are the vision chain, read on the API
+host. **homr has never read a page in production.**
+
+### Why nothing said so
+
+Every check that existed was a check on the *shape* of the deployment.
+`test_dispatch.py` asserts the function name in `modal_app.py` matches the one
+the dispatcher looks up — it did. `test_modal_runs_the_same_runner_not_a_copy`
+asserts the import line is present — it was. `fn.spawn()` succeeded, so the API
+logged "being read on Modal", which was true. `/v1/ready` reported
+`transcription_dispatch` ok, because pages *were* being dispatched.
+
+And Modal writes the row itself, so a container that dies before its first
+write leaves the row exactly as a slow page leaves it. The sweeper's guess —
+"reading this page stopped before it finished" — was shown to a musician twice
+for a fault that was neither slow nor anything to do with the page.
+
+**This is the third time this repository has paid for the same distinction**:
+Modal credentials (a `\n` that made every spawn raise while every readiness
+check passed), CORS origins (a variable that was set, to the wrong value), and
+now an image that installs the wrong packages. Configuration checks pass on
+broken deployments. Only behaviour checks fail.
+
+### The fix
+
+`app/services/buckets.py` holds the three bucket names. It imports nothing, so
+it cannot drag a web framework into a container; `routers/upload` re-exports
+them so every existing import still works. That removes the worker→router edge
+entirely — and with it `pyjwt`, which came in through `app.auth`.
+
+`fastapi` and `python-dotenv` are added to the transcription image, because
+both are genuinely imported at module level. `fastapi` in a scanning container
+is still a wart; it is now a *declared* one.
+
+### The test, and what it found on its first run
+
+`test_modal_images.py` walks the **module-level** import graph from each Modal
+function's entry point and compares it against that image's `pip_install` —
+plus a second check that no worker reaches `app.routers`, and a third asserting
+the images keep excluding it.
+
+Module-level only, deliberately: an import inside a function fails when that
+function runs, which is a different and much louder failure than a container
+that cannot start. `librosa` and `modal` are both reachable from the runner
+through function-level imports and neither has ever mattered.
+
+**It failed immediately on the analysis image**, which is also missing
+`python-dotenv`. `ANALYSIS_RUNTIME` is `inprocess`, so nobody had ever tried —
+switching it to Modal would have failed the same way, with the same silence.
+Fixed in the same pass.
+
+A fourth test guards the guard: a static walk with a broken resolver reports
+nothing missing and passes forever, so it asserts the machinery actually finds
+`supabase` and `fastapi`, and that a pretend image missing them actually fails.
+
+### Mutation testing
+
+6 mutants, 6 killed — each of the three missing packages removed again, the
+routers exclusion lifted, and `page_image` pointed back at the router.
+
+The routers mutant survived the first pass and was **equivalent**: with the
+layering fixed nothing reaches `app.routers`, so shipping it breaks no import.
+It would only quietly restore the conditions that made
+`from app.routers.upload import SCORE_BUCKET` look reasonable. That is a rule
+worth stating rather than a test worth contorting, so it became its own
+assertion.
+
+### Tests
+
+7 new; full backend suite **1141 passed**.
+
+### Honest status
+
+The import failures are real, measured against the actual image definitions,
+and fixed. **What is not verified is that a page now reads end to end** — that
+needs a deploy and a real scan, and neither has happened yet. The next scan is
+the test. If it fails again, the call-id work in the entry below means it will
+say why instead of guessing.
+
+### Rollback
+
+`git revert`. `services/buckets.py` can stay; it is a leaf module nothing else
+depends on.
+
+---
+
 ## 2026-08-25 — The scan's black hole: a Modal read that dies before its first write
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg` (realigned onto `main`
