@@ -178,6 +178,89 @@ staleness test fails when `WAKE_GOES_STALE_AFTER_MS` is made infinite.
 
 ---
 
+## 2026-08-25 — A 14.8 MB page is a good page in a large file, not a bad photograph
+
+**Branch:** `main`. Mobile only.
+
+**Files:** `mobile/src/lib/scan/shrink.ts` + `.test.ts` (new),
+`mobile/src/lib/scan/uploadPage.ts`, `mobile/src/lib/scan/uploadPage.test.ts`,
+`mobile/package.json` (adds `expo-image-manipulator`).
+
+### The refusal
+
+Importing on a laptop, past the picker fix:
+
+    The page didn't upload
+    That photograph is 14.8 MB — too large to send, and the limit is 10.0 MB.
+    Photographing the page with this app's camera makes a smaller file than
+    the original from your camera roll.
+
+Every clause of that advice is wrong on a desktop. There is no camera roll.
+"This app's camera" is a **webcam**, and a webcam capture of a page is precisely
+what `too_small_to_read` exists to turn away — the app would have sent them from
+a refusal they could fix to one they could not.
+
+It is the same shape as "a flatter, better-lit shot" for a page that was already
+flat, and as `Unsupported file type: .` — confidently unhelpful, and impossible
+to act on. Three in one evening, all in the same scan path.
+
+### The fix
+
+Re-encode instead of refusing. `expo-image-manipulator` (Expo's own, works on
+both platforms) behind `shrinkToFit`.
+
+**Quality first, pixels last.** A JPEG at 0.8 is a fraction of the size and
+visually identical at the scale a staff line occupies; resolution is the thing
+the reader actually needs, since the server refuses a page whose staff lines are
+under eight pixels apart. So every quality step is tried at full size before a
+single pixel is given up, and the ladder stops at `MIN_LONG_EDGE = 2400`.
+
+That floor is measured against the page that provoked this: 5712 px long edge
+with staff lines 25 px apart, so at 2400 they are about 10.5 — clear of the
+server's floor of 8. A denser page starts finer and could cross it, which is
+**deliberate**: the server then measures *that page* and says so in a sentence
+about it, which beats refusing to send anything at all.
+
+A page that already fits is returned by identity and never re-encoded — a lossy
+round trip is not free just because the file got no bigger.
+
+If every rung is exhausted the upload still fails, but the message now carries
+both numbers (what they gave, what the app got it down to) and no advice the
+app cannot honour.
+
+### Two things worth keeping
+
+`expo-image-manipulator` reaches `react-native`, whose Flow syntax vitest cannot
+parse, so importing it at module level broke every test that merely imports
+`uploadPage`. It is a **type-only import plus a lazy `await import()`** inside
+the one branch that needs it — nothing loads it until a page is actually too
+large. `SaveFormat.JPEG` became a pinned literal for the same reason.
+
+The three existing tests asserted the *refusal*, which is the behaviour that
+changed. Rewritten rather than deleted: a too-large page is now re-encoded and
+sent; only an unshrinkable one fails, and its message may not mention a camera
+roll, "this app's camera", or the MusicXML importer.
+
+### Tests
+
+8 new in `shrink.test.ts`, 3 rewritten; 321 mobile tests, typecheck clean, web
+build green. Mutation-tested: 6 mutants, 6 killed — re-encoding a page that
+fits, spending pixels before quality, shrinking past the readable floor,
+continuing after a rung that fits, re-encoding as PNG, and refusing instead of
+shrinking.
+
+### Not verified
+
+That a shrunk page then reads. `expo-image-manipulator` has never run in this
+environment — there is no browser here — so the ladder is tested against a
+stubbed manipulator and the real re-encode has not been exercised once.
+
+### Rollback
+
+`git revert`, and `npm uninstall expo-image-manipulator`. The refusal returns.
+
+---
+
 ## 2026-08-25 — Importing on a desktop browser: refused before the file was looked at
 
 **Branch:** `main`. Mobile only (the web build).

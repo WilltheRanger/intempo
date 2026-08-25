@@ -1,5 +1,7 @@
 import { Asset } from 'expo-asset';
 
+import { needsShrinking, shrinkToFit } from './shrink';
+
 import {
   CANCELLED,
   requestScoreImageUpload,
@@ -170,7 +172,7 @@ export async function uploadPage(
   page: CapturedPage,
   options: UploadOptions = {},
 ): Promise<string> {
-  const uri = uriFor(page);
+  let uri = uriFor(page);
   if (!uri) {
     throw new ScanUploadError('That page could not be read from the device.');
   }
@@ -183,13 +185,17 @@ export async function uploadPage(
   // the device is not instant, and leaving the screen during it should stop
   // the scan rather than let it run on to ask the API for somewhere to put a
   // page nobody is waiting for.
-  let bytes: Blob;
-  try {
-    const response = await fetch(uri, { signal: options.signal });
+  const readBytes = async (from: string): Promise<Blob> => {
+    const response = await fetch(from, { signal: options.signal });
     if (!response.ok) {
       throw new Error(`reading the image returned ${response.status}`);
     }
-    bytes = await response.blob();
+    return response.blob();
+  };
+
+  let bytes: Blob;
+  try {
+    bytes = await readBytes(uri);
   } catch (cause) {
     // A cancelled read is not a device that could not be read. Saying it was
     // would put "That page could not be read from the device" on screen for
@@ -210,13 +216,31 @@ export async function uploadPage(
   // moment, and refusing after costs however long it took to push ten
   // megabytes over cellular — or the two-minute timeout, which a slow uplink
   // hits before the bucket ever answers.
-  if (bytes.size > MAX_PAGE_BYTES) {
-    throw new ScanUploadError(
-      `That photograph is ${megabytes(bytes.size)} — too large to send, and ` +
-        `the limit is ${megabytes(MAX_PAGE_BYTES)}. Photographing the page ` +
-        `with this app's camera makes a smaller file than the original from ` +
-        `your camera roll.`,
+  // **Re-encoded, not refused.** A 14.8 MB photograph is a good page in a large
+  // file, and the app used to turn it away with advice to use its own camera
+  // instead — which on a laptop is a webcam, and a webcam capture of a page is
+  // exactly what the server's legibility check exists to reject. The suggestion
+  // could not have worked.
+  //
+  // Quality is spent before pixels, because resolution is what the reader
+  // needs. See `shrinkToFit`.
+  if (needsShrinking(bytes.size, MAX_PAGE_BYTES)) {
+    const smaller = await shrinkToFit(uri, bytes.size, MAX_PAGE_BYTES, async (at) =>
+      (await readBytes(at)).size,
     );
+    if (smaller.size > MAX_PAGE_BYTES) {
+      throw new ScanUploadError(
+        `That photograph is ${megabytes(bytes.size)} and could not be made ` +
+          `small enough to send — the limit is ${megabytes(MAX_PAGE_BYTES)}, ` +
+          `and the smallest version of it is still ` +
+          `${megabytes(smaller.size)}. A photograph of one page, rather than a ` +
+          `scan of several, is usually well inside it.`,
+      );
+    }
+    if (smaller.changed) {
+      bytes = await readBytes(smaller.uri);
+      uri = smaller.uri;
+    }
   }
 
   const { contentType, ext } = typeOf(bytes, uri);
