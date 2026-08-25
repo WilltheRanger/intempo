@@ -83,14 +83,24 @@ unreachable auth endpoint turns every request into a half-minute wait ending in
 a 401, which the app renders as "your session has ended" and sends the musician
 to sign in against the same unreachable endpoint.
 
-**Reading a page dispatches off the request.** `start_transcription` submits to
-its own `ThreadPoolExecutor`, sized by `TRANSCRIPTION_MAX_CONCURRENT`. Two
+**Reading a page dispatches off the request.** `start_transcription` puts the
+id on a queue drained by `TRANSCRIPTION_MAX_CONCURRENT` daemon threads. Two
 reasons, and the second one is new: the Modal spawn leaves the request path,
 **and** a full read queue can no longer park request-serving threads.
 `run_transcription` waits for `_scan_slots` by blocking, which was harmless
 while that thread came from BackgroundTasks and nothing else, but the handlers
 now draw from that same pool — moving them off the event loop and then letting
 a scan queue starve them would have been the same outage with more steps.
+
+**Daemon threads rather than a `ThreadPoolExecutor`, which is what this was
+first written as.** The executor registers an `atexit` hook that **joins its
+workers**, so a process asked to exit while a page is being read blocks until
+the read finishes — measured, before merging: a task sleeping eight seconds
+delayed `sys.exit(0)` by eight seconds; the shipped shape exits in zero with a
+page mid-read. That would have been a deploy or restart hanging for the length
+of a transcription, which is a stuck shutdown introduced while removing stuck
+requests. A process that goes down mid-read leaves the row `reading`, and
+`sweep_stuck_transcriptions` has always recovered exactly that.
 
 ### The app side, same symptom from the other end
 
@@ -131,7 +141,7 @@ musician's own decision.
 
 ### Tests
 
-Backend `1114 → 1119 passed` (+3 for the handler guard, +2 for dispatch).
+Backend `1114 → 1120 passed` (+3 for the handler guard, +3 for dispatch).
 Mobile `300 → 309 passed`, `tsc --noEmit` clean.
 
 Mutation-checked, each failing by name when reverted: the `async def` guard

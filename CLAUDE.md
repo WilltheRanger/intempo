@@ -398,11 +398,16 @@ there works differently as of 2026-08-24:
   JWKS fetch to 30s; both are set in `db.py` and `auth.py` now. Starlette's pool
   holds forty threads and is shared with background work, so an untimed call does
   not degrade the API, it removes it.
-- **Reading a page dispatches to its own executor, not to `BackgroundTasks`.**
-  Two reasons and both matter: the Modal spawn is a gRPC round trip that has no
-  business in `POST /v1/scores`, and `run_transcription` waits for a slot by
-  *blocking a thread* — harmless when that thread came from BackgroundTasks alone,
-  an outage now the handlers draw from the same pool.
+- **Reading a page dispatches to its own daemon threads, not to
+  `BackgroundTasks` and not to a `ThreadPoolExecutor`.** Two reasons for taking
+  it off BackgroundTasks and both matter: the Modal spawn is a gRPC round trip
+  that has no business in `POST /v1/scores`, and `run_transcription` waits for a
+  slot by *blocking a thread* — harmless when that thread came from
+  BackgroundTasks alone, an outage now the handlers draw from the same pool.
+  **Daemon is the load-bearing word**: `ThreadPoolExecutor` registers an `atexit`
+  hook that joins its workers, so a restart during a read blocks for the whole
+  read (measured: 8s task, 8s delay to `sys.exit`). A process that goes down
+  mid-read leaves the row `reading`, which the sweeper already recovers.
 - **On the app side, the wake goes stale.** `warmApi` was resolved once and held
   for the life of the process, so it protected the first screen of a session and
   nothing after it — while the host sleeps every fifteen minutes. Any response

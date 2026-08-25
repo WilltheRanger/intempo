@@ -30,7 +30,8 @@ from __future__ import annotations
 
 import logging
 import os
-from concurrent.futures import ThreadPoolExecutor
+import queue
+import threading
 from dataclasses import dataclass
 from typing import Literal
 
@@ -216,27 +217,68 @@ def _spawn_transcription_on_modal(score_id: str) -> bool:
     return True
 
 
-#: Where a page is read when it is read here, and the queue in front of it.
+#: Pages waiting to be read here, and the threads that read them.
 #:
-#: **Its own pool, not Starlette's.** Reading a page takes tens of seconds and
-#: a scan that arrives while the pool is full waits by *blocking a thread*
-#: (`_scan_slots` in the runner). Starlette's threadpool is where every request
-#: handler in this API now runs, so borrowing threads from it to hold a queue
-#: would trade the event loop the handlers were just taken off for a thread
-#: pool they can be starved out of — the same outage with more steps.
+#: **Its own threads, not Starlette's.** Reading a page takes tens of seconds
+#: and a scan that arrives while the readers are busy waits by *blocking a
+#: thread* (`_scan_slots` in the runner). Starlette's threadpool is where every
+#: request handler in this API now runs, so borrowing threads from it to hold a
+#: queue would trade the event loop the handlers were just taken off for a pool
+#: they can be starved out of — the same outage with more steps. Waiting happens
+#: in `_pending`, which holds no thread at all.
 #:
-#: Sized by the same memory ceiling `_scan_slots` enforces, so the queue is a
-#: queue rather than a crowd of parked threads: work waits in
-#: `ThreadPoolExecutor`'s own backlog, holding nothing.
+#: **Daemon threads, and that is the load-bearing word.** The obvious shape here
+#: is a `ThreadPoolExecutor`, and it is wrong for this: it registers an `atexit`
+#: hook that **joins its workers**, so a process asked to exit while a page is
+#: being read blocks until the read finishes. Measured: a task sleeping eight
+#: seconds delays `sys.exit(0)` by eight seconds. That is a deploy or a restart
+#: hanging for the length of a transcription — tens of seconds now, and up to
+#: the vision SDK's ten-minute default if that chain is ever turned back on.
+#: Introducing a stuck shutdown while removing stuck requests is not a trade.
 #:
-#: Never `shutdown()`. A process going down mid-read leaves the row `reading`,
-#: which `sweep_stuck_transcriptions` already understands and recovers — and
-#: blocking shutdown on a vision model finishing would hold the deployment open
-#: for minutes.
-_transcription_pool = ThreadPoolExecutor(
-    max_workers=max(1, settings.TRANSCRIPTION_MAX_CONCURRENT),
-    thread_name_prefix="transcribe",
-)
+#: A process that goes down mid-read leaves the row `reading`, which
+#: `sweep_stuck_transcriptions` already understands and recovers. That is the
+#: same ending a crash has always had, and the same recovery.
+_pending: queue.Queue[str] = queue.Queue()
+
+_readers_lock = threading.Lock()
+_readers_started = False
+
+
+def _reader_loop() -> None:
+    """Take pages off the queue and read them, forever."""
+    while True:
+        score_id = _pending.get()
+        try:
+            _decide_and_read(score_id)
+        except Exception:  # noqa: BLE001 — a queued read must not die unrecorded
+            # Nothing holds a handle on this work, so an exception that escaped
+            # here would vanish in silence: the row would stay `queued` and the
+            # screen would go on polling a question already answered badly.
+            log.exception("score %s: reading it could not be started", score_id)
+        finally:
+            _pending.task_done()
+
+
+def _ensure_readers() -> None:
+    """Start the reader threads, once, the first time a page needs one.
+
+    Lazily, not at import. `transcription_runner` imports this module and the
+    Modal container imports that, so threads created at import would be created
+    in a container that reads its one page on the main thread and exits.
+
+    Sized by the same memory ceiling `_scan_slots` enforces: reading a page
+    peaks around 81 MB on the vision path, on an instance with 512 MB.
+    """
+    global _readers_started
+    with _readers_lock:
+        if _readers_started:
+            return
+        for index in range(max(1, settings.TRANSCRIPTION_MAX_CONCURRENT)):
+            threading.Thread(
+                target=_reader_loop, name=f"transcribe-{index}", daemon=True
+            ).start()
+        _readers_started = True
 
 
 def _decide_and_read(score_id: str) -> None:
@@ -283,21 +325,8 @@ def start_transcription(score_id: str) -> None:
     worse at reading and it is not nothing, and a musician who has just
     photographed a page should not lose it to a deployment setting.
     """
-    _transcription_pool.submit(_read_and_never_raise, score_id)
-
-
-def _read_and_never_raise(score_id: str) -> None:
-    """`_decide_and_read`, with its exceptions in the log instead of nowhere.
-
-    An exception inside a `ThreadPoolExecutor` task is stored on a `Future`
-    nobody holds, so it vanishes in silence — unlike a `BackgroundTasks`
-    failure, which Starlette logs. The row would stay `queued` and the screen
-    would poll a question that has already been answered badly.
-    """
-    try:
-        _decide_and_read(score_id)
-    except Exception:  # noqa: BLE001 — a queued read must not die unrecorded
-        log.exception("score %s: reading it could not be started", score_id)
+    _ensure_readers()
+    _pending.put(score_id)
 
 
 def start_analysis(analysis_id: str, background_tasks) -> None:

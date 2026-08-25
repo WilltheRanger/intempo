@@ -338,24 +338,57 @@ def test_the_scan_request_never_waits_for_modal(monkeypatch) -> None:
 
 
 def test_a_read_that_throws_is_logged_rather_than_lost(monkeypatch, caplog) -> None:
-    """An exception in a pool task lands on a `Future` nobody holds.
+    """Nothing holds a handle on this work, so an escaping exception vanishes.
 
-    Unlike `BackgroundTasks`, which Starlette logs, a `ThreadPoolExecutor` task
-    that raises does so in complete silence — the row would stay `queued` and
-    the screen would go on polling a question that had already been answered
-    badly.
+    Unlike `BackgroundTasks`, which Starlette logs, a reader thread that dies
+    does so in silence — and it takes the reader with it, so the *next* page
+    queued behind it is never read either. The row would stay `queued` and the
+    screen would go on polling a question already answered badly.
     """
-    monkeypatch.setattr(dispatch, "TRANSCRIPTION_RUNTIME", "inprocess")
+    import threading
 
-    def _explodes(_sid: str) -> None:
-        raise RuntimeError("boom")
+    monkeypatch.setattr(dispatch, "TRANSCRIPTION_RUNTIME", "inprocess")
+    seen = threading.Event()
+
+    def _explodes(sid: str) -> None:
+        if sid == "score-4":
+            raise RuntimeError("boom")
+        seen.set()
 
     monkeypatch.setattr(dispatch, "_decide_and_read", _explodes)
 
     with caplog.at_level("ERROR"):
-        dispatch._read_and_never_raise("score-4")
+        dispatch.start_transcription("score-4")
+        dispatch._pending.join()
+        # The reader survived it: the page behind the bad one still gets read.
+        dispatch.start_transcription("score-5")
+        assert seen.wait(5), "one failed page stopped every page after it"
 
     assert "score-4" in caplog.text
+
+
+def test_reading_a_page_does_not_hold_the_process_open() -> None:
+    """The readers are daemon threads, and that word is load-bearing.
+
+    A `ThreadPoolExecutor` — the obvious shape here — registers an `atexit` hook
+    that joins its workers, so a process asked to exit while a page is being
+    read blocks until the read finishes. Measured at the time: a task sleeping
+    eight seconds delayed `sys.exit(0)` by eight seconds. On this deployment
+    that is a restart hanging for the length of a transcription, which is a
+    stuck shutdown introduced while removing stuck requests.
+
+    A process that goes down mid-read leaves the row `reading`, and
+    `sweep_stuck_transcriptions` already recovers exactly that.
+    """
+    import threading
+
+    dispatch._ensure_readers()
+    readers = [t for t in threading.enumerate() if t.name.startswith("transcribe-")]
+
+    assert readers, "no reader threads were started"
+    assert all(t.daemon for t in readers), (
+        "a non-daemon reader blocks process exit until its page is read"
+    )
 
 
 def test_reading_a_page_and_analysing_a_take_are_settled_separately(monkeypatch) -> None:

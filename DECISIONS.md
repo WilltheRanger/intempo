@@ -47,11 +47,13 @@ which is the thing that OOM-kills this box.
 
 * Forty concurrent requests is now the ceiling (Starlette's default pool), and
   that pool is shared with sync background work. Handled by giving the
-  transcription runner its own executor, so a full read queue cannot park
+  transcription runner its own daemon threads, so a full read queue cannot park
   request-serving threads — the reason a scan queue waits by *blocking* a
   thread (`_scan_slots`) is a memory ceiling, and moving handlers into that
   same pool without separating them would have re-created the outage in a new
-  place.
+  place. Not a `ThreadPoolExecutor`: its `atexit` hook joins its workers, so a
+  restart during a read would block for the length of the read — a stuck
+  shutdown bought with the fix for stuck requests.
 * A thread per in-flight request costs stack space. Immaterial next to a
   vision-model read.
 * The rule now has to be *kept*. `async def` in front of a handler is a
