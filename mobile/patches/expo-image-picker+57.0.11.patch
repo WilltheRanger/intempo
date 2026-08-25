@@ -1,0 +1,69 @@
+diff --git a/node_modules/expo-image-picker/src/ExponentImagePicker.web.ts b/node_modules/expo-image-picker/src/ExponentImagePicker.web.ts
+index 29811bf..03b59f2 100644
+--- a/node_modules/expo-image-picker/src/ExponentImagePicker.web.ts
++++ b/node_modules/expo-image-picker/src/ExponentImagePicker.web.ts
+@@ -212,8 +212,47 @@ async function readFileAsBase64(file: File): Promise<string> {
+  * Reads a file and returns its data as an ImagePickerAsset.
+  * Handles both base64 and blob URL modes, and extracts metadata for images and videos.
+  */
++/**
++ * Extensions the browser sometimes has no MIME mapping for.
++ *
++ * `File.type` is empty whenever the platform cannot infer a type from the
++ * name — a HEIC synced from a phone, an uppercase extension, a file with no
++ * extension at all. `readFile` then threw `Unsupported file type: .` and the
++ * musician was told their photograph was the wrong sort of file when it was a
++ * perfectly ordinary JPEG.
++ *
++ * Patched for InTempo (patches/expo-image-picker+*.patch). The empty case is
++ * the only one this touches: a file the browser *did* type is untouched.
++ */
++const INTEMPO_TYPE_BY_EXTENSION: Record<string, string> = {
++  jpg: 'image/jpeg',
++  jpeg: 'image/jpeg',
++  jpe: 'image/jpeg',
++  png: 'image/png',
++  webp: 'image/webp',
++  heic: 'image/heic',
++  heif: 'image/heif',
++  gif: 'image/gif',
++  bmp: 'image/bmp',
++  tif: 'image/tiff',
++  tiff: 'image/tiff',
++  avif: 'image/avif',
++  mp4: 'video/mp4',
++  mov: 'video/quicktime',
++  m4v: 'video/x-m4v',
++  webm: 'video/webm',
++};
++
++function intempoGuessMimeType(file: File): string {
++  if (file.type) {
++    return file.type;
++  }
++  const extension = (file.name ?? '').split('.').pop()?.toLowerCase() ?? '';
++  return INTEMPO_TYPE_BY_EXTENSION[extension] ?? '';
++}
++
+ async function readFile(targetFile: File, options: { base64: boolean }): Promise<ImagePickerAsset> {
+-  const mimeType = targetFile.type;
++  const mimeType = intempoGuessMimeType(targetFile);
+   const baseUri = URL.createObjectURL(targetFile);
+ 
+   try {
+@@ -225,7 +264,14 @@ async function readFile(targetFile: File, options: { base64: boolean }): Promise
+     } else if (mimeType.startsWith('video/')) {
+       metadata = await getVideoMetadata(baseUri);
+     } else {
+-      throw new Error(`Unsupported file type: ${mimeType}. Only images and videos are supported.`);
++      // Names the file. The unpatched message was `Unsupported file type: .`
++      // — an empty type and nothing to act on, which is what a musician saw
++      // for an ordinary JPEG the browser happened not to type.
++      throw new Error(
++        `Unsupported file type${mimeType ? `: ${mimeType}` : ''}` +
++          ` for "${targetFile.name || 'the selected file'}".` +
++          ' Only images and videos are supported.'
++      );
+     }
+ 
+     if (options.base64) {

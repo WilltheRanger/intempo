@@ -178,6 +178,72 @@ staleness test fails when `WAKE_GOES_STALE_AFTER_MS` is made infinite.
 
 ---
 
+## 2026-08-25 — Importing on a desktop browser: refused before the file was looked at
+
+**Branch:** `main`. Mobile only (the web build).
+
+**Files:** `mobile/patches/expo-image-picker+57.0.11.patch` (new),
+`mobile/src/lib/pickerTypes.test.ts` (new).
+
+### What happened
+
+On a laptop, "Import score" → "Choose images" answered:
+
+    Unsupported file type: . Only images and videos are supported.
+
+Note what is after the colon: **nothing**. The type was empty.
+
+`expo-image-picker`'s web implementation reads `File.type` and throws when it
+does not start with `image/` or `video/`. A browser leaves `File.type` empty
+whenever the platform has no MIME mapping for the name — a HEIC synced from a
+phone, an uppercase extension, a file with no extension at all. Nothing about
+the photograph was wrong; it was refused before anything looked at it.
+
+The message is the second failure. It named the empty string as the problem and
+offered nothing to act on — the same shape as the "flatter, better-lit shot"
+advice on a page that was already flat: confidently unhelpful, and impossible
+to satisfy.
+
+### The fix
+
+`patch-package` is already this project's mechanism (`expo-audio` is patched
+the same way). The patch fills in a type **only when the browser left it
+empty**, from the extension, covering every format the server accepts plus the
+video types the picker offers. A file the browser typed correctly is untouched.
+
+The throw now names the file, so the case that is genuinely unsupported says
+which one it means.
+
+### A test on a patch file
+
+A patch is invisible. It is applied by `postinstall`, lives outside `src`, and
+nothing imports it — so an `npm update` that moves the version leaves it
+silently unapplied, and the only symptom is a musician being told their
+photograph is the wrong sort of file. `pickerTypes.test.ts` reads the patch as
+text and pins: the installed version still matches the patch's filename (which
+is what `patch-package` matches on), every extension in the server's
+`_ALLOWED_IMAGE_EXTS` is covered, the `if (file.type)` guard is still there so
+a correct type is never overridden, and the failure message still names the
+file.
+
+### Verified
+
+313 mobile tests, typecheck clean, web build green — and the patched strings
+are confirmed present in the shipped bundle (`video/quicktime`, `image/heic`,
+and the new message), not merely in the source.
+
+### Not verified
+
+That a page then imports and reads end to end on desktop. This removes a
+refusal that happened before the file was opened; everything after it is
+unchanged and untested from a browser.
+
+### Rollback
+
+Delete the patch file and re-run `npm ci`.
+
+---
+
 ## 2026-08-25 — The page was sideways: turn it upright before anything reads it
 
 **Branch:** `main`. Backend only. **This is the musician's actual bug**, found
