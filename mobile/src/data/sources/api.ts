@@ -225,7 +225,15 @@ function toMusician(
     role: me.role,
     studioId: me.studio_id,
     usage: me.analyses ?? null,
-    avatarUrl,
+    // The account's picture wins; the provider's is the fallback for accounts
+    // that never set one. Someone who deliberately cleared theirs must not
+    // have Google's put back in its place.
+    avatarUrl: me.avatar_url ?? avatarUrl,
+    displayName: me.display_name,
+    instrument: me.instrument,
+    // A timestamp on the wire, a boolean here: the app only ever asks *whether*
+    // they were asked. Nothing renders when it happened.
+    onboarded: me.onboarded_at !== null,
   };
 }
 

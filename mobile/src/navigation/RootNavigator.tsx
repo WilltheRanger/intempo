@@ -3,7 +3,9 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { StyleSheet, View } from 'react-native';
 
 import { useAuthStatus } from '../data/auth/useAuthStatus';
+import { useMe } from '../data/hooks/useMe';
 import { colors } from '../design';
+import { shouldOnboard } from '../lib/onboarding';
 import { AcknowledgementsScreen } from '../screens/account/AcknowledgementsScreen';
 import { ChangeEmailScreen } from '../screens/account/ChangeEmailScreen';
 import { ChangePasswordScreen } from '../screens/account/ChangePasswordScreen';
@@ -16,6 +18,7 @@ import { WarmupScreen } from '../screens/warmup/WarmupScreen';
 import { LibraryScreen } from '../screens/library/LibraryScreen';
 import { PieceDetailScreen } from '../screens/pieceDetail/PieceDetailScreen';
 import { MeasureEditScreen } from '../screens/measureEdit/MeasureEditScreen';
+import { OnboardingScreen } from '../screens/onboarding/OnboardingScreen';
 import { PieceScoreScreen } from '../screens/pieceScore/PieceScoreScreen';
 import { RecordScreen } from '../screens/record/RecordScreen';
 import { ProfileScreen } from '../screens/profile/ProfileScreen';
@@ -74,6 +77,31 @@ export function RootNavigator() {
   // the same kind of thing: the app is not reachable until it is dealt with.
   if (status === 'recovering') {
     return <SetPasswordScreen />;
+  }
+
+  return <SignedInApp />;
+}
+
+/**
+ * The app, once there is an account behind it.
+ *
+ * Its own component so `useMe` runs **only** when signed in. Called from
+ * `RootNavigator` it would fire a `/v1/me` on the sign-in screen, where there
+ * is no session to answer it — the hook has no `enabled` flag, and giving it
+ * one would put this screen's concern into every other caller.
+ */
+function SignedInApp() {
+  const { data: me } = useMe();
+
+  // Held in front of the app the way sign-in and the password reset are, and
+  // for the same reason: there is nothing behind it to go back to. It is not a
+  // pushed route, so it needs no `reset` on the way out — saving flips
+  // `onboarded` and this falls away.
+  //
+  // Only a definite `false` gates. While `/v1/me` is in flight the app opens;
+  // see `shouldOnboard` for why that direction and not the other.
+  if (shouldOnboard(me)) {
+    return <OnboardingScreen />;
   }
 
   return (

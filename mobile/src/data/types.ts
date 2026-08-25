@@ -48,6 +48,24 @@ export interface MeResponse {
    * as either.
    */
   analyses: UsageResponse | null;
+  /**
+   * What they play, or **null because nobody has asked yet**.
+   *
+   * Never defaulted on the wire. `violin` here has to mean a person chose
+   * violin — the same rule `ScoreJson.clef` follows, and for the same reason:
+   * an assumed value indistinguishable from a stated one is worse than an
+   * absent one. The onboarding screen has nothing to key off otherwise.
+   */
+  instrument: Instrument | null;
+  /** What to call them. Null is a legitimate final answer for someone who skipped. */
+  display_name: string | null;
+  /** A freshly signed URL, or null. The server stores a key, never a URL. */
+  avatar_url: string | null;
+  /**
+   * When onboarding was completed **or skipped**. Null means the screen has
+   * not been shown, and that is the only thing that decides whether to show it.
+   */
+  onboarded_at: string | null;
 }
 
 /** Analyses used this calendar month, and what the ceiling is. */
@@ -622,13 +640,36 @@ export interface Musician {
   role: UserRole;
   studioId: string | null;
   /**
-   * Profile photo. Null for most accounts, and null is the normal state — not
-   * an error to design around.
+   * Profile photo. Null is a normal state, not an error to design around.
    *
-   * There is no avatar column on `users` and no endpoint that accepts an
-   * upload, so the only photo the app can reach today is the one an OAuth
-   * provider puts in the Supabase auth user's metadata. Everyone who signed up
-   * with an email address has none, and falls back to a monogram.
+   * **Two sources, and the account wins.** Since migration 009 there is an
+   * `avatar_key` on `users` and an upload endpoint behind it, so a picture set
+   * in onboarding or in Profile is the one to show. An OAuth provider's
+   * metadata photo is the fallback for accounts that never set one, which is
+   * what the app had before and all it had. Someone who deliberately cleared
+   * their picture must not have Google's put back in its place, so the
+   * fallback only applies when the account carries none.
    */
   avatarUrl: string | null;
+  /**
+   * What to call them, or null.
+   *
+   * Null is not a failure — it is what someone who skipped onboarding has, and
+   * they are entitled to keep it. Anything greeting a musician has to read
+   * this as "no name given" and say something that works without one.
+   */
+  displayName: string | null;
+  /**
+   * What they play, or null when nobody has asked.
+   *
+   * Distinct from the device preference, which always has a value. Null here
+   * means the account has never been told, and it is what puts the onboarding
+   * screen on screen.
+   */
+  instrument: Instrument | null;
+  /**
+   * Whether the onboarding screen has been shown — **not** whether it was
+   * answered. Someone who skipped is onboarded: they were asked and declined.
+   */
+  onboarded: boolean;
 }

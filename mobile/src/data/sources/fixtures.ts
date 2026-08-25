@@ -326,6 +326,12 @@ const FIXTURE_MUSICIAN: Musician = {
   tier: 'free',
   role: 'student',
   studioId: null,
+  // A name and an instrument, and **onboarded**. The fixture build has to
+  // develop the app that comes *after* the question, because that is where
+  // almost all of it is — the onboarding screen has its own fixture below.
+  displayName: 'Alex',
+  instrument: 'violin',
+  onboarded: true,
   // Two of three used, so the quota is visible in the sample data rather than
   // only appearing at the moment someone is refused.
   usage: {
