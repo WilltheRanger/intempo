@@ -33,9 +33,16 @@ from app.db import get_service_client
 
 router = APIRouter(prefix="/upload", tags=["upload"])
 
-AUDIO_BUCKET = "audio-uploads"
-SCORE_BUCKET = "score-images"
-AVATAR_BUCKET = "avatars"
+# Re-exported, not redefined. They live in `services/buckets` so a worker can
+# name a bucket without importing the web layer — see that module for what
+# importing it from here cost on Modal.
+from app.services.buckets import (  # noqa: E402  (kept beside its users)
+    AUDIO_BUCKET,
+    AVATAR_BUCKET,
+    SCORE_BUCKET,
+)
+
+__all__ = ["router", "AUDIO_BUCKET", "AVATAR_BUCKET", "SCORE_BUCKET"]
 SIGNED_URL_TTL_SECONDS = 60 * 5  # 5 minutes is plenty for a single PUT.
 
 _ALLOWED_AUDIO_EXTS = {"wav", "m4a", "mp3", "ogg", "webm", "flac"}

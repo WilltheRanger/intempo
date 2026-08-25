@@ -62,6 +62,11 @@ image = (
         "librosa==0.11.0",
         "numpy==2.4.6",
         "pydantic[email]==2.13.3",
+        # `app/config.py` reads a .env at import — a no-op here, but the import
+        # still has to succeed. Missing until `test_modal_images.py` was
+        # written, which found it on the first run: `ANALYSIS_RUNTIME` is
+        # `inprocess` today, so nothing had ever tried.
+        "python-dotenv==1.2.2",
         "scipy==1.18.0",
         "supabase==2.29.0",
         # librosa's, pinned for the reason above.
@@ -152,12 +157,26 @@ transcription_image = (
     .pip_install(
         "homr==0.7.0",
         "anthropic==0.97.0",
+        # **Not decoration, and not obvious.** `services/page_image` raises
+        # `fastapi.HTTPException` — six of them — and `transcription_runner`
+        # catches it. Its own docstring calls that "one wart, kept
+        # deliberately", and on the API host it costs nothing because FastAPI
+        # is loaded anyway. Here it is an import, and without it every call to
+        # `transcribe_score` died about ten milliseconds in: measured on the
+        # Modal dashboard as startup 3.13 s, **execution 11 ms, Failed**, for
+        # every read ever dispatched. `test_modal_images.py` now fails the
+        # build rather than the scan.
+        "fastapi==0.136.1",
         "google-genai==1.73.1",
         "httpx==0.28.1",
         "numpy==2.4.6",
         "pillow==12.3.0",
         "pillow-heif==1.5.0",
         "pydantic[email]==2.13.3",
+        # `app/config.py` reads a .env at import. There is none in the
+        # container, and `load_dotenv` on a missing file is a no-op — but the
+        # import still has to succeed.
+        "python-dotenv==1.2.2",
         "supabase==2.29.0",
     )
     # **Fetch the weights at build time, not on the first page.**

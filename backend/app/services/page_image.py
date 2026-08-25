@@ -26,7 +26,7 @@ from fastapi import HTTPException, status
 
 from app.config import settings
 from app.db import get_service_client
-from app.routers.upload import SCORE_BUCKET
+from app.services.buckets import SCORE_BUCKET
 
 log = logging.getLogger("intempo.scores")
 
