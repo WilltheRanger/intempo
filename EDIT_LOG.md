@@ -6,6 +6,82 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-25 — The avatars bucket was unchecked, and homr's message promised a fallback that no longer exists
+
+**Branch:** `main`. Backend only. Both found by reading a real `/v1/ready`
+response from the deployment rather than the code.
+
+**Files:** `backend/app/services/readiness.py`,
+`backend/app/tests/test_readiness.py`.
+
+### The CORS probe answered, and the answer was no
+
+First: `cors_probe` came back **ok** against `https://idk-41z.pages.dev`. CORS
+was not the cause of the outage, and the hypothesis in the entry below was
+wrong. Recorded as such — the point of building the instrument was to stop
+guessing, and it earned that by contradicting me.
+
+The same response also settled two things that had been open all session:
+`schema:users.instrument`, `display_name`, `avatar_key` and `onboarded_at` all
+pass, so Render points at `intempo-dev` and **migration 009 is live** there.
+
+### `storage:avatars` did not exist
+
+`_storage_checks` covers `audio-uploads` and `score-images`. Migration 009 adds
+a third bucket and nothing checked it.
+
+**Why it was missed is the interesting part.** That function was written as a
+*size-mismatch* check — the worker's byte cap against the bucket's limit, after
+a 25 MB reader met a 50 MB bucket and reported `audio_unavailable` for a take
+that had uploaded fine. A bucket with no reader has no second number, so it
+looks like nothing to check. It still has existence: 009 adds four columns
+**and** a bucket, the columns have their own `schema:` checks, and a deployment
+that applied one half and not the other reports entirely ready while every
+onboarding attempt dies at the upload with nothing anywhere saying why.
+
+`cap` is now `int | None`, and `None` means "no reader, so nothing to compare"
+— the bucket is still read, which is the part that matters.
+
+### homr's message named a rescue that was deleted
+
+    homr is not installed in this container, so pages will be read by the
+    models in the chain instead.
+
+Written when the chain was homr with vision models behind it. The owner removed
+the backup on 2026-08-24 — *"run homr only, no backup AI"* — so on the shipped
+configuration nothing reads the page instead; `_read_page` refuses before
+downloading it. The sentence described a fallback that no longer exists, in the
+one place someone looks when transcription is broken.
+
+It now points at `transcription_dispatch` — which is the check that actually
+answers whether pages are reaching Modal, where homr does live — and describes
+the local behaviour truthfully in both configurations.
+
+### Tests
+
+3 new/rewritten in `test_readiness.py` (44 in that file), full suite 1114
+passed. Mutation-tested: 3 mutants, 3 killed — avatars dropped from the loop, a
+`None` cap falling through to the size comparison, and the homr detail
+reinstating the old fallback promise.
+
+### Still open: the outage itself
+
+Not diagnosed. CORS is clean, the API is up, `/v1/ready` is reachable from the
+musician's own browser, and the app still reports a thrown `fetch`. The
+remaining candidates are mixed content (an `EXPO_PUBLIC_API_BASE_URL` on
+`http://` is blocked outright by an HTTPS page, with no status), a host that
+does not resolve, or a transient failure during the Render redeploy that
+followed an environment-variable edit. **I cannot read either the Pages
+configuration or the deployed bundle** — the agent proxy refuses CONNECT to
+both `onrender.com` and `pages.dev` with a 403 — so this needs the value from
+the dashboard or a Network tab entry.
+
+### Rollback
+
+`git revert`. Both changes are additive or textual.
+
+---
+
 ## 2026-08-25 — `/v1/ready?origin=` — asking whether a browser can actually reach the API
 
 **Branch:** `main`. Backend only.
