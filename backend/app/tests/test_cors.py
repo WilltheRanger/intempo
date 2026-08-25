@@ -242,3 +242,134 @@ class TestASubdomainWildcard:
         assert not self._allowed(
             monkeypatch, "https://proj.pages.dev", "https://a16c.proj.pages.dev"
         )
+
+
+# ---------------------------------------------------------------------------
+# /v1/ready?origin= — the behaviour check beside the configuration one
+# ---------------------------------------------------------------------------
+#
+# `cors_allowed_origins` asks whether the variable is set. Every value passes
+# that, including one naming an origin the deployed site does not have — and
+# the browser's report of the difference is a thrown fetch with no status,
+# which reads as the API being down. On 2026-08-25 that cost an afternoon:
+# Supabase logs showed sign-in returning 200 and the API process happily
+# querying the database, while the app said "Could not reach the server".
+
+
+def _probe(monkeypatch: pytest.MonkeyPatch, origins: str, asked: str) -> dict:
+    client = TestClient(_app_with_origins(monkeypatch, origins))
+    body = client.get("/v1/ready", params={"origin": asked}).json()
+    return next(c for c in body["checks"] if c["name"] == "cors_probe")
+
+
+def test_the_probe_confirms_an_origin_that_is_listed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    assert _probe(monkeypatch, ORIGIN, ORIGIN)["ok"] is True
+
+
+def test_the_probe_refuses_an_origin_that_is_not(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The whole point. A set variable naming the wrong site passes
+    `cors_allowed_origins` and fails here."""
+    check = _probe(monkeypatch, ORIGIN, "https://idk-41z.pages.dev")
+
+    assert check["ok"] is False
+    # And it says what to do about it, naming the Pages shape that is almost
+    # always the answer.
+    assert "CORS_ALLOWED_ORIGINS" in check["detail"]
+
+
+def test_a_configured_variable_is_not_evidence_the_site_can_reach_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The two checks disagreeing is the entire feature.
+
+    If a future change makes the probe read presence too, this fails — which is
+    the only thing standing between this endpoint and the Modal lesson, where
+    every readiness check passed while every spawn raised.
+    """
+    client = TestClient(_app_with_origins(monkeypatch, ORIGIN))
+    body = client.get("/v1/ready", params={"origin": "https://elsewhere.test"}).json()
+
+    checks = {c["name"]: c["ok"] for c in body["checks"]}
+    assert checks["cors_allowed_origins"] is True
+    assert checks["cors_probe"] is False
+
+
+def test_the_probe_understands_the_wildcard_the_middleware_understands(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Cloudflare gives every deployment its own hostname, so the wildcard is
+    the entry that actually matters — and a probe that did not read it would
+    call a working configuration broken."""
+    origins = "https://intempo.pages.dev,https://*.intempo.pages.dev"
+
+    assert _probe(monkeypatch, origins, "https://a16c6845.intempo.pages.dev")["ok"]
+    # One label, and not across a dot — the same limit the middleware has.
+    assert not _probe(monkeypatch, origins, "https://a.b.intempo.pages.dev")["ok"]
+    assert not _probe(monkeypatch, origins, "https://intempo.pages.dev.evil.test")["ok"]
+    # **The match must reach the end of the origin.** `re.match` anchors only
+    # the start, so without the trailing `$` this host — which anyone can
+    # register — matches as a prefix and is handed a musician's API. A
+    # mutation dropping the anchor survived the three cases above, because
+    # none of them match even as a prefix.
+    assert not _probe(
+        monkeypatch, origins, "https://abc.intempo.pages.dev.evil.test"
+    )["ok"]
+
+
+def test_a_preflights_own_origin_header_is_used_when_no_parameter_is_given(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A real browser request carries one. The query parameter exists only
+    because a person opening this in a tab does not."""
+    client = TestClient(_app_with_origins(monkeypatch, ORIGIN))
+
+    body = client.get("/v1/ready", headers={"Origin": ORIGIN}).json()
+
+    assert next(c for c in body["checks"] if c["name"] == "cors_probe")["ok"] is True
+
+
+def test_no_origin_asked_means_no_probe(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Absent, not false. A check reporting `ok: false` for a question nobody
+    asked is a broken deployment on every dashboard that reads this."""
+    client = TestClient(_app_with_origins(monkeypatch, ORIGIN))
+
+    body = client.get("/v1/ready").json()
+
+    assert not any(c["name"] == "cors_probe" for c in body["checks"])
+
+
+def test_the_probe_never_blocks_readiness(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An API serving only the native app has no origin to name, and a 503 on a
+    working deployment teaches whoever reads this to stop reading it.
+
+    Asserted against the `blocking` list rather than the status code. The
+    status code is 503 in this test environment anyway — no Supabase keys — so
+    a comparison of before and after passes whatever `blocking` is set to, and
+    a mutation flipping it to True survived exactly that test. The fixture made
+    the mutant inert, which is the shape this project keeps rediscovering.
+    """
+    client = TestClient(_app_with_origins(monkeypatch, ORIGIN))
+
+    body = client.get("/v1/ready", params={"origin": "https://elsewhere.test"}).json()
+
+    probe = next(c for c in body["checks"] if c["name"] == "cors_probe")
+    assert probe["ok"] is False
+    assert probe["detail"] not in body["blocking"]
+
+
+def test_what_is_quoted_back_is_scrubbed_and_bounded(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """It is the caller's own input, so it is not a secret — but this endpoint
+    gets pasted into chats and terminals, and a kilobyte of control characters
+    coming back out of it is nobody's convenience."""
+    hostile = "https://x.test\r\n\x1b[31mDROP\x1b[0m<b>" + "a" * 500
+
+    detail = _probe(monkeypatch, ORIGIN, hostile)["detail"]
+
+    assert "\x1b" not in detail and "\r" not in detail and "<b>" not in detail
+    assert "a" * 500 not in detail
