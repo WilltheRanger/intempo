@@ -42,6 +42,7 @@ from app.services.page_image import (
     readable_url,
     staff_space_px,
     too_small_to_read,
+    upright,
 )
 
 log = logging.getLogger("intempo.transcription")
@@ -302,6 +303,20 @@ def _read_page(client, score_id: str, image_url: str) -> None:
     try:
         fetch_url = readable_url(image_url)
         image_bytes = download_image(fetch_url)
+        # **Turn the page the right way up before anything looks at it.**
+        #
+        # A page held sideways is unreadable to everything downstream and
+        # nothing said so. `homr` finds staves expecting them to run across the
+        # page; given one turned ninety degrees it finds none and gives up —
+        # measured on the deployment at 2.6 seconds against the ~21 it takes to
+        # read a page it can see. The musician got the default failure, which
+        # blames the photograph and asks for a flatter, better-lit shot. Theirs
+        # was flat, sharp, evenly lit and 4284x5712, and sideways.
+        #
+        # First, so that the legibility check and the crops both see the same
+        # page the reader will. `upright` returns the bytes untouched unless the
+        # evidence is clear — see `is_sideways`.
+        image_bytes = upright(image_bytes)
         # Normalise before anything reads it. A page arrives from a phone
         # rotated by an EXIF flag, several megabytes, and 3000-4000px on the
         # long edge — none of which any provider was ever tested against, and

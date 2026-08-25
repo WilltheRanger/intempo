@@ -781,6 +781,124 @@ def staff_space_px(image_bytes: bytes) -> float | None:
     return _legibility(image_bytes).spacing
 
 
+#: How much better the columns must agree before a page is called sideways.
+#:
+#: Only consulted when both axes found the *same number* of staff periods, which
+#: is the one case band-count cannot separate. Measured across every page to
+#: hand, as a coefficient of variation of the periods each axis found:
+#:
+#:     musician's sideways bass part   rows 0.326   cols 0.208   -> sideways
+#:     page-upright                    rows 0.057   cols 0.0     -> upright (4 bands vs 2)
+#:     01..05 at phone resolution      rows 0.0     cols n/a     -> upright (5-12 bands vs 1)
+#:
+#: Four fifths, so a tie needs the columns to be clearly steadier and not merely
+#: luckier. Everything here errs towards *not* rotating: leaving a page alone is
+#: the behaviour that has always existed, and turning an upright page sideways
+#: would break a page that reads today.
+_SIDEWAYS_AGREEMENT_MARGIN = 0.8
+
+
+def _axis_reading(ink):
+    """The staff periods one orientation finds, and how well they agree."""
+    import numpy as np
+
+    read = _profile_of(ink)
+    if read is None:
+        return [], None
+    profile, smoothed = read
+    spacings = [
+        space
+        for top, bottom in _bands(smoothed)
+        if (space := _band_staff_space(profile[top:bottom])) is not None
+    ]
+    if len(spacings) < 2:
+        return spacings, None
+    mean = float(np.mean(spacings))
+    if mean <= 0:
+        return spacings, None
+    return spacings, float(np.std(spacings) / mean)
+
+
+def is_sideways(image_bytes: bytes) -> bool:
+    """Whether this page's staves run down the image instead of across it.
+
+    **A page held sideways is unreadable to everything downstream**, and nothing
+    said so. `homr` segments a page and finds its staves expecting them to run
+    horizontally; handed a page turned ninety degrees it finds none and gives up
+    — measured on the deployment at 2.6 seconds against the ~21 it takes to read
+    a page it can see. The error that reached the musician was the default one,
+    which blames the photograph and advises a flatter, better-lit shot. Their
+    photograph was flat, sharp, evenly lit and 4284x5712. It was sideways.
+
+    Two signals, because neither is enough alone:
+
+    - **How many bands agreed.** A page has systems, each carrying the same
+      staff period; the cross-axis has no systems and produces one blob. Every
+      upright page to hand wins this outright — 7 to 1, 5 to 2, 12 to 1 — and
+      `homr_page.jpg` loses it 0 to 1, which is how a page with no measurable
+      rows is caught.
+    - **How well they agreed**, and only when the counts tie. The musician's
+      page found three periods each way: rows 16/34/38, columns 18/19/28. The
+      columns are reading staff lines and the rows are reading whatever crosses
+      them.
+
+    Conservative on purpose: anything unclear returns False, which is exactly
+    the behaviour that existed before this function. Rotating an upright page
+    would break a page that reads today, and that is much worse than failing to
+    rescue one that does not.
+    """
+    ink = _inked(image_bytes)
+    if ink is None:
+        return False
+
+    across, across_cv = _axis_reading(ink)
+    down, down_cv = _axis_reading(ink.T)
+
+    if not down:
+        return False
+    if len(down) > len(across):
+        return True
+    if len(down) < len(across):
+        return False
+    # A tie. Steadier wins, and only by a clear margin.
+    if across_cv is None or down_cv is None:
+        return False
+    return down_cv < across_cv * _SIDEWAYS_AGREEMENT_MARGIN
+
+
+def upright(image_bytes: bytes) -> bytes:
+    """The page with its staves running across it, ready to be read.
+
+    Returns the bytes untouched when the page is already upright or cannot be
+    judged — see `is_sideways`. Re-encoded rather than rotated in EXIF, because
+    the thing that has to see it turned is `homr`, and an orientation tag is
+    only honoured by whoever remembers to look.
+    """
+    if not is_sideways(image_bytes):
+        return image_bytes
+    try:
+        from PIL import Image, ImageOps
+    except ImportError:  # pragma: no cover — Pillow is a declared dependency
+        return image_bytes
+
+    _register_heif()
+    try:
+        with Image.open(io.BytesIO(image_bytes)) as image:
+            turned = ImageOps.exif_transpose(image).convert("RGB").rotate(
+                -90, expand=True
+            )
+        buffer = io.BytesIO()
+        turned.save(buffer, format="JPEG", quality=95, optimize=True)
+    except Exception:  # noqa: BLE001 — an unrotatable page is still a page
+        log.warning("page looked sideways but could not be turned; sending as it arrived")
+        return image_bytes
+    log.info(
+        "page was sideways: turned %dx%d for reading",
+        turned.width, turned.height,
+    )
+    return buffer.getvalue()
+
+
 def too_small_to_read(image_bytes: bytes) -> str | None:
     """Why this page cannot be read, in a sentence, or None if it can be.
 

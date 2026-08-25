@@ -178,6 +178,114 @@ staleness test fails when `WAKE_GOES_STALE_AFTER_MS` is made infinite.
 
 ---
 
+## 2026-08-25 — The page was sideways: turn it upright before anything reads it
+
+**Branch:** `main`. Backend only. **This is the musician's actual bug**, found
+by asking for the photograph instead of reasoning about it.
+
+**Files:** `backend/app/services/page_image.py`,
+`backend/app/workers/transcription_runner.py`,
+`backend/app/tests/test_page_legibility.py`.
+
+### The photograph
+
+They sent the page that failed: "Reh. 49 – 52", a String Bass part, 5712x4284
+raw, 4.5 MB, flat, sharp, evenly lit — and **photographed sideways**. The
+staves run down the image, not across it.
+
+Measured on that exact file:
+
+    legibility     spacing 25.0 px, short edge 4284  ->  passes the size gate
+    crop_systems   0 crops
+    homr           failed on the deployment in 2.6 s, against the ~21 s it
+                   takes to read a page it can see
+
+So it got past `too_small_to_read` — which is why their error was the *default*
+sentence and not the "too small" one — and died inside homr. homr segments a
+page and finds staves expecting them to run horizontally. Given one turned
+ninety degrees it finds none and gives up almost immediately.
+
+What reached the musician was *"a flatter, better-lit shot of the page usually
+fixes it"*. The page was already flat, sharp and evenly lit. Re-shooting it the
+same way changes nothing, so the advice was not merely unhelpful, it was a
+loop.
+
+### The fix
+
+`is_sideways()` and `upright()`. The page is turned before **anything** looks at
+it — before the legibility check and before the crops, so every stage sees the
+page the reader will. Wiring order is asserted by a test, because a rotation
+applied after the legibility check would leave it refusing sideways pages
+exactly as before.
+
+Two signals, because neither is enough alone. Measured across every page to
+hand:
+
+    page                    rows n/cv      cols n/cv     truth
+    musician's bass part    3 / 0.326      3 / 0.208     sideways
+    homr_page.jpg           0 / -          1 / -         sideways
+    page-upright.jpg        4 / 0.057      2 / 0.0       upright
+    01..05 at phone res     5-12 / 0.0     1-2           upright
+
+- **How many bands agreed.** Every upright page wins outright (7-to-1, 5-to-2,
+  12-to-1); `homr_page.jpg` loses 0-to-1, which is how a page with no measurable
+  rows at all is caught.
+- **How well they agreed**, and only on a tie. The musician's page found three
+  periods each way — rows 16/34/38, columns 18/19/28. The columns are reading
+  staff lines; the rows are reading whatever crosses them.
+
+`_SIDEWAYS_AGREEMENT_MARGIN = 0.8`: a tie needs the columns to be *clearly*
+steadier, not merely luckier. **Everything errs towards not rotating.** Leaving
+a page alone is the behaviour that has always existed, and turning an upright
+page sideways would break a page that reads today — much worse than failing to
+rescue one that does not. An upright page is returned by identity, not
+re-encoded, and a test asserts that.
+
+### Two mutants survived, and the reason is worth keeping
+
+Both were about the tie-break margin, because none of the tests exercised a tie
+— the only real tie is the musician's page, 4.5 MB and not worth checking in,
+and a downscaled copy measures differently. The rule is pinned directly instead:
+0.326 vs 0.208 turns, 0.326 vs 0.300 does not, rows-steadier never does.
+
+Deciding a tie with no margin, or handing every tie to the columns, both turn
+upright pages over on a coin-flip.
+
+### Tests
+
+7 new (33 in the file, 1 xfail); full suite **1152 passed**. Mutation-tested:
+6 mutants, 6 killed — nothing ever sideways, everything sideways, the two
+margin cases, re-encoding without rotating, and turning the page after
+measuring it.
+
+### The better fix I did not take
+
+**Let homr decide.** Read the page; if it fails or comes back under
+`CONFIDENCE_THRESHOLD`, rotate and read again, keep the better. No heuristic and
+no fitted constant — homr's own confidence, the share of bars that add up, is
+the judge. It costs a second ~21 s read, and only when the first attempt
+already failed.
+
+Not taken because homr runs only in the Modal container and I cannot execute it
+from here, so I could not test it. The heuristic is testable against eight real
+pages today. If the rotation ever misjudges a page, that is the fix to reach
+for.
+
+### Honest status
+
+Verified: the classification is correct on all eight pages available, including
+the musician's own. **Not verified:** that homr then reads the turned page. That
+needs a deploy and a scan, and the page has never once reached homr the right
+way up.
+
+### Rollback
+
+`git revert`. `upright()` returns its input unchanged for any page it cannot
+judge, so removing the one call in the runner restores the old behaviour
+exactly.
+
+---
+
 ## 2026-08-25 — A page held sideways was refused for being "too small"
 
 **Branch:** `main`. Backend only.
