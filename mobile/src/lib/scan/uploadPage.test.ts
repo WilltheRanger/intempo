@@ -1,5 +1,18 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+// `expo-image-manipulator` reaches `react-native`, whose Flow syntax vitest
+// cannot parse — and `shrinkToFit` now imports it lazily when a page is too
+// large. `compressTo` is what each test says the re-encode achieves.
+const { compressTo } = vi.hoisted(() => ({ compressTo: { size: 0 } }));
+vi.mock('expo-image-manipulator', () => ({
+  manipulateAsync: vi.fn(async (uri: string) => ({
+    uri: `${uri}#smaller`,
+    width: 0,
+    height: 0,
+  })),
+  SaveFormat: { JPEG: 'jpeg' },
+}));
+
 const { requestScoreImageUpload, uploadToSignedUrl, fromModule, UploadError } =
   vi.hoisted(() => ({
     requestScoreImageUpload: vi.fn(),
@@ -54,6 +67,25 @@ function respondWith(blob: Blob, ok = true, status = 200) {
   vi.stubGlobal(
     'fetch',
     vi.fn(async () => ({ ok, status, blob: async () => blob })),
+  );
+}
+
+/**
+ * A `fetch` that answers each successive read with the next blob.
+ *
+ * `uploadPage` reads the page's bytes, and reads them again after each
+ * re-encode to see how large it got — so a too-large page makes several reads
+ * and a single canned answer would loop forever at the original size.
+ */
+function respondWithEach(blobs: Blob[]) {
+  let index = 0;
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () => {
+      const blob = blobs[Math.min(index, blobs.length - 1)];
+      index += 1;
+      return { ok: true, status: 200, blob: async () => blob };
+    }),
   );
 }
 
@@ -175,44 +207,48 @@ describe('a page too large for the bucket', () => {
     return blob;
   }
 
-  it('is refused before a byte is sent, not after', async () => {
-    // The difference is the whole upload. `UPLOAD_TIMEOUT_MS` is an XHR
-    // *total* timeout rather than an idle one, so a weak uplink is cut off at
-    // exactly two minutes however much progress it made — with no resume and
-    // no retry, every attempt starting from zero and meeting the same wall.
-    // Finding out from a 413 means paying that first.
-    respondWith(ofSize(MAX_PAGE_BYTES + 1));
+  it('is re-encoded and sent, not refused', async () => {
+    // **The behaviour this replaced.** A 14.8 MB page chosen on a laptop was
+    // turned away with advice to use the app's camera instead — which on a
+    // desktop is a webcam, and a webcam capture of a page is exactly what the
+    // server's legibility check exists to reject. Nothing was wrong with the
+    // photograph; it was a good page in a large file.
+    respondWithEach([
+      ofSize(14.8 * 1024 * 1024), // the original
+      ofSize(3 * 1024 * 1024), // measured after re-encoding
+      ofSize(3 * 1024 * 1024), // read back for the upload
+    ]);
 
-    await expect(uploadPage({ source: 'file:///tmp/page.jpg' } as never)).rejects.toThrow(
-      ScanUploadError,
-    );
-    expect(requestScoreImageUpload).not.toHaveBeenCalled();
-    expect(uploadToSignedUrl).not.toHaveBeenCalled();
+    await uploadPage({ source: 'file:///tmp/page.jpg' } as never);
+
+    expect(uploadToSignedUrl).toHaveBeenCalled();
   });
 
-  it('says how large it is and how large it may be', async () => {
-    // "Too large" alone leaves someone guessing whether they missed by a
-    // little or by a lot, which decides whether trying a different page is
-    // worth anything.
-    respondWith(ofSize(13 * 1024 * 1024));
+  it('says both sizes when even the smallest version is too large', async () => {
+    // "Too large" alone leaves someone guessing whether they missed by a little
+    // or by a lot. Now there are two numbers that matter: what they gave, and
+    // what the app could get it down to.
+    respondWithEach([ofSize(40 * 1024 * 1024), ...Array(12).fill(ofSize(13 * 1024 * 1024))]);
 
     const message = await refusalFor('file:///tmp/page.jpg');
 
+    expect(message).toContain('40.0 MB');
     expect(message).toContain('13.0 MB');
     expect(message).toContain('10.0 MB');
   });
 
   it('does not send someone to a route that cannot take a photograph', async () => {
-    // The same property the 413 message has to hold: `ImportFileScreen` is a
-    // MusicXML-only picker and refuses a JPEG, and the scanner has no size
-    // control to turn down. The only true remedy is that the scanner
-    // re-encodes at `quality: 0.8` while the picker hands over the original.
-    respondWith(ofSize(MAX_PAGE_BYTES * 2));
+    // `ImportFileScreen` is a MusicXML-only picker and refuses a JPEG; the
+    // scanner has no size control to turn down; and on a desktop there is no
+    // camera roll and the camera is a webcam. Every remedy the old message
+    // offered was one the app could not honour.
+    respondWithEach([ofSize(40 * 1024 * 1024), ...Array(12).fill(ofSize(13 * 1024 * 1024))]);
 
     const message = await refusalFor('file:///tmp/page.jpg');
 
     expect(message).not.toMatch(/import/i);
-    expect(message).toMatch(/photograph/i);
+    expect(message).not.toMatch(/camera roll/i);
+    expect(message).not.toMatch(/this app's camera/i);
   });
 
   it('sends a page exactly at the limit', async () => {
