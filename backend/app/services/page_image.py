@@ -565,6 +565,9 @@ class _Legibility(NamedTuple):
     spacing: float | None
     #: The shorter side of the photograph, in pixels. 0 when it did not decode.
     short_edge: int = 0
+    #: `(width, height)` as read, after any EXIF rotation. `(0, 0)` if it did
+    #: not decode.
+    size: tuple[int, int] = (0, 0)
 
 
 def _legibility(image_bytes: bytes) -> _Legibility:
@@ -586,6 +589,7 @@ def _legibility(image_bytes: bytes) -> _Legibility:
     if ink is None:
         return _Legibility(decoded=False, bands=False, spacing=None)
     short_edge = int(min(ink.shape))
+    size = (int(ink.shape[1]), int(ink.shape[0]))
 
     # **Both orientations answer, and only one of them is reading staff lines.**
     # Measured on `01_simple_printed` at phone resolution: upright, rows give
@@ -628,8 +632,8 @@ def _legibility(image_bytes: bytes) -> _Legibility:
             best = (len(spacings), _representative_spacing(spacings))
 
     if best is None:
-        return _Legibility(True, any_bands, None, short_edge)
-    return _Legibility(True, True, best[1], short_edge)
+        return _Legibility(True, any_bands, None, short_edge, size)
+    return _Legibility(True, True, best[1], short_edge, size)
 
 
 #: The smallest staff-line spacing, in source pixels, a page can be read from.
@@ -939,12 +943,18 @@ def too_small_to_read(image_bytes: bytes) -> str | None:
         )
 
     if space < _MIN_STAFF_SPACE_PX:
+        # **The pixel size is in the sentence on purpose.** Without it, working
+        # out whether a refusal came from a webcam grab or a phone photograph
+        # meant inferring the resolution from a byte count in the database —
+        # which is what it took to explain one of these, and the answer was
+        # sitting right here unsaid.
+        width, height = measured.size
         return (
             "This photograph is too small to read the notation from — the staff "
             "lines are about "
             f"{space:.0f} pixels apart and the app needs {_MIN_STAFF_SPACE_PX}. "
-            "Photographing the page again from closer, or with a phone rather "
-            "than a webcam, is what fixes it."
+            f"The image is {width}x{height}. Photographing the page again from "
+            "closer, or with a phone rather than a webcam, is what fixes it."
         )
     return None
 

@@ -178,6 +178,63 @@ staleness test fails when `WAKE_GOES_STALE_AFTER_MS` is made infinite.
 
 ---
 
+## 2026-08-25 — Say how large the photograph was, in the sentence that refuses it
+
+**Branch:** `main`. Backend only, one sentence and the field behind it.
+
+**Files:** `backend/app/services/page_image.py`,
+`backend/app/tests/test_page_legibility.py`.
+
+### Why
+
+A scan came back refused at 6 px and looked, from the app, indistinguishable
+from every other failure of the evening. Working out which it was meant joining
+`scores` against `storage.objects` and inferring the resolution from a **byte
+count**:
+
+    awda  22:28  1.5 MB  image/png   <- refused at 6 px
+    awd   22:25  146 KB  image/jpeg
+    Fb    19:03  3.9 MB  image/jpeg
+
+`image/png` was the tell. On the web build only one thing produces a PNG — the
+canvas behind "Use the camera instead", which on a laptop is a **webcam**.
+Imports arrive as JPEG and the new re-encode always writes JPEG.
+
+So the refusal was correct and the check was working. Confirmed by measurement:
+the musician's own page reads **25 px at 4284x5712** and passes, and the same
+page resized to 1280x960 reads **4 px** and is refused.
+
+None of that needed to be archaeology. The size was already in hand and simply
+was not said.
+
+### The change
+
+`_Legibility` carries the decoded `(width, height)`, and the refusal names it:
+
+    This photograph is too small to read the notation from — the staff lines
+    are about 6 pixels apart and the app needs 8. The image is 1280x960.
+    Photographing the page again from closer, or with a phone rather than a
+    webcam, is what fixes it.
+
+The advice was already there and was already right. What it lacked was the fact
+that makes it *followable*: "with a phone rather than a webcam" is only useful
+if the musician can see which one this was.
+
+### Tests
+
+1 new; 1153 passed, 1 xfail.
+
+### Not a fix for anything
+
+This diagnoses faster next time. It changes no behaviour, and the scan that
+prompted it was refused correctly.
+
+### Rollback
+
+`git revert`. The field is additive.
+
+---
+
 ## 2026-08-25 — A 14.8 MB page is a good page in a large file, not a bad photograph
 
 **Branch:** `main`. Mobile only.
