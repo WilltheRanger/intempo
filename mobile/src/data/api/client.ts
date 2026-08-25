@@ -66,7 +66,11 @@ export async function apiFetch<T>(
   }
 
   if (authenticated) {
-    const token = await getAccessToken();
+    const token = await withDeadline(
+      getAccessToken(),
+      TOKEN_TIMEOUT_MS,
+      () => new ApiError(0, path, SESSION_UNREADABLE),
+    );
     // No token means the session is gone — expired past refresh, or signed out
     // in another tab. Sending the request anyway is what this used to do, and
     // the backend answered "Missing bearer token", which screens rendered as
@@ -87,32 +91,45 @@ export async function apiFetch<T>(
     requestHeaders.Authorization = `Bearer ${token}`;
   }
 
-  const response = await send(path, {
+  const { response, signal, release } = await send(path, {
     ...init,
     headers: requestHeaders,
     body: body === undefined ? undefined : JSON.stringify(body),
   });
 
-  if (!response.ok) {
-    // A rejected token is not retryable and not the caller's problem to
-    // interpret. Clearing the session makes `onAuthStateChange` fire, which
-    // returns the app to the sign-in screen instead of leaving every query
-    // failing against a credential that will never work again.
-    if (response.status === 401 && authenticated) {
-      await signOut().catch(() => {
-        // Already gone, or storage refused. The throw below still stands.
-      });
-      throw new ApiError(401, path, SESSION_ENDED);
+  try {
+    if (!response.ok) {
+      // A rejected token is not retryable and not the caller's problem to
+      // interpret. Clearing the session makes `onAuthStateChange` fire, which
+      // returns the app to the sign-in screen instead of leaving every query
+      // failing against a credential that will never work again.
+      if (response.status === 401 && authenticated) {
+        await signOut().catch(() => {
+          // Already gone, or storage refused. The throw below still stands.
+        });
+        throw new ApiError(401, path, SESSION_ENDED);
+      }
+      const { message, detail } = await readError(response, path);
+      throw new ApiError(response.status, path, message, detail);
     }
-    const { message, detail } = await readError(response, path);
-    throw new ApiError(response.status, path, message, detail);
-  }
 
-  if (response.status === 204) {
-    return undefined as T;
-  }
+    if (response.status === 204) {
+      return undefined as T;
+    }
 
-  return (await response.json()) as T;
+    return (await response.json()) as T;
+  } catch (cause) {
+    // The deadline fired while the body was still coming. Checked on the
+    // signal rather than on the error's shape, because a body that is simply
+    // not JSON throws here too and is a different fault with a different fix —
+    // and it should keep propagating exactly as it did before.
+    if (signal.aborted && !(cause instanceof ApiError)) {
+      throw new ApiError(0, path, RESPONSE_STALLED, cause);
+    }
+    throw cause;
+  } finally {
+    release();
+  }
 }
 
 /**
@@ -131,6 +148,75 @@ export async function apiFetch<T>(
  * connection at all any more; it is a row the app polls.
  */
 const REQUEST_TIMEOUT_MS = 45_000;
+
+/**
+ * How long to wait for the bearer token before giving up on the request.
+ *
+ * **`getAccessToken` is a network call in disguise.** It reads the stored
+ * session, and when the access token is near expiry `supabase.auth.getSession`
+ * refreshes it over the network first. Awaiting it unbounded — which this did
+ * — means every authenticated request can hang *before it is sent*: no request
+ * on the wire, no response to time out, no error to render. A screen waiting
+ * on it sits on its skeleton forever, because `isPending` never becomes
+ * `isError`.
+ *
+ * `useAuthStatus` already guards the same call with `SESSION_TIMEOUT_MS`, and
+ * its comment records what an unguarded one cost: "the whole app into a blank
+ * screen with nothing to tap". That guard was only ever applied at boot. This
+ * is the same hazard on every request afterwards.
+ *
+ * Shorter than the request deadline on purpose. This is a local read plus at
+ * most one token refresh; if it has not answered in ten seconds it is not
+ * going to, and the ten seconds are spent *before* the real request has even
+ * started.
+ */
+const TOKEN_TIMEOUT_MS = 10_000;
+
+/**
+ * The session could not be read in time.
+ *
+ * Deliberately **not** `SESSION_ENDED`. The session may be perfectly valid and
+ * simply unreachable, and signing someone out over a slow network would throw
+ * away a good session to report a temporary fault.
+ */
+const SESSION_UNREADABLE =
+  'Could not read your session in time. Check your connection and try again.';
+
+/**
+ * Headers arrived, then the body stopped.
+ *
+ * Its own sentence because it is its own failure: the server was reached and
+ * did answer, so "could not reach the server" would send someone to check a
+ * connection that demonstrably works.
+ */
+const RESPONSE_STALLED =
+  'The server started answering and then stopped. Try again.';
+
+/**
+ * Races `work` against a deadline, and always clears the timer.
+ *
+ * The loser of a `Promise.race` keeps running — that is fine here, it is a
+ * session read with nothing to undo. What is not fine is leaving the timer
+ * armed: in a test with fake timers, and on a platform that counts pending
+ * work, an uncleared deadline outlives the thing it was guarding.
+ */
+async function withDeadline<T>(
+  work: Promise<T>,
+  ms: number,
+  onTimeout: () => Error,
+): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      work,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(onTimeout()), ms);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 /**
  * Methods that can be sent twice without meaning it twice.
@@ -168,7 +254,15 @@ const REPEATABLE = new Set(['GET', 'HEAD', 'OPTIONS']);
  * repeated, only when nothing was heard back at all — a request that got a 500
  * is answered and is not tried again.
  */
-async function send(path: string, init: RequestInit): Promise<Response> {
+interface Sent {
+  response: Response;
+  /** Armed until `release`, so a body that stalls is aborted too. */
+  signal: AbortSignal;
+  /** Disarms the deadline. Call once the body is read, or never will be. */
+  release: () => void;
+}
+
+async function send(path: string, init: RequestInit): Promise<Sent> {
   const method = (init.method ?? 'GET').toUpperCase();
   const attempts = REPEATABLE.has(method) ? 2 : 1;
 
@@ -178,15 +272,25 @@ async function send(path: string, init: RequestInit): Promise<Response> {
     const controller = new AbortController();
     const deadline = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
     try {
-      return await fetch(`${API_BASE_URL}${path}`, {
+      const response = await fetch(`${API_BASE_URL}${path}`, {
         ...init,
         signal: controller.signal,
       });
+      // **The deadline is not cleared here**, which is the whole point of
+      // handing `release` back. `fetch` resolves when the *headers* arrive, so
+      // clearing it at this line — which is what this used to do, in a
+      // `finally` — left the body to arrive with no deadline at all. A
+      // response whose headers land and whose body then stops hangs forever,
+      // and forever is not a state any screen in this app renders.
+      return {
+        response,
+        signal: controller.signal,
+        release: () => clearTimeout(deadline),
+      };
     } catch (cause) {
+      clearTimeout(deadline);
       lastTimedOut = controller.signal.aborted;
       lastCause = cause;
-    } finally {
-      clearTimeout(deadline);
     }
   }
 
