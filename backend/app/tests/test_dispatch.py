@@ -277,7 +277,7 @@ def test_a_page_goes_to_modal_when_the_deployment_says_so(monkeypatch) -> None:
     spawned: list[str] = []
     monkeypatch.setattr(dispatch, "TRANSCRIPTION_RUNTIME", "modal")
     monkeypatch.setattr(
-        dispatch, "_spawn_transcription_on_modal", lambda sid: spawned.append(sid) or True
+        dispatch, "_spawn_transcription_on_modal", lambda sid: spawned.append(sid) or "fc-1"
     )
     read = _read_here(monkeypatch)
 
@@ -294,7 +294,7 @@ def test_a_page_is_still_read_here_when_modal_refuses(monkeypatch) -> None:
     deployment setting.
     """
     monkeypatch.setattr(dispatch, "TRANSCRIPTION_RUNTIME", "modal")
-    monkeypatch.setattr(dispatch, "_spawn_transcription_on_modal", lambda sid: False)
+    monkeypatch.setattr(dispatch, "_spawn_transcription_on_modal", lambda sid: None)
     read = _read_here(monkeypatch)
 
     dispatch._decide_and_read("score-2")
@@ -547,7 +547,7 @@ def _fresh_counters():
 
 def test_a_page_that_fell_back_is_counted(monkeypatch) -> None:
     monkeypatch.setattr(dispatch, "TRANSCRIPTION_RUNTIME", "modal")
-    monkeypatch.setattr(dispatch, "_spawn_transcription_on_modal", lambda _id: False)
+    monkeypatch.setattr(dispatch, "_spawn_transcription_on_modal", lambda _id: None)
     read = _read_here(monkeypatch)
 
     dispatch._decide_and_read("s1")
@@ -562,7 +562,7 @@ def test_a_page_that_fell_back_is_counted(monkeypatch) -> None:
 
 def test_a_page_that_reached_modal_is_counted(monkeypatch) -> None:
     monkeypatch.setattr(dispatch, "TRANSCRIPTION_RUNTIME", "modal")
-    monkeypatch.setattr(dispatch, "_spawn_transcription_on_modal", lambda _id: True)
+    monkeypatch.setattr(dispatch, "_spawn_transcription_on_modal", lambda _id: "fc-1")
     read = _read_here(monkeypatch)
 
     dispatch._decide_and_read("s1")
@@ -599,8 +599,113 @@ def test_the_failure_type_is_kept_and_the_message_is_not(monkeypatch) -> None:
 
     monkeypatch.setitem(__import__("sys").modules, "modal", type("m", (), {"Function": _Boom}))
 
-    assert dispatch._spawn_transcription_on_modal("s1") is False
+    # None, not False: the spawn now returns the Modal call id so a read that
+    # dies before its first write can still be asked about. A refused spawn has
+    # no id to give.
+    assert dispatch._spawn_transcription_on_modal("s1") is None
 
     recorded = dispatch.transcription_dispatches.last_failure_type
     assert recorded == "ValueError"
     assert secret not in (recorded or "")
+
+
+# ---------------------------------------------------------------------------
+# The thread back to a Modal container that died before it wrote anything
+# ---------------------------------------------------------------------------
+
+
+def _fake_modal(monkeypatch, *, object_id):
+    import sys
+    import types
+
+    fake = types.ModuleType("modal")
+
+    class _Function:
+        @staticmethod
+        def from_name(*_a, **_k):
+            class _Fn:
+                @staticmethod
+                def spawn(_score_id):
+                    return type("Call", (), {"object_id": object_id})()
+
+            return _Fn()
+
+    fake.Function = _Function
+    monkeypatch.setitem(sys.modules, "modal", fake)
+
+
+def test_the_spawn_hands_back_the_call_id(monkeypatch) -> None:
+    _fake_modal(monkeypatch, object_id="fc-abc123")
+
+    assert dispatch._spawn_transcription_on_modal("s1") == "fc-abc123"
+
+
+def test_a_spawn_with_no_handle_is_still_a_spawn(monkeypatch) -> None:
+    """**Empty string, not None.**
+
+    The page is on Modal; only the diagnostic is missing. Returning None would
+    make `_decide_and_read` read it here instead — without homr, by the vision
+    models the owner removed — so an absent handle would quietly become a scan
+    that invents notes.
+    """
+    _fake_modal(monkeypatch, object_id=None)
+
+    assert dispatch._spawn_transcription_on_modal("s1") == ""
+
+
+def test_a_page_with_no_handle_is_not_read_here_as_well(monkeypatch) -> None:
+    """The consequence of the line above, asserted where it bites."""
+    monkeypatch.setattr(dispatch, "TRANSCRIPTION_RUNTIME", "modal")
+    monkeypatch.setattr(dispatch, "_spawn_transcription_on_modal", lambda _id: "")
+    monkeypatch.setattr(dispatch, "_record_call_id", lambda *_a: None)
+    read_here: list[str] = []
+    import app.workers.transcription_runner as runner_module
+
+    monkeypatch.setattr(runner_module, "run_transcription", read_here.append)
+
+    dispatch._decide_and_read("s1")
+
+    assert read_here == [], "Modal already has it"
+
+
+def test_the_call_id_is_written_to_the_row(monkeypatch) -> None:
+    """Without this the sweeper has nothing to ask about, and a container that
+    dies before its first write is indistinguishable from a slow page."""
+    monkeypatch.setattr(dispatch, "TRANSCRIPTION_RUNTIME", "modal")
+    monkeypatch.setattr(dispatch, "_spawn_transcription_on_modal", lambda _id: "fc-9")
+    recorded: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        dispatch, "_record_call_id", lambda sid, cid: recorded.append((sid, cid))
+    )
+
+    dispatch._decide_and_read("s1")
+
+    assert recorded == [("s1", "fc-9")]
+
+
+def test_nothing_is_recorded_when_there_is_no_handle(monkeypatch) -> None:
+    """A blank call id in the row would have the sweeper ask Modal about a call
+    nobody made, and believe the answer."""
+    monkeypatch.setattr(dispatch, "TRANSCRIPTION_RUNTIME", "modal")
+    monkeypatch.setattr(dispatch, "_spawn_transcription_on_modal", lambda _id: "")
+    recorded: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        dispatch, "_record_call_id", lambda sid, cid: recorded.append((sid, cid))
+    )
+
+    dispatch._decide_and_read("s1")
+
+    assert recorded == []
+
+
+def test_recording_the_call_id_never_breaks_the_read(monkeypatch) -> None:
+    """It is a diagnostic. Losing it costs a better error message; raising here
+    would cost the page."""
+
+    class _Boom:
+        def table(self, _n):
+            raise RuntimeError("database unreachable")
+
+    monkeypatch.setattr("app.db.get_service_client", lambda: _Boom())
+
+    dispatch._record_call_id("s1", "fc-1")  # must not raise

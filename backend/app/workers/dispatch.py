@@ -189,12 +189,22 @@ class _Dispatches:
 transcription_dispatches = _Dispatches()
 
 
-def _spawn_transcription_on_modal(score_id: str) -> bool:
-    """Hand the page to Modal. True if it was accepted.
+def _spawn_transcription_on_modal(score_id: str) -> str | None:
+    """Hand the page to Modal. Returns the call id, or None if it was refused.
 
-    Fire and forget, exactly as for an analysis: the `scores` row is the state
-    on both sides, and `sweep_stuck_transcriptions` already understands a read
-    that never finished.
+    **Empty string and None are different answers, deliberately.** `None` means
+    the spawn did not happen and the page still needs reading somewhere. `""`
+    means it happened and gave no handle back — the page is on its way, and
+    only the diagnostic is missing. Collapsing the two would send a page that
+    Modal already has to be read again in-process, without homr, by the vision
+    models the owner removed: a scan that quietly invents notes because a
+    handle was absent.
+
+    Still fire and forget — nothing waits for the read — but **not anonymous
+    any more.** `spawn` returns a handle Modal will answer questions about
+    later, and that handle is the only way to find out what happened to a run
+    that died before it could write to the row. Without it, a bad secret and a
+    genuinely slow page are the same observation: a row that has not changed.
     """
     clean_modal_credentials()
     try:
@@ -205,16 +215,18 @@ def _spawn_transcription_on_modal(score_id: str) -> bool:
             "installed; score %s was not started",
             score_id,
         )
-        return False
+        return None
 
     try:
         fn = modal.Function.from_name(MODAL_APP_NAME, MODAL_TRANSCRIBE_FUNCTION_NAME)
-        fn.spawn(score_id)
+        call = fn.spawn(score_id)
     except Exception as exc:  # noqa: BLE001 — must not 500 the request
         transcription_dispatches.last_failure_type = type(exc).__name__
         log.exception("score %s: could not be started on Modal", score_id)
-        return False
-    return True
+        return None
+    # `""`, not None: see the docstring. The call id improves how a failure is
+    # *reported*; it is never a precondition for the work.
+    return getattr(call, "object_id", None) or ""
 
 
 #: Pages waiting to be read here, and the threads that read them.
@@ -295,10 +307,14 @@ def _decide_and_read(score_id: str) -> None:
     """
     from app.workers.transcription_runner import run_transcription
 
-    if TRANSCRIPTION_RUNTIME == "modal" and _spawn_transcription_on_modal(score_id):
-        transcription_dispatches.to_modal += 1
-        log.info("score %s: being read on Modal", score_id)
-        return
+    if TRANSCRIPTION_RUNTIME == "modal":
+        call_id = _spawn_transcription_on_modal(score_id)
+        if call_id is not None:
+            transcription_dispatches.to_modal += 1
+            log.info("score %s: being read on Modal as %s", score_id, call_id)
+            if call_id:
+                _record_call_id(score_id, call_id)
+            return
 
     if TRANSCRIPTION_RUNTIME == "modal":
         # Counted as well as logged. The warning was already here and was true
@@ -310,6 +326,30 @@ def _decide_and_read(score_id: str) -> None:
         )
 
     run_transcription(score_id)
+
+
+def _record_call_id(score_id: str, call_id: str) -> None:
+    """Remember which Modal call is reading this page.
+
+    **After the spawn, never before.** A call id written first would name a run
+    that may not exist, and the sweeper would then ask Modal about a call
+    nobody made and believe the answer.
+
+    Never raises. This is a diagnostic thread back to a container, and losing it
+    costs a better error message; failing the read over it would cost the page.
+    A row without one is swept exactly as it was before this existed.
+    """
+    from app.db import get_service_client
+
+    client = get_service_client()
+    if client is None:
+        return
+    try:
+        client.table("scores").update({"transcription_call_id": call_id}).eq(
+            "id", score_id
+        ).execute()
+    except Exception:  # noqa: BLE001 — a lost handle is not a lost read
+        log.warning("score %s: could not record the Modal call id", score_id)
 
 
 def start_transcription(score_id: str) -> None:
