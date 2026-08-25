@@ -6,6 +6,112 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-25 — `/v1/ready?origin=` — asking whether a browser can actually reach the API
+
+**Branch:** `main`. Backend only.
+
+**Files:** `backend/app/services/readiness.py`, `backend/app/routers/health.py`,
+`backend/app/tests/test_cors.py`.
+
+### What prompted it
+
+A report that "everything on the app is broken" — sign-in included. Tracing it
+through the Supabase logs rather than guessing:
+
+    POST /auth/v1/token   200  ×18   last 05:25:58  referer https://idk-41z.pages.dev/
+    POST /auth/v1/signup  200  ×1    05:24:45
+    GET  /auth/v1/user    200  ×19   05:15:43
+
+Sign-in was **succeeding**, and the API process was alive — its own sweeper was
+querying Supabase as `service_role` at 05:28:59. Supabase up, Render up, auth
+returning 200, and the app saying *"Could not reach the server."*
+
+That string comes from `client.ts:203`, which fires only when `fetch` **throws**
+— not on an error status, and not on a timeout, which has its own message. A
+thrown fetch with no status is what a CORS refusal looks like from inside a
+browser, because the request is rejected before it is sent.
+
+### Why the existing check could not have caught it
+
+`cors_allowed_origins` reports whether the variable is **set**. Every value it
+can hold passes that, including one naming an origin the deployed site does not
+have. **This is the Modal lesson again**, recorded in `CLAUDE.md` less than a
+day earlier: every readiness check passed while every spawn raised, because
+they asked whether the runtime *could* be reached rather than what happened
+when it was. Same shape, different subsystem, and the second one was already
+written down when it bit.
+
+### What it does now
+
+`GET /v1/ready?origin=https://your-site.pages.dev` answers whether a browser
+there would actually be allowed through, evaluated against the same two values
+`CORSMiddleware` was constructed with — an exact hit in `cors_origins`, or a
+match against `cors_origin_regex`. **No second copy of the matching rules**: if
+those are wrong this is wrong the same way, which is the only agreement worth
+having. A real preflight carries `Origin`, so that is used when no parameter is
+given; the parameter exists because someone opening the endpoint in a browser
+tab sends none.
+
+Not blocking, and absent rather than `false` when nobody asked — a check
+reporting a failure for a question nobody put would show every native-only
+deployment as broken.
+
+Settings are fetched inside the function, not bound at import, following the
+rule `_configuration_checks` already states. I got that wrong first and
+`test_cors.py` would have caught it: it reloads `app.config` to rebuild the
+middleware, so an import-time binding reports a settings object nothing else
+holds.
+
+### The echo
+
+The origin is quoted back so a reply carrying several is readable. It is the
+caller's own input, so it is not a secret and the module's "never reports a
+value" rule is intact — but this endpoint gets pasted into chats and terminals,
+so it is bounded to 200 characters and scrubbed to the characters an origin can
+contain.
+
+### Two mutants survived the first pass, and one was a real hole
+
+- **The trailing `$` on the wildcard regex.** `re.match` anchors only the
+  start, so without it `https://abc.intempo.pages.dev.evil.test` matches as a
+  **prefix** and any browser on a host anyone can register is handed a
+  musician's API. Three wildcard cases were already asserted and none of them
+  matched even as a prefix, so the anchor was untested. Added the case.
+- **`blocking=False`.** The test compared the status code before and after
+  probing — and this environment has no Supabase keys, so `/v1/ready` is 503
+  either way and the comparison passed whatever `blocking` was. The fixture
+  made the mutant inert, which is the shape this project keeps rediscovering.
+  Now asserted against the response's `blocking` list, which is true regardless
+  of what else is failing.
+
+After the fixes: 8 mutants, 8 killed.
+
+### Tests
+
+24 in `test_cors.py`; full backend suite 1112 passed.
+
+### Honest status
+
+**This diagnoses; it does not fix.** I cannot reach `intempo-api.onrender.com`
+from this sandbox — the agent proxy refuses CONNECT with a 403 — and the Render
+MCP server disconnected mid-session, so I have not read the deployed
+`CORS_ALLOWED_ORIGINS` and have **not** confirmed that CORS is the cause. What
+is confirmed is only what the Supabase logs show: auth works, the API process
+is alive, and the failure is on a hop neither of those covers. The probe is the
+instrument for settling it, and it has never been run against the deployment.
+
+Separately established this session: migration 009 applied to `intempo-dev`
+(`<project-ref>`) and verified — all four columns present and nullable.
+The `intempo` project is paused and cannot be restored: the org is at the
+free-tier limit of two active projects.
+
+### Rollback
+
+`git revert`. The probe is additive — a `/v1/ready` with no `origin` parameter
+behaves exactly as before.
+
+---
+
 ## 2026-08-25 — Onboarding, part 4: name, photo and instrument are all required
 
 **Branch:** `main`. **UI/UX — the owner's direct instruction**, *"dont make

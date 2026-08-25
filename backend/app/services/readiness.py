@@ -16,6 +16,7 @@ present. The whole point is that this can be opened in a browser on a phone.
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass, field
 
 from app.db import get_service_client
@@ -617,3 +618,69 @@ def check() -> Readiness:
     result.checks.extend(_schema_checks(client))
     result.checks.extend(_storage_checks(client))
     return result
+
+
+#: Longest origin this will quote back. An origin is a scheme and a host; a
+#: kilobyte of one is somebody testing what this endpoint will echo.
+_MAX_PROBE_LENGTH = 200
+#: Anything outside this is not part of any origin, and quoting it back into a
+#: response somebody pastes into a chat or a terminal is not worth the
+#: convenience of exactness.
+_PROBE_SAFE = re.compile(r"[^A-Za-z0-9:/._*\-]")
+
+
+def cors_probe(origin: str) -> Check:
+    """Would a browser on this origin be allowed to call the API.
+
+    **A behaviour check, which the one beside it is not.**
+    `cors_allowed_origins` asks whether the variable is *set*. Every value it
+    can hold passes that, including one naming an origin the deployed web app
+    does not have — and the browser's report of the difference is a thrown
+    `fetch` with no status, indistinguishable from the API being down. This
+    project has already paid for that distinction once, with Modal: every
+    readiness check passed while every spawn raised, because they asked whether
+    the runtime *could* be reached rather than what happened when it was.
+
+    So this answers the question actually being asked — *can the site at this
+    address talk to me* — by evaluating the same two values `CORSMiddleware`
+    was constructed with. There is no second copy of the matching rules here:
+    an exact hit against `cors_origins`, or a match against
+    `cors_origin_regex`. If those two are wrong, this is wrong in the same
+    direction, which is the only kind of agreement worth having.
+
+    Reached as `/v1/ready?origin=https://example.pages.dev`. Not blocking: an
+    API serving only the native app has no origin to name, and a 503 on a
+    working deployment teaches whoever reads this to stop reading it.
+
+    The origin is echoed so a reply carrying several is readable, trimmed and
+    with anything that is not part of an origin removed. It is the caller's own
+    input and no setting of ours — this module still never reports a value.
+
+    Settings are fetched here, not bound at import, for the reason
+    `_configuration_checks` already gives: a snapshot taken at import is a
+    different claim from "what this process is configured with now", true in
+    production and quietly false anywhere the module is reloaded — which is
+    exactly what `test_cors.py` does to rebuild the middleware.
+    """
+    from app.config import settings
+
+    quoted = _PROBE_SAFE.sub("?", origin.strip()[:_MAX_PROBE_LENGTH])
+
+    allowed = origin in settings.cors_origins
+    if not allowed:
+        pattern = settings.cors_origin_regex
+        allowed = bool(pattern and re.match(pattern, origin))
+
+    return Check(
+        name="cors_probe",
+        ok=allowed,
+        detail=(
+            f"A browser on {quoted} is refused before it sends anything, and "
+            "the only thing it can report is a failed fetch — which looks "
+            "exactly like this API being down. Add that origin to "
+            "CORS_ALLOWED_ORIGINS. A Cloudflare Pages project needs both its "
+            "production alias and a wildcard for the per-deployment hostname: "
+            "https://project.pages.dev,https://*.project.pages.dev"
+        ),
+        blocking=False,
+    )
