@@ -35,7 +35,8 @@ in a worker thread. So every handler blocked the loop on a socket, and the
 server served exactly one request at a time.
 
 Measured against the real app, with the Supabase client made to take 1s and six
-requests fired at once (`scratchpad/concurrency_probe.py`):
+requests fired at once (`backend/scripts/concurrency_probe.py`, committed — a cited measurement
+nobody can re-run is a claim):
 
 | | `async def` (as shipped) | `def` |
 |---|---|---|
