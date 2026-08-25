@@ -4,6 +4,7 @@ const { apiFetch } = vi.hoisted(() => ({ apiFetch: vi.fn() }));
 vi.mock('./client', () => ({ apiFetch }));
 
 import {
+  CANCELLED,
   UploadError,
   requestAudioUpload,
   requestScoreImageUpload,
@@ -52,6 +53,13 @@ class FakeXHR {
 
   send(body: unknown) {
     this.sent = body;
+  }
+
+  aborted = false;
+
+  abort() {
+    this.aborted = true;
+    this.onabort?.();
   }
 }
 
@@ -210,5 +218,74 @@ describe('what the musician is told', () => {
       expect(message.trim(), String(status)).not.toBe('');
       expect(message, String(status)).toMatch(/[.!]$/);
     }
+  });
+});
+
+
+/**
+ * Stopping an upload that is already going.
+ *
+ * **Cancel did not cancel.** `TranscribeScreen` navigated away and set a flag
+ * that made the *result* be ignored, and the transfer went on pushing
+ * megabytes at storage from a screen that no longer existed. On a phone that
+ * is the whole uplink: the scan the musician started instead had to share the
+ * line with the one they thought they had stopped, and every request in the
+ * app queued behind the pair. Cancelling made the app slower, which is the
+ * opposite of what the button is for.
+ */
+describe('cancelling', () => {
+  it('aborts the transfer, rather than only ignoring its answer', async () => {
+    const abort = new AbortController();
+    const pending = uploadToSignedUrl(
+      'https://storage.example/put?token=x',
+      new Blob(['x']),
+      'image/png',
+      { signal: abort.signal },
+    );
+
+    abort.abort();
+
+    await expect(pending).rejects.toThrow(CANCELLED);
+    expect(FakeXHR.last.aborted, 'the request was left running').toBe(true);
+  });
+
+  it('sends nothing at all when it was already cancelled', async () => {
+    // The screen can be left while the bytes are still being read off the
+    // device, which happens before this is called. Opening a transfer in order
+    // to abort it a moment later would put the first packets of an abandoned
+    // page on the wire.
+    const abort = new AbortController();
+    abort.abort();
+    const before = FakeXHR.last;
+
+    await expect(
+      uploadToSignedUrl('https://storage.example/put?token=x', new Blob(['x']), 'image/png', {
+        signal: abort.signal,
+      }),
+    ).rejects.toThrow(CANCELLED);
+
+    expect(FakeXHR.last, 'a request was opened for a cancelled upload').toBe(before);
+  });
+
+  it('lets go of the signal once the upload has ended', async () => {
+    // The signal belongs to the screen and outlives every upload it starts, so
+    // a listener left attached holds each finished request for as long as the
+    // screen lives.
+    const abort = new AbortController();
+    const removals: unknown[] = [];
+    const original = abort.signal.removeEventListener.bind(abort.signal);
+    abort.signal.removeEventListener = ((type: string, fn: unknown) => {
+      removals.push(fn);
+      return original(type, fn as EventListener);
+    }) as typeof abort.signal.removeEventListener;
+
+    await upload(200, { signal: abort.signal });
+
+    expect(removals).toHaveLength(1);
+  });
+
+  it('does not abort an upload nobody cancelled', async () => {
+    await expect(upload(200)).resolves.toBeUndefined();
+    expect(FakeXHR.last.aborted).toBe(false);
   });
 });

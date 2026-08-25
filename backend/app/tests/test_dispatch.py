@@ -255,6 +255,22 @@ def test_a_worker_reading_the_wrong_project_crashes_too(monkeypatch) -> None:
 # ---- where a page is read -------------------------------------------------
 
 
+def _read_here(monkeypatch) -> list[str]:
+    """Catch the in-process reading instead of running it.
+
+    Patched on `transcription_runner`, not on `dispatch`, because
+    `_decide_and_read` imports it inside the function body — a module-level
+    import would be circular.
+    """
+    from app.workers import transcription_runner
+
+    read: list[str] = []
+    monkeypatch.setattr(
+        transcription_runner, "run_transcription", lambda sid: read.append(sid)
+    )
+    return read
+
+
 def test_a_page_goes_to_modal_when_the_deployment_says_so(monkeypatch) -> None:
     """Reading a page with homr peaks at 1350 MB, measured. The API host has
     512 MB for the whole application, so this is not a preference."""
@@ -263,12 +279,12 @@ def test_a_page_goes_to_modal_when_the_deployment_says_so(monkeypatch) -> None:
     monkeypatch.setattr(
         dispatch, "_spawn_transcription_on_modal", lambda sid: spawned.append(sid) or True
     )
-    tasks = _Tasks()
+    read = _read_here(monkeypatch)
 
-    dispatch.start_transcription("score-1", tasks)
+    dispatch._decide_and_read("score-1")
 
     assert spawned == ["score-1"]
-    assert tasks.added == [], "it was read here as well as there"
+    assert read == [], "it was read here as well as there"
 
 
 def test_a_page_is_still_read_here_when_modal_refuses(monkeypatch) -> None:
@@ -279,11 +295,100 @@ def test_a_page_is_still_read_here_when_modal_refuses(monkeypatch) -> None:
     """
     monkeypatch.setattr(dispatch, "TRANSCRIPTION_RUNTIME", "modal")
     monkeypatch.setattr(dispatch, "_spawn_transcription_on_modal", lambda sid: False)
-    tasks = _Tasks()
+    read = _read_here(monkeypatch)
 
-    dispatch.start_transcription("score-2", tasks)
+    dispatch._decide_and_read("score-2")
 
-    assert [args for _fn, args in tasks.added] == [("score-2",)]
+    assert read == ["score-2"]
+
+
+def test_the_scan_request_never_waits_for_modal(monkeypatch) -> None:
+    """`start_transcription` returns before the decision has been made.
+
+    **This is the whole point of the split.** `fn.spawn()` is a gRPC round trip
+    to Modal and it used to sit inside `POST /v1/scores`, between the musician
+    pressing the shutter and the app admitting the piece existed — a third
+    party's latency, and when Modal was unreachable a third party's *timeout*,
+    in front of a response that does not depend on the answer either way.
+
+    Asserted by blocking the decision outright: if anything about dispatch were
+    still in the caller's path, this test would hang rather than fail, which is
+    exactly the symptom it exists to rule out.
+    """
+    import threading
+
+    started = threading.Event()
+    release = threading.Event()
+
+    def _blocks(_sid: str) -> bool:
+        started.set()
+        release.wait(5)
+        return True
+
+    monkeypatch.setattr(dispatch, "TRANSCRIPTION_RUNTIME", "modal")
+    monkeypatch.setattr(dispatch, "_spawn_transcription_on_modal", _blocks)
+
+    try:
+        dispatch.start_transcription("score-3")
+        # Returned. The dispatch is still sitting in `_blocks` at this point.
+        assert started.wait(5), "the queued work never ran"
+        assert not release.is_set()
+    finally:
+        release.set()
+
+
+def test_a_read_that_throws_is_logged_rather_than_lost(monkeypatch, caplog) -> None:
+    """Nothing holds a handle on this work, so an escaping exception vanishes.
+
+    Unlike `BackgroundTasks`, which Starlette logs, a reader thread that dies
+    does so in silence — and it takes the reader with it, so the *next* page
+    queued behind it is never read either. The row would stay `queued` and the
+    screen would go on polling a question already answered badly.
+    """
+    import threading
+
+    monkeypatch.setattr(dispatch, "TRANSCRIPTION_RUNTIME", "inprocess")
+    seen = threading.Event()
+
+    def _explodes(sid: str) -> None:
+        if sid == "score-4":
+            raise RuntimeError("boom")
+        seen.set()
+
+    monkeypatch.setattr(dispatch, "_decide_and_read", _explodes)
+
+    with caplog.at_level("ERROR"):
+        dispatch.start_transcription("score-4")
+        dispatch._pending.join()
+        # The reader survived it: the page behind the bad one still gets read.
+        dispatch.start_transcription("score-5")
+        assert seen.wait(5), "one failed page stopped every page after it"
+
+    assert "score-4" in caplog.text
+
+
+def test_reading_a_page_does_not_hold_the_process_open() -> None:
+    """The readers are daemon threads, and that word is load-bearing.
+
+    A `ThreadPoolExecutor` — the obvious shape here — registers an `atexit` hook
+    that joins its workers, so a process asked to exit while a page is being
+    read blocks until the read finishes. Measured at the time: a task sleeping
+    eight seconds delayed `sys.exit(0)` by eight seconds. On this deployment
+    that is a restart hanging for the length of a transcription, which is a
+    stuck shutdown introduced while removing stuck requests.
+
+    A process that goes down mid-read leaves the row `reading`, and
+    `sweep_stuck_transcriptions` already recovers exactly that.
+    """
+    import threading
+
+    dispatch._ensure_readers()
+    readers = [t for t in threading.enumerate() if t.name.startswith("transcribe-")]
+
+    assert readers, "no reader threads were started"
+    assert all(t.daemon for t in readers), (
+        "a non-daemon reader blocks process exit until its page is read"
+    )
 
 
 def test_reading_a_page_and_analysing_a_take_are_settled_separately(monkeypatch) -> None:
@@ -443,28 +548,28 @@ def _fresh_counters():
 def test_a_page_that_fell_back_is_counted(monkeypatch) -> None:
     monkeypatch.setattr(dispatch, "TRANSCRIPTION_RUNTIME", "modal")
     monkeypatch.setattr(dispatch, "_spawn_transcription_on_modal", lambda _id: False)
-    tasks = _Tasks()
+    read = _read_here(monkeypatch)
 
-    dispatch.start_transcription("s1", tasks)
+    dispatch._decide_and_read("s1")
 
     assert dispatch.transcription_dispatches.fell_back == 1
     assert dispatch.transcription_dispatches.to_modal == 0
     # And it was still read. The counter records the fallback, it does not
     # replace it — a musician who has just photographed a page must not lose it
     # to a deployment setting.
-    assert len(tasks.added) == 1
+    assert read == ["s1"]
 
 
 def test_a_page_that_reached_modal_is_counted(monkeypatch) -> None:
     monkeypatch.setattr(dispatch, "TRANSCRIPTION_RUNTIME", "modal")
     monkeypatch.setattr(dispatch, "_spawn_transcription_on_modal", lambda _id: True)
-    tasks = _Tasks()
+    read = _read_here(monkeypatch)
 
-    dispatch.start_transcription("s1", tasks)
+    dispatch._decide_and_read("s1")
 
     assert dispatch.transcription_dispatches.to_modal == 1
     assert dispatch.transcription_dispatches.fell_back == 0
-    assert tasks.added == [], "it was read twice"
+    assert read == [], "it was read twice"
 
 
 def test_in_process_deployments_are_not_counted_as_falling_back(monkeypatch) -> None:
@@ -472,12 +577,12 @@ def test_in_process_deployments_are_not_counted_as_falling_back(monkeypatch) -> 
     Counting it would make every correctly-configured local deployment report
     a problem, which is how a warning stops being read."""
     monkeypatch.setattr(dispatch, "TRANSCRIPTION_RUNTIME", "inprocess")
-    tasks = _Tasks()
+    read = _read_here(monkeypatch)
 
-    dispatch.start_transcription("s1", tasks)
+    dispatch._decide_and_read("s1")
 
     assert dispatch.transcription_dispatches.fell_back == 0
-    assert len(tasks.added) == 1
+    assert read == ["s1"]
 
 
 def test_the_failure_type_is_kept_and_the_message_is_not(monkeypatch) -> None:

@@ -1,12 +1,36 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { requestScoreImageUpload, uploadToSignedUrl, fromModule } = vi.hoisted(() => ({
-  requestScoreImageUpload: vi.fn(),
-  uploadToSignedUrl: vi.fn(),
-  fromModule: vi.fn(),
-}));
+const { requestScoreImageUpload, uploadToSignedUrl, fromModule, UploadError } =
+  vi.hoisted(() => ({
+    requestScoreImageUpload: vi.fn(),
+    uploadToSignedUrl: vi.fn(),
+    fromModule: vi.fn(),
+    UploadError: class UploadError extends Error {
+      constructor(message: string, readonly cause?: unknown) {
+        super(message);
+        this.name = 'UploadError';
+      }
+    },
+  }));
 
-vi.mock('../../data/api/upload', () => ({ requestScoreImageUpload, uploadToSignedUrl }));
+// `UploadError` and `CANCELLED` are stubbed alongside the two network calls
+// rather than left out of the mock. This module *constructs* an `UploadError`
+// on the cancel path, so a mock that omitted it would turn that into
+// "UploadError is not a constructor" — a harness failure wearing the costume
+// of a bug.
+//
+// Not `importActual`: the real module reaches `api/client`, which reaches the
+// Supabase session, which pulls react-native into a plain Node test run.
+// The *wording* of the sentence is `api/upload.test.ts`'s subject, against the
+// real constant; what matters here is which error type is raised, because that
+// is the difference between telling someone their phone failed and telling
+// them they cancelled.
+vi.mock('../../data/api/upload', () => ({
+  requestScoreImageUpload,
+  uploadToSignedUrl,
+  CANCELLED: 'cancelled',
+  UploadError,
+}));
 vi.mock('expo-asset', () => ({ Asset: { fromModule } }));
 
 import { MAX_PAGE_BYTES, ScanUploadError, uploadPage, uriFor } from './uploadPage';
@@ -277,5 +301,73 @@ describe('uriFor', () => {
     fromModule.mockReturnValue({});
 
     expect(uriFor({ source: 42 } as never)).toBeNull();
+  });
+});
+
+
+/**
+ * Leaving the screen while a page is being sent.
+ *
+ * There are three places a scan can be abandoned in, and only the last of them
+ * was ever stoppable: reading the bytes off the device, asking the API for
+ * somewhere to put them, and the transfer itself. A cancel that only covered
+ * the third would still let an abandoned scan read a twelve-megapixel
+ * photograph into memory and then spend an authenticated round trip — possibly
+ * behind a cold start — claiming a signed URL with a five-minute life that
+ * nobody will ever use.
+ */
+describe('a scan the musician walked away from', () => {
+  it('does not ask for somewhere to put a page that was cancelled', async () => {
+    const abort = new AbortController();
+    // Cancelled while the bytes were being read, which is where a large
+    // photograph spends real time.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        abort.abort();
+        return { ok: true, status: 200, blob: async () => new Blob(['x'], { type: 'image/png' }) };
+      }),
+    );
+
+    await expect(
+      uploadPage({ id: 'p1', source: 'blob:x' } as never, { signal: abort.signal }),
+    ).rejects.toBeInstanceOf(UploadError);
+
+    expect(requestScoreImageUpload, 'a signed URL was claimed for an abandoned scan')
+      .not.toHaveBeenCalled();
+    expect(uploadToSignedUrl).not.toHaveBeenCalled();
+  });
+
+  it('blames the cancellation, not the phone', async () => {
+    // An aborted `fetch` rejects, and the catch around it says "That page
+    // could not be read from the device" — which would tell someone who had
+    // just pressed Cancel that their phone was at fault.
+    const abort = new AbortController();
+    abort.abort();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        throw new DOMException('Aborted', 'AbortError');
+      }),
+    );
+
+    const thrown = await uploadPage(
+      { id: 'p1', source: 'blob:x' } as never,
+      { signal: abort.signal },
+    ).catch((error: unknown) => error);
+
+    expect(thrown).toBeInstanceOf(UploadError);
+    expect(thrown, 'a cancellation reported as a broken phone').not.toBeInstanceOf(
+      ScanUploadError,
+    );
+  });
+
+  it('hands the signal on to the transfer', async () => {
+    const abort = new AbortController();
+    respondWith(new Blob(['x'], { type: 'image/png' }));
+
+    await uploadPage({ id: 'p1', source: 'blob:x' } as never, { signal: abort.signal });
+
+    expect(uploadToSignedUrl.mock.calls[0][3]).toMatchObject({ signal: abort.signal });
   });
 });

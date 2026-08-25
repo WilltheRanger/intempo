@@ -83,10 +83,19 @@ export function TranscribeScreen() {
     // Guards against the upload finishing after the screen has gone — an
     // unmounted `navigation.replace` throws, and a late `setError` warns.
     let live = true;
+    // **And stops it, which the flag never did.** `live = false` only made the
+    // *result* be ignored; the transfer went on pushing megabytes at storage
+    // from a screen that was no longer there. Leaving this screen is either
+    // Cancel or Back, and both of them mean stop — but the upload owned the
+    // only connection the phone has, so the scan started instead had to share
+    // the uplink with the one the musician thought they had abandoned, and
+    // every request in the app queued behind the pair of them.
+    const abort = new AbortController();
 
     void (async () => {
       try {
         const url = await uploadPage(first, {
+          signal: abort.signal,
           onProgress: (bytes, total) => {
             if (live) {
               setSent({ sent: bytes, total });
@@ -117,6 +126,7 @@ export function TranscribeScreen() {
 
     return () => {
       live = false;
+      abort.abort();
     };
     // Keyed on the page's identity: re-running on every render would upload in
     // a loop, and the page cannot change while this screen is mounted.

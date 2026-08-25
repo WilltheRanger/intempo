@@ -137,7 +137,7 @@ def _build_object_key(user_id: UUID, ext: str) -> str:
 
 
 @router.post("/audio", response_model=UploadResponse)
-async def upload_audio(
+def upload_audio(
     body: UploadRequest,
     user_id: UUID = Depends(current_user_id),
 ) -> UploadResponse:
@@ -148,7 +148,7 @@ async def upload_audio(
 
 
 @router.post("/avatar", response_model=UploadResponse)
-async def upload_avatar(
+def upload_avatar(
     body: UploadRequest,
     user_id: UUID = Depends(current_user_id),
 ) -> UploadResponse:
@@ -166,7 +166,7 @@ async def upload_avatar(
 
 
 @router.post("/score-image", response_model=UploadResponse)
-async def upload_score_image(
+def upload_score_image(
     body: UploadRequest,
     user_id: UUID = Depends(current_user_id),
 ) -> UploadResponse:

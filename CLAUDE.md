@@ -380,6 +380,45 @@ there works differently as of 2026-08-24:
   Both rules the screen can get wrong live in `lib/onboarding.ts` where they are
   tested, not in the `.tsx`.
 
+### The API serves requests in parallel, and only just started to (2026-08-25)
+
+- **No request handler may be `async def`.** Every one of them was, none
+  contained an `await`, and all of them call Supabase through its **synchronous**
+  client — so each blocked the event loop and the server served **one request at
+  a time**. Measured on the real app with a 1s database call: six concurrent
+  requests took 6.02s and `/v1/health` took 5.86s while they ran; as plain `def`
+  handlers on the threadpool, 1.01s and 0.002s. That health check is what the app
+  blocks *every screen* on while it wakes the host, so this was not one
+  endpoint's latency, it was the whole app's. `test_no_blocking_handlers.py`
+  asserts it, including for the auth dependencies, which run on every request.
+  Writing `async` back is a one-word change a reviewer cannot see, and one person
+  clicking around never notices a server with no concurrency.
+- **Every blocking call gets a timeout, because a thread is now the thing it
+  parks.** Supabase defaults to **120s** (`postgrest_client_timeout`) and PyJWT's
+  JWKS fetch to 30s; both are set in `db.py` and `auth.py` now. Starlette's pool
+  holds forty threads and is shared with background work, so an untimed call does
+  not degrade the API, it removes it.
+- **Reading a page dispatches to its own daemon threads, not to
+  `BackgroundTasks` and not to a `ThreadPoolExecutor`.** Two reasons for taking
+  it off BackgroundTasks and both matter: the Modal spawn is a gRPC round trip
+  that has no business in `POST /v1/scores`, and `run_transcription` waits for a
+  slot by *blocking a thread* — harmless when that thread came from
+  BackgroundTasks alone, an outage now the handlers draw from the same pool.
+  **Daemon is the load-bearing word**: `ThreadPoolExecutor` registers an `atexit`
+  hook that joins its workers, so a restart during a read blocks for the whole
+  read (measured: 8s task, 8s delay to `sys.exit`). A process that goes down
+  mid-read leaves the row `reading`, which the sweeper already recovers.
+- **On the app side, the wake goes stale.** `warmApi` was resolved once and held
+  for the life of the process, so it protected the first screen of a session and
+  nothing after it — while the host sleeps every fifteen minutes. Any response
+  refreshes `lastContactAt`; a wake older than ten minutes is armed again.
+- **`send` already retried, so React Query must not.** Two 45s attempts inside
+  `send` plus `retry: 1` outside it was three minutes on a skeleton before an
+  error appeared. An `ApiError` is never retried — it was answered.
+- **Cancel cancels.** `uploadToSignedUrl` takes an `AbortSignal`; the flag that
+  used to "cancel" only made the *result* be ignored while the transfer kept the
+  phone's entire uplink, so cancelling a slow upload made the app slower.
+
 ### The capture path (2026-08-24) — what an audit of it found
 
 Nine defects between the shutter and a saved score, in a path that had **zero

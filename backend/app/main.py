@@ -107,6 +107,40 @@ async def lifespan(_app: FastAPI):
             await sweeper
 
 
+# ---------------------------------------------------------------------------
+# Every request handler in this API is a plain `def`, never `async def`, and
+# that is load-bearing.
+#
+# **What it cost when they were `async def`.** Starlette runs an `async def`
+# endpoint *on the event loop* and a plain `def` one in a worker thread. Every
+# handler here talks to Supabase through its synchronous client, which blocks
+# the calling thread on a socket — so while they were coroutines, the whole API
+# served exactly **one request at a time**. Not slowly: serially. A library
+# listing held the loop for its round trip to Supabase, and everything else the
+# app had asked for — the profile, the analyses, the next poll of a page being
+# read — waited behind it rather than running alongside it.
+#
+# Three things made that far worse than a queue usually is:
+#
+#   * `/v1/health` queued too. The app wakes this host on `/v1/health` before
+#     its first authenticated request and blocks every screen on the answer, so
+#     one slow database call did not delay one screen, it delayed all of them.
+#   * `POST /v1/calibration` downloads a take and runs librosa over it. That is
+#     seconds of CPU with no `await` in it anywhere, during which nothing else
+#     was served at all — including the health check Render uses to decide
+#     whether this instance is alive.
+#   * Creating a score handed the page to Modal over gRPC *in the handler*.
+#     A blocking network call, on the loop, in front of the response.
+#
+# None of it needed the event loop: there is not one `await` in any router.
+# They were coroutines by habit, and the cost was the entire server's
+# concurrency.
+#
+# The rule is enforced by `tests/test_no_blocking_handlers.py` rather than left
+# as a convention, because the failure it prevents is invisible in development
+# — one person clicking around never notices a server that serves one request
+# at a time — and shows up only as "the app is stuck" under real use.
+# ---------------------------------------------------------------------------
 app = FastAPI(title="InTempo API", lifespan=lifespan)
 
 # The app and this API are never same-origin — 8081 against 8000 in
