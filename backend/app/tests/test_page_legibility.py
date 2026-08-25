@@ -767,3 +767,31 @@ def test_a_tie_needs_the_columns_to_be_clearly_steadier(monkeypatch) -> None:
 
     # Rows steadier: upright, whatever the counts did.
     assert decide(0.100, 0.400) is False
+
+
+def test_the_refusal_says_how_large_the_photograph_was() -> None:
+    """Because working it out cost real time.
+
+    A refusal arrived from the deployment and the only way to tell a webcam
+    grab from a phone photograph was to join the score row against
+    `storage.objects` and infer the resolution from a byte count. The number was
+    already in hand here and was simply not said.
+
+    It also settles the question the sentence raises. "With a phone rather than
+    a webcam" is only useful advice if the musician can see which one this was.
+    """
+    import io as _io
+
+    from PIL import Image
+
+    from app.tests.test_scan_end_to_end import _phone_photo
+
+    with Image.open(_io.BytesIO(_phone_photo(READABLE))) as image:
+        webcam = image.convert("RGB").resize((1280, 960))
+    buffer = _io.BytesIO()
+    webcam.save(buffer, format="PNG")
+
+    reason = too_small_to_read(buffer.getvalue())
+
+    assert reason is not None
+    assert "1280x960" in reason
