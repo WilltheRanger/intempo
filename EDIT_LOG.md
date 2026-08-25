@@ -6,6 +6,117 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-25 — Two awaits with no deadline on them, and the skeleton that never ended
+
+**Branch:** `main`. Mobile only, no UI change.
+
+**Files:** `mobile/src/data/api/client.ts`, `mobile/src/data/api/client.test.ts`.
+
+### The report
+
+A photograph of `TodayScreen` sitting on `ContinueSkeleton`: *"it always gets
+stuck in this skeleton screen."*
+
+That screen is not missing an error state. It renders `ContinueSkeleton` while
+`currentPiece.isPending` and an `EmptyState` with `describeLoadError` while
+`isError`, with pull-to-refresh on it. So a **stuck** skeleton is not a failed
+request — a failed request would have shown the sentence. It is a promise that
+never settles, which is permanently `isPending` and never `isError`.
+
+The Supabase logs ruled the backend out first: at 06:58:37–39 the API served a
+whole Today load — `users`, four `analyses`, `scores` and two signed-URL calls
+— every one 200, between 87 and 463 ms, the lot inside 2.6 seconds.
+
+### Two unbounded awaits, either of which hangs forever
+
+**`await getAccessToken()`**, before the request is built. That calls
+`supabase.auth.getSession()`, which **refreshes over the network** when the
+access token is near expiry. Unbounded, a hang there means no request on the
+wire, no response to time out, and no error to render — on every authenticated
+request at once, which is what makes a whole screen go quiet rather than one
+card.
+
+The precedent is in this repo. `useAuthStatus` guards the *same call* with
+`SESSION_TIMEOUT_MS = 8000`, and its comment records what an unguarded one
+cost: "turned the whole app into a blank screen with nothing to tap". That
+guard was applied at boot and nowhere else. Every request afterwards ran
+unguarded past the same hazard.
+
+**`await response.json()`**, after it. `send` cleared its abort deadline in a
+`finally`, which runs when `fetch` resolves — and `fetch` resolves on
+**headers**. Everything after that was unguarded, so a response whose headers
+land and whose body then stops hangs forever.
+
+### The fix
+
+`send` now hands back `{ response, signal, release }` and keeps the deadline
+armed until `apiFetch` has read the body. The token read gets its own
+`TOKEN_TIMEOUT_MS = 10_000` — shorter than the request deadline on purpose,
+because it is a local read plus at most one refresh, and those ten seconds are
+spent *before* the real request starts.
+
+Three distinctions the code makes deliberately:
+
+- **A timed-out session read is not an ended session.** It throws
+  `SESSION_UNREADABLE`, not `SESSION_ENDED`, and does **not** sign anyone out.
+  The session is probably fine and merely unreachable; signing out over a slow
+  network throws away a good one to report a temporary fault.
+- **A stalled body is not an unreachable server.** Its own sentence, because
+  the server *was* reached and *did* answer — "could not reach the server"
+  would send someone to check a connection that demonstrably works.
+- **A body that is simply not JSON is neither.** The stall is detected on
+  `signal.aborted`, not on the error's shape, so malformed JSON keeps
+  propagating exactly as before.
+
+A stalled body is also **not retried**, even on a GET. `send`'s retry exists
+for a request that was never *answered*; this one was — the headers came back,
+so the server has it. Asking again doubles the load on a server already
+struggling.
+
+### Tests
+
+9 new in `client.test.ts` (13 total), 294 mobile tests, typecheck and web build
+green.
+
+The first stub was wrong in an instructive way: a `Response` built in a test is
+not wired to the abort signal the way the platform's is, so it hung whether the
+fix was present or not — the test would have passed by timing out rather than
+by aborting. The helper now errors the stream on abort, which is what `fetch`
+does.
+
+Mutation-tested, 9 mutants, 9 killed. Two needed new tests:
+
+- **An uncleared timer after a request that succeeded.** Invisible in the
+  result — a leaked deadline still rejects, later, into a promise nobody is
+  listening to. Now asserted with `vi.getTimerCount()`.
+- **A leaked deadline on an attempt that failed outright.** The two timed-out
+  cases hide it: their timers fired on their own, so a missing `clearTimeout`
+  in the `catch` costs nothing there. A connection refused rejects immediately,
+  with its deadline still armed, and a GET makes two attempts — so a leak
+  leaves two.
+
+### What this does not fix, stated plainly
+
+**The wait is still far too long on a cold start.** `retry: 1` at the react
+query layer multiplies `send`'s two attempts, so a query can take up to
+**4 × 45 s = 180 seconds** to reach `isError` — and shows nothing but a
+skeleton throughout. Bounded is not the same as bearable. Two things would
+close it and both are the owner's call: not letting the host sleep (see the
+entry below), and saying on screen that the server is waking, which is
+user-visible copy and therefore §2.
+
+I have also **not proven** either hang is what was photographed. A cold start
+produces the same picture for up to three minutes and then resolves. What is
+certain is that both awaits could hang forever, that forever is a state no
+screen in this app renders, and that neither can now.
+
+### Rollback
+
+`git revert`. The change is contained to `client.ts`; reverting restores the
+previous unbounded behaviour exactly.
+
+---
+
 ## 2026-08-25 — The avatars bucket was unchecked, and homr's message promised a fallback that no longer exists
 
 **Branch:** `main`. Backend only. Both found by reading a real `/v1/ready`
