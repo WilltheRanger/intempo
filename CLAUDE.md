@@ -351,14 +351,28 @@ there works differently as of 2026-08-24:
   the photograph exists to check, so it cannot be the thing that authorises
   throwing it away.
 
-- **Onboarding is one screen, it is skippable, and it fails open.**
-  `users.onboarded_at` (009) records *being asked*, not answering — someone who
-  skips is onboarded, because a skippable screen that comes back is not
-  skippable. `shouldOnboard` gates only on a definite `onboarded === false`: a
-  slow, failed or pre-009 `/v1/me` opens the app rather than holding it behind a
-  network request (`DECISIONS.md`, 2026-08-25). The screen is held in front of
-  the app by `RootNavigator`, not pushed as a route, so it needs no `reset` and
-  has no route to be wrong about.
+- **Onboarding is one screen, all three answers are required, and the gate
+  fails open.** Name, photograph and instrument — the owner's call on
+  2026-08-25 (*"dont make name profile and instrument optional"*), reversing
+  the skippable version shipped earlier the same day. There is no Skip.
+  The rule is enforced **twice on purpose**: `missingFromOnboarding` shuts the
+  button, and `PATCH /v1/me` refuses to stamp `onboarded_at` unless the
+  **resulting row** carries all three. A requirement only the client checks is
+  a convention, and that endpoint is reachable without the screen. The server
+  reads the resulting row rather than the body, so an answer already stored
+  counts; and a second `{onboarded: true}` on an account already through is a
+  no-op 200, never a re-stamp and never a 400.
+  The photograph is the expensive one and the cost should stay visible: it is
+  the only answer that cannot be given by thinking, so someone signing up away
+  from a picture they like is locked out until they find one.
+  `users.onboarded_at` records *being asked*. `shouldOnboard` gates only on a
+  definite `onboarded === false`: a slow, failed or pre-009 `/v1/me` opens the
+  app rather than holding it behind a network request (`DECISIONS.md`,
+  2026-08-25). The screen is held in front of the app by `RootNavigator`, not
+  pushed as a route, so it needs no `reset` and has no route to be wrong about.
+  An account onboarded *before* the fields were required keeps its gaps and is
+  never sent back through — `onboarded` is the only thing that decides this,
+  never a missing instrument.
   **`users.instrument` is nullable and never defaulted**, the same rule as
   `ScoreJson.clef` and for the same reason — `instrumentInUse()` falls back to
   the device preference, which always has a value, so no screen needs a "no

@@ -6,6 +6,119 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-25 — Onboarding, part 4: name, photo and instrument are all required
+
+**Branch:** `main`. **UI/UX — the owner's direct instruction**, *"dont make
+name profile and instrument optional"*, reversing the skippable screen shipped
+hours earlier the same day. There is no Skip.
+
+**Files:** `mobile/src/screens/onboarding/OnboardingScreen.tsx`,
+`mobile/src/lib/onboarding.ts` + `.test.ts`,
+`backend/app/routers/me.py`, `backend/app/tests/test_me.py`, `CLAUDE.md`.
+
+### The rule is enforced twice, on purpose
+
+`missingFromOnboarding` shuts the button. `PATCH /v1/me` refuses to stamp
+`onboarded_at` unless the row has all three. **A requirement only the client
+checks is a convention**, and that endpoint is reachable without this screen —
+so the server carries the rule too.
+
+Three details in the server check that each exist because the obvious version
+is wrong:
+
+- It reads the **resulting** row, not the request body. Someone whose name was
+  set on another device and who answers the rest here is finishing onboarding;
+  a body-only check would refuse them with no way through the screen at all.
+- **Empty string is missing, not answered.** `display_name` is stripped to NULL
+  on write, but a row can predate that, and an account whose greeting is blank
+  has not answered the question.
+- **A second `{onboarded: true}` is a no-op 200.** A retry, a double tap, a
+  lost response. It must not 400 — the caller did nothing wrong — must not
+  re-stamp the time, which would make "when were they asked" a lie, and must
+  not run the completeness check against an account already through. That last
+  one matters most: **accounts onboarded before this change keep their gaps and
+  are never sent back**, because `onboarded` is the only thing that decides
+  whether the screen appears.
+
+### What requiring the photograph costs, stated rather than buried
+
+The instrument changes what the app does. The name changes a greeting. **The
+photograph currently changes nothing at all** — there is no screen in this app
+where another person appears. It is now a hard gate at the front door, and it
+is the only one of the three that cannot be satisfied by thinking: someone
+signing up away from a picture they are happy with is locked out until they
+find one. Flagged to the owner before building, and built as asked. Written
+into `lib/onboarding.ts` and `CLAUDE.md` so the trade stays visible to whoever
+reads it next rather than living in a commit message.
+
+### Three-foot test — before
+
+1. **"Who's playing?"** 2. **the four instruments** 3. **Continue**, in the
+thumb zone with the still-needed line under it.
+
+### Three-foot test — on the screenshot
+
+Same order, and the disabled Continue helps rather than hurts: greyed, it
+recedes, so the instrument grid takes second place cleanly where the ink
+version had been competing for it.
+
+Two composition changes the requirement forced:
+
+- **The photograph got a label.** Unlabelled beside a labelled Name field it
+  read as decoration on that field, and a required field nobody recognises as a
+  field is exactly how someone ends up staring at a disabled button. It did not
+  get *bigger* — required does not mean important, and a large circle at the top
+  would still make the least consequential answer dominant (§3 law 4).
+- **A line under Continue names what is missing**, narrowing as answers come in
+  ("your name, a photo and your instrument" → "a photo"). A disabled button with
+  no reason beside it is a tap that did nothing.
+
+`describeMissing` lives in `lib/onboarding.ts` rather than in the screen
+because the empty case is the one that matters and it is invisible in a
+component: it returns **null**, not `''`, so "say nothing" is the only way to
+render a satisfied form. "Still needed:" with nothing after it is worse than no
+line at all.
+
+### Also fixed
+
+Picking a second photo now clears `avatarKey` **before** the upload starts.
+Previously a replacement that failed left the first picture's key in state, so
+Continue would have saved a photograph the musician had already replaced on
+screen.
+
+The lede lost "You can change any of this later in Profile." Profile can change
+the instrument; it cannot change the name or the photograph. Reinstate the
+sentence when it becomes true, not before.
+
+### Tests
+
+Mobile: 285 green (18 in `onboarding.test.ts`), typecheck clean, web build
+green. Backend: 32 in `test_me.py`, full suite green.
+
+Mutation-tested both halves, 16 mutants, 16 killed. Server: each of the three
+fields dropped from `ONBOARDING_REQUIRED_FIELDS` separately; check-the-row-only;
+check-the-body-only; empty-string-counts; re-stamp-when-already-onboarded;
+refusal-removed; second-finish-falls-through-to-400. Client: blank name,
+spaces-only name, missing photo, missing instrument, empty list still renders a
+sentence, two joined with a comma, single item through the and-branch.
+
+### Honest DoD status
+
+Unchanged from part 3 and worth repeating: verified **visually**, against
+fixture data, in a browser. No real sign-up has reached this screen, the photo
+picker has not run on a device, and the upload → `avatar_key` → signed-URL
+round trip has never completed. Migration 009 has **not** been run against the
+live database — until it is, `/v1/me` returns no `onboarded_at`, `toMusician`
+reads that as onboarded, and the screen correctly never appears.
+
+### Rollback
+
+`git revert`. The server rule is one `if` in `update_me`; the client rule is
+`missingFromOnboarding`. Removing either restores optional answers on that
+side, and they are independent.
+
+---
+
 ## 2026-08-25 — Onboarding, part 3: the screen, and the gate that puts it there
 
 **Branch:** `main`. **UI/UX — built under the §2 go-ahead** the owner gave on

@@ -200,22 +200,30 @@ async def update_me(
             detail="Supabase service-role client is not configured",
         )
 
-    # The picture being replaced, so it can be removed once the row no longer
-    # points at it. Read before the update for the reason `delete_score`
-    # learned this morning: the row is the only thing that knows the key, and
-    # after the write it knows a different one.
-    superseded: str | None = None
-    if "avatar_key" in body.model_fields_set:
-        current = (
+    sent = body.model_fields_set
+
+    # One read of the row as it stands, for the two things that need it: the
+    # picture being replaced, and whether onboarding is already done. Read
+    # **before** the update for the reason `delete_score` learned: the row is
+    # the only thing that knows the old key, and after the write it knows a
+    # different one.
+    current: dict[str, Any] = {}
+    if "avatar_key" in sent or body.onboarded:
+        rows = (
             client.table("users")
-            .select("avatar_key")
+            .select("*")
             .eq("id", str(user_id))
             .limit(1)
             .execute()
         ).data or []
-        superseded = current[0].get("avatar_key") if current else None
+        if not rows:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="user not found"
+            )
+        current = rows[0]
 
-    sent = body.model_fields_set
+    superseded = current.get("avatar_key") if "avatar_key" in sent else None
+
     update: dict[str, Any] = {}
     if "instrument" in sent:
         update["instrument"] = body.instrument.value if body.instrument else None
@@ -227,12 +235,31 @@ async def update_me(
         update["display_name"] = cleaned or None
     if "avatar_key" in sent:
         update["avatar_key"] = _own_avatar_key(user_id, body.avatar_key)
-    if body.onboarded:
-        # Only ever forward. There is no route back to "never asked", and a
-        # client that could send false would make the screen reappear.
+    if body.onboarded and not current.get("onboarded_at"):
+        # Only ever forward, and only once. There is no route back to "never
+        # asked", and re-stamping the timestamp on an account that is already
+        # through would make "when were they asked" a lie.
+        missing = _missing_for_onboarding(current, update)
+        if missing:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    "onboarding needs a name, an instrument and a photo; "
+                    f"missing: {', '.join(missing)}"
+                ),
+            )
         update["onboarded_at"] = datetime.now(timezone.utc).isoformat()
 
     if not update:
+        if body.onboarded:
+            # Already onboarded, and nothing else was sent. A second tap, a
+            # retried request — not an error, and not a reason to write.
+            return _to_response(
+                user_id,
+                current,
+                UserTier(current.get("tier", UserTier.free.value)),
+                None,
+            )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="patch body must include at least one field",
@@ -259,6 +286,34 @@ async def update_me(
         _remove_avatar(client, superseded)
 
     return _to_response(user_id, row, UserTier(row.get("tier", UserTier.free.value)), None)
+
+
+#: What onboarding must have answered before it counts as done.
+#:
+#: The owner's call, 2026-08-25: *"dont make name profile and instrument
+#: optional"*. It reversed the skippable screen shipped the same day, so the
+#: rule is written here as well as in the app — a requirement only the client
+#: enforces is a convention, and this endpoint is reachable without it.
+ONBOARDING_REQUIRED_FIELDS = ("display_name", "instrument", "avatar_key")
+
+
+def _missing_for_onboarding(
+    current: dict[str, Any], update: dict[str, Any]
+) -> list[str]:
+    """Which required answers the row would still be missing after this patch.
+
+    Reads the **resulting** row, not the request: someone who set their name
+    last week and their instrument and photo now is finishing onboarding, and
+    a check that only looked at the body would refuse them.
+
+    Empty string and null are both missing. `display_name` is already stripped
+    to None above, but the row may predate that.
+    """
+    return [
+        field
+        for field in ONBOARDING_REQUIRED_FIELDS
+        if not (update[field] if field in update else current.get(field))
+    ]
 
 
 def _own_avatar_key(user_id: UUID, key: str | None) -> str | None:
