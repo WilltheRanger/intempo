@@ -66,6 +66,15 @@ export function requestAudioUpload(filename: string): Promise<UploadResponse> {
  */
 const UPLOAD_TIMEOUT_MS = 120_000;
 
+/**
+ * Said when the upload was stopped on purpose.
+ *
+ * One constant because two places raise it — a signal that was already
+ * aborted before the request opened, and one that fires during the transfer —
+ * and a caller distinguishing "cancelled" from "failed" has to be able to.
+ */
+export const CANCELLED = 'The upload was cancelled.';
+
 export class UploadError extends Error {
   constructor(message: string, readonly cause?: unknown) {
     super(message);
@@ -84,6 +93,24 @@ export interface UploadOptions {
    * genuinely measurable rather than merely staged.
    */
   onProgress?: (sent: number, total: number) => void;
+
+  /**
+   * Stops the transfer.
+   *
+   * **The Cancel button on the sending screen did not cancel anything.** It
+   * navigated away and set a flag that made the result be ignored; the
+   * transfer went on pushing megabytes at storage from a screen that was no
+   * longer there. On the connection this app is used over — a phone, in a
+   * practice room, on the far side of a house from the router — that is the
+   * whole uplink, so the scan the musician started *instead* had to share the
+   * line with the one they thought they had stopped, and every request behind
+   * it queued. Cancelling made the app slower.
+   *
+   * It compounds: nothing stopped a second attempt beginning while the first
+   * was still running, so cancel-and-retry on a slow connection left two
+   * uploads of the same page racing, both slower for the company.
+   */
+  signal?: AbortSignal;
 }
 
 /**
@@ -101,13 +128,33 @@ export function uploadToSignedUrl(
   uploadUrl: string,
   file: Blob,
   contentType: string,
-  { onProgress }: UploadOptions = {},
+  { onProgress, signal }: UploadOptions = {},
 ): Promise<void> {
   return new Promise((resolve, reject) => {
+    // Already cancelled before anything opened — the screen was left while the
+    // bytes were still being read off the device. Nothing to abort, and
+    // starting a transfer in order to abort it a moment later would send the
+    // first packets of a page nobody is waiting for.
+    if (signal?.aborted) {
+      reject(new UploadError(CANCELLED));
+      return;
+    }
+
     const request = new XMLHttpRequest();
     request.open('PUT', uploadUrl);
     request.setRequestHeader('Content-Type', contentType);
     request.timeout = UPLOAD_TIMEOUT_MS;
+
+    const stop = () => request.abort();
+    signal?.addEventListener('abort', stop);
+    // Every ending goes through here, so the listener is removed once whatever
+    // it was watching for can no longer happen. A signal that outlives the
+    // upload — and this one does, it belongs to the screen — would otherwise
+    // hold a reference to each finished request for as long as it lives.
+    const settle = (finish: () => void) => {
+      signal?.removeEventListener('abort', stop);
+      finish();
+    };
 
     request.upload.onprogress = (event) => {
       if (event.lengthComputable) {
@@ -117,18 +164,18 @@ export function uploadToSignedUrl(
 
     request.onload = () => {
       if (request.status >= 200 && request.status < 300) {
-        resolve();
+        settle(resolve);
         return;
       }
       // Named separately because they need different things from the
       // musician: an expired URL means start the scan again, and anything
       // else means try again as-is.
       if (request.status === 400 || request.status === 403) {
-        reject(
+        settle(() => reject(
           new UploadError(
             'The upload link expired before the page finished sending. Take the photograph again.',
           ),
-        );
+        ));
         return;
       }
       // Too large for the bucket. "Try again" is the one thing that cannot
@@ -150,33 +197,39 @@ export function uploadToSignedUrl(
       // says what happened and offers the one route that genuinely produces a
       // smaller file, and nothing else.
       if (request.status === 413) {
-        reject(
+        settle(() => reject(
           new UploadError(
             'Storage refused the page for being too large. Photographing it ' +
               "with this app's camera makes a smaller file than the original " +
               'from your camera roll.',
           ),
-        );
+        ));
         return;
       }
-      reject(new UploadError(`Storage refused the page (${request.status}). Try again.`));
+      settle(() =>
+        reject(new UploadError(`Storage refused the page (${request.status}). Try again.`)),
+      );
     };
 
     request.ontimeout = () =>
-      reject(
-        new UploadError(
-          'Sending the page took too long. A stronger connection — or moving closer to the router — usually fixes it.',
+      settle(() =>
+        reject(
+          new UploadError(
+            'Sending the page took too long. A stronger connection — or moving closer to the router — usually fixes it.',
+          ),
         ),
       );
 
     request.onerror = () =>
-      reject(
-        new UploadError(
-          'The page could not be sent. Check your connection and try again.',
+      settle(() =>
+        reject(
+          new UploadError(
+            'The page could not be sent. Check your connection and try again.',
+          ),
         ),
       );
 
-    request.onabort = () => reject(new UploadError('The upload was cancelled.'));
+    request.onabort = () => settle(() => reject(new UploadError(CANCELLED)));
 
     request.send(file);
   });
