@@ -407,3 +407,163 @@ def test_a_patch_only_ever_touches_the_callers_own_row(
 
     scoped = sb.table.return_value.update.return_value.eq
     assert scoped.call_args.args == ("id", str(user_id))
+
+
+# ---- the avatar key comes from the client -----------------------------------
+#
+# The storage policies in 009 protect the bucket from a client acting
+# *directly*. They do nothing about a client handing the server someone else's
+# key: the server reads storage with the service role, which bypasses RLS.
+
+
+def test_a_key_belonging_to_someone_else_is_refused(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """Without this, `PATCH /v1/me {"avatar_key": "<stranger>/face.jpg"}` makes
+    the next `/v1/me` hand back a working signed URL for their photograph.
+
+    An audit of this codebase already found the same class of hole in the score
+    `image_url` check, which looked at the path and not the host.
+    """
+    user_id, stranger = uuid4(), uuid4()
+    sb = _profile_mock(row=_row(id=str(user_id)))
+    monkeypatch.setattr(me_module, "get_service_client", lambda: sb)
+
+    res = _patch(client, make_token(sub=user_id), {"avatar_key": f"{stranger}/face.jpg"})
+
+    assert res.status_code == 400
+    assert not sb.table.return_value.update.called, "the stranger's key was written"
+
+
+def test_a_key_that_escapes_the_prefix_is_refused(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """`<me>/../<stranger>/face.jpg` starts with the right prefix and is not
+    this account's object. The check is the whole key, not just its start."""
+    user_id, stranger = uuid4(), uuid4()
+    sb = _profile_mock(row=_row(id=str(user_id)))
+    monkeypatch.setattr(me_module, "get_service_client", lambda: sb)
+
+    res = _patch(
+        client, make_token(sub=user_id), {"avatar_key": f"{user_id}/../{stranger}/face.jpg"}
+    )
+
+    assert res.status_code == 400
+
+
+def test_the_accounts_own_key_is_accepted(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """It has to be able to pass, or nobody can set a picture at all."""
+    user_id = uuid4()
+    key = f"{user_id}/abc.jpg"
+    sb = _profile_mock(row=_row(id=str(user_id)), updated=_row(id=str(user_id), avatar_key=key))
+    monkeypatch.setattr(me_module, "get_service_client", lambda: sb)
+
+    res = _patch(client, make_token(sub=user_id), {"avatar_key": key})
+
+    assert res.status_code == 200, res.text
+    assert sb.table.return_value.update.call_args.args[0]["avatar_key"] == key
+
+
+def test_replacing_a_picture_removes_the_one_it_replaced(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """Otherwise every change of picture leaks the previous one forever — the
+    bug `delete_score` had until this morning, in a new place."""
+    user_id = uuid4()
+    old_key, new_key = f"{user_id}/old.jpg", f"{user_id}/new.jpg"
+    sb = _profile_mock(
+        row=_row(id=str(user_id), avatar_key=old_key),
+        updated=_row(id=str(user_id), avatar_key=new_key),
+    )
+    monkeypatch.setattr(me_module, "get_service_client", lambda: sb)
+
+    _patch(client, make_token(sub=user_id), {"avatar_key": new_key})
+
+    removed = [
+        c.args[0][0]
+        for c in sb.storage.from_.return_value.remove.call_args_list
+        if c.args and c.args[0]
+    ]
+    assert removed == [old_key]
+
+
+def test_clearing_a_picture_removes_it_too(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """Taking your photograph off the account has to actually take it off."""
+    user_id = uuid4()
+    old_key = f"{user_id}/old.jpg"
+    sb = _profile_mock(
+        row=_row(id=str(user_id), avatar_key=old_key),
+        updated=_row(id=str(user_id), avatar_key=None),
+    )
+    monkeypatch.setattr(me_module, "get_service_client", lambda: sb)
+
+    _patch(client, make_token(sub=user_id), {"avatar_key": None})
+
+    removed = [
+        c.args[0][0]
+        for c in sb.storage.from_.return_value.remove.call_args_list
+        if c.args and c.args[0]
+    ]
+    assert removed == [old_key]
+
+
+def test_a_patch_that_does_not_touch_the_picture_removes_nothing(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """Changing your name must not cost you your photograph."""
+    user_id = uuid4()
+    sb = _profile_mock(row=_row(id=str(user_id), avatar_key=f"{user_id}/face.jpg"))
+    monkeypatch.setattr(me_module, "get_service_client", lambda: sb)
+
+    _patch(client, make_token(sub=user_id), {"display_name": "Aryam"})
+
+    assert not sb.storage.from_.return_value.remove.called
+
+
+def test_storage_being_down_does_not_fail_a_picture_change(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    user_id = uuid4()
+    sb = _profile_mock(
+        row=_row(id=str(user_id), avatar_key=f"{user_id}/old.jpg"),
+        updated=_row(id=str(user_id), avatar_key=f"{user_id}/new.jpg"),
+    )
+    sb.storage.from_.return_value.remove.side_effect = RuntimeError("storage unreachable")
+    monkeypatch.setattr(me_module, "get_service_client", lambda: sb)
+
+    res = _patch(client, make_token(sub=user_id), {"avatar_key": f"{user_id}/new.jpg"})
+
+    assert res.status_code == 200
+
+
+def test_setting_the_same_picture_again_does_not_delete_it(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """A real bug, found by mutating the guard away rather than by me.
+
+    A client that re-sends the key it already has — a retry, a form that
+    submits every field, a save with nothing changed — would otherwise have the
+    picture read as "superseded" and removed, while the row went on pointing at
+    it. The next `/v1/me` would sign a URL for an object that no longer exists.
+
+    So the test is not "was something removed" but "was it still the current
+    one", which is why the guard compares against the row *after* the write.
+    """
+    user_id = uuid4()
+    key = f"{user_id}/face.jpg"
+    sb = _profile_mock(
+        row=_row(id=str(user_id), avatar_key=key),
+        updated=_row(id=str(user_id), avatar_key=key),
+    )
+    monkeypatch.setattr(me_module, "get_service_client", lambda: sb)
+
+    res = _patch(client, make_token(sub=user_id), {"avatar_key": key})
+
+    assert res.status_code == 200
+    assert not sb.storage.from_.return_value.remove.called, (
+        "the picture the row still points at was deleted"
+    )

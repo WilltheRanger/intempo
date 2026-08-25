@@ -35,10 +35,24 @@ router = APIRouter(prefix="/upload", tags=["upload"])
 
 AUDIO_BUCKET = "audio-uploads"
 SCORE_BUCKET = "score-images"
+AVATAR_BUCKET = "avatars"
 SIGNED_URL_TTL_SECONDS = 60 * 5  # 5 minutes is plenty for a single PUT.
 
 _ALLOWED_AUDIO_EXTS = {"wav", "m4a", "mp3", "ogg", "webm", "flac"}
 _ALLOWED_IMAGE_EXTS = {"jpg", "jpeg", "png", "heic", "webp"}
+#: **No HEIC**, unlike a score page, and the difference is not an oversight.
+#:
+#: A photographed page is downloaded by the worker and decoded by Pillow, which
+#: reads HEIC through `pillow-heif`. An avatar is never decoded by anything —
+#: it is handed to an `<img>` straight from a signed URL, and Chrome and
+#: Firefox cannot display HEIC at all. Accepting one would store a picture that
+#: most browsers render as a broken image, with nothing anywhere reporting a
+#: problem.
+#:
+#: The client controls this: `expo-image-picker` re-encodes to JPEG when a
+#: quality is given, which is what an iPhone needs since it shoots HEIC by
+#: default.
+_ALLOWED_AVATAR_EXTS = {"jpg", "jpeg", "png", "webp"}
 _EXT_PATTERN = re.compile(r"^[a-z0-9]{1,8}$")
 
 
@@ -131,6 +145,24 @@ async def upload_audio(
     object_key = _build_object_key(user_id, ext)
     signed = _sign_upload(AUDIO_BUCKET, object_key)
     return _make_response(AUDIO_BUCKET, object_key, signed)
+
+
+@router.post("/avatar", response_model=UploadResponse)
+async def upload_avatar(
+    body: UploadRequest,
+    user_id: UUID = Depends(current_user_id),
+) -> UploadResponse:
+    """A signed URL for a profile picture.
+
+    Its own bucket rather than a folder in `score-images`, because the two have
+    opposite lifetimes: a page photograph is transient and deleted when the
+    reading is accepted, an avatar lives as long as the account. Sharing a
+    bucket would mean one retention rule for both.
+    """
+    ext = _extract_ext(body.filename, _ALLOWED_AVATAR_EXTS)
+    object_key = _build_object_key(user_id, ext)
+    signed = _sign_upload(AVATAR_BUCKET, object_key)
+    return _make_response(AVATAR_BUCKET, object_key, signed)
 
 
 @router.post("/score-image", response_model=UploadResponse)
