@@ -266,6 +266,15 @@ there works differently as of 2026-08-24:
   empty rather than inventing a duration. Renumbering happens only when
   something was expanded. Measured: `homr_page.jpg` 74→77 bars at 1.00,
   `page-upright.jpg` 43→51 bars at 0.70→0.86.
+  **A whole rest alone in a bar is a bar of rest, whatever the metre says** —
+  `_whole_rests_that_mean_a_bar`. An engraver writes the whole-rest glyph for a
+  full bar in any metre, so homr's literal four quarter-beats runs a 2/4 bar two
+  beats long and, since durations accumulate, judges every later bar late. Three
+  limits, each of which is the rule doing harm if removed: exactly one note in
+  the bar, that note a **rest** (a lone whole *note* rewritten as silence
+  deletes music), and the bar shorter than a whole note. Such a bar also gets
+  **no vote** in `infer_beats_per_measure` — its length is the question being
+  asked. Measured: `page-upright.jpg` 0.86→0.98, corpus mean 0.81→1.00.
   **It does not quantise, and that is measured rather than hoped** (2026-08-26).
   The worry was that a page of nothing but quarters is what both a march and a
   rounding look like, and the beat check cannot separate them. Two fixtures can,
