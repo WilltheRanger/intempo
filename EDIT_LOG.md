@@ -6,6 +6,76 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-26 — homr does not quantise, and it is measured rather than hoped
+
+**Branch:** `main`. `tools/homr-bench.py`, one docstring, and two notes. No
+behaviour changed — this tick retires a documented unknown with evidence.
+
+**Files:** `tools/homr-bench.py`, `backend/app/services/ocr/homr_provider.py`
+(comments only), `CLAUDE.md`.
+
+### The worry, as it has stood since homr landed
+
+`confidence_from_arithmetic` counts bars whose durations add up, and a bar of
+four quarters adds up in 4/4 whether or not the page shows eight eighths. So a
+reading that quantised an entire page scores **1.00** and is wrong in every bar
+in the way that matters most: `alignment.py` accumulates durations, so the
+musician is told they rushed every passage the page writes short.
+
+Measured on the first real page: 230 quarters, 20 eighths, **no sixteenths
+anywhere**. Both this file and `homr_provider` said the same thing about it —
+*"That may be correct; a march in quarter notes looks exactly like that. It is
+also what a reading that quantised everything would look like, and nothing
+downstream can tell the two apart."*
+
+### What separates them
+
+`fixtures/scores/SOURCES.md` documents what is **printed** on each fixture, so
+two of them are ground truth for rhythm without anybody looking at the page:
+
+* `01_simple_printed` — Wohlfahrt Op. 45 No. 1, described there as a
+  "continuous-eighth-note pattern".
+* `03_complex_printed` — Kreutzer No. 2, "the canonical continuous-sixteenth-
+  note study".
+
+Measured:
+
+```
+page                    meas notes  conf   clef     s  durations
+01_simple_printed.jpg      4    32  1.00 treble   4.8  eighthx32
+02_medium_printed.jpg      6    34  1.00 treble   3.5  eighthx20 quarterx14
+03_complex_printed.jpg     3    48  1.00 treble   3.4  sixteenthx48
+page-upright.jpg          43   114  0.70   bass  15.5  sixteenthx16 eighthx76
+                                                       quarterx11 halfx4 wholex7
+```
+
+**32 eighths and nothing else. 48 sixteenths and nothing else.** A reading that
+rounded could not produce either, and it certainly could not produce both from
+the same engine. `page-upright.jpg` — a real phone photograph — comes back with
+five different values in it.
+
+And the march is a march: `homr_page.jpg` reads **2/2 with 36 rests**, which is
+what a cut-time march is. The quarters were on the page.
+
+### What changed
+
+`tools/homr-bench.py` prints a duration column, shortest value first, because
+the short values are the ones a rounding failure eats — a quantised page loses
+its sixteenths, never its wholes. So the check is one command rather than an
+argument, and it runs on every future engine and every future page.
+
+The two notes that said nothing could tell the two apart now say what did, and
+`homr_provider`'s own line is kept rather than deleted: the mix is still the
+only thing that makes the *shape* of a reading visible, and the next engine has
+not been checked.
+
+**Not verified:** this is four pages, two of them with documented content. It
+says this engine reads short values that are printed; it does not say every
+rhythm on every page is right, and nothing here substitutes for the musician
+looking — which is why `POST /scores/:id/accept` exists.
+
+---
+
 ## 2026-08-26 — The API takes a whole part, and discards a whole part
 
 **Branch:** `main`. Backend only. No screen, component, style or copy touched.

@@ -84,8 +84,19 @@ def confidence_from_arithmetic(findings: list[MeasureFinding]) -> float:
     musician is told they rushed every passage the page writes short.
 
     Measured on the first real page: 55 of its 74 bars are exactly four
-    quarters, no sixteenth appears anywhere, and 73 of 74 bars add up. That may
-    be a correct reading of a march. Nothing in this number can say.
+    quarters, no sixteenth appears anywhere, and 73 of 74 bars add up. Nothing
+    in this number can say whether that is a march or a rounding.
+
+    **Something else can, and did (2026-08-26).** Two fixtures have their
+    printed content documented in `fixtures/scores/SOURCES.md`, so the reading
+    can be checked against the page without looking at it:
+    `01_simple_printed` is Wohlfahrt No. 1, a continuous-eighth study, and
+    `03_complex_printed` is Kreutzer No. 2, the canonical continuous-sixteenth
+    study. homr returns **32 eighths and nothing else** for the first and
+    **48 sixteenths and nothing else** for the second. A reading that rounded
+    could not produce either. The march is a march — it is in 2/2 with 36 rests
+    — and this engine reads the short values when they are on the page.
+    `tools/homr-bench.py` prints the mix so the check is repeatable.
 
     So it is a floor, not a grade: it *falls* when a reading is visibly broken,
     which is what the gate needs, and it never rises above what arithmetic can
@@ -236,9 +247,13 @@ class HomrProvider:
         # this engine earned on the first real page — says nothing at all about
         # whether the rhythms are right. Measured on that page: 230 quarters, 20
         # eighths, 9 wholes, 8 halves, and **no sixteenths anywhere**. That may
-        # be correct; a march in quarter notes looks exactly like that. It is
-        # also what a reading that quantised everything would look like, and
-        # nothing downstream can tell the two apart.
+        # be correct; a march in quarter notes looks exactly like that. It was
+        # also what a reading that quantised everything would look like — until
+        # the two documented fixtures separated them: continuous eighths and
+        # continuous sixteenths both come back exact. See
+        # `confidence_from_arithmetic`. This line stays because the mix is
+        # still the only thing that makes the *shape* of a reading visible,
+        # and the next engine or the next page has not been checked.
         #
         # `alignment.py` accumulates durations, so if it is the second one a
         # musician is told they rushed every passage the page writes in eighths.
