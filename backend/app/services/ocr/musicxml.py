@@ -194,6 +194,14 @@ def _duration_name(note: ET.Element, divisions: int | None = None) -> str | None
     # believe — but only when it maps exactly to something an engraver would
     # write. An inexact remainder is not evidence about anything, and `<type>`
     # stays the answer.
+    #
+    # **Dotted notes are out of scope, and that is not redundancy.** For a
+    # self-consistent file the timing of a dotted note maps to exactly the name
+    # its dots produce — that is what a dot means — so the exclusion changes
+    # nothing there, and a mutation removing it survives. What it does do is
+    # keep this rule out of the *tuplet-before-dot* decision immediately below,
+    # which was made deliberately and for its own reasons. A rule written for a
+    # malformed breve should not quietly relitigate that.
     stated = _text(note.find("duration"))
     if divisions and stated and not note.findall("dot") and base in DURATION_BEATS:
         try:

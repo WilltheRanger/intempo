@@ -1080,3 +1080,125 @@ def test_a_rest_voice_never_wins_on_count() -> None:
     score = score_json_from_musicxml(_two_voice(three_rests, two_notes))
 
     assert [n.pitch for n in score.measures[1].notes] == ["D3", "D3"]
+
+
+# ---------------------------------------------------------------------------
+# The shapes homr never writes, which every engraved file does
+# ---------------------------------------------------------------------------
+#
+# homr emits no ties, no tuplets and no dots, so the only provider in the chain
+# exercises none of this. A MusicXML file dropped into `ImportFileScreen` does,
+# and that is the one route whose timeline is *stated* rather than read — so it
+# is the route that must not be quietly broken by a change made for a
+# photograph. These sit directly downstream of the contradiction rule in
+# `_duration_name`, which is why they exist.
+
+_D4 = (
+    "<attributes><divisions>12</divisions>"
+    "<time><beats>4</beats><beat-type>4</beat-type></time></attributes>"
+)
+
+
+def _voiceless(kind: str, ticks: int, extra: str = "") -> str:
+    return (
+        "<note><pitch><step>D</step><octave>3</octave></pitch>"
+        f"<duration>{ticks}</duration><type>{kind}</type>{extra}</note>"
+    )
+
+
+_TRIPLET_MARK = (
+    "<time-modification><actual-notes>3</actual-notes>"
+    "<normal-notes>2</normal-notes></time-modification>"
+)
+
+
+def test_a_triplet_is_still_a_triplet() -> None:
+    """**The regression the contradiction rule could have caused.**
+
+    A triplet eighth is typed `eighth` and timed at a third of a quarter, so it
+    *is* a note whose type and duration disagree — by design, and the
+    disagreement is what the tuplet marking explains. Mapping it to the nearest
+    written value would be reading a bracket that is not there.
+    """
+    triplets = _voiceless("eighth", 4, _TRIPLET_MARK) * 3
+    score = score_json_from_musicxml(
+        _part(_bar(1, _voiceless("quarter", 12) * 3 + triplets, _D4))
+    )
+
+    kinds = [n.duration for n in score.measures[0].notes]
+    assert kinds[-3:] == ["triplet_eighth"] * 3, kinds
+    assert [f.verdict for f in validate_measures(score)] == ["ok"]
+
+
+def test_a_ratio_with_no_name_is_still_dropped_rather_than_guessed() -> None:
+    """A quintuplet has no name in this schema, and the nearest triplet would
+    put notes at times nobody played. It is dropped and declared — which the
+    beat check then sees."""
+    five_four = (
+        "<time-modification><actual-notes>5</actual-notes>"
+        "<normal-notes>4</normal-notes></time-modification>"
+    )
+    score = score_json_from_musicxml(
+        _part(_bar(1, _voiceless("quarter", 12) * 3 + _voiceless("16th", 2, five_four), _D4))
+    )
+
+    assert len(score.measures[0].notes) == 3
+    assert "could not be represented" in score.notes_to_human
+
+
+def test_a_dotted_note_keeps_its_dot_when_the_file_states_divisions() -> None:
+    """The contradiction rule skips dotted notes outright. A dotted quarter is
+    typed `quarter` and timed at one and a half beats — a disagreement the dot
+    explains, exactly as the tuplet marking does."""
+    score = score_json_from_musicxml(
+        _part(_bar(1, _voiceless("quarter", 18, "<dot />") + _voiceless("eighth", 6), _D4))
+    )
+
+    assert [n.duration for n in score.measures[0].notes] == [
+        "dotted_quarter",
+        "eighth",
+    ]
+
+
+def test_a_tie_survives_a_file_that_states_its_divisions() -> None:
+    tied = _voiceless(
+        "half", 24, '<tie type="start" /><notations><tied type="start" /></notations>'
+    )
+    score = score_json_from_musicxml(_part(_bar(1, tied + _voiceless("half", 24), _D4)))
+
+    assert score.measures[0].notes[0].tied_to_next is True
+    assert score.measures[0].notes[1].tied_to_next is False
+
+
+def test_a_duplet_now_survives_as_the_note_it_lasts() -> None:
+    """**An improvement the contradiction rule made by accident, kept on
+    purpose.**
+
+    Two notes in the time of three has no name in `Duration`, so
+    `_duration_name` returned None and the note was *dropped* — costing the bar
+    the whole value, which `alignment.py` then carries into every later bar.
+
+    A duplet eighth in compound time lasts exactly a dotted eighth. That is not
+    an approximation, it is the standard equivalence, and the file states it in
+    the one element that drives time. So the note now survives with the right
+    duration and the wrong-looking name — and since `alignment.py` reads
+    nothing but durations, right is the half that matters.
+
+    Recorded as a test because it was not the point of the change that caused
+    it, and an unrecorded behaviour change is one nobody can defend later.
+    """
+    duplet = (
+        "<time-modification><actual-notes>2</actual-notes>"
+        "<normal-notes>3</normal-notes></time-modification>"
+    )
+    six_eight = (
+        "<attributes><divisions>12</divisions>"
+        "<time><beats>6</beats><beat-type>8</beat-type></time></attributes>"
+    )
+    score = score_json_from_musicxml(
+        _part(_bar(1, _voiceless("quarter", 18, duplet) * 2, six_eight))
+    )
+
+    assert [n.duration for n in score.measures[0].notes] == ["dotted_quarter"] * 2
+    assert score.notes_to_human == ""
+    assert [f.verdict for f in validate_measures(score)] == ["ok"]
