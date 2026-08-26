@@ -31,6 +31,7 @@ from fastapi import HTTPException
 from app.config import settings
 from app.db import get_service_client
 from app.services.ocr import OCRError, parse_sheet_music
+from app.services.ocr.pages import join_pages
 from app.services.ocr.pipeline import (
     STAGE_CONFIRMING,
     STAGE_READING,
@@ -258,8 +259,8 @@ def run_transcription(score_id: str) -> None:
         log.error("transcription %s: row missing", score_id)
         return
 
-    image_url = row.get("source_image_url")
-    if not image_url:
+    pages = pages_of(row)
+    if not pages:
         _fail(client, score_id, "There was no photograph to read.")
         return
 
@@ -268,7 +269,35 @@ def run_transcription(score_id: str) -> None:
     # and it means a second person scanning during a busy minute sees "queued"
     # rather than a progress bar that has not moved.
     with _scan_slots:
-        _read_page(client, score_id, image_url)
+        _read_pages(client, score_id, pages)
+
+
+def pages_of(row: dict) -> list[str]:
+    """The pages of this scan, in page order.
+
+    **Three shapes have to come back right, and only one of them is new.**
+    `source_image_urls` (011) is the answer where it exists; a row written
+    before that migration, or by a deployment that has not applied it, has only
+    `source_image_url`; and a piece entered by hand has neither.
+
+    The array is read *first* and the single column is the fallback rather than
+    the other way round, because a deployment mid-rollout writes both — page
+    one into the old column so an older worker still finds something, and every
+    page into the new one. Preferring the old column would read page one of a
+    three-page part on a database that had the other two.
+
+    An empty array is treated as no pages at all: `011` writes NULL rather than
+    `'{}'` for a piece with no scan, so an empty array is a row somebody built
+    by hand, and reading it as "a scan with no pages" is the only honest
+    reading of it.
+    """
+    many = row.get("source_image_urls")
+    if isinstance(many, list):
+        pages = [url for url in many if url]
+        if pages:
+            return pages
+    one = row.get("source_image_url")
+    return [one] if one else []
 
 
 #: Said when this process has no reader in it at all.
@@ -315,7 +344,16 @@ def _nothing_here_can_read() -> bool:
     return True
 
 
-def _read_page(client, score_id: str, image_url: str) -> None:
+def _read_pages(client, score_id: str, urls: list[str]) -> None:
+    """Every page of one part, joined into one piece of music.
+
+    **All-or-nothing, and the failure names the page.** A score assembled out
+    of the pages that happened to read is a timeline with a silent hole in it,
+    and `alignment.py` accumulates durations — so every bar after the gap is
+    judged against music that is not there, and the musician is told they
+    rushed a passage they played correctly. Naming the page is what makes the
+    failure actionable: one page gets re-photographed, not the whole part.
+    """
     if _nothing_here_can_read():
         log.error(
             "transcription %s: no provider in the chain is installed in this "
@@ -331,8 +369,76 @@ def _read_page(client, score_id: str, image_url: str) -> None:
         {"transcription_status": "reading", "transcription_stage": STAGE_FETCHING},
     )
 
+    readings = []
+    for page_number, image_url in enumerate(urls, start=1):
+        page_score = _read_one_page(client, score_id, image_url, page_number, len(urls))
+        if page_score is None:
+            return
+        readings.append(page_score)
+
+    try:
+        score = join_pages(readings)
+    except Exception:  # noqa: BLE001 — anything at all beats a row stuck reading
+        log.exception("transcription %s: could not join %d pages", score_id, len(readings))
+        _fail(client, score_id, "Something went wrong assembling the pages.")
+        return
+
+    _update(
+        client,
+        score_id,
+        {
+            "score_json": score.model_dump(mode="json"),
+            "ocr_confidence": score.ocr_confidence,
+            "transcription_status": "done",
+            "transcription_stage": None,
+            "transcription_error": None,
+        },
+    )
+    log.info(
+        "transcription %s: %d page(s), %d measures, confidence %.2f",
+        score_id,
+        len(urls),
+        len(score.measures),
+        score.ocr_confidence,
+    )
+
+
+def _read_one_page(
+    client, score_id: str, image_url: str, page_number: int, total: int
+):
+    """One page, or None having already written the failure to the row."""
+    single = total == 1
+
+    def _failed(sentence: str) -> None:
+        # The page is named only when there is a choice of page to name. On a
+        # one-page scan "Page 1 of 1:" is noise in front of every error message
+        # in the app.
+        _fail(
+            client,
+            score_id,
+            sentence if single else f"Page {page_number} of {total}: {sentence}",
+        )
+
     def report(stage: str) -> None:
-        _update(client, score_id, {"transcription_stage": _human_stage(stage)})
+        # **A multi-page scan reports the page it is on and nothing finer, and
+        # that is a limitation rather than a design.**
+        #
+        # The bar's positions are keyed on the worker's words and rise in the
+        # order the worker reaches them (`fixtures/stages/parity.json`). Page 2
+        # starting over at "Finding the staves" — 0.3, after page 1 left the bar
+        # at 0.9 — walks it backwards, which reads as the scan having restarted
+        # and is the exact failure `transcriptionProgress.ts` exists to prevent.
+        #
+        # The honest fix is a page counter in the words, the way a stave count
+        # already works: `Reading page 2 of 3`. That is new copy on a screen, so
+        # it waits for the owner's approval under the UI gate. Until then a
+        # multi-page read reports "Reading the notation" for the whole of it —
+        # coarse, true throughout, and monotone.
+        if single:
+            _update(client, score_id, {"transcription_stage": _human_stage(stage)})
+
+    if not single:
+        _update(client, score_id, {"transcription_stage": STAGE_READING_HUMAN})
 
     try:
         fetch_url = readable_url(image_url)
@@ -367,12 +473,13 @@ def _read_page(client, score_id: str, image_url: str) -> None:
         unreadable = too_small_to_read(image_bytes)
         if unreadable:
             log.info(
-                "transcription %s: refusing a page with %s px staff spacing",
+                "transcription %s: refusing page %d with %s px staff spacing",
                 score_id,
+                page_number,
                 staff_space_px(image_bytes),
             )
-            _fail(client, score_id, unreadable)
-            return
+            _failed(unreadable)
+            return None
         page, media_type = prepare_for_model(image_bytes)
         # The prepared page is what gets *read* whole and what the systems are
         # detected on; the crops are cut from the photograph itself, so each
@@ -385,47 +492,64 @@ def _read_page(client, score_id: str, image_url: str) -> None:
     except HTTPException as exc:
         # `page_image` speaks in HTTP status codes because its other caller is
         # a request handler. Here only the sentence matters.
-        log.warning("transcription %s: could not fetch the page: %s", score_id, exc.detail)
-        _fail(client, score_id, "The photograph could not be fetched from storage.")
-        return
+        log.warning(
+            "transcription %s: could not fetch page %d: %s",
+            score_id, page_number, exc.detail,
+        )
+        _failed("The photograph could not be fetched from storage.")
+        return None
     except OCRError as exc:
-        log.warning("transcription %s: %s", score_id, exc)
-        _fail(client, score_id, _why_it_failed(str(exc)))
-        return
+        log.warning("transcription %s: page %d: %s", score_id, page_number, exc)
+        _failed(_why_it_failed(str(exc)))
+        return None
     except Exception:  # noqa: BLE001 — anything at all beats a row stuck reading
-        log.exception("transcription %s: internal error", score_id)
-        _fail(client, score_id, "Something went wrong reading this page.")
-        return
+        log.exception("transcription %s: internal error on page %d", score_id, page_number)
+        _failed("Something went wrong reading this page.")
+        return None
 
-    _update(
-        client,
-        score_id,
-        {
-            "score_json": score.model_dump(mode="json"),
-            "ocr_confidence": score.ocr_confidence,
-            "transcription_status": "done",
-            "transcription_stage": None,
-            "transcription_error": None,
-        },
-    )
-    log.info(
-        "transcription %s: %d measures, confidence %.2f",
-        score_id,
-        len(score.measures),
-        score.ocr_confidence,
-    )
+    return score
+
+
+#: Selected in order, most complete first.
+#:
+#: **PostgREST validates the column list, so asking for a column the database
+#: does not have fails the whole request** — and a failed fetch here leaves the
+#: row `reading` with nobody coming back for it. `011` is applied by hand in
+#: the Supabase editor (nothing auto-applies `app/migrations/*.sql`), so there
+#: is a window where this code is deployed and the column is not, and during it
+#: the worker must keep reading page one rather than stop reading anything.
+#:
+#: `/v1/ready` reports the missing column separately and loudly; this is what
+#: keeps the scan working in the meantime.
+_SCORE_COLUMNS = (
+    "id, user_id, source_image_url, source_image_urls",
+    "id, user_id, source_image_url",
+)
 
 
 def _fetch_score(client, score_id: str) -> dict | None:
-    res = (
-        client.table("scores")
-        .select("id, user_id, source_image_url")
-        .eq("id", score_id)
-        .limit(1)
-        .execute()
-    )
-    rows = res.data or []
-    return rows[0] if rows else None
+    for index, columns in enumerate(_SCORE_COLUMNS):
+        try:
+            res = (
+                client.table("scores")
+                .select(columns)
+                .eq("id", score_id)
+                .limit(1)
+                .execute()
+            )
+        except Exception:  # noqa: BLE001 — try the narrower shape before giving up
+            if index == len(_SCORE_COLUMNS) - 1:
+                raise
+            log.warning(
+                "transcription %s: `%s` was refused; falling back to the "
+                "pre-011 columns and reading page one only",
+                score_id,
+                columns,
+            )
+            continue
+        rows = res.data or []
+        return rows[0] if rows else None
+    return None
 
 
 def _update(client, score_id: str, patch: dict) -> None:

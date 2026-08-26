@@ -55,12 +55,12 @@ def test_only_so_many_pages_are_read_at_once(monkeypatch: pytest.MonkeyPatch) ->
     """
     seen = _Recorder()
 
-    def fake_read(_client, _score_id, _image_url):
+    def fake_read(_client, _score_id, _urls):
         seen.enter()
         time.sleep(0.05)
         seen.leave()
 
-    monkeypatch.setattr(runner, "_read_page", fake_read)
+    monkeypatch.setattr(runner, "_read_pages", fake_read)
     monkeypatch.setattr(runner, "get_service_client", lambda: _Client())
     monkeypatch.setattr(runner, "_fetch_score", lambda *_: {"source_image_url": "u"})
 
@@ -80,11 +80,11 @@ def test_every_page_still_gets_read(monkeypatch: pytest.MonkeyPatch) -> None:
     done = []
     lock = threading.Lock()
 
-    def fake_read(_client, _score_id, _image_url):
+    def fake_read(_client, _score_id, _urls):
         with lock:
             done.append(1)
 
-    monkeypatch.setattr(runner, "_read_page", fake_read)
+    monkeypatch.setattr(runner, "_read_pages", fake_read)
     monkeypatch.setattr(runner, "get_service_client", lambda: _Client())
     monkeypatch.setattr(runner, "_fetch_score", lambda *_: {"source_image_url": "u"})
 
@@ -103,10 +103,10 @@ def test_a_slot_is_returned_even_when_the_page_fails(monkeypatch: pytest.MonkeyP
     exactly like the queue being busy.
     """
 
-    def explodes(_client, _score_id, _image_url):
+    def explodes(_client, _score_id, _urls):
         raise RuntimeError("boom")
 
-    monkeypatch.setattr(runner, "_read_page", explodes)
+    monkeypatch.setattr(runner, "_read_pages", explodes)
     monkeypatch.setattr(runner, "get_service_client", lambda: _Client())
     monkeypatch.setattr(runner, "_fetch_score", lambda *_: {"source_image_url": "u"})
 
