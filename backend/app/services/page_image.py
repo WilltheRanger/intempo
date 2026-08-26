@@ -307,6 +307,31 @@ def readable_url(image_url: str) -> str:
 #: deliver the same picture.
 MODEL_MAX_EDGE = 1568
 
+#: **What this costs the OMR engine: nothing, measured** (2026-08-26).
+#:
+#: 1568 is a *vision API's* limit, and the chain is now `homr` alone — an engine
+#: whose whole value is finding and dewarping staves, which is exactly the kind
+#: of work resolution should matter to. A real photograph is 5712×4284, so this
+#: shrinks it 3.6× on each axis before homr sees it, and the obvious worry is
+#: that it throws away the reason homr is here.
+#:
+#: It does not. Both real pages read the same either way:
+#:
+#: | page | original | prepared |
+#: |---|---|---|
+#: | `homr_page.jpg` | staff 107 px → 77 bars, 1.00 | staff 7 px → 77 bars, 1.00 |
+#: | `page-upright.jpg` | staff 34 px → 56 bars add up | staff 9 px → **57** |
+#:
+#: Two pages are not a series, so this is evidence and not a licence to change
+#: the constant in either direction. It is recorded because the hypothesis is
+#: plausible enough that somebody will have it again.
+#:
+#: **The striking number is the 7.** homr read a page at 1.00 confidence with
+#: seven pixels between its staff lines, which is *below* the floor
+#: `too_small_to_read` refuses at. That does not make the floor wrong — see
+#: there — but it is the first evidence in this repository about what the floor
+#: is now protecting against, and whoever revisits it should start here.
+
 #: The hard API ceiling on one image, applied to the base64 payload.
 MODEL_MAX_BYTES = 5 * 1024 * 1024
 
@@ -787,6 +812,19 @@ def staff_space_px(image_bytes: bytes) -> float | None:
 
 def too_small_to_read(image_bytes: bytes) -> str | None:
     """Why this page cannot be read, in a sentence, or None if it can be.
+
+    **The floor has not been moved, and here is the evidence that might tempt
+    someone to** (2026-08-26). homr reads the prepared copy of `homr_page.jpg`
+    — seven pixels between staff lines, under this floor — at 1.00 confidence
+    with all 77 bars adding up. Three things stop that from being an argument
+    for lowering it. This is measured on the **prepared** copy while the floor
+    is applied to the **photograph as it arrived**, which is a different image
+    and deliberately so. The floor was calibrated against the vision chain
+    inventing notes on a page too small to hold any, and a page whose
+    *original* has seven-pixel staves is a genuinely tiny photograph, not a
+    downscaled good one. And the two measurement series behind the current
+    value are in `EDIT_LOG.md`, 2026-08-24, with an explicit note not to refit
+    it to one photograph.
 
     Checked **before** any provider sees the page, and on the photograph as it
     arrived rather than on the prepared copy — resizing a page up to
