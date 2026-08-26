@@ -32,6 +32,7 @@ from app.config import settings
 from app.db import get_service_client
 from app.services.ocr import OCRError, parse_sheet_music
 from app.services.ocr.pages import join_pages
+from app.services.score_pages import PAGE_COLUMNS, pages_of
 from app.services.ocr.pipeline import (
     STAGE_CONFIRMING,
     STAGE_READING,
@@ -272,34 +273,6 @@ def run_transcription(score_id: str) -> None:
         _read_pages(client, score_id, pages)
 
 
-def pages_of(row: dict) -> list[str]:
-    """The pages of this scan, in page order.
-
-    **Three shapes have to come back right, and only one of them is new.**
-    `source_image_urls` (011) is the answer where it exists; a row written
-    before that migration, or by a deployment that has not applied it, has only
-    `source_image_url`; and a piece entered by hand has neither.
-
-    The array is read *first* and the single column is the fallback rather than
-    the other way round, because a deployment mid-rollout writes both — page
-    one into the old column so an older worker still finds something, and every
-    page into the new one. Preferring the old column would read page one of a
-    three-page part on a database that had the other two.
-
-    An empty array is treated as no pages at all: `011` writes NULL rather than
-    `'{}'` for a piece with no scan, so an empty array is a row somebody built
-    by hand, and reading it as "a scan with no pages" is the only honest
-    reading of it.
-    """
-    many = row.get("source_image_urls")
-    if isinstance(many, list):
-        pages = [url for url in many if url]
-        if pages:
-            return pages
-    one = row.get("source_image_url")
-    return [one] if one else []
-
-
 #: Said when this process has no reader in it at all.
 #:
 #: The chain is homr alone, and homr is installed **only in the Modal
@@ -510,21 +483,10 @@ def _read_one_page(
     return score
 
 
-#: Selected in order, most complete first.
-#:
-#: **PostgREST validates the column list, so asking for a column the database
-#: does not have fails the whole request** — and a failed fetch here leaves the
-#: row `reading` with nobody coming back for it. `011` is applied by hand in
-#: the Supabase editor (nothing auto-applies `app/migrations/*.sql`), so there
-#: is a window where this code is deployed and the column is not, and during it
-#: the worker must keep reading page one rather than stop reading anything.
-#:
-#: `/v1/ready` reports the missing column separately and loudly; this is what
-#: keeps the scan working in the meantime.
-_SCORE_COLUMNS = (
-    "id, user_id, source_image_url, source_image_urls",
-    "id, user_id, source_image_url",
-)
+#: The row this worker needs, in the two shapes the database may have. A failed
+#: fetch here leaves the row `reading` with nobody coming back for it, which is
+#: why the narrower shape has to exist — see `score_pages.PAGE_COLUMNS`.
+_SCORE_COLUMNS = tuple(f"id, user_id, {pages}" for pages in PAGE_COLUMNS)
 
 
 def _fetch_score(client, score_id: str) -> dict | None:
