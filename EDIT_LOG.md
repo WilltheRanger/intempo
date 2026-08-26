@@ -6,6 +6,67 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-26 — Testing the shapes homr never writes, because a file does
+
+**Branch:** `main`. Backend only, tests plus one comment. No screen, component,
+style or copy touched.
+
+**Files:** `backend/app/tests/test_musicxml.py`,
+`backend/app/services/ocr/musicxml.py` (one comment).
+
+### Why this tick exists
+
+Nine ticks of findings have all come from the same five pages, and the corpus
+is close to exhausted as a source. The gap worth closing first is not another
+photograph: last tick established that homr emits **no ties, no tuplets and no
+dots**, and the tick before that added a rule to `_duration_name` that sits
+directly upstream of the tuplet branch.
+
+So the only provider in the chain exercises **none** of the notation the new
+rule could break — while `ImportFileScreen` exercises all of it, on the one
+route CLAUDE.md calls the one whose timeline *cannot* be wrong because the
+durations are stated rather than read. The bundled fixture has ties and one dot
+and **no `time-modification` at all**.
+
+That is a change made for a photograph, shipped over a path with no coverage.
+
+### What the tests found
+
+Nothing broken — triplets, dots, ties and the deliberate dropping of unnamed
+ratios all survive the contradiction rule intact, for the reason it was written
+narrowly: a triplet's type and duration disagree *by design*, and the
+disagreement maps to no written value, so the rule declines and the tuplet
+branch answers.
+
+**One behaviour change I did not set out to make.** A duplet — two notes in the
+time of three — has no name in `Duration`, so it used to be *dropped*, costing
+the bar the note's whole value and moving every later bar with it. A duplet
+eighth in compound time lasts exactly a dotted eighth: not an approximation,
+the standard equivalence, and stated in the one element that drives time. It
+now survives with the right duration and an unconventional name, and since
+`alignment.py` reads nothing but durations, right is the half that matters.
+
+Pinned as a test rather than left as an undocumented accident — an unrecorded
+behaviour change is one nobody can defend later.
+
+### The mutation that survived, and what it taught
+
+Removing the dotted-note exclusion from the contradiction rule broke no test,
+and chasing it showed why: for a self-consistent file, a dotted note's timing
+maps to exactly the name its dots produce — that is what a dot *means*. The
+exclusion is equivalent in effect.
+
+It is kept, and the comment now says the reason I had not written down: it
+keeps this rule out of the **tuplet-before-dot** decision immediately below it,
+which was made deliberately and for its own reasons. A rule written for a
+malformed breve should not quietly relitigate that. Last tick a genuinely
+redundant term was deleted rather than tested; this one has a justification,
+and the difference is worth stating.
+
+Full suite green at 1237.
+
+---
+
 ## 2026-08-26 — Three findings from one photograph, and one of them was my own guard
 
 **Branch:** `main`. Backend only. No screen, component, style or copy touched.
