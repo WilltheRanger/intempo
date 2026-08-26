@@ -785,3 +785,130 @@ def test_a_metre_printed_at_the_rest_is_stated_once_not_at_every_bar() -> None:
     assert len(score.measures) == 5
     assert [m.time_signature for m in score.measures] == [None, "3/4", None, None, None]
     assert [n.duration for m in score.measures[1:] for n in m.notes] == ["dotted_half"] * 4
+
+
+# ---------------------------------------------------------------------------
+# A whole rest alone in a bar is a bar of rest, whatever the metre says
+# ---------------------------------------------------------------------------
+#
+# The convention is universal and the notation is not literal: an engraver
+# writes the whole-rest glyph for a full bar of rest in any metre — a bar of
+# 2/4 rest is a whole rest, never a half rest. homr reads the glyph correctly
+# and writes four quarter-beats of duration, which is what the symbol means by
+# itself and not what it means in that bar.
+#
+# Measured on `page-upright.jpg`, a 2/4 part: six bars, each a lone whole rest
+# scored 4.0 against 2.0, every one of them correct on the page.
+
+_TWO_FOUR = (
+    "<attributes><divisions>1</divisions>"
+    "<time><beats>2</beats><beat-type>4</beat-type></time></attributes>"
+)
+_WHOLE_REST = "<note><rest /><duration>4</duration><type>whole</type></note>"
+
+
+def test_a_lone_whole_rest_in_two_four_is_one_bar_of_rest() -> None:
+    score = score_json_from_musicxml(
+        _part(
+            _bar(1, _A_QUARTER * 2, _TWO_FOUR)
+            + _bar(2, _WHOLE_REST)
+            + _bar(3, _A_QUARTER * 2)
+        )
+    )
+
+    assert score.measures[1].notes[0].duration == "half"
+    assert [f.verdict for f in validate_measures(score)] == ["ok", "ok", "ok"]
+
+
+def test_a_whole_rest_in_four_four_is_left_alone() -> None:
+    """It already *is* the bar. Reinterpreting a reading that is right is the
+    only way this rule can do harm."""
+    score = score_json_from_musicxml(
+        _part(_bar(1, _A_QUARTER * 4, _FOUR_FOUR) + _bar(2, _WHOLE_REST))
+    )
+
+    assert score.measures[1].notes[0].duration == "whole"
+    assert [f.verdict for f in validate_measures(score)] == ["ok", "ok"]
+
+
+def test_a_whole_rest_in_a_bar_longer_than_a_whole_note_is_left_alone() -> None:
+    """In 3/2 the bar is six beats and the whole-rest glyph genuinely means
+    four — the convention this rule follows applies to bars *shorter* than a
+    whole note."""
+    three_two = (
+        "<attributes><divisions>1</divisions>"
+        "<time><beats>3</beats><beat-type>2</beat-type></time></attributes>"
+    )
+    score = score_json_from_musicxml(
+        _part(_bar(1, "", three_two) + _bar(2, _WHOLE_REST))
+    )
+
+    assert score.measures[1].notes[0].duration == "whole"
+
+
+def test_a_whole_rest_sharing_a_bar_with_notes_is_left_alone() -> None:
+    """Two things in the bar means the rest is not the bar. `page-upright.jpg`
+    ends with exactly this — a whole rest and a quarter rest in 2/4 — and it is
+    a genuine misread that should stay flagged rather than be quietly
+    reinterpreted into something that still does not add up."""
+    score = score_json_from_musicxml(
+        _part(_bar(1, _A_QUARTER * 2, _TWO_FOUR) + _bar(2, _WHOLE_REST + _A_QUARTER))
+    )
+
+    assert score.measures[1].notes[0].duration == "whole"
+    assert [f.verdict for f in validate_measures(score)] == ["ok", "long"]
+
+
+def test_a_bar_of_only_a_whole_rest_does_not_vote_on_the_metre() -> None:
+    """**Otherwise the wrong reading argues for itself.**
+
+    With no metre printed, the bar length comes from
+    `infer_beats_per_measure` — and a lone whole rest sums to 4.0, which is the
+    very number in question. Here three real bars of 2.0 are outvoted 4-to-3 by
+    four rests: the vote fails its agreement threshold, nothing is inferred,
+    and all seven bars stay wrong. Excluding them, 2.0 wins outright.
+    """
+    score = score_json_from_musicxml(
+        _part(
+            "".join(_bar(n, _A_QUARTER * 2) for n in (1, 2, 3))
+            + "".join(_bar(n, _WHOLE_REST) for n in (4, 5, 6, 7))
+        )
+    )
+
+    assert [n.duration for m in score.measures[3:] for n in m.notes] == ["half"] * 4
+    assert [f.verdict for f in validate_measures(score)] == ["ok"] * 7
+
+
+def test_a_lone_quarter_rest_in_two_four_stays_short() -> None:
+    """A bar of 2/4 holding one quarter rest is genuinely half a bar short, and
+    that is a misread the musician should see. The whole-rest convention is
+    about one specific glyph — widening it to "whatever is alone in the bar"
+    turns the beat check into a rubber stamp."""
+    quarter_rest = "<note><rest /><duration>1</duration><type>quarter</type></note>"
+    score = score_json_from_musicxml(
+        _part(_bar(1, _A_QUARTER * 2, _TWO_FOUR) + _bar(2, quarter_rest))
+    )
+
+    assert score.measures[1].notes[0].duration == "quarter"
+    assert [f.verdict for f in validate_measures(score)] == ["ok", "short"]
+
+
+def test_a_lone_whole_note_is_a_note_and_stays_one() -> None:
+    """**The one mutation of this rule that would delete music.**
+
+    A whole note alone in a 2/4 bar is a misread — the bar is two beats too
+    long — but it is a misread about a *note*, and rewriting it as a bar of
+    rest replaces something the musician played with silence. The check is on
+    the glyph being a rest, not on it being alone.
+    """
+    whole_note = (
+        "<note><pitch><step>D</step><octave>3</octave></pitch>"
+        "<duration>4</duration><type>whole</type></note>"
+    )
+    score = score_json_from_musicxml(
+        _part(_bar(1, _A_QUARTER * 2, _TWO_FOUR) + _bar(2, whole_note))
+    )
+
+    assert score.measures[1].notes[0].pitch == "D3"
+    assert score.measures[1].notes[0].duration == "whole"
+    assert [f.verdict for f in validate_measures(score)] == ["ok", "long"]

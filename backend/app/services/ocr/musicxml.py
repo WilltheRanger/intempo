@@ -347,10 +347,87 @@ def _choose_part(root: ET.Element, wanted: str | None) -> ET.Element:
 
 
 
+def _bar_lengths(
+    measures: list[Measure], header_metre: str | None
+) -> list[float | None]:
+    """The bar length in quarter-beats in force at each measure.
+
+    A metre holds until another is printed, which is how the page works and
+    what `meters_in_force` reads. When no metre is printed anywhere — the
+    ordinary state of a photographed inner page — the music is asked instead,
+    through `infer_beats_per_measure`.
+
+    **A bar holding nothing but a whole rest does not get a vote.** Its length
+    is precisely the question being asked (see `_whole_rests_that_mean_a_bar`),
+    and on a 2/4 page those bars each sum to 4.0 — so letting them vote is
+    letting the wrong reading argue for itself.
+    """
+    inferred = infer_beats_per_measure(
+        [
+            sum(DURATION_BEATS[note.duration] for note in measure.notes)
+            for measure in measures
+            if measure.notes and not _is_lone_whole_rest(measure)
+        ]
+    )
+    running = _quarter_beats(header_metre)
+    out: list[float | None] = []
+    for measure in measures:
+        if measure.time_signature is not None:
+            running = _quarter_beats(measure.time_signature)
+        out.append(running if running is not None else inferred)
+    return out
+
+
+def _is_lone_whole_rest(measure: Measure) -> bool:
+    return (
+        len(measure.notes) == 1
+        and measure.notes[0].pitch == "rest"
+        and measure.notes[0].duration == "whole"
+    )
+
+
+def _whole_rests_that_mean_a_bar(
+    measures: list[Measure], lengths: list[float | None]
+) -> list[Measure]:
+    """A whole rest alone in a bar is a bar of rest, whatever the metre says.
+
+    **The convention is universal and the notation is not literal.** An
+    engraver writes the whole-rest glyph for a full bar of rest in any metre —
+    a bar of 2/4 rest is a whole rest, never a half rest. homr reads the glyph
+    correctly and writes `<type>whole</type>` with four quarter-beats of
+    duration, which is what the symbol means *by itself* and not what it means
+    in that bar.
+
+    Read literally, a 2/4 bar of rest is two beats too long. `alignment.py`
+    accumulates durations, so the musician who rests one bar and comes back in
+    on time is judged two beats late for the whole of the rest of the page —
+    the same damage a dropped multi-bar rest does, from the opposite direction.
+
+    Measured on `page-upright.jpg`, a 2/4 part: **six bars**, each a lone whole
+    rest scored 4.0 against 2.0, and every one of them correct on the page.
+
+    Applied only where the bar is *shorter* than a whole note. In 4/4 the whole
+    rest already is the bar, and in 4/2 or 3/2 the glyph genuinely means four
+    beats — reinterpreting there would break a reading that is right.
+    """
+    out = []
+    for measure, beats in zip(measures, lengths):
+        rest = _BAR_REST_FOR.get(beats) if beats is not None and beats < 4.0 else None
+        if rest is None or not _is_lone_whole_rest(measure):
+            out.append(measure)
+            continue
+        out.append(
+            measure.model_copy(
+                update={"notes": [Note(pitch="rest", duration=rest)]}  # type: ignore[arg-type]
+            )
+        )
+    return out
+
+
 def _expand_multiple_rests(
     measures: list[Measure],
     pending: list[tuple[int, int, str | None]],
-    header_metre: str | None,
+    lengths: list[float | None],
 ) -> list[Measure]:
     """Turn each multi-bar rest into the bars of silence it stands for.
 
@@ -383,14 +460,6 @@ def _expand_multiple_rests(
     if not pending:
         return measures
 
-    inferred = infer_beats_per_measure(
-        [
-            sum(DURATION_BEATS[note.duration] for note in measure.notes)
-            for measure in measures
-            if measure.notes
-        ]
-    )
-
     out: list[Measure] = []
     expanded = False
     by_index = {index: (count, metre) for index, count, metre in pending}
@@ -400,9 +469,7 @@ def _expand_multiple_rests(
             out.append(measure)
             continue
         count, metre = entry
-        beats = _quarter_beats(metre or header_metre)
-        if beats is None:
-            beats = inferred
+        beats = _quarter_beats(metre) or lengths[index]
         rest = _BAR_REST_FOR.get(beats) if beats is not None else None
         if rest is None:
             out.append(measure)
@@ -681,7 +748,12 @@ def score_json_from_musicxml(
             )
         )
 
-    measures = _expand_multiple_rests(measures, pending_rests, time_signature)
+    # Both of these need the bar length in force, and neither can know it
+    # during the loop above: the only `<time>` on a real photographed part is
+    # often printed mid-page, after a double barline.
+    lengths = _bar_lengths(measures, time_signature)
+    measures = _whole_rests_that_mean_a_bar(measures, lengths)
+    measures = _expand_multiple_rests(measures, pending_rests, lengths)
 
     total_notes = sum(len(m.notes) for m in measures)
     # Confidence an engine did not report, inferred from what had to be thrown

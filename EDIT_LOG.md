@@ -6,6 +6,89 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-26 — A whole rest means the bar, not four beats
+
+**Branch:** `main`. Backend only. No screen, component, style or copy touched.
+
+**Files:** `backend/app/services/ocr/musicxml.py`,
+`backend/app/tests/test_musicxml.py`.
+
+Straight after the multi-bar rest fix, and found the same way: asking which
+bars of the worst page still do not add up.
+
+### The finding
+
+All seven remaining failures on `page-upright.jpg` were **the same bar**, seven
+times: a lone whole rest in a 2/4 part, scored 4.0 against 2.0.
+
+**The convention is universal and the notation is not literal.** An engraver
+writes the whole-rest glyph for a full bar of rest in *any* metre — a bar of
+2/4 rest is a whole rest, never a half rest. homr reads the glyph correctly and
+writes `<type>whole</type>` with four quarter-beats, which is what the symbol
+means by itself and not what it means in that bar. Every one of those six bars
+was **right on the page and wrong in the file**.
+
+Read literally, a 2/4 bar of rest runs two beats long, and `alignment.py`
+accumulates durations — so a musician who rests one bar and comes back in
+exactly on time is judged two beats late for the whole of the rest of the page.
+The same damage the dropped multi-bar rest did, from the opposite direction.
+
+### The rule, and its three limits
+
+`_whole_rests_that_mean_a_bar` rewrites the duration only where:
+
+* the bar holds **exactly one** note — two things in the bar means the rest is
+  not the bar;
+* that note is a **rest** — a lone whole *note* in a short bar is a misread
+  about something the musician played, and rewriting it as silence would delete
+  it;
+* the bar is **shorter than a whole note** — in 4/4 the whole rest already is
+  the bar, and in 3/2 or 4/2 the glyph genuinely means four beats.
+
+It shares `_bar_lengths` with the multi-rest expansion, because both need the
+metre in force and neither can know it during the measure loop.
+
+**A bar holding nothing but a whole rest does not get a vote on the metre.**
+Its length is precisely the question being asked, and on a 2/4 page each of
+them sums to 4.0 — letting them vote is letting the wrong reading argue for
+itself. Constructed in the test: three real bars of 2.0 against four rests
+fails the agreement threshold, infers nothing, and leaves all seven bars wrong.
+
+### Measured
+
+```
+page                    meas notes  conf   clef  durations
+01_simple_printed.jpg      4    32  1.00 treble  eighthx32
+02_medium_printed.jpg      6    34  1.00 treble  eighthx20 quarterx14
+03_complex_printed.jpg     3    48  1.00 treble  sixteenthx48
+homr_page.jpg             77   271  1.00   bass  eighthx20 quarterx230 halfx8 wholex13
+page-upright.jpg          51   128  0.98   bass  sixteenthx16 eighthx76 quarterx11 halfx24 wholex1
+```
+
+`page-upright.jpg` 0.86 → **0.98**, 44 of 51 bars adding up → **50 of 51**.
+Mean confidence across the corpus **1.00**, from 0.81 two ticks ago.
+
+The one bar left is bar 51, which holds a whole rest *and* a quarter rest in
+2/4. It is a genuine misread, it stays flagged, and `MeasureEditScreen` is the
+thing that fixes it. `homr_page.jpg` is untouched, as it must be: its bars are
+4.0 beats, so the rule does not apply.
+
+### Mutations
+
+Six, four caught, **two survived and both would have caused real harm**:
+
+* *any lone note is treated as a bar rest* — a lone quarter rest in 2/4 would
+  be inflated to fill the bar, hiding a genuine misread behind a clean beat
+  sum.
+* *a lone whole **note** is treated as a rest* — a bar holding one whole note
+  would be rewritten as silence. That deletes music.
+
+Both now have tests. All six die. Full suite green at 1225.
+
+**Not verified:** no scan has gone through production with either rest fix.
+
+---
+
 ## 2026-08-26 — A four-bar rest was being read as one empty bar
 
 **Branch:** `main`. Backend only. No screen, component, style or copy touched.
