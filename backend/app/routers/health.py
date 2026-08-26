@@ -6,12 +6,17 @@ router = APIRouter(tags=["health"])
 
 
 @router.get("/health")
+@router.head("/health")
 def health() -> dict[str, str]:
     """Is the process alive.
 
     Deliberately trivial and deliberately dependency-free. Render's health
     check points here, so anything that can fail in it can take a working
     deployment offline. "Can it do anything useful" is `/v1/ready`.
+
+    HEAD is explicit because free uptime monitors use it instead of GET. FastAPI
+    does not add HEAD automatically, so without this route a successful process
+    was reported as 405/Down and the keep-alive never worked.
     """
     return {"status": "ok"}
 
