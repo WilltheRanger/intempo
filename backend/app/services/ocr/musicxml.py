@@ -145,13 +145,65 @@ def _tuplet_ratio(note: ET.Element) -> tuple[int, int] | None:
     return pair if pair[0] > 1 else None
 
 
-def _duration_name(note: ET.Element) -> str | None:
+#: A written duration, by its length in quarter-beats.
+#:
+#: Only the plain and dotted values — a contradiction is resolved to something
+#: an engraver would print, never to a triplet, which would be a claim about a
+#: bracket the file did not draw.
+_DURATION_BY_BEATS: Final[dict[float, str]] = {
+    8.0: "double_whole",
+    6.0: "dotted_whole",
+    4.0: "whole",
+    3.0: "dotted_half",
+    2.0: "half",
+    1.5: "dotted_quarter",
+    1.0: "quarter",
+    0.75: "dotted_eighth",
+    0.5: "eighth",
+    0.375: "dotted_sixteenth",
+    0.25: "sixteenth",
+    0.125: "thirty_second",
+    0.0625: "sixty_fourth",
+}
+
+
+def _duration_name(note: ET.Element, divisions: int | None = None) -> str | None:
     kind = _text(note.find("type"))
     if kind is None:
         return None
     base = _TYPE_TO_DURATION.get(kind)
     if base is None:
         return None
+
+    # **When the note contradicts itself, believe its timing.**
+    #
+    # This module reads `<type>` and not `<duration>`, for the reason at the
+    # top of the file: divisions are an arbitrary per-file tick unit and a
+    # damaged file may not carry them. That stands. What it did not consider is
+    # a note where *both* are present and they disagree — which is not a choice
+    # between two conventions, it is a malformed note, and one of the two
+    # numbers is wrong.
+    #
+    # Measured on `page-upright.jpg`: four notes typed `breve` — eight
+    # quarter-beats — carrying `<duration>2</duration>` at four divisions per
+    # quarter, which is **half a beat**. A sixteenfold error, in a value
+    # `alignment.py` accumulates, so one of them moves every onset after it by
+    # seven and a half beats.
+    #
+    # `<duration>` is what MusicXML says drives time, so it is the half to
+    # believe — but only when it maps exactly to something an engraver would
+    # write. An inexact remainder is not evidence about anything, and `<type>`
+    # stays the answer.
+    stated = _text(note.find("duration"))
+    if divisions and stated and not note.findall("dot") and base in DURATION_BEATS:
+        try:
+            beats = int(stated) / divisions
+        except ValueError:
+            beats = None
+        if beats is not None and abs(beats - DURATION_BEATS[base]) > 1e-6:
+            corrected = _DURATION_BY_BEATS.get(round(beats, 6))
+            if corrected is not None:
+                return corrected
     # A tuplet before a dot: a dotted triplet has no name in `Duration` either,
     # and reporting the triplet is closer to the truth than reporting the dot.
     actual = _text(note.find("time-modification/actual-notes"))
@@ -347,6 +399,45 @@ def _choose_part(root: ET.Element, wanted: str | None) -> ET.Element:
 
 
 
+
+def _voice_carrying_the_music(measure_el: ET.Element) -> str | None:
+    """Which voice of a polyphonic bar is the line the musician plays.
+
+    **The voice that holds the most *pitched* notes, not the one written
+    first** — and the difference is four notes of real music on the one real
+    photograph in this repository.
+
+    homr writes a whole-bar rest in voice 2 *before* the music in voice 1, so
+    "the first voice in document order" picked the rests and threw the bar
+    away. Measured on `page-upright.jpg`: four `<backup>` measures, and one of
+    them held a whole rest in voice 2 and four eighth notes in voice 1 — the
+    file has 75 pitched notes and the reading had 71.
+
+    A voice of nothing but rests is never the music. Ties go to the voice
+    written first, which is the old behaviour and the right tiebreak for two
+    genuine lines: nothing else here can tell a divisi apart, and the upper
+    part is written first by convention.
+    """
+    counts: dict[str, int] = {}
+    order: list[str] = []
+    for note_el in measure_el.iterfind("note"):
+        voice = (note_el.findtext("voice") or "").strip()
+        if not voice:
+            continue
+        if voice not in counts:
+            counts[voice] = 0
+            order.append(voice)
+        if note_el.find("rest") is None:
+            counts[voice] += 1
+    if not order:
+        return None
+    # `max` returns the first maximal element and `order` is document order, so
+    # a tie already goes to the voice written first. An explicit index term
+    # here was redundant — the mutation that removed it changed nothing, which
+    # is what redundant means.
+    return max(order, key=lambda voice: counts[voice])
+
+
 def _bar_lengths(
     measures: list[Measure], header_metre: str | None
 ) -> list[float | None]:
@@ -536,6 +627,10 @@ def score_json_from_musicxml(
     tempo_marking: str | None = None
     bpm_hint: int | None = None
 
+    #: Ticks per quarter note, which holds until another `<divisions>` is
+    #: stated. Needed only to notice a note whose `<type>` and `<duration>`
+    #: contradict each other — see `_duration_name`.
+    divisions: int | None = None
     measures: list[Measure] = []
     #: `(index in measures, how many bars it stands for, metre stated on it)`
     pending_rests: list[tuple[int, int, str | None]] = []
@@ -562,6 +657,12 @@ def score_json_from_musicxml(
         # because the metre it needs may be stated in this very measure.
         standing_for = _multiple_rest_count(measure_el)
         for attributes in measure_el.iterfind("attributes"):
+            stated_divisions = _text(attributes.find("divisions"))
+            if stated_divisions:
+                try:
+                    divisions = int(stated_divisions) or None
+                except ValueError:
+                    divisions = None
             clef_el = attributes.find("clef")
             if clef is None and clef_el is not None:
                 sign = _text(clef_el.find("sign")) or ""
@@ -638,7 +739,7 @@ def score_json_from_musicxml(
             (el.findtext("voice") or "").strip()
             for el in measure_el.iterfind("note")
         ]
-        first_voice = next((v for v in voices if v), None)
+        kept_voice = _voice_carrying_the_music(measure_el)
         multi_voice = rewound and len({v for v in voices if v}) > 1
 
         for note_el in measure_el.iterfind("note"):
@@ -658,11 +759,11 @@ def score_json_from_musicxml(
             # Dropping those emptied a bar outright in the bundled Audiveris
             # fixture, which is a worse reading than the double-count this
             # filter exists to prevent.
-            if multi_voice and this_voice and this_voice != first_voice:
+            if multi_voice and this_voice and this_voice != kept_voice:
                 filtered_out = True
 
             pitch = _pitch_name(note_el)
-            duration = _duration_name(note_el)
+            duration = _duration_name(note_el, divisions)
             if pitch is None or duration is None:
                 dropped += 1
                 continue
@@ -735,7 +836,18 @@ def score_json_from_musicxml(
         # A multi-bar rest is recorded here and expanded after the loop —
         # the bar length it needs may not be knowable until the whole part has
         # been read. See `_expand_multiple_rests`.
-        if standing_for and not notes:
+        # **Rests do not count against it, and that is not a loosening.**
+        #
+        # This read `not notes`, on the reasoning that a bar carrying both a
+        # multi-rest marking and notes is a contradiction and the notes are the
+        # half definitely read off the page. That reasoning holds for *pitched*
+        # notes and is wrong for rests, because homr writes the multi-rest
+        # marking **together with** the rest symbols that draw it — measured on
+        # `page-upright.jpg`, a bar marked `<multiple-rest>8</multiple-rest>`
+        # carrying a whole rest and a breve rest. Under `not notes` it stayed
+        # one bar, and **seven bars of rest were lost** — the same failure this
+        # expansion was written to fix, blocked by its own guard.
+        if standing_for and not any(note.pitch != "rest" for note in notes):
             pending_rests.append((len(measures), standing_for, measure_time))
 
         measures.append(
