@@ -6,6 +6,86 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-26 — Readiness checked the wrong machine for the page reader
+
+**Branch:** `fix/transcription-runtime-readiness`. Backend diagnostics and
+tests only. No screen, component, style, or user-facing product copy changed.
+
+**Files:** `backend/app/services/readiness.py`,
+`backend/app/tests/test_readiness.py`.
+
+Reported as: basic functionality is unreliable even though CI is green.
+
+### What the live system said
+
+The shipping web app is `https://idk-41z.pages.dev`; the similarly named
+`intempo.pages.dev` is an unrelated site. A visible-browser pass at 1440x900
+and 390x844 found that the app boots, all four auth modes render, empty-form
+validation stays local, and an invalid credential reaches Supabase and returns
+the expected musician-facing message. The API health route returned 200 and a
+CORS probe for the production Pages origin passed.
+
+`GET https://intempo-api.onrender.com/v1/ready` still returned 503. Its only
+blocking failure was `sheet_music_reading`: homr is not installed in the
+Render container and no vision-model key is set.
+
+That local absence is intentional. The configured chain is homr alone, homr
+peaks around 1.35 GB, and photographed pages are delegated with
+`TRANSCRIPTION_RUNTIME=modal`. Readiness was checking the machine that must
+not contain the reader, then declaring the feature unavailable. At the same
+time it never hydrated Modal's `transcribe_score` function, so the actual
+runtime could be missing and the endpoint would learn only after a musician
+submitted a page.
+
+### What changed
+
+* `sheet_music_reading` now accepts either a usable local provider or an
+  explicitly delegated page runtime. A missing local homr remains visible as
+  the non-blocking `ocr:homr` diagnostic; it no longer makes the intended
+  production topology return 503.
+* A new `transcription_runtime:modal` check imports the client, requires both
+  token halves, and hydrates `transcribe_score` by its deployed app and
+  function names. Missing package, credentials, app, or function is blocking:
+  with the homr-only chain, the local fallback cannot read a page.
+* Credential whitespace is named without echoing a value, repaired with the
+  same function the dispatcher uses, and left non-blocking because the repaired
+  credentials are what the spawn will use.
+* Four regression tests pin the delegated-reader aggregate, missing-token
+  failure, successful `transcribe_score` hydration, and the undeployed-function
+  explanation. The existing wiring test now holds the new check in the report.
+
+### Tests
+
+GitHub Actions CI passed on PR #6:
+
+* backend: **1150 passed, 6 skipped, 1 xfailed**;
+* mobile: **328 passed**, TypeScript check clean, Expo web export completed;
+* legacy frontend: Vite production build completed.
+
+Live checks before the change: auth shell and invalid-login path passed at both
+viewports; API health 200; production-origin CORS probe passed; readiness
+reproduced the false blocking 503. Cloudflare's active `intempo` preview
+deployed successfully. Its separate stale `front` project still reports a
+failed build, the pre-existing duplicate-project state already documented in
+this repository; neither changed file is in a frontend tree.
+
+### Known limits
+
+* No authenticated library, scan, recording, or verdict flow was exercised:
+  doing that requires an existing account session and a real page/audio input.
+* The latest Modal deployment succeeded in GitHub Actions, but the repository's
+  own newest commit says the corrected homr call has not yet been verified on
+  Modal. Hydration proves the function exists, not that homr reads a page; the
+  existing dispatch counter remains the behaviour check after a real scan.
+* The deployed signed-out page changes the browser tab title from `InTempo` to
+  `undefined`. That is user-facing UI metadata, so it was recorded rather than
+  changed under this backend-only fix; the repository's UI gate requires owner
+  approval before touching it.
+* The known orphaned-upload lifecycle hole remains open. It needs a retention
+  decision, not an opportunistic deletion rule.
+
+---
+
 ## 2026-08-25 — The API served one request at a time, and the app waited on it
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Backend and mobile. No UI
