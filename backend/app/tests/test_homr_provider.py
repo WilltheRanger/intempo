@@ -416,7 +416,7 @@ _UNMETERED_PAGE = (
 def test_a_page_whose_metre_is_unknown_is_kept(homr) -> None:
     """**The regression the refusal was one version away from causing.**
 
-    `_confidence_from_arithmetic` scores an `unverifiable` bar zero, because a
+    `confidence_from_arithmetic` scores an `unverifiable` bar zero, because a
     bar whose metre is unknown has not been *shown* to add up. Refusing on that
     number alone — which the first version of this did — throws away a
     correctly read inner page, which is the commonest page anyone photographs:
@@ -489,7 +489,7 @@ def test_a_page_with_one_hole_in_it_is_kept(homr) -> None:
 def test_the_refusal_and_the_confidence_read_the_same_page_the_same_way(homr) -> None:
     """A pickup counts as a bar that read, in both places or in neither.
 
-    `_confidence_from_arithmetic` counts `pickup` alongside `ok` — a short
+    `confidence_from_arithmetic` counts `pickup` alongside `ok` — a short
     first measure is how a great deal of music is actually written, and
     `pickup_complement` is what catches the case where it was not. If the
     refusal did not count it too, the two would disagree about the same page:

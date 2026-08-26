@@ -101,6 +101,11 @@ REQUIRED_COLUMNS: tuple[tuple[str, str, str], ...] = (
     # is written on every Modal dispatch, so a missing one is an error logged
     # on every single scan.
     ("scores", "transcription_call_id", "010"),
+    # 011. The pages of a scan, in page order. A deployment missing it reads
+    # page one of a three-page part and silently discards the rest — which is
+    # the failure the column exists to end, so it is worth saying out loud
+    # rather than degrading quietly back to it.
+    ("scores", "source_image_urls", "011"),
 )
 
 

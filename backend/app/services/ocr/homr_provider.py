@@ -59,7 +59,7 @@ _SUFFIX_FOR = {
 }
 
 
-def _confidence_from_arithmetic(findings: list[MeasureFinding]) -> float:
+def confidence_from_arithmetic(findings: list[MeasureFinding]) -> float:
     """How much of this reading agrees with itself, as a fraction of its bars.
 
     **Not the number the importer computes, and the difference matters.**
@@ -121,7 +121,7 @@ def _refuse_if_it_is_not_a_reading(
 
     **What is deliberately *not* refused: a page whose metre could not be
     established.** `validate_measures` calls those bars `unverifiable`, and
-    `_confidence_from_arithmetic` scores them zero because a bar whose metre is
+    `confidence_from_arithmetic` scores them zero because a bar whose metre is
     unknown has not been shown to add up. An earlier version of this refused on
     the confidence alone, which would have thrown away a *correctly read* inner
     page — no header, no metre inferable — over a number that only ever meant
@@ -224,7 +224,7 @@ class HomrProvider:
         # the app, and whether this is a reading at all.
         findings = validate_measures(score)
         score = score.model_copy(
-            update={"ocr_confidence": _confidence_from_arithmetic(findings)}
+            update={"ocr_confidence": confidence_from_arithmetic(findings)}
         )
         _refuse_if_it_is_not_a_reading(self.name, score, findings)
 
