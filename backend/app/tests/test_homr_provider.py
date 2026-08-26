@@ -512,3 +512,41 @@ def test_the_refusal_and_the_confidence_read_the_same_page_the_same_way(homr) ->
     score = HomrProvider().parse(b"<page>").score
 
     assert score.ocr_confidence == 0.5
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="known gap: a whole page yielding one bar with one note is returned",
+)
+def test_a_page_that_yields_a_single_note_is_refused(homr) -> None:
+    """**A known gap, encoded rather than guessed at.**
+
+    Measured while separating the crop defect in `04_handwritten_clean` from
+    its handwriting: with the intruding fragment of the system below removed,
+    homr returns **one bar holding one note** at 0.00 confidence, and that is
+    *returned* rather than refused. Neither existing rule catches it — there
+    are no holes, and with no metre the single bar is `unverifiable`, so no
+    checkable bar has failed.
+
+    `_read_any_music` was written for exactly this shape ("two scans came back
+    `done` … one with four notes for a whole page") and only asks whether *any*
+    note exists, so one note passes it.
+
+    Left failing on purpose. The principled rule is that a staff system always
+    holds at least one bar, so a reading with fewer bars than the page has
+    systems has plainly failed — but `_legibility` reports whether there are
+    bands, not how many, and `crop_systems` returns zero for the single-line
+    strips this corpus is made of. There is no measurement series here to build
+    it on, and `EDIT_LOG` 2026-08-24 is explicit about not fitting a constant
+    to one photograph. Strict, so whoever gets the data finds this waiting.
+    """
+    one_note = MUSICXML.format(
+        notes=(
+            '<note><pitch><step>D</step><octave>3</octave></pitch>'
+            "<duration>2</duration><type>quarter</type></note>"
+        )
+    ).replace("<time><beats>4</beats><beat-type>4</beat-type></time>", "")
+    homr(one_note)
+
+    with pytest.raises(OCRProviderError):
+        HomrProvider().parse(b"<page>")

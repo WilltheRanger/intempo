@@ -6,6 +6,85 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-26 — Correcting my own record about the handwritten fixtures
+
+**Branch:** `main`. One `xfail`, and documentation. No screen, component, style
+or copy touched.
+
+**Files:** `fixtures/scores/SOURCES.md`,
+`backend/app/tests/test_homr_provider.py`.
+
+### The correction
+
+The entry above dated earlier today — *"The two ways homr finds nothing are two
+different sentences"* — justified the `noteheads` failure message like this:
+
+> `05_handwritten_messy` is the first. Pre-processing it — 2x upscale,
+> autocontrast, both — moved it not at all: it is a limit of a model trained on
+> printed notation, and no photograph of that page gets past it.
+
+**`05_handwritten_messy` never reaches an OCR provider in production.** It is
+1200×72 with six pixels between staff lines, and `too_small_to_read` refuses it
+at the size gate against a floor of eight, with a message about the photograph.
+The codebase already knew — `test_the_corpus_page_that_yields_nothing_is_the_one_below_the_floor`
+pins exactly this — and I measured it through `tools/homr-bench.py`, which calls
+the provider directly and bypasses the gate.
+
+The needle itself is still right: a larger handwritten page with staves and
+unreadable noteheads is entirely plausible, and that is what it is for. The
+evidence cited for it was not. This is the second time this session the bench
+and production have turned out to be looking at different things — tick eleven
+was the first — and it is why `tools/pipeline-check.py` now exists.
+
+### The experiment that eliminated two confounds
+
+`04_handwritten_clean` **does** reach homr, and it is not a clean single line:
+its crop cuts into the system below, with stems and beams from it along the
+bottom edge. Two plausible explanations for its failure, both testable:
+
+| variant | result |
+|---|---|
+| as checked in | refused — 5 of 7 bars empty |
+| bottom 20% removed | 1 bar, 1 note, **0.00** |
+| bottom 28% removed | no staffs found |
+| 3× upscale | 3 bars, 22 notes, **0.00** |
+| 3× and bottom 20% removed | 2 bars, 15 notes, **0.00** |
+
+Every variant reads at **0.00 confidence** — not one bar's durations add up.
+Neither the crop defect nor the resolution is the cause; it is the handwriting.
+That was the original conclusion, and it now rests on evidence rather than on
+the absence of an alternative.
+
+### A gap found while doing it, and not papered over
+
+With the intruding fragment removed, homr returns **one bar holding one note**
+— and that is *returned*, not refused. No holes, and with no metre the single
+bar is `unverifiable`, so no checkable bar has failed. `_read_any_music` was
+written for this exact shape and only asks whether *any* note exists.
+
+The principled rule is that a staff system always holds at least one bar, so a
+reading with fewer bars than the page has systems has plainly failed. But
+`_legibility` reports *whether* there are bands, not how many, and
+`crop_systems` returns zero for the single-line strips this corpus is made of.
+There is no measurement series here to build it on, and this log's own entry of
+2026-08-24 is explicit about not fitting a constant to one photograph.
+
+So it is a **strict `xfail`** rather than a guessed threshold. Whoever gets the
+data will find it waiting, and it cannot rot quietly.
+
+### The corpus, measured
+
+`SOURCES.md` now carries the numbers, because that is where somebody goes to
+understand these files. Every fixture was resized to 1200 px wide when it was
+authored, so the corpus runs at **6–11 px** of staff spacing against **34–107
+px** for a real photograph. Every measurement taken here is taken near the edge
+of legibility — a second reason, beside repertoire, that a real page keeps
+surprising this repository.
+
+Full suite green at 1243, two xfailed.
+
+---
+
 ## 2026-08-26 — Four hypotheses about the vision-era pipeline, three of them wrong
 
 **Branch:** `main`. Backend only — one test and two docstrings. No screen,
