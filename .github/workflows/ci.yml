@@ -6,6 +6,42 @@ on:
     branches: [main]
 
 jobs:
+  # **The four logs are part of the Definition of Done, and nothing checked
+  # them.** On 2026-08-26 a commit landed with its tooling changes and without
+  # its `EDIT_LOG` entry: the script writing the entry ran from the wrong
+  # directory and failed on a relative path, while the `git commit` in the same
+  # shell command succeeded. Nothing noticed.
+  #
+  # A log entry is a claim about work, so this cannot check that the entry is
+  # any good. It checks the one thing a program can — that the change did not
+  # go out in silence. The rule itself is a tested function in
+  # `tools/check-log-entry.py`, not shell in this file, because a rule that
+  # only runs inside a workflow is a rule nothing checks.
+  log-entry:
+    name: Change is recorded (EDIT_LOG)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The whole history, so a push of several commits is compared with
+          # what was there before it rather than with its own last commit —
+          # which would check one commit and wave the rest through.
+          fetch-depth: 0
+
+      - name: Check for an EDIT_LOG entry
+        run: |
+          base="${{ github.event.pull_request.base.sha }}"
+          if [ -z "$base" ]; then base="${{ github.event.before }}"; fi
+          # A first push to a branch reports an all-zero "before", and a
+          # shallow or grafted history can leave it unreachable. Falling back
+          # to the parent checks less than it should, which is the right
+          # direction to fail in: this job must never be the thing that blocks
+          # a push it cannot reason about.
+          if [ -z "$base" ] || ! git cat-file -e "$base^{commit}" 2>/dev/null; then
+            base="$(git rev-parse HEAD~1)"
+          fi
+          python3 tools/check-log-entry.py "$base..HEAD"
+
   backend-test:
     name: Backend tests (pytest)
     runs-on: ubuntu-latest

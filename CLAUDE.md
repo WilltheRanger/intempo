@@ -18,6 +18,13 @@ rules from `intempo-combined.md` Part II. They are not optional polish.
 | `TUNING_LOG.md` | Every Batch 3 audio-threshold change | Old value → new value, clip-by-clip regression across all six fixtures, rationale. |
 | Git history | Every commit | Atomic, frequent, descriptive commits. |
 
+`tools/check-log-entry.py` enforces the `EDIT_LOG.md` row, and CI runs it on
+every push and pull request. It exists because a commit landed without its
+entry on 2026-08-26 — the script writing the entry failed on a relative path
+while the `git commit` beside it succeeded — and nothing noticed. It cannot
+check that an entry is *good*; it checks that the change did not go out in
+silence.
+
 **The rest of the operating principles:**
 
 1. **Branch per batch** (`feat/batch-N-...` or the session's assigned branch). Squash to main on DoD.
