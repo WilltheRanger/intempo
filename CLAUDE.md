@@ -254,6 +254,18 @@ there works differently as of 2026-08-24:
   betters it. Its `ocr_confidence` is the **share of bars that add up**, computed
   here — the importer's number is conversion loss and reads 1.0 on real output,
   which would claim certainty about a photograph.
+  **A multi-bar rest is expanded into the bars it stands for** — `musicxml.py`,
+  `_expand_multiple_rests`. `<multiple-rest>4</multiple-rest>` arrives as *one*
+  empty `<measure>`, and read literally three bars of time vanish; since
+  `alignment.py` accumulates durations, every bar after the rest is then judged
+  eight beats early, so a musician who counts the rest correctly is told they
+  rushed the rest of the page. It is a second pass because the bar length is
+  often not knowable yet — the real page's only `<time>` is printed mid-page —
+  and it falls back to `infer_beats_per_measure`, **asked rather than copied**.
+  A metre no single rest fills (5/4, 7/8, none at all) leaves the bar visibly
+  empty rather than inventing a duration. Renumbering happens only when
+  something was expanded. Measured: `homr_page.jpg` 74→77 bars at 1.00,
+  `page-upright.jpg` 43→51 bars at 0.70→0.86.
   **It does not quantise, and that is measured rather than hoped** (2026-08-26).
   The worry was that a page of nothing but quarters is what both a march and a
   rounding look like, and the beat check cannot separate them. Two fixtures can,
