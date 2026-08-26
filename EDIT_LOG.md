@@ -6,6 +6,142 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-26 — A page that was not read is refused instead of drawn as a score
+
+**Branch:** `main`. Backend only. No UI change: no screen, component, style or
+copy was touched. The words a musician sees for a failed scan changed, and they
+live in `_FAILURE_REASONS`, which is backend.
+
+**Files:** `backend/app/services/ocr/homr_provider.py`,
+`backend/app/workers/transcription_runner.py`,
+`backend/app/tests/test_homr_provider.py`, `tools/homr-bench.py` (new).
+
+### The measurement that started it
+
+`tools/homr-bench.py` is new and is the reason this was found: it runs
+`homr_provider.parse` over pages and prints what came back, so a change to the
+reader has numbers on both sides of it. Baseline, with homr working for the
+first time (see yesterday's entry — `ProcessingConfig()` was called with no
+arguments and had never once run):
+
+```
+page                      meas notes  conf   clef     s
+01_simple_printed.jpg        4    32  1.00 treble   6.8
+02_medium_printed.jpg        6    34  1.00 treble   4.9
+03_complex_printed.jpg       3    48  1.00 treble   3.8
+04_handwritten_clean.jpg     7    13  0.00   None
+05_handwritten_messy.jpg  FAILED: Exception: No noteheads found
+homr_page.jpg               74   267  0.99   bass  22.5
+page-upright.jpg            43   114  0.70   bass  18.1
+```
+
+**`04_handwritten_clean` is the finding, not `05`.** A page that fails is
+handled: the row goes `failed`, the musician is told why, the photograph is
+kept. A page that comes back at 0.00 is *stored and drawn as their score.*
+Measured exactly:
+
+```
+measures 7   notes 13   clef None   time None   confidence 0.0
+verdicts ['unverifiable', 'unverifiable', 'empty', 'empty', 'empty', 'empty', 'empty']
+```
+
+Five of seven bars hold nothing at all. Thirteen notes are crowded into the
+other two. No clef, no metre.
+
+Every mechanism this project has for doubt was working correctly and not one of
+them applies. The caveat line names the bars that do not add up — and none of
+these were *wrong*, five of them were **empty**. The confidence sentence says a
+reading might be wrong, when the true statement is that there is no reading.
+`_read_any_music` asks whether the page holds a single note, and it holds
+thirteen. The pipeline's `CONFIDENCE_THRESHOLD` does not save it either: the
+chain is homr-only now, so `not rest` is true and a 0.00 reading comes straight
+back as the answer.
+
+It is the same distinction `too_small_to_read` exists for, one stage later.
+
+### What changed
+
+`_refuse_if_it_is_not_a_reading` in `homr_provider.py`. Three refusals, because
+they are three different pages and the musician can act on only one of them:
+
+1. **No measures at all** — "found no bars of music on this page". Reachable
+   without any error from the importer: a `<part>` with no `<measure>` in it
+   parses cleanly and returns an empty score.
+2. **More holes than music** — "5 of the 7 bars on this page came out empty".
+3. **Nothing that could be checked, checked out** — "none of the N bars on this
+   page could be read as music".
+
+Each has its own needle in `_FAILURE_REASONS`, because the default sentence is
+*"a flatter, better-lit shot of the page usually fixes it"* — advice about a
+photograph, which for a page whose barlines were found and whose notes were not
+sends the musician back to a stand for a page that will fail the same way. That
+mistake has now been made four times in this file and every one of them was a
+missing needle.
+
+### The version of this I wrote first, and why it was wrong
+
+The first refusal was `if score.ocr_confidence <= 0`. It passes every test I
+had written, it refuses `04`, and **it would have thrown away correctly read
+pages.**
+
+`_confidence_from_arithmetic` counts a bar as agreeing only if its verdict is
+`ok` or `pickup`. A bar whose metre could not be established is `unverifiable`
+— *not shown to add up*, which is not the same as *wrong*. A photograph of an
+inner page has no header on it, and if `infer_beats_per_measure` cannot get
+three measures and 60% agreement out of the reading, **every bar on that page
+is unverifiable and the confidence is 0.00** with the durations all perfectly
+present. Refusing on that number reads "not proven" as "disproven".
+
+So the arithmetic refusal now looks only at bars arithmetic could actually see
+(`verdict != "unverifiable"`), and the holes refusal — which needs no metre at
+all — is what catches `04`. `test_a_page_whose_metre_is_unknown_is_kept` is the
+regression test for the version I did not ship.
+
+### The one comparison in it
+
+`holes * 2 > len(measures)` — more empty bars than bars with music in them.
+Deliberately a comparison and not a tuned fraction: one smudged bar in
+seventy-four is a page with a hole in it, five in seven is holes with a page
+around them, and there is no constant here to fit to a photograph. A rest is a
+note in this schema, with pitch `"rest"`, so the multi-bar rests in an
+orchestral part are music and are counted as music — a quiet page cannot
+trigger this.
+
+### Verification
+
+Bench after, on the same pages — nothing that read before stopped reading, and
+the real photograph is untouched at 43 measures / 0.70:
+
+```
+01_simple_printed.jpg        4    32  1.00 treble
+02_medium_printed.jpg        6    34  1.00 treble
+03_complex_printed.jpg       3    48  1.00 treble
+04_handwritten_clean.jpg  FAILED: 5 of the 7 bars on this page came out empty
+05_handwritten_messy.jpg  FAILED: Exception: No noteheads found
+homr_page.jpg               74   267  0.99   bass
+page-upright.jpg            43   114  0.70   bass
+```
+
+Eleven mutations applied and reverted against
+`app/tests/test_homr_provider.py`, all caught: each refusal removed, the holes
+comparison loosened to "every bar" and tightened to "any bar", `unverifiable`
+folded back in, `pickup` dropped from the agreeing set, and each of the four
+wordings changed to one no needle matches — in the provider *and* in the
+needle table, so the two are pinned together from both sides. The
+pickup mutation survived the first round; the test that now catches it
+(`test_the_refusal_and_the_confidence_read_the_same_page_the_same_way`) exists
+because the refusal and the confidence must read the same findings the same
+way, or a page reported at 0.5 could be refused outright.
+
+Full backend suite green.
+
+**Not verified:** none of this has run against a real scan in production. The
+next handwritten page a musician photographs is the test, and what it should
+now produce is a `failed` row with words about the page rather than a piece
+with five blank bars in it.
+
+---
+
 ## 2026-08-26 — Free uptime probes were rejected as 405
 
 **Branch:** `fix/uptime-health-head`. Backend health routing and tests only. No
