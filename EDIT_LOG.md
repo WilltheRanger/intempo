@@ -6,6 +6,77 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-26 — Four hypotheses about the vision-era pipeline, three of them wrong
+
+**Branch:** `main`. Backend only — one test and two docstrings. No screen,
+component, style or copy touched.
+
+**Files:** `backend/app/services/page_image.py` (comments),
+`backend/app/tests/test_homr_only_chain.py`.
+
+Continuing yesterday's thread. The pipeline was built around vision models you
+can prompt, and now runs a chain of exactly one engine you cannot; the retry
+was one mismatch, so this tick looked for the others. **Mostly negative
+results, which are the point of writing them down** — each is cheap to
+re-derive wrongly, and one of them I already had wrong.
+
+### The one that mattered, and it was my hypothesis that was wrong
+
+`MODEL_MAX_EDGE = 1568` is a *vision API's* limit. A real photograph is
+5712×4284, so the page is shrunk **3.6× on each axis** before homr sees it —
+an engine whose whole value is finding and dewarping staves, which is exactly
+the work resolution should matter to. I expected this to be the biggest
+remaining loss.
+
+It costs nothing:
+
+| page | original | prepared |
+|---|---|---|
+| `homr_page.jpg` | staff 107 px → 77 bars, 1.00 | staff 7 px → 77 bars, 1.00 |
+| `page-upright.jpg` | staff 34 px → 56 bars add up | staff 9 px → **57** |
+
+Identical readings, and the prepared copy is marginally *better* on the second
+page. Two pages are not a series, so this is evidence and not a licence to move
+the constant either way — recorded because the hypothesis is plausible enough
+that somebody will have it again. Shrinking also cuts the Modal upload from
+5.5 MB to a couple of hundred kilobytes, which is a real saving on a gRPC round
+trip.
+
+### The striking number, and the constant it does not justify moving
+
+homr read a page at **1.00 confidence with seven pixels between its staff
+lines** — below the floor `too_small_to_read` refuses at.
+
+That is not an argument for lowering the floor, and the docstring now says why
+in the place someone will read it: the measurement is on the **prepared** copy
+while the floor is applied to the **photograph as it arrived**, deliberately;
+the floor was calibrated against the vision chain inventing notes on a page too
+small to hold any; and a page whose *original* has seven-pixel staves is a
+genuinely tiny photograph rather than a downscaled good one. The two
+measurement series behind the value are in this log at 2026-08-24 with an
+explicit note not to refit it.
+
+### Three things checked and found sound
+
+* **Truncation.** `_is_truncation` matches "cut off", a contract between
+  `claude_provider`, `gemini_provider` and the pipeline that nothing held homr
+  to. A homr failure that matched would be retried as half an answer and told
+  the musician to photograph fewer bars — advice about an output cap homr does
+  not have. None of its seven failure strings match; there is now a test that
+  says so.
+* **Numbering.** `renumber` and `numbering_gaps` run over every reading and
+  write caveats a musician sees, and the multi-bar-rest expansion renumbers
+  too. They do not fight: both real pages come out contiguous with no
+  `notes_to_human` at all.
+* **Crops.** `crop_systems` is never reached on a homr-only chain — the stage
+  list from `tools/pipeline-check.py` is `['reading:homr']` with no
+  `splitting`, so the whole-page reader really is getting the whole page and
+  nothing is being cut up for nobody.
+
+Full suite green at 1243.
+
+---
+
 ## 2026-08-26 — Every doubtful page was being read twice for the same answer
 
 **Branch:** `main`. Backend only. No screen, component, style or copy touched.

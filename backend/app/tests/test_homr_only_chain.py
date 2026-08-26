@@ -509,3 +509,26 @@ def test_homr_declares_that_it_cannot_reconsider() -> None:
     from app.services.ocr.homr_provider import homr_provider
 
     assert homr_provider.takes_a_note is False
+
+
+def test_homr_never_looks_like_a_truncated_answer() -> None:
+    """`_is_truncation` matches the phrase "cut off", which `claude_provider`
+    and `gemini_provider` both use for running out of output room. That string
+    is a contract between three files and nothing held homr to it.
+
+    A homr failure that matched would be retried as though half an answer had
+    arrived — and, in `_FAILURE_REASONS`, told the musician to photograph fewer
+    bars at a time, which is advice about an output cap homr does not have.
+    """
+    from app.services.ocr.pipeline import _is_truncation
+
+    for said in (
+        "homr: Exception: No noteheads found",
+        "homr: found no staves on this page",
+        "homr: none of the 3 bars on this page could be read as music",
+        "homr: 5 of the 7 bars on this page came out empty",
+        "homr: found no bars of music on this page",
+        "homr: homr is not installed in this container",
+        "homr: unsupported media type 'image/heic'; it reads .jpg, .png, .webp",
+    ):
+        assert not _is_truncation(Exception(said)), said
