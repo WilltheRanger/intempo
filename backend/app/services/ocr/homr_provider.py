@@ -192,6 +192,26 @@ class HomrProvider:
     #: works and pay for it in wall-clock as well.
     reads_whole_page = True
 
+    #: Whether asking again, with the arithmetic pointed out, can change the
+    #: answer. For homr it cannot.
+    #:
+    #: `retry_with_arithmetic` was written for a model you can talk to: it
+    #: hands the reading's own beat sums back with the offending measures named
+    #: and asks for those bars again. homr has no prompt — `parse` accepts a
+    #: `note` and ignores it — and it is deterministic, so the re-read is the
+    #: same computation on the same bytes.
+    #:
+    #: **Measured, not assumed:** the same page read twice, once plain and once
+    #: with a note naming a bad measure, returns byte-identical MusicXML. The
+    #: second read cost **14.5 seconds** and, on Modal, a second 2.5 GB
+    #: container — spent to reproduce an answer that could not differ, on
+    #: exactly the pages that are already the slowest.
+    #:
+    #: Declared here rather than tested for by name in the pipeline: a provider
+    #: knows whether it can reconsider, and the default is that it can, so a
+    #: new provider has to opt out deliberately.
+    takes_a_note = False
+
     #: No API key. This is the odd one out in the chain and `/v1/ready` has to
     #: ask it a different question: every other provider is usable when a key is
     #: set, and this one when the engine is installed *in this container*.

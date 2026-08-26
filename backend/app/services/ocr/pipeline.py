@@ -927,7 +927,15 @@ def parse_sheet_music(
                 provider.name,
                 "; ".join(f.describe() for f in broken),
             )
-            if retry:
+            if retry and not getattr(provider, "takes_a_note", True):
+                # Said out loud, because a missing `rereading` stage on a page
+                # that plainly needs one otherwise looks like a bug.
+                log.info(
+                    "%s cannot reconsider — no prompt and deterministic — so "
+                    "the arithmetic retry is skipped",
+                    provider.name,
+                )
+            if retry and getattr(provider, "takes_a_note", True):
                 stage(STAGE_CONFIRMING)
                 corrected = retry_with_arithmetic(
                     response.score,

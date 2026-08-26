@@ -6,6 +6,62 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-26 — Every doubtful page was being read twice for the same answer
+
+**Branch:** `main`. Backend only. No screen, component, style or copy touched.
+
+**Files:** `backend/app/services/ocr/pipeline.py`,
+`backend/app/services/ocr/homr_provider.py`,
+`backend/app/tests/test_homr_only_chain.py`.
+
+Found by following yesterday's `rereading` stage — the one `tools/pipeline-check.py`
+turned up and the bench never shows — to what it actually does.
+
+### The measurement
+
+`retry_with_arithmetic` was written for a model you can talk to: it hands the
+reading's own beat sums back with the offending measures named and asks for
+those bars again. **homr has no prompt** — `parse` accepts a `note` and ignores
+it, which its own docstring says — and it is deterministic.
+
+Measured, rather than argued from the docstring: the same page read twice, once
+plain and once with a note naming a bad measure, returns **byte-identical
+MusicXML**. The second read took **14.5 seconds**.
+
+So every page whose bars did not add up was read twice: fifteen seconds of a
+musician's wait and, on Modal, a second 2.5 GB container, spent reproducing an
+answer that could not differ — on exactly the pages that are already the
+slowest, because a page that fails arithmetic is usually a dense one.
+
+Also worth stating plainly, because I assumed otherwise before measuring: the
+retry was **not** quietly improving anything. With it skipped, `page-upright.jpg`
+returns the identical reading — 58 bars, 75 pitched notes, 0.98, same verdicts —
+and one stage fewer.
+
+### The fix
+
+`takes_a_note`, declared on the provider. A provider knows whether it can
+reconsider; the pipeline should not test for one by name. **The default is
+`True`**, so the vision providers — none of which has heard of the attribute —
+are untouched, and a new provider has to opt out deliberately.
+
+The skip is logged. A missing `rereading` stage on a page that plainly needs
+one otherwise looks like a bug.
+
+### Two mutations survived, and both were the same mistake
+
+* *the default becomes opt-in* — my test provider set `takes_a_note` explicitly
+  in both directions, so it exercised the flag and never the fallback. The
+  mutation silenced the retry for the entire chain and every test passed. **A
+  rule's default has to be tested on something that does not state it**, which
+  is now a provider with no such attribute at all.
+* *homr claims it can reconsider* — nothing asserted the one value the flag
+  exists for.
+
+Both closed; all four mutations die. Full suite green at 1242.
+
+---
+
 ## 2026-08-26 — Nine ticks of changes had never been through the real entry point
 
 **Branch:** `main`. Backend only. No screen, component, style or copy touched.
