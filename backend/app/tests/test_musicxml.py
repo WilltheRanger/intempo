@@ -605,3 +605,183 @@ def test_a_clef_change_mid_piece_does_not_relabel_the_part() -> None:
       </measure>'''))
 
     assert score.clef == "bass", "a tenor-clef passage relabelled the whole part"
+
+
+# ---------------------------------------------------------------------------
+# A multi-bar rest is N bars of silence, not one empty bar
+# ---------------------------------------------------------------------------
+#
+# This is most of what a bass player does, and it was being dropped. Read
+# literally, a four-bar rest arrives as a single `<measure>` with nothing in
+# it, so three bars of time vanish — and `alignment.py` accumulates durations,
+# so every bar after the rest is compared against the recording eight beats
+# early. The musician counts the rest correctly, comes in exactly on time, and
+# is told they rushed the whole rest of the page.
+
+
+def _part(measures: str, *, header: str = "") -> str:
+    return (
+        '<?xml version="1.0"?><score-partwise version="4.0"><part-list>'
+        '<score-part id="P1"><part-name>Bass</part-name></score-part>'
+        f'</part-list><part id="P1">{header}{measures}</part></score-partwise>'
+    )
+
+
+def _bar(number: int, notes: str, attributes: str = "") -> str:
+    return f'<measure number="{number}">{attributes}{notes}</measure>'
+
+
+_FOUR_FOUR = (
+    "<attributes><divisions>1</divisions>"
+    "<time><beats>4</beats><beat-type>4</beat-type></time></attributes>"
+)
+_A_QUARTER = (
+    "<note><pitch><step>D</step><octave>3</octave></pitch>"
+    "<duration>1</duration><type>quarter</type></note>"
+)
+_MULTI_REST_4 = (
+    "<attributes><measure-style><multiple-rest>4</multiple-rest>"
+    "</measure-style></attributes>"
+)
+
+
+def test_a_four_bar_rest_becomes_four_bars_of_rest() -> None:
+    score = score_json_from_musicxml(
+        _part(
+            _bar(1, _A_QUARTER * 4, _FOUR_FOUR)
+            + _bar(2, "", _MULTI_REST_4)
+            + _bar(3, _A_QUARTER * 4)
+        )
+    )
+
+    assert len(score.measures) == 6, [len(m.notes) for m in score.measures]
+    silent = score.measures[1:5]
+    assert all(
+        [(n.pitch, n.duration) for n in m.notes] == [("rest", "whole")] for m in silent
+    ), [[(n.pitch, n.duration) for n in m.notes] for m in silent]
+    assert [f.verdict for f in validate_measures(score)] == ["ok"] * 6
+
+
+def test_the_bars_after_it_are_renumbered() -> None:
+    """The file numbers a four-bar rest as one bar, so everything after it is
+    three too low — and `MeasureEditScreen` and every caveat line address a bar
+    by its number."""
+    score = score_json_from_musicxml(
+        _part(
+            _bar(1, _A_QUARTER * 4, _FOUR_FOUR)
+            + _bar(2, "", _MULTI_REST_4)
+            + _bar(3, _A_QUARTER * 4)
+        )
+    )
+
+    assert [m.measure_number for m in score.measures] == [1, 2, 3, 4, 5, 6]
+
+
+def test_the_metre_is_taken_from_the_music_when_the_page_never_prints_one() -> None:
+    """**The case the real page is.** The only `<time>` on that photograph is
+    printed mid-page after a double barline, which is the ordinary shape of an
+    inner part rather than an oddity — so a first attempt that expanded only on
+    a *stated* metre left the rest exactly as it found it.
+
+    `infer_beats_per_measure` is what `validate.py` already trusts to check a
+    headerless page, asked here rather than copied.
+    """
+    score = score_json_from_musicxml(
+        _part(
+            _bar(1, _A_QUARTER * 4)
+            + _bar(2, _A_QUARTER * 4)
+            + _bar(3, "", _MULTI_REST_4)
+            + _bar(4, _A_QUARTER * 4)
+        )
+    )
+
+    assert len(score.measures) == 7
+    assert score.measures[2].notes[0].duration == "whole"
+
+
+def test_a_metre_no_single_rest_fills_is_left_visibly_short() -> None:
+    """5/4 has no rest in this schema that fills a bar of it, and inventing one
+    would put a duration on the page that the page does not have.
+
+    Left as one empty measure, which `validate.py` reports as a hole. Being
+    visibly short is the failure this can afford; being silently short — three
+    bars of time gone with every later verdict wrong and nothing to see — is
+    not.
+    """
+    five_four = (
+        "<attributes><divisions>1</divisions>"
+        "<time><beats>5</beats><beat-type>4</beat-type></time></attributes>"
+    )
+    # Numbered 7 and 8, not 1 and 2, so that the *other* half of the rule is
+    # visible here too: a rest that was not expanded must not renumber the
+    # part. With 1 and 2 an unconditional renumber is indistinguishable from
+    # no renumber at all, and the mutation that removes the guard survives.
+    score = score_json_from_musicxml(
+        _part(_bar(7, _A_QUARTER * 5, five_four) + _bar(8, "", _MULTI_REST_4))
+    )
+
+    assert len(score.measures) == 2
+    assert score.measures[1].notes == []
+    assert [m.measure_number for m in score.measures] == [7, 8]
+    assert [f.verdict for f in validate_measures(score)] == ["ok", "empty"]
+
+
+def test_a_score_with_no_multi_bar_rest_keeps_the_file_s_own_numbers() -> None:
+    """Renumbering only happens when something was expanded. Doing it
+    unconditionally would change the numbers of every score already in the
+    library — including the pickup an engine numbers 0, which the importer
+    handles deliberately."""
+    score = score_json_from_musicxml(
+        _part(_bar(7, _A_QUARTER * 4, _FOUR_FOUR) + _bar(8, _A_QUARTER * 4))
+    )
+
+    assert [m.measure_number for m in score.measures] == [7, 8]
+
+
+@pytest.mark.parametrize("value", ["1", "0", "-3", "lots", ""])
+def test_a_multiple_rest_that_is_not_several_bars_is_ignored(value: str) -> None:
+    """`1` is one bar and needs no expanding; the rest are an engine writing
+    something that is not a count, and guessing at it would add bars of silence
+    to a part that has none."""
+    odd = (
+        f"<attributes><measure-style><multiple-rest>{value}</multiple-rest>"
+        "</measure-style></attributes>"
+    )
+    score = score_json_from_musicxml(
+        _part(_bar(1, _A_QUARTER * 4, _FOUR_FOUR) + _bar(2, "", odd))
+    )
+
+    assert len(score.measures) == 2
+
+
+def test_a_multi_rest_measure_that_also_holds_notes_keeps_them() -> None:
+    """Defensive: the two together are a contradiction, and the notes are the
+    half that was definitely read off the page."""
+    score = score_json_from_musicxml(
+        _part(_bar(1, _A_QUARTER * 4, _FOUR_FOUR) + _bar(2, _A_QUARTER * 4, _MULTI_REST_4))
+    )
+
+    assert len(score.measures) == 2
+    assert len(score.measures[1].notes) == 4
+
+
+def test_a_metre_printed_at_the_rest_is_stated_once_not_at_every_bar() -> None:
+    """A metre change printed at a four-bar rest is printed *once*.
+
+    `meters_in_force` reads `Measure.time_signature` as a change taking effect
+    at that bar, so repeating it across the expanded bars would put three metre
+    changes into a score that has one — and a score that says 3/4, 3/4, 3/4,
+    3/4 is a different document from one that says 3/4 and then three bars.
+    """
+    three_four = (
+        "<attributes><time><beats>3</beats><beat-type>4</beat-type></time>"
+        "<measure-style><multiple-rest>4</multiple-rest></measure-style>"
+        "</attributes>"
+    )
+    score = score_json_from_musicxml(
+        _part(_bar(1, _A_QUARTER * 4, _FOUR_FOUR) + _bar(2, "", three_four))
+    )
+
+    assert len(score.measures) == 5
+    assert [m.time_signature for m in score.measures] == [None, "3/4", None, None, None]
+    assert [n.duration for m in score.measures[1:] for n in m.notes] == ["dotted_half"] * 4

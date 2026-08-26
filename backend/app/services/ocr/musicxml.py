@@ -22,7 +22,15 @@ from __future__ import annotations
 import xml.etree.ElementTree as ET
 from typing import Final
 
-from app.services.score_schema import Measure, Note, ScoreJson, Slur, Tuplet
+from app.services.ocr.validate import infer_beats_per_measure
+from app.services.score_schema import (
+    DURATION_BEATS,
+    Measure,
+    Note,
+    ScoreJson,
+    Slur,
+    Tuplet,
+)
 
 # MusicXML type names → ours. `long` and `maxima` are still absent, and a piece
 # of string music that needs them is outside what this product reads; `breve`
@@ -171,6 +179,67 @@ def _duration_name(note: ET.Element) -> str | None:
     return None
 
 
+
+#: The rest that fills exactly one bar, by the bar's length in quarter-beats.
+#:
+#: Named rather than searched out of `DURATION_BEATS` so that the answer for a
+#: bar is a **notated** value and not whichever key happened to match first —
+#: 4.0 beats is a whole rest, never a triplet-half plus arithmetic. Metres whose
+#: bar is not one of these (5/4, 7/8) are absent on purpose: there is no single
+#: rest that fills them, so `_expand_multiple_rest` declines rather than
+#: inventing one.
+_BAR_REST_FOR: Final[dict[float, str]] = {
+    8.0: "double_whole",
+    6.0: "dotted_whole",
+    4.0: "whole",
+    3.0: "dotted_half",
+    2.0: "half",
+    1.5: "dotted_quarter",
+    1.0: "quarter",
+}
+
+
+def _quarter_beats(time_signature: str | None) -> float | None:
+    """Quarter-note beats in one bar of this metre, or None.
+
+    A local copy of the one line `validate.beats_per_measure` computes, kept
+    here rather than imported so the importer does not depend on the validator
+    — this module is what the validator reads, and the arrow has only ever
+    pointed one way.
+    """
+    if not time_signature or time_signature == "unknown":
+        return None
+    try:
+        upper, lower = time_signature.split("/")
+        count, unit = int(upper), int(lower)
+    except (ValueError, AttributeError):
+        return None
+    if count <= 0 or unit <= 0:
+        return None
+    return count * (4.0 / unit)
+
+
+def _multiple_rest_count(measure_el: ET.Element) -> int | None:
+    """How many bars this measure stands for, if it is a multi-bar rest.
+
+    **A four-bar rest is written as one empty `<measure>`** carrying
+    `<measure-style><multiple-rest>4</multiple-rest></measure-style>`, which is
+    how a real orchestral part writes the thing a bass player spends most of a
+    symphony doing. Read literally it is a bar with nothing in it.
+    """
+    for attributes in measure_el.iterfind("attributes"):
+        for style in attributes.iterfind("measure-style"):
+            raw = _text(style.find("multiple-rest"))
+            if raw is None:
+                continue
+            try:
+                count = int(raw)
+            except ValueError:
+                return None
+            return count if count > 1 else None
+    return None
+
+
 def _pitch_name(note: ET.Element) -> str | None:
     if note.find("rest") is not None:
         return "rest"
@@ -277,6 +346,98 @@ def _choose_part(root: ET.Element, wanted: str | None) -> ET.Element:
     )
 
 
+
+def _expand_multiple_rests(
+    measures: list[Measure],
+    pending: list[tuple[int, int, str | None]],
+    header_metre: str | None,
+) -> list[Measure]:
+    """Turn each multi-bar rest into the bars of silence it stands for.
+
+    **This is most of what a bass player does, and it was being dropped.**
+    `<measure-style><multiple-rest>4</multiple-rest></measure-style>` is how the
+    notation writes four bars of rest, and it arrives as a *single* `<measure>`
+    with nothing in it. Read literally, three bars of time vanish — and
+    `alignment.py` accumulates durations, so **every bar after the rest is
+    compared against the recording eight beats early**. The musician counts the
+    rest correctly, comes in exactly on time, and is told they rushed the whole
+    rest of the page.
+
+    Measured on the one real page in this repository: a four-bar rest at bar 3,
+    a 77-bar part read as 74, and every verdict from bar 4 onwards computed
+    against the wrong moment.
+
+    **Done in a second pass because the bar length is often not knowable yet.**
+    On that page the only `<time>` printed is mid-page, after a double barline —
+    which is the ordinary shape of an inner page, not an oddity. So the length
+    comes from, in order: a metre stated on the rest itself, the part's header
+    metre, and failing both `infer_beats_per_measure` over the bars that do
+    have notes — the same evidence `validate.py` already trusts to check a
+    headerless page, asked here rather than copied.
+
+    When none of those yields a bar this schema has a single rest for — no
+    metre at all, or 5/4, or 7/8 — the rest is left as it was: one empty
+    measure, which `validate.py` reports as a hole. Being visibly short is the
+    failure this can afford; being silently short is not.
+    """
+    if not pending:
+        return measures
+
+    inferred = infer_beats_per_measure(
+        [
+            sum(DURATION_BEATS[note.duration] for note in measure.notes)
+            for measure in measures
+            if measure.notes
+        ]
+    )
+
+    out: list[Measure] = []
+    expanded = False
+    by_index = {index: (count, metre) for index, count, metre in pending}
+    for index, measure in enumerate(measures):
+        entry = by_index.get(index)
+        if entry is None:
+            out.append(measure)
+            continue
+        count, metre = entry
+        beats = _quarter_beats(metre or header_metre)
+        if beats is None:
+            beats = inferred
+        rest = _BAR_REST_FOR.get(beats) if beats is not None else None
+        if rest is None:
+            out.append(measure)
+            continue
+        expanded = True
+        for offset in range(count):
+            out.append(
+                measure.model_copy(
+                    update={
+                        "notes": [Note(pitch="rest", duration=rest)],
+                        # The metre is stated once, on the first of the bars it
+                        # governs. Repeating it would read as a metre change
+                        # printed at every bar of the rest.
+                        "time_signature": measure.time_signature if offset == 0 else None,
+                        "measure_number": measure.measure_number + offset,
+                    }
+                )
+            )
+
+    if not expanded:
+        return measures
+
+    # **Renumbered, and only when something was actually expanded.**
+    #
+    # The file numbers a four-bar rest as one bar, so every measure after it is
+    # now three too low — and `MeasureEditScreen` and every caveat line address
+    # a bar by its number. Renumbering unconditionally would change the numbers
+    # of every score already in the library, including the pickup a file
+    # numbers 0, which the loop above handles deliberately.
+    return [
+        measure.model_copy(update={"measure_number": position})
+        for position, measure in enumerate(out, start=1)
+    ]
+
+
 def score_json_from_musicxml(
     xml: str, *, clef_fallback: str | None = None, part: str | None = None
 ) -> ScoreJson:
@@ -309,6 +470,8 @@ def score_json_from_musicxml(
     bpm_hint: int | None = None
 
     measures: list[Measure] = []
+    #: `(index in measures, how many bars it stands for, metre stated on it)`
+    pending_rests: list[tuple[int, int, str | None]] = []
     dropped = 0
 
     for index, measure_el in enumerate(chosen.iterfind("measure"), start=1):
@@ -327,6 +490,10 @@ def score_json_from_musicxml(
         # presented 2/2 and F major as the page's header, on a page that starts
         # in cut-common somewhere else entirely.
         measure_time: str | None = None
+        # A multi-bar rest is *this* many bars, and reading it as one is how a
+        # bass part loses most of its music. Handled after the attributes loop,
+        # because the metre it needs may be stated in this very measure.
+        standing_for = _multiple_rest_count(measure_el)
         for attributes in measure_el.iterfind("attributes"):
             clef_el = attributes.find("clef")
             if clef is None and clef_el is not None:
@@ -498,6 +665,12 @@ def score_json_from_musicxml(
                 )
             run_start = position
 
+        # A multi-bar rest is recorded here and expanded after the loop —
+        # the bar length it needs may not be knowable until the whole part has
+        # been read. See `_expand_multiple_rests`.
+        if standing_for and not notes:
+            pending_rests.append((len(measures), standing_for, measure_time))
+
         measures.append(
             Measure(
                 measure_number=number if number >= 1 else index,
@@ -507,6 +680,8 @@ def score_json_from_musicxml(
                 time_signature=measure_time,
             )
         )
+
+    measures = _expand_multiple_rests(measures, pending_rests, time_signature)
 
     total_notes = sum(len(m.notes) for m in measures)
     # Confidence an engine did not report, inferred from what had to be thrown

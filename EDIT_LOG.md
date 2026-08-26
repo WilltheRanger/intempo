@@ -6,6 +6,97 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-26 — A four-bar rest was being read as one empty bar
+
+**Branch:** `main`. Backend only. No screen, component, style or copy touched.
+
+**Files:** `backend/app/services/ocr/musicxml.py`,
+`backend/app/tests/test_musicxml.py`.
+
+**The biggest reading fix so far, and it is most of what a bass player does.**
+
+### What was wrong
+
+`<measure-style><multiple-rest>4</multiple-rest></measure-style>` is how the
+notation writes four bars of rest, and it arrives as a **single** `<measure>`
+with nothing in it. The importer read it literally: one bar, no notes.
+
+Three bars of time vanish. `alignment.py` accumulates durations, so **every bar
+after the rest is compared against the recording eight beats early** — the
+musician counts the rest correctly, comes in exactly on time, and is told they
+rushed the whole rest of the page. On an orchestral part, which is where multi-
+bar rests live and which is the founder's own instrument, that is not an edge
+case; it is the ordinary shape of the music.
+
+It was also invisible: the bar became `empty`, which reads as one dropped bar
+rather than three missing ones, and 73 of 74 bars still added up.
+
+### How it was found
+
+Bar 3 of `homr_page.jpg` was the single `empty` verdict on an otherwise perfect
+reading, and homr's own token dump for that page contained `rest_4m`. Following
+that one bar into the raw MusicXML is what turned up the `multiple-rest`.
+
+### The second pass, and why the first attempt did not work
+
+Written first as an expansion inside the measure loop, using the metre stated
+so far. It fired on nothing, because **the only `<time>` printed on that
+photograph is mid-page, after a double barline** — which is the ordinary shape
+of an inner part, not an oddity.
+
+So `_expand_multiple_rests` runs after the whole part is read and takes the bar
+length from, in order: a metre stated on the rest itself, the part's header
+metre, and failing both `infer_beats_per_measure` over the bars that do have
+notes — the same evidence `validate.py` already trusts for a headerless page,
+**asked rather than copied**.
+
+Where none of those gives a bar this schema has a single rest for — no metre at
+all, or 5/4, or 7/8 — the rest is left exactly as it was: one empty measure,
+which `validate.py` reports as a hole. Being visibly short is the failure this
+can afford; being silently short is not.
+
+The part is renumbered **only when something was actually expanded**. The file
+numbers a four-bar rest as one bar, so everything after it is three too low and
+`MeasureEditScreen` addresses a bar by its number — but renumbering
+unconditionally would change the numbers of every score already in the library,
+including the pickup an engine numbers 0.
+
+### Measured, on both real photographs
+
+```
+page                    meas notes  conf   clef  durations
+homr_page.jpg             77   271  1.00   bass  eighthx20 quarterx230 halfx8 wholex13
+page-upright.jpg          51   128  0.86   bass  sixteenthx16 eighthx76 quarterx11 halfx18 wholex7
+```
+
+| page | before | after |
+|---|---|---|
+| `homr_page.jpg` | 74 bars, 267 notes, 0.99 | **77 bars, 271 notes, 1.00** |
+| `page-upright.jpg` | 43 bars, 114 notes, 0.70 | **51 bars, 128 notes, 0.86** |
+
+Every bar of the first page now adds up (was 73 of 74). Mean confidence across
+the corpus 0.81 → 0.97. The three printed fixtures are unchanged, which is the
+other half of the result — none of them has a multi-bar rest.
+
+### Mutations
+
+Seven, five caught, two survived, both fixed:
+
+* **"every score is renumbered, expanded or not" survived** because the test
+  for it used bars numbered 1 and 2, where renumbering is indistinguishable
+  from not renumbering. Moved to 7 and 8.
+* **"the metre is restated on every bar of the rest" survived** because nothing
+  asserted it. `meters_in_force` reads `Measure.time_signature` as a change at
+  that bar, so repeating it turns one printed metre change into four.
+
+All seven die now. Full suite green at 1218.
+
+**Not verified:** no scan has gone through production with this. What it should
+now produce is a part whose bar count matches the page and whose verdicts line
+up after a rest.
+
+---
+
 ## 2026-08-26 — homr does not quantise, and it is measured rather than hoped
 
 **Branch:** `main`. `tools/homr-bench.py`, one docstring, and two notes. No
