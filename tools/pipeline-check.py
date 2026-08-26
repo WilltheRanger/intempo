@@ -50,3 +50,13 @@ for arg in sys.argv[1:]:
     print(f"{page.name:24} bars={len(score.measures):3} pitched={pitched:3} "
           f"conf={score.ocr_confidence:.2f} clef={score.clef} {dict(v)}")
     print(f"{'':24} stages: {stages}")
+    # The duration mix, reported here as well as in `homr-bench.py`, so the two
+    # can be compared rather than assumed to agree. They look at different
+    # images: the bench reads the photograph, the pipeline reads the copy
+    # `prepare_for_model` makes. Twice this session a claim measured on one has
+    # turned out not to hold on the other.
+    mix = Counter(n.duration for m in score.measures for n in m.notes)
+    order = ("thirty_second", "sixteenth", "eighth", "quarter", "half", "whole")
+    known = [f"{n}x{mix[n]}" for n in order if mix.get(n)]
+    rest = [f"{k}x{v}" for k, v in mix.items() if k not in order]
+    print(f"{'':24} durations: {' '.join(known + rest) or '-'}")
