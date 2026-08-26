@@ -124,3 +124,42 @@ JOBS = [
 ```
 
 All output images are 1200 px wide, 85 % JPEG quality, downscaled with Lanczos.
+
+## What these files actually are, measured (2026-08-26)
+
+Every fixture here was **resized to 1200 px wide** when it was authored, which
+is the single most important fact about the corpus and is easy to miss. The
+staff spacing that survives that is a fraction of a real photograph's:
+
+| fixture | size | staff spacing | reaches a reader? | homr |
+|---|---|---|---|---|
+| `01_simple_printed` | 1200×124 | 11.0 px | yes | 4 bars, 1.00 |
+| `02_medium_printed` | 1200×165 | 11.0 px | yes | 6 bars, 1.00 |
+| `03_complex_printed` | 1200×168 | 11.0 px | yes | 3 bars, 1.00 |
+| `04_handwritten_clean` | 1200×145 | 9.25 px | yes | refused — no bar adds up |
+| `05_handwritten_messy` | 1200×72 | 6.0 px | **no** | never asked |
+| *(a real photograph)* | 4284×5712 | 34 px | yes | 58 bars, 0.97 |
+| *(a real photograph)* | 5712×4284 | 107 px | yes | 77 bars, 1.00 |
+
+Three things follow, and each of them has been got wrong at least once.
+
+**`05_handwritten_messy` never reaches an OCR provider in production.**
+`too_small_to_read` refuses it at the size gate — six pixels between staff
+lines against a floor of eight — with a message about the photograph. Running
+it through `tools/homr-bench.py` bypasses that gate, so the bench will show you
+a reader's opinion of a page no reader is ever given. It is not evidence about
+any engine's handwriting.
+
+**`04_handwritten_clean` is not a clean single line.** The crop cuts into the
+system below, and stems and beams belonging to it run along the bottom edge.
+
+**It fails on the handwriting even so.** Removing the intruding fragment, and
+tripling the resolution, and both together, were each measured: 1 bar, 3 bars,
+2 bars — and **0.00 confidence every time**, not one bar's durations adding up.
+Neither the crop nor the size is the cause.
+
+**The corpus is near-threshold throughout.** 6–11 px of staff spacing against
+34–107 px for a real photograph. Any measurement taken here is taken close to
+the edge of legibility, which is worth remembering before concluding anything
+general from it — and is a second reason, beside repertoire, that a real page
+keeps surprising this repository.
