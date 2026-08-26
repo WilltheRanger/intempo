@@ -492,7 +492,7 @@ def test_the_page_is_measured_as_photographed_not_as_prepared() -> None:
     from app.workers import transcription_runner as runner
 
     source = Path(runner.__file__).read_text()
-    body = source.split("def _read_page(")[1].split("\ndef ")[0]
+    body = source.split("def _read_one_page(")[1].split("\ndef ")[0]
     code = re.sub(r"#[^\n]*", "", body)
 
     assert "too_small_to_read(image_bytes)" in code, (

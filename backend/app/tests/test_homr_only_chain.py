@@ -176,7 +176,7 @@ def test_it_refuses_before_the_page_is_downloaded(monkeypatch) -> None:
     fake = FakeSupabase()
     fake.seed("scores", [{"id": "s1", "transcription_status": "queued"}])
 
-    runner._read_page(fake, "s1", "https://example.test/page.jpg")
+    runner._read_pages(fake, "s1", ["https://example.test/page.jpg"])
 
     assert fetched == [], "the page was downloaded before we knew we could read it"
     row = fake.table("scores").rows[0]

@@ -6,6 +6,79 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-26 — The worker reads every page of a part, and stops at the first that does not
+
+**Branch:** `main`. Backend only. No screen, component, style or copy touched —
+and one thing was **not** built because it would have been (see "the bar",
+below).
+
+**Files:** `backend/app/workers/transcription_runner.py`,
+`backend/app/tests/test_multi_page_scan.py` (new),
+`backend/app/tests/{test_concurrency_limits,test_homr_only_chain,test_page_legibility}.py`.
+
+**Status.** Second half of the worker side. `join_pages` is now called; the
+migration is **still not applied**, and the API and the app still send one
+page. A real scan is unchanged until those land.
+
+### What it does
+
+`_read_page` became `_read_pages` over a list, plus `_read_one_page` for each.
+`pages_of(row)` decides what a row means: `source_image_urls` where it exists,
+`source_image_url` otherwise, nothing for a piece entered by hand.
+
+**The array is read first and that ordering is load-bearing.** A deployment
+mid-rollout writes both — page one into the old column so an older worker still
+finds something, every page into the new one. Preferring the old column would
+read page one of a three-page part on a database holding all three.
+
+**All-or-nothing, and the failure names the page.** A score built from pages 1
+and 3 is a timeline with a silent hole where page 2 was; `alignment.py`
+accumulates durations, so every bar after the gap is judged against music that
+is not there. The scan stops at the first page that fails, says *"Page 2 of 3:"*
+in front of the reason, and never fetches page 3. A one-page scan is not
+labelled "Page 1 of 1" — that would put noise in front of every error message
+in the app, on the shape of scan that is still the common one.
+
+`_fetch_score` now asks for the new column and **falls back to the old list if
+PostgREST refuses it.** Migrations here are applied by hand in the Supabase
+editor, so there is a window where this code is deployed and the column is not
+— and during it the worker has to keep reading page one rather than stop
+reading anything. A failed fetch leaves the row `reading` with nobody coming
+back for it.
+
+### The bar, and the thing I did not build
+
+A multi-page read reports `Reading the notation` for the whole of it and
+nothing finer. That is a limitation, recorded as one.
+
+The bar's positions are keyed on the worker's words and rise in the order the
+worker reaches them (`fixtures/stages/parity.json`). Page 2 starting over at
+"Finding the staves" — 0.3, after page 1 left the bar at 0.9 — walks it
+backwards, which reads as the scan having restarted and is the exact failure
+`transcriptionProgress.ts` exists to prevent. The honest fix is a page counter
+in the words, the way a stave count already works: `Reading page 2 of 3`. That
+is **new copy on a screen**, so it is held for the owner under §2 rather than
+shipped quietly. Coarse-but-monotone is the version that needs no approval, so
+it is the version that shipped.
+
+### The two mutations that survived, and why they were my fault
+
+Six mutations, four caught, two survived — both inside `_read_one_page`, which
+the first round of tests **replaced wholesale**. The assertion that a failure
+names the page was passing against a stub that did the naming itself: a double
+more permissive than the real thing agrees with the code instead of testing it,
+which is precisely the mistake that let `ProcessingConfig()` ship with no
+arguments and never read a page.
+
+Rewritten to patch at the module boundary — `readable_url`, `download_image`,
+`too_small_to_read`, `prepare_for_model`, `parse_sheet_music` — so the real
+function decides. Both mutants die now, along with a third the new tests bring:
+per-page stage reporting, i.e. the retreating bar.
+
+Full suite green at 1191.
+
+---
+
 ## 2026-08-26 — A piece is more pages than one: the join, and the schema for it
 
 **Branch:** `main`. Backend only. No screen, component, style or copy touched.
