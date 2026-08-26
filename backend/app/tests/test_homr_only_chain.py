@@ -224,3 +224,108 @@ def test_the_same_answer_arrives_even_if_the_pipeline_is_reached() -> None:
 )
 def test_the_backstop_matches_however_it_is_written(detail: str) -> None:
     assert runner._why_it_failed(detail) != runner._UNKNOWN_REASON
+
+
+# ---------------------------------------------------------------------------
+# Orientation: homr decides, not a heuristic
+# ---------------------------------------------------------------------------
+
+
+def test_a_page_homr_reads_costs_exactly_one_pass(tmp_path, monkeypatch) -> None:
+    """The page that arrives correct — which is every page whose EXIF tag is
+    honoured — must not pay for the retry."""
+    from app.services.ocr import homr_provider as module
+
+    seen: list[str] = []
+    monkeypatch.setattr(
+        module.HomrProvider, "_run", lambda self, page: seen.append(page.name) or "<xml/>"
+    )
+    page = tmp_path / "page.jpg"
+    page.write_bytes(b"x")
+
+    assert module.homr_provider._read_at_any_orientation(page) == "<xml/>"
+    assert seen == ["page.jpg"], "an upright page was turned"
+
+
+def test_a_page_homr_cannot_segment_is_turned_and_offered_again(
+    tmp_path, monkeypatch
+) -> None:
+    """**Why this replaced a heuristic.** Guessing the orientation from ink
+    profiles got it wrong on the first real photograph: EXIF had already put
+    that page the right way up, and rotating it took homr from 5 staffs, 25
+    measures and 112 notes to none at all. homr's own "No staffs found" is a
+    far better signal than counting bands."""
+    from PIL import Image
+
+    from app.services.ocr import homr_provider as module
+    from app.services.ocr.base import OCRProviderError
+
+    page = tmp_path / "page.jpg"
+    Image.new("RGB", (40, 30), "white").save(page)
+
+    attempts: list[str] = []
+
+    def _run(self, path):
+        attempts.append(path.name)
+        if len(attempts) == 1:
+            raise OCRProviderError("homr: Exception: No staffs found")
+        return "<xml/>"
+
+    monkeypatch.setattr(module.HomrProvider, "_run", _run)
+
+    assert module.homr_provider._read_at_any_orientation(page) == "<xml/>"
+    assert len(attempts) == 2
+    assert "turned" in attempts[1]
+
+
+def test_a_failure_turning_the_page_cannot_fix_is_not_retried(
+    tmp_path, monkeypatch
+) -> None:
+    """A container without homr, a missing model, an unreadable file. Turning
+    the page helps none of them, and trying twice doubles a failure rather than
+    fixing it — on a worker that is billed by the second."""
+    from PIL import Image
+
+    from app.services.ocr import homr_provider as module
+    from app.services.ocr.base import OCRProviderError
+
+    attempts: list[str] = []
+
+    def _run(self, path):
+        attempts.append(path.name)
+        raise OCRProviderError("homr: homr is not installed in this container")
+
+    monkeypatch.setattr(module.HomrProvider, "_run", _run)
+    # A page that genuinely *can* be turned. Written as raw bytes it could not
+    # be, so the loop skipped the rotations for that reason instead of this
+    # one — and a mutation removing the check survived.
+    page = tmp_path / "page.jpg"
+    Image.new("RGB", (40, 30), "white").save(page)
+
+    with pytest.raises(OCRProviderError):
+        module.homr_provider._read_at_any_orientation(page)
+
+    assert len(attempts) == 1
+
+
+def test_the_first_failure_is_the_one_reported(tmp_path, monkeypatch) -> None:
+    """After turning it twice and failing, the musician should be told what
+    happened to their page as it was, not to the third rotation of it."""
+    from PIL import Image
+
+    from app.services.ocr import homr_provider as module
+    from app.services.ocr.base import OCRProviderError
+
+    page = tmp_path / "page.jpg"
+    Image.new("RGB", (40, 30), "white").save(page)
+
+    def _run(self, path):
+        raise OCRProviderError(f"homr: No staffs found in {path.name}")
+
+    monkeypatch.setattr(module.HomrProvider, "_run", _run)
+
+    with pytest.raises(OCRProviderError) as caught:
+        module.homr_provider._read_at_any_orientation(page)
+
+    assert "page.jpg" in str(caught.value)
+    assert "turned" not in str(caught.value)

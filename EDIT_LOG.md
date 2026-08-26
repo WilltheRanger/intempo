@@ -178,6 +178,122 @@ staleness test fails when `WAKE_GOES_STALE_AFTER_MS` is made infinite.
 
 ---
 
+## 2026-08-26 — homr had never run: `ProcessingConfig()` was called with no arguments
+
+**Branch:** `main`. **The scan reads.** First successful transcription in this
+project's production path.
+
+**Files:** `backend/app/services/ocr/homr_provider.py`,
+`backend/app/workers/transcription_runner.py`,
+`backend/app/services/page_image.py`,
+`backend/app/tests/test_homr_provider.py`,
+`backend/app/tests/test_homr_only_chain.py`,
+`backend/app/tests/test_modal_images.py`,
+`backend/app/tests/test_page_legibility.py`,
+`mobile/src/lib/platform/pageCamera.ts` + `.test.ts` (new),
+`mobile/src/screens/addPiece/ImportPages.tsx`.
+
+### The bug
+
+    ProcessingConfig()
+
+`homr.main.ProcessingConfig` takes **eight required positional parameters** in
+0.7.0. This called it with none, so every page raised
+
+    TypeError: ProcessingConfig.__init__() missing 8 required positional arguments
+
+before a pixel was looked at. It was wrapped as an `OCRProviderError`, matched
+no needle in `_FAILURE_REASONS`, and reached the musician as *"A flatter,
+better-lit shot of the page usually fixes it"* — advice about a photograph, for
+a call that never reached one.
+
+**homr has never run in this deployment. Not once, on any page.** Every `done`
+row in the database at confidence 0.2–0.42 is the vision chain; homr's own
+number on the page below is **0.96**.
+
+### Why nothing caught it
+
+The provider's test double was `type("ProcessingConfig", (), {})` — a class
+taking no arguments. The provider called it with none, the stub agreed, and
+thirteen tests passed. **A double more permissive than the real thing does not
+test the code, it agrees with it.** The stub is now a dataclass with homr's
+eight fields, and would have failed on the first run.
+
+`test_modal_images.py` checked the container could *import* homr, which it
+could. Importing is not calling.
+
+### Proved, not inferred
+
+homr installed in this sandbox and run against the musician's own page:
+
+    as stored (4284x5712, after EXIF)   5 staffs, 25 measures, 112 notes
+    rotated -90                          0 staffs -> "No staffs found"
+    rotated +90                          0 staffs -> "No staffs found"
+
+Then through the real provider, unchanged:
+
+    measures   25
+    notes      108
+    confidence 0.96
+    clef       bass      <- correct; it is a String Bass part
+
+### And an admission: my orientation fix was wrong
+
+The entry two below this one turned pages judged sideways. **It broke this
+page.** EXIF orientation had already put the photograph the right way up; what
+looked sideways to me was the raw pixels before the tag is applied — which
+`_inked` applies and I did not, having viewed the file rather than measured it.
+The heuristic took a page homr reads perfectly and rotated it into one homr
+cannot read at all.
+
+`is_sideways`, `upright` and their tests are **deleted**, not left unused. Dead
+code with tests around it is worse than none: it reads as a considered feature.
+
+Replaced by the approach EDIT_LOG already recorded as "the better fix I did not
+take", now that homr can be run here to validate it: the page goes in as it
+arrived, and **only a page homr rejects with "No staffs found" is turned and
+offered again**. homr segments, finds and dewarps its own staves; its own
+refusal is a far better signal than counting ink bands. A page it reads costs
+exactly one pass, so this is paid only by pages that were failing anyway — and
+a failure turning cannot fix (no homr in the container, a missing model) is not
+retried at all.
+
+### The webcam option is gone on desktop
+
+The owner asked. `cameraCanPhotographAPage` decides on **whether the device has
+a camera worth photographing a page with**, not on whether the build is web: a
+phone browser is `web` and its rear camera is the best camera in this product,
+while a laptop's is a 720p webcam pointed at the person. Measured on the same
+page — 25 px between staff lines at full resolution, 4 px at 1280x960, against
+a floor of 8.
+
+Errs towards keeping the button: a touchscreen laptop keeps one it does not
+need, and the cost of guessing the other way is taking the camera from a phone.
+
+### Tests
+
+6 new, 1 stub corrected, the rotation tests deleted. Backend **1152 passed, 1
+xfail**; mobile **328**, typecheck clean. Mutation-tested: 6 mutants, 6 killed
+— `ProcessingConfig()` with nothing, one staff instead of every staff, never
+turning, not trying upright first, retrying failures turning cannot fix, and
+reporting the last failure instead of the first.
+
+Two of those survived a first pass and both were the test's fault: one was
+fooled by a commented-out line (the check now strips comments), and one used
+raw bytes as the page, so the rotation was skipped for the wrong reason.
+
+### Honest status
+
+The page reads **here**, through the real provider and real homr, at 0.96. It
+has not yet read **on Modal** — that needs this deploy and one more scan.
+
+### Rollback
+
+`git revert`. The `ProcessingConfig` arguments are the load-bearing part;
+without them homr cannot run at all.
+
+---
+
 ## 2026-08-25 — Say how large the photograph was, in the sentence that refuses it
 
 **Branch:** `main`. Backend only, one sentence and the field behind it.

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import sys
 import types
+from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
@@ -70,7 +71,30 @@ def homr(monkeypatch):
 
         main = types.ModuleType("homr.main")
         main.process_image = process_image
-        main.ProcessingConfig = type("ProcessingConfig", (), {})
+        # **The stub has homr's real signature, and that is the point.**
+        #
+        # It used to be `type("ProcessingConfig", (), {})` — a class taking no
+        # arguments. The provider called `ProcessingConfig()` with none, the
+        # stub accepted it, and every test passed. Against real homr 0.7.0,
+        # where all eight parameters are required positionals, that same call
+        # raised `TypeError` on **every page ever scanned** — reported to the
+        # musician as "a flatter, better-lit shot of the page usually fixes
+        # it", advice about a photograph for a call that never reached one.
+        #
+        # A double that is more permissive than the real thing does not test
+        # the code, it agrees with it.
+        @dataclass
+        class ProcessingConfig:
+            enable_debug: bool
+            enable_cache: bool
+            write_staff_positions: bool
+            read_staff_positions: bool
+            selected_staff: int
+            transformer_use_gpu: bool
+            segnet_use_gpu: bool
+            coreml_encoder: bool
+
+        main.ProcessingConfig = ProcessingConfig
         generator = types.ModuleType("homr.music_xml_generator")
         generator.XmlGeneratorArguments = lambda **kwargs: kwargs
         package = types.ModuleType("homr")
