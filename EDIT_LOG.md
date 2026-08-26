@@ -6,6 +6,72 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-26 — A commit cannot land without saying what it changed
+
+**Branch:** `main`. Tooling and CI. No screen, component, style or copy
+touched.
+
+**Files:** `tools/check-log-entry.py` (new),
+`backend/app/tests/test_log_entry_check.py` (new),
+`.github/workflows/ci.yml`, `CLAUDE.md`.
+
+### Written because it happened, one tick ago
+
+`CLAUDE.md` §1 makes four logs binding and part of the Definition of Done, and
+nothing checked any of them. Last tick a commit landed with its tooling changes
+and **without its entry**: the script writing the entry ran from `backend/`,
+failed on a relative path, and the `git commit` in the same shell command
+succeeded anyway. Nothing noticed. I found it by reading the output afterwards
+— which is precisely the silent gap the three ticks before it were about, on
+the tick that was about silent gaps.
+
+### What it checks, and what it cannot
+
+A log entry is a claim about work, so no program can check that an entry is any
+*good*. This checks the one thing a program can: that a change to the product
+did not go out in silence.
+
+The rule is a tested function, not shell inside the workflow file — for the
+reason this repository keeps rediscovering, and which `CLAUDE.md` states about
+screens: **a rule that only runs inside a workflow is a rule nothing checks.**
+Seven tests, including one that pins the exact commit that caused it.
+
+`tools/` and `fixtures/` count as the product, deliberately. The benches decide
+what gets measured and therefore what gets believed — two conclusions this
+session came from a bench that silently skipped a production gate — and every
+number anybody quotes is taken against the fixtures. A commit that only edits
+`CLAUDE.md`, a log or a README needs no entry: it is already a record, and
+requiring one would mean an entry about writing an entry.
+
+### Verified against the history it was written for
+
+```
+$ tools/check-log-entry.py 3d47e77~1..3d47e77
+This change touches the product and adds no EDIT_LOG.md entry:
+  tools/homr-bench.py
+  tools/pipeline-check.py
+exit=1
+
+$ tools/check-log-entry.py af6e05d~1..af6e05d
+exit=0
+```
+
+It refuses the commit that caused it and allows the one that fixed it.
+
+### The CI step fails in the safe direction
+
+It compares against `github.event.before` on a push rather than `HEAD~1`, so a
+push of several commits is checked against what was there before it instead of
+against its own last commit — which would check one and wave the rest through.
+Where that SHA is absent or unreachable (a first push, a grafted history) it
+falls back to the parent, checking *less* than it should. That is the right
+direction to fail in: this job must never be the thing that blocks a push it
+cannot reason about.
+
+Full suite green at 1250, two xfailed.
+
+---
+
 ## 2026-08-26 — Re-measuring the session's claims, and stopping the bench misleading
 
 **Branch:** `main`. Tooling only. No screen, component, style or copy touched.
