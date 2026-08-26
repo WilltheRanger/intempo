@@ -534,11 +534,28 @@ def test_a_page_that_yields_a_single_note_is_refused(homr) -> None:
 
     Left failing on purpose. The principled rule is that a staff system always
     holds at least one bar, so a reading with fewer bars than the page has
-    systems has plainly failed — but `_legibility` reports whether there are
-    bands, not how many, and `crop_systems` returns zero for the single-line
-    strips this corpus is made of. There is no measurement series here to build
-    it on, and `EDIT_LOG` 2026-08-24 is explicit about not fitting a constant
-    to one photograph. Strict, so whoever gets the data finds this waiting.
+    systems has plainly failed. **Two ways to get that count were measured, and
+    both are unusable** (2026-08-26) — recorded here so the next person does
+    not repeat it:
+
+    * **`crop_systems`.** On the same photograph it returns **9** systems, and
+      **12** on the prepared copy the reader is actually given: it tiles, so
+      the count includes margin bands and moves with the image scale. It also
+      costs 10–11 s on a photograph against 0.6 s on the prepared copy. And it
+      is unsafe in principle: a page of one bar per system — slow music, or a
+      bass part of long rests — has *fewer bars than crops*, so the rule would
+      refuse legitimate music.
+    * **homr's own reporting.** It prints "Found N staff line fragments",
+      "Found N noteheads" and "Found N bar lines" (`homr/main.py`) — **no staff
+      count**. The `Found 11 staffs` that looked promising was `Found 11 bar
+      lines` matched by a loose regex.
+
+    Note also that the case *this test builds* is a single-system strip, where
+    one bar is arithmetically fine and no system-count rule could call it
+    wrong. The rule worth having is about a whole page yielding almost nothing;
+    the fixture here cannot express one, because the corpus is made of strips.
+
+    Strict, so whoever gets a real corpus finds this waiting.
     """
     one_note = MUSICXML.format(
         notes=(

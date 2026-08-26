@@ -6,6 +6,65 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-26 — Trying to close yesterday's xfail, and finding it cannot be
+
+**Branch:** `main`. One docstring. No screen, component, style or copy
+touched.
+
+**Files:** `backend/app/tests/test_homr_provider.py`.
+
+The `xfail` left two ticks ago said a whole page yielding one bar should be
+refused, and that the principled rule — **a staff system always holds at least
+one bar**, so a reading with fewer bars than the page has systems has plainly
+failed — was blocked only on getting a count of systems. This tick went to get
+one. Both candidates are unusable, and the reasons are worth more than another
+guess would have been.
+
+### `crop_systems` is not a count of systems
+
+| page | photograph | prepared copy | bars read |
+|---|---|---|---|
+| `homr_page.jpg` | 9 systems, 11.0 s | **12**, 0.62 s | 77 |
+| `page-upright.jpg` | 8 systems, 9.7 s | 8, 0.63 s | 58 |
+
+Nine against twelve for the same page. It **tiles**, so the count includes the
+margin bands above and below the music, and it moves with the image scale — so
+it is neither the number of systems nor a stable proxy for one. It is also 10–11
+seconds on a photograph against 0.6 on the prepared copy, which would be half a
+homr read added to every page.
+
+**And it is unsafe in principle, which the margins hide.** The real pages read
+6–8× more bars than crops, so a rule would look comfortable — but a page of one
+bar per system, which is what slow music or a bass part of long rests looks
+like, has *fewer bars than crops*. The rule would refuse legitimate music, on
+exactly this repertoire.
+
+### homr does not report a staff count
+
+Its own numbers looked like the better source — the engine contradicting itself
+beats any heuristic of ours. Captured from a real page: `892`, `212`, `11`.
+
+They are **staff line fragments, noteheads and bar lines** (`homr/main.py`
+lines 242, 246, 265). There is no staff count. The `Found 11 staffs` that
+looked promising was `Found 11 bar lines`, matched because my regex said
+`staffs?` and "staff line fragments" begins with "staff".
+
+### And the test itself was mis-specified
+
+The case it builds is a **single-system strip** yielding one bar — where one
+bar is arithmetically fine and no system-count rule could call it wrong. The
+rule worth having is about a whole *page* yielding almost nothing, and the
+fixture cannot express one, because this corpus is made of strips (see
+`SOURCES.md`).
+
+So the `xfail` stays, its reasoning now records both measurements and the
+mis-specification, and nobody has to repeat the investigation to find out why
+the obvious fix is not one.
+
+Full suite green at 1250, two xfailed.
+
+---
+
 ## 2026-08-26 — A commit cannot land without saying what it changed
 
 **Branch:** `main`. Tooling and CI. No screen, component, style or copy
