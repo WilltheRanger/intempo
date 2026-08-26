@@ -6,6 +6,80 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-26 — Nine ticks of changes had never been through the real entry point
+
+**Branch:** `main`. Backend only. No screen, component, style or copy touched.
+
+**Files:** `backend/app/services/ocr/pipeline.py`,
+`backend/app/tests/test_stage_parity.py`, `tools/pipeline-check.py` (new).
+
+### The gap
+
+`tools/homr-bench.py` calls `homr_provider.parse`. **Production calls
+`parse_sheet_music`**, which is a different thing: it routes a whole-page
+reader past the crops, applies `CONFIDENCE_THRESHOLD`, re-reads the bars that
+do not add up, checks `_read_any_music`, and reports the stages a musician
+watches. Every measurement this session had gone through the first and none
+through the second.
+
+Run properly, all five readable pages come through correctly and the refusal
+fires on `04` as it should. Two things worth recording:
+
+* Through the pipeline `04_handwritten_clean` returns **3** bars rather than 7,
+  because `prepare_for_model` resizes before homr sees it. Both readings are
+  refused, so the difference costs nothing here — but the bench and production
+  are not looking at the same page, and that is worth knowing before the next
+  number gets quoted from the wrong one.
+* `page-upright.jpg` emits a stage the bench never shows: `rereading`. It maps
+  to "Checking the bar counts" and is in the parity contract under its internal
+  name — checked rather than assumed, and it is fine.
+
+`tools/pipeline-check.py` is committed so this is repeatable. A cited
+measurement nobody can re-run is a claim.
+
+### The bug it exposed
+
+The app places the bar by the worker's words and **does not clamp** — a
+recognised stage moves it wherever its position says, including backwards.
+`transcriptionProgress.ts` states the rule as "in the order the worker reaches
+them, and never decreasing", which is a property of *the reports*, and nothing
+was holding it.
+
+A page read whole at low confidence reports `reading` (0.8) then `rereading`
+(0.9); `_read_page_whole` then calls `parse_sheet_music` again for the rest of
+the chain, which begins by cutting the page into systems and reporting
+`splitting` — at **0.3**. Nine tenths to a third in the middle of a working
+read, which reads as the scan having restarted: exactly the failure that module
+exists to prevent, arriving from the server rather than from a stage the app
+did not recognise.
+
+Dormant today, because the chain is `homr` alone and there is no `rest` to fall
+through to. It is one environment variable from being live, and the registry
+keeps the vision providers precisely so that variable works.
+
+Suppressed in the pipeline rather than clamped in the app, because the ordering
+is the **pipeline's own fact**: it needs no copy of the app's positions, only
+the order it does its own steps in. Ranking is on the part before the colon, so
+a page read stave by stave reports `reading:system 3 of 7` many times over and
+none of them is a step backwards.
+
+### My first fix was wrong, and my first test would not have caught it
+
+The recursive call was still handed the raw `on_stage`, so the inner
+`parse_sheet_music` built a fresh counter and started the ordering again from
+nothing — undoing the suppression **on the one path it exists for**. The test I
+had written asserted things about the ordering table and never ran a fallback,
+so it passed against the broken version.
+
+Rewritten to drive a real fallback: a whole-page provider returning a doubtful
+reading, a second provider behind it, and an assertion that the ranks reported
+come out sorted. Four mutations, all caught — including the one that puts the
+raw callback back.
+
+Full suite green at 1238.
+
+---
+
 ## 2026-08-26 — Testing the shapes homr never writes, because a file does
 
 **Branch:** `main`. Backend only, tests plus one comment. No screen, component,
