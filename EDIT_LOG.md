@@ -6,6 +6,51 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-26 — Average-user pass began at the front door
+
+**Branch:** `fix/average-user-first-pass`. Mobile web metadata and
+authentication layout. UI work approved by the owner in this session.
+
+**Files:** `mobile/src/App.tsx`,
+`mobile/src/lib/documentTitle.ts`,
+`mobile/src/lib/documentTitle.test.ts`,
+`mobile/src/screens/auth/AuthScreen.tsx`.
+
+### What the live app said
+
+The signed-out production page still changed its browser-tab title from
+`InTempo` to the literal string `undefined`. React Navigation owns document
+titles on web by default, but the auth gate is intentionally outside every
+navigator, so there is no focused route for its default formatter.
+
+At the desktop browser's current viewport, the email field, password field and
+primary action also stretched from one screen gutter to the other. That is
+phone composition enlarged rather than adapted: labels separated by more than
+a thousand pixels from the controls they describe, and a primary action too
+wide to read as one object.
+
+### What changed
+
+* The navigation container now uses a tested formatter that always returns the
+  product name. A signed-out gate, a recovering-password gate and a mounted
+  route all keep the useful title `InTempo`.
+* Both the form and its sent-email state use a centred 720-point maximum
+  measure on wider screens. Phones remain width-constrained by their viewport
+  and keep the existing gutter.
+* Three-foot order after the layout change is unchanged and explicit:
+  **InTempo**, the credential form, then **Sign in**. The change reduces travel
+  between those elements; it adds no surface or competing focal point.
+
+### Verification and known limits
+
+The pure formatter has regression coverage. Full mobile tests, typecheck, web
+export, and a deployed browser screenshot are pending the draft PR. The
+authenticated journey is also pending: the prior browser tab was closed between
+sessions, so the owner is signing in again in the newly opened live tab. No
+claim is made yet about onboarding, library, capture, recording, or verdict.
+
+---
+
 ## 2026-08-26 — Free uptime probes were rejected as 405
 
 **Branch:** `fix/uptime-health-head`. Backend health routing and tests only. No
