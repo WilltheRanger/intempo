@@ -6,6 +6,93 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-26 — A piece is more pages than one: the join, and the schema for it
+
+**Branch:** `main`. Backend only. No screen, component, style or copy touched.
+
+**Files:** `backend/app/migrations/011_score_pages.sql` (new),
+`backend/app/services/ocr/pages.py` (new),
+`backend/app/services/ocr/score_join_errors.py` (new),
+`backend/app/tests/test_page_join.py` (new),
+`backend/app/services/readiness.py`, `backend/app/services/ocr/homr_provider.py`
+(one rename), `backend/app/tests/test_homr_provider.py`.
+
+**Status — read this before assuming it works.** This is the first half. The
+migration is **written and not applied**; `join_pages` is **written and called
+by nothing**. The worker, the API and the app all still read one page. Nothing
+about a real scan has changed yet.
+
+### The gap
+
+`scores.source_image_url` is one text column, so a scan has always been one
+photograph. `TranscribeScreen` uploads `pages[0]` and says so on screen, which
+is honest and is also the whole problem: **no orchestral part is one page.**
+Photograph three pages of a bass part and two are discarded.
+
+### An array column, not a `score_pages` table
+
+A table was the obvious shape — a row per page carries per-page status, so a
+scan where page 2 fails keeps pages 1 and 3 and says which is missing.
+
+That is the design this project spent the rest of today deciding against. A
+score assembled from the pages that happened to read is a timeline with a
+silent hole in it, and `alignment.py` accumulates durations, so every bar after
+the gap is compared against music that is not there — the musician is told they
+rushed a passage they played correctly. It is the same mistake as a page read
+at 0.00 being drawn as a score, one level up.
+
+So a multi-page read is all-or-nothing and the failure names the page. With no
+per-page state to hold, a table holds nothing an array does not and costs a
+join on every read plus its own RLS policy. `source_image_url` is **kept and
+backfilled**, not dropped: expand now, contract later, so main stays deployable
+between the migration running and the new code serving.
+
+### The join, and the bug mutation testing found in it
+
+`join_pages` renumbers measures across the whole part (homr numbers each page
+from 1, so three pages would carry three measure 1s), offsets repeats and
+tempo changes with them, reads the clef off whichever page shows one, and
+recomputes confidence over the whole part rather than averaging the pages'
+numbers — averaging weights a two-bar page like a forty-bar one.
+
+The part that needed care is the metre across a page break. `musicxml.py` puts
+a page's metre in `score.time_signature` and leaves `Measure.time_signature`
+empty unless the metre changes *within* that page. So page 2 of a part in 3/4
+states 3/4 in its own header and nowhere else, and joined naively under page
+1's 4/4 the entire page reads as short. The join stamps a genuine change onto
+the page's first measure, which is exactly what `meters_in_force` reads.
+
+**`_stated_metre` exists because a mutation survived.** Replacing the
+"is this page's metre actually stated" guard with `True` passed all thirteen
+tests, because writing `None` onto a measure is indistinguishable from leaving
+it there. Chasing that found a real defect: `ScoreJson.time_signature` also
+allows the literal `"unknown"` for a cropped header, and `meters_in_force`
+treats `"unknown"` **on a measure** as invalidating the metre in force —
+correctly, because a change printed and illegible is worse than no change. So
+one page with a cropped header would have written `"unknown"` onto its first
+bar and switched off the beat check for every page after it, silently. The
+guard now normalises both spellings, and the test is parametrised over `None`,
+`"unknown"` and `"UNKNOWN"` — written with `None` alone it passed against the
+broken code.
+
+Eleven mutations, ten caught. The eleventh (`stated and` dropped from the
+stamp condition) is an **equivalent mutant**, not a test gap: with `"unknown"`
+normalised to `None`, assigning `None` to `Measure.time_signature` is the same
+as not assigning it. Recorded rather than papered over with a contorted test.
+
+`_confidence_from_arithmetic` was renamed `confidence_from_arithmetic` so the
+join uses the same rule rather than growing a second copy of it — the
+"validator has one home" rule, applied before there was a second home.
+
+### Verification
+
+`test_every_column_migration_has_a_readiness_check` caught the migration before
+I did: a new column with no entry in `REQUIRED_COLUMNS` means a half-applied
+deployment 500s while `/v1/ready` reports ready. Added. Full suite green at
+1180 passed.
+
+---
+
 ## 2026-08-26 — The two ways homr finds nothing are two different sentences
 
 **Branch:** `main`. Backend only — `_FAILURE_REASONS` and its tests. No screen,
