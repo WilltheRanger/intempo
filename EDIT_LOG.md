@@ -6,6 +6,72 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-26 — Re-measuring the session's claims, and stopping the bench misleading
+
+**Branch:** `main`. Tooling only. No screen, component, style or copy touched.
+
+**Files:** `tools/homr-bench.py`, `tools/pipeline-check.py`.
+
+Twice this session a claim measured with `tools/homr-bench.py` did not hold in
+production. Two is a coincidence; the response to it should be a rule, so this
+tick re-measured the session's biggest bench-derived claim through the real
+entry point and then made the bench unable to mislead the same way again.
+
+### The claim held
+
+The quantisation finding is the one that matters most, because it retired a
+worry `CLAUDE.md` had carried since homr landed. Through `parse_sheet_music`,
+on the copy `prepare_for_model` actually hands the reader:
+
+```
+01_simple_printed.jpg    durations: eighthx32
+03_complex_printed.jpg   durations: sixteenthx48
+homr_page.jpg            durations: eighthx20 quarterx230 halfx8 wholex13
+page-upright.jpg         durations: sixteenthx16 eighthx81 quarterx10 halfx31
+```
+
+32 eighths and 48 sixteenths, unchanged, against fixtures whose printed content
+`SOURCES.md` documents. `page-upright.jpg` differs by a single note from the
+bench's reading — the same one bar that reads differently on the prepared copy.
+Explained, not a discrepancy.
+
+### Which sharpens the rule
+
+The bench and production differ in exactly **two** ways, and both failures were
+one of them: the bench skips `too_small_to_read`, and it reads the photograph
+rather than the resized copy. Everything else agrees. So the rule is not
+"re-measure everything" — it is that a bench which silently skips a production
+gate will eventually be read as though it had not.
+
+### So the bench now says so
+
+`homr-bench.py` computes `too_small_to_read` and labels any row production
+would refuse: *"production refuses this page before any provider sees it — this
+row is not evidence about a reader"*. The reading is still taken, because what
+an engine does with an unreadable page is worth seeing; what is fixed is that
+the number no longer looks exactly like every other number in the table.
+`05_handwritten_messy` — the row I wrote up in this log as evidence about
+homr's handwriting — now carries the label.
+
+`pipeline-check.py` gained the duration column for the same reason: two tools
+reporting the same measurement can be compared, and two reporting different
+subsets cannot.
+
+One more piece of misleading output, fixed while here: the bench named a
+"worst page" even when every page scored 1.00, which reads as a finding and is
+an artefact of `min` breaking a tie. It now says *"every page read
+completely"*.
+
+**Process note.** This entry was written a commit late: the script that adds it
+ran from `backend/` and failed on a relative path, while the `git commit` in
+the same command succeeded. The four logs are part of the Definition of Done,
+so a commit that lands without its entry is an incomplete commit — recorded
+here rather than quietly amended.
+
+Full suite green at 1243, two xfailed.
+
+---
+
 ## 2026-08-26 — Correcting my own record about the handwritten fixtures
 
 **Branch:** `main`. One `xfail`, and documentation. No screen, component, style
