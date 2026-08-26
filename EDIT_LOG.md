@@ -56,10 +56,18 @@ submitted a page.
 
 ### Tests
 
-The branch tests and full CI run are pending the pull request. Live checks
-before the change: auth shell and invalid-login path passed at both viewports;
-API health 200; production-origin CORS probe passed; readiness reproduced the
-false blocking 503.
+GitHub Actions CI passed on PR #6:
+
+* backend: **1150 passed, 6 skipped, 1 xfailed**;
+* mobile: **328 passed**, TypeScript check clean, Expo web export completed;
+* legacy frontend: Vite production build completed.
+
+Live checks before the change: auth shell and invalid-login path passed at both
+viewports; API health 200; production-origin CORS probe passed; readiness
+reproduced the false blocking 503. Cloudflare's active `intempo` preview
+deployed successfully. Its separate stale `front` project still reports a
+failed build, the pre-existing duplicate-project state already documented in
+this repository; neither changed file is in a frontend tree.
 
 ### Known limits
 
