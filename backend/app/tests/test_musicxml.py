@@ -912,3 +912,171 @@ def test_a_lone_whole_note_is_a_note_and_stays_one() -> None:
     assert score.measures[1].notes[0].pitch == "D3"
     assert score.measures[1].notes[0].duration == "whole"
     assert [f.verdict for f in validate_measures(score)] == ["ok", "long"]
+
+
+# ---------------------------------------------------------------------------
+# Three findings from one real photograph, in the order they were found
+# ---------------------------------------------------------------------------
+
+
+def _two_voice(rest_first: str, music: str) -> str:
+    """A bar written the way homr writes one: a rest voice, a backup, music."""
+    return _part(
+        _bar(1, _A_QUARTER * 2, _TWO_FOUR)
+        + _bar(2, rest_first + "<backup><duration>4</duration></backup>" + music)
+    )
+
+
+def test_the_voice_that_holds_the_music_is_the_one_kept() -> None:
+    """**Four notes of real music, deleted on the one real photograph here.**
+
+    A polyphonic bar keeps one voice, because the timeline is one line and a
+    bassist plays one of the two. It used to keep whichever voice was written
+    *first* — and homr writes its whole-bar rest in voice 2 before the music in
+    voice 1, so the rest won and the bar was thrown away. Measured on
+    `page-upright.jpg`: the file holds 75 pitched notes and the reading held
+    71.
+    """
+    rest_voice = (
+        "<note><rest /><duration>4</duration><type>whole</type>"
+        "<voice>2</voice></note>"
+    )
+    music = "".join(
+        "<note><pitch><step>D</step><octave>3</octave></pitch>"
+        "<duration>1</duration><type>quarter</type><voice>1</voice></note>"
+        for _ in range(2)
+    )
+    score = score_json_from_musicxml(_two_voice(rest_voice, music))
+
+    kept = [(n.pitch, n.duration) for n in score.measures[1].notes]
+    assert kept == [("D3", "quarter"), ("D3", "quarter")], kept
+
+
+def test_two_real_voices_still_keep_the_one_written_first() -> None:
+    """The tiebreak, and the old behaviour where it was right. Nothing here can
+    tell a divisi apart, and the upper part is written first by convention."""
+    upper = (
+        "<note><pitch><step>A</step><octave>3</octave></pitch>"
+        "<duration>4</duration><type>half</type><voice>1</voice></note>"
+    )
+    lower = (
+        "<note><pitch><step>D</step><octave>2</octave></pitch>"
+        "<duration>4</duration><type>half</type><voice>2</voice></note>"
+    )
+    score = score_json_from_musicxml(_two_voice(upper, lower))
+
+    assert [n.pitch for n in score.measures[1].notes] == ["A3"]
+
+
+def test_a_multi_bar_rest_drawn_with_rest_symbols_still_expands() -> None:
+    """**The guard I wrote last week blocking the fix I wrote last week.**
+
+    The expansion required the bar to hold no notes, on the reasoning that a
+    bar carrying both a multi-rest marking and notes is a contradiction and the
+    notes are the half definitely read off the page. True of *pitched* notes,
+    false of rests: homr writes the marking together with the rest symbols that
+    draw it. Measured on `page-upright.jpg`, a bar marked
+    `<multiple-rest>8</multiple-rest>` carrying a whole rest and a breve rest —
+    it stayed one bar, and **seven bars of rest were lost**.
+    """
+    drawn = (
+        "<note><rest /><duration>4</duration><type>whole</type></note>"
+        "<note><rest /><duration>2</duration><type>half</type></note>"
+    )
+    score = score_json_from_musicxml(
+        _part(_bar(1, _A_QUARTER * 2, _TWO_FOUR) + _bar(2, drawn, _MULTI_REST_4))
+    )
+
+    assert len(score.measures) == 5
+    assert all(
+        [(n.pitch, n.duration) for n in m.notes] == [("rest", "half")]
+        for m in score.measures[1:]
+    )
+
+
+def test_a_note_that_contradicts_itself_is_read_by_its_timing() -> None:
+    """**A sixteenfold error in a value that accumulates.**
+
+    Measured on `page-upright.jpg`: four notes typed `breve` — eight
+    quarter-beats — carrying a `<duration>` of half a beat. Read by `<type>`,
+    one of them moves every onset after it by seven and a half beats.
+
+    This module reads `<type>` and not `<duration>` for a good reason, stated
+    at the top of the file. That stands; it just never considered a note where
+    both are present and they disagree, which is not a choice between two
+    conventions but a malformed note with one wrong number in it.
+    """
+    four_four_in_quarters = (
+        "<attributes><divisions>4</divisions>"
+        "<time><beats>4</beats><beat-type>4</beat-type></time></attributes>"
+    )
+    a_quarter = (
+        "<note><pitch><step>D</step><octave>3</octave></pitch>"
+        "<duration>4</duration><type>quarter</type></note>"
+    )
+    # Typed as eight quarter-beats, timed as half of one: the exact shape homr
+    # writes, sixteen times too long.
+    contradictory = "<note><rest /><duration>2</duration><type>breve</type></note>"
+    score = score_json_from_musicxml(
+        _part(_bar(1, a_quarter * 4 + contradictory, four_four_in_quarters))
+    )
+
+    assert score.measures[0].notes[-1].duration == "eighth"
+
+
+def test_a_contradiction_that_maps_to_nothing_keeps_the_written_type() -> None:
+    """An inexact remainder is not evidence about anything. Five-twelfths of a
+    beat is not a duration an engraver writes, so the written value stays."""
+    twelfths = (
+        "<attributes><divisions>12</divisions>"
+        "<time><beats>4</beats><beat-type>4</beat-type></time></attributes>"
+    )
+    a_quarter = (
+        "<note><pitch><step>D</step><octave>3</octave></pitch>"
+        "<duration>12</duration><type>quarter</type></note>"
+    )
+    odd = "<note><rest /><duration>5</duration><type>breve</type></note>"
+    score = score_json_from_musicxml(
+        _part(_bar(1, a_quarter * 4 + odd, twelfths))
+    )
+
+    assert score.measures[0].notes[-1].duration == "double_whole"
+
+
+def test_a_file_with_no_divisions_is_read_by_its_types_as_before() -> None:
+    """The reason `<type>` is the default: divisions are an arbitrary per-file
+    tick unit and a damaged file may not carry them at all."""
+    no_divisions = (
+        "<attributes><time><beats>4</beats><beat-type>4</beat-type></time>"
+        "</attributes>"
+    )
+    score = score_json_from_musicxml(
+        _part(
+            _bar(
+                1,
+                "<note><rest /><duration>999</duration><type>half</type></note>",
+                no_divisions,
+            )
+        )
+    )
+
+    assert score.measures[0].notes[0].duration == "half"
+
+
+def test_a_rest_voice_never_wins_on_count() -> None:
+    """Three rests against two notes: the rests are more numerous and are still
+    not the music. Counting entries rather than *pitched* entries would hand
+    the bar to the voice that has nothing in it."""
+    three_rests = "".join(
+        "<note><rest /><duration>1</duration><type>quarter</type>"
+        "<voice>2</voice></note>"
+        for _ in range(3)
+    )
+    two_notes = "".join(
+        "<note><pitch><step>D</step><octave>3</octave></pitch>"
+        "<duration>1</duration><type>quarter</type><voice>1</voice></note>"
+        for _ in range(2)
+    )
+    score = score_json_from_musicxml(_two_voice(three_rests, two_notes))
+
+    assert [n.pitch for n in score.measures[1].notes] == ["D3", "D3"]

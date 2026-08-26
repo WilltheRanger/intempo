@@ -6,6 +6,108 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-26 — Three findings from one photograph, and one of them was my own guard
+
+**Branch:** `main`. Backend only. No screen, component, style or copy touched.
+
+**Files:** `backend/app/services/ocr/musicxml.py`,
+`backend/app/tests/test_musicxml.py`.
+
+The beat check had gone quiet — every page in the corpus adding up — so this
+tick asked the checks that fire on bars which *already* add up: broken ties,
+tuplet ratios, note density. All three reported nothing on all five pages.
+
+**That turned out to be the finding.** homr emits **no ties, no tuplets and no
+dots at all** — only slurs — so two of the four "a bar can add up and still be
+wrong" checks can never fire on the only provider in the chain. Not a bug in
+them; worth knowing, and worth writing down before somebody reads their silence
+as a clean bill of health.
+
+Checking whether dotted rhythms were being silently flattened: **they are not.**
+On `homr_page.musicxml` every one of 267 notes has a `<duration>` that agrees
+with its `<type>`. homr saw no dots because there are none on those pages. Said
+here rather than turned into a fix nothing needed.
+
+The census that answered that question is what turned up the rest.
+
+### 1. Four notes of real music, deleted
+
+A polyphonic bar keeps one voice — the timeline is one line and a bassist plays
+one of two. It kept whichever voice was written **first**, and homr writes its
+whole-bar rest in voice 2 *before* the music in voice 1. So the rest won and
+the bar was thrown away.
+
+Measured on `page-upright.jpg`: four `<backup>` measures, the file holding 75
+pitched notes and the reading holding **71**. `_voice_carrying_the_music` now
+takes the voice with the most *pitched* notes; a voice of nothing but rests is
+never the music. Ties still go to the voice written first, which is the old
+behaviour and the right tiebreak for two genuine lines.
+
+### 2. My own guard, blocking my own fix
+
+The multi-bar rest expansion required the bar to hold **no notes**, on the
+reasoning — written last tick — that a bar carrying both a multi-rest marking
+and notes is a contradiction, and the notes are the half definitely read off
+the page.
+
+True of *pitched* notes. False of rests: homr writes the marking **together
+with the rest symbols that draw it.** `page-upright.jpg` has a bar marked
+`<multiple-rest>8</multiple-rest>` carrying a whole rest and a breve rest. It
+stayed one bar. **Seven bars of rest were lost** — the exact failure the
+expansion was written to fix, blocked by its own guard, one tick later.
+
+### 3. A note that contradicts itself, by a factor of sixteen
+
+Four notes on that page are typed `breve` — eight quarter-beats — and carry a
+`<duration>` of **half a beat**. `alignment.py` accumulates durations, so one
+of them moves every onset after it by seven and a half beats.
+
+This module reads `<type>` and not `<duration>`, for a good reason stated at
+the top of the file: divisions are an arbitrary per-file tick unit and a
+damaged file may not carry them. **That stands.** What it never considered is a
+note where both are present and they *disagree* — which is not a choice between
+two conventions, it is a malformed note with one wrong number in it. On a
+contradiction the timing is believed, and only when it maps exactly to
+something an engraver would write.
+
+### Measured
+
+```
+page                    meas notes  conf   clef  durations
+homr_page.jpg             77   271  1.00   bass  eighthx20 quarterx230 halfx8 wholex13
+page-upright.jpg          58   139  0.97   bass  sixteenthx16 eighthx81 quarterx11 halfx30 wholex1
+```
+
+`page-upright.jpg`: **51 → 58 bars**, pitched notes **71 → 75** — exactly the
+75 in the file, nothing lost. The three printed fixtures and `homr_page.jpg`
+are unchanged.
+
+Two bars still flagged, both genuine misreads homr made: a hallucinated rest
+alongside four eighths (now 2.5 beats against 2.0 instead of 10.0 — the
+sixteenfold error bounded to half a beat), and a bar holding two rests. Both
+are what `MeasureEditScreen` is for.
+
+### Mutations
+
+Eight, and the two that survived after fixing are **equivalent mutants**, not
+gaps — recorded rather than papered over with a contorted test:
+
+* *the timing overrides the type even when they agree* — when they agree the
+  lookup returns the same name; there are no collisions among the base types.
+* *an inexact contradiction still drops the type* — `or base` is the same value
+  the no-dots path already returns.
+
+Both guards are kept because they state the rule's **limits**, which is what
+the next reader needs. A third survivor was genuinely redundant code — an
+explicit index term in the voice tiebreak that `max` already provides — and
+was deleted rather than tested.
+
+Full suite green at 1232.
+
+**Not verified:** no scan has gone through production with any of this.
+
+---
+
 ## 2026-08-26 — A whole rest means the bar, not four beats
 
 **Branch:** `main`. Backend only. No screen, component, style or copy touched.
