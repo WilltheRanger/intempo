@@ -178,6 +178,21 @@ STAGE_SPLITTING = "splitting"
 
 
 
+#: The order the pipeline does its own steps in, for the monotonicity rule in
+#: `parse_sheet_music`. Keyed on the part before the colon, so every
+#: `reading:<provider>` and `reading:system 3 of 7` ranks the same — a page read
+#: stave by stave reports many of them and none is a step backwards.
+#:
+#: A stage absent from here ranks -1 and is always reported: it is not known to
+#: be out of order, and silence is worse than an unrecognised word the app
+#: already knows to hold on.
+_STAGE_ORDER: dict[str, int] = {
+    STAGE_SPLITTING: 0,
+    STAGE_READING: 1,
+    STAGE_CONFIRMING: 2,
+}
+
+
 def _is_truncation(exc: Exception) -> bool:
     """Whether a provider failed by running out of output room.
 
@@ -655,9 +670,48 @@ def parse_sheet_music(
     if not chain:
         raise OCRError("provider chain is empty")
 
+    # **A step is never reported after a later one has been.**
+    #
+    # The app places the bar by the worker's words and does *not* clamp: a
+    # recognised stage moves the bar wherever its position says, including
+    # backwards. `transcriptionProgress.ts` states "in the order the worker
+    # reaches them, and never decreasing" — which is a property of the reports,
+    # and this is the only place that can hold it.
+    #
+    # The fallback is what breaks it. A page read whole at low confidence goes
+    # `reading` (0.8) then `rereading` (0.9), and then `_read_page_whole` calls
+    # `parse_sheet_music` again for the rest of the chain — which begins by
+    # cutting the page into systems and reporting `splitting`, at **0.3**. The
+    # bar falls from nine tenths to a third in the middle of a working read,
+    # which reads as the scan having restarted: exactly the failure that module
+    # exists to prevent, arriving from the server instead of from a stage it
+    # did not recognise.
+    #
+    # Dormant today, because the chain is `homr` alone and there is no `rest`
+    # to fall through to. It is one environment variable from being live, and
+    # the registry keeps the vision providers precisely so that variable works.
+    #
+    # Suppressed here rather than clamped in the app, because the ordering is
+    # the *pipeline's* own fact — this needs no copy of the app's positions,
+    # only the order it does its own steps in.
+    #
+    # **The recursive calls are handed `stage`, not `on_stage`.** The fallback
+    # re-enters `parse_sheet_music`, which builds its own reporter with its own
+    # counter — so passing the raw callback down starts the ordering again from
+    # nothing and undoes this on the one path it exists for. The first version
+    # of this fix did exactly that, and the test that passed against it never
+    # ran a fallback.
+    furthest = [-1]
+
     def stage(name: Stage) -> None:
         if on_stage is None:
             return
+        rank = _STAGE_ORDER.get(name.split(":", 1)[0], -1)
+        if rank >= 0:
+            if rank < furthest[0]:
+                log.debug("not reporting %s after a later step", name)
+                return
+            furthest[0] = rank
         try:
             on_stage(name)
         except Exception:  # noqa: BLE001 — reporting must never break reading
@@ -717,7 +771,7 @@ def parse_sheet_music(
                     media_type=media_type,
                     providers=whole_page,
                     retry=retry,
-                    on_stage=on_stage,
+                    on_stage=stage,
                     _by_system=False,
                 )
             except OCRError as exc:
@@ -749,7 +803,7 @@ def parse_sheet_music(
                     media_type=media_type,
                     providers=rest,
                     retry=retry,
-                    on_stage=on_stage,
+                    on_stage=stage,
                     source=source,
                 )
             except Exception:  # noqa: BLE001 — a reading in hand outranks it

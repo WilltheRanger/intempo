@@ -154,3 +154,91 @@ def test_the_fixture_covers_the_counts_that_actually_occur() -> None:
     assert _MAX_SYSTEMS_TO_READ in totals, (
         f"the ceiling is {_MAX_SYSTEMS_TO_READ} and the fixture stops short of it"
     )
+
+
+# ---------------------------------------------------------------------------
+# A step is never reported after a later one has been
+# ---------------------------------------------------------------------------
+
+
+def test_the_fallback_cannot_walk_the_bar_backwards() -> None:
+    """**The failure `transcriptionProgress.ts` exists to prevent, arriving
+    from the server.**
+
+    The app places the bar by the worker's words and does not clamp — a
+    recognised stage moves it wherever its position says, including backwards.
+    A page read whole at low confidence reports `reading` (0.8) and `rereading`
+    (0.9); then `_read_page_whole` calls `parse_sheet_music` again for the rest
+    of the chain, which begins by cutting the page into systems and reporting
+    `splitting`, at **0.3**. Nine tenths to a third, mid-read, which reads as
+    the scan having restarted.
+
+    Dormant while the chain is `homr` alone, and one environment variable from
+    being live — the registry keeps the vision providers so that variable
+    works. Which is why this drives a real fallback rather than the ordering
+    table: a first version of the fix left the recursive call carrying the raw
+    callback, so the inner `parse_sheet_music` started the ordering again from
+    nothing, and a test that never ran a fallback passed against it.
+    """
+    from app.services.ocr import pipeline
+    from app.services.score_schema import Measure, Note, ScoreJson
+
+    def _doubtful() -> ScoreJson:
+        # Two bars, one of which does not add up: under the gate, so the rest
+        # of the chain is asked as well.
+        return ScoreJson(
+            time_signature="4/4",
+            clef="bass",
+            measures=[
+                Measure(
+                    measure_number=1,
+                    notes=[Note(pitch="D3", duration="quarter") for _ in range(4)],
+                ),
+                Measure(
+                    measure_number=2,
+                    notes=[Note(pitch="D3", duration="quarter")],
+                ),
+            ],
+            ocr_confidence=0.5,
+        )
+
+    class _Engine:
+        name = "engine"
+        reads_whole_page = True
+
+        def available(self):
+            return True
+
+        def parse(self, image_bytes, mime_type="image/jpeg", note=None):
+            from app.services.ocr.base import OCRResponse
+
+            return OCRResponse(
+                score=_doubtful(), raw_text="", model=self.name,
+                input_tokens=0, output_tokens=0, cost_usd=0.0, latency_ms=1,
+            )
+
+    class _Model:
+        name = "model"
+
+        def available(self):
+            return True
+
+        def parse(self, image_bytes, mime_type="image/jpeg", note=None):
+            raise pipeline.OCRProviderError("model: nothing here")
+
+    seen: list[str] = []
+    try:
+        pipeline.parse_sheet_music(
+            b"x", providers=[_Engine(), _Model()], on_stage=seen.append
+        )
+    except Exception:  # the fallback fails; the reports are the subject
+        pass
+
+    ranks = [
+        pipeline._STAGE_ORDER.get(name.split(":", 1)[0], -1) for name in seen
+    ]
+    known = [r for r in ranks if r >= 0]
+    assert known == sorted(known), seen
+    assert any(r == pipeline._STAGE_ORDER[pipeline.STAGE_READING] for r in known), (
+        f"the engine never reported reading, so nothing was ordered: {seen}"
+    )
