@@ -6,6 +6,27 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-26 — Free uptime probes were rejected as 405
+
+**Branch:** `fix/uptime-health-head`. Backend health routing and tests only. No
+screen, component, style, or user-facing product copy changed.
+
+**Files:** `backend/app/routers/health.py`,
+`backend/app/tests/test_health.py`.
+
+UptimeRobot's free HTTP monitor sends HEAD requests and checks every five
+minutes. FastAPI did not synthesize HEAD for the GET-only health route, so the
+live monitor reached Render but recorded `405 Method Not Allowed` and stayed
+Down. The health handler now explicitly accepts HEAD as well as GET, preserving
+the same dependency-free liveness contract. A regression test pins the 200
+response and empty HEAD body.
+
+Live verification is pending the Render deployment from this branch; the
+existing monitor is already configured for
+`https://intempo-api.onrender.com/v1/health` at the free five-minute interval.
+
+---
+
 ## 2026-08-26 — Readiness checked the wrong machine for the page reader
 
 **Branch:** `fix/transcription-runtime-readiness`. Backend diagnostics and
