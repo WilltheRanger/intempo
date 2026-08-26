@@ -146,7 +146,7 @@ class HomrProvider:
         with tempfile.TemporaryDirectory(prefix="homr-") as workspace:
             page = Path(workspace) / f"page{suffix}"
             page.write_bytes(image_bytes)
-            xml = self._run(page)
+            xml = self._read_at_any_orientation(page)
 
         latency_ms = int((time.perf_counter() - started) * 1000)
 
@@ -211,7 +211,34 @@ class HomrProvider:
         try:
             process_image(
                 str(page),
-                ProcessingConfig(),
+                # **Every argument, by name.** `ProcessingConfig` takes eight
+                # required positional parameters in 0.7.0, and this called it
+                # with none — so every page ever handed to homr raised
+                # `TypeError: ProcessingConfig.__init__() missing 8 required
+                # positional arguments` before a pixel was looked at.
+                #
+                # It was wrapped as an `OCRProviderError`, matched no needle in
+                # `_FAILURE_REASONS`, and reached the musician as "a flatter,
+                # better-lit shot of the page usually fixes it" — advice about a
+                # photograph, for a call that never reached one. **homr has
+                # never once run in this deployment.**
+                #
+                # The values are homr's own CLI defaults, read from its
+                # `main()`: no debug, no cache, no staff-position files, every
+                # staff (`-1`), and CPU everywhere because the container has no
+                # GPU. Keywords rather than positions so a reordering upstream
+                # is a `TypeError` at the call site instead of a silently
+                # different configuration.
+                ProcessingConfig(
+                    enable_debug=False,
+                    enable_cache=False,
+                    write_staff_positions=False,
+                    read_staff_positions=False,
+                    selected_staff=_EVERY_STAFF,
+                    transformer_use_gpu=False,
+                    segnet_use_gpu=False,
+                    coreml_encoder=False,
+                ),
                 XmlGeneratorArguments(large_page=None, metronome=None, tempo=None),
             )
         except Exception as exc:  # noqa: BLE001 — any failure is this provider's
@@ -225,6 +252,79 @@ class HomrProvider:
             )
         return written.read_text(encoding="utf-8")
 
+    def _read_at_any_orientation(self, page: Path) -> str:
+        """homr on the page, and on the page turned, if it has to be.
+
+        **homr decides, not a heuristic.** A previous attempt guessed the
+        orientation from ink profiles before anything read the page, and got it
+        wrong on the first real photograph: EXIF had already put that page the
+        right way up, and rotating it took homr from *5 staffs, 25 measures and
+        112 notes* to none at all.
+
+        The engine is simply better placed to answer. It segments the page,
+        finds its staves and dewarps them, and when it cannot it says so in one
+        sentence — "No staffs found" — which is a far more reliable signal than
+        counting bands. So the page goes in as it arrived, and only a page homr
+        rejects outright is turned and offered again.
+
+        The cost is bounded and paid only by pages that were failing anyway: a
+        page it reads costs one pass, exactly as before.
+        """
+        first: OCRProviderError | None = None
+        for turn in _ORIENTATIONS:
+            candidate = page if turn == 0 else _turned(page, turn)
+            if candidate is None:
+                continue
+            try:
+                return self._run(candidate)
+            except OCRProviderError as exc:
+                first = first or exc
+                if not _looks_like_no_staves(exc):
+                    # A missing model, a container without homr, an unreadable
+                    # file — turning the page cannot help any of those, and
+                    # trying twice would double a failure rather than fix it.
+                    raise
+        raise first or OCRProviderError(f"{self.name}: found no staves on this page")
+
+
+#: The turns to try, in order. Zero first: a page that arrives correct must
+#: cost exactly one pass, and every page whose EXIF tag is honoured arrives
+#: correct.
+_ORIENTATIONS = (0, 90, 270)
+
+
+def _looks_like_no_staves(exc: Exception) -> bool:
+    """Whether this failure is the one that turning the page might fix.
+
+    homr raises `Exception("No staffs found")`, and `_run` raises its own
+    "found no staves on this page" when nothing was written. Matched on the
+    words rather than the type because homr raises a bare `Exception`, which
+    cannot be told apart from anything else by class.
+    """
+    said = str(exc).lower()
+    return "no staffs found" in said or "found no staves" in said
+
+
+def _turned(page: Path, degrees: int) -> Path | None:
+    """The same page, rotated, written beside it. None if it cannot be."""
+    try:
+        from PIL import Image
+    except ImportError:  # pragma: no cover — Pillow is a declared dependency
+        return None
+    out = page.with_name(f"{page.stem}-turned{degrees}{page.suffix}")
+    try:
+        with Image.open(page) as image:
+            image.convert("RGB").rotate(-degrees, expand=True).save(
+                out, quality=95
+            )
+    except Exception:  # noqa: BLE001 — a page that will not turn is not fatal
+        return None
+    return out
+
+
+#: `selected_staff` for "all of them", which is what homr's own CLI passes.
+#: Named because `-1` at a call site reads like a mistake.
+_EVERY_STAFF = -1
 
 #: Instantiated once. Nothing here holds state between pages; the weights are
 #: loaded by `onnxruntime` inside homr and cached there.

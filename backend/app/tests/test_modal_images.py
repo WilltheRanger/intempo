@@ -228,3 +228,76 @@ def test_a_worker_image_does_not_carry_the_web_layer(
         f"serves no HTTP; keep the exclusion, and put anything shared in a "
         f"module both sides can import (see app/services/buckets.py)."
     )
+
+
+# ---------------------------------------------------------------------------
+# Calling homr correctly
+# ---------------------------------------------------------------------------
+
+#: Every parameter `homr.main.ProcessingConfig` requires in 0.7.0, in order.
+#:
+#: Read from the installed package's own signature, and from the way homr's
+#: `main()` builds one for its CLI. All eight are **required positional
+#: parameters** — there are no defaults.
+_PROCESSING_CONFIG_PARAMETERS = (
+    "enable_debug",
+    "enable_cache",
+    "write_staff_positions",
+    "read_staff_positions",
+    "selected_staff",
+    "transformer_use_gpu",
+    "segnet_use_gpu",
+    "coreml_encoder",
+)
+
+
+def test_homr_is_given_every_argument_its_config_requires() -> None:
+    """**The bug that meant homr never ran, once, on any page.**
+
+    `HomrProvider._run` called `ProcessingConfig()` with no arguments. All eight
+    parameters are required, so every page raised
+
+        TypeError: ProcessingConfig.__init__() missing 8 required positional
+        arguments
+
+    before a pixel was looked at. It was wrapped as an `OCRProviderError`,
+    matched no needle in `_FAILURE_REASONS`, and reached the musician as *"A
+    flatter, better-lit shot of the page usually fixes it"* — advice about a
+    photograph, for a call that never reached one. Four scans of a perfectly
+    good page were refused that way.
+
+    Nothing caught it because homr is installed only in the Modal container:
+    the provider's own tests stub it out, and `test_modal_images.py` checks the
+    image can *import* it, which it could.
+
+    Keywords, checked by name, so a reordering upstream fails at the call site
+    rather than silently configuring something else.
+    """
+    source = (_APP / "services" / "ocr" / "homr_provider.py").read_text()
+
+    # Comments are stripped first. A mutation that commented the arguments out
+    # left the words in the file and this passed on a call that would raise —
+    # the test agreeing with itself rather than with the code.
+    code = "\n".join(
+        line.split("#", 1)[0] for line in source.splitlines()
+    )
+    call = code[code.index("ProcessingConfig(") :]
+    call = call[: call.index(")")]
+
+    missing = [p for p in _PROCESSING_CONFIG_PARAMETERS if f"{p}=" not in call]
+
+    assert not missing, (
+        f"ProcessingConfig is called without {missing}. Every parameter is "
+        f"required in homr 0.7.0, so a missing one is a TypeError on every "
+        f"page — reported to the musician as advice about their photograph."
+    )
+
+
+def test_homr_is_asked_for_every_staff_on_the_page() -> None:
+    """`selected_staff` is an index, and `-1` is homr's own CLI value for all
+    of them. Any other number reads one staff and silently drops the rest of
+    the page."""
+    source = (_APP / "services" / "ocr" / "homr_provider.py").read_text()
+
+    assert "_EVERY_STAFF = -1" in source
+    assert "selected_staff=_EVERY_STAFF" in source

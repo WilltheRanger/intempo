@@ -2,7 +2,7 @@ import { useNavigation } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
 import { Images } from 'lucide-react-native';
 import { useState } from 'react';
-import { StyleSheet } from 'react-native';
+import { Platform, StyleSheet } from 'react-native';
 
 import {
   PageHeader,
@@ -13,6 +13,10 @@ import {
 } from '../../components/primitives';
 import { captureSession } from '../../data/captureSession';
 import { spacing } from '../../design';
+import {
+  cameraCanPhotographAPage,
+  deviceHints,
+} from '../../lib/platform/pageCamera';
 import type { RootNavigation } from '../../navigation/types';
 
 /**
@@ -37,6 +41,10 @@ import type { RootNavigation } from '../../navigation/types';
  */
 export function ImportPagesScreen() {
   const navigation = useNavigation<RootNavigation>();
+  // Read once: nothing about the device changes while the screen is open.
+  const [hasUsableCamera] = useState(() =>
+    cameraCanPhotographAPage(deviceHints(Platform.OS)),
+  );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -106,11 +114,22 @@ export function ImportPagesScreen() {
         style={styles.action}
       />
 
-      <SecondaryButton
-        label="Use the camera instead"
-        onPress={() => navigation.replace('Scanner')}
-        style={styles.secondary}
-      />
+      {/*
+        **Not offered on a desktop.** A laptop webcam cannot resolve the gap
+        between staff lines — measured on a real page, 25 px at full resolution
+        against 4 px at 1280x960, where the server's floor is 8 — so the button
+        led to a refusal every time. The refusal's own advice was "with a phone
+        rather than a webcam", pointing away from a button this screen had just
+        shown. A phone *browser* keeps it: its rear camera is the best camera in
+        this product. See `cameraCanPhotographAPage`.
+      */}
+      {hasUsableCamera ? (
+        <SecondaryButton
+          label="Use the camera instead"
+          onPress={() => navigation.replace('Scanner')}
+          style={styles.secondary}
+        />
+      ) : null}
 
       <Text variant="metadataSmall" color="textTertiary" style={styles.caveat}>
         Only the first page is transcribed. A score spanning several pages

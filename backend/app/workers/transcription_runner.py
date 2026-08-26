@@ -42,7 +42,6 @@ from app.services.page_image import (
     readable_url,
     staff_space_px,
     too_small_to_read,
-    upright,
 )
 
 log = logging.getLogger("intempo.transcription")
@@ -303,20 +302,19 @@ def _read_page(client, score_id: str, image_url: str) -> None:
     try:
         fetch_url = readable_url(image_url)
         image_bytes = download_image(fetch_url)
-        # **Turn the page the right way up before anything looks at it.**
+        # **Nothing is rotated here, and that is a correction.**
         #
-        # A page held sideways is unreadable to everything downstream and
-        # nothing said so. `homr` finds staves expecting them to run across the
-        # page; given one turned ninety degrees it finds none and gives up —
-        # measured on the deployment at 2.6 seconds against the ~21 it takes to
-        # read a page it can see. The musician got the default failure, which
-        # blames the photograph and asks for a flatter, better-lit shot. Theirs
-        # was flat, sharp, evenly lit and 4284x5712, and sideways.
+        # A previous version turned pages it judged sideways. It judged wrongly
+        # on the page it was written for: EXIF orientation had *already* put
+        # that photograph the right way up, and what looked sideways was the raw
+        # pixels before the tag is applied — which `_inked` applies and I did
+        # not. Measured against real homr on that exact page: as stored it finds
+        # **5 staffs, 25 measures, 112 notes**; rotated either way it finds
+        # **none**. The heuristic took a page homr reads and broke it.
         #
-        # First, so that the legibility check and the crops both see the same
-        # page the reader will. `upright` returns the bytes untouched unless the
-        # evidence is clear — see `is_sideways`.
-        image_bytes = upright(image_bytes)
+        # Orientation is homr's problem, and homr is better at it than a
+        # band-count heuristic — it dewarps and finds its own staves. When it
+        # cannot, it says so, and `HomrProvider` turns the page and asks again.
         # Normalise before anything reads it. A page arrives from a phone
         # rotated by an EXIF flag, several megabytes, and 3000-4000px on the
         # long edge — none of which any provider was ever tested against, and

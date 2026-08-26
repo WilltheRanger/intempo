@@ -630,154 +630,15 @@ def test_the_gate_and_the_measurement_cannot_disagree() -> None:
             )
 
 
-# ---------------------------------------------------------------------------
-# A page held sideways, turned upright before anything reads it
-#
-# The failure this closes, measured on the deployment: a musician's String Bass
-# part, 4284x5712, flat and sharp and evenly lit, failed in **2.6 seconds**
-# against the ~21 homr takes on a page it can see. homr segments a page and
-# finds staves expecting them to run across it; theirs ran down. The error that
-# reached them was the default one — "a flatter, better-lit shot of the page
-# usually fixes it" — which is unactionable, because the page was already flat
-# and re-shooting it the same way changes nothing.
-# ---------------------------------------------------------------------------
-
-
-def test_an_upright_page_is_left_exactly_as_it_arrived() -> None:
-    """The conservative half, and the one that matters most.
-
-    Turning an upright page sideways breaks a page that reads today, which is
-    far worse than failing to rescue one that does not. Identity, not
-    equivalence: an upright page must not even be re-encoded.
-    """
-    from app.services.page_image import is_sideways, upright
-    from app.tests.test_scan_end_to_end import _phone_photo
-
-    for fixture in sorted(FIXTURES.glob("0*.jpg")):
-        page = _phone_photo(fixture)
-        assert not is_sideways(page), f"{fixture.stem} was called sideways"
-        assert upright(page) is page, f"{fixture.stem} was re-encoded for nothing"
-
-
-def test_a_sideways_page_is_recognised_and_turned() -> None:
-    from PIL import Image
-    import io as _io
-
-    from app.services.page_image import is_sideways, upright
-
-    turned = _rotated(READABLE, 90)
-    assert is_sideways(turned)
-
-    corrected = upright(turned)
-    assert not is_sideways(corrected), "turning it did not make it upright"
-
-    with Image.open(_io.BytesIO(turned)) as before, Image.open(
-        _io.BytesIO(corrected)
-    ) as after:
-        assert after.size == (before.height, before.width), (
-            "the page was re-encoded without being rotated"
-        )
-
-
-@pytest.mark.parametrize("degrees", [90, 270])
-def test_turning_it_upright_restores_the_original_measurement(degrees: int) -> None:
-    """Not just "it rotated" — the corrected page has to measure like the page
-    it came from, or the rotation is cosmetic."""
-    from app.services.page_image import upright
-
-    original = staff_space_px(_rotated(READABLE, 0))
-    corrected = staff_space_px(upright(_rotated(READABLE, degrees)))
-
-    assert original is not None and corrected is not None
-    assert corrected == pytest.approx(original, rel=0.15)
-
-
-def test_a_page_that_cannot_be_judged_is_left_alone() -> None:
-    """Anything unclear keeps the behaviour that existed before this function.
-
-    Bytes that are not an image at all reach here — `prepare_for_model`
-    deliberately passes them through so the provider refuses them by name — and
-    this must not be what breaks on them.
-    """
-    from app.services.page_image import is_sideways, upright
-
-    rubbish = b"not an image at all"
-    assert is_sideways(rubbish) is False
-    assert upright(rubbish) is rubbish
-
-
-def test_the_worker_turns_the_page_before_it_measures_it() -> None:
-    """Wiring, asserted at the source.
-
-    The order is the point: `too_small_to_read` and the crops both have to see
-    the same page the reader will. A rotation applied after the legibility check
-    would leave it refusing sideways pages exactly as before.
-    """
-    from pathlib import Path as _Path
-
-    from app.workers import transcription_runner as runner
-
-    source = _Path(runner.__file__).read_text()
-    turned = source.index("upright(image_bytes)")
-    measured = source.index("too_small_to_read(image_bytes)")
-
-    assert turned < measured, "the page is measured before it is turned upright"
-
-
-def test_a_tie_needs_the_columns_to_be_clearly_steadier(monkeypatch) -> None:
-    """The margin, pinned directly.
-
-    Ties are what band-count cannot separate, and the real example is the
-    musician's page — three periods each way, rows 16/34/38 against columns
-    18/19/28. It is 4.5 MB and not worth checking in, and a downscaled copy
-    measures differently, so the rule is exercised here instead of the page.
-
-    Two mutations survived without this: deciding a tie with no margin at all,
-    and handing every tie to the columns. Both turn upright pages sideways on a
-    coin-flip, which breaks pages that read today.
-    """
-    from app.services import page_image as pi
-
-    def reading(across_cv, down_cv):
-        def fake(ink):
-            # Same count either way — a tie — with the given agreement.
-            first = getattr(fake, "called", False)
-            fake.called = True
-            return [20, 20, 20], down_cv if first else across_cv
-
-        return fake
-
-    def decide(across_cv, down_cv):
-        monkeypatch.setattr(pi, "_inked", lambda _b: _Ink())
-        monkeypatch.setattr(pi, "_axis_reading", reading(across_cv, down_cv))
-        return pi.is_sideways(b"x")
-
-    class _Ink:
-        shape = (10, 10)
-
-        @property
-        def T(self):
-            return self
-
-    # The musician's page: 0.208 against 0.326, comfortably past the margin.
-    assert decide(0.326, 0.208) is True
-
-    # Steadier, but not by enough to be worth turning a page over.
-    assert decide(0.326, 0.300) is False
-
-    # Rows steadier: upright, whatever the counts did.
-    assert decide(0.100, 0.400) is False
-
-
 def test_the_refusal_says_how_large_the_photograph_was() -> None:
     """Because working it out cost real time.
 
     A refusal arrived from the deployment and the only way to tell a webcam
     grab from a phone photograph was to join the score row against
-    `storage.objects` and infer the resolution from a byte count. The number was
-    already in hand here and was simply not said.
+    `storage.objects` and infer the resolution from a byte count. The number
+    was already in hand here and was simply not said.
 
-    It also settles the question the sentence raises. "With a phone rather than
+    It also settles the question the sentence raises: "with a phone rather than
     a webcam" is only useful advice if the musician can see which one this was.
     """
     import io as _io
