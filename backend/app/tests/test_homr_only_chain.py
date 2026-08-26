@@ -227,6 +227,51 @@ def test_the_backstop_matches_however_it_is_written(detail: str) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Every way homr can find nothing says which nothing it found
+# ---------------------------------------------------------------------------
+
+
+def test_a_page_with_no_noteheads_is_not_blamed_on_the_photograph() -> None:
+    """homr raises `Exception("No noteheads found")` once its segmentation has
+    found staff-line ink and its notehead model has found none at all.
+
+    Measured on `05_handwritten_messy`, and pre-processing it — 2x upscale,
+    autocontrast, both — moved it not at all. It is a limit of a model trained
+    on printed notation, so *"a flatter, better-lit shot of the page usually
+    fixes it"* is advice for a page that cannot get past this however well it
+    is photographed. That default has now been reached wrongly five times in
+    this file's history and every one of them was a missing needle.
+    """
+    reason = runner._why_it_failed("homr: Exception: No noteheads found")
+
+    assert reason != runner._UNKNOWN_REASON
+    assert "flatter" not in reason and "better-lit" not in reason
+    assert "handwritten" in reason.lower()
+    # Name a route that exists. The 413 message named a camera setting the
+    # scanner does not have; this one may only offer what the app can do.
+    assert "MusicXML" in reason and "by hand" in reason
+
+
+def test_a_page_with_no_staves_still_gets_the_photograph_advice() -> None:
+    """The other side of the same line, and the reason this is a *separate*
+    needle rather than one that matches both.
+
+    "No staffs found" is raised after the notehead check, so it is what a page
+    lying on its side actually produces — measured: `01_simple_printed` turned
+    90 degrees reads zero staffs while its noteheads are still found. That page
+    is re-tried turned by `_read_at_any_orientation`, and if it still fails,
+    the photograph really is the thing to change: a sideways, dark, cropped or
+    non-musical page all land here. The default sentence is correct for it, and
+    widening the noteheads needle to cover it would replace right advice with
+    wrong.
+    """
+    assert (
+        runner._why_it_failed("homr: found no staves on this page")
+        == runner._UNKNOWN_REASON
+    )
+
+
+# ---------------------------------------------------------------------------
 # Orientation: homr decides, not a heuristic
 # ---------------------------------------------------------------------------
 

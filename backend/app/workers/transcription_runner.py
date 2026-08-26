@@ -172,6 +172,23 @@ _FAILURE_REASONS: tuple[tuple[str, str], ...] = (
     #: that will fail the same way — and both name a route that exists, which
     #: is the rule the 413 message broke.
     (
+        # homr raises this after its segmentation has found staff-line ink and
+        # its notehead model has found **zero noteheads on the whole page**
+        # (`homr/main.py`, before the staff check, which is why a sideways page
+        # does not land here — that one raises "No staffs found" and is
+        # re-tried turned). Measured on `05_handwritten_messy`, and pre-
+        # processing the page — 2x upscale, autocontrast, both — moved it not
+        # at all. It is a limit of the model on handwriting, not a photograph
+        # that came out badly, so the default sentence would send a musician
+        # back to the stand for a page that cannot get past this however well
+        # it is shot.
+        "noteheads",
+        "The staves on this page were found but none of the notes on them "
+        "were. Handwritten music is the usual cause — this reader is trained "
+        "on printed notation. Importing a MusicXML file, or entering the piece "
+        "by hand, both work.",
+    ),
+    (
         "came out empty",
         "Most of this page came back blank — its barlines were found but the "
         "notes between them were not. Handwritten or faint pages are the usual "

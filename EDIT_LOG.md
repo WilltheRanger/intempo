@@ -6,6 +6,52 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-26 — The two ways homr finds nothing are two different sentences
+
+**Branch:** `main`. Backend only — `_FAILURE_REASONS` and its tests. No screen,
+component, style or copy inside the app was touched.
+
+**Files:** `backend/app/workers/transcription_runner.py`,
+`backend/app/tests/test_homr_only_chain.py`.
+
+Following on from the refusals added earlier today. Two of homr's three "found
+nothing" outcomes still reached `_UNKNOWN_REASON` — *"a flatter, better-lit
+shot of the page usually fixes it"* — and only one of them deserved it.
+
+**Read from homr's own source, not guessed.** `homr/main.py` raises
+`Exception("No noteheads found")` at line 248, *after* the segmentation has
+found staff-line fragments and **before** the staff check at line 274. So the
+two failures mean different things:
+
+| homr raises | what actually happened | is the photograph the problem? |
+|---|---|---|
+| `No noteheads found` | staff-line ink found, **zero** noteheads on the page | no |
+| `No staffs found` | no staff could be assembled at all | usually yes |
+
+`05_handwritten_messy` is the first. Pre-processing it — 2x upscale,
+autocontrast, both — moved it not at all: it is a limit of a model trained on
+printed notation, and no photograph of that page gets past it. It now says so,
+and names the two routes that exist (import MusicXML, enter by hand).
+
+`No staffs found` keeps the default, and the measurement is why. I had assumed
+a sideways page would fail at the notehead stage first, which would have made
+`_read_at_any_orientation`'s retry dead code for the one case it exists for.
+Measured instead: `01_simple_printed` turned 90 degrees reports **0 staffs**
+with its noteheads still found, so it raises `No staffs found`,
+`_looks_like_no_staves` matches, and the page is re-tried turned. A page that
+still fails after that really is sideways, dark, cropped or not music — the
+default sentence is right for it, and widening the noteheads needle to cover
+both would replace right advice with wrong.
+
+Three mutations, all caught: the needle stopped from matching, the needle
+widened to swallow `no staves` as well, and the advice reverted to blaming the
+photograph.
+
+**Not verified:** no real handwritten page has been scanned through production
+since this landed.
+
+---
+
 ## 2026-08-26 — A page that was not read is refused instead of drawn as a score
 
 **Branch:** `main`. Backend only. No UI change: no screen, component, style or
