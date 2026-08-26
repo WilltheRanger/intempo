@@ -254,6 +254,14 @@ there works differently as of 2026-08-24:
   betters it. Its `ocr_confidence` is the **share of bars that add up**, computed
   here — the importer's number is conversion loss and reads 1.0 on real output,
   which would claim certainty about a photograph.
+  **It does not quantise, and that is measured rather than hoped** (2026-08-26).
+  The worry was that a page of nothing but quarters is what both a march and a
+  rounding look like, and the beat check cannot separate them. Two fixtures can,
+  because `SOURCES.md` documents what is printed on them: `01_simple_printed`
+  (Wohlfahrt No. 1, continuous eighths) reads back **32 eighths and nothing
+  else**, and `03_complex_printed` (Kreutzer No. 2, continuous sixteenths) reads
+  back **48 sixteenths and nothing else**. `tools/homr-bench.py` prints the
+  duration mix per page, so the check is one command rather than an argument.
   It runs **only on Modal** (`transcribe_score`): 1350 MB peak, measured, on a
   512 MB host. `TRANSCRIPTION_RUNTIME=modal` sends pages there and is separate
   from `ANALYSIS_RUNTIME` on purpose. AGPL-3.0, used unmodified, accepted
