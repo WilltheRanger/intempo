@@ -52,7 +52,7 @@ def test_a_bare_deployment_is_not_ready_and_says_why(unconfigured) -> None:
     assert result.ready is False
     joined = " ".join(result.blocking)
     assert "SUPABASE_SERVICE_ROLE_KEY" in joined
-    assert "model key" in joined
+    assert "sheet-music reader" in joined
 
 
 def test_it_never_reports_a_value(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -772,6 +772,119 @@ def test_an_engine_that_is_not_installed_is_reported_rather_than_assumed(
     assert "Modal" in checks["ocr:homr"].detail, "it does not say where it does run"
 
 
+# ---- whether the configured page runtime exists -----------------------------
+
+
+def _page_runtime_checks(monkeypatch, *, runtime="modal") -> dict[str, Check]:
+    from app.workers import dispatch
+
+    monkeypatch.setattr(dispatch, "TRANSCRIPTION_RUNTIME", runtime)
+    return {c.name: c for c in readiness._transcription_runtime_checks()}
+
+
+def test_modal_counts_as_the_reader_when_homr_is_deliberately_remote(
+    monkeypatch,
+) -> None:
+    """The production false alarm: homr is absent from Render by design.
+
+    A selected remote runtime satisfies the capability check; the runtime check
+    below is responsible for proving that selection is reachable.
+    """
+    from app.services.ocr import homr_provider as module
+    from app.services.ocr import pipeline
+    from app.workers import dispatch
+
+    monkeypatch.setattr(dispatch, "TRANSCRIPTION_RUNTIME", "modal")
+    monkeypatch.setattr(pipeline, "_default_chain", lambda: [module.homr_provider])
+    monkeypatch.setattr(module.HomrProvider, "available", lambda self: False)
+
+    checks = {c.name: c for c in readiness._configuration_checks()}
+
+    assert checks["ocr:homr"].ok is False
+    assert checks["sheet_music_reading"].ok is True
+
+
+def test_modal_page_runtime_without_credentials_is_blocking(monkeypatch) -> None:
+    """With the homr-only chain there is no useful local fallback."""
+    import sys
+    import types
+
+    monkeypatch.setitem(sys.modules, "modal", types.ModuleType("modal"))
+    monkeypatch.delenv("MODAL_TOKEN_ID", raising=False)
+    monkeypatch.delenv("MODAL_TOKEN_SECRET", raising=False)
+
+    check = _page_runtime_checks(monkeypatch)["transcription_runtime:modal"]
+
+    assert not check.ok
+    assert check.blocking
+    assert "MODAL_TOKEN_ID" in check.detail
+
+
+def test_page_runtime_hydrates_the_transcription_function(monkeypatch) -> None:
+    """Looking up the analysis function proves nothing about page reading."""
+    import sys
+    import types
+
+    from app.workers import dispatch
+
+    monkeypatch.setenv("MODAL_TOKEN_ID", "ak-something")
+    monkeypatch.setenv("MODAL_TOKEN_SECRET", "as-something")
+    looked_up: list[tuple[str, str]] = []
+    hydrated: list[bool] = []
+
+    class _Handle:
+        def hydrate(self):
+            hydrated.append(True)
+
+    class _Function:
+        @staticmethod
+        def from_name(app_name, function_name):
+            looked_up.append((app_name, function_name))
+            return _Handle()
+
+    fake = types.ModuleType("modal")
+    fake.Function = _Function
+    monkeypatch.setitem(sys.modules, "modal", fake)
+
+    check = _page_runtime_checks(monkeypatch)["transcription_runtime:modal"]
+
+    assert looked_up == [
+        (dispatch.MODAL_APP_NAME, dispatch.MODAL_TRANSCRIBE_FUNCTION_NAME)
+    ]
+    assert hydrated, "from_name is lazy; hydrate is the actual lookup"
+    assert check.ok
+    assert check.detail == ""
+
+
+def test_missing_modal_transcription_function_is_named(monkeypatch) -> None:
+    import sys
+    import types
+
+    from app.workers import dispatch
+
+    monkeypatch.setenv("MODAL_TOKEN_ID", "ak-something")
+    monkeypatch.setenv("MODAL_TOKEN_SECRET", "as-something")
+
+    class _Handle:
+        def hydrate(self):
+            raise RuntimeError("not deployed")
+
+    fake = types.ModuleType("modal")
+    fake.Function = type(
+        "Function",
+        (),
+        {"from_name": staticmethod(lambda *args, **kwargs: _Handle())},
+    )
+    monkeypatch.setitem(sys.modules, "modal", fake)
+
+    check = _page_runtime_checks(monkeypatch)["transcription_runtime:modal"]
+
+    assert not check.ok
+    assert check.blocking
+    assert dispatch.MODAL_TRANSCRIBE_FUNCTION_NAME in check.detail
+    assert "Deploy Modal" in check.detail
+
+
 # ---- what actually happened to the pages ------------------------------------
 
 
@@ -850,3 +963,4 @@ def test_it_is_wired_into_the_readiness_report() -> None:
     )
     # Specifically: extended into the result, not merely defined.
     assert "checks.extend(_transcription_dispatch_check())" in code
+    assert "checks.extend(_transcription_runtime_checks())" in code

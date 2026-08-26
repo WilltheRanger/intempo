@@ -249,13 +249,20 @@ def _configuration_checks() -> list[Check]:
             )
         )
 
+    # A reader can live here or behind the page runtime. The production
+    # deployment deliberately keeps homr off this 512 MB process and sends
+    # photographs to Modal, so checking only the local provider list made a
+    # healthy delegated reader report as a blocking 503.
+    from app.workers import dispatch
+
     checks.append(
         Check(
             name="sheet_music_reading",
-            ok=bool(usable),
+            ok=bool(usable) or dispatch.TRANSCRIPTION_RUNTIME == "modal",
             detail=(
-                "No model key is set, so a photographed page cannot be read at all. "
-                "Importing a MusicXML file still works — that path uses no model."
+                "No sheet-music reader is available in this process, and page "
+                "transcription is not delegated to Modal. Importing a MusicXML "
+                "file still works — that path needs no reader."
             ),
         )
     )
@@ -365,6 +372,108 @@ def _transcription_dispatch_check() -> list[Check]:
             blocking=False,
         )
     ]
+
+
+def _transcription_runtime_checks() -> list[Check]:
+    """Whether the runtime that reads photographed pages is reachable now.
+
+    Provider checks above answer what this web process can run. Production
+    intentionally answers "not homr": the engine peaks around 1.35 GB and lives
+    only in Modal. Treating that local absence as the capability check made
+    `/v1/ready` return 503 on the intended deployment, while never asking
+    whether Modal's actual `transcribe_score` function existed.
+
+    This is blocking when Modal was explicitly selected. With the shipped
+    homr-only chain, falling back to this process cannot read a page at all.
+    The behaviour counter below remains separate: hydration proves the function
+    exists; only a real dispatch proves a page reached it.
+    """
+    import os
+
+    from app.workers import dispatch
+
+    if dispatch.TRANSCRIPTION_RUNTIME != "modal":
+        return []
+
+    try:
+        import modal
+    except ImportError:
+        return [
+            Check(
+                name="transcription_runtime:modal",
+                ok=False,
+                detail=(
+                    "TRANSCRIPTION_RUNTIME is modal, but the modal package is "
+                    "not installed on this host, so photographed pages cannot "
+                    "be handed to the reader."
+                ),
+            )
+        ]
+
+    if not (os.getenv("MODAL_TOKEN_ID") and os.getenv("MODAL_TOKEN_SECRET")):
+        return [
+            Check(
+                name="transcription_runtime:modal",
+                ok=False,
+                detail=(
+                    "MODAL_TOKEN_ID and MODAL_TOKEN_SECRET are not both set "
+                    "here, so this API cannot hand photographed pages to Modal."
+                ),
+            )
+        ]
+
+    checks: list[Check] = []
+    untrimmed = [
+        name
+        for name in _MODAL_CREDENTIAL_VARS
+        if (raw := os.getenv(name)) is not None and raw != raw.strip()
+    ]
+    if untrimmed:
+        checks.append(
+            Check(
+                name="transcription_modal_credentials",
+                ok=False,
+                detail=(
+                    f"{' and '.join(untrimmed)} "
+                    + ("carry" if len(untrimmed) > 1 else "carries")
+                    + " leading or trailing whitespace. It is repaired before "
+                    "use, but should be re-pasted cleanly in the hosting "
+                    "dashboard."
+                ),
+                blocking=False,
+            )
+        )
+        # The dispatcher makes the same repair immediately before a spawn.
+        # Apply it here too so hydration tests the credentials that will
+        # actually be used rather than failing on a newline already handled.
+        dispatch.clean_modal_credentials()
+
+    try:
+        modal.Function.from_name(
+            dispatch.MODAL_APP_NAME,
+            dispatch.MODAL_TRANSCRIBE_FUNCTION_NAME,
+        ).hydrate()
+    except Exception as exc:  # noqa: BLE001 — report, never break readiness
+        log.warning("readiness: Modal transcription function not resolvable: %s", exc)
+        checks.append(
+            Check(
+                name="transcription_runtime:modal",
+                ok=False,
+                detail=(
+                    f"Modal has no function "
+                    f"'{dispatch.MODAL_TRANSCRIBE_FUNCTION_NAME}' in an app "
+                    f"named '{dispatch.MODAL_APP_NAME}', so photographed pages "
+                    f"cannot be read. Run the Deploy Modal workflow. "
+                    f"({type(exc).__name__})"
+                ),
+            )
+        )
+        return checks
+
+    checks.append(
+        Check(name="transcription_runtime:modal", ok=True, detail="")
+    )
+    return checks
 
 
 def _analysis_runtime_checks() -> list[Check]:
@@ -602,6 +711,7 @@ def check() -> Readiness:
     # configuration fact, and the two early returns below would otherwise
     # swallow it on exactly the deployment most likely to be half-configured.
     result.checks.extend(_analysis_runtime_checks())
+    result.checks.extend(_transcription_runtime_checks())
     result.checks.extend(_transcription_dispatch_check())
 
     client = get_service_client()
