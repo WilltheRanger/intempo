@@ -374,3 +374,138 @@ def test_the_first_failure_is_the_one_reported(tmp_path, monkeypatch) -> None:
 
     assert "page.jpg" in str(caught.value)
     assert "turned" not in str(caught.value)
+
+
+# ---------------------------------------------------------------------------
+# A provider that cannot reconsider is not asked twice
+# ---------------------------------------------------------------------------
+
+
+def _doubtful_score():
+    from app.services.score_schema import Measure, Note, ScoreJson
+
+    return ScoreJson(
+        time_signature="4/4",
+        clef="bass",
+        measures=[
+            Measure(
+                measure_number=1,
+                notes=[Note(pitch="D3", duration="quarter") for _ in range(4)],
+            ),
+            Measure(measure_number=2, notes=[Note(pitch="D3", duration="quarter")]),
+        ],
+        ocr_confidence=0.5,
+    )
+
+
+class _Counting:
+    """A provider that records how many times it was asked to read."""
+
+    name = "counting"
+    reads_whole_page = True
+
+    def __init__(self, *, takes_a_note: bool) -> None:
+        self.takes_a_note = takes_a_note
+        self.reads = 0
+
+    def available(self) -> bool:
+        return True
+
+    def parse(self, image_bytes, mime_type="image/jpeg", note=None):
+        from app.services.ocr.base import OCRResponse
+
+        self.reads += 1
+        return OCRResponse(
+            score=_doubtful_score(), raw_text="", model=self.name,
+            input_tokens=0, output_tokens=0, cost_usd=0.0, latency_ms=1,
+        )
+
+
+def test_homr_is_not_asked_to_re_read_a_page_it_cannot_re_read() -> None:
+    """**Measured, not assumed: the same page read twice returns byte-identical
+    MusicXML, and the second read costs 14.5 seconds.**
+
+    `retry_with_arithmetic` was written for a model you can talk to — it hands
+    the reading's own beat sums back with the offending measures named. homr
+    has no prompt (`parse` accepts a `note` and ignores it) and is
+    deterministic, so the retry is the same computation on the same bytes. On
+    Modal that is a second 2.5 GB container spent to reproduce an answer that
+    could not differ, on exactly the pages that are already the slowest.
+    """
+    from app.services.ocr import pipeline
+
+    provider = _Counting(takes_a_note=False)
+    try:
+        pipeline.parse_sheet_music(b"x", providers=[provider])
+    except Exception:
+        pass
+
+    assert provider.reads == 1, (
+        f"the page was read {provider.reads} times by a provider whose second "
+        "reading cannot differ from its first"
+    )
+
+
+def test_a_provider_that_can_be_talked_to_is_still_asked_again() -> None:
+    """The other side of the line, and the reason the default is `True`: a
+    vision model handed its own arithmetic back really can fix a bar, which is
+    the whole point of `confirm.py`. A new provider has to opt out
+    deliberately."""
+    from app.services.ocr import pipeline
+
+    provider = _Counting(takes_a_note=True)
+    try:
+        pipeline.parse_sheet_music(b"x", providers=[provider])
+    except Exception:
+        pass
+
+    assert provider.reads > 1, "a provider that can reconsider was never asked to"
+
+
+def test_a_provider_that_says_nothing_is_asked_again() -> None:
+    """**The default, tested on a provider that does not declare it** — which
+    is every vision provider in the registry, none of which has ever heard of
+    this attribute.
+
+    `_Counting` sets it explicitly either way, so it exercises the flag and
+    never the fallback: the mutation making the default opt-in passed against
+    it, silencing the retry for the whole chain. A rule's default has to be
+    tested on something that does not state it.
+    """
+    from app.services.ocr import pipeline
+
+    class _Silent:
+        name = "silent"
+        reads_whole_page = True
+
+        def __init__(self) -> None:
+            self.reads = 0
+
+        def available(self) -> bool:
+            return True
+
+        def parse(self, image_bytes, mime_type="image/jpeg", note=None):
+            from app.services.ocr.base import OCRResponse
+
+            self.reads += 1
+            return OCRResponse(
+                score=_doubtful_score(), raw_text="", model=self.name,
+                input_tokens=0, output_tokens=0, cost_usd=0.0, latency_ms=1,
+            )
+
+    assert not hasattr(_Silent, "takes_a_note")
+    provider = _Silent()
+    try:
+        pipeline.parse_sheet_music(b"x", providers=[provider])
+    except Exception:
+        pass
+
+    assert provider.reads > 1, "a provider that says nothing was silently skipped"
+
+
+def test_homr_declares_that_it_cannot_reconsider() -> None:
+    """The flag is only worth having if the one provider it exists for sets
+    it, and nothing else in the suite reads homr's own value."""
+    from app.services.ocr.homr_provider import homr_provider
+
+    assert homr_provider.takes_a_note is False
