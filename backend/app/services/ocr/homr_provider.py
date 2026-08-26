@@ -44,6 +44,7 @@ from pathlib import Path
 
 from app.services.ocr.base import OCRProviderError, OCRResponse
 from app.services.ocr.musicxml import MusicXMLError, score_json_from_musicxml
+from app.services.ocr.validate import MeasureFinding, validate_measures
 from app.services.score_schema import ScoreJson
 
 log = logging.getLogger("intempo.ocr")
@@ -58,7 +59,7 @@ _SUFFIX_FOR = {
 }
 
 
-def _confidence_from_arithmetic(score: ScoreJson) -> float:
+def _confidence_from_arithmetic(findings: list[MeasureFinding]) -> float:
     """How much of this reading agrees with itself, as a fraction of its bars.
 
     **Not the number the importer computes, and the difference matters.**
@@ -92,13 +93,77 @@ def _confidence_from_arithmetic(score: ScoreJson) -> float:
     `POST /scores/:id/accept` exists and why nothing else may discard the
     photograph.
     """
-    from app.services.ocr.validate import validate_measures
-
-    findings = validate_measures(score)
     if not findings:
         return 0.0
     agree = sum(1 for f in findings if f.verdict in ("ok", "pickup"))
     return round(agree / len(findings), 3)
+
+
+def _refuse_if_it_is_not_a_reading(
+    name: str, score: ScoreJson, findings: list[MeasureFinding]
+) -> None:
+    """Stop a reading that has nothing in it from being shown as a score.
+
+    **Measured on `04_handwritten_clean`.** homr returns 7 measures holding 13
+    notes: five of the seven are *empty*, the other two hold everything, no
+    clef was found and no metre. That was stored, and drawn for a musician as
+    their piece. Every mechanism this project has for doubt was working and not
+    one of them applies — the caveat line names the bars that do not add up,
+    the confidence sentence says a reading *might* be wrong, and both of those
+    say "this reading is imperfect" when the true statement is "there is no
+    reading here". It is the same distinction `too_small_to_read` exists for,
+    one stage later.
+
+    **Three refusals, because they are three different pages** and the musician
+    can act on only one of them. Collapsing them costs the difference between
+    *your photograph did not come out* and *this page cannot be read however
+    well you photograph it*, which is the whole of the advice.
+
+    **What is deliberately *not* refused: a page whose metre could not be
+    established.** `validate_measures` calls those bars `unverifiable`, and
+    `_confidence_from_arithmetic` scores them zero because a bar whose metre is
+    unknown has not been shown to add up. An earlier version of this refused on
+    the confidence alone, which would have thrown away a *correctly read* inner
+    page — no header, no metre inferable — over a number that only ever meant
+    "not proven". The durations are still there, the timeline still builds, and
+    `MeasureEditScreen` still works. So the arithmetic refusal fires only where
+    arithmetic could actually see something: bars whose metre was known.
+    """
+    if not score.measures:
+        raise OCRProviderError(f"{name}: found no bars of music on this page")
+
+    # More holes than music.
+    #
+    # A bar with no notes in it is not a quiet bar — a rest is a note here,
+    # with pitch `"rest"`, so multi-bar rests in an orchestral part come
+    # through as music and are counted as such. An empty measure is a barline
+    # with nothing between it, which `validate.py` already calls "not a
+    # reading, a hole".
+    #
+    # The comparison is holes against music, not a tuned fraction: one smudged
+    # bar in seventy-four is a page with a hole in it, and five in seven is
+    # holes with a page around them. There is no constant here to fit to a
+    # photograph, which is the point — the line sits where the words change.
+    holes = sum(1 for measure in score.measures if not measure.notes)
+    if holes * 2 > len(score.measures):
+        raise OCRProviderError(
+            f"{name}: {holes} of the {len(score.measures)} bars on this page "
+            f"came out empty"
+        )
+
+    # Nothing that could be checked, checked out.
+    #
+    # `> 0` rather than a threshold on purpose: this is not a quality bar, and
+    # choosing one would be inventing a number. It asks whether *any* bar that
+    # arithmetic can see survived it, which is the least this can require and
+    # still be a score. A page read at 0.5 is worth having — the app names the
+    # bars that do not add up and `MeasureEditScreen` fixes them.
+    checkable = [f for f in findings if f.verdict != "unverifiable"]
+    if checkable and not any(f.verdict in ("ok", "pickup") for f in checkable):
+        raise OCRProviderError(
+            f"{name}: none of the {len(checkable)} bars on this page could be "
+            f"read as music"
+        )
 
 
 class HomrProvider:
@@ -155,9 +220,14 @@ class HomrProvider:
         except MusicXMLError as exc:
             raise OCRProviderError(f"{self.name}: {exc}") from exc
 
+        # Validated once, and the answer used twice: the confidence reported to
+        # the app, and whether this is a reading at all.
+        findings = validate_measures(score)
         score = score.model_copy(
-            update={"ocr_confidence": _confidence_from_arithmetic(score)}
+            update={"ocr_confidence": _confidence_from_arithmetic(findings)}
         )
+        _refuse_if_it_is_not_a_reading(self.name, score, findings)
+
         # The duration mix, not just the totals.
         #
         # **Because the beat check cannot see the failure that matters most

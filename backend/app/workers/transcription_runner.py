@@ -167,6 +167,24 @@ _FAILURE_REASONS: tuple[tuple[str, str], ...] = (
         "fault on our side — your page is fine, and re-photographing it will "
         "not help.",
     ),
+    #: The two ways a page can be *found* and still not be readable. Both say
+    #: so, because the default sends the musician back to re-photograph a page
+    #: that will fail the same way — and both name a route that exists, which
+    #: is the rule the 413 message broke.
+    (
+        "came out empty",
+        "Most of this page came back blank — its barlines were found but the "
+        "notes between them were not. Handwritten or faint pages are the usual "
+        "cause. A darker, sharper photograph is worth one try; after that, "
+        "importing a MusicXML file or entering the piece by hand both work.",
+    ),
+    (
+        "could be read as music",
+        "The notation on this page was found but could not be read — none of "
+        "its bars came out as music that adds up. Handwritten or heavily "
+        "marked pages are the usual cause. Importing a MusicXML file, or "
+        "entering the piece by hand, both work.",
+    ),
     (
         "media type",
         "That image format could not be read. A JPEG or PNG works.",

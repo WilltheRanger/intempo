@@ -6,6 +6,45 @@ Operating Principle #5.
 
 ---
 
+## 2026-08-26 — Refuse an unread page on its structure, not on its confidence number
+
+**Context:** `04_handwritten_clean` comes back from homr as 7 measures holding
+13 notes, five of the seven empty, no clef, no metre — `ocr_confidence` 0.00 —
+and that was stored and drawn for a musician as their score. Nothing downstream
+catches it: `_read_any_music` finds thirteen notes, the caveat line reports bars
+that do not add up and none of these are *wrong*, and with a homr-only chain
+`CONFIDENCE_THRESHOLD` has nothing to fall through to, so the 0.00 reading is
+returned as the answer.
+
+**Decision:** the provider refuses a page on what the reading *is* — no bars at
+all, more empty bars than bars with music, or no checkable bar that checked out
+— and never on `ocr_confidence`.
+
+**Alternative considered, written first, and reverted: `if ocr_confidence <= 0`.**
+One line, refuses `04`, passes every test I had written for it.
+
+It is wrong because of what a zero means. `_confidence_from_arithmetic` counts a
+bar only if its verdict is `ok` or `pickup`; a bar whose metre could not be
+established is `unverifiable`, which means **not shown to add up**, not *wrong*.
+A photograph of an inner page carries no header, and when
+`infer_beats_per_measure` cannot find three measures agreeing 60% of the time,
+every bar on that page is `unverifiable` and the confidence is 0.00 — with all
+of the durations correctly read and the timeline perfectly usable. Refusing on
+that number reads "not proven" as "disproven", and the page it throws away is
+the commonest page anyone photographs.
+
+**Trade-offs accepted.** Three checks instead of one, and one of them
+(`holes * 2 > len(measures)`) is a comparison somebody could argue with. It is
+deliberately a comparison and not a fraction, so there is no constant fitted to
+a photograph; a rest is a note in this schema, so a page of multi-bar rests
+reads as music and cannot trigger it. The refusals are also *structural*, which
+means they can miss a page that is confidently and completely wrong — nothing
+here substitutes for the musician looking, which is why
+`POST /scores/:id/accept` exists and why nothing else may discard the
+photograph.
+
+---
+
 ## 2026-08-25 — Sync handlers on Starlette's threadpool, over an async Supabase client
 
 **Context:** Every request handler in the API was `async def`, contained no

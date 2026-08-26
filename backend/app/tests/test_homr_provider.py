@@ -282,3 +282,233 @@ def test_the_shape_of_a_reading_is_logged_not_just_its_size(homr, caplog) -> Non
     said = " ".join(r.getMessage() for r in caplog.records)
     assert "quarter" in said, f"the durations were not reported: {said}"
     assert "'quarter': 4" in said or "quarter': 4" in said, said
+
+
+# ---------------------------------------------------------------------------
+# A reading where nothing adds up is not a reading
+# ---------------------------------------------------------------------------
+
+#: A bar of five quarters in 4/4, then a bar of one. Neither adds up.
+#:
+#: Long **first**, short second, and that ordering is the fixture doing work:
+#: a short first measure is a pickup, which `validate_measures` forgives and
+#: should. Written the other way round this page would score 0.5 and the test
+#: would pass against a provider that refuses nothing.
+_NOTHING_ADDS_UP = (
+    "".join(
+        f'<note><pitch><step>{step}</step><octave>3</octave></pitch>'
+        f"<duration>2</duration><type>quarter</type></note>"
+        for step in "DEFGA"
+    )
+    + '</measure><measure number="2">'
+    + '<note><pitch><step>D</step><octave>3</octave></pitch>'
+    + "<duration>2</duration><type>quarter</type></note>"
+)
+
+
+def test_a_page_where_no_bar_adds_up_is_refused(homr) -> None:
+    """**Measured on `04_handwritten_clean`.** homr returns 8 measures and 17
+    notes at confidence 0.00 with no clef, and that was stored and shown to a
+    musician as their score.
+
+    Every mechanism this project has for doubt was working and none of them
+    applies: the caveat line names the bars that do not add up, and *all* of
+    them do not; the confidence sentence says a reading might be wrong, and the
+    true statement is that there was no reading. The verdict compares a
+    recording against bar durations, and not one of this page's survived.
+    """
+    homr(MUSICXML.format(notes=_NOTHING_ADDS_UP))
+
+    with pytest.raises(OCRProviderError) as caught:
+        HomrProvider().parse(b"<page>")
+
+    said = str(caught.value)
+    assert "could be read as music" in said, said
+    assert "2 bars" in said, f"the musician is not told how much was found: {said}"
+
+
+def test_the_refusal_reaches_the_musician_as_words_about_the_page(homr) -> None:
+    """A refusal nothing in `_FAILURE_REASONS` matches lands on *"a flatter,
+    better-lit shot of the page usually fixes it"* — advice about a photograph,
+    which for the fourth time here would blame the musician for something else.
+
+    So the wording of the error and the needle that catches it are one fact,
+    and this is the test that keeps them together.
+    """
+    from app.workers.transcription_runner import _why_it_failed
+
+    homr(MUSICXML.format(notes=_NOTHING_ADDS_UP))
+
+    with pytest.raises(OCRProviderError) as caught:
+        HomrProvider().parse(b"<page>")
+
+    said = _why_it_failed(str(caught.value))
+    assert "could not be read" in said, said
+    assert "better-lit" not in said, (
+        f"a page that was found and could not be read was blamed on the "
+        f"photograph: {said}"
+    )
+
+
+def test_a_page_where_some_bars_add_up_is_kept(homr) -> None:
+    """The distinction the refusal turns on, and the more expensive mistake.
+
+    A page read at 0.5 is worth having: the app names the bars that do not add
+    up and `MeasureEditScreen` fixes them. Refusing it would throw away a
+    usable scan over an imperfect one — and by then the photograph has already
+    been taken, so the musician pays for that in a second trip to the stand.
+    """
+    homr(MUSICXML.format(notes=_ONE_GOOD_BAR_THEN_A_SHORT_ONE))
+
+    score = HomrProvider().parse(b"<page>").score
+
+    assert 0 < score.ocr_confidence < 1
+    assert len(score.measures) == 2
+
+
+def test_a_file_with_no_bars_in_it_is_refused_in_its_own_words(homr) -> None:
+    """A `<part>` holding no measures parses cleanly and returns a score with
+    nothing in it — `score_json_from_musicxml` raises only on XML it cannot
+    read or a part it cannot find, and an empty part is neither.
+
+    Refused separately from the bars-do-not-add-up case because the advice
+    differs. Nothing was read here, so *"a flatter, better-lit shot"* is the
+    right thing to say; on a page whose notation was found and misread it is
+    the wrong thing, and it is what a musician hears when a needle is missing.
+    """
+    from app.workers.transcription_runner import _UNKNOWN_REASON, _why_it_failed
+
+    homr(
+        '<?xml version="1.0"?><score-partwise version="4.0"><part-list>'
+        '<score-part id="P1"><part-name>Voice</part-name></score-part>'
+        '</part-list><part id="P1"></part></score-partwise>'
+    )
+
+    with pytest.raises(OCRProviderError, match="no bars of music") as caught:
+        HomrProvider().parse(b"<page>")
+
+    assert _why_it_failed(str(caught.value)) == _UNKNOWN_REASON
+
+
+#: A page written with no metre anywhere and no two bars the same length.
+#:
+#: `infer_beats_per_measure` needs three measures and 60% agreement, and gets
+#: neither, so every bar comes back `unverifiable` — not *wrong*, **not shown
+#: to add up**. It is the ordinary shape of a photograph of an inner page.
+_NO_METRE_ANYWHERE = "".join(
+    f'<measure number="{n}">'
+    + "".join(
+        f'<note><pitch><step>{step}</step><octave>3</octave></pitch>'
+        f"<duration>2</duration><type>quarter</type></note>"
+        for step in "DEFGA"[:n]
+    )
+    + "</measure>"
+    for n in (1, 2, 3, 4, 5)
+)
+
+_UNMETERED_PAGE = (
+    '<?xml version="1.0"?><score-partwise version="4.0"><part-list>'
+    '<score-part id="P1"><part-name>Voice</part-name></score-part></part-list>'
+    '<part id="P1">' + _NO_METRE_ANYWHERE + "</part></score-partwise>"
+)
+
+
+def test_a_page_whose_metre_is_unknown_is_kept(homr) -> None:
+    """**The regression the refusal was one version away from causing.**
+
+    `_confidence_from_arithmetic` scores an `unverifiable` bar zero, because a
+    bar whose metre is unknown has not been *shown* to add up. Refusing on that
+    number alone — which the first version of this did — throws away a
+    correctly read inner page, which is the commonest page anyone photographs:
+    no header, no metre, nothing to check the durations against.
+
+    The durations are all still there. The timeline builds, the caveat line has
+    nothing to complain about, and `MeasureEditScreen` works. Zero here means
+    *not proven*, and refusing on it would read it as *disproven*.
+    """
+    homr(_UNMETERED_PAGE)
+
+    score = HomrProvider().parse(b"<page>").score
+
+    assert score.ocr_confidence == 0.0
+    assert len(score.measures) == 5
+    assert sum(len(m.notes) for m in score.measures) == 15
+
+
+def test_a_page_that_is_mostly_holes_is_refused(homr) -> None:
+    """**Measured on `04_handwritten_clean`:** seven measures, five of them
+    empty, thirteen notes crowded into the other two, no clef and no metre.
+    Not one bar was *wrong* — five of them held nothing at all — so a check
+    that only asks whether the arithmetic works has nothing to say about it.
+
+    An empty measure is a barline with nothing between it, which `validate.py`
+    already calls "not a reading, a hole". A rest is a note here, with pitch
+    `"rest"`, so the multi-bar rests in an orchestral part are music and are
+    counted as music — this cannot be triggered by a quiet page.
+    """
+    from app.workers.transcription_runner import _UNKNOWN_REASON, _why_it_failed
+
+    one_bar_and_two_holes = (
+        _FOUR_QUARTERS
+        + '</measure><measure number="2"></measure>'
+        + '<measure number="3">'
+    )
+    homr(MUSICXML.format(notes=one_bar_and_two_holes))
+
+    with pytest.raises(OCRProviderError) as caught:
+        HomrProvider().parse(b"<page>")
+
+    said = str(caught.value)
+    assert "2 of the 3 bars" in said and "came out empty" in said, said
+
+    reason = _why_it_failed(said)
+    assert reason != _UNKNOWN_REASON, (
+        f"a page whose barlines were found and whose notes were not was blamed "
+        f"on the photograph: {reason}"
+    )
+    assert "blank" in reason, reason
+
+
+def test_a_page_with_one_hole_in_it_is_kept(homr) -> None:
+    """The other side of the same line. One smudged bar in a page of music is a
+    page with a hole in it; the app names it and the editor fills it in.
+    Refusing that would cost a scan that is almost entirely right."""
+    two_bars_and_a_hole = (
+        _FOUR_QUARTERS
+        + '</measure><measure number="2">'
+        + _FOUR_QUARTERS
+        + '</measure><measure number="3">'
+    )
+    homr(MUSICXML.format(notes=two_bars_and_a_hole))
+
+    score = HomrProvider().parse(b"<page>").score
+
+    assert len(score.measures) == 3
+
+
+def test_the_refusal_and_the_confidence_read_the_same_page_the_same_way(homr) -> None:
+    """A pickup counts as a bar that read, in both places or in neither.
+
+    `_confidence_from_arithmetic` counts `pickup` alongside `ok` — a short
+    first measure is how a great deal of music is actually written, and
+    `pickup_complement` is what catches the case where it was not. If the
+    refusal did not count it too, the two would disagree about the same page:
+    a scan reported at 0.5 confidence, refused outright. One of those numbers
+    reaches the musician and the other decides whether anything does, so they
+    have to be reading the same findings the same way.
+    """
+    a_pickup_then_a_long_bar = (
+        '<note><pitch><step>D</step><octave>3</octave></pitch>'
+        "<duration>2</duration><type>quarter</type></note>"
+        + '</measure><measure number="2">'
+        + "".join(
+            f'<note><pitch><step>{step}</step><octave>3</octave></pitch>'
+            f"<duration>2</duration><type>quarter</type></note>"
+            for step in "DEFGA"
+        )
+    )
+    homr(MUSICXML.format(notes=a_pickup_then_a_long_bar))
+
+    score = HomrProvider().parse(b"<page>").score
+
+    assert score.ocr_confidence == 0.5
