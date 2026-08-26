@@ -32,6 +32,7 @@ from app.db import get_service_client
 from app.routers.upload import SCORE_BUCKET
 from app.services.ocr.musicxml import MusicXMLError, score_json_from_musicxml
 from app.workers.dispatch import start_transcription
+from app.services.score_pages import pages_of, select_with_pages
 from app.services.score_schema import Clef, ScoreJson
 
 # Fetching the page lives in `services/page_image.py` so the transcription
@@ -65,7 +66,16 @@ class CreateScoreRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     #: Absent for a hand-entered piece. See `_MANUAL_FIELDS`.
+    #:
+    #: **The single-page form, kept for the app that is already installed.**
+    #: `image_urls` is the one to send; this is what a build from before
+    #: multi-page scanning has.
     image_url: str | None = Field(default=None, min_length=1, max_length=2048)
+    #: Every page of the part, in page order.
+    #:
+    #: Order is the caller's, settled before it uploads anything
+    #: (`lib/scan/drag.ts`), so there is no ordering decision here to get wrong.
+    image_urls: list[str] | None = Field(default=None)
     title: str = Field(min_length=1, max_length=200)
     composer: str | None = Field(default=None, max_length=200)
     #: e.g. "I. Adagio". Null for music that has no movements at all, which is
@@ -82,7 +92,28 @@ class CreateScoreRequest(BaseModel):
     @model_validator(mode="after")
     def _one_provenance(self) -> "CreateScoreRequest":
         supplied = [name for name in _MANUAL_FIELDS if getattr(self, name) is not None]
-        if self.image_url is None:
+        if self.image_url is not None and self.image_urls is not None:
+            # Rejected rather than merged, the same stance this model already
+            # takes on `clef` alongside `image_url`: a caller sending both has
+            # misunderstood something, and picking one silently means the pages
+            # that were dropped are discovered later, by a musician, on a piece
+            # that is missing half its music.
+            raise ValueError(
+                "send image_urls for a scan; image_url is the single-page form "
+                "and the two cannot both be given"
+            )
+        if self.image_urls is not None:
+            if not self.image_urls:
+                raise ValueError("image_urls cannot be empty; omit it for a hand-entered piece")
+            if len(self.image_urls) > MAX_PAGES:
+                raise ValueError(
+                    f"a scan may hold at most {MAX_PAGES} pages; "
+                    f"this one has {len(self.image_urls)}"
+                )
+            for url in self.image_urls:
+                if not url or len(url) > 2048:
+                    raise ValueError("every entry in image_urls must be a URL")
+        if self.pages() == []:
             if self.clef is None:
                 raise ValueError(
                     "a piece with no image_url is entered by hand and needs a clef"
@@ -94,6 +125,27 @@ class CreateScoreRequest(BaseModel):
                 "OCR reads them from the image, so omit them when image_url is set"
             )
         return self
+
+    def pages(self) -> list[str]:
+        """The pages this request is for, in page order. Empty means by hand."""
+        if self.image_urls is not None:
+            return list(self.image_urls)
+        return [self.image_url] if self.image_url else []
+
+
+#: The most pages one scan may hold.
+#:
+#: **A ceiling on the bill, stated as a choice rather than measured** — the
+#: same kind of number as `_MAX_SYSTEMS_TO_READ`, and the honest thing is to
+#: say which it is. Each page is read separately, so an unbounded list is an
+#: unbounded read against a metered container, and a request is the wrong place
+#: to discover that.
+#:
+#: Twelve because a part longer than that is a book rather than a part, and a
+#: book is several pieces in this library — one per movement — which is how a
+#: musician would file it anyway. Nothing was measured to arrive at it; if a
+#: real part turns out to need more, raise it, and say so here.
+MAX_PAGES = 12
 
 
 #: Fields that only mean something for a hand-entered piece.
@@ -204,6 +256,15 @@ class ScoreResponse(BaseModel):
     #: one to render.
     image_url: str | None = None
     image_url_expires_at: datetime | None = None
+    #: How many pages this scan holds. 0 for a piece entered by hand and for
+    #: one whose photographs have been discarded.
+    #:
+    #: A count rather than a list of signed URLs, for now. Signing every page
+    #: of every row would turn a library listing into one storage call per
+    #: page; `image_url` still signs page one, which is what any screen draws
+    #: today. When a screen needs to show page three, this becomes a list —
+    #: the count is what tells it there is a page three at all.
+    page_count: int = 0
     score_json: dict[str, Any]
     shared_with_studio: UUID | None = None
     ocr_confidence: float | None = None
@@ -355,6 +416,51 @@ def _concerns_for(score_json: Any) -> list[MeasureConcern]:
     return out
 
 
+def _page_keys(row: dict[str, Any]) -> list[str]:
+    """Every storage object this row owns, in page order.
+
+    One place, so accept and delete cannot disagree about how much of a scan
+    there is. A key that cannot be recovered from its URL is skipped rather
+    than guessed — `_object_key_from` returns None for a URL this deployment
+    does not recognise, and deleting a guessed key is worse than leaking one.
+    """
+    keys = []
+    for url in pages_of(row):
+        key = _object_key_from(url or "")
+        if key is not None:
+            keys.append(key)
+    return keys
+
+
+def _insert_score(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    """Insert the row, dropping the page array if the database has no column.
+
+    **Same window as `score_pages.PAGE_COLUMNS`, on the write side.** Render
+    deploys from `main` automatically and `011` is applied by hand in the
+    Supabase editor, so this code is live before the column is. An insert
+    naming a column that does not exist fails the whole request — which would
+    turn "your scan reads page one only for a day" into "you cannot add a piece
+    at all", on the one endpoint the app cannot work without.
+
+    Page one is already in `source_image_url`, so the narrower insert loses the
+    later pages and nothing else. That is the same thing every scan did last
+    week, and it is recoverable — `POST /:id/transcribe` re-reads the row once
+    the column arrives.
+    """
+    client = _service_client()
+    try:
+        return client.table("scores").insert(payload).execute().data or []
+    except Exception:  # noqa: BLE001 — retry once without the newest column
+        if "source_image_urls" not in payload:
+            raise
+        log.warning(
+            "scores: `source_image_urls` was refused on insert; writing page "
+            "one only. Apply backend/app/migrations/011_score_pages.sql."
+        )
+        narrower = {k: v for k, v in payload.items() if k != "source_image_urls"}
+        return client.table("scores").insert(narrower).execute().data or []
+
+
 def _row_to_response(
     row: dict[str, Any],
     *,
@@ -370,6 +476,7 @@ def _row_to_response(
         source_image_url=row["source_image_url"],
         image_url=image_url,
         image_url_expires_at=expires_at,
+        page_count=len(pages_of(row)),
         score_json=row["score_json"],
         shared_with_studio=row.get("shared_with_studio"),
         ocr_confidence=row.get("ocr_confidence"),
@@ -452,12 +559,15 @@ def create_score(
     Still 201 with the row, not 202 with an id: the piece genuinely exists when
     this returns, and everything except its notes is already usable.
     """
-    manual = body.image_url is None
-    if not manual:
-        # Before anything is written. A URL that isn't this user's object is a
-        # 403 the caller can act on, and a row that could never be transcribed
-        # should not be created to discover that in a worker.
-        _assert_image_url_owned_by(body.image_url, user_id)
+    pages = body.pages()
+    manual = not pages
+    for url in pages:
+        # Before anything is written, and **every page, not the first**. A URL
+        # that isn't this user's object is a 403 the caller can act on, and a
+        # row that could never be transcribed should not be created to discover
+        # that in a worker. Checking only page one would let a scan carry
+        # somebody else's page 2 into a read.
+        _assert_image_url_owned_by(url, user_id)
 
     score = _hand_entered(body) if manual else _awaiting_transcription()
 
@@ -466,7 +576,13 @@ def create_score(
         "title": body.title,
         "composer": body.composer,
         "movement": body.movement,
-        "source_image_url": body.image_url,
+        # **Both, deliberately.** The array is the truth; the single column is
+        # page one, kept written so that a worker or a reader from before
+        # migration 011 still finds a photograph instead of a piece with no
+        # scan at all. It is dropped in a later migration once nothing reads
+        # it — expand now, contract later.
+        "source_image_url": pages[0] if pages else None,
+        "source_image_urls": pages or None,
         "score_json": score.model_dump(mode="json"),
         # Null rather than 0 for a hand-entered piece: the column answers "how
         # well did OCR read this", and for a piece that was never read the
@@ -477,10 +593,7 @@ def create_score(
         # nothing to read and never will be.
         "transcription_status": "done" if manual else "queued",
     }
-    inserted = (
-        _service_client().table("scores").insert(insert_payload).execute()
-    )
-    rows = inserted.data or []
+    rows = _insert_score(insert_payload)
     if not rows:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -729,13 +842,30 @@ def accept_transcription(
         "updated_at": _now_iso(),
     }
 
-    key = _object_key_from(row.get("source_image_url") or "")
-    if key is not None and _remove_object(client, key):
+    # **Every page, not the first.** Accepting a three-page scan used to
+    # discard page one and leave pages two and three in the bucket with no row
+    # naming them, no accept path and no delete path — the orphaned-upload hole
+    # this file already documents, multiplied by the length of the part.
+    keys = _page_keys(row)
+    if keys and all(_remove_object(client, key) for key in keys):
         # Nulled together with the discard timestamp, never apart. A row that
         # still names an object that has been deleted would sign download URLs
         # for a file that 404s, which reads to the app as "signing is broken"
         # rather than "the photograph is gone".
+        #
+        # **`all`, and only after every one of them went.** A partial discard
+        # that nulled the columns would strand whatever storage refused, in
+        # exactly the way this is meant to prevent; leaving the row intact
+        # keeps every remaining page reachable by `DELETE /:id`, which is the
+        # one path that can still clean them up.
         patch["source_image_url"] = None
+        if "source_image_urls" in row:
+            # Only when the row actually carries it. `select("*")` returns what
+            # the database has, so on a deployment where 011 has not been
+            # applied the key is absent — and naming it in the update would
+            # fail the whole request, turning "accepting discards page one" into
+            # "accepting is broken".
+            patch["source_image_urls"] = None
         patch["page_image_discarded_at"] = _now_iso()
 
     updated = (
@@ -882,15 +1012,18 @@ def delete_score(
     # again. That contradicts the rule the rest of this file states plainly:
     # the photograph is discarded when a person is done with it. Deleting the
     # piece is a person being done with it.
-    existing = (
-        client.table("scores")
-        .select("source_image_url")
-        .eq("id", str(score_id))
-        .eq("user_id", str(user_id))
-        .limit(1)
-        .execute()
+    existing = select_with_pages(
+        lambda columns: (
+            client.table("scores")
+            .select(columns)
+            .eq("id", str(score_id))
+            .eq("user_id", str(user_id))
+            .limit(1)
+            .execute()
+        ),
+        "",
     ).data or []
-    key = _object_key_from((existing[0].get("source_image_url") or "")) if existing else None
+    keys = _page_keys(existing[0]) if existing else []
 
     # The schema declares analyses.score_id with ON DELETE RESTRICT, so a
     # delete with dependent analyses will surface as a Postgres FK error.
@@ -920,7 +1053,8 @@ def delete_score(
     # behind by a failed removal is exactly what this is trying to stop, so it
     # is logged rather than swallowed. `_remove_object` already refuses to
     # raise for that reason.
-    if key is not None and not _remove_object(client, key):
-        log.warning("score %s was deleted but its page image %s was not", score_id, key)
+    for key in keys:
+        if not _remove_object(client, key):
+            log.warning("score %s was deleted but its page image %s was not", score_id, key)
 
     return Response(status_code=status.HTTP_204_NO_CONTENT)

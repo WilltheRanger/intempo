@@ -6,6 +6,69 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-26 — The API takes a whole part, and discards a whole part
+
+**Branch:** `main`. Backend only. No screen, component, style or copy touched.
+
+**Files:** `backend/app/services/score_pages.py` (new),
+`backend/app/routers/scores.py`, `backend/app/workers/transcription_runner.py`,
+`backend/app/tests/test_multi_page_api.py` (new).
+
+**Status.** The server side is complete: `POST /v1/scores` accepts a list, the
+worker reads it, accept and delete discard all of it. The migration is **still
+not applied** and the **app still uploads one page** (`TranscribeScreen` sends
+`pages[0]`), so a real scan is unchanged. The app is the last piece and it is
+UI, so it waits on the §2 gate.
+
+### One home for "what are this row's pages"
+
+`pages_of` moved out of the worker into `app/services/score_pages.py`. The
+worker asks so it knows what to read; the router asks so it knows what to
+delete and what to discard. A router that discarded one page of a three-page
+scan would leave two photographs in the bucket that nothing can ever reach
+again — the orphaned-upload hole this repository already documents, multiplied
+by the length of the part.
+
+### Every endpoint survives the column not existing yet
+
+Render deploys from `main` automatically; `011` is applied by hand in the
+Supabase editor. So this code is live before the column is, and PostgREST fails
+the **whole request** for a column list it cannot satisfy. Three places needed
+the narrower shape: the worker's fetch (a failure there leaves the row
+`reading` with nobody coming back), the delete's select, and the insert — where
+naming a missing column would turn *"your scan reads page one for a day"* into
+*"you cannot add a piece at all"*, on the endpoint the app cannot work without.
+Accept selects `*` and needed only a guard on the patch.
+
+### `MAX_PAGES = 12`, and saying which kind of number it is
+
+A ceiling on the bill, **stated as a choice rather than measured** — the same
+kind of number as `_MAX_SYSTEMS_TO_READ`, and the honest thing is to say so.
+Twelve because a part longer than that is a book rather than a part, and a book
+is several pieces in this library. Nothing was measured to arrive at it.
+
+### The five mutations that survived, for the second tick running
+
+Nine mutations, four caught, **five survived** — and every survivor was a
+*handler*: ownership checked on page one only, the pages never written to the
+row, accept and delete discarding page one only, and accept nulling the row
+after a partial discard. Each of those loses a musician's pages, and every
+isolated test passed through all of them, because the tests covered
+`CreateScoreRequest` and `_page_keys` and nothing that runs a request.
+
+This is the same lesson as `_read_one_page` yesterday's tick, which is why it
+is written down twice: **a rule is only tested where it actually runs.** Five
+handler tests added on `test_scores_router.py`'s harness. All nine die now.
+
+The one worth naming: `all(...)` in accept, not `any(...)`. A partial discard
+that nulled the row's columns would strand whatever storage refused, in exactly
+the way this exists to prevent — leaving the row intact keeps every remaining
+page reachable by `DELETE /:id`, the one path that can still clean them up.
+
+Full suite green at 1206.
+
+---
+
 ## 2026-08-26 — The worker reads every page of a part, and stops at the first that does not
 
 **Branch:** `main`. Backend only. No screen, component, style or copy touched —
