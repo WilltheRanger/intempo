@@ -1052,9 +1052,15 @@ def _navigation_in(part_el: ET.Element) -> list[tuple[int, int, str]]:
             for sound in direction.iterfind("sound"):
                 if sound.get("segno") is not None and segno is None:
                     segno = index
-                if sound.get("fine") is not None:
+                # First, not last — the same rule as the segno above and as
+                # `min(fine, coda_from)` below, and it was not applied here.
+                # A page carries one Fine; two is a misreading, and the one a
+                # player reaches first on the second pass is the one they act
+                # on. Taking the last meant a spurious mark *after* the real
+                # one silently extended the piece.
+                if sound.get("fine") is not None and fine is None:
                     fine = index
-                if sound.get("tocoda") is not None:
+                if sound.get("tocoda") is not None and coda_from is None:
                     coda_from = index
                 if sound.get("dacapo") is not None and jump is None:
                     jump, from_segno = index, False
