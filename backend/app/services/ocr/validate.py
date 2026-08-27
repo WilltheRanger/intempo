@@ -315,6 +315,28 @@ DENSITY_MIN_NOTES = 8
 #: Starting values. Nothing here has been measured against real pages yet.
 
 
+#: How far a bar's length may sit from the page's median before it is suspect,
+#: on a page whose metre nobody could read.
+#:
+#: **The beat check is switched off exactly where a reading is worst.** A metre
+#: comes from the header, which is illegible on most phone photographs of an
+#: inner page, and `infer_beats_per_measure` refuses to name one when the bars
+#: do not agree — correctly, since a wrong metre flags every correct bar. The
+#: cost is that a page whose bars *wildly* disagree gets no complaint at all.
+#:
+#: Measured on `oemer_phone_photo`, five bars reading **43.25, 1.0, 1.5, 22.0
+#: and 11.5** quarter-beats: no metre inferred, every bar `unverifiable`, and
+#: one concern on the whole page. A bar holding forty-three beats is not a
+#: reading of music whatever the metre is.
+#:
+#: Deliberately coarse. This does not name a metre and must not become a way of
+#: sneaking one in: it says the bars disagree with each other, which is a
+#: weaker claim and the only one available. Three times the median — the same
+#: shape and the same multiple as the density check next to it — flags 3 of the
+#: 5 bars above and, run against `audiveris_phone_photo`, would flag none.
+LENGTH_MULTIPLE = 3.0
+
+
 @dataclass(frozen=True)
 class MeasureFinding:
     measure_number: int
@@ -356,6 +378,11 @@ class MeasureFinding:
     #: Re-reading cannot fix it, which is why it is deliberately not part of
     #: `worth_a_re_read`.
     unwritable_notes: int = 0
+    #: This bar's length is wildly out of step with the rest of the page.
+    #:
+    #: Only ever set where no metre could be read, because where one could,
+    #: `short` and `long` say it better. See `LENGTH_MULTIPLE`.
+    out_of_line: bool = False
 
     @property
     def worth_a_re_read(self) -> bool:
@@ -369,6 +396,7 @@ class MeasureFinding:
             bool(self.broken_ties)
             or bool(self.tuplet_faults)
             or self.too_dense
+            or self.out_of_line
             or self.verdict in {"short", "long", "empty"}
         )
 
@@ -414,6 +442,12 @@ class MeasureFinding:
             return (
                 f"measure {self.measure_number}: {self.note_count} notes in "
                 f"{self.expected_beats:g} beats — far more than the rest of the page"
+            )
+        if self.out_of_line:
+            return (
+                f"measure {self.measure_number}: {self.actual_beats:g} beats, "
+                "far out of step with the rest of the page — the metre could "
+                "not be read, so this is measured against the other bars"
             )
         if self.verdict == "unverifiable":
             return f"measure {self.measure_number}: not checkable"
@@ -593,6 +627,26 @@ def validate_measures(score: ScoreJson) -> list[MeasureFinding]:
     median_density = median(densities) if densities else 0.0
     density_limit = DENSITY_MULTIPLE * median_density
 
+    # **A page with no readable metre is still evidence about itself.**
+    #
+    # Every bar of a piece holds the same number of beats, so where the metre
+    # could not be read the bars can still be compared with one another — a
+    # weaker claim than naming a metre, and the only one available. See
+    # `LENGTH_MULTIPLE` for what it costs to say nothing.
+    #
+    # Bars of rest **do** vote here, unlike the density median above: a bar of
+    # rest is exactly one bar long, which is the whole question. A bar with no
+    # notes at all does not, because it has no length — and it is already
+    # `empty`, which is reported.
+    #
+    # `MIN_MEASURES_TO_INFER` shared with the metre vote deliberately: both ask
+    # the same question, which is whether there are enough bars for the page to
+    # be evidence about itself.
+    lengths = [total for total, m in zip(sums, score.measures) if m.notes]
+    median_length = (
+        median(lengths) if len(lengths) >= MIN_MEASURES_TO_INFER else 0.0
+    )
+
     for index, measure in enumerate(score.measures):
         expected = expected_per_measure[index]
         actual = sums[index]
@@ -601,6 +655,18 @@ def validate_measures(score: ScoreJson) -> list[MeasureFinding]:
             bool(expected)
             and count >= DENSITY_MIN_NOTES
             and count / expected > density_limit
+        )
+
+        # Only where no metre could be read. Where one could, `short` and
+        # `long` say the same thing against a real number instead of a median.
+        adrift = bool(
+            expected is None
+            and count
+            and median_length > 0
+            and (
+                actual > LENGTH_MULTIPLE * median_length
+                or actual * LENGTH_MULTIPLE < median_length
+            )
         )
 
         if count == 0:
@@ -628,6 +694,7 @@ def validate_measures(score: ScoreJson) -> list[MeasureFinding]:
                 tuplet_faults=tuple(tuplets_by_measure.get(measure.measure_number, ())),
                 too_dense=dense,
                 unwritable_notes=measure.unwritable_notes,
+                out_of_line=adrift,
             )
         )
     return findings
@@ -674,6 +741,7 @@ def describe_for_retry(findings: list[MeasureFinding]) -> str:
     ties = [f for f in bad if f.broken_ties]
     tuplets = [f for f in bad if f.tuplet_faults]
     dense = [f for f in bad if f.too_dense]
+    adrift = [f for f in bad if f.out_of_line]
 
     header = "Your previous transcription has measures that cannot be right:"
     body = "\n".join(f"  - {line}" for line in lines)
@@ -703,5 +771,12 @@ def describe_for_retry(findings: list[MeasureFinding]) -> str:
             " Where a measure holds far more notes than the rest of the page, "
             "check it is not a tremolo, a trill or a turn: those are one written "
             "note with a mark over it, not a run of separate notes."
+        )
+    if adrift:
+        instructions.append(
+            " The time signature could not be read on this page, so those "
+            "measures are measured against the other bars rather than against "
+            "a metre. Read their durations again, and if you can see the time "
+            "signature anywhere on the image, state it."
         )
     return header + "\n" + body + "".join(instructions)
