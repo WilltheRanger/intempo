@@ -119,7 +119,16 @@ DURATION_BEATS: dict[str, float] = {
 }
 
 # Pitch: "rest" or scientific-pitch like "C4", "F#3", "Bb2".
-_PITCH_PATTERN = re.compile(r"^(?:rest|[A-G](?:#|b)?-?\d)$")
+#: What `Note.pitch` accepts: `rest`, or a step A–G with an optional single
+#: accidental and **one** octave digit.
+#:
+#: Exported so `musicxml.py` can ask the same question before it builds a note
+#: rather than after. It used to hand over whatever the file said and let the
+#: model reject it — which raised `ValidationError` out of the importer, past
+#: the `MusicXMLError` the import route catches, and turned a file with one bad
+#: notehead into a 500. See `_pitch_name`.
+PITCH_PATTERN = re.compile(r"^(?:rest|[A-G](?:#|b)?-?\d)$")
+_PITCH_PATTERN = PITCH_PATTERN
 
 
 class _Strict(BaseModel):
@@ -409,7 +418,14 @@ class Repeat(_Strict):
     type: RepeatType
 
 
-_TIME_SIG_PATTERN = re.compile(r"^\d+/\d+$")
+#: What a stated time signature has to look like: `N/N`.
+#:
+#: Exported for the same reason `PITCH_PATTERN` is — `musicxml.py` builds one
+#: out of two text nodes it did not write, and handing over `four/four`
+#: raised `ValidationError` out of the importer, past the `MusicXMLError` the
+#: import route catches, and became a 500.
+TIME_SIG_PATTERN = re.compile(r"^\d+/\d+$")
+_TIME_SIG_PATTERN = TIME_SIG_PATTERN
 
 
 class ScoreJson(_Strict):
