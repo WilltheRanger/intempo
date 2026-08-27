@@ -6,6 +6,84 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-27 — The scan state had no home on the server
+
+**Branch:** `main`. Backend and tests. No screen, component, style or copy
+touched.
+
+**Files:** `backend/app/models/score.py`,
+`backend/app/workers/transcription_runner.py`,
+`backend/app/tests/test_client_enums.py`.
+
+Continuing yesterday's sweep of what crosses the wire. Six closed vocabularies
+were checked; six more were not. This is the one that matters most.
+
+### `transcription_status` was four bare strings in two files
+
+The app declares `TranscriptionStatus = 'queued' | 'reading' | 'done' |
+'failed'`. The server declared **nothing** — the four values appear as literals
+scattered through the worker and the router, and the response field is typed
+`str`. There was no vocabulary to compare the app against, so a fifth state
+added anywhere in the backend would have been a silent breaking change.
+
+### And it is a contract, not a convenience
+
+`usePieces` keeps asking for a piece only while its row is `queued` or
+`reading`:
+
+    return status === 'queued' || status === 'reading' ? TRANSCRIPTION_POLL_MS : false;
+
+So a new **in-progress** state the app has not heard of is treated as
+**terminal**. The app stops polling and shows a scan stuck half-read forever,
+with no error anywhere.
+
+That is the exact mirror of the failure `test_the_app_knows_which_analysis_states_are_final`
+was written for. Where the analysis version costs forty wasted polls and a
+wrong message, this one costs no polls at all and no message either — and
+`AnalysisStatus` was carefully guarded while its twin was not guarded at all.
+
+### What was done
+
+`TranscriptionStatus` and `TRANSCRIPTION_IN_PROGRESS` now live in
+`app/models/score.py`, which both the worker and the router can import without
+a cycle. The sweeper's two hard-coded `["queued", "reading"]` lists read from
+the set instead.
+
+The response field stays `str` deliberately. Typing it as the Literal would
+turn one unexpected row into a **500 on reading a library**, which is worse
+than showing "done"; the vocabulary is enforced by tests at the boundary
+instead of by validation at the door.
+
+Three checks, all reading the real thing rather than restating it: the app's
+union against the server's, the app's polling predicate parsed out of the hook
+against `TRANSCRIPTION_IN_PROGRESS`, and every value actually written to
+`transcription_status` in the backend source against the vocabulary — because a
+constant nobody uses would pass a comparison against itself and prove nothing.
+
+### Tests
+
+Backend suite green; mobile 378 pass, typecheck clean. Three tests added; five
+mutants, all killed — including **the worker writing a state nobody declared**,
+which is the one that could not have been caught before today.
+
+### Still unchecked
+
+`Clef`, `Articulation`, `Dynamics`, `TempoChangeKind` and `ResultStatus` all
+cross the wire and none is compared. They are display and playback vocabularies
+rather than polling ones, so none can hang a screen the way this could — next,
+not now.
+
+### Three-foot test
+
+Not run: no screen was built or changed.
+
+### Still waiting on the owner
+
+The UI plan (four items), migration `011`, permission to re-read the nine
+failed scans, and whether `Repeat` gets a field for an unclosed forward sign.
+
+---
+
 ## 2026-08-27 — The parity fixture covers five of twenty-one durations
 
 **Branch:** `main`. Backend tests only — no production code changed.
