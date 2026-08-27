@@ -6,6 +6,95 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-27 — One bad notehead was a 500, and a failed scan blamed on the musician
+
+**Branch:** `main`. Backend and tests. No screen, component, style or copy
+touched.
+
+**Files:** `backend/app/services/score_schema.py`,
+`backend/app/services/ocr/musicxml.py`, and one new test file
+(`app/tests/test_hostile_musicxml.py`).
+
+Reading anything includes not falling over on it. Sixty hostile MusicXML inputs
+against the importer, then everything downstream of whatever survived. Two
+crashes, both the same shape.
+
+### The contract that was being broken
+
+`score_json_from_musicxml` is reached two ways and **both catch
+`MusicXMLError` and nothing else**:
+
+* `POST /v1/scores/import` → anything else is a **500**. "Something went
+  wrong", for a file with one bad notehead in it.
+* `HomrProvider.parse` → anything else unwinds to the pipeline's broad
+  handler, and with `OCR_PROVIDER_CHAIN = "homr"` there is no second provider,
+  so the **scan fails**. The reason string a pydantic error produces matches no
+  needle in `_FAILURE_REASONS`, so it lands on `_UNKNOWN_REASON` — *"A flatter,
+  better-lit shot of the page usually fixes it."* A server fault blamed on the
+  musician, which this project has now done four times.
+
+### The two that were real
+
+**`<octave>99</octave>`** and **a `<step>` outside A–G.** `_pitch_name` knew
+about exactly one unrepresentable pitch — a double accidental — and handed
+everything else over for `Note` to reject by raising. So the model was doing
+the validating, from inside the constructor, after the point where a refusal
+could still be an answer.
+
+The step case is not only a fuzzer's idea: **German-language software writes H
+for B natural.**
+
+**`<beats>four</beats>`** built the string `"four/four"` and handed it to
+`ScoreJson`, which rejects it the same way.
+
+One bad notehead should cost one note — which is what every other unreadable
+value in this file already costs, through the `dropped` path that names the bar
+and lowers the confidence. Now it does.
+
+### The grammars are imported, not re-typed
+
+`PITCH_PATTERN` and `TIME_SIG_PATTERN` are exported from `score_schema` and
+asked by the importer. Two copies of a pattern are two chances to disagree
+about what a pitch is, and the disagreement lands as a 500 again — which is the
+bug, one layer along.
+
+That also makes a loosened pattern invisible to any round-trip test, because
+both sides loosen together. Two mutants survived on exactly that until the
+grammars were pinned by example: `H3`, `A99`, `Abb2` and `four/four` are now
+asserted to be refused by the pattern itself.
+
+### The table is the test
+
+`test_hostile_musicxml.py` keeps all sixty inputs, each asserted to either
+produce a score or raise `MusicXMLError`, and each surviving score run through
+`validate_measures`, `describe_for_retry`, `_concerns_for`, `expand_repeats`,
+`build_timeline` and a round-trip through the column it is stored in — because
+a crash in any of those is the same 500, one call later. Zero downstream
+crashes, which is a result worth having recorded rather than assumed.
+
+Among the inputs that already behaved: a multi-bar rest of a hundred thousand
+bars, a repeat-bar sign over 99999 bars, two thousand grace notes in one
+measure, a metronome mark of twenty digits, a tuplet of zero in the time of
+zero, a metre of a billion, a bar numbered 10¹⁸, four hundred levels of
+nesting, and ten thousand empty measures.
+
+**Tests:** backend **1617 passed, 3 xfailed** (132 new — the table is
+parametrised twice over). Four mutants, **four killed**, on a verified-green
+baseline.
+
+**Known side effects:** a file whose notes are all outside the pitch grammar
+now reads as a score with no notes rather than raising. That is the same answer
+a page of unreadable noteheads already gave, and `_read_any_music` is what
+refuses it — one rule for "nothing here is readable", not two.
+
+**Rollback:** `git revert` this commit. Nothing stored changes shape.
+
+**Still waiting on the owner** — the UI plan (four items), migration `011`,
+permission to re-read the nine failed scans, and whether `Repeat` gets a field
+for an unclosed forward sign.
+
+---
+
 ## 2026-08-27 — Three bars numbered 3, and one broken tie reported on all of them
 
 **Branch:** `main`. Backend and tests. No screen, component, style or copy

@@ -26,6 +26,8 @@ from typing import Final
 from app.services.ocr.validate import infer_beats_per_measure
 from app.services.score_schema import (
     DURATION_BEATS,
+    PITCH_PATTERN,
+    TIME_SIG_PATTERN,
     Measure,
     Note,
     Repeat,
@@ -664,7 +666,22 @@ def _pitch_name(note: ET.Element) -> str | None:
         # natural instead would be a wrong note, so drop it and let the note
         # count fall short, which the validator can see.
         return None
-    return f"{step}{suffix}{octave}"
+    name = f"{step}{suffix}{octave}"
+    # **Asked here, not left to the model to reject.**
+    #
+    # A double accidental was the only unrepresentable pitch this function
+    # knew about, so everything else was handed over and `Note` raised
+    # `ValidationError` — which is not `MusicXMLError`, so it went straight
+    # past the `except` in `POST /v1/scores/import` and became a **500**. Two
+    # inputs found it in about a minute of fuzzing: `<octave>99</octave>`, and
+    # a `<step>` outside A–G, which German-language software writes as **H**
+    # for B natural.
+    #
+    # One bad notehead should cost one note, which is what every other
+    # unreadable value here costs. The grammar is imported rather than
+    # re-typed: two copies of a pattern are two chances to disagree about what
+    # a pitch is, and the disagreement would land as a 500 again.
+    return name if PITCH_PATTERN.match(name) else None
 
 
 def _articulation(note: ET.Element) -> str | None:
@@ -1432,7 +1449,13 @@ def score_json_from_musicxml(
             beat_type = (
                 _text(time_el.find("beat-type")) if time_el is not None else None
             )
-            if beats and beat_type:
+            # Checked against the grammar the schema enforces rather than
+            # trusted: these are two text nodes out of a file nobody here
+            # wrote, and `<beats>four</beats>` built `four/four`, which `Note`
+            # and `ScoreJson` reject by raising — past the `MusicXMLError` the
+            # import route catches, and out as a 500. An unreadable metre is
+            # what `unknown` and `None` are already for.
+            if beats and beat_type and TIME_SIG_PATTERN.match(f"{beats}/{beat_type}"):
                 stated = f"{beats}/{beat_type}"
                 if time_signature is None:
                     time_signature = stated
