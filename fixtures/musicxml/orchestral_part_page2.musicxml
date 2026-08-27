@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Page two of `orchestral_part.musicxml`, and it exists for one reason.
+
+  Page one is headed 4/4 and changes to 2/4 partway down. This page is back in
+  4/4 and says so in its own header — which is what a part does when a section
+  ends at a page break, and is the shape that broke `join_pages`: it compared
+  this header against page one's *header*, found both 4/4, stamped nothing, and
+  left the 2/4 from mid-page-one in force over every bar here.
+
+  The one real photograph in this repository prints its only time signature
+  mid-page, after a double barline. This is not an exotic arrangement.
+-->
+<score-partwise version="4.0">
+  <part-list>
+    <score-part id="P1"><part-name>String Bass</part-name></score-part>
+  </part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes>
+        <divisions>12</divisions>
+        <key><fifths>-2</fifths></key>
+        <time><beats>4</beats><beat-type>4</beat-type></time>
+        <clef><sign>F</sign><line>4</line></clef>
+      </attributes>
+      <note><pitch><step>E</step><alter>-1</alter><octave>3</octave></pitch><duration>12</duration><type>quarter</type></note>
+      <note><pitch><step>D</step><octave>3</octave></pitch><duration>12</duration><type>quarter</type></note>
+      <note><pitch><step>C</step><octave>3</octave></pitch><duration>12</duration><type>quarter</type></note>
+      <note><pitch><step>B</step><alter>-1</alter><octave>2</octave></pitch><duration>12</duration><type>quarter</type></note>
+    </measure>
+
+    <!-- Two bars' rest, drawn with a rest symbol, in the metre this page
+         states rather than the one page one left in force. -->
+    <measure number="2">
+      <attributes><measure-style><multiple-rest>2</multiple-rest></measure-style></attributes>
+      <note><rest/><duration>48</duration><type>whole</type></note>
+    </measure>
+
+    <measure number="3">
+      <note><pitch><step>B</step><alter>-1</alter><octave>2</octave></pitch><duration>48</duration><type>whole</type></note>
+    </measure>
+  </part>
+</score-partwise>

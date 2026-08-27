@@ -6,6 +6,70 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-26 — A page that returns to its first metre read as entirely wrong
+
+**Branch:** `main`. Backend and a fixture. No screen, component, style or copy
+touched.
+
+**Files:** `backend/app/services/ocr/pages.py`,
+`backend/app/tests/{test_page_join,test_orchestral_part}.py`,
+`fixtures/musicxml/orchestral_part_page2.musicxml` (new).
+
+Set out to give `join_pages` the same treatment as yesterday's part fixture —
+it is tested only with tiny synthetic bars, and multi-page is the biggest new
+feature. Found a bug instead, which is the better outcome.
+
+### The bug
+
+`running_metre` tracked `readings[0].time_signature` and **never moved**.
+
+So a part headed 4/4 that changes to 2/4 partway down page one, and returns to
+4/4 on page two — what a part does when a section ends at a page break —
+compared page two's header "4/4" against page **one's header** "4/4", found
+them equal, and stamped nothing. The 2/4 from mid-page-one stayed in force over
+every bar of page two.
+
+Measured: six bars, nothing wrong in the reading, and **every bar of page two
+comes out `long`. Confidence 1.00 → 0.67.**
+
+Not an exotic shape. The one real photograph in this repository prints its only
+time signature **mid-page, after a double barline**, which is precisely the
+arrangement that sets the trap.
+
+**Third time this session a rule has been right alone and wrong beside its
+neighbour** — after the multi-rest guard that blocked its own expansion and the
+voice rule that discarded the music because the rest was written first. Each
+page reads perfectly on its own; the fault lives at the seam.
+
+### The fix
+
+The metre in force at a page break is the last one printed *anywhere* on the
+pages so far: a page's header, then any change printed on one of its measures,
+in the order they are read.
+
+### Tested twice, on purpose
+
+`test_page_join.py` gets both branches with synthetic bars — the return to an
+earlier metre, and the page that reprints the metre already in force, which is
+the branch the fix could have broken by stamping a change where the page prints
+none.
+
+`orchestral_part_page2.musicxml` is the same bug on two documents actually put
+through the importer, because the bug lives at the seam between them. Fifteen
+bars across the two pages, all adding up, and page two's two-bar rest sized in
+**its own** 4/4 — whole rests, where the stale 2/4 would have made them halves
+and run the page four beats short.
+
+Three mutations. Two caught; the third — initialising `running_metre` from the
+first page's header instead of `None` — is an **equivalent mutant**: it is only
+read while `page_number > 1` is false, so it cannot affect anything. `None` is
+kept because it states the truth, that nothing is in force before the first
+page.
+
+Full suite green at 1265, two xfailed.
+
+---
+
 ## 2026-08-26 — One document holding every shape the reader got wrong today
 
 **Branch:** `main`. Backend tests and a fixture. No screen, component, style or
