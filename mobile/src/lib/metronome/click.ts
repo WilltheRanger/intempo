@@ -117,10 +117,13 @@ export function startClicks({ bpm, perBar }: ClickTrackOptions): ClickTrack {
     // A render or write failure must not take a take down with it. The
     // metronome is an aid; the recording is the point.
     cleanUp();
-    return { stop: () => {} };
+    return { stop: () => {}, leadInS: 0 };
   }
 
   return {
+    // No slack: this strikes a player from the same kind of timer the on-screen
+    // pulse uses, so the two are already counting from the same instant.
+    leadInS: 0,
     stop() {
       if (stopped) {
         return;

@@ -19,6 +19,15 @@ const LOOKAHEAD_S = 0.25;
 const WAKE_MS = 60;
 
 /**
+ * Slack before the first click, so it is not booked into a moment that has
+ * already passed.
+ *
+ * Reported back as `ClickTrack.leadInS` so the beat clock driving the screen
+ * can start from the same instant. See that field for what the mismatch cost.
+ */
+const LEAD_IN_S = 0.1;
+
+/**
  * A click, not a tone.
  *
  * Short and hard on purpose: the ear places a transient far more precisely
@@ -38,12 +47,13 @@ export function startClicks({ bpm, perBar }: ClickTrackOptions): ClickTrack {
       .webkitAudioContext;
 
   if (!AudioContextCtor) {
-    return { stop: () => {} };
+    // Nothing will sound, so nothing has to be waited for.
+    return { stop: () => {}, leadInS: 0 };
   }
 
   const context = new AudioContextCtor();
   const period = secondsPerBeat(bpm);
-  const startedAt = context.currentTime + 0.1; // slack to book the first window
+  const startedAt = context.currentTime + LEAD_IN_S;
   let next = 0;
   let stopped = false;
 
@@ -86,6 +96,7 @@ export function startClicks({ bpm, perBar }: ClickTrackOptions): ClickTrack {
   }
 
   return {
+    leadInS: LEAD_IN_S,
     stop() {
       if (stopped) {
         return;

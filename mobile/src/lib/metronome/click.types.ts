@@ -21,4 +21,21 @@ export interface ClickTrackOptions {
 export interface ClickTrack {
   /** Idempotent. Releases whatever audio resources were held. */
   stop: () => void;
+  /**
+   * How long after starting the **first click** is due.
+   *
+   * **Because the eye and the ear were being told different things.** The web
+   * implementation books its first click at `currentTime + 0.1` — slack, so
+   * the booking is not already in the past — while `startBeatClock`, which
+   * drives the on-screen pulse, fires beat zero immediately. That is a fixed
+   * **100 ms** gap between seeing the beat and hearing it, on every beat of
+   * every take. At 120bpm it is a fifth of a beat: a musician following the
+   * screen plays ahead of the click they can hear, and the two cues the
+   * metronome exists to give disagree.
+   *
+   * Reported rather than shared as a constant because it is genuinely per
+   * platform — native strikes a player from the same timer the pulse uses and
+   * needs no slack at all, so it reports 0 and nothing is delayed.
+   */
+  leadInS: number;
 }

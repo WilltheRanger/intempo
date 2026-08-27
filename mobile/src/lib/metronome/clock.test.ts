@@ -188,4 +188,39 @@ describe('a beat clock', () => {
 
     expect(beats.map((b) => b.index)).toEqual([0, 1]);
   });
+
+  it('waits out a lead-in before beat zero, then counts from there', () => {
+    // **So the eye and the ear count from the same instant.** The web click
+    // track books its first click a tenth of a second out — a booking at
+    // exactly `currentTime` is already in the past — and this clock fired beat
+    // zero immediately, so the screen pulsed 100ms ahead of every click for
+    // the whole take. At 120bpm that is a fifth of a beat.
+    const at: number[] = [];
+    startBeatClock({
+      bpm: 60,
+      perBar: 4,
+      leadInS: 0.1,
+      onBeat: (b) => {
+        beats.push(b);
+        at.push(clockMs);
+      },
+      now,
+    });
+    const startedAt = clockMs;
+
+    expect(beats, 'beat zero is not due yet').toEqual([]);
+
+    advance(2000);
+
+    expect(beats.map((b) => b.index)).toEqual([0, 1]);
+    at.forEach((fired, index) => {
+      expect(fired - startedAt).toBeGreaterThanOrEqual(100 + index * 1000);
+    });
+  });
+
+  it('treats a negative lead-in as none rather than as time already served', () => {
+    startBeatClock({ bpm: 60, perBar: 4, leadInS: -5, onBeat: (b) => beats.push(b), now });
+
+    expect(beats.map((b) => b.index)).toEqual([0]);
+  });
 });
