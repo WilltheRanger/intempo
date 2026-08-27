@@ -739,6 +739,82 @@ def test_a_page_that_curls_is_still_read() -> None:
     assert set(measured.values()) == {11.0}, measured
 
 
+def test_the_table_the_floor_was_chosen_against_still_holds() -> None:
+    """**Re-derive the evidence for `_MIN_STAFF_SPACE_PX`, every row of it.**
+
+    That table is the entire justification for refusing a musician's
+    photograph, and one of its five rows stopped reproducing the day after it
+    was written. `04_handwritten_clean` is recorded there as **15 px**; it
+    measures **9.25**, and has since the cross-axis fallback landed on
+    2026-08-25 — a change made for a page photographed sideways, which on this
+    upright fixture lets two bands of handwriting outvote the one band holding
+    the staff.
+
+    Nothing noticed for three days, because nothing re-ran the table. This
+    does, so the next drift is a failing test rather than a comment that is
+    quietly no longer true.
+
+    The numbers below are what the corpus measures **today**, with the
+    discrepancy named in `_MIN_STAFF_SPACE_PX` rather than hidden by rounding
+    it away.
+    """
+    readings = {
+        path.name: staff_space_px(path.read_bytes())
+        for path in sorted(FIXTURES.glob("*.jpg"))
+    }
+
+    assert readings == {
+        "01_simple_printed.jpg": 11.0,
+        "02_medium_printed.jpg": 11.0,
+        "03_complex_printed.jpg": 11.0,
+        # 15.0 in the table, and 15.0 from the rows alone. See the constant.
+        "04_handwritten_clean.jpg": 9.25,
+        "05_handwritten_messy.jpg": 6.0,
+    }
+
+    reads = [readings[n] for n in readings if not n.startswith("05")]
+    fails = readings["05_handwritten_messy.jpg"]
+
+    assert min(reads) > _MIN_STAFF_SPACE_PX > fails, (
+        "the floor no longer sits between the pages that read and the one that "
+        f"does not: reads {sorted(reads)}, fails at {fails}"
+    )
+
+
+def test_the_wrong_axis_is_what_moved_that_row() -> None:
+    """The diagnosis, pinned, because the fix is not being made today.
+
+    Rows hold the staff and answer once, with the value the table records.
+    Columns hold handwriting, produce dozens of narrow bands, and two of them
+    answer — so the more-answering-bands rule takes the axis with no staff in
+    it.
+
+    Five cropped strips and synthetic rotations are not enough to choose a
+    better rule, and a margin picked to fix this corpus is what `CLAUDE.md`
+    means by fitting to one photograph. Recorded rather than refitted.
+    """
+    import numpy as np
+
+    from app.services.page_image import _bands, _inked, _profile_of
+
+    ink = _inked((FIXTURES / "04_handwritten_clean.jpg").read_bytes())
+    by_axis = {}
+    for name, oriented in (("rows", ink), ("cols", np.asarray(ink).T)):
+        profile, smoothed = _profile_of(oriented)
+        bands = _bands(smoothed)
+        answered = [
+            space
+            for top, bottom in bands
+            if (space := _band_staff_space(profile[top:bottom])) is not None
+        ]
+        by_axis[name] = (len(bands), answered)
+
+    assert by_axis["rows"] == (1, [15]), by_axis["rows"]
+    columns, answers = by_axis["cols"]
+    assert columns > 20 and len(answers) == 2, by_axis["cols"]
+    assert _representative_spacing(answers) == 9.25
+
+
 def test_the_slices_only_answer_where_the_whole_width_could_not() -> None:
     """**The rule that makes this incapable of regressing anything.**
 
