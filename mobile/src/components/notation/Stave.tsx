@@ -1,11 +1,16 @@
-import Svg, { Ellipse, G, Line, Text as SvgText } from 'react-native-svg';
+import Svg, { Ellipse, G, Line, Path, Rect, Text as SvgText } from 'react-native-svg';
 
 import type { Clef } from '../../data/types';
 import { colors, fontFamily, typography } from '../../design';
-import { engrave, type StaveNote } from '../../lib/notation/engrave';
+import {
+  engrave,
+  type NoteValue,
+  type StaveItem,
+} from '../../lib/notation/engrave';
 
 export interface StaveProps {
-  notes: StaveNote[];
+  /** Notes, rests and multi-bar rests, in reading order. */
+  notes: StaveItem[];
   clef: Clef;
   /**
    * Which ground it is drawn on.
@@ -63,6 +68,12 @@ const STROKE = 1.1;
  */
 const STAFF_STROKE = 0.9;
 const BEAM_FACTOR = 0.55;
+/** Half the height of the little upright strokes on a multi-bar rest's ends. */
+const MULTI_REST_SERIF_FACTOR = 0.55;
+const MULTI_REST_NUMBER_SIZE = 1.5;
+/** A rest bar is about as wide as a notehead and rather flatter. */
+const REST_WIDTH_FACTOR = 1.4;
+const REST_HEIGHT_FACTOR = 0.58;
 
 /**
  * Engraved notation, wrapped onto as many systems as it takes.
@@ -148,6 +159,59 @@ export function Stave({
             />
           ))}
 
+          {system.multiRests.map((block, index) => (
+            <G key={`multirest-${index}`}>
+              <Rect
+                x={block.x}
+                y={block.y - block.halfHeight}
+                width={block.width}
+                height={block.halfHeight * 2}
+                fill={rule}
+              />
+              {/* The end serifs. Without them the block is a dash; with them
+                  it is the symbol a musician has counted since school. */}
+              {[block.x, block.x + block.width].map((x, side) => (
+                <Line
+                  key={`serif-${side}`}
+                  x1={x}
+                  y1={block.y - lineGap * MULTI_REST_SERIF_FACTOR}
+                  x2={x}
+                  y2={block.y + lineGap * MULTI_REST_SERIF_FACTOR}
+                  stroke={rule}
+                  strokeWidth={stroke * 1.4}
+                />
+              ))}
+              <SvgText
+                x={block.x + block.width / 2}
+                y={block.numberY}
+                fill={label}
+                fontFamily={fontFamily.sansMedium}
+                fontSize={lineGap * MULTI_REST_NUMBER_SIZE}
+                textAnchor="middle"
+              >
+                {block.bars}
+              </SvgText>
+            </G>
+          ))}
+
+          {/* **Rests are ink, the block is not**, and the split is deliberate.
+              A rest is a note-sized mark and drawing it in the staff-line
+              colour made it a speck of dust — measured on the first render,
+              where the hierarchy came out notes, number, staff, *then* rests.
+              The multi-bar block is large enough that full ink would make it
+              the first thing seen on the page, which is the wrong subject. */}
+          {system.rests.map((rest, index) => (
+            <Rest
+              key={`rest-${index}`}
+              x={rest.x}
+              y={rest.y}
+              value={rest.value}
+              ink={ink}
+              lineGap={lineGap}
+              stroke={stroke}
+            />
+          ))}
+
           {system.notes.map((note, index) => (
             <G key={`note-${index}`}>
               {note.ledgers.map((y, ledger) => (
@@ -225,6 +289,108 @@ export function Stave({
         </G>
       ))}
     </Svg>
+  );
+}
+
+/**
+ * A rest, drawn rather than set in type — the same reasoning as `Sharp`, and
+ * the same risk `engrave.ts` names about clefs: a badly approximated glyph is
+ * the first thing a musician notices and the last thing they forgive.
+ *
+ * **Two of these are exact and two are approximations, and the difference is
+ * worth knowing.** A whole and a half rest genuinely *are* rectangles — the
+ * only thing to get right is which line they touch, and they are opposites:
+ * the whole hangs below the second line from the top, the half sits on the
+ * middle line. Drawn the same way round, every bar of rest in the app would be
+ * a beat wrong to anyone who reads music.
+ *
+ * The quarter and eighth are calligraphic figures rendered as strokes. They
+ * read correctly at the size this draws them and they are not typeset music.
+ * The alternative was to count them as undrawable and leave holes in the bar,
+ * which for a part written in quarter rests is most of the bar.
+ */
+function Rest({
+  x,
+  y,
+  value,
+  ink,
+  lineGap,
+  stroke,
+}: {
+  x: number;
+  y: number;
+  value: NoteValue;
+  ink: string;
+  lineGap: number;
+  stroke: number;
+}) {
+  const g = lineGap;
+  if (value === 'whole' || value === 'half') {
+    const w = g * REST_WIDTH_FACTOR;
+    const h = g * REST_HEIGHT_FACTOR;
+    return (
+      <Rect
+        x={x - w / 2}
+        // Hanging below its line, or standing on it.
+        y={value === 'whole' ? y : y - h}
+        width={w}
+        height={h}
+        fill={ink}
+      />
+    );
+  }
+
+  if (value === 'quarter') {
+    return (
+      <G>
+        <Path
+          d={`M ${x - g * 0.38} ${y - g * 1.05} L ${x + g * 0.34} ${y - g * 0.34} L ${x - g * 0.2} ${y + g * 0.1} L ${x + g * 0.4} ${y + g * 0.78}`}
+          fill="none"
+          stroke={ink}
+          strokeWidth={g * 0.26}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+        {/* The terminal curl. Without it the zigzag reads as a chevron — the
+            first render of this looked like a "<" from across the room. */}
+        <Path
+          d={`M ${x + g * 0.4} ${y + g * 0.78} q ${-g * 0.5} ${-g * 0.18} ${-g * 0.34} ${g * 0.34}`}
+          fill="none"
+          stroke={ink}
+          strokeWidth={g * 0.2}
+          strokeLinecap="round"
+        />
+      </G>
+    );
+  }
+
+  // An eighth rest: one slanted stroke, a filled hook at its head, and the
+  // short bar that joins them.
+  return (
+    <G>
+      <Path
+        d={`M ${x + g * 0.36} ${y - g * 0.72} L ${x - g * 0.24} ${y + g * 0.95}`}
+        fill="none"
+        stroke={ink}
+        strokeWidth={g * 0.17}
+        strokeLinecap="round"
+      />
+      <Ellipse
+        cx={x - g * 0.06}
+        cy={y - g * 0.5}
+        rx={g * 0.26}
+        ry={g * 0.21}
+        transform={`rotate(-18 ${x - g * 0.06} ${y - g * 0.5})`}
+        fill={ink}
+      />
+      <Path
+        d={`M ${x + g * 0.36} ${y - g * 0.72} L ${x + g * 0.1} ${y - g * 0.62}`}
+        fill="none"
+        stroke={ink}
+        strokeWidth={g * 0.15}
+        strokeLinecap="round"
+      />
+    </G>
   );
 }
 
