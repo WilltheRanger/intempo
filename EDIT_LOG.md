@@ -6,6 +6,79 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-27 — Re-deriving the other two tables in the same file
+
+**Branch:** `main`. Backend tests only — no production code changed.
+
+**Files:** `backend/app/tests/test_page_legibility.py`.
+
+Yesterday's finding was that one measured table had gone stale unnoticed for
+three days. The obvious next question is whether the others had, and
+`page_image.py` has two more that can be checked here.
+
+### `_STAFF_PERIOD_STRENGTH` reproduces exactly
+
+    01/02/03_printed      0.75  0.64  0.38
+    05_handwritten_messy  0.36
+    04_handwritten_clean  0.136   <- the weakest true signal
+
+Measured again today: **0.753, 0.637, 0.380, 0.364, 0.136**. Sound, and now
+pinned — the value was already wrong once, at 0.15, where it refused a
+handwritten fixture whose true peak is 0.136.
+
+### `_SPACING_PERCENTILE` cannot be re-derived, and that is the finding
+
+Its table cites *"a page of eight stacked fixture strips"* and says neither
+which eight nor how they were stacked. The `_MIN_STAFF_SPACE_PX` table could
+be re-run because its rows name files; this one cannot, which is exactly why
+nobody would notice it drifting.
+
+So rather than claim staleness from a harness I would be guessing at — the
+mistake I warned myself about two ticks ago — the constant's **purpose** is now
+asserted on a page a named function builds. Eight systems, the five fixtures
+then the first three again, 60 px apart:
+
+    full size    [11, 11, 11, 33, 5, 11, 11, 11]   -> 11.0, page reads
+    at 0.4 scale [4, 6, 4]                          ->  4.0, page refused
+
+**33** is a band reporting a multiple of its own period — the upward-only error
+the percentile is chosen against. **5** is the one fixture that yields no
+measures, which a strict minimum would let veto the whole page. Neither wins,
+which is the whole claim.
+
+Worth knowing and in no docstring: `04_handwritten_clean` reports **15** in a
+five-strip page and **33** in this eight-strip one. Band boundaries move with
+what else is on the sheet, so a per-band number is a property of the page and
+not of the strip — which is also why a table that does not name its page cannot
+be checked.
+
+### A trap, pinned before someone falls into it
+
+Choosing the orientation by how *strongly* its peak reads is the obvious
+improvement on counting bands, and I tried it yesterday. On **two of five**
+fixtures the cross-axis — which holds no staff at all — peaks harder than the
+real one: `03_complex_printed` 0.41 against 0.38, `04_handwritten_clean` 0.143
+against 0.136. Now a test, so the next person measures it in a second rather
+than an hour.
+
+### Tests
+
+Full suite green. Four added. Five mutants, all killed — the percentile moved
+to the median and to the strict minimum, the strength floor raised past
+handwriting, the band-height cap removed, and the minimum period dropped to
+noise. Two of those five had no test against them before today.
+
+### Three-foot test
+
+Not run: no screen was built or changed.
+
+### Still waiting on the owner
+
+The UI plan (four items), migration `011`, permission to re-read the nine
+failed scans, and whether `Repeat` gets a field for an unclosed forward sign.
+
+---
+
 ## 2026-08-27 — The table the refusal floor rests on stopped reproducing
 
 **Branch:** `main`. Backend and tests. No screen, component, style or copy
