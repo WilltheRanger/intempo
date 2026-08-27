@@ -58,6 +58,49 @@ export interface StaveNote {
   barBefore?: boolean;
 }
 
+/**
+ * A rest, of the four values this engraver draws.
+ *
+ * **Silence is music and was being deleted.** `fromScore` counted rests and
+ * drew none, so on the orchestral part fixture six of nineteen bars vanished
+ * from the stave and the note before the silence sat next to the note after
+ * it. A bass part is mostly rests; a picture of one that shows only the notes
+ * is not a picture of the part.
+ */
+export interface StaveRest {
+  rest: NoteValue;
+  barBefore?: boolean;
+}
+
+/**
+ * One symbol standing for several bars of silence — what an orchestral part
+ * prints, and what a musician actually counts.
+ *
+ * The backend expands `<multiple-rest>20</multiple-rest>` into twenty bars of
+ * whole rest, which is what keeps the timeline from running twenty bars early.
+ * Drawing twenty empty bars would be honest and useless: nobody counts twenty
+ * barlines on a phone. This is the printed form put back.
+ */
+export interface StaveMultiRest {
+  /** How many bars of silence. Printed above the block. */
+  bars: number;
+  barBefore?: boolean;
+}
+
+export type StaveItem = StaveNote | StaveRest | StaveMultiRest;
+
+export function isRest(item: StaveItem): item is StaveRest {
+  return 'rest' in item;
+}
+
+export function isMultiRest(item: StaveItem): item is StaveMultiRest {
+  return 'bars' in item;
+}
+
+export function isNote(item: StaveItem): item is StaveNote {
+  return 'pitch' in item;
+}
+
 export type Accidental = 'sharp' | 'natural' | null;
 
 export interface EngravedNote {
@@ -75,6 +118,36 @@ export interface EngravedNote {
   name: string;
 }
 
+/**
+ * Where a rest sits, and of what value. **Position only** — the shapes live in
+ * `Stave.tsx`, the same division the noteheads already follow.
+ *
+ * `y` is the staff line the glyph is drawn *against*, which differs per value
+ * and is the part that is easy to get wrong: a whole rest hangs below the
+ * second line from the top, a half rest sits on the middle line, and the two
+ * are otherwise identical rectangles. Drawn the same way round, every bar of
+ * rest in the app would be a beat wrong to anyone who reads music.
+ */
+export interface EngravedRest {
+  x: number;
+  y: number;
+  value: NoteValue;
+}
+
+/** A multi-bar rest: the block, and where its number goes. */
+export interface EngravedMultiRest {
+  /** Left end of the block. */
+  x: number;
+  width: number;
+  /** Centre of the block — the middle staff line. */
+  y: number;
+  /** Half the block's height, so the caller can draw its end serifs. */
+  halfHeight: number;
+  bars: number;
+  /** Baseline for the number printed above the staff. */
+  numberY: number;
+}
+
 export interface EngravedBeam {
   from: number;
   to: number;
@@ -89,6 +162,8 @@ export interface EngravedSystem {
   /** X of each barline, including the one that ends the system. */
   barlines: number[];
   notes: EngravedNote[];
+  rests: EngravedRest[];
+  multiRests: EngravedMultiRest[];
   beams: EngravedBeam[];
   /** Baseline for the note names printed under this system. */
   nameY: number;
@@ -162,6 +237,20 @@ const BARE_BOTTOM_FACTOR = 0.8;
 const SYSTEM_GAP_FACTOR = 1.6;
 /** Stem length, in staff gaps. An octave, which is the engraver's convention. */
 const STEM_FACTOR = 3.5;
+
+/**
+ * How much of a column a multi-bar rest's block fills.
+ *
+ * Wider than a notehead by a long way, because that is the point: it has to
+ * read as a *stretch of silence* from across the room and not as another
+ * symbol on the line. One column, though — the layout is even columns and
+ * inventing a wider one for this would push the wrap arithmetic out of step
+ * with what it draws.
+ */
+const MULTI_REST_WIDTH_FACTOR = 0.72;
+const MULTI_REST_HEIGHT_FACTOR = 0.95;
+/** The number sits above the top staff line, clear of it. */
+const MULTI_REST_NUMBER_FACTOR = 1.1;
 /**
  * How far justification may stretch the note spacing.
  *
@@ -202,8 +291,8 @@ export function displayName(pitch: string): string {
 }
 
 /** Split a run of notes into bars, using the `barBefore` flags. */
-export function splitBars(notes: StaveNote[]): StaveNote[][] {
-  const bars: StaveNote[][] = [];
+export function splitBars(notes: StaveItem[]): StaveItem[][] {
+  const bars: StaveItem[][] = [];
   for (const note of notes) {
     if (note.barBefore || bars.length === 0) {
       bars.push([]);
@@ -222,11 +311,11 @@ export function splitBars(notes: StaveNote[]): StaveNote[][] {
  * own and overflows rather than being split.
  */
 export function packSystems(
-  bars: StaveNote[][],
+  bars: StaveItem[][],
   notesPerSystem: number,
-): StaveNote[][] {
-  const systems: StaveNote[][] = [];
-  let current: StaveNote[] = [];
+): StaveItem[][] {
+  const systems: StaveItem[][] = [];
+  let current: StaveItem[] = [];
 
   for (const bar of bars) {
     if (current.length > 0 && current.length + bar.length > notesPerSystem) {
@@ -248,7 +337,7 @@ export function packSystems(
  * knows how tall the system turned out to be.
  */
 function layoutSystem(
-  notes: StaveNote[],
+  notes: StaveItem[],
   clef: Clef,
   lineGap: number,
   noteGap: number,
@@ -260,19 +349,52 @@ function layoutSystem(
   const middleStep = MIDDLE_LINE_STEP[clef];
   const staffLines = [-2, -1, 0, 1, 2].map((i) => i * lineGap);
   const engravedNotes: EngravedNote[] = [];
+  const engravedRests: EngravedRest[] = [];
+  const multiRests: EngravedMultiRest[] = [];
   const barlines: number[] = [];
   const beams: EngravedBeam[] = [];
   const stemLength = lineGap * STEM_FACTOR;
 
   let x = leftPad;
 
-  notes.forEach((note, index) => {
-    if (note.barBefore && index > 0) {
+  notes.forEach((item, index) => {
+    if (item.barBefore && index > 0) {
       // The line sits midway in the gap it interrupts, so it belongs to
       // neither of the notes on either side.
       barlines.push(x - noteGap / 2);
     }
 
+    if (isMultiRest(item)) {
+      const width = noteGap * MULTI_REST_WIDTH_FACTOR;
+      multiRests.push({
+        x: x - width / 2,
+        width,
+        y: 0,
+        halfHeight: (lineGap * MULTI_REST_HEIGHT_FACTOR) / 2,
+        bars: item.bars,
+        numberY: staffLines[0] - lineGap * MULTI_REST_NUMBER_FACTOR,
+      });
+      x += noteGap;
+      return;
+    }
+
+    if (isRest(item)) {
+      // Whole hangs below the second line from the top; half sits on the
+      // middle line; quarter and eighth are centred on the staff. `y` is the
+      // line each is drawn against, not the middle of the glyph — see
+      // `EngravedRest`.
+      const y =
+        item.rest === 'whole'
+          ? staffLines[1]
+          : item.rest === 'half'
+            ? 0
+            : 0;
+      engravedRests.push({ x, y, value: item.rest });
+      x += noteGap;
+      return;
+    }
+
+    const note = item;
     const step = stepOf(note.pitch);
     const y = step === null ? 0 : -(step - middleStep) * halfGap;
     const stemUp = y > 0;
@@ -335,13 +457,29 @@ function layoutSystem(
     run = [];
   };
 
-  notes.forEach((note, index) => {
-    if (note.value === 'eighth' && !(note.barBefore && run.length > 0)) {
+  // Walked over the *items* while counting into `engravedNotes`, because a
+  // rest occupies a column and produces no notehead — so the two indices
+  // stopped being the same the moment silence could be drawn. Beaming by item
+  // index would have joined a beam to whichever notehead happened to sit at
+  // that position, which on a part with rests in it is a different note.
+  let noteAt = 0;
+  notes.forEach((item) => {
+    if (!isNote(item)) {
+      // **A rest breaks a beam**, which is engraving and not an accident of
+      // this loop: a beam over a silence would group notes that are not a
+      // group. A multi-bar rest breaks it for the same reason, twenty times
+      // over.
+      flush();
+      return;
+    }
+    const index = noteAt;
+    noteAt += 1;
+    if (item.value === 'eighth' && !(item.barBefore && run.length > 0)) {
       run.push(index);
       return;
     }
     flush();
-    if (note.value === 'eighth') {
+    if (item.value === 'eighth') {
       run.push(index);
     }
   });
@@ -362,6 +500,17 @@ function layoutSystem(
     extents.push(...note.ledgers);
   }
 
+  // Rests reach outside the noteheads' box too — a quarter rest spans the
+  // staff, and a multi-bar rest's number sits above the top line. A box sized
+  // from the notes alone clips the number, which is the only part of a
+  // multi-bar rest a musician actually reads.
+  for (const rest of engravedRests) {
+    extents.push(rest.y - lineGap, rest.y + lineGap);
+  }
+  for (const block of multiRests) {
+    extents.push(block.numberY - lineGap * MULTI_REST_NUMBER_FACTOR, block.y + block.halfHeight);
+  }
+
   const nameY = Math.max(...extents) + lineGap * NAME_ROW_FACTOR;
 
   return {
@@ -369,6 +518,8 @@ function layoutSystem(
       staffLines,
       barlines,
       notes: engravedNotes,
+      rests: engravedRests,
+      multiRests,
       beams,
       nameY,
       width: right,
@@ -397,6 +548,12 @@ function shift(system: EngravedSystem, dy: number): EngravedSystem {
         ? { ...note.stem, from: note.stem.from + dy, to: note.stem.to + dy }
         : null,
     })),
+    rests: system.rests.map((rest) => ({ ...rest, y: rest.y + dy })),
+    multiRests: system.multiRests.map((block) => ({
+      ...block,
+      y: block.y + dy,
+      numberY: block.numberY + dy,
+    })),
     beams: system.beams.map((beam) => ({ ...beam, y: beam.y + dy })),
   };
 }
@@ -410,7 +567,7 @@ function shift(system: EngravedSystem, dy: number): EngravedSystem {
  * which is the whole point of a rhythm exercise.
  */
 export function engrave(
-  notes: StaveNote[],
+  notes: StaveItem[],
   clef: Clef,
   options: EngraveOptions = {},
 ): Engraving {
@@ -491,7 +648,7 @@ export function engrave(
  * limit — unless that would leave almost nothing, in which case a hard cut is
  * the lesser problem.
  */
-export function truncateAtBar(notes: StaveNote[], limit: number): StaveNote[] {
+export function truncateAtBar(notes: StaveItem[], limit: number): StaveItem[] {
   if (notes.length <= limit) {
     return notes;
   }

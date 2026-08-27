@@ -1,5 +1,5 @@
-import type { ScoreJson } from '../../data/types';
-import type { NoteValue, StaveNote } from './engrave';
+import type { ScoreJson, ScoreMeasure } from '../../data/types';
+import type { NoteValue, StaveItem } from './engrave';
 
 /**
  * A parsed score, turned into something the engraver can draw.
@@ -20,8 +20,16 @@ import type { NoteValue, StaveNote } from './engrave';
  * is not.
  */
 export interface StaveScore {
-  notes: StaveNote[];
-  /** Rests in the score. Not drawn — the engraver has no rest glyph. */
+  /** Notes, rests and multi-bar rests, in the order they are read. */
+  items: StaveItem[];
+  /** How many of `items` are noteheads — what "there is a stave" means. */
+  noteCount: number;
+  /**
+   * Rests whose *value* the engraver cannot draw: dotted, sixteenth, shorter.
+   *
+   * Was every rest, because none were drawn at all. Now it is the same
+   * exception the notes have, for the same reason and counted the same way.
+   */
   rests: number;
   /** Notes whose value the engraver cannot draw: dots, sixteenths, shorter. */
   undrawable: number;
@@ -41,36 +49,86 @@ const DRAWABLE: Partial<Record<string, NoteValue>> = {
   eighth: 'eighth',
 };
 
+/** A bar holding notes, none of which is one. */
+function isSilent(measure: ScoreMeasure): boolean {
+  return (
+    measure.notes.length > 0 && measure.notes.every((note) => note.pitch === 'rest')
+  );
+}
+
+/**
+ * Runs of consecutive silent bars, folded back into one symbol each.
+ *
+ * **Because the backend took the printed form apart on purpose.**
+ * `<multiple-rest>20</multiple-rest>` is expanded into twenty bars of whole
+ * rest, and that expansion is load-bearing — without it the timeline runs
+ * twenty bars early and a musician who counts correctly is told they rushed
+ * the rest of the page. What it costs is the *picture*: twenty empty bars is
+ * not what the part prints and not what anybody counts on a phone.
+ *
+ * Detected here rather than recorded on the schema, because a run of silent
+ * bars is a run of silent bars however it got that way — a part that really
+ * does print twenty separate bars of rest is counted the same, which is what
+ * its player does too.
+ *
+ * Two bars is the floor. A single bar of rest is drawn as a bar of rest; a
+ * block with "1" over it is not something an engraver writes.
+ */
+const MULTI_REST_MIN_BARS = 2;
+
 export function staveScoreFor(score: ScoreJson): StaveScore {
-  const notes: StaveNote[] = [];
+  const items: StaveItem[] = [];
+  let noteCount = 0;
   let rests = 0;
   let undrawable = 0;
 
-  for (const [index, measure] of score.measures.entries()) {
-    // The barline belongs before the first note of every measure but the
-    // first. Tracked here rather than counted later, because notes get
+  let index = 0;
+  while (index < score.measures.length) {
+    if (isSilent(score.measures[index])) {
+      let end = index;
+      while (end < score.measures.length && isSilent(score.measures[end])) {
+        end += 1;
+      }
+      const bars = end - index;
+      if (bars >= MULTI_REST_MIN_BARS) {
+        items.push({ bars, barBefore: index > 0 });
+        index = end;
+        continue;
+      }
+    }
+
+    const measure = score.measures[index];
+    // The barline belongs before the first item of every measure but the
+    // first. Tracked here rather than counted later, because items get
     // dropped below and a bar whose every note was undrawable must not leave
     // its barline attached to the next measure's opening note.
     let opensMeasure = index > 0;
 
     for (const note of measure.notes) {
+      const value = DRAWABLE[note.duration];
       if (note.pitch === 'rest') {
-        rests += 1;
+        if (!value) {
+          rests += 1;
+          continue;
+        }
+        items.push(opensMeasure ? { rest: value, barBefore: true } : { rest: value });
+        opensMeasure = false;
         continue;
       }
-      const value = DRAWABLE[note.duration];
       if (!value) {
         undrawable += 1;
         continue;
       }
-      notes.push(
+      items.push(
         opensMeasure ? { pitch: note.pitch, value, barBefore: true } : { pitch: note.pitch, value },
       );
+      noteCount += 1;
       opensMeasure = false;
     }
+    index += 1;
   }
 
-  return { notes, rests, undrawable };
+  return { items, noteCount, rests, undrawable };
 }
 
 /**
@@ -97,29 +155,36 @@ export function staveScoreFor(score: ScoreJson): StaveScore {
  * that yielded nothing is not.
  */
 export function describeUndrawnScore({
-  notes,
+  items,
   rests,
   undrawable,
 }: StaveScore): string | null {
-  if (notes.length > 0) {
+  // **`items`, not the notes.** A page that is nothing but a twenty-bar rest
+  // has something to show now, and telling its owner there is no stave while
+  // drawing one underneath would be the caveat contradicting the picture.
+  if (items.length > 0) {
     return null;
   }
   if (rests + undrawable === 0) {
     return "Nothing was read from this page. The photograph is below — try reading it again, or photograph the page closer and straighter.";
   }
-  const values = undrawable > 0 ? 'note values' : 'rests';
+  const values = undrawable > 0 ? 'note values' : 'rest values';
   return `This page is written in ${values} the app can't draw yet, so there is no stave to show. The reading is stored and recording will use it — the photograph is below.`;
 }
 
 export function describeOmissions({ rests, undrawable }: StaveScore): string | null {
+  const short = 'shorter than an eighth or dotted';
   const parts: string[] = [];
-  if (rests > 0) {
-    parts.push(`${rests} ${rests === 1 ? 'rest' : 'rests'}`);
-  }
   if (undrawable > 0) {
-    parts.push(
-      `${undrawable} ${undrawable === 1 ? 'note' : 'notes'} shorter than an eighth or dotted`,
-    );
+    parts.push(`${undrawable} ${undrawable === 1 ? 'note' : 'notes'} ${short}`);
+  }
+  // **Only the rests whose value cannot be drawn.** This used to name every
+  // rest on the page, because none of them were drawn — so a bass part
+  // reported "Not drawn: 8 rests" while eight bars of silence were missing
+  // from the stave. They are drawn now, and what is left is the same
+  // exception the notes have.
+  if (rests > 0) {
+    parts.push(`${rests} ${rests === 1 ? 'rest' : 'rests'} ${short}`);
   }
   if (parts.length === 0) {
     return null;

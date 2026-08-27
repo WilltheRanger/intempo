@@ -6,6 +6,127 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-27 — Silence was being deleted from the picture
+
+**Branch:** `main`. App only — the engraver, the score adapter, the stave
+component and their tests. **This is UI work**, asked for and approved by the
+owner ("just do all 3") after I measured the gap and stopped at the §2 gate.
+
+**Files:** `mobile/src/lib/notation/engrave.ts`,
+`mobile/src/lib/notation/fromScore.ts`,
+`mobile/src/components/notation/Stave.tsx`, and their tests (one new).
+
+The owner noticed it: *"how about long rest bars and rests. It looks as if it
+doesnt mark them"*. It does not mark them — it **deletes** them.
+
+### What it cost, measured across the fixtures
+
+`fromScore.ts` counted every rest and drew none, because `engrave.ts` says so
+in its own scope note: *"no key signatures, no slurs, no dynamics, no chords,
+**no rests**."* It was written for the daily warmup, whose notes this app
+authors, and then pointed at real repertoire.
+
+| fixture | bars | bars that are nothing but rest | drawn | rests dropped |
+|---|---|---|---|---|
+| `orchestral_part` | 19 | **6** | 32 | 8 |
+| `orchestral_part_page2` | 4 | **2** | 5 | 2 |
+| `audiveris_phone_photo` | 15 | 0 | 51 | 5 |
+
+Six bars of nineteen vanished on the fixture that represents the actual
+repertoire. The note before a silence sat against the note after it, with one
+barline between, and the only trace was a line underneath reading *"Not drawn:
+8 rests."*
+
+**Multi-bar rests are the sharp end.** The backend expands
+`<multiple-rest>20</multiple-rest>` into twenty bars of whole rest, and that
+expansion is load-bearing — without it the timeline runs twenty bars early. Then
+every one of those bars disappeared from the picture, so the analysis waited
+twenty bars while the stave showed nothing, and the two disagreed about the
+piece in front of the musician. Counting rests **is** the job in an orchestral
+part.
+
+### The three-foot test, before writing anything
+
+What I wanted noticed, in order: ① the shape of the line — where there are
+notes and where there is silence; ② the long rests, as breaks in the texture
+with a countable number; ③ the caveat line. ① was a lie: an unbroken run of
+noteheads on a page that is a third silence.
+
+The named risk was law 4 — a multi-bar rest is a wide black bar with a large
+number, and at full ink it takes first place from the noteheads.
+
+### The three-foot test on the render, which found me wrong
+
+Rendered the engraver's output to SVG and screenshotted it. The order came out
+**notes, number, staff lines, *then* rests** — the rests read as specks of
+dust. I had drawn them in the staff-line colour, over-applying "silence
+recedes" until silence was invisible, which is the bug I was fixing. The
+quarter rest read as a `<` and the eighth as a `7`.
+
+Second pass: rests in full ink at engraved proportions, the quarter rest given
+its terminal curl, the multi-bar block thickened to about a staff space. The
+order is now ① notes ② the block and its number ③ the individual rests.
+
+**The block stays muted while the rests are full ink**, and that is a departure
+from print made deliberately: a black bar that wide genuinely does become the
+first thing seen at this size. The rests are notehead-sized and can carry full
+ink without competing.
+
+### Three rules that are wrong *silently* if they are wrong
+
+- **A whole rest hangs below the second line from the top; a half rest sits on
+  the middle line.** They are the same rectangle, and swapped, every bar of
+  rest in the app is a beat wrong to anyone who reads music — with nothing else
+  on the screen to show it. Asserted directly against the staff lines.
+- **A rest occupies a column and produces no notehead**, so the beaming loop's
+  index into `engravedNotes` stopped being the item index the moment silence
+  could be drawn. Beaming by item index joins a beam to whichever notehead
+  happens to sit at that position, which on a part with rests in it is a
+  different note. Walked over items with a separate counter, and tested.
+- **A rest breaks a beam.** Engraving, not an accident of the loop: a beam over
+  a silence groups notes that are not a group.
+
+### The multi-bar rest is detected, not recorded
+
+A run of consecutive silent bars is folded back into one symbol. Detected in
+the app rather than carried on the schema, because a run of silent bars is a
+run of silent bars however it got that way — a part that really does print
+twenty separate bars of rest is counted the same, which is what its player does
+too. Two bars is the floor: a block with "1" over it is not something an
+engraver writes.
+
+### Nothing is rounded, still
+
+The rule the module exists for is unchanged and now applies to rests as well:
+a sixteenth rest is **not** drawn as a quarter rest, it is counted and
+declared, exactly as a sixteenth note is. `describeOmissions` used to name
+every rest on the page because none were drawn; it now names only the ones
+whose value has no glyph.
+
+`describeUndrawnScore` keys off `items` rather than notes — a page that is
+nothing but a twenty-bar rest has something to show now, and telling its owner
+there is no stave while drawing one underneath would be the caveat
+contradicting the picture.
+
+**Tests:** app **414 passed** in 34 files (fifteen new, six rewritten where
+their premise changed — including one that asserted rests are counted and *not*
+drawn), typecheck clean. Backend untouched and re-run.
+
+**Honest limits.** The quarter and eighth rests are calligraphic figures drawn
+as strokes; they read correctly at this size and they are not typeset music.
+The screenshot was made from the engraver's real output with the same numbers
+the component now uses, not from the component itself — rendering React Native
+SVG headlessly is not set up here, so this is verified visually one step short
+of the actual screen.
+
+**Rollback:** `git revert` this commit.
+
+**Still waiting on the owner** — migration `011`, permission to re-read the
+nine failed scans, and whether `Repeat` gets a field for an unclosed forward
+sign. (The UI plan is no longer waiting: this was it.)
+
+---
+
 ## 2026-08-27 — A 196KB file that unpacks to 200MB, and two mistakes of my own
 
 **Branch:** `main`. One app module, its test, and one backend test. No screen,

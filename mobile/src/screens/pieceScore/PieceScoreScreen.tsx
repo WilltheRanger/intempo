@@ -178,7 +178,7 @@ export function PieceScoreScreen() {
     );
   }
 
-  const hasNotation = (stave?.notes.length ?? 0) > 0;
+  const hasNotation = (stave?.items.length ?? 0) > 0;
   const hasPages = piece.thumbnail !== null;
 
   // Still being read. Distinguished from "has no notes" by the status and only
@@ -348,7 +348,7 @@ export function PieceScoreScreen() {
         <View style={styles.plate} onLayout={measure}>
           {width === null ? null : (
             <Stave
-              notes={stave.notes}
+              notes={stave.items}
               clef={piece.score?.clef ?? UNREAD_CLEF_PLACEMENT}
               maxWidth={width}
               scale={STAVE_SCALE}

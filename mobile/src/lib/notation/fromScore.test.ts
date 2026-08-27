@@ -1,16 +1,22 @@
 import { describe, expect, it } from 'vitest';
 
 import type { ScoreJson } from '../../data/types';
+import { isMultiRest, isNote, isRest, type StaveItem } from './engrave';
 import { describeOmissions, describeUndrawnScore, staveScoreFor } from './fromScore';
 
 /**
  * Turning a read page into something the engraver can draw — and admitting
  * what it could not.
  *
- * `engrave.ts` draws four note values and no rests. The rule this module
- * exists to keep is that nothing is **rounded**: a sixteenth does not become
- * an eighth to make it drawable. Rhythm is the entire subject of this app, so
- * a stave that misreports it is the one picture it must never draw.
+ * `engrave.ts` draws four note values, the four rests that match them, and a
+ * multi-bar rest. The rule this module exists to keep is that nothing is
+ * **rounded**: a sixteenth does not become an eighth to make it drawable.
+ * Rhythm is the entire subject of this app, so a stave that misreports it is
+ * the one picture it must never draw.
+ *
+ * Rests were dropped outright until 2026-08-27 — counted, and drawn as
+ * nothing. On the orchestral part fixture that deleted six bars of nineteen,
+ * and the note before a silence sat against the note after it.
  *
  * The consequence is that an ordinary part — sixteenths, dotted eighths — can
  * lose every note, and until now the screen rendered the title, the
@@ -42,11 +48,32 @@ function scoreOf(...durations: string[]): ScoreJson {
   } as unknown as ScoreJson;
 }
 
+/** A score of several bars, each given as a list of durations. */
+function barsOf(...bars: string[][]): ScoreJson {
+  return {
+    ...scoreOf(),
+    measures: bars.map((durations, index) => ({
+      measure_number: index + 1,
+      notes: durations.map((duration) => ({
+        pitch: duration === 'rest' ? 'rest' : 'E2',
+        duration: duration === 'rest' ? 'quarter' : duration.replace(/^r:/, ''),
+        tied_to_next: false,
+      })),
+      slurs: [],
+    })),
+  } as unknown as ScoreJson;
+}
+
+/** A bar of `count` whole rests — what an expanded multi-bar rest looks like. */
+const SILENT_BAR = ['rest'];
+
+const valuesOf = (items: StaveItem[]) => items.filter(isNote).map((n) => n.value);
+
 describe('what survives the trip', () => {
   it('draws the four values it has glyphs for', () => {
     const stave = staveScoreFor(scoreOf('whole', 'half', 'quarter', 'eighth'));
 
-    expect(stave.notes.map((n) => n.value)).toEqual(['whole', 'half', 'quarter', 'eighth']);
+    expect(valuesOf(stave.items)).toEqual(['whole', 'half', 'quarter', 'eighth']);
     expect(stave.undrawable).toBe(0);
   });
 
@@ -55,14 +82,32 @@ describe('what survives the trip', () => {
     // rhythmically wrong line of music presented as a right one.
     const stave = staveScoreFor(scoreOf('sixteenth', 'dotted_quarter', 'triplet_eighth'));
 
-    expect(stave.notes).toHaveLength(0);
+    expect(stave.items).toHaveLength(0);
     expect(stave.undrawable).toBe(3);
   });
 
-  it('counts rests without drawing them', () => {
+  it('draws rests, and does not count them as missing', () => {
+    // **This asserted the opposite.** Rests were counted and drawn as nothing,
+    // so a bar of silence was a gap between two notes with no sign it existed.
     const stave = staveScoreFor(scoreOf('quarter', 'rest', 'rest'));
 
-    expect(stave.notes).toHaveLength(1);
+    expect(stave.items.filter(isNote)).toHaveLength(1);
+    expect(stave.items.filter(isRest).map((r) => r.rest)).toEqual(['quarter', 'quarter']);
+    expect(stave.rests).toBe(0);
+  });
+
+  it('still refuses to round a rest it has no glyph for', () => {
+    // The same rule as the notes, and it has to be the same rule: a sixteenth
+    // rest drawn as a quarter rest is a bar that no longer adds up.
+    const score = scoreOf('quarter');
+    score.measures[0].notes.push(
+      { pitch: 'rest', duration: 'sixteenth' } as never,
+      { pitch: 'rest', duration: 'dotted_half' } as never,
+    );
+
+    const stave = staveScoreFor(score);
+
+    expect(stave.items.filter(isRest)).toHaveLength(0);
     expect(stave.rests).toBe(2);
   });
 
@@ -78,8 +123,61 @@ describe('what survives the trip', () => {
 
     const stave = staveScoreFor(score);
 
-    expect(stave.notes).toHaveLength(2);
-    expect(stave.notes[1].barBefore).toBe(true);
+    expect(stave.items).toHaveLength(2);
+    expect(stave.items[1].barBefore).toBe(true);
+  });
+});
+
+describe('bars of silence', () => {
+  it('folds a run of silent bars into one multi-bar rest', () => {
+    // **What the backend took apart on purpose.** `<multiple-rest>4</...>` is
+    // expanded into four bars of whole rest so the timeline waits four bars.
+    // Four empty bars is not what the part prints and not what anybody counts.
+    const stave = staveScoreFor(
+      barsOf(['quarter'], SILENT_BAR, SILENT_BAR, SILENT_BAR, SILENT_BAR, ['quarter']),
+    );
+
+    const blocks = stave.items.filter(isMultiRest);
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0].bars).toBe(4);
+    expect(blocks[0].barBefore).toBe(true);
+    expect(stave.items.filter(isNote)).toHaveLength(2);
+  });
+
+  it('draws a single silent bar as a bar of rest, not a block of one', () => {
+    // A block with "1" over it is not something an engraver writes.
+    const stave = staveScoreFor(barsOf(['quarter'], SILENT_BAR, ['quarter']));
+
+    expect(stave.items.filter(isMultiRest)).toHaveLength(0);
+    expect(stave.items.filter(isRest)).toHaveLength(1);
+  });
+
+  it('starts a bar before the block and after it', () => {
+    const stave = staveScoreFor(barsOf(['quarter'], SILENT_BAR, SILENT_BAR, ['quarter']));
+
+    const [note, block, after] = stave.items;
+    expect(isNote(note)).toBe(true);
+    expect(isMultiRest(block)).toBe(true);
+    expect(block.barBefore).toBe(true);
+    expect(after.barBefore).toBe(true);
+  });
+
+  it('folds a run that opens the page without a barline before it', () => {
+    const stave = staveScoreFor(barsOf(SILENT_BAR, SILENT_BAR, ['quarter']));
+
+    expect(stave.items[0].barBefore).toBeFalsy();
+    expect((stave.items[0] as { bars: number }).bars).toBe(2);
+  });
+
+  it('does not fold a bar that holds a note as well as rests', () => {
+    // A bar of three rests and a quarter is music, and counting it as silence
+    // would hide the note.
+    const stave = staveScoreFor(
+      barsOf(SILENT_BAR, ['rest', 'quarter'], SILENT_BAR),
+    );
+
+    expect(stave.items.filter(isMultiRest)).toHaveLength(0);
+    expect(stave.items.filter(isNote)).toHaveLength(1);
   });
 });
 
@@ -109,10 +207,22 @@ describe('describeUndrawnScore', () => {
     expect(said).not.toMatch(/reading is stored/i);
   });
 
-  it('distinguishes a page of rests from a page of short notes', () => {
-    const rests = describeUndrawnScore(staveScoreFor(scoreOf('rest', 'rest')));
+  it('says nothing about a page that is only silence, because it draws it', () => {
+    // **This asserted the opposite**, and had to: a page of rests produced no
+    // stave at all, so it needed a sentence explaining the blank. It draws now.
+    expect(describeUndrawnScore(staveScoreFor(scoreOf('rest', 'rest')))).toBeNull();
+  });
 
-    expect(rests).toMatch(/rests/i);
+  it('distinguishes undrawable rest values from undrawable note values', () => {
+    const score = scoreOf();
+    score.measures[0].notes.push(
+      { pitch: 'rest', duration: 'sixteenth' } as never,
+      { pitch: 'rest', duration: 'sixteenth' } as never,
+    );
+
+    const rests = describeUndrawnScore(staveScoreFor(score));
+
+    expect(rests).toMatch(/rest values/i);
     expect(rests).not.toMatch(/note values/i);
   });
 });
@@ -123,11 +233,20 @@ describe('describeOmissions', () => {
   });
 
   it('names both kinds of omission, and gets the plurals right', () => {
-    const said = describeOmissions(staveScoreFor(scoreOf('quarter', 'rest', 'sixteenth')));
+    // A *drawable* rest is no longer an omission — that is the change. What is
+    // still one is a rest whose value has no glyph, exactly as for a note.
+    const score = scoreOf('quarter', 'sixteenth');
+    score.measures[0].notes.push({ pitch: 'rest', duration: 'thirty_second' } as never);
 
-    expect(said).toContain('1 rest');
-    expect(said).toContain('1 note');
+    const said = describeOmissions(staveScoreFor(score));
+
+    expect(said).toContain('1 rest ');
+    expect(said).toContain('1 note ');
     expect(said).not.toContain('1 rests');
+  });
+
+  it('says nothing about rests it could draw', () => {
+    expect(describeOmissions(staveScoreFor(scoreOf('quarter', 'rest')))).toBeNull();
   });
 
   it('says the engraving is incomplete rather than approximate', () => {
