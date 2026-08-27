@@ -507,6 +507,29 @@ def test_the_app_refuses_a_score_file_the_api_would_refuse() -> None:
     )
 
 
+def test_the_unzip_guard_cannot_refuse_a_score_the_size_check_would_accept() -> None:
+    """**A guard that refuses valid work is a bug dressed as safety.**
+
+    `MAX_UNZIPPED_BYTES` exists only to stop a `.mxl` allocating gigabytes
+    before anything has looked at it — measured at 1070:1, so a 10MB file
+    expands to about ten. `MAX_XML_CHARS` is what actually decides whether a
+    score is too big. If the first were the smaller, a legitimate score would
+    be refused as a bomb, and the message would tell its owner the file was
+    damaged.
+
+    Checked from here rather than from the app's own test, because reading the
+    screen's source needs `node:fs` and this project has no `@types/node`.
+    """
+    reader = _number_in(MOBILE_SRC / "lib" / "musicxml" / "file.ts", "MAX_UNZIPPED_BYTES")
+    chars = _number_in(
+        MOBILE_SRC / "screens" / "addPiece" / "ImportFile.tsx", "MAX_XML_CHARS"
+    )
+    assert reader >= chars, (
+        f"the unzip guard stops at {reader} bytes and a score may be "
+        f"{chars} characters"
+    )
+
+
 def test_the_app_shrinks_a_page_to_something_the_worker_will_read() -> None:
     """**The app's cap is the stricter one, and that is load-bearing.**
 
