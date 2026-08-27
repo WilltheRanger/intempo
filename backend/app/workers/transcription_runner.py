@@ -28,6 +28,7 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi import HTTPException
 
+from app.models.score import TRANSCRIPTION_IN_PROGRESS
 from app.config import settings
 from app.db import get_service_client
 from app.services.ocr import OCRError, parse_sheet_music
@@ -698,7 +699,7 @@ def sweep_stuck_transcriptions(client=None, *, now: datetime | None = None) -> i
         stuck = (
             client.table("scores")
             .select("id, transcription_call_id")
-            .in_("transcription_status", ["queued", "reading"])
+            .in_("transcription_status", sorted(TRANSCRIPTION_IN_PROGRESS))
             .lt("updated_at", cutoff)
             .execute()
         ).data or []
@@ -723,7 +724,7 @@ def sweep_stuck_transcriptions(client=None, *, now: datetime | None = None) -> i
                     "updated_at": _now_iso(),
                 }
             ).eq("id", row["id"]).in_(
-                "transcription_status", ["queued", "reading"]
+                "transcription_status", sorted(TRANSCRIPTION_IN_PROGRESS)
             ).execute()
         except Exception:  # noqa: BLE001 — one row, not the whole sweep
             log.exception("score %s: could not be swept", row.get("id"))

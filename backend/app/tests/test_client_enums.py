@@ -251,3 +251,92 @@ def test_the_app_declares_exactly_the_repeat_types_this_api_sends() -> None:
         f"only the server sends {sorted(server - app)}; "
         f"only the app knows {sorted(app - server)}"
     )
+
+
+PIECES_TS = MOBILE / "hooks" / "usePieces.ts"
+
+
+def test_the_app_declares_exactly_the_scan_states_this_api_writes() -> None:
+    """The sixth closed union, and it had no server-side home until today.
+
+    The four strings were bare literals scattered across the worker and the
+    router while the app declared a union of exactly four, so there was
+    nothing to compare against and a fifth added anywhere in the backend would
+    have been a silent breaking change.
+    """
+    import typing
+
+    from app.models.score import TranscriptionStatus
+
+    server = set(typing.get_args(TranscriptionStatus))
+    app = _union("TranscriptionStatus")
+
+    assert app == server, (
+        f"only the server writes {sorted(server - app)}; "
+        f"only the app knows {sorted(app - server)}"
+    )
+
+
+def test_the_app_polls_exactly_the_scan_states_a_worker_moves_off() -> None:
+    """**The mirror of the analysis-status failure, in the other direction.**
+
+    `usePieces` keeps asking only while the row is `queued` or `reading`, and
+    stops otherwise. So a new in-progress state the app has not heard of is
+    treated as terminal: the app stops asking, and shows a scan stuck half-read
+    forever with no error anywhere. Where the analysis version costs forty
+    wasted polls and a wrong message, this one costs no polls at all and no
+    message either.
+
+    Read out of the hook rather than restated, because the hook is what runs.
+    """
+    from app.models.score import TRANSCRIPTION_IN_PROGRESS, TranscriptionStatus
+
+    import typing
+
+    source = PIECES_TS.read_text()
+    match = re.search(
+        r"const status = query\.state\.data\?\.transcriptionStatus;\s*"
+        r"return (.*?) \? TRANSCRIPTION_POLL_MS : false;",
+        source,
+        re.DOTALL,
+    )
+    assert match, "usePieces no longer decides polling from the scan state"
+    polled = set(re.findall(r"'([^']+)'", match.group(1)))
+
+    assert polled == set(TRANSCRIPTION_IN_PROGRESS), (
+        f"the app polls {sorted(polled)}; a worker moves off "
+        f"{sorted(TRANSCRIPTION_IN_PROGRESS)}"
+    )
+    terminal = set(typing.get_args(TranscriptionStatus)) - TRANSCRIPTION_IN_PROGRESS
+    assert terminal == {"done", "failed"}, terminal
+
+
+def test_every_scan_state_the_backend_writes_is_in_the_vocabulary() -> None:
+    """The vocabulary is only worth having if nothing writes around it.
+
+    Scanned from the source because that is where the values are — a constant
+    nobody uses would pass a comparison against itself and prove nothing.
+    """
+    from app.models.score import TranscriptionStatus
+
+    import typing
+
+    backend = Path(__file__).resolve().parents[1]
+    written: set[str] = set()
+    for path in (backend / "workers" / "transcription_runner.py",
+                 backend / "routers" / "scores.py"):
+        source = path.read_text()
+        written |= set(
+            re.findall(r'"transcription_status":\s*"([a-z_]+)"', source)
+        )
+        written |= set(
+            re.findall(
+                r'"transcription_status":\s*"[a-z_]+" if \w+ else "([a-z_]+)"', source
+            )
+        )
+
+    assert written, "no scan state is written anywhere — the scan cannot report"
+    assert written <= set(typing.get_args(TranscriptionStatus)), (
+        f"written but not in the vocabulary: "
+        f"{sorted(written - set(typing.get_args(TranscriptionStatus)))}"
+    )
