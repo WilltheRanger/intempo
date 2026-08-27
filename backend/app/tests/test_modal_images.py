@@ -301,3 +301,89 @@ def test_homr_is_asked_for_every_staff_on_the_page() -> None:
 
     assert "_EVERY_STAFF = -1" in source
     assert "selected_staff=_EVERY_STAFF" in source
+
+
+# ---------------------------------------------------------------------------
+# The page cap and the container's timeout are one budget
+# ---------------------------------------------------------------------------
+
+#: What one page costs inside `transcribe_score`, wall clock, generously.
+#:
+#: **Measured, on the two real photographs in this repository** (2026-08-26):
+#: the homr read itself is 15.2–22.5 s, and around it sit the download, the
+#: decode-and-resize of a 24-megapixel photograph, and the legibility check —
+#: each a second or three. `modal_app.py`'s own note records 21 s wall clock
+#: for a page on Modal, which agrees.
+#:
+#: Forty is deliberately above every number measured. A budget that is
+#: optimistic proves nothing; the point of this one is that even a pessimistic
+#: reading of it fits.
+SECONDS_PER_PAGE = 40
+
+#: Loading 150 MB of ONNX weights on a cold container, once per call.
+CONTAINER_STARTUP_SECONDS = 60
+
+
+def _transcribe_timeout() -> int:
+    """The `timeout=` on `transcribe_score`, read out of `modal_app.py`."""
+    source = _MODAL_APP.read_text()
+    start = source.index("def transcribe_score(")
+    decorator = source.rindex("@app.function(", 0, start)
+    block = source[decorator:start]
+    match = re.search(r"timeout=(\d+)", block)
+    assert match, "transcribe_score has no timeout; this test cannot check it"
+    return int(match.group(1))
+
+
+def test_a_full_length_scan_fits_in_the_container_s_timeout() -> None:
+    """**Two numbers in two systems, and nothing compared them.**
+
+    `MAX_PAGES` is validated in `POST /v1/scores`, in a router. The timeout is
+    on a Modal function in a different file. **The whole multi-page scan is one
+    call**, so a scan the API happily accepts could be killed partway by the
+    container — leaving the row `reading` with a photograph already spent, for
+    the sweeper to find later.
+
+    This is the same shape as the storage-cap mismatch `readiness.py` describes:
+    a worker capped at 25 MB against a bucket accepting 50, so a take uploaded,
+    sat there, and was refused by the thing meant to read it.
+
+    Raising `MAX_PAGES` is a one-word change in a file that says nothing about
+    Modal. This is what notices.
+    """
+    from app.routers.scores import MAX_PAGES
+
+    worst_case = MAX_PAGES * SECONDS_PER_PAGE + CONTAINER_STARTUP_SECONDS
+
+    # Strictly less. A scan whose worst case lands *exactly* on the timeout is
+    # killed as its last page finishes, which is a coin flip rather than a
+    # pass — the mutation that raised `MAX_PAGES` to 21 hit 900 against 900 and
+    # went through. The margin is not in this comparison; it is in
+    # `SECONDS_PER_PAGE`, which is already above every measurement.
+    assert worst_case < _transcribe_timeout(), (
+        f"{MAX_PAGES} pages at {SECONDS_PER_PAGE}s plus "
+        f"{CONTAINER_STARTUP_SECONDS}s of startup is {worst_case}s, and "
+        f"`transcribe_score` is killed at {_transcribe_timeout()}s. Either "
+        f"lower MAX_PAGES, raise the timeout, or read the pages somewhere "
+        f"other than one call."
+    )
+
+
+def test_the_budget_is_not_so_slack_that_it_checks_nothing() -> None:
+    """A guard with unlimited headroom is a guard nobody has to think about.
+
+    If `MAX_PAGES` were raised far enough for the timeout to matter, the test
+    above fires. This one says the relationship is live now — that the cap is
+    within sight of the limit rather than orders of magnitude away, which is
+    what makes the first test worth having rather than decorative.
+    """
+    from app.routers.scores import MAX_PAGES
+
+    worst_case = MAX_PAGES * SECONDS_PER_PAGE + CONTAINER_STARTUP_SECONDS
+
+    assert worst_case >= _transcribe_timeout() * 0.25, (
+        f"{worst_case}s against a {_transcribe_timeout()}s timeout is so much "
+        f"headroom that the check above cannot fail for any realistic cap — "
+        f"which means it is not checking anything. Either the per-page budget "
+        f"is wrong or this pair of numbers is no longer related."
+    )

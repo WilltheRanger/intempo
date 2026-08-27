@@ -6,6 +6,62 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-26 — The page cap and the container's timeout were never compared
+
+**Branch:** `main`. Backend tests. No screen, component, style or copy touched.
+
+**Files:** `backend/app/tests/test_modal_images.py`.
+
+Continuing at the seams, which have now produced three real bugs. This one is
+between a router and a piece of infrastructure.
+
+### The two numbers
+
+`MAX_PAGES = 12` is validated in `POST /v1/scores`, in a file that says nothing
+about Modal. `transcribe_score` is killed at **900 s**, in `modal_app.py`. And
+**the whole multi-page scan is one call** — `run_transcription` loops the pages
+inside the container.
+
+So a scan the API happily accepts could be killed partway by the container,
+leaving the row `reading` with a photograph already spent, for the sweeper to
+find later. Nothing connected the two numbers, and raising `MAX_PAGES` is a
+one-word change.
+
+This is the shape `readiness.py` already names: *"Two numbers in two systems,
+and nothing ever compared them"* — a worker capped at 25 MB against a bucket
+accepting 50, so a take uploaded, sat there, and was refused by the thing meant
+to read it.
+
+### It fits, and now it is checked
+
+Measured per page on the two real photographs: the homr read is 15.2–22.5 s,
+and around it sit the download, the decode-and-resize of a 24-megapixel
+photograph, and the legibility check. `modal_app.py`'s own note records 21 s on
+Modal, which agrees.
+
+`SECONDS_PER_PAGE = 40` is deliberately above every number measured — a budget
+that is optimistic proves nothing, and the point is that even a pessimistic
+reading fits. With 60 s for loading the ONNX weights on a cold container:
+**12 × 40 + 60 = 540 s against 900.**
+
+Two tests, because a guard can fail in both directions. One asserts the worst
+case fits. The other asserts the headroom is not so vast that the first could
+never fire for any realistic cap — a check nothing can break is decorative.
+
+### The mutation that found the off-by-one
+
+Four mutations. Raising `MAX_PAGES` to 30 was caught; **21 was not**. Twenty-one
+pages is 21 × 40 + 60 = exactly 900, and the comparison was `<=`.
+
+A scan whose worst case lands exactly on the timeout is killed as its last page
+finishes — a coin flip, not a pass. Now strictly `<`, and the margin lives
+where it belongs: in `SECONDS_PER_PAGE`, which is already almost double the
+worst measurement.
+
+Full suite green at 1263, two xfailed.
+
+---
+
 ## 2026-08-26 — A page that returns to its first metre read as entirely wrong
 
 **Branch:** `main`. Backend and a fixture. No screen, component, style or copy
