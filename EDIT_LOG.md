@@ -6,6 +6,69 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-26 — Five of the nine failed scans were told a lie about their photographs
+
+**Branch:** `main`. No code. A read-only query, and a wrong hypothesis
+abandoned before it cost anything.
+
+**Files:** `EDIT_LOG.md`.
+
+### The hypothesis that was wrong
+
+Went looking for staleness between `tools/*.template.html` and the rendered
+`tools/*.html` that a person opens in a browser — the parity tests build the
+template **in memory** and never compare the file on disk, so a template edited
+without a rebuild would ship a browser tool running old rules while every test
+passed.
+
+There is no such gap. Both rendered files are **gitignored build artifacts**,
+and `build-validator-sandbox.py`'s own docstring says so in its fifth line. I
+ran the build to measure the drift before reading it; there was none, because
+there is nothing committed to drift. Read the docstring first.
+
+### What the library actually says
+
+Nine scans are `failed`, and **all nine still hold their photographs**. Three
+different things happened to them:
+
+| what the musician was told | scans | true? |
+|---|---|---|
+| *"A flatter, better-lit shot of the page usually fixes it"* | **5** | **no** |
+| *"too small to read — the staff lines are about 4 pixels apart"* | 2 | yes |
+| *"Reading this page stopped before it finished"* | 2 | yes, and stale |
+
+**The five are the `ProcessingConfig` failures.** Every one predates
+`677535d` (2026-08-26 02:14), the commit whose message is *"homr had never run:
+`ProcessingConfig()` was called with no arguments"*. That call raised
+`TypeError` before a pixel was looked at; it matched no needle in
+`_FAILURE_REASONS` and fell through to the default sentence — advice about a
+photograph, for a read that never reached one. `homr_provider.py` says exactly
+this in its own comment, written when the bug was found. Here are the rows it
+was written about.
+
+Those musicians were told to go back to the stand and photograph the page
+better. The photograph was never the problem.
+
+The two that *"stopped before it finished"* are also stale — from when the
+worker ran in `BackgroundTasks` inside the web process, so a spin-down killed
+the read. It runs on daemon threads and Modal now.
+
+Only the two size refusals were true, and they remain true: four pixels between
+staff lines is not a readable page.
+
+### Which makes the gap already recorded much larger than it looked
+
+Yesterday's entry noted that **nothing tells a musician a piece could usefully
+be read again**, and put the number at two. It is **nine**: seven whose failure
+no longer applies, plus the two that would fail again for a reason worth
+restating. Every one of them keeps its photograph, and `POST /:id/transcribe`
+already re-reads.
+
+Still the owner's call, and still not triggered: re-reading overwrites
+`score_json` and would discard hand-corrections.
+
+---
+
 ## 2026-08-26 — Where the reading stands, after a day of it
 
 **Branch:** `main`. No code. A stock-take, because twenty-three entries is more
