@@ -6,6 +6,83 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-27 — Checking the excuse I made for the page that still fails
+
+**Branch:** `main`. Backend and tests. No screen, component, style or copy
+touched.
+
+**Files:** `backend/app/workers/transcription_runner.py`,
+`backend/app/tests/test_page_legibility.py`.
+
+Yesterday's fix left one case failing and I dismissed it as bad evidence — the
+five-strip page stacks five different études at different staff sizes, "a page
+that does not exist". An excuse is worth checking before it is believed.
+
+### The excuse holds
+
+A page of **one repeated system**, which is what a real page of one part is,
+bowed from flat to twice each system's own height:
+
+| sag | `01_simple_printed` | `03_complex_printed` |
+|---|---|---|
+| 0 – 2.0× | never refused | never refused |
+
+All six systems found up to 1.5×. So the mixed-size page really was the
+problem, not the curl, and it is now pinned as a test — the case that actually
+happens, protecting the fix that rescued it.
+
+One wrong number is in there and is worth naming: at sag 1.0× the spacing reads
+**31** instead of 11, a harmonic. Harmless, because nothing but this gate and
+one log line ever reads it — which I checked rather than assumed.
+
+### Checked, and left alone
+
+`find_systems` splits a system bowed by twice its height — twelve bands where
+there are six. That feeds `crop_systems` only, and `crop_systems` is
+**unreachable in the default deployment**: `OCR_PROVIDER_CHAIN` is `homr`, homr
+declares `reads_whole_page`, so `rest` is empty and the branch that crops is
+never taken. A real defect behind a variable nobody has set. Written down, not
+chased.
+
+### The refusal path measured the page twice
+
+`too_small_to_read` measures it, and the sentence it returns carries the
+spacing **and** the pixel size — that is why they were put in it. The worker
+then called `staff_space_px` as well, purely to log a figure the string already
+contained: a second decode and a second full measurement, on the one path where
+the image is by definition a large one somebody has just uploaded. The log now
+carries the sentence.
+
+### Two mutants, two real gaps
+
+- **The fallback ignores the cross axis** survived. My slice fallback walks
+  both orientations exactly as the whole-width measurement does, and nothing
+  exercised the second one. Both faults are real and they compose: a page held
+  sideways is why the cross-axis exists (`homr_page.jpg`, refused at 4284x5712
+  because rows find no systems on it), a page held in the hand curls, and a
+  page held sideways *in the hand* does both — the one page neither half could
+  measure. Now tested at 90° and 270°.
+- **The refusal is logged without its reason** survived and is left surviving.
+  It is a log string; the substantive property — that the page is measured once
+  — is pinned instead, as the absence it is.
+
+### Tests
+
+Full suite green. Five tests added: the whole-page-of-one-part case for two
+fixtures, the sideways-curled page at two rotations, and the
+measured-once assertion.
+
+### Three-foot test
+
+Not run: no screen was built or changed.
+
+### Still waiting on the owner
+
+The UI plan (four items), migration `011`, permission to re-read the nine
+failed scans, and whether `Repeat` gets a field for an unclosed forward sign.
+
+---
+
 ## 2026-08-27 — A curled page reads now, on the third attempt
 
 **Branch:** `main`. Backend and tests. No screen, component, style or copy
