@@ -6,6 +6,63 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-26 — Which scans in the live library today's fixes would change
+
+**Branch:** `main`. No code. A measurement against the running database, and
+the consequence of it.
+
+**Files:** `EDIT_LOG.md`.
+
+The corpus is exhausted as a source of findings — three threads in a row closed
+as dead ends — so this tick asked a different question: **every fix today is at
+*import* time, so what does that mean for scans already in the library?**
+
+### The answer is nothing, until they are read again
+
+Read-only query against `intempo-dev`. Twelve scores; six `failed` from before
+homr ever ran; one accepted with its photograph discarded, which can never be
+re-read. Two carry the exact signatures of today's fixes, and **both still have
+their photographs and neither has been accepted**, so `POST /:id/transcribe`
+can re-read them:
+
+| score | bars | confidence | signature |
+|---|---|---|---|
+| "Mate" | 8 | 0.625 | **1 empty bar** — a collapsed multi-bar rest |
+| "H" | 39 | 0.564 | **2 lone whole rests in a 4/8 part** |
+
+"H" is the sharper case. Its metre is 4/8 — two quarter-beats to a bar — and
+bars 23 and 24 each hold a single `whole` rest, scored at four. Precisely what
+`_whole_rests_that_mean_a_bar` corrects, in the wild, on the founder's own
+library.
+
+### And bars 37 and 38 are why that rule has three limits
+
+They also hold a lone `whole`, and they are **`G3`** — notes, not rests. The
+rule declines them, which is the test written two ticks ago as *"the one
+mutation of this rule that would delete music"*. It is not a hypothetical: two
+bars of real music in a real library are being kept by it.
+
+### What is not claimed
+
+That re-reading "H" would fix it. Twelve of its bars hold eight eighths against
+a two-beat metre, which looks more like an unrecorded metre change than
+anything today's work touches, and there is no photograph here to check that
+against. The checkable prediction is narrow and worth having anyway: **bars 23
+and 24 change, bars 37 and 38 do not.**
+
+### The gap this exposes, which is UI and therefore not mine to close
+
+Nothing in the product tells a musician that a piece was read by an older
+version of the reader and could usefully be read again. The information exists
+— the row knows when it was transcribed and whether its photograph survives —
+and there is no screen that says so. Recorded, not built.
+
+Re-reading overwrites `score_json`, which would discard any hand-corrections
+made in `MeasureEditScreen`. It is the owner's call, not mine, so nothing was
+triggered.
+
+---
+
 ## 2026-08-26 — Trying to close yesterday's xfail, and finding it cannot be
 
 **Branch:** `main`. One docstring. No screen, component, style or copy
