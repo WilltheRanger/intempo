@@ -6,6 +6,79 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-27 — Chasing the shape instead of waiting for the third instance
+
+**Branch:** `main`. Backend tests only — no production code changed.
+
+**Files:** `backend/app/tests/test_musicxml.py`.
+
+Yesterday's entry ended: *"twice now that 'every test puts notes in the stop
+bar' has hidden the same thing. It is worth remembering as a shape rather than
+as two incidents."* So this tick looked for the shape everywhere else it could
+apply, rather than waiting to be bitten a third time.
+
+### Nine mutants at the branches nothing closes cleanly
+
+Five survived. **Every one of them was in the ending-closing code**, and every
+one is about an ending that does not close normally — which is exactly what a
+page break makes:
+
+| Mutant | |
+|---|---|
+| an ending marked `discontinue` is not closed | survived |
+| an ending closed with no start begins at bar one | survived |
+| an ending left open at the page edge is dropped | survived |
+| an open ending runs to the wrong bar | survived |
+| a second ending left open is treated as a first | survived |
+
+None of them was a bug. Measured, all five branches do the right thing — the
+cluster was **correct and entirely unguarded**, which is the state a rule is in
+just before somebody simplifies it.
+
+### What they do, now written down
+
+- **A second ending is closed by its open bracket.** It is normally drawn with
+  no downward hook, which MusicXML writes as `discontinue` rather than `stop`.
+  Left unclosed it swallows every bar printed after it.
+- **An ending the page runs out of covers what was read.** The bracket really
+  does continue onto the next page; dropping it instead leaves a repeat with no
+  first ending, which plays those bars on both passes.
+- **An ending that closes without opening is one bar** — the bar it closes on.
+  Falling back to bar 1 would claim it covers everything read so far, which on
+  a fragment is most of the page.
+- **A second ending left open is still a second ending.** Calling it a first
+  inverts which pass its bars belong to.
+
+### The last one needed a better test than I first wrote
+
+`an ending closed with no start begins at bar one` survived my *replacement*
+test too. The fragment I built put the closing bar first, so "the bar it closes
+on" and "bar one" were the same number and the mutant was indistinguishable.
+With one bar of music before the close, the difference is a whole bar of the
+second pass:
+
+    correct   1, 2, 1, 3
+    wrong     1, 2, 1, 2, 3
+
+Third time this week a test of mine has proved nothing because the case I chose
+collapsed the distinction. The pattern is always the same: pick the example
+where the two answers coincide, and the mutation walks through it.
+
+### Tests
+
+Full suite green. Four tests added; eight mutants, all killed.
+
+### Three-foot test
+
+Not run: no screen was built or changed.
+
+### Still waiting on the owner
+
+The UI plan (four items), migration `011`, permission to re-read the nine
+failed scans, and whether `Repeat` gets a field for an unclosed forward sign.
+
+---
+
 ## 2026-08-27 — The reason I gave for not fixing it was wrong
 
 **Branch:** `main`. Backend and tests. No screen, component, style or copy
