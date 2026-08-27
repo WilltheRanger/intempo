@@ -521,3 +521,161 @@ def test_playing_detache_against_written_slurs_is_told_apart_from_a_wrong_piece(
     wrong = to_timeline_base(np.sort(rng.uniform(0, float(expected[-1]), 8)))
     other = align_dtw(wrong, expected, target_bpm=60.0)
     assert "right piece" in _why_alignment_failed(other, wrong, expected)
+
+
+# ---------------------------------------------------------------------------
+# Sections nest, and the inner one is expanded first
+# ---------------------------------------------------------------------------
+
+
+def _minuet() -> ScoreJson:
+    """`|: A :| |: B :|` then *D.C. al Fine* — ordinary form, not an edge case.
+
+    Two spans inside a third: the A repeat, the B repeat, and the da capo,
+    whose "first ending" is the B section because it is played once, before
+    the jump back.
+    """
+    def bar(number: int) -> Measure:
+        return Measure(
+            measure_number=number,
+            notes=[Note(pitch="D3", duration="whole")],
+        )
+
+    return ScoreJson(
+        time_signature="4/4",
+        clef="bass",
+        measures=[bar(n) for n in (1, 2, 3, 4)],
+        repeats=[
+            Repeat(start_measure=1, end_measure=2, type="repeat"),
+            Repeat(start_measure=3, end_measure=4, type="repeat"),
+            Repeat(start_measure=1, end_measure=4, type="repeat"),
+            Repeat(start_measure=3, end_measure=4, type="first_ending"),
+        ],
+        ocr_confidence=1.0,
+    )
+
+
+def test_a_repeat_inside_a_da_capo_is_taken_on_both_passes() -> None:
+    """**Measured before this was recursive: six bars against a player's
+    twelve.** Two faults produced that one number and both are the same shape.
+
+    The outer span never fired at all, because the first span *starting* at bar
+    1 consumed bars 1–2 and marked them done. And the da capo's first ending —
+    bars 3–4 — was applied to the inner B repeat as well, deleting its second
+    pass. A rule right about its own span and wrong beside its neighbour, for
+    the fifth time this session.
+    """
+    played = [m.measure_number for m in expand_repeats(_minuet())]
+
+    assert played == [1, 2, 1, 2, 3, 4, 3, 4, 1, 2, 1, 2]
+
+
+def test_an_ending_that_starts_where_its_section_starts_is_not_its_ending() -> None:
+    """The scoping rule, on its own.
+
+    A first ending cannot begin where its section begins — there would be
+    nothing before it to repeat. That is what separates the da capo's tail
+    (bars 3–4 of a span starting at 1) from the inner B repeat, whose span
+    *is* bars 3–4.
+    """
+    score = ScoreJson(
+        time_signature="4/4",
+        clef="bass",
+        measures=[
+            Measure(measure_number=n, notes=[Note(pitch="D3", duration="whole")])
+            for n in (1, 2)
+        ],
+        repeats=[
+            Repeat(start_measure=1, end_measure=2, type="repeat"),
+            Repeat(start_measure=1, end_measure=2, type="first_ending"),
+        ],
+        ocr_confidence=1.0,
+    )
+
+    # The bracket covers the whole span, so it is not this span's ending and
+    # both bars are played twice.
+    assert [m.measure_number for m in expand_repeats(score)] == [
+        1, 2, 1, 2
+    ]
+
+
+def test_two_spans_naming_the_same_bars_terminate() -> None:
+    """The recursion excludes a span identical to the one being expanded, and
+    caps depth regardless. A duplicate is what a mis-read repeat sign produces,
+    and hanging the analysis worker on one would cost the whole take."""
+    score = _minuet()
+    score.repeats.append(Repeat(start_measure=1, end_measure=4, type="repeat"))
+
+    assert len(expand_repeats(score)) == 12
+
+
+def test_one_sections_ending_does_not_reach_into_another() -> None:
+    """**Found by a mutation that survived.** `bracketed` filters on the span's
+    start, and also on the ending lying inside the span's own bars. Without the
+    second half, a bracket printed over section B is applied to section A —
+    deleting bars from a pass that never had an ending at all.
+
+    Two independent repeated sections, each with its own first and second
+    ending, is what a strophic piece looks like.
+    """
+    def bar(number: int) -> Measure:
+        return Measure(
+            measure_number=number, notes=[Note(pitch="D3", duration="whole")]
+        )
+
+    score = ScoreJson(
+        time_signature="4/4",
+        clef="bass",
+        measures=[bar(n) for n in range(1, 9)],
+        repeats=[
+            # A: bars 1-3, first ending 3, second ending 4.
+            Repeat(start_measure=1, end_measure=3, type="repeat"),
+            Repeat(start_measure=3, end_measure=3, type="first_ending"),
+            Repeat(start_measure=4, end_measure=4, type="second_ending"),
+            # B: bars 5-7, first ending 7, second ending 8.
+            Repeat(start_measure=5, end_measure=7, type="repeat"),
+            Repeat(start_measure=7, end_measure=7, type="first_ending"),
+            Repeat(start_measure=8, end_measure=8, type="second_ending"),
+        ],
+        ocr_confidence=1.0,
+    )
+
+    assert [m.measure_number for m in expand_repeats(score)] == [
+        1, 2, 3, 1, 2, 4,
+        5, 6, 7, 5, 6, 8,
+    ]
+
+
+def test_an_ending_that_overruns_its_section_is_ignored_rather_than_obeyed() -> None:
+    """**The remaining half of that mutation, and a decision rather than a
+    guard.** `bracketed` requires the whole bracket to lie inside the span. Drop
+    that and a bracket straddling the span's last bar still removes its opening
+    bars from the second pass.
+
+    A bracket that does not fit inside the section it belongs to is a
+    misreading — precisely what OCR produces from a bracket line that runs on.
+    Ignoring it costs one repeat's worth of nuance; obeying it deletes bars the
+    musician plays, from a section that reads perfectly otherwise. The same
+    trade `expand_repeats` already makes for a repeat naming bars that do not
+    exist.
+    """
+    def bar(number: int) -> Measure:
+        return Measure(
+            measure_number=number, notes=[Note(pitch="D3", duration="whole")]
+        )
+
+    score = ScoreJson(
+        time_signature="4/4",
+        clef="bass",
+        measures=[bar(n) for n in range(1, 6)],
+        repeats=[
+            Repeat(start_measure=1, end_measure=3, type="repeat"),
+            # Runs past bar 3, where the section ends.
+            Repeat(start_measure=3, end_measure=5, type="first_ending"),
+        ],
+        ocr_confidence=1.0,
+    )
+
+    assert [m.measure_number for m in expand_repeats(score)] == [
+        1, 2, 3, 1, 2, 3, 4, 5
+    ]
