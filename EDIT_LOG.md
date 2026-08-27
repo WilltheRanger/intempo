@@ -6,6 +6,89 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-27 — Two numbers written on both sides of the wire, held together by nothing
+
+**Branch:** `main`. Backend tests and one new app test module. **No screen,
+component, visual style or copy touched** — `ImportFile.tsx` and
+`uploadPage.ts` are *read* by a test, not edited.
+
+**Files:** `backend/app/tests/test_client_enums.py`,
+`mobile/src/lib/musicxml/hostile.test.ts` (new).
+
+The previous tick fuzzed the backend importer. This one fuzzed the surface
+above it — **a file the musician picked is the only truly arbitrary input this
+app takes.** A photograph comes from the camera and a recording from the
+microphone; a `.mxl` comes from anywhere, and `readMusicXML` unzips it before
+anything has looked at it.
+
+### The fuzz found nothing, and that is the result
+
+Twelve hostile files — a zip magic number with nothing behind it, a container
+naming a file the zip does not hold, a container pointing at
+`../../../etc/passwd`, a zip of nothing but macOS resource forks, an entry that
+is a directory, bytes that are not valid UTF-8 — and every one either yielded
+text or raised `MusicXMLFileError`, which is the contract `ImportFile` depends
+on. Anything else reaches its generic `catch` and becomes *"Couldn't read that
+file"*, which is true and says nothing.
+
+The four readers that run on the decompressed text are regexes, and a regex
+that backtracks catastrophically is a **frozen screen on a phone**, not an
+exception. `[^>]*\bid\s*=` is exactly the shape that goes quadratic on a naive
+engine. Measured: a 200KB tag with no `id` in it, **1ms**; a hundred thousand
+`<score-part>` entries, **86ms**; two hundred thousand entities in one part
+name, **71ms**. The table is kept as a test with a 2s budget, so this stays
+measured rather than being assumed again.
+
+### What it did find was two numbers
+
+| limit | app | API | held together by |
+|---|---|---|---|
+| MusicXML characters | `MAX_XML_CHARS` 8,000,000 | `ImportScoreRequest.musicxml` 8,000,000 | **nothing** |
+| page bytes | `MAX_PAGE_BYTES` 10 MB | `page_image.MAX_IMAGE_BYTES` 12 MB | **nothing** |
+
+Both are currently right. Neither was checked, and the drift costs what a
+drifted enum costs: a musician told **no after the work rather than before it**.
+
+- Lower the API's MusicXML cap and the app still reads, unzips, uploads and
+  then hits a validation error naming a field and a character count — the shape
+  of the 413 message this project has already had to rewrite once, for being
+  advice a musician could not follow.
+- Lower `MAX_IMAGE_BYTES` and a page uploads, the row is created, and the
+  *worker* refuses it at the reading step — for a size the app itself approved
+  and shrank to. That direction is the one that matters: the app's cap being
+  the stricter of the two is load-bearing, and headroom the other way is
+  invisible.
+
+Two assertions in `test_client_enums.py`, which is where the other twelve
+cross-wire vocabularies already live. They read the constants out of the app's
+own source, exactly as the scan-state check does — no app code moved, and
+nothing new for a screen to get wrong.
+
+**Tests:** backend **1619 passed, 3 xfailed** (two new); app **394 passed** in
+33 files (sixteen new), typecheck clean. Four mutants attempted, **two killed**
+— the other two mutated the new assertions themselves, which is meaningless: a
+test cannot fail because its own comparison was loosened. Recorded rather than
+counted, since a mutation score inflated with self-mutations is worse than no
+score.
+
+**Known side effects:** none. Nothing shipped changed behaviour this tick;
+what changed is that two silent invariants now fail loudly.
+
+**Not fixed, and named:** `readMusicXML` decompresses the whole zip into memory
+before any size check, so a zip bomb is still an out-of-memory crash on the
+phone rather than a refusal. The size check that exists runs on the
+*decompressed* text, which is the wrong side of the allocation. It needs a
+streaming or declared-size check inside the unzip, which is an `fflate` API
+question rather than a line to add here.
+
+**Rollback:** `git revert` this commit. Tests only.
+
+**Still waiting on the owner** — the UI plan (four items), migration `011`,
+permission to re-read the nine failed scans, and whether `Repeat` gets a field
+for an unclosed forward sign.
+
+---
+
 ## 2026-08-27 — One bad notehead was a 500, and a failed scan blamed on the musician
 
 **Branch:** `main`. Backend and tests. No screen, component, style or copy
