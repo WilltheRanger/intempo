@@ -6,6 +6,109 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-27 — The `%` sign read as an empty bar
+
+**Branch:** `main`. Backend and tests. No screen, component, style or copy
+touched.
+
+**Files:** `backend/app/services/ocr/musicxml.py`,
+`backend/app/tests/test_musicxml.py`.
+
+Back to reading, after three ticks of verifying what was written down. The
+multi-bar rest mattered enormously and it has a sibling nobody had looked at.
+
+### What was wrong
+
+After a bar of music an orchestral part writes `%` rather than engraving the
+same bar again — it is on nearly every tutti page a bass player owns, and a
+doubled sign covers two-bar patterns. Read literally the bar has no notes in
+it.
+
+```
+bar of eight eighths | % | bar of eight eighths
+  → 16 onsets, where a musician sounds 24
+```
+
+And an empty bar carries no duration either, so `alignment.py` — which
+accumulates — expected every note after it a **whole bar early**. The same
+damage a dropped multi-bar rest does, from the same cause: a notation meaning
+"more music", written as an absence.
+
+Unlike the multi-rest this was never silent; `validate_measures` said `empty`.
+It was wrong, and the concern named the wrong thing — the bar is not a hole in
+the reading, it is one the reader could not fill.
+
+### What it does now
+
+The run continues until a `stop`, so one symbol and three blanks is four bars,
+which is how a page writes it. The copy is taken from what has **already been
+produced**, so a two-bar pattern takes bar *i* from *i-2* and *i+2* from *i*.
+A `%` with nothing before it — repeating something on an earlier page or before
+a crop — stays visibly empty rather than inventing anything. And a bar the
+engine also read is never overwritten, which is the rule the multi-rest
+expansion had to learn: copying nothing is visibly wrong, copying over
+something is invisibly wrong.
+
+### Two rules meeting on one page
+
+The sharpest finding, and it came from a mutation about *ordering*. A page with
+no legible `<time>` — the ordinary state of a photographed inner page —
+carrying a `%` run and then a three-bar rest. The metre must be inferred before
+the rest can be sized, and the `%` bars are empty until they are filled. With
+the fill running after the lengths are taken:
+
+    4 bars, all of them eighths
+
+The three bars of rest **vanish**, and the bar that held them is filled with a
+copy of the repeated music instead — silence turned into notes the musician is
+told they missed. Filled first: six bars, three of them rest. Now pinned.
+
+The fill also declines to touch a bar standing for a multi-bar rest. A mutation
+says that guard changes nothing, and it is right *today*: `_expand_multiple_rests`
+runs afterwards and overwrites whatever went in. Kept anyway and recorded as a
+deliberate survivor — working by the order two functions happen to be called in
+is not the same as working, and the ordering is exactly what the mutation above
+proved fragile.
+
+### Tests
+
+Full suite green. Ten added; nine mutants, eight killed and one kept
+deliberately.
+
+| Mutant | Result |
+|---|---|
+| the bar-repeat sign is ignored | killed |
+| the run never stops | **survived**, then killed |
+| only the bar carrying the sign is filled | killed |
+| a bar the engine read is overwritten | killed |
+| the copy comes from the input, not the output | killed |
+| a two-bar pattern copies one bar back | killed |
+| a sign with nothing before it invents a bar | killed |
+| the fill happens after the bar lengths are taken | **survived**, then killed |
+| a multi-bar rest bar is filled by the run | **survives** — redundant today, kept |
+
+The two survivors were both my tests' fault and both pointed at real cases: a
+`stop` only does work when an empty bar follows it, and the ordering only shows
+when a rest and a `%` share a page.
+
+### Not done
+
+`orchestral_part.musicxml` does not carry a `%` yet. It is the fixture of
+"every shape this reader gets wrong", so it should — but adding bars to it
+invalidated quoted numbers twice this week, and the direct tests above cover
+the shape. Next tick, deliberately rather than in passing.
+
+### Three-foot test
+
+Not run: no screen was built or changed.
+
+### Still waiting on the owner
+
+The UI plan (four items), migration `011`, permission to re-read the nine
+failed scans, and whether `Repeat` gets a field for an unclosed forward sign.
+
+---
+
 ## 2026-08-27 — A number in a comment that moves when the fixture grows
 
 **Branch:** `main`. Backend and tests. No screen, component, style or copy

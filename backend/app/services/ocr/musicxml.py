@@ -331,6 +331,102 @@ def _multiple_rest_count(measure_el: ET.Element) -> int | None:
     return None
 
 
+def _measure_repeat_mark(measure_el: ET.Element) -> tuple[str, int] | None:
+    """`("start", bars)` or `("stop", 0)` for the bar-repeat sign, else None.
+
+    **The `%` sign, and it read as an empty bar.** After a bar of music an
+    orchestral part writes `%` rather than engraving the same bar again, and
+    for two-bar patterns a doubled one — it is on nearly every tutti page a
+    bass player owns. In MusicXML it is
+    `<measure-style><measure-repeat type="start">1</measure-repeat></measure-style>`
+    in the first repeated bar, nothing at all in the bars that continue the
+    run, and `type="stop"` in the first bar that does not.
+
+    Read literally the bar has no notes in it. Measured: one `%` between two
+    bars of eight eighths gave a timeline of **16 onsets where a musician
+    sounds 24**, and because the empty bar carries no duration either,
+    `alignment.py` — which accumulates — expected every note after it a **whole
+    bar early**. The same damage a dropped multi-bar rest does, from the same
+    cause: a notation that means "more music" written as an absence.
+
+    `validate_measures` does say `empty` about it, so unlike the multi-rest
+    this was never silent. It was wrong, and the concern named the wrong thing:
+    the bar is not a hole in the reading, it is a bar the reader did not know
+    how to fill.
+    """
+    for attributes in measure_el.iterfind("attributes"):
+        for style in attributes.iterfind("measure-style"):
+            mark = style.find("measure-repeat")
+            if mark is None:
+                continue
+            kind = (mark.get("type") or "").strip()
+            if kind == "stop":
+                return "stop", 0
+            if kind != "start":
+                continue
+            try:
+                bars = int((mark.text or "1").strip())
+            except ValueError:
+                bars = 1
+            return "start", bars if bars > 0 else 1
+    return None
+
+
+def _fill_measure_repeats(
+    measures: list[Measure],
+    marks: dict[int, tuple[str, int]],
+    standing_for_rests: set[int] = frozenset(),  # type: ignore[assignment]
+) -> list[Measure]:
+    """Copy the bars a `%` stands for into the bars that carry it.
+
+    The run continues until a `stop`, so a `%` written once covers however many
+    bars follow it empty — which is how a page writes four bars of the same
+    figure with one symbol and three blanks.
+
+    Copying from the **output** rather than the input, so a second `%` inside
+    the run repeats what the first one produced. For a two-bar pattern that is
+    the whole point: bar *i* takes from *i-2*, bar *i+1* from *i-1*, and bar
+    *i+2* takes from *i* — which by then holds what *i-2* held.
+
+    **Only a bar with nothing in it is filled.** If the engine put notes there
+    as well, those are what it actually read off the page, and the same rule
+    the multi-rest expansion had to learn applies: a marking is not licence to
+    overwrite a reading. Copying nothing is visibly wrong; copying over
+    something is invisibly wrong.
+
+    **And never a bar that is a multi-bar rest**, which is also empty at this
+    point and also means something. It happened to survive without this —
+    `_expand_multiple_rests` runs later and overwrites whatever went in — but
+    working by the order two functions happen to be called in is not the same
+    as working, and the order is exactly what the caller's comment is about.
+    """
+    if not marks:
+        return measures
+
+    out = list(measures)
+    span = 0
+    for index, measure in enumerate(measures):
+        mark = marks.get(index)
+        if mark is not None:
+            span = mark[1] if mark[0] == "start" else 0
+        if not span or measure.notes or index in standing_for_rests:
+            continue
+        source = index - span
+        if source < 0:
+            # A `%` in the first bars of the page, repeating something printed
+            # before it — on an earlier page, or before a crop. Nothing to copy
+            # and nothing to invent, so it stays visibly empty.
+            continue
+        out[index] = measure.model_copy(
+            update={
+                "notes": list(out[source].notes),
+                "slurs": list(out[source].slurs),
+                "tuplets": list(out[source].tuplets),
+            }
+        )
+    return out
+
+
 def _pitch_name(note: ET.Element) -> str | None:
     if note.find("rest") is not None:
         return "rest"
@@ -907,6 +1003,8 @@ def score_json_from_musicxml(
     #: 1 once an opening anacrusis has taken number 1, so every printed
     #: number after it moves up to stay distinct. See the loop below.
     pickup_shift = 0
+    #: `{index in measures: ("start", bars) | ("stop", 0)}` for the `%` sign.
+    repeat_marks: dict[int, tuple[str, int]] = {}
     dropped = 0
     #: `{index in measures: how many notes that bar lost}`.
     #:
@@ -943,6 +1041,8 @@ def score_json_from_musicxml(
         # bass part loses most of its music. Handled after the attributes loop,
         # because the metre it needs may be stated in this very measure.
         standing_for = _multiple_rest_count(measure_el)
+        if (mark := _measure_repeat_mark(measure_el)) is not None:
+            repeat_marks[len(measures)] = mark
         for attributes in measure_el.iterfind("attributes"):
             stated_divisions = _text(attributes.find("divisions"))
             if stated_divisions:
@@ -1245,6 +1345,12 @@ def score_json_from_musicxml(
     # Both of these need the bar length in force, and neither can know it
     # during the loop above: the only `<time>` on a real photographed part is
     # often printed mid-page, after a double barline.
+    # Before the bar lengths are taken, so a bar the `%` sign filled votes on
+    # the metre with the music it actually holds.
+    measures = _fill_measure_repeats(
+        measures, repeat_marks, {index for index, _, _ in pending_rests}
+    )
+
     lengths = _bar_lengths(measures, time_signature)
     measures = _whole_rests_that_mean_a_bar(measures, lengths)
     measures, moved = _expand_multiple_rests(measures, pending_rests, lengths)
