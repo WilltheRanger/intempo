@@ -6,6 +6,77 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-27 — A number in a comment that moves when the fixture grows
+
+**Branch:** `main`. Backend and tests. No screen, component, style or copy
+touched.
+
+**Files:** `backend/app/services/ocr/validate.py`,
+`backend/app/tests/test_orchestral_part.py`.
+
+Third tick of the same sweep: `page_image.py`'s tables are re-derivable now, so
+this one takes `validate.py`'s.
+
+### The density measurement, re-derived
+
+`validate.py` records why a bar of nothing but rests gets no vote on how dense
+the page is:
+
+> On the two-page part fixture: **16 bars counted, 7 of them nothing but
+> rests**, median 0.50 and a limit of 1.50 … Excluding rest bars gives a median
+> of 1.000 and a limit of 3.00 on both one page and two.
+
+Re-derived today: **21 bars counted, 8 of them rests**. Median 0.50, limit
+1.50, and 1.000 / 3.00 excluding rests — every one of the four numbers that
+carries the argument is **exactly right**; only the two bar counts moved.
+
+They moved because **I added bars to that fixture the next day** — the cue
+bars in one tick and the repeated strain in another. Nobody else touched it.
+
+### Which is the point
+
+The counts were never the evidence. They are a property of how big the fixture
+happens to be, so they go stale the moment anyone extends it, and a number in a
+comment that moves whenever the fixture grows is a number that will be wrong
+and unnoticed. That is precisely how `_MIN_STAFF_SPACE_PX`'s table managed
+three days.
+
+Removed rather than updated, with the reason left in their place, and the
+limits — which survive somebody extending the page — asserted from the fixture
+instead of quoted:
+
+- counting **every** bar, the two-page limit falls **below 2.0 notes per
+  beat**, an ordinary run of eight eighths, which is the bar the check then
+  flags on a page that is entirely correct;
+- counting only bars with notes in, the limit is **3.00** on one page and on
+  two alike, and the run is silent;
+- a tremolo read as sixteen sixteenths is still 4 notes per beat against that
+  3, so nothing the check exists for has been given up.
+
+### The conclusion was already well guarded
+
+Checked before assuming otherwise: reverting the exclusion fails four tests,
+including a dedicated `test_density.py`. So this was a stale comment beside
+live code, not an unguarded rule — worth saying, because the previous two
+ticks each found the opposite and it would have been easy to assume a third.
+
+### Tests
+
+Full suite green. One test added, deriving the limits from the real fixture.
+Four mutants, all killed: rest bars voting again, the multiple halved and
+doubled, and the note-count floor removed.
+
+### Three-foot test
+
+Not run: no screen was built or changed.
+
+### Still waiting on the owner
+
+The UI plan (four items), migration `011`, permission to re-read the nine
+failed scans, and whether `Repeat` gets a field for an unclosed forward sign.
+
+---
+
 ## 2026-08-27 — Re-deriving the other two tables in the same file
 
 **Branch:** `main`. Backend tests only — no production code changed.

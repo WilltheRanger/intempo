@@ -522,11 +522,19 @@ def validate_measures(score: ScoreJson) -> list[MeasureFinding]:
     # no vote there either (`musicxml._bar_lengths`).
     #
     # **Measured (2026-08-26), and made worse by a fix earlier the same day.**
-    # On the two-page part fixture: 16 bars counted, 7 of them nothing but
-    # rests, median 0.50 and a limit of 1.50 — so an ordinary run of eight
-    # eighths, at 2.0 notes per beat, was flagged as three times the density of
-    # its own page. Excluding rest bars gives a median of 1.000 and a limit of
-    # 3.00 on both one page and two, and the run is silent.
+    # On the two-page part fixture, counting every bar: median **0.50** and a
+    # limit of **1.50** — so an ordinary run of eight eighths, at 2.0 notes per
+    # beat, was flagged as three times the density of its own page. Excluding
+    # rest bars gives a median of **1.000** and a limit of **3.00** on one page
+    # and on two alike, and the run is silent. Re-derived 2026-08-27: all four
+    # numbers unchanged.
+    #
+    # The bar counts that used to be quoted here — 16 counted, 7 of them rests
+    # — are not, because bars were added to that fixture the next day. They
+    # were never the evidence: the medians are, and they are what survives
+    # someone extending the page. A number in a comment that moves whenever the
+    # fixture grows is a number that will be wrong and unnoticed, which is
+    # exactly how `_MIN_STAFF_SPACE_PX`'s table went stale for three days.
     #
     # A bass part is mostly bars of rest, and expanding a four-bar rest turns
     # one voting bar into four — so `_expand_multiple_rests` multiplied this on
