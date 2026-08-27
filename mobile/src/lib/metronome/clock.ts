@@ -53,6 +53,21 @@ export interface BeatClockOptions {
   /** From `beatsPerBar`. Null means no accent — every beat is the same. */
   perBar: number | null;
   onBeat: (beat: Beat) => void;
+  /**
+   * Seconds to wait before beat zero. Default none.
+   *
+   * **So the eye and the ear count from the same instant.** The web click
+   * track books its first click a tenth of a second out, because a booking at
+   * exactly `currentTime` is already in the past; this clock fired beat zero
+   * immediately, so the screen pulsed 100 ms ahead of every click for the
+   * whole take. `ClickTrack.leadInS` reports the number and `useMetronome`
+   * hands it here — 0 on native, which needs no slack.
+   *
+   * The docstring above still holds: *"beat zero is now, not one period from
+   * now."* A tenth of a second is not a period, and it is only ever waited
+   * through when something audible is waiting with it.
+   */
+  leadInS?: number;
   /** The time source, in milliseconds. Injected only so tests can drive it. */
   now?: () => number;
 }
@@ -66,10 +81,11 @@ export function startBeatClock({
   bpm,
   perBar,
   onBeat,
+  leadInS = 0,
   now = monotonicNow,
 }: BeatClockOptions): BeatClock {
   const periodMs = secondsPerBeat(bpm) * 1000;
-  const startedAt = now();
+  const startedAt = now() + Math.max(0, leadInS) * 1000;
   let next = 0;
   let timer: ReturnType<typeof setInterval> | null = null;
 
@@ -84,7 +100,8 @@ export function startBeatClock({
   }
 
   // Beat zero is now, not one period from now. A metronome that starts with a
-  // silent beat is a metronome you have to guess the tempo of.
+  // silent beat is a metronome you have to guess the tempo of. With a lead-in
+  // this fires nothing and the first poll picks it up, which is the point.
   fireDue();
   timer = setInterval(fireDue, Math.max(1, Math.min(MAX_POLL_MS, periodMs / 5)));
 

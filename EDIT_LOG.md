@@ -6,6 +6,104 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-27 — The screen pulsed a tenth of a second before the click
+
+**Branch:** `main`. Mobile `lib/` only — logic modules and a hook, no screen,
+component, style or copy touched, so outside the §2 gate.
+
+**Files:** `mobile/src/lib/metronome/click.types.ts`, `click.web.ts`,
+`click.ts`, `clock.ts`, `useMetronome.ts`, and three new test files.
+
+Yesterday's tick fixed the beat clock's time source. This one is what was
+found by looking at the clock **next to** the thing it runs beside — the sixth
+time this session a rule has been right alone and wrong beside its neighbour.
+
+### Two clocks, one instant apart
+
+`useMetronome` starts both at once: `startBeatClock` drives the on-screen pulse,
+and `startClicks` drives the audible click. Each is correct.
+
+- `startBeatClock` fires beat zero **immediately** — *"a metronome that starts
+  with a silent beat is a metronome you have to guess the tempo of."*
+- `click.web.ts` books its first click at `currentTime + 0.1`, because a
+  booking at exactly `currentTime` is already in the past.
+
+So on web, in `audio_with_headphones`, **the screen pulses 100 ms before every
+click, for the whole take**. At 120bpm that is a fifth of a beat. A musician
+following the screen plays ahead of the click they can hear, and the two cues
+the metronome exists to give disagree with each other.
+
+Native does not have it: it strikes a player from the same kind of timer the
+pulse uses, and takes no slack at all.
+
+### `ClickTrack.leadInS`
+
+Reported by the track rather than shared as a constant, because it is genuinely
+per platform — web returns its slack, native returns 0, and the no-audio path
+returns 0 because nothing has to be waited for when nothing will sound.
+`useMetronome` starts the clicks **first** and hands the number to
+`startBeatClock`, which now waits it out before beat zero.
+
+The beat clock's own rule survives intact: *"beat zero is now, not one period
+from now."* A tenth of a second is not a period, and it is only ever waited
+through when something audible is waiting with it. A negative lead-in is
+treated as none rather than as time already served.
+
+### Both click tracks had no test at all
+
+`click.web.ts` now has nine, against a stub AudioContext — the property under
+test is arithmetic, *when* each click is booked, and that is knowable without
+any sound. Including the one that matters most: with the waking timer starved
+to a single tick while three seconds of audio time pass, every click that fell
+in the gap is still booked at its own time rather than at the moment it was
+noticed. That is the lookahead pattern's entire claim and nothing checked it.
+
+`click.ts` cannot be imported outside a device — `expo-audio` and
+`expo-file-system` load at module scope — so its half of the contract is
+checked by reading the source, the same technique `bootWatchdog.test.ts` uses
+on an HTML file and `test_client_enums.py` uses on `types.ts`. The alternative
+is mocking two Expo modules to check one literal.
+
+### Tests
+
+32 files, 378 tests, typecheck clean. Twelve mutants, all killed.
+
+| Mutant | Result |
+|---|---|
+| the lead-in is ignored | killed |
+| a negative lead-in is served as credit | killed |
+| the click track under-reports its lead-in | killed |
+| the first click is booked in the past | killed |
+| clicks are booked from now rather than from the start | killed |
+| the accent never sounds / every beat is accented | killed |
+| stop leaves the context open | killed |
+| a suspended context is left suspended | killed |
+| no-audio still asks the pulse to wait | killed |
+| native claims a lead-in it does not have | killed |
+| a native return path stops reporting one | killed |
+
+The last two needed the source-text test: a mutation of `click.ts` survived
+everything else, because nothing in this repository could load that file.
+
+### Also checked, no change needed
+
+- **The WAV header's promise holds.** `wav.ts` says it carries "the true sample
+  rate, whatever the hardware handed us"; both recorders pass the rate the
+  hardware reported rather than the one requested. Worth checking because a
+  wrong rate scales every tempo judgement by a constant and nothing downstream
+  could notice — the musician would simply be told they rushed.
+
+### Three-foot test
+
+Not run: no screen was built or changed.
+
+### Still waiting on the owner
+
+The UI plan (four items), migration `011`, permission to re-read the nine
+failed scans, and whether `Repeat` gets a field for an unclosed forward sign.
+
+---
+
 ## 2026-08-27 — The metronome read the wall clock
 
 **Branch:** `main`. Mobile `lib/` only — logic modules, no screen, component,

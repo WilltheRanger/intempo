@@ -67,9 +67,15 @@ export function useMetronome({
       return;
     }
 
+    // Started **before** the clock, because the clock needs its lead-in. Web
+    // books the first click a tenth of a second out and the screen used to
+    // pulse that far ahead of it, every beat of every take.
+    const clicks = mode === 'audio_with_headphones' ? startClicks({ bpm, perBar }) : null;
+
     const clock = startBeatClock({
       bpm,
       perBar,
+      leadInS: clicks?.leadInS ?? 0,
       onBeat: (next) => {
         setBeat(next);
         if (modeRef.current === 'haptic') {
@@ -84,9 +90,8 @@ export function useMetronome({
 
     // Its own clock, on purpose: clicks are booked against the audio clock on
     // web, which is the whole reason they're trustworthy. Sharing the timer
-    // here would throw that away to save an object.
-    const clicks = mode === 'audio_with_headphones' ? startClicks({ bpm, perBar }) : null;
-
+    // here would throw that away to save an object — what they share instead
+    // is the instant they start counting from.
     return () => {
       clock.stop();
       clicks?.stop();
