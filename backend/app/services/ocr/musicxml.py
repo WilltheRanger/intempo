@@ -561,20 +561,53 @@ def _expand_multiple_rests(
 
     out: list[Measure] = []
     expanded = False
+    #: How many bars the expansions so far have inserted. Everything after a
+    #: rest moves down the page by that much.
+    #:
+    #: **Shifted, not renumbered 1..N — and the difference is a signal.** The
+    #: file numbers a four-bar rest as one bar, so the measures after it are
+    #: three too low, and `MeasureEditScreen` and every caveat line address a
+    #: bar by its number. But numbering them positionally **erases the file's
+    #: own numbering anomalies**, and one of those is what `renumber` calls the
+    #: single most common failure this pipeline has: a boxed rehearsal mark
+    #: reading 49 came back as measure 409.
+    #:
+    #: Measured (2026-08-26): a page numbered 1, 2, 3, 409 reports the gap. The
+    #: same page with a multi-bar rest reported **nothing**, because this had
+    #: already renumbered it 1..7 — erased on exactly the pages that carry
+    #: rehearsal marks, since those are the pages with multi-bar rests.
+    #:
+    #: `pipeline.renumber` still normalises positionally and still names the
+    #: gap in `notes_to_human` first, which is the documented order and the
+    #: whole point: *"The anomaly is reported before it is normalised, not
+    #: hidden by it."* The shift keeps that signal intact for it to find.
+    shift = 0
     by_index = {index: (count, metre) for index, count, metre in pending}
     for index, measure in enumerate(measures):
         entry = by_index.get(index)
         if entry is None:
-            out.append(measure)
+            out.append(
+                measure.model_copy(
+                    update={"measure_number": measure.measure_number + shift}
+                )
+                if shift
+                else measure
+            )
             continue
         count, metre = entry
         beats = _quarter_beats(metre) or lengths[index]
         rest = _BAR_REST_FOR.get(beats) if beats is not None else None
         if rest is None:
-            out.append(measure)
+            out.append(
+                measure.model_copy(
+                    update={"measure_number": measure.measure_number + shift}
+                )
+                if shift
+                else measure
+            )
             continue
         expanded = True
-        for offset in range(count):
+        for step in range(count):
             out.append(
                 measure.model_copy(
                     update={
@@ -582,26 +615,15 @@ def _expand_multiple_rests(
                         # The metre is stated once, on the first of the bars it
                         # governs. Repeating it would read as a metre change
                         # printed at every bar of the rest.
-                        "time_signature": measure.time_signature if offset == 0 else None,
-                        "measure_number": measure.measure_number + offset,
+                        "time_signature": measure.time_signature if step == 0 else None,
+                        "measure_number": measure.measure_number + shift + step,
                     }
                 )
             )
+        # Everything after this rest is that many bars further down the page.
+        shift += count - 1
 
-    if not expanded:
-        return measures
-
-    # **Renumbered, and only when something was actually expanded.**
-    #
-    # The file numbers a four-bar rest as one bar, so every measure after it is
-    # now three too low — and `MeasureEditScreen` and every caveat line address
-    # a bar by its number. Renumbering unconditionally would change the numbers
-    # of every score already in the library, including the pickup a file
-    # numbers 0, which the loop above handles deliberately.
-    return [
-        measure.model_copy(update={"measure_number": position})
-        for position, measure in enumerate(out, start=1)
-    ]
+    return out if expanded else measures
 
 
 def score_json_from_musicxml(

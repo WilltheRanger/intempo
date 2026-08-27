@@ -1202,3 +1202,80 @@ def test_a_duplet_now_survives_as_the_note_it_lasts() -> None:
     assert [n.duration for n in score.measures[0].notes] == ["dotted_quarter"] * 2
     assert score.notes_to_human == ""
     assert [f.verdict for f in validate_measures(score)] == ["ok"]
+
+
+def test_a_rehearsal_mark_counted_as_a_bar_survives_the_expansion() -> None:
+    """**The multi-bar rest fix was erasing the pipeline's most common
+    failure.**
+
+    `renumber` calls it that: a boxed rehearsal mark reading **49** came back as
+    measure **409**, which inserts a spurious bar and renumbers the line after
+    it. `numbering_gaps` is what catches it, and `renumber`'s own docstring is
+    explicit that *"the anomaly is reported before it is normalised, not hidden
+    by it"*.
+
+    The expansion numbered its output 1..N, which normalises everything —
+    including that. Measured: a page numbered 1, 2, 3, 409 reports the gap; the
+    same page with a multi-bar rest reported **nothing at all**. Erased on
+    exactly the pages that carry rehearsal marks, because those are the pages
+    with multi-bar rests.
+
+    Shifting by what the expansion inserted keeps the file's own numbering
+    anomalies intact for `renumber` to find and name.
+    """
+    from app.services.ocr.validate import numbering_gaps
+
+    rehearsal_mark_as_a_bar = (
+        _bar(1, _A_QUARTER * 4, _FOUR_FOUR)
+        + _bar(2, _A_QUARTER * 4)
+        + _bar(3, "", _MULTI_REST_4)
+        + _bar(409, _A_QUARTER * 4)
+    )
+    score = score_json_from_musicxml(_part(rehearsal_mark_as_a_bar))
+
+    # Four bars of rest inserted, so the bar the file called 409 is 412 here.
+    assert [m.measure_number for m in score.measures] == [1, 2, 3, 4, 5, 6, 412]
+    assert [(g.after, g.next) for g in numbering_gaps(score)] == [(6, 412)]
+
+
+def test_an_ordinary_part_still_comes_out_contiguous() -> None:
+    """The shift is exactly what the expansion inserted, so a file whose own
+    numbering is sound stays sound — which is every score in the library and
+    the reason this could not simply stop renumbering."""
+    score = score_json_from_musicxml(
+        _part(
+            _bar(1, _A_QUARTER * 4, _FOUR_FOUR)
+            + _bar(2, "", _MULTI_REST_4)
+            + _bar(3, _A_QUARTER * 4)
+            + _bar(4, _A_QUARTER * 4)
+        )
+    )
+
+    assert [m.measure_number for m in score.measures] == [1, 2, 3, 4, 5, 6, 7]
+
+
+def test_a_second_multi_bar_rest_is_numbered_after_the_first() -> None:
+    """Two rests on a page, which is an orchestral part rather than an edge
+    case — a bass part can hold a dozen.
+
+    Each expansion moves everything after it, **including the next expansion's
+    own bars**. Written without that, the second rest starts numbering from the
+    file's number for it and lands on top of bars that already exist: 1, 2, 3,
+    4, 5, **4, 5**, 8. The single-rest tests cannot see this, because there is
+    nothing after the first shift for it to get wrong.
+    """
+    two_rests = (
+        _bar(1, _A_QUARTER * 4, _FOUR_FOUR)
+        + '<measure number="2">'
+        + "<attributes><measure-style><multiple-rest>3</multiple-rest>"
+        + "</measure-style></attributes></measure>"
+        + _bar(3, _A_QUARTER * 4)
+        + '<measure number="4">'
+        + "<attributes><measure-style><multiple-rest>2</multiple-rest>"
+        + "</measure-style></attributes></measure>"
+        + _bar(5, _A_QUARTER * 4)
+    )
+    score = score_json_from_musicxml(_part(two_rests))
+
+    assert [m.measure_number for m in score.measures] == [1, 2, 3, 4, 5, 6, 7, 8]
+    assert [len(m.notes) for m in score.measures] == [4, 1, 1, 1, 4, 1, 1, 4]

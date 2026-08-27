@@ -6,6 +6,62 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-26 — The multi-rest fix was erasing the pipeline's commonest failure
+
+**Branch:** `main`. Backend and tests. No screen, component, style or copy
+touched.
+
+**Files:** `backend/app/services/ocr/musicxml.py`,
+`backend/app/tests/test_musicxml.py`.
+
+Second bug in two ticks from the same method: take a check that has been silent
+and make it fire.
+
+### The bug, and it is mine again
+
+`renumber` calls it the single most common failure this pipeline has — a boxed
+rehearsal mark reading **49** comes back as measure **409**, inserting a
+spurious bar and renumbering the line after it. `numbering_gaps` catches it, and
+`renumber`'s docstring is explicit about the order: *"The anomaly is reported
+before it is normalised, not hidden by it."*
+
+`_expand_multiple_rests` numbered its output **1..N**, which normalises
+everything — including that.
+
+```
+page numbered 1, 2, 3, 409           → gap reported (3 → 409)
+the same page with a multi-bar rest  → nothing at all
+```
+
+Erased on exactly the pages that carry rehearsal marks, because those are the
+pages with multi-bar rests. Written this morning, in the fix for a bass part.
+
+### Shifted, not renumbered
+
+Each expansion now moves everything after it by what it inserted — including
+the next expansion's own bars. The file's numbering anomalies survive for
+`renumber` to find and name; a file whose numbering is sound still comes out
+contiguous, which is every score in the library and the reason this could not
+simply stop renumbering.
+
+```
+1, 2, 3(rest×4), 409  →  1, 2, [3, 4, 5, 6], 412   gap reported (6 → 412)
+```
+
+### The mutation that needed a second rest to catch
+
+Three mutations. Dropping the shift and reverting to 1..N were caught at once.
+**The rest's own bars ignoring the shift was not** — it only goes wrong with
+*two* multi-bar rests, where the second would start from the file's number and
+land on bars that already exist: 1, 2, 3, 4, 5, **4, 5**, 8.
+
+Every test had one rest. An orchestral bass part can hold a dozen, so the case
+that could not fail was the ordinary one. Added, and all three die.
+
+Full suite green at 1277, two xfailed.
+
+---
+
 ## 2026-08-26 — A bar of rest was voting on how dense the music is
 
 **Branch:** `main`. Backend, both browser ports, and the part fixture. No
