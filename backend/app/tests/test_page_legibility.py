@@ -700,53 +700,98 @@ def test_the_curl_harness_does_not_move_the_measurement_on_its_own() -> None:
     assert staff_space_px(_curled(image, 0)) == 11.0
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "A curved page of the right size is refused, and told to get closer. "
-        "The staff period is measured from an ink profile summed across the "
-        "whole width, which assumes the five lines are horizontal; on a bowed "
-        "system they are not, and the periodicity smears away. homr dewarps "
-        "each staff itself, so the gate is stricter than the reader it "
-        "guards — the same shape as the rotated page in `staff_space_px`, "
-        "which was fixed by measuring the other axis. No fix here yet: "
-        "measuring in narrow column slices, where a bowed staff is locally "
-        "flat, was tried and is worse (see EDIT_LOG 2026-08-27)."
-    ),
-)
 def test_a_page_that_curls_is_still_read() -> None:
-    """**Measured, on the canonical beginner fixture.**
+    """**It was refused, and told to get closer** (fixed 2026-08-27).
 
     `01_simple_printed` is a clean printed line with 11 px between its staff
     lines. Bowed across its width, through a harness that changes nothing at
-    `sag=0`:
+    `sag=0`, it used to read:
 
-    | sag (px) | measured spacing |
+    | sag (px) | measured spacing, before |
     |---|---|
     | 0 – 18 | 11 |
     | 20, 22 | **nothing measurable** |
     | 24 | 11 |
     | 26 and beyond | **nothing measurable** |
 
-    Twenty pixels is under two staff-spaces of bow across 1200 px, which is an
-    ordinary photograph of a page held in the hand. `03_complex_printed` has
-    the same failure in a window at 22–28 and recovers; `02_medium_printed`
-    never fails and degrades gracefully to 8.75.
+    Twenty pixels is under two staff-spaces of bow across 1200 px — an ordinary
+    photograph of a page held in the hand. And what the musician was told is
+    the part that mattered: *"the app can find the systems on the page but not
+    the five lines in them … a laptop webcam usually does not have the
+    resolution."* The page is 1200 px wide and perfectly sharp. That was the
+    third time this project worded a geometry fault as the musician's fault,
+    and the advice — take it again from closer — could not work, because the
+    fix is to flatten the page.
 
-    What the musician is told is the part that matters: *"the app can find the
-    systems on the page but not the five lines in them … a laptop webcam
-    usually does not have the resolution."* The page is 1200 px wide and
-    perfectly sharp. That is the third time this project has worded a geometry
-    fault as the musician's fault, and the advice — take it again from closer —
-    cannot work, because the fix is to flatten the page.
+    `_sliced_staff_space` now answers when the whole width cannot, and reads
+    the true 11 at every sag out to 60. Two other approaches were tried first
+    and both were worse; they are written up on that function and in
+    `EDIT_LOG.md`.
     """
     from PIL import Image
 
     image = Image.open(FIXTURES / "01_simple_printed.jpg").convert("L")
 
-    refused = [sag for sag in range(0, 40, 2) if too_small_to_read(_curled(image, sag))]
+    measured = {sag: staff_space_px(_curled(image, sag)) for sag in range(0, 62, 2)}
+    refused = [sag for sag in measured if too_small_to_read(_curled(image, sag))]
 
     assert refused == [], f"refused a sharp 1200px page at sag {refused}"
+    assert set(measured.values()) == {11.0}, measured
+
+
+def test_the_slices_only_answer_where_the_whole_width_could_not() -> None:
+    """**The rule that makes this incapable of regressing anything.**
+
+    Per *page*, not per band. Half a real page's bands never yield a period —
+    a title block, a desk, a system of nothing but rests — and they are skipped
+    on purpose. Letting slices answer for those instead adds spurious short
+    periods to the pool and drags the percentile down: measured, `02` fell from
+    11 to 5.5 and `05` from 6 to 4, which would refuse two pages that read.
+
+    So every fixture keeps exactly the number it had before slices existed.
+    """
+    readings = {
+        path.name: staff_space_px(path.read_bytes())
+        for path in sorted(FIXTURES.glob("*.jpg"))
+    }
+
+    assert readings == {
+        "01_simple_printed.jpg": 11.0,
+        "02_medium_printed.jpg": 11.0,
+        "03_complex_printed.jpg": 11.0,
+        "04_handwritten_clean.jpg": 9.25,
+        "05_handwritten_messy.jpg": 6.0,
+    }
+
+
+def test_a_page_too_small_to_read_gains_nothing_from_the_slices() -> None:
+    """**The guard the whole gate exists for.**
+
+    A fallback that rescues a curved page is worthless if it also passes the
+    webcam page — that one had its systems found, all eight cropped and sent,
+    and came back with invented notes describing themselves as "approximate
+    reconstructions".
+
+    Every fixture, downscaled until the whole-width measurement gives up. Where
+    it gave up before, it still does.
+    """
+    from PIL import Image
+
+    for path in sorted(FIXTURES.glob("*.jpg")):
+        original = Image.open(path).convert("L")
+        for factor in (0.35, 0.3, 0.25, 0.2):
+            small = original.resize(
+                (max(1, int(original.width * factor)), max(1, int(original.height * factor))),
+                Image.LANCZOS,
+            )
+            buffer = io.BytesIO()
+            small.save(buffer, "JPEG", quality=92)
+            raw = buffer.getvalue()
+
+            space = staff_space_px(raw)
+            assert space is None or space < _MIN_STAFF_SPACE_PX, (
+                f"{path.name} at {factor} now measures {space} and would pass"
+            )
 
 
 def test_the_curl_failure_is_a_refusal_and_not_a_wrong_number() -> None:
@@ -764,3 +809,34 @@ def test_the_curl_failure_is_a_refusal_and_not_a_wrong_number() -> None:
     measured = [staff_space_px(_curled(image, sag)) for sag in range(0, 40, 2)]
 
     assert all(space is None or space == 11.0 for space in measured), measured
+
+
+def test_two_slices_are_too_coarse_to_follow_a_bow() -> None:
+    """The one slice count that is genuinely wrong, pinned.
+
+    Measured from 2 to 100: everything from 3 upward reads the curled fixture
+    correctly at almost every sag, and the exceptions are isolated single
+    points rather than a trend — 40, 60 and 100 are clean. Two is different in
+    kind, because half the width still contains most of the bow.
+
+    So the constant is chosen from a clean stretch rather than from a
+    mechanism, and this pins the floor under it.
+    """
+    from PIL import Image
+
+    from app.services import page_image
+
+    image = Image.open(FIXTURES / "01_simple_printed.jpg").convert("L")
+    sags = range(20, 61, 4)
+
+    original = page_image._SLICES_WHEN_CURLED
+    try:
+        page_image._SLICES_WHEN_CURLED = 2
+        coarse = [staff_space_px(_curled(image, sag)) for sag in sags]
+    finally:
+        page_image._SLICES_WHEN_CURLED = original
+
+    assert any(space != 11.0 for space in coarse), (
+        "two slices now follow the bow — the floor under the constant moved"
+    )
+    assert all(staff_space_px(_curled(image, sag)) == 11.0 for sag in sags)

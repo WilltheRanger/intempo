@@ -656,6 +656,40 @@ def _legibility(image_bytes: bytes) -> _Legibility:
         if best is None or len(spacings) > best[0]:
             best = (len(spacings), _representative_spacing(spacings))
 
+    if best is None and any_bands:
+        # **Last resort before refusing: measure where the staff is flat.**
+        #
+        # Reached only when the whole width found nothing along either axis, so
+        # by construction it cannot move a page that reads today — every number
+        # in this file's corpus tables was re-measured and is unchanged.
+        #
+        # Per *page* and not per band, which is the part that took a second
+        # attempt. Half a real page's bands never yield a period — a title
+        # block, a desk, a system of nothing but rests — and they are skipped
+        # on purpose. Letting slices answer for those instead adds spurious
+        # short periods to the pool and drags the percentile down: measured,
+        # `02` fell from 11 to 5.5 and `05` from 6 to 4. A band that says
+        # nothing is not the same as a page that says nothing.
+        #
+        # Measured on `01_simple_printed` bowed across its width: nothing at
+        # all from sag 20 px onward, and its true **11 px** at every sag from
+        # 20 to 60 once the slices answer. No page too small to read gains a
+        # passing spacing — checked on all five fixtures at four downscales.
+        for oriented in (ink, ink.T):
+            read = _profile_of(oriented)
+            if read is None:
+                continue
+            _, smoothed = read
+            spacings = [
+                space
+                for top, bottom in _bands(smoothed)
+                if (space := _sliced_staff_space(oriented[top:bottom])) is not None
+            ]
+            if not spacings:
+                continue
+            if best is None or len(spacings) > best[0]:
+                best = (len(spacings), _representative_spacing(spacings))
+
     if best is None:
         return _Legibility(True, any_bands, None, short_edge, size)
     return _Legibility(True, True, best[1], short_edge, size)
@@ -711,8 +745,8 @@ _MIN_STAFF_PERIOD = 3
 _STAFF_PERIOD_STRENGTH = 0.10
 
 
-def _band_staff_space(profile_segment) -> int | None:
-    """The staff-line period within one band, or None if there isn't one.
+def _staff_peak(profile_segment) -> tuple[int, float] | None:
+    """The staff-line period within one band, and how strongly it reads.
 
     Five evenly spaced lines make the ink profile periodic, so the first
     prominent peak in its autocorrelation is the spacing. Capped at a quarter
@@ -721,6 +755,10 @@ def _band_staff_space(profile_segment) -> int | None:
     confident 28, which would have put a staff 112 rows tall inside an 80-row
     band, and that single spurious value was enough to pass a page with no
     resolvable notation on it at all.
+
+    The strength is returned because `_sliced_staff_space` has to choose
+    between slices of one band and needs something to choose *by*. Nothing else
+    uses it, and `_band_staff_space` is the same measurement without it.
     """
     import numpy as np
 
@@ -743,8 +781,81 @@ def _band_staff_space(profile_segment) -> int | None:
             and correlation[lag] >= correlation[lag + 1]
             and correlation[lag] > _STAFF_PERIOD_STRENGTH
         ):
-            return lag
+            return lag, float(correlation[lag])
     return None
+
+
+def _band_staff_space(profile_segment) -> int | None:
+    """The staff-line period within one band, or None if there isn't one."""
+    found = _staff_peak(profile_segment)
+    return None if found is None else found[0]
+
+
+#: How many column slices a band is cut into when the whole width fails.
+#:
+#: **Measured from 2 to 100, on `01_simple_printed` bowed by 20 to 60 px, and
+#: on every fixture downscaled until it stops being readable.** Reading the
+#: true 11 px at every sag:
+#:
+#:     2                                    6 sags wrong  ✗
+#:     3, 6, 8, 12, 40, 60, 100             all correct   ✓
+#:     4, 16, 24                            one sag each  ~
+#:
+#: Two is genuinely too coarse — half the width still contains most of the bow.
+#: Above that the count barely matters, and the failures are **isolated single
+#: points rather than a trend**: 40, 60 and 100 are clean, so "too few columns
+#: to average the noise" does not explain 16 and is not offered as a reason.
+#: What the wobbles have in common has not been established, and a number
+#: sitting in a clean stretch — 6, with 8 and 12 clean either side — is what is
+#: chosen rather than a mechanism that is not evidenced.
+#:
+#: No page that is genuinely too small gains a passing spacing at **any** count
+#: tried, which is the property that matters most: this is a last resort before
+#: refusing, and it must not rescue a page that deserves refusing.
+_SLICES_WHEN_CURLED = 6
+
+
+def _sliced_staff_space(band) -> int | None:
+    """The staff period of a band whose lines are not horizontal.
+
+    **A page held in the hand bows, and the profile is summed across the whole
+    width.** That sum assumes the five lines sit in five rows; on a bowed system
+    each line wanders over several, the periodicity smears, and the band reports
+    nothing. Measured on `01_simple_printed`, which reads 11 px flat: bowed by
+    20 px across 1200 — under two staff-spaces, an ordinary photograph — it
+    reported nothing at all, and the musician was told the app could not find
+    five lines and that a webcam lacks resolution, about a page 1200 px wide
+    and perfectly sharp.
+
+    Inside a narrow column slice the same bowed staff is very nearly flat, so
+    the period is there to be found. Two earlier attempts at using that are
+    written up in `EDIT_LOG.md`, 2026-08-27, because both are the obvious idea
+    and both are worse:
+
+    - **The median of the slices' periods.** Slices that lock onto a stem or a
+      barline report short periods and drag the median down: `02` and `03` fell
+      from 11 to 5.5–7.0, below the floor, so three fixtures that read today
+      would have been refused.
+    - **Undoing the bow by cross-correlating adjacent slices.** On a *flat*
+      staff the peaks at lag 0 and lag 1 are near-ties — 5.1 against 5.4 — so
+      noise picks, and progressive alignment makes each error permanent: 2 px
+      of drift over twelve slices, a fifth of the spacing, enough to smear the
+      sum it was meant to sharpen.
+
+    What works is taking the slice whose peak reads *strongest*, rather than
+    averaging slices that disagree — a staff is the most periodic thing in its
+    own band, so where one slice has really found it, it says so loudest.
+    """
+    width = int(band.shape[1])
+    step = max(1, width // _SLICES_WHEN_CURLED)
+    found = [
+        peak
+        for start in range(0, max(1, width - step + 1), step)
+        if (peak := _staff_peak(band[:, start:start + step].mean(axis=1))) is not None
+    ]
+    if not found:
+        return None
+    return max(found, key=lambda peak: peak[1])[0]
 
 
 #: Which of the per-band periods to believe, as a percentile.

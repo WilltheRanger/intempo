@@ -6,6 +6,119 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-27 — A curled page reads now, on the third attempt
+
+**Branch:** `main`. Backend and tests. No screen, component, style or copy
+touched.
+
+**Files:** `backend/app/services/page_image.py`,
+`backend/app/tests/test_page_legibility.py`.
+
+Yesterday's entry measured the defect and refuted the obvious fix. This one
+fixes it, after refuting a second approach as well. All three attempts are
+written up on `_sliced_staff_space`, because each is the idea a reader has next.
+
+### What is fixed
+
+`01_simple_printed`, 11 px between staff lines, bowed across its width:
+
+| sag (px) | before | after |
+|---|---|---|
+| 0 – 18 | 11 | 11 |
+| 20 – 60 | **nothing measurable → refused** | **11, every sag** |
+
+The refusal told a musician that the app could not find five lines and that a
+webcam lacks resolution, about a page 1200 px wide and perfectly sharp, with
+advice — take it again from closer — that could not work.
+
+### Attempt two, and why it failed
+
+Undo the bow before profiling: cut the band into column slices, cross-correlate
+each slice against its left neighbour to find its vertical shift, accumulate,
+realign, sum.
+
+It is wrong on a **flat** staff, which is where it was diagnosed. Adjacent
+slices correlate at lag 0 and lag 1 almost equally — **5.1 against 5.4** — so
+noise decides, and progressive alignment makes every error permanent: **2 px of
+drift over twelve slices** on a staff with no bow at all. A fifth of the
+spacing, smeared into the sum it was meant to sharpen. Every fixture fell to
+about 5 px.
+
+### What works
+
+**Take the slice whose peak reads strongest, rather than averaging slices that
+disagree.** A staff is the most periodic thing in its own band, so where one
+slice has really found it, it says so loudest. Attempt one took the *median* of
+the slice periods, and slices that lock onto a stem or a barline dragged it
+down.
+
+**And run it per page, not per band** — the part that took a second go. Half a
+real page's bands never yield a period (a title block, a desk, a system of
+nothing but rests) and are skipped on purpose. Letting slices answer for those
+adds spurious short periods to the pool: measured, `02` fell 11 → 5.5 and `05`
+6 → 4, refusing two pages that read.
+
+Reached only when the whole width found nothing along **either** axis — the
+same shape as the axis fallback above it, *"only reached when the first
+orientation found nothing"*. So by construction it cannot move a page that
+reads today, and every number in this file's corpus tables is unchanged, which
+is asserted rather than assumed.
+
+### The guard that matters most
+
+A fallback that rescues a curved page is worthless if it also passes the webcam
+page. Every fixture, at four downscales, checked: where the whole-width
+measurement gave up before, it still does. No page too small to read gains a
+passing spacing at **any** slice count tried.
+
+### A claim I had to withdraw
+
+The constant's first docstring said the reading wobbles at 16 slices "because a
+sixteenth of the width is too few columns to average the noise out". A mutation
+setting it to **60** survived, which sent me back to measure properly: 40, 60
+and 100 are all clean. The failures are isolated single points — 4, 16 and 24
+each miss one sag — not a trend, and the mechanism I offered does not explain
+them. Rewritten to say what was measured and to say plainly that what the
+wobbles have in common is not established. Only **2** is wrong in kind, because
+half the width still contains most of the bow; that floor is now pinned by a
+test.
+
+### Tests
+
+Full suite green. Yesterday's strict `xfail` flipped to a passing test, plus
+three more: the corpus is unchanged, no downscaled page gains a spacing, and
+two slices are too coarse. Seven mutants, six killed and the seventh is what
+found the false claim.
+
+| Mutant | Result |
+|---|---|
+| the slice fallback never runs | killed |
+| slices answer for every band, not only a silent page | killed |
+| the slices vote by median instead of by confidence | killed |
+| the weakest slice wins | killed |
+| the band is not sliced at all | killed |
+| the peak strength is discarded | killed |
+| slices are cut far too fine (60) | **survived** — and the docstring was wrong, not the code |
+
+### Still not fixed
+
+The five-strip stacked page still refuses at sag 1.0–1.5× because it yields a
+*low number* rather than nothing, so the fallback never runs. That is the
+multi-band percentile, a different problem — and that synthetic page stacks
+five different études with different staff sizes, so it is poor evidence.
+Left alone rather than fitted to.
+
+### Three-foot test
+
+Not run: no screen was built or changed.
+
+### Still waiting on the owner
+
+The UI plan (four items), migration `011`, permission to re-read the nine
+failed scans, and whether `Repeat` gets a field for an unclosed forward sign.
+
+---
+
 ## 2026-08-27 — A page that curls is refused and told to get closer
 
 **Branch:** `main`. Backend tests only — one measurement written down, one
