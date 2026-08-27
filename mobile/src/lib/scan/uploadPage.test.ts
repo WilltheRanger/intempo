@@ -407,3 +407,76 @@ describe('a scan the musician walked away from', () => {
     expect(uploadToSignedUrl.mock.calls[0][3]).toMatchObject({ signal: abort.signal });
   });
 });
+
+// ---------------------------------------------------------------------------
+// The cap and the timeout are one statement about somebody's connection
+// ---------------------------------------------------------------------------
+
+// Imported rather than read off disk: this project has no `@types/node`, so
+// `readFileSync` does not typecheck (see `bootWatchdog.test.ts`).
+import uploadSource from './uploadPage.ts?raw';
+import apiUploadSource from '../../data/api/upload.ts?raw';
+
+/** `const NAME = 10 * 1024 * 1024;` — or `export const` — as a number. */
+function constantIn(source: string, name: string): number {
+  const match = new RegExp(`const ${name}\\s*=\\s*([0-9_*\\s]+);`).exec(source);
+  if (!match) {
+    throw new Error(`${name} is not declared in the form this test reads`);
+  }
+  // Digits, underscores, spaces and `*` only — checked by the pattern above.
+  return Number(
+    match[1]
+      .replace(/_/g, '')
+      .split('*')
+      .map((part) => Number(part.trim()))
+      .reduce((a, b) => a * b, 1),
+  );
+}
+
+describe('the largest page and the time allowed to send it', () => {
+  it('states the connection speed it actually implies', () => {
+    // **The two constants are a claim about a musician's connection, and the
+    // claim was 27% out.** `UPLOAD_TIMEOUT_MS` is an XHR *total* timeout, so
+    // an upload slower than cap/timeout is killed at exactly two minutes with
+    // no progress kept and no resume. The comment in `uploadPage.ts` said 550
+    // kbps — the figure for an 8 MiB cap — in the same commit that set the cap
+    // to 10 MiB. Somebody on a 600 kbps link was inside the documented
+    // envelope and outside the real one.
+    const cap = constantIn(uploadSource, 'MAX_PAGE_BYTES');
+    const timeoutMs = constantIn(apiUploadSource, 'UPLOAD_TIMEOUT_MS');
+
+    const kbps = Math.round((cap * 8) / (timeoutMs / 1000) / 1000);
+
+    // One assertion doing one job: the prose carries the number, so checking
+    // the prose checks the arithmetic. Pinning the figure separately only
+    // added a second failure with a worse message — "expected 350 to be 699"
+    // reads as a bug when what happened is that somebody improved the timeout
+    // and left the comment behind.
+    const stated = /roughly \*\*(\d+) kbps\*\*/.exec(uploadSource);
+    expect(stated, 'the documented floor is no longer written where this reads it')
+      .not.toBeNull();
+    expect(
+      Math.round(Number(stated![1]) / 100),
+      `the comment says ${stated?.[1]} kbps and the constants imply ${kbps}. ` +
+        'Whichever moved, the other has to follow — this figure is what a ' +
+        'musician on a weak connection is being promised.',
+    ).toBe(Math.round(kbps / 100));
+  });
+
+  it('does not ask for a connection a musician away from a router will not have', () => {
+    // A ceiling on the ceiling. Raising the cap without raising the timeout
+    // does not fail loudly — it quietly moves the floor up until the app only
+    // works on wifi, which is the opposite of where this is used: "from
+    // wherever the musician happens to be practising, which is not usually
+    // next to the router" (`upload.ts`).
+    //
+    // 1.5 Mbps is roughly a weak 4G uplink. Not tuned — it is the point at
+    // which "several megabytes from a practice room" stops being a claim this
+    // app can make.
+    const cap = constantIn(uploadSource, 'MAX_PAGE_BYTES');
+    const timeoutMs = constantIn(apiUploadSource, 'UPLOAD_TIMEOUT_MS');
+
+    const kbps = (cap * 8) / (timeoutMs / 1000) / 1000;
+    expect(kbps).toBeLessThan(1500);
+  });
+});

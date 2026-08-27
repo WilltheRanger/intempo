@@ -6,6 +6,67 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-26 — The upload promised a connection speed 27% faster than it needs
+
+**Branch:** `main`. App tests and one source comment. No screen, component,
+style or user-facing copy touched.
+
+**Files:** `mobile/src/lib/scan/uploadPage.ts` (comment),
+`mobile/src/lib/scan/uploadPage.test.ts`.
+
+Last pair in the seam sweep, and this one was already written down — which is
+how it was wrong.
+
+### The finding
+
+`uploadPage.ts` explains the page cap by naming the connection it implies:
+
+> `UPLOAD_TIMEOUT_MS` is an XHR *total* timeout rather than an idle one, so
+> anything under roughly **550 kbps** is killed at exactly two minutes however
+> much progress it made, with no resume and no retry.
+
+The arithmetic is 10 MiB over 120 s = 85.3 KiB/s = **699 kbps**. The figure was
+27% low.
+
+550 kbps is what an **8 MiB** cap gives over the same two minutes — and both
+the comment and the 10 MiB cap arrived in the same commit (`f71cebd`,
+2026-08-24), so it was miscalculated when written rather than left behind by a
+later change. I had assumed drift and checked; worth correcting, because "stale
+comment" and "wrong when written" call for different care.
+
+**What it costs:** a musician on a 600 kbps link is inside the documented
+envelope and outside the real one. They watch two minutes of uplink and keep
+nothing — this timeout is *total*, so there is no partial progress and no
+resume, and every retry meets the same wall.
+
+### Now derived rather than asserted
+
+`uploadPage.test.ts` reads both constants — `MAX_PAGE_BYTES` from one file,
+`UPLOAD_TIMEOUT_MS` from another, neither exported — and requires the prose to
+agree with the arithmetic to the hundred. A second test caps the floor at
+1.5 Mbps, roughly a weak 4G uplink: raising the cap without raising the timeout
+fails nothing loudly, it quietly moves the floor until the app only works on
+wifi, which is the opposite of where `upload.ts` says it is used — *"from
+wherever the musician happens to be practising, which is not usually next to
+the router."*
+
+### A mutation that was right to fail, and a test that was wrong to say so
+
+Four mutations, all caught. The interesting one is **doubling the timeout**,
+which is strictly *better* for a musician on a weak link and still fails —
+correctly, because the comment then promises 700 where the truth is 350.
+
+It failed twice, though: once on the prose check and once on a separate
+`expect(kbps).toBe(699)`. That second assertion duplicated the first with a
+worse message — *"expected 350 to be 699"* reads as a bug when what happened is
+that somebody improved the timeout and left the comment behind. Removed; the
+prose carries the number, so checking the prose checks the arithmetic, and the
+failure now says which of the two moved and that the other has to follow.
+
+330 app tests green, `tsc --noEmit` clean.
+
+---
+
 ## 2026-08-26 — The largest page, declared in two languages, never compared
 
 **Branch:** `main`. Backend tests. No screen, component, style or copy touched.
