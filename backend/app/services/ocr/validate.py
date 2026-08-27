@@ -263,11 +263,27 @@ def numbering_gaps(score: ScoreJson) -> list[NumberingGap]:
         if b - a != 1
     ]
 
-#: How much of the score has to agree before a beat count is treated as the
-#: meter. Below this there is no majority to be an outlier *from*, and calling
-#: the most common of four different answers "the meter" would manufacture
-#: errors in the other three.
+#: How decisively the commonest beat count has to beat the **runner-up** before
+#: it is treated as the meter. Below this the top two are a tie or near it,
+#: there is no majority to be an outlier *from*, and calling one of them "the
+#: meter" would manufacture errors in every bar holding the other.
+#:
+#: Measured against the runner-up rather than against every vote, which is what
+#: it used to be, because those are two different questions and only the first
+#: one is being asked. On `audiveris_phone_photo` — a real phone photograph —
+#: **eight of fifteen bars sum to exactly 4.0** and the other seven are
+#: scattered singletons: 9.5, 5.0, 4.5, 8.0, 3.0, 3.0, 3.5. The metre is
+#: obvious to any musician and seven bars are visibly wrong. Under the old
+#: share-of-everything test that was 8/15 = 0.53, so the beat check switched
+#: itself **off for the whole page** and reported all fifteen bars
+#: `unverifiable` — turning itself off on exactly the page it exists for.
+#: Against the runner-up it is 8 against 2, which is not a tie by any reading.
 MIN_AGREEMENT = 0.6
+
+#: And a floor on how much of the page the winner covers. Dominance alone would
+#: call three agreeing bars in a forty-bar page of noise a metre: 3 against 1 is
+#: decisive and means nothing. This is the half of the old test worth keeping.
+MIN_COVERAGE = 1 / 3
 
 #: And a floor on how many measures that fraction is computed over. Two
 #: measures agreeing is not a majority, it is a coincidence.
@@ -409,6 +425,20 @@ def infer_beats_per_measure(sums: list[float]) -> float | None:
     dropping the first vote turned a 3-3 tie into 3 of 5 and manufactured a
     meter. A real pickup is one short measure among many correct ones, so the
     majority survives it without help.
+
+    **Two tests, because there are two ways to have no answer**, and one number
+    was being asked to carry both. The winner must beat the runner-up
+    (`MIN_AGREEMENT`) — that is the tie above, and it still refuses 4,4,4,3,3,3.
+    And it must cover enough of the page (`MIN_COVERAGE`) — three agreeing bars
+    in forty of noise is decisive against any single rival and still means
+    nothing.
+
+    What the single test got wrong is the page in between: one clear winner
+    surrounded by scattered singletons. Measured on `audiveris_phone_photo`,
+    eight of fifteen bars at exactly 4.0 and seven different wrong answers, the
+    old test read 0.53 and switched the beat check off for the whole page —
+    reporting fifteen `unverifiable` bars where seven were flaggable and the
+    metre was not in doubt.
     """
     votes = [s for s in sums if s > 0]
     if len(votes) < MIN_MEASURES_TO_INFER:
@@ -417,7 +447,12 @@ def infer_beats_per_measure(sums: list[float]) -> float | None:
     for value in votes:
         tally[value] = tally.get(value, 0) + 1
     winner, hits = max(tally.items(), key=lambda kv: (kv[1], -kv[0]))
-    if hits / len(votes) < MIN_AGREEMENT:
+    runner_up = max(
+        (count for value, count in tally.items() if value != winner), default=0
+    )
+    if hits / (hits + runner_up) < MIN_AGREEMENT:
+        return None
+    if hits / len(votes) < MIN_COVERAGE:
         return None
     return winner
 

@@ -185,6 +185,15 @@ def test_a_stated_meter_beats_an_inferred_one() -> None:
         ([4.0, 3.0, 2.0, 5.0, 1.0, 6.0], None),  # no majority
         ([4.0, 4.0], None),  # too little music
         ([4.0, 4.0, 4.0, 3.0, 3.0, 3.0], None),  # a real 50/50 is not a meter
+        # A clear winner among scattered singletons — the shape of a real
+        # phone photograph, `audiveris_phone_photo`: eight bars at 4.0 and
+        # seven different wrong answers. Under the old share-of-everything
+        # test this was 8/15 = 0.53 and the beat check switched itself off
+        # for the whole page, with nothing to say about the seven bad bars.
+        ([4.0] * 8 + [9.5, 5.0, 4.5, 8.0, 3.0, 3.5, 6.0], 4.0),
+        # And the floor that keeps: three agreeing bars in fifteen of noise is
+        # decisive against any single rival and still means nothing.
+        ([4.0] * 3 + [float(n) for n in range(5, 17)], None),
     ],
 )
 def test_infer_beats_per_measure(sums, expected) -> None:
