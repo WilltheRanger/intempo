@@ -601,6 +601,48 @@ def _fill_measure_repeats(
     return out
 
 
+def _unnameable_tuplet_beats(note: ET.Element) -> float | None:
+    """What this note is worth, when its bracket leaves it with no name.
+
+    `_duration_name` returns `None` for 5:4 and 7:8 because a fifth of a beat
+    has no notehead, and a dropped note shortens its bar — which `alignment.py`
+    accumulates, so **every bar after it on the page is judged early**. Measured
+    on a 4/4 bar of a quintuplet of sixteenths and three quarters: the five
+    notes vanished, the bar read three beats, and being bar 1 it was forgiven
+    as a pickup, so nothing was reported at all.
+
+    The group's *total* is a different matter. Five in the time of four
+    sixteenths is one quarter however it is subdivided, and a quarter has a
+    rest. So the length is recoverable even when none of its parts is, and
+    keeping it is what stops the page after it from moving.
+
+    Returns None whenever the note is not that case — a duration that *does*
+    have a name, no bracket, a bracket whose ratio cannot be read, a type with
+    no beat value — so the caller can tell "this note has a length nobody can
+    write" from "this note is gone".
+
+    The first of those is the one that matters: this is the only place that
+    decides what "unnameable" means. Its one caller sits inside a branch that
+    already implies it, so a mutation removing that first line survives — kept
+    because the alternative is a second copy of the test at the call site, and
+    because a helper whose name is a claim should check the claim.
+    """
+    if _duration_name(note) is not None:
+        return None
+    ratio = _tuplet_ratio(note)
+    if ratio is None:
+        return None
+    base = _TYPE_TO_DURATION.get(_text(note.find("type")) or "")
+    written = DURATION_BEATS.get(base) if base else None
+    if written is None:
+        return None
+    dots = len(note.findall("dot"))
+    if dots >= len(_DOT_FACTOR):
+        return None
+    actual, normal = ratio
+    return written * _DOT_FACTOR[dots] * normal / actual
+
+
 def _pitch_name(note: ET.Element) -> str | None:
     if note.find("rest") is not None:
         return "rest"
@@ -1210,6 +1252,10 @@ def score_json_from_musicxml(
     #: — the count rides on the next real note — so carrying it costs nothing
     #: when the bar ends without one.
     pending_graces = 0
+    #: Whether any bracketed group's length was kept as rests, so the sentence
+    #: shown to a musician can say so rather than sending them to a short bar
+    #: that is no longer short.
+    rests_for_unwritable = False
 
     for index, measure_el in enumerate(chosen.iterfind("measure"), start=1):
         # **Every** `<attributes>` block in the measure, not the first.
@@ -1321,6 +1367,43 @@ def score_json_from_musicxml(
         kept_voice = _voice_carrying_the_music(measure_el)
         multi_voice = rewound and len({v for v in voices if v}) > 1
 
+        #: Beats belonging to bracketed groups whose parts have no name.
+        #:
+        #: Accumulated rather than emitted note by note, and flushed as rests
+        #: at the next note the bar keeps — which is where the group sat. See
+        #: `_unnameable_tuplet_beats`.
+        unnamed_beats = 0.0
+
+        def flush_unnamed() -> None:
+            """Turn a measured but unwritable run into the silence it lasted.
+
+            **Not an approximation of the notes.** Nothing here knows where the
+            five attacks of a quintuplet fell, and inventing five onsets would
+            put notes at times nobody played — the same reason
+            `_duration_name` refuses to round a quintuplet to the nearest
+            triplet. What is known is how long the group took, and a rest is
+            how this schema says "time passes here and no attack is claimed".
+
+            The musician does play those notes, so they arrive as attacks the
+            timeline did not expect. That was already true when the notes were
+            dropped; what was *also* true then, and is not now, is that every
+            bar after them was expected early.
+
+            A run whose total no combination of rests can express — an
+            incomplete group the reader only half saw — flushes nothing and
+            leaves the bar visibly short, which the beat check can see.
+            """
+            nonlocal unnamed_beats, rests_for_unwritable
+            if unnamed_beats <= 0:
+                return
+            for name in _rests_for_gap(unnamed_beats):
+                rests_for_unwritable = True
+                silence = Note(pitch="rest", duration=name)  # type: ignore[arg-type]
+                not_filtered.append(silence)
+                notes.append(silence)
+                ratios.append(None)
+            unnamed_beats = 0.0
+
         for child in measure_el:
             if child.tag == "forward":
                 # Only the kept voice's gaps: a `<forward>` belonging to a
@@ -1405,6 +1488,20 @@ def score_json_from_musicxml(
             pitch = "rest" if cue else _pitch_name(note_el)
             duration = _duration_name(note_el, divisions)
             if pitch is None or duration is None:
+                # A bracket with no name still has a length. Held rather than
+                # emitted here so the whole group is measured together: one
+                # note of a quintuplet is a fifth of a beat and no rest writes
+                # that, while five of them are a quarter and one does.
+                #
+                # Asked without re-testing `duration is None`: the branch it
+                # sits in already implies it, and the helper makes the same
+                # test itself. Two copies of one condition is how they come to
+                # disagree, so the helper is the single place that says what
+                # "unnameable" means — which does make its own guard
+                # unreachable from here, and a mutation removing it survives.
+                unnameable = _unnameable_tuplet_beats(note_el)
+                if unnameable is not None:
+                    unnamed_beats += unnameable
                 dropped += 1
                 # Which bar lost it, by position — the numbers are still being
                 # decided (a multi-bar rest shifts everything after it), so the
@@ -1436,6 +1533,9 @@ def score_json_from_musicxml(
             # one they most need to be right.
             graces = 0 if pitch == "rest" else pending_graces
             pending_graces = 0
+            # The rests stand where the group stood, so this runs before the
+            # note that ended the run is appended and not after it.
+            flush_unnamed()
 
             built = Note(
                 pitch=pitch,
@@ -1517,6 +1617,9 @@ def score_json_from_musicxml(
         # a voice removed everything, the guess about voices was wrong.
         if not notes and not_filtered:
             notes = not_filtered
+
+        # A group that ran to the barline has no following note to flush it.
+        flush_unnamed()
 
         # Consecutive notes carrying the same ratio are one bracket. MusicXML
         # also marks brackets with `<notations><tuplet type="start"/>`, but not
@@ -1637,11 +1740,18 @@ def score_json_from_musicxml(
             if len(numbers) > 6:
                 named += f" and {len(numbers) - 6} more"
             where = f" in measure{'s' if len(numbers) > 1 else ''} {named}"
+        # **"Dropped" stopped being the whole truth.** A bracketed group with no
+        # writable parts now keeps its length as rests, so the bar adds up and
+        # the page after it stays in place — and a musician sent to look for a
+        # short bar would find nothing wrong with it. The count is still the
+        # count of notes this schema could not write; what changed is what
+        # happened to their time.
+        kept = " Where a whole tuplet was unwritable its length was kept as a rest."
         notes_to_human = (
             f"{dropped} note(s) in the MusicXML could not be represented "
             "(double accidental, double dot, or a duration outside this schema) "
             f"and were dropped{where}."
-        )
+        ) + (kept if rests_for_unwritable else "")
 
     return ScoreJson(
         time_signature=time_signature,

@@ -1466,20 +1466,20 @@ _QUINTUPLET = (
 
 
 def test_the_dropped_note_sentence_names_the_bar() -> None:
-    """**Because the bar itself may say nothing at all.**
+    """**Because the bar itself says nothing at all.**
 
     A quintuplet has no name in this schema and is dropped rather than
-    approximated — the right call, and it leaves the bar short. Usually the
-    beat check then flags it. Not always: measured, the *same* damaged bar
-    reads `short` in the middle of a page and **`pickup`** at the start of one,
-    because `validate_measures` forgives a short first measure by design. On
-    that page no concern reaches the app at all and `MeasureEditScreen` cannot
-    be opened for the bar.
+    approximated — still the right call, since inventing five onsets would put
+    notes at times nobody played. What changed is what happens to its *length*:
+    the group's total is a quarter however it is subdivided, and that is now
+    kept as a rest, because a bar short by a beat moves every bar after it.
 
-    So this sentence is the only trace, and "5 note(s) were dropped" does not
-    say where to look. Naming the bar does not undo the forgiveness — that
-    needs a field on a schema the app shares — but it gives a musician the one
-    thing they can act on.
+    Which makes this sentence the **only** trace, where it used to be merely
+    the most reliable one. The bar adds up, so the beat check is silent by
+    design rather than by the accident this test was first written about — a
+    short first measure being forgiven as a pickup. Either way "5 note(s) were
+    dropped" does not say where to look, and naming the bar is the one thing a
+    musician can act on.
     """
     score = score_json_from_musicxml(
         _part(
@@ -1488,8 +1488,11 @@ def test_the_dropped_note_sentence_names_the_bar() -> None:
         )
     )
 
-    assert [f.verdict for f in validate_measures(score)] == ["pickup", "ok"]
+    assert [f.verdict for f in validate_measures(score)] == ["ok", "ok"]
     assert "in measure 1." in score.notes_to_human, score.notes_to_human
+    # And it says what became of the time, so nobody is sent to look for a
+    # short bar that is no longer short.
+    assert "kept as a rest" in score.notes_to_human
 
 
 def test_the_named_bar_is_the_one_after_the_rests_moved_it() -> None:

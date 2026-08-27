@@ -265,3 +265,132 @@ def test_five_in_the_time_of_four_still_has_no_name() -> None:
     measure = _measure(["triplet_eighth"] * 5 + ["quarter"] * 3, [_bracket(5, 4, through=4)])
     (fault,) = tuplet_faults([measure])
     assert fault.reason == "unwritable"
+
+
+# --------------------------------------------------------------------------
+# A group with no writable parts still has a writable length
+# --------------------------------------------------------------------------
+
+
+def _xml(body: str, *, beats: int = 4, beat_type: int = 4, divisions: int = 12) -> str:
+    return f"""<?xml version="1.0"?>
+<score-partwise version="4.0">
+  <part-list><score-part id="P1"><part-name>B</part-name></score-part></part-list>
+  <part id="P1"><measure number="1">
+    <attributes><divisions>{divisions}</divisions><key><fifths>0</fifths></key>
+    <time><beats>{beats}</beats><beat-type>{beat_type}</beat-type></time>
+    <clef><sign>F</sign><line>4</line></clef></attributes>{body}
+  </measure></part>
+</score-partwise>"""
+
+
+_QUARTER = (
+    "<note><pitch><step>A</step><octave>3</octave></pitch>"
+    "<duration>12</duration><type>quarter</type></note>"
+)
+
+
+def _bracketed(kind: str, actual: int, normal: int, count: int) -> str:
+    one = (
+        "<note><pitch><step>A</step><octave>3</octave></pitch>"
+        f"<type>{kind}</type><time-modification>"
+        f"<actual-notes>{actual}</actual-notes>"
+        f"<normal-notes>{normal}</normal-notes></time-modification></note>"
+    )
+    return one * count
+
+
+def test_a_quintuplet_keeps_its_length_as_a_rest() -> None:
+    """**Because a bar short by a beat moves every bar after it.**
+
+    Five in the time of four sixteenths is a quarter however it is subdivided,
+    and a quarter has a rest — so the length survives even though none of its
+    parts can be written. Before this, the five notes vanished, the bar read
+    three beats, and `alignment.py` accumulates: every bar on the rest of the
+    page was expected a beat early.
+    """
+    score = score_json_from_musicxml(
+        _xml(_QUARTER + _bracketed("16th", 5, 4, 5) + _QUARTER * 2)
+    )
+    assert [(n.pitch, n.duration) for n in score.measures[0].notes] == [
+        ("A3", "quarter"),
+        ("rest", "quarter"),
+        ("A3", "quarter"),
+        ("A3", "quarter"),
+    ]
+    assert [f.verdict for f in validate_measures(score)] == ["ok"]
+
+
+def test_the_rest_stands_where_the_group_stood() -> None:
+    """Flushed at the note that ended the run, before that note is appended.
+
+    Position is not decoration here: `alignment.py` walks the measure in order,
+    so a rest emitted after the note it preceded swaps two onsets in time.
+    """
+    score = score_json_from_musicxml(
+        _xml(_QUARTER * 2 + _bracketed("16th", 5, 4, 5) + _QUARTER)
+    )
+    assert [n.pitch for n in score.measures[0].notes] == ["A3", "A3", "rest", "A3"]
+
+
+def test_a_group_that_runs_to_the_barline_is_still_flushed() -> None:
+    """There is no following note to flush it, so the measure end must."""
+    score = score_json_from_musicxml(
+        _xml(_QUARTER * 3 + _bracketed("16th", 5, 4, 5))
+    )
+    assert [n.pitch for n in score.measures[0].notes] == ["A3", "A3", "A3", "rest"]
+    assert [f.verdict for f in validate_measures(score)] == ["ok"]
+
+
+def test_a_septuplet_of_thirty_seconds_is_a_quarter_too() -> None:
+    score = score_json_from_musicxml(
+        _xml(_QUARTER + _bracketed("32nd", 7, 8, 7) + _QUARTER * 2)
+    )
+    assert [f.verdict for f in validate_measures(score)] == ["ok"]
+    assert sum(1 for n in score.measures[0].notes if n.pitch == "rest") == 1
+
+
+def test_half_a_group_leaves_the_bar_visibly_short() -> None:
+    """**The one case where being wrong out loud is the right answer.**
+
+    Four sixteenths of a quintuplet is four fifths of a beat, and no
+    combination of rests writes that. Rather than round it — which would put
+    the notes after it at times nobody played — nothing is flushed, and the bar
+    comes up short where the beat check can see it.
+    """
+    # In bar *two*, because `validate_measures` forgives a short first measure
+    # as a pickup — so putting it there would prove nothing about being seen.
+    score = score_json_from_musicxml(
+        _xml(_QUARTER * 4).replace(
+            "</measure>",
+            '</measure><measure number="2">'
+            + _QUARTER
+            + _bracketed("16th", 5, 4, 4)
+            + _QUARTER * 2
+            + "</measure>",
+            1,
+        )
+    )
+    assert all(n.pitch != "rest" for n in score.measures[1].notes)
+    assert [f.verdict for f in validate_measures(score)] == ["ok", "short"]
+
+
+def test_a_ratio_that_does_have_a_name_is_not_turned_into_silence() -> None:
+    """The guard that keeps this from eating the tuplets the last change
+    taught the importer to read."""
+    score = score_json_from_musicxml(
+        _xml(_QUARTER + _bracketed("eighth", 3, 2, 3) + _QUARTER * 2)
+    )
+    assert all(n.pitch == "A3" for n in score.measures[0].notes)
+    assert [n.duration for n in score.measures[0].notes[1:4]] == ["triplet_eighth"] * 3
+
+
+def test_the_notes_are_still_declared_lost() -> None:
+    """Keeping the time is not the same as reading the notes, and the count is
+    still the count of notes this schema could not write."""
+    score = score_json_from_musicxml(
+        _xml(_QUARTER + _bracketed("16th", 5, 4, 5) + _QUARTER * 2)
+    )
+    assert "5 note(s)" in score.notes_to_human
+    assert "kept as a rest" in score.notes_to_human
+    assert score.ocr_confidence < 0.5

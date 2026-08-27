@@ -6,6 +6,102 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-27 — A quintuplet with no name still lasted exactly one beat
+
+**Branch:** `main`. Backend and tests. No screen, component, style or copy
+touched.
+
+**Files:** `backend/app/services/ocr/musicxml.py`, and two test files.
+
+The follow-on the last entry named for itself. 5:4 and 7:8 have no notehead —
+a fifth of a beat is not a written value — so `_duration_name` returns `None`
+and the note is dropped. That was and is the right call about the *notes*:
+rounding a quintuplet to the nearest triplet would put attacks at times nobody
+played, and the module has refused to do it from the start.
+
+It was never the right call about the **length**.
+
+### What being short costs
+
+`alignment.py` accumulates durations, so a bar a beat short does not damage one
+bar — it moves every bar after it. Measured on a 4/4 bar of one quarter, a
+quintuplet of sixteenths and two quarters:
+
+| | before | after |
+|---|---|---|
+| notes read | 3 | 3 + one quarter rest |
+| bar sum | 3.0 beats | 4.0 beats |
+| verdict | `pickup` — **forgiven, nothing reported** | `ok` |
+| the rest of the page | expected a beat early | in place |
+
+Five in the time of four sixteenths is **one quarter however it is
+subdivided**, and a quarter has a rest. The length is recoverable even when
+none of its parts is.
+
+### A rest, not an approximation
+
+Nothing here knows where the five attacks fell, so nothing claims to. A rest is
+how this schema says *time passes here and no attack is expected* — the same
+move `<forward>` gaps and cue notes already make, and the same sentence that
+comment uses: rewritten to a rest rather than filtered, which keeps the time.
+
+The musician does play those notes, so they arrive as attacks the timeline did
+not expect. That was already true when the notes were dropped. What was also
+true then, and is not now, is that every bar after them was judged early.
+
+### Three rules, each of which is the change doing harm if removed
+
+- **The rests stand where the group stood.** Flushed at the note that ended the
+  run, *before* that note is appended, and again at the barline for a group
+  with no following note. `alignment.py` walks the measure in order, so a rest
+  emitted after the note it preceded swaps two onsets in time.
+- **A run whose total no rest can express flushes nothing.** Four sixteenths of
+  a quintuplet is four fifths of a beat — an incomplete group the reader only
+  half saw — and rounding it would move everything after it. It stays short,
+  where the beat check can see it. `_rests_for_gap` already declines an
+  inexpressible remainder; this leans on that rather than repeating it.
+- **A ratio that *does* have a name is untouched.** The whole of the previous
+  entry taught the importer to read duplets, quadruplets and sextuplets; this
+  must not turn them into silence. `_unnameable_tuplet_beats` is the single
+  place that decides which is which.
+
+### The sentence had to change with it
+
+`notes_to_human` said the notes "were dropped", which sent a musician to look
+for a short bar. The bar is not short any more — so the sentence now says the
+length was kept as a rest. The count is unchanged and so is `ocr_confidence`:
+keeping the time is not the same as reading the notes, and a page with an
+unreadable quintuplet on it still reads 0.444 rather than 1.0.
+
+This also makes that sentence the **only** trace, where it used to be merely
+the most reliable one. A test written earlier about that had its premise
+change: it recorded that a short *first* bar is forgiven as a pickup so no
+concern reaches the app. Now no concern reaches the app for a bar in *any*
+position, because the bar adds up. Rewritten rather than deleted — the reason
+is stronger than it was.
+
+**Tests:** backend **1430 passed, 3 xfailed** (seven new, one rewritten where
+its premise changed). Seven mutants, six killed. The survivor is
+`_unnameable_tuplet_beats`'s own "does this already have a name" guard, which
+its only caller sits inside a branch that implies; kept because the
+alternative is a second copy of the test at the call site, and recorded here
+rather than papered over.
+
+**Known side effects:** a page with an unwritable tuplet now produces a bar
+that passes the beat check, so nothing but `notes_to_human` and the confidence
+number says anything is missing. That is a deliberate trade — a silent correct
+timeline beats a loud wrong one — but it is the thing to revisit if a concern
+kind for "notes we could not write" is ever added.
+
+**Rollback:** `git revert` this commit. Nothing stored changes shape; this only
+affects what a new reading produces.
+
+**Still waiting on the owner** — the UI plan (four items), migration `011`,
+permission to re-read the nine failed scans, and whether `Repeat` gets a field
+for an unclosed forward sign.
+
+---
+
 ## 2026-08-27 — Every bracket that was not a triplet emptied its bar
 
 **Branch:** `main`. Backend, both browser validator ports, and tests. No screen,
