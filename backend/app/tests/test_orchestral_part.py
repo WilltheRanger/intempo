@@ -332,3 +332,78 @@ def test_the_joined_pages_are_flagged_for_nothing_either(both_pages) -> None:
     assert tuplet_faults(both_pages.measures) == []
     assert numbering_gaps(both_pages) == []
     assert [f for f in validate_measures(both_pages) if f.is_problem] == []
+
+
+# ---------------------------------------------------------------------------
+# The density median, re-derived from this fixture rather than quoted
+# ---------------------------------------------------------------------------
+
+
+def _density_limits(score) -> tuple[float, float]:
+    """`(limit counting every bar, limit counting only bars with notes in)`."""
+    from statistics import median
+
+    from app.services.ocr.validate import (
+        DENSITY_MULTIPLE,
+        infer_beats_per_measure,
+        meters_in_force,
+    )
+    from app.services.score_schema import DURATION_BEATS
+
+    sums = [sum(DURATION_BEATS[n.duration] for n in m.notes) for m in score.measures]
+    inferred = infer_beats_per_measure(sums)
+    meters = [m if m is not None else inferred for m in meters_in_force(score)]
+
+    everything = [
+        len(m.notes) / meter
+        for m, meter in zip(score.measures, meters)
+        if m.notes and meter
+    ]
+    played = [
+        len(m.notes) / meter
+        for m, meter in zip(score.measures, meters)
+        if m.notes and meter and not all(n.pitch == "rest" for n in m.notes)
+    ]
+    return (
+        DENSITY_MULTIPLE * median(everything),
+        DENSITY_MULTIPLE * median(played),
+    )
+
+
+def test_bars_of_rest_would_still_drag_this_page_under_its_own_music(
+    part, both_pages
+) -> None:
+    """**The comment in `validate.py` quoted bar counts, and they went stale.**
+
+    Bars were added to this fixture the day after it was measured, so "16 bars
+    counted, 7 of them rests" stopped being true and nothing noticed — the same
+    shape as `_MIN_STAFF_SPACE_PX`'s table, which was stale for three days.
+
+    The counts were never the evidence. The limits are, and they survive
+    somebody extending the page, so they are asserted here from the fixture
+    rather than quoted in a comment:
+
+    - counting every bar, the two-page part's limit falls **below 2.0 notes per
+      beat**, which is an ordinary run of eight eighths — the bar this check
+      then flags on a page that is entirely correct;
+    - counting only bars with notes in, the limit is **3.00** on one page and
+      on two alike, and the run is silent.
+
+    A bass part is mostly bars of rest and expanding a four-bar rest turns one
+    voting bar into four, so this got worse on precisely the repertoire the
+    expansion was written for.
+    """
+    RUN_OF_EIGHTHS = 8 / 4  # eight eighth notes across a four-beat bar
+
+    everything_one, played_one = _density_limits(part)
+    everything_two, played_two = _density_limits(both_pages)
+
+    assert played_one == 3.0
+    assert played_two == 3.0
+    assert everything_two < RUN_OF_EIGHTHS < played_two, (
+        everything_two,
+        played_two,
+    )
+    # A tremolo read as sixteen sixteenths is 4 notes per beat, so nothing the
+    # check exists for has been given up.
+    assert 16 / 4 > played_two
