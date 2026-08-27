@@ -78,6 +78,34 @@ class ExpectedNote:
     #: the fermata's own attack is on time. It is the arrival of the next note
     #: that the hold moves, and that is what gets judged.
     after_fermata: bool = False
+    #: This onset is a grace note.
+    #:
+    #: **The page prints the ornament and does not say when it sounds.** An
+    #: acciaccatura is squeezed in before the beat and takes its time from the
+    #: note before; an appoggiatura lands *on* the beat and takes half the value
+    #: of the note after. The two readings put the same two attacks the better
+    #: part of a beat apart, and nothing on the page chooses between them —
+    #: which is why both the ornament and the note it decorates carry this.
+    #:
+    #: The same refusal as `under_tempo_change` and `after_fermata`, and the
+    #: same shape as `is_slur_interior`: the onset is kept, because keeping it
+    #: is what stops the timeline losing an attack the musician makes, and it
+    #: is excluded from the verdict, because its written time is an assumption
+    #: this file made rather than something the page states.
+    #:
+    #: It is also the **only** thing here that may go unheard without being a
+    #: mistake — see `align_dtw`'s `optional`. Sixty milliseconds from the note
+    #: it decorates is inside the onset detector's resolution.
+    is_grace_note: bool = False
+    #: A grace note is printed in front of this one.
+    #:
+    #: Separate from `is_grace_note` because the two need opposite treatment
+    #: where it counts: this note is **certainly** played, so failing to hear
+    #: it is a skipped note and must stay one. Only its *time* is in doubt, and
+    #: badly — an acciaccatura leaves it on the beat, an appoggiatura pushes it
+    #: half the written value late, and the page does not choose. So it is not
+    #: banded, exactly as `after_fermata` is not.
+    after_grace_note: bool = False
 
 
 @dataclass(frozen=True)
@@ -264,6 +292,34 @@ def expand_repeats(score: ScoreJson) -> list[Measure]:
     return [by_number[n] for n in play(order, spans)]
 
 
+#: How much of the run-up to a note its grace notes are assumed to occupy.
+#:
+#: **A named assumption, in the sense `UNREAD_CLEF_PLACEMENT` is one.** The
+#: page states that an ornament is played and not when; a timeline is a list of
+#: instants, so something has to be written down. A quarter of the interval
+#: leading into the note sits between the two readings an engraver may have
+#: meant — an acciaccatura is nearer a tenth of it, an appoggiatura a half —
+#: and no reading is preferred, because the ornament and the note it decorates
+#: are both excluded from the verdict for exactly this reason.
+#:
+#: What the number has to be good enough for is the matching, and there the
+#: cost is intervals with position saturated past a sixth of a gap, so being a
+#: tenth of a beat out of place is far cheaper than not being there at all.
+#: The span is also capped by the decorated note's own value, so an ornament
+#: after eight bars' rest is not placed two seconds early.
+#:
+#: **Chosen against two synthetic takes and no real recording**, which is the
+#: honest limit on it. Both series are in `EDIT_LOG.md`, 2026-08-27. What they
+#: agree on is the shape rather than the value: an acciaccatura take scores
+#: 1.000 anywhere from 0.05 to 0.5, and a take of a page whose ornaments were
+#: *not* played needs at least 0.15 — below that the grace sits so close to the
+#: note it decorates that the matcher takes the wrong one and reports skipped
+#: notes. The appoggiatura take is the only one that discriminates inside the
+#: safe range, and it is also the one that most depends on the fixture, so the
+#: bottom of that range is taken rather than its best score.
+ORNAMENT_SHARE = 0.15
+
+
 def build_timeline(score: ScoreJson, target_bpm: float) -> ExpectedTimeline:
     """Walk the score, accumulating time, emitting one entry per *sounded* onset.
 
@@ -288,6 +344,12 @@ def build_timeline(score: ScoreJson, target_bpm: float) -> ExpectedTimeline:
     #: measure loop on purpose: a fermata at a barline is the commonest place
     #: for one, and the note it moves is the first of the next bar.
     fermata_pending = False
+    #: Beat position of the last onset emitted, so a grace note can be placed
+    #: inside the run-up the ear actually hears. Not `elapsed_beats` at the
+    #: previous note: rests, slur interiors and tied-over notes advance the
+    #: clock without being attacked, and the interval an ornament is squeezed
+    #: into is the one between *sounds*.
+    last_onset_beats: float | None = None
 
     played = expand_repeats(score)
     # Read over the *played* order, not the written one: a repeat plays the
@@ -344,7 +406,46 @@ def build_timeline(score: ScoreJson, target_bpm: float) -> ExpectedTimeline:
             # attacked, and every note after it aligned against the wrong one.
             sounded = not is_rest and not ties.absorbed[position] and not under_the_bow
             if sounded:
+                # **The ornament first, because it is played first.**
+                #
+                # Discarding these is what made a perfectly played take of
+                # sixteen quarters with six appoggiaturas score 0.000 and call
+                # fifteen of its notes `severe`: the attacks were real, the
+                # page printed them, and only the timeline had never heard of
+                # them. See `Note.grace_notes` for the measurements.
+                #
+                # Placed only when the note they decorate is itself attacked.
+                # A note under a bow or absorbed by a tie has no onset here at
+                # all, and claiming an ornament was struck in front of one
+                # would be inventing an attack rather than restoring one.
+                if note.grace_notes:
+                    own = _beats(note.duration)
+                    run_up = (
+                        elapsed_beats - last_onset_beats
+                        if last_onset_beats is not None
+                        else own
+                    )
+                    span = max(0.0, min(run_up, own)) * ORNAMENT_SHARE
+                    for g in range(note.grace_notes, 0, -1):
+                        at = elapsed_beats - span * g / note.grace_notes
+                        onsets.append(at * sec_per_beat)
+                        notes.append(
+                            ExpectedNote(
+                                onset_s=at * sec_per_beat,
+                                measure_number=measure.measure_number,
+                                note_index_in_measure=i,
+                                global_index=global_index,
+                                under_tempo_change=(
+                                    measure.measure_number in under_tempo_change
+                                ),
+                                is_slur_interior=False,
+                                is_slur_boundary=False,
+                                is_grace_note=True,
+                            )
+                        )
+                        global_index += 1
                 onsets.append(elapsed_beats * sec_per_beat)
+                last_onset_beats = elapsed_beats
                 notes.append(
                     ExpectedNote(
                         onset_s=elapsed_beats * sec_per_beat,
@@ -377,6 +478,10 @@ def build_timeline(score: ScoreJson, target_bpm: float) -> ExpectedTimeline:
                         # interior never reaches here; it has no onset to keep.
                         is_slur_interior=ties.broken[position],
                         is_slur_boundary=i in boundary and not ties.broken[position],
+                        # Its own attack is the one the ornament moves, and
+                        # which way depends on a reading the page does not
+                        # state. See `ExpectedNote.after_grace_note`.
+                        after_grace_note=bool(note.grace_notes),
                     )
                 )
                 global_index += 1
@@ -677,15 +782,37 @@ MAX_TEMPO_RATIO = 1.7
 MIN_ONSETS_TO_ESTIMATE_TEMPO = 7
 
 
-def closest_expected_gap(expected: np.ndarray) -> float | None:
+def closest_expected_gap(
+    expected: np.ndarray, *, optional: np.ndarray | None = None
+) -> float | None:
     """The smallest interval between notes the score expects, in seconds.
 
     What the onset detector needs in order to size its local-max window: it
     must not be wider than the closest pair of notes, or the quieter of them is
     never reported. See `audio.peak_window_frames`.
+
+    **Grace notes are left out, and this is the one place their `optional`
+    flag has to buy something instead of costing it.** An acciaccatura is
+    placed a fraction of a beat before the note it decorates — 75 ms at 120
+    BPM — and that becomes the closest pair on the whole page, so the window
+    shrinks everywhere to chase an attack that may not be there. Measured on a
+    click track of eight quarters played exactly on the grid, ornaments printed
+    and played straight: **14 onsets detected for 8 clicks**, three of them
+    called extra, quality 0.665 and a low-confidence caveat on a take that was
+    perfect.
+
+    The window is sized for what must be heard. An ornament this close is
+    already at the edge of what the detector can resolve, which is why it is
+    optional in the first place — paying for it across the whole take is the
+    wrong side of that trade.
     """
     if expected.size < 2:
         return None
+    if optional is not None:
+        keep = ~np.asarray(optional, dtype=bool)
+        # Unless there is nothing left to measure between.
+        if keep.sum() >= 2:
+            expected = expected[keep]
     gaps = np.diff(expected)
     positive = gaps[gaps > 0]
     return float(positive.min()) if positive.size else None
@@ -774,6 +901,7 @@ def align_take(
     target_bpm: float = 120.0,
     config: AudioConfig | None = None,
     steady: np.ndarray | None = None,
+    optional: np.ndarray | None = None,
 ) -> AnchoredAlignment:
     """Align, having first worked out which detections are the *take*.
 
@@ -823,7 +951,12 @@ def align_take(
         trimmed_lead=0,
         trimmed_tail=0,
         alignment=align_dtw(
-            base, expected, target_bpm=target_bpm, config=config, steady=steady
+            base,
+            expected,
+            target_bpm=target_bpm,
+            config=config,
+            steady=steady,
+            optional=optional,
         ),
     )
     if detected.size < 3 or expected.size == 0:
@@ -845,7 +978,16 @@ def align_take(
                     trimmed_lead=lead,
                     trimmed_tail=tail,
                     alignment=align_dtw(
-                        onsets, expected, target_bpm=target_bpm, config=config
+                        onsets,
+                        expected,
+                        target_bpm=target_bpm,
+                        config=config,
+                        # Both masks, the same as the untrimmed candidate. This
+                        # passed neither, so the trimmed alignments were scored
+                        # under different rules from the one they compete with
+                        # — and `MIN_TRIM_GAIN` is a comparison between them.
+                        steady=steady,
+                        optional=optional,
                     ),
                 )
             )
@@ -871,6 +1013,7 @@ def align_dtw(
     target_bpm: float = 120.0,
     config: AudioConfig | None = None,
     steady: np.ndarray | None = None,
+    optional: np.ndarray | None = None,
 ) -> AlignmentResult:
     """Align detected onsets to expected onsets with a constrained DTW.
 
@@ -1116,8 +1259,31 @@ def align_dtw(
     # went unheard. Weight by the fraction of expected notes actually
     # matched so a "played two bars then stopped / wrong page" take is
     # correctly flagged as broken rather than "steady".
-    covered = len({e for _, e in mapping})
-    coverage = covered / expected.size if expected.size else 0.0
+    #
+    # `optional` marks expected onsets that may legitimately not be heard, and
+    # they are dropped from **both** halves of that fraction. Grace notes are
+    # the case: the page prints the ornament, so the onset belongs in the
+    # timeline, but whether a separate attack is *reported* is a coin toss —
+    # an acciaccatura can sit sixty milliseconds from the note it decorates,
+    # inside the onset detector's own resolution, and a musician may simply
+    # not play it. Counting those as unheard notes made a **perfectly played**
+    # take of four ornamented bars fall from quality 1.000 to 0.350, under the
+    # cutoff that tells the musician to record it again. Left in the numerator
+    # they would also be free credit for onsets nobody required.
+    covered_all = {e for _, e in mapping}
+    required = (
+        np.ones(expected.size, dtype=bool)
+        if optional is None
+        else ~np.asarray(optional, dtype=bool)
+    )
+    denominator = int(required.sum())
+    if denominator:
+        covered = sum(1 for e in covered_all if required[e])
+    else:
+        # Every expected onset is optional — vanishingly unlikely, and the old
+        # fraction is a better answer than dividing by zero.
+        covered, denominator = len(covered_all), expected.size
+    coverage = covered / denominator if denominator else 0.0
     quality = timing_quality * coverage
     return AlignmentResult(
         mapping=mapping,
@@ -1132,6 +1298,8 @@ def apply_fuzzy_match(
     alignment: AlignmentResult,
     detected: np.ndarray,
     expected: np.ndarray,
+    *,
+    optional: np.ndarray | None = None,
 ) -> CleanedAlignment:
     """Resolve count mismatches DTW leaves behind (§7).
 
@@ -1139,6 +1307,13 @@ def apply_fuzzy_match(
       Keep the closest in time as the real note; the rest are
       re-attacks / added notes → `extra_detected`.
     - One-to-many: an expected note nobody landed on → `missed_expected`.
+
+    `optional` marks expected onsets it is not a mistake to miss — grace
+    notes, whose attack may fall inside the onset detector's resolution or
+    simply not be played. An unheard one is not a skipped note, and counting
+    it as one reaches the musician twice: `n_missed_notes` on the result, and
+    `_why_alignment_failed`, which tells a take with any missed note to check
+    it is the right piece rather than naming the real problem.
     """
     detected = np.asarray(detected, dtype=float)
     expected = np.asarray(expected, dtype=float)
@@ -1160,8 +1335,48 @@ def apply_fuzzy_match(
 
     matched.sort()
     extra.sort()
+    skippable = (
+        np.zeros(expected.size, dtype=bool)
+        if optional is None
+        else np.asarray(optional, dtype=bool)
+    )
+
+    # **The note takes its ornament's attack back.**
+    #
+    # Between a grace and the note it decorates the written gap is a fraction
+    # of a beat while the gap *into* the grace is nearly a whole one — and the
+    # cost is interval-first, so a lone detection arriving on the beat is
+    # cheaper to call the grace than to call the note. The note is then
+    # reported skipped on a take where it was the only thing played.
+    #
+    # Which of the two is certain is not a matter of degree: the page says the
+    # note is played and only suggests when the ornament is. So an optional
+    # onset may not keep a detection that leaves the next required onset with
+    # none. Nothing else is disturbed — the swap is refused unless everything
+    # between the two is optional, so it can only ever undo this one confusion.
+    #
+    # Both narrowing clauses survive mutation, and deliberately: `back not in
+    # held` already stops the walk before either can bite in any case that was
+    # constructed. They are kept because what they exclude is not nothing — an
+    # ornament reclaiming from another ornament changes which detection sits on
+    # which, and `pulse_anchors` reads every matched pair — and because the
+    # rule is far easier to reason about stated in full than inferred from the
+    # loop that happens to make half of it redundant.
+    held: dict[int, int] = {exp_i: det_i for det_i, exp_i in matched}
+    for exp_i in range(expected.size):
+        if skippable[exp_i] or exp_i in held:
+            continue
+        back = exp_i - 1
+        while back >= 0 and skippable[back] and back not in held:
+            back -= 1
+        if back >= 0 and skippable[back] and back in held:
+            held[exp_i] = held.pop(back)
+    matched = sorted((det_i, exp_i) for exp_i, det_i in held.items())
+
     covered = {exp_i for _, exp_i in matched}
-    missed = [i for i in range(expected.size) if i not in covered]
+    missed = [
+        i for i in range(expected.size) if i not in covered and not skippable[i]
+    ]
 
     return CleanedAlignment(
         matched=matched,

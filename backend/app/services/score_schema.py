@@ -229,6 +229,34 @@ class Note(_Strict):
     #: Additive rather than a closed union, so an app that has never heard of
     #: it is unaffected: the field simply is not read.
     fermata: bool = False
+    #: How many grace notes are printed **before** this note.
+    #:
+    #: A count on the note they decorate rather than notes of their own,
+    #: because a grace note has no duration — that is what the little slashed
+    #: stem means — and a bar of four quarters with an ornament still adds up
+    #: to four. Giving them their own entries would make `validate.py` call a
+    #: correctly-read bar long, and would need porting to both sandbox copies
+    #: of the checker for a fact that is not about beats at all.
+    #:
+    #: **They are onsets, though, and dropping them broke takes that were
+    #: played perfectly.** The importer used to discard `<grace>` outright, on
+    #: the reasoning that it "carries no duration and belongs to the note it
+    #: decorates" — true about duration, and the timeline is a list of
+    #: *attacks*. Measured on sixteen quarters played exactly on the grid:
+    #:
+    #:     ornaments   alignment quality   what the musician is told
+    #:      4 (appog.)       0.416         a caution, barely above re-record
+    #:      6 (appog.)       0.000         15 of 16 notes `severe`
+    #:      8 (acciac.)      0.000         alignment failed
+    #:
+    #: `_initial_ratio` reads the pace off the gaps between detections, so
+    #: enough unexplained onsets halve the estimate and the band-constrained
+    #: search can no longer contain the true path. The page said the ornaments
+    #: were there; only the importer did not.
+    #:
+    #: Chorded graces count once — a rolled grace chord is one attack — and a
+    #: grace before a rest or a cue is dropped, because neither is played.
+    grace_notes: int = Field(default=0, ge=0)
 
     _keep_known_articulation = field_validator("articulation", mode="before")(
         _one_of(_ARTICULATIONS, "articulation")

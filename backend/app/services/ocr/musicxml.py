@@ -1151,6 +1151,14 @@ def score_json_from_musicxml(
     #: schema the app shares — but it does give a musician the one thing they
     #: need, which is which bar to go and look at.
     dropped_at: dict[int, int] = {}
+    #: Grace notes seen but not yet attached to the note they decorate.
+    #:
+    #: Kept across the measure loop for the same reason `fermata_pending` is in
+    #: `build_timeline`: an engraver may print the ornament before the barline
+    #: and the note it decorates after it. Nothing enters `measures` from here
+    #: — the count rides on the next real note — so carrying it costs nothing
+    #: when the bar ends without one.
+    pending_graces = 0
 
     for index, measure_el in enumerate(chosen.iterfind("measure"), start=1):
         # **Every** `<attributes>` block in the measure, not the first.
@@ -1292,9 +1300,24 @@ def score_json_from_musicxml(
             # a correctly-read measure long.
             if note_el.find("chord") is not None:
                 continue
-            # Grace notes carry no duration and belong to the note they
-            # decorate; including them has the same effect as a chord member.
+            # **A grace note has no duration and is still an attack.**
+            #
+            # It is not counted as a note — it has no `<duration>`, and giving
+            # it one would make the beat sum of a correctly-read bar wrong.
+            # But it *is* played, and this used to end there, which left the
+            # timeline missing an onset the page prints. Measured on sixteen
+            # quarters played exactly on the grid, four appoggiaturas scored
+            # 0.416 and six scored **0.000** — `alignment_failed` on a perfect
+            # take, because `_initial_ratio` reads the pace off the gaps
+            # between detections and unexplained onsets halve it.
+            #
+            # So it is counted on the note it decorates instead. Same voice
+            # rule as everything else here, and a chord member does not count
+            # again: a rolled grace chord is one attack, exactly as a chord is.
             if note_el.find("grace") is not None:
+                grace_voice = (note_el.findtext("voice") or "").strip()
+                if not (multi_voice and grace_voice and grace_voice != kept_voice):
+                    pending_graces += 1
                 continue
             # **A cue note is time you do not play.**
             #
@@ -1336,6 +1359,12 @@ def score_json_from_musicxml(
                 # decided (a multi-bar rest shifts everything after it), so the
                 # index is the only stable handle until the end.
                 dropped_at[len(measures)] = dropped_at.get(len(measures), 0) + 1
+                # `pending_graces` is deliberately **not** cleared. The note
+                # this ornament decorated is gone, but the attack was still
+                # made, and the same rule that governs the dropped note governs
+                # its grace: an onset lost outright is worse than one placed a
+                # little late. It rides on to the next real note, which is the
+                # nearest true thing left to attach it to.
                 continue
 
             # A tie out of a cue would be a tie out of a rest, and the tie
@@ -1349,11 +1378,20 @@ def score_json_from_musicxml(
                 )
             )
 
+            # A grace before something nobody plays decorates nothing. A rest
+            # has no attack to ornament, and a cue is somebody else's line —
+            # keeping the count there would put invented onsets in a bar the
+            # musician sits through, which is the bar before an entry and the
+            # one they most need to be right.
+            graces = 0 if pitch == "rest" else pending_graces
+            pending_graces = 0
+
             built = Note(
                 pitch=pitch,
                 duration=duration,  # type: ignore[arg-type]
                 articulation=_articulation(note_el),  # type: ignore[arg-type]
                 tied_to_next=tied,
+                grace_notes=graces,
                 # Anywhere in `<notations>`; the spec allows several and their
                 # shape and placement are engraving, not duration.
                 fermata=note_el.find("notations/fermata") is not None,

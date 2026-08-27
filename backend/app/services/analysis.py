@@ -161,7 +161,11 @@ def _summarize_measures(deltas: list[Delta]) -> list[PerMeasure]:
 
 
 def _why_alignment_failed(
-    raw: AlignmentResult, onsets: np.ndarray, expected: np.ndarray
+    raw: AlignmentResult,
+    onsets: np.ndarray,
+    expected: np.ndarray,
+    *,
+    optional: np.ndarray | None = None,
 ) -> str:
     """Say which failure this is, when it can be told apart.
 
@@ -189,7 +193,7 @@ def _why_alignment_failed(
     validator flagged nothing. Sending that musician to look for the wrong
     piece is sending them to look in the wrong place.
     """
-    cleaned = apply_fuzzy_match(raw, onsets, expected)
+    cleaned = apply_fuzzy_match(raw, onsets, expected, optional=optional)
     heard_everything = not cleaned.missed_expected and bool(cleaned.matched)
     far_too_many = len(cleaned.extra_detected) > len(cleaned.matched)
 
@@ -273,13 +277,18 @@ def analyze(
     # making fast passages undetectable.
     timeline = build_timeline(score, target_bpm)
     expected = timeline.onsets
+    # Which expected onsets it is not a mistake to miss: the grace notes, whose
+    # written time is `ORNAMENT_SHARE` splitting the difference between two
+    # readings the page did not choose between. Built here because the detector
+    # is sized from it too — see `closest_expected_gap`.
+    grace_onsets = np.array([n.is_grace_note for n in timeline.notes], dtype=bool)
 
     onsets = audio_svc.detect_onsets(
         audio_svc.pre_emphasis(y, config=cfg),
         sr,
         double_bass=double_bass,
         config=cfg,
-        min_gap_s=closest_expected_gap(expected),
+        min_gap_s=closest_expected_gap(expected, optional=grace_onsets),
     )
 
     if onsets.size == 0 or expected.size == 0:
@@ -303,9 +312,32 @@ def analyze(
     # under a `rit.` are not among them: the page has said the beat will not be
     # steady there, so they can say nothing about whether a steady-tempo
     # alignment is trustworthy.
-    steady = np.array([not n.under_tempo_change for n in timeline.notes], dtype=bool)
+    #
+    # An ornament is not steady either, and for a stronger reason than a
+    # `rit.`: its written time is not a claim the page made, it is
+    # `ORNAMENT_SHARE` splitting the difference between the two readings an
+    # engraver may have meant. A number this file invented can say nothing
+    # about whether the alignment is trustworthy — and the note the ornament
+    # decorates is in the same position, because the two readings put its
+    # attack the better part of a beat apart.
+    steady = np.array(
+        [
+            not n.under_tempo_change and not n.is_grace_note and not n.after_grace_note
+            for n in timeline.notes
+        ],
+        dtype=bool,
+    )
+    # Which onsets it is not a mistake to miss. Only the grace notes: the note
+    # they decorate is certainly played, it is only its *time* that is in
+    # doubt, and forgiving it would forgive a genuinely skipped note.
+    optional = grace_onsets
     anchored = align_take(
-        onsets, expected, target_bpm=target_bpm, config=cfg, steady=steady
+        onsets,
+        expected,
+        target_bpm=target_bpm,
+        config=cfg,
+        steady=steady,
+        optional=optional,
     )
     onsets = anchored.onsets
     raw = anchored.alignment
@@ -314,12 +346,12 @@ def analyze(
             status="alignment_failed",
             quality=round(raw.quality, 3),
             tolerance=Tolerance.of(cfg),
-            verdict=_why_alignment_failed(raw, onsets, expected),
+            verdict=_why_alignment_failed(raw, onsets, expected, optional=optional),
             n_detected_onsets=raw.n_detected,
             n_expected_onsets=raw.n_expected,
         )
 
-    cleaned = apply_fuzzy_match(raw, onsets, expected)
+    cleaned = apply_fuzzy_match(raw, onsets, expected, optional=optional)
     deltas = compute_deltas(cleaned, onsets, timeline, target_bpm, config=cfg)
     trend = rolling_trend(deltas, config=cfg)
     verdict = generate_verdict(

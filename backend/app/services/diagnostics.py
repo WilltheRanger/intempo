@@ -180,7 +180,24 @@ def analyze_with_diagnostics(
     # exactly as `analyze()` does.
     onsets = to_timeline_base(onsets)
 
-    raw = align_dtw(onsets, expected, target_bpm=target_bpm, config=cfg)
+    # The same two masks `analyze()` builds, so a diagnostic run and a real one
+    # do not disagree about a page with ornaments on it.
+    optional = np.array([n.is_grace_note for n in timeline.notes], dtype=bool)
+    steady = np.array(
+        [
+            not n.under_tempo_change and not n.is_grace_note and not n.after_grace_note
+            for n in timeline.notes
+        ],
+        dtype=bool,
+    )
+    raw = align_dtw(
+        onsets,
+        expected,
+        target_bpm=target_bpm,
+        config=cfg,
+        steady=steady,
+        optional=optional,
+    )
     base.quality = round(raw.quality, 3)
     base.raw_pairs = list(raw.mapping)
 
@@ -189,7 +206,7 @@ def analyze_with_diagnostics(
         base.verdict = f"Alignment broke: quality {raw.quality:.3f} is under the broken threshold."
         return base
 
-    cleaned = apply_fuzzy_match(raw, onsets, expected)
+    cleaned = apply_fuzzy_match(raw, onsets, expected, optional=optional)
     deltas = compute_deltas(cleaned, onsets, timeline, target_bpm, config=cfg)
 
     base.matched = list(cleaned.matched)

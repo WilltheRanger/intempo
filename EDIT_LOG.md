@@ -6,6 +6,171 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-27 — The ornaments on the page were attacks nobody had counted
+
+**Branch:** `main`. Backend and tests. No screen, component, style or copy
+touched.
+
+**Files:** `backend/app/services/score_schema.py`,
+`backend/app/services/ocr/musicxml.py`,
+`backend/app/services/alignment.py`,
+`backend/app/services/classification.py`,
+`backend/app/services/analysis.py`, `backend/app/services/diagnostics.py`,
+and three test files (one new: `app/tests/test_grace_notes.py`).
+
+The importer discarded `<grace>` outright, with a comment that was true about
+duration and silent about onsets: *"Grace notes carry no duration and belong to
+the note they decorate."* The timeline is a list of **attacks**, and the page
+prints these.
+
+### What it cost, measured
+
+Sixteen quarters at 60 BPM played exactly on the grid, ornaments played as
+printed. `q` is alignment quality, `off` is notes the app calls off-tempo:
+
+| ornaments | reading | graces dropped | graces read |
+|---|---|---|---|
+| 1 | acciaccatura | q=0.978 off=0/16 | **q=1.000** off=0/17 |
+| 4 | acciaccatura | q=0.947 off=0/16 | **q=1.000** off=0/20 |
+| 6 | acciaccatura | q=0.647 **off=4/16** | **q=1.000** off=0/22 |
+| 8 | acciaccatura | q=0.541 **off=6/16** | **q=1.000** off=0/24 |
+| 4 | appoggiatura | q=0.708 off=0/16 | **q=0.937** off=0/19 |
+| 6 | appoggiatura | q=0.522 **off=13/16** | **q=0.937** off=0/21 |
+| 8 | appoggiatura | q=0.147 **off=15/16** | **q=1.000** off=0/23 |
+
+A mixed line — quarters, eighths, a half, twelve ornaments over thirty notes —
+went from **0.296 to 1.000** for an acciaccatura take and 0.000 to 0.534 for an
+appoggiatura one. In the worst rows the app told a musician who played the page
+exactly as printed that fifteen of their sixteen notes were severely out.
+
+The mechanism is `_initial_ratio`, which reads the pace off the gaps between
+detections. Enough attacks the score has never heard of halve the estimate, and
+the band-constrained search can no longer contain the true path.
+
+### It is a count, not a note
+
+`Note.grace_notes` sits on the note the ornament decorates. A grace has no
+`<duration>` — that is what the little slashed stem means — so a bar of four
+quarters with an ornament still adds up to four, and `validate.py` is untouched.
+Giving them entries of their own would have made the beat check call a
+correctly-read bar long, and would have needed porting to **both** browser
+copies of the checker for a fact that is not about beats at all.
+
+Chorded graces count once. A grace before a rest or a cue is dropped — neither
+is played, and an invented onset in the bar before an entry is the last place
+for one. A grace whose note this schema drops rides on to the next real note:
+the same rule that governs the dropped note governs its ornament, an onset lost
+outright being worse than one placed a little late.
+
+### `ORNAMENT_SHARE` is a named assumption, in the sense `UNREAD_CLEF_PLACEMENT` is
+
+The page states that the ornament is played and not when. An acciaccatura is
+squeezed in before the beat; an appoggiatura lands *on* it and pushes the note
+half its written value late. The two put the same two attacks the better part
+of a beat apart and nothing on the page chooses between them.
+
+So a timeline needs a number, and 0.15 of the run-up is it — capped by the
+decorated note's own value, so an ornament after eight bars' rest is not placed
+two seconds early. **Both the ornament and the note it decorates are then
+excluded from the verdict**, which is the third instance of the same refusal
+after `under_tempo_change` and `after_fermata`: timing a musician against a
+number this code invented would be worse than not placing the ornament at all.
+
+Chosen against two synthetic takes and no real recording, which is the honest
+limit on it. What they agree on is the shape rather than the value:
+
+| share | acciaccatura | appoggiatura (mixed line) | printed, not played |
+|---|---|---|---|
+| 0.05 | 1.000 | 1.000 | **0.94, 1 note called skipped** |
+| 0.10 | 1.000 | — | **0.87, 2 skipped** |
+| **0.15** | **1.000** | **0.534** | **1.000** |
+| 0.25 | 1.000 | **0.000** | 1.000 |
+| 0.35 | 1.000 | 0.309 | 1.000 |
+| 0.50 | 1.000 | 0.326 | 1.000 |
+
+Below 0.15 the ornament sits so close to its note that the matcher takes the
+wrong one. Above it the appoggiatura take falls off a cliff on the mixed line.
+The uniform-quarter take prefers 0.50 there, and that preference is an
+artefact — every ornament on an identical value makes the error a single global
+shift, which the straight-line fit absorbs entirely. The mixed line is the more
+honest fixture, so 0.15.
+
+### Three things the first version got wrong, each caught by measuring
+
+**1. An unheard ornament was reported as a skipped note.** An acciaccatura can
+sit sixty milliseconds from the note it decorates — inside the onset detector's
+own resolution — and plenty of musicians do not play the printed ornaments at
+all. Counting those against coverage took a **perfectly played** take from
+1.000 to **0.350**, under the cutoff that asks for a re-record. Fixed by an
+`optional` mask threaded to `align_dtw` and `apply_fuzzy_match`: dropped from
+*both* halves of the coverage fraction, so an ornament is neither a debt nor
+free credit.
+
+**2. The onset detector was resized to chase them.** `closest_expected_gap`
+sizes the local-max window from the closest pair on the page, and a grace note
+becomes that pair — so the window shrank across the whole take. Measured on
+eight clicks played exactly on the grid: **14 onsets detected**, three called
+extra, quality 0.665 and a low-confidence caveat on a perfect take. The window
+is now sized from the required onsets only. An ornament that close is already
+at the edge of what the detector can resolve, which is why it is optional.
+
+**3. The note lost its own attack to its ornament.** The cost is
+interval-first, and the written gap *into* a grace is nearly a whole beat while
+the gap from the grace to its note is a fraction of one — so a lone detection
+arriving on the beat is cheaper to call the grace. The decorated note was then
+reported skipped on a take where it was the only thing played: nine phantom
+skipped notes on the mixed line. `apply_fuzzy_match` now lets a required onset
+reclaim the detection from an ornament immediately before it. Nine → **zero**.
+
+### One refuted fix, recorded so nobody retries it blind
+
+Penalising `optional` columns in the DTW cost matrix, to make the matcher
+prefer the real note. It does **nothing**: the mixed line reads 0.700 with nine
+phantom skipped notes at penalties of 0.0, 0.05, 0.1 *and* 0.2, identically,
+and 0.4 makes it worse (0.564, eleven skipped). The difference it would have to
+overcome is 0.7 of a written gap, and a penalty that large would refuse
+genuinely played ornaments too. Reverted; the reclaim rule above is what works.
+
+### The limit, stated plainly
+
+A page where **half** the notes carry an ornament and none of them is heard is
+still refused — 0.153 with five notes called skipped, against 1.000 before this
+change. That is the one row where reading the graces is worse than dropping
+them, and it is a real limit rather than a tuning accident: the timeline then
+alternates a 0.425 s gap with a 0.075 s one, which is not a stretched version
+of anything the musician played. Up to 37.5% ornament density the same take
+reads 1.000. Nothing here has been checked against a real ornamented recording.
+
+Also: the appoggiatura take now reports **one** missed note at every ornament
+count from 1 to 6 — constant, so an edge effect rather than a per-ornament
+cost, and unexplained. Named because it reaches the musician as `n_missed_notes`.
+
+### One thing fixed on the way past
+
+`align_take` passed `steady` to the untrimmed candidate and to none of the
+trimmed ones, so the alignments competing under `MIN_TRIM_GAIN` were scored
+under different rules. Both masks now go to all of them. No existing test
+changed.
+
+**Tests:** backend **1411 passed, 3 xfailed** (was 1385/3 before the new file).
+Eighteen mutants, sixteen killed. The two survivors are both narrowing clauses
+in the reclaim loop that `back not in held` already forecloses in every case
+that could be constructed; kept and documented rather than deleted, because
+what they exclude is not nothing — `pulse_anchors` reads every matched pair.
+
+**Known side effects:** the ornament and the note it decorates are no longer
+banded, so a musician who is genuinely late on an ornamented note is not told
+so. That is the intended trade and the same one `after_fermata` makes.
+
+**Rollback:** `git revert` this commit. `Note.grace_notes` defaults to 0, so
+scores already stored read back exactly as they do today.
+
+**Still waiting on the owner** — the UI plan (four items), migration `011`,
+permission to re-read the nine failed scans, and whether `Repeat` gets a field
+for an unclosed forward sign.
+
+---
+
 ## 2026-08-27 — A musician who held a fermata was told they dragged
 
 **Branch:** `main`. Backend and tests. No screen, component, style or copy

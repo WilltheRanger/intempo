@@ -212,9 +212,17 @@ def compute_deltas(
         # player. So the interval after it cannot be measured against a written
         # value, and `pulse_anchors` cannot help: it cannot tell a hold from a
         # hesitation, and for a hesitation keeping the drift is right.
+        # A grace note is the third case, and the narrowest: the page prints
+        # the ornament without stating when it sounds, so both it and the note
+        # it decorates are placed here by an assumption this code made — see
+        # `ORNAMENT_SHARE`. Timing a musician against a number we invented is
+        # the one thing that would be worse than not placing them at all.
         band = (
             Band.on
-            if note.under_tempo_change or note.after_fermata
+            if note.under_tempo_change
+            or note.after_fermata
+            or note.is_grace_note
+            or note.after_grace_note
             else classify_band(delta_pct, config=cfg)
         )
         deltas.append(
