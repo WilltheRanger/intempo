@@ -79,22 +79,39 @@
       <note><pitch><step>F</step><octave>3</octave></pitch><duration>12</duration><type>quarter</type></note>
     </measure>
 
-    <!-- 6. The metre changes mid-part, which is where the real page prints
-         its only time signature. -->
+    <!-- 6. A run of eighths — ordinary music, and the only bar here dense
+         enough for the density check to look at. `DENSITY_MIN_NOTES` is 8, so
+         every other bar in this part is below the floor and the check cannot
+         fire on them at all: without this bar, breaking it would go unnoticed.
+         Eight notes over four beats is twice the page's median and the limit
+         is three times it, so this must stay silent. -->
     <measure number="6">
+      <note><pitch><step>D</step><octave>3</octave></pitch><duration>6</duration><type>eighth</type></note>
+      <note><pitch><step>E</step><alter>-1</alter><octave>3</octave></pitch><duration>6</duration><type>eighth</type></note>
+      <note><pitch><step>F</step><octave>3</octave></pitch><duration>6</duration><type>eighth</type></note>
+      <note><pitch><step>G</step><octave>3</octave></pitch><duration>6</duration><type>eighth</type></note>
+      <note><pitch><step>A</step><octave>3</octave></pitch><duration>6</duration><type>eighth</type></note>
+      <note><pitch><step>G</step><octave>3</octave></pitch><duration>6</duration><type>eighth</type></note>
+      <note><pitch><step>F</step><octave>3</octave></pitch><duration>6</duration><type>eighth</type></note>
+      <note><pitch><step>E</step><alter>-1</alter><octave>3</octave></pitch><duration>6</duration><type>eighth</type></note>
+    </measure>
+
+    <!-- 7. The metre changes mid-part, which is where the real page prints
+         its only time signature. -->
+    <measure number="7">
       <attributes><time><beats>2</beats><beat-type>4</beat-type></time></attributes>
       <note><pitch><step>G</step><octave>2</octave></pitch><duration>12</duration><type>quarter</type></note>
       <note><pitch><step>B</step><alter>-1</alter><octave>2</octave></pitch><duration>12</duration><type>quarter</type></note>
     </measure>
 
-    <!-- 7. A whole rest alone in a 2/4 bar: one bar of rest, not four beats. -->
-    <measure number="7">
+    <!-- 8. A whole rest alone in a 2/4 bar: one bar of rest, not four beats. -->
+    <measure number="8">
       <note><rest/><duration>48</duration><type>whole</type></note>
     </measure>
 
-    <!-- 8. A note that contradicts itself — typed `breve`, eight quarter
+    <!-- 9. A note that contradicts itself — typed `breve`, eight quarter
          beats, timed at half of one. -->
-    <measure number="8">
+    <measure number="9">
       <note><rest/><duration>6</duration><type>breve</type></note>
       <note><pitch><step>D</step><octave>3</octave></pitch><duration>18</duration><type>quarter</type><dot/></note>
     </measure>

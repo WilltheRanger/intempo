@@ -58,6 +58,12 @@ EXPECTED = [
         ("D3", "eighth"),
         ("F3", "quarter"),
     ],
+    # A run of eighths: ordinary music, and the only bar dense enough for the
+    # density check to look at — every other bar is under `DENSITY_MIN_NOTES`.
+    [
+        ("D3", "eighth"), ("Eb3", "eighth"), ("F3", "eighth"), ("G3", "eighth"),
+        ("A3", "eighth"), ("G3", "eighth"), ("F3", "eighth"), ("Eb3", "eighth"),
+    ],
     [("G2", "quarter"), ("Bb2", "quarter")],
     # A whole rest alone in a 2/4 bar is one bar of rest, not four beats.
     [("rest", "half")],
@@ -83,7 +89,7 @@ def test_every_bar_adds_up(part) -> None:
     """
     verdicts = Counter(f.verdict for f in validate_measures(part))
 
-    assert verdicts == {"ok": 11}, verdicts
+    assert verdicts == {"ok": 12}, verdicts
 
 
 def test_the_header_is_read_and_the_change_rides_on_its_bar(part) -> None:
@@ -94,7 +100,7 @@ def test_the_header_is_read_and_the_change_rides_on_its_bar(part) -> None:
     assert part.clef == "bass"
     assert part.key_signature == "Bb major"
     assert [m.time_signature for m in part.measures] == [
-        None, None, None, None, None, None, None, None, "2/4", None, None
+        None, None, None, None, None, None, None, None, None, "2/4", None, None
     ]
 
 
@@ -117,7 +123,7 @@ def test_the_bars_are_numbered_as_a_player_would_count_them(part) -> None:
     """The file numbers four bars' rest as one bar, so everything after it is
     three too low until the expansion renumbers. `MeasureEditScreen` and every
     caveat line address a bar by its number."""
-    assert [m.measure_number for m in part.measures] == list(range(1, 12))
+    assert [m.measure_number for m in part.measures] == list(range(1, 13))
 
 
 # ---------------------------------------------------------------------------
@@ -153,15 +159,15 @@ def test_a_part_that_returns_to_its_first_metre_on_page_two(both_pages) -> None:
     metres = [m.time_signature for m in both_pages.measures]
 
     # Page one's change, then page two restating what it is in.
-    assert metres[8] == "2/4", metres
-    assert metres[11] == "4/4", metres
+    assert metres[9] == "2/4", metres
+    assert metres[12] == "4/4", metres
     assert [m for m in metres if m] == ["2/4", "4/4"], metres
 
 
 def test_the_joined_part_still_adds_up_everywhere(both_pages) -> None:
     verdicts = Counter(f.verdict for f in validate_measures(both_pages))
 
-    assert verdicts == {"ok": 15}, verdicts
+    assert verdicts == {"ok": 16}, verdicts
     assert both_pages.ocr_confidence == 1.0
 
 
@@ -170,7 +176,7 @@ def test_the_second_page_s_rests_are_in_its_own_metre(both_pages) -> None:
     against the 2/4 left in force by page one they would be halves, and the
     page would run four beats short."""
     assert [
-        (n.pitch, n.duration) for m in both_pages.measures[11:] for n in m.notes
+        (n.pitch, n.duration) for m in both_pages.measures[12:] for n in m.notes
     ] == [
         ("Eb3", "quarter"), ("D3", "quarter"), ("C3", "quarter"), ("Bb2", "quarter"),
         ("rest", "whole"), ("rest", "whole"),
@@ -220,7 +226,7 @@ def test_a_rest_advances_the_clock_without_asking_for_a_note(part) -> None:
 
     onsets = [round(float(o), 3) for o in alignment.build_timeline(part, 60.0).onsets]
 
-    assert onsets[-1] == 36.5, onsets
+    assert onsets[-1] == 40.5, onsets
 
 
 def test_a_tie_costs_the_timeline_an_onset(part) -> None:
@@ -233,4 +239,57 @@ def test_a_tie_costs_the_timeline_an_onset(part) -> None:
     onsets = alignment.build_timeline(part, 60.0).onsets
     pitched = sum(1 for m in part.measures for n in m.notes if n.pitch != "rest")
 
-    assert len(onsets) == pitched - 1 == 18
+    assert len(onsets) == pitched - 1 == 26
+
+
+def test_a_correct_part_is_flagged_for_nothing_at_all(part) -> None:
+    """**Four checks, and a clean part must trip none of them.**
+
+    Three of the four fire on measures whose beats add up *exactly* — a slur
+    written as a tie, a tuplet bracket contradicting its ratio, a bar far
+    denser than the page's median — and they exist because arithmetic cannot
+    see any of that. The cost of one firing wrongly is not a wrong number on a
+    screen: it is that the next caveat, on the page that really is misread, is
+    the second one this musician has been shown and the first was noise.
+
+    This part contains a tie and a run of triplets — the first document in this
+    corpus that holds what two of these checks look for at all — and is
+    correct. So the assertion is that it says **nothing**.
+
+    Checked live rather than assumed: the same document with its tie altered to
+    run `Bb2` into a `D3` reports `BrokenTie(measure_number=2, ...)`. The
+    silence below is the check working, not the check missing.
+    """
+    from app.services.ocr.validate import (
+        broken_ties,
+        numbering_gaps,
+        pickup_complement,
+        tuplet_faults,
+        validate_measures,
+    )
+
+    findings = validate_measures(part)
+
+    assert broken_ties(part.measures) == []
+    assert tuplet_faults(part.measures) == []
+    assert numbering_gaps(part) == []
+    assert pickup_complement(part) is None
+    assert [f for f in findings if getattr(f, "dense", False)] == []
+    assert [f for f in findings if f.is_problem] == []
+    assert part.notes_to_human == ""
+
+
+def test_the_joined_pages_are_flagged_for_nothing_either(both_pages) -> None:
+    """The same, across the page break — where a spurious caveat is likeliest,
+    because the join is the one place a measure's neighbours change."""
+    from app.services.ocr.validate import (
+        broken_ties,
+        numbering_gaps,
+        tuplet_faults,
+        validate_measures,
+    )
+
+    assert broken_ties(both_pages.measures) == []
+    assert tuplet_faults(both_pages.measures) == []
+    assert numbering_gaps(both_pages) == []
+    assert [f for f in validate_measures(both_pages) if f.is_problem] == []

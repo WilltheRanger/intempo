@@ -65,9 +65,17 @@ def _score(
                 "notes": [
                     # A "!" suffix on a duration writes a tie into the next
                     # note, so the cases can cover ties without a second helper.
+                    # An "@" prefix makes it a rest — without which no case
+                    # could hold a bar of rest, and the density rule that
+                    # excludes them from the median would be unported and
+                    # unnoticed, which is exactly what happened.
                     {
-                        "pitch": "A4" if not d.startswith("~") else "G4",
-                        "duration": d.strip("~!"),
+                        "pitch": (
+                            "rest"
+                            if d.startswith("@")
+                            else ("A4" if not d.startswith("~") else "G4")
+                        ),
+                        "duration": d.strip("~!@"),
                         "tied_to_next": d.endswith("!"),
                     }
                     for d in durations
@@ -98,6 +106,32 @@ CASES = [
     _score([["half"], ["half"], ["half"], ["half"]], "unknown"),  # inferred 2.0
     _score([Q, Q, ["quarter"] * 3, Q, Q], "unknown"),             # outlier vs inferred
     _score([["quarter"] * 3] * 4, "4/4"),                         # stated beats inferred
+    # Bars of rest must not vote on the median density. Without these two, both
+    # ports carried the old filter and every parity test still passed — a rule
+    # changed in `validate.py` and ported nowhere, which is the failure
+    # `CLAUDE.md` says this file exists to prevent.
+    #
+    # Quiet: eight eighths is ordinary music on a page that is mostly resting.
+    _score(
+        [Q, Q] + [["@whole"]] * 8 + [["eighth"] * 8],
+        "4/4",
+    ),
+    # Loud: sixteen sixteenths on the same resting page is the tremolo this
+    # check exists for, and both sides must still catch it.
+    _score(
+        [Q, Q] + [["@whole"]] * 8 + [["sixteenth"] * 16],
+        "4/4",
+    ),
+    # And the distinction between "a bar of nothing but rests" and "a bar with
+    # a rest in it". These bars are music and must keep voting; if a port used
+    # `some` instead of `every`, the tremolo would become the only voter and be
+    # measured against itself, and both sides would go quiet on the one bar
+    # that is wrong.
+    _score(
+        [["quarter", "@quarter", "quarter", "quarter"]] * 6
+        + [["sixteenth"] * 16],
+        "4/4",
+    ),
     _score([Q, Q, Q, ["quarter"] * 3, ["quarter"] * 3, ["quarter"] * 3], "unknown"),  # 50/50
     _score([["dotted_quarter", "eighth", "sixteenth", "sixteenth", "eighth", "quarter"]], "4/4"),
     _score([["dotted_half"], ["dotted_half"], ["dotted_half"]], "6/8"),

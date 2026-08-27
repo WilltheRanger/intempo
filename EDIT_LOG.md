@@ -6,6 +6,71 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-26 — A bar of rest was voting on how dense the music is
+
+**Branch:** `main`. Backend, both browser ports, and the part fixture. No
+screen, component, style or copy touched.
+
+**Files:** `backend/app/services/ocr/validate.py`,
+`backend/app/tests/{test_density,test_sandbox_parity,test_orchestral_part}.py`,
+`fixtures/musicxml/orchestral_part.musicxml`,
+`tools/{validator-sandbox,scan-bench}.template.html`.
+
+### Found by a mutation surviving a test written to be sure of nothing
+
+The *"a correct part is flagged for nothing"* test passed while
+`DENSITY_MULTIPLE` was halved — because the fixture's densest bar held **six**
+notes and `DENSITY_MIN_NOTES` is **eight**. The density check could not fire on
+that document at all, so its silence proved nothing.
+
+Adding a run of eight eighths — ordinary music, and what a real part actually
+contains — made the check live. It also made it **fire**, on the joined two
+pages but not on one.
+
+### The bug, and it is mine
+
+The density is notes per beat, and **a rest is a note in this schema**. So a
+bar of rest contributes to a median that is supposed to say how many *notes* a
+bar of this page holds, and drags it down:
+
+| | bars counted | rest-only | median | limit | 8 eighths flagged? |
+|---|---|---|---|---|---|
+| one page | 12 | 5 | 0.750 | 2.25 | no |
+| **two pages** | 16 | **7** | **0.500** | **1.50** | **yes** |
+| either, rests excluded | — | — | 1.000 | 3.00 | no |
+
+A musician would be told to look again at a bar of perfectly ordinary music.
+
+**And `_expand_multiple_rests` multiplied it.** A four-bar rest used to be one
+voting bar; this morning it became four. The fix written for a bass part's
+multi-bar rests made this check misfire on exactly the repertoire that fix was
+for — the fourth time this session a rule has been right alone and wrong beside
+its neighbour, and the first where I wrote both sides.
+
+`all`, not `any`: a bar of three quarters and a rest is music and still votes.
+Nothing the check is for has been given up — a tremolo read as sixteen
+sixteenths is still 4 notes per beat against a limit of 3, and is still caught
+on a page full of rests.
+
+### Both ports, and a case that actually exercises them
+
+`CLAUDE.md`: *"when you add a check, port it **and add a case**, or the browser
+tools will quietly call a bad page clean."*
+
+Both templates carried the old filter, and **every parity test passed** — no
+case could hold a bar of rest, because `_score` only ever wrote pitched notes.
+It now takes an `@` prefix, and three cases were added: a resting page whose
+eighth-run must stay quiet, the same page with a tremolo that must be caught,
+and bars carrying *one* rest that must keep voting.
+
+Mutations: reverting either port is caught, and so is a port using `some` where
+the validator uses `all` — which was still surviving until the third case
+existed.
+
+Full suite green at 1274, two xfailed.
+
+---
+
 ## 2026-08-26 — Checking the reading at the layer that actually collects it
 
 **Branch:** `main`. Backend tests. No screen, component, style or copy touched.
