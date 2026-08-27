@@ -26,6 +26,24 @@ const ZIP_MAGIC = [0x50, 0x4b, 0x03, 0x04];
  */
 const CONTAINER = 'META-INF/container.xml';
 
+/**
+ * How much a `.mxl` is allowed to expand to.
+ *
+ * **Because a zip is small until you open it.** `unzipSync` decompresses every
+ * entry into memory, and `ImportFile`'s size check runs on the text that comes
+ * out — the wrong side of the allocation. Measured with `fflate` at level 9:
+ * eight entries of 25MB compress to **196KB**, a ratio of **1070:1**. So a
+ * 10MB file — an unremarkable thing to be sent, and well inside what a picker
+ * will hand over — expands to roughly ten gigabytes, and the phone is gone
+ * before anything has looked at a note.
+ *
+ * Comfortably above `MAX_XML_CHARS`, which is the limit that actually decides
+ * whether a score is too big: this one only has to stop the allocation, and a
+ * guard that could refuse a file the real check would accept would be a bug
+ * dressed as safety. `test_client_enums.py` asserts the two stay in that order.
+ */
+export const MAX_UNZIPPED_BYTES = 32 * 1024 * 1024;
+
 export class MusicXMLFileError extends Error {}
 
 function looksLikeZip(bytes: Uint8Array): boolean {
@@ -117,6 +135,14 @@ function scoreEntryName(files: Record<string, Uint8Array>): string {
   return candidate;
 }
 
+function totalBytes(files: Record<string, Uint8Array>): number {
+  let total = 0;
+  for (const name of Object.keys(files)) {
+    total += files[name].length;
+  }
+  return total;
+}
+
 /** The MusicXML text inside a picked file, compressed or not. */
 export function readMusicXML(bytes: Uint8Array): string {
   if (!looksLikeZip(bytes)) {
@@ -127,10 +153,45 @@ export function readMusicXML(bytes: Uint8Array): string {
   }
 
   let files: Record<string, Uint8Array>;
+  // **Refused on what the zip says about itself, before anything is
+  // allocated.** The central directory carries each entry's uncompressed size,
+  // and `unzipSync` reads it there — so a filter that returns false for an
+  // entry is a decompression that never happens.
+  //
+  // Running total rather than per entry: a thousand entries under the limit
+  // are over it together, and a bomb is as easily built that way.
+  //
+  // **A declared size is a claim, and here the library makes the claim
+  // binding.** The backend's matching guard for a downloaded page refuses on
+  // the content-length *and then* counts the bytes as they stream, because
+  // there a header can lie and the body still arrive. Measured here: patch the
+  // central directory to declare 0 and `fflate` extracts **0 bytes** — it
+  // allocates to the declared size and truncates. So understating is not a way
+  // to smuggle a bomb past this; it is a way to produce an empty score, which
+  // the "isn't a MusicXML score" check downstream then refuses.
+  //
+  // The total below is kept anyway. It costs a pass over what was extracted,
+  // and it is the check that would still be standing if this ever stopped
+  // going through `fflate`.
+  let declared = 0;
+  let overLimit = false;
   try {
-    files = unzipSync(bytes);
+    files = unzipSync(bytes, {
+      filter: (file) => {
+        // A streamed entry can declare nothing at all, in which case there is
+        // no claim to refuse and the check below the unzip is the only guard.
+        declared += file.originalSize || 0;
+        overLimit = overLimit || declared > MAX_UNZIPPED_BYTES;
+        return !overLimit;
+      },
+    });
   } catch {
     throw new MusicXMLFileError("That file is compressed and won't open.");
+  }
+  if (overLimit || totalBytes(files) > MAX_UNZIPPED_BYTES) {
+    throw new MusicXMLFileError(
+      'That file unpacks to far more than a score of music — it may be damaged.',
+    );
   }
   return decode(files[scoreEntryName(files)]);
 }

@@ -6,6 +6,99 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-27 — A 196KB file that unpacks to 200MB, and two mistakes of my own
+
+**Branch:** `main`. One app module, its test, and one backend test. No screen,
+component, visual style or design token touched. **One new error sentence**, in
+a module that already owns two and in their voice — named here because copy is
+gated and I would rather over-report it than decide quietly.
+
+**Files:** `mobile/src/lib/musicxml/file.ts`,
+`mobile/src/lib/musicxml/hostile.test.ts`,
+`backend/app/tests/test_client_enums.py`.
+
+The previous entry named this and did not fix it: *"`readMusicXML`
+decompresses the whole zip into memory before any size check, so a zip bomb is
+still an out-of-memory crash on the phone rather than a refusal."*
+
+### Measured before deciding anything
+
+Eight entries of 25MB, `fflate` at level 9: **195,942 bytes**, declaring
+**200MB**. A ratio of **1070:1**. So a 10MB `.mxl` — an unremarkable thing to
+be sent, and well inside what a file picker will hand over — expands to roughly
+ten gigabytes, and `ImportFile`'s size check runs on the text that comes out,
+which is the wrong side of the allocation.
+
+Guarded: **refused in 130ms**, resident memory unchanged.
+
+### What the guard is, and the honest limit of it
+
+`unzipSync` takes a `filter`, called with each entry's declared uncompressed
+size **before** it is decompressed — so returning false is a decompression that
+never happens. A running total, not per entry: a thousand entries under the
+limit are over it together.
+
+`MAX_UNZIPPED_BYTES` is 32MB, comfortably above `MAX_XML_CHARS`, because this
+guard only has to stop the allocation — the limit that decides whether a score
+is too big is the character one, and a guard that could refuse a file the real
+check would accept would be a bug dressed as safety. Asserted in
+`test_client_enums.py`, beside the two cross-wire limits added yesterday.
+
+**A declared size is a claim, and here the library makes the claim binding.**
+The backend's matching guard for a downloaded page refuses on the
+content-length *and then* counts bytes as they stream, because there a header
+can lie and the body still arrive. Measured here: patch the central directory
+to declare 0 and `fflate` extracts **0 bytes** — it allocates to the declared
+size and truncates. Understating is therefore not a way to smuggle a bomb past
+this; it produces an empty score, which the "isn't a MusicXML score" check
+refuses. Pinned as a test, because it is surprising.
+
+### The mutation that showed the test was testing the wrong thing
+
+Both guards reach the same verdict, so *"it throws"* cannot tell "refused
+before decompressing" from "decompressed and then refused" — and **three
+mutants survived on exactly that**, including deleting the filter outright.
+
+The observable that separates them is memory. Not heap: `fflate` returns typed
+arrays, which live outside it and read as ~0. **Resident** memory grows by
+**197MB** when the bomb is extracted and by nothing when it is refused, so the
+tests now assert a 64MB ceiling around the call. Four of five mutants killed
+after that; the fifth is the extracted-total check, which the filter always
+reaches first — the belt-and-braces the comment already says it is.
+
+### Two mistakes of mine, and the second is a hazard of the method
+
+1. I ran `git checkout -- src/lib/musicxml/file.ts` to tidy up and **destroyed
+   my own uncommitted guard**. Re-applied from the conversation; nothing else
+   was lost. A destructive command run for tidiness, on a file with unsaved
+   work in it.
+
+2. **The mutation harness left a mutant in the tree.** It edits source in place
+   and restores in a `finally`, which does not survive the process being
+   killed — and I had wrapped it in an outer timeout shorter than the run. It
+   was terminated mid-mutant and `MAX_UNZIPPED_BYTES` stayed at 32 **GB** until
+   I checked. This method has been used every tick this session; the fix that
+   worked is a per-mutant timeout well inside the harness's own budget, so the
+   harness is never the thing that gets killed. Worth knowing before the next
+   one silently ships a mutant as a change.
+
+**Tests:** app **399 passed** in 33 files (five new), typecheck clean; backend
+**1620 passed, 3 xfailed** (one new). Five mutants, four killed, on a
+verified-green baseline.
+
+**Known side effects:** a legitimate score larger than 32MB uncompressed is now
+refused as damaged rather than being read and then refused for its length. Such
+a file is already over the 8,000,000-character limit by a wide margin, so the
+answer is the same either way and only the sentence differs.
+
+**Rollback:** `git revert` this commit.
+
+**Still waiting on the owner** — the UI plan (four items), migration `011`,
+permission to re-read the nine failed scans, and whether `Repeat` gets a field
+for an unclosed forward sign.
+
+---
+
 ## 2026-08-27 — Two numbers written on both sides of the wire, held together by nothing
 
 **Branch:** `main`. Backend tests and one new app test module. **No screen,

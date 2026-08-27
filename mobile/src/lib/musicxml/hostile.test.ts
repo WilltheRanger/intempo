@@ -16,6 +16,7 @@ import { zipSync } from 'fflate';
 import { describe, expect, it } from 'vitest';
 
 import {
+  MAX_UNZIPPED_BYTES,
   MusicXMLFileError,
   composerIn,
   partsIn,
@@ -120,3 +121,100 @@ describe('the readers cannot be made to hang', () => {
     );
   });
 });
+
+/**
+ * A zip is small until you open it.
+ *
+ * `unzipSync` decompresses every entry into memory, and `ImportFile`'s size
+ * check runs on the text that comes out — the wrong side of the allocation.
+ */
+describe('a file that unpacks to far more than a score', () => {
+  const twentyFiveMB = new Uint8Array(25_000_000).fill(0x78); // 'x'
+
+  it('compresses about a thousand to one, which is the whole problem', () => {
+    const zipped = zipSync({ 'p.xml': twentyFiveMB }, { level: 9 });
+    // Measured when written: 25MB → ~25KB. A 10MB file — an unremarkable thing
+    // to be sent — therefore expands to something around ten gigabytes.
+    expect(twentyFiveMB.length / zipped.length).toBeGreaterThan(500);
+  });
+
+  it('is refused without being decompressed', () => {
+    const files: Record<string, Uint8Array> = {};
+    for (let i = 0; i < 8; i += 1) {
+      files[`p${i}.xml`] = twentyFiveMB;
+    }
+    const bomb = zipSync(files, { level: 9 });
+    expect(bomb.length).toBeLessThan(1_000_000);
+
+    const started = Date.now();
+    const grew = grownBy(() => expect(() => readMusicXML(bomb)).toThrow(MusicXMLFileError));
+    expect(Date.now() - started).toBeLessThan(BUDGET_MS);
+    // **The refusal is not the point; not allocating is.** Both guards reach
+    // the same verdict, so asserting only that it throws cannot tell "refused
+    // before decompressing" from "decompressed and then refused" — and a
+    // mutation removing the filter survived exactly that test. Measured:
+    // extracting these 200MB grows resident memory by ~197MB, and refusing
+    // them grows it by nothing.
+    expect(grew).toBeLessThan(64 * 1024 * 1024);
+  });
+
+  it('counts the entries together, not one at a time', () => {
+    // Each well under the limit; the eight of them are over it. A bomb is as
+    // easily built this way, and a per-entry check would wave it through — and
+    // would still *refuse* it further down, having already paid for it, which
+    // is why this measures the memory too.
+    const eighth = new Uint8Array(MAX_UNZIPPED_BYTES / 4).fill(0x78);
+    const files: Record<string, Uint8Array> = {};
+    for (let i = 0; i < 8; i += 1) {
+      files[`p${i}.xml`] = eighth;
+    }
+    const zipped = zipSync(files, { level: 9 });
+    const grew = grownBy(() =>
+      expect(() => readMusicXML(zipped)).toThrow(MusicXMLFileError),
+    );
+    expect(grew).toBeLessThan(64 * 1024 * 1024);
+  });
+
+  it('still reads a score that is merely large', () => {
+    const big = '<score-partwise>' + '<!--' + 'x'.repeat(4_000_000) + '-->' + '</score-partwise>';
+    const out = readMusicXML(zipSync({ 'score.xml': new TextEncoder().encode(big) }, { level: 9 }));
+    expect(out).toHaveLength(big.length);
+  });
+
+  it('a header that understates itself truncates rather than smuggling', () => {
+    // The central directory's uncompressed-size field is what `fflate` reads
+    // and what it allocates to. Patching it to 0 does not slip a large entry
+    // past the filter — it produces an empty one, which the "isn't a MusicXML
+    // score" check downstream refuses.
+    const zipped = zipSync(
+      { 'score.xml': new TextEncoder().encode('<score-partwise>' + 'x'.repeat(200_000) + '</score-partwise>') },
+      { level: 9 },
+    );
+    const at = indexOfSignature(zipped, [0x50, 0x4b, 0x01, 0x02]);
+    expect(at).toBeGreaterThan(0);
+    new DataView(zipped.buffer, zipped.byteOffset).setUint32(at + 24, 0, true);
+    expect(readMusicXML(zipped)).toBe('');
+  });
+});
+
+/**
+ * How much resident memory a call left behind.
+ *
+ * The only observable that separates a guard which refuses early from one that
+ * refuses late. Heap size does not work: `fflate` returns typed arrays, which
+ * live outside the JS heap and read as ~0 there.
+ */
+function grownBy(run: () => void): number {
+  const before = process.memoryUsage().rss;
+  run();
+  return process.memoryUsage().rss - before;
+}
+
+function indexOfSignature(bytes: Uint8Array, signature: number[]): number {
+  for (let i = 0; i <= bytes.length - signature.length; i += 1) {
+    if (signature.every((byte, k) => bytes[i + k] === byte)) {
+      return i;
+    }
+  }
+  return -1;
+}
