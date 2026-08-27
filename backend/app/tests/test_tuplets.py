@@ -97,7 +97,10 @@ def test_a_ratio_the_durations_cannot_express_is_reported() -> None:
     )
     (fault,) = tuplet_faults([measure])
     assert fault.reason == "unwritable"
-    assert "three in the time of two" in fault.describe()
+    # The message named 3:2 as the only writable ratio. It is not any more —
+    # duplets, quadruplets and sextuplets all land on written values — so what
+    # it says now is the thing that is still true of 5:4.
+    assert "no written value survives it" in fault.describe()
 
 
 def test_a_bracket_over_plain_durations_is_caught() -> None:
@@ -110,7 +113,7 @@ def test_a_bracket_over_plain_durations_is_caught() -> None:
     )
     (fault,) = tuplet_faults([measure])
     assert fault.reason == "durations"
-    assert "not triplet values" in fault.describe()
+    assert "not 3:2 values" in fault.describe()
 
 
 # --- flagging --------------------------------------------------------------
@@ -191,3 +194,74 @@ def test_an_imported_file_with_two_brackets_gets_two_entries() -> None:
 def test_a_file_with_no_brackets_states_none() -> None:
     score = score_json_from_musicxml(_XML.format(notes=_PLAIN_QUARTER * 4))
     assert score.measures[0].tuplets == []
+
+
+# --------------------------------------------------------------------------
+# Ratios other than three-in-the-time-of-two
+#
+# The importer used to drop every one of them, so nothing here could ever have
+# a bracket to check. It reads any ratio whose product lands on a written
+# value, and these are the rules that keeps the fault honest.
+# --------------------------------------------------------------------------
+
+
+def _bracket(actual: int, normal: int, at: int = 0, through: int = 1) -> Tuplet:
+    return Tuplet(
+        start_note_index=at,
+        end_note_index=through,
+        actual_notes=actual,
+        normal_notes=normal,
+    )
+
+
+def test_a_duplet_of_dotted_values_is_not_a_fault() -> None:
+    """Two in the time of three, worth a dotted value each.
+
+    Every one of these was `unwritable` — the ratio set held 3:2 alone — so the
+    first duplet the importer could read would have been reported as broken on
+    a bar it had read correctly.
+    """
+    measure = _measure(["dotted_eighth"] * 4, [_bracket(2, 3)])
+    assert tuplet_faults([measure]) == []
+
+
+def test_a_quadruplet_of_dotted_sixteenths_is_not_a_fault() -> None:
+    measure = _measure(["dotted_sixteenth"] * 8, [_bracket(4, 3, through=3)])
+    assert tuplet_faults([measure]) == []
+
+
+def test_a_sextuplet_is_three_in_the_time_of_two_twice_over() -> None:
+    measure = _measure(["triplet_eighth"] * 9, [_bracket(6, 4, through=5)])
+    assert tuplet_faults([measure]) == []
+
+
+def test_a_duplet_bracket_over_plain_values_is_caught_by_the_arithmetic() -> None:
+    """A duplet bracket read but not applied leaves a plain eighth.
+
+    Caught without needing the visible-ratio rule at all: un-tupleting an
+    eighth under 2:3 gives a third of a beat, which no notehead writes, so the
+    stored value cannot have come from this bracket. What the correctly-read
+    duplet carries — a dotted eighth — un-tuplets to a plain eighth and passes.
+    """
+    (fault,) = tuplet_faults([_measure(["eighth"] * 4, [_bracket(2, 3)])])
+    assert fault.reason == "durations"
+    assert tuplet_faults([_measure(["dotted_eighth"] * 4, [_bracket(2, 3)])]) == []
+
+
+def test_a_three_in_two_bracket_over_plain_values_is_still_caught() -> None:
+    """And this is why the ambiguity above is not simply forgiven everywhere.
+
+    3:2 turns written values into lengths no notehead writes, so a plain eighth
+    inside one is the bracket having been read and its arithmetic not applied.
+    """
+    measure = _measure(["eighth"] * 3 + ["quarter"] * 2, [_bracket(3, 2, through=2)])
+    (fault,) = tuplet_faults([measure])
+    assert fault.reason == "durations"
+
+
+def test_five_in_the_time_of_four_still_has_no_name() -> None:
+    """A fifth of a beat has no notehead, and guessing the nearest triplet
+    would put notes at times nobody played."""
+    measure = _measure(["triplet_eighth"] * 5 + ["quarter"] * 3, [_bracket(5, 4, through=4)])
+    (fault,) = tuplet_faults([measure])
+    assert fault.reason == "unwritable"

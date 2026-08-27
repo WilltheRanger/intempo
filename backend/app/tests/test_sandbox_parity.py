@@ -211,6 +211,29 @@ CASES = [
         "4/4",
         {0: [{"start_note_index": 0, "end_note_index": 1, "actual_notes": 3, "normal_notes": 2}]},
     ),
+    # A duplet: two in the time of three, ordinary in any compound metre and
+    # worth a dotted value each. Both sides used to call this `unwritable`,
+    # because 3:2 was hard-coded as the only ratio that could be written.
+    _score(
+        [["dotted_eighth"] * 4],
+        "6/8",
+        {0: [{"start_note_index": 0, "end_note_index": 1, "actual_notes": 2, "normal_notes": 3}]},
+    ),
+    # A quadruplet: four in the time of three, and a dotted sixteenth each.
+    _score(
+        [["dotted_sixteenth"] * 8],
+        "6/8",
+        {0: [{"start_note_index": 0, "end_note_index": 3, "actual_notes": 4, "normal_notes": 3}]},
+    ),
+    # A 3:2 bracket whose notes are still plain eighths — the case the general
+    # rule must not stop catching. 3:2 turns written values into lengths no
+    # notehead writes, so a plain eighth inside one is the bracket having been
+    # read and its arithmetic not applied.
+    _score(
+        [["eighth"] * 3 + ["quarter"] * 2],
+        "4/4",
+        {0: [{"start_note_index": 0, "end_note_index": 2, "actual_notes": 3, "normal_notes": 2}]},
+    ),
     # Density: a page of quarters with one bar of thirty-seconds that still
     # sums to 4.0.
     _score([Q, Q, ["thirty_second"] * 32, Q], "4/4"),
