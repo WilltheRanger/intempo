@@ -131,3 +131,123 @@ def test_the_app_knows_which_analysis_states_are_final() -> None:
         "a final one is forty wasted polls and a wrong message; a new "
         "in-progress one belongs in `waited_through` here"
     )
+
+
+SCHEDULE_TS = MOBILE.parent / "lib" / "score" / "schedule.ts"
+NOTATION_TS = MOBILE / "types.ts"
+
+
+def _duration_union() -> set[str]:
+    return _union("Duration")
+
+
+def _app_beats() -> dict[str, float]:
+    """The app's `BEATS` table, parsed.
+
+    Asserts rather than returning empty, the same rule `_union` follows: a
+    regex that quietly matched nothing would make every comparison below
+    compare two empty things and pass, wearing this file as a disguise.
+    """
+    source = SCHEDULE_TS.read_text()
+    match = re.search(
+        r"export const BEATS: Record<Duration, number> = \{(.*?)\n\};",
+        source,
+        re.DOTALL,
+    )
+    assert match, "the app no longer declares a BEATS table"
+
+    table: dict[str, float] = {}
+    for name, expr in re.findall(r"^\s{2}([a-z_0-9]+):\s*([^,]+),", match.group(1), re.M):
+        cleaned = expr.strip()
+        assert re.fullmatch(r"[\d.\s/]+", cleaned), f"{name} is not arithmetic: {cleaned}"
+        table[name] = eval(cleaned)  # noqa: S307 — shape asserted immediately above
+    assert len(table) > 15, f"only {len(table)} durations parsed out of BEATS"
+    return table
+
+
+def test_the_app_knows_exactly_the_durations_this_api_sends() -> None:
+    """`Duration` is the vocabulary every timeline on both sides is built from.
+
+    A value only the server knows arrives at a `Record<Duration, number>` that
+    has no entry for it. `scheduleScore` then sounds it as a quarter — a
+    deliberate choice, and the least-wrong one — while `reading.beatsOf`
+    declines to count the bar at all. Both are documented; neither is a thing
+    to discover from a musician.
+    """
+    from app.services.score_schema import Duration
+
+    import typing
+
+    server = set(typing.get_args(Duration))
+    app = _duration_union()
+
+    assert app == server, (
+        f"only the server sends {sorted(server - app)}; "
+        f"only the app knows {sorted(app - server)}"
+    )
+
+
+def test_both_sides_agree_what_every_duration_is_worth() -> None:
+    """**The parity fixture covers five of twenty-one.**
+
+    `fixtures/timeline/parity.json` is the one file both trees are held to, and
+    its own docstring says why: *"If they drift, nothing looks broken from
+    either side. The app plays the piece, the analysis judges the recording,
+    and a musician who played exactly along with what the app sounded is told
+    they rushed."*
+
+    It exercises `quarter`, `eighth`, `half`, `dotted_quarter` and
+    `triplet_quarter`. **Sixteen durations it never touches** — every
+    double-dotted value, every triplet but one, and everything shorter than an
+    eighth — so for those the two tables could hold different numbers and the
+    fixture would pass.
+
+    Comparing the tables covers all twenty-one at once, which the fixture
+    cannot do without becoming a piece nobody would play.
+    """
+    from app.services.score_schema import DURATION_BEATS
+
+    app = _app_beats()
+
+    assert set(app) == set(DURATION_BEATS), (
+        f"only the server has {sorted(set(DURATION_BEATS) - set(app))}; "
+        f"only the app has {sorted(set(app) - set(DURATION_BEATS))}"
+    )
+    differing = {
+        name: (DURATION_BEATS[name], app[name])
+        for name in DURATION_BEATS
+        if abs(DURATION_BEATS[name] - app[name]) > 1e-12
+    }
+    assert not differing, f"server vs app: {differing}"
+
+
+def test_the_beats_table_covers_the_duration_union() -> None:
+    """TypeScript forces this on the app's side — `Record<Duration, number>`
+    will not compile with a member missing. Nothing forces it on the server's,
+    and `DURATION_BEATS` is what `alignment.build_timeline` reads."""
+    from app.services.score_schema import Duration, DURATION_BEATS
+
+    import typing
+
+    assert set(typing.get_args(Duration)) <= set(DURATION_BEATS)
+
+
+def test_the_app_declares_exactly_the_repeat_types_this_api_sends() -> None:
+    """The fifth closed union, and it went unchecked here because until this
+    week nothing ever populated `repeats` — the importer returned an empty list
+    unconditionally, so a drift would have shown up as nothing at all.
+
+    Now that a `%`, a da capo and a repeat barline all produce them, a type the
+    app has not heard of is a repeat it cannot draw or reason about.
+    """
+    from app.services.score_schema import RepeatType
+
+    import typing
+
+    server = set(typing.get_args(RepeatType))
+    app = _union("RepeatType")
+
+    assert app == server, (
+        f"only the server sends {sorted(server - app)}; "
+        f"only the app knows {sorted(app - server)}"
+    )
