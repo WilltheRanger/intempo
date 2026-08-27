@@ -1872,6 +1872,37 @@ def score_json_from_musicxml(
             Repeat(start_measure=first, end_measure=last_bar, type=kind)  # type: ignore[arg-type]
         )
 
+    # **A number that repeats identifies no bar at all.**
+    #
+    # Everything downstream keys off `measure_number`: `validate_measures`
+    # groups broken ties and tuplet faults by it, `MeasureConcern` is how a
+    # screen points at a bar, `MeasureEditScreen` is opened by it, and the
+    # verdict groups per-note deltas by it. Measured on three bars all numbered
+    # 3, one of them carrying a tie between two pitches: **three identical
+    # concerns**, on three different bars, two of which were correct — and each
+    # offering to open bar 3 for repair.
+    #
+    # Real, and not hypothetical: `oemer_phone_photo` reads back as
+    # `[1, 2, 3, 3, 3]`. `pipeline.renumber` already fixes this for a *scanned*
+    # page, positionally and always, and it is right to — a page read by a
+    # model has no numbering worth keeping. But it does not run on
+    # `POST /v1/scores/import`, where the numbering usually *is* the printed
+    # part's and a bar labelled 47 should stay 47.
+    #
+    # So the rule here is the narrow one that serves both: keep the file's
+    # numbering unless it cannot identify a bar. Strictly increasing is the
+    # test, which leaves **gaps alone** on purpose — 1, 2, 3, 409 is a boxed
+    # rehearsal mark counted as a bar, and `numbering_gaps` is what catches it.
+    # Renumbering that away is exactly the signal `_expand_multiple_rests`
+    # shifts rather than renumbers to protect.
+    numbers = [m.measure_number for m in measures]
+    renumbered = any(b <= a for a, b in zip(numbers, numbers[1:]))
+    if renumbered:
+        measures = [
+            measure.model_copy(update={"measure_number": position})
+            for position, measure in enumerate(measures, start=1)
+        ]
+
     total_notes = sum(len(m.notes) for m in measures)
     # Confidence an engine did not report, inferred from what had to be thrown
     # away. A run that dropped a fifth of its notes for want of a readable type
@@ -1880,6 +1911,13 @@ def score_json_from_musicxml(
         confidence = 0.0
     else:
         confidence = round(total_notes / (total_notes + dropped), 3)
+
+    sentences: list[str] = []
+    if renumbered:
+        sentences.append(
+            "The bar numbers in this file do not run in order, so the bars "
+            "have been numbered from 1 as they appear."
+        )
 
     notes_to_human = ""
     if dropped:
@@ -1910,6 +1948,9 @@ def score_json_from_musicxml(
             "(double accidental, double dot, or a duration outside this schema) "
             f"and were dropped{where}."
         ) + (kept if rests_for_unwritable else "")
+    if notes_to_human:
+        sentences.append(notes_to_human)
+    notes_to_human = " ".join(sentences)
 
     return ScoreJson(
         time_signature=time_signature,
