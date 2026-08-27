@@ -6,6 +6,95 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-27 — A minuet: twelve bars played, six in the timeline
+
+**Branch:** `main`. Backend and tests. No screen, component, style or copy
+touched.
+
+**Files:** `backend/app/services/alignment.py`,
+`backend/app/tests/test_alignment.py`.
+
+Last tick's entry closed with a known limit: *"an inner `|: :|` inside a da
+capo section is lost."* Measuring it turned out to be worth more than the
+sentence admitted.
+
+### The measurement
+
+`|: A :| |: B :|` then *D.C. al Fine* — a minuet, ordinary form, not an edge
+case. A player performs **twelve** bars. The timeline held **six**.
+
+Two faults produced that one number, and both are the shape this session keeps
+finding:
+
+- **The outer span never fired at all.** The loop took the first span
+  *starting* at bar 1, which was the A repeat, consumed bars 1–2 and marked
+  them done — so the da capo, which also starts at bar 1, was never reached.
+- **The da capo's first ending leaked into the inner B repeat.** `firsts` was a
+  global set of bar numbers, so bars 3–4 — played once because of the jump —
+  were also dropped from the B repeat's second pass. A rule right about its own
+  span and wrong beside its neighbour, for the fifth time this session.
+
+### Both fixed by one shape
+
+At each position take the **widest** span that starts there, expand its body by
+recursing on the spans inside it, and only then filter the expanded run by
+ending.
+
+Filtering *after* expansion is the part that matters: it makes a first ending
+containing a repeat skip the repeat along with it, which is what a player does.
+
+### The scoping rule
+
+**An ending belongs to a span only if the span starts strictly before it** —
+because a first ending cannot begin where its section begins; there would be
+nothing before it to repeat. For the inner B repeat, bars 3–4 *are* the whole
+span, so the bracket is not its ending. For the da capo they are the tail, so
+they are.
+
+And **an ending must lie wholly inside its span.** A bracket straddling the
+section's last bar is a misreading — what OCR produces from a bracket line that
+runs on — and ignoring it costs one repeat's worth of nuance, where obeying it
+deletes bars the musician plays from a section that reads perfectly otherwise.
+The same trade `expand_repeats` already makes for a repeat naming bars that do
+not exist. Found by a mutation that survived twice: the first replacement test
+did not kill it, because the filter only ever sees the span's own bars, and
+only a *straddling* bracket distinguishes the two.
+
+### A cap removed, with the termination argument written down
+
+`_MAX_NESTING = 8` stood over the recursion. `inside` never contains the span
+being expanded — by identity *or* by naming the same bars — so every level has
+strictly fewer spans available than the one above it, and depth is bounded by
+`len(spans)`. Termination is structural. The cap could therefore only ever
+truncate a deeply nested reading into a quietly wrong one: a failure mode with
+no benefit. Removed, and the argument left in its place. Third guard this
+session that a mutation proved was doing nothing.
+
+### Tests
+
+Full suite green. Four new tests; six mutants, all killed.
+
+| Mutant | Result |
+|---|---|
+| the narrowest span wins instead of the widest | killed |
+| inner spans are not expanded | killed |
+| endings are global again | killed |
+| an ending outside the span still applies | **survived**, then killed |
+| a duplicate span is not excluded from the inside | killed |
+| the second pass keeps the first ending | killed |
+| the depth cap is removed | **equivalent** — cap deleted instead |
+
+### Three-foot test
+
+Not run: no screen was built or changed.
+
+### Still waiting on the owner
+
+The UI plan (four items), migration `011`, and permission to re-read the nine
+failed scans.
+
+---
+
 ## 2026-08-27 — A da capo is a repeat, and this schema could already say so
 
 **Branch:** `main`. Backend and tests. No screen, component, style or copy

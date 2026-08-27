@@ -122,6 +122,25 @@ def expand_repeats(score: ScoreJson) -> list[Measure]:
     A repeat naming measures that do not exist is ignored rather than fatal —
     OCR produces those, and losing the whole take to a mis-read repeat sign
     would be the wrong trade.
+
+    **Sections nest, and the inner one is expanded first.** A minuet is
+    `|: A :| |: B :|` and then *D.C. al Fine*, which is two spans inside a
+    third — ordinary form, not an edge case. Measured on exactly that, before
+    this was recursive: a player performs **twelve** bars and the timeline held
+    **six**. Two separate faults produced that one number, and both are the
+    same shape:
+
+    - the outer span never fired at all, because the first span *starting* at
+      bar 1 consumed bars 1–2 and marked them done; and
+    - the D.C.'s "first ending" — bars 3–4, played once — was applied to the
+      **inner** B repeat as well, deleting its second pass. A rule right about
+      its own span and wrong beside its neighbour.
+
+    Both are fixed by the same shape: at each position take the **widest** span
+    that starts there, expand its body by recursing on the spans inside it, and
+    only then filter that expanded run by ending. Filtering after expansion is
+    what makes a first ending that contains a repeat skip the repeat with it,
+    which is what a player does.
     """
     if not score.repeats:
         return list(score.measures)
@@ -138,40 +157,85 @@ def expand_repeats(score: ScoreJson) -> list[Measure]:
     if not spans:
         return list(score.measures)
 
-    firsts = {
-        n
+    first_brackets = [
+        (r.start_measure, r.end_measure)
         for r in score.repeats
         if r.type == "first_ending"
-        for n in range(r.start_measure, r.end_measure + 1)
-    }
-    seconds = {
-        n
+    ]
+    second_brackets = [
+        (r.start_measure, r.end_measure)
         for r in score.repeats
         if r.type == "second_ending"
-        for n in range(r.start_measure, r.end_measure + 1)
-    }
+    ]
 
-    played: list[Measure] = []
-    consumed: set[int] = set()
-    for number in order:
-        if number in consumed:
-            continue
-        span = next((r for r in spans if r.start_measure == number), None)
-        if span is None:
-            if number in seconds and number not in consumed:
-                # A second ending reached without its repeat is just music.
-                played.append(by_number[number])
-            elif number not in seconds:
-                played.append(by_number[number])
-            continue
+    def bracketed(brackets: list[tuple[int, int]], span, body: list[int]) -> set[int]:
+        """The bars an ending removes from one pass **of this span**.
 
-        body = [n for n in order if span.start_measure <= n <= span.end_measure]
-        # First pass: everything up to and including the first ending.
-        played.extend(by_number[n] for n in body if n not in seconds)
-        # Second pass: the same, skipping the first ending, taking the second.
-        played.extend(by_number[n] for n in body if n not in firsts)
-        consumed.update(body)
+        **An ending belongs to the span it closes, and a global set of bar
+        numbers cannot say which that is.** Measured on a minuet — `|: A :|
+        `|: B :|` then *D.C. al Fine* — where the da capo's synthetic first
+        ending, bars 3–4, was also applied to the inner B repeat and deleted
+        its second pass: ten bars where a player performs twelve.
 
+        The rule is that a first ending cannot begin where its section begins,
+        because there would be nothing before it to repeat. So an ending
+        applies to a span only when the span starts **strictly before** it.
+        For the inner B repeat that range *is* the whole span, so it does not
+        apply; for the da capo it is the tail, so it does.
+        """
+        return {
+            n
+            for start, end in brackets
+            if start > span.start_measure and start in body and end in body
+            for n in range(start, end + 1)
+        }
+
+    def play(numbers: list[int], available: list) -> list[int]:
+        out: list[int] = []
+        position = 0
+        while position < len(numbers):
+            number = numbers[position]
+            here = [
+                span
+                for span in available
+                if span.start_measure == number
+                and span.end_measure in numbers[position:]
+            ]
+            if not here:
+                out.append(number)
+                position += 1
+                continue
+
+            # The widest, so an outer span wraps the inner ones rather than
+            # being shadowed by whichever happened to be listed first.
+            span = max(here, key=lambda s: numbers.index(s.end_measure, position))
+            stop = numbers.index(span.end_measure, position)
+            body = numbers[position : stop + 1]
+            # `inside` never contains `span`, by identity *or* by naming the
+            # same bars — so every level has strictly fewer spans available
+            # than the one above it and the depth is bounded by `len(spans)`.
+            # A cap stood here; a mutation removing it changed nothing, and it
+            # could only ever have truncated a deeply nested reading into a
+            # quietly wrong one. Termination is structural, so the cap was a
+            # failure mode with no benefit.
+            inside = [
+                other
+                for other in available
+                if other is not span
+                and (other.start_measure, other.end_measure)
+                != (span.start_measure, span.end_measure)
+                and other.start_measure in body
+                and other.end_measure in body
+            ]
+            written = play(body, inside)
+            firsts = bracketed(first_brackets, span, body)
+            seconds = bracketed(second_brackets, span, body)
+            out.extend(n for n in written if n not in seconds)
+            out.extend(n for n in written if n not in firsts)
+            position = stop + 1
+        return out
+
+    played = [by_number[n] for n in play(order, spans)]
     return played or list(score.measures)
 
 
