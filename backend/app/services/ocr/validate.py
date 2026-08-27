@@ -461,10 +461,31 @@ def validate_measures(score: ScoreJson) -> list[MeasureFinding]:
     ]
     findings: list[MeasureFinding] = []
 
+    # **A bar of nothing but rests does not vote on how dense this music is.**
+    #
+    # The density is notes per beat, and a rest is a note in this schema — so a
+    # bar of rest contributes 1/meter to a median that is supposed to describe
+    # how many *notes* a bar of this page holds. It carries no evidence about
+    # that, exactly as a lone whole rest carries none about the metre and gets
+    # no vote there either (`musicxml._bar_lengths`).
+    #
+    # **Measured (2026-08-26), and made worse by a fix earlier the same day.**
+    # On the two-page part fixture: 16 bars counted, 7 of them nothing but
+    # rests, median 0.50 and a limit of 1.50 — so an ordinary run of eight
+    # eighths, at 2.0 notes per beat, was flagged as three times the density of
+    # its own page. Excluding rest bars gives a median of 1.000 and a limit of
+    # 3.00 on both one page and two, and the run is silent.
+    #
+    # A bass part is mostly bars of rest, and expanding a four-bar rest turns
+    # one voting bar into four — so `_expand_multiple_rests` multiplied this on
+    # precisely the repertoire it was written for. The check exists to catch a
+    # tremolo read as sixteen sixteenths; a tremolo is still 4 notes per beat
+    # against a limit of 3, so nothing it was for has been given up.
     densities = [
         len(measure.notes) / meter
         for measure, meter in zip(score.measures, expected_per_measure)
         if measure.notes and meter
+        and not all(note.pitch == "rest" for note in measure.notes)
     ]
     median_density = median(densities) if densities else 0.0
     density_limit = DENSITY_MULTIPLE * median_density

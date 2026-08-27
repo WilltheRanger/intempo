@@ -404,8 +404,12 @@ function validateMeasures(score){
   const inferred=meters.every(v=>v===null)?inferBeatsPerMeasure(sums):null;
   const perMeasure=meters.map(v=>v!==null?v:inferred);
   const meterInferred=stated===null&&inferred!==null;
+  // A bar of nothing but rests does not vote — see `validate.py`. `all`, not
+  // `any`: a bar of three quarters and a rest is music and says what this page
+  // holds.
   const densities=measures.map((m,i)=>[m,perMeasure[i]])
     .filter(([m,meter])=>(m.notes??[]).length&&meter)
+    .filter(([m])=>!(m.notes??[]).every((n)=>n.pitch==='rest'))
     .map(([m,meter])=>(m.notes??[]).length/meter);
   const sorted=[...densities].sort((a,b)=>a-b);
   const medianDensity=sorted.length?(sorted.length%2?sorted[(sorted.length-1)/2]
