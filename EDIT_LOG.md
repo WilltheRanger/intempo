@@ -6,6 +6,88 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-27 — Both hands of a grand staff were being read as one line
+
+**Branch:** `main`. Backend and tests. No screen, component, style or copy
+touched.
+
+**Files:** `backend/app/services/ocr/musicxml.py`, and one new test file
+(`app/tests/test_staves.py`).
+
+A part that writes more than one staff — a keyboard part, a divisi, anything
+braced together — puts both lines inside one `<part>`, separated by `<backup>`,
+and tells them apart with `<staff>`. Nothing in this module read that element.
+
+### Measured on four quarters over two halves in 4/4
+
+| | before | after |
+|---|---|---|
+| notes read | 6 — **both staves, concatenated** | 4 |
+| bar sum | 8.0 beats in a 4-beat bar | 4.0 |
+| verdict | `long` | `ok` |
+| the rest of the page | expected **four beats late**, and accumulating | in place |
+
+The voice filter hides this exactly half the time. Where the exporter numbers
+the voices it happens to pick one hand and the bar comes out right; where it
+does not — and `<voice>` is optional, so plenty do not — every note of both
+staves is one line.
+
+And the voice filter is *right* not to help. Its comment says: *"an untagged
+note is not in a competing voice — it is a note."* True. It is a note **on
+another staff**, which is a different axis, and asking one question to answer
+two is the shape this file keeps finding.
+
+### `<staff>` is more reliable than `<voice>`, and needs different rules
+
+- **Chosen once for the whole part.** A staff is a stable property of a line; a
+  voice number may be reused freely from bar to bar. Choosing per measure would
+  let the reading jump hands wherever one of them happened to rest — covered by
+  a test where the upper staff runs through a bar the lower one holds.
+- **An omitted `<staff>` is staff 1, because MusicXML says it is.** Absence is
+  a claim here, unlike `<voice>`, where it is a shrug. I wrote the shrug first
+  — "keep it either way" — and it hands back both hands wherever the *lower*
+  staff is the one chosen, which is the double count this filter exists to
+  prevent arriving by another door. A mutation and a failing test of my own
+  found it.
+- **The voice filter runs second, on what survives.** A grand staff writes each
+  hand in its own voice, so counting voices across the whole bar can elect a
+  voice living on the discarded staff — everything on the staff being read then
+  fails the voice test, the bar empties, and the fallback returns every note of
+  it. The same double count, by a third door.
+- **The clef is the chosen staff's.** A grand staff prints two, and
+  `find("clef")` took the top one — so a part read off the lower staff was
+  captioned with the upper staff's clef. That is the failure `ScoreJson.clef`
+  is nullable to avoid: a bass line labelled "Treble clef" is worse than no
+  label, and it places every notehead a seventh off on any screen drawing from
+  it.
+
+Neither hand of a keyboard part is "the piece", and this app analyses one
+melodic line, so one staff is the only thing it can return: the most *pitched*
+notes, ties to the upper staff. The same rule and the same tiebreak as the
+voice filter, and rests and cues do not vote — both for the reasons already
+written there.
+
+**Tests:** backend **1454 passed, 3 xfailed** (fourteen new, all in the new
+file). Nine mutants, **nine killed**, on a baseline verified green first — the
+guard added after the previous entry's mistake, and it earned its place
+immediately: four mutants survived the first run, three were real gaps now
+covered, and the fourth was a clause of mine that turned out to be dead. It is
+deleted rather than left in with a comment claiming it does something.
+
+**Known side effects:** a genuine keyboard piece now reads as one hand instead
+of two hands interleaved. Both are wrong for a pianist; only one of them is
+wrong in a way that moves every later bar. This app is for a single melodic
+line and does not claim otherwise.
+
+**Rollback:** `git revert` this commit. Nothing stored changes shape; this only
+affects what a new reading produces from a multi-staff part.
+
+**Still waiting on the owner** — the UI plan (four items), migration `011`,
+permission to re-read the nine failed scans, and whether `Repeat` gets a field
+for an unclosed forward sign.
+
+---
+
 ## 2026-08-27 — Closing the silence the last change opened
 
 **Branch:** `main`. Backend, both browser validator ports, and one type-only
