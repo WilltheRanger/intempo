@@ -2017,3 +2017,141 @@ def test_whichever_of_fine_and_to_coda_comes_first_governs() -> None:
     assert [m.measure_number for m in alignment.expand_repeats(score)] == [
         1, 2, 3, 4, 1, 2, 5
     ]
+
+
+# ---------------------------------------------------------------------------
+# An anacrusis has no number on the page
+# ---------------------------------------------------------------------------
+
+_PICKUP_BAR = (
+    '<measure number="0" implicit="yes">'
+    "<attributes><divisions>1</divisions>"
+    "<time><beats>4</beats><beat-type>4</beat-type></time></attributes>"
+    + _A_QUARTER
+    + "</measure>"
+)
+
+
+def test_an_upbeat_does_not_take_the_number_of_the_bar_after_it() -> None:
+    """**Two measures numbered 1, on a very large share of real files.**
+
+    An upbeat is written `<measure number="0" implicit="yes">` and `Measure`
+    requires 1 or more, so it fell back to its position — which is 1, and the
+    printed bar 1 that follows is also 1.
+
+    Measured, on a part with an upbeat and a repeat: `expand_repeats` builds
+    `{number: measure}`, so the one-note pickup was **replaced by a copy of the
+    four-note bar 1**, on both passes. The timeline gained three beats nobody
+    plays and lost the upbeat entirely. `numbering_gaps` reported `1→1` as
+    well, so the musician was told a rehearsal mark had probably been counted
+    as a bar — about a page read perfectly.
+
+    `CLAUDE.md` says of the file-import route that it is "the one whose
+    timeline cannot be wrong". This is the second thing today to disprove that,
+    and the sharper one: the provider path escaped it only because
+    `pipeline.renumber` happens to shift the same way, and the import route
+    never calls `renumber`.
+    """
+    from app.services import alignment
+    from app.services.ocr.validate import numbering_gaps
+
+    backward = '<barline location="right"><repeat direction="backward"/></barline>'
+    score = score_json_from_musicxml(
+        _part(
+            _PICKUP_BAR
+            + _bar(1, _A_QUARTER * 4)
+            + _bar(2, _A_QUARTER * 4 + backward)
+        )
+    )
+
+    assert [m.measure_number for m in score.measures] == [1, 2, 3]
+    assert [len(m.notes) for m in score.measures] == [1, 4, 4]
+    assert numbering_gaps(score) == [], "a correct page must not be accused"
+
+    played = alignment.expand_repeats(score)
+    assert [len(m.notes) for m in played] == [1, 4, 4, 1, 4, 4]
+
+
+def test_a_bar_split_across_a_system_break_shifts_nothing() -> None:
+    """`implicit="yes"` in the middle of a part is a bar continued after a
+    system break, not an upbeat. Shifting for it would move every number after
+    it away from the page for no reason."""
+    split = (
+        '<measure number="2" implicit="yes">' + _A_QUARTER * 2 + "</measure>"
+    )
+    score = score_json_from_musicxml(
+        _part(_bar(1, _A_QUARTER * 4, _FOUR_FOUR) + split + _bar(3, _A_QUARTER * 4))
+    )
+
+    assert [m.measure_number for m in score.measures] == [1, 2, 3]
+
+
+def test_a_rehearsal_mark_anomaly_still_shows_through_the_shift() -> None:
+    """The shift moves numbers; it does not normalise them.
+
+    `renumber` is explicit that "the anomaly is reported before it is
+    normalised", and a boxed rehearsal mark read as measure 409 is the single
+    most common failure this pipeline has. An upbeat must not hide it.
+    """
+    from app.services.ocr.validate import numbering_gaps
+
+    score = score_json_from_musicxml(
+        _part(
+            _PICKUP_BAR
+            + _bar(1, _A_QUARTER * 4)
+            + _bar(409, _A_QUARTER * 4)
+        )
+    )
+
+    assert [m.measure_number for m in score.measures] == [1, 2, 410]
+    assert [(g.after, g.next) for g in numbering_gaps(score)] == [(2, 410)]
+
+
+def test_an_upbeat_a_file_numbered_itself_is_left_alone() -> None:
+    """**The other half of that mutation, and it was the mutation that was
+    right.** Some engravers number the anacrusis **1** and the first full bar
+    **2**. Those numbers collide with nothing.
+
+    Shifting them — which keying on `implicit="yes"` did — turns them into 1
+    and 3, a gap `numbering_gaps` reports as a rehearsal mark counted as a bar,
+    on a page that is perfectly read. Below 1 is the collision and the only
+    collision.
+    """
+    from app.services.ocr.validate import numbering_gaps
+
+    numbered = (
+        '<measure number="1" implicit="yes">'
+        "<attributes><divisions>1</divisions>"
+        "<time><beats>4</beats><beat-type>4</beat-type></time></attributes>"
+        + _A_QUARTER
+        + "</measure>"
+    )
+    score = score_json_from_musicxml(
+        _part(numbered + _bar(2, _A_QUARTER * 4) + _bar(3, _A_QUARTER * 4))
+    )
+
+    assert [m.measure_number for m in score.measures] == [1, 2, 3]
+    assert numbering_gaps(score) == []
+
+
+def test_a_bar_numbered_zero_in_the_middle_is_not_a_second_upbeat() -> None:
+    """**Found by a mutation that survived.** `index == 1` is load-bearing.
+
+    Without it, any bar numbered below 1 takes the number **1** and shifts
+    everything after it again — so a second-movement pickup, or a plain
+    misread, puts a bar numbered 1 in the middle of the piece, colliding with
+    the real one, and adds a second offset on top of the first. The mid-piece
+    bar keeps its position instead, which is what it had before an upbeat was
+    special at all.
+    """
+    zero = '<measure number="0">' + _A_QUARTER * 4 + "</measure>"
+    score = score_json_from_musicxml(
+        _part(
+            _bar(1, _A_QUARTER * 4, _FOUR_FOUR)
+            + _bar(2, _A_QUARTER * 4)
+            + zero
+            + _bar(4, _A_QUARTER * 4)
+        )
+    )
+
+    assert [m.measure_number for m in score.measures] == [1, 2, 3, 4]

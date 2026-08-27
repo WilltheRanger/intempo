@@ -6,6 +6,105 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-27 — An upbeat took the number of the bar after it
+
+**Branch:** `main`. Backend and tests. No screen, component, style or copy
+touched.
+
+**Files:** `backend/app/services/ocr/musicxml.py`,
+`backend/app/tests/test_musicxml.py`, `backend/app/tests/test_page_join.py`.
+
+Two findings, both from checking the new repeat reader against the things
+around it.
+
+### 1. A repeat that spans a page break — measured, unfixed, pinned
+
+The convention written yesterday, *"a backward sign with no forward goes back
+to the beginning"*, is right for a **piece** and wrong for a **page** — the
+same shape as `pickup_complement` and the metre join before it. The importer
+sees each page alone, so page 1's forward sign is discarded and page 2's
+closing sign falls back to the start of its own page. On ten-bar pages:
+
+| shape | read | truth |
+|---|---|---|
+| forward p1 bar 5, backward p3 bar 4 | **4** bars repeated | 20 |
+| no forward at all, backward p2 bar 3 | **3** bars repeated | 13 |
+
+Extending such a span back to bar 1 of the part is closer in both — and it is
+indistinguishable from a genuine forward sign printed at the top of a page,
+which happens at section boundaries. That trades a known error for a guess, so
+it is not done. `Repeat` has no way to say *"a forward sign here, still open"*;
+saying it needs a field on a schema the app types against, which is the owner's
+call. Pinned as a **strict `xfail`** with the correct answer written out, and
+recorded in `_repeats_in`. Nothing reads it today — multi-page is inert behind
+the unapplied `011`.
+
+### 2. An upbeat and the bar after it were both numbered 1
+
+An anacrusis is written `<measure number="0" implicit="yes">`. `Measure`
+requires 1 or more, so it fell back to its position — which is 1, and the
+printed bar 1 that follows is also 1. **Two measures with the same number, on a
+very large share of real files.**
+
+Measured, on a part with an upbeat and a repeat: `expand_repeats` builds
+`{number: measure}`, so the one-note pickup was **replaced by a copy of the
+four-note bar 1**, on both passes. The timeline gained three beats nobody plays
+and lost the upbeat. `numbering_gaps` reported `1→1` as well, so the musician
+was told a rehearsal mark had probably been counted as a bar — about a page
+read perfectly. That is the wolf-crying `renumber`'s own docstring warns
+about, on ordinary repertoire.
+
+`CLAUDE.md` says of the file-import route that it is *"the one whose timeline
+cannot be wrong"*. This is the second thing today to disprove that, and the
+sharper one: the **provider** path escaped it only because `pipeline.renumber`
+happens to shift the same way, and **the import route never calls
+`renumber`**.
+
+The pickup now takes 1 and everything printed after it shifts up by one. One
+more than the page says, which is a real cost and the only option the schema
+leaves — the alternative is a duplicate that deletes music. It **shifts, it
+does not renumber**, so a rehearsal mark read as measure 409 still shows
+through as a gap, which `renumber` is explicit must never be normalised away.
+
+### The mutation that was right
+
+Keying on `implicit="yes"` as well as `number < 1` survived removal, and
+looking at why showed the clause doing harm. Some engravers number the upbeat
+**1** and the first full bar **2**; those collide with nothing, and shifting
+turns them into 1 and 3 — a gap reported on a perfectly read page. Below 1 is
+the collision and the only collision. Clause removed, and a test now covers the
+engraver that numbers its own upbeat.
+
+`index == 1` turned out to be load-bearing, also found by a survivor: without
+it a mid-piece bar numbered 0 — a second-movement pickup, or a misread — takes
+the number 1 in the middle of the piece and adds a second offset on top of the
+first.
+
+### Tests
+
+Full suite green. Five new tests plus one strict `xfail`; five mutants, all
+killed.
+
+| Mutant | Result |
+|---|---|
+| an upbeat collides with bar 1 again | killed |
+| the shift is never applied to later bars | killed |
+| any bar numbered below 1 shifts, not just the first | **survived**, then killed |
+| `implicit` is keyed on again | **survived**, then the clause was deleted |
+| the shift renumbers instead of shifting | killed |
+
+### Three-foot test
+
+Not run: no screen was built or changed.
+
+### Still waiting on the owner
+
+The UI plan (four items), migration `011`, and permission to re-read the nine
+failed scans. The page-break repeat above is a fourth thing that needs an
+owner's decision — a field on `Repeat`, or living with the limit.
+
+---
+
 ## 2026-08-27 — A minuet: twelve bars played, six in the timeline
 
 **Branch:** `main`. Backend and tests. No screen, component, style or copy

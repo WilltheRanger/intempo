@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import pytest
 
+from app.services.ocr.musicxml import score_json_from_musicxml
 from app.services.ocr.pages import join_pages
 from app.services.ocr.score_join_errors import NoPagesToJoin
 from app.services.ocr.validate import validate_measures
@@ -278,3 +279,76 @@ def test_a_page_reprinting_the_metre_already_in_force_still_states_nothing() -> 
 
     assert [m.time_signature for m in joined.measures] == [None, "2/4", None, None]
     assert [f.verdict for f in validate_measures(joined)] == ["ok"] * 4
+
+
+# ---------------------------------------------------------------------------
+# A repeat that spans the page break — known wrong, measured, unfixed
+# ---------------------------------------------------------------------------
+
+
+def _signed_page(bars: list[tuple[bool, bool]], *, first: bool = False) -> ScoreJson:
+    """A page of 4/4 bars, each optionally carrying a forward/backward sign."""
+    header = (
+        "<attributes><divisions>1</divisions>"
+        "<time><beats>4</beats><beat-type>4</beat-type></time></attributes>"
+    )
+    note = (
+        "<note><pitch><step>D</step><octave>3</octave></pitch>"
+        "<duration>1</duration><type>quarter</type></note>"
+    )
+    forward = '<barline location="left"><repeat direction="forward"/></barline>'
+    backward = '<barline location="right"><repeat direction="backward"/></barline>'
+    body = ""
+    for index, (opens, closes) in enumerate(bars, start=1):
+        body += (
+            f'<measure number="{index}">'
+            + (header if first and index == 1 else "")
+            + (forward if opens else "")
+            + note * 4
+            + (backward if closes else "")
+            + "</measure>"
+        )
+    return score_json_from_musicxml(
+        '<?xml version="1.0"?><score-partwise version="4.0"><part-list>'
+        '<score-part id="P1"><part-name>Bass</part-name></score-part></part-list>'
+        f'<part id="P1">{body}</part></score-partwise>'
+    )
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason=(
+        "A repeat opening on one page and closing on another cannot be read. "
+        "The importer sees each page alone, and `Repeat` has no way to say "
+        "'a forward sign here, still open' — so page 1's sign is discarded and "
+        "page 2's closing sign falls back to the start of its own page. "
+        "Fixing it needs a field on a schema the app types against, which is "
+        "the owner's call. Multi-page is inert behind the unapplied 011, so "
+        "nothing reads this today."
+    ),
+)
+def test_a_repeat_spanning_a_page_break_is_read_from_its_forward_sign() -> None:
+    """**The convention is right for a piece and wrong for a page**, the same
+    shape as `pickup_complement` and the metre join before it.
+
+    Measured, on ten-bar pages:
+
+    | shape | read | truth |
+    |---|---|---|
+    | forward p1 bar 5, backward p3 bar 4 | 4 bars repeated | 20 |
+    | no forward at all, backward p2 bar 3 | 3 bars repeated | 13 |
+
+    Extending such a span back to bar 1 of the part would be closer in both —
+    but it is indistinguishable from a genuine forward sign printed at the top
+    of a page, which happens at section boundaries, so it trades a known error
+    for a guess. Left as an honest failure.
+    """
+    pages = [
+        _signed_page([(index == 5, False) for index in range(1, 11)], first=True),
+        _signed_page([(False, False) for _ in range(10)]),
+        _signed_page([(False, index == 4) for index in range(1, 11)]),
+    ]
+
+    joined = join_pages(pages)
+
+    assert [(r.start_measure, r.end_measure) for r in joined.repeats] == [(5, 24)]
