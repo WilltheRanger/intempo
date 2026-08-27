@@ -172,5 +172,22 @@
       <barline location="right"><ending number="2" type="stop"/></barline>
     </measure>
 
+
+    <!-- 15-16. A bar, then the `%` sign standing for it — what a part prints
+         instead of engraving the same bar twice, and it is on nearly every
+         tutti page. Read literally the second bar has no notes in it, so the
+         timeline lost its music *and* its four beats: because durations
+         accumulate, everything after it was expected a whole bar early. -->
+    <measure number="15">
+      <note><pitch><step>D</step><octave>3</octave></pitch><duration>12</duration><type>quarter</type></note>
+      <note><pitch><step>F</step><octave>3</octave></pitch><duration>12</duration><type>quarter</type></note>
+    </measure>
+
+    <measure number="16">
+      <attributes>
+        <measure-style><measure-repeat type="start">1</measure-repeat></measure-style>
+      </attributes>
+    </measure>
+
   </part>
 </score-partwise>

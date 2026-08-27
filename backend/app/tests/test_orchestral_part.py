@@ -80,6 +80,10 @@ EXPECTED = [
     [("D3", "quarter"), ("F3", "quarter")],
     [("G2", "half")],
     [("Bb2", "half")],
+    # A bar, then the `%` standing for it. Read literally the second held no
+    # notes and no beats, so everything after it was expected a bar early.
+    [("D3", "quarter"), ("F3", "quarter")],
+    [("D3", "quarter"), ("F3", "quarter")],
 ]
 
 
@@ -105,7 +109,7 @@ def test_every_bar_adds_up(part) -> None:
     """
     verdicts = Counter(f.verdict for f in validate_measures(part))
 
-    assert verdicts == {"ok": 17}, verdicts
+    assert verdicts == {"ok": 19}, verdicts
 
 
 def test_the_header_is_read_and_the_change_rides_on_its_bar(part) -> None:
@@ -117,7 +121,7 @@ def test_the_header_is_read_and_the_change_rides_on_its_bar(part) -> None:
     assert part.key_signature == "Bb major"
     assert [m.time_signature for m in part.measures] == [
         None, None, None, None, None, None, None, None, None, "2/4",
-        None, None, None, None, None, None, None,
+        None, None, None, None, None, None, None, None, None,
     ]
 
 
@@ -140,7 +144,7 @@ def test_the_bars_are_numbered_as_a_player_would_count_them(part) -> None:
     """The file numbers four bars' rest as one bar, so everything after it is
     three too low until the expansion renumbers. `MeasureEditScreen` and every
     caveat line address a bar by its number."""
-    assert [m.measure_number for m in part.measures] == list(range(1, 18))
+    assert [m.measure_number for m in part.measures] == list(range(1, 20))
 
 
 # ---------------------------------------------------------------------------
@@ -177,14 +181,14 @@ def test_a_part_that_returns_to_its_first_metre_on_page_two(both_pages) -> None:
 
     # Page one's change, then page two restating what it is in.
     assert metres[9] == "2/4", metres
-    assert metres[17] == "4/4", metres
+    assert metres[19] == "4/4", metres
     assert [m for m in metres if m] == ["2/4", "4/4"], metres
 
 
 def test_the_joined_part_still_adds_up_everywhere(both_pages) -> None:
     verdicts = Counter(f.verdict for f in validate_measures(both_pages))
 
-    assert verdicts == {"ok": 21}, verdicts
+    assert verdicts == {"ok": 23}, verdicts
     assert both_pages.ocr_confidence == 1.0
 
 
@@ -193,7 +197,7 @@ def test_the_second_page_s_rests_are_in_its_own_metre(both_pages) -> None:
     against the 2/4 left in force by page one they would be halves, and the
     page would run four beats short."""
     assert [
-        (n.pitch, n.duration) for m in both_pages.measures[17:] for n in m.notes
+        (n.pitch, n.duration) for m in both_pages.measures[19:] for n in m.notes
     ] == [
         ("Eb3", "quarter"), ("D3", "quarter"), ("C3", "quarter"), ("Bb2", "quarter"),
         ("rest", "whole"), ("rest", "whole"),
@@ -274,7 +278,7 @@ def test_a_tie_costs_the_timeline_an_onset(part) -> None:
     pitched = sum(1 for m in played for n in m.notes if n.pitch != "rest")
     written = sum(1 for m in part.measures for n in m.notes if n.pitch != "rest")
 
-    assert len(onsets) == pitched - 1 == 34
+    assert len(onsets) == pitched - 1 == 38
     assert pitched == written + 2, (
         "the repeat is contributing nothing — the played order holds no more "
         "notes than the page does"
@@ -383,27 +387,35 @@ def test_bars_of_rest_would_still_drag_this_page_under_its_own_music(
     somebody extending the page, so they are asserted here from the fixture
     rather than quoted in a comment:
 
-    - counting every bar, the two-page part's limit falls **below 2.0 notes per
-      beat**, which is an ordinary run of eight eighths — the bar this check
-      then flags on a page that is entirely correct;
     - counting only bars with notes in, the limit is **3.00** on one page and
-      on two alike, and the run is silent.
+      on two alike — the number the argument rests on;
+    - counting every bar can only ever lower it, because a bar of rest holds
+      one note and that is fewer than any bar of music holds.
+
+    **How far it falls is not asserted here, and that is the second lesson of
+    the same kind.** This test used to require the all-bars limit to sit below
+    an ordinary run of eight eighths, which was true of the fixture as it stood
+    and stopped being true the moment two bars of music were added to it — the
+    same way the bar counts it replaced stopped being true. A ratio between
+    rest bars and music bars is a property of the page, not of the rule. The
+    harm itself is demonstrated on constructed scores in `test_density.py`,
+    where nothing can drift into it.
 
     A bass part is mostly bars of rest and expanding a four-bar rest turns one
     voting bar into four, so this got worse on precisely the repertoire the
     expansion was written for.
     """
-    RUN_OF_EIGHTHS = 8 / 4  # eight eighth notes across a four-beat bar
-
     everything_one, played_one = _density_limits(part)
     everything_two, played_two = _density_limits(both_pages)
 
     assert played_one == 3.0
     assert played_two == 3.0
-    assert everything_two < RUN_OF_EIGHTHS < played_two, (
-        everything_two,
-        played_two,
-    )
+    # Counting rest bars can only ever lower the median, never raise it: a bar
+    # of rest holds one note, which is fewer than any bar of music. The
+    # direction is a property of the arithmetic; **how far** it falls is a
+    # property of how much of this particular page is resting.
+    assert everything_one <= played_one
+    assert everything_two <= played_two
     # A tremolo read as sixteen sixteenths is 4 notes per beat, so nothing the
     # check exists for has been given up.
     assert 16 / 4 > played_two
