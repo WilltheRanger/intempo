@@ -56,6 +56,13 @@ export interface StaveNote {
   value: NoteValue;
   /** Starts a new bar before this note. */
   barBefore?: boolean;
+  /**
+   * Which bar of the score this came from, when the caller knows.
+   *
+   * Only so a playhead can say where it is. The warmup, which authors its own
+   * notes, has no measure numbers to give and omits it.
+   */
+  measureNumber?: number;
 }
 
 /**
@@ -70,6 +77,7 @@ export interface StaveNote {
 export interface StaveRest {
   rest: NoteValue;
   barBefore?: boolean;
+  measureNumber?: number;
 }
 
 /**
@@ -85,6 +93,7 @@ export interface StaveMultiRest {
   /** How many bars of silence. Printed above the block. */
   bars: number;
   barBefore?: boolean;
+  measureNumber?: number;
 }
 
 export type StaveItem = StaveNote | StaveRest | StaveMultiRest;
@@ -148,6 +157,13 @@ export interface EngravedMultiRest {
   numberY: number;
 }
 
+/** One bar's horizontal extent on a system. */
+export interface MeasureSpan {
+  measureNumber: number;
+  from: number;
+  to: number;
+}
+
 export interface EngravedBeam {
   from: number;
   to: number;
@@ -164,6 +180,19 @@ export interface EngravedSystem {
   notes: EngravedNote[];
   rests: EngravedRest[];
   multiRests: EngravedMultiRest[];
+  /**
+   * Where each bar sits on this system, for a playhead to sit behind.
+   *
+   * Derived here rather than in the component because the component does not
+   * know which item belongs to which bar — it draws a flat list of positions,
+   * and reconstructing the grouping from the barlines would be a second copy
+   * of arithmetic this loop already does.
+   *
+   * A bar that spans a system break appears on both, each time covering the
+   * part of it that is on that system, which is what a musician reading it
+   * sees too.
+   */
+  measureSpans: MeasureSpan[];
   beams: EngravedBeam[];
   /** Baseline for the note names printed under this system. */
   nameY: number;
@@ -356,12 +385,29 @@ function layoutSystem(
   const stemLength = lineGap * STEM_FACTOR;
 
   let x = leftPad;
+  // Where each bar starts and stops on this system. Tracked as the loop walks
+  // because only the loop knows which item belongs to which bar.
+  const measureSpans: MeasureSpan[] = [];
+  let spanFrom = leftPad - noteGap / 2;
+  let spanMeasure: number | undefined;
+
+  function closeSpan(to: number) {
+    if (spanMeasure !== undefined) {
+      measureSpans.push({ measureNumber: spanMeasure, from: spanFrom, to });
+    }
+  }
 
   notes.forEach((item, index) => {
     if (item.barBefore && index > 0) {
       // The line sits midway in the gap it interrupts, so it belongs to
       // neither of the notes on either side.
       barlines.push(x - noteGap / 2);
+      closeSpan(x - noteGap / 2);
+      spanFrom = x - noteGap / 2;
+      spanMeasure = undefined;
+    }
+    if (spanMeasure === undefined) {
+      spanMeasure = item.measureNumber;
     }
 
     if (isMultiRest(item)) {
@@ -426,6 +472,7 @@ function layoutSystem(
 
   const right = x - noteGap / 2 + rightPad;
   barlines.push(right);
+  closeSpan(x - noteGap / 2);
 
   // Beam runs of eighths, broken at barlines: a beam across a barline would
   // group notes that are in different bars.
@@ -520,6 +567,7 @@ function layoutSystem(
       notes: engravedNotes,
       rests: engravedRests,
       multiRests,
+      measureSpans,
       beams,
       nameY,
       width: right,
@@ -548,6 +596,8 @@ function shift(system: EngravedSystem, dy: number): EngravedSystem {
         ? { ...note.stem, from: note.stem.from + dy, to: note.stem.to + dy }
         : null,
     })),
+    // Spans are horizontal only, so a vertical shift leaves them alone.
+    measureSpans: system.measureSpans,
     rests: system.rests.map((rest) => ({ ...rest, y: rest.y + dy })),
     multiRests: system.multiRests.map((block) => ({
       ...block,

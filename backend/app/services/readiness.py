@@ -106,6 +106,14 @@ REQUIRED_COLUMNS: tuple[tuple[str, str, str], ...] = (
     # the failure the column exists to end, so it is worth saying out loud
     # rather than degrading quietly back to it.
     ("scores", "source_image_urls", "011"),
+    # 012. Whether a take was played with the long rests skipped. A deployment
+    # missing it does not degrade quietly: the API writes the key only when the
+    # musician actually skipped something, so an ordinary take is unaffected
+    # and a skipped one fails at submit. That is deliberate — measured, a take
+    # judged against rests it skipped scores **0.000** and is told to check it
+    # is the right piece — but an error a musician meets by using a control the
+    # app offered them is worth naming here before they meet it.
+    ("analyses", "skip_long_rests", "012"),
 )
 
 

@@ -6,6 +6,63 @@ Operating Principle #5.
 
 ---
 
+## 2026-08-27 — Skipping a long rest is a fact about the take, not a playback setting
+
+**Context:** an orchestral part is mostly waiting, and practising the notes
+around a twenty-bar rest means skipping it. The obvious shape is a playback
+convenience — shorten the score the app plays and counts, leave the stored
+score alone.
+
+Measured, on a take played exactly on the grid with the rest skipped:
+
+    bars of rest   waited through   skipped
+    2              1.000            0.000
+    4              1.000            0.000
+    12             1.000            0.000
+    20             1.000            0.000
+
+Every note still matched. The shape simply cannot be explained by a steady
+grid, so the verdict is `alignment_failed` — *"check you're on the right
+piece"* — on a take that was played correctly. Note the two-bar row: this is
+not about how long the rest is.
+
+**Decision:** the choice travels with the take. `POST /v1/analyses` carries
+`skip_long_rests`, migration 012 stores it, and the worker shortens the score
+the same way before building the timeline. The rule itself lives in
+`fixtures/practice/long_rests.json` and both implementations are tested against
+it, the same arrangement as `fixtures/timeline`.
+
+**Alternatives considered:**
+
+- **Client-only.** What the feature looks like from the outside, and it makes
+  every take that uses it unanalysable. Rejected on the numbers above.
+- **Store the shortened score.** Then the piece in the library is not the piece
+  on the page, and the next take — or the same musician tomorrow, playing it in
+  full — is judged against a page with bars missing. Practising is not editing.
+- **Detect it in the worker.** Look at the take, notice the rest was skipped,
+  compensate. This is guessing, which is what the whole pipeline refuses to do;
+  and a take that genuinely rushed a passage looks the same.
+- **Store the number of bars skipped** rather than the choice. Derivable from
+  the score and the rule, so it would be a second copy of an answer that has to
+  match — the failure this project keeps finding. The row records the decision;
+  the arithmetic stays in one place.
+
+**Trade-offs accepted:**
+
+- The feature is **inert until migration 012 is applied**, like `011`. The API
+  writes the key *only when true*, so a deployment without the column is
+  untouched until someone actually skips a rest — and then the insert fails
+  loudly rather than the take being judged against silence nobody played. A
+  visible error beats a wrong verdict.
+- The threshold (four bars, one kept) is a judgement, not a measurement. Four
+  bars at 60 BPM is sixteen seconds; below that a rest is phrasing rather than
+  waiting. It lives in the contract file so moving it moves both sides at once.
+- The bar that survives keeps its number, so the numbering has a gap where bars
+  were skipped. That is the truth about what was played, and the verdict names
+  measures by these numbers.
+
+---
+
 ## 2026-08-26 — Refuse an unread page on its structure, not on its confidence number
 
 **Context:** `04_handwritten_clean` comes back from homr as 7 measures holding

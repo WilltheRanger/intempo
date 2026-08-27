@@ -50,6 +50,16 @@ export interface CreateAnalysisInput {
    * the value that turns it on.
    */
   instrument?: Instrument;
+  /**
+   * The take was played with runs of rest shortened.
+   *
+   * The worker shortens the score the same way before building the timeline —
+   * `fixtures/practice/long_rests.json` is the contract both sides keep. Sent
+   * always, including false, because the API writes the key only when true and
+   * a deployment without migration 012 is therefore untouched until someone
+   * actually skips a rest.
+   */
+  skip_long_rests?: boolean;
 }
 
 /**

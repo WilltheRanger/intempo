@@ -46,6 +46,18 @@ class CreateAnalysisRequest(BaseModel):
     #: instrument — an older client sends nothing, and guessing on its behalf
     #: would apply bass settings to a violin or the reverse.
     instrument: Instrument | None = None
+    #: The musician practised with the long rests shortened, so judge the take
+    #: against a score shortened the same way.
+    #:
+    #: **Not a display preference.** Measured on an otherwise perfect take,
+    #: skipping a rest the timeline still contains takes alignment quality from
+    #: **1.000 to 0.000** — `alignment_failed`, "check you're on the right
+    #: piece" — and that is as true of a two-bar rest as a twenty-bar one. So it
+    #: has to reach the worker or the take is unanalysable.
+    #:
+    #: Defaults false, which is every client that has never heard of it and
+    #: every take recorded before it existed.
+    skip_long_rests: bool = False
 
 
 class CreateAnalysisResponse(BaseModel):
@@ -62,6 +74,9 @@ class AnalysisResponse(BaseModel):
     bpm_source: str
     metronome_mode: str
     instrument: str | None = None
+    #: Whether this take was played with the long rests shortened. Null on a
+    #: deployment whose `analyses` table predates the column.
+    skip_long_rests: bool | None = None
     result_json: dict[str, Any] | None = None
     failure_reason: str | None = None
     alignment_quality: float | None = None
@@ -126,6 +141,10 @@ def _row_to_response(row: dict[str, Any]) -> AnalysisResponse:
         # None for every row written before the column existed, and for a
         # client that did not say. Not defaulted to anything — see migration 008.
         instrument=row.get("instrument"),
+        # Null on a deployment whose table predates the column — which is not
+        # the same as false, and the verdict screen can say so if it ever needs
+        # to explain why a take was judged against the whole page.
+        skip_long_rests=row.get("skip_long_rests"),
         result_json=row.get("result_json"),
         failure_reason=row.get("failure_reason"),
         alignment_quality=row.get("alignment_quality"),
@@ -181,6 +200,13 @@ def create_analysis(
         "instrument": body.instrument.value if body.instrument else None,
         "status": "queued",
     }
+    # **Written only when it is true**, so a deployment whose `analyses` table
+    # predates migration 012 is unaffected until someone actually skips a rest —
+    # and when they do, the insert fails loudly rather than the take being
+    # analysed against silence the musician was told to skip. A wrong verdict is
+    # worse than an error at submit.
+    if body.skip_long_rests:
+        insert_payload["skip_long_rests"] = True
     inserted = client.table("analyses").insert(insert_payload).execute()
     rows = inserted.data or []
     if not rows:
