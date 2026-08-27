@@ -223,19 +223,37 @@ def test_audiveris_finds_barlines_where_oemer_found_none(
 def test_audiveris_measures_mostly_add_up(audiveris_score) -> None:
     """Not all of them, and the ones that do not are the honest finding.
 
-    Eight of fifteen sum to exactly four beats. The rest run long, which is what
-    a missed barline looks like from here — two bars merged into one. No time
-    signature was found, so `validate.py` cannot infer a metre (the modal beat
-    count is 4.0 but only in 6 of 15 measures, under the 0.6 agreement floor)
-    and correctly reports every measure as unverifiable rather than guessing.
+    A real phone photograph. **Eight of fifteen bars sum to exactly 4.0**, and
+    the other seven are seven different answers: 9.5, 5.0, 4.5, 8.0, 3.0, 3.0,
+    3.5. Long is a missed barline — two bars merged into one; short is a
+    dropped note. No `<time>` was legible, so the metre has to be inferred.
+
+    **This test used to assert that all fifteen were `unverifiable`, and called
+    that correct.** It was not. The old inference asked what share of *every*
+    vote the winner held — 8/15 = 0.53, under the 0.6 floor — so the beat check
+    switched itself off for the whole page and had nothing to say about the
+    seven wrong bars. It turned itself off on exactly the kind of page it
+    exists for.
+
+    Split into two tests, the winner beats the runner-up 8 to 2 and covers over
+    a third of the page, so the metre is 4.0 and the seven bars are named.
+
+    The old docstring also said "the modal beat count is 4.0 but only in 6 of
+    15 measures" and asserted `>= 6`. It is 8, and has been since some earlier
+    fix improved the reading without anyone re-reading the sentence beside the
+    assertion. Pinned exactly now.
     """
+    from collections import Counter
+
     sums = [
         sum(_DURATION_BEATS[n.duration] for n in m.notes)
         for m in audiveris_score.measures
     ]
-    assert sum(1 for value in sums if value == 4.0) >= 6
+    assert sum(1 for value in sums if value == 4.0) == 8
     assert audiveris_score.time_signature is None
-    assert all(row.verdict == "unverifiable" for row in validate_measures(audiveris_score))
+
+    verdicts = Counter(row.verdict for row in validate_measures(audiveris_score))
+    assert verdicts == {"ok": 8, "long": 4, "short": 3}, verdicts
 
 
 def test_clef_falls_back_when_absent() -> None:

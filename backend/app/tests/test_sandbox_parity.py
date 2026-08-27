@@ -106,6 +106,29 @@ CASES = [
     _score([["half"], ["half"], ["half"], ["half"]], "unknown"),  # inferred 2.0
     _score([Q, Q, ["quarter"] * 3, Q, Q], "unknown"),             # outlier vs inferred
     _score([["quarter"] * 3] * 4, "4/4"),                         # stated beats inferred
+    # Inference is two tests now, and both ports have to make both of them.
+    #
+    # A clear winner among scattered singletons: eight bars at 4.0 against
+    # seven different wrong answers. The old share-of-everything test read 0.53
+    # and switched the beat check off for the whole page. Shaped after
+    # `audiveris_phone_photo`, which is a real phone photograph.
+    #
+    # Seven *different* wrong answers, not four: with fewer the winner still
+    # clears 0.6 of every vote and the old rule agrees, so the case proves
+    # nothing. Measured — a mutation reverting either port survived until the
+    # noise was this wide. 8 of 15 is 0.53.
+    _score(
+        [Q] * 8
+        + [["quarter"] * n for n in (3, 5, 6, 7, 9, 10, 11)],
+        "unknown",
+    ),
+    # A genuine tie, which must still refuse: 4,4,4,3,3,3 is a transcription
+    # nobody should be confident about, and manufacturing a metre from it would
+    # call three correct bars errors.
+    _score([Q] * 3 + [["quarter"] * 3] * 3, "unknown"),
+    # And the coverage floor: three agreeing bars in fifteen of noise. Decisive
+    # against any single rival, and still not a metre.
+    _score([Q] * 3 + [["quarter"] * n for n in range(5, 17)], "unknown"),
     # Bars of rest must not vote on the median density. Without these two, both
     # ports carried the old filter and every parity test still passed — a rule
     # changed in `validate.py` and ported nowhere, which is the failure

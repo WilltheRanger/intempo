@@ -6,6 +6,121 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-27 — The beat check switched itself off on the page it exists for
+
+**Branch:** `main`. Backend, both browser ports and tests. No screen,
+component, style or copy touched — but **what a musician is told about a badly
+read page changes**, and that is flagged below.
+
+**Files:** `backend/app/services/ocr/validate.py`,
+`tools/validator-sandbox.template.html`, `tools/scan-bench.template.html`,
+`tools/sandbox_shared.py`, `backend/app/tests/test_ocr_validate.py`,
+`backend/app/tests/test_musicxml.py`,
+`backend/app/tests/test_sandbox_parity.py`.
+
+Found by measuring the importer across every fixture instead of the one being
+worked on — the "read the worst page, never the average" rule applied to the
+corpus rather than to a page.
+
+### The measurement
+
+| fixture | bars | verdicts |
+|---|---|---|
+| `audiveris_phone_photo` | 15 | **15 × unverifiable** |
+| `oemer_phone_photo` | 5 | 5 × unverifiable |
+| `orchestral_part` | 17 | 17 × ok |
+
+`oemer` deserves it — its five "bars" sum to 43.25, 1.0, 1.5, 22.0, 11.5, which
+is not a reading of anything. `audiveris` does not:
+
+```
+4.0 4.0 4.0 4.0 4.0 4.0 4.0 4.0   ← eight bars, exactly
+9.5 5.0 4.5 8.0 3.0 3.0 3.5       ← seven different wrong answers
+```
+
+The metre is obvious to any musician and seven bars are visibly wrong. The
+whole page was reported `unverifiable`.
+
+### One number was answering two questions
+
+`infer_beats_per_measure` asked what share of **every** vote the winner held.
+8/15 = 0.53, under the 0.6 floor, so no metre — and with no metre the beat
+check is switched off entirely. It turned itself off on exactly the kind of
+page it exists for.
+
+There are two ways to have no answer and they are not the same:
+
+- **The top two are tied.** `4,4,4,3,3,3` is a transcription nobody should be
+  confident about, and picking one manufactures errors in every bar holding
+  the other. That is what `MIN_AGREEMENT` was written for, and its docstring
+  says so.
+- **The winner is too small to mean anything.** Three agreeing bars in forty
+  of noise is decisive against any single rival and still nothing.
+
+The share-of-everything test half-catches both and gets the page in between
+wrong. Split: `MIN_AGREEMENT` now measures the winner **against the
+runner-up**, and a new `MIN_COVERAGE = 1/3` keeps the second question.
+
+| case | old | new |
+|---|---|---|
+| `4,4,4,3,3,3` — a real tie | None | None |
+| 8 × 4.0 + 7 scattered | **None** | **4.0** |
+| 3 × 4.0 + 12 scattered | 4.0 would be wrong; was None | None |
+| `audiveris_phone_photo` | 15 unverifiable | **8 ok, 4 long, 3 short** |
+
+Not a refit of 0.6 to one photograph — the number is unchanged. What changed is
+what it is a share *of*.
+
+### The behaviour change, called out
+
+A badly read page now says "these seven bars do not add up" where it used to
+say nothing about any of them. That is more truthful and it is more caveats on
+bad scans. No screen, component or copy string was touched, but the change is
+visible to a musician, so it is named here rather than filed as backend-only.
+
+### Ported, and the ports proved
+
+`validate.py` has two ports and `test_sandbox_parity.py` is the only thing
+holding them together. Both updated, both given `MIN_COVERAGE`.
+
+**The first parity case I wrote proved nothing.** Eight bars at 4.0 against
+*four* wrong answers is 8/12 = 0.67, which the old rule accepts too — so a
+mutation reverting either port survived. The case needs the winner *under* 0.6
+of all votes while still dominating: eight in fifteen, seven distinct wrong
+answers. With that, reverting either port fails parity.
+
+### A stale sentence beside a live assertion
+
+`test_audiveris_measures_mostly_add_up` said "the modal beat count is 4.0 but
+only in **6** of 15 measures" and asserted `>= 6`. It is **8**, and has been
+since some earlier fix improved the reading without anyone re-reading the
+sentence next to the assertion. Pinned exactly now. The test also asserted that
+all fifteen bars being `unverifiable` was *correct*; it was the bug.
+
+### Tests
+
+Full suite green. Two new inference cases, two new parity cases; five mutants,
+all killed — including one for each browser port.
+
+| Mutant | Result |
+|---|---|
+| dominance measured against every vote again | killed |
+| the coverage floor is removed | **survived**, then killed |
+| the runner-up is ignored entirely | killed |
+| the validator sandbox keeps the old rule | **survived**, then killed |
+| the scan bench keeps the old rule | **survived**, then killed |
+
+### Three-foot test
+
+Not run: no screen was built or changed.
+
+### Still waiting on the owner
+
+The UI plan (four items), migration `011`, permission to re-read the nine
+failed scans, and whether `Repeat` gets a field for an unclosed forward sign.
+
+---
+
 ## 2026-08-27 — An upbeat took the number of the bar after it
 
 **Branch:** `main`. Backend and tests. No screen, component, style or copy

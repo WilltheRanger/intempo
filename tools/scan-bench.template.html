@@ -329,7 +329,7 @@ const MODELS = __MODELS__;
 // Substituted from the backend at build time by tools/sandbox_shared.py.
 const DURATION_BEATS = __DURATION_BEATS__;
 const TOLERANCE=__TOLERANCE__, MIN_AGREEMENT=__MIN_AGREEMENT__,
-      MIN_MEASURES_TO_INFER=__MIN_MEASURES_TO_INFER__;
+      MIN_COVERAGE=__MIN_COVERAGE__, MIN_MEASURES_TO_INFER=__MIN_MEASURES_TO_INFER__;
 const DENSITY_MULTIPLE=__DENSITY_MULTIPLE__, DENSITY_MIN_NOTES=__DENSITY_MIN_NOTES__;
 
 function metersInForce(score){
@@ -354,11 +354,20 @@ function inferBeatsPerMeasure(sums){
   if(votes.length<MIN_MEASURES_TO_INFER)return null;
   const tally=new Map();
   for(const v of votes)tally.set(v,(tally.get(v)??0)+1);
-  let winner=null,hits=-1;
-  for(const [value,count] of tally){
-    if(count>hits||(count===hits&&value<winner)){winner=value;hits=count;}
+  let winner = null, hits = -1;
+  for (const [value, count] of tally) {
+    if (count > hits || (count === hits && value < winner)) { winner = value; hits = count; }
   }
-  return hits/votes.length<MIN_AGREEMENT?null:winner;
+  // Two tests, because there are two ways to have no answer. See
+  // `infer_beats_per_measure` — a page with one clear winner among scattered
+  // singletons used to switch the whole beat check off.
+  let runnerUp = 0;
+  for (const [value, count] of tally) {
+    if (value !== winner && count > runnerUp) runnerUp = count;
+  }
+  if (hits / (hits + runnerUp) < MIN_AGREEMENT) return null;
+  if (hits / votes.length < MIN_COVERAGE) return null;
+  return winner;
 }
 // The three non-arithmetic checks, kept in step with `ocr/validate.py`. Ported
 // rather than imported because this file has to run from a file:// URL.
