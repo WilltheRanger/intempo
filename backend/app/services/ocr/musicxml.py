@@ -777,6 +777,87 @@ def _repeats_in(part_el: ET.Element) -> list[tuple[int, int, str]]:
     return found
 
 
+def _navigation_in(part_el: ET.Element) -> list[tuple[int, int, str]]:
+    """`D.C.`, `D.S.`, `Fine` and `To Coda`, as spans in the same vocabulary.
+
+    **A da capo is a repeat, and this schema can already say so.** The mapping
+    is exact rather than approximate, which is why it is worth doing inside a
+    closed union of three values:
+
+    - *D.C. al Fine* — play to the D.C., go back to bar 1, stop at Fine. That
+      is the span `(1, D.C.)` played twice, with the bars **after Fine** marked
+      as a first ending: played the first time through, skipped the second.
+    - *D.S. al Fine* — the same from the segno instead of bar 1.
+    - *D.C./D.S. al Coda* — play to the D.C., go back, play to "To Coda", jump
+      to the coda. The bars between "To Coda" and the D.C. are again a first
+      ending, and the coda section is simply the music that follows, which
+      `expand_repeats` plays once after the span. No extra machinery.
+    - A plain *D.C.* with no Fine and no coda is the span played twice.
+
+    Without this, a musician who takes a da capo plays half the piece again
+    against a timeline holding one pass — the identical silent failure the
+    repeat barline had, and da capo form is most of the short repertoire a
+    student practises.
+
+    **Read from `<sound>` attributes, never from the words.** `<sound
+    dacapo="yes">` is unambiguous and every engraver writes it; matching the
+    text "D.C. al Fine" is guesswork, and a false positive here does not
+    mis-read a bar, it plays half the piece twice. homr writes no `<sound>` at
+    all, so scanned pages are unaffected — stated rather than implied, because
+    "the importer understands da capo" would otherwise read as a claim about
+    photographs.
+
+    **Known limit: an inner `|: :|` inside a da capo section is lost.**
+    `expand_repeats` consumes a span's bars, so the outer span swallows the
+    inner one. Both were lost before, so this is strictly better, but it is not
+    complete and should not be described as if it were.
+    """
+    segno: int | None = None
+    coda_from: int | None = None
+    fine: int | None = None
+    jump: int | None = None
+    from_segno = False
+
+    for index, measure_el in enumerate(part_el.iterfind("measure")):
+        for direction in measure_el.iterfind("direction"):
+            if direction.find("direction-type/segno") is not None and segno is None:
+                segno = index
+            for sound in direction.iterfind("sound"):
+                if sound.get("segno") is not None and segno is None:
+                    segno = index
+                if sound.get("fine") is not None:
+                    fine = index
+                if sound.get("tocoda") is not None:
+                    coda_from = index
+                if sound.get("dacapo") is not None and jump is None:
+                    jump, from_segno = index, False
+                elif sound.get("dalsegno") is not None and jump is None:
+                    jump, from_segno = index, True
+
+    if jump is None:
+        return []
+    # A D.S. whose segno was never read goes back to the beginning, which is
+    # what a D.C. does — wrong about *where*, right about *that the music
+    # repeats*, and the second is worth far more to the timeline than the
+    # first. Silently dropping the jump loses both.
+    start = segno if (from_segno and segno is not None) else 0
+    # A segno printed *after* the D.S. that points at it is a misreading, not a
+    # piece. There is no guard for it here: the caller already refuses a span
+    # whose end precedes its start, and a mutation removing a check of the same
+    # thing here changed nothing — which is what redundant means. The rule is
+    # still asserted, one layer down.
+
+    found: list[tuple[int, int, str]] = [(start, jump, "repeat")]
+    #: Whichever comes first ends the second pass: `Fine` stops the piece,
+    #: `To Coda` sends it elsewhere. Everything after it, up to the jump, is
+    #: played once.
+    ends = [x for x in (fine, coda_from) if x is not None]
+    stop = min(ends) if ends else None
+    if stop is not None and start <= stop < jump:
+        found.append((stop + 1, jump, "first_ending"))
+    return found
+
+
 def score_json_from_musicxml(
     xml: str, *, clef_fallback: str | None = None, part: str | None = None
 ) -> ScoreJson:
@@ -1137,7 +1218,7 @@ def score_json_from_musicxml(
         return measures[stop].measure_number if 0 <= stop < len(measures) else None
 
     repeats: list[Repeat] = []
-    for start_index, end_index, kind in _repeats_in(chosen):
+    for start_index, end_index, kind in _repeats_in(chosen) + _navigation_in(chosen):
         first = _first_bar(start_index)
         last_bar = _last_bar(end_index)
         if first is None or last_bar is None or last_bar < first:
