@@ -720,6 +720,14 @@ def _repeats_in(part_el: ET.Element) -> list[tuple[int, int, str]]:
       the piece, or to just after the previous repeat if there was one. Most
       pieces that repeat their opening print no forward sign at all, so
       requiring one would find nothing on exactly the commonest case.
+      **Right for a piece and wrong for a page** — the same shape as
+      `pickup_complement` — and a repeat opening on one page and closing on
+      another therefore reads from the wrong bar. Measured on ten-bar pages: a
+      forward on page 1 bar 5 closing on page 3 bar 4 reads **4** bars repeated
+      where the truth is 20. Fixing it needs a way to say "a forward sign here,
+      still open", which `Repeat` has not got, so it is pinned as a strict
+      `xfail` in `test_page_join.py` rather than guessed at. Nothing reads it
+      today: multi-page is inert behind the unapplied `011`.
     - **An ending marked `1,2`** serves both passes, so it is part of the body
       and not an ending at all — no `Repeat` is emitted for it.
     - **A `<repeat times="3">` is still played twice.** `RepeatType` has no way
@@ -896,6 +904,9 @@ def score_json_from_musicxml(
     measures: list[Measure] = []
     #: `(index in measures, how many bars it stands for, metre stated on it)`
     pending_rests: list[tuple[int, int, str | None]] = []
+    #: 1 once an opening anacrusis has taken number 1, so every printed
+    #: number after it moves up to stay distinct. See the loop below.
+    pickup_shift = 0
     dropped = 0
     #: `{index in measures: how many notes that bar lost}`.
     #:
@@ -1133,8 +1144,48 @@ def score_json_from_musicxml(
             number = int(raw_number) if raw_number is not None else index
         except ValueError:
             number = index
-        # An engine that reads a pickup bar numbers it 0, and `Measure` requires
-        # 1 or more. Position in the list is what everything downstream uses.
+        # **An anacrusis has no number on the page, and giving it one used to
+        # collide with the bar after it.**
+        #
+        # An upbeat is written `<measure number="0" implicit="yes">`, and
+        # `Measure` requires 1 or more — so it fell back to its position, which
+        # is 1, and the printed bar 1 that follows is also 1. Two measures with
+        # the same number, on a very large share of real files.
+        #
+        # Measured, on a part with an upbeat and a repeat: `expand_repeats`
+        # builds `{number: measure}`, so the one-note pickup was **replaced by
+        # a copy of the four-note bar 1** and every played copy of it too — the
+        # timeline gained three beats nobody plays and lost the upbeat.
+        # `numbering_gaps` reported `1→1`, so the musician was also told a
+        # rehearsal mark had probably been counted as a bar, about a page read
+        # perfectly.
+        #
+        # The pickup takes 1 and everything printed after it shifts up by one.
+        # That is one more than the page says, which is a real cost and the only
+        # option the schema leaves: the alternative is a duplicate that deletes
+        # music. `pipeline.renumber` already did exactly this shift on the
+        # provider path — the import route never called it, which is why the
+        # duplicate survived there.
+        #
+        # Only the *first* measure, and only when it is numbered below 1.
+        #
+        # `implicit="yes"` marks it too, and keying on that as well was wrong —
+        # a mutation removing it survived, and looking at why showed the clause
+        # doing harm. Some engravers number the upbeat **1** and the first full
+        # bar **2**; those numbers already collide with nothing, and shifting
+        # turns them into 1 and 3 — a gap `numbering_gaps` then reports on a
+        # page that is perfectly read. A mid-piece `implicit="yes"` is a bar
+        # split across a system break, which is a third thing again.
+        #
+        # Below 1 is the collision and the only collision: `Measure` refuses it,
+        # so it falls back to its position, which is the number the next bar
+        # already has.
+        if index == 1 and number < 1:
+            pickup_shift = 1
+            number = 1
+        elif number >= 1:
+            number += pickup_shift
+        # Position in the list is what everything downstream uses.
         # Never let the voice filter empty a bar. A measure with no notes is
         # not a reading, it is a hole — and `validate.py` reports one as a sign
         # that something which was not a measure was counted as one. If picking
