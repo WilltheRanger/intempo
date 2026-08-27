@@ -116,5 +116,32 @@
       <note><pitch><step>D</step><octave>3</octave></pitch><duration>18</duration><type>quarter</type><dot/></note>
     </measure>
 
+
+    <!-- 10. A bar of cue notes. This is how a part tells you where to come in
+         after a long rest: small notes of somebody *else's* line, printed so
+         you can follow. You rest through them. They carry a `<duration>` and
+         occupy the bar, unlike a grace note — so they are neither played nor
+         droppable, and are read as rests. Before that they read as two played
+         notes and every check in the pipeline said the page was clean. -->
+    <measure number="10">
+      <note><cue/><pitch><step>A</step><octave>4</octave></pitch><duration>12</duration><type>quarter</type></note>
+      <note><cue/><pitch><step>G</step><octave>4</octave></pitch><duration>12</duration><type>quarter</type></note>
+    </measure>
+
+    <!-- 11. The entry, with the tail of the cue line still printed above it.
+         Four cue eighths in voice 2 against two played quarters in voice 1:
+         cue notes are pitched, so they used to win the vote for "the voice
+         carrying the music" and both real notes were thrown away — into a bar
+         that then summed to exactly two beats and was reported `ok`. -->
+    <measure number="11">
+      <note><pitch><step>G</step><octave>2</octave></pitch><duration>12</duration><type>quarter</type><voice>1</voice></note>
+      <note><pitch><step>D</step><octave>3</octave></pitch><duration>12</duration><type>quarter</type><voice>1</voice></note>
+      <backup><duration>24</duration></backup>
+      <note><cue/><pitch><step>A</step><octave>4</octave></pitch><duration>6</duration><type>eighth</type><voice>2</voice></note>
+      <note><cue/><pitch><step>G</step><octave>4</octave></pitch><duration>6</duration><type>eighth</type><voice>2</voice></note>
+      <note><cue/><pitch><step>F</step><octave>4</octave></pitch><duration>6</duration><type>eighth</type><voice>2</voice></note>
+      <note><cue/><pitch><step>E</step><octave>4</octave></pitch><duration>6</duration><type>eighth</type><voice>2</voice></note>
+    </measure>
+
   </part>
 </score-partwise>

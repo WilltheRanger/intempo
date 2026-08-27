@@ -421,10 +421,17 @@ def _voice_carrying_the_music(measure_el: ET.Element) -> str | None:
     them held a whole rest in voice 2 and four eighth notes in voice 1 — the
     file has 75 pitched notes and the reading had 71.
 
-    A voice of nothing but rests is never the music. Ties go to the voice
-    written first, which is the old behaviour and the right tiebreak for two
-    genuine lines: nothing else here can tell a divisi apart, and the upper
-    part is written first by convention.
+    A voice of nothing but rests is never the music, and **neither is a voice
+    of nothing but cues** — a rule that was right alone and wrong beside its
+    neighbour. Cue notes are pitched, so they counted, and a bar holding two
+    played half notes in voice 1 against four cue quarters in voice 2 elected
+    the cues and threw the music away. Measured: the bar came back as four
+    rests, summing to exactly four beats, so `validate_measures` said `ok`.
+    Both real notes gone and nothing anywhere reporting it.
+
+    Ties go to the voice written first, which is the old behaviour and the
+    right tiebreak for two genuine lines: nothing else here can tell a divisi
+    apart, and the upper part is written first by convention.
     """
     counts: dict[str, int] = {}
     order: list[str] = []
@@ -435,7 +442,7 @@ def _voice_carrying_the_music(measure_el: ET.Element) -> str | None:
         if voice not in counts:
             counts[voice] = 0
             order.append(voice)
-        if note_el.find("rest") is None:
+        if note_el.find("rest") is None and note_el.find("cue") is None:
             counts[voice] += 1
     if not order:
         return None
@@ -811,6 +818,26 @@ def score_json_from_musicxml(
             # decorate; including them has the same effect as a chord member.
             if note_el.find("grace") is not None:
                 continue
+            # **A cue note is time you do not play.**
+            #
+            # It is how an orchestral part tells you where to come in: the
+            # small notes printed after a long rest showing what somebody else
+            # is playing. The musician rests through them. Unlike a grace note
+            # it carries a `<duration>` and occupies its place in the bar, so
+            # it is neither a note nor droppable — dropping it leaves the bar
+            # short and `alignment.py` accumulates, and keeping it puts an
+            # onset in the timeline that nobody will ever play.
+            #
+            # Measured before this line existed: a bar of four cue quarters
+            # read back as four played notes at A4, `validate_measures` said
+            # `ok`, `notes_to_human` was empty and confidence was 1.00 —
+            # every mechanism for doubt silent on a bar that is wrong. The
+            # musician who rests correctly through it is then told they missed
+            # four notes, on the bar before a difficult entry, which is the one
+            # bar they most need the app to be right about.
+            #
+            # Rewritten to a rest rather than filtered, which keeps the time.
+            cue = note_el.find("cue") is not None
             filtered_out = False
             this_voice = (note_el.findtext("voice") or "").strip()
             # An *untagged* note is not in a competing voice — it is a note.
@@ -820,7 +847,10 @@ def score_json_from_musicxml(
             if multi_voice and this_voice and this_voice != kept_voice:
                 filtered_out = True
 
-            pitch = _pitch_name(note_el)
+            # A cue's own pitch is discarded rather than read, so a cue
+            # carrying a double accidental keeps its time instead of being
+            # dropped for a pitch that was never going to be played.
+            pitch = "rest" if cue else _pitch_name(note_el)
             duration = _duration_name(note_el, divisions)
             if pitch is None or duration is None:
                 dropped += 1
@@ -830,10 +860,15 @@ def score_json_from_musicxml(
                 dropped_at[len(measures)] = dropped_at.get(len(measures), 0) + 1
                 continue
 
-            tied = any(
-                tie.get("type") == "start" for tie in note_el.iterfind("tie")
-            ) or any(
-                tie.get("type") == "start" for tie in note_el.iterfind("notations/tied")
+            # A tie out of a cue would be a tie out of a rest, and the tie
+            # check reads a tie as two noteheads sharing a pitch — so keeping
+            # it would raise a broken-tie concern about a bar that is right.
+            tied = not cue and (
+                any(tie.get("type") == "start" for tie in note_el.iterfind("tie"))
+                or any(
+                    tie.get("type") == "start"
+                    for tie in note_el.iterfind("notations/tied")
+                )
             )
 
             built = Note(

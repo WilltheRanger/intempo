@@ -69,6 +69,13 @@ EXPECTED = [
     [("rest", "half")],
     # Typed `breve` — eight quarter-beats — and timed at half of one.
     [("rest", "eighth"), ("D3", "dotted_quarter")],
+    # A bar of cue notes: somebody else's line, printed so you know where to
+    # come in. Time you do not play, so rests.
+    [("rest", "quarter"), ("rest", "quarter")],
+    # The entry, with the tail of the cue line still above it. Four cue eighths
+    # in voice 2 against two played quarters in voice 1 — the cues used to win
+    # the vote and both real notes were thrown away.
+    [("G2", "quarter"), ("D3", "quarter")],
 ]
 
 
@@ -81,15 +88,20 @@ def test_the_whole_part_reads_as_written(part) -> None:
 def test_every_bar_adds_up(part) -> None:
     """**The property that makes this fixture worth having.**
 
-    Eleven bars across two metres, with four of them invented by the
-    multi-rest expansion and two more rewritten by rules that guess nothing.
+    Fourteen bars across two metres, with four of them invented by the
+    multi-rest expansion and three more rewritten by rules that guess nothing.
     If any of those rules is wrong the arithmetic says so here, on one
-    document, rather than in six separate snippets each of which can be right
-    alone.
+    document, rather than in seven separate snippets each of which can be
+    right alone.
+
+    Two of the rules cannot be caught by arithmetic at all: a cue read as a
+    played note, and a cue voice outvoting the line, both leave a bar summing
+    to exactly the right number of beats. `EXPECTED` is what catches those,
+    which is why this file asserts the whole reading rather than the verdicts.
     """
     verdicts = Counter(f.verdict for f in validate_measures(part))
 
-    assert verdicts == {"ok": 12}, verdicts
+    assert verdicts == {"ok": 14}, verdicts
 
 
 def test_the_header_is_read_and_the_change_rides_on_its_bar(part) -> None:
@@ -100,7 +112,8 @@ def test_the_header_is_read_and_the_change_rides_on_its_bar(part) -> None:
     assert part.clef == "bass"
     assert part.key_signature == "Bb major"
     assert [m.time_signature for m in part.measures] == [
-        None, None, None, None, None, None, None, None, None, "2/4", None, None
+        None, None, None, None, None, None, None, None, None, "2/4",
+        None, None, None, None,
     ]
 
 
@@ -123,7 +136,7 @@ def test_the_bars_are_numbered_as_a_player_would_count_them(part) -> None:
     """The file numbers four bars' rest as one bar, so everything after it is
     three too low until the expansion renumbers. `MeasureEditScreen` and every
     caveat line address a bar by its number."""
-    assert [m.measure_number for m in part.measures] == list(range(1, 13))
+    assert [m.measure_number for m in part.measures] == list(range(1, 15))
 
 
 # ---------------------------------------------------------------------------
@@ -160,14 +173,14 @@ def test_a_part_that_returns_to_its_first_metre_on_page_two(both_pages) -> None:
 
     # Page one's change, then page two restating what it is in.
     assert metres[9] == "2/4", metres
-    assert metres[12] == "4/4", metres
+    assert metres[14] == "4/4", metres
     assert [m for m in metres if m] == ["2/4", "4/4"], metres
 
 
 def test_the_joined_part_still_adds_up_everywhere(both_pages) -> None:
     verdicts = Counter(f.verdict for f in validate_measures(both_pages))
 
-    assert verdicts == {"ok": 16}, verdicts
+    assert verdicts == {"ok": 18}, verdicts
     assert both_pages.ocr_confidence == 1.0
 
 
@@ -176,7 +189,7 @@ def test_the_second_page_s_rests_are_in_its_own_metre(both_pages) -> None:
     against the 2/4 left in force by page one they would be halves, and the
     page would run four beats short."""
     assert [
-        (n.pitch, n.duration) for m in both_pages.measures[12:] for n in m.notes
+        (n.pitch, n.duration) for m in both_pages.measures[14:] for n in m.notes
     ] == [
         ("Eb3", "quarter"), ("D3", "quarter"), ("C3", "quarter"), ("Bb2", "quarter"),
         ("rest", "whole"), ("rest", "whole"),
@@ -219,14 +232,23 @@ def test_the_timeline_counts_the_rest_the_way_a_player_does(part) -> None:
 
 def test_a_rest_advances_the_clock_without_asking_for_a_note(part) -> None:
     """A rest is a note in this schema, with pitch `"rest"`, and it must carry
-    time without carrying an onset. Bar 11 is an eighth rest then a dotted
+    time without carrying an onset. Bar 12 is an eighth rest then a dotted
     quarter: the rest moves the clock half a beat and the note is expected
-    there, not at the barline."""
+    there, not at the barline.
+
+    Asserted by value rather than by `onsets[-1]`, which was only the last
+    onset while bar 12 was the last bar carrying one — adding the two cue bars
+    after it broke this test without anything about rests having changed.
+    """
     from app.services import alignment
 
     onsets = [round(float(o), 3) for o in alignment.build_timeline(part, 60.0).onsets]
 
-    assert onsets[-1] == 40.5, onsets
+    assert 40.5 in onsets, onsets
+    assert 40.0 not in onsets, (
+        "the note is expected at the barline — the eighth rest before it is "
+        "carrying no time"
+    )
 
 
 def test_a_tie_costs_the_timeline_an_onset(part) -> None:
@@ -239,7 +261,7 @@ def test_a_tie_costs_the_timeline_an_onset(part) -> None:
     onsets = alignment.build_timeline(part, 60.0).onsets
     pitched = sum(1 for m in part.measures for n in m.notes if n.pitch != "rest")
 
-    assert len(onsets) == pitched - 1 == 26
+    assert len(onsets) == pitched - 1 == 28
 
 
 def test_a_correct_part_is_flagged_for_nothing_at_all(part) -> None:
