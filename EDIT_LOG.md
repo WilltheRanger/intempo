@@ -6,6 +6,92 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-27 — The table the refusal floor rests on stopped reproducing
+
+**Branch:** `main`. Backend and tests. No screen, component, style or copy
+touched.
+
+**Files:** `backend/app/services/page_image.py`,
+`backend/app/tests/test_page_legibility.py`.
+
+Started by attacking yesterday's own fix — a page that is **curled and too
+small at once** is the corner the slice fallback could wrongly rescue, and
+nothing covered it. It does not: every such page is still refused. What the
+sweep turned up instead was older and worse.
+
+### One row of the floor's evidence is three days stale
+
+`_MIN_STAFF_SPACE_PX = 8` is justified by a table of measurements, and that
+table is the entire reason a musician's photograph gets refused. It records:
+
+    04_handwritten_clean.jpg (read correctly)   -> 15 px  ✓
+
+It measures **9.25**. Dated against history rather than guessed:
+
+| | |
+|---|---|
+| **2026-08-24** `81737d5` | the floor and its table land — a row-wise measurement |
+| **2026-08-25** `5d7cacb` | the cross-axis fallback lands, to rescue a page held sideways |
+
+After that change this fixture is measured off the wrong axis:
+
+    rows: 1 band,  84 rows tall, period 15   <- the staff
+    cols: 43 bands, mostly 2-9 wide, 2 answer, periods 10 and 9
+
+The axis with more answering bands wins, so **two bands of handwriting outvote
+the one band holding the staff**.
+
+### The rule is right for what it was built for
+
+On the same fixture turned ninety degrees it is 6 against 1 the other way, and
+without the rule a sideways page reads **316**. This is the case where the
+margin is a single band and it goes the wrong way.
+
+Two alternatives were measured and both are worse. Preferring the axis where a
+larger *share* of bands answered ties at 100% on both axes of a single-staff
+strip, and the tiebreak then hands a rotated page its blob — 316 again.
+Consulting the cross-axis only when the primary finds nothing is the shape the
+rest of this file uses, and it fails for the same reason: rows *do* answer on a
+rotated page, with garbage.
+
+**Not refitted.** Five cropped strips and synthetic rotations are not enough to
+choose a better rule, and a margin picked to fix this corpus is exactly what
+`CLAUDE.md` means by fitting to one photograph.
+
+### What it costs, said plainly
+
+The gap the floor sits in is narrower than the table claims — **9.25 against
+6**, not 15 against 5. The evidence for 8 is weaker than it reads. The
+constant now says so, and `test_page_legibility.py` re-derives **every row**,
+so the next drift is a failing test rather than a comment that is quietly no
+longer true. Nothing re-ran that table for three days; now something does on
+every push.
+
+### The curled-and-small sweep, since it is why this was found
+
+Four fixtures × three curls × four downscales. Every page whose staff lines
+are genuinely unresolvable is refused; the slice fallback rescues none of
+them. The three rows the sweep flagged were all `04_handwritten_clean`, all at
+**sag 0** — pre-existing, and the trail to the stale table.
+
+### Tests
+
+Full suite green. Two added: the table re-derived with the floor asserted to
+sit between what reads and what does not, and the axis diagnosis pinned. Five
+mutants, all killed — including moving the floor to 6 and to 10, which nothing
+caught before.
+
+### Three-foot test
+
+Not run: no screen was built or changed.
+
+### Still waiting on the owner
+
+The UI plan (four items), migration `011`, permission to re-read the nine
+failed scans, and whether `Repeat` gets a field for an unclosed forward sign.
+
+---
+
 ## 2026-08-27 — Checking the excuse I made for the page that still fails
 
 **Branch:** `main`. Backend and tests. No screen, component, style or copy

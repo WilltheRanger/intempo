@@ -715,6 +715,29 @@ def _legibility(image_bytes: bytes) -> _Legibility:
 #: So 8 sits in the gap between every page in the corpus that reads and the one
 #: that does not, and the corpus agrees with the downscale series about where
 #: the gap is. It is not fitted to a single photograph.
+#:
+#: **One row of that table stopped reproducing the next day, and nothing
+#: noticed until 2026-08-27.** `04_handwritten_clean` measures **9.25**, not
+#: 15. The table was taken on 2026-08-24, when this was a row-wise measurement;
+#: the cross-axis fallback landed on 2026-08-25 to rescue a page photographed
+#: sideways, and on this fixture it *wins*:
+#:
+#:     rows: 1 band,  84 rows tall, period 15   <- the staff
+#:     cols: 43 bands, mostly 2-9 wide, 2 of them answer, periods 10 and 9
+#:
+#: The axis with more answering bands is taken, so two bands of handwriting
+#: outvote one band holding the staff. That rule is right for what it was built
+#: for — on the same fixture turned ninety degrees it is 6 against 1 the other
+#: way, and without it a sideways page reads 316 — and this is the case where
+#: the margin is one band and it is wrong. **Not refitted here**: five cropped
+#: strips and synthetic rotations are not enough to choose a better rule, and a
+#: margin picked to fix this corpus is exactly what the note above warns
+#: against.
+#:
+#: What it costs is that the gap the floor sits in is narrower than the table
+#: claims — 9.25 against 6, not 15 against 5 — so the evidence for **8** is
+#: weaker than it reads. `test_page_legibility.py` now re-derives every row, so
+#: this cannot drift again in silence.
 _MIN_STAFF_SPACE_PX = 8
 
 #: A staff period must be at least this many rows, or it is pixel noise.
