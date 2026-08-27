@@ -1023,3 +1023,157 @@ def test_the_refusal_path_measures_the_page_once() -> None:
     ]
 
     assert calls == [], calls
+
+
+# ---------------------------------------------------------------------------
+# The other two measured tables in this file, re-derived
+# ---------------------------------------------------------------------------
+
+
+def _page_of_strips(order: list[str], gap: int = 60, scale: float = 1.0) -> bytes:
+    """Fixture strips stacked into a page, by name and in this order.
+
+    **Named, because the table it reproduces was not.** `_SPACING_PERCENTILE`
+    cites "a page of eight stacked fixture strips" and neither which eight nor
+    how, so its numbers cannot be re-derived — unlike `_MIN_STAFF_SPACE_PX`,
+    whose rows name files and which turned out to have gone stale unnoticed for
+    three days. What is asserted below is therefore the constant's *purpose* on
+    a page this function builds, rather than a list whose provenance cannot be
+    confirmed.
+    """
+    from PIL import Image
+
+    strips = [Image.open(FIXTURES / f"{name}.jpg").convert("L") for name in order]
+    width = max(strip.width for strip in strips)
+    height = sum(strip.height for strip in strips) + gap * (len(strips) - 1)
+    page = Image.new("L", (width, height), 255)
+    y = 0
+    for strip in strips:
+        page.paste(strip, (0, y))
+        y += strip.height + gap
+    if scale != 1.0:
+        page = page.resize((int(width * scale), int(height * scale)), Image.LANCZOS)
+    buffer = io.BytesIO()
+    page.save(buffer, "JPEG", quality=92)
+    return buffer.getvalue()
+
+
+#: Eight systems: the five fixtures, then the first three again.
+_EIGHT = [
+    "01_simple_printed", "02_medium_printed", "03_complex_printed",
+    "04_handwritten_clean", "05_handwritten_messy",
+    "01_simple_printed", "02_medium_printed", "03_complex_printed",
+]
+
+
+def _per_band(raw: bytes) -> list[int | None]:
+    from app.services.page_image import _bands, _inked, _profile_of
+
+    profile, smoothed = _profile_of(_inked(raw))
+    return [_band_staff_space(profile[top:bottom]) for top, bottom in _bands(smoothed)]
+
+
+def test_a_harmonic_and_a_small_system_are_both_outvoted_on_a_real_page() -> None:
+    """`_SPACING_PERCENTILE` exists to survive two errors at once, and this is
+    the page that carries both.
+
+    Measured on the eight above at full size:
+
+        [11, 11, 11, 33, 5, 11, 11, 11]
+
+    **33** is `04_handwritten_clean`'s band reporting a multiple of its own
+    period — the upward-only error the percentile is chosen against. **5** is
+    `05_handwritten_messy`, the one fixture that yields no measures, which a
+    strict minimum would let veto the whole page. Neither wins.
+
+    Worth knowing and not in any docstring: the same fixture reports **15** in
+    a five-strip page and **33** in this eight-strip one. Band boundaries move
+    with what else is on the sheet, so a per-band number is a property of the
+    page, not of the strip.
+    """
+    bands = _per_band(_page_of_strips(_EIGHT))
+    answered = [space for space in bands if space is not None]
+
+    assert bands == [11, 11, 11, 33, 5, 11, 11, 11], bands
+    assert _representative_spacing(answered) == 11.0
+    assert staff_space_px(_page_of_strips(_EIGHT)) == 11.0
+
+
+def test_the_same_page_at_webcam_resolution_is_still_refused() -> None:
+    """The other half: nothing on it is readable and the statistic has to say
+    so. The median would not — its own docstring is about a median of 8.5
+    clearing the floor.
+    """
+    small = _page_of_strips(_EIGHT, scale=0.4)
+    bands = _per_band(small)
+    answered = [space for space in bands if space is not None]
+
+    assert answered == [4, 6, 4], bands
+    assert _representative_spacing(answered) < _MIN_STAFF_SPACE_PX
+    assert too_small_to_read(small) is not None
+
+
+def test_the_peak_strength_table_still_holds() -> None:
+    """`_STAFF_PERIOD_STRENGTH` cites a strength per fixture, and unlike the
+    floor's table this one reproduces exactly.
+
+    It is pinned because the value was already wrong once — at 0.15 it refused
+    `04_handwritten_clean`, whose true peak is 0.136, and handwriting is
+    quieter than engraving without being any less present.
+    """
+    from app.tests.test_scan_end_to_end import _phone_photo
+
+    from app.services.page_image import _bands, _inked, _profile_of, _staff_peak
+
+    measured = {}
+    for name in ("01_simple_printed", "02_medium_printed", "03_complex_printed",
+                 "04_handwritten_clean", "05_handwritten_messy"):
+        profile, smoothed = _profile_of(_inked(_phone_photo(FIXTURES / f"{name}.jpg")))
+        peaks = [
+            found[1]
+            for top, bottom in _bands(smoothed)
+            if (found := _staff_peak(profile[top:bottom])) is not None
+        ]
+        measured[name] = round(max(peaks), 2)
+
+    assert measured == {
+        "01_simple_printed": 0.75,
+        "02_medium_printed": 0.64,
+        "03_complex_printed": 0.38,
+        "04_handwritten_clean": 0.14,   # 0.136, the weakest true signal
+        "05_handwritten_messy": 0.36,
+    }, measured
+
+    assert min(measured.values()) > _STAFF_PERIOD_STRENGTH
+
+
+def test_strength_would_be_a_worse_axis_rule_than_counting() -> None:
+    """**A trap for whoever tries the obvious thing next**, which I did.
+
+    Choosing the orientation by how *strongly* its peak reads looks better than
+    counting bands. It is worse: on two of five fixtures the cross-axis —
+    which holds no staff at all — peaks harder than the real one.
+    """
+    import numpy as np
+
+    from app.tests.test_scan_end_to_end import _phone_photo
+
+    from app.services.page_image import _bands, _inked, _profile_of, _staff_peak
+
+    def best(oriented) -> float:
+        profile, smoothed = _profile_of(oriented)
+        peaks = [
+            found[1]
+            for top, bottom in _bands(smoothed)
+            if (found := _staff_peak(profile[top:bottom])) is not None
+        ]
+        return max(peaks) if peaks else 0.0
+
+    louder = []
+    for name in ("01_simple_printed", "02_medium_printed", "03_complex_printed",
+                 "04_handwritten_clean", "05_handwritten_messy"):
+        ink = _inked(_phone_photo(FIXTURES / f"{name}.jpg"))
+        if best(np.asarray(ink).T) > best(ink):
+            louder.append(name)
+
+    assert louder == ["03_complex_printed", "04_handwritten_clean"], louder
