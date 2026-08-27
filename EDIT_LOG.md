@@ -6,6 +6,98 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-27 — The tempo was printed on the page and nothing read it
+
+**Branch:** `main`. Backend and tests. No screen, component, style or copy
+touched.
+
+**Files:** `backend/app/services/ocr/musicxml.py`, and one new test file
+(`app/tests/test_metronome_mark.py`).
+
+`bpm_hint` came from `<sound tempo=...>` alone. That is a **playback hint** and
+it is optional: this module's own comment records that *"homr writes no
+`<sound>` at all"*, and plenty of exporters write only the mark the engraver
+drew. So a piece whose page says **♩ = 132** opened at the app's 80 BPM
+fallback, with the number sitting unread in the file it was imported from.
+
+`<metronome>` is now read as a fallback.
+
+### The conversion is the whole risk, and it is why this is not two lines
+
+`bpm_hint` feeds `target_bpm`, `build_timeline` measures every duration in
+quarter-beats, and the app's own metronome says so in as many words: *"a beat
+is a quarter note, everywhere in this app."* So the number has to be quarter
+notes per minute, and `<per-minute>` is beats of whatever unit is printed
+beside it:
+
+| printed | naive read | correct | error |
+|---|---|---|---|
+| ♩ = 132 | 132 | 132 | — |
+| ♪ = 120 | 120 | 60 | **2×** |
+| ♩. = 60 | 60 | 90 | **1.5×** |
+| 𝅗𝅥 = 60 | 60 | 120 | **2×** |
+| 𝅘𝅥𝅯 = 240 | 240 | 60 | **4×** |
+
+Every one of those moves the expected timeline, not just the number on screen.
+A compound-metre page read straight would put a musician's practice tempo a
+third out; a page marked in eighths, half out.
+
+### Four things it declines to read, each for its own reason
+
+- **A metric modulation** (`♩ = ♪`) carries two beat units and states a
+  *ratio*, never a speed. The guard counts the units rather than checking for a
+  per-minute — a modulation without one already reads as nothing, so only the
+  count catches an exporter that writes both, where believing the first unit
+  invents a tempo out of a ratio. A mutation survived until that case was
+  written.
+- **A tempo outside 20–300**, the same range `<sound tempo>` is held to and for
+  the same reason: a number outside it is a misreading, and 300 is not a better
+  answer than admitting the page did not say.
+- **A beat unit with three dots**, which would index past the table of dot
+  factors — an exception in the middle of transcribing a page, failing the
+  whole scan on one exotic marking rather than leaving one number unread.
+- **A beat unit or per-minute it cannot parse.** `<per-minute>` is free text.
+
+A *range* — `♩ = 120-132`, which the free text allows — takes the **lower**
+number. It is the tempo a player would start from, and it is a reading rather
+than an average nobody printed.
+
+### `<sound>` still wins where both are present
+
+It is quarter-note BPM by definition, so believing it needs no arithmetic at
+all, and an arithmetic answer should not overrule a stated one.
+
+### One thing this makes more visible without fixing
+
+`bpm_hint` is quarter notes per minute **by contract**, so a 6/8 page marked
+♩. = 60 now reports 90 — correct for the timeline, and not the number the
+engraver wrote or the one a musician sets their metronome to. That tension
+already existed for any file carrying `<sound tempo="90">` on such a page; what
+changes is that far more pages now have a number at all. Fixing it means
+deciding what the app *displays* against what it *counts in*, which is a
+screen-and-copy question and gated. Named here rather than quietly resolved by
+whichever half I happened to touch.
+
+The app's metronome is not wrong today, only plain: `beatsPerBar("6/8")` is 3,
+so the downbeat lands on the barline and the clicks in between are quarters —
+a unit nobody counts 6/8 in, but the accent is where "one" is.
+
+**Tests:** backend **1468 passed, 3 xfailed** (fourteen new). Eight mutants,
+**eight killed**, on a verified-green baseline.
+
+**Known side effects:** a piece imported from a file that states both a
+`<sound>` tempo and a contradicting printed mark keeps the `<sound>` one, which
+is the existing behaviour and unchanged.
+
+**Rollback:** `git revert` this commit. Nothing stored changes shape; a score
+already read keeps whatever `bpm_hint` it was given.
+
+**Still waiting on the owner** — the UI plan (four items), migration `011`,
+permission to re-read the nine failed scans, and whether `Repeat` gets a field
+for an unclosed forward sign.
+
+---
+
 ## 2026-08-27 — Both hands of a grand staff were being read as one line
 
 **Branch:** `main`. Backend and tests. No screen, component, style or copy
