@@ -1712,3 +1712,139 @@ def test_an_ending_more_than_one_bar_long_covers_all_of_it() -> None:
     assert [m.measure_number for m in alignment.expand_repeats(score)] == [
         1, 2, 3, 4, 1, 2, 5, 6
     ]
+
+
+# ---------------------------------------------------------------------------
+# `<forward>`: a gap that used to vanish
+# ---------------------------------------------------------------------------
+
+
+def test_a_forward_gap_is_filled_with_rest_rather_than_ignored() -> None:
+    """**It vanished, and the bar after it paid for it.**
+
+    `<forward>` advances the clock without writing a note — how an engraver
+    leaves a gap, most often before a voice that enters partway through the
+    bar. Nothing read it.
+
+    Measured before this: a 4/4 bar written as quarter, two-beat `<forward>`,
+    quarter came back **two beats long**, and because it was measure 1
+    `validate_measures` forgave it as a pickup and reported nothing at all.
+    `alignment.py` accumulates, so every bar after it on the page was expected
+    two beats early — the multi-bar-rest damage again, from a third direction.
+    """
+    two = (
+        "<attributes><divisions>2</divisions>"
+        "<time><beats>4</beats><beat-type>4</beat-type></time></attributes>"
+    )
+    quarter = (
+        "<note><pitch><step>D</step><octave>3</octave></pitch>"
+        "<duration>2</duration><type>quarter</type></note>"
+    )
+    score = score_json_from_musicxml(
+        _part(
+            _bar(1, quarter + "<forward><duration>4</duration></forward>" + quarter, two)
+        )
+    )
+
+    assert [(n.pitch, n.duration) for n in score.measures[0].notes] == [
+        ("D3", "quarter"),
+        ("rest", "half"),
+        ("D3", "quarter"),
+    ]
+    assert [f.verdict for f in validate_measures(score)] == ["ok"]
+
+
+def test_a_gap_is_written_the_way_an_engraver_would() -> None:
+    """Greedy over the named values: two and a half beats is a half and an
+    eighth, not a value with no name."""
+    from app.services.ocr.musicxml import _rests_for_gap
+
+    assert _rests_for_gap(2.0) == ["half"]
+    assert _rests_for_gap(2.5) == ["half", "eighth"]
+    assert _rests_for_gap(0.75) == ["dotted_eighth"]
+
+
+def test_a_gap_no_rest_can_express_is_refused_rather_than_rounded() -> None:
+    """A third of a beat is a triplet rest, which this schema cannot name.
+
+    Returning the nearest thing would misplace every note after it in the bar
+    and, since durations accumulate, on the rest of the page. Being visibly
+    short is a failure this can afford.
+    """
+    from app.services.ocr.musicxml import _rests_for_gap
+
+    assert _rests_for_gap(1 / 3) == []
+
+
+def test_a_gap_belonging_to_a_discarded_voice_does_not_pad_the_bar() -> None:
+    """A `<forward>` in the voice that was filtered out is not this line's
+    silence. Padding with it makes a correct bar overrun."""
+    two = (
+        "<attributes><divisions>2</divisions>"
+        "<time><beats>4</beats><beat-type>4</beat-type></time></attributes>"
+    )
+
+    def quarter(voice: int) -> str:
+        return (
+            "<note><pitch><step>D</step><octave>3</octave></pitch>"
+            f"<duration>2</duration><type>quarter</type><voice>{voice}</voice></note>"
+        )
+
+    score = score_json_from_musicxml(
+        _part(
+            _bar(
+                1,
+                quarter(1) * 4
+                + "<backup><duration>8</duration></backup>"
+                + "<forward><duration>4</duration><voice>2</voice></forward>"
+                + quarter(2) * 2,
+                two,
+            )
+        )
+    )
+
+    assert [(n.pitch, n.duration) for n in score.measures[0].notes] == [
+        ("D3", "quarter")
+    ] * 4
+    assert [f.verdict for f in validate_measures(score)] == ["ok"]
+
+
+def test_a_gap_before_a_triplet_does_not_move_the_bracket() -> None:
+    """**Found by a mutation that survived.** `ratios` is positional against
+    `notes`, and the rests a `<forward>` inserts have to take their place in
+    it. Without that, the tuplet run is detected at the wrong indices and the
+    bracket is drawn over notes that are not in it — a 3:2 marking on ordinary
+    eighths, which `tuplet_faults` then reports as a misread bar on a page that
+    is right.
+    """
+    six = (
+        "<attributes><divisions>6</divisions>"
+        "<time><beats>4</beats><beat-type>4</beat-type></time></attributes>"
+    )
+    quarter = (
+        "<note><pitch><step>D</step><octave>3</octave></pitch>"
+        "<duration>6</duration><type>quarter</type></note>"
+    )
+    triplet = (
+        "<note><pitch><step>F</step><octave>3</octave></pitch><duration>2</duration>"
+        "<type>eighth</type><time-modification><actual-notes>3</actual-notes>"
+        "<normal-notes>2</normal-notes></time-modification></note>"
+    )
+    score = score_json_from_musicxml(
+        _part(
+            _bar(
+                1,
+                "<forward><duration>6</duration></forward>"
+                + triplet * 3
+                + quarter * 2,
+                six,
+            )
+        )
+    )
+
+    measure = score.measures[0]
+    assert [n.pitch for n in measure.notes] == ["rest", "F3", "F3", "F3", "D3", "D3"]
+    assert [
+        (t.start_note_index, t.end_note_index, t.actual_notes, t.normal_notes)
+        for t in measure.tuplets
+    ] == [(1, 3, 3, 2)]

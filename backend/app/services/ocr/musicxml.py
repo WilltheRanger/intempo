@@ -168,6 +168,36 @@ _DURATION_BY_BEATS: Final[dict[float, str]] = {
 }
 
 
+def _rests_for_gap(beats: float) -> list[str]:
+    """The rest values that fill `beats`, longest first.
+
+    **For `<forward>`, which advances the clock without writing a note.** It is
+    how an engraver leaves a gap — most often the start of a voice that enters
+    partway through the bar — and it was ignored entirely, so the gap simply
+    vanished. Measured: a 4/4 bar written as quarter, two-beat `<forward>`,
+    quarter came back two beats long instead of four; and because it was
+    measure 1, `validate_measures` forgave it as a pickup and nothing was
+    reported at all. `alignment.py` accumulates, so every bar after it on the
+    page was expected two beats early.
+
+    Greedy over the named values because that is what an engraver writes: two
+    and a half beats is a half and an eighth, not a value with no name. A
+    remainder that no rest can express returns nothing rather than a wrong
+    total — being visibly short is a failure this can afford, and silently
+    misplacing every later bar is not.
+    """
+    values = sorted(_DURATION_BY_BEATS.items(), reverse=True)
+    out: list[str] = []
+    left = round(beats, 6)
+    for size, name in values:
+        while left >= size - 1e-9:
+            out.append(name)
+            left = round(left - size, 6)
+            if len(out) > 16:
+                return []
+    return out if abs(left) < 1e-9 else []
+
+
 def _duration_name(note: ET.Element, divisions: int | None = None) -> str | None:
     kind = _text(note.find("type"))
     if kind is None:
@@ -907,7 +937,30 @@ def score_json_from_musicxml(
         kept_voice = _voice_carrying_the_music(measure_el)
         multi_voice = rewound and len({v for v in voices if v}) > 1
 
-        for note_el in measure_el.iterfind("note"):
+        for child in measure_el:
+            if child.tag == "forward":
+                # Only the kept voice's gaps: a `<forward>` belonging to a
+                # voice that was filtered out would pad this bar with silence
+                # that is not in the line being read.
+                gap_voice = (child.findtext("voice") or "").strip()
+                if multi_voice and gap_voice and gap_voice != kept_voice:
+                    continue
+                raw = _text(child.find("duration"))
+                if raw is None or divisions in (None, 0):
+                    continue
+                try:
+                    gap = float(raw) / float(divisions)  # type: ignore[arg-type]
+                except ValueError:
+                    continue
+                for name in _rests_for_gap(gap):
+                    silence = Note(pitch="rest", duration=name)  # type: ignore[arg-type]
+                    not_filtered.append(silence)
+                    notes.append(silence)
+                    ratios.append(None)
+                continue
+            if child.tag != "note":
+                continue
+            note_el = child
             # A chord member shares its predecessor's onset. The timeline is
             # built from durations, so counting the second note of a chord
             # would make the measure overrun and the beat-sum check would call

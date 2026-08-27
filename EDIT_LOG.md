@@ -6,6 +6,94 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-27 — `<forward>` advanced the clock and the reader did not
+
+**Branch:** `main`. Backend and tests. No screen, component, style or copy
+touched.
+
+**Files:** `backend/app/services/ocr/musicxml.py`,
+`backend/app/tests/test_musicxml.py`.
+
+### The gap that vanished
+
+`<forward>` moves the position on without writing a note. It is how an
+engraver leaves a gap — most often before a voice that enters partway through
+the bar. Nothing read it, so the gap simply disappeared.
+
+```
+4/4: quarter, <forward> two beats, quarter
+  → read as two beats
+  → and because it is measure 1: verdict `pickup`, no concern at all
+```
+
+The same forgiveness hole documented yesterday, now catching a second cause.
+And `alignment.py` accumulates, so every bar after it on the page was expected
+two beats early. That is the multi-bar-rest damage arriving from a third
+direction: a dropped rest, a bar of rest read as four beats, and now a gap
+read as nothing.
+
+Filled with rests, greedily over the named values, because that is what an
+engraver writes: two and a half beats is a half and an eighth, not a value
+with no name.
+
+**A remainder no rest can express returns nothing** rather than a wrong total.
+A third of a beat is a triplet rest, which this schema cannot name; rounding
+it would misplace every note after it in the bar and, since durations
+accumulate, on the rest of the page. Being visibly short is a failure this can
+afford.
+
+**A gap belonging to a discarded voice does not pad the bar.** A `<forward>`
+in the voice that lost the vote is not this line's silence, and padding with
+it makes a correct bar overrun. An *untagged* one is honoured, matching the
+rule already written for untagged notes.
+
+### The mutant that survived and was real
+
+Removing `ratios.append(None)` for the inserted rests passed. `ratios` is
+positional against `notes`, so without it the tuplet run is detected at the
+wrong indices — a 3:2 bracket drawn over ordinary eighths, which
+`tuplet_faults` then reports as a misread bar on a page that is right. No test
+had a gap and a tuplet in the same bar.
+`test_a_gap_before_a_triplet_does_not_move_the_bracket` does, and the mutant
+dies.
+
+### The mutant that survived and was not
+
+`while` → `if` in the decomposition. Checked exhaustively rather than argued:
+across every gap that is a multiple of a 64th up to sixteen beats, **one** of
+256 differs — exactly 16.0 beats, where `while` writes two breve rests and
+`if` writes breve + dotted whole + half. Same total, different spelling, and
+only the total reaches the timeline. Recorded as equivalent rather than
+pinned with a test that would fix an arbitrary spelling.
+
+### Tests
+
+Full suite green. Five new tests; five mutants, four killed and one equivalent
+by exhaustive search.
+
+| Mutant | Result |
+|---|---|
+| a forward gap is ignored again | killed |
+| a discarded voice's gap pads the bar | killed |
+| a gap no rest can express is rounded down | killed |
+| ratios drift out of step with notes | **survived**, then killed |
+| the gap is filled with one value, not decomposed | **equivalent** (proved) |
+
+Also checked while here: `<time><senza-misura/></time>` already reads as no
+metre and `validate_measures` reports `unverifiable`, which is right. No
+change needed.
+
+### Three-foot test
+
+Not run: no screen was built or changed.
+
+### Still waiting on the owner
+
+The UI plan (four items), migration `011`, and permission to re-read the nine
+failed scans.
+
+---
+
 ## 2026-08-27 — Every repeat sign this pipeline has ever read was ignored
 
 **Branch:** `main`. Backend, one fixture and tests. No screen, component,
