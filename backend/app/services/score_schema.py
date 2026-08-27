@@ -9,9 +9,9 @@ from __future__ import annotations
 
 import logging
 import re
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Literal, get_args
+from typing import Any, Literal, get_args
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -347,6 +347,24 @@ class Measure(_Strict):
     #: The onset timeline never cared: it accumulates durations, so where the
     #: barlines fall does not move a note. This exists for the beat check.
     time_signature: str | None = Field(default=None, max_length=20)
+    #: How many notes in this measure the reading saw and could not write.
+    #:
+    #: **Because the bar can now come out looking perfect.** A double accidental,
+    #: a triple dot, a quintuplet — the page had a note, this schema has no name
+    #: for it, and it is dropped rather than mis-named. Until recently the bar
+    #: was then short and the beat check said so. Now an unwritable *tuplet*
+    #: keeps its length as rests, so the arithmetic is clean and nothing reaches
+    #: the app at all: no concern, no way to open `MeasureEditScreen` on the one
+    #: bar that is missing notes.
+    #:
+    #: `notes_to_human` names the bar, and it is one sentence for the whole
+    #: page which no screen can point at a measure. This is the same fact on the
+    #: schema the app shares, which is what a per-measure concern needs.
+    #:
+    #: Defaults to 0, so every score written before it existed reads as a page
+    #: with nothing missing — which is the only honest answer for a row that
+    #: never recorded it.
+    unwritable_notes: int = Field(default=0, ge=0)
 
     @field_validator("time_signature")
     @classmethod
@@ -743,6 +761,54 @@ def tuplet_faults(measures: Sequence[Measure]) -> list[TupletFault]:
                 )
 
     return out
+
+
+def clear_unwritable_where_rewritten(
+    incoming: "ScoreJson", stored: Mapping[str, Any] | None
+) -> "ScoreJson":
+    """Drop `unwritable_notes` from every measure a person has just rewritten.
+
+    **Because a caveat nobody can clear is worse than no caveat.** The count
+    records what the *reading* lost, and the app shows it as a concern with a
+    control that opens the bar for editing. `MeasureEditScreen` spreads the
+    measure it saves — deliberately, so fields it does not know about survive —
+    so the count came straight back, and the bar a musician had just repaired
+    kept telling them it was broken. Nothing teaches someone to ignore a caveat
+    faster than one that will not go away.
+
+    A measure counts as rewritten when its notes differ from the stored ones,
+    by pitch and duration in order — which is exactly what adding a missing
+    note changes, and what renaming a piece or fixing a slur does not. A
+    measure number with no stored counterpart is new, and a bar that did not
+    exist when the page was read cannot carry what the reading lost.
+
+    Stored measures are matched by `measure_number` rather than position: a bar
+    inserted in the middle shifts every index after it, and clearing the wrong
+    bar's count is the same class of mistake as naming the wrong bar in
+    `notes_to_human`, which this project has already made once.
+    """
+    if not any(m.unwritable_notes for m in incoming.measures):
+        return incoming
+    was: dict[int, tuple] = {}
+    for raw in (stored or {}).get("measures") or []:
+        try:
+            number = int(raw["measure_number"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        was[number] = tuple(
+            (note.get("pitch"), note.get("duration"))
+            for note in raw.get("notes") or []
+            if isinstance(note, Mapping)
+        )
+    measures = [
+        measure
+        if not measure.unwritable_notes
+        or was.get(measure.measure_number)
+        == tuple((n.pitch, n.duration) for n in measure.notes)
+        else measure.model_copy(update={"unwritable_notes": 0})
+        for measure in incoming.measures
+    ]
+    return incoming.model_copy(update={"measures": measures})
 
 
 @dataclass(frozen=True)

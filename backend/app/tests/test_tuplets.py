@@ -12,13 +12,18 @@ from __future__ import annotations
 import pytest
 
 from app.services.ocr.musicxml import score_json_from_musicxml
-from app.services.ocr.validate import describe_for_retry, validate_measures
+from app.services.ocr.validate import (
+    MeasureFinding,
+    describe_for_retry,
+    validate_measures,
+)
 from app.services.score_schema import (
     DURATION_BEATS,
     Measure,
     Note,
     ScoreJson,
     Tuplet,
+    clear_unwritable_where_rewritten,
     tuplet_faults,
 )
 
@@ -394,3 +399,136 @@ def test_the_notes_are_still_declared_lost() -> None:
     assert "5 note(s)" in score.notes_to_human
     assert "kept as a rest" in score.notes_to_human
     assert score.ocr_confidence < 0.5
+
+
+# --------------------------------------------------------------------------
+# The bar that adds up and is still missing notes
+# --------------------------------------------------------------------------
+
+
+def test_the_measure_carries_what_the_reading_lost() -> None:
+    """The count has to live on the schema the app shares.
+
+    `notes_to_human` names the bar in one sentence for the whole page, and no
+    screen can point that at a measure. Since an unwritable tuplet now keeps
+    its length as rests, the beat check is silent by construction — so without
+    this the app has nothing at all to show.
+    """
+    score = score_json_from_musicxml(
+        _xml(_QUARTER + _bracketed("16th", 5, 4, 5) + _QUARTER * 2)
+    )
+    assert score.measures[0].unwritable_notes == 5
+    assert [f.verdict for f in validate_measures(score)] == ["ok"]
+
+
+def test_a_clean_page_carries_nothing() -> None:
+    score = score_json_from_musicxml(_xml(_QUARTER * 4))
+    assert score.measures[0].unwritable_notes == 0
+    assert not any(f.is_problem for f in validate_measures(score))
+
+
+def test_it_becomes_a_concern_on_a_bar_whose_beats_add_up() -> None:
+    score = score_json_from_musicxml(
+        _xml(_QUARTER + _bracketed("16th", 5, 4, 5) + _QUARTER * 2)
+    )
+    (finding,) = validate_measures(score)
+    assert finding.is_problem is True
+    # ...and not a re-read: the page was read correctly and this app ran out
+    # of names, so a fresh look at the image returns the same note.
+    assert finding.worth_a_re_read is False
+    assert describe_for_retry(validate_measures(score)) == ""
+    assert "could not write" in finding.describe()
+
+
+def test_a_bar_that_is_short_as_well_says_both() -> None:
+    """The missing notes are usually *why* the bar is short, so choosing
+    between the two sentences would drop the half that explains the other."""
+    finding = MeasureFinding(
+        measure_number=4,
+        verdict="short",
+        expected_beats=4.0,
+        actual_beats=3.0,
+        note_count=3,
+        unwritable_notes=2,
+    )
+    described = finding.describe()
+    assert "2 notes the reading could not write" in described
+    assert "3 beats, expected 4 (short)" in described
+    # ...and says "measure 4" once, not twice, which is what joining two
+    # sentences that each open with it would do.
+    assert described.count("measure 4") == 1
+    assert finding.worth_a_re_read is True
+
+
+def test_a_bar_the_musician_rewrites_stops_claiming_it_lost_notes() -> None:
+    """**A caveat nobody can clear is worse than no caveat.**
+
+    `MeasureEditScreen` spreads the measure it saves, deliberately, so fields
+    it does not know about survive — and the count came straight back with it.
+    The bar a musician had just repaired kept telling them it was broken.
+    """
+    read = score_json_from_musicxml(
+        _xml(_QUARTER + _bracketed("16th", 5, 4, 5) + _QUARTER * 2)
+    )
+    stored = read.model_dump(mode="json")
+
+    repaired = read.model_copy(
+        update={
+            "measures": [
+                read.measures[0].model_copy(
+                    update={
+                        "notes": [
+                            Note(pitch="A3", duration="sixteenth") for _ in range(4)
+                        ]
+                    }
+                )
+            ]
+        }
+    )
+    cleared = clear_unwritable_where_rewritten(repaired, stored)
+    assert cleared.measures[0].unwritable_notes == 0
+
+
+def test_a_bar_saved_untouched_keeps_its_count() -> None:
+    """Renaming a piece, or fixing a slur three bars away, is not a repair."""
+    read = score_json_from_musicxml(
+        _xml(_QUARTER + _bracketed("16th", 5, 4, 5) + _QUARTER * 2)
+    )
+    stored = read.model_dump(mode="json")
+    assert (
+        clear_unwritable_where_rewritten(read, stored).measures[0].unwritable_notes == 5
+    )
+
+
+def test_a_bar_that_did_not_exist_when_the_page_was_read_carries_nothing() -> None:
+    read = score_json_from_musicxml(
+        _xml(_QUARTER + _bracketed("16th", 5, 4, 5) + _QUARTER * 2)
+    )
+    invented = read.measures[0].model_copy(update={"measure_number": 9})
+    with_new_bar = read.model_copy(update={"measures": [*read.measures, invented]})
+    cleared = clear_unwritable_where_rewritten(
+        with_new_bar, read.model_dump(mode="json")
+    )
+    assert cleared.measures[0].unwritable_notes == 5
+    assert cleared.measures[-1].unwritable_notes == 0
+
+
+def test_stored_measures_are_matched_by_number_not_position() -> None:
+    """A bar inserted in the middle shifts every index after it, and clearing
+    the wrong bar's count is the same mistake as naming the wrong bar."""
+    read = score_json_from_musicxml(
+        _xml(_QUARTER + _bracketed("16th", 5, 4, 5) + _QUARTER * 2)
+    )
+    stored = read.model_dump(mode="json")
+    shifted = read.model_copy(
+        update={
+            "measures": [
+                Measure(measure_number=0 + 1, notes=[]).model_copy(
+                    update={"measure_number": 7}
+                ),
+                read.measures[0],
+            ]
+        }
+    )
+    cleared = clear_unwritable_where_rewritten(shifted, stored)
+    assert cleared.measures[1].unwritable_notes == 5

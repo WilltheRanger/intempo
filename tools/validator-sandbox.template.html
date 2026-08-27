@@ -293,22 +293,30 @@ function validateMeasures(score) {
     else verdict = actual < expected ? 'short' : 'long';
     const number = m.measure_number ?? i + 1;
     const ties = brokenTies.get(number) ?? [];
+    const worthReRead = ties.length > 0 || (tupletFaults.get(number) ?? []).length > 0
+                        || tooDense || ['short', 'long', 'empty'].includes(verdict);
     return { measure_number: number, verdict,
              expected_beats: expected, actual_beats: actual,
              note_count: count, meter_inferred: meterInferred,
              broken_ties: ties,
              tuplet_faults: tupletFaults.get(number) ?? [],
              too_dense: tooDense,
+             unwritable_notes: m.unwritable_notes ?? 0,
              // A clean beat sum must not hide any of these: four quarters can
              // sum to exactly 4.0 with a slur written as a tie in the middle,
              // and a 5:4 bracket approximated as triplets sums perfectly too.
-             is_problem: ties.length > 0 || (tupletFaults.get(number) ?? []).length > 0
-                         || tooDense || ['short', 'long', 'empty'].includes(verdict) };
+             // Notes the schema could not write are the newest and the flattest
+             // case of it: an unwritable tuplet keeps its length as rests, so
+             // the bar sums exactly and nothing else here can see the gap.
+             worth_a_re_read: worthReRead,
+             is_problem: worthReRead || (m.unwritable_notes ?? 0) > 0 };
   });
 }
 
 function describeForRetry(findings) {
-  const bad = findings.filter((f) => f.is_problem);
+  // `worth_a_re_read`, not `is_problem`: a bar holding a note this schema has
+  // no name for was read correctly, and a fresh look returns the same note.
+  const bad = findings.filter((f) => f.worth_a_re_read);
   if (!bad.length) return '';
   const line = (f) => f.verdict === 'empty'
     ? `measure ${f.measure_number}: no notes`

@@ -1230,20 +1230,6 @@ def score_json_from_musicxml(
     #: The same for the `/` sign, whose pattern is measured in quarter-beats.
     beat_marks: dict[int, tuple[str, float]] = {}
     dropped = 0
-    #: `{index in measures: how many notes that bar lost}`.
-    #:
-    #: **Because "5 notes were dropped" does not say where to look.** The
-    #: sentence is the only trace a dropped note leaves — the bar itself just
-    #: comes out short, and if it is the *first* bar `validate_measures`
-    #: forgives it as a pickup and flags nothing at all. Measured: the same
-    #: damaged bar reads `short` in the middle of a page and `pickup` at the
-    #: start of one, where no concern reaches the app and `MeasureEditScreen`
-    #: cannot be opened for it.
-    #:
-    #: Naming the bars does not fix that forgiveness — that needs a field on a
-    #: schema the app shares — but it does give a musician the one thing they
-    #: need, which is which bar to go and look at.
-    dropped_at: dict[int, int] = {}
     #: Grace notes seen but not yet attached to the note they decorate.
     #:
     #: Kept across the measure loop for the same reason `fermata_pending` is in
@@ -1366,6 +1352,9 @@ def score_json_from_musicxml(
         ]
         kept_voice = _voice_carrying_the_music(measure_el)
         multi_voice = rewound and len({v for v in voices if v}) > 1
+
+        #: How many notes this bar lost to a value the schema cannot write.
+        dropped_here = 0
 
         #: Beats belonging to bracketed groups whose parts have no name.
         #:
@@ -1506,7 +1495,12 @@ def score_json_from_musicxml(
                 # Which bar lost it, by position — the numbers are still being
                 # decided (a multi-bar rest shifts everything after it), so the
                 # index is the only stable handle until the end.
-                dropped_at[len(measures)] = dropped_at.get(len(measures), 0) + 1
+                # Counted on the measure itself rather than in a map keyed by
+                # position. The map had to be read back through `moved`,
+                # because expanding a multi-bar rest shifts every index after
+                # it — a mapping that was got wrong once already, and that the
+                # measure object simply carries through the expansion instead.
+                dropped_here += 1
                 # `pending_graces` is deliberately **not** cleared. The note
                 # this ornament decorated is gone, but the attack was still
                 # made, and the same rule that governs the dropped note governs
@@ -1667,6 +1661,7 @@ def score_json_from_musicxml(
                 slurs=slurs,
                 tuplets=tuplets,
                 time_signature=measure_time,
+                unwritable_notes=dropped_here,
             )
         )
 
@@ -1729,10 +1724,14 @@ def score_json_from_musicxml(
 
     notes_to_human = ""
     if dropped:
-        # The indices were recorded before the expansion inserted anything, so
-        # map them through the measures that actually came out.
+        # Read off the measures themselves, so the expansion cannot move them
+        # out from under the count. This mapped indices through `moved` and got
+        # it wrong once: a page whose third measure lost notes, with a four-bar
+        # rest above it, named measure 3 where the bar is number 6.
         numbers = sorted(
-            measures[moved[index]].measure_number for index in dropped_at
+            measure.measure_number
+            for measure in measures
+            if measure.unwritable_notes
         )
         where = ""
         if numbers:

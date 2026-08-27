@@ -33,7 +33,11 @@ from app.routers.upload import SCORE_BUCKET
 from app.services.ocr.musicxml import MusicXMLError, score_json_from_musicxml
 from app.workers.dispatch import start_transcription
 from app.services.score_pages import pages_of, select_with_pages
-from app.services.score_schema import Clef, ScoreJson
+from app.services.score_schema import (
+    Clef,
+    ScoreJson,
+    clear_unwritable_where_rewritten,
+)
 
 # Fetching the page lives in `services/page_image.py` so the transcription
 # worker can reach it without importing this module, which imports the worker.
@@ -236,7 +240,7 @@ class MeasureConcern(BaseModel):
 
     measure_number: int
     #: Which test failed, for a client that wants to group or filter.
-    kind: Literal["beats", "tie", "tuplet", "density"]
+    kind: Literal["beats", "tie", "tuplet", "density", "unwritable"]
     #: A sentence fit to show a musician, not an exception string.
     detail: str
 
@@ -398,7 +402,13 @@ def _concerns_for(score_json: Any) -> list[MeasureConcern]:
     for finding in validate_measures(score):
         if not finding.is_problem:
             continue
-        if finding.broken_ties:
+        # First, because it is the only one that is not a doubt about the
+        # reading: the page was read and this schema had no name for what was
+        # on it. A bar can carry it *and* run short, and the missing notes are
+        # usually why — `describe()` says both.
+        if finding.unwritable_notes:
+            kind = "unwritable"
+        elif finding.broken_ties:
             kind = "tie"
         elif finding.tuplet_faults:
             kind = "tuplet"
@@ -714,6 +724,26 @@ def get_score(
     return _with_image_urls(rows)[0]
 
 
+def _stored_score_json(score_id: UUID, user_id: UUID) -> dict[str, Any]:
+    """The score as it stands, or an empty dict when there is no row to read.
+
+    Not an error here: the update below runs against the same id and user and
+    raises its own 404. Returning nothing means "no measure matches", which
+    makes every incoming measure count as rewritten — the safe direction, since
+    the cost is one caveat lost and the alternative is one that cannot be.
+    """
+    rows = (
+        _service_client()
+        .table("scores")
+        .select("score_json")
+        .eq("id", str(score_id))
+        .eq("user_id", str(user_id))
+        .limit(1)
+        .execute()
+    ).data or []
+    return (rows[0].get("score_json") if rows else None) or {}
+
+
 @router.patch("/{score_id}", response_model=ScoreResponse)
 def update_score(
     score_id: UUID,
@@ -729,8 +759,19 @@ def update_score(
 
     update: dict[str, Any] = {}
     if body.score_json is not None:
-        update["score_json"] = body.score_json.model_dump(mode="json")
-        update["ocr_confidence"] = body.score_json.ocr_confidence
+        # A bar the musician has just rewritten no longer carries what the
+        # *reading* lost in it — see `clear_unwritable_where_rewritten`. The
+        # stored score is read for the comparison, and only when the incoming
+        # one actually claims something was unwritable, so an ordinary save
+        # costs no extra round trip.
+        incoming = clear_unwritable_where_rewritten(
+            body.score_json,
+            _stored_score_json(score_id, user_id)
+            if any(m.unwritable_notes for m in body.score_json.measures)
+            else None,
+        )
+        update["score_json"] = incoming.model_dump(mode="json")
+        update["ocr_confidence"] = incoming.ocr_confidence
     if "title" in sent:
         # Null is meaningful for a composer — anonymous, or traditional — but
         # not for a title. Refuse it rather than ignoring it.

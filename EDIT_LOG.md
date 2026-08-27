@@ -6,6 +6,122 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-27 — Closing the silence the last change opened
+
+**Branch:** `main`. Backend, both browser validator ports, and one type-only
+line in the app. **No screen, component, visual style or design token touched**
+— the sentence a musician reads is written by the server, as every other
+concern's is, and `test_client_enums` asserts the app does not switch on
+`kind`.
+
+**Files:** `backend/app/services/score_schema.py`,
+`backend/app/services/ocr/musicxml.py`,
+`backend/app/services/ocr/validate.py`, `backend/app/routers/scores.py`,
+`tools/validator-sandbox.template.html`, `tools/scan-bench.template.html`,
+`mobile/src/data/types.ts`, and two test files.
+
+The previous entry ended by naming its own cost: *"a page with an unwritable
+tuplet now produces a bar that passes the beat check, so nothing but
+`notes_to_human` and the confidence number says anything is missing."* That is
+the whole of this change. I opened the silence; closing it is not optional.
+
+### Why the sentence was not enough
+
+`notes_to_human` is **one sentence for the whole page**. No screen can point it
+at a measure, and `MeasureEditScreen` is reached from a per-measure concern.
+So a bar that lost notes had nothing the app could show and no way in — which
+was already half-true before (a short *first* bar is forgiven as a pickup) and
+became entirely true once the length was kept as rests.
+
+`Measure.unwritable_notes` is the same fact on the schema the app shares.
+
+### It replaced a map that had already been got wrong
+
+`dropped_at` keyed counts by a measure's index *at the time of the drop*, and
+had to be read back through `moved` because expanding a multi-bar rest shifts
+every index after it. That mapping was wrong once already — a page whose third
+measure lost notes, with a four-bar rest above it, named measure 3 where the
+bar is number 6. A count on the measure object is carried through the expansion
+by the object, so there is nothing left to map. The map is gone.
+
+### Not a doubt about the reading, and that changes where it goes
+
+Every other finding says *this might have been read wrong*. This one says *the
+page was read right and this app has no name for what was on it*. So
+`MeasureFinding` grew a second property: `worth_a_re_read` is what `is_problem`
+used to be, and `is_problem` is now that **or** notes we could not write.
+`describe_for_retry` uses the first — asking a model to look again at a
+quintuplet returns the same quintuplet, and listing it would spend a re-read on
+the one fault a re-read cannot touch.
+
+`describe()` **prefixes** rather than ranks: the missing notes are usually why
+the bar is short, so choosing between the two sentences would drop the half
+that explains the other. It says "measure 4" once, not twice — the joined
+halves each opened with it.
+
+### The part that would have made it a bad caveat
+
+`MeasureEditScreen` spreads the measure it saves, deliberately, so fields it
+does not know about survive. Which means the count came **straight back**, and
+a bar a musician had just repaired would keep telling them it was broken,
+forever, with no way to dismiss it. Nothing teaches someone to ignore a caveat
+faster than one that will not go away — this file has said so before, about
+four wrong "short" bars in 3/4.
+
+`clear_unwritable_where_rewritten` drops the count from any measure whose notes
+come back different, by pitch and duration in order. Matched by
+`measure_number`, not position, for exactly the reason `dropped_at` is gone. It
+runs in `PATCH /v1/scores/:id`, and only when the incoming score claims
+something was unwritable, so an ordinary save costs no extra round trip.
+
+I would rather not have shipped the concern at all than shipped one that cannot
+be cleared.
+
+### Both ports, and a parity case that can only be this
+
+`validate_measures` has two browser copies, and both now carry
+`worth_a_re_read` alongside `is_problem`. Two parity cases added — a bar that
+adds up perfectly and is still missing notes, and one that is *also* short,
+since the missing notes are usually why. The first is the only shape that can
+test this: every other fault the ports check makes the arithmetic disagree
+somewhere, and this one is invisible to all of it by construction.
+
+**Tests:** backend **1440 passed, 3 xfailed** (fifteen new). App: 378 passed,
+typecheck clean. Ten mutants, ten killed — including both directions of the
+clearing rule (a repaired bar keeping its caveat, and an untouched bar losing
+it), which are the two ways it could be wrong.
+
+### Two mistakes of my own, and the second is the one worth reading
+
+The helper that reads the stored score was inserted **between**
+`@router.patch(...)` and `def update_score` — so the decorator registered the
+*helper*, FastAPI read its `user_id` argument as a query parameter, and twelve
+existing router tests went red. Caught by the full suite, fixed by moving it
+above the decorator.
+
+The real failure is that my mutation run said **ten killed** on that broken
+tree. It had no baseline, so every mutant "failed the suite" for a reason that
+had nothing to do with the mutation, and the whole run was noise reported as
+evidence. The script now runs the suite unmutated first and refuses to start if
+it is red — and with a green baseline one mutant genuinely survived (nothing
+asserted the concern's *kind* reaches the app), which is now covered. The
+numbers above are from that second run.
+
+**Known side effects:** a score saved by a client that has never heard of
+`unwritable_notes` still round-trips it, because the app spreads measures. That
+is what the clearing rule exists for, and it is also why the rule lives on the
+server: a convention only the client honours is not a rule.
+
+**Rollback:** `git revert` this commit. `unwritable_notes` defaults to 0, so
+every score already stored reads as a page with nothing missing — the only
+honest answer for a row that never recorded it.
+
+**Still waiting on the owner** — the UI plan (four items), migration `011`,
+permission to re-read the nine failed scans, and whether `Repeat` gets a field
+for an unclosed forward sign.
+
+---
+
 ## 2026-08-27 — A quintuplet with no name still lasted exactly one beat
 
 **Branch:** `main`. Backend and tests. No screen, component, style or copy

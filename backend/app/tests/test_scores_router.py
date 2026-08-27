@@ -1356,6 +1356,50 @@ def test_a_short_measure_is_reported_as_a_beat_concern() -> None:
     assert (concern.kind, concern.measure_number) == ("beats", 2)
 
 
+def test_notes_the_reading_could_not_write_reach_the_app_as_a_concern() -> None:
+    """**The one fault that leaves the arithmetic clean by construction.**
+
+    An unwritable tuplet keeps its length as rests, so the bar sums exactly and
+    every other check here is silent. Without this the app has nothing to show
+    and no way into `MeasureEditScreen` on the one bar that is missing notes.
+    """
+    lost = {
+        "time_signature": "4/4", "key_signature": "C major", "clef": "bass",
+        "ocr_confidence": 0.4,
+        "measures": [
+            {"measure_number": 1, "slurs": [],
+             "notes": [{"pitch": "E2", "duration": "quarter"} for _ in range(4)]},
+            {"measure_number": 2, "slurs": [], "unwritable_notes": 5,
+             "notes": [{"pitch": "E2", "duration": "quarter"} for _ in range(4)]},
+        ],
+    }
+    from app.routers.scores import _concerns_for
+
+    (concern,) = _concerns_for(lost)
+    assert (concern.kind, concern.measure_number) == ("unwritable", 2)
+    assert "could not write" in concern.detail
+
+
+def test_a_bar_that_lost_notes_and_runs_short_is_named_for_the_notes() -> None:
+    """The missing notes are why it is short, so leading with `beats` would
+    send a musician to count a bar whose count is not the problem."""
+    both = {
+        "time_signature": "4/4", "key_signature": "C major", "clef": "bass",
+        "ocr_confidence": 0.4,
+        "measures": [
+            {"measure_number": 1, "slurs": [],
+             "notes": [{"pitch": "E2", "duration": "quarter"} for _ in range(4)]},
+            {"measure_number": 2, "slurs": [], "unwritable_notes": 1,
+             "notes": [{"pitch": "E2", "duration": "quarter"} for _ in range(3)]},
+        ],
+    }
+    from app.routers.scores import _concerns_for
+
+    (concern,) = _concerns_for(both)
+    assert concern.kind == "unwritable"
+    assert "could not write" in concern.detail and "short" in concern.detail
+
+
 def test_an_unreadable_score_column_has_no_concerns_rather_than_raising() -> None:
     """A listing of the whole library must not fail because one row predates a
     schema change."""
