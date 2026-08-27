@@ -1848,3 +1848,172 @@ def test_a_gap_before_a_triplet_does_not_move_the_bracket() -> None:
         (t.start_note_index, t.end_note_index, t.actual_notes, t.normal_notes)
         for t in measure.tuplets
     ] == [(1, 3, 3, 2)]
+
+
+# ---------------------------------------------------------------------------
+# Da capo: a repeat this schema could already say, and did not
+# ---------------------------------------------------------------------------
+
+_DC = (
+    "<direction><direction-type><words>D.C. al Fine</words></direction-type>"
+    '<sound dacapo="yes"/></direction>'
+)
+_FINE_MARK = (
+    "<direction><direction-type><words>Fine</words></direction-type>"
+    '<sound fine="yes"/></direction>'
+)
+_SEGNO = (
+    "<direction><direction-type><segno/></direction-type>"
+    '<sound segno="s"/></direction>'
+)
+_DS = (
+    "<direction><direction-type><words>D.S. al Coda</words></direction-type>"
+    '<sound dalsegno="s"/></direction>'
+)
+_TO_CODA = (
+    "<direction><direction-type><words>To Coda</words></direction-type>"
+    '<sound tocoda="c"/></direction>'
+)
+
+
+def test_a_da_capo_al_fine_is_played_the_way_it_is_read() -> None:
+    """**A da capo is a repeat, and this schema could already say so.**
+
+    Play to the D.C., go back to bar 1, stop at Fine: the span `(1, D.C.)`
+    played twice, with the bars *after* Fine marked as a first ending — played
+    the first time through, skipped the second. Exact, not approximate.
+
+    Without it a musician who takes a da capo plays half the piece again
+    against a timeline holding one pass: the same silent failure the repeat
+    barline had, on the form most of the short student repertoire is written
+    in.
+    """
+    from app.services import alignment
+
+    score = score_json_from_musicxml(
+        _part(
+            _bar(1, _A_QUARTER * 4 + _FINE_MARK, _FOUR_FOUR)
+            + _bar(2, _A_QUARTER * 4)
+            + _bar(3, _A_QUARTER * 4 + _DC)
+        )
+    )
+
+    assert [m.measure_number for m in alignment.expand_repeats(score)] == [1, 2, 3, 1]
+
+
+def test_a_dal_segno_al_coda_jumps_from_the_sign_to_the_coda() -> None:
+    """The coda section needs no machinery: it is simply the music that
+    follows, which `expand_repeats` plays once after the span."""
+    from app.services import alignment
+
+    score = score_json_from_musicxml(
+        _part(
+            _bar(1, _A_QUARTER * 4, _FOUR_FOUR)
+            + _bar(2, _SEGNO + _A_QUARTER * 4)
+            + _bar(3, _A_QUARTER * 4 + _TO_CODA)
+            + _bar(4, _A_QUARTER * 4 + _DS)
+            + _bar(5, _A_QUARTER * 4)
+        )
+    )
+
+    assert [m.measure_number for m in alignment.expand_repeats(score)] == [
+        1, 2, 3, 4, 2, 3, 5
+    ]
+
+
+def test_a_plain_da_capo_is_the_piece_played_twice() -> None:
+    from app.services import alignment
+
+    plain = (
+        "<direction><direction-type><words>D.C.</words></direction-type>"
+        '<sound dacapo="yes"/></direction>'
+    )
+    score = score_json_from_musicxml(
+        _part(_bar(1, _A_QUARTER * 4, _FOUR_FOUR) + _bar(2, _A_QUARTER * 4 + plain))
+    )
+
+    assert [m.measure_number for m in alignment.expand_repeats(score)] == [1, 2, 1, 2]
+
+
+def test_a_dal_segno_with_no_segno_goes_back_to_the_beginning() -> None:
+    """Wrong about *where*, right about *that the music repeats* — and the
+    second is worth far more to the timeline than the first. Dropping the jump
+    because one glyph was missed loses both."""
+    from app.services import alignment
+
+    lone = (
+        "<direction><direction-type><words>D.S.</words></direction-type>"
+        '<sound dalsegno="s"/></direction>'
+    )
+    score = score_json_from_musicxml(
+        _part(_bar(1, _A_QUARTER * 4, _FOUR_FOUR) + _bar(2, _A_QUARTER * 4 + lone))
+    )
+
+    assert [m.measure_number for m in alignment.expand_repeats(score)] == [1, 2, 1, 2]
+
+
+def test_the_words_alone_are_never_enough() -> None:
+    """**Read from `<sound>`, never from the text.** A false positive here does
+    not misread a bar — it plays half the piece twice.
+
+    homr writes no `<sound>` at all, so a scanned page is unaffected by any of
+    this. Asserted rather than assumed, so that "the importer understands da
+    capo" is never mistaken for a claim about photographs.
+    """
+    words_only = (
+        "<direction><direction-type><words>D.C. al Fine</words>"
+        "</direction-type></direction>"
+    )
+    score = score_json_from_musicxml(
+        _part(
+            _bar(1, _A_QUARTER * 4, _FOUR_FOUR) + _bar(2, _A_QUARTER * 4 + words_only)
+        )
+    )
+
+    assert score.repeats == []
+
+
+def test_a_segno_printed_after_the_sign_that_points_at_it_is_ignored() -> None:
+    """That is a misreading, not a piece. A backwards span would be worse than
+    no span."""
+    late_segno = (
+        "<direction><direction-type><segno/></direction-type>"
+        '<sound segno="s"/></direction>'
+    )
+    score = score_json_from_musicxml(
+        _part(
+            _bar(1, _A_QUARTER * 4, _FOUR_FOUR)
+            + _bar(2, _A_QUARTER * 4 + _DS)
+            + _bar(3, late_segno + _A_QUARTER * 4)
+        )
+    )
+
+    assert score.repeats == []
+
+
+def test_whichever_of_fine_and_to_coda_comes_first_governs() -> None:
+    """**Found by a mutation that survived.** A piece can carry both marks, and
+    `<sound dacapo="yes">` does not say whether the instruction reads *al Fine*
+    or *al Coda* — the attribute has no such distinction.
+
+    It does not need one. On the second pass the player reaches the earlier
+    mark first and acts on it, and never arrives at the later one. `min`, not
+    `max`, and it is a reading of the page rather than a tiebreak.
+    """
+    from app.services import alignment
+
+    score = score_json_from_musicxml(
+        _part(
+            _bar(1, _A_QUARTER * 4, _FOUR_FOUR)
+            + _bar(2, _A_QUARTER * 4 + _TO_CODA)
+            + _bar(3, _A_QUARTER * 4 + _FINE_MARK)
+            + _bar(4, _A_QUARTER * 4 + _DC)
+            + _bar(5, _A_QUARTER * 4)
+        )
+    )
+
+    # To Coda at bar 2 is reached before Fine at bar 3, so the second pass ends
+    # there and the coda section follows.
+    assert [m.measure_number for m in alignment.expand_repeats(score)] == [
+        1, 2, 3, 4, 1, 2, 5
+    ]

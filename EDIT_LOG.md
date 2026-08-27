@@ -6,6 +6,110 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-27 — A da capo is a repeat, and this schema could already say so
+
+**Branch:** `main`. Backend and tests. No screen, component, style or copy
+touched.
+
+**Files:** `backend/app/services/ocr/musicxml.py`,
+`backend/app/tests/test_musicxml.py`.
+
+Yesterday's repeat reader handled the barline. It did not handle the other
+half of how music repeats, which is words: `D.C.`, `D.S.`, `Fine`, `To Coda`.
+A da capo page read as one pass, `repeats` empty, nothing said.
+
+That matters more than it might sound: da capo form is most of the short
+repertoire a student practises, and the failure is the identical silent one —
+the musician plays half the piece again against a timeline holding one pass,
+and DTW still produces *a* number.
+
+### The mapping is exact, not approximate
+
+Which is what makes it worth doing inside a closed union of three values:
+
+| On the page | As a `Repeat` |
+|---|---|
+| *D.C. al Fine* | span `(1, D.C.)` twice, bars after Fine a **first ending** |
+| *D.S. al Fine* | the same, from the segno |
+| *D.C./D.S. al Coda* | the same, with **To Coda** ending the second pass |
+| plain *D.C.* | the span played twice |
+
+The coda section needs no machinery at all: it is simply the music that
+follows, which `expand_repeats` plays once after the span. Measured on a five
+bar part with segno at 2, To Coda at 3, D.S. at 4:
+**1, 2, 3, 4, 2, 3, 5** — exactly what a player does.
+
+### Three readings, each of which is a decision
+
+- **Read from `<sound>`, never from the words.** `<sound dacapo="yes">` is
+  unambiguous and every engraver writes it; matching the text "D.C. al Fine"
+  is guesswork, and a false positive here does not misread a bar, it plays
+  half the piece twice. **homr writes no `<sound>` at all**, so scanned pages
+  are unaffected — asserted in a test rather than left implied, so that "the
+  importer understands da capo" is never mistaken for a claim about
+  photographs.
+- **A D.S. whose segno was never read goes back to the beginning.** Wrong
+  about *where*, right about *that the music repeats*, and the second is worth
+  far more to the timeline than the first. Dropping the jump because one glyph
+  was missed loses both.
+- **Whichever of Fine and To Coda comes first governs.** Found by a mutation
+  that survived: a piece can carry both, and the `<sound>` attribute does not
+  say whether the instruction reads *al Fine* or *al Coda*. It does not need
+  to — on the second pass the player reaches the earlier mark and acts on it,
+  never arriving at the later one. `min`, and it is a reading of the page
+  rather than a tiebreak.
+
+### A guard removed because a mutation proved it redundant
+
+`if start > jump: return []` — a segno printed after the D.S. that points at
+it. The caller already refuses a span whose end precedes its start, so
+removing this changed nothing. Removed, with the reasoning left in its place
+and the behaviour still asserted one layer down. The same call
+`_voice_carrying_the_music` records making, for the same reason: *"the
+mutation that removed it changed nothing, which is what redundant means."*
+
+Re-pointed the mutant at the caller's guard instead, which dies.
+
+### Known limit, stated rather than glossed
+
+**An inner `|: :|` inside a da capo section is lost.** `expand_repeats`
+consumes a span's bars, so the outer span swallows the inner one. Both were
+lost before this change, so it is strictly better — and it is not complete,
+and the docstring says so.
+
+### Also checked
+
+A `<divisions>` change mid-part already reads correctly: a part switching from
+1 to 3 divisions per quarter reads both bars as quarters and both verdicts
+`ok`. No change needed. Worth checking because getting it wrong scales every
+duration after the change by a constant.
+
+### Tests
+
+Full suite green. Seven new tests; eight mutants, all killed.
+
+| Mutant | Result |
+|---|---|
+| navigation is never read | killed |
+| Fine is ignored, so the piece plays whole twice | killed |
+| To Coda is ignored | killed |
+| the later of Fine and To Coda wins | **survived**, then killed |
+| a D.S. starts from the beginning, not the segno | killed |
+| the words alone are enough | killed |
+| the first ending is off by one | killed |
+| the caller's backwards-span guard is removed | killed |
+
+### Three-foot test
+
+Not run: no screen was built or changed.
+
+### Still waiting on the owner
+
+The UI plan (four items), migration `011`, and permission to re-read the nine
+failed scans.
+
+---
+
 ## 2026-08-27 — `<forward>` advanced the clock and the reader did not
 
 **Branch:** `main`. Backend and tests. No screen, component, style or copy
