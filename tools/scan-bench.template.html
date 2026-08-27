@@ -479,11 +479,18 @@ function validateMeasures(score){
     else verdict=actual<expected?'short':'long';
     const number=m.measure_number??i+1;
     const ties=brokenTies.get(number)??[], tuplets=tupletFaults.get(number)??[];
+    // Notes the schema could not write are not a doubt about the reading and
+    // no re-read fixes them, so they are a problem without being worth one.
+    // An unwritable tuplet also keeps its length as rests, so the bar sums
+    // exactly and nothing else here can see the gap.
+    const worthReRead=ties.length>0||tuplets.length>0||tooDense
+                      ||['short','long','empty'].includes(verdict);
     return{measure_number:number,verdict,expected_beats:expected,
       actual_beats:actual,note_count:count,meter_inferred:meterInferred,
       broken_ties:ties,tuplet_faults:tuplets,too_dense:tooDense,
-      is_problem:ties.length>0||tuplets.length>0||tooDense
-                 ||['short','long','empty'].includes(verdict)};
+      unwritable_notes:m.unwritable_notes??0,
+      worth_a_re_read:worthReRead,
+      is_problem:worthReRead||(m.unwritable_notes??0)>0};
   });
 }
 

@@ -144,7 +144,14 @@ export interface ScoreTuplet {
  */
 export interface MeasureConcern {
   measure_number: number;
-  kind: 'beats' | 'tie' | 'tuplet' | 'density';
+  /**
+   * `unwritable` is the odd one out: it is not a doubt about the reading. The
+   * page was read correctly and this app has no name for what was on it — a
+   * double accidental, a triple dot, a quintuplet — so the notes are dropped
+   * rather than mis-named. Nothing switches on `kind`; `detail` is the
+   * sentence, and the server writes it.
+   */
+  kind: 'beats' | 'tie' | 'tuplet' | 'density' | 'unwritable';
   /** A sentence fit to show a musician. */
   detail: string;
 }
@@ -166,6 +173,15 @@ export interface ScoreMeasure {
    * measure, as `MeasureEditScreen` does, is enough.
    */
   time_signature?: string | null;
+  /**
+   * How many notes the reading saw in this bar and could not write.
+   *
+   * Absent on every score written before it was recorded, and 0 on a clean
+   * bar. Carried, not computed — the server turns it into a concern. Clearing
+   * it is the server's job too: a bar whose notes come back rewritten has been
+   * repaired, and keeping the count would leave a caveat nobody can dismiss.
+   */
+  unwritable_notes?: number;
 }
 
 /**

@@ -349,10 +349,22 @@ class MeasureFinding:
     #: read as a run of real notes — and it can sum to exactly the right number
     #: of beats, which is why the arithmetic check cannot see it.
     too_dense: bool = False
+    #: Notes the reading saw in this measure and this schema cannot write.
+    #:
+    #: Separate from every other field here because it is not a doubt about the
+    #: reading — the page was read correctly and the *schema* ran out of names.
+    #: Re-reading cannot fix it, which is why it is deliberately not part of
+    #: `worth_a_re_read`.
+    unwritable_notes: int = 0
 
     @property
-    def is_problem(self) -> bool:
-        """A pickup and an unverifiable measure are not faults."""
+    def worth_a_re_read(self) -> bool:
+        """A fault a fresh look at the image could actually correct.
+
+        What `is_problem` used to be, and what `describe_for_retry` still
+        wants: a bar with a note this schema has no name for was read right,
+        and asking a model to read it again gets the same answer back.
+        """
         return (
             bool(self.broken_ties)
             or bool(self.tuplet_faults)
@@ -360,7 +372,38 @@ class MeasureFinding:
             or self.verdict in {"short", "long", "empty"}
         )
 
+    @property
+    def is_problem(self) -> bool:
+        """A pickup and an unverifiable measure are not faults."""
+        return self.worth_a_re_read or bool(self.unwritable_notes)
+
     def describe(self) -> str:
+        # **Prefixed rather than ranked.** Notes this schema could not write are
+        # often the *cause* of whatever else is wrong with the bar — the reason
+        # it comes up short — so choosing between the two sentences would drop
+        # the half that explains the other. Nothing changes for a measure that
+        # has none, which is nearly all of them.
+        if self.unwritable_notes:
+            count = self.unwritable_notes
+            return (
+                f"measure {self.measure_number}: {count} note"
+                f"{'' if count == 1 else 's'} the reading could not write "
+                "(a duration or accidental this app has no name for)"
+                + (f" — {self._without_prefix()}" if self.worth_a_re_read else "")
+            )
+        return self._describe_fault()
+
+    def _without_prefix(self) -> str:
+        """The fault sentence with its own "measure N:" removed.
+
+        Every branch below opens with it, which reads correctly alone and
+        twice in one line when two sentences are joined.
+        """
+        head = f"measure {self.measure_number}: "
+        fault = self._describe_fault()
+        return fault[len(head):] if fault.startswith(head) else fault
+
+    def _describe_fault(self) -> str:
         # A broken tie leads, because it is the fault that changes the timeline
         # even when the arithmetic is clean.
         if self.broken_ties:
@@ -584,6 +627,7 @@ def validate_measures(score: ScoreJson) -> list[MeasureFinding]:
                 broken_ties=tuple(ties_by_measure.get(measure.measure_number, ())),
                 tuplet_faults=tuple(tuplets_by_measure.get(measure.measure_number, ())),
                 too_dense=dense,
+                unwritable_notes=measure.unwritable_notes,
             )
         )
     return findings
@@ -614,7 +658,10 @@ def describe_for_retry(findings: list[MeasureFinding]) -> str:
     look, and lets it answer that the passage is a tuplet — which is a real
     answer this schema cannot represent.
     """
-    bad = [f for f in findings if f.is_problem]
+    # `worth_a_re_read`, not `is_problem`: a bar holding a note this schema has
+    # no name for was read correctly and a fresh look returns the same note.
+    # Listing it would spend a re-read on the one fault a re-read cannot touch.
+    bad = [f for f in findings if f.worth_a_re_read]
     if not bad:
         return ""
 

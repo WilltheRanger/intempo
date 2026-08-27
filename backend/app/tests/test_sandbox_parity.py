@@ -49,10 +49,16 @@ def _score(
     time_signature: str | None,
     tuplets: dict[int, list[dict]] | None = None,
     meters: dict[int, str] | None = None,
+    unwritable: dict[int, int] | None = None,
 ) -> dict:
-    """`meters` states a *change* of time signature at those measure indices."""
+    """`meters` states a *change* of time signature at those measure indices.
+
+    `unwritable` gives a measure index a count of notes the reading could not
+    write — the one fault that leaves the arithmetic clean by construction.
+    """
     tuplets = tuplets or {}
     meters = meters or {}
+    unwritable = unwritable or {}
     return {
         "time_signature": time_signature,
         "key_signature": "C major",
@@ -83,6 +89,7 @@ def _score(
                 "slurs": [],
                 "tuplets": tuplets.get(i, []),
                 "time_signature": meters.get(i),
+                "unwritable_notes": unwritable.get(i, 0),
             }
             for i, durations in enumerate(measures)
         ],
@@ -234,6 +241,13 @@ CASES = [
         "4/4",
         {0: [{"start_note_index": 0, "end_note_index": 2, "actual_notes": 3, "normal_notes": 2}]},
     ),
+    # A bar that adds up perfectly and is still missing notes: an unwritable
+    # tuplet keeps its length as rests, so nothing else in either
+    # implementation can see the gap.
+    _score([Q, Q, Q], "4/4", unwritable={1: 5}),
+    # ...and the same count on a bar that is *also* short, since the missing
+    # notes are usually why.
+    _score([Q, Q, ["quarter", "quarter"]], "4/4", unwritable={2: 2}),
     # Density: a page of quarters with one bar of thirty-seconds that still
     # sums to 4.0.
     _score([Q, Q, ["thirty_second"] * 32, Q], "4/4"),
