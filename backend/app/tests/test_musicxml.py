@@ -1370,3 +1370,139 @@ def test_a_clean_part_says_nothing_about_dropped_notes() -> None:
     )
 
     assert score.notes_to_human == ""
+
+
+# ---------------------------------------------------------------------------
+# A cue note is time you do not play
+# ---------------------------------------------------------------------------
+
+#: What an orchestral part prints after a long rest to show you where to come
+#: in: small notes of somebody *else's* line. Unlike a grace note it carries a
+#: `<duration>` and occupies its place in the bar.
+_CUE_QUARTER = (
+    "<note><cue/><pitch><step>A</step><octave>4</octave></pitch>"
+    "<duration>1</duration><type>quarter</type></note>"
+)
+
+
+def test_a_cue_note_is_not_something_the_musician_plays() -> None:
+    """**Every mechanism for doubt was silent on a bar that was wrong.**
+
+    Measured before the fix: a bar of four cue quarters read back as four
+    played notes at A4, `validate_measures` said `ok`, `notes_to_human` was
+    empty and confidence was 1.00. Nothing anywhere had anything to say.
+
+    What it costs is specific. `alignment.py` expects an onset per note, so the
+    musician who rests correctly through the cues is told they missed four —
+    on the bar immediately before a difficult entry, which is the one bar they
+    most need the app to be right about.
+
+    `CLAUDE.md` says of the import route that "the durations are *stated*
+    rather than read, so it is the one whose timeline cannot be wrong". Every
+    engraver that writes `.musicxml` writes `<cue/>`, so that was not true.
+    """
+    score = score_json_from_musicxml(
+        _part(_bar(1, _CUE_QUARTER * 4, _FOUR_FOUR) + _bar(2, _A_QUARTER * 4))
+    )
+
+    assert [n.pitch for n in score.measures[0].notes] == ["rest"] * 4
+    assert [n.pitch for n in score.measures[1].notes] == ["D3"] * 4
+
+
+def test_a_cue_keeps_its_time_rather_than_being_dropped() -> None:
+    """Rewritten, not filtered.
+
+    Dropping it leaves the bar short and `alignment.py` accumulates durations,
+    so every bar after it on the page is judged early — the same damage a
+    dropped multi-bar rest does.
+    """
+    score = score_json_from_musicxml(
+        _part(_bar(1, _CUE_QUARTER * 2 + _A_QUARTER * 2, _FOUR_FOUR))
+    )
+
+    assert [(n.pitch, n.duration) for n in score.measures[0].notes] == [
+        ("rest", "quarter"),
+        ("rest", "quarter"),
+        ("D3", "quarter"),
+        ("D3", "quarter"),
+    ]
+    assert [f.verdict for f in validate_measures(score)] == ["ok"]
+
+
+def test_a_cue_pitch_this_schema_cannot_name_costs_no_time() -> None:
+    """The pitch is discarded before it is read, so it cannot fail to be read.
+
+    A double accidental has no name in `Note.pitch` and is normally dropped,
+    which is right for a note somebody plays. On a cue it would throw away a
+    beat of the bar for a pitch that was never going to be sounded.
+    """
+    double_flat_cue = (
+        "<note><cue/><pitch><step>A</step><alter>-2</alter><octave>4</octave>"
+        "</pitch><duration>1</duration><type>quarter</type></note>"
+    )
+    score = score_json_from_musicxml(
+        _part(_bar(1, double_flat_cue + _A_QUARTER * 3, _FOUR_FOUR))
+    )
+
+    assert len(score.measures[0].notes) == 4
+    assert score.notes_to_human == ""
+    assert [f.verdict for f in validate_measures(score)] == ["ok"]
+
+
+def test_a_tie_out_of_a_cue_is_not_carried() -> None:
+    """It would be a tie out of a rest.
+
+    A tie is validated by two noteheads sharing a pitch, so carrying it raises
+    a broken-tie concern about a bar that is right.
+    """
+    tied_cue = (
+        "<note><cue/><pitch><step>A</step><octave>4</octave></pitch>"
+        '<duration>1</duration><type>quarter</type><tie type="start"/></note>'
+    )
+    score = score_json_from_musicxml(
+        _part(_bar(1, tied_cue + _A_QUARTER * 3, _FOUR_FOUR))
+    )
+
+    assert [n.tied_to_next for n in score.measures[0].notes] == [False] * 4
+
+
+def test_a_voice_of_cues_does_not_outvote_the_line_being_played() -> None:
+    """A rule that was right alone and wrong beside its neighbour.
+
+    `_voice_carrying_the_music` picks the voice holding the most *pitched*
+    notes, which is correct and is worth four notes of real music on the one
+    photographed page here. Cue notes are pitched, so they counted.
+
+    Measured: two played half notes in voice 1 against four cue quarters in
+    voice 2 elected the cues, the bar came back as four rests — summing to
+    exactly four beats, so `validate_measures` said `ok` — and both real notes
+    were gone with nothing anywhere reporting it.
+    """
+    def played(voice: int) -> str:
+        return (
+            "<note><pitch><step>D</step><octave>3</octave></pitch>"
+            f"<duration>2</duration><type>half</type><voice>{voice}</voice></note>"
+        )
+
+    def cue(voice: int) -> str:
+        return (
+            "<note><cue/><pitch><step>A</step><octave>4</octave></pitch>"
+            f"<duration>1</duration><type>quarter</type><voice>{voice}</voice></note>"
+        )
+
+    score = score_json_from_musicxml(
+        _part(
+            _bar(
+                1,
+                played(1) * 2
+                + "<backup><duration>4</duration></backup>"
+                + cue(2) * 4,
+                _FOUR_FOUR,
+            )
+        )
+    )
+
+    assert [(n.pitch, n.duration) for n in score.measures[0].notes] == [
+        ("D3", "half"),
+        ("D3", "half"),
+    ]

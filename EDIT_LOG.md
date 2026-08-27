@@ -6,6 +6,125 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-27 — A cue note is time you do not play
+
+**Branch:** `main`. Backend, one fixture and tests. No screen, component,
+style or copy touched.
+
+**Files:** `backend/app/services/ocr/musicxml.py`,
+`fixtures/musicxml/orchestral_part.musicxml`,
+`backend/app/tests/test_musicxml.py`,
+`backend/app/tests/test_orchestral_part.py`.
+
+Two bugs, both silent, both in the same feature of the notation — and the
+second is the first one's neighbour.
+
+### What a cue note is
+
+It is how an orchestral part tells you where to come in: after a long rest,
+the engraver prints a few small notes of *somebody else's* line so you can
+follow along and count. You rest through them. Unlike a grace note it carries
+a `<duration>` and occupies its place in the bar.
+
+So it is neither a note nor droppable. Dropping it leaves the bar short and
+`alignment.py` accumulates, which is the multi-bar-rest damage from the other
+direction. Keeping it puts an onset in the timeline that nobody will play.
+It is a **rest**.
+
+### It was read as a played note, and nothing said so
+
+```
+a bar of four cue quarters
+  → four played notes at A4
+  → validate_measures: ok
+  → notes_to_human: ""
+  → ocr_confidence: 1.00
+```
+
+Every mechanism for doubt this pipeline has, silent on a bar that is wrong.
+The bar sums to exactly four beats, which is why: the arithmetic is *correct*,
+the notes are not.
+
+What it costs is specific. `alignment.py` expects an onset per note, so the
+musician who rests correctly through the cues is told they missed four — on
+the bar immediately before a difficult entry, which is the one bar they most
+need the app to be right about.
+
+`CLAUDE.md` says of the file-import route that "the durations are *stated*
+rather than read, so it is the one whose timeline cannot be wrong." Sibelius,
+Finale and MuseScore all write `<cue/>`. That was not true.
+
+### The neighbour: a voice of cues outvoted the line
+
+`_voice_carrying_the_music` picks the voice holding the most **pitched** notes.
+That rule is right — it is worth four notes of real music on the one
+photographed page in this repository — and it is wrong beside cue notes,
+because cue notes are pitched.
+
+```
+voice 1: two played half notes
+voice 2: four cue quarters      ← elected
+  → bar reads as four rests, sums to exactly four beats, verdict ok
+```
+
+Both real notes gone, nothing anywhere reporting it. Fourth instance this
+session of a rule that is right alone and wrong beside its neighbour, and the
+fourth to be found at a seam. Cue notes no longer vote.
+
+### The other two edges
+
+- **A cue's pitch is discarded before it is read**, so a cue carrying a double
+  accidental keeps its time instead of losing a beat of the bar to a pitch
+  that was never going to be sounded.
+- **A tie out of a cue is not carried.** It would be a tie out of a rest, and
+  the tie check reads a tie as two noteheads sharing a pitch — so keeping it
+  raises a broken-tie concern about a bar that is right.
+
+### Why no fixture had one
+
+Nothing in `fixtures/musicxml/` contained `<cue`, which is exactly why this was
+silent. `orchestral_part.musicxml` — the synthetic part written yesterday to
+hold every shape this reader gets wrong — now has two more bars: a bar of cues,
+and the entry with the tail of the cue line still printed above it in its own
+voice. Fourteen bars, all adding up, nothing dropped.
+
+That fixture asserts the **whole reading**, not just the verdicts, and this is
+why: both of today's bugs leave a bar summing to exactly the right number of
+beats. A fixture that only checked arithmetic would have passed on both.
+
+Checked: the app has no second copy to update. `mobile/src/lib/musicxml/file.ts`
+unzips and reads part names, title and composer — it never parses notes.
+
+### Tests
+
+Full suite green. Five new tests in `test_musicxml.py`; four mutants, all
+killed:
+
+| Mutant | Result |
+|---|---|
+| a cue is read as a played note | killed |
+| a cue is dropped instead of rewritten | killed |
+| a tie out of a cue is carried | killed |
+| cues vote for their voice again | killed |
+
+`test_a_rest_advances_the_clock_without_asking_for_a_note` asserted
+`onsets[-1] == 40.5`, which held only while that bar was the last one carrying
+an onset — adding two bars after it broke a test about rests without anything
+about rests changing. Now asserted by value, plus `40.0 not in onsets`, which
+is the property the docstring actually describes.
+
+### Three-foot test
+
+Not run: no screen was built or changed.
+
+### Still waiting on the owner
+
+The UI plan (four items), migration `011` — multi-page is complete and inert
+until it is applied — and permission to re-read the nine failed scans, which is
+the only way any of this reaches a real page.
+
+---
+
 ## 2026-08-27 — A dropped note in bar 1 reached the musician as nothing at all
 
 **Branch:** `main`. Backend and tests. No screen, component or style touched —
