@@ -217,6 +217,18 @@ class Note(_Strict):
     articulation: Articulation | None = None
     tied_to_next: bool = False
     dynamics: Dynamics | None = None
+    #: A fermata is printed over this note.
+    #:
+    #: **It is the one duration a page deliberately does not state.** The
+    #: written value says how long the note would be without the mark; the mark
+    #: says the length is the player's. So the interval after it is stretched
+    #: by however long they held, and `pulse_anchors` — which cannot tell a
+    #: hold from a hesitation — keeps that drift and reports the next note as
+    #: dragging. A musician who held a fermata is told off for holding it.
+    #:
+    #: Additive rather than a closed union, so an app that has never heard of
+    #: it is unaffected: the field simply is not read.
+    fermata: bool = False
 
     _keep_known_articulation = field_validator("articulation", mode="before")(
         _one_of(_ARTICULATIONS, "articulation")

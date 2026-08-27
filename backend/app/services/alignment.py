@@ -65,6 +65,19 @@ class ExpectedNote:
     #: 24 BPM. What replaces the bands is how *evenly* the change was made,
     #: which is a different measurement against a different reference.
     under_tempo_change: bool = False
+    #: The note **before** this one carried a fermata.
+    #:
+    #: So the interval this note arrives after is not the written one — the
+    #: page said the length was the player's, and this is where the holding
+    #: shows up. `pulse_anchors` re-anchors after the run, so the damage stops
+    #: at this note; it cannot tell a hold from a hesitation, and keeps the
+    #: drift, which for a hesitation is right and here is a musician being
+    #: told off for reading the page.
+    #:
+    #: Marked on the note **after** rather than on the fermata itself because
+    #: the fermata's own attack is on time. It is the arrival of the next note
+    #: that the hold moves, and that is what gets judged.
+    after_fermata: bool = False
 
 
 @dataclass(frozen=True)
@@ -271,6 +284,10 @@ def build_timeline(score: ScoreJson, target_bpm: float) -> ExpectedTimeline:
     notes: list[ExpectedNote] = []
     elapsed_beats = 0.0
     global_index = 0
+    #: Whether the previous sounded note carried a fermata. Kept across the
+    #: measure loop on purpose: a fermata at a barline is the commonest place
+    #: for one, and the note it moves is the first of the next bar.
+    fermata_pending = False
 
     played = expand_repeats(score)
     # Read over the *played* order, not the written one: a repeat plays the
@@ -313,6 +330,14 @@ def build_timeline(score: ScoreJson, target_bpm: float) -> ExpectedTimeline:
             # The clock still advances for these notes; only the expectation of
             # hearing them is dropped.
             under_the_bow = i in interior
+            held = fermata_pending
+            # **A rest counts.** A fermata over a rest is a held silence — it
+            # is how a page writes a pause before an entry — and the note after
+            # it arrives just as late as one after a held note. This read
+            # `note.fermata and not is_rest`, which was reflex rather than
+            # reasoning; a mutation removing the guard survived, and looking at
+            # why showed the mutation was the correct version.
+            fermata_pending = note.fermata
             # Absorbed only when the tie is real — same pitch on both sides.
             # This read `tied_to_next` alone, so a tie the model invented across
             # two different pitches deleted an onset the musician had actually
@@ -329,6 +354,7 @@ def build_timeline(score: ScoreJson, target_bpm: float) -> ExpectedTimeline:
                         under_tempo_change=(
                             measure.measure_number in under_tempo_change
                         ),
+                        after_fermata=held,
                         # A tie written between two pitches is a slur — the same
                         # curve on the page, and the mark a vision model most
                         # often confuses. So it is read as one: the note keeps

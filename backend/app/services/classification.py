@@ -206,9 +206,15 @@ def compute_deltas(
         # screen from painting a rushing colour on a bar that was played
         # exactly as marked, and what keeps `generate_verdict`'s run-finder —
         # which skips notes inside tolerance — away from them.
+        # A fermata is the same refusal for a narrower reason. `rit.` says the
+        # beat stops being steady; a fermata says *this one length is not
+        # written down at all* — the mark exists precisely to hand it to the
+        # player. So the interval after it cannot be measured against a written
+        # value, and `pulse_anchors` cannot help: it cannot tell a hold from a
+        # hesitation, and for a hesitation keeping the drift is right.
         band = (
             Band.on
-            if note.under_tempo_change
+            if note.under_tempo_change or note.after_fermata
             else classify_band(delta_pct, config=cfg)
         )
         deltas.append(

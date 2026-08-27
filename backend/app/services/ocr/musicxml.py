@@ -1354,6 +1354,9 @@ def score_json_from_musicxml(
                 duration=duration,  # type: ignore[arg-type]
                 articulation=_articulation(note_el),  # type: ignore[arg-type]
                 tied_to_next=tied,
+                # Anywhere in `<notations>`; the spec allows several and their
+                # shape and placement are engraving, not duration.
+                fermata=note_el.find("notations/fermata") is not None,
             )
             not_filtered.append(built)
             if filtered_out:

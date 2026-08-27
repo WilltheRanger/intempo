@@ -742,3 +742,146 @@ def test_the_played_order_is_never_empty() -> None:
     )
 
     assert [m.measure_number for m in expand_repeats(score)] == [1, 1]
+
+
+# ---------------------------------------------------------------------------
+# A fermata: the one length a page deliberately does not state
+# ---------------------------------------------------------------------------
+
+
+def _held(numbers: list[int], fermata_on: tuple[int, int] | None = None) -> ScoreJson:
+    """Four quarters per bar, optionally with a fermata at `(bar, note)`."""
+    measures = []
+    for number in numbers:
+        notes = []
+        for index in range(4):
+            notes.append(
+                Note(
+                    pitch="D3",
+                    duration="quarter",
+                    fermata=fermata_on == (number, index),
+                )
+            )
+        measures.append(Measure(measure_number=number, notes=notes))
+    return ScoreJson(
+        time_signature="4/4", clef="bass", measures=measures, ocr_confidence=1.0
+    )
+
+
+def test_the_note_after_a_fermata_is_the_one_marked() -> None:
+    """**The fermata's own attack is on time.**
+
+    It arrives when the previous note ends, like any other. What the hold moves
+    is the arrival of the note *after* it, and that is what gets judged — so
+    that is what carries the mark.
+    """
+    timeline = build_timeline(_held([1, 2], fermata_on=(1, 3)), 60.0)
+
+    assert [n.after_fermata for n in timeline.notes] == [
+        False, False, False, False,   # bar 1, the fourth of which is held
+        True, False, False, False,    # bar 2 opens on the moved note
+    ]
+
+
+def test_a_fermata_at_a_barline_marks_the_next_bar() -> None:
+    """Which is where fermatas mostly are — at the end of a phrase — and why
+    the flag is carried across the measure loop rather than reset per bar."""
+    timeline = build_timeline(_held([1, 2, 3], fermata_on=(2, 3)), 60.0)
+
+    marked = [i for i, n in enumerate(timeline.notes) if n.after_fermata]
+
+    assert marked == [8]
+    assert timeline.notes[8].measure_number == 3
+
+
+def test_a_take_with_no_fermata_marks_nothing() -> None:
+    timeline = build_timeline(_held([1, 2]), 60.0)
+
+    assert not any(n.after_fermata for n in timeline.notes)
+
+
+def test_the_note_after_a_fermata_is_not_told_it_dragged() -> None:
+    """**The point of all of it.**
+
+    `pulse_anchors` re-anchors after a run that departs from the take's habit,
+    so a hold does not poison the rest of the piece — but it deliberately
+    *keeps* the drift on the notes inside the run, because a bar genuinely
+    played slow is dragging and has to say so. It cannot tell a hold from a
+    hesitation.
+
+    So without the mark, a musician who held a fermata exactly as printed is
+    told they dragged, on the note the page told them to arrive late on. The
+    band is refused there, the same way it is under a written `rit.` — not a
+    softening, a refusal to answer a question the page declined to ask.
+    """
+    import numpy as np
+
+    from app.services.classification import Band, compute_deltas
+
+    score = _held([1, 2], fermata_on=(1, 3))
+    timeline = build_timeline(score, 60.0)
+
+    # Played exactly, except the fermata is held half a beat longer — so every
+    # note from the next one on arrives 0.5s late until the pulse re-anchors.
+    detected = np.array(
+        [t + (0.5 if i >= 4 else 0.0) for i, t in enumerate(timeline.onsets)]
+    )
+    cleaned = apply_fuzzy_match(
+        align_dtw(detected, timeline.onsets), detected, timeline.onsets
+    )
+
+    found = compute_deltas(cleaned, detected, timeline, target_bpm=60.0)
+    after = [d for d in found if d.measure_number == 2 and d.expected_ms == 4000.0]
+
+    assert after, "the note after the fermata was not judged at all"
+    assert all(d.band is Band.on for d in after), [
+        (d.expected_ms, d.band, d.delta_pct) for d in after
+    ]
+
+
+def test_a_fermata_over_a_rest_moves_the_next_note_too() -> None:
+    """**A held silence is a hold.**
+
+    A pause before an entry is written as a fermata over a rest, and the note
+    after it arrives just as late as one after a held note — the clock advances
+    by the written rest while the musician waits longer.
+
+    This was wrong: the flag was set only for a fermata on a *sounding* note.
+    A mutation removing that guard survived, and looking at why showed the
+    mutation was the correct version.
+    """
+    score = ScoreJson(
+        time_signature="4/4",
+        clef="bass",
+        measures=[
+            Measure(
+                measure_number=1,
+                notes=[
+                    Note(pitch="D3", duration="half"),
+                    Note(pitch="rest", duration="half", fermata=True),
+                ],
+            ),
+            Measure(
+                measure_number=2,
+                notes=[Note(pitch="D3", duration="whole")],
+            ),
+        ],
+        ocr_confidence=1.0,
+    )
+
+    timeline = build_timeline(score, 60.0)
+
+    # The rest sounds nothing, so only two notes are expected — and the second
+    # of them is the one the held silence moves.
+    assert [n.after_fermata for n in timeline.notes] == [False, True]
+
+
+def test_the_mark_survives_the_bar_it_was_printed_in() -> None:
+    """A fermata sits at the end of a phrase, so it is usually the last note of
+    a bar — and the note it moves is the first of the next one. Resetting the
+    flag per measure would make it do nothing in exactly the place it is
+    always printed."""
+    timeline = build_timeline(_held([1, 2], fermata_on=(1, 3)), 60.0)
+
+    assert timeline.notes[4].measure_number == 2
+    assert timeline.notes[4].after_fermata is True
