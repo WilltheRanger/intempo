@@ -6,6 +6,77 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-27 — The parity fixture covers five of twenty-one durations
+
+**Branch:** `main`. Backend tests only — no production code changed.
+
+**Files:** `backend/app/tests/test_client_enums.py`.
+
+The reader has been swept thoroughly; this tick went to the seam instead, which
+had not been looked at since `repeats` started being populated.
+
+### What is checked, and what is not
+
+`fixtures/timeline/parity.json` is the one file both trees are held to, and its
+docstring says exactly why:
+
+> If they drift, nothing looks broken from either side. The app plays the
+> piece, the analysis judges the recording, and a musician who played exactly
+> along with what the app sounded is told they rushed. Both halves are
+> behaving; there is nothing to notice.
+
+It exercises **five** durations: `quarter`, `eighth`, `half`,
+`dotted_quarter`, `triplet_quarter`.
+
+The vocabulary has **twenty-one**. Sixteen are never touched — every
+double-dotted value, every triplet but one, and everything shorter than an
+eighth. For those, `schedule.ts`'s `BEATS` table and `score_schema`'s
+`DURATION_BEATS` could hold different numbers and the fixture would pass.
+
+**They do not.** All twenty-one agree exactly today, and both unions have the
+same twenty-one members. Nothing was checking either.
+
+### Comparing the tables instead of the fixture
+
+A fixture covering all twenty-one would be a piece nobody would play. Comparing
+the two tables covers them in one assertion, and covers the membership as well:
+
+- the app's `Duration` union against the server's,
+- the app's `BEATS` values against `DURATION_BEATS`,
+- `DURATION_BEATS` covering the union at all — TypeScript forces that on the
+  app's side, since `Record<Duration, number>` will not compile with a member
+  missing, and nothing forces it on the server's.
+
+Double-dotted values matter here specifically: they were added to the reader
+this week, and `score_schema` records what leaving them out cost on both the
+import and the OCR side. They were live and unchecked at the seam.
+
+### And the fifth closed union
+
+`RepeatType` belongs in this file and was not in it, because until this week
+nothing ever populated `repeats` — the importer returned an empty list
+unconditionally, so a drift would have shown up as nothing at all. Now a `%`,
+a da capo and a repeat barline all produce them.
+
+### Tests
+
+Backend suite green; mobile 378 pass. Five tests added; six mutants, all
+killed — a wrong double-dotted quarter, a wrong triplet eighth, a duration
+missing from the app's table, one missing from its union, a missing repeat
+type, and the **server** changing what a dotted eighth is worth. Drift in
+either direction now fails.
+
+### Three-foot test
+
+Not run: no screen was built or changed.
+
+### Still waiting on the owner
+
+The UI plan (four items), migration `011`, permission to re-read the nine
+failed scans, and whether `Repeat` gets a field for an unclosed forward sign.
+
+---
+
 ## 2026-08-27 — Five dead guards from my own rewrite, and one real asymmetry
 
 **Branch:** `main`. Backend and tests. No screen, component, style or copy
