@@ -6,6 +6,57 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-26 — The largest page, declared in two languages, never compared
+
+**Branch:** `main`. Backend tests. No screen, component, style or copy touched.
+
+**Files:** `backend/app/tests/test_page_size_agreement.py` (new).
+
+Second constant pair in the seam sweep. Three numbers describe one photograph's
+size, in three places:
+
+| where | number | what it does |
+|---|---|---|
+| `mobile/.../uploadPage.ts` | `MAX_PAGE_BYTES` 10 MB | the app refuses to send |
+| `backend/.../page_image.py` | `MAX_IMAGE_BYTES` 12 MB | the worker refuses to fetch |
+| the storage bucket | its own cap | refuses the upload |
+
+**Only one pair was ever compared.** `readiness.py` checks the bucket against
+the worker at runtime, and says exactly why it exists: a worker capped at 25 MB
+against a bucket accepting 50, so a take uploaded, sat in storage, and was
+refused by the thing meant to read it — *"reported as `audio_unavailable`,
+which was not true"*.
+
+**The app's number is the one that pair does not cover, and it is the one a
+musician meets first.** Raising it is a one-line change in a TypeScript file
+that mentions neither Python nor storage. A page between the two caps would
+pass the check on the phone, upload in full over somebody's data, sit in
+storage, and then fail with *"The photograph could not be fetched from
+storage"* — which is not what happened, gives the musician nothing to act on,
+and has already spent the photograph.
+
+Today the two are 10 MB against 12 MB: the right way round, with the app the
+stricter. Now checked, in the direction that matters and in the other one too —
+a worker cap far above the app's would mean the real limit lives only in the
+app, which is the same thing `readiness.py` says about the harmless direction.
+
+Precedent for a Python test reading the app's source is `test_client_enums.py`,
+which holds four closed unions to `types.ts` for the same reason: a TypeScript
+union cannot be imported from Python, and the drift costs something real.
+
+### The fourth mutation is the one worth having
+
+A test that reads source **fails open** if the declaration is renamed or
+reformatted — it finds nothing, and silently agrees with whatever is there.
+Four mutations: the app cap raised above the worker's, the worker's lowered
+below the app's, the worker's raised until it is not the real limit, and the
+app constant **renamed**. All four caught; the rename fails all three tests
+rather than passing them, which is the point.
+
+Full suite green at 1266, two xfailed.
+
+---
+
 ## 2026-08-26 — The page cap and the container's timeout were never compared
 
 **Branch:** `main`. Backend tests. No screen, component, style or copy touched.
