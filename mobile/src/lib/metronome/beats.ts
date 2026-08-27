@@ -50,9 +50,23 @@ export function beatsPerBar(timeSignature: string | null | undefined): number | 
   return Number.isInteger(quarters) && quarters > 0 ? quarters : null;
 }
 
-/** Seconds between beats. Guarded so a nonsense tempo can't divide by zero. */
+/**
+ * Seconds between beats. Guarded so a nonsense tempo cannot break the clock.
+ *
+ * `Math.max(1, bpm)` covers zero and negatives and **not `NaN`**, because
+ * `Math.max` propagates it. That is the whole failure: `periodMs` becomes NaN,
+ * `next * periodMs <= elapsed` is false forever so **no beat ever fires**, and
+ * the poll interval is NaN too, which `setInterval` reads as zero — a dead
+ * metronome spinning a timer as fast as the thread allows.
+ *
+ * Not reachable from the app today: `practiceTempo.clampBpm` refuses `NaN` and
+ * hydration checks `Number.isFinite`, so every bpm that gets here is already
+ * clean. This is the guard matching what its own comment claimed rather than a
+ * live bug being fixed — and the reason to complete it is that the next caller
+ * of `startBeatClock` inherits the boundary check only by accident.
+ */
 export function secondsPerBeat(bpm: number): number {
-  return 60 / Math.max(1, bpm);
+  return 60 / (Number.isFinite(bpm) && bpm > 1 ? bpm : 1);
 }
 
 export interface Beat {

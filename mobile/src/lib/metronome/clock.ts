@@ -23,11 +23,38 @@ import { beatAt, secondsPerBeat, type Beat } from './beats';
 /** Never poll slower than this, however slow the tempo. */
 const MAX_POLL_MS = 20;
 
+/**
+ * A clock that only goes forwards.
+ *
+ * **This read `Date.now()`, which is the wall clock and can step.** A phone
+ * re-syncs time over the network, and after flight mode or a long sleep the
+ * step is not always small. Backwards is the bad direction: `elapsed` goes
+ * down, the `while` loop's condition stops being true, and **the metronome
+ * silently stops clicking** until real time catches up to where it thought it
+ * was. Forwards fires a burst of beats at once.
+ *
+ * Either way this is a tool for telling people their timing is off, and its
+ * whole docstring above is a promise not to drift. A clock that can jump is
+ * not a smaller version of drift; it is the same failure the comment describes,
+ * arriving all at once and blamed on the musician.
+ *
+ * `performance.now()` is monotonic and is present in every runtime this app
+ * has — Hermes on both platforms and every browser — but it is guarded rather
+ * than assumed, because the fallback is what today already does.
+ */
+export function monotonicNow(): number {
+  return typeof performance !== 'undefined' && typeof performance.now === 'function'
+    ? performance.now()
+    : Date.now();
+}
+
 export interface BeatClockOptions {
   bpm: number;
   /** From `beatsPerBar`. Null means no accent — every beat is the same. */
   perBar: number | null;
   onBeat: (beat: Beat) => void;
+  /** The time source, in milliseconds. Injected only so tests can drive it. */
+  now?: () => number;
 }
 
 export interface BeatClock {
@@ -35,14 +62,19 @@ export interface BeatClock {
   stop: () => void;
 }
 
-export function startBeatClock({ bpm, perBar, onBeat }: BeatClockOptions): BeatClock {
+export function startBeatClock({
+  bpm,
+  perBar,
+  onBeat,
+  now = monotonicNow,
+}: BeatClockOptions): BeatClock {
   const periodMs = secondsPerBeat(bpm) * 1000;
-  const startedAt = Date.now();
+  const startedAt = now();
   let next = 0;
   let timer: ReturnType<typeof setInterval> | null = null;
 
   function fireDue() {
-    const elapsed = Date.now() - startedAt;
+    const elapsed = now() - startedAt;
     // A loop, not an `if`: a backgrounded tab or a long frame can swallow
     // several beats, and the count has to stay honest about how many passed.
     while (next * periodMs <= elapsed) {

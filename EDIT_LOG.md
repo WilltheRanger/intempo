@@ -6,6 +6,131 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-27 — The metronome read the wall clock
+
+**Branch:** `main`. Mobile `lib/` only — logic modules, no screen, component,
+style or copy touched, so outside the §2 gate.
+
+**Files:** `mobile/src/lib/metronome/clock.ts`,
+`mobile/src/lib/metronome/beats.ts`, and two new test files.
+
+Both metronome modules had **no test at all**, which is what made them worth
+reading: `CLAUDE.md` says rules live in modules rather than components so that
+something checks them, and nothing was checking these.
+
+### `startBeatClock` promised not to drift and read a clock that jumps
+
+Its own docstring:
+
+> a metronome that loses a millisecond a beat is a quarter of a second out by
+> the end of a two-minute take. It would be measuring its own error and
+> blaming the musician.
+
+The arithmetic keeping that promise is right — every beat computed as
+`start + index × period`, never accumulated. The **source** was `Date.now()`,
+which is the wall clock. A phone re-syncs time over the network, and after
+flight mode or a long sleep the step is not always small.
+
+Backwards is the bad direction: `elapsed` goes down, `next * periodMs <=
+elapsed` stops holding, and **the metronome silently stops clicking** until
+real time catches up to where it thought it was — mid-take, on the tool that
+judges the take. Forwards fires a burst.
+
+A clock that can jump is not a smaller version of drift. It is the same failure
+the comment describes, arriving all at once.
+
+Now `performance.now()`, guarded rather than assumed because the fallback is
+exactly what today already does. **The fix is not to tolerate a clock that
+jumps, it is not to use one** — so the test asserts the absence: `Date.now` is
+spied on and must never be called. A revert fails there, and no arrangement of
+fake times can reproduce a jump the source no longer has.
+
+### `secondsPerBeat` guarded the wrong nonsense
+
+`Math.max(1, bpm)` covers zero and negatives and **not `NaN`**, which it
+propagates. `periodMs` becomes NaN, the loop condition is false forever so no
+beat ever fires, and the poll interval is NaN too — which `setInterval` reads
+as zero. A dead metronome spinning a timer as fast as the thread allows.
+
+**Not reachable from the app today**, and saying so matters: `clampBpm` refuses
+NaN and hydration checks `Number.isFinite`, so every bpm arriving here is
+already clean. This is the guard matching what its own comment claimed, not a
+live bug being fixed. The reason to complete it is that the next caller of
+`startBeatClock` inherits the boundary check only by accident.
+
+### Two of my own tests were too weak, and mutation said so
+
+- **"only one swallowed beat is caught up"** (`while` → `if`) survived. The
+  stall test advanced the clock and the timers together, so the interval fired
+  often enough that one beat was ever due at a time and a single catch-up
+  passed. A stall is real time moving while the timer does *not* run — moved
+  separately now, and five owed beats have to arrive at once. They matter: the
+  count is what the accent derives from, so a short count puts the "one" on the
+  wrong beat of every bar from then on.
+- **"the period accumulates"** survived because the no-drift test counted
+  beats. A clock that accumulates emits the same number of them, just later and
+  later. Each beat's time is now recorded and checked against `index × period`.
+  That exposed a third fault, in the test helper: bumping the fake clock by a
+  whole second before letting the interval run makes every beat inside it
+  appear to fire at the end of the second — half a second of lateness the clock
+  never had. The step has to be at most the poll interval for observed times to
+  mean anything.
+
+### A compound-metre finding, written down rather than changed
+
+6/8 comes to three quarters, so the downbeat is right and **two of every three
+clicks are not**: 6/8 is six eighths felt in two groups of three, beats at
+eighths 0 and 3, while quarters fall at 0, 2 and 4. That is precisely the
+metronome "that quietly fights the player" from the docstring.
+
+Left alone deliberately. *"A beat is a quarter note, everywhere in this app"*
+is load-bearing — `scheduleScore` scales by `quarter: 1` and
+`alignment.build_timeline` does the same server-side, so what a bpm **means**
+is one decision shared across both trees and the analysis. Changing the
+metronome alone would make the clicks and the reference playback disagree about
+the number on screen, which is a worse fault than the one being fixed. Changing
+all three is a `DECISIONS.md` call about compound metre, not a quiet edit.
+Pinned in a test so the behaviour is deliberate rather than merely current.
+
+### Tests
+
+30 files, 364 tests, typecheck clean. Nine mutants, eight killed.
+
+| Mutant | Result |
+|---|---|
+| the wall clock is used again | killed |
+| `monotonicNow` returns the wall clock | killed |
+| beat zero waits a period | killed |
+| only one swallowed beat is caught up | **survived**, then killed |
+| the period accumulates, losing 30ms a beat | **survived**, then killed |
+| a nonsense tempo divides by itself again | killed |
+| a bar that is not whole quarters still gets an accent | killed |
+| every beat is a downbeat | killed |
+| `stop` is not idempotent-safe | **equivalent** |
+
+The last one honestly: `clearInterval` on an already-cleared handle is a no-op
+and nothing reads `timer` afterwards, so the `if` is unobservable. Kept anyway
+— unlike the three guards deleted earlier today, removing this one needs a cast
+to satisfy the types, which is worse code than the check it replaces.
+
+### Also checked, no change needed
+
+`scheduleScore` does not follow repeats while the server now does. That is a
+recorded decision on both sides — `schedule.parity.test.ts` says the fixture
+"leaves out repeats and slurs on purpose" and names the reason for each — so
+this session's repeat work does not put the two walks out of step.
+
+### Three-foot test
+
+Not run: no screen was built or changed.
+
+### Still waiting on the owner
+
+The UI plan (four items), migration `011`, permission to re-read the nine
+failed scans, and whether `Repeat` gets a field for an unclosed forward sign.
+
+---
+
 ## 2026-08-27 — The beat check switched itself off on the page it exists for
 
 **Branch:** `main`. Backend, both browser ports and tests. No screen,
