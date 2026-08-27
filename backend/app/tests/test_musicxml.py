@@ -1279,3 +1279,94 @@ def test_a_second_multi_bar_rest_is_numbered_after_the_first() -> None:
 
     assert [m.measure_number for m in score.measures] == [1, 2, 3, 4, 5, 6, 7, 8]
     assert [len(m.notes) for m in score.measures] == [4, 1, 1, 1, 4, 1, 1, 4]
+
+
+# ---------------------------------------------------------------------------
+# A dropped note leaves one trace, and it has to say where
+# ---------------------------------------------------------------------------
+
+#: 60 ticks to a quarter, so a 5:4 sixteenth is exactly 12 — an integer the
+#: file can state, and a duration this schema has no name for, so it is
+#: dropped rather than approximated.
+_FINE = (
+    "<attributes><divisions>60</divisions>"
+    "<time><beats>4</beats><beat-type>4</beat-type></time></attributes>"
+)
+_FINE_QUARTER = (
+    '<note><pitch><step>D</step><octave>3</octave></pitch>'
+    "<duration>60</duration><type>quarter</type></note>"
+)
+_QUINTUPLET = (
+    '<note><pitch><step>D</step><octave>3</octave></pitch><duration>12</duration>'
+    "<type>16th</type><time-modification><actual-notes>5</actual-notes>"
+    "<normal-notes>4</normal-notes></time-modification></note>"
+) * 5
+
+
+def test_the_dropped_note_sentence_names_the_bar() -> None:
+    """**Because the bar itself may say nothing at all.**
+
+    A quintuplet has no name in this schema and is dropped rather than
+    approximated — the right call, and it leaves the bar short. Usually the
+    beat check then flags it. Not always: measured, the *same* damaged bar
+    reads `short` in the middle of a page and **`pickup`** at the start of one,
+    because `validate_measures` forgives a short first measure by design. On
+    that page no concern reaches the app at all and `MeasureEditScreen` cannot
+    be opened for the bar.
+
+    So this sentence is the only trace, and "5 note(s) were dropped" does not
+    say where to look. Naming the bar does not undo the forgiveness — that
+    needs a field on a schema the app shares — but it gives a musician the one
+    thing they can act on.
+    """
+    score = score_json_from_musicxml(
+        _part(
+            _bar(1, _QUINTUPLET + _FINE_QUARTER * 3, _FINE)
+            + _bar(2, _FINE_QUARTER * 4)
+        )
+    )
+
+    assert [f.verdict for f in validate_measures(score)] == ["pickup", "ok"]
+    assert "in measure 1." in score.notes_to_human, score.notes_to_human
+
+
+def test_the_named_bar_is_the_one_after_the_rests_moved_it() -> None:
+    """**The index is recorded before the expansion and read after it.**
+
+    Measured while writing the line above: a page whose third measure loses
+    notes, with a four-bar rest above it, named **measure 3** — where the bar
+    is number **6**. Sending a musician to the wrong bar is worse than sending
+    them to no bar, because they will find music there and conclude the app is
+    talking nonsense.
+    """
+    score = score_json_from_musicxml(
+        _part(
+            _bar(1, _FINE_QUARTER * 4, _FINE)
+            + _bar(2, "", _MULTI_REST_4)
+            + _bar(3, _QUINTUPLET + _FINE_QUARTER * 3)
+        )
+    )
+
+    assert [m.measure_number for m in score.measures] == [1, 2, 3, 4, 5, 6]
+    assert "in measure 6." in score.notes_to_human, score.notes_to_human
+
+
+def test_several_damaged_bars_are_all_named() -> None:
+    score = score_json_from_musicxml(
+        _part(
+            _bar(1, _FINE_QUARTER * 4, _FINE)
+            + _bar(2, _QUINTUPLET + _FINE_QUARTER * 3)
+            + _bar(3, _FINE_QUARTER * 4)
+            + _bar(4, _QUINTUPLET + _FINE_QUARTER * 3)
+        )
+    )
+
+    assert "in measures 2, 4." in score.notes_to_human, score.notes_to_human
+
+
+def test_a_clean_part_says_nothing_about_dropped_notes() -> None:
+    score = score_json_from_musicxml(
+        _part(_bar(1, _A_QUARTER * 4, _FOUR_FOUR) + _bar(2, _A_QUARTER * 4))
+    )
+
+    assert score.notes_to_human == ""

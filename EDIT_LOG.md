@@ -6,6 +6,125 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-27 — A dropped note in bar 1 reached the musician as nothing at all
+
+**Branch:** `main`. Backend and tests. No screen, component or style touched —
+but **one string of user-visible copy changed**, and that is flagged below
+rather than buried.
+
+**Files:** `backend/app/services/ocr/musicxml.py`,
+`backend/app/services/ocr/validate.py`, `backend/app/tests/test_musicxml.py`,
+`backend/app/tests/test_ocr_validate.py`.
+
+Third tick running the same method — take a check that has been silent and make
+it fire — and it found two things, one of which is a hole and one of which is a
+rule that never runs at all.
+
+### `pickup_complement` is unreachable, and wiring it in would be wrong
+
+`_concerns_for` builds what a musician sees out of `validate_measures` alone.
+`pickup_complement` is reachable only from its own tests. The obvious fix is to
+call it; measured, that is the wrong move.
+
+The rule asks whether the opening and closing bars sum to one measure — the
+classic pickup-and-final-bar pair. It therefore fires whenever the closing bar
+is simply **full**, which is the ordinary state of a photographed page, because
+a page break is not the end of a piece. It also fires on a page ending in a
+multi-bar rest, which is what an orchestral part does constantly.
+
+Sound for a whole *piece*, unsound for a *page*, and which one a `ScoreJson`
+holds is not knowable from inside the function. Left as it is, with a docstring
+paragraph saying so and
+`test_the_pickup_complement_rule_is_not_wired_to_anything` asserting both
+halves — that nothing imports it, and that a page ending on a complete bar
+would be flagged. A rule nobody can find is worse than a rule with a reason
+written beside it.
+
+### The hole: a damaged bar 1 is forgiven, so nothing reaches the app
+
+A duration this schema has no name for — a 5:4 quintuplet, a double dot — is
+**dropped rather than approximated**, which is the right call and is why
+`03_complex_printed` reads back 48 sixteenths and nothing else. The bar it came
+from then comes out short, and `validate_measures` normally flags it `short`.
+
+Not always. Measured, the *same* damaged bar:
+
+```
+as measure 2 of a page   → short    → concern → MeasureEditScreen opens on it
+as measure 1 of a page   → pickup   → nothing → no concern, no way in
+```
+
+`validate_measures` forgives a short first measure by design, and it should — a
+real pickup is not a defect. But a page whose *first* bar lost five notes then
+carries no concern at all, and the only trace left anywhere is
+`notes_to_human`, which said:
+
+> 5 note(s) in the MusicXML could not be represented … and were dropped.
+
+Which bar? The sentence is the one thing the musician has and it does not say.
+
+### The copy change, called out because §2 exists
+
+`notes_to_human` now names the bars:
+
+> 5 note(s) … and were dropped **in measure 1.**
+
+Six at most, then `and N more`. This does not undo the forgiveness — that needs
+a field on the schema the app shares, which is a change I am not making without
+the UI go-ahead still outstanding — but it gives a musician the one thing they
+can act on, which is where to look.
+
+It is a wording change to a caveat line the app displays, so it is a copy
+change, and I am naming it rather than filing it under "backend only". It is
+diagnostic content in an existing sentence, not a new surface or a visual
+decision; if the owner wants it worded differently, it is one string.
+
+### The bug inside the fix
+
+First version named **measure 3** where the bar is **6**. The index is recorded
+during the read and used after `_expand_multiple_rests`, which inserts bars —
+so a page with a four-bar rest above the damaged measure sent the musician to a
+bar three earlier, where they would find music and conclude the app is talking
+nonsense. Worse than naming nothing.
+
+`_expand_multiple_rests` now returns `(measures, moved)`, `moved[i]` being where
+old measure `i` came out. A **list**, not a dict: "every measure has a
+destination" is then structural, and the bounds guard I had written around the
+lookup turned out to be unreachable — every index is always present and in
+range — so it is gone rather than sitting there implying a case that cannot
+happen.
+
+### Tests
+
+Full suite green. Mutation pass on the new naming — five mutants, four run:
+
+| Mutant | Result |
+|---|---|
+| `moved` ignores the expansion shift | killed |
+| the damaged bars are never recorded | killed |
+| only the first bar is named | killed |
+| the sentence never says where | killed |
+| `sorted(...)` → unsorted | **not run — equivalent under today's inputs** |
+
+The last one honestly: `dropped_at` is filled in ascending order and `moved` is
+non-decreasing, so the numbers already come out sorted. It differs only on a
+page whose printed measure numbers run backwards, which no fixture has. Left in
+because `measure_number` is taken from the file and the file can say anything.
+
+### Three-foot test
+
+Not run: no screen was built or changed. The three UI items and the
+`011` migration are still waiting on the owner.
+
+### Known and unchanged
+
+Handwriting still fails at the homr model. A whole page yielding one bar is
+returned rather than refused (strict `xfail`). Orphaned uploads still have no
+lifecycle. Nine failed scans in the live library still hold their photographs
+and still cannot be re-read without permission.
+
+---
+
 ## 2026-08-26 — The multi-rest fix was erasing the pipeline's commonest failure
 
 **Branch:** `main`. Backend and tests. No screen, component, style or copy

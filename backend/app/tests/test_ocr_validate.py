@@ -8,6 +8,8 @@ flags correct music is worse than none, because it trains people to dismiss it.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from app.services.score_schema import Measure, Note, ScoreJson
@@ -468,3 +470,48 @@ def test_the_prompt_says_where_a_mid_piece_time_signature_goes() -> None:
         Path(__file__).resolve().parents[1] / "prompts" / "ocr_prompt.txt"
     ).read_text()
     assert "TIME SIGNATURE PRINTED MID-PIECE" in prompt
+
+
+def test_the_pickup_complement_rule_is_not_wired_to_anything() -> None:
+    """**And measuring why is the point of this test.**
+
+    `pickup_complement` reads like a check a musician would see, and it is
+    reachable only from tests — `_concerns_for` builds concerns out of
+    `validate_measures` alone. Somebody will eventually notice it and wire it
+    in, so what they need is the measurement that says not to.
+
+    It fires whenever the opening and closing bars do not sum to one measure,
+    **including when the closing bar is simply full** — which is the ordinary
+    state of a photographed page, because a page break is not the end of a
+    piece. Sound for a whole piece; unsound for a page; and which one a
+    `ScoreJson` holds is not knowable from inside it.
+    """
+    import app.routers.scores as scores_module
+    from app.services.ocr.validate import pickup_complement
+
+    source = Path(scores_module.__file__).read_text()
+    assert "pickup_complement" not in source, (
+        "the pickup rule is now reachable from the router — see this test's "
+        "docstring for the measurement that says it flags ordinary pages"
+    )
+
+    def bar(number: int, beats: int) -> Measure:
+        return Measure(
+            measure_number=number,
+            notes=[Note(pitch="D3", duration="quarter") for _ in range(beats)],
+        )
+
+    def page(last_beats: int) -> ScoreJson:
+        return ScoreJson(
+            time_signature="4/4",
+            clef="bass",
+            ocr_confidence=1.0,
+            measures=[bar(1, 1), bar(2, 4), bar(3, last_beats)],
+        )
+
+    # A page that really does close the anacrusis: silent, as it should be.
+    assert pickup_complement(page(3)) is None
+
+    # A page that ends on a complete bar — the ordinary case — is flagged, and
+    # the piece simply carries on over the page break.
+    assert pickup_complement(page(4)) is not None

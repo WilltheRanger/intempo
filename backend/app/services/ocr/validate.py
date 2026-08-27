@@ -177,6 +177,23 @@ def pickup_complement(score: ScoreJson) -> str | None:
 
     Returns None when there is nothing to say: no meter, too little music, or
     a first measure that is already full.
+
+    **Nothing calls this, and wiring it in naively would be wrong** (measured
+    2026-08-26). `_concerns_for` builds what a musician sees out of
+    `validate_measures` alone; this is reachable only from tests.
+
+    It fires whenever the opening and closing bars do not sum to one measure —
+    including when the closing bar is simply **full**, which is the ordinary
+    state of a photographed page, because a page break is not the end of a
+    piece. Measured on a three-bar page opening with a one-beat pickup: a page
+    ending in a complete bar is flagged, and so is a page ending in a multi-bar
+    rest, which is what an orchestral part does constantly.
+
+    The rule is sound for a whole *piece* and unsound for a *page*, and which
+    one a `ScoreJson` holds is not knowable from here. Left as it is rather
+    than redesigned on speculation: it is doing no harm while nothing calls it,
+    and the thing a future reader needs is this paragraph rather than a
+    different guess.
     """
     findings = validate_measures(score)
     if len(findings) < 3:

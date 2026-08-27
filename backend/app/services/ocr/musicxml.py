@@ -527,8 +527,18 @@ def _expand_multiple_rests(
     measures: list[Measure],
     pending: list[tuple[int, int, str | None]],
     lengths: list[float | None],
-) -> list[Measure]:
+) -> tuple[list[Measure], list[int]]:
     """Turn each multi-bar rest into the bars of silence it stands for.
+
+    Returns the measures and, for each measure that went in, where it came
+    out — because an expansion moves everything after it, and a caller holding
+    an index into the old list (which bar dropped a note, say) would otherwise
+    read it against the new one and name the wrong bar. Measured while adding
+    exactly that: a page whose third measure lost notes, with a four-bar rest
+    above it, named measure 3 where the bar is 6.
+
+    A list rather than a dict, so that "every measure has a destination" is
+    structural instead of a lookup a caller has to guard.
 
     **This is most of what a bass player does, and it was being dropped.**
     `<measure-style><multiple-rest>4</multiple-rest></measure-style>` is how the
@@ -557,7 +567,7 @@ def _expand_multiple_rests(
     failure this can afford; being silently short is not.
     """
     if not pending:
-        return measures
+        return measures, list(range(len(measures)))
 
     out: list[Measure] = []
     expanded = False
@@ -582,8 +592,10 @@ def _expand_multiple_rests(
     #: whole point: *"The anomaly is reported before it is normalised, not
     #: hidden by it."* The shift keeps that signal intact for it to find.
     shift = 0
+    moved: list[int] = []
     by_index = {index: (count, metre) for index, count, metre in pending}
     for index, measure in enumerate(measures):
+        moved.append(len(out))
         entry = by_index.get(index)
         if entry is None:
             out.append(
@@ -623,7 +635,9 @@ def _expand_multiple_rests(
         # Everything after this rest is that many bars further down the page.
         shift += count - 1
 
-    return out if expanded else measures
+    if not expanded:
+        return measures, list(range(len(measures)))
+    return out, moved
 
 
 def score_json_from_musicxml(
@@ -665,6 +679,20 @@ def score_json_from_musicxml(
     #: `(index in measures, how many bars it stands for, metre stated on it)`
     pending_rests: list[tuple[int, int, str | None]] = []
     dropped = 0
+    #: `{index in measures: how many notes that bar lost}`.
+    #:
+    #: **Because "5 notes were dropped" does not say where to look.** The
+    #: sentence is the only trace a dropped note leaves — the bar itself just
+    #: comes out short, and if it is the *first* bar `validate_measures`
+    #: forgives it as a pickup and flags nothing at all. Measured: the same
+    #: damaged bar reads `short` in the middle of a page and `pickup` at the
+    #: start of one, where no concern reaches the app and `MeasureEditScreen`
+    #: cannot be opened for it.
+    #:
+    #: Naming the bars does not fix that forgiveness — that needs a field on a
+    #: schema the app shares — but it does give a musician the one thing they
+    #: need, which is which bar to go and look at.
+    dropped_at: dict[int, int] = {}
 
     for index, measure_el in enumerate(chosen.iterfind("measure"), start=1):
         # **Every** `<attributes>` block in the measure, not the first.
@@ -796,6 +824,10 @@ def score_json_from_musicxml(
             duration = _duration_name(note_el, divisions)
             if pitch is None or duration is None:
                 dropped += 1
+                # Which bar lost it, by position — the numbers are still being
+                # decided (a multi-bar rest shifts everything after it), so the
+                # index is the only stable handle until the end.
+                dropped_at[len(measures)] = dropped_at.get(len(measures), 0) + 1
                 continue
 
             tied = any(
@@ -895,7 +927,7 @@ def score_json_from_musicxml(
     # often printed mid-page, after a double barline.
     lengths = _bar_lengths(measures, time_signature)
     measures = _whole_rests_that_mean_a_bar(measures, lengths)
-    measures = _expand_multiple_rests(measures, pending_rests, lengths)
+    measures, moved = _expand_multiple_rests(measures, pending_rests, lengths)
 
     total_notes = sum(len(m.notes) for m in measures)
     # Confidence an engine did not report, inferred from what had to be thrown
@@ -908,10 +940,21 @@ def score_json_from_musicxml(
 
     notes_to_human = ""
     if dropped:
+        # The indices were recorded before the expansion inserted anything, so
+        # map them through the measures that actually came out.
+        numbers = sorted(
+            measures[moved[index]].measure_number for index in dropped_at
+        )
+        where = ""
+        if numbers:
+            named = ", ".join(str(n) for n in numbers[:6])
+            if len(numbers) > 6:
+                named += f" and {len(numbers) - 6} more"
+            where = f" in measure{'s' if len(numbers) > 1 else ''} {named}"
         notes_to_human = (
             f"{dropped} note(s) in the MusicXML could not be represented "
             "(double accidental, double dot, or a duration outside this schema) "
-            "and were dropped."
+            f"and were dropped{where}."
         )
 
     return ScoreJson(
