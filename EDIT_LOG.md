@@ -6,6 +6,72 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-27 — The last six vocabularies, and one that is safe to grow
+
+**Branch:** `main`. Backend tests only — no production code changed.
+
+**Files:** `backend/app/tests/test_client_enums.py`.
+
+Yesterday's entry named five unions still uncompared. Measuring them turned up
+a sixth I had not spotted, and one genuinely good property worth protecting.
+
+### All of them already agree
+
+`Clef`, `Articulation`, `Dynamics`, `ResultStatus`, `TempoChangeKind` and the
+concern `kind` — six vocabularies, none of them differing today, none of them
+checked. Now all six are.
+
+Two were missed by the earlier sweep because they are declared **inline** on an
+interface rather than as a named type: `ScoreTempoChange.kind` and
+`MeasureConcern.kind`. A regex looking for `export type` finds neither.
+`_interface_field` reads them, and asserts on both halves — the interface and
+the field — because one that matched the block but not the field would hand
+back an empty set and pass every comparison.
+
+### The sixth was found by a wrong answer
+
+The first comparison of `TempoChangeKind` reported the app knowing `beats`,
+`density`, `tie` and `tuplet` — because my regex for an inline `kind:` matched
+the wrong interface. That is the concern kind, a union I had not noticed was
+crossing the wire at all. A bad measurement that names something real is worth
+more than a clean one that confirms what you expected.
+
+### And it is safe to grow, which is unusual here
+
+`validate.py` had one check and now has four, three of which fire on measures
+whose beats add up exactly. A fifth is a question of when, not whether — and
+normally that would make this the most breaking union of the six.
+
+It is not, because **the app does not switch on it**. It separates `'beats'` —
+the one wording that can promise arithmetic — and shows the server's own
+sentence verbatim for everything else. A fifth check appears on the screen the
+day it ships, with no client change at all.
+
+That property is undocumented and one `switch` away from gone: a kind with no
+branch would be a caveat that says nothing, on the screen that exists to say
+what is wrong. So the assertion is that `'beats'` is the **only** kind the app
+names anywhere.
+
+### Tests
+
+Full suite green. Seven tests added; seven mutants, all killed — a fifth clef,
+a lost articulation, a lost dynamic, a tempo change the app cannot name, a
+fifth concern kind, a new result state, and **the app starting to branch on
+concern kinds**.
+
+Every closed vocabulary that crosses this wire is now compared: twelve of them.
+
+### Three-foot test
+
+Not run: no screen was built or changed.
+
+### Still waiting on the owner
+
+The UI plan (four items), migration `011`, permission to re-read the nine
+failed scans, and whether `Repeat` gets a field for an unclosed forward sign.
+
+---
+
 ## 2026-08-27 — The scan state had no home on the server
 
 **Branch:** `main`. Backend and tests. No screen, component, style or copy

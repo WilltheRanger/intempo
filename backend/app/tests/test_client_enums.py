@@ -340,3 +340,129 @@ def test_every_scan_state_the_backend_writes_is_in_the_vocabulary() -> None:
         f"written but not in the vocabulary: "
         f"{sorted(written - set(typing.get_args(TranscriptionStatus)))}"
     )
+
+
+READING_TS = MOBILE.parent / "lib" / "notation" / "reading.ts"
+
+
+def _interface_field(interface: str, field: str) -> set[str]:
+    """The string members of one field inside `export interface <name>`.
+
+    For the unions declared inline rather than as a named type. Asserts on both
+    halves, because a regex that matched the interface but not the field would
+    hand back an empty set and pass every comparison below.
+    """
+    source = TYPES_TS.read_text()
+    block = re.search(rf"export interface {interface} \{{(.*?)\n\}}", source, re.DOTALL)
+    assert block, f"the app no longer declares a {interface}"
+    match = re.search(rf"\n\s*{field}:\s*([^;]+);", block.group(1))
+    assert match, f"{interface} no longer has a {field}"
+    found = set(re.findall(r"'([^']+)'", match.group(1)))
+    assert found, f"{interface}.{field} names no literals"
+    return found
+
+
+@pytest.mark.parametrize(
+    ("name", "members"),
+    [
+        ("Clef", "app.services.score_schema.Clef"),
+        ("Articulation", "app.services.score_schema.Articulation"),
+        ("Dynamics", "app.services.score_schema.Dynamics"),
+    ],
+)
+def test_the_app_declares_exactly_this_score_vocabulary(name: str, members: str) -> None:
+    """The three remaining named unions in the score schema.
+
+    None can hang a screen the way the scan state could — they are read for
+    display and for playback shaping — but each is still a value the app types
+    against, and `Clef` in particular is one `CLAUDE.md` is emphatic about: a
+    bass part labelled "Treble clef" is worse than no label.
+    """
+    import importlib
+    import typing
+
+    module, _, attribute = members.rpartition(".")
+    server = set(typing.get_args(getattr(importlib.import_module(module), attribute)))
+
+    assert _union(name) == server, (
+        f"{name}: only the server sends {sorted(server - _union(name))}; "
+        f"only the app knows {sorted(_union(name) - server)}"
+    )
+
+
+def test_the_app_declares_exactly_the_result_states_this_api_sets() -> None:
+    """What the verdict screen switches on when an analysis finishes."""
+    import typing
+
+    from app.services.analysis import Status
+
+    server = set(typing.get_args(Status))
+    app = _union("ResultStatus")
+
+    assert app == server, (
+        f"only the server sets {sorted(server - app)}; "
+        f"only the app knows {sorted(app - server)}"
+    )
+
+
+def test_the_app_declares_exactly_the_tempo_changes_this_api_sends() -> None:
+    """Declared inline on `ScoreTempoChange` rather than as a named type, which
+    is why it was missed when the named unions were swept."""
+    import typing
+
+    from app.services.score_schema import TempoChangeKind
+
+    server = set(typing.get_args(TempoChangeKind))
+    app = _interface_field("ScoreTempoChange", "kind")
+
+    assert app == server, (
+        f"only the server sends {sorted(server - app)}; "
+        f"only the app knows {sorted(app - server)}"
+    )
+
+
+def test_the_app_declares_exactly_the_concern_kinds_this_api_sends() -> None:
+    """`validate.py` had one check and now has four, three of which fire on
+    measures whose beats add up exactly. A fifth is a question of when, not
+    whether."""
+    import typing
+
+    from app.routers.scores import MeasureConcern
+
+    server = set(typing.get_args(MeasureConcern.model_fields["kind"].annotation))
+    app = _interface_field("MeasureConcern", "kind")
+
+    assert app == server, (
+        f"only the server sends {sorted(server - app)}; "
+        f"only the app knows {sorted(app - server)}"
+    )
+
+
+def test_a_new_concern_kind_would_still_reach_the_musician() -> None:
+    """**The property that makes the union above safe to grow, pinned before
+    somebody removes it.**
+
+    The app does not switch on `kind`. It separates `'beats'` — the one wording
+    that can promise arithmetic — and shows the server's own sentence verbatim
+    for everything else. So a fifth check added to `validate.py` appears on the
+    screen the day it ships, with no client change at all.
+
+    A `switch` here would undo that silently: a kind with no branch is a
+    caveat that says nothing, on the screen that exists to say what is wrong.
+    So the assertion is that `'beats'` is the **only** kind the app names.
+    """
+    import typing
+
+    from app.routers.scores import MeasureConcern
+
+    source = READING_TS.read_text()
+    named = set(re.findall(r"c\.kind\s*[!=]==\s*'([^']+)'", source))
+    named |= set(re.findall(r"kind\s*===\s*'([^']+)'", source))
+
+    assert named == {"beats"}, (
+        f"the app now branches on {sorted(named)} — a kind with no branch is a "
+        "caveat that says nothing"
+    )
+    assert "beats" in set(
+        typing.get_args(MeasureConcern.model_fields["kind"].annotation)
+    )
