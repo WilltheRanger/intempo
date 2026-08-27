@@ -143,5 +143,34 @@
       <note><cue/><pitch><step>E</step><octave>4</octave></pitch><duration>6</duration><type>eighth</type><voice>2</voice></note>
     </measure>
 
+
+    <!-- 12-14. A repeated strain with first and second endings — the shape
+         `alignment.expand_repeats` was written for and had never once been
+         handed. Bar 12 opens the repeat; 13 is the first ending and closes it;
+         14 is the second. A player reads that as 12, 13, 12, 14. Before the
+         importer read repeat signs at all, they played it that way and the
+         timeline held one pass, so DTW matched a doubled performance against
+         half a score and every delta after the sign was meaningless. -->
+    <measure number="12">
+      <barline location="left"><repeat direction="forward"/></barline>
+      <note><pitch><step>D</step><octave>3</octave></pitch><duration>12</duration><type>quarter</type></note>
+      <note><pitch><step>F</step><octave>3</octave></pitch><duration>12</duration><type>quarter</type></note>
+    </measure>
+
+    <measure number="13">
+      <barline location="left"><ending number="1" type="start"/></barline>
+      <note><pitch><step>G</step><octave>2</octave></pitch><duration>24</duration><type>half</type></note>
+      <barline location="right">
+        <ending number="1" type="stop"/>
+        <repeat direction="backward"/>
+      </barline>
+    </measure>
+
+    <measure number="14">
+      <barline location="left"><ending number="2" type="start"/></barline>
+      <note><pitch><step>B</step><alter>-1</alter><octave>2</octave></pitch><duration>24</duration><type>half</type></note>
+      <barline location="right"><ending number="2" type="stop"/></barline>
+    </measure>
+
   </part>
 </score-partwise>
