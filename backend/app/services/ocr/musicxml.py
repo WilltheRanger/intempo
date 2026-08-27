@@ -751,6 +751,70 @@ def _choose_part(root: ET.Element, wanted: str | None) -> ET.Element:
 
 
 
+def _staff_carrying_the_music(part_el: ET.Element) -> str | None:
+    """Which staff of a multi-staff part is the line to read, or None.
+
+    **A second axis of the same problem the voice filter solves, and the voice
+    filter cannot see it.** A grand-staff part writes both hands inside one
+    `<part>`, separated by `<backup>`, with `<staff>1</staff>` and
+    `<staff>2</staff>` on the notes. Where the exporter also numbers the
+    voices, the voice filter happens to pick one hand and the bar comes out
+    right. Where it does not — and plenty do not, since `<voice>` is optional —
+    every note of both staves is read as one line.
+
+    Measured on a 4/4 bar of four quarters over two halves: eight quarter-beats
+    in a four-beat bar, `long`, and since `alignment.py` accumulates, every bar
+    after it expected four beats late. The voice filter is explicitly right not
+    to help: *"an untagged note is not in a competing voice — it is a note"*,
+    which is true, and it is a note **on another staff**.
+
+    Chosen once for the whole part rather than per measure. A staff is a stable
+    property of a line, unlike a voice number, which may be reused freely from
+    bar to bar; picking per measure would let the reading jump between hands
+    where one of them happens to rest.
+
+    Neither hand of a keyboard part is "the piece", and this app analyses one
+    melodic line, so one staff is the only thing it can return. The most
+    *pitched* notes, ties to the lowest-numbered staff — the same rule and the
+    same tiebreak as the voice filter, for the same reasons.
+
+    Returns None when the part uses one staff or none, which is every
+    single-line instrument's part and so almost every page this app sees.
+    """
+    counts: dict[str, int] = {}
+    for note_el in part_el.iterfind("measure/note"):
+        staff = (note_el.findtext("staff") or "").strip()
+        # **MusicXML says an omitted `<staff>` is staff 1**, so absence is a
+        # claim here and not the shrug it is for `<voice>`. Exporters leave the
+        # tag off the upper staff often enough that treating those notes as
+        # "belongs to whichever staff wins" would hand the reading both hands
+        # again wherever the lower one was chosen — the double count this
+        # filter exists to prevent, arriving by another door.
+        counts.setdefault(staff or "1", 0)
+        if note_el.find("rest") is None and note_el.find("cue") is None:
+            counts[staff or "1"] += 1
+    # One staff, or none named at all — a single-line part, and every note of
+    # it is the music. The default above cannot manufacture a second entry:
+    # untagged notes all land on the same "1", so a page that never mentions a
+    # staff counts exactly one and leaves here.
+    if len(counts) < 2:
+        return None
+    best = max(counts.values())
+    return min(staff for staff, n in counts.items() if n == best)
+
+
+def _only(measure_el: ET.Element, notes: list[ET.Element]) -> ET.Element:
+    """A stand-in measure holding just these notes.
+
+    So `_voice_carrying_the_music` can be asked about one staff without
+    growing a parameter it would ignore on every single-staff page. Built
+    rather than filtered in place: the real element is iterated again below.
+    """
+    stub = ET.Element("measure")
+    stub.extend(notes)
+    return stub
+
+
 def _voice_carrying_the_music(measure_el: ET.Element) -> str | None:
     """Which voice of a polyphonic bar is the line the musician plays.
 
@@ -1242,6 +1306,20 @@ def score_json_from_musicxml(
     #: shown to a musician can say so rather than sending them to a short bar
     #: that is no longer short.
     rests_for_unwritable = False
+    #: The one staff to read, on a part that writes more than one. None for
+    #: every single-line instrument's part — see `_staff_carrying_the_music`.
+    kept_staff = _staff_carrying_the_music(chosen)
+
+    def on_kept_staff(el: ET.Element) -> bool:
+        """Whether this note or gap belongs to the staff being read.
+
+        An element with no `<staff>` is staff 1, which is what MusicXML says it
+        is — not "keep it either way", which would put both hands back into one
+        line wherever the lower staff was the one chosen.
+        """
+        if kept_staff is None:
+            return True
+        return ((el.findtext("staff") or "").strip() or "1") == kept_staff
 
     for index, measure_el in enumerate(chosen.iterfind("measure"), start=1):
         # **Every** `<attributes>` block in the measure, not the first.
@@ -1274,7 +1352,22 @@ def score_json_from_musicxml(
                     divisions = int(stated_divisions) or None
                 except ValueError:
                     divisions = None
-            clef_el = attributes.find("clef")
+            # **The clef of the staff being read, not the first one printed.**
+            #
+            # A grand staff prints two, `<clef number="1">` and
+            # `<clef number="2">`, and `find("clef")` takes the top one. On a
+            # part whose lower staff carries the music that labels a bass line
+            # "Treble clef" — worse than no label at all, by the same rule that
+            # keeps `ScoreJson.clef` nullable, and it places every notehead a
+            # seventh off on any screen that draws from it.
+            clef_el = next(
+                (
+                    el
+                    for el in attributes.iterfind("clef")
+                    if kept_staff is None or el.get("number") in (None, kept_staff)
+                ),
+                None,
+            )
             if clef is None and clef_el is not None:
                 sign = _text(clef_el.find("sign")) or ""
                 line = _text(clef_el.find("line")) or ""
@@ -1346,11 +1439,15 @@ def score_json_from_musicxml(
         # `<backup>` is the actual signal that the clock was rewound to write
         # something over the same bar.
         rewound = measure_el.find("backup") is not None
-        voices = [
-            (el.findtext("voice") or "").strip()
-            for el in measure_el.iterfind("note")
-        ]
-        kept_voice = _voice_carrying_the_music(measure_el)
+        # The staff filter runs first, and the voice filter must be decided on
+        # what survives it. A grand staff writes each hand in its own voice, so
+        # asking the whole bar would see two voices where the line being read
+        # has one — and then drop half of it a second time.
+        on_staff = [el for el in measure_el.iterfind("note") if on_kept_staff(el)]
+        voices = [(el.findtext("voice") or "").strip() for el in on_staff]
+        kept_voice = _voice_carrying_the_music(
+            _only(measure_el, on_staff) if kept_staff is not None else measure_el
+        )
         multi_voice = rewound and len({v for v in voices if v}) > 1
 
         #: How many notes this bar lost to a value the schema cannot write.
@@ -1394,6 +1491,8 @@ def score_json_from_musicxml(
             unnamed_beats = 0.0
 
         for child in measure_el:
+            if child.tag in ("note", "forward") and not on_kept_staff(child):
+                continue
             if child.tag == "forward":
                 # Only the kept voice's gaps: a `<forward>` belonging to a
                 # voice that was filtered out would pad this bar with silence
