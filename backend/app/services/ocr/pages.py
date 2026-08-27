@@ -56,7 +56,19 @@ def join_pages(readings: list[ScoreJson]) -> ScoreJson:
     # the first measure of the page is precisely what `meters_in_force` reads,
     # and is how the printed page works too: a metre holds until another one
     # is printed.
-    running_metre = _stated_metre(readings[0].time_signature)
+    #: The metre in force as the reader crosses a page break — which is the
+    #: last one printed *anywhere* on the pages so far, not the header of the
+    #: first.
+    #:
+    #: **Measured bug (2026-08-26).** This tracked `readings[0].time_signature`
+    #: and never moved. So a part headed 4/4 that changes to 2/4 partway down
+    #: page one, and returns to 4/4 on page two — an entirely ordinary shape,
+    #: and the shape of the one real photograph here, whose only printed metre
+    #: is mid-page — compared page two's "4/4" against page one's *header*
+    #: "4/4", found them equal, and stamped nothing. The 2/4 from mid-page one
+    #: therefore stayed in force, and every correctly-read bar of page two came
+    #: out `long`: confidence 1.00 → 0.67 on a reading with nothing wrong in it.
+    running_metre: str | None = None
 
     for page_number, page in enumerate(readings, start=1):
         offset = len(measures)
@@ -75,8 +87,15 @@ def join_pages(readings: list[ScoreJson]) -> ScoreJson:
                 update["time_signature"] = stated
             measures.append(measure.model_copy(update=update))
 
+        # What is in force at the end of this page: its header, then any
+        # change printed on one of its measures, in the order they are read.
+        # Taking only the header is what caused the bug above.
         if _stated_metre(page.time_signature):
-            running_metre = page.time_signature
+            running_metre = _stated_metre(page.time_signature)
+        for measure in page.measures:
+            printed = _stated_metre(measure.time_signature)
+            if printed:
+                running_metre = printed
 
         # A repeat or a tempo change names a measure, so both move with them.
         repeats.extend(

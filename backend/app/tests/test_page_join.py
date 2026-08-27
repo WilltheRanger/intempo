@@ -234,3 +234,47 @@ def test_a_caveat_says_which_page_it_is_about() -> None:
     )
 
     assert "Page 2:" in joined.notes_to_human
+
+
+def test_a_page_that_returns_to_an_earlier_metre_states_it() -> None:
+    """**Measured bug, and the third time this session a rule was right alone
+    and wrong beside its neighbour.**
+
+    The metre in force at a page break is the last one printed *anywhere* on
+    the pages so far — not the header of the first. This tracked
+    `readings[0].time_signature` and never moved, so a part headed 4/4 that
+    changes to 2/4 partway down page one and returns to 4/4 on page two
+    compared page two's "4/4" against page one's *header* "4/4", found them
+    equal, and stamped nothing. The 2/4 stayed in force and every correctly
+    read bar of page two came out `long` — confidence 1.00 → 0.67 on a reading
+    with nothing wrong in it.
+
+    Not an exotic shape: the one real photograph in this repository prints its
+    only time signature mid-page, after a double barline.
+    """
+    page_one = _page(
+        [_bar(1, 4), _bar(2, 4), _bar(3, 2, metre="2/4"), _bar(4, 2)], metre="4/4"
+    )
+    page_two = _page([_bar(1, 4), _bar(2, 4)], metre="4/4")
+
+    joined = join_pages([page_one, page_two])
+
+    assert [m.time_signature for m in joined.measures] == [
+        None, None, "2/4", None, "4/4", None
+    ]
+    assert [f.verdict for f in validate_measures(joined)] == ["ok"] * 6
+    assert joined.ocr_confidence == 1.0
+
+
+def test_a_page_reprinting_the_metre_already_in_force_still_states_nothing() -> None:
+    """The other branch, and the one the fix could have broken: page one ends
+    in 2/4 because it changed there, and page two reprints 2/4 as its header.
+    That is the same fact printed twice, not a change — and writing it onto the
+    measure would put a metre marking in the score where the page has none."""
+    page_one = _page([_bar(1, 4), _bar(2, 2, metre="2/4")], metre="4/4")
+    page_two = _page([_bar(1, 2), _bar(2, 2)], metre="2/4")
+
+    joined = join_pages([page_one, page_two])
+
+    assert [m.time_signature for m in joined.measures] == [None, "2/4", None, None]
+    assert [f.verdict for f in validate_measures(joined)] == ["ok"] * 4

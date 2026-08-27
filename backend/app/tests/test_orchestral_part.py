@@ -118,3 +118,61 @@ def test_the_bars_are_numbered_as_a_player_would_count_them(part) -> None:
     three too low until the expansion renumbers. `MeasureEditScreen` and every
     caveat line address a bar by its number."""
     assert [m.measure_number for m in part.measures] == list(range(1, 12))
+
+
+# ---------------------------------------------------------------------------
+# The same part, across a page break
+# ---------------------------------------------------------------------------
+
+PAGE_TWO = FIXTURE.with_name("orchestral_part_page2.musicxml")
+
+
+@pytest.fixture(scope="module")
+def both_pages(part):
+    from app.services.ocr.pages import join_pages
+
+    return join_pages(
+        [part, score_json_from_musicxml(PAGE_TWO.read_text(encoding="utf-8"))]
+    )
+
+
+def test_a_part_that_returns_to_its_first_metre_on_page_two(both_pages) -> None:
+    """**The realistic form of a bug found with synthetic bars.**
+
+    Page one is headed 4/4 and changes to 2/4 partway. Page two is back in 4/4
+    and says so in its own header — what a part does when a section ends at a
+    page break. `join_pages` compared that header against page one's *header*,
+    found both 4/4, stamped nothing, and left the 2/4 in force across every bar
+    of page two.
+
+    Asserted here on two documents actually put through the importer, because
+    the bug lives exactly at the seam between them: each page reads perfectly
+    alone, and this is the third time this session a rule has been right alone
+    and wrong beside its neighbour.
+    """
+    metres = [m.time_signature for m in both_pages.measures]
+
+    # Page one's change, then page two restating what it is in.
+    assert metres[8] == "2/4", metres
+    assert metres[11] == "4/4", metres
+    assert [m for m in metres if m] == ["2/4", "4/4"], metres
+
+
+def test_the_joined_part_still_adds_up_everywhere(both_pages) -> None:
+    verdicts = Counter(f.verdict for f in validate_measures(both_pages))
+
+    assert verdicts == {"ok": 15}, verdicts
+    assert both_pages.ocr_confidence == 1.0
+
+
+def test_the_second_page_s_rests_are_in_its_own_metre(both_pages) -> None:
+    """A two-bar rest on page two is two bars of **4/4** — whole rests. Sized
+    against the 2/4 left in force by page one they would be halves, and the
+    page would run four beats short."""
+    assert [
+        (n.pitch, n.duration) for m in both_pages.measures[11:] for n in m.notes
+    ] == [
+        ("Eb3", "quarter"), ("D3", "quarter"), ("C3", "quarter"), ("Bb2", "quarter"),
+        ("rest", "whole"), ("rest", "whole"),
+        ("Bb2", "whole"),
+    ]
