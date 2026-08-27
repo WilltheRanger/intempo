@@ -6,6 +6,112 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-27 — Every bracket that was not a triplet emptied its bar
+
+**Branch:** `main`. Backend, both browser validator ports, and tests. No screen,
+component, style or copy touched.
+
+**Files:** `backend/app/services/ocr/musicxml.py`,
+`backend/app/services/score_schema.py`,
+`tools/validator-sandbox.template.html`, `tools/scan-bench.template.html`,
+and three test files.
+
+`_duration_name` read **one** tuplet ratio. Three in the time of two returned a
+fixed triplet name; every other ratio returned `None`, which drops the note.
+
+### What that cost, each measured on a bar that was otherwise fine
+
+| written | before | after |
+|---|---|---|
+| 2:3 duplet eighths (6/8) | every note dropped, bar read **`empty`** | `dotted_eighth` ×4, `ok` |
+| 2:3 duplet quarters (6/8) | every note dropped, **`empty`** | `dotted_quarter` ×2, `ok` |
+| 4:3 quadruplet eighths | every note dropped, **`empty`** | `dotted_sixteenth` ×8, `ok` |
+| 6:4 sextuplet eighths | every note dropped, **`empty`** | `triplet_eighth` ×9, `ok` |
+| dotted 3:2 triplet eighths | named `triplet_eighth` — **a third short** | `eighth`, `ok` |
+| 5:4 quintuplet sixteenths | dropped, bar read `pickup` | unchanged — no notehead writes a fifth of a beat |
+
+A duplet is ordinary in any compound metre and a dotted triplet is ordinary
+anywhere, so this was not an exotic corner. The dotted case is the worse kind:
+a dropped note leaves the bar visibly short and the beat check can say so,
+while a note named a third short is a **confident wrong answer** in a value
+`alignment.py` accumulates — every bar after it expected early, and the bar
+itself short enough to be forgiven as a pickup when it was bar 1.
+
+### The names were already there; only the arithmetic was missing
+
+A bracket scales each written value by `normal / actual`, and most of the
+ratios an engraver writes land exactly on a value `DURATION_BEATS` already
+holds. A duplet eighth *is* a dotted eighth. A quadruplet eighth is a dotted
+sixteenth. 6:4 is 3:2 twice over. So the fixed 3:2 table is gone and the name
+is looked up by the product, which covers every case the table did — exactly,
+not approximately — and the ones it did not.
+
+The exclusion of dots from the tuplet branch went with it. It existed because
+a dotted triplet had no name; it has one whenever the product lands on a
+written value, and a dotted triplet eighth lands exactly on an eighth. That
+overturns a comment which said reporting the triplet was "closer to the truth
+than reporting the dot" — true when there was no third option, and there is.
+
+What is still dropped is what genuinely has no name: 5:4, 7:8, a triplet of
+thirty-seconds. Naming those needs new members in a `Duration` the app shares,
+and the honest alternative — replacing the whole group with rests summing to
+it — needs the group, which is a `<tuplet>` bracket this module does not read.
+
+### The check that would have called every one of them broken
+
+`tuplet_faults` tested each bracketed note for membership of the four triplet
+names and each ratio against a frozen set holding `(3, 2)` alone. Both were
+right while 3:2 was all the importer could read, and both would have reported
+**every correctly-read duplet on the page** as a fault the moment it could read
+more — the recurring shape in this codebase: a rule right on its own and wrong
+beside its neighbour.
+
+Generalised to the inverse of the importer's arithmetic: a stored duration
+multiplied back by `actual / normal` must land on something a notehead writes.
+
+One rule had to be kept alongside it, and it is not decoration. 3:2 turns
+written values into lengths no notehead writes, so a plain `eighth` inside a
+3:2 bracket is the bracket having been read and its arithmetic *not* applied —
+the bar then runs long, and this names why. That check does not generalise:
+2:3 and 4:3 scale by exactly a dot, mapping written values onto written values,
+so for those a plain value is ambiguous and flagging it would flag every
+correct duplet. `_ratio_leaves_a_mark` is that distinction, and it is measured
+per ratio rather than listed.
+
+A duplet bracket over plain eighths is still caught, and by the plainer half of
+the rule: un-tupleting an eighth under 2:3 gives a third of a beat, which no
+notehead writes at all. I had written the opposite in a test docstring and the
+test failed, which is how I found out.
+
+### Both browser ports carry it
+
+`tools/validator-sandbox.template.html` and `tools/scan-bench.template.html`
+had the same 3:2-only logic inline. `test_sandbox_parity.py` caught my first
+port of it disagreeing with Python on the 3:2-over-plain-eighths case — the
+port had the general rule and not the visible-ratio one — which is the whole
+reason that test exists. Three parity cases added: a duplet, a quadruplet, and
+the 3:2 bracket that must still fault.
+
+**Tests:** backend **1423 passed, 3 xfailed** (ten new, two rewritten where
+their premise had changed). Eight mutants, eight killed — the one survivor was
+a `_DOT_FACTOR` bounds guard with no test behind it, so a triple-dotted note
+inside a bracket would have raised `IndexError` mid-transcription and failed
+the whole scan on one exotic notehead. Covered.
+
+**Known side effects:** two existing tests asserted the old wording of the
+`unwritable` and `durations` messages; both messages now name the actual ratio.
+No score already stored changes shape — this only affects what a *new* reading
+produces from a page with a bracket on it.
+
+**Rollback:** `git revert` this commit; the ports are in the same commit as the
+backend rule, so they cannot drift apart across it.
+
+**Still waiting on the owner** — the UI plan (four items), migration `011`,
+permission to re-read the nine failed scans, and whether `Repeat` gets a field
+for an unclosed forward sign.
+
+---
+
 ## 2026-08-27 — The ornaments on the page were attacks nobody had counted
 
 **Branch:** `main`. Backend and tests. No screen, component, style or copy

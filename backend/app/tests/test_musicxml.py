@@ -1171,6 +1171,143 @@ def test_a_ratio_with_no_name_is_still_dropped_rather_than_guessed() -> None:
     assert "could not be represented" in score.notes_to_human
 
 
+def _ratio(actual: int, normal: int) -> str:
+    return (
+        f"<time-modification><actual-notes>{actual}</actual-notes>"
+        f"<normal-notes>{normal}</normal-notes></time-modification>"
+    )
+
+
+def test_a_duplet_is_worth_the_dotted_value_it_lands_on() -> None:
+    """Two in the time of three — ordinary in any compound metre.
+
+    Every note of one used to be dropped, and a 6/8 bar of duplet eighths read
+    back **empty**. A duplet eighth is exactly a dotted eighth, so there was
+    never a name missing; only the arithmetic was.
+    """
+    score = score_json_from_musicxml(
+        _part(
+            _bar(
+                1,
+                _voiceless("eighth", 9, _ratio(2, 3)) * 4,
+                '<attributes><divisions>12</divisions>'
+                "<time><beats>6</beats><beat-type>8</beat-type></time>"
+                "<clef><sign>F</sign><line>4</line></clef></attributes>",
+            )
+        )
+    )
+    assert [n.duration for n in score.measures[0].notes] == ["dotted_eighth"] * 4
+    assert [f.verdict for f in validate_measures(score)] == ["ok"]
+
+
+def test_a_duplet_survives_a_file_that_states_no_duration() -> None:
+    """The half that the contradiction rule was accidentally covering.
+
+    That rule reads `<duration>` against `<type>` and happens to resolve a
+    duplet on the way past — but only when divisions and a duration are both
+    present and land exactly. This module reads `<type>` first precisely
+    because a damaged file may carry neither, and without one the same bar read
+    back empty.
+    """
+    note = (
+        "<note><pitch><step>D</step><octave>4</octave></pitch>"
+        f"<type>eighth</type>{_ratio(2, 3)}</note>"
+    )
+    score = score_json_from_musicxml(
+        _part(
+            _bar(
+                1,
+                note * 4,
+                '<attributes><divisions>12</divisions>'
+                "<time><beats>6</beats><beat-type>8</beat-type></time>"
+                "<clef><sign>F</sign><line>4</line></clef></attributes>",
+            )
+        )
+    )
+    assert [n.duration for n in score.measures[0].notes] == ["dotted_eighth"] * 4
+
+
+def test_a_quadruplet_and_a_sextuplet_land_on_written_values_too() -> None:
+    """4:3 and 6:4 are the other two an engraver writes often, and both have
+    exact names: a quadruplet eighth is a dotted sixteenth, and 6:4 is 3:2
+    twice over."""
+    header = (
+        '<attributes><divisions>12</divisions>'
+        "<time><beats>6</beats><beat-type>8</beat-type></time>"
+        "<clef><sign>F</sign><line>4</line></clef></attributes>"
+    )
+    quad = score_json_from_musicxml(
+        _part(_bar(1, _voiceless("eighth", 4, _ratio(4, 3)) * 8, header))
+    )
+    six = score_json_from_musicxml(
+        _part(_bar(1, _voiceless("eighth", 4, _ratio(6, 4)) * 9, header))
+    )
+    assert [n.duration for n in quad.measures[0].notes] == ["dotted_sixteenth"] * 8
+    assert [n.duration for n in six.measures[0].notes] == ["triplet_eighth"] * 9
+    assert [f.verdict for f in validate_measures(quad)] == ["ok"]
+    assert [f.verdict for f in validate_measures(six)] == ["ok"]
+
+
+def test_a_dotted_triplet_is_worth_its_dot() -> None:
+    """**This is the case that was confidently wrong rather than absent.**
+
+    The tuplet branch ignored dots, on the reasoning that a dotted triplet had
+    no name and "reporting the triplet is closer to the truth than reporting
+    the dot". It has a name: a dotted triplet eighth is exactly an eighth. Read
+    as `triplet_eighth` it was a **third short**, in a value `alignment.py`
+    accumulates — so every bar after it was expected early, and the bar itself
+    summed short enough to be forgiven as a pickup when it was bar 1.
+    """
+    dotted = _voiceless("eighth", 6, "<dot />" + _TRIPLET_MARK)
+    score = score_json_from_musicxml(
+        _part(_bar(1, _voiceless("quarter", 12) * 3 + dotted * 2, _D4))
+    )
+    kinds = [n.duration for n in score.measures[0].notes]
+    assert kinds[-2:] == ["eighth", "eighth"], kinds
+    assert [f.verdict for f in validate_measures(score)] == ["ok"]
+
+
+def test_a_triple_dotted_note_inside_a_bracket_is_dropped_not_crashed() -> None:
+    """Three dots have no name in `Duration` outside a bracket either.
+
+    Inside one the arithmetic runs through a table of dot factors, and reading
+    past its end is an `IndexError` in the middle of transcribing a page — the
+    whole scan fails on one exotic notehead instead of one bar coming up short.
+    """
+    score = score_json_from_musicxml(
+        _part(
+            _bar(
+                1,
+                _voiceless("quarter", 12) * 3
+                + _voiceless("eighth", 4, "<dot /><dot /><dot />" + _TRIPLET_MARK),
+                _D4,
+            )
+        )
+    )
+    assert len(score.measures[0].notes) == 3
+
+
+def test_a_bracket_whose_ratio_cannot_be_read_is_not_read_past() -> None:
+    """`<actual-notes>` with nothing to divide by. Believing the written value
+    would be reading straight past the one mark that says not to."""
+    score = score_json_from_musicxml(
+        _part(
+            _bar(
+                1,
+                _voiceless("quarter", 12) * 3
+                + _voiceless(
+                    "eighth",
+                    4,
+                    "<time-modification><actual-notes>5</actual-notes>"
+                    "</time-modification>",
+                ),
+                _D4,
+            )
+        )
+    )
+    assert len(score.measures[0].notes) == 3
+
+
 def test_a_dotted_note_keeps_its_dot_when_the_file_states_divisions() -> None:
     """The contradiction rule skips dotted notes outright. A dotted quarter is
     typed `quarter` and timed at one and a half beats — a disagreement the dot

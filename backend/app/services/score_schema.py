@@ -577,15 +577,76 @@ def broken_ties(measures: Sequence[Measure]) -> list[BrokenTie]:
 #: score claiming one is telling us it holds notes we cannot place. That is
 #: worth reporting rather than approximating: `TUPLET_NOTE` in `ocr/validate`
 #: is the sentence the model is given about it.
-WRITABLE_TUPLET_RATIOS: frozenset[tuple[int, int]] = frozenset({(3, 2)})
+#: Every length, in quarter-beats, that a plain notehead and its dots write —
+#: no bracket involved.
+#:
+#: The triplet names are exactly the complement: they are what a bracket
+#: produces and nothing else, which is what makes them evidence.
+_WRITTEN_BEATS: frozenset[float] = frozenset(
+    round(beats, 6)
+    for name, beats in DURATION_BEATS.items()
+    if not name.startswith("triplet_")
+)
 
-#: Which plain value each tuplet duration is three-in-the-time-of-two *of*.
-TRIPLET_OF: dict[str, str] = {
-    "triplet_half": "whole",
-    "triplet_quarter": "half",
-    "triplet_eighth": "quarter",
-    "triplet_sixteenth": "eighth",
-}
+#: The lengths only a bracket can produce.
+_TUPLET_ONLY_BEATS: frozenset[float] = (
+    frozenset(round(b, 6) for b in DURATION_BEATS.values()) - _WRITTEN_BEATS
+)
+
+
+def untuplets_cleanly(duration: str, actual: int, normal: int) -> bool:
+    """Whether this stored duration is what the bracket over it would produce.
+
+    The exact inverse of the arithmetic `musicxml.py` does on the way in: a
+    bracket of `actual` in the time of `normal` scales each written value by
+    `normal / actual`, so multiplying back by `actual / normal` must land on
+    something a notehead writes.
+
+    This replaces a membership test against the four triplet names, which was
+    right while three-in-the-time-of-two was the only ratio the importer could
+    read. It no longer is — a duplet reads back as a dotted value — and the old
+    test called every one of them a fault on a bar just read correctly.
+    """
+    beats = DURATION_BEATS.get(duration)
+    if beats is None or actual <= 0 or normal <= 0:
+        return False
+    if round(beats * actual / normal, 6) not in _WRITTEN_BEATS:
+        return False
+    # **A visible ratio must have left a mark, and this one has not.**
+    #
+    # 3:2 turns written values into lengths no notehead writes, so a note
+    # inside a 3:2 bracket that still carries a plain `eighth` is the bracket
+    # having been read and its arithmetic not applied — the bar then runs long
+    # and this says why. That check is worth keeping and it does not generalise
+    # to every ratio: 2:3 and 4:3 scale by a dot, so they map written values
+    # onto written values and there is nothing left in the duration to see. For
+    # those the bracket and the duration agree in *both* readings, and flagging
+    # the ambiguity would flag every correctly-read duplet on the page.
+    return not (
+        _ratio_leaves_a_mark(actual, normal) and round(beats, 6) in _WRITTEN_BEATS
+    )
+
+
+def _ratio_leaves_a_mark(actual: int, normal: int) -> bool:
+    """Whether this ratio can turn a written value into one only it produces."""
+    return any(
+        round(beats * normal / actual, 6) in _TUPLET_ONLY_BEATS
+        for beats in _WRITTEN_BEATS
+    )
+
+
+def tuplet_ratio_is_writable(actual: int, normal: int) -> bool:
+    """Whether *any* written value survives this ratio with a name.
+
+    A coarse gate in front of the per-note check, and it has to stay coarse:
+    what a bracket is worth depends on the value under it, so the ratio alone
+    can only say that nothing at all fits. 5:4 is the ordinary ratio that does
+    not — a fifth of a beat has no notehead — and it is why the gate exists.
+    """
+    nameable = _WRITTEN_BEATS | _TUPLET_ONLY_BEATS
+    return any(
+        round(beats * normal / actual, 6) in nameable for beats in _WRITTEN_BEATS
+    )
 
 
 @dataclass(frozen=True)
@@ -648,14 +709,14 @@ def tuplet_faults(measures: Sequence[Measure]) -> list[TupletFault]:
                 )
                 continue
 
-            if ratio not in WRITABLE_TUPLET_RATIOS:
+            if not tuplet_ratio_is_writable(*ratio):
                 out.append(
                     TupletFault(
                         **common,
                         reason="unwritable",
                         detail=(
-                            "is a ratio these durations cannot express — only "
-                            "three in the time of two can be written"
+                            "is a ratio these durations cannot express — no "
+                            "written value survives it with a name"
                         ),
                     )
                 )
@@ -666,7 +727,7 @@ def tuplet_faults(measures: Sequence[Measure]) -> list[TupletFault]:
                 for note in measure.notes[
                     tuplet.start_note_index : tuplet.end_note_index + 1
                 ]
-                if note.duration not in TRIPLET_OF
+                if not untuplets_cleanly(note.duration, *ratio)
             ]
             if wrong:
                 out.append(
@@ -676,7 +737,7 @@ def tuplet_faults(measures: Sequence[Measure]) -> list[TupletFault]:
                         detail=(
                             "contains "
                             + ", ".join(sorted(set(wrong)))
-                            + ", which are not triplet values"
+                            + f", which are not {ratio[0]}:{ratio[1]} values"
                         ),
                     )
                 )

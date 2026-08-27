@@ -49,11 +49,22 @@ _TYPE_TO_DURATION: Final[dict[str, str]] = {
 #: Three in the time of two, by base value. A file states a tuplet in
 #: `<time-modification>` — `actual-notes` over `normal-notes` — so a triplet is
 #: read rather than inferred from the beam.
-_TRIPLET: Final[dict[str, str]] = {
-    "half": "triplet_half",
-    "quarter": "triplet_quarter",
-    "eighth": "triplet_eighth",
-    "sixteenth": "triplet_sixteenth",
+#: What each number of dots multiplies a written value by.
+#:
+#: A dot adds half, a second dot half of that again. Indexed rather than
+#: computed so that "how many dots have a meaning here" is one readable fact:
+#: a triple dot is genuinely rare and has no name in `Duration` on its own.
+_DOT_FACTOR: Final[tuple[float, ...]] = (1.0, 1.5, 1.75)
+
+#: Every written value by its length in quarter-beats, triplets included.
+#:
+#: Deliberately **not** `_DURATION_BY_BEATS`, which excludes the triplet names
+#: because it answers a different question: there, a note contradicts itself and
+#: nothing on the page mentions a bracket, so resolving to a triplet would be a
+#: claim about a mark the file never drew. Here the file has drawn exactly that
+#: mark, and the triplet names are the answer rather than a guess.
+_DURATION_BY_TUPLET_BEATS: Final[dict[float, str]] = {
+    round(beats, 6): name for name, beats in DURATION_BEATS.items()
 }
 _DOTTED: Final[dict[str, str]] = {
     "whole": "dotted_whole",
@@ -243,18 +254,58 @@ def _duration_name(note: ET.Element, divisions: int | None = None) -> str | None
             corrected = _DURATION_BY_BEATS.get(round(beats, 6))
             if corrected is not None:
                 return corrected
-    # A tuplet before a dot: a dotted triplet has no name in `Duration` either,
-    # and reporting the triplet is closer to the truth than reporting the dot.
-    actual = _text(note.find("time-modification/actual-notes"))
-    normal = _text(note.find("time-modification/normal-notes"))
-    if actual == "3" and normal == "2":
-        # Only the 3:2 case. A quintuplet or septuplet has no name here, and
-        # guessing the nearest triplet would put notes at times nobody played.
-        return _TRIPLET.get(base)
-    if actual is not None and actual != "1":
+    dots = len(note.findall("dot"))
+
+    # **A bracket says what the note is worth; the arithmetic says what to call
+    # it.** This read only 3:2, returned a fixed triplet name for it, and
+    # dropped every other ratio — on the reasoning that "a quintuplet or
+    # septuplet has no name here, and guessing the nearest triplet would put
+    # notes at times nobody played". The second half stands. The first was
+    # never about names: it was about *this* table, and most of the ratios an
+    # engraver writes land on a value it already holds exactly.
+    #
+    # Measured before this, each on a bar whose notes were otherwise fine:
+    #
+    #     2:3 duplet eighths (6/8)      every note dropped, bar read `empty`
+    #     2:3 duplet quarters (6/8)     every note dropped, bar read `empty`
+    #     4:3 quadruplet eighths        every note dropped, bar read `empty`
+    #     6:4 sextuplet eighths         every note dropped, bar read `empty`
+    #     dotted 3:2 triplet eighths    named `triplet_eighth` — **a third short**
+    #
+    # A duplet is ordinary in any compound metre and a dotted triplet is
+    # ordinary anywhere, so this was not an exotic corner. The dotted case is
+    # the worse of the two kinds: a dropped note leaves the bar visibly short,
+    # and the beat-sum check can say so, while a note named a third short is a
+    # confident wrong answer in a value `alignment.py` accumulates.
+    #
+    # The exclusion of dots from the tuplet branch went with it. It existed
+    # because a dotted triplet had no name — it has one whenever the product
+    # lands on a written value, and a dotted triplet eighth lands exactly on an
+    # eighth.
+    #
+    # What is still dropped is what genuinely has no name: 5:4, 7:8, a triplet
+    # of thirty-seconds. Naming those needs new members in a `Duration` the app
+    # shares, and the honest alternative — replacing the whole group with rests
+    # that sum to it — needs the group, which is a `<tuplet>` bracket this
+    # module does not yet read.
+    stated_actual = _text(note.find("time-modification/actual-notes"))
+    ratio = _tuplet_ratio(note)
+    if ratio is not None:
+        actual, normal = ratio
+        written = DURATION_BEATS.get(base)
+        if written is None:
+            return None
+        named = _DURATION_BY_TUPLET_BEATS.get(
+            round(written * _DOT_FACTOR[dots] * normal / actual, 6)
+            if dots < len(_DOT_FACTOR)
+            else -1.0
+        )
+        return named
+    if stated_actual is not None and stated_actual not in ("", "1"):
+        # A bracket whose ratio cannot be read at all. Believing the written
+        # value would be reading straight past the one mark that says not to.
         return None
 
-    dots = len(note.findall("dot"))
     if dots == 0:
         return base
     if dots == 1:

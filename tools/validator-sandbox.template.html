@@ -187,8 +187,46 @@ function brokenTiesByMeasure(score) {
 
 // Bracketed groups, kept in step with `score_schema.tuplet_faults`. Reported,
 // not repaired: the ratio is a check on the durations, never a source of them.
+// Bracketed groups, kept in step with `score_schema.tuplet_faults`.
+// A bracket scales each written value by normal/actual, so a stored duration
+// multiplied back by actual/normal must land on something a notehead writes.
+// This was a membership test against the four triplet names, which was right
+// while 3:2 was the only ratio the importer could read and called every
+// correctly-read duplet a fault once it could read more.
+const WRITTEN_BEATS = new Set(
+  Object.entries(DURATION_BEATS)
+    .filter(([name]) => !name.startsWith('triplet_'))
+    .map(([, b]) => Math.round(b * 1e6) / 1e6),
+);
+const TUPLET_ONLY_BEATS = new Set(
+  Object.values(DURATION_BEATS)
+    .map((b) => Math.round(b * 1e6) / 1e6)
+    .filter((b) => !WRITTEN_BEATS.has(b)),
+);
+const round6 = (x) => Math.round(x * 1e6) / 1e6;
+
+// A ratio that can turn a written value into one only a bracket produces.
+// 3:2 can; 2:3 and 4:3 scale by a dot, so they map written values onto written
+// values and leave nothing in the duration to see.
+function ratioLeavesAMark(actual, normal) {
+  return [...WRITTEN_BEATS].some((b) => TUPLET_ONLY_BEATS.has(round6((b * normal) / actual)));
+}
+
+function untupletsCleanly(duration, actual, normal) {
+  const beats = DURATION_BEATS[duration];
+  if (beats === undefined || actual <= 0 || normal <= 0) return false;
+  if (!WRITTEN_BEATS.has(round6((beats * actual) / normal))) return false;
+  return !(ratioLeavesAMark(actual, normal) && WRITTEN_BEATS.has(round6(beats)));
+}
+
+function tupletRatioIsWritable(actual, normal) {
+  return [...WRITTEN_BEATS].some((b) => {
+    const scaled = round6((b * normal) / actual);
+    return WRITTEN_BEATS.has(scaled) || TUPLET_ONLY_BEATS.has(scaled);
+  });
+}
+
 function tupletFaultsByMeasure(score) {
-  const TRIPLET = new Set(['triplet_half', 'triplet_quarter', 'triplet_eighth', 'triplet_sixteenth']);
   const out = new Map();
   for (const m of score.measures ?? []) {
     for (const t of m.tuplets ?? []) {
@@ -196,9 +234,10 @@ function tupletFaultsByMeasure(score) {
       let reason = null;
       if (t.end_note_index >= notes.length) reason = 'range';
       else if (t.end_note_index - t.start_note_index + 1 !== t.actual_notes) reason = 'count';
-      else if (!(t.actual_notes === 3 && t.normal_notes === 2)) reason = 'unwritable';
+      else if (!tupletRatioIsWritable(t.actual_notes, t.normal_notes)) reason = 'unwritable';
       else if (notes.slice(t.start_note_index, t.end_note_index + 1)
-                    .some((n) => !TRIPLET.has(n.duration))) reason = 'durations';
+                    .some((n) => !untupletsCleanly(n.duration, t.actual_notes, t.normal_notes)))
+        reason = 'durations';
       if (reason === null) continue;
       if (!out.has(m.measure_number)) out.set(m.measure_number, []);
       out.get(m.measure_number).push({ reason });
