@@ -840,3 +840,110 @@ def test_two_slices_are_too_coarse_to_follow_a_bow() -> None:
         "two slices now follow the bow — the floor under the constant moved"
     )
     assert all(staff_space_px(_curled(image, sag)) == 11.0 for sag in sags)
+
+
+def _page_of(strip, systems: int, gap: int, factor: float) -> bytes:
+    """A page of one part: the same system, that many times, each bowed.
+
+    **The realistic shape, and the reason the other synthetic page here is not
+    it.** `test_page_systems.py` stacks the five fixtures, which are five
+    different études engraved at different sizes — a page no printer ever
+    produced. A real page of a real part repeats one system size down the
+    sheet, and every system on it bows by a similar amount because it is one
+    piece of paper.
+    """
+    from PIL import Image
+
+    sag = int(strip.height * factor)
+    height = systems * (strip.height + sag) + gap * (systems - 1) + 40
+    page = Image.new("L", (strip.width, height), 255)
+    y = 20
+    for _ in range(systems):
+        for x in range(strip.width):
+            dy = int(round(sag * math.sin(math.pi * x / max(1, strip.width - 1))))
+            page.paste(strip.crop((x, 0, x + 1, strip.height)), (x, y + dy))
+        y += strip.height + sag + gap
+    buffer = io.BytesIO()
+    page.save(buffer, "JPEG", quality=92)
+    return buffer.getvalue()
+
+
+@pytest.mark.parametrize("name", ["01_simple_printed", "03_complex_printed"])
+def test_a_whole_page_of_one_part_is_read_however_much_it_curls(name: str) -> None:
+    """**The case that actually happens, protecting the fix that rescued it.**
+
+    Six systems of one étude, bowed from flat to twice each system's own
+    height. Never refused, at any curl. Measured across that range the spacing
+    stays between 10 and 31 — one harmonic among them, which is a wrong number
+    and harmless here, because nothing but this gate and one log line reads it.
+
+    The five-strip page in `test_page_systems.py` *is* refused around one
+    system-height of bow. That page mixes staff sizes, so its bands disagree
+    and the percentile that protects against harmonics has genuinely different
+    staves to choose between. Left alone rather than fitted to: it is evidence
+    about a page that does not exist.
+    """
+    from PIL import Image
+
+    strip = Image.open(FIXTURES / f"{name}.jpg").convert("L")
+
+    refused = {
+        factor: too_small_to_read(_page_of(strip, 6, 60, factor))
+        for factor in (0.0, 0.25, 0.5, 0.75, 1.0, 1.5, 2.0)
+    }
+
+    assert all(reason is None for reason in refused.values()), refused
+
+
+@pytest.mark.parametrize("degrees", [90, 270])
+def test_a_curled_page_held_sideways_is_still_measured(degrees: int) -> None:
+    """**Found by a mutation that survived.** The slice fallback walks both
+    axes, exactly as the whole-width measurement above it does, and nothing
+    exercised the second one — dropping `ink.T` from it changed no test.
+
+    Both faults are real and they compose. A page held sideways is the reason
+    the cross-axis exists at all: `homr_page.jpg`, a 4284x5712 photograph homr
+    reads at 1.00 confidence, was refused because a row-wise profile finds no
+    systems on it. A page held in the hand curls. A page held sideways *in the
+    hand* does both, and until the fallback learned the second axis it was the
+    one page neither half could measure.
+    """
+    from PIL import Image
+
+    image = Image.open(FIXTURES / "01_simple_printed.jpg").convert("L")
+    bowed = _curled(image, 30)  # past where the whole width gives up
+
+    assert staff_space_px(bowed) == 11.0, "the upright case is the control"
+
+    with Image.open(io.BytesIO(bowed)) as page:
+        turned = page.convert("RGB").rotate(degrees, expand=True)
+    buffer = io.BytesIO()
+    turned.save(buffer, format="JPEG", quality=95)
+
+    assert too_small_to_read(buffer.getvalue()) is None
+
+
+def test_the_refusal_path_measures_the_page_once() -> None:
+    """**The reason the log line stopped naming a number.**
+
+    `too_small_to_read` already measures the page, and the sentence it returns
+    carries the spacing and the pixel size — that is why they were put in it.
+    The worker then called `staff_space_px` as well, purely to log a figure the
+    string already contained, which decoded the photograph and re-ran the whole
+    measurement a second time. On the one path where the image is by definition
+    a large one somebody has just uploaded.
+
+    Asserted as an absence, because that is what it is: nothing in the worker
+    reaches for the measurement any more.
+    """
+    source = (
+        Path(__file__).resolve().parents[1] / "workers" / "transcription_runner.py"
+    ).read_text()
+
+    calls = [
+        line
+        for line in source.splitlines()
+        if "staff_space_px(" in line and not line.lstrip().startswith("#")
+    ]
+
+    assert calls == [], calls

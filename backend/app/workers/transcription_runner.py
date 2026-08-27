@@ -42,7 +42,6 @@ from app.services.page_image import (
     download_image,
     prepare_for_model,
     readable_url,
-    staff_space_px,
     too_small_to_read,
 )
 
@@ -445,11 +444,17 @@ def _read_one_page(
         # is invented, and there is nothing further down that can tell.
         unreadable = too_small_to_read(image_bytes)
         if unreadable:
+            # **The sentence already carries the number**, and the pixel size
+            # with it — that is why they were put in it. Calling
+            # `staff_space_px` here as well decoded the photograph and re-ran
+            # the entire measurement a second time, on the one path where the
+            # image is by definition a large one somebody just uploaded, to
+            # print a figure this string already contains.
             log.info(
-                "transcription %s: refusing page %d with %s px staff spacing",
+                "transcription %s: refusing page %d: %s",
                 score_id,
                 page_number,
-                staff_space_px(image_bytes),
+                unreadable,
             )
             _failed(unreadable)
             return None
