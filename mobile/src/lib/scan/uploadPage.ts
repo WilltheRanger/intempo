@@ -49,9 +49,17 @@ const FALLBACK = { contentType: 'image/jpeg', ext: 'jpg' } as const;
  * cannot get back cheaply. A take costs the playing; a page costs two minutes
  * of uplink and, on a weak connection, cannot be sent at all:
  * `UPLOAD_TIMEOUT_MS` is an XHR *total* timeout rather than an idle one, so
- * anything under roughly 550 kbps is killed at exactly two minutes however
+ * anything under roughly **700 kbps** is killed at exactly two minutes however
  * much progress it made, with no resume and no retry — every attempt starting
  * again from zero and meeting the same wall.
+ *
+ * That figure is this cap over that timeout and nothing else: 10 MiB in 120 s
+ * is 85.3 KiB/s, which is 699 kbps as a link is quoted. It said **550** until
+ * 2026-08-26, which is the figure for an 8 MiB cap — wrong when written, in
+ * the same commit that set the cap to 10. A musician on a 600 kbps link was
+ * inside the documented envelope and outside the real one, and would watch two
+ * minutes of uplink end with nothing kept. `uploadPage.test.ts` now derives it
+ * from the two constants so it cannot drift again.
  *
  * The server keeps its own, larger figure (`MAX_IMAGE_BYTES`, 12 MB, "with
  * headroom"). This is the bucket's, because the bucket is what answers 413.
