@@ -6,6 +6,133 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-27 — Every repeat sign this pipeline has ever read was ignored
+
+**Branch:** `main`. Backend, one fixture and tests. No screen, component,
+style or copy touched.
+
+**Files:** `backend/app/services/ocr/musicxml.py`,
+`fixtures/musicxml/orchestral_part.musicxml`,
+`backend/app/tests/test_musicxml.py`,
+`backend/app/tests/test_orchestral_part.py`.
+
+The largest silent hole found so far, and it is not a bug in a rule — it is a
+whole feature with no producer.
+
+### An entire downstream feature, waiting for data that never came
+
+`alignment.expand_repeats` writes a repeated section out twice.
+`validate.repeat_balance` checks that brackets close. `pages.join_pages` and
+`pipeline.py` both carry the list across a page break. All of it written, all
+of it tested.
+
+`score_json_from_musicxml` returned `repeats=[]` **unconditionally**. Since
+homr → MusicXML → `musicxml.py` is now the only path a page takes, that means
+on every score this pipeline has ever read, every one of those was a no-op.
+
+`expand_repeats`' own docstring describes the damage, in the past tense, of a
+bug it could not have been fixing:
+
+> A musician who takes an eight-bar repeat plays sixteen bars and produces
+> roughly twice the onsets, against a timeline that held eight — so DTW was
+> matching a doubled performance to a single pass and every delta after the
+> repeat sign was meaningless. **Silent, because the alignment still produced
+> *a* number.**
+
+That is the failure profile this session keeps finding: not an error, a
+plausible answer. And a repeat is not an edge case in string repertoire — it
+is most of the first page of most of it.
+
+### What was written
+
+`_repeats_in` walks `<barline>` for `<repeat>` and `<ending>`, in **indices**,
+because measure numbers are still being decided when it runs — a multi-bar rest
+expands and moves everything after it, the same mapping problem as yesterday's
+dropped-note naming, solved with the same `moved` list.
+
+Three readings are convention rather than markup, and each is what a player
+does with the page:
+
+- **A backward repeat with no forward sign goes back to the beginning** — or
+  to just after the previous repeat, if there was one. Most pieces that repeat
+  their opening print only the closing sign, so requiring a forward one would
+  find nothing on exactly the commonest case. Two closing signs and no opening
+  ones is a piece in two repeated halves, not a piece whose second half repeats
+  the first.
+- **An ending marked `1,2` is not an ending.** Those bars serve both passes, so
+  emitting a `first_ending` would make `expand_repeats` skip them the second
+  time and delete music the musician plays.
+- **A `<repeat times="3">` is still played twice.** `RepeatType` has no way to
+  say otherwise; twice is closer than once. Recorded rather than rounded
+  silently. A third or later ending is skipped for the same reason — inventing
+  a fourth value would break the closed union the app types against.
+
+**The span's end maps to the *last* bar its measure produced**, not the first.
+A repeat closing on a four-bar rest is otherwise three bars short on the second
+pass — a whole phrase of silence the musician counts and the timeline does not.
+
+### The mutant that survived
+
+`endings are not read` — deleting the `type="start"` branch entirely — passed.
+Every ending in the new tests was **one bar long**, and a one-bar ending works
+without reading its start at all, because the `stop` branch falls back to the
+bar it is on.
+
+A two-bar first ending recorded as only its last bar makes `expand_repeats`
+play the first bar of it twice, once per pass: a bar played once on the page
+and twice in the timeline, and every onset after it out by a full measure.
+`test_an_ending_more_than_one_bar_long_covers_all_of_it` now covers it and the
+mutant dies.
+
+### The test that was only right while the feature was dead
+
+`test_a_tie_costs_the_timeline_an_onset` asserted
+`len(onsets) == pitched - 1`, counting `pitched` over `part.measures`. That
+identity holds only when the played order and the written order are the same
+list — which was true precisely because repeats did nothing. It now counts over
+`expand_repeats(part)` and asserts the played order holds **two more** notes
+than the page, so the test fails if the repeat ever goes quiet again.
+
+### Fixture
+
+`orchestral_part.musicxml` gains a repeated strain with first and second
+endings: bars 15–17, read as **15, 16, 15, 17**. Seventeen bars, all adding up,
+`repeat_balance` clean, nothing dropped.
+
+### Reachability, checked rather than assumed
+
+`repeat_balance` is not wired to `_concerns_for` either — the same finding as
+`pickup_complement` yesterday. That is *why* this change raises no spurious
+caveats today, and it is also the argument for wiring it in now that the data
+exists: with the page-break caveat that page one can hold the forward sign and
+page two the backward, so an unclosed bracket at a page edge is normal and must
+not be reported as a misread. Not done this tick.
+
+### Tests
+
+Full suite green. Eight new tests; six mutants, all killed after the seventh
+test was added:
+
+| Mutant | Result |
+|---|---|
+| repeats are never emitted at all | killed |
+| a backward sign with no forward is ignored | killed |
+| a second repeat goes back to bar 1 | killed |
+| the span end maps to the first expanded bar | killed |
+| a `1,2` ending is treated as a first ending | killed |
+| endings are not read | **survived**, then killed |
+
+### Three-foot test
+
+Not run: no screen was built or changed.
+
+### Still waiting on the owner
+
+The UI plan (four items), migration `011`, and permission to re-read the nine
+failed scans.
+
+---
+
 ## 2026-08-27 — A cue note is time you do not play
 
 **Branch:** `main`. Backend, one fixture and tests. No screen, component,

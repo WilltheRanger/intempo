@@ -76,6 +76,10 @@ EXPECTED = [
     # in voice 2 against two played quarters in voice 1 — the cues used to win
     # the vote and both real notes were thrown away.
     [("G2", "quarter"), ("D3", "quarter")],
+    # A repeated strain with first and second endings: read as 15, 16, 15, 17.
+    [("D3", "quarter"), ("F3", "quarter")],
+    [("G2", "half")],
+    [("Bb2", "half")],
 ]
 
 
@@ -101,7 +105,7 @@ def test_every_bar_adds_up(part) -> None:
     """
     verdicts = Counter(f.verdict for f in validate_measures(part))
 
-    assert verdicts == {"ok": 14}, verdicts
+    assert verdicts == {"ok": 17}, verdicts
 
 
 def test_the_header_is_read_and_the_change_rides_on_its_bar(part) -> None:
@@ -113,7 +117,7 @@ def test_the_header_is_read_and_the_change_rides_on_its_bar(part) -> None:
     assert part.key_signature == "Bb major"
     assert [m.time_signature for m in part.measures] == [
         None, None, None, None, None, None, None, None, None, "2/4",
-        None, None, None, None,
+        None, None, None, None, None, None, None,
     ]
 
 
@@ -136,7 +140,7 @@ def test_the_bars_are_numbered_as_a_player_would_count_them(part) -> None:
     """The file numbers four bars' rest as one bar, so everything after it is
     three too low until the expansion renumbers. `MeasureEditScreen` and every
     caveat line address a bar by its number."""
-    assert [m.measure_number for m in part.measures] == list(range(1, 15))
+    assert [m.measure_number for m in part.measures] == list(range(1, 18))
 
 
 # ---------------------------------------------------------------------------
@@ -173,14 +177,14 @@ def test_a_part_that_returns_to_its_first_metre_on_page_two(both_pages) -> None:
 
     # Page one's change, then page two restating what it is in.
     assert metres[9] == "2/4", metres
-    assert metres[14] == "4/4", metres
+    assert metres[17] == "4/4", metres
     assert [m for m in metres if m] == ["2/4", "4/4"], metres
 
 
 def test_the_joined_part_still_adds_up_everywhere(both_pages) -> None:
     verdicts = Counter(f.verdict for f in validate_measures(both_pages))
 
-    assert verdicts == {"ok": 18}, verdicts
+    assert verdicts == {"ok": 21}, verdicts
     assert both_pages.ocr_confidence == 1.0
 
 
@@ -189,7 +193,7 @@ def test_the_second_page_s_rests_are_in_its_own_metre(both_pages) -> None:
     against the 2/4 left in force by page one they would be halves, and the
     page would run four beats short."""
     assert [
-        (n.pitch, n.duration) for m in both_pages.measures[14:] for n in m.notes
+        (n.pitch, n.duration) for m in both_pages.measures[17:] for n in m.notes
     ] == [
         ("Eb3", "quarter"), ("D3", "quarter"), ("C3", "quarter"), ("Bb2", "quarter"),
         ("rest", "whole"), ("rest", "whole"),
@@ -255,13 +259,26 @@ def test_a_tie_costs_the_timeline_an_onset(part) -> None:
     """Bar 2 is two tied halves — one sustained sound, so one attack. The
     timeline holds an onset for every pitched note *except* the second half of
     each tie, which is why a tie invented by a reader deletes a note the
-    musician actually played."""
+    musician actually played.
+
+    Counted over the **played** order rather than the written one. Bar 15 sits
+    inside a repeat and is sounded twice, so the page holds fewer notes than
+    the musician plays — which is the entire point of `expand_repeats`.
+    Counting against `part.measures` was right only while repeats were a no-op,
+    and it stopped being right the moment the importer started reading them.
+    """
     from app.services import alignment
 
     onsets = alignment.build_timeline(part, 60.0).onsets
-    pitched = sum(1 for m in part.measures for n in m.notes if n.pitch != "rest")
+    played = alignment.expand_repeats(part)
+    pitched = sum(1 for m in played for n in m.notes if n.pitch != "rest")
+    written = sum(1 for m in part.measures for n in m.notes if n.pitch != "rest")
 
-    assert len(onsets) == pitched - 1 == 28
+    assert len(onsets) == pitched - 1 == 34
+    assert pitched == written + 2, (
+        "the repeat is contributing nothing — the played order holds no more "
+        "notes than the page does"
+    )
 
 
 def test_a_correct_part_is_flagged_for_nothing_at_all(part) -> None:

@@ -27,6 +27,7 @@ from app.services.score_schema import (
     DURATION_BEATS,
     Measure,
     Note,
+    Repeat,
     ScoreJson,
     Slur,
     Tuplet,
@@ -647,6 +648,105 @@ def _expand_multiple_rests(
     return out, moved
 
 
+def _ending_numbers(el: ET.Element) -> set[int]:
+    """The passes an `<ending>` belongs to.
+
+    `number` is a comma-separated list in the spec — `"1"`, `"2"`, `"1,2"`,
+    `"1, 2"` are all legal — and an engraver writes `1,2` for bars that serve
+    both passes. Anything unparseable yields nothing rather than a guess.
+    """
+    out: set[int] = set()
+    for part in (el.get("number") or "").split(","):
+        part = part.strip()
+        if part.isdigit():
+            out.add(int(part))
+    return out
+
+
+def _repeats_in(part_el: ET.Element) -> list[tuple[int, int, str]]:
+    """Repeat signs and endings, as `(first index, last index, type)`.
+
+    **Nothing produced these, and everything downstream was waiting for them.**
+    `alignment.expand_repeats` reads `score.repeats` and writes a repeated
+    section out twice; `validate.py` checks endings for sense; `pages.py` and
+    `pipeline.py` both carry the list across a page break. All of it built,
+    all of it tested — and `score_json_from_musicxml` returned `repeats=[]`
+    unconditionally, so on every score this pipeline has ever read, the whole
+    feature was a no-op.
+
+    What that costs is in `expand_repeats`' own docstring: a musician who
+    takes an eight-bar repeat plays sixteen bars and produces roughly twice
+    the onsets, against a timeline holding eight, so DTW matches a doubled
+    performance to a single pass and every delta after the repeat sign is
+    meaningless. *"Silent, because the alignment still produced a number."*
+
+    Indices, not measure numbers, because the numbers are still being decided
+    when this runs — a multi-bar rest expands and moves everything after it.
+
+    Three readings here are conventions rather than markup, and each is what a
+    player does with the page:
+
+    - **A backward repeat with no forward sign goes back to the beginning** of
+      the piece, or to just after the previous repeat if there was one. Most
+      pieces that repeat their opening print no forward sign at all, so
+      requiring one would find nothing on exactly the commonest case.
+    - **An ending marked `1,2`** serves both passes, so it is part of the body
+      and not an ending at all — no `Repeat` is emitted for it.
+    - **A `<repeat times="3">` is still played twice.** `RepeatType` has no way
+      to say otherwise; twice is closer than once, and this is recorded rather
+      than silently rounded.
+
+    A third or later ending is skipped for the same reason: `RepeatType` is
+    `repeat | first_ending | second_ending`, and inventing a fourth value here
+    would break the closed union the app types against.
+    """
+    found: list[tuple[int, int, str]] = []
+    forwards: list[int] = []
+    #: Where the previous repeat ended, so a second backward sign with no
+    #: forward sign of its own starts after it rather than back at bar 1.
+    after_last: int = 0
+    open_endings: dict[int, int] = {}
+
+    index = -1
+    for index, measure_el in enumerate(part_el.iterfind("measure")):
+        for barline in measure_el.iterfind("barline"):
+            for ending in barline.iterfind("ending"):
+                numbers = _ending_numbers(ending)
+                kind = ending.get("type")
+                if kind == "start":
+                    for number in numbers:
+                        open_endings.setdefault(number, index)
+                elif kind in {"stop", "discontinue"}:
+                    for number in numbers:
+                        start = open_endings.pop(number, index)
+                        if numbers == {1}:
+                            found.append((start, index, "first_ending"))
+                        elif numbers == {2}:
+                            found.append((start, index, "second_ending"))
+
+            repeat = barline.find("repeat")
+            if repeat is None:
+                continue
+            direction = repeat.get("direction")
+            if direction == "forward":
+                forwards.append(index)
+            elif direction == "backward":
+                start = forwards.pop() if forwards else after_last
+                if start <= index:
+                    found.append((start, index, "repeat"))
+                after_last = index + 1
+
+    # An ending opened and never closed runs to the end of what was read — a
+    # page break lands in the middle of one constantly.
+    last = index
+    for number, start in open_endings.items():
+        if number == 1:
+            found.append((start, last, "first_ending"))
+        elif number == 2:
+            found.append((start, last, "second_ending"))
+    return found
+
+
 def score_json_from_musicxml(
     xml: str, *, clef_fallback: str | None = None, part: str | None = None
 ) -> ScoreJson:
@@ -964,6 +1064,35 @@ def score_json_from_musicxml(
     measures = _whole_rests_that_mean_a_bar(measures, lengths)
     measures, moved = _expand_multiple_rests(measures, pending_rests, lengths)
 
+    #: The repeats, in the numbers the finished page uses.
+    #:
+    #: An index maps to the *first* bar that measure produced; the end of a
+    #: span maps to the *last*, which is the bar before the next source
+    #: measure began. They differ only where a multi-bar rest expanded — and a
+    #: repeat whose last bar is a four-bar rest is otherwise three bars short,
+    #: which is a whole phrase of silence the musician plays and the timeline
+    #: does not.
+    def _first_bar(index: int) -> int | None:
+        if not 0 <= index < len(moved):
+            return None
+        return measures[moved[index]].measure_number
+
+    def _last_bar(index: int) -> int | None:
+        if not 0 <= index < len(moved):
+            return None
+        stop = moved[index + 1] - 1 if index + 1 < len(moved) else len(measures) - 1
+        return measures[stop].measure_number if 0 <= stop < len(measures) else None
+
+    repeats: list[Repeat] = []
+    for start_index, end_index, kind in _repeats_in(chosen):
+        first = _first_bar(start_index)
+        last_bar = _last_bar(end_index)
+        if first is None or last_bar is None or last_bar < first:
+            continue
+        repeats.append(
+            Repeat(start_measure=first, end_measure=last_bar, type=kind)  # type: ignore[arg-type]
+        )
+
     total_notes = sum(len(m.notes) for m in measures)
     # Confidence an engine did not report, inferred from what had to be thrown
     # away. A run that dropped a fifth of its notes for want of a readable type
@@ -999,7 +1128,7 @@ def score_json_from_musicxml(
         bpm_hint=bpm_hint,
         clef=clef or clef_fallback,  # type: ignore[arg-type]
         measures=measures,
-        repeats=[],
+        repeats=repeats,
         ocr_confidence=confidence,
         notes_to_human=notes_to_human,
     )

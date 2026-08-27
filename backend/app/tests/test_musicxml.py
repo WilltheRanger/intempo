@@ -1506,3 +1506,209 @@ def test_a_voice_of_cues_does_not_outvote_the_line_being_played() -> None:
         ("D3", "half"),
         ("D3", "half"),
     ]
+
+
+# ---------------------------------------------------------------------------
+# Repeats: read at last, after everything downstream had been waiting for them
+# ---------------------------------------------------------------------------
+
+_FORWARD = '<barline location="left"><repeat direction="forward"/></barline>'
+_BACKWARD = '<barline location="right"><repeat direction="backward"/></barline>'
+
+
+def _first_ending(start: bool) -> str:
+    if start:
+        return '<barline location="left"><ending number="1" type="start"/></barline>'
+    return (
+        '<barline location="right"><ending number="1" type="stop"/>'
+        '<repeat direction="backward"/></barline>'
+    )
+
+
+def test_a_repeat_is_read_and_the_section_is_played_twice() -> None:
+    """**Nothing produced these, and everything downstream was waiting.**
+
+    `alignment.expand_repeats` writes a repeated section out twice;
+    `validate.py` checks endings; `pages.py` and `pipeline.py` both carry the
+    list across a page break. All built, all tested — and
+    `score_json_from_musicxml` returned `repeats=[]` unconditionally, so on
+    every score this pipeline has ever read the whole feature was a no-op.
+
+    From `expand_repeats`' own docstring, which describes a bug it could not
+    have been fixing: a musician who takes an eight-bar repeat plays sixteen
+    bars and produces roughly twice the onsets, against a timeline holding
+    eight, so DTW matches a doubled performance to a single pass and every
+    delta after the repeat sign is meaningless. *"Silent, because the
+    alignment still produced a number."*
+    """
+    from app.services import alignment
+
+    score = score_json_from_musicxml(
+        _part(
+            _bar(1, _FORWARD + _A_QUARTER * 4, _FOUR_FOUR)
+            + _bar(2, _A_QUARTER * 4)
+            + _bar(3, _A_QUARTER * 4 + _BACKWARD)
+        )
+    )
+
+    assert [(r.start_measure, r.end_measure, r.type) for r in score.repeats] == [
+        (1, 3, "repeat")
+    ]
+    assert [m.measure_number for m in alignment.expand_repeats(score)] == [
+        1, 2, 3, 1, 2, 3
+    ]
+    assert len(alignment.build_timeline(score, 60.0).onsets) == 24
+
+
+def test_a_repeat_with_no_forward_sign_goes_back_to_the_beginning() -> None:
+    """A convention rather than markup, and the commonest case on the page.
+
+    Most pieces that repeat their opening print only the closing sign, so
+    requiring a forward one would find nothing on exactly the scores this
+    matters most for.
+    """
+    from app.services import alignment
+
+    score = score_json_from_musicxml(
+        _part(
+            _bar(1, _A_QUARTER * 4, _FOUR_FOUR)
+            + _bar(2, _A_QUARTER * 4 + _BACKWARD)
+        )
+    )
+
+    assert [(r.start_measure, r.end_measure) for r in score.repeats] == [(1, 2)]
+    assert [m.measure_number for m in alignment.expand_repeats(score)] == [1, 2, 1, 2]
+
+
+def test_a_second_repeat_starts_after_the_first_rather_than_at_bar_one() -> None:
+    """Two closing signs and no opening ones is a piece in two repeated halves,
+    not a piece whose second half repeats the first."""
+    score = score_json_from_musicxml(
+        _part(
+            _bar(1, _A_QUARTER * 4, _FOUR_FOUR)
+            + _bar(2, _A_QUARTER * 4 + _BACKWARD)
+            + _bar(3, _A_QUARTER * 4)
+            + _bar(4, _A_QUARTER * 4 + _BACKWARD)
+        )
+    )
+
+    assert [(r.start_measure, r.end_measure) for r in score.repeats] == [(1, 2), (3, 4)]
+
+
+def test_first_and_second_endings_are_played_the_way_they_are_read() -> None:
+    from app.services import alignment
+
+    second = (
+        '<barline location="left"><ending number="2" type="start"/></barline>'
+    )
+    score = score_json_from_musicxml(
+        _part(
+            _bar(1, _FORWARD + _A_QUARTER * 4, _FOUR_FOUR)
+            + _bar(2, _A_QUARTER * 4)
+            + _bar(3, _first_ending(True) + _A_QUARTER * 4 + _first_ending(False))
+            + _bar(4, second + _A_QUARTER * 4)
+        )
+    )
+
+    assert [m.measure_number for m in alignment.expand_repeats(score)] == [
+        1, 2, 3, 1, 2, 4
+    ]
+
+
+def test_an_ending_serving_both_passes_is_not_an_ending() -> None:
+    """`number="1,2"` is bars that serve both times through. Emitting a
+    `first_ending` for it would make `expand_repeats` skip them on the second
+    pass — deleting music the musician plays."""
+    both = (
+        '<barline location="left"><ending number="1,2" type="start"/></barline>'
+    )
+    both_end = (
+        '<barline location="right"><ending number="1, 2" type="stop"/>'
+        '<repeat direction="backward"/></barline>'
+    )
+    score = score_json_from_musicxml(
+        _part(
+            _bar(1, _FORWARD + _A_QUARTER * 4, _FOUR_FOUR)
+            + _bar(2, both + _A_QUARTER * 4 + both_end)
+        )
+    )
+
+    assert [r.type for r in score.repeats] == ["repeat"]
+
+
+def test_a_repeat_ending_on_a_multi_bar_rest_covers_all_of_it() -> None:
+    """The end index maps to the *last* bar that measure produced.
+
+    A four-bar rest arrives as one `<measure>` and expands to four. Mapping the
+    repeat's end to the first of them makes the second pass three bars short —
+    a whole phrase of silence the musician counts and the timeline does not.
+    """
+    from app.services import alignment
+
+    score = score_json_from_musicxml(
+        _part(
+            _bar(1, _FORWARD + _A_QUARTER * 4, _FOUR_FOUR)
+            + _bar(
+                2,
+                "<note><rest/><duration>4</duration><type>whole</type></note>"
+                + _BACKWARD,
+                _MULTI_REST_4,
+            )
+            + _bar(3, _A_QUARTER * 4)
+        )
+    )
+
+    assert [(r.start_measure, r.end_measure) for r in score.repeats] == [(1, 5)]
+    assert [m.measure_number for m in alignment.expand_repeats(score)] == [
+        1, 2, 3, 4, 5, 1, 2, 3, 4, 5, 6
+    ]
+
+
+def test_a_score_with_no_repeat_signs_reports_none() -> None:
+    score = score_json_from_musicxml(
+        _part(_bar(1, _A_QUARTER * 4, _FOUR_FOUR) + _bar(2, _A_QUARTER * 4))
+    )
+
+    assert score.repeats == []
+
+
+def test_an_ending_more_than_one_bar_long_covers_all_of_it() -> None:
+    """**Found by a mutation that survived.** Every ending in the tests above is
+    one bar, and a one-bar ending works even if `type="start"` is never read at
+    all — the `stop` branch falls back to the bar it is on.
+
+    A two-bar first ending recorded as only its last bar makes `expand_repeats`
+    play the first bar of it *twice*, once on each pass. On the page that is a
+    bar the musician plays once, in the timeline it is a bar they play twice,
+    and every onset after it is out by a full measure.
+    """
+    from app.services import alignment
+
+    score = score_json_from_musicxml(
+        _part(
+            _bar(1, _FORWARD + _A_QUARTER * 4, _FOUR_FOUR)
+            + _bar(2, _A_QUARTER * 4)
+            + _bar(3, _first_ending(True) + _A_QUARTER * 4)
+            + _bar(4, _A_QUARTER * 4 + _first_ending(False))
+            + _bar(
+                5,
+                '<barline location="left"><ending number="2" type="start"/>'
+                "</barline>" + _A_QUARTER * 4,
+            )
+            + _bar(
+                6,
+                _A_QUARTER * 4
+                + '<barline location="right"><ending number="2" type="stop"/>'
+                "</barline>",
+            )
+        )
+    )
+
+    assert [(r.start_measure, r.end_measure, r.type) for r in score.repeats] == [
+        (3, 4, "first_ending"),
+        (1, 4, "repeat"),
+        (5, 6, "second_ending"),
+    ]
+    assert [m.measure_number for m in alignment.expand_repeats(score)] == [
+        1, 2, 3, 4, 1, 2, 5, 6
+    ]
