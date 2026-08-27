@@ -331,6 +331,7 @@ const DURATION_BEATS = __DURATION_BEATS__;
 const TOLERANCE=__TOLERANCE__, MIN_AGREEMENT=__MIN_AGREEMENT__,
       MIN_COVERAGE=__MIN_COVERAGE__, MIN_MEASURES_TO_INFER=__MIN_MEASURES_TO_INFER__;
 const DENSITY_MULTIPLE=__DENSITY_MULTIPLE__, DENSITY_MIN_NOTES=__DENSITY_MIN_NOTES__;
+const LENGTH_MULTIPLE=__LENGTH_MULTIPLE__;
 
 function metersInForce(score){
   // One entry per measure: the quarter-note beats it is expected to hold.
@@ -467,10 +468,19 @@ function validateMeasures(score){
   const medianDensity=sorted.length?(sorted.length%2?sorted[(sorted.length-1)/2]
     :(sorted[sorted.length/2-1]+sorted[sorted.length/2])/2):0;
   const densityLimit=DENSITY_MULTIPLE*medianDensity;
+  // A page with no readable metre is still evidence about itself. Bars of rest
+  // vote here, unlike the density median: a bar of rest is exactly one bar
+  // long. Kept in step with `validate.LENGTH_MULTIPLE`.
+  const lengths=sums.filter((_,i)=>(measures[i].notes??[]).length).sort((a,b)=>a-b);
+  const medianLength=lengths.length>=MIN_MEASURES_TO_INFER
+    ?(lengths.length%2?lengths[(lengths.length-1)/2]
+      :(lengths[lengths.length/2-1]+lengths[lengths.length/2])/2):0;
   return measures.map((m,i)=>{
     const actual=sums[i],count=(m.notes??[]).length;
     const expected=perMeasure[i];
     const tooDense=Boolean(expected)&&count>=DENSITY_MIN_NOTES&&count/expected>densityLimit;
+    const adrift=expected===null&&count>0&&medianLength>0
+      &&(actual>LENGTH_MULTIPLE*medianLength||actual*LENGTH_MULTIPLE<medianLength);
     let verdict;
     if(count===0)verdict='empty';
     else if(expected===null)verdict='unverifiable';
@@ -483,11 +493,11 @@ function validateMeasures(score){
     // no re-read fixes them, so they are a problem without being worth one.
     // An unwritable tuplet also keeps its length as rests, so the bar sums
     // exactly and nothing else here can see the gap.
-    const worthReRead=ties.length>0||tuplets.length>0||tooDense
+    const worthReRead=ties.length>0||tuplets.length>0||tooDense||adrift
                       ||['short','long','empty'].includes(verdict);
     return{measure_number:number,verdict,expected_beats:expected,
       actual_beats:actual,note_count:count,meter_inferred:meterInferred,
-      broken_ties:ties,tuplet_faults:tuplets,too_dense:tooDense,
+      broken_ties:ties,tuplet_faults:tuplets,too_dense:tooDense,out_of_line:adrift,
       unwritable_notes:m.unwritable_notes??0,
       worth_a_re_read:worthReRead,
       is_problem:worthReRead||(m.unwritable_notes??0)>0};

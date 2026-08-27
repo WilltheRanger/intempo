@@ -44,6 +44,7 @@ def shared_js() -> dict[str, str]:
     from app.services.ocr.validate import (
         DENSITY_MIN_NOTES,
         DENSITY_MULTIPLE,
+        LENGTH_MULTIPLE,
         MIN_AGREEMENT,
         MIN_COVERAGE,
         MIN_MEASURES_TO_INFER,
@@ -63,6 +64,7 @@ def shared_js() -> dict[str, str]:
         "__MIN_MEASURES_TO_INFER__": str(int(MIN_MEASURES_TO_INFER)),
         "__DENSITY_MULTIPLE__": _js_number(DENSITY_MULTIPLE),
         "__DENSITY_MIN_NOTES__": str(int(DENSITY_MIN_NOTES)),
+        "__LENGTH_MULTIPLE__": _js_number(LENGTH_MULTIPLE),
         "__TUPLET_NOTE__": json.dumps(TUPLET_NOTE),
     }
 
@@ -77,6 +79,7 @@ REQUIRED = (
     "__MIN_MEASURES_TO_INFER__",
     "__DENSITY_MULTIPLE__",
     "__DENSITY_MIN_NOTES__",
+    "__LENGTH_MULTIPLE__",
 )
 
 

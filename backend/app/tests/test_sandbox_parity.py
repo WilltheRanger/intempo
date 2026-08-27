@@ -248,6 +248,22 @@ CASES = [
     # ...and the same count on a bar that is *also* short, since the missing
     # notes are usually why.
     _score([Q, Q, ["quarter", "quarter"]], "4/4", unwritable={2: 2}),
+    # No readable metre, and bars that wildly disagree — the shape of
+    # `oemer_phone_photo`, whose five bars read 43.25, 1.0, 1.5, 22.0 and 11.5
+    # quarter-beats with no metre inferred and one concern on the whole page.
+    _score(
+        [
+            ["whole"] * 10,
+            ["quarter"],
+            ["dotted_quarter"],
+            ["whole"] * 5,
+            ["whole", "half", "quarter"],
+        ],
+        None,
+    ),
+    # ...and the same shape with a metre stated, where `short` and `long` say
+    # it against a real number and this must stay silent.
+    _score([["whole"] * 10, ["quarter"], Q], "4/4"),
     # Density: a page of quarters with one bar of thirty-seconds that still
     # sums to 4.0.
     _score([Q, Q, ["thirty_second"] * 32, Q], "4/4"),

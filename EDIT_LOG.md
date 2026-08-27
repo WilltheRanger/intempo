@@ -6,6 +6,91 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-27 — Forty-three beats in one bar and nothing said a word
+
+**Branch:** `main`. Backend, both browser validator ports, and tests. No screen,
+component, style or copy touched.
+
+**Files:** `backend/app/services/ocr/validate.py`,
+`tools/sandbox_shared.py`, `tools/validator-sandbox.template.html`,
+`tools/scan-bench.template.html`, and two test files (one new).
+
+Found by reading the whole MusicXML corpus back rather than by guessing at
+another feature — five fixtures, every bar's verdict, after six ticks of
+changes to the importer.
+
+### What the corpus said
+
+`oemer_phone_photo` reads back as five bars of **43.25, 1.0, 1.5, 22.0 and
+11.5** quarter-beats. No metre in the header, and `infer_beats_per_measure`
+refuses to name one from that — correctly. The consequence: every bar
+`unverifiable`, and **one concern on the entire page**.
+
+A bar holding forty-three beats is not a reading of music whatever the metre
+is. The beat check was switched off exactly where the reading was worst, which
+is the failure `infer_beats_per_measure`'s own docstring warns about: *"without
+this the check that catches duration errors is switched off for exactly those
+scores."* It fixed half of that. This is the other half.
+
+### The bars are evidence about each other
+
+Every bar of a piece holds the same number of beats, so where no metre can be
+named the bars can still be compared with one another. That is a **weaker
+claim** than naming a metre, and deliberately so — it must not become a way of
+sneaking one in, because a metre asserted wrongly flags every correct bar.
+
+`LENGTH_MULTIPLE = 3.0`, the same shape and the same multiple as the density
+check beside it: a bar more than three times the page's median length, or less
+than a third of it, is out of step. Measured — it flags 3 of the 5 bars above,
+and on `audiveris_phone_photo` (whose metre *is* inferred, and which would
+otherwise be the obvious place to introduce false positives) it would flag
+none. The other four fixtures are unchanged.
+
+It runs **only** where no metre could be read. Where one could, `short` and
+`long` say the same thing against a real number instead of a median, and two
+checks answering one question is how they come to disagree.
+
+### Bars of rest vote here, and do not vote next door
+
+The density median excludes them deliberately — it asks how many *notes* a bar
+of this page holds, and a bar of rest carries no evidence about that. Length
+asks how long a bar is, and a bar of rest is exactly one bar long, which is the
+whole question. A bass part is mostly bars of rest, and a multi-bar rest
+expands into several of them; excluding them would leave the median describing
+the handful of bars that are not rests.
+
+The two rules sit six lines apart and disagree, so both now say why. The test
+exhibits the difference rather than asserting the rule: on a page of two rest
+bars at twelve beats, two bars at two and one at twenty, counting the rest bars
+flags the short pair and excluding them flags the long one instead.
+
+### Ported, with the parity case that can only be this
+
+Both browser copies carry it, and `sandbox_shared.py` passes the constant
+through so neither can drift to a different number. Two parity cases: a page
+with no metre whose bars disagree, and the same shape *with* a metre stated,
+where this must stay silent.
+
+**Tests:** backend **1476 passed, 3 xfailed** (eight new). Eight mutants,
+**eight killed**, on a verified-green baseline — including both halves of the
+comparison (too long, too short) and the rest-bar decision, which are the three
+ways the rule could be quietly wrong.
+
+**Known side effects:** a page with no readable metre and genuinely uneven bars
+— a cadenza, an unmetred recitative — will now draw a concern it did not
+before. The threshold is coarse enough that it takes a threefold difference,
+and such a page has no metre to check against by definition, so a musician
+looking at the bar is the right outcome rather than a wrong one.
+
+**Rollback:** `git revert` this commit; the ports are in the same commit as the
+rule, so they cannot drift apart across it.
+
+**Still waiting on the owner** — the UI plan (four items), migration `011`,
+permission to re-read the nine failed scans, and whether `Repeat` gets a field
+for an unclosed forward sign.
+
+---
+
 ## 2026-08-27 — The tempo was printed on the page and nothing read it
 
 **Branch:** `main`. Backend and tests. No screen, component, style or copy
