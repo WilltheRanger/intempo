@@ -2600,3 +2600,128 @@ def test_a_refused_beat_repeat_is_visibly_empty() -> None:
     )
 
     assert [f.verdict for f in validate_measures(score)] == ["ok", "empty"]
+
+
+# ---------------------------------------------------------------------------
+# Endings that do not close cleanly — which is what a page break makes
+# ---------------------------------------------------------------------------
+
+_END_1_START = '<barline location="left"><ending number="1" type="start"/></barline>'
+_END_1_STOP = (
+    '<barline location="right"><ending number="1" type="stop"/>'
+    '<repeat direction="backward"/></barline>'
+)
+_END_2_START = '<barline location="left"><ending number="2" type="start"/></barline>'
+_END_2_OPEN = (
+    '<barline location="right"><ending number="2" type="discontinue"/></barline>'
+)
+
+
+def test_a_second_ending_is_closed_by_its_open_bracket() -> None:
+    """**Found by a mutation sweep, not by a failure.**
+
+    A second ending is normally drawn with no downward hook on its right end,
+    which MusicXML writes as `type="discontinue"` rather than `stop`. Nothing
+    tested it, so dropping `discontinue` from the branch that closes an ending
+    changed no test — and it would have left the bracket open, swallowing every
+    bar printed after it.
+
+    Here bar 4 is ordinary music following the repeat. A player reads
+    **1, 2, 1, 3, 4**.
+    """
+    from app.services import alignment
+
+    score = score_json_from_musicxml(
+        _part(
+            _bar(1, _FORWARD + _A_QUARTER * 4, _FOUR_FOUR)
+            + _bar(2, _END_1_START + _A_QUARTER * 4 + _END_1_STOP)
+            + _bar(3, _END_2_START + _A_QUARTER * 4 + _END_2_OPEN)
+            + _bar(4, _A_QUARTER * 4)
+        )
+    )
+
+    assert [(r.start_measure, r.end_measure, r.type) for r in score.repeats] == [
+        (2, 2, "first_ending"),
+        (1, 2, "repeat"),
+        (3, 3, "second_ending"),
+    ]
+    assert [m.measure_number for m in alignment.expand_repeats(score)] == [
+        1, 2, 1, 3, 4
+    ]
+
+
+def test_an_ending_the_page_runs_out_of_covers_what_was_read() -> None:
+    """A page break lands inside a first ending constantly, and the bracket
+    genuinely continues onto the next page.
+
+    Running it to the last bar read is the honest reading of the fragment.
+    Dropping it instead — which is what removing this branch does — loses the
+    ending altogether, and a repeat with no first ending plays those bars on
+    both passes.
+    """
+    score = score_json_from_musicxml(
+        _part(
+            _bar(1, _FORWARD + _A_QUARTER * 4, _FOUR_FOUR)
+            + _bar(2, _END_1_START + _A_QUARTER * 4)
+            + _bar(3, _A_QUARTER * 4)
+        )
+    )
+
+    assert [(r.start_measure, r.end_measure, r.type) for r in score.repeats] == [
+        (2, 3, "first_ending")
+    ]
+
+
+def test_an_ending_that_closes_without_opening_is_one_bar() -> None:
+    """The other edge of the same break: a page that *begins* inside an ending.
+
+    The bracket closes on a bar whose opening is on the previous page, so the
+    only defensible span is the bar it closes on. Falling back to bar 1 instead
+    would claim the ending covers everything read so far, which on a fragment
+    is most of the page.
+
+    The bracket must close on **bar 2 here, not bar 1** — a distinction the
+    first version of this test could not make, because it put the closing bar
+    first and "the bar it closes on" and "bar one" were then the same number. A
+    mutation survived it. With a bar of music before the close, the difference
+    is a whole bar of the second pass:
+
+        correct   1, 2, 1, 3        the ending is bar 2, skipped second time
+        wrong     1, 2, 1, 2, 3     the ending covers the span, so applies to
+                                    nothing, and bar 2 is played twice
+    """
+    from app.services import alignment
+
+    score = score_json_from_musicxml(
+        _part(
+            _bar(1, _A_QUARTER * 4, _FOUR_FOUR)
+            + _bar(2, _A_QUARTER * 4 + _END_1_STOP)
+            + _bar(3, _END_2_START + _A_QUARTER * 4 + _END_2_OPEN)
+        )
+    )
+
+    assert [(r.start_measure, r.end_measure, r.type) for r in score.repeats] == [
+        (2, 2, "first_ending"),
+        (1, 2, "repeat"),
+        (3, 3, "second_ending"),
+    ]
+    assert [m.measure_number for m in alignment.expand_repeats(score)] == [1, 2, 1, 3]
+
+
+def test_a_second_ending_left_open_is_still_a_second_ending() -> None:
+    """It decides which pass the bars belong to, so calling it a first ending
+    inverts them — the bars a player takes only the second time through become
+    the ones they take only the first."""
+    score = score_json_from_musicxml(
+        _part(
+            _bar(1, _FORWARD + _A_QUARTER * 4, _FOUR_FOUR)
+            + _bar(2, _END_1_START + _A_QUARTER * 4 + _END_1_STOP)
+            + _bar(3, _END_2_START + _A_QUARTER * 4)
+        )
+    )
+
+    assert [r.type for r in score.repeats] == [
+        "first_ending",
+        "repeat",
+        "second_ending",
+    ]
