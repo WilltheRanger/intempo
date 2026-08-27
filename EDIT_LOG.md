@@ -6,6 +6,85 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-27 — The same lesson twice, from a fixture I grew myself
+
+**Branch:** `main`. Backend fixture and tests. No production code changed.
+
+**Files:** `fixtures/musicxml/orchestral_part.musicxml`,
+`backend/app/tests/test_orchestral_part.py`,
+`backend/app/tests/test_musicxml.py`.
+
+Last tick left the `%` sign out of the whole-document fixture and said it
+should go in "next tick, deliberately rather than in passing". Doing that
+taught the same lesson as two ticks ago, which is why it is worth an entry
+rather than a footnote.
+
+### The `%` is in the fixture now
+
+Two bars appended: one of music, then the sign standing for it. **19 bars, all
+`ok`**, nothing dropped, the repeated strain still read as 15, 16, 15, 17, and
+the timeline 38 onsets ending at 57.0s.
+
+### And it broke a test I had written to be un-breakable
+
+Two ticks ago I removed quoted bar counts from `validate.py` because they went
+stale whenever the fixture grew, and replaced them with limits **derived** from
+the fixture. One of those derived assertions was:
+
+    counting every bar, the two-page limit falls below 2.0 notes per beat
+
+True when written. False the moment two bars of music were added — the median
+over all bars moved from 0.5 to 1.0 and the all-bars limit became 3.0, the same
+as the played-bars limit.
+
+**A derived number is not automatically a durable one.** That ratio is a
+property of how much of the page is resting, which is exactly the kind of thing
+adding bars changes. The fix I made two ticks ago was right about *quoting* and
+incomplete about *what to assert*.
+
+So the test now asserts only what the arithmetic guarantees — counting rest
+bars can lower the median and never raise it, because a bar of rest holds one
+note and that is fewer than any bar of music — plus the durable **3.00** the
+argument actually rests on. How far it falls is demonstrated on constructed
+scores in `test_density.py`, where nothing can drift into it.
+
+### `<beat-repeat>` has the same fault and is not fixed
+
+The `/` sign — "keep doing what you just did, beat by beat". Measured: a bar of
+eight eighths, a beat-repeat bar, another of eight eighths gives **16 onsets
+where a musician sounds 24**, and the empty bar carries no duration either, so
+every note after it is a whole bar early. Identical to `<measure-repeat>`
+before this week.
+
+Not fixed, and the reason is specific. Filling it needs the length of one beat
+in the preceding bar — `4/denominator` quarter-beats — which is only known
+after `_bar_lengths`, and the fill has to run **before** that so a `%` bar can
+vote on an inferred metre. Yesterday's ordering mutation is precisely about
+that constraint. The cheap guess, "repeat the whole previous bar", is right
+only when that bar is the figure being repeated, and inventing notes is the one
+failure this reader must not have.
+
+It reaches the file-import route only — homr emits no measure-style markings —
+and `validate_measures` says `empty`, so it is visibly wrong rather than
+quietly wrong. Pinned as a strict `xfail` with the measurement, plus a passing
+test that the bar at least says `empty`.
+
+### Tests
+
+Full suite green. Two tests added, one strict `xfail`, and seven expectations
+updated for the two new bars.
+
+### Three-foot test
+
+Not run: no screen was built or changed.
+
+### Still waiting on the owner
+
+The UI plan (four items), migration `011`, permission to re-read the nine
+failed scans, and whether `Repeat` gets a field for an unclosed forward sign.
+
+---
+
 ## 2026-08-27 — The `%` sign read as an empty bar
 
 **Branch:** `main`. Backend and tests. No screen, component, style or copy

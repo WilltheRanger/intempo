@@ -2392,3 +2392,70 @@ def test_a_multi_bar_rest_beside_a_percent_sign_survives_both() -> None:
 
     assert [len(m.notes) for m in score.measures] == [8, 8, 8, 1, 1, 1]
     assert [n.pitch for m in score.measures[3:] for n in m.notes] == ["rest"] * 3
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason=(
+        "`<beat-repeat>` empties a bar the same way `<measure-repeat>` did, "
+        "and is not read. Filling it needs the length of one beat in the bar "
+        "before it — 4/denominator quarter-beats — which is only known after "
+        "`_bar_lengths`, and the fill has to run before that so a `%` bar can "
+        "vote on an inferred metre. Guessing 'repeat the whole previous bar' "
+        "is right only when that bar is the figure repeated, and inventing "
+        "notes is the one failure this reader must not have. Measured, "
+        "unfixed, and visibly empty rather than quietly wrong."
+    ),
+)
+def test_a_beat_repeat_is_the_beat_it_stands_for() -> None:
+    """The `/` sign: keep doing what you just did, beat by beat.
+
+    Measured today, on a bar of eight eighths followed by one beat-repeat bar
+    and another of eight eighths: **16 onsets where a musician sounds 24**, and
+    the empty bar carries no duration either, so every note after it is
+    expected a whole bar early. Identical to what `<measure-repeat>` did before
+    this tick.
+
+    It reaches the **file-import** route only: homr does not emit measure-style
+    markings, so no photographed page produces one. `validate_measures` says
+    `empty`, which is the honest signal and is why this is a gap rather than a
+    silent fault.
+    """
+    from app.services import alignment
+
+    beat_repeat = (
+        '<attributes><measure-style><beat-repeat type="start" slashes="1">1'
+        "</beat-repeat></measure-style></attributes>"
+    )
+    stop = (
+        '<attributes><measure-style><beat-repeat type="stop"/></measure-style>'
+        "</attributes>"
+    )
+    score = score_json_from_musicxml(
+        _part(
+            _bar(1, _AN_EIGHTH * 8, _TWO_DIV)
+            + _bar(2, "", beat_repeat)
+            + _bar(3, _AN_EIGHTH * 8, stop)
+        )
+    )
+
+    assert len(alignment.build_timeline(score, 60.0).onsets) == 24
+
+
+def test_a_beat_repeat_is_at_least_visibly_empty() -> None:
+    """The consolation, pinned so it stays true while the gap above is open.
+
+    A bar the reader could not fill says `empty`, which a musician can see and
+    `MeasureEditScreen` can be opened on. That is the failure this project
+    prefers: a wrong reading nobody can see is the one that gets practised
+    against.
+    """
+    beat_repeat = (
+        '<attributes><measure-style><beat-repeat type="start" slashes="1">1'
+        "</beat-repeat></measure-style></attributes>"
+    )
+    score = score_json_from_musicxml(
+        _part(_bar(1, _AN_EIGHTH * 8, _TWO_DIV) + _bar(2, "", beat_repeat))
+    )
+
+    assert [f.verdict for f in validate_measures(score)] == ["ok", "empty"]
