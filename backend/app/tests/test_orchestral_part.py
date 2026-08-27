@@ -176,3 +176,61 @@ def test_the_second_page_s_rests_are_in_its_own_metre(both_pages) -> None:
         ("rest", "whole"), ("rest", "whole"),
         ("Bb2", "whole"),
     ]
+
+
+# ---------------------------------------------------------------------------
+# What the reading is for
+# ---------------------------------------------------------------------------
+
+
+def test_the_timeline_counts_the_rest_the_way_a_player_does(part) -> None:
+    """**The payoff, asserted where it is actually collected.**
+
+    Every rule in this file exists to make one number right: the moment
+    `alignment.build_timeline` expects the next note. A reading can be checked
+    bar by bar and still hand the verdict a timeline nobody could play to.
+
+    Bars 1–2 are 4/4, eight beats. Bars 3–6 are the four-bar rest. So at 60 bpm
+    the first note of bar 7 falls at **24.0 s**, and a musician who counts four
+    bars and comes back in on time is judged against that.
+
+    Before the expansion those four bars were **one measure with no notes in
+    it**, contributing nothing at all — so the same note was expected at 8.0 s.
+    Sixteen seconds early, and `alignment.py` accumulates, so every note after
+    it was wrong by the same amount for the rest of the page.
+    """
+    from app.services import alignment
+
+    onsets = [round(float(o), 3) for o in alignment.build_timeline(part, 60.0).onsets]
+
+    assert onsets[:5] == [0.0, 1.0, 2.0, 3.0, 4.0]
+    assert 8.0 not in onsets, (
+        "a note is expected where the collapsed rest used to end — the four-bar "
+        "rest is contributing nothing again"
+    )
+    assert onsets[5] == 24.0, onsets
+
+
+def test_a_rest_advances_the_clock_without_asking_for_a_note(part) -> None:
+    """A rest is a note in this schema, with pitch `"rest"`, and it must carry
+    time without carrying an onset. Bar 11 is an eighth rest then a dotted
+    quarter: the rest moves the clock half a beat and the note is expected
+    there, not at the barline."""
+    from app.services import alignment
+
+    onsets = [round(float(o), 3) for o in alignment.build_timeline(part, 60.0).onsets]
+
+    assert onsets[-1] == 36.5, onsets
+
+
+def test_a_tie_costs_the_timeline_an_onset(part) -> None:
+    """Bar 2 is two tied halves — one sustained sound, so one attack. The
+    timeline holds an onset for every pitched note *except* the second half of
+    each tie, which is why a tie invented by a reader deletes a note the
+    musician actually played."""
+    from app.services import alignment
+
+    onsets = alignment.build_timeline(part, 60.0).onsets
+    pitched = sum(1 for m in part.measures for n in m.notes if n.pitch != "rest")
+
+    assert len(onsets) == pitched - 1 == 18

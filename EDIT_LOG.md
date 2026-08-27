@@ -6,6 +6,58 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-26 — Checking the reading at the layer that actually collects it
+
+**Branch:** `main`. Backend tests. No screen, component, style or copy touched.
+
+**Files:** `backend/app/tests/test_orchestral_part.py`.
+
+The one seam left unexamined, and it is the one every rule in the importer was
+written for: **importer → `alignment.build_timeline`**. Every fix today has
+been checked bar by bar. A reading can pass all of that and still hand the
+verdict a timeline nobody could play to, because the thing that reaches a
+musician is not a bar count — it is the moment the next note is expected.
+
+### Measured, on the part fixture, at 60 bpm
+
+```
+onsets: 0.0 1.0 2.0 3.0 | 4.0 | ……………… | 24.0 25.0 26.0 27.0 | 28.0 28.333
+        28.667 29.0 30.5 31.0 | 32.0 33.0 | …… | 36.5
+```
+
+Every one is right:
+
+- Bar 2 is two tied halves and contributes **one** onset. A tie is a single
+  sustained sound, so it costs the timeline an attack — which is why a tie a
+  reader invents deletes a note the musician played.
+- Bars 3–6, the four-bar rest, contribute **sixteen beats and no onsets**, and
+  the first note of bar 7 lands at **24.0 s**.
+- Bar 11's eighth rest moves the clock half a beat, and the dotted quarter is
+  expected at 36.5 rather than at the barline.
+
+### What the multi-bar rest fix is worth, in seconds
+
+Before the expansion those four bars were **one measure with no notes in it**,
+contributing nothing. The same note was expected at **8.0 s**.
+
+**Sixteen seconds early**, at 60 bpm — and `alignment.py` accumulates, so every
+note after it was wrong by the same amount for the rest of the page. A musician
+who counts four bars correctly and comes in exactly on time was told they had
+rushed, and told it about everything they played afterwards.
+
+That is the number the whole day's work turns on, and until now nothing
+asserted it.
+
+### Three tests, and a mutation for each
+
+Collapsing the four-bar rest again fails **nine of twelve**; making the 2/4
+whole rest four beats again fails four. The timeline tests are the ones that
+fail loudest, which is right — they are closest to what a musician experiences.
+
+Full suite green at 1269, two xfailed.
+
+---
+
 ## 2026-08-26 — Five of the nine failed scans were told a lie about their photographs
 
 **Branch:** `main`. No code. A read-only query, and a wrong hypothesis
