@@ -74,7 +74,14 @@ def test_chord_members_are_not_counted(score) -> None:
 
 
 def test_grace_notes_are_not_counted(score) -> None:
-    """Same reasoning: a grace note carries no duration of its own."""
+    """Same reasoning: a grace note carries no duration of its own.
+
+    Not the same conclusion, though. It is still an *attack*, and discarding it
+    left the timeline short of an onset the page prints — see
+    `test_grace_notes.py` and `Note.grace_notes`. What stays true is this: it
+    never becomes a note of its own, because a bar of four quarters with an
+    ornament in it still adds up to four.
+    """
     assert all(n.pitch != "E3" for n in score.measures[1].notes)
 
 

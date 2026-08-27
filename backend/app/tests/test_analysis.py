@@ -23,6 +23,42 @@ def _eight_quarter_note_score() -> ScoreJson:
     )
 
 
+def test_ornaments_the_musician_did_not_play_are_not_missed_notes(tmp_path) -> None:
+    """A page with grace notes, played straight — the common case.
+
+    An acciaccatura sits inside the onset detector's own resolution, and plenty
+    of musicians do not play the printed ornaments at all. The timeline carries
+    an onset for each of them, so without the `optional` mask reaching
+    `align_dtw` and `apply_fuzzy_match` this take is reported as skipped notes
+    and its quality falls by the coverage they cost.
+
+    Two ornaments over eight notes. **A page where half the notes carry one and
+    none of them is heard is still refused** — measured at 0.16 with seven
+    notes called skipped — and that is a real limit rather than a tuning
+    accident: the timeline then alternates a 0.425 s gap with a 0.075 s one,
+    which is not a stretched version of anything the musician played. The
+    honest range is in `EDIT_LOG.md`, 2026-08-27.
+    """
+    score = _eight_quarter_note_score()
+    for measure in score.measures:
+        measure.notes[1] = measure.notes[1].model_copy(update={"grace_notes": 1})
+    times = evenly_spaced(8, bpm=120.0)
+    path = write_wav(tmp_path / "straight.wav", synth_click_track(times, sr=SR), sr=SR)
+
+    result = analyze(path, score, target_bpm=120.0)
+
+    assert result.status == "ok"
+    assert result.n_missed_notes == 0
+    assert result.n_extra_notes == 0
+    # The same take without ornaments printed scores above 0.9. What is lost is
+    # the two decorated notes, which are excluded from the straight-line fit
+    # quality is measured against — see `analyze`'s `steady`. Comfortably above
+    # `warn_quality`, so no caveat reaches the musician.
+    assert result.quality > 0.8
+    assert result.low_confidence is False
+    assert len(result.per_note) == 8
+
+
 def test_analyze_clean_recording_is_ok_and_steady(tmp_path) -> None:
     score = _eight_quarter_note_score()
     # Play exactly on the 120 BPM grid the score expects.
