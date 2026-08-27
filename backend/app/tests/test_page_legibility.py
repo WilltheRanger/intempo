@@ -19,6 +19,7 @@ and in `EDIT_LOG.md`, 2026-08-24.
 from __future__ import annotations
 
 import io
+import math
 
 import pytest
 from pathlib import Path
@@ -656,3 +657,110 @@ def test_the_refusal_says_how_large_the_photograph_was() -> None:
 
     assert reason is not None
     assert "1280x960" in reason
+
+
+# ---------------------------------------------------------------------------
+# A page that curls — measured, and not fixed
+# ---------------------------------------------------------------------------
+
+
+def _curled(image, sag: int) -> bytes:
+    """One system bowed, the way a page held in the hand bows.
+
+    Every column shifted down by a sine, deepest in the middle. Not a rotation:
+    `CLAUDE.md` is explicit that no rotation fixes this, because every system
+    on a real page bows by a different amount.
+
+    **Neutral at `sag=0`.** Through this harness `01_simple_printed` measures
+    11.0, which is what the file itself measures — so anything that changes
+    below is the curl and not the re-encode. Checked, because the same harness
+    is *not* neutral for `04_handwritten_clean` (6.0 through it against 9.25
+    for the file), and numbers taken through a harness that moves them mean
+    nothing.
+    """
+    from PIL import Image
+
+    out = Image.new("L", (image.width, image.height + sag + 20), 255)
+    for x in range(image.width):
+        dy = int(round(sag * math.sin(math.pi * x / max(1, image.width - 1))))
+        out.paste(image.crop((x, 0, x + 1, image.height)), (x, 10 + dy))
+    buffer = io.BytesIO()
+    out.save(buffer, "JPEG", quality=92)
+    return buffer.getvalue()
+
+
+def test_the_curl_harness_does_not_move_the_measurement_on_its_own() -> None:
+    """Without this the numbers below are about JPEG, not about curvature."""
+    from PIL import Image
+
+    path = FIXTURES / "01_simple_printed.jpg"
+    image = Image.open(path).convert("L")
+
+    assert staff_space_px(path.read_bytes()) == 11.0
+    assert staff_space_px(_curled(image, 0)) == 11.0
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason=(
+        "A curved page of the right size is refused, and told to get closer. "
+        "The staff period is measured from an ink profile summed across the "
+        "whole width, which assumes the five lines are horizontal; on a bowed "
+        "system they are not, and the periodicity smears away. homr dewarps "
+        "each staff itself, so the gate is stricter than the reader it "
+        "guards — the same shape as the rotated page in `staff_space_px`, "
+        "which was fixed by measuring the other axis. No fix here yet: "
+        "measuring in narrow column slices, where a bowed staff is locally "
+        "flat, was tried and is worse (see EDIT_LOG 2026-08-27)."
+    ),
+)
+def test_a_page_that_curls_is_still_read() -> None:
+    """**Measured, on the canonical beginner fixture.**
+
+    `01_simple_printed` is a clean printed line with 11 px between its staff
+    lines. Bowed across its width, through a harness that changes nothing at
+    `sag=0`:
+
+    | sag (px) | measured spacing |
+    |---|---|
+    | 0 – 18 | 11 |
+    | 20, 22 | **nothing measurable** |
+    | 24 | 11 |
+    | 26 and beyond | **nothing measurable** |
+
+    Twenty pixels is under two staff-spaces of bow across 1200 px, which is an
+    ordinary photograph of a page held in the hand. `03_complex_printed` has
+    the same failure in a window at 22–28 and recovers; `02_medium_printed`
+    never fails and degrades gracefully to 8.75.
+
+    What the musician is told is the part that matters: *"the app can find the
+    systems on the page but not the five lines in them … a laptop webcam
+    usually does not have the resolution."* The page is 1200 px wide and
+    perfectly sharp. That is the third time this project has worded a geometry
+    fault as the musician's fault, and the advice — take it again from closer —
+    cannot work, because the fix is to flatten the page.
+    """
+    from PIL import Image
+
+    image = Image.open(FIXTURES / "01_simple_printed.jpg").convert("L")
+
+    refused = [sag for sag in range(0, 40, 2) if too_small_to_read(_curled(image, sag))]
+
+    assert refused == [], f"refused a sharp 1200px page at sag {refused}"
+
+
+def test_the_curl_failure_is_a_refusal_and_not_a_wrong_number() -> None:
+    """The one consolation, pinned so it stays true.
+
+    Nothing here ever reported a *confident wrong* spacing under curl — it
+    reported none at all. A page that is refused is a page the musician can
+    retake; a page passed with an invented number is one they might practise
+    against, which is the failure `too_small_to_read` was written for.
+    """
+    from PIL import Image
+
+    image = Image.open(FIXTURES / "01_simple_printed.jpg").convert("L")
+
+    measured = [staff_space_px(_curled(image, sag)) for sag in range(0, 40, 2)]
+
+    assert all(space is None or space == 11.0 for space in measured), measured

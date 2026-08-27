@@ -6,6 +6,120 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-27 — A page that curls is refused and told to get closer
+
+**Branch:** `main`. Backend tests only — one measurement written down, one
+proposed fix refuted, no production code changed.
+
+**Files:** `backend/app/tests/test_page_legibility.py`.
+
+### Why look here
+
+`page_image.py` carries more measured constants than anything else in this
+repository, and **the photographs they were fitted to are not in it**.
+`homr_page.jpg` and `page-upright.jpg` are cited a dozen times in `CLAUDE.md`
+and exist nowhere on disk, so nobody — including me — can re-run those series
+or notice a regression against them. What *is* here is five single staff
+strips, and `test_page_systems.py` stacks them into a page.
+
+Stacked **flat**. The rewrite that made system-finding work exists because *"a
+page held in the hand is not flat"* — and the only page fixture is.
+
+### The measurement
+
+`01_simple_printed`, the canonical beginner profile: a clean printed line, 11 px
+between staff lines. Bowed across its width — every column shifted down by a
+sine, deepest in the middle, which is what a page held in the hand does:
+
+| sag (px) | measured spacing |
+|---|---|
+| 0 – 18 | 11 |
+| 20, 22 | **nothing measurable** |
+| 24 | 11 |
+| 26 and beyond | **nothing measurable** |
+
+Twenty pixels is under **two staff-spaces** of bow across 1200 px — an ordinary
+photograph. `03_complex_printed` fails in a window at 22–28 and recovers;
+`02_medium_printed` never fails and degrades gracefully to 8.75.
+
+The harness is neutral at `sag=0` — 11.0 through it, 11.0 for the file — and
+that is asserted in its own test, because the same harness is **not** neutral
+for `04_handwritten_clean` (6.0 through it against 9.25 for the file) and
+numbers taken through a harness that moves them mean nothing.
+
+### What the musician is told
+
+> the app can find the systems on the page but not the five lines in them … a
+> laptop webcam usually does not have the resolution for a page of music
+
+The page is 1200 px wide and perfectly sharp. **Third time this project has
+worded a geometry fault as the musician's fault**, and the advice — take it
+again from closer — cannot work, because the fix is to flatten the page.
+
+### The gate is stricter than the reader it guards
+
+homr **dewarps each staff itself**; that is the reason it beat the vision chain
+74 measures to 59 on the one real page. So a curved page reads perfectly well
+and is turned away before the reader ever sees it. That is the same shape as
+the *rotated* page already recorded in `staff_space_px` — a full-resolution
+photograph homr reads at 1.00 confidence, refused with a wrong diagnosis — which
+was fixed by teaching the gate the other axis. This is the next one along.
+
+### The fix I tried, and the numbers that refuted it
+
+The mechanism is clear: the staff period comes from an ink profile summed
+across the **whole width**, which assumes the five lines are horizontal. So
+measure in narrow column slices instead, where a bowed staff is locally flat —
+the same move as `_ink_profile` measuring against local paper rather than
+global darkness, which is what made system-finding work at all.
+
+It is worse. Measured, with the band period taken as the median of its slice
+periods:
+
+| fixture | today | 2 slices | 4 | 6 | 8 |
+|---|---|---|---|---|---|
+| `01_simple_printed` | 11.0 | 11.0 | 11.0 | 11.0 | 11.0 |
+| `02_medium_printed` | **11.0** | 11.0 | 6.5 | 5.5 | 6.5 |
+| `03_complex_printed` | **11.0** | 6.0 | 6.5 | 7.0 | 6.5 |
+| `04_handwritten_clean` | **9.25** | 6.5 | 7.0 | 5.75 | 7.0 |
+
+Three fixtures that read correctly today would be **refused**, the floor being
+8. And in the other direction a downscaled page went from 4.0 to 11.0 — passing
+one with nothing readable on it, which is the failure this gate exists to
+prevent. A narrow slice has too few columns to average the noise out, so the
+autocorrelation locks onto something that is not a staff.
+
+Written down rather than shipped, and written down rather than forgotten: the
+next person to see the mechanism will have the same idea.
+
+### Left as a strict `xfail`
+
+With the table in it. `CLAUDE.md` forbids refitting these constants to one
+photograph and it is right — a real fix is a mini-dewarp before the profile is
+taken, not a threshold move, and it wants measuring against pages this
+repository does not have.
+
+One consolation is pinned as a passing test: under curl this never reports a
+*confident wrong* spacing, only none at all. A refused page is one the musician
+can retake; a page passed with an invented number is one they might practise
+against.
+
+### Tests
+
+Full suite green. Three tests added: the harness-neutrality check, the strict
+`xfail`, and the refusal-not-a-wrong-number property.
+
+### Three-foot test
+
+Not run: no screen was built or changed.
+
+### Still waiting on the owner
+
+The UI plan (four items), migration `011`, permission to re-read the nine
+failed scans, and whether `Repeat` gets a field for an unclosed forward sign.
+
+---
+
 ## 2026-08-27 — The screen pulsed a tenth of a second before the click
 
 **Branch:** `main`. Mobile `lib/` only — logic modules and a hook, no screen,
