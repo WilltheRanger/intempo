@@ -175,16 +175,26 @@ def test_the_validator_catches_that_this_reading_is_wrong(oemer_score) -> None:
 from app.services.alignment import _DURATION_BEATS  # noqa: E402
 
 
-def test_duplicate_measure_numbers_survive_conversion(oemer_score) -> None:
+def test_duplicate_measure_numbers_do_not_survive_conversion(oemer_score) -> None:
     """oemer emitted `number="3"` three times.
 
-    `Measure.measure_number` does not have to be unique and nothing downstream
-    assumes it is — `validate.py` reports by position. Worth a test because the
-    obvious "fix" is to renumber, which would hide exactly the damage that
-    tells you the reading is broken.
+    **This test used to assert the opposite, on a claim that has since become
+    false.** It said "nothing downstream assumes it is unique — `validate.py`
+    reports by position". `validate_measures` groups broken ties and tuplet
+    faults by measure *number*, and `MeasureConcern` — which did not exist when
+    that was written — carries the number as the handle a screen points at a
+    bar with. Measured on three bars numbered 3, one carrying a tie between two
+    pitches: three identical concerns, two of them on correct bars, each
+    offering to open bar 3 for repair.
+
+    Its second reason still stands and is honoured: renumbering must not hide
+    the damage that says the reading is broken. So only a numbering that
+    *cannot identify a bar* is repaired, gaps are left exactly alone for
+    `numbering_gaps` to find, and the change is named in `notes_to_human`.
     """
     numbers = [m.measure_number for m in oemer_score.measures]
-    assert len(numbers) != len(set(numbers))
+    assert numbers == sorted(set(numbers))
+    assert "do not run in order" in oemer_score.notes_to_human
 
 
 AUDIVERIS = (

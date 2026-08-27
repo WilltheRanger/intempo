@@ -6,6 +6,90 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-27 — Three bars numbered 3, and one broken tie reported on all of them
+
+**Branch:** `main`. Backend and tests. No screen, component, style or copy
+touched.
+
+**Files:** `backend/app/services/ocr/musicxml.py`, and two test files (one
+new). One existing test **rewritten to assert the opposite of what it did**,
+which is the interesting part of this entry.
+
+Same method as the previous tick: reading the corpus back rather than guessing
+at a feature. `oemer_phone_photo` returns measure numbers **`[1, 2, 3, 3, 3]`**.
+
+### What a repeated number costs
+
+`validate_measures` groups broken ties and tuplet faults by measure *number*.
+Measured on three bars all numbered 3, only the first carrying a tie between
+two pitches:
+
+    m3  ties=1  problem=True   "A3 is tied to C4 — a tie joins one pitch to itself…"
+    m3  ties=1  problem=True   "A3 is tied to C4 — a tie joins one pitch to itself…"
+    m3  ties=1  problem=True   "A3 is tied to C4 — a tie joins one pitch to itself…"
+
+Three identical concerns, on three different bars, **two of them correct** —
+each offering to open bar 3 for repair, which cannot be the right bar for more
+than one of them. `MeasureConcern.measure_number` is how a screen points at a
+bar, `MeasureEditScreen` is opened by it, and the verdict groups per-note
+deltas by it. A number that repeats identifies none of them.
+
+### It only bites on the import route, and that is why it was missed
+
+`pipeline.renumber` already numbers a *scanned* page 1..N positionally, and is
+right to — a page read by a model has no numbering worth keeping. It does not
+run on `POST /v1/scores/import`, where the numbering usually **is** the printed
+part's and a bar labelled 47 must stay 47.
+
+So the rule sits in the importer, where both routes pass, and it is the narrow
+one that serves both: **keep the file's numbering unless it cannot identify a
+bar.** Strictly increasing is the test.
+
+### The signal it must not erase
+
+Gaps are left exactly alone. `1, 2, 3, 409` is a boxed rehearsal mark counted
+as a bar — by `renumber`'s own account the single most common failure this
+pipeline has — and `numbering_gaps` is what catches it. Renumbering that away
+is precisely what `_expand_multiple_rests` shifts rather than renumbers to
+protect. And the repair is announced: *"The bar numbers in this file do not run
+in order, so the bars have been numbered from 1 as they appear."*
+
+### The test that said the opposite
+
+`test_duplicate_measure_numbers_survive_conversion` asserted duplicates
+survive, on two reasons:
+
+1. *"nothing downstream assumes it is unique — `validate.py` reports by
+   position."* **False now**, and measured above. `MeasureConcern` did not
+   exist when that was written.
+2. *"the obvious fix is to renumber, which would hide exactly the damage that
+   tells you the reading is broken."* **Still true, and honoured** — gaps
+   untouched, the change named to the musician, and only an unusable numbering
+   repaired.
+
+Rewritten rather than deleted, carrying both the claim that went stale and the
+one that did not. A test that has been checked and found wrong is worth more as
+a record than as a deletion.
+
+**Tests:** backend **1485 passed, 3 xfailed** (nine new, one rewritten). Five
+mutants, **five killed**, on a verified-green baseline — including the two ways
+the test could be too broad (renumbering a gap) or too narrow (allowing a
+repeat while refusing a decrease).
+
+**Known side effects:** an imported file whose numbering repeats loses the
+page's labels entirely — every bar renumbered, not just the colliding ones. A
+partial repair would produce a numbering that is neither the page's nor
+sequential, which is worse to reason about and no more truthful.
+
+**Rollback:** `git revert` this commit. Nothing stored changes shape; this only
+affects what a new reading produces.
+
+**Still waiting on the owner** — the UI plan (four items), migration `011`,
+permission to re-read the nine failed scans, and whether `Repeat` gets a field
+for an unclosed forward sign.
+
+---
+
 ## 2026-08-27 — Forty-three beats in one bar and nothing said a word
 
 **Branch:** `main`. Backend, both browser validator ports, and tests. No screen,
