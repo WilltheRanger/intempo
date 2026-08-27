@@ -372,6 +372,129 @@ def _measure_repeat_mark(measure_el: ET.Element) -> tuple[str, int] | None:
     return None
 
 
+def _beat_repeat_mark(measure_el: ET.Element) -> tuple[str, float] | None:
+    """`("start", beats)` or `("stop", 0.0)` for the `/` sign, else None.
+
+    **The within-bar sibling of `%`, and it emptied a bar the same way.**
+    Measured: a bar of eight eighths, a beat-repeat bar, another of eight
+    eighths gave **16 onsets where a musician sounds 24**, and the empty bar
+    carried no duration either, so every note after it was expected a whole bar
+    early.
+
+    The pattern length comes from the markup rather than from the metre. The
+    element's text is how many beats repeat; `slashes` says what a beat is
+    here — one slash is a quarter, two eighths, three sixteenths — so the
+    length is `beats x 1/2**(slashes-1)` quarter-beats and no denominator is
+    involved. That matters: the previous entry declined this fix on the
+    grounds that a beat's length needs the metre and so could only be known
+    after `_bar_lengths`, which runs after the fill. It does not.
+    """
+    for attributes in measure_el.iterfind("attributes"):
+        for style in attributes.iterfind("measure-style"):
+            mark = style.find("beat-repeat")
+            if mark is None:
+                continue
+            kind = (mark.get("type") or "").strip()
+            if kind == "stop":
+                return "stop", 0.0
+            if kind != "start":
+                continue
+            try:
+                beats = int((mark.text or "1").strip())
+            except ValueError:
+                beats = 1
+            try:
+                slashes = int(mark.get("slashes") or "1")
+            except ValueError:
+                slashes = 1
+            beats = max(1, beats)
+            slashes = min(max(1, slashes), 8)
+            return "start", beats * (1.0 / 2 ** (slashes - 1))
+    return None
+
+
+def _stated_bar_lengths(
+    measures: list[Measure], header_metre: str | None
+) -> list[float | None]:
+    """Bar lengths from metres actually printed, with **no inference**.
+
+    `_bar_lengths` asks the music when nothing is printed, which cannot be done
+    before the repeat signs are filled — the bars they stand for are empty, and
+    they are some of the bars that would be voting. This is the half that needs
+    nothing but the page: a metre holds until another is printed.
+
+    None where no metre has been printed yet, and a beat-repeat there is left
+    alone rather than guessed at. On the route this reaches — a file, not a
+    photograph — an engraver always writes `<time>`.
+    """
+    running = _quarter_beats(header_metre)
+    out: list[float | None] = []
+    for measure in measures:
+        if measure.time_signature is not None:
+            running = _quarter_beats(measure.time_signature)
+        out.append(running)
+    return out
+
+
+def _tail_of(measure: Measure, beats: float) -> list[Note] | None:
+    """The last `beats` quarter-beats of a bar, or None if it does not split.
+
+    A pattern that would cut a note in half is not a pattern this can repeat,
+    and half a note is exactly the kind of invention that must not reach a
+    musician. Refusing leaves the bar visibly empty, which is where it started.
+    """
+    taken: list[Note] = []
+    total = 0.0
+    for note in reversed(measure.notes):
+        length = DURATION_BEATS.get(note.duration)
+        if length is None:
+            return None
+        taken.insert(0, note)
+        total = round(total + length, 6)
+        if total >= beats - 1e-6:
+            break
+    return taken if abs(total - beats) < 1e-6 else None
+
+
+def _fill_beat_repeats(
+    measures: list[Measure],
+    marks: dict[int, tuple[str, float]],
+    lengths: list[float | None],
+) -> list[Measure]:
+    """Tile the repeated beat across each bar carrying the `/` sign.
+
+    Every step refuses rather than approximates: no printed metre, a pattern
+    that does not land on a note boundary, or a bar that is not a whole number
+    of patterns long, and the bar stays empty. Empty is what it already was,
+    and `validate_measures` calls it out; a bar filled with a guess is the one
+    failure this reader must not have.
+    """
+    if not marks:
+        return measures
+
+    out = list(measures)
+    pattern = 0.0
+    for index, measure in enumerate(measures):
+        mark = marks.get(index)
+        if mark is not None:
+            pattern = mark[1] if mark[0] == "start" else 0.0
+        if not pattern or measure.notes or index == 0:
+            continue
+        bar = lengths[index]
+        if bar is None or pattern <= 0:
+            continue
+        copies = bar / pattern
+        if abs(copies - round(copies)) > 1e-6 or round(copies) < 1:
+            continue
+        figure = _tail_of(out[index - 1], pattern)
+        if not figure:
+            continue
+        out[index] = measure.model_copy(
+            update={"notes": [note.model_copy() for note in figure] * round(copies)}
+        )
+    return out
+
+
 def _fill_measure_repeats(
     measures: list[Measure],
     marks: dict[int, tuple[str, int]],
@@ -1005,6 +1128,8 @@ def score_json_from_musicxml(
     pickup_shift = 0
     #: `{index in measures: ("start", bars) | ("stop", 0)}` for the `%` sign.
     repeat_marks: dict[int, tuple[str, int]] = {}
+    #: The same for the `/` sign, whose pattern is measured in quarter-beats.
+    beat_marks: dict[int, tuple[str, float]] = {}
     dropped = 0
     #: `{index in measures: how many notes that bar lost}`.
     #:
@@ -1043,6 +1168,8 @@ def score_json_from_musicxml(
         standing_for = _multiple_rest_count(measure_el)
         if (mark := _measure_repeat_mark(measure_el)) is not None:
             repeat_marks[len(measures)] = mark
+        if (beat_mark := _beat_repeat_mark(measure_el)) is not None:
+            beat_marks[len(measures)] = beat_mark
         for attributes in measure_el.iterfind("attributes"):
             stated_divisions = _text(attributes.find("divisions"))
             if stated_divisions:
@@ -1349,6 +1476,12 @@ def score_json_from_musicxml(
     # the metre with the music it actually holds.
     measures = _fill_measure_repeats(
         measures, repeat_marks, {index for index, _, _ in pending_rests}
+    )
+    # After the whole-bar sign, so a `/` bar can repeat a beat of a bar a `%`
+    # has just filled. Both run before `_bar_lengths`, which is what lets a
+    # filled bar vote on a metre nobody printed.
+    measures = _fill_beat_repeats(
+        measures, beat_marks, _stated_bar_lengths(measures, time_signature)
     )
 
     lengths = _bar_lengths(measures, time_signature)

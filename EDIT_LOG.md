@@ -6,6 +6,88 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-27 — The reason I gave for not fixing it was wrong
+
+**Branch:** `main`. Backend and tests. No screen, component, style or copy
+touched.
+
+**Files:** `backend/app/services/ocr/musicxml.py`,
+`backend/app/tests/test_musicxml.py`.
+
+Yesterday I measured `<beat-repeat>` failing exactly as `<measure-repeat>`
+did, declined to fix it, and wrote down why. Re-reading that reason this
+morning, it does not hold.
+
+### The premise
+
+> Filling it needs the length of one beat in the preceding bar —
+> `4/denominator` quarter-beats — which is only known after `_bar_lengths`,
+> and the fill has to run before that.
+
+**A beat's length here does not come from the metre at all.** The element's
+text says how many beats repeat and its `slashes` attribute says what a beat
+is — one slash a quarter, two eighths, three sixteenths — so the pattern is
+`beats × 1/2**(slashes-1)` quarter-beats and no denominator is involved. The
+*bar* length is still needed, to know how many times to tile, and that comes
+from a metre actually **printed**: `_stated_bar_lengths` does that half with no
+inference and therefore no ordering conflict.
+
+I had reasoned from the harder half to a conclusion about the easier one. The
+same shape of mistake this session has been finding in comments all week, made
+in one of my own the day before.
+
+### What it does now
+
+```
+bar of eight eighths | / | bar of eight eighths
+  before: 16 onsets, where a musician sounds 24
+  after:  24
+```
+
+The figure is the **tail** of the bar before, not the whole bar — here a single
+quarter after a half and two eighths, tiled four times. Copying the whole bar
+would have put the half note back and made the bar eight beats long.
+
+### It refuses at every step, and that is the design
+
+No printed metre, a pattern that would cut a note in half, a bar that is not a
+whole number of patterns long: the bar stays empty. Empty is where it started,
+and `validate_measures` calls it out, so a refusal costs a musician a caveat
+they can act on. A bar filled with a guess costs them notes they are told they
+missed.
+
+The two signs also compose: a `/` can repeat a beat of a bar a `%` has just
+filled, which is why the whole-bar fill runs first.
+
+### Tests
+
+Full suite green. Nine mutants, all killed — after two survived and both were
+my tests' fault again, for the second tick running:
+
+- **slashes ignored** survived because a bar of nothing but eighths tiles back
+  to eight eighths under *every* pattern length. The mark is now asserted
+  directly, and on a bar whose tail is a quarter, where a quarter pattern fills
+  and an eighth pattern refuses — filled against empty is a difference no
+  uniform bar can hide.
+- **the run never stops** survived for the identical reason it did on `%`
+  yesterday: the `stop` bar had notes in it, so the run would have stopped
+  anyway. It needs an empty bar *after* the stop, which is the case the sign
+  exists for.
+
+That is twice now that "every test puts notes in the stop bar" has hidden the
+same thing. It is worth remembering as a shape rather than as two incidents.
+
+### Three-foot test
+
+Not run: no screen was built or changed.
+
+### Still waiting on the owner
+
+The UI plan (four items), migration `011`, permission to re-read the nine
+failed scans, and whether `Repeat` gets a field for an unclosed forward sign.
+
+---
+
 ## 2026-08-27 — The same lesson twice, from a fixture I grew myself
 
 **Branch:** `main`. Backend fixture and tests. No production code changed.

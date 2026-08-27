@@ -2394,68 +2394,209 @@ def test_a_multi_bar_rest_beside_a_percent_sign_survives_both() -> None:
     assert [n.pitch for m in score.measures[3:] for n in m.notes] == ["rest"] * 3
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "`<beat-repeat>` empties a bar the same way `<measure-repeat>` did, "
-        "and is not read. Filling it needs the length of one beat in the bar "
-        "before it — 4/denominator quarter-beats — which is only known after "
-        "`_bar_lengths`, and the fill has to run before that so a `%` bar can "
-        "vote on an inferred metre. Guessing 'repeat the whole previous bar' "
-        "is right only when that bar is the figure repeated, and inventing "
-        "notes is the one failure this reader must not have. Measured, "
-        "unfixed, and visibly empty rather than quietly wrong."
-    ),
+def _beat_repeat(beats: int = 1, slashes: int = 1) -> str:
+    return (
+        f'<attributes><measure-style><beat-repeat type="start" slashes="{slashes}">'
+        f"{beats}</beat-repeat></measure-style></attributes>"
+    )
+
+
+_BEAT_STOP = (
+    '<attributes><measure-style><beat-repeat type="stop"/></measure-style>'
+    "</attributes>"
 )
+
+
 def test_a_beat_repeat_is_the_beat_it_stands_for() -> None:
     """The `/` sign: keep doing what you just did, beat by beat.
 
-    Measured today, on a bar of eight eighths followed by one beat-repeat bar
-    and another of eight eighths: **16 onsets where a musician sounds 24**, and
-    the empty bar carries no duration either, so every note after it is
-    expected a whole bar early. Identical to what `<measure-repeat>` did before
-    this tick.
+    Measured before this: a bar of eight eighths, a beat-repeat bar and another
+    of eight eighths gave **16 onsets where a musician sounds 24**, and the
+    empty bar carried no duration either, so every note after it was expected a
+    whole bar early. Identical to what `<measure-repeat>` did.
 
-    It reaches the **file-import** route only: homr does not emit measure-style
-    markings, so no photographed page produces one. `validate_measures` says
-    `empty`, which is the honest signal and is why this is a gap rather than a
-    silent fault.
+    **The previous entry declined this fix on a premise that was wrong.** It
+    said a beat's length needs the metre and so could only be known after
+    `_bar_lengths`, which runs after the fill. It does not: the element's text
+    is how many beats repeat and `slashes` says what a beat is here — one slash
+    a quarter, two eighths, three sixteenths — so the pattern is
+    `beats x 1/2**(slashes-1)` quarter-beats and no denominator is involved.
     """
     from app.services import alignment
 
-    beat_repeat = (
-        '<attributes><measure-style><beat-repeat type="start" slashes="1">1'
-        "</beat-repeat></measure-style></attributes>"
-    )
-    stop = (
-        '<attributes><measure-style><beat-repeat type="stop"/></measure-style>'
-        "</attributes>"
-    )
     score = score_json_from_musicxml(
         _part(
             _bar(1, _AN_EIGHTH * 8, _TWO_DIV)
-            + _bar(2, "", beat_repeat)
-            + _bar(3, _AN_EIGHTH * 8, stop)
+            + _bar(2, "", _beat_repeat())
+            + _bar(3, _AN_EIGHTH * 8, _BEAT_STOP)
         )
     )
 
+    assert [len(m.notes) for m in score.measures] == [8, 8, 8]
+    assert [f.verdict for f in validate_measures(score)] == ["ok"] * 3
     assert len(alignment.build_timeline(score, 60.0).onsets) == 24
 
 
-def test_a_beat_repeat_is_at_least_visibly_empty() -> None:
-    """The consolation, pinned so it stays true while the gap above is open.
+def test_the_repeated_figure_is_the_tail_of_the_bar_before() -> None:
+    """Not the whole bar — a beat, which may be several notes or one.
 
-    A bar the reader could not fill says `empty`, which a musician can see and
-    `MeasureEditScreen` can be opened on. That is the failure this project
-    prefers: a wrong reading nobody can see is the one that gets practised
-    against.
+    Here the last beat is a single quarter after a half and two eighths, so
+    four quarters fill the bar. Copying the whole previous bar would have put a
+    half note back in and made the bar eight beats long.
     """
-    beat_repeat = (
-        '<attributes><measure-style><beat-repeat type="start" slashes="1">1'
-        "</beat-repeat></measure-style></attributes>"
+    half = (
+        "<note><pitch><step>D</step><octave>3</octave></pitch>"
+        "<duration>4</duration><type>half</type></note>"
     )
     score = score_json_from_musicxml(
-        _part(_bar(1, _AN_EIGHTH * 8, _TWO_DIV) + _bar(2, "", beat_repeat))
+        _part(
+            _bar(1, half + _AN_EIGHTH * 2 + _A_G, _TWO_DIV)
+            + _bar(2, "", _beat_repeat())
+        )
+    )
+
+    assert [(n.pitch, n.duration) for n in score.measures[1].notes] == [
+        ("G2", "quarter")
+    ] * 4
+
+
+def test_the_slash_count_says_what_a_beat_is() -> None:
+    """**Found by a mutation that survived.** One slash is a quarter, two
+    eighths, three sixteenths — and on a bar of nothing but eighths every one
+    of those tiles back to the same eight eighths, so the first test of this
+    proved nothing.
+
+    Asserted on the mark itself, where the lengths are visible, and then on a
+    bar whose tail is a quarter: a quarter pattern fills it and an eighth
+    pattern cannot split the quarter, so it refuses. Filled against empty is a
+    difference no uniform bar can hide.
+    """
+    from app.services.ocr.musicxml import _beat_repeat_mark
+
+    import xml.etree.ElementTree as ET
+
+    def mark(beats: int, slashes: int):
+        return _beat_repeat_mark(
+            ET.fromstring(f"<measure>{_beat_repeat(beats, slashes)}</measure>")
+        )
+
+    assert mark(1, 1) == ("start", 1.0)
+    assert mark(1, 2) == ("start", 0.5)
+    assert mark(1, 3) == ("start", 0.25)
+    assert mark(2, 1) == ("start", 2.0)
+
+    ends_on_a_quarter = _AN_EIGHTH * 6 + _A_G
+    filled = score_json_from_musicxml(
+        _part(_bar(1, ends_on_a_quarter, _TWO_DIV) + _bar(2, "", _beat_repeat()))
+    )
+    refused = score_json_from_musicxml(
+        _part(
+            _bar(1, ends_on_a_quarter, _TWO_DIV)
+            + _bar(2, "", _beat_repeat(slashes=2))
+        )
+    )
+
+    assert [(n.pitch, n.duration) for n in filled.measures[1].notes] == [
+        ("G2", "quarter")
+    ] * 4
+    assert refused.measures[1].notes == []
+
+
+def test_the_beat_repeat_run_ends_at_its_stop() -> None:
+    """**The other survivor, and the same one as for `%`.** Every other test
+    puts notes in the bar carrying `stop`, so the run would have stopped
+    filling there anyway and the `stop` did no work.
+
+    What it is for is the bar *after*: one the reader genuinely failed on.
+    Filling that with a tiled figure turns a hole the musician can see into
+    notes they are told they missed.
+    """
+    score = score_json_from_musicxml(
+        _part(
+            _bar(1, _AN_EIGHTH * 8, _TWO_DIV)
+            + _bar(2, "", _beat_repeat())
+            + _bar(3, _AN_EIGHTH * 8, _BEAT_STOP)
+            + _bar(4, "")
+        )
+    )
+
+    assert [len(m.notes) for m in score.measures] == [8, 8, 8, 0]
+
+
+@pytest.mark.parametrize(
+    ("label", "header", "first", "mark"),
+    [
+        (
+            "no metre is printed anywhere",
+            "<attributes><divisions>2</divisions></attributes>",
+            _AN_EIGHTH * 8,
+            _beat_repeat(),
+        ),
+        (
+            "the pattern would cut a note in half",
+            _TWO_DIV,
+            "<note><pitch><step>D</step><octave>3</octave></pitch>"
+            "<duration>4</duration><type>half</type></note>" * 2,
+            _beat_repeat(),
+        ),
+        (
+            "the bar is not a whole number of patterns long",
+            "<attributes><divisions>2</divisions>"
+            "<time><beats>3</beats><beat-type>4</beat-type></time></attributes>",
+            "<note><pitch><step>G</step><octave>2</octave></pitch>"
+            "<duration>2</duration><type>quarter</type></note>" * 3,
+            _beat_repeat(beats=2),
+        ),
+    ],
+)
+def test_a_beat_repeat_refuses_rather_than_approximates(
+    label: str, header: str, first: str, mark: str
+) -> None:
+    """**Every step refuses rather than guesses**, and the bar stays empty.
+
+    Empty is where it started, and `validate_measures` calls it out — so a
+    refusal costs a musician a caveat they can act on. A bar filled with a
+    guess costs them notes they are told they missed, which is the one failure
+    this reader must not have.
+    """
+    score = score_json_from_musicxml(_part(_bar(1, first, header) + _bar(2, "", mark)))
+
+    assert score.measures[1].notes == [], label
+
+
+def test_a_slash_can_repeat_a_beat_of_a_bar_a_percent_filled() -> None:
+    """The two signs meet: `%` fills bar 2 from bar 1, then `/` in bar 3 takes
+    a beat of bar 2 — which only exists because the `%` ran first.
+
+    The order is deliberate and the alternative is a bar left empty for no
+    reason a musician could see.
+    """
+    score = score_json_from_musicxml(
+        _part(
+            _bar(1, _AN_EIGHTH * 8, _TWO_DIV)
+            + _bar(2, "", _REPEAT_ONE)
+            + _bar(3, "", _REPEAT_STOP + _beat_repeat())
+        )
+    )
+
+    assert [len(m.notes) for m in score.measures] == [8, 8, 8]
+
+
+def test_a_refused_beat_repeat_is_visibly_empty() -> None:
+    """The consolation that survives every refusal above.
+
+    When the fill declines — no printed metre, a pattern that would cut a note
+    in half, a bar that is not a whole number of patterns long — the bar says
+    `empty`, which a musician can see and `MeasureEditScreen` can be opened on.
+    That is the failure this project prefers: a wrong reading nobody can see is
+    the one that gets practised against.
+    """
+    half = (
+        "<note><pitch><step>D</step><octave>3</octave></pitch>"
+        "<duration>4</duration><type>half</type></note>"
+    )
+    score = score_json_from_musicxml(
+        _part(_bar(1, half * 2, _TWO_DIV) + _bar(2, "", _beat_repeat()))
     )
 
     assert [f.verdict for f in validate_measures(score)] == ["ok", "empty"]
