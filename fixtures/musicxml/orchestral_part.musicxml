@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  A bass part shaped like one out of a real folder — synthetic, not a
+  transcription of anybody's page.
+
+  **Why it exists.** `CLAUDE.md` says nothing in this corpus resembles real
+  repertoire, and it is right: the five JPEGs are single cropped lines from
+  exercise books, and `bass_excerpt.musicxml` is six notes of awkward cases.
+  Every importer fix made on 2026-08-26 — multi-bar rests, whole rests in a
+  short metre, the voice that carries the music, a note contradicting its own
+  duration — was tested against a one-shape snippet written for it, and passed.
+  A part is not a snippet: the shapes arrive together, in one document, with a
+  metre that changes and a reader that has to carry state across all of it.
+
+  Every measure here is one this session got wrong at least once, arranged as a
+  player would meet them. Written by hand rather than captured from an engine
+  so that it can be reasoned about, and so that no question arises about whose
+  music it is.
+-->
+<score-partwise version="4.0">
+  <part-list>
+    <score-part id="P1"><part-name>String Bass</part-name></score-part>
+  </part-list>
+  <part id="P1">
+
+    <!-- 1. Ordinary bar, and the only place the metre is stated up front. -->
+    <measure number="1">
+      <attributes>
+        <divisions>12</divisions>
+        <key><fifths>-2</fifths></key>
+        <time><beats>4</beats><beat-type>4</beat-type></time>
+        <clef><sign>F</sign><line>4</line></clef>
+      </attributes>
+      <note><pitch><step>B</step><alter>-1</alter><octave>2</octave></pitch><duration>12</duration><type>quarter</type></note>
+      <note><pitch><step>D</step><octave>3</octave></pitch><duration>12</duration><type>quarter</type></note>
+      <note><pitch><step>F</step><octave>3</octave></pitch><duration>12</duration><type>quarter</type></note>
+      <note><pitch><step>D</step><octave>3</octave></pitch><duration>12</duration><type>quarter</type></note>
+    </measure>
+
+    <!-- 2. A tie across the barline. -->
+    <measure number="2">
+      <note><pitch><step>B</step><alter>-1</alter><octave>2</octave></pitch><duration>24</duration><type>half</type>
+        <tie type="start"/><notations><tied type="start"/></notations></note>
+      <note><pitch><step>B</step><alter>-1</alter><octave>2</octave></pitch><duration>24</duration><type>half</type></note>
+    </measure>
+
+    <!-- 3. Four bars' rest, written as ONE measure and drawn with rest
+         symbols — the shape that defeated the expansion's own guard. -->
+    <measure number="3">
+      <attributes>
+        <measure-style><multiple-rest>4</multiple-rest></measure-style>
+      </attributes>
+      <note><rest/><duration>48</duration><type>whole</type></note>
+      <note><rest/><duration>24</duration><type>half</type></note>
+    </measure>
+
+    <!-- 4. Two voices, the rest written FIRST — the shape that deleted four
+         notes of real music on the one real photograph here. -->
+    <measure number="4">
+      <note><rest/><duration>48</duration><type>whole</type><voice>2</voice></note>
+      <backup><duration>48</duration></backup>
+      <note><pitch><step>D</step><octave>3</octave></pitch><duration>12</duration><type>quarter</type><voice>1</voice></note>
+      <note><pitch><step>E</step><alter>-1</alter><octave>3</octave></pitch><duration>12</duration><type>quarter</type><voice>1</voice></note>
+      <note><pitch><step>F</step><octave>3</octave></pitch><duration>12</duration><type>quarter</type><voice>1</voice></note>
+      <note><pitch><step>G</step><octave>3</octave></pitch><duration>12</duration><type>quarter</type><voice>1</voice></note>
+    </measure>
+
+    <!-- 5. A triplet and a dotted note: type and duration disagree by design,
+         and the contradiction rule must decline both. -->
+    <measure number="5">
+      <note><pitch><step>F</step><octave>3</octave></pitch><duration>4</duration><type>eighth</type>
+        <time-modification><actual-notes>3</actual-notes><normal-notes>2</normal-notes></time-modification></note>
+      <note><pitch><step>E</step><alter>-1</alter><octave>3</octave></pitch><duration>4</duration><type>eighth</type>
+        <time-modification><actual-notes>3</actual-notes><normal-notes>2</normal-notes></time-modification></note>
+      <note><pitch><step>D</step><octave>3</octave></pitch><duration>4</duration><type>eighth</type>
+        <time-modification><actual-notes>3</actual-notes><normal-notes>2</normal-notes></time-modification></note>
+      <note><pitch><step>B</step><alter>-1</alter><octave>2</octave></pitch><duration>18</duration><type>quarter</type><dot/></note>
+      <note><pitch><step>D</step><octave>3</octave></pitch><duration>6</duration><type>eighth</type></note>
+      <note><pitch><step>F</step><octave>3</octave></pitch><duration>12</duration><type>quarter</type></note>
+    </measure>
+
+    <!-- 6. The metre changes mid-part, which is where the real page prints
+         its only time signature. -->
+    <measure number="6">
+      <attributes><time><beats>2</beats><beat-type>4</beat-type></time></attributes>
+      <note><pitch><step>G</step><octave>2</octave></pitch><duration>12</duration><type>quarter</type></note>
+      <note><pitch><step>B</step><alter>-1</alter><octave>2</octave></pitch><duration>12</duration><type>quarter</type></note>
+    </measure>
+
+    <!-- 7. A whole rest alone in a 2/4 bar: one bar of rest, not four beats. -->
+    <measure number="7">
+      <note><rest/><duration>48</duration><type>whole</type></note>
+    </measure>
+
+    <!-- 8. A note that contradicts itself — typed `breve`, eight quarter
+         beats, timed at half of one. -->
+    <measure number="8">
+      <note><rest/><duration>6</duration><type>breve</type></note>
+      <note><pitch><step>D</step><octave>3</octave></pitch><duration>18</duration><type>quarter</type><dot/></note>
+    </measure>
+
+  </part>
+</score-partwise>

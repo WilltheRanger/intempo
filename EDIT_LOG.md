@@ -6,6 +6,78 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-26 — One document holding every shape the reader got wrong today
+
+**Branch:** `main`. Backend tests and a fixture. No screen, component, style or
+copy touched.
+
+**Files:** `fixtures/musicxml/orchestral_part.musicxml` (new),
+`backend/app/tests/test_orchestral_part.py` (new).
+
+### The gap
+
+`CLAUDE.md` says nothing in this corpus resembles real repertoire, and it is
+right: the five JPEGs are single cropped lines from exercise books (see
+`SOURCES.md`, measured yesterday) and `bass_excerpt.musicxml` is six notes of
+awkward cases.
+
+**Every importer fix made today was tested against a one-shape snippet written
+for it, and passed.** A part is not a snippet. The shapes arrive together, in
+one document, with a metre that changes partway and a reader carrying state
+across all of it — and this session has twice found a rule that was right alone
+and wrong beside its neighbour: the multi-rest guard that blocked its own
+expansion, and the voice rule that discarded the music because the rest was
+written first.
+
+### The fixture
+
+A synthetic bass part — hand-authored, so it can be reasoned about and so no
+question arises about whose music it is. Eight written measures holding, in the
+order a player meets them: an ordinary bar, a tie, **four bars' rest written as
+one measure and drawn with rest symbols**, **two voices with the rest written
+first**, a triplet and a dotted note in the same bar, **a metre change to 2/4**,
+**a whole rest alone in a 2/4 bar**, and **a note typed `breve` and timed at
+half a beat**.
+
+It reads as eleven bars, and **every one of them adds up**:
+
+```
+ 1      Bb2 D3 F3 D3 (quarters)
+ 2      Bb2 half (tied) → Bb2 half
+ 3-6    rest whole ×4          ← the multi-rest, expanded
+ 7      D3 Eb3 F3 G3           ← the music, not the rest voice
+ 8      triplet ×3, dotted quarter, eighth, quarter
+ 9 2/4  G2 Bb2                 ← the change, stated once, on its bar
+10      rest half              ← the whole rest, meaning its bar
+11      rest eighth, D3 dotted quarter   ← the breve, read by its timing
+```
+
+The test asserts the **whole** reading rather than spot-checking, because that
+is the point: a test that only looked at the bar it cared about would not
+notice the bar beside it moving.
+
+### It catches all five
+
+Each rule turned off in turn, against this fixture alone:
+
+| rule disabled | result |
+|---|---|
+| whole rest means its bar | 2 failed |
+| multi-rest guard back to `not notes` | 4 failed |
+| first voice wins again | 1 failed |
+| contradiction rule off | 2 failed |
+| multi-rest expansion off | 4 failed |
+
+Five for five, from one document.
+
+Full suite green at 1256, two xfailed.
+
+**Still true and unchanged:** this is a MusicXML file, not a photograph. It
+tests the importer, not the reader, and `CLAUDE.md`'s warning that no *page*
+here resembles real repertoire stands exactly as written.
+
+---
+
 ## 2026-08-26 — Which scans in the live library today's fixes would change
 
 **Branch:** `main`. No code. A measurement against the running database, and
