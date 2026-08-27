@@ -1,6 +1,6 @@
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import { Mic, Square } from 'lucide-react-native';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import {
@@ -34,6 +34,7 @@ import {
 import { TempoStepper } from '../../components/practice/TempoStepper';
 import { impact, ImpactFeedbackStyle } from '../../lib/haptics';
 import { beatsPerBar, useMetronome } from '../../lib/metronome';
+import { shortenLongRests, skippableBars } from '../../lib/notation/longRests';
 import { describeTierLimit } from '../../lib/tierLimit';
 import type { RootNavigation, RootStackParamList } from '../../navigation/types';
 import { BeatIndicator } from './BeatIndicator';
@@ -222,6 +223,10 @@ export function RecordScreen() {
         metronomeMode,
         audio: recording.audio,
         filename: recording.filename,
+        // **Sent, not just applied on the phone.** The metronome counted a
+        // shortened piece, so the analysis has to judge a shortened one — see
+        // `SubmitTakeInput.skipLongRests` for what happens when it does not.
+        skipLongRests: skipRests,
       });
       unsent.current = null;
       setPendingTake(false);
@@ -254,6 +259,24 @@ export function RecordScreen() {
   // score's own time signature, so "one" lands where the musician is counting
   // it rather than every four beats regardless.
   const perBar = beatsPerBar(piece?.score?.time_signature);
+  /**
+   * Practise the notes without sitting through the rests.
+   *
+   * Screen-local and defaulting to off, so a take is judged against the whole
+   * page unless somebody said otherwise on this screen, this time. Locked once
+   * recording starts: the choice changes what the analysis compares against,
+   * and changing it mid-take would mean the first half and the second half
+   * were played against different pieces.
+   */
+  const [skipRests, setSkipRests] = useState(false);
+  const skippable = useMemo(() => skippableBars(piece?.score), [piece?.score]);
+  /** The piece as it will actually be played, heard and judged. */
+  const heard = useMemo(
+    () =>
+      piece?.score && skipRests ? shortenLongRests(piece.score).score : (piece?.score ?? null),
+    [piece?.score, skipRests],
+  );
+
   const metronome = useMetronome({
     mode: metronomeMode,
     bpm: targetBpm,
@@ -400,6 +423,42 @@ export function RecordScreen() {
           )}
 
           {/*
+            Only where there is something to skip — a control that is always
+            there and does nothing on most pieces teaches a musician to stop
+            reading the controls. It names the number of bars, because "skip
+            long rests" is not a question anybody can answer about a page they
+            have not counted.
+
+            Locked with the tempo and the mode once recording starts, and for a
+            stronger reason than either: it changes what the analysis compares
+            the take against, so flipping it mid-take would mean the first half
+            and the second half were played against different pieces.
+          */}
+          {skippable > 0 ? (
+            <Pressable
+              onPress={() => setSkipRests((on) => !on)}
+              disabled={recording}
+              accessibilityRole="switch"
+              aria-checked={skipRests}
+              aria-disabled={recording}
+              accessibilityLabel="Skip long rests"
+              style={({ pressed }) => [
+                styles.metronome,
+                pressed && styles.metronomePressed,
+              ]}
+            >
+              <Text
+                variant="metadataSmall"
+                color={recording ? 'textTertiary' : 'textPrimary'}
+              >
+                {skipRests
+                  ? `Skipping ${skippable} bars of rest`
+                  : `Skip ${skippable} bars of rest`}
+              </Text>
+            </Pressable>
+          ) : null}
+
+          {/*
             A mode that can't produce anything has to say so. Haptics off in
             the profile silences the haptic metronome completely, and a
             metronome you can't perceive is indistinguishable from the bug this
@@ -417,7 +476,12 @@ export function RecordScreen() {
           ) : null}
 
           <ListenButton
-            score={piece.score}
+            // **What you are about to play**, which is the whole point of
+            // listening before a take. With the rests skipped it has to play
+            // them skipped, or the preview rehearses a different piece from
+            // the one the metronome is about to count and the analysis is
+            // about to judge.
+            score={heard}
             bpm={targetBpm}
             // Silenced the moment a take starts: anything through the speaker
             // lands in the microphone as phantom onsets (§4).

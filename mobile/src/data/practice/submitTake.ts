@@ -10,6 +10,16 @@ export interface SubmitTakeInput {
   /** The recording. WAV keeps the transients the onset detector reads. */
   audio: Blob;
   filename: string;
+  /**
+   * The take was played with runs of rest shortened, so the analysis has to
+   * shorten the score the same way before it builds the timeline.
+   *
+   * **Not a display preference.** Measured on an otherwise perfect take,
+   * skipping a rest the timeline still contains takes alignment quality from
+   * 1.000 to 0.000 — `alignment_failed`, "check you're on the right piece" —
+   * and that is as true of a two-bar rest as a twenty-bar one.
+   */
+  skipLongRests?: boolean;
 }
 
 /**
@@ -26,6 +36,7 @@ export async function submitTake({
   metronomeMode,
   audio,
   filename,
+  skipLongRests = false,
 }: SubmitTakeInput): Promise<string> {
   const upload = await requestAudioUpload(filename);
   await uploadToSignedUrl(upload.upload_url, audio, 'audio/wav');
@@ -47,6 +58,7 @@ export async function submitTake({
     // reporting what the app already says about them rather than guessing on
     // their behalf.
     instrument: preferences.current().instrument,
+    skip_long_rests: skipLongRests,
   });
   return analysis_id;
 }

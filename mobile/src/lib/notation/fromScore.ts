@@ -91,7 +91,11 @@ export function staveScoreFor(score: ScoreJson): StaveScore {
       }
       const bars = end - index;
       if (bars >= MULTI_REST_MIN_BARS) {
-        items.push({ bars, barBefore: index > 0 });
+        items.push({
+          bars,
+          barBefore: index > 0,
+          measureNumber: score.measures[index].measure_number,
+        });
         index = end;
         continue;
       }
@@ -111,7 +115,11 @@ export function staveScoreFor(score: ScoreJson): StaveScore {
           rests += 1;
           continue;
         }
-        items.push(opensMeasure ? { rest: value, barBefore: true } : { rest: value });
+        items.push({
+          rest: value,
+          measureNumber: measure.measure_number,
+          ...(opensMeasure ? { barBefore: true } : {}),
+        });
         opensMeasure = false;
         continue;
       }
@@ -119,9 +127,12 @@ export function staveScoreFor(score: ScoreJson): StaveScore {
         undrawable += 1;
         continue;
       }
-      items.push(
-        opensMeasure ? { pitch: note.pitch, value, barBefore: true } : { pitch: note.pitch, value },
-      );
+      items.push({
+        pitch: note.pitch,
+        value,
+        measureNumber: measure.measure_number,
+        ...(opensMeasure ? { barBefore: true } : {}),
+      });
       noteCount += 1;
       opensMeasure = false;
     }

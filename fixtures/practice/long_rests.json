@@ -1,0 +1,79 @@
+{
+  "_comment": [
+    "Shortening a long stretch of rest for practice, and the contract both",
+    "implementations must keep.",
+    "",
+    "**Why a fixture rather than a shared function.** The app has to shorten",
+    "the score to play it and to count it (`lib/notation/longRests.ts`), and",
+    "the backend has to shorten it the same way before `build_timeline`, or",
+    "the analysis expects silence the musician was told to skip. Measured on a",
+    "perfectly played take: skipping a rest the timeline still contains takes",
+    "quality from 1.000 to 0.000 — `alignment_failed`, 'check you're on the",
+    "right piece' — and that is true for a two-bar rest as much as a twenty.",
+    "Different languages, no way to share code, so this file is the contract.",
+    "",
+    "The rule: a run of consecutive bars that hold nothing but rests, at least",
+    "`min_bars` long, becomes the first `kept_bars` of them. The first, so the",
+    "bar keeps its number and any metre change printed on it; and a bar rather",
+    "than nothing, so there is a downbeat to come in on and the metronome has",
+    "something to count."
+  ],
+  "min_bars": 4,
+  "kept_bars": 1,
+  "cases": [
+    {
+      "name": "a run at the threshold is shortened",
+      "in": [["quarter"], ["rest"], ["rest"], ["rest"], ["rest"], ["quarter"]],
+      "out": [["quarter"], ["rest"], ["quarter"]],
+      "skipped_bars": 3
+    },
+    {
+      "name": "a run under the threshold is left alone",
+      "in": [["quarter"], ["rest"], ["rest"], ["rest"], ["quarter"]],
+      "out": [["quarter"], ["rest"], ["rest"], ["rest"], ["quarter"]],
+      "skipped_bars": 0
+    },
+    {
+      "name": "a long run is shortened to the same one bar however long it was",
+      "in": [["quarter"], ["rest"], ["rest"], ["rest"], ["rest"], ["rest"], ["rest"], ["rest"], ["rest"], ["quarter"]],
+      "out": [["quarter"], ["rest"], ["quarter"]],
+      "skipped_bars": 7
+    },
+    {
+      "name": "two runs are shortened independently",
+      "in": [["quarter"], ["rest"], ["rest"], ["rest"], ["rest"], ["quarter"], ["rest"], ["rest"], ["rest"], ["rest"], ["quarter"]],
+      "out": [["quarter"], ["rest"], ["quarter"], ["rest"], ["quarter"]],
+      "skipped_bars": 6
+    },
+    {
+      "name": "a bar holding a note as well as rests is not silence",
+      "in": [["rest"], ["rest"], ["rest", "quarter"], ["rest"], ["rest"], ["rest"], ["rest"], ["quarter"]],
+      "out": [["rest"], ["rest"], ["rest", "quarter"], ["rest"], ["quarter"]],
+      "skipped_bars": 3
+    },
+    {
+      "name": "a run that opens the page is shortened too",
+      "in": [["rest"], ["rest"], ["rest"], ["rest"], ["rest"], ["quarter"]],
+      "out": [["rest"], ["quarter"]],
+      "skipped_bars": 4
+    },
+    {
+      "name": "a run that ends the page is shortened too",
+      "in": [["quarter"], ["rest"], ["rest"], ["rest"], ["rest"]],
+      "out": [["quarter"], ["rest"]],
+      "skipped_bars": 3
+    },
+    {
+      "name": "a bar with no notes at all is not a bar of rest",
+      "in": [["quarter"], ["rest"], ["rest"], [], ["rest"], ["rest"], ["quarter"]],
+      "out": [["quarter"], ["rest"], ["rest"], [], ["rest"], ["rest"], ["quarter"]],
+      "skipped_bars": 0
+    },
+    {
+      "name": "a page with nothing to skip comes back unchanged",
+      "in": [["quarter"], ["quarter"], ["quarter"]],
+      "out": [["quarter"], ["quarter"], ["quarter"]],
+      "skipped_bars": 0
+    }
+  ]
+}

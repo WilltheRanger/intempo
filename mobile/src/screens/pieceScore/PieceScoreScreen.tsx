@@ -36,6 +36,8 @@ import {
   describeUndrawnScore,
   staveScoreFor,
 } from '../../lib/notation/fromScore';
+import { shortenLongRests, skippableBars } from '../../lib/notation/longRests';
+import { scheduleScore } from '../../lib/score';
 import {
   describeConfidence,
   describeProblemMeasures,
@@ -143,10 +145,55 @@ export function PieceScoreScreen() {
   // The engraver needs a pixel width to wrap against, and only layout knows it.
   const [width, setWidth] = useState<number | null>(null);
 
-  const stave = useMemo(
-    () => (piece?.score ? staveScoreFor(piece.score) : null),
-    [piece?.score],
+  /**
+   * Whether the long rests are skipped, for listening and for the stave.
+   *
+   * Screen-local rather than remembered per piece. It is a way of *inspecting*
+   * a reading — hearing whether OCR got a passage right — and the honest
+   * default for that is the whole page. The record screen has its own,
+   * separate, because there it changes what is analysed.
+   */
+  const [skipRests, setSkipRests] = useState(false);
+  const skippable = useMemo(() => skippableBars(piece?.score), [piece?.score]);
+  const heard = useMemo(() => {
+    if (!piece?.score) {
+      return null;
+    }
+    return skipRests ? shortenLongRests(piece.score).score : piece.score;
+  }, [piece?.score, skipRests]);
+
+  const stave = useMemo(() => (heard ? staveScoreFor(heard) : null), [heard]);
+
+  /**
+   * Which bar the playback is in, or null when nothing is sounding.
+   *
+   * Built from the same schedule the player is running, so the stave and the
+   * speaker cannot disagree about where they are. Rebuilding it rather than
+   * threading it out of `ListenButton` keeps the button's job to one thing —
+   * and it is the same pure function with the same inputs, so it is the same
+   * schedule.
+   */
+  const [elapsedS, setElapsedS] = useState<number | null>(null);
+  const playback = useMemo(
+    () => (heard ? scheduleScore(heard, piece?.markedBpm ?? FALLBACK_LISTEN_BPM) : null),
+    [heard, piece?.markedBpm],
   );
+  const soundingMeasure = useMemo(() => {
+    if (elapsedS === null || !playback) {
+      return null;
+    }
+    // The last note that has started. A note still sounding is where the ear
+    // is, so the bar stays lit through the note rather than blinking off in
+    // the gap `articulation` leaves before the next one.
+    let current: number | null = null;
+    for (const note of playback.notes) {
+      if (note.startS > elapsedS) {
+        break;
+      }
+      current = note.measureNumber;
+    }
+    return current;
+  }, [elapsedS, playback]);
 
   const reading = useMemo(
     () => (piece?.score ? readingNotesFor(piece.score, piece.concerns) : null),
@@ -349,6 +396,7 @@ export function PieceScoreScreen() {
           {width === null ? null : (
             <Stave
               notes={stave.items}
+              highlightMeasure={soundingMeasure}
               clef={piece.score?.clef ?? UNREAD_CLEF_PLACEMENT}
               maxWidth={width}
               scale={STAVE_SCALE}
@@ -372,9 +420,47 @@ export function PieceScoreScreen() {
           */}
           <View style={styles.listen}>
             <ListenButton
-              score={piece.score}
+              score={heard}
               bpm={piece.markedBpm ?? FALLBACK_LISTEN_BPM}
+              onProgress={(elapsed, total) =>
+                setElapsedS(total > 0 ? elapsed : null)
+              }
             />
+            {/*
+              Only where there is something to skip. A control that is always
+              there and does nothing on most pieces teaches a musician to stop
+              reading the controls — and it says how many bars, because "skip
+              long rests" on a page you have not read yet is not a question
+              anybody can answer.
+            */}
+            {skippable > 0 ? (
+              <Pressable
+                accessibilityRole="switch"
+                // The ARIA props, not `accessibilityState`: react-native-web
+                // drops `checked` entirely, so the web build would announce a
+                // switch with no on or off. Same reasoning as the metronome
+                // toggle on the record screen.
+                aria-checked={skipRests}
+                accessibilityLabel="Skip long rests"
+                onPress={() => setSkipRests((on) => !on)}
+                style={styles.skipToggle}
+              >
+                {/*
+                  Not gold when on. At 13px the accent is 3.54:1, under the
+                  4.5:1 floor — the record screen learned this and `audit-a11y`
+                  holds the line. The words carry the state; the weight of the
+                  colour says whether the line does anything.
+                */}
+                <Text
+                  variant="metadataSmall"
+                  color={skipRests ? 'textPrimary' : 'textTertiary'}
+                >
+                  {skipRests
+                    ? `Skipping ${skippable} bars of rest`
+                    : `Skip ${skippable} bars of rest`}
+                </Text>
+              </Pressable>
+            ) : null}
           </View>
 
           {/*
@@ -773,6 +859,11 @@ const styles = StyleSheet.create({
   listen: {
     marginTop: spacing.xl,
     alignSelf: 'flex-start',
+  },
+  skipToggle: {
+    marginTop: spacing.sm,
+    minHeight: MIN_TOUCH_TARGET,
+    justifyContent: 'center',
   },
   accept: {
     marginTop: spacing['3xl'],

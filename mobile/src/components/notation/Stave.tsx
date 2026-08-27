@@ -50,6 +50,17 @@ export interface StaveProps {
    * notehead is a different pitch in alto clef. See `engrave.ts`.
    */
   showNoteNames?: boolean;
+  /**
+   * Wash the bar that is sounding, for following a playback.
+   *
+   * A **bar**, not a note. On a phone-sized stave a note-level cursor is a
+   * few pixels wide and the eye loses it; the bar is the unit a musician is
+   * reading in anyway, and it stays legible from the distance a stand is at.
+   * It is also robust to what the engraver cannot draw — a bar whose notes are
+   * all sixteenths still highlights, where a note cursor would have nothing to
+   * sit on.
+   */
+  highlightMeasure?: number | null;
 }
 
 const LINE_GAP = 9;
@@ -97,6 +108,7 @@ export function Stave({
   scale = 1,
   justify = false,
   showNoteNames = true,
+  highlightMeasure = null,
 }: StaveProps) {
   const dark = tone === 'dark';
   const ink = dark ? colors.actionText : colors.textPrimary;
@@ -135,6 +147,31 @@ export function Stave({
     >
       {layout.systems.map((system, s) => (
         <G key={`system-${s}`}>
+          {/* Behind everything, so the notes stay the darkest thing on the
+              staff. A wash rather than an outline: an outlined bar reads as
+              something selected and waiting to be acted on, and this is a
+              position, not a selection. */}
+          {highlightMeasure !== null
+            ? system.measureSpans
+                .filter((span) => span.measureNumber === highlightMeasure)
+                .map((span, index) => (
+                  <Rect
+                    key={`playhead-${index}`}
+                    x={span.from}
+                    y={system.staffLines[0] - lineGap}
+                    width={span.to - span.from}
+                    height={lineGap * 6}
+                    // **The accent, at a tint.** §3 law 5: ochre marks active
+                    // states and progress — which is exactly what a playhead
+                    // is — and must never become a surface. Low opacity is how
+                    // it can be both: a wash the eye reads as "here", not a
+                    // gold panel competing with the notes.
+                    fill={dark ? colors.actionText : colors.accent}
+                    opacity={dark ? 0.16 : 0.14}
+                  />
+                ))
+            : null}
+
           {system.staffLines.map((y, index) => (
             <Line
               key={`staff-${index}`}

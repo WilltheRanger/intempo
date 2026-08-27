@@ -447,3 +447,74 @@ def test_an_unknown_instrument_is_refused_rather_than_ignored(
         },
     )
     assert res.status_code == 422
+
+
+# --------------------------------------------------------------------------
+# Skipping the long rests
+#
+# The flag has to reach the worker: skipping a rest the timeline still contains
+# takes an otherwise perfect take from quality 1.000 to 0.000. See
+# `test_long_rest_parity.py` for that measurement and migration 012 for why the
+# key is written only when it is true.
+# --------------------------------------------------------------------------
+
+
+def _post_take(client, token: str, user_id: UUID, score_id, **extra) -> Any:
+    return client.post(
+        "/v1/analyses",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "score_id": str(score_id),
+            "audio_url": _audio_url(user_id),
+            "target_bpm": 96,
+            "bpm_source": "manual",
+            **extra,
+        },
+    )
+
+
+def test_a_take_that_skipped_the_rests_says_so_on_the_row(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    user_id = uuid4()
+    score_id = uuid4()
+    fake = FakeSupabase()
+    fake.seed("scores", [{"id": str(score_id), "user_id": str(user_id), "score_json": GOOD_SCORE_JSON}])
+    _install(monkeypatch, fake)
+    monkeypatch.setattr(analysis_runner, "run_analysis", lambda _id: None)
+
+    res = _post_take(
+        client, make_token(sub=user_id), user_id, score_id, skip_long_rests=True
+    )
+
+    assert res.status_code == 202, res.text
+    assert fake.table("analyses").rows[0]["skip_long_rests"] is True
+
+
+def test_a_take_that_did_not_skip_writes_no_key_at_all(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """**So a deployment without migration 012 is untouched until it matters.**
+
+    Writing `false` on every take would break every insert on a table that
+    predates the column — for a fact that is only ever interesting when true.
+    """
+    user_id = uuid4()
+    score_id = uuid4()
+    fake = FakeSupabase()
+    fake.seed("scores", [{"id": str(score_id), "user_id": str(user_id), "score_json": GOOD_SCORE_JSON}])
+    _install(monkeypatch, fake)
+    monkeypatch.setattr(analysis_runner, "run_analysis", lambda _id: None)
+
+    assert (
+        _post_take(client, make_token(sub=user_id), user_id, score_id).status_code == 202
+    )
+    assert "skip_long_rests" not in fake.table("analyses").rows[0]
+
+    assert (
+        _post_take(
+            client, make_token(sub=user_id), user_id, score_id, skip_long_rests=False
+        ).status_code
+        == 202
+    )
+    assert "skip_long_rests" not in fake.table("analyses").rows[1]

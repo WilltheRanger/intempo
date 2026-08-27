@@ -24,6 +24,7 @@ from app.db import get_service_client
 from app.models.analysis import Instrument
 from app.services import audio as audio_svc
 from app.services.analysis import analyze
+from app.services.long_rests import shorten_long_rests
 from app.services.score_schema import ScoreJson
 
 log = logging.getLogger("intempo.analysis")
@@ -130,6 +131,17 @@ def run_analysis(analysis_id: str) -> None:
     try:
         audio_bytes = download_audio(row["audio_url"])
         score = _load_score(client, row["score_id"], row["user_id"])
+        # **The take was played against a shortened score, so judge it against
+        # one.** Skipping a long rest the timeline still contains takes an
+        # otherwise perfect take from quality 1.000 to 0.000 —
+        # `alignment_failed`, "check you're on the right piece" — and that holds
+        # for a two-bar rest as much as a twenty-bar one.
+        #
+        # The same transformation the app applied to play and count it. The rule
+        # lives in `fixtures/practice/long_rests.json` because there is no way to
+        # share the walk between the two languages; see `services/long_rests.py`.
+        if row.get("skip_long_rests"):
+            score = shorten_long_rests(score).score
         y, sr = audio_svc.load_audio_bytes(audio_bytes)
         # The one caller that has ever set this. `analyze()` has taken a
         # `double_bass` flag since Batch 3 — a high-pass filter and a lower

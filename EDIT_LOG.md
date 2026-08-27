@@ -6,6 +6,135 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-27 — Skipping the long rests, and following the playback
+
+**Branch:** `main`. App and backend. **UI work**, asked for by the owner —
+"give an option for someone to skip those long bar rests… have it track where
+the listen is reading… for the actual practice feature with the metronome give
+an option to skip those long bar rests".
+
+**Files:** `fixtures/practice/long_rests.json` (new),
+`backend/app/services/long_rests.py` (new),
+`backend/app/migrations/012_analysis_skip_long_rests.sql` (new),
+`backend/app/routers/analyses.py`, `backend/app/workers/analysis_runner.py`,
+`backend/app/services/readiness.py`,
+`mobile/src/lib/notation/longRests.ts` (new),
+`mobile/src/lib/notation/engrave.ts`, `mobile/src/lib/notation/fromScore.ts`,
+`mobile/src/components/notation/Stave.tsx`,
+`mobile/src/screens/pieceScore/PieceScoreScreen.tsx`,
+`mobile/src/screens/record/RecordScreen.tsx`,
+`mobile/src/data/practice/submitTake.ts`, `mobile/src/data/api/analyses.ts`,
+and four test files (three new).
+
+### The trap, found before anything was built
+
+Skipping a rest looks like a playback convenience. It is not. Measured on a
+take played exactly on the grid with the rest skipped:
+
+| bars of rest | waited through | skipped |
+|---|---|---|
+| 2 | quality **1.000** | **0.000** |
+| 4 | 1.000 | **0.000** |
+| 12 | 1.000 | **0.000** |
+| 20 | 1.000 | **0.000** |
+
+Every note still matched. The shape cannot be explained by a steady grid, so
+the verdict is `alignment_failed` — *"check you're on the right piece"* — on a
+take that was played correctly. **The two-bar row is the important one:** this
+is not about how long the rest is, so "only skip the long ones and hope" was
+never available.
+
+So the choice travels with the take. `DECISIONS.md` carries the call and the
+four alternatives; the short version is that the row records the musician's
+decision and the worker shortens the score the same way before building the
+timeline.
+
+### One rule, two languages, one contract
+
+`fixtures/practice/long_rests.json` holds the threshold, what survives, and
+nine cases. `backend/app/tests/test_long_rest_parity.py` and
+`mobile/src/lib/notation/longRests.parity.test.ts` both run against it — the
+same arrangement as `fixtures/timeline`, and for the same reason: two walks
+over a score with no way to share code, and a drift that looks like nothing
+from either side. The app shortens the score to play and count it; the backend
+shortens it to judge the recording; a musician who came in exactly where the
+app counted them in would be told they were bars early.
+
+Four bars is the floor and one bar survives — the **first** of the run, so it
+keeps its number and any metre change printed on it, and so there is a downbeat
+to come in on and something for the metronome to count. Bars after a skip keep
+the numbers off the page; the gap is the truth about what was played.
+
+### Following the playback
+
+`ListenButton` already reported progress and every scheduled note already knew
+its bar, so what was missing was the other end: the engraver now reports where
+each bar sits on each system, and the stave washes the one that is sounding.
+
+**A bar, not a note.** On a phone-sized stave a note cursor is a few pixels and
+the eye loses it; the bar is the unit being read anyway, it stays legible at
+stand distance, and it is robust to what the engraver cannot draw — a bar of
+sixteenths still highlights where a note cursor would have nothing to sit on.
+
+The wash is the accent at **0.14 opacity**. §3 law 5 says ochre marks active
+states and progress — which is what a playhead is — and must never become a
+surface. A tint is how it can be both.
+
+### Three-foot test
+
+Before: ① notes ② the sounding bar ③ the long-rest block and the rests. On the
+render: the same order. The band reads as "here" without competing — it sits
+behind everything and covers the stems, so it is a column of attention rather
+than a highlighted object.
+
+### Two rules the record screen had already learned, which I was about to break
+
+Both are written in comments beside the metronome toggle and both applied to my
+new toggles:
+
+- **`aria-checked`, not `accessibilityState`.** react-native-web drops
+  `checked`, so the web build announces a switch with no on or off. I had
+  written `accessibilityState` on the score screen.
+- **No gold text at 13px.** The accent is 3.54:1, under the 4.5:1 floor. I had
+  coloured the "on" state with it. The words carry the state; the colour's
+  weight says whether the line does anything.
+
+### What the toggle is and is not
+
+The metronome does not read the score — it clicks a tempo — so "skip" is the
+musician's choice and the app's job is to *know*. What the toggle changes: what
+Listen plays (on both screens), what the stave shows, and what the analysis
+compares against. It is locked once recording starts, for a stronger reason
+than the tempo lock: flipping it mid-take would mean the two halves were played
+against different pieces.
+
+Offered only where there is something to skip, and it names the number of bars
+— "skip long rests" is not a question anyone can answer about a page they have
+not counted.
+
+**Tests:** backend **1637 passed, 3 xfailed** (28 new); app **427 passed** in
+35 files (13 new), typecheck clean.
+
+**A guard I did not know about caught me.**
+`test_every_column_migration_has_a_readiness_check` failed on migration 012 —
+every column migration owes `/v1/ready` a row, and the test reads the migrations
+directory rather than trusting a comment. Added.
+
+**Known limits.** The toggle is screen-local, so it resets each visit; the
+per-piece tempo store exists and this does not use it, which is a choice about
+machinery rather than a considered one. The feature is **inert until migration
+012 is applied**, like `011` — the API writes the key only when true, so an
+ordinary take is unaffected and a skipped one fails loudly at submit rather
+than being judged against silence nobody played.
+
+**Rollback:** `git revert` this commit. Migration 012 is additive with a
+default, so a database that has run it is unaffected by the revert.
+
+**Still waiting on the owner** — migration `011` **and now `012`**, and
+permission to re-read the nine failed scans.
+
+---
+
 ## 2026-08-27 — Silence was being deleted from the picture
 
 **Branch:** `main`. App only — the engraver, the score adapter, the stave
