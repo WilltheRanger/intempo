@@ -2173,3 +2173,222 @@ def test_a_bar_numbered_zero_in_the_middle_is_not_a_second_upbeat() -> None:
     )
 
     assert [m.measure_number for m in score.measures] == [1, 2, 3, 4]
+
+
+# ---------------------------------------------------------------------------
+# The `%` sign: a bar that means "the last one again"
+# ---------------------------------------------------------------------------
+
+_REPEAT_ONE = (
+    '<attributes><measure-style><measure-repeat type="start">1'
+    "</measure-repeat></measure-style></attributes>"
+)
+_REPEAT_TWO = (
+    '<attributes><measure-style><measure-repeat type="start">2'
+    "</measure-repeat></measure-style></attributes>"
+)
+_REPEAT_STOP = (
+    '<attributes><measure-style><measure-repeat type="stop"/></measure-style>'
+    "</attributes>"
+)
+_AN_EIGHTH = (
+    "<note><pitch><step>D</step><octave>3</octave></pitch>"
+    "<duration>1</duration><type>eighth</type></note>"
+)
+_TWO_DIV = (
+    "<attributes><divisions>2</divisions>"
+    "<time><beats>4</beats><beat-type>4</beat-type></time></attributes>"
+)
+_A_G = (
+    "<note><pitch><step>G</step><octave>2</octave></pitch>"
+    "<duration>2</duration><type>quarter</type></note>"
+)
+
+
+def test_a_bar_repeat_sign_is_the_bar_it_stands_for() -> None:
+    """**On nearly every tutti page a bass player owns.**
+
+    After a bar of music a part writes `%` rather than engraving the same bar
+    again. Read literally the bar has no notes in it.
+
+    Measured before this: one `%` between two bars gave a timeline of **16
+    onsets where a musician sounds 24**, and because an empty bar carries no
+    duration either, `alignment.py` — which accumulates — expected every note
+    after it a **whole bar early**. The same damage a dropped multi-bar rest
+    does, from the same cause: a notation meaning "more music", written as an
+    absence.
+
+    Unlike the multi-rest this was never silent — `validate_measures` said
+    `empty`. It was wrong, and the concern named the wrong thing: the bar is
+    not a hole in the reading, it is one the reader could not fill.
+    """
+    from app.services import alignment
+
+    score = score_json_from_musicxml(
+        _part(
+            _bar(1, _AN_EIGHTH * 8, _TWO_DIV)
+            + _bar(2, "", _REPEAT_ONE)
+            + _bar(3, _A_G * 4, _REPEAT_STOP)
+        )
+    )
+
+    assert [len(m.notes) for m in score.measures] == [8, 8, 4]
+    assert [n.pitch for n in score.measures[1].notes] == ["D3"] * 8
+    assert [f.verdict for f in validate_measures(score)] == ["ok", "ok", "ok"]
+    assert len(alignment.build_timeline(score, 60.0).onsets) == 20
+
+
+def test_the_run_continues_until_something_stops_it() -> None:
+    """One symbol and three blanks is how a page writes four bars of the same
+    figure. The sign appears once; the bars that continue the run carry
+    nothing at all."""
+    score = score_json_from_musicxml(
+        _part(
+            _bar(1, _AN_EIGHTH * 8, _TWO_DIV)
+            + _bar(2, "", _REPEAT_ONE)
+            + _bar(3, "")
+            + _bar(4, "")
+            + _bar(5, _A_G * 4, _REPEAT_STOP)
+        )
+    )
+
+    assert [len(m.notes) for m in score.measures] == [8, 8, 8, 8, 4]
+
+
+def test_a_two_bar_pattern_takes_from_two_bars_back() -> None:
+    """And the copy is taken from what has already been produced, not from the
+    file — so a `%` inside the run repeats what the one before it made.
+
+    Bar 3 takes bar 1, bar 4 takes bar 2. Copying from the input would give
+    bar 4 an empty bar 2 in a longer run.
+    """
+    score = score_json_from_musicxml(
+        _part(
+            _bar(1, _AN_EIGHTH * 8, _TWO_DIV)
+            + _bar(2, _A_G * 4)
+            + _bar(3, "", _REPEAT_TWO)
+            + _bar(4, "")
+            + _bar(5, _A_G * 4, _REPEAT_STOP)
+        )
+    )
+
+    assert [len(m.notes) for m in score.measures] == [8, 4, 8, 4, 4]
+    assert [n.pitch for n in score.measures[2].notes] == ["D3"] * 8
+    assert [n.pitch for n in score.measures[3].notes] == ["G2"] * 4
+
+
+def test_a_bar_the_engine_also_read_is_not_overwritten() -> None:
+    """The rule the multi-rest expansion had to learn, applied here first.
+
+    A marking is not licence to overwrite a reading: if notes are there, they
+    are what was seen on the page. Copying nothing is visibly wrong; copying
+    over something is invisibly wrong.
+    """
+    score = score_json_from_musicxml(
+        _part(
+            _bar(1, _AN_EIGHTH * 8, _TWO_DIV)
+            + _bar(2, _A_G * 4, _REPEAT_ONE)
+            + _bar(3, _A_G * 4, _REPEAT_STOP)
+        )
+    )
+
+    assert [n.pitch for n in score.measures[1].notes] == ["G2"] * 4
+
+
+def test_a_bar_repeat_with_nothing_before_it_stays_empty() -> None:
+    """A `%` in the opening bars repeats something printed earlier — on a
+    previous page, or before a crop. There is nothing to copy and nothing to
+    invent, so it stays visibly empty rather than quietly wrong."""
+    score = score_json_from_musicxml(
+        _part(_bar(1, "", _TWO_DIV + _REPEAT_ONE) + _bar(2, _A_G * 4, _REPEAT_STOP))
+    )
+
+    assert [len(m.notes) for m in score.measures] == [0, 4]
+    assert "empty" in [f.verdict for f in validate_measures(score)]
+
+
+def test_the_stop_sign_ends_the_run() -> None:
+    """**Found by a mutation that survived.** Every earlier test puts notes in
+    the bar carrying `stop`, so the run would have stopped filling there
+    anyway and the `stop` itself was never doing any work.
+
+    What it is for is the bar *after*: one the reader genuinely failed on, or
+    one a page break left empty. Filling that with a copy of music printed
+    before the stop turns a hole the musician can see into notes they are told
+    they missed.
+    """
+    score = score_json_from_musicxml(
+        _part(
+            _bar(1, _AN_EIGHTH * 8, _TWO_DIV)
+            + _bar(2, "", _REPEAT_ONE)
+            + _bar(3, _A_G * 4, _REPEAT_STOP)
+            + _bar(4, "")
+        )
+    )
+
+    assert [len(m.notes) for m in score.measures] == [8, 8, 4, 0]
+    assert [f.verdict for f in validate_measures(score)][3] == "empty"
+
+
+def test_a_filled_bar_votes_on_a_metre_nobody_printed() -> None:
+    """**The other survivor**, and the reason the fill runs before the lengths
+    are taken.
+
+    A photographed inner page often has no legible `<time>` at all, so the
+    metre is inferred from the bars that agree — and `MIN_MEASURES_TO_INFER`
+    is three. A page of four bars where two of them are `%` has only **two**
+    bars holding notes, so nothing can be inferred, the beat check switches
+    off, and every bar comes back `unverifiable`.
+
+    Filled first, all four agree at four beats and the page is checked.
+    """
+    no_metre = "<attributes><divisions>2</divisions></attributes>"
+    score = score_json_from_musicxml(
+        _part(
+            _bar(1, _AN_EIGHTH * 8, no_metre)
+            + _bar(2, "", _REPEAT_ONE)
+            + _bar(3, "")
+            + _bar(4, _A_G * 4, _REPEAT_STOP)
+        )
+    )
+
+    assert score.time_signature is None
+    assert [f.verdict for f in validate_measures(score)] == ["ok"] * 4
+
+
+def test_a_multi_bar_rest_beside_a_percent_sign_survives_both() -> None:
+    """**Two rules, each right alone, meeting on one page.**
+
+    A page with no legible `<time>` — the ordinary state of a photographed
+    inner page — carrying a `%` run and then a three-bar rest. The metre has to
+    be inferred before the rest can be sized, and the `%` bars are empty until
+    they are filled, so with the fill running *after* the lengths are taken:
+
+        4 bars, all of them eighths
+
+    The three bars of rest **vanish**, and the bar that held them is filled
+    with a copy of the repeated music instead — silence turned into notes the
+    musician is told they missed. Filled first, the metre is inferred from four
+    agreeing bars and the page reads six.
+
+    The fill also declines to touch a bar that stands for a multi-bar rest.
+    That was not needed while `_expand_multiple_rests` ran afterwards and
+    overwrote it — but working by the order two functions happen to be called
+    in is not the same as working.
+    """
+    no_metre = "<attributes><divisions>2</divisions></attributes>"
+    multi_rest = (
+        "<attributes><measure-style><multiple-rest>3</multiple-rest>"
+        "</measure-style></attributes>"
+    )
+    score = score_json_from_musicxml(
+        _part(
+            _bar(1, _AN_EIGHTH * 8, no_metre)
+            + _bar(2, "", _REPEAT_ONE)
+            + _bar(3, "")
+            + _bar(4, "", multi_rest)
+        )
+    )
+
+    assert [len(m.notes) for m in score.measures] == [8, 8, 8, 1, 1, 1]
+    assert [n.pitch for m in score.measures[3:] for n in m.notes] == ["rest"] * 3
