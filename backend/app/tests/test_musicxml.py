@@ -2725,3 +2725,90 @@ def test_a_second_ending_left_open_is_still_a_second_ending() -> None:
         "repeat",
         "second_ending",
     ]
+
+
+def test_the_first_fine_governs_not_the_last() -> None:
+    """**Found by a mutation sweep, and it was an inconsistency with my own
+    rule.**
+
+    `_navigation_in` takes the *first* segno and the *first* D.C.; it took the
+    **last** Fine and the last To Coda. And the rule written for choosing
+    between the two kinds — `min(fine, coda_from)` — is precisely "whichever
+    the player reaches first governs". It was not applied within one kind.
+
+    A page carries one Fine. Two is a misreading, and taking the later one
+    silently extends the piece: measured on three bars with a Fine on the first
+    and a spurious one on the second, a player reading it stops at bar 1 and
+    plays **1, 2, 3, 1**, where this gave **1, 2, 3, 1, 2**.
+
+    A correctly engraved file is unaffected, which is the point — this only
+    shows on the misreadings the reader exists to survive.
+    """
+    from app.services import alignment
+
+    fine = (
+        "<direction><direction-type><words>Fine</words></direction-type>"
+        '<sound fine="yes"/></direction>'
+    )
+    score = score_json_from_musicxml(
+        _part(
+            _bar(1, _A_QUARTER * 4 + fine, _FOUR_FOUR)
+            + _bar(2, _A_QUARTER * 4 + fine)
+            + _bar(3, _A_QUARTER * 4 + _DC)
+        )
+    )
+
+    assert [m.measure_number for m in alignment.expand_repeats(score)] == [1, 2, 3, 1]
+
+
+def test_the_first_segno_governs_too() -> None:
+    """The half that was already right, pinned beside the half that was not."""
+    from app.services import alignment
+
+    segno = (
+        "<direction><direction-type><segno/></direction-type>"
+        '<sound segno="s"/></direction>'
+    )
+    ds = (
+        "<direction><direction-type><words>D.S.</words></direction-type>"
+        '<sound dalsegno="s"/></direction>'
+    )
+    score = score_json_from_musicxml(
+        _part(
+            _bar(1, segno + _A_QUARTER * 4, _FOUR_FOUR)
+            + _bar(2, segno + _A_QUARTER * 4)
+            + _bar(3, _A_QUARTER * 4 + ds)
+        )
+    )
+
+    assert [(r.start_measure, r.end_measure) for r in score.repeats] == [(1, 3)]
+    assert [m.measure_number for m in alignment.expand_repeats(score)] == [
+        1, 2, 3, 1, 2, 3
+    ]
+
+
+def test_the_first_da_capo_governs_as_well() -> None:
+    """The third of the same rule, and the last one the sweep found unguarded.
+
+    A page carries one D.C. Two is a misreading, and the first is where a
+    player is actually sent back from — so the section that repeats is the
+    shorter one. Taking the later mark would repeat everything up to it:
+    **1, 2, 3, 1, 2, 3** where the truth is **1, 2, 1, 2, 3**.
+    """
+    from app.services import alignment
+
+    plain = (
+        "<direction><direction-type><words>D.C.</words></direction-type>"
+        '<sound dacapo="yes"/></direction>'
+    )
+    score = score_json_from_musicxml(
+        _part(
+            _bar(1, _A_QUARTER * 4, _FOUR_FOUR)
+            + _bar(2, _A_QUARTER * 4 + plain)
+            + _bar(3, _A_QUARTER * 4 + plain)
+        )
+    )
+
+    assert [m.measure_number for m in alignment.expand_repeats(score)] == [
+        1, 2, 1, 2, 3
+    ]

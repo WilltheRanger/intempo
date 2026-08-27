@@ -6,6 +6,80 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-27 — Five dead guards from my own rewrite, and one real asymmetry
+
+**Branch:** `main`. Backend and tests. No screen, component, style or copy
+touched.
+
+**Files:** `backend/app/services/alignment.py`,
+`backend/app/services/ocr/musicxml.py`,
+`backend/app/tests/test_alignment.py`,
+`backend/app/tests/test_musicxml.py`.
+
+Same sweep as yesterday, turned on the rest of this session's own code. Eleven
+mutants across `expand_repeats`, `join_pages` and the navigation reader. Eight
+survived, in two clusters.
+
+### Cluster one: guards my rewrite left behind
+
+`expand_repeats` filtered its spans four ways — the start and the end must be
+real bars, the span must not run backwards, and an empty span list returned
+early — plus a fifth fallback if the played order came out empty. All five were
+written for the **iterative** version that the recursion replaced in tick 34,
+and all five have been dead since.
+
+`play` selects a span only when its end appears in the bars **after** its
+start, so a span naming a bar that is not there, or running backwards, is never
+chosen. With no spans at all `play` walks the numbers and returns every one.
+And the played order cannot come back empty, because a span's **first** bar
+survives both passes: an ending is only applied to a span starting strictly
+before it, so a bracket on the opening bar is not that span's ending and
+filters nothing.
+
+Removed, with the argument in their place. The promise they were there to keep
+— *"a repeat naming measures that do not exist is ignored rather than fatal;
+losing the whole take to a mis-read repeat sign would be the wrong trade"* —
+was never tested, and now is. That is the trade: the guard goes, the promise
+stays and gains a test.
+
+### Cluster two: an asymmetry against my own rule
+
+`_navigation_in` takes the **first** segno and the **first** D.C. It took the
+**last** Fine and the last To Coda. And the rule written in tick 33 for
+choosing between the two kinds — `min(fine, coda_from)` — is exactly *whichever
+the player reaches first governs*. I had not applied it within one kind.
+
+Measured, on three bars with a Fine on the first and a spurious second one:
+
+    a player reads   1, 2, 3, 1
+    this gave        1, 2, 3, 1, 2
+
+A page carries one Fine, so a correctly engraved file is unaffected — which is
+the point. It shows only on the misreadings the reader exists to survive, and
+there it silently extended the piece. Fixed, and the same rule is now pinned
+for all three marks: **first Fine, first segno, first D.C.**
+
+### One of my mutants was bogus
+
+"a segno printed after the sign that points at it is used" removed a pair of
+parentheses from a condition that means the same thing without them. It
+survived because it was not a mutation. Replaced with one that is.
+
+### Tests
+
+Full suite green. Five tests added; seven live mutants, all killed.
+
+### Three-foot test
+
+Not run: no screen was built or changed.
+
+### Still waiting on the owner
+
+The UI plan (four items), migration `011`, permission to re-read the nine
+failed scans, and whether `Repeat` gets a field for an unclosed forward sign.
+
+---
+
 ## 2026-08-27 — Chasing the shape instead of waiting for the third instance
 
 **Branch:** `main`. Backend tests only — no production code changed.

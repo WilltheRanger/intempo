@@ -679,3 +679,66 @@ def test_an_ending_that_overruns_its_section_is_ignored_rather_than_obeyed() -> 
     assert [m.measure_number for m in expand_repeats(score)] == [
         1, 2, 3, 1, 2, 3, 4, 5
     ]
+
+
+def test_a_repeat_naming_bars_that_do_not_exist_is_ignored_not_fatal() -> None:
+    """**The promise five dead guards were there to keep.**
+
+    `expand_repeats` says it: *"OCR produces those, and losing the whole take
+    to a mis-read repeat sign would be the wrong trade."* Nothing tested it,
+    and the conditions enforcing it had been dead since the recursion replaced
+    the iterative version — `play` only ever selects a span whose end appears
+    in the bars after its start, so a span naming a bar that is not there, or
+    running backwards, is never chosen at all.
+
+    Removing the guards was safe. Leaving the promise unchecked was not.
+    """
+    def bar(number: int) -> Measure:
+        return Measure(
+            measure_number=number, notes=[Note(pitch="D3", duration="whole")]
+        )
+
+    def played(repeats: list[Repeat]) -> list[int]:
+        score = ScoreJson(
+            time_signature="4/4",
+            clef="bass",
+            measures=[bar(n) for n in (1, 2, 3)],
+            repeats=repeats,
+            ocr_confidence=1.0,
+        )
+        return [m.measure_number for m in expand_repeats(score)]
+
+    assert played([Repeat(start_measure=1, end_measure=9, type="repeat")]) == [1, 2, 3]
+    assert played([Repeat(start_measure=7, end_measure=9, type="repeat")]) == [1, 2, 3]
+    assert played([Repeat(start_measure=3, end_measure=1, type="repeat")]) == [1, 2, 3]
+    assert played([Repeat(start_measure=2, end_measure=2, type="first_ending")]) == [
+        1, 2, 3
+    ]
+
+
+def test_the_played_order_is_never_empty() -> None:
+    """The fifth dead guard, and why it could not fire.
+
+    A span's **first** bar survives both passes: an ending only applies to a
+    span that starts strictly before it, so a bracket on the opening bar is not
+    that span's ending and filters nothing. Even a bar marked as both endings
+    at once — what a misread pair of brackets looks like — only costs that bar.
+    """
+    def bar(number: int) -> Measure:
+        return Measure(
+            measure_number=number, notes=[Note(pitch="D3", duration="whole")]
+        )
+
+    score = ScoreJson(
+        time_signature="4/4",
+        clef="bass",
+        measures=[bar(1), bar(2)],
+        repeats=[
+            Repeat(start_measure=1, end_measure=2, type="repeat"),
+            Repeat(start_measure=2, end_measure=2, type="first_ending"),
+            Repeat(start_measure=2, end_measure=2, type="second_ending"),
+        ],
+        ocr_confidence=1.0,
+    )
+
+    assert [m.measure_number for m in expand_repeats(score)] == [1, 1]

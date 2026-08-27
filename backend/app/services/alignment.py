@@ -149,13 +149,21 @@ def expand_repeats(score: ScoreJson) -> list[Measure]:
     order = [m.measure_number for m in score.measures]
 
     # Only plain repeats define a span to play twice; endings modify one.
-    spans = [
-        r for r in score.repeats
-        if r.type == "repeat" and r.start_measure <= r.end_measure
-        and r.start_measure in by_number and r.end_measure in by_number
-    ]
-    if not spans:
-        return list(score.measures)
+    #
+    # **Nothing is filtered here beyond the type, and that is a change.** Four
+    # conditions stood in this list — the start and the end must be real bars,
+    # the span must not run backwards, and an empty list returned early — all
+    # written for the iterative version this replaced, and all dead since.
+    # `play` selects a span only when its end appears in the bars *after* its
+    # start, so a span naming a bar that does not exist, or running backwards,
+    # is never chosen; and with no spans at all `play` walks the numbers and
+    # returns every one. Mutations removing each of the four changed nothing,
+    # which is what dead means.
+    #
+    # The promise they were there to keep is unchanged and now tested rather
+    # than guarded: a repeat naming measures that do not exist is ignored, not
+    # fatal.
+    spans = [r for r in score.repeats if r.type == "repeat"]
 
     first_brackets = [
         (r.start_measure, r.end_measure)
@@ -235,8 +243,12 @@ def expand_repeats(score: ScoreJson) -> list[Measure]:
             position = stop + 1
         return out
 
-    played = [by_number[n] for n in play(order, spans)]
-    return played or list(score.measures)
+    # No `or list(score.measures)` fallback: `play` cannot come back empty.
+    # Every span's **first** bar survives both passes, because an ending is
+    # only applied to a span that starts strictly before it — so a bracket
+    # sitting on the span's opening bar is not that span's ending and filters
+    # nothing. A fifth dead condition, from the same rewrite.
+    return [by_number[n] for n in play(order, spans)]
 
 
 def build_timeline(score: ScoreJson, target_bpm: float) -> ExpectedTimeline:
