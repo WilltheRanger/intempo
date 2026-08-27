@@ -2812,3 +2812,30 @@ def test_the_first_da_capo_governs_as_well() -> None:
     assert [m.measure_number for m in alignment.expand_repeats(score)] == [
         1, 2, 1, 2, 3
     ]
+
+
+def test_a_fermata_is_read_off_the_page() -> None:
+    """**The importer half, which no test covered.**
+
+    Every test of the fermata built its `Note` directly, so removing the line
+    that reads `<notations><fermata/>` changed nothing — the flag was checked
+    from the schema onwards and never from the page.
+    """
+    held = (
+        "<note><pitch><step>D</step><octave>3</octave></pitch><duration>1</duration>"
+        '<type>quarter</type><notations><fermata type="upright"/></notations></note>'
+    )
+    score = score_json_from_musicxml(
+        _part(_bar(1, _A_QUARTER * 3 + held, _FOUR_FOUR) + _bar(2, _A_QUARTER * 4))
+    )
+
+    assert [[n.fermata for n in m.notes] for m in score.measures] == [
+        [False, False, False, True],
+        [False, False, False, False],
+    ]
+
+
+def test_a_page_with_no_fermata_marks_none() -> None:
+    score = score_json_from_musicxml(_part(_bar(1, _A_QUARTER * 4, _FOUR_FOUR)))
+
+    assert not any(n.fermata for m in score.measures for n in m.notes)

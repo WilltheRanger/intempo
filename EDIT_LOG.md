@@ -6,6 +6,93 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-27 — A musician who held a fermata was told they dragged
+
+**Branch:** `main`. Backend and tests. No screen, component, style or copy
+touched.
+
+**Files:** `backend/app/services/score_schema.py`,
+`backend/app/services/ocr/musicxml.py`,
+`backend/app/services/alignment.py`,
+`backend/app/services/classification.py`, and three test files.
+
+The wire is fully swept, so back to the reading. **Nothing in the backend
+mentioned a fermata** — the one mark on a page that says a duration is *not*
+written down.
+
+### What it cost
+
+The written value says how long the note would be without the mark; the mark
+says the length is the player's. So the interval after it is stretched by
+however long they held, and `pulse_anchors` — which explicitly cannot tell a
+hold from a hesitation, and for a hesitation is right to keep the drift — keeps
+it. The note after the fermata is reported as **dragging**.
+
+A fermata sits at the end of a phrase, at a cadence, at the end of a movement.
+It is on the bars a musician most wants a straight answer about.
+
+### The mechanism already existed
+
+`under_tempo_change` forces the band to `on`, and its comment is the argument
+in full: *"not a softening — it is a refusal to answer a question the page has
+made meaningless."* A fermata is the same refusal for a narrower reason, so it
+is the same one clause.
+
+And `pulse_anchors` re-anchors after the run, so the damage stops at that one
+note. The fix is bounded, which is why it fits in a tick.
+
+### Marked on the note after, not on the fermata
+
+The fermata's own attack is on time — it arrives when the previous note ends,
+like any other. What the hold moves is the arrival of the note *after* it, and
+that is what gets judged. The flag is carried across the measure loop, because
+a fermata is usually the last note of a bar and the note it moves is the first
+of the next.
+
+### A mutation that was more correct than my code
+
+`fermata_pending = note.fermata and not is_rest` — the guard survived removal,
+and looking at why showed the mutation was the right version. **A fermata over
+a rest is a held silence**: it is how a page writes a pause before an entry,
+and the note after it arrives just as late. The `not is_rest` was reflex rather
+than reasoning. Removed, and covered.
+
+### Two more gaps the same run found
+
+Every fermata test built its `Note` directly, so deleting the line that reads
+`<notations><fermata/>` changed nothing — the flag was checked from the schema
+onwards and never from the page. And nothing stopped the flag being reset per
+measure, which would make it do nothing in the one place fermatas are always
+printed.
+
+### The round trip
+
+`MeasureEditScreen` sends the **whole** `score_json` back, so every field makes
+a round trip through the app on any correction. The app spreads
+(`{ ...note, ...patch }`) rather than rebuilding, so an unknown field survives
+— checked, because `fermata` defaults to `False` and a note that came back
+without it would not error, it would silently arrive un-held. The server half
+is asserted.
+
+The field is additive rather than a closed union, so an app that has never
+heard of it is unaffected.
+
+### Tests
+
+Backend suite green; mobile 378 pass, typecheck clean. Eight tests added; six
+mutants, all killed.
+
+### Three-foot test
+
+Not run: no screen was built or changed.
+
+### Still waiting on the owner
+
+The UI plan (four items), migration `011`, permission to re-read the nine
+failed scans, and whether `Repeat` gets a field for an unclosed forward sign.
+
+---
+
 ## 2026-08-27 — The last six vocabularies, and one that is safe to grow
 
 **Branch:** `main`. Backend tests only — no production code changed.
