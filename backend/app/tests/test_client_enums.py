@@ -466,3 +466,60 @@ def test_a_new_concern_kind_would_still_reach_the_musician() -> None:
     assert "beats" in set(
         typing.get_args(MeasureConcern.model_fields["kind"].annotation)
     )
+
+
+# --------------------------------------------------------------------------
+# Numbers, not vocabularies — and the same failure
+#
+# Two limits are written down on both sides of the wire, and nothing has held
+# them together. They are not enums, so no union test covers them; the drift
+# costs the same thing a drifted enum costs, which is a musician told no after
+# the work rather than before it.
+# --------------------------------------------------------------------------
+
+MOBILE_SRC = Path(__file__).resolve().parents[3] / "mobile" / "src"
+
+
+def _number_in(path: Path, name: str) -> int:
+    """`const NAME = 8_000_000;` — the app's own copy of a limit."""
+    source = path.read_text()
+    match = re.search(rf"\b{name}\s*=\s*([0-9_ */]+);", source)
+    assert match, f"the app no longer declares {name} in {path.name}"
+    return int(eval(match.group(1).replace("_", "")))  # noqa: S307 — arithmetic only
+
+
+def test_the_app_refuses_a_score_file_the_api_would_refuse() -> None:
+    """**Checked before the upload, or the musician waits for a no.**
+
+    `ImportScoreRequest.musicxml` is capped, and the app caps the same thing
+    before it sends. If the app's number were the larger one, a file would be
+    read, unzipped, uploaded and then refused by a validation error naming a
+    field and a character count — the shape of the 413 message this project has
+    already had to rewrite once, for being advice a musician could not follow.
+    """
+    from app.routers.scores import ImportScoreRequest
+
+    api = ImportScoreRequest.model_fields["musicxml"].metadata
+    limit = next(m.max_length for m in api if hasattr(m, "max_length"))
+    app = _number_in(MOBILE_SRC / "screens" / "addPiece" / "ImportFile.tsx", "MAX_XML_CHARS")
+    assert app <= limit, (
+        f"the app accepts {app} characters of MusicXML and the API accepts {limit}"
+    )
+
+
+def test_the_app_shrinks_a_page_to_something_the_worker_will_read() -> None:
+    """**The app's cap is the stricter one, and that is load-bearing.**
+
+    `uploadPage` shrinks a photograph to `MAX_PAGE_BYTES` before sending;
+    `page_image.MAX_IMAGE_BYTES` is what the worker refuses at, **after** the
+    upload has finished and the row exists. Headroom in that direction is
+    invisible; headroom the other way is a scan that uploads, saves, and then
+    fails at the reading step for a size the app itself approved.
+    """
+    from app.services.page_image import MAX_IMAGE_BYTES
+
+    app = _number_in(MOBILE_SRC / "lib" / "scan" / "uploadPage.ts", "MAX_PAGE_BYTES")
+    assert app <= MAX_IMAGE_BYTES, (
+        f"the app uploads up to {app} bytes and the worker refuses over "
+        f"{MAX_IMAGE_BYTES}"
+    )
