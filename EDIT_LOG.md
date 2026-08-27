@@ -6,6 +6,73 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-26 — Where the reading stands, after a day of it
+
+**Branch:** `main`. No code. A stock-take, because twenty-three entries is more
+than anyone will read backwards and the state is now decided by three things
+nobody has answered.
+
+### What the reader does now that it did not this morning
+
+| | before | after |
+|---|---|---|
+| `homr_page.jpg` | 74 bars, 267 notes, 0.99 | **77 bars, 271 notes, 1.00** |
+| `page-upright.jpg` | 43 bars, 114 notes, 0.70 | **58 bars, 139 notes, 0.97** |
+| corpus mean | 0.81 | **0.99** |
+
+Five defects behind that, each of which moved a real page: a **multi-bar rest**
+read as one empty bar (three bars of time gone, every later verdict eight beats
+early); a **whole rest** in a short metre read as four beats; the **voice**
+carrying the music discarded because the rest was written first (four notes
+lost); a note **contradicting its own duration** by a factor of sixteen; and a
+page that **returns to its first metre** after a page break reading as entirely
+wrong.
+
+### What it refuses now, and why that is the same work
+
+A page whose bars do not add up, one that is mostly holes, and one with no bars
+at all — each with its own sentence, because *"a flatter, better-lit shot of
+the page usually fixes it"* is advice about a photograph and three of these are
+not about the photograph. A reading of 0.00 shown to a musician as their score
+was the failure; the number was working correctly the whole time.
+
+### What is measured that used to be argued
+
+homr **does not quantise** — 32 eighths and 48 sixteenths against fixtures
+whose printed content `SOURCES.md` documents. It **does not lose anything to
+the vision-API downscale**. It **cannot reconsider**, so it is no longer asked
+twice for the same answer — fifteen seconds and a Modal container per doubtful
+page. And the corpus itself is **6–11 px of staff spacing against 34–107 on a
+real photograph**, which is why it keeps agreeing with whatever is asked of it.
+
+### What is known and unfixed
+
+- **Handwriting.** `04_handwritten_clean` fails at 0.00 through three variants —
+  cropped, upscaled, both. A model limit, not a photograph.
+- **A whole page yielding one bar is returned, not refused.** Strict `xfail`.
+  The rule needs a count of systems; `crop_systems` gives 9 or 12 for the same
+  page depending on scale, and homr reports bar lines rather than staffs.
+- **Orphaned uploads**, unchanged and still needing a lifecycle decision.
+
+### What is blocked, and on whom
+
+Everything below is finished on the server and cannot go further without a
+person:
+
+1. **The UI**, gated since the first tick — four items now, including
+   `Reading page 2 of 3`, without which a multi-page scan reports one coarse
+   stage for its whole length.
+2. **Migration `011`**, unapplied. The app still uploads `pages[0]`, so
+   multi-page is complete and inert.
+3. **Re-reading two scans** ("Mate", "H"), which is the only way any of today's
+   work reaches a real page. Both keep their photographs; neither is accepted.
+
+**Nothing in this entry has been verified against a production scan.** The
+suites are green — 1266 backend, 330 app — and every number above comes from
+`tools/homr-bench.py` or `tools/pipeline-check.py` on this machine.
+
+---
+
 ## 2026-08-26 — The upload promised a connection speed 27% faster than it needs
 
 **Branch:** `main`. App tests and one source comment. No screen, component,
