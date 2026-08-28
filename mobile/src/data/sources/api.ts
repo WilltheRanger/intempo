@@ -4,6 +4,7 @@ import { getMe } from '../api/me';
 import { ApiError } from '../api/client';
 import { createScore, deleteScore, getScore, listScores, updateScore } from '../api/scores';
 import { getAuthAvatarUrl } from '../auth/session';
+import { stableImage } from '../../lib/imageSource';
 import { verdictFor } from '../../lib/tempo';
 import type {
   AnalysisResponse,
@@ -52,7 +53,7 @@ export function toPiece(
     // Signed on read and good for an hour. Null when signing failed, which is
     // a thumbnail-shaped hole rather than an error — `ScoreThumbnail` already
     // falls back to its ruled-staff drawing.
-    thumbnail: score.image_url,
+    thumbnail: stableImage(score.image_url),
     markedBpm: score.score_json?.bpm_hint ?? null,
     score: score.score_json ?? null,
     concerns: score.concerns ?? [],

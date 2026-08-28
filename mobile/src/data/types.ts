@@ -426,7 +426,15 @@ export interface UploadResponse {
  * A score thumbnail: a remote URI once the backend can serve one, or the
  * module id returned by `require()` for a bundled fixture image.
  */
-export type ThumbnailSource = string | number;
+export type ThumbnailSource =
+  | string
+  | number
+  /**
+   * A signed URL pinned to a stable cache key — the storage path, which
+   * survives the token rotating. See `lib/imageSource.stableImage` for why a
+   * raw signed URL re-downloads on every rotation.
+   */
+  | { uri: string; cacheKey: string };
 
 /**
  * What the UI renders. Deliberately not the same shape as `ScoreResponse`.
