@@ -1721,3 +1721,160 @@ def test_nothing_is_removed_until_the_row_is_actually_gone(
     assert _deleted_keys(sb) == [], (
         "the photograph was removed for a score that was not deleted"
     )
+
+
+# ---- Signed URLs are reused, not re-minted --------------------------------
+#
+# A fresh signature is a fresh `?token=`, and a fresh URL is a cache miss in
+# every image cache there is — expo-image's, keyed on the URL, and the
+# browser's alike. The screen that shows the photograph while a scan is being
+# read polls every three seconds, so before the memo, watching one
+# sixty-second read re-downloaded the photograph twenty times.
+
+
+@pytest.fixture(autouse=True)
+def _fresh_url_cache():
+    scores_module.reset_display_url_cache()
+    yield
+    scores_module.reset_display_url_cache()
+
+
+def _signed_for(user_id, name: str = "abc.jpg"):
+    return [
+        {
+            "path": f"{user_id}/{name}",
+            "signedUrl": f"https://cdn.example/{name}?token={uuid4().hex}",
+        }
+    ]
+
+
+def test_the_same_image_is_signed_once_and_the_url_is_stable(
+    monkeypatch: pytest.MonkeyPatch,
+    client: TestClient,
+    make_token: Callable[..., str],
+) -> None:
+    user_id, score_id = uuid4(), uuid4()
+    supabase = _install_supabase(monkeypatch, returning_rows=[_row_for(score_id, user_id)])
+    _install_storage(supabase, signed=_signed_for(user_id))
+    headers = {"Authorization": f"Bearer {make_token(sub=str(user_id))}"}
+
+    first = client.get("/v1/scores", headers=headers).json()[0]
+    second = client.get("/v1/scores", headers=headers).json()[0]
+
+    assert first["image_url"] == second["image_url"]
+    assert supabase.storage.from_.return_value.create_signed_urls.call_count == 1
+
+
+def test_the_reported_expiry_is_the_reused_urls_not_a_fresh_promise(
+    monkeypatch: pytest.MonkeyPatch,
+    client: TestClient,
+    make_token: Callable[..., str],
+) -> None:
+    """`image_url_expires_at` exists so a client can re-fetch rather than
+    guess. Reporting `now + TTL` beside a reused URL would promise an hour the
+    token does not have."""
+    user_id, score_id = uuid4(), uuid4()
+    supabase = _install_supabase(monkeypatch, returning_rows=[_row_for(score_id, user_id)])
+    _install_storage(supabase, signed=_signed_for(user_id))
+    headers = {"Authorization": f"Bearer {make_token(sub=str(user_id))}"}
+
+    first = client.get("/v1/scores", headers=headers).json()[0]
+    second = client.get("/v1/scores", headers=headers).json()[0]
+
+    assert second["image_url_expires_at"] == first["image_url_expires_at"]
+
+
+def test_a_url_near_the_end_of_its_life_is_signed_afresh(
+    monkeypatch: pytest.MonkeyPatch,
+    client: TestClient,
+    make_token: Callable[..., str],
+) -> None:
+    """Reuse must stop while the URL still comfortably works: a list fetched
+    and then stared at is still holding URLs that have to survive the stare."""
+    from datetime import datetime, timedelta, timezone
+
+    user_id, score_id = uuid4(), uuid4()
+    supabase = _install_supabase(monkeypatch, returning_rows=[_row_for(score_id, user_id)])
+    _install_storage(supabase, signed=_signed_for(user_id))
+    headers = {"Authorization": f"Bearer {make_token(sub=str(user_id))}"}
+
+    client.get("/v1/scores", headers=headers)
+    # Age the memo entry to just inside the floor.
+    with scores_module._display_url_lock:
+        for key, (url, _) in list(scores_module._display_urls.items()):
+            scores_module._display_urls[key] = (
+                url,
+                datetime.now(tz=timezone.utc) + timedelta(seconds=60),
+            )
+
+    client.get("/v1/scores", headers=headers)
+
+    assert supabase.storage.from_.return_value.create_signed_urls.call_count == 2
+
+
+def test_only_the_missing_keys_are_signed(
+    monkeypatch: pytest.MonkeyPatch,
+    client: TestClient,
+    make_token: Callable[..., str],
+) -> None:
+    """The memo is per object, not per batch — a new piece added to a library
+    of forty signs one key, not forty-one."""
+    user_id = uuid4()
+    first_score = _row_for(uuid4(), user_id)
+    # Its own object, or there is nothing missing to sign: `_row_for` derives
+    # the image key from the user alone, and two rows sharing one photograph
+    # would make the second fetch a pure memo hit.
+    second_score = _row_for(
+        uuid4(),
+        user_id,
+        source_image_url=_signed_url(user_id).replace("abc.jpg", "second.jpg"),
+    )
+    supabase = _install_supabase(monkeypatch, returning_rows=[first_score])
+    bucket = supabase.storage.from_.return_value
+    bucket.create_signed_urls.return_value = _signed_for(user_id)
+    headers = {"Authorization": f"Bearer {make_token(sub=str(user_id))}"}
+
+    client.get("/v1/scores", headers=headers)
+
+    supabase = _install_supabase(
+        monkeypatch, returning_rows=[first_score, second_score]
+    )
+    bucket = supabase.storage.from_.return_value
+    bucket.create_signed_urls.return_value = []
+    client.get("/v1/scores", headers=headers)
+
+    assert bucket.create_signed_urls.call_count == 1
+    (signed_keys, _ttl) = bucket.create_signed_urls.call_args[0]
+    assert signed_keys == [f"{user_id}/second.jpg"]
+
+
+def test_a_request_mixing_a_memo_hit_and_a_miss_keeps_the_cached_url(
+    monkeypatch: pytest.MonkeyPatch,
+    client: TestClient,
+    make_token: Callable[..., str],
+) -> None:
+    """The path the other tests miss: `missing` non-empty AND `cached`
+    non-empty in the same request. Returning only the fresh half would strip
+    the thumbnail from every *old* piece the moment a new one is added."""
+    user_id = uuid4()
+    first_score = _row_for(uuid4(), user_id)
+    second_score = _row_for(
+        uuid4(),
+        user_id,
+        source_image_url=_signed_url(user_id).replace("abc.jpg", "second.jpg"),
+    )
+    supabase = _install_supabase(monkeypatch, returning_rows=[first_score])
+    supabase.storage.from_.return_value.create_signed_urls.return_value = _signed_for(user_id)
+    headers = {"Authorization": f"Bearer {make_token(sub=str(user_id))}"}
+
+    cached_url = client.get("/v1/scores", headers=headers).json()[0]["image_url"]
+
+    supabase = _install_supabase(monkeypatch, returning_rows=[first_score, second_score])
+    supabase.storage.from_.return_value.create_signed_urls.return_value = _signed_for(
+        user_id, "second.jpg"
+    )
+    body = client.get("/v1/scores", headers=headers).json()
+
+    by_id = {row["id"]: row["image_url"] for row in body}
+    assert by_id[first_score["id"]] == cached_url
+    assert by_id[second_score["id"]].startswith("https://cdn.example/second.jpg")

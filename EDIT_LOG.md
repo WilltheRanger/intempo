@@ -6,6 +6,92 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-27 — A 53 MB bucket was billing gigabytes of egress
+
+**Branch:** `main`. Backend and app plumbing — no screen, component, style or
+copy touched.
+
+**Files:** `backend/app/routers/scores.py`, `mobile/src/lib/imageSource.ts`
+(new), `mobile/src/data/types.ts`, `mobile/src/data/sources/api.ts`,
+`mobile/src/data/captureSession.ts`, and two test files (one new).
+
+The owner's Supabase egress is nearly at the monthly cap on personal use.
+Measured before touching anything: the storage bucket holds **53 MB** — 23
+page photographs at ~2.4 MB each, one 244 kB audio clip — and **zero analyses
+have ever run**, so the WAV-download theory from the previous session is dead.
+Near the 5 GB cap with 53 MB stored means the same objects were downloaded
+**~100× over**.
+
+### The mechanism, confirmed in code
+
+1. Every score response — list, detail, and every poll — called
+   `_sign_downloads`, which minted a **fresh token per image** (1-hour TTL). A
+   fresh signature is a fresh `?token=…`, so the URL string differed on every
+   response.
+2. The app hands that URL to `expo-image`, whose cache is keyed on the URL.
+   Different URL → cache miss → full re-download.
+3. The sharp end: `PieceScoreScreen` shows the photograph **while a scan is
+   being read**, and `usePiece` polls every **3 seconds** in exactly that
+   state. A sixty-second read = twenty re-downloads of a 2–5 MB photograph =
+   **50–100 MB of egress per scan watched** — and there are 22 scores and 9
+   failed scans that were presumably retried and watched again.
+
+### The fix, in two halves that cover different platforms
+
+**Server: sign once, reuse for most of the hour.** `_sign_downloads` now
+memoizes per object key and reuses a URL while at least ten minutes of its
+life remain (`_REUSE_FLOOR_SECONDS` — a list fetched and then stared at is
+still holding URLs that must survive the stare). A stable URL string means the
+app's URL-keyed cache *and* the browser's HTTP cache both start hitting — this
+half fixes **web**, where `cacheKey` is ignored. `image_url_expires_at` now
+reports the reused URL's **real** expiry rather than `now + TTL`, a promise the
+token would not have kept. The memo is bounded (prune stale past a cap, then
+clear), and per-key: a new piece added to a library of forty signs one key.
+
+**App: pin the cache to the object's identity.** `stableImage` turns a signed
+URL into `{ uri, cacheKey: pathname }` — the path survives the token rotating,
+so on **native** the photograph downloads once per device, ever, not once per
+hour. Correct because these objects are immutable: pages are written once and
+only ever deleted, never replaced, so a stale entry cannot show the wrong
+photograph. `ThumbnailSource` widened to carry the shape.
+
+One honest narrowing fell out: `CapturedPage.source` reused `ThumbnailSource`,
+and the widening leaked into `uriFor`, which would have had to handle a
+signed-URL shape a captured page can never be — the page has not been uploaded
+yet, so there is nothing to sign. `CapturedSource = string | number` is the
+truthful type, and `uriFor` stays as it was.
+
+### What this does to the numbers
+
+The polling screen goes from ~20 downloads per watched scan to **1**; a
+library visit goes from re-downloading every thumbnail to hitting cache on all
+of them. Steady-state egress should now be roughly *one download per
+photograph per device*, plus the worker's one read per transcription — which
+is what a 53 MB library ought to cost.
+
+**Tests:** backend router suite green including five new (URL stable across
+requests, expiry honest, near-expiry re-signs, per-key signing, and the mixed
+hit/miss request keeping the cached URL — that last one added because a mutant
+survived without it). App **431 passed**, typecheck clean. Six mutants, five
+killed; the survivor makes pruning run on every call rather than past the cap,
+which changes no output — equivalent, recorded rather than chased.
+
+**Known limits.** The memo is per-process, so a host restart re-signs
+everything once — harmless. Egress attribution is inferred from code and
+storage contents, not from Supabase's billing breakdown, which these tools
+cannot read; if the meter keeps climbing after this ships, the next suspect is
+the transcription worker's page downloads on retries, and the dashboard's
+per-bucket numbers are the thing to look at.
+
+**Rollback:** `git revert` this commit. Wire-compatible both ways — an old app
+against the new server just sees stabler URLs; a new app against the old
+server still caches within the hour on native.
+
+**Still waiting on the owner** — migrations `011` and `012`, and permission to
+re-read the nine failed scans.
+
+---
+
 ## 2026-08-27 — Skipping the long rests, and following the playback
 
 **Branch:** `main`. App and backend. **UI work**, asked for by the owner —

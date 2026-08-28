@@ -1,10 +1,18 @@
 import { useSyncExternalStore } from 'react';
 
-import type { ThumbnailSource } from './types';
+
+
+/**
+ * Where a captured page's pixels live: a local file/blob URI, or a bundled
+ * asset in fixtures. Deliberately narrower than `ThumbnailSource`, which also
+ * admits a signed-URL-with-cache-key shape a capture can never be — the page
+ * has not been uploaded yet, so there is nothing to sign.
+ */
+export type CapturedSource = string | number;
 
 export interface CapturedPage {
   id: string;
-  source: ThumbnailSource;
+  source: CapturedSource;
 }
 
 /** What became of an image the session was handed. */
@@ -98,7 +106,7 @@ export const captureSession = {
    * screen — a retake is one shot and you are finished, an ordinary capture
    * leaves you at the viewfinder for the next page.
    */
-  capture(source: ThumbnailSource): CaptureOutcome {
+  capture(source: CapturedSource): CaptureOutcome {
     const target = retakingId;
     retakingId = null;
 
@@ -122,7 +130,7 @@ export const captureSession = {
    * earlier, so this resets — but in one commit rather than a reset followed by
    * a loop of appends, which published an empty list to every subscriber first.
    */
-  importAll(sources: ThumbnailSource[]): void {
+  importAll(sources: CapturedSource[]): void {
     nextId = 1;
     uploadedImageUrl = null;
     retakingId = null;

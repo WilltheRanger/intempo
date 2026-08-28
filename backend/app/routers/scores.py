@@ -9,6 +9,7 @@ read so the same access rules apply at the API layer.
 from __future__ import annotations
 
 import logging
+import threading
 from datetime import datetime, timedelta, timezone
 from typing import Any, Literal
 from urllib.parse import urlparse
@@ -326,7 +327,23 @@ def _assert_image_url_owned_by(image_url: str, user_id: UUID) -> None:
         )
 
 
-def _sign_downloads(keys: list[str]) -> dict[str, str]:
+#: Display URLs already signed, by object key, with their real expiry.
+#: See the comment inside `_sign_downloads` for why reuse is the whole point.
+_display_urls: dict[str, tuple[str, datetime]] = {}
+_display_url_lock = threading.Lock()
+#: A URL is only reused while at least this much of its life remains — a
+#: screen that fetched a list and then sat is still holding URLs that work.
+_REUSE_FLOOR_SECONDS = 10 * 60
+_DISPLAY_URL_CACHE_MAX = 4096
+
+
+def reset_display_url_cache() -> None:
+    """For tests. The memo is process state, and tests must not share it."""
+    with _display_url_lock:
+        _display_urls.clear()
+
+
+def _sign_downloads(keys: list[str]) -> dict[str, tuple[str, datetime]]:
     """Object key → signed download URL, for as many as storage will give us.
 
     Batched: a library of forty scores is one storage call, not forty. Missing
@@ -336,17 +353,45 @@ def _sign_downloads(keys: list[str]) -> dict[str, str]:
     """
     if not keys:
         return {}
+
+    # **Signed once, reused for most of the hour — because a fresh signature is
+    # a fresh URL, and a fresh URL is a cache miss.** Every response used to
+    # mint a new token per image, so the URL string differed on every fetch and
+    # every image cache — expo-image's, keyed on the URL, and the browser's
+    # HTTP cache alike — missed on every one. The screen showing the photograph
+    # *while a scan is read* polls every three seconds, so watching one
+    # sixty-second read re-downloaded the photograph twenty times: measured
+    # against this library's pages, 50–100 MB of egress per scan watched, on a
+    # bucket holding 53 MB in total.
+    #
+    # Reused only while comfortably inside its life (`_REUSE_FLOOR_SECONDS`),
+    # so nothing on screen holds a URL that dies mid-scroll, and the reported
+    # `image_url_expires_at` is the *reused* URL's real expiry rather than a
+    # promise the token does not keep.
+    now = datetime.now(tz=timezone.utc)
+    with _display_url_lock:
+        floor = now + timedelta(seconds=_REUSE_FLOOR_SECONDS)
+        cached = {
+            key: _display_urls[key]
+            for key in keys
+            if key in _display_urls and _display_urls[key][1] > floor
+        }
+    missing = [key for key in keys if key not in cached]
+    if not missing:
+        return cached
+
     client = get_service_client()
     if client is None:
-        return {}
+        return cached
 
     bucket = client.storage.from_(SCORE_BUCKET)
     try:
-        signed = bucket.create_signed_urls(keys, SIGNED_DOWNLOAD_TTL_SECONDS)
+        signed = bucket.create_signed_urls(missing, SIGNED_DOWNLOAD_TTL_SECONDS)
     except Exception:
-        return {}
+        return cached
 
-    out: dict[str, str] = {}
+    expires_at = now + timedelta(seconds=SIGNED_DOWNLOAD_TTL_SECONDS)
+    fresh: dict[str, tuple[str, datetime]] = {}
     for entry in signed or []:
         if not isinstance(entry, dict) or entry.get("error"):
             continue
@@ -354,8 +399,21 @@ def _sign_downloads(keys: list[str]) -> dict[str, str]:
         path = entry.get("path")
         if url and path:
             # Supabase echoes the key back; it may or may not carry the bucket.
-            out[str(path).removeprefix(f"{SCORE_BUCKET}/")] = str(url)
-    return out
+            fresh[str(path).removeprefix(f"{SCORE_BUCKET}/")] = (str(url), expires_at)
+
+    with _display_url_lock:
+        # Bounded, because an unbounded memo is a slow leak on a host that
+        # stays up for weeks. Past the cap the stale entries are dropped; if
+        # every entry is live the memo is simply cleared — the cost is one
+        # extra signing call per key, which is where this started.
+        if len(_display_urls) + len(fresh) > _DISPLAY_URL_CACHE_MAX:
+            for key in [k for k, (_, exp) in _display_urls.items() if exp <= floor]:
+                del _display_urls[key]
+        if len(_display_urls) + len(fresh) > _DISPLAY_URL_CACHE_MAX:
+            _display_urls.clear()
+        _display_urls.update(fresh)
+
+    return {**cached, **fresh}
 
 
 def _with_image_urls(rows: list[dict[str, Any]]) -> list[ScoreResponse]:
@@ -367,11 +425,10 @@ def _with_image_urls(rows: list[dict[str, Any]]) -> list[ScoreResponse]:
             keys[row["id"]] = key
 
     signed = _sign_downloads(sorted(set(keys.values())))
-    expires_at = datetime.now(tz=timezone.utc) + timedelta(seconds=SIGNED_DOWNLOAD_TTL_SECONDS)
 
     out = []
     for row in rows:
-        url = signed.get(keys.get(row["id"], ""))
+        url, expires_at = signed.get(keys.get(row["id"], ""), (None, None))
         out.append(_row_to_response(row, image_url=url, expires_at=expires_at if url else None))
     return out
 
