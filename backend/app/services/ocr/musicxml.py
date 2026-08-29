@@ -103,7 +103,14 @@ _FLAT_KEYS: Final[list[str]] = [
     "Ab major", "Db major", "Gb major", "Cb major",
 ]
 
-_ALTER_SUFFIX: Final[dict[int, str]] = {-1: "b", 0: "", 1: "#"}
+#: How a `<alter>` value is spelled in a pitch name.
+#:
+#: ±2 are double accidentals. They were absent, so `_pitch_name` returned
+#: None for them and the note was dropped — see `PITCH_PATTERN`, which now
+#: admits them. Anything beyond ±2 (a triple accidental, or a quarter-tone
+#: written as `alter="0.5"`) is still None: those have no spelling here and
+#: inventing one would be the wrong-note outcome this avoids.
+_ALTER_SUFFIX: Final[dict[int, str]] = {-2: "bb", -1: "b", 0: "", 1: "#", 2: "##"}
 
 _ARTICULATION_TAGS: Final[dict[str, str]] = {
     "staccato": "staccato",
@@ -702,20 +709,57 @@ def _pitch_name(note: ET.Element) -> str | None:
         return "rest"
     pitch = note.find("pitch")
     if pitch is None:
-        return None
+        # **`<unpitched>` is a note, at a place on the staff rather than a
+        # frequency.** It is how percussion is written, and how a string part
+        # writes a body tap or col legno battuto — a notehead with a real
+        # attack, printed on a line the player reads.
+        #
+        # It was dropped for having no `<pitch>`, which costs the onset, and
+        # `alignment.py` accumulates, so every later bar is judged against music
+        # that is not there. On a part written entirely this way — a percussion
+        # part — *every* note dropped and the page was refused as empty bars.
+        #
+        # `display-step` and `display-octave` are exactly the staff position the
+        # engraver drew, so the note keeps the place it was printed in. Nothing
+        # downstream asks a pitch to be a frequency: the verdict reads it only
+        # as `== "rest"`, and a tie compares two of them for equality.
+        pitch = note.find("unpitched")
+        if pitch is None:
+            return None
+        step = _text(pitch.find("display-step"))
+        octave = _text(pitch.find("display-octave"))
+        if step is None or octave is None:
+            return None
+        name = f"{step}{octave}"
+        return name if PITCH_PATTERN.match(name) else None
     step = _text(pitch.find("step"))
     octave = _text(pitch.find("octave"))
     if step is None or octave is None:
         return None
+    # **Truncating a fractional alter turns a microtone into a natural.**
+    #
+    # `<alter>` is a semitone count and MusicXML allows fractions for
+    # microtones: 0.5 is a quarter-sharp, 1.5 a three-quarter-sharp, -0.5 a
+    # quarter-flat. `int(float(...))` rounded 0.5 down to 0, so a quarter-sharp
+    # was written out as a plain natural — a wrong note printed exactly like the
+    # right ones around it, which is the one outcome this function's own comment
+    # says it exists to avoid, arrived at by arithmetic rather than by choice.
+    #
+    # There is no spelling for a microtone here, so it drops, like a triple
+    # accidental. A short bar is visible to the beat check and to the musician;
+    # a natural where a quarter-sharp was printed is visible to nobody.
+    raw = _text(pitch.find("alter"))
     try:
-        alter = int(float(_text(pitch.find("alter")) or "0"))
+        exact = float(raw) if raw else 0.0
     except ValueError:
-        alter = 0
-    suffix = _ALTER_SUFFIX.get(alter)
+        exact = 0.0
+    alter = int(exact) if exact.is_integer() else None
+    suffix = _ALTER_SUFFIX.get(alter) if alter is not None else None
     if suffix is None:
-        # Double sharps and flats are not in the pitch grammar. Naming the
-        # natural instead would be a wrong note, so drop it and let the note
-        # count fall short, which the validator can see.
+        # Past a double accidental, or a microtone. Naming the natural instead
+        # would be a wrong note, so drop it and let the note count fall short,
+        # which the validator can see. Doubles used to land here too and no
+        # longer do; microtones used to skip this entirely and be *rounded*.
         return None
     name = f"{step}{suffix}{octave}"
     # **Asked here, not left to the model to reject.**

@@ -261,7 +261,23 @@ def test_whatever_it_reads_survives_everything_downstream(label: str) -> None:
 
 @pytest.mark.parametrize(
     "value",
-    ["rest", "A3", "C#4", "Bb2", "F#0", "G9", "A-1"],
+    [
+        "rest",
+        "A3",
+        "C#4",
+        "Bb2",
+        "F#0",
+        "G9",
+        "A-1",
+        # **Doubles moved up from the refusal list**, where they sat with a
+        # `# double flat` comment as though being one were the reason to refuse
+        # it. They are ordinary notation — any chromatic passage in a sharp key
+        # writes a double sharp — and refusing them dropped the note, which
+        # costs an onset rather than a symbol. See `PITCH_PATTERN`.
+        "A##3",
+        "Abb2",
+        "F##-1",
+    ],
 )
 def test_the_pitch_grammar_accepts_a_pitch(value: str) -> None:
     from app.services.score_schema import PITCH_PATTERN
@@ -274,8 +290,9 @@ def test_the_pitch_grammar_accepts_a_pitch(value: str) -> None:
     [
         "H3",  # German for B natural, and not a step MusicXML has
         "A99",  # two octave digits
-        "Abb2",  # double flat
-        "A##3",
+        "A###3",  # a triple: past a double there is no spelling here
+        "Abbb2",
+        "A#b3",  # a sharp and a flat at once is not a note
         "",
         "A",  # no octave
         "3",

@@ -32,7 +32,16 @@ import type { Clef } from '../../data/types';
 /** Diatonic steps above C0 — the unit the staff actually measures in. */
 const LETTERS: Record<string, number> = { C: 0, D: 1, E: 2, F: 3, G: 4, A: 5, B: 6 };
 
-const PITCH = /^([A-G])(#|b)?(-?\d+)$/;
+/**
+ * A pitch name, as the server spells one.
+ *
+ * `##` and `bb` before `#` and `b`, because an alternation takes the first
+ * branch that matches: the single-accidental branch first matches `F#` out of
+ * `F##4`, leaves `#4` unconsumed, fails the anchor, and returns null for a
+ * pitch that is perfectly well formed. The server's `PITCH_PATTERN` carries the
+ * same ordering and the same note.
+ */
+const PITCH = /^([A-G])(##|bb|#|b)?(-?\d+)$/;
 
 /**
  * The step sitting on each clef's middle line.
@@ -306,6 +315,19 @@ export function stepOf(pitch: string): number | null {
 }
 
 /** The accidental to print before a note, or null. */
+/**
+ * The glyph to draw before a notehead, if this engraver has one.
+ *
+ * Only the single sharp. Flats have never been drawn — the note sits at its
+ * diatonic position and the name row under the system carries the accidental —
+ * and doubles join them rather than borrowing the sharp glyph: `F##` drawn with
+ * one sharp is a different note, printed as though it were right, which is the
+ * failure this module's own docstring is written against.
+ *
+ * The position is still correct in every case, because `stepOf` reads the
+ * letter and ignores the accidental. So a double accidental loses its symbol
+ * and nothing else, exactly as a flat does today.
+ */
 export function accidentalOf(pitch: string): Accidental {
   const match = PITCH.exec(pitch);
   if (!match) {
@@ -316,7 +338,10 @@ export function accidentalOf(pitch: string): Accidental {
 
 /** `F#4` reads as `F♯` — the octave is on the staff, and the sharp is a glyph. */
 export function displayName(pitch: string): string {
-  return pitch.replace(/#/, '♯').replace(/-?\d+$/, '');
+  // Every sharp, not the first: the replace was un-anchored and ungreedy, so
+  // `F##4` read back as `F♯#` — half converted, and the half left behind is
+  // the character this row exists to spell out.
+  return pitch.replace(/#/g, '♯').replace(/-?\d+$/, '');
 }
 
 /** Split a run of notes into bars, using the `barBefore` flags. */
@@ -441,8 +466,14 @@ function layoutSystem(
     }
 
     const note = item;
-    const step = stepOf(note.pitch);
-    const y = step === null ? 0 : -(step - middleStep) * halfGap;
+    // `staveScoreFor` has already dropped anything whose step cannot be read,
+    // so this is a total rather than a fallback. It was `step === null ? 0`,
+    // which put a note nobody could place **on the middle line** under a name
+    // it did not have — the pitch equivalent of drawing a sixteenth as an
+    // eighth, and the thing this module's own docstring forbids: "Drawing less
+    // and admitting it is honest; drawing something else is not."
+    const step = stepOf(note.pitch) ?? 0;
+    const y = -(step - middleStep) * halfGap;
     const stemUp = y > 0;
     const filled = note.value === 'quarter' || note.value === 'eighth';
 

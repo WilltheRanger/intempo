@@ -1,4 +1,5 @@
 import type { ScoreJson, ScoreMeasure } from '../../data/types';
+import { stepOf } from './engrave';
 import type { NoteValue, StaveItem } from './engrave';
 
 /**
@@ -123,7 +124,19 @@ export function staveScoreFor(score: ScoreJson): StaveScore {
         opensMeasure = false;
         continue;
       }
-      if (!value) {
+      // **A pitch this engraver cannot place is left out and counted**, the
+      // same treatment as a duration it cannot draw and for the same reason.
+      // It used to go through, and `engrave.ts` put it on the **middle line**
+      // under whatever name it carried — a note at a pitch it never had,
+      // presented exactly like the ones around it that were right. That is the
+      // pitch version of drawing a sixteenth as an eighth, and this module's
+      // whole premise is that drawing less beats drawing something else.
+      //
+      // Nothing reaches this today that should not: the server's grammar and
+      // `stepOf` now agree, doubles included. It is the guard for the next
+      // spelling neither of them has heard of — a triple accidental, a
+      // quarter-tone — which is precisely how the last one arrived.
+      if (!value || stepOf(note.pitch) === null) {
         undrawable += 1;
         continue;
       }

@@ -184,16 +184,32 @@ DURATION_BEATS: dict[str, float] = {
     "septuplet_sixteenth": 1.0 / 7.0,
 }
 
-# Pitch: "rest" or scientific-pitch like "C4", "F#3", "Bb2".
-#: What `Note.pitch` accepts: `rest`, or a step A–G with an optional single
-#: accidental and **one** octave digit.
+# Pitch: "rest" or scientific-pitch like "C4", "F#3", "Bb2", "F##4", "Bbb3".
+#: What `Note.pitch` accepts: `rest`, or a step A–G with an optional accidental
+#: — single or **double** — and one octave digit.
+#:
+#: **Double accidentals were outside the grammar, and the note was dropped.**
+#: `_pitch_name` said so in as many words: "Naming the natural instead would be
+#: a wrong note, so drop it and let the note count fall short, which the
+#: validator can see." Both halves of that were true and the choice was still
+#: between two damaging options, because a dropped note is not a quiet loss —
+#: it is a **lost onset**, and `alignment.py` accumulates durations, so every
+#: bar after it is judged against music that is not there. A double sharp is
+#: ordinary in the repertoire this app is for: any chromatic passage in a sharp
+#: key writes them, and Kreutzer, Bach and Paganini are full of them.
+#:
+#: Widening the grammar removes the choice rather than picking a side.
+#: `##` and `bb` are matched **before** `#` and `b` — a regex alternation takes
+#: the first branch that matches, so the single-accidental branch first would
+#: match `F#` out of `F##4` and leave `#4` unconsumed, failing the anchor and
+#: dropping exactly the note this exists to keep.
 #:
 #: Exported so `musicxml.py` can ask the same question before it builds a note
 #: rather than after. It used to hand over whatever the file said and let the
 #: model reject it — which raised `ValidationError` out of the importer, past
 #: the `MusicXMLError` the import route catches, and turned a file with one bad
 #: notehead into a 500. See `_pitch_name`.
-PITCH_PATTERN = re.compile(r"^(?:rest|[A-G](?:#|b)?-?\d)$")
+PITCH_PATTERN = re.compile(r"^(?:rest|[A-G](?:##|bb|#|b)?-?\d)$")
 _PITCH_PATTERN = PITCH_PATTERN
 
 

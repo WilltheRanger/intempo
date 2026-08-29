@@ -6,6 +6,148 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-29 — Notation coverage, measured: four things were shown wrong rather than admitted
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Asked: *"there's a lot of
+edge cases in music and notations can you make sure the program accounts for all
+of them?"* — no, and no program can; Western notation is open-ended. What is
+possible is making the coverage **legible**, then fixing what that exposes.
+
+**Files:** `tools/notation-coverage.py` (new),
+`backend/app/services/score_schema.py`, `backend/app/services/ocr/musicxml.py`,
+`backend/app/tests/test_musicxml.py`, `mobile/src/lib/notation/engrave.ts`,
+`mobile/src/lib/notation/fromScore.ts` + test.
+
+### The tool first, because the answer is a measurement
+
+`tools/notation-coverage.py` runs 35 notation constructs and the whole
+note-value matrix (every `<type>` × dots × common tuplet ratio) through the real
+importer and the real beat checks, locally, in a second. The value matrix is
+worth having because the importer holds **no table** of these — it computes a
+length and looks for a name of that length, so a combination is covered exactly
+when its arithmetic lands on one, which is not predictable by reading the code.
+
+30 of 35 constructs were already clean on the first run: pickup bars, cut time,
+compound and irregular metres, mid-piece metre and key changes, repeats, first
+and second endings, D.C./Fine, D.S., fermatas, rit./a tempo, metronome marks,
+tremolo, trills, turns, mordents, arpeggios, glissandi, breath marks,
+transposition, 8va, multi-voice with `<backup>`, `<forward>`, grace notes, ties
+across barlines, chords, bar rests and multi-bar rests. That is a well-built
+importer and the table now says so out loud.
+
+### Four defects, all the same shape
+
+Each one showed something **wrong** as though it were right, or dropped a note —
+and a dropped note is not a lost symbol, it is a lost **onset**, which
+`alignment.py` accumulates into every bar after it.
+
+**1. A double accidental had no spelling, so the note was dropped.**
+`_pitch_name` said so plainly: *"Naming the natural instead would be a wrong
+note, so drop it and let the note count fall short."* Both options are damaging;
+the grammar was the thing that was wrong. `F##` and `Bbb` are ordinary in this
+repertoire — any chromatic passage in a sharp key writes them.
+
+Measured on the repo's own bundled `bass_excerpt.musicxml`, which carries a real
+`Ebb3`:
+
+| | dropped | spelled |
+|---|---|---|
+| measure 2 | `short` | `ok` |
+| confidence | 0.50 | **1.00** |
+
+Corpus mean **0.61 → 0.71**.
+
+`##`/`bb` are matched **before** `#`/`b` in both regexes: an alternation takes
+the first branch that matches, so the single-accidental branch first pulls `F#`
+out of `F##4`, leaves `#4` unconsumed, fails the anchor, and drops exactly the
+note this exists to keep.
+
+**2. A microtone was rounded to a natural.** `<alter>` allows fractions —
+0.5 is a quarter-sharp — and `int(float(...))` truncated it to 0. So a
+three-quarter-sharp was written out as a plain natural: a wrong note printed
+exactly like the right ones around it, arrived at by arithmetic rather than by
+anyone's decision, in the very function whose comment says it exists to avoid
+that. Non-integral alters now drop, like triples.
+
+**3. A pitch the engraver could not place was drawn on the middle line.**
+`engrave.ts` read `stepOf(note.pitch)` and fell back to `y = 0`. So a note
+nobody could place appeared among the correct ones, in the same ink, under
+whatever name it carried — the pitch equivalent of drawing a sixteenth as an
+eighth. `fromScore.ts`'s own docstring forbids it: *"Drawing less and admitting
+it is honest; drawing something else is not."* Such notes are now left out and
+counted, like an undrawable duration.
+
+The app's `PITCH` regex learned `##`/`bb` in the same change, and it had to:
+widening the server alone would have turned a note quietly *missing* into a note
+quietly in the *wrong place*. `accidentalOf` still returns no glyph for a
+double — borrowing the single sharp would be a different note shown as right —
+so it loses its symbol and keeps its position, exactly as a flat does today, and
+`displayName` spells it in the row under the system. That replace was also
+un-anchored, so `F##4` read back as `F♯#`, half-converted.
+
+**4. `<unpitched>` was dropped.** It is how percussion is written, and how a
+string part writes a body tap or col legno battuto — a notehead with a real
+attack on a line the player reads. Dropped for having no `<pitch>`, so on a part
+written entirely that way *every* note vanished and the page was refused for
+coming out empty. It now keeps `display-step`/`display-octave`, which is the
+staff position the engraver drew. Nothing downstream wants a frequency: the
+verdict reads pitch only as `== "rest"` and a tie compares two for equality.
+
+### Tests whose premise had gone, rewritten rather than deleted
+
+`test_an_unrepresentable_note_is_dropped_and_declared` asserted the **opposite**
+of the new behaviour and explained why in detail. Its reasoning was sound about
+the choice available at the time and the choice itself was the problem. Rewritten
+with the before/after measured, and the half that survives — past a double there
+is genuinely no spelling — kept as its own test.
+`test_chord_members_are_not_counted` expected three notes because the fourth was
+being dropped; nothing about chords changed.
+
+### Still missing, and now visible rather than unknown
+
+- **128th and shorter have no name at any ratio**, so they drop. `Duration` is a
+  closed union shared with the app, so widening it changes both sides and the
+  measure editor — not done on the strength of a construct nobody here has seen
+  in a real part.
+- **Dotted notes inside tuplets are patchy.**
+- **Microtones and triple accidentals drop by design.**
+- A page with no metre stays `unverifiable`, which is correct rather than a gap.
+
+All four drop the note, which the bar's beat sum then reports — visible, not
+silent. The tool prints them on every run.
+
+### Five more tests across the suite had the same premise
+
+All five used a double accidental as their example of an unrepresentable note,
+so all five broke — every one of them my fix working, and every one rewritten
+rather than deleted:
+
+- **`test_the_pitch_grammar_refuses_what_is_not_one`** listed `Abb2` and `A##3`
+  among things the grammar must refuse, annotated `# double flat` as though
+  being one were the reason. Moved to the accepts list; triples and `A#b3` took
+  their place, so the refusal case is still pinned by example.
+- **`test_a_grace_whose_note_this_schema_drops_rides_on`** — the rule survives
+  (a grace whose note is dropped rides on to the next), only the example needed
+  to be a note that still drops.
+- **`test_the_bundled_fixture_loses_its_ornament_at_the_end_of_the_page`** was
+  the best confirmation of the lot. `bass_excerpt.musicxml` prints a grace
+  before its *last* note, and that note is the `Ebb3`: the note was dropped, and
+  being last there was nothing further along for the ornament to ride to, so it
+  went too. One fix recovered both. Renamed to say what now happens.
+- **`test_the_renumbering_sentence_does_not_displace_the_others`** needed a note
+  that still goes missing for its two sentences to coexist.
+
+### Tests
+
+`backend` full suite **1720 passed, 3 xfailed**. `mobile` 39 files / 467 passed,
+`tsc` clean.
+
+### Not verified
+
+No homr in the loop — every measurement here is the importer and the validator
+on MusicXML, not a reading of a photograph. And the note-value matrix reports
+what can be *named*, not what a musician would recognise on the page.
+
 ## 2026-08-29 — A bar of rest is not an empty bar, and the scanner says so at the shutter
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Asked for: *"can you improve

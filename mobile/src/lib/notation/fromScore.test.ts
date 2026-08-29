@@ -256,3 +256,50 @@ describe('describeOmissions', () => {
     );
   });
 });
+
+// ---------------------------------------------------------------------------
+// Pitches the engraver cannot place
+// ---------------------------------------------------------------------------
+
+describe('a pitch the engraver cannot place', () => {
+  function scoreWith(pitches: string[]): ScoreJson {
+    return {
+      time_signature: '4/4',
+      clef: 'treble',
+      ocr_confidence: 1,
+      measures: [
+        {
+          measure_number: 1,
+          notes: pitches.map((pitch) => ({ pitch, duration: 'quarter' as const })),
+        },
+      ],
+    } as unknown as ScoreJson;
+  }
+
+  it('is left out and counted, not drawn on the middle line', () => {
+    // **What it used to do.** `engrave.ts` read `stepOf(note.pitch)` and fell
+    // back to `y = 0` — the middle line — for anything it could not parse. So a
+    // note at a pitch nobody could place was drawn among the ones that were
+    // right, in the same ink, under whatever name it carried. That is the pitch
+    // version of drawing a sixteenth as an eighth, and this module's own
+    // docstring forbids it: drawing less and admitting it is honest, drawing
+    // something else is not.
+    const out = staveScoreFor(scoreWith(['C4', 'F###4', 'D4']));
+
+    expect(out.noteCount).toBe(2);
+    expect(out.undrawable).toBe(1);
+    expect(out.items.every((item) => !('pitch' in item) || item.pitch !== 'F###4')).toBe(
+      true,
+    );
+  });
+
+  it('does not leave a double accidental out — those are placeable now', () => {
+    // The server spells `F##` and `Bbb`, so the engraver must too, or the fix
+    // above turns into a note quietly missing from the stave instead of a note
+    // quietly in the wrong place.
+    const out = staveScoreFor(scoreWith(['F##4', 'Bbb3', 'C4']));
+
+    expect(out.noteCount).toBe(3);
+    expect(out.undrawable).toBe(0);
+  });
+});

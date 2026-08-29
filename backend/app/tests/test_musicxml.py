@@ -70,7 +70,10 @@ def test_chord_members_are_not_counted(score) -> None:
     beat-sum check would then report a correctly-read measure as long — sending
     a repair pass at the one measure that did not need one.
     """
-    assert [n.pitch for n in score.measures[1].notes] == ["D3", "D3", "F#3"]
+    # `Ebb3` joined this list when the pitch grammar learned to spell a double
+    # accidental. It was being dropped, which is why the expected list was three
+    # notes long — nothing about chords changed.
+    assert [n.pitch for n in score.measures[1].notes] == ["D3", "D3", "F#3", "Ebb3"]
 
 
 def test_grace_notes_are_not_counted(score) -> None:
@@ -90,17 +93,33 @@ def test_first_measure_sums_to_the_metre(score) -> None:
     assert rows[0].verdict == "ok"
 
 
-def test_an_unrepresentable_note_is_dropped_and_declared(score) -> None:
-    """E-double-flat has no name in the pitch grammar.
+def test_the_double_flat_in_this_excerpt_is_now_read(score) -> None:
+    """**This test asserted the opposite, and its premise has gone.**
 
-    Writing "Eb3" instead would be a wrong note that reads as a confident one.
-    Dropping it leaves the measure short, which the beat-sum check can see, and
-    the count is reported rather than buried.
+    It read: *"E-double-flat has no name in the pitch grammar. Writing 'Eb3'
+    instead would be a wrong note that reads as a confident one. Dropping it
+    leaves the measure short, which the beat-sum check can see."* Every clause
+    was true, and the choice it described was between two damaging options —
+    the grammar was the thing that was wrong, because a dropped note is a lost
+    **onset** and `alignment.py` accumulates durations.
+
+    Measured on this fixture, which is a real bass excerpt and carries a real
+    `Ebb3`:
+
+    | | dropped | spelled |
+    |---|---|---|
+    | measure 2 | `short` | `ok` |
+    | confidence | 6/7 | **1.00** |
+    | `notes_to_human` | "1 note(s)…" | empty |
+
+    The half of the old reasoning that survives is tested next door: past a
+    double there is still no spelling, and those still drop.
     """
-    assert "1 note(s)" in score.notes_to_human
-    assert score.ocr_confidence == pytest.approx(6 / 7, abs=1e-3)
+    assert score.notes_to_human == ""
+    assert score.ocr_confidence == pytest.approx(1.0)
     rows = validate_measures(score)
-    assert rows[1].verdict == "short"
+    assert [row.verdict for row in rows] == ["ok", "ok"]
+    assert all(row.unwritable_notes == 0 for row in rows)
 
 
 def test_namespaced_document_is_read() -> None:
@@ -3273,3 +3292,114 @@ def test_a_part_that_is_mostly_rest_is_not_refused_as_holes() -> None:
     assert confidence_from_arithmetic(findings) == 1.0
     # Does not raise.
     _refuse_if_it_is_not_a_reading("homr", score, findings)
+
+
+# ---------------------------------------------------------------------------
+# Double accidentals
+# ---------------------------------------------------------------------------
+
+
+def _bar_with(first_note: str) -> str:
+    plain = (
+        "<note><pitch><step>C</step><octave>4</octave></pitch>"
+        "<duration>4</duration><type>quarter</type></note>"
+    )
+    return f"""<?xml version="1.0"?>
+<score-partwise version="4.0"><part-list><score-part id="P1">
+<part-name>V</part-name></score-part></part-list><part id="P1">
+ <measure number="1"><attributes><divisions>4</divisions>
+   <time><beats>4</beats><beat-type>4</beat-type></time>
+   <clef><sign>G</sign><line>2</line></clef></attributes>
+   {first_note}{plain * 3}</measure>
+</part></score-partwise>"""
+
+
+def _altered_note(alter: int, step: str = "F") -> str:
+    return (
+        f"<note><pitch><step>{step}</step><alter>{alter}</alter>"
+        "<octave>4</octave></pitch><duration>4</duration>"
+        "<type>quarter</type></note>"
+    )
+
+
+@pytest.mark.parametrize(
+    "alter,step,spelled",
+    [(2, "F", "F##4"), (-2, "B", "Bbb4"), (1, "F", "F#4"), (-1, "B", "Bb4"), (0, "F", "F4")],
+)
+def test_an_accidental_is_spelled_rather_than_dropped(alter, step, spelled) -> None:
+    """**A dropped note is a lost onset, not a lost symbol.**
+
+    Double accidentals were outside the pitch grammar, and `_pitch_name`
+    returned None for them — so the note vanished, the bar came up a beat short,
+    and because `alignment.py` accumulates durations every bar after it was
+    judged against music that is not there. The comment there weighed dropping
+    against naming the natural and picked the lesser harm; both are harmful, and
+    the grammar is the thing that was wrong.
+
+    Ordinary in this repertoire: any chromatic passage in a sharp key writes a
+    double sharp, and Kreutzer, Bach and Paganini are full of them.
+    """
+    score = score_json_from_musicxml(_bar_with(_altered_note(alter, step)))
+
+    assert [n.pitch for n in score.measures[0].notes] == [spelled, "C4", "C4", "C4"]
+    assert [f.verdict for f in validate_measures(score)] == ["ok"]
+
+
+@pytest.mark.parametrize("alter", [3, -3, 7])
+def test_a_triple_accidental_is_still_refused(alter) -> None:
+    """Past a double there is no spelling here, and inventing one is the
+    wrong-note outcome the grammar exists to avoid. It drops, and the short bar
+    is what the validator sees — the same trade as before, now made only where
+    there is genuinely no answer."""
+    score = score_json_from_musicxml(_bar_with(_altered_note(alter)))
+
+    assert [n.pitch for n in score.measures[0].notes] == ["C4", "C4", "C4"]
+
+
+def test_a_quarter_tone_alter_does_not_become_a_natural() -> None:
+    """`alter="0.5"` is a quarter-tone. It has no spelling here, and rounding it
+    to 0 would put a natural on the page where a three-quarter-sharp was
+    printed — a wrong note presented as a right one."""
+    score = score_json_from_musicxml(
+        _bar_with(
+            "<note><pitch><step>F</step><alter>0.5</alter><octave>4</octave></pitch>"
+            "<duration>4</duration><type>quarter</type></note>"
+        )
+    )
+
+    assert [n.pitch for n in score.measures[0].notes] == ["C4", "C4", "C4"]
+
+
+def test_an_unpitched_note_keeps_the_place_it_was_printed() -> None:
+    """**A notehead with no frequency is still a notehead.**
+
+    `<unpitched>` is how percussion is written, and how a string part writes a
+    body tap or col legno battuto. It was dropped for having no `<pitch>`, which
+    costs the *onset* — and `alignment.py` accumulates, so every bar after it is
+    judged against music that is not there. On a part written entirely this way
+    every note dropped and the page was refused for coming out empty.
+
+    `display-step` and `display-octave` are the staff position the engraver
+    drew, so that is what the note keeps. Nothing downstream wants a frequency:
+    the verdict reads pitch only as `== "rest"`, and a tie compares two of them
+    for equality.
+    """
+    score = score_json_from_musicxml(
+        _bar_with(
+            "<note><unpitched><display-step>E</display-step>"
+            "<display-octave>4</display-octave></unpitched>"
+            "<duration>4</duration><type>quarter</type></note>"
+        )
+    )
+
+    assert [n.pitch for n in score.measures[0].notes] == ["E4", "C4", "C4", "C4"]
+    assert [f.verdict for f in validate_measures(score)] == ["ok"]
+
+
+def test_an_unpitched_note_without_a_display_position_is_still_dropped() -> None:
+    """`<unpitched/>` empty is legal MusicXML and says nothing about where the
+    notehead sits. Putting it somewhere would be inventing the one thing the
+    element was supposed to carry."""
+    score = score_json_from_musicxml(_bar_with("<note><unpitched/><duration>4</duration><type>quarter</type></note>"))
+
+    assert [n.pitch for n in score.measures[0].notes] == ["C4", "C4", "C4"]
