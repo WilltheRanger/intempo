@@ -44,6 +44,21 @@ export const BEATS: Record<Duration, number> = {
   triplet_quarter: 2 / 3,
   triplet_eighth: 1 / 3,
   triplet_sixteenth: 1 / 6,
+  // Five in the time of four, and seven in the time of four. A half is 2
+  // beats, so a quintuplet half is 2 x 4/5 = 8/5.
+  //
+  // Written as a single division of two exact integers, matching score_schema
+  // .py character for character: `test_client_enums.py` compares the two
+  // tables to 1e-12 and evaluates this arithmetic literally, so a decimal
+  // typed to any number of places would be a different double.
+  quintuplet_half: 8 / 5,
+  quintuplet_quarter: 4 / 5,
+  quintuplet_eighth: 2 / 5,
+  quintuplet_sixteenth: 1 / 5,
+  septuplet_half: 8 / 7,
+  septuplet_quarter: 4 / 7,
+  septuplet_eighth: 2 / 7,
+  septuplet_sixteenth: 1 / 7,
 };
 
 /**

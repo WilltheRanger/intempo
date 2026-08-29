@@ -99,7 +99,15 @@ export type Duration =
   | 'triplet_half'
   | 'triplet_quarter'
   | 'triplet_eighth'
-  | 'triplet_sixteenth';
+  | 'triplet_sixteenth'
+  | 'quintuplet_half'
+  | 'quintuplet_quarter'
+  | 'quintuplet_eighth'
+  | 'quintuplet_sixteenth'
+  | 'septuplet_half'
+  | 'septuplet_quarter'
+  | 'septuplet_eighth'
+  | 'septuplet_sixteenth';
 
 export type RepeatType = 'repeat' | 'first_ending' | 'second_ending';
 

@@ -234,14 +234,20 @@ def test_an_articulation_this_schema_does_not_hold_is_dropped_not_fatal() -> Non
     ).articulation == "staccato"
 
 
-@pytest.mark.parametrize("duration", ["long", "maxima", "quintuplet_eighth", ""])
+@pytest.mark.parametrize(
+    "duration", ["long", "maxima", "triple_dotted_quarter", ""]
+)
 def test_a_duration_this_schema_cannot_express_is_still_fatal(duration: str) -> None:
     """The line this tolerance stops at, and it is not arbitrary.
 
     `long` and `maxima` rather than a value that might later ship: `musicxml.py`
     names those two as the values deliberately outside what this product reads.
     This used to say `sixty_fourth` and `breve`, both of which then shipped —
-    the test was right and its examples expired.
+    the test was right and its examples expired. It then said
+    `quintuplet_eighth`, which shipped as well. Three for three, so the example
+    to pick is one whose absence is *reasoned* rather than merely current: a
+    triple dot has no name because `_DOT_FACTOR` stops at two, and `musicxml.py`
+    says so where it stops.
 
 
     A dynamic nothing reads can be dropped for free. A *duration* cannot: it is

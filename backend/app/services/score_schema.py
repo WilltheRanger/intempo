@@ -77,7 +77,55 @@ Duration = Literal[
     # what makes adding them safe rather than a source of false "does not add
     # up" reports.
     "triplet_half", "triplet_quarter", "triplet_eighth", "triplet_sixteenth",
+    # Quintuplets and septuplets, on exactly the argument that added the
+    # triplets above — and they cost more than the triplets did, because of
+    # what the importer does when it cannot name a group.
+    #
+    # A note with no name is not dropped any more: `_unnameable_tuplet_beats`
+    # keeps the *group's* length and writes it as rests, so the bar still adds
+    # up. That is the right trade when the alternative is moving every later
+    # bar, and it means the failure is now completely silent to the beat check.
+    # Measured on a 4/4 bar of a 5:4 quintuplet of sixteenths and three
+    # quarters, read correctly off the page:
+    #
+    #     onsets in the transcription   3 of 8
+    #     beat-sum verdict              ok, 4.0 of 4.0
+    #     the only trace                unwritable_notes = 5
+    #
+    # Five attacks the musician plays are silence in the expected timeline, and
+    # `alignment.py` matches detections against that timeline — so a passage
+    # played correctly is scored against a bar that says nothing happens there.
+    # The septuplet case is the same with seven.
+    #
+    # 5:4 and 7:4 are the ratios an engraver actually writes, and they are the
+    # two the gate in `tuplet_ratio_is_writable` was documented to refuse. Each
+    # name here is a *length*, exactly as `triplet_eighth` is: it is what the
+    # base value becomes under the bracket, which is why 7:8 eighths need no
+    # name of their own — they land on `septuplet_quarter`'s 4/7 and the
+    # beats-to-name lookup finds them. What still has no name is a ratio landing
+    # on none of these values at all (5:6 in compound metre, a triplet of
+    # thirty-seconds), and those still keep their length as rests.
+    #
+    # Fifths and sevenths are not exactly representable in binary. Every
+    # comparison downstream already carries `validate.TOLERANCE`, and the sums
+    # are checked exhaustively rather than assumed — see
+    # `test_duration_beats.py`.
+    "quintuplet_half", "quintuplet_quarter",
+    "quintuplet_eighth", "quintuplet_sixteenth",
+    "septuplet_half", "septuplet_quarter",
+    "septuplet_eighth", "septuplet_sixteenth",
 ]
+
+#: The names a bracket produces and a plain notehead never does.
+#:
+#: `_WRITTEN_BEATS` used to be spelled "every name that does not start with
+#: `triplet_`", which was correct while triplets were the only tuplet in the
+#: schema and silently wrong the moment they were not: a `quintuplet_eighth`
+#: would have been filed as a value an engraver writes, and
+#: `untuplets_cleanly` — which asks whether a stored duration is what the
+#: bracket over it would produce — would have called a correctly-read
+#: quintuplet a fault. Named here so that adding a tuplet is one edit.
+TUPLET_PREFIXES: tuple[str, ...] = ("triplet_", "quintuplet_", "septuplet_")
 
 #: Quarter-note beats per duration — the single table.
 #:
@@ -116,6 +164,24 @@ DURATION_BEATS: dict[str, float] = {
     "triplet_quarter": 2.0 / 3.0,
     "triplet_eighth": 1.0 / 3.0,
     "triplet_sixteenth": 1.0 / 6.0,
+    # Five in the time of four, and seven in the time of four: the written
+    # value scaled by normal/actual, which is the same arithmetic the triplets
+    # above are and the same arithmetic `musicxml._duration_name` does on the
+    # way in. A half is 2 beats, so a quintuplet half is 2 × 4/5 = 8/5.
+    #
+    # Written as a single division of two exact integers, in this order, on
+    # both sides. `test_client_enums` compares these against the app's table to
+    # 1e-12 and evaluates the app's arithmetic literally, so `8 / 5` and
+    # `2 * 4 / 5` agreeing is a fact about these particular numbers rather than
+    # a rule — reduced fractions make the two files the same expression.
+    "quintuplet_half": 8.0 / 5.0,
+    "quintuplet_quarter": 4.0 / 5.0,
+    "quintuplet_eighth": 2.0 / 5.0,
+    "quintuplet_sixteenth": 1.0 / 5.0,
+    "septuplet_half": 8.0 / 7.0,
+    "septuplet_quarter": 4.0 / 7.0,
+    "septuplet_eighth": 2.0 / 7.0,
+    "septuplet_sixteenth": 1.0 / 7.0,
 }
 
 # Pitch: "rest" or scientific-pitch like "C4", "F#3", "Bb2".
@@ -605,21 +671,23 @@ def broken_ties(measures: Sequence[Measure]) -> list[BrokenTie]:
 # the reading is silently wrong. Stating the ratio makes that answerable.
 
 
-#: Ratios `Duration` can express. Three in the time of two, and nothing else.
+#: Ratios `Duration` can express: 3:2, 5:4 and 7:4, plus every ratio that maps a
+#: written value onto another written value (2:3, 4:3, 6:4).
 #:
-#: A quintuplet, a septuplet or a dotted triplet has no name in `Duration`, so a
-#: score claiming one is telling us it holds notes we cannot place. That is
-#: worth reporting rather than approximating: `TUPLET_NOTE` in `ocr/validate`
-#: is the sentence the model is given about it.
+#: What remains unnameable is a ratio that lands on none of those lengths — 5:6
+#: in a compound metre, a triplet of thirty-seconds. A score claiming one is
+#: telling us it holds notes we cannot place, which is worth reporting rather
+#: than approximating: `TUPLET_NOTE` in `ocr/validate` is the sentence the model
+#: is given about it.
 #: Every length, in quarter-beats, that a plain notehead and its dots write —
 #: no bracket involved.
 #:
-#: The triplet names are exactly the complement: they are what a bracket
+#: The tuplet names are exactly the complement: they are what a bracket
 #: produces and nothing else, which is what makes them evidence.
 _WRITTEN_BEATS: frozenset[float] = frozenset(
     round(beats, 6)
     for name, beats in DURATION_BEATS.items()
-    if not name.startswith("triplet_")
+    if not name.startswith(TUPLET_PREFIXES)
 )
 
 #: The lengths only a bracket can produce.
@@ -674,8 +742,14 @@ def tuplet_ratio_is_writable(actual: int, normal: int) -> bool:
 
     A coarse gate in front of the per-note check, and it has to stay coarse:
     what a bracket is worth depends on the value under it, so the ratio alone
-    can only say that nothing at all fits. 5:4 is the ordinary ratio that does
-    not — a fifth of a beat has no notehead — and it is why the gate exists.
+    can only say that nothing at all fits.
+
+    5:4 used to be the ordinary ratio that did not fit, and was the reason the
+    gate was written. It fits now — `Duration` names quintuplets and septuplets
+    — so what this refuses is narrower than it was: a ratio landing on no named
+    length at all, such as 5:6 in a compound metre. The gate is still worth
+    having for exactly the reason it always was, since a ratio that fits nothing
+    would otherwise be approximated silently.
     """
     nameable = _WRITTEN_BEATS | _TUPLET_ONLY_BEATS
     return any(

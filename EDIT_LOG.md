@@ -6,6 +6,103 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-29 — A quintuplet read correctly off the page came back as silence
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Backend, schema and app
+plumbing — no screen, component, style or layout touched. One user-visible
+string per new duration (the `DURATION_LABELS` entry the `Record<Duration, …>`
+type forces), following the existing `³` convention.
+
+**Files:** `backend/app/services/score_schema.py`,
+`backend/app/services/ocr/musicxml.py`, `backend/app/services/ocr/validate.py`,
+`backend/app/prompts/ocr_prompt.txt`, `mobile/src/data/types.ts`,
+`mobile/src/lib/score/schedule.ts`, `mobile/src/lib/notation/reading.ts`, and
+four test files.
+
+`Duration` named triplets and no other tuplet. Anything else had its notes
+dropped and its *length* kept as rests by `_unnameable_tuplet_beats` — the
+right trade when the alternative is moving every later bar, and the reason the
+failure is now completely invisible to the beat check. Measured before the
+change, on a 4/4 bar of a 5:4 quintuplet of sixteenths and three quarters,
+constructed correct and read correctly:
+
+    onsets in the transcription   3 of 8
+    beat-sum verdict              ok, 4.0 of 4.0
+    the only trace                unwritable_notes = 5
+
+`alignment.py` matches detections against that timeline, so a musician playing
+the quintuplet was measured against a bar expecting nothing there. The
+septuplet case is the same with seven.
+
+**What changed:** eight names — `quintuplet_half` … `quintuplet_sixteenth`
+(5:4) and `septuplet_half` … `septuplet_sixteenth` (7:4). Additive to a closed
+`Literal`, exactly as the triplets and the double dots were, and no stored
+score is invalidated. Measured after, same four bars:
+
+    5:4 quintuplet of 16ths + 3 quarters   8 of 8 onsets, ok, 4.0
+    7:4 septuplet of 16ths + 3 quarters   10 of 10 onsets, ok, 4.0
+    5:4 quintuplet of 8ths + 2 quarters    7 of 7 onsets, ok, 4.0
+    7:8 septuplet of 8ths (fills the bar)  7 of 7 onsets, ok, 4.0
+
+The importer needed no new code: `_duration_name` already computes
+`written × normal/actual` and looks the result up, so naming the lengths is
+what taught it the ratios. 7:8 needs no name of its own — it lands on
+`septuplet_quarter`'s 4/7 and the lookup finds it.
+
+**The bug this nearly shipped with.** `_WRITTEN_BEATS` was spelled "every name
+that does not start with `triplet_`", which was correct while triplets were the
+only tuplet and silently wrong the moment they were not: a `quintuplet_eighth`
+would have been filed as a value an engraver writes, and `untuplets_cleanly`
+would have called a correctly-read quintuplet a fault. Now `TUPLET_PREFIXES`.
+
+**Tests.** Nineteen failed on the first run and every one of them was this
+change working — they used 5:4 as their example of an unwritable ratio, so they
+had quietly become tests that a *writable* ratio is reported unwritable. Two
+replacements, chosen rather than picked: **5:6** (a quintuplet as bracketed in a
+compound metre) where the subject is a ratio the schema cannot name, and **9:8
+thirty-seconds** where a group needs no writable parts but a writable total —
+a group's total is `base × normal` and does not depend on how many notes are
+inside it, so the nonuplet is still a quarter and those bars kept their shape.
+This is the third time an example in this repository has expired by shipping
+(`sixty_fourth`, `breve`, then `quintuplet_eighth`), so
+`test_a_duration_this_schema_cannot_express_is_still_fatal` now uses a triple
+dot, whose absence is *reasoned* — `_DOT_FACTOR` stops at two — rather than
+merely current.
+
+Two new tests carry the claim the tolerance rests on. `EXACT_BEATS` states
+every duration as a `Fraction` — a second table on purpose, and the only one
+that can say whether the floats are *right* rather than merely consistent —
+and `test_no_bar_that_should_add_up_fails_the_beat_check` sums every
+combination of up to six durations whose exact total is a whole number of
+beats, the way the validator sums them. **11,293 such bars, worst
+floating-point error 0.0.** Not a theorem, which is why it is a test.
+
+**Green:** backend 1651 passed / 3 xfailed; app 431 passed in 36 files;
+`tsc --noEmit` clean. The two browser tools rebuild from `sandbox_shared`, so
+they picked up all eight names and the new `TUPLET_NOTE` with no hand edit, and
+`test_sandbox_parity` passes — which is the arrangement working as designed.
+
+**Known gaps, unfixed and deliberate:**
+
+- **`EDITABLE_DURATIONS` is unchanged.** A score can hold a quintuplet and
+  `MeasureEditScreen` will label one correctly; it is not offered as a button.
+  Eight more controls on a thumb-sized picker is a decision about that screen
+  (CLAUDE.md §2), not a consequence of the schema knowing a name. The list was
+  already a subset — `triplet_half` and `triplet_sixteenth` are not there
+  either.
+- **A double accidental still costs a note**, and it is worse than a quintuplet
+  was because the note is dropped outright rather than kept as a rest.
+  Reproduced on `fixtures/musicxml/bass_excerpt.musicxml`: the `Ebb3` in bar 2
+  vanishes, the bar reads 3.0 of 4.0 and is reported short. Not fixed here —
+  see `DECISIONS.md`, today, for what it would take and why it is not a regex
+  change.
+
+**Rollback:** `git revert`. The names are additive; a score written with one
+would fail validation on the old code, so a revert would need those rows
+re-read — none exist yet, since nothing has been scanned since this shipped.
+
+---
+
 ## 2026-08-28 — Migrations 011 and 012 applied to the live database
 
 **Branch:** `main`. No code change — this entry records a deployment-state

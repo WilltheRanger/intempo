@@ -239,6 +239,12 @@ export const EDITABLE_DURATIONS = [
   // reaching for one knows what they are looking for.
   'triplet_quarter',
   'triplet_eighth',
+  // Deliberately a subset of `Duration`, and always has been — `triplet_half`
+  // and `triplet_sixteenth` are not here either. A score can *hold* a
+  // quintuplet or a septuplet, and this screen will label one correctly; what
+  // it does not do is offer eight more buttons on a control a thumb has to
+  // hit. Widening it is a design decision about this screen, not a
+  // consequence of the schema knowing a new name.
 ] as const;
 
 /** How a duration is written on a button. Not the American names — a string
@@ -266,6 +272,14 @@ export const DURATION_LABELS: Record<Duration, string> = {
   triplet_quarter: 'Quarter ³',
   triplet_eighth: 'Eighth ³',
   triplet_sixteenth: '16th ³',
+  quintuplet_half: 'Half ⁵',
+  quintuplet_quarter: 'Quarter ⁵',
+  quintuplet_eighth: 'Eighth ⁵',
+  quintuplet_sixteenth: '16th ⁵',
+  septuplet_half: 'Half ⁷',
+  septuplet_quarter: 'Quarter ⁷',
+  septuplet_eighth: 'Eighth ⁷',
+  septuplet_sixteenth: '16th ⁷',
 };
 
 /**

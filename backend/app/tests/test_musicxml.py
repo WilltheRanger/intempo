@@ -1166,15 +1166,20 @@ def test_a_triplet_is_still_a_triplet() -> None:
 
 
 def test_a_ratio_with_no_name_is_still_dropped_rather_than_guessed() -> None:
-    """A quintuplet has no name in this schema, and the nearest triplet would
-    put notes at times nobody played. It is dropped and declared — which the
-    beat check then sees."""
-    five_four = (
+    """A ratio landing on no named length is dropped rather than approximated —
+    the nearest triplet would put notes at times nobody played. It is dropped
+    and declared, which the beat check then sees.
+
+    Five in the time of four was this test's example, and is now
+    `quintuplet_sixteenth`. Five in the time of **six** — how a quintuplet is
+    bracketed in a compound metre — still lands on nothing.
+    """
+    five_six = (
         "<time-modification><actual-notes>5</actual-notes>"
-        "<normal-notes>4</normal-notes></time-modification>"
+        "<normal-notes>6</normal-notes></time-modification>"
     )
     score = score_json_from_musicxml(
-        _part(_bar(1, _voiceless("quarter", 12) * 3 + _voiceless("16th", 2, five_four), _D4))
+        _part(_bar(1, _voiceless("quarter", 12) * 3 + _voiceless("16th", 2, five_six), _D4))
     )
 
     assert len(score.measures[0].notes) == 3
@@ -1461,18 +1466,30 @@ def test_a_second_multi_bar_rest_is_numbered_after_the_first() -> None:
 #: file can state, and a duration this schema has no name for, so it is
 #: dropped rather than approximated.
 _FINE = (
-    "<attributes><divisions>60</divisions>"
+    "<attributes><divisions>72</divisions>"
     "<time><beats>4</beats><beat-type>4</beat-type></time></attributes>"
 )
 _FINE_QUARTER = (
     '<note><pitch><step>D</step><octave>3</octave></pitch>'
-    "<duration>60</duration><type>quarter</type></note>"
+    "<duration>72</duration><type>quarter</type></note>"
 )
-_QUINTUPLET = (
-    '<note><pitch><step>D</step><octave>3</octave></pitch><duration>12</duration>'
-    "<type>16th</type><time-modification><actual-notes>5</actual-notes>"
-    "<normal-notes>4</normal-notes></time-modification></note>"
-) * 5
+#: A bracketed group this schema cannot name, worth exactly a quarter.
+#:
+#: Nine thirty-seconds in the time of eight — a ninth of a beat each, which no
+#: notehead writes. It was a 5:4 quintuplet of sixteenths until `Duration`
+#: learned `quintuplet_sixteenth`, at which point these three cases stopped
+#: testing the dropped-note sentence and started testing that a bar reads
+#: correctly, which they assert nothing about.
+#:
+#: A group's total is `base x normal` and does not depend on how many notes are
+#: inside it, so this is still a quarter and the bars around it are unchanged.
+#: `divisions` went 60 -> 72 for the same reason: sixty ticks to the quarter
+#: cannot divide into nine.
+_NAMELESS_GROUP = (
+    '<note><pitch><step>D</step><octave>3</octave></pitch><duration>8</duration>'
+    "<type>32nd</type><time-modification><actual-notes>9</actual-notes>"
+    "<normal-notes>8</normal-notes></time-modification></note>"
+) * 9
 
 
 def test_the_dropped_note_sentence_names_the_bar() -> None:
@@ -1487,13 +1504,13 @@ def test_the_dropped_note_sentence_names_the_bar() -> None:
     Which makes this sentence the **only** trace, where it used to be merely
     the most reliable one. The bar adds up, so the beat check is silent by
     design rather than by the accident this test was first written about — a
-    short first measure being forgiven as a pickup. Either way "5 note(s) were
+    short first measure being forgiven as a pickup. Either way "9 note(s) were
     dropped" does not say where to look, and naming the bar is the one thing a
     musician can act on.
     """
     score = score_json_from_musicxml(
         _part(
-            _bar(1, _QUINTUPLET + _FINE_QUARTER * 3, _FINE)
+            _bar(1, _NAMELESS_GROUP + _FINE_QUARTER * 3, _FINE)
             + _bar(2, _FINE_QUARTER * 4)
         )
     )
@@ -1518,7 +1535,7 @@ def test_the_named_bar_is_the_one_after_the_rests_moved_it() -> None:
         _part(
             _bar(1, _FINE_QUARTER * 4, _FINE)
             + _bar(2, "", _MULTI_REST_4)
-            + _bar(3, _QUINTUPLET + _FINE_QUARTER * 3)
+            + _bar(3, _NAMELESS_GROUP + _FINE_QUARTER * 3)
         )
     )
 
@@ -1530,9 +1547,9 @@ def test_several_damaged_bars_are_all_named() -> None:
     score = score_json_from_musicxml(
         _part(
             _bar(1, _FINE_QUARTER * 4, _FINE)
-            + _bar(2, _QUINTUPLET + _FINE_QUARTER * 3)
+            + _bar(2, _NAMELESS_GROUP + _FINE_QUARTER * 3)
             + _bar(3, _FINE_QUARTER * 4)
-            + _bar(4, _QUINTUPLET + _FINE_QUARTER * 3)
+            + _bar(4, _NAMELESS_GROUP + _FINE_QUARTER * 3)
         )
     )
 

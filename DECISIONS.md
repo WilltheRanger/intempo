@@ -6,6 +6,82 @@ Operating Principle #5.
 
 ---
 
+## 2026-08-29 — Tuplet names are additive; the pitch grammar is not, so it waits
+
+**Context:** two gaps in the schema were discarding music that homr had read
+correctly. Both looked like one-line widenings. Only one of them is.
+
+Measured before deciding, on fixtures in this repository:
+
+    5:4 quintuplet, bar otherwise correct   3 of 8 onsets kept, beat check "ok"
+    Ebb3 in bass_excerpt.musicxml           note dropped, bar 3.0 of 4.0, "short"
+
+**Decision:** ship the tuplet names (`quintuplet_*`, `septuplet_*`) now. Leave
+`PITCH_PATTERN` alone, and record why here rather than leaving the next person
+to rediscover the cost.
+
+**Why the two are not the same size.** A duration is a *number*: adding a name
+adds a row to one table, and every consumer either reads that table
+(`DURATION_BEATS`, substituted into both browser tools by `sandbox_shared`) or
+is forced by `Record<Duration, …>` to declare it. The compiler and
+`test_client_enums` between them find every site. A pitch is a *string that
+five separate places parse*, and only one of them imports the canonical
+pattern. An audit of every consumer found:
+
+- **`engrave.ts`** — `stepOf` returns null on an unparseable pitch and the
+  caller draws the notehead at `step === null ? 0`, i.e. **on the middle staff
+  line**. A double sharp would silently engrave as B4 in treble. There is also
+  no flat glyph at all today (`accidentalOf` only ever returns `'sharp'`), so
+  `##`/`bb` need new glyphs before they can be drawn at all.
+- **`schedule.ts`** — `frequencyOf` returns null, and the note is dropped from
+  playback while the clock still advances. Silent, not desynced.
+- **`reading.ts`** — `stepPitch` and `cycleAccidental` return the pitch
+  unchanged on a non-match, so the ▲/▼ and accidental controls become no-ops on
+  **exactly the notes a musician would open the editor to fix**.
+- **`frontend/src/lib/score.ts`** — a second grammar feeding `canSave`, so an
+  imported score containing one would be unsaveable in the web editor.
+- **`scan-bench.template.html`** — a third copy of the engraver; it degrades
+  visibly (`?`) rather than silently, which is the only one that fails well.
+
+So widening the regex alone converts "one note is missing, the bar is short,
+and the beat check says so" into "the bar looks complete and a notehead is
+drawn a seventh out of place." That is strictly worse by this codebase's own
+standard — the rule that keeps `ScoreJson.clef` nullable, because a bass part
+labelled "Treble clef" is worse than no label. **A wrong notehead presented as
+a right one is the failure mode, not the missing note.**
+
+**Alternatives considered:**
+
+- **Widen the grammar and fix the four TS parsers in the same change.** The
+  honest version, and what should eventually happen. It needs new accidental
+  glyphs on the stave and a `cycleAccidental` that can reach and clear a double
+  — both design decisions about a screen, which CLAUDE.md §2 gates. Not
+  something to decide inside a schema change.
+- **Widen the grammar now, fix the engraver later.** Rejected on the paragraph
+  above: it trades a visible failure for an invisible one.
+- **Keep the note's time as a rest**, the way an unwritable tuplet does. This
+  is the tempting middle and it is wrong here for a reason that does not apply
+  to tuplets: a tuplet's parts were *unnameable*, so a rest was the best
+  available answer, whereas `Ebb3` is a note this app could name if it chose to.
+  Writing a rest would make the bar sum correctly and silence the one check
+  that currently catches it. Today the bar comes up short, the musician is
+  shown a concern, and `MeasureEditScreen` can already correct pitch — so the
+  existing behaviour is a working repair path, not a dead end.
+
+**What it costs to wait:** a dropped note also shortens its bar, and
+`alignment.py` accumulates durations, so every later bar on the page is judged
+early. That is real. It is bounded by being *reported* — `unwritable_notes` and
+the short verdict both fire — which is what makes waiting tolerable rather than
+free. Double accidentals are common in sharp keys and romantic repertoire, so
+this should not wait indefinitely.
+
+**Also worth converging when that happens:** the copies already disagree about
+octaves. The canonical pattern ends `-?\d` (one digit); `engrave.ts`,
+`schedule.ts` and both scan-bench copies use `(-?\d+)`. `A99` is rejected by the
+backend and happily engraved by the app today.
+
+---
+
 ## 2026-08-27 — Skipping a long rest is a fact about the take, not a playback setting
 
 **Context:** an orchestral part is mostly waiting, and practising the notes

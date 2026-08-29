@@ -286,11 +286,20 @@ def _duration_name(note: ET.Element, divisions: int | None = None) -> str | None
     # lands on a written value, and a dotted triplet eighth lands exactly on an
     # eighth.
     #
-    # What is still dropped is what genuinely has no name: 5:4, 7:8, a triplet
-    # of thirty-seconds. Naming those needs new members in a `Duration` the app
-    # shares, and the honest alternative — replacing the whole group with rests
-    # that sum to it — needs the group, which is a `<tuplet>` bracket this
-    # module does not yet read.
+    # 5:4 and 7:4 were on that list until `Duration` learned to name them, and
+    # they were the expensive two: `_unnameable_tuplet_beats` keeps a group's
+    # *length* as rests, so a quintuplet read correctly off the page produced a
+    # bar that summed perfectly with five of its onsets replaced by silence —
+    # invisible to every check here. Measured before naming them, on a 4/4 bar
+    # of a 5:4 quintuplet of sixteenths and three quarters: 3 onsets of 8, and
+    # the beat check said `ok`.
+    #
+    # What is still dropped is what genuinely has no name: a ratio landing on
+    # none of the values in `DURATION_BEATS` — 5:6 in a compound metre, a
+    # triplet of thirty-seconds. Naming those needs new members in a `Duration`
+    # the app shares, and the honest alternative — replacing the whole group
+    # with rests that sum to it — is what `_unnameable_tuplet_beats` already
+    # does, at the cost above.
     stated_actual = _text(note.find("time-modification/actual-notes"))
     ratio = _tuplet_ratio(note)
     if ratio is not None:
