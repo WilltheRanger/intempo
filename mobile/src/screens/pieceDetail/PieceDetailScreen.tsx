@@ -406,7 +406,7 @@ export function PieceDetailScreen() {
               <SheetOptionRow
                 icon={FileMusic}
                 label="Digital score"
-                description="The transcribed notation."
+                description="The notes read from the page."
                 divided={false}
                 onPress={() =>
                   navigation.navigate('PieceScore', {
@@ -425,7 +425,7 @@ export function PieceDetailScreen() {
               <SheetOptionRow
                 icon={Layers}
                 label="Original pages"
-                description="The photograph this piece was transcribed from."
+                description="The pages this piece was read from."
                 divided={hasNotation || stillReading || readingFailed}
                 onPress={() =>
                   navigation.navigate('PieceScore', {

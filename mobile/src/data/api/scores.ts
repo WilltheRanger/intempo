@@ -31,13 +31,22 @@ export function getScore(id: string): Promise<ScoreResponse> {
 export type CreateScoreInput = TranscribedScoreInput | HandEnteredScoreInput;
 
 export interface TranscribedScoreInput {
-  image_url: string;
+  /**
+   * Every page of the part, in page order.
+   *
+   * The server takes `image_url` too — the single-page form, kept for builds
+   * already installed — and refuses both together rather than guessing which
+   * one won. This app sends `image_urls` for every scan, one page or twelve.
+   */
+  image_urls: string[];
+  image_url?: never;
   title: string;
   composer?: string | null;
   movement?: string | null;
 }
 
 export interface HandEnteredScoreInput {
+  image_urls?: never;
   image_url?: never;
   title: string;
   composer?: string | null;
@@ -56,10 +65,8 @@ export interface HandEnteredScoreInput {
 /**
  * POST /v1/scores
  *
- * With an image this runs OCR inline and takes 10–14 seconds in practice
- * (EDIT_LOG.md, Batch 2), so any caller needs a real progress state rather
- * than a brief spinner. A hand-entered piece skips OCR and returns straight
- * away.
+ * Returns as soon as the row exists. Reading the pages happens in a worker and
+ * is watched through `transcription_status` — see `useScan`.
  */
 export function createScore(input: CreateScoreInput): Promise<ScoreResponse> {
   return apiFetch<ScoreResponse>('/v1/scores', {

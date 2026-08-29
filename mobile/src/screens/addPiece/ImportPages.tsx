@@ -89,14 +89,14 @@ export function ImportPagesScreen() {
   return (
     <ScreenContainer>
       <PageHeader
-        title="Import score"
+        title="Choose photos"
         onBack={() => navigation.goBack()}
         backLabel="Back"
       />
 
       <Text variant="body" color="textSecondary" style={styles.lede}>
-        Choose photographs of the music you want transcribed. You can pick
-        several at once, and reorder them before saving.
+        Pick every page of the part. You can choose several at once and put
+        them in order before saving.
       </Text>
 
       {error ? (
@@ -106,7 +106,7 @@ export function ImportPagesScreen() {
       ) : null}
 
       <PrimaryButton
-        label="Choose images"
+        label="Choose photos"
         icon={Images}
         onPress={() => void pick()}
         loading={busy}
@@ -125,16 +125,11 @@ export function ImportPagesScreen() {
       */}
       {hasUsableCamera ? (
         <SecondaryButton
-          label="Use the camera instead"
+          label="Photograph them instead"
           onPress={() => navigation.replace('Scanner')}
           style={styles.secondary}
         />
       ) : null}
-
-      <Text variant="metadataSmall" color="textTertiary" style={styles.caveat}>
-        Only the first page is transcribed. A score spanning several pages
-        isn&apos;t supported yet.
-      </Text>
     </ScreenContainer>
   );
 }
@@ -151,8 +146,5 @@ const styles = StyleSheet.create({
   },
   secondary: {
     marginTop: spacing.md,
-  },
-  caveat: {
-    marginTop: spacing.xl,
   },
 });

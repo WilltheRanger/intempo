@@ -32,7 +32,15 @@ export type RootStackParamList = {
   Scanner: { adding?: boolean } | undefined;
   /** Pages live in the shared capture session, not in params. */
   CapturedPages: undefined;
-  Transcribe: undefined;
+  /**
+   * Naming the piece, and where the pages are uploaded.
+   *
+   * There used to be a `Transcribe` route between this and `CapturedPages`
+   * that did nothing but hold a progress bar while the pages went up. It made
+   * the musician wait for a transfer before it would ask them the one question
+   * only they could answer, so the upload moved into this screen and runs while
+   * they type.
+   */
   TranscriptionReview: undefined;
   PieceDetail: { pieceId: string };
   /**

@@ -6,6 +6,131 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-29 — Every page of the part is read, and the upload stops being a screen
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. **UI/UX work, done under an
+explicit §2 go-ahead** given on 2026-08-29 ("Can we improve the user experience
+for OCR system. Its clunky not that smoothing and some of the ui and wording
+deosnt make sense" → scope "All three", menu labels "By source").
+
+**Files:** `mobile/src/lib/scan/uploadPages.ts` (new) and its test (new),
+`mobile/src/screens/transcriptionReview/TranscriptionReviewScreen.tsx`,
+`mobile/src/screens/transcribe/` (**deleted**),
+`mobile/src/screens/capturedPages/CapturedPagesScreen.tsx`,
+`mobile/src/screens/scanner/ScannerScreen.tsx`,
+`mobile/src/screens/addPiece/ImportPages.tsx`,
+`mobile/src/components/pieces/AddPieceSheet.tsx`,
+`mobile/src/data/captureSession.ts`, `mobile/src/data/api/scores.ts`,
+`mobile/src/data/hooks/useScan.ts`, `mobile/src/navigation/{types,RootNavigator}.tsx`,
+`mobile/src/lib/transcriptionProgress.ts` + test,
+`mobile/src/screens/{pieceScore,pieceDetail}/`,
+`backend/app/workers/transcription_runner.py`,
+`backend/app/tests/{test_stage_parity,test_client_enums,test_multi_page_scan}.py`,
+`fixtures/stages/parity.json`.
+
+### The app was a generation behind its own backend
+
+`POST /v1/scores` has accepted `image_urls` — up to `MAX_PAGES = 12` — with
+`pages_of`, `_read_pages` and `join_pages` behind it for some time. The app sent
+`image_url`, singular, uploading `pages[0]` and discarding the rest.
+
+What a musician actually met: photograph six pages, drag them into order under
+the words *"pages transcribe in this order"*, and then be told in grey type,
+three separate times, that **only the first page is transcribed**. The ordering
+control was real and did nothing except decide which single page survived.
+
+Now: `uploadPages` sends every page in the musician's order, `image_urls`
+carries it, and the three caveats are deleted because they became false.
+
+- **Sequential, not parallel.** `UPLOAD_TIMEOUT_MS` is a *total* per-request
+  timeout, so N transfers sharing one uplink each get a fraction of the
+  bandwidth and the whole two minutes — a link that would have completed
+  serially times out N times at once instead.
+- **All-or-nothing**, matching `_read_pages` on the server. Five pages of a
+  seven-page part is a timeline with a hole in it, and `alignment.py`
+  accumulates durations, so every bar after the gap is judged against music that
+  is not there.
+- **Refused at the shutter**, not after the upload. `MAX_PAGES` is declared in
+  the app and `test_client_enums.py` asserts it equals the server's — a
+  thirteenth page discovered by `POST /v1/scores` costs the whole uplink first
+  and fails in a sentence written for whoever wrote the client.
+
+### The upload screen was making the musician wait to be asked a question
+
+`TranscribeScreen` filled the display with "Sending your page", a bar and a
+Cancel button, then handed on to a screen that asked for a title. Two screens,
+strictly sequential, and the second needed something from the person that the
+first was making them wait for. It is deleted; the upload runs inside the naming
+screen from the moment it opens, while the title is typed. On any real
+connection the wait now disappears rather than being decorated.
+
+Save waits on the *same* transfer if someone types faster than the connection —
+an in-flight promise, not a flag, because a flag makes Save either fail or start
+the upload again.
+
+### A multi-page read reports the page it is on
+
+`_read_one_page` carried a comment calling its own coarse reporting "a
+limitation rather than a design", naming a page counter as the honest fix and
+saying it waited on the UI gate. The gate was given, so: `Reading page 2 of 3`,
+contracted in `fixtures/stages/parity.json` and tested on both sides.
+
+The count is pages **finished**, so page 2 of 3 sits at 1/3 of the reading band.
+Placing it at 2/3 would claim a page that is still being read, and this whole
+module exists because the bar reports what has happened rather than what is
+expected. Per-stave counts stay suppressed on a multi-page scan so the two
+counters cannot fight: page 2 opening at "stave 1 of 9" after page 1 finished at
+"9 of 9" walks the bar backwards.
+
+`test_a_multi_page_scan_does_not_walk_the_bar_backwards` asserted the *old*
+words. Rewritten, not deleted — its stated reason had been satisfied, and the
+invariant underneath it (one stage per page, never a step that drops the bar)
+is exactly what still needs holding.
+
+### Wording
+
+One vocabulary: the app says **read** and **the notes**, never "transcribe" or
+"transcription". The score screen already said "This page couldn't be read" and
+"Try reading it again"; the scan flow said the other thing.
+
+The Add-piece sheet is named by **what you have in your hand**, per the owner's
+choice: *Photograph sheet music · Choose photos · Open a MusicXML file · Enter it
+by hand*. "Import score" promised **"images or a PDF"** and the screen behind it
+calls `launchImageLibraryAsync({ mediaTypes: ['images'] })` — the PDF was never
+accepted and the promise is gone.
+
+### Three-foot test — "Name this piece"
+
+**Before:** a 300px photograph first, the header second, the fields third, and
+Save below the fold. Two focal points competing (§3 law 4) and the wrong one
+winning — the task is typing a title, not looking at a picture — with the
+primary action out of the thumb zone (law 7).
+
+**After:** the **Title field** first, the page image second at 200px as the
+reference material it is, the upload line third and silent once it has finished.
+Save pinned in the footer. The upload reports as a hairline rule and one line of
+text, never a card (laws 3 and 6).
+
+### Tests
+
+`mobile`: 37 files, 445 passed; `tsc --noEmit` clean. `backend`: 1696 passed,
+3 xfailed, after the one rewritten test. New: 9 cases for `uploadPages`, 5 for
+the page counter in the app, 2 on the server, 1 cross-boundary for `MAX_PAGES`.
+
+### Honest gaps
+
+- **Not verified against a real device or a live backend.** The web build gates
+  on auth before this flow is reachable, so the screenshot pass that CLAUDE.md
+  asks for could not be driven end to end here. The composition is reasoned
+  against the §3 laws and the code is typechecked and unit-tested; it has not
+  been *seen* running. This is the same standing gap as the rest of Batches 5–7.
+- **Orphaned uploads get worse, not better.** The known hole — an upload that
+  never becomes a score row is unreachable forever — now strands up to twelve
+  objects per abandoned scan instead of one. It still needs a lifecycle
+  decision rather than a patch.
+- The scanner's own capture quality is under investigation separately, on a
+  report that photographs come back too small to read.
+
 ## 2026-08-29 — Keeping what the musician fixed, and reading the egress meter at last
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Backend, schema and app

@@ -6,8 +6,13 @@ import { IS_LIVE_BACKEND } from '../environment';
 import type { Piece } from '../types';
 
 export interface TranscribeInput {
-  /** The signed upload URL from `uploadPage`. Expires five minutes after issue. */
-  imageUrl: string;
+  /**
+   * Every uploaded page, in page order, from `uploadPages`.
+   *
+   * The order is the musician's, settled by dragging the review list before
+   * anything was sent. Nothing between here and `join_pages` re-derives it.
+   */
+  imageUrls: string[];
   title: string;
   composer: string | null;
   /** e.g. "I. Adagio". Null for music with no movements. */
@@ -38,11 +43,11 @@ export function useTranscribePage() {
     mutationFn: async (input) => {
       if (!IS_LIVE_BACKEND) {
         throw new Error(
-          'Transcription needs the backend. This build is running on sample data, so there is nothing to read the photograph. Add a piece manually instead.',
+          'Reading a page needs the backend. This build is running on sample data, so there is nothing to read the photograph. Enter the piece by hand instead.',
         );
       }
       const score = await createScore({
-        image_url: input.imageUrl,
+        image_urls: input.imageUrls,
         title: input.title,
         composer: input.composer,
         movement: input.movement,

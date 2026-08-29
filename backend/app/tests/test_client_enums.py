@@ -32,9 +32,13 @@ from pathlib import Path
 import pytest
 
 from app.models.analysis import BpmSource, Instrument, MetronomeMode
+from app.routers.scores import MAX_PAGES
 from app.services.classification import Band, Direction
 
 MOBILE = Path(__file__).resolve().parents[3] / "mobile" / "src" / "data"
+UPLOAD_PAGES_TS = (
+    Path(__file__).resolve().parents[3] / "mobile" / "src" / "lib" / "scan" / "uploadPages.ts"
+)
 TYPES_TS = MOBILE / "types.ts"
 ANALYSES_TS = MOBILE / "api" / "analyses.ts"
 
@@ -545,4 +549,26 @@ def test_the_app_shrinks_a_page_to_something_the_worker_will_read() -> None:
     assert app <= MAX_IMAGE_BYTES, (
         f"the app uploads up to {app} bytes and the worker refuses over "
         f"{MAX_IMAGE_BYTES}"
+    )
+
+
+def test_the_app_stops_a_scan_at_the_same_page_count_the_server_does() -> None:
+    """The page ceiling is declared twice, and the drift is expensive.
+
+    `MAX_PAGES` here is what `POST /v1/scores` refuses above. The app declares
+    it again so a scan too long is refused **at the shutter**, before anything
+    is uploaded — the two numbers disagreeing means a musician photographs
+    thirteen pages, waits for all thirteen to upload over cellular, and is then
+    told by the server that the scan is too long, in a sentence written for
+    whoever wrote the client.
+
+    Too *low* in the app is the cheaper direction and still wrong: pages the
+    server would have accepted are refused with an explanation that is not true.
+    """
+    source = UPLOAD_PAGES_TS.read_text()
+    match = re.search(r"export const MAX_PAGES = (\d+);", source)
+    assert match, "the app no longer declares MAX_PAGES in lib/scan/uploadPages.ts"
+    assert int(match.group(1)) == MAX_PAGES, (
+        f"the app stops a scan at {match.group(1)} pages and the server refuses "
+        f"above {MAX_PAGES}"
     )

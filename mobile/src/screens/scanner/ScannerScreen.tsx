@@ -10,6 +10,7 @@ import { ScoreThumbnail } from '../../components/pieces/ScoreThumbnail';
 import { Text } from '../../components/primitives/Text';
 import { impact, ImpactFeedbackStyle } from '../../lib/haptics';
 import { captureSession, useCapturedPages } from '../../data/captureSession';
+import { MAX_PAGES } from '../../lib/scan/uploadPages';
 import {
   BORDER_WIDTH,
   colors,
@@ -98,6 +99,18 @@ export function ScannerScreen() {
 
   async function handleCapture() {
     if (!ready || busy) {
+      return;
+    }
+    // **Refused at the shutter, not after the upload.** `POST /v1/scores`
+    // rejects a thirteenth page, and finding that out at the end means the
+    // musician has already spent the uplink on all thirteen. A retake is
+    // exempt: it replaces a page rather than adding one, so a full scan must
+    // still be correctable.
+    if (!captureSession.retaking() && pages.length >= MAX_PAGES) {
+      setError(
+        `That is ${MAX_PAGES} pages, which is as long as one scan can be. ` +
+          'Save these, then start another piece for the rest.',
+      );
       return;
     }
     setBusy(true);

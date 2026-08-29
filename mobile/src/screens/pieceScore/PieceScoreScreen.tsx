@@ -387,7 +387,7 @@ export function PieceScoreScreen() {
       {!hasNotation && !hasPages ? (
         <EmptyState
           title="No score to show"
-          description="This piece was entered by hand, so there is no transcription and no photograph. Photograph the music to get both."
+          description="This piece was typed in by hand, so there are no notes read from a page and no photograph. Photograph the music to get both."
         />
       ) : null}
 
@@ -785,7 +785,7 @@ export function PieceScoreScreen() {
         // The consequence, not the verb. Naming what survives matters as much
         // as naming what goes: someone who thinks they are deleting the piece
         // will cancel a thing they actually wanted.
-        message={`The transcription stays in your library. The photograph of the page is deleted and cannot be recovered — so check the notation above first.`}
+        message={`The notes stay in your library. The photograph of the page is deleted and cannot be recovered — so check the notation above first.`}
         confirmLabel="Delete photograph"
         onConfirm={() => {
           setConfirmingAccept(false);

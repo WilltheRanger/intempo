@@ -88,6 +88,25 @@ STAGE_READING_HUMAN = "Reading the notation"
 _SYSTEM_COUNT = re.compile(rf"^{re.escape(STAGE_READING)}:system (\d+) of (\d+)$")
 
 
+def _reading_page(page_number: int, total: int) -> str:
+    """The words for the page a multi-page scan is on — `Reading page 2 of 3`.
+
+    **A count, in the words, because there is no other way to say it.** A scan
+    is every page of one part and they are read one after another, so a
+    seven-page part is seven times the wait a one-page part was. All of it used
+    to report "Reading the notation" — true from the first page to the last, and
+    a bar that did not move once across the whole of it. The comment in
+    `_read_one_page` called that "a limitation rather than a design" and named
+    this as the fix, waiting on the UI gate; the gate was given on 2026-08-29.
+
+    The app reads the count as pages *finished*, so this places the bar at
+    `(n - 1) / total` of the reading band — page 2 means page 1 is read and page
+    2 has not started. See `fixtures/stages/parity.json`, which both sides are
+    tested against.
+    """
+    return f"Reading page {page_number} of {total}"
+
+
 def _human_stage(stage: str) -> str:
     """The words that go on the screen for one pipeline stage.
 
@@ -421,7 +440,16 @@ def _read_one_page(
             _update(client, score_id, {"transcription_stage": _human_stage(stage)})
 
     if not single:
-        _update(client, score_id, {"transcription_stage": STAGE_READING_HUMAN})
+        # The page counter, in place of the per-stave one. Suppressing the
+        # stave reports is what keeps the two from fighting over the bar: page
+        # 2 opening at "Reading stave 1 of 9" after page 1 finished at "9 of 9"
+        # walks it backwards, which is exactly what `transcriptionProgress.ts`
+        # exists to prevent.
+        _update(
+            client,
+            score_id,
+            {"transcription_stage": _reading_page(page_number, total)},
+        )
 
     try:
         fetch_url = readable_url(image_url)

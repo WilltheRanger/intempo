@@ -24,7 +24,6 @@ import { RecordScreen } from '../screens/record/RecordScreen';
 import { ProfileScreen } from '../screens/profile/ProfileScreen';
 import { ScannerScreen } from '../screens/scanner/ScannerScreen';
 import { TodayScreen } from '../screens/today/TodayScreen';
-import { TranscribeScreen } from '../screens/transcribe/TranscribeScreen';
 import { TranscriptionReviewScreen } from '../screens/transcriptionReview/TranscriptionReviewScreen';
 import { VerdictScreen } from '../screens/verdict/VerdictScreen';
 import { BottomTabBar } from './BottomTabBar';
@@ -115,7 +114,6 @@ function SignedInApp() {
         options={{ animation: 'slide_from_bottom' }}
       />
       <Stack.Screen name="CapturedPages" component={CapturedPagesScreen} />
-      <Stack.Screen name="Transcribe" component={TranscribeScreen} />
       <Stack.Screen
         name="TranscriptionReview"
         component={TranscriptionReviewScreen}

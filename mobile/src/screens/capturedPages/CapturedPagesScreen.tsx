@@ -13,12 +13,13 @@ import {
   Text,
 } from '../../components/primitives';
 import { captureSession, useCapturedPages } from '../../data/captureSession';
+import { MAX_PAGES } from '../../lib/scan/uploadPages';
 import { spacing } from '../../design';
 import type { RootNavigation } from '../../navigation/types';
 import { DraggablePageList } from './DraggablePageList';
 
 /**
- * Review of the pages just captured, before transcription.
+ * The pages just captured, in the order they will be read.
  *
  * Reorder, retake, and delete all act on the shared capture session, so going
  * back to add another page keeps whatever order was set here.
@@ -94,14 +95,14 @@ export function CapturedPagesScreen() {
     return (
       <ScreenContainer>
         <PageHeader
-          title="Review pages"
+          title="Your pages"
           onBack={() => navigation.goBack()}
           backLabel={scannerBelow ? 'Back to the scanner' : 'Back'}
         />
         <EmptyState
           icon={Layers}
           title="No pages left"
-          description="You've removed every page. Capture at least one to continue."
+          description="You've removed every page. Photograph at least one to carry on."
           actionLabel="Add page"
           onActionPress={addPage}
         />
@@ -118,20 +119,20 @@ export function CapturedPagesScreen() {
       footer={
         <PrimaryButton
           label="Continue"
-          onPress={() => navigation.navigate('Transcribe')}
+          onPress={() => navigation.navigate('TranscriptionReview')}
         />
       }
     >
       <PageHeader
         eyebrow={pageCountLabel(pages.length)}
-        title="Review pages"
+        title="Your pages"
         onBack={() => navigation.goBack()}
         // It said "Back to the scanner" on a route with no scanner on it.
         backLabel={scannerBelow ? 'Back to the scanner' : 'Back'}
       />
 
       <Text variant="metadataSmall" color="textTertiary" style={styles.hint}>
-        Drag to reorder — pages transcribe in this order.
+        Drag to reorder. Every page is read, in this order.
       </Text>
 
       <DraggablePageList
@@ -142,17 +143,23 @@ export function CapturedPagesScreen() {
         onNudge={(id, direction) => captureSession.move(id, direction)}
       />
 
-      <SecondaryButton
-        label="Add page"
-        icon={Plus}
-        onPress={addPage}
-        style={styles.addPage}
-      />
+      {pages.length >= MAX_PAGES ? (
+        <Text variant="metadataSmall" color="textTertiary" style={styles.addPage}>
+          {`That is ${MAX_PAGES} pages, as long as one scan can be. Save these, then start another piece for the rest.`}
+        </Text>
+      ) : (
+        <SecondaryButton
+          label="Add page"
+          icon={Plus}
+          onPress={addPage}
+          style={styles.addPage}
+        />
+      )}
 
       <ConfirmDialog
         visible={pendingDelete !== null}
         title={`Delete page ${pendingPosition}?`}
-        message="The photo goes with it. You'd have to shoot the page again."
+        message="The photograph goes with it. You'd have to take it again."
         confirmLabel="Delete"
         onConfirm={() => {
           if (pendingDelete) {

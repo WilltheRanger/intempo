@@ -171,9 +171,9 @@ describe('importing pages', () => {
     // A signed URL from the previous scan would let the save go through
     // against a page nobody chose.
     scanOf(1);
-    captureSession.setUploadedImageUrl('https://example.test/signed');
+    captureSession.setUploadedPageUrls(['https://example.test/signed']);
 
     captureSession.importAll([PAGE(5)]);
-    expect(captureSession.uploadedImageUrl()).toBeNull();
+    expect(captureSession.uploadedPageUrls()).toEqual([]);
   });
 });

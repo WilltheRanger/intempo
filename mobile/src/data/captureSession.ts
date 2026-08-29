@@ -38,8 +38,8 @@ export type CaptureOutcome = 'added' | 'replaced';
  */
 let pages: CapturedPage[] = [];
 let nextId = 1;
-/** Set by the transcribe step, consumed by the save. See `setUploadedImageUrl`. */
-let uploadedImageUrl: string | null = null;
+/** Set by the upload, consumed by the save. See `setUploadedPageUrls`. */
+let uploadedPageUrls: string[] = [];
 /**
  * The page a retake is going to replace, while one is in flight.
  *
@@ -90,7 +90,7 @@ export const captureSession = {
   /** Clears the session, retake included. Called when the scanner opens fresh. */
   reset(): void {
     nextId = 1;
-    uploadedImageUrl = null;
+    uploadedPageUrls = [];
     retakingId = null;
     commit([]);
   },
@@ -132,7 +132,7 @@ export const captureSession = {
    */
   importAll(sources: CapturedSource[]): void {
     nextId = 1;
-    uploadedImageUrl = null;
+    uploadedPageUrls = [];
     retakingId = null;
     commit(sources.map((source) => ({ id: `page-${nextId++}`, source })));
   },
@@ -193,21 +193,30 @@ export const captureSession = {
   },
 
   /**
-   * Remembers where the uploaded page landed, for the save that follows.
+   * Remembers where the uploaded pages landed, for the save that follows.
    *
-   * The value is a **signed upload URL that expires five minutes after
-   * issue** — the only form `POST /v1/scores` accepts. It lives here rather
-   * than in route params because the review screen can be left and returned
-   * to, and because `reset()` must be able to clear it: a stale URL from a
-   * previous scan is worse than none, since the save would fail against an
-   * expired signature with nothing on screen explaining why.
+   * Each value is a **signed upload URL** — the only form `POST /v1/scores`
+   * accepts. The five-minute expiry on the signature is not the save's problem:
+   * the server stores the URL as an identifier and re-signs it to fetch
+   * (`readable_url`), so nothing downstream needs the token to still be live.
+   *
+   * **In page order, which is the musician's order.** It is settled on the
+   * review list before a byte is sent (`lib/scan/drag.ts`), carried through
+   * `uploadPages` and read straight into `image_urls`, so no layer between the
+   * drag and the read re-derives it. `join_pages` trusts that order absolutely.
+   *
+   * Here rather than in route params because the naming screen can be left and
+   * returned to, and because `reset()` must be able to clear it: URLs from a
+   * previous scan are worse than none, since the save would quietly file the
+   * last piece's pages under this piece's title.
    */
-  setUploadedImageUrl(url: string | null): void {
-    uploadedImageUrl = url;
+  setUploadedPageUrls(urls: readonly string[]): void {
+    uploadedPageUrls = [...urls];
     notify();
   },
 
-  uploadedImageUrl(): string | null {
-    return uploadedImageUrl;
+  /** Every uploaded page, in page order. Empty until the upload finishes. */
+  uploadedPageUrls(): string[] {
+    return uploadedPageUrls;
   },
 };
