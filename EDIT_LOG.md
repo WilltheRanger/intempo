@@ -6,6 +6,149 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-29 — Keeping what the musician fixed, and reading the egress meter at last
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Backend, schema and app
+plumbing. **No screen, component, style or copy touched** — and that is the
+main honest gap in it, see the bottom.
+
+**Files:** `backend/app/migrations/013_training_corrections.sql` (new),
+`backend/app/services/training.py` (new), `backend/app/routers/scores.py`,
+`backend/app/routers/me.py`, `backend/app/models/user.py`,
+`backend/app/services/readiness.py`, `backend/app/services/ocr/pipeline.py`,
+`backend/app/services/ocr/musicxml.py`, `backend/app/services/score_schema.py`,
+`backend/app/workers/transcription_runner.py`, `mobile/src/data/types.ts`,
+three test files (one new).
+
+### The egress question, answered from the request log rather than guessed
+
+The 2026-08-27 entry said egress attribution was "inferred from code and
+storage contents, not from Supabase's billing breakdown, which these tools
+cannot read". The billing meter still cannot be read — `get_project` returns no
+usage — but the **edge request log** can, and it is better evidence than the
+meter: it says which object, how many bytes, and whether the cache was hit.
+
+Measured on `intempo-dev`, one afternoon (28 Aug, 15:24 → 20:03):
+
+    storage GETs                       195
+    bytes                              461.6 MB
+    distinct objects                   22
+    distinct ?token= values            193
+    Cloudflare cache HIT               2 of 193
+    worst hour                         155 GETs over 22 objects
+    one object, inside one hour        9–10 GETs, 8–9 different tokens
+
+**193 tokens for 195 requests is the diagnosis, not a symptom.** A fresh
+signature per request is a fresh URL, and every URL-keyed cache — `expo-image`'s
+and the browser's alike — misses on all of them. 461.6 MB is the 53 MB bucket
+downloaded 8.7 times over, in an afternoon, by one person, against a 5 GB
+monthly cap.
+
+**All of it predates the fix.** `d6791ef` went live at **20:11:14** and the last
+of those requests was at **20:03:43**. Since the deploy there have been **zero**
+storage GETs — and also zero of anything else, because nobody has opened the app
+(no upload since 27 Aug, no analysis ever). So the fix is **untested in
+production, not proven**; what the log proves is that the mechanism it was
+written against was real and exactly as described.
+
+The user agent on all 195 was mobile Safari, i.e. the **web** build — which is
+the half that depends on the server memo rather than on `cacheKey`. The next
+session on that build is the measurement that settles it.
+
+Also found, and unrelated to caching: the bucket holds **23 objects, 3 of them
+orphaned** (1264 kB) — no `scores` row references them. That is the
+orphaned-upload hole `CLAUDE.md` already documents, confirmed in production and
+still unfixed.
+
+### Corrections are kept now, if the musician says they may
+
+Every scan this app has read has been corrected by a person and then thrown
+away twice over: the corrected bar overwrote the misread one keeping nothing
+about what it replaced, and accepting deleted the photograph. The pair (what
+the reader said, what it should have said) is the asset nobody can buy, and it
+was being destroyed at the moment it was created.
+
+Migration **013** adds `users.training_consent_at`, `scores.transcription_reader`,
+`scores.page_image_retained_at` and the `training_corrections` table. The rules
+live in `services/training.py` — out of the handlers, so they are testable
+without a database, which is the pattern `captureSession` and
+`transcriptionProgress` established.
+
+Four things worth stating because each was a decision:
+
+1. **Consent fails closed**, the opposite of `shouldOnboard`. No row, no
+   timestamp, an unreadable value, a `/v1/me` that threw — all mean no. Getting
+   onboarding wrong shows a screen twice; getting this wrong keeps somebody's
+   photographs without being told to.
+2. **One row per corrected measure holding that measure**, not a before/after
+   pair of whole `ScoreJson` documents. A page is seventy bars and a correction
+   touches one; the whole-score form stores the other sixty-eight twice to say
+   nothing about them.
+3. **Either side may be NULL and that is the interesting case** — a bar the
+   reader missed has no `before`, a bar it invented (a rehearsal mark counted as
+   a measure, which this pipeline has done) has no `after`. An empty measure
+   would claim a different mistake.
+4. **`transcription_reader` exists because a correction with nothing to
+   attribute it to is not a training example.** `parse_sheet_music` returns a
+   `ScoreJson` and no telemetry, so the *winning* provider is genuinely not
+   recoverable; the configured chain is the honest thing to record and for a
+   homr-only chain it is the same fact.
+
+Withdrawal is the part that had to actually work: `training_consent: false`
+clears the timestamp, deletes every correction row, and discards every retained
+photograph through the same `discard_pages_of` the accept path uses. Storage
+refusing leaves `page_image_retained_at` set rather than writing a row that
+claims a file is gone while it sits in the bucket.
+
+**Three graceful narrowings, all for the same window.** Render auto-deploys
+`main` while migrations here are applied by hand, so a select or a write naming
+a 013 column fails the *whole* statement until somebody runs the SQL. The score
+read narrows its column list; `_accepted` retries without
+`page_image_retained_at`; and `_update` in the worker gained a `fallback` patch
+— that last one because it swallows failures by design, which is right for a
+stage update and catastrophic on the write that stores the transcription and
+moves the row off `reading`.
+
+### Two more schema gaps closed
+
+**Per-measure clef changes.** `Measure.clef`, modelled exactly like
+`Measure.time_signature`. A cello or bass part moving into tenor for a high
+passage and back is ordinary writing and had nowhere to go. Compared against
+the clef **in force**, not the header — a part that goes tenor at bar 3 and back
+to bass at bar 5 states bass at 5, which equals the header, so a header
+comparison records the departure and silently drops the return. Verified on a
+five-bar part: header `bass`, changes at 3 (`tenor`) and 5 (`bass`).
+
+**Chord pitches.** `Note.chord_pitches`, additive and outside the timeline —
+`pitch` is still one pitch and a chord is still one attack, so the beat sum is
+untouched. The importer kept the first note of a `<chord>` and discarded the
+rest, so a double stop drew one notehead where the page has two and
+`MeasureEditScreen` had nowhere to put the fix. Confirmed on
+`fixtures/musicxml/bass_excerpt.musicxml`: `F#3` now carries `['A3']`, verdicts
+unchanged.
+
+**Green:** backend 1694 passed / 3 xfailed (30 new), app 431 passed,
+`tsc --noEmit` clean.
+
+### Honest DoD
+
+- **Nothing in the app can grant consent.** The switch and its wording are a
+  screen, and screens go through the owner (§2). The field is in `types.ts`, the
+  endpoint works, and the feature is dark until that screen exists — so no
+  correction will be recorded and no photograph retained by anyone, yet.
+- **Nothing draws `Measure.clef` or `Note.chord_pitches`.** Both are stored and
+  imported; `engrave.ts` places one notehead per note in one clef per score.
+  Also stave work, also §2.
+- **013 is not applied.** Written, not run — the live database still lacks all
+  three columns, which `/v1/ready` now reports.
+- **Item 2 (eval corpus) and item 3 (PDF input) are not started.**
+
+**Rollback:** `git revert`. 013 is additive with nullable columns and a new
+table; the code narrows around all three, so reverting the code and leaving the
+migration applied is also safe.
+
+---
+
 ## 2026-08-29 — A quintuplet read correctly off the page came back as silence
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Backend, schema and app

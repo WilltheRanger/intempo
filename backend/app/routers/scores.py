@@ -39,6 +39,11 @@ from app.services.score_schema import (
     ScoreJson,
     clear_unwritable_where_rewritten,
 )
+from app.services.training import (
+    corrections_between,
+    may_keep_corrections,
+    rows_for,
+)
 
 # Fetching the page lives in `services/page_image.py` so the transcription
 # worker can reach it without importing this module, which imports the worker.
@@ -294,6 +299,11 @@ class ScoreResponse(BaseModel):
     #: there — including for an accepted score whose delete failed, which is a
     #: real state and not the same as a finished one.
     page_image_discarded_at: datetime | None = None
+    #: When the photograph was *kept* at accept time because the owner agreed it
+    #: could be used to improve the reader. Null everywhere else, including for
+    #: an accepted score whose delete merely failed — see migration 013 for why
+    #: those two must not look the same.
+    page_image_retained_at: datetime | None = None
     created_at: str
     updated_at: str
 
@@ -497,6 +507,122 @@ def _page_keys(row: dict[str, Any]) -> list[str]:
         if key is not None:
             keys.append(key)
     return keys
+
+
+def _consents_to_training(user_id: UUID) -> bool:
+    """Whether this account has agreed their corrections may be kept.
+
+    **Never raises, and a failure is a no.** Every caller is in the middle of
+    doing the thing the musician actually asked for — saving a bar, accepting a
+    reading — and none of them may fail because a consent lookup did. The rule
+    itself is in `services/training.py`; what is here is the fetch, and the
+    decision that a fetch which did not work means no.
+    """
+    try:
+        rows = (
+            _service_client()
+            .table("users")
+            .select("training_consent_at")
+            .eq("id", str(user_id))
+            .limit(1)
+            .execute()
+        ).data or []
+    except Exception:  # noqa: BLE001 — pre-013 database, or storage of any kind down
+        log.warning("could not read training consent for %s", user_id, exc_info=True)
+        return False
+    return may_keep_corrections(rows[0] if rows else None)
+
+
+def _record_corrections(
+    *,
+    user_id: UUID,
+    score_id: UUID,
+    stored: dict[str, Any],
+    before: ScoreJson | None,
+    after: ScoreJson,
+) -> None:
+    """Keep what the musician just fixed, if they have agreed we may.
+
+    **Never raises.** A correction is a by-product of the save, not the point of
+    it: the musician asked for their bar to be stored and it has been. Losing
+    one training row is a cost worth paying without them ever knowing; failing
+    their save to record one is not.
+
+    `before` is None when the previous reading could not be read back — a row
+    that has since gone, or JSON that no longer validates. There is then no
+    prediction to pair the correction with, and a correction with nothing on the
+    other side of it is not a training example.
+    """
+    if before is None:
+        return
+    try:
+        changes = corrections_between(before, after)
+        if not changes:
+            return
+        keys = _page_keys(stored)
+        rows = rows_for(
+            changes,
+            user_id=str(user_id),
+            score_id=str(score_id),
+            reader=stored.get("transcription_reader"),
+            # The page the bar was read from is not knowable per bar — nothing
+            # carries a measure's position on the page — so page one is the
+            # honest pointer for a single-page scan and the best available for
+            # a multi-page one. See the column comment in migration 013.
+            page_image_key=keys[0] if keys else None,
+        )
+        _service_client().table("training_corrections").insert(rows).execute()
+        log.info(
+            "kept %d correction(s) for score %s", len(rows), score_id
+        )
+    except Exception:  # noqa: BLE001 — pre-013 database, or anything at all
+        log.warning(
+            "could not record corrections for score %s", score_id, exc_info=True
+        )
+
+
+def _score_before_edit(score_id: UUID, user_id: UUID) -> tuple[dict[str, Any], ScoreJson | None]:
+    """The stored row and its reading, for comparison against what is incoming.
+
+    Returns the raw row as well, because the correction needs two things from it
+    that the parsed score does not carry: which chain read it, and which object
+    the page lives in.
+    """
+    def run(columns: str):
+        return (
+            _service_client()
+            .table("scores")
+            .select(columns)
+            .eq("id", str(score_id))
+            .eq("user_id", str(user_id))
+            .limit(1)
+            .execute()
+        )
+
+    # **Two narrowings, not one.** `select_with_pages` already handles a
+    # database without 011's page array; `transcription_reader` is 013 and has
+    # the same window in front of it, because Render deploys `main`
+    # automatically while migrations here are applied by hand. Asking PostgREST
+    # for a column that does not exist fails the *whole* request, so a save
+    # would start 500ing the moment this shipped and before the migration ran.
+    rows: list[dict[str, Any]] = []
+    for base in ("score_json, transcription_reader", "score_json"):
+        try:
+            result = select_with_pages(run, base)
+        except Exception:  # noqa: BLE001 — try the narrower shape, then give up
+            continue
+        rows = result.data or []
+        break
+    else:
+        log.warning("could not read score %s before an edit", score_id)
+        return {}, None
+    if not rows:
+        return {}, None
+    row = rows[0]
+    try:
+        return row, ScoreJson.model_validate(row.get("score_json") or {})
+    except Exception:  # noqa: BLE001 — a row written before a schema change
+        return row, None
 
 
 def _insert_score(payload: dict[str, Any]) -> list[dict[str, Any]]:
@@ -781,26 +907,6 @@ def get_score(
     return _with_image_urls(rows)[0]
 
 
-def _stored_score_json(score_id: UUID, user_id: UUID) -> dict[str, Any]:
-    """The score as it stands, or an empty dict when there is no row to read.
-
-    Not an error here: the update below runs against the same id and user and
-    raises its own 404. Returning nothing means "no measure matches", which
-    makes every incoming measure count as rewritten — the safe direction, since
-    the cost is one caveat lost and the alternative is one that cannot be.
-    """
-    rows = (
-        _service_client()
-        .table("scores")
-        .select("score_json")
-        .eq("id", str(score_id))
-        .eq("user_id", str(user_id))
-        .limit(1)
-        .execute()
-    ).data or []
-    return (rows[0].get("score_json") if rows else None) or {}
-
-
 @router.patch("/{score_id}", response_model=ScoreResponse)
 def update_score(
     score_id: UUID,
@@ -815,6 +921,19 @@ def update_score(
     sent = body.model_fields_set
 
     update: dict[str, Any] = {}
+    # The reading as it stands, fetched once and used for two things: clearing
+    # the unwritable count on a rewritten bar, and — only where the musician has
+    # agreed to it — recording what they changed. Fetched only when a
+    # `score_json` is actually incoming, so renaming a piece still costs no
+    # extra round trip.
+    keeping = False
+    stored_row: dict[str, Any] = {}
+    previous: ScoreJson | None = None
+    if body.score_json is not None:
+        keeping = _consents_to_training(user_id)
+        if keeping or any(m.unwritable_notes for m in body.score_json.measures):
+            stored_row, previous = _score_before_edit(score_id, user_id)
+
     if body.score_json is not None:
         # A bar the musician has just rewritten no longer carries what the
         # *reading* lost in it — see `clear_unwritable_where_rewritten`. The
@@ -823,7 +942,7 @@ def update_score(
         # costs no extra round trip.
         incoming = clear_unwritable_where_rewritten(
             body.score_json,
-            _stored_score_json(score_id, user_id)
+            stored_row.get("score_json")
             if any(m.unwritable_notes for m in body.score_json.measures)
             else None,
         )
@@ -882,6 +1001,21 @@ def update_score(
     rows = response.data or []
     if not rows:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="score not found")
+
+    # **After the save, never before it.** A correction is evidence that the
+    # save happened; writing one first would leave a training row describing an
+    # edit that then 404'd. `_record_corrections` swallows its own failures for
+    # the same reason — the musician asked for their bar to be stored, and it
+    # has been.
+    if keeping and body.score_json is not None:
+        _record_corrections(
+            user_id=user_id,
+            score_id=score_id,
+            stored=stored_row,
+            before=previous,
+            after=incoming,
+        )
+
     # Signed like every other read. A rename returning a null `image_url` made
     # the caller's freshly-updated piece lose its thumbnail until the next
     # list fetch.
@@ -940,6 +1074,23 @@ def accept_transcription(
         "updated_at": _now_iso(),
     }
 
+    # **The photograph is kept only where a person has said it may be.**
+    #
+    # 007 deletes on accept, and every reason it gives still stands — a page is
+    # megabytes of JPEG whose one remaining purpose has just been served. What
+    # changed is that there is now a second purpose, and it is not one this
+    # code may assume: the page plus the corrections made against it is the
+    # training example that makes the reader better next time.
+    #
+    # So this is 007 with a consent gate in front of it. No consent and nothing
+    # here behaves differently in any way. `page_image_retained_at` records the
+    # keeping as a deliberate act, because an accepted row whose photograph is
+    # still present is otherwise indistinguishable from one whose delete failed.
+    if _consents_to_training(user_id):
+        patch["page_image_retained_at"] = _now_iso()
+        log.info("keeping the photograph of %s: the owner consented", score_id)
+        return _accepted(client, score_id, user_id, patch)
+
     # **Every page, not the first.** Accepting a three-page scan used to
     # discard page one and leave pages two and three in the bucket with no row
     # naming them, no accept path and no delete path — the orphaned-upload hole
@@ -966,19 +1117,91 @@ def accept_transcription(
             patch["source_image_urls"] = None
         patch["page_image_discarded_at"] = _now_iso()
 
-    updated = (
-        client.table("scores")
-        .update(patch)
-        .eq("id", str(score_id))
-        .eq("user_id", str(user_id))
-        .execute()
-    ).data or []
-    if not updated:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="failed to record the acceptance",
+    return _accepted(client, score_id, user_id, patch)
+
+
+def _accepted(
+    client, score_id: UUID, user_id: UUID, patch: dict[str, Any]
+) -> ScoreResponse:
+    """Write the acceptance, narrowing if the database predates a column.
+
+    Both exits from `accept_transcription` come through here, so the retaining
+    branch and the discarding one cannot drift apart about what a written
+    acceptance looks like.
+
+    `page_image_retained_at` is 013 and Render deploys before the migrations
+    here are applied by hand, so naming it on a database that has not got it
+    would turn "accepting keeps the photograph" into "accepting is broken" for
+    the length of that window — the same failure the `source_image_urls` guard
+    a few lines up exists to prevent, and the reason that guard is written as it
+    is.
+    """
+    for attempt in (patch, {k: v for k, v in patch.items() if k != "page_image_retained_at"}):
+        try:
+            updated = (
+                client.table("scores")
+                .update(attempt)
+                .eq("id", str(score_id))
+                .eq("user_id", str(user_id))
+                .execute()
+            ).data or []
+        except Exception:  # noqa: BLE001 — pre-013 column; retry without it
+            if attempt is not patch:
+                raise
+            log.warning(
+                "accepting %s without page_image_retained_at; 013 looks unapplied",
+                score_id,
+            )
+            continue
+        if not updated:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="failed to record the acceptance",
+            )
+        return _with_image_urls(updated)[0]
+    raise HTTPException(  # pragma: no cover — the loop returns or raises
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        detail="failed to record the acceptance",
+    )
+
+
+def discard_pages_of(client, score: dict[str, Any]) -> bool:
+    """Delete one score's photographs and record it, returning whether they went.
+
+    Public because withdrawal of training consent has to do exactly what accept
+    does — `routers/me.py` calls it for every score whose page was retained.
+    Two copies of "remove the objects, then null the columns, but only if every
+    object actually went" is two chances to get the ordering wrong, and getting
+    it wrong strands a photograph that nothing can reach again.
+
+    Returns False and writes nothing when storage refused, which leaves
+    `page_image_retained_at` set — so the row still says a photograph is being
+    kept, and a later attempt can still find it. That is the honest state, and
+    it is better than a row claiming the file is gone while it sits in the
+    bucket.
+    """
+    keys = _page_keys(score)
+    if keys and not all(_remove_object(client, key) for key in keys):
+        return False
+
+    patch: dict[str, Any] = {
+        "source_image_url": None,
+        "page_image_discarded_at": _now_iso(),
+        "page_image_retained_at": None,
+        "updated_at": _now_iso(),
+    }
+    if "source_image_urls" in score:
+        patch["source_image_urls"] = None
+    try:
+        client.table("scores").update(patch).eq("id", str(score["id"])).execute()
+    except Exception:  # noqa: BLE001 — the objects are gone either way
+        log.warning(
+            "discarded the pages of %s but could not update the row",
+            score.get("id"),
+            exc_info=True,
         )
-    return _with_image_urls(updated)[0]
+        return False
+    return True
 
 
 def _remove_object(client, key: str) -> bool:

@@ -156,6 +156,30 @@ def _default_chain() -> list[OCRProvider]:
     return chain
 
 
+def configured_reader() -> str | None:
+    """The chain that will read a page, named, for the record on the row.
+
+    **The chain, not the winner, and the difference is a limitation rather than
+    a choice.** `parse_sheet_music` returns a `ScoreJson` and no telemetry, so
+    which provider actually produced a reading is not recoverable by its caller
+    — and every caller would have to change to make it so. What *is* knowable is
+    the configuration in force when the page was read, which for a one-provider
+    chain is the same fact and for a longer one narrows it to a list.
+
+    It exists because a correction with nothing to attribute it to is not a
+    training example: "this bar was read wrong" is a complaint, and "this bar
+    was read wrong by this reader" is data. See migration 013.
+
+    Returns None rather than raising when the chain cannot be resolved at all —
+    a transcription that is about to fail for that reason should fail in the
+    pipeline with its own message, not here while recording a name.
+    """
+    try:
+        return ",".join(p.name for p in _default_chain()) or None
+    except Exception:  # noqa: BLE001 — an unusable chain is the pipeline's error
+        return None
+
+
 #: A step the pipeline actually took, reported as it happens.
 #:
 #: Every value is an event the pipeline observes, never an estimate of how far

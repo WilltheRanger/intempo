@@ -1354,6 +1354,9 @@ def score_json_from_musicxml(
     chosen = _choose_part(root, part)
 
     clef: str | None = None
+    #: The clef in force as the measures are walked, which is not the header
+    #: once the part changes clef. See where `measure_clef` is set.
+    running_clef: str | None = None
     time_signature: str | None = None
     key_signature: str | None = None
     tempo_marking: str | None = None
@@ -1417,6 +1420,7 @@ def score_json_from_musicxml(
         # presented 2/2 and F major as the page's header, on a page that starts
         # in cut-common somewhere else entirely.
         measure_time: str | None = None
+        measure_clef: str | None = None
         # A multi-bar rest is *this* many bars, and reading it as one is how a
         # bass part loses most of its music. Handled after the attributes loop,
         # because the metre it needs may be stated in this very measure.
@@ -1448,10 +1452,32 @@ def score_json_from_musicxml(
                 ),
                 None,
             )
-            if clef is None and clef_el is not None:
+            if clef_el is not None:
                 sign = _text(clef_el.find("sign")) or ""
                 line = _text(clef_el.find("line")) or ""
-                clef = _CLEF_BY_SIGN_LINE.get((sign, line))
+                stated_clef = _CLEF_BY_SIGN_LINE.get((sign, line))
+                if clef is None:
+                    clef = stated_clef
+                if stated_clef is not None and stated_clef != running_clef:
+                    # **A clef printed mid-piece is a change of clef**, exactly
+                    # as a metre printed mid-piece is a change of metre, and it
+                    # belongs on the measure for the same reason. A cello part
+                    # moving into tenor for a high passage is ordinary writing;
+                    # overwriting the header with it would caption the whole
+                    # page — including everything before the change — with a
+                    # clef it does not use, which is the failure
+                    # `ScoreJson.clef` is nullable to avoid.
+                    #
+                    # **Compared against the running clef, not the header.** A
+                    # part that moves into tenor at bar 20 and back to bass at
+                    # bar 40 states bass at 40, which equals the header — so
+                    # comparing against the header would record the departure
+                    # and silently drop the return, leaving every bar after 40
+                    # captioned tenor. `clef` stays the clef the page opens in,
+                    # which is what a reader wants when nothing says otherwise.
+                    if running_clef is not None:
+                        measure_clef = stated_clef
+                    running_clef = stated_clef
 
             time_el = attributes.find("time")
             beats = _text(time_el.find("beats")) if time_el is not None else None
@@ -1612,7 +1638,25 @@ def score_json_from_musicxml(
             # built from durations, so counting the second note of a chord
             # would make the measure overrun and the beat-sum check would call
             # a correctly-read measure long.
+            #
+            # **Not counted, and no longer thrown away.** Skipping it outright
+            # was right about the timeline and lost the music: a double stop is
+            # two noteheads and the reading kept one, so a stave drawn from it
+            # shows a single note where the page has two and the edit screen has
+            # nowhere to put the other. `chord_pitches` is additive — it changes
+            # no duration and adds no onset — so the count stays exactly as it
+            # was. See `Note.chord_pitches`.
             if note_el.find("chord") is not None:
+                member = _pitch_name(note_el)
+                # `not_filtered` rather than `notes`: it holds every note built
+                # in this measure including ones the voice filter dropped, so
+                # its last entry is always the notehead this one is stacked on.
+                # A chord member of a dropped note lands on a dropped note,
+                # which is where it belongs.
+                if member and member != "rest" and not_filtered:
+                    principal = not_filtered[-1]
+                    if principal.pitch != "rest" and member not in principal.chord_pitches:
+                        principal.chord_pitches.append(member)
                 continue
             # **A grace note has no duration and is still an attack.**
             #
@@ -1852,6 +1896,7 @@ def score_json_from_musicxml(
                 slurs=slurs,
                 tuplets=tuplets,
                 time_signature=measure_time,
+                clef=measure_clef,  # type: ignore[arg-type]
                 unwritable_notes=dropped_here,
             )
         )

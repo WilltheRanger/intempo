@@ -66,6 +66,20 @@ export interface MeResponse {
    * not been shown, and that is the only thing that decides whether to show it.
    */
   onboarded_at: string | null;
+  /**
+   * Whether their corrections to a reading may be kept to improve it, and the
+   * photograph kept alongside them.
+   *
+   * A boolean, though the column is a timestamp: *when* they agreed is a fact
+   * the consent record needs and a screen has no use for. Defaults false and
+   * a server without migration 013 returns false, which is correct — a
+   * deployment that cannot store consent has not got any.
+   *
+   * **Nothing in the app sets this yet.** The switch and its wording are a
+   * screen, and screens go through the owner (CLAUDE.md §2), so the field is
+   * here and the control is not.
+   */
+  training_consent: boolean;
 }
 
 /** Analyses used this calendar month, and what the ceiling is. */
@@ -118,6 +132,19 @@ export interface ScoreNote {
   articulation?: Articulation | null;
   tied_to_next: boolean;
   dynamics?: Dynamics | null;
+  /**
+   * The other noteheads struck together with this one — a double stop, a chord.
+   *
+   * Additive, and deliberately outside the timeline: `pitch` is still the one
+   * pitch and `duration` still governs when the next note starts, because a
+   * chord is one attack. What this carries is the part the reading used to
+   * drop, so a stave can draw both noteheads instead of one.
+   *
+   * Absent on every score written before it was recorded. **Nothing draws it
+   * yet** — `engrave.ts` places one notehead per note, and giving it a second
+   * is a change to the stave, so it goes through the owner (CLAUDE.md §2).
+   */
+  chord_pitches?: string[];
 }
 
 export interface ScoreSlur {
@@ -181,6 +208,20 @@ export interface ScoreMeasure {
    * measure, as `MeasureEditScreen` does, is enough.
    */
   time_signature?: string | null;
+  /**
+   * The clef, when it **changes** at this measure. Absent everywhere else, and
+   * absent on every score written before it was recorded.
+   *
+   * The same shape as `time_signature` above and carrying the same obligation:
+   * anything rebuilding a measure has to preserve it, or the change is lost and
+   * every bar after it is captioned — and drawn — in a clef the page stopped
+   * using. A cello or bass part moving into tenor for a high passage is
+   * ordinary writing, not an edge case.
+   *
+   * `ScoreScore.clef` stays the clef the page **opens** in, which is what a
+   * reader wants when nothing says otherwise.
+   */
+  clef?: Clef | null;
   /**
    * How many notes the reading saw in this bar and could not write.
    *

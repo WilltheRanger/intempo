@@ -6,6 +6,64 @@ Operating Principle #5.
 
 ---
 
+## 2026-08-29 — The photograph is kept only where a person said so, and withdrawal deletes
+
+**Context:** migration 007 deletes the page photograph when a musician accepts
+the reading, and every reason it gives still stands — a page is megabytes of
+JPEG whose one remaining purpose has just been served. What changed is that
+there is now a second purpose: the page, the reading, and the correction made
+against it are the training example that makes the reader better, and that is
+the one asset here nobody can buy.
+
+**Decision:** keep the photograph *only* where the account has explicitly
+agreed, record corrections the same way, and make withdrawal delete both. With
+no consent, nothing about the existing behaviour changes in any way — this is
+007 with a gate in front of it, not a reversal of it.
+
+**Alternatives considered:**
+
+- **Keep every photograph and ask later.** The cheapest way to start the
+  flywheel, and it takes the decision away from the person whose photographs
+  they are. Also a storage bill that grows with every scan, on a project already
+  near its egress cap.
+- **Infer consent from something already stored** — the tier, an existing
+  privacy setting, having shared to a studio. All of these are a way of not
+  asking, and none of them is what the person agreed to.
+- **A boolean rather than a timestamp.** A consent record has to answer *when*
+  they agreed, because the wording changes and a boolean cannot say which
+  wording it belongs to. Re-granting therefore keeps the original timestamp
+  rather than re-stamping, or the answer becomes the date of the last save.
+- **Keep a `withdrawn_at` tombstone.** Useful for an audit trail, and it is a
+  row recording that someone once consented, retained after they asked to be
+  forgotten. NULL means all three of "never asked", "declined" and "withdrew",
+  because all three mean the same thing to every caller.
+- **Store the whole `ScoreJson` before and after.** The obvious shape, and it
+  stores sixty-eight unchanged bars twice to say nothing about them, then makes
+  whoever trains on it diff the signal back out. One row per corrected measure.
+
+**Failing closed, which is the opposite of the sibling rule.** `shouldOnboard`
+deliberately fails *open* — a slow or failed `/v1/me` opens the app rather than
+holding it behind a network request (2026-08-25) — because the cost of guessing
+wrong there is one screen shown twice. Here the cost is keeping a person's
+photographs without being told to, so every uncertainty is a no: no row, no
+timestamp, a value that is not a timestamp, a lookup that threw. `may_keep_
+corrections` takes the row rather than a user id specifically so it cannot do
+IO, because a consent check that can time out is one that can fail open.
+
+**What is deliberately weaker than it should be:** the training example wants an
+*image crop* of the bar, and the finest pointer available is the page key plus a
+measure number. homr knows where each measure sits and neither `musicxml.py` nor
+the schema carries it. Recording the honest pointer now is what makes
+re-locating the bar possible later; inventing a crop we do not have would not.
+
+**Known cost, accepted:** retention makes the bucket grow where it used to
+shrink, on a project whose egress is the thing being watched. It is bounded by
+being opt-in and by nobody being able to opt in until the consent screen
+exists — but when that screen ships, storage growth becomes a real number to
+watch rather than a hypothetical.
+
+---
+
 ## 2026-08-29 — Tuplet names are additive; the pitch grammar is not, so it waits
 
 **Context:** two gaps in the schema were discarding music that homr had read

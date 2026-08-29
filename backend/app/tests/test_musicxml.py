@@ -3013,3 +3013,111 @@ def test_a_page_with_no_fermata_marks_none() -> None:
     score = score_json_from_musicxml(_part(_bar(1, _A_QUARTER * 4, _FOUR_FOUR)))
 
     assert not any(n.fermata for m in score.measures for n in m.notes)
+
+
+# ---------------------------------------------------------------------------
+# A clef that changes partway down the page
+# ---------------------------------------------------------------------------
+
+_CELLO_NOTE = (
+    "<note><pitch><step>C</step><octave>3</octave></pitch>"
+    "<duration>4</duration><type>whole</type></note>"
+)
+#: 4/4 in bass clef, one division to the quarter — so `<duration>4</duration>`
+#: on a `whole` agrees with its type and no contradiction rule fires.
+_BASS_FOUR_FOUR = (
+    "<attributes><divisions>1</divisions>"
+    "<time><beats>4</beats><beat-type>4</beat-type></time>"
+    "<clef><sign>F</sign><line>4</line></clef></attributes>"
+)
+
+
+def _clef_change(sign: str, line: str) -> str:
+    return f"<attributes><clef><sign>{sign}</sign><line>{line}</line></clef></attributes>"
+
+
+def test_a_clef_printed_mid_piece_lands_on_its_measure() -> None:
+    """**A single clef for a whole part is a simplification the repertoire does
+    not honour.**
+
+    A cello or bass part moving into tenor for a high passage and back again is
+    ordinary writing. Before this the second clef had nowhere to go, so every
+    bar after the change was captioned — and drawn — in a clef the page had
+    stopped using.
+
+    Modelled exactly like `Measure.time_signature`: the header keeps the clef
+    the page *opens* in, and the change sits on the bar that prints it.
+    """
+    score = score_json_from_musicxml(
+        _part(
+            _bar(1, _CELLO_NOTE, _BASS_FOUR_FOUR)
+            + _bar(2, _CELLO_NOTE)
+            + _bar(3, _clef_change("C", "4") + _CELLO_NOTE)
+            + _bar(4, _CELLO_NOTE)
+        )
+    )
+    assert score.clef == "bass", "the header is the clef the page opens in"
+    assert [m.clef for m in score.measures] == [None, None, "tenor", None]
+
+
+def test_a_return_to_the_opening_clef_is_recorded_too() -> None:
+    """**The bug a header comparison would have shipped with.**
+
+    Bar 5 states bass, which equals the header — so comparing the stated clef
+    against `score.clef` records the departure at bar 3 and silently drops the
+    return, leaving every bar from 5 on drawn a fourth out of place. It is
+    compared against the clef in force instead.
+    """
+    score = score_json_from_musicxml(
+        _part(
+            _bar(1, _CELLO_NOTE, _BASS_FOUR_FOUR)
+            + _bar(2, _clef_change("C", "4") + _CELLO_NOTE)
+            + _bar(3, _CELLO_NOTE)
+            + _bar(4, _clef_change("F", "4") + _CELLO_NOTE)
+        )
+    )
+    assert [m.clef for m in score.measures] == [None, "tenor", None, "bass"]
+
+
+def test_a_clef_restated_without_changing_is_not_a_change() -> None:
+    """Engravers restate the clef at the start of a system. Recording that as a
+    change would put a caption on a bar where nothing happened."""
+    score = score_json_from_musicxml(
+        _part(
+            _bar(1, _CELLO_NOTE, _BASS_FOUR_FOUR)
+            + _bar(2, _clef_change("F", "4") + _CELLO_NOTE)
+        )
+    )
+    assert [m.clef for m in score.measures] == [None, None]
+
+
+# ---------------------------------------------------------------------------
+# Both notes of a double stop
+# ---------------------------------------------------------------------------
+
+
+def test_a_chord_keeps_its_other_noteheads() -> None:
+    """**One attack, two noteheads.**
+
+    The chord member is still not counted — the timeline is built from
+    durations and a second note would make the bar overrun — but it is no
+    longer thrown away. A double stop read as a single pitch draws a stave the
+    page does not show, and gives `MeasureEditScreen` nowhere to put the fix.
+    """
+    chord_member = (
+        "<note><chord/><pitch><step>A</step><octave>3</octave></pitch>"
+        "<duration>4</duration><type>whole</type></note>"
+    )
+    score = score_json_from_musicxml(
+        _part(_bar(1, _CELLO_NOTE + chord_member, _BASS_FOUR_FOUR))
+    )
+    (measure,) = score.measures
+    assert len(measure.notes) == 1, "a chord is one onset, as it always was"
+    assert measure.notes[0].pitch == "C3"
+    assert measure.notes[0].chord_pitches == ["A3"]
+    assert [f.verdict for f in validate_measures(score)] == ["ok"]
+
+
+def test_a_plain_note_carries_no_chord_pitches() -> None:
+    score = score_json_from_musicxml(_part(_bar(1, _CELLO_NOTE, _BASS_FOUR_FOUR)))
+    assert score.measures[0].notes[0].chord_pitches == []

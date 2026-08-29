@@ -114,6 +114,16 @@ REQUIRED_COLUMNS: tuple[tuple[str, str, str], ...] = (
     # is the right piece — but an error a musician meets by using a control the
     # app offered them is worth naming here before they meet it.
     ("analyses", "skip_long_rests", "012"),
+    # 013. All three degrade quietly on purpose — every caller narrows its
+    # select or retries its write without them, because the alternative was a
+    # save that 500s and a scan that sits `reading` forever during the window
+    # between Render deploying `main` and somebody applying the migration by
+    # hand. Quietly is the right behaviour and a bad thing to be unable to see:
+    # a deployment missing these keeps nothing, and looks exactly like one where
+    # nobody has consented.
+    ("users", "training_consent_at", "013"),
+    ("scores", "transcription_reader", "013"),
+    ("scores", "page_image_retained_at", "013"),
 )
 
 

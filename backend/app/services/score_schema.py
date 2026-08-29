@@ -332,6 +332,38 @@ class Note(_Strict):
     #: Chorded graces count once — a rolled grace chord is one attack — and a
     #: grace before a rest or a cue is dropped, because neither is played.
     grace_notes: int = Field(default=0, ge=0)
+    #: The other noteheads struck together with this one, lowest first.
+    #:
+    #: **Additive, and deliberately not part of the timeline.** `pitch` stays
+    #: the single pitch it always was and `duration` still governs when the next
+    #: note starts, so `alignment.py` is untouched: a chord is one attack, which
+    #: is why the importer counts only its first note and must keep doing so.
+    #:
+    #: What this adds is the part that was simply lost. A double stop is two
+    #: noteheads on the page and the reading kept one, so any stave drawn from
+    #: it shows a single note where the music has two, and `MeasureEditScreen`
+    #: cannot express the fix because there is nowhere to put the second pitch.
+    #: For a violin part that is a Bach chaconne rendered wrong; for a corrected
+    #: reading kept as training data it is a wrong label.
+    #:
+    #: Empty for the overwhelming majority of notes and for every score written
+    #: before the field existed, which is why it defaults rather than being
+    #: required. A rest never has any.
+    chord_pitches: list[str] = Field(default_factory=list)
+
+    @field_validator("chord_pitches")
+    @classmethod
+    def _validate_chord_pitches(cls, values: list[str]) -> list[str]:
+        for value in values:
+            # `rest` is a legal `pitch` and never a legal chord member: silence
+            # does not sound with a note, and a "rest" here would draw a
+            # notehead for nothing.
+            if value == "rest" or not _PITCH_PATTERN.match(value):
+                raise ValueError(
+                    "chord_pitches must be scientific-pitch (e.g. 'D3', 'F#4'); "
+                    f"got {value!r}"
+                )
+        return values
 
     _keep_known_articulation = field_validator("articulation", mode="before")(
         _one_of(_ARTICULATIONS, "articulation")
@@ -422,6 +454,25 @@ class Measure(_Strict):
     #: The onset timeline never cared: it accumulates durations, so where the
     #: barlines fall does not move a note. This exists for the beat check.
     time_signature: str | None = Field(default=None, max_length=20)
+    #: The clef, when it *changes* at this measure. Null everywhere else.
+    #:
+    #: Exactly the shape `time_signature` above has, for exactly the same
+    #: reason. A single clef for a whole piece is a simplification the
+    #: repertoire does not honour: a cello or bass part moving into tenor or
+    #: treble for a high passage and back again is ordinary writing, not an edge
+    #: case, and `ScoreJson.clef` has nowhere to put the second one.
+    #:
+    #: The cost of not having it is the same cost `ScoreJson.clef` being
+    #: defaulted would have — every notehead after the change drawn at the wrong
+    #: staff position, captioned with a clef the page stopped using. The onset
+    #: timeline never cared, because `alignment.py` reads pitch only to ask
+    #: whether a note is a rest.
+    #:
+    #: `_one_of` rather than a bare `Clef`, matching `ScoreJson.clef`: a clef
+    #: this schema cannot place becomes null — "no change here" — rather than
+    #: costing the page. Wrong in the direction that loses a caption, never in
+    #: the direction that invents one.
+    clef: Clef | None = None
     #: How many notes in this measure the reading saw and could not write.
     #:
     #: **Because the bar can now come out looking perfect.** A double accidental,
@@ -440,6 +491,10 @@ class Measure(_Strict):
     #: with nothing missing — which is the only honest answer for a row that
     #: never recorded it.
     unwritable_notes: int = Field(default=0, ge=0)
+
+    _keep_known_measure_clef = field_validator("clef", mode="before")(
+        _one_of(_CLEFS, "clef")
+    )
 
     @field_validator("time_signature")
     @classmethod
