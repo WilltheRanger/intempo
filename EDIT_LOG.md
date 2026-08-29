@@ -6,6 +6,158 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-29 — A bar of rest is not an empty bar, and the scanner says so at the shutter
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Asked for: *"can you improve
+the scanning ui and OCR system to be more accurate"*. **UI half done under a §2
+go-ahead** ("Check the shot on the phone").
+
+**Files:** `backend/app/services/ocr/musicxml.py`,
+`backend/app/tests/test_musicxml.py`, `tools/musicxml-bench.py` (new),
+`mobile/src/lib/scan/legibility.ts` (new) + test (new),
+`mobile/src/lib/scan/pageSamples.{ts,web.ts}` (new),
+`mobile/src/screens/scanner/ScannerScreen.tsx`.
+
+### Two accuracy hypotheses, both refuted before anything was built
+
+Recorded because the reasoning was sound and the conclusions were wrong, and
+the next person will have the same two ideas.
+
+**Resolution.** `prepare_for_model` shrinks every page to `MODEL_MAX_EDGE`
+(1568), a number whose own comment says it is *Anthropic's* vision-API limit —
+while the chain is homr alone, an OMR engine. Measured here: a 4032 px
+photograph whose staff lines are 25 px apart reaches the reader at 9.7 px, and
+at 20 px it reaches it at 7.8 — under the 8 px floor `too_small_to_read`
+declares unreadable. `shrink.ts` will not shrink a page below 2400 for exactly
+this reason, so the two ends of the pipeline disagree.
+
+All true, and the change would still be wrong: the comment **directly below the
+constant** records the experiment, run 2026-08-26 against real homr on real
+pages. `homr_page.jpg` reads 77 bars at 1.00 both at staff-107 px and at
+staff-**7 px**; `page-upright.jpg` reads *better* prepared (56 → 57). The
+premise — that homr's accuracy tracks staff resolution — is the part that was
+tested and refuted. Its own note anticipates this: *"evidence and not a licence
+to change the constant in either direction … the hypothesis is plausible enough
+that somebody will have it again."*
+
+**A stated metre.** Both real phone photographs in the corpus read
+`time_signature: None`, so everything rests on `infer_beats_per_measure`, and
+asking the musician looked like free accuracy. Measured: on
+`audiveris_phone_photo`, inference already picks the best available answer —
+stating the correct 4/4 gives **0.53**, identical. On `oemer_phone_photo` no
+metre helps, because its barlines were never found. Nothing to gain.
+
+### `tools/musicxml-bench.py` — the one bench that runs without Modal
+
+`homr-bench.py` and `pipeline-check.py` both need homr, which exists only in the
+transcription container. So neither can be run while working on `musicxml.py` or
+`validate.py` — which is where **every** measured accuracy win in this project
+has come from. This measures the importer and the beat checks against
+`fixtures/musicxml/`, locally, in a second.
+
+Baseline recorded, and it prints the worst page as loudly as the mean because
+the mean is what let a reader scoring 0% on real repertoire look adequate:
+
+    mean 0.61   worst 0.00   pages 5
+
+### A bar of rest was being dropped, and that is expensive three times over
+
+The bench surfaced it: *"1 note the reading could not write"*. The note was
+`<rest measure="yes"/>` with `<duration>57</duration>` and no `<type>` — the
+canonical MusicXML spelling of a bar of rest, and the shape an orchestral part
+is mostly made of. `_duration_name` returns None without a `<type>`, so it was
+dropped and the bar came through **empty**.
+
+This is the third spelling of one idea and the only one that had no handler:
+`_expand_multiple_rests` takes `<multiple-rest>`, `_whole_rests_that_mean_a_bar`
+takes the whole-rest *glyph*, and nothing took this.
+
+What dropping it costs, measured:
+
+| | before | after |
+|---|---|---|
+| play / rest / play, 4/4 | 0.67, bar 2 `empty` | **1.00** |
+| the same in 2/4, 3/4 | `empty` | `half`, `dotted_half` |
+| 12-bar part, 9 bars rest | 8 empty bars, 0.33, **refused** | 0 empty, **1.00**, accepted |
+
+The third row is the severe one. `_refuse_if_it_is_not_a_reading` turns a page
+away when empty bars outnumber music — the right rule, firing on the wrong
+pages, because a bass part *is* mostly counting rests. The founder's own
+instrument was the worst case.
+
+And `alignment.py` accumulates durations, so a musician who counts the rest
+correctly was judged a bar early for the whole of the rest of the page.
+
+**Named `whole` rather than measured from `<duration>`.** That fixture's own
+duration is 9.5 beats in a bar of 4, so the stated length is not evidence about
+anything; and `_whole_rests_that_mean_a_bar` already owns what a bar of rest is
+worth in a given metre, including inferring the metre. Reusing it beats a fourth
+thing that has to agree with the other three.
+
+Corpus mean is **unchanged** at 0.61 — these five fixtures are not rest-heavy —
+so the win is the constructed measurements above plus note recovery
+(`oemer_phone_photo` 80 → 83 notes, and the "could not write" line gone).
+
+### The scanner answers at the shutter now
+
+The server's legibility answer arrives after the upload, after the queue and
+after the worker fetches the page — by which time the music is back in its case,
+and the advice ("photograph it again from closer") costs a whole round trip.
+`lib/scan/legibility.ts` measures the shot on the phone and says so immediately.
+
+**It is a subset, deliberately** — the second in this project after
+`notation/reading.ts`, under the same rule: *it may never refuse a page the
+server would accept*. `CLIENT_FLOOR` (6 px) sits **below** the server's 8, and
+anything unmeasurable is silence. A test sweeps 8–40 px asserting no warning.
+
+Native returns null — React Native has no canvas and reading pixels would mean a
+native module, not a check. The web build is the one deployed.
+
+**Two bugs found by measuring rather than by reasoning**, both mine:
+
+- The band window was `height / 8` of a page. Autocorrelation needs three
+  periods to see one, so a 50-row window could only find a staff up to ~16 rows
+  — a *good* page at 20 px had no findable period and fell through to silence,
+  the harmless direction, which is exactly why it would never have been noticed.
+- The peak rule was "shortest lag reaching 80% of the tallest". Measured on a
+  real capture at 4 px: the staff peaked at **0.662** and the system pitch at
+  lag 28 at **0.929**, so the true period sat at 71% and was rejected by a
+  whisker — the answer came back as 28, seven times too generous, on exactly the
+  page this exists to warn about. The bar is absolute now (`STRONG_PEAK = 0.5`,
+  the middle of the measured gap between 0.662 and its multiples' ~0.28).
+  My own "not the distance between systems" test could not have caught this: at
+  five systems on 600 rows the system pitch is 100, past `MAX_PERIOD`, so it was
+  never a candidate. Replaced with one that packs them in.
+
+**Verified in the running app, not only in units.** Two Y4M camera feeds of a
+page with exact known staff spacing, fed to Chromium as the camera, driven
+through Library → Add piece → Photograph sheet music → shutter:
+
+    4 px between staff lines   -> warning shown
+    14 px between staff lines  -> silent
+
+**Three-foot test — the scanner, from the screenshot.** First the page in the
+bracketed frame, second the shutter ring, third the ochre advice line. The
+warning is the only accent on the screen so it draws the eye when present, and
+is absent otherwise; one line and an underlined action, no card and no badge
+(§3 laws 3, 4, 5, 6).
+
+A retake started from this line keeps the musician at the viewfinder rather than
+returning them to the page list — begun there it means "re-shoot page three of
+six", not "one shot and you are finished".
+
+### Tests
+
+`mobile` 39 files / 465 passed, `tsc` clean. `backend` 1705 passed, 3 xfailed.
+New: 16 legibility cases, 5 for the bar's-rest rule.
+
+### Not verified
+
+- The bar's-rest fix is measured on constructed parts and the corpus, **not**
+  on a homr reading of a real page — homr runs only on Modal.
+- The legibility check is verified on synthetic pages of exact geometry, not on
+  a photograph of real sheet music at a known distance.
+
 ## 2026-08-29 — The web camera was photographing every page at 640x480
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Reported by the owner

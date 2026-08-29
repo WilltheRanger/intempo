@@ -11,6 +11,8 @@ import { Text } from '../../components/primitives/Text';
 import { impact, ImpactFeedbackStyle } from '../../lib/haptics';
 import { captureSession, useCapturedPages } from '../../data/captureSession';
 import { MAX_PAGES } from '../../lib/scan/uploadPages';
+import { adviceFor, legibilityOf } from '../../lib/scan/legibility';
+import { pageSamples } from '../../lib/scan/pageSamples';
 import {
   BORDER_WIDTH,
   colors,
@@ -62,7 +64,20 @@ export function ScannerScreen() {
   const [permission, requestPermission] = useCameraPermissions();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  //: The page just taken that will not read, and why. Null when the last shot
+  //: was fine, could not be measured, or has been retaken.
+  const [doubt, setDoubt] = useState<{ id: string; advice: string } | null>(null);
   const camera = useRef<CameraView>(null);
+  /**
+   * Whether the retake in flight was started *here*, at the viewfinder.
+   *
+   * A retake normally begins on the review list, so finishing one returns
+   * there — "one shot and you are finished". Started from the doubt line below
+   * it means the opposite: the musician is mid-scan with the music in front of
+   * them, and sending them to the page list after re-shooting page three of
+   * six is the app losing their place.
+   */
+  const retakingHere = useRef(false);
 
   // Opening the scanner starts a new session. Coming back from review to add
   // another page doesn't remount this screen, so the pages survive that.
@@ -131,8 +146,25 @@ export function ScannerScreen() {
       // `capture`. A retake swaps the new photograph in where the old one sat
       // and you are finished; an ordinary capture leaves you here for the next
       // page.
-      if (captureSession.capture(photo.uri) === 'replaced') {
+      const outcome = captureSession.capture(photo.uri);
+      const startedHere = retakingHere.current;
+      retakingHere.current = false;
+      if (outcome === 'replaced' && !startedHere) {
         navigation.navigate('CapturedPages');
+        return;
+      }
+
+      // **Not awaited, and the shutter is not blocked on it.** Measuring is
+      // tens of milliseconds and the answer is advisory: someone shooting a
+      // six-page part should not wait for a verdict between pages, and a
+      // verdict that arrives after the next shot is about the previous one,
+      // which is why it is keyed by page id.
+      //
+      // Found by source rather than by position: a replacement sits where the
+      // page it replaced sat, which is not the end of the list.
+      const taken = captureSession.current().find((page) => page.source === photo.uri);
+      if (taken) {
+        void checkItReads(taken.id, photo.uri);
       }
     } catch (cause) {
       setError(
@@ -141,6 +173,34 @@ export function ScannerScreen() {
     } finally {
       setBusy(false);
     }
+  }
+
+  /**
+   * Whether the page just taken has enough detail on it to be read.
+   *
+   * The server answers this too, and its answer is the one that decides
+   * anything — but it arrives after the upload, after the queue and after the
+   * worker fetches the page, by which time the music is back in its case. Here
+   * it costs one more press. See `lib/scan/legibility.ts`, which is
+   * deliberately more permissive than the server so it can never talk someone
+   * out of a photograph that would have read.
+   */
+  async function checkItReads(id: string, uri: string) {
+    const advice = adviceFor(legibilityOf(await pageSamples(uri)));
+    if (advice) {
+      setDoubt({ id, advice });
+    }
+  }
+
+  function retakeDoubtful() {
+    if (!doubt) {
+      return;
+    }
+    // The existing retake path, unchanged: the page stays until a photograph
+    // replaces it, and `capture` swaps the new one in where the old one sits.
+    captureSession.beginRetake(doubt.id);
+    retakingHere.current = true;
+    setDoubt(null);
   }
 
   function handleDone() {
@@ -226,6 +286,29 @@ export function ScannerScreen() {
           <Text variant="metadataSmall" color="onDarkMuted" style={styles.error}>
             {error}
           </Text>
+        ) : null}
+
+        {/*
+          One line, in the only accent on this screen, and only when there is
+          something to say. Not a card and not a badge: the page in the frame is
+          the subject and the shutter is the action, so this has to be third
+          (§3 laws 3, 4 and 5).
+        */}
+        {doubt && !error ? (
+          <View style={styles.doubt}>
+            <Text variant="metadataSmall" color="accent" style={styles.doubtText}>
+              {doubt.advice}
+            </Text>
+            <Text
+              variant="metadataSmall"
+              color="actionText"
+              onPress={retakeDoubtful}
+              accessibilityRole="button"
+              style={styles.doubtAction}
+            >
+              Take this page again
+            </Text>
+          </View>
         ) : null}
       </View>
 
@@ -345,6 +428,18 @@ const styles = StyleSheet.create({
     marginTop: spacing.lg,
     textAlign: 'center',
     paddingHorizontal: spacing.xl,
+  },
+  doubt: {
+    marginTop: spacing.lg,
+    paddingHorizontal: spacing.xl,
+  },
+  doubtText: {
+    textAlign: 'center',
+  },
+  doubtAction: {
+    marginTop: spacing.sm,
+    textAlign: 'center',
+    textDecorationLine: 'underline',
   },
   captureDisabled: {
     opacity: 0.4,

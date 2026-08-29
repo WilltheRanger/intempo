@@ -3121,3 +3121,155 @@ def test_a_chord_keeps_its_other_noteheads() -> None:
 def test_a_plain_note_carries_no_chord_pitches() -> None:
     score = score_json_from_musicxml(_part(_bar(1, _CELLO_NOTE, _BASS_FOUR_FOUR)))
     assert score.measures[0].notes[0].chord_pitches == []
+
+
+# ---------------------------------------------------------------------------
+# A bar of rest, written the way MusicXML says to write one
+# ---------------------------------------------------------------------------
+#
+# `<rest measure="yes"/>` with no `<type>`: the third and most canonical of the
+# three spellings of a bar of rest, and the one that was dropped. See
+# `_duration_name`.
+
+
+def _part_with_a_bars_rest(beats: int = 4, beat_type: int = 4, rest_ticks: int = 16) -> str:
+    """Play a bar, rest a bar, play a bar — an orchestral part in miniature."""
+    played = "".join(
+        "<note><pitch><step>D</step><octave>3</octave></pitch>"
+        "<duration>4</duration><type>quarter</type></note>"
+        for _ in range(beats)
+    )
+    return f"""<?xml version="1.0"?>
+<score-partwise version="4.0"><part-list><score-part id="P1">
+<part-name>Bass</part-name></score-part></part-list><part id="P1">
+ <measure number="1"><attributes><divisions>4</divisions>
+   <time><beats>{beats}</beats><beat-type>{beat_type}</beat-type></time>
+   <clef><sign>F</sign><line>4</line></clef></attributes>{played}</measure>
+ <measure number="2">
+   <note><rest measure="yes"/><duration>{rest_ticks}</duration><voice>1</voice></note>
+ </measure>
+ <measure number="3">{played}</measure>
+</part></score-partwise>"""
+
+
+def test_a_measure_rest_is_a_bar_of_rest_not_an_empty_bar() -> None:
+    """**It used to vanish, and an empty bar is not a quiet bar.**
+
+    Dropped, the bar came through with no notes at all, which costs three
+    separate things: `validate.py` calls it a hole rather than a bar of rest,
+    `alignment.py` accumulates durations so every later bar is judged a bar
+    early, and `_refuse_if_it_is_not_a_reading` counts empty bars against the
+    page.
+    """
+    score = score_json_from_musicxml(_part_with_a_bars_rest())
+
+    bar = score.measures[1]
+    assert [n.duration for n in bar.notes] == ["whole"]
+    assert [n.pitch for n in bar.notes] == ["rest"]
+    assert [f.verdict for f in validate_measures(score)] == ["ok", "ok", "ok"]
+
+
+@pytest.mark.parametrize(
+    "beats,beat_type,expected",
+    [(4, 4, "whole"), (2, 4, "half"), (3, 4, "dotted_half")],
+)
+def test_a_bars_rest_is_worth_the_bar_it_is_in(beats, beat_type, expected) -> None:
+    """The metre decides its length, and an existing rule already owns that.
+
+    Importing it as `whole` hands it to `_whole_rests_that_mean_a_bar`, which
+    shortens a lone whole rest to the bar it sits in. Reusing that rule is the
+    point: a fourth thing computing bar lengths is a fourth thing that has to
+    agree with the other three.
+    """
+    score = score_json_from_musicxml(_part_with_a_bars_rest(beats, beat_type))
+
+    assert [n.duration for n in score.measures[1].notes] == [expected]
+    assert all(f.verdict == "ok" for f in validate_measures(score))
+
+
+def test_a_bars_rest_does_not_believe_its_own_duration() -> None:
+    """**Because one of them was 9.5 beats in a bar of 4.**
+
+    `audiveris_phone_photo.musicxml` carries `<duration>57</duration>` at six
+    divisions on a measure rest. Reading the stated length would put nine and a
+    half beats in a four-beat bar — and `alignment.py` accumulates, so it moves
+    every onset after it. What the tag *means* is "this bar, whatever it holds";
+    what it says is not evidence about anything.
+    """
+    score = score_json_from_musicxml(_part_with_a_bars_rest(rest_ticks=57))
+
+    assert [n.duration for n in score.measures[1].notes] == ["whole"]
+    assert all(f.verdict == "ok" for f in validate_measures(score))
+
+
+def test_an_ordinary_rest_is_untouched_by_the_measure_rest_rule() -> None:
+    """`measure="no"`, and a rest that states its own type, are ordinary rests.
+
+    The rule keys on the attribute alone. Widening it to "a rest with no type"
+    would swallow genuinely unreadable notes and silently call them bars of
+    rest, which is the failure mode this whole module is written against.
+    """
+    typed = _part_with_a_bars_rest().replace(
+        '<rest measure="yes"/><duration>16</duration>',
+        '<rest measure="no"/><duration>4</duration><type>quarter</type>',
+    )
+    score = score_json_from_musicxml(typed)
+
+    assert [n.duration for n in score.measures[1].notes] == ["quarter"]
+
+
+def test_a_part_that_is_mostly_rest_is_not_refused_as_holes() -> None:
+    """**The severest consequence, and the one a bass player would meet first.**
+
+    `_refuse_if_it_is_not_a_reading` turns a page away when empty bars
+    outnumber music — "more holes than music", which is the right rule and was
+    firing on the wrong pages. An orchestral bass part is mostly counting
+    rests, so dropping them made the part *itself* look like a failed read.
+
+    Measured on a 12-bar part with 9 bars of rest: 8 empty bars and 0.33
+    confidence, refused outright as "8 of the 12 bars on this page came out
+    empty". With the rule: no empty bars, 1.00, accepted.
+    """
+    from app.services.ocr.homr_provider import (
+        _refuse_if_it_is_not_a_reading,
+        confidence_from_arithmetic,
+    )
+
+    head = (
+        '<measure number="1"><attributes><divisions>4</divisions>'
+        "<time><beats>4</beats><beat-type>4</beat-type></time>"
+        "<clef><sign>F</sign><line>4</line></clef></attributes>"
+        "<note><pitch><step>D</step><octave>3</octave></pitch>"
+        "<duration>16</duration><type>whole</type></note></measure>"
+    )
+    bars = [head]
+    for number in range(2, 13):
+        if number % 4 == 0:
+            bars.append(
+                f'<measure number="{number}">'
+                + "".join(
+                    "<note><pitch><step>G</step><octave>2</octave></pitch>"
+                    "<duration>4</duration><type>quarter</type></note>"
+                    for _ in range(4)
+                )
+                + "</measure>"
+            )
+        else:
+            bars.append(
+                f'<measure number="{number}">'
+                '<note><rest measure="yes"/><duration>16</duration>'
+                "<voice>1</voice></note></measure>"
+            )
+    xml = (
+        '<?xml version="1.0"?><score-partwise version="4.0"><part-list>'
+        '<score-part id="P1"><part-name>Bass</part-name></score-part>'
+        '</part-list><part id="P1">' + "".join(bars) + "</part></score-partwise>"
+    )
+
+    score = score_json_from_musicxml(xml)
+    findings = validate_measures(score)
+
+    assert [m.measure_number for m in score.measures if not m.notes] == []
+    assert confidence_from_arithmetic(findings) == 1.0
+    # Does not raise.
+    _refuse_if_it_is_not_a_reading("homr", score, findings)

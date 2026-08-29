@@ -212,10 +212,52 @@ def _rests_for_gap(beats: float) -> list[str]:
     return out if abs(left) < 1e-9 else []
 
 
+def _is_a_bars_rest(note: ET.Element) -> bool:
+    """`<rest measure="yes"/>` — the rest that fills whatever bar it is in.
+
+    MusicXML's own way of writing a bar of rest, and the shape an orchestral
+    part is mostly made of. It carries no `<type>`, because the glyph it draws
+    depends on the metre rather than on a note value.
+    """
+    rest = note.find("rest")
+    return rest is not None and (rest.get("measure") or "").strip().lower() == "yes"
+
+
 def _duration_name(note: ET.Element, divisions: int | None = None) -> str | None:
     kind = _text(note.find("type"))
     if kind is None:
-        return None
+        # **A bar of rest, and the third spelling of one.**
+        #
+        # `_expand_multiple_rests` handles `<multiple-rest>`, several bars at
+        # once. `_whole_rests_that_mean_a_bar` handles the whole-rest *glyph*,
+        # `<type>whole</type>`. This is the one in between and the most
+        # canonical of the three — a single bar of rest, written as MusicXML
+        # says to write it: `<rest measure="yes"/>` and no `<type>` at all,
+        # because which glyph it draws depends on the metre.
+        #
+        # It was dropped, and dropping it is expensive three times over. The
+        # bar comes through **empty**, so: `validate.py` calls it a hole rather
+        # than a bar of rest and the reading's confidence falls; `alignment.py`
+        # accumulates durations, so a musician who counts the rest correctly is
+        # judged a bar early for the whole of the rest of the page — the exact
+        # damage `_expand_multiple_rests` exists to prevent; and
+        # `_refuse_if_it_is_not_a_reading` counts empty bars against the page,
+        # so a part with more rest than music — which a bass part frequently
+        # is — could be **refused outright** as bars that "came out empty".
+        #
+        # Measured on a three-bar part, play/rest/play: 0.67 confidence with
+        # bar 2 `empty`, against 1.00 with this. Found in
+        # `audiveris_phone_photo.musicxml`, which carries one.
+        #
+        # **Named `whole`, deliberately, rather than measured from
+        # `<duration>`.** Two reasons, and the second is the load-bearing one:
+        # `<duration>` on these is not trustworthy — the one in that fixture
+        # says 57 ticks at 6 divisions, which is 9.5 beats in a bar of 4 — and
+        # `_whole_rests_that_mean_a_bar` already owns the question of what a
+        # bar of rest is worth in this metre, including inferring the metre
+        # when the page never states one. Handing this to that rule reuses it
+        # rather than writing a fourth thing that has to agree with it.
+        return "whole" if _is_a_bars_rest(note) else None
     base = _TYPE_TO_DURATION.get(kind)
     if base is None:
         return None
