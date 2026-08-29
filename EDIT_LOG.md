@@ -6,6 +6,76 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-29 — The web camera was photographing every page at 640x480
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Reported by the owner
+mid-session: *"when I take a picture it says the image is too hard to read and
+lowers the quality a lot."* Both halves are one bug with one cause.
+
+**Files:** `mobile/patches/expo-camera+57.0.3.patch` (new),
+`mobile/src/lib/cameraResolution.test.ts` (new).
+
+### Measured
+
+`useWebCameraStream` calls `getPreferredStreamDevice(preferredType)` with no
+width and no height. `getIdealConstraints` therefore falls through to
+`MinimumConstraints` — literally `{ audio: false, video: true }` — and the
+browser picks. In this repo's own Chromium, on a secure origin:
+
+    getUserMedia({ video: true })                       640 x 480
+    getUserMedia({ video: { width: {ideal: 3840}, … } }) 3840 x 2160
+
+`captureImage` draws its canvas at exactly `video.videoWidth/videoHeight`, so
+**that 640x480 is the photograph the app uploads** — whatever the phone's rear
+camera can do, and however sharp the preview looked while framing it.
+
+640x480 is not a near miss. It is precisely the case `too_small_to_read` exists
+to refuse: the server wants 8 source pixels between staff lines and a page of
+music at 480 rows has around 4. So the two symptoms are the same fact seen from
+two ends — the picture really was low quality, and the server really could not
+read it.
+
+The advice in that refusal — *"Photographing the page again from closer, or with
+a phone rather than a webcam, is what fixes it"* — was unfollowable here, which
+is the failure `CLAUDE.md` already records under "Advice must be followable in
+this app". The owner **was** on a phone. Nothing they could do at the shutter
+would have helped, because the app was discarding the camera before the shutter.
+
+`cameraCanPhotographAPage` turned desktops away for this reason and deliberately
+kept phone browsers, on the grounds that *"its rear camera is the best camera in
+this product"*. It is, and the app was asking it for a thumbnail.
+
+### The fix
+
+A `patch-package` patch — the project's existing idiom, alongside `expo-audio`
+and `expo-image-picker` — making `getIdealConstraints` ask for an **ideal**
+3840x2160. Ideal rather than exact: a camera that cannot reach 4K returns its
+best mode instead of failing to open at all. Verified by driving the patched
+function itself through a real Chromium and reading `videoWidth` off the
+resulting stream: 3840x2160.
+
+The patch also drops an inverted early return that gave `MinimumConstraints`
+when the caller *had* supplied valid constraints and built the preferred ones
+only when it had not — unreachable from this package's own call site, and a trap
+for anyone who starts passing a size.
+
+`cameraResolution.test.ts` guards it. A patch is invisible — applied by
+`postinstall`, outside `src`, imported by nothing — and an `npm update` that
+moves the version leaves it silently unapplied, with no crash and no error:
+just photographs that are quietly too small again.
+
+### Not verified, and worth saying
+
+- **Native was not measured.** `takePictureAsync({ quality: 0.8 })` sets JPEG
+  quality, not resolution, and native captures at the sensor's picture size — so
+  this defect is specific to the web build, which is the one deployed. If pages
+  photographed through a native build are also coming back small, that is a
+  second bug and `pictureSize` is where to look.
+- **`quality: 0.8` was left alone.** Raising it is a plausible improvement for
+  high-frequency detail like staff lines, and it is a tuning change with no
+  measurement behind it, so it is not being made on a guess.
+- No screenshot: this is a resolution change with no visual surface.
+
 ## 2026-08-29 — Every page of the part is read, and the upload stops being a screen
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. **UI/UX work, done under an
