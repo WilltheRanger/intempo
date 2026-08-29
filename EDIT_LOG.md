@@ -6,6 +6,46 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-28 — Migrations 011 and 012 applied to the live database
+
+**Branch:** `main`. No code change — this entry records a deployment-state
+change, because the last several entries end "still waiting on migrations 011
+and 012" and that stopped being true today.
+
+Applied to the live Supabase project (`intempo-dev`), owner's instruction.
+Verified by SQL against the same database the service reads:
+
+- **011 (`scores.source_image_urls`):** 20 rows backfilled, **0 mismatches**
+  between the array's first element and the old single-page column.
+- **012 (`analyses.skip_long_rests`):** column present, default false.
+
+The backend was already live on `d6791ef` — Render auto-deploys `main`, and
+the deploy finished with the health check passing before the migrations ran.
+That ordering was safe by design and the design held: inserts in the window
+retried without the 011 column (page one only, the pre-011 behaviour, with a
+warning in the logs), and 012's key is written only when a musician actually
+skips a rest, which none could have.
+
+**What this unblocks:** multi-page scans persist all their pages, and the
+skip-long-rests toggle now works end to end instead of failing at submit.
+The app still uploads `pages[0]` — the client half of multi-page is the
+remaining gap, and it is a code change, not an ops one.
+
+**Not verified:** `/v1/ready` could not be probed from this environment (the
+sandbox proxy refuses the tunnel), so liveness rests on Render's own health
+check and the column checks on direct SQL. Also unknown from here: whether the
+Cloudflare Pages build of the app auto-deployed the `cacheKey` half of the
+egress fix — the Cloudflare connector is not authenticated in this session,
+so the owner should check that build went out, or the phone/web app keeps
+re-downloading until it does.
+
+**Rollback:** both columns are additive with safe defaults; the code runs with
+or without them, in both directions.
+
+**Still waiting on the owner** — permission to re-read the nine failed scans.
+
+---
+
 ## 2026-08-27 — A 53 MB bucket was billing gigabytes of egress
 
 **Branch:** `main`. Backend and app plumbing — no screen, component, style or
