@@ -92,10 +92,19 @@ class Settings:
     #: bars can be replaced (`_splice`), and an answer that leaves more bars
     #: broken than it found is discarded. A reading is never *originated* here.
     #:
-    #: Empty by default, deliberately: it costs a metered API call per page that
-    #: needs one, and turning it on is a decision about a bill as well as about
-    #: transcription quality. `claude-sonnet-5` is the intended value.
-    OCR_CORRECTOR: str = os.getenv("OCR_CORRECTOR", "")
+    #: **On, by the owner's call on 2026-08-30** — *"Im fine with the api costs.
+    #: just have claude read the part where it has trouble with"*. It was empty
+    #: by default until then, because it costs a metered call per page that
+    #: needs one and that is a decision about a bill.
+    #:
+    #: It costs nothing on a page that reads cleanly: the retry runs only where
+    #: `validate.py` has already found bars that do not add up.
+    #:
+    #: Set it to the empty string to turn it off again. A build with no
+    #: `ANTHROPIC_API_KEY` behaves as though it were off — the provider refuses,
+    #: `retry_with_arithmetic` keeps the reading it has, and `/v1/ready` reports
+    #: `ocr_corrector` so that silence is visible rather than assumed.
+    OCR_CORRECTOR: str = os.getenv("OCR_CORRECTOR", "claude-sonnet-5")
 
 
 

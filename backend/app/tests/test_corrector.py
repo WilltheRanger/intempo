@@ -100,14 +100,6 @@ def _retry(score: ScoreJson, helper) -> ScoreJson:
 # ---------------------------------------------------------------------------
 
 
-def test_no_corrector_is_configured_by_default() -> None:
-    """Off unless asked for. It costs a metered call per page that needs one,
-    and turning that on is a decision about a bill."""
-    from app.config import settings
-
-    assert settings.OCR_CORRECTOR == ""
-
-
 def test_a_corrector_that_takes_no_prompt_is_refused(monkeypatch, caplog) -> None:
     """Naming homr here is asking it the question it cannot be asked, which is
     the situation the setting exists to escape."""
@@ -353,3 +345,95 @@ def test_one_bad_line_does_not_discard_another_line_s_correction(wired) -> None:
 
     assert len(out.measures[1].notes) == 4, "line 0's repair was thrown away"
     assert len(out.measures[2].notes) == 3, "line 1's damage was kept instead of refused"
+
+
+# ---------------------------------------------------------------------------
+# Telling it what it is looking at
+# ---------------------------------------------------------------------------
+
+
+def _keyed(key: str | None, clef: str | None = "bass", metre: str | None = "4/4") -> ScoreJson:
+    return ScoreJson(
+        time_signature=metre,
+        key_signature=key,
+        clef=clef,
+        ocr_confidence=1.0,
+        measures=[
+            Measure(
+                measure_number=n,
+                notes=[Note(pitch="D3", duration="quarter") for _ in range(4)],
+            )
+            for n in (1, 2, 3)
+        ],
+    )
+
+
+def test_the_key_is_stated_because_it_decides_the_pitch_names() -> None:
+    """**The one reading error arithmetic cannot see.**
+
+    `pitch` is an absolute name, so a notehead on the F line in D major is
+    `F#4`. A bar spelled in the wrong key sums perfectly and is still wrong —
+    and a tie is recognised only when two noteheads share a pitch name, so one
+    mis-spelled accidental deletes an onset rather than merely looking odd.
+    """
+    from app.services.ocr.confirm import what_this_piece_is
+
+    said = what_this_piece_is(_keyed("D major"), [2])
+
+    assert "D major" in said
+    assert "accidental the key gives it" in said
+
+
+def test_the_clef_is_stated_too() -> None:
+    """A bass part read as treble is a seventh out on every note, which is the
+    mistake `ScoreJson.clef` is documented never to guess at."""
+    from app.services.ocr.confirm import what_this_piece_is
+
+    assert "bass-clef" in what_this_piece_is(_keyed("D major"), [2])
+
+
+def test_nothing_is_invented_when_the_page_states_nothing() -> None:
+    """An inner page often carries no header at all. Naming a key to sound
+    authoritative is how a wrong note gets written confidently."""
+    from app.services.ocr.confirm import what_this_piece_is
+
+    assert what_this_piece_is(_keyed(None, clef=None, metre=None), [2]) == ""
+
+
+def test_an_unknown_key_is_not_repeated_back_as_a_key() -> None:
+    """"unknown" is the escape hatch the prompt offers for an illegible header.
+    Handing it back as `in unknown` would be asking the model to spell the
+    accidentals of a key called unknown."""
+    from app.services.ocr.confirm import what_this_piece_is
+
+    said = what_this_piece_is(_keyed("unknown"), [2])
+
+    assert "unknown" not in said
+    assert "accidental the key gives it" not in said
+
+
+def test_the_metre_is_the_one_in_force_at_those_bars() -> None:
+    """**Not the header's.** A page that turns 3/4 at bar 3 and is re-read
+    against the 4/4 it started in has its correct bars reported short — the
+    false caveat `Measure.time_signature` was added to stop."""
+    from app.services.ocr.confirm import what_this_piece_is
+
+    score = _keyed("D major")
+    score.measures[2].time_signature = "3/4"
+
+    assert "in 3/4" in what_this_piece_is(score, [3])
+    assert "in 4/4" in what_this_piece_is(score, [2])
+
+
+def test_the_corrector_is_on_by_default() -> None:
+    """**This asserted the opposite yesterday**, and the reason it did was
+    sound: a metered call per page is a decision about a bill and not one to
+    make on someone's behalf. The owner made it on 2026-08-30 — *"Im fine with
+    the api costs"* — so the default moved and the test with it.
+
+    It costs nothing on a page that reads cleanly: the retry runs only where
+    `validate.py` has already found bars that do not add up.
+    """
+    from app.config import settings
+
+    assert settings.OCR_CORRECTOR == "claude-sonnet-5"

@@ -147,6 +147,72 @@ class Readiness:
         }
 
 
+def _corrector_check() -> Check:
+    """Whether the bars that do not add up can actually be re-read.
+
+    **A configuration check, and it says so.** It asks whether a corrector is
+    named and whether its key is present — not whether one has ever run. That
+    distinction has bitten this project before (`transcription_dispatch` exists
+    because every readiness check passed while every spawn raised), so the
+    detail says which question it answered.
+
+    Non-blocking either way. A page with no corrector is read exactly as it was
+    before one existed: homr's reading stands, the bars that do not add up are
+    named for the musician, and `MeasureEditScreen` fixes them by hand.
+    """
+    from app.config import settings
+    from app.services.ocr.pipeline import PROVIDER_REGISTRY
+
+    named = settings.OCR_CORRECTOR.strip()
+    if not named:
+        return Check(
+            name="ocr_corrector",
+            ok=True,
+            detail=(
+                "OCR_CORRECTOR is empty, so bars that do not add up are left "
+                "for the musician to correct rather than re-read."
+            ),
+            blocking=False,
+        )
+
+    provider = PROVIDER_REGISTRY.get(named)
+    if provider is None:
+        return Check(
+            name="ocr_corrector",
+            ok=False,
+            detail=(
+                f"OCR_CORRECTOR names {named!r}, which this build does not "
+                f"know ({', '.join(sorted(PROVIDER_REGISTRY))}). Bars that do "
+                "not add up will not be re-read."
+            ),
+            blocking=False,
+        )
+
+    setting = getattr(provider, "api_key_setting", "")
+    has_key = bool(getattr(settings, setting, "")) if setting else True
+    return Check(
+        name="ocr_corrector",
+        ok=has_key,
+        detail=(
+            f"{named} is configured to re-read bars that do not add up. "
+            "Configured, not exercised — `transcription_dispatch` is what says "
+            "whether pages reach a reader at all."
+            if has_key
+            else (
+                f"OCR_CORRECTOR is {named} but {setting} is not set **in this "
+                "process**. When TRANSCRIPTION_RUNTIME=modal the re-read runs "
+                "in the Modal container and reads that container's secret, so "
+                "this is expected and harmless there — the same caveat the "
+                f"ocr:{named} check carries. Set it here only if pages are read "
+                "here. If it is missing in both, no bar is ever re-read: the "
+                "reading still stands and the bars that do not add up are "
+                "still named for the musician."
+            )
+        ),
+        blocking=False,
+    )
+
+
 def _configuration_checks() -> list[Check]:
     """Settings only. No network, so this half always answers.
 
@@ -271,6 +337,8 @@ def _configuration_checks() -> list[Check]:
                 blocking=False,
             )
         )
+
+    checks.append(_corrector_check())
 
     # A reader can live here or behind the page runtime. The production
     # deployment deliberately keeps homr off this 512 MB process and sends

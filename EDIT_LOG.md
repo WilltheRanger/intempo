@@ -6,6 +6,79 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-30 — The corrector is on, and it is told what key the music is in
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Owner: *"ok can you turn it
+on also make sure the ai knows what key its in"*.
+
+**Files:** `backend/app/config.py`, `backend/app/prompts/ocr_prompt.txt`,
+`backend/app/services/ocr/confirm.py`, `backend/app/services/readiness.py`,
+`backend/app/tests/test_corrector.py`.
+
+### The prompt asked for the key and never said what it was for
+
+`ocr_prompt.txt` has always had a `key_signature` field and one line about what
+to do when it is illegible. Nowhere did it say that **the key decides the pitch
+names**. `pitch` is an absolute name, so a notehead on the F line in D major is
+`F#4` — and nothing downstream can catch getting that wrong, because a bar
+spelled in the wrong key **sums perfectly**. Every check this pipeline has is
+arithmetic; a wrong accidental is invisible to all of them.
+
+It is not cosmetic either: a tie is recognised only when two noteheads share a
+pitch name, so one mis-spelled accidental deletes an onset.
+
+Three rules added, in the order an engraver applies them: the key applies to
+every note of that letter in every octave; a printed accidental applies to that
+letter *in that octave* to the end of the bar; a natural cancels either. Plus
+the spellings for double accidentals, which the vocabulary learned yesterday.
+
+### And the corrector is told, per re-read
+
+`what_this_piece_is` prefixes the ask with the clef, the key and the metre.
+Three details, each of which is a rule this project already learned the hard
+way:
+
+- The **clef** comes from the bars being asked about, falling back to the
+  page's — a bass part read as treble is a seventh out on every note, the
+  mistake `ScoreJson.clef` is documented never to guess at.
+- The **metre** is `meters_in_force` **at those bars**, not the header's. A page
+  that turns 3/4 at bar 12, re-read against the 4/4 it opened in, has its
+  correct bars reported short — the false caveat `Measure.time_signature` was
+  added to stop.
+- A key of `"unknown"` — the escape hatch the prompt offers for an illegible
+  header — is **not** repeated back. Asking a model to spell the accidentals of
+  a key called unknown is worse than saying nothing, and saying nothing is what
+  an inner page with no header honestly deserves.
+
+### Turned on
+
+`OCR_CORRECTOR` now defaults to `claude-sonnet-5`. It costs nothing on a page
+that reads cleanly: the retry runs only where `validate.py` has already found
+bars that do not add up.
+
+`/v1/ready` gained `ocr_corrector`, non-blocking, and it says which question it
+answered — *configured*, not *exercised*. That distinction is why
+`transcription_dispatch` exists: every readiness check here once passed while
+every Modal spawn raised. It also carries the caveat the `ocr:*` checks carry,
+because the re-read runs **in the Modal container** under
+`TRANSCRIPTION_RUNTIME=modal`, so a missing `ANTHROPIC_API_KEY` in the API
+process is expected and harmless there and would otherwise read as a fault.
+
+A test that asserted "off by default" yesterday now asserts the opposite. Its
+reasoning was right — a metered call per page is a decision about a bill and not
+one to make on someone's behalf — and the owner made the decision.
+
+### Honest gaps
+
+- **Whether `ANTHROPIC_API_KEY` is in the Modal secret `intempo-backend` is not
+  something this session can see**, and it is what decides whether the corrector
+  actually runs. If it is absent the provider refuses, the reading stands
+  unchanged, and nothing breaks — it simply never fires. The first scan with a
+  broken bar is what proves it either way.
+- Still no run against a real corrector or real crops: no key here, and homr
+  only runs on Modal.
+- The musician is still not told which bars a corrector touched.
+
 ## 2026-08-30 — Claude is shown the line, not the page
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Owner: *"Im fine with the

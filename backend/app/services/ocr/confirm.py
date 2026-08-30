@@ -29,7 +29,11 @@ from __future__ import annotations
 import logging
 
 from app.services.ocr.base import OCRProvider, OCRProviderError, OCRResponse
-from app.services.ocr.validate import describe_for_retry, validate_measures
+from app.services.ocr.validate import (
+    describe_for_retry,
+    meters_in_force,
+    validate_measures,
+)
 from app.services.score_schema import Measure, ScoreJson
 
 log = logging.getLogger(__name__)
@@ -134,7 +138,8 @@ def retry_with_arithmetic(
     return ask_and_splice(
         score, image_bytes,
         media_type=media_type, provider=provider,
-        bars=broken, note=note, context=context,
+        bars=broken, note=note,
+        context=_joined(what_this_piece_is(score, broken), context),
     )
 
 
@@ -269,6 +274,77 @@ def _one_line_context(bars: list[int]) -> str:
     )
 
 
+def _joined(*parts: str | None) -> str | None:
+    """The context sentences that exist, in order, or None if there are none."""
+    said = [p for p in parts if p]
+    return "\n\n".join(said) if said else None
+
+
+def what_this_piece_is(score: ScoreJson, bars: list[int]) -> str:
+    """The key, clef and metre in force where the re-read is being aimed.
+
+    **The key is the one that changes the notes.** `pitch` is an absolute name,
+    so a notehead on the F line in D major is `F#4` — and a tie is recognised
+    only when two noteheads share a pitch name, so one mis-spelled accidental
+    deletes an onset rather than merely looking wrong. A model shown a crop of a
+    line does have the key signature printed at its left, but saying it costs
+    nothing and removes the one reading error that is invisible to arithmetic:
+    a bar can sum perfectly and still be in the wrong key.
+
+    The clef for the same reason and worse — a bass part read as treble is a
+    seventh out on every note, which is the mistake `ScoreJson.clef` is
+    documented never to guess at.
+
+    The metre is taken **at those bars**, not from the header: `meters_in_force`
+    follows a change, and a page that turns 3/4 at bar 12 would otherwise be
+    re-read against the 4/4 it started in — reporting bars that are correct as
+    short, which is precisely the false caveat `Measure.time_signature` was
+    added to stop.
+
+    Empty when the score states none of the three, which is honest rather than
+    unhelpful: an inner page often carries no header at all, and inventing a key
+    to sound authoritative is how a wrong note gets written confidently.
+    """
+    parts: list[str] = []
+    clef = next(
+        (m.clef for m in score.measures if m.measure_number in set(bars) and m.clef),
+        score.clef,
+    )
+    if clef:
+        parts.append(f"a {clef}-clef part")
+    if score.key_signature and score.key_signature != "unknown":
+        parts.append(f"in {score.key_signature}")
+
+    said = ""
+    if parts:
+        said = "This is " + " ".join(parts) + ". "
+        if score.key_signature and score.key_signature != "unknown":
+            said += (
+                "Spell every pitch with the accidental the key gives it — a "
+                "notehead on a line the key sharpens is written sharp, whether "
+                "or not a sharp is printed in front of it. "
+            )
+
+    # The metre where the question is, which is not always the metre at the top.
+    meters = meters_in_force(score)
+    at = {
+        meters[i]
+        for i, measure in enumerate(score.measures)
+        if measure.measure_number in set(bars) and i < len(meters)
+    }
+    stated = {
+        m.time_signature
+        for m in score.measures
+        if m.measure_number in set(bars) and m.time_signature
+    } or ({score.time_signature} if score.time_signature else set())
+    if len(stated) == 1 and len(at) <= 1:
+        metre = stated.pop()
+        if metre and metre != "unknown":
+            said += f"These bars are in {metre}."
+
+    return said.strip()
+
+
 def retry_by_system(
     score: ScoreJson,
     crops: list[bytes],
@@ -336,7 +412,9 @@ def retry_by_system(
             # bar the model was not shown must not be accepted.
             bars=here,
             note=note,
-            context=_one_line_context(on_this_line),
+            context=_joined(
+                what_this_piece_is(corrected, here), _one_line_context(on_this_line)
+            ),
         )
         after = sum(1 for row in validate_measures(attempt) if row.is_problem)
         if after > before:

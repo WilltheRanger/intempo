@@ -68,6 +68,12 @@ Rules:
 - If you can't read a measure clearly, include it but set ocr_confidence to <0.7 and explain in notes_to_human.
 - Never emit a measure with an empty notes array unless the image genuinely shows a measure you cannot read at all — and say which in notes_to_human. An empty measure is otherwise a sign that something that was not a measure was counted as one.
 - Do NOT invent notes. If part of the image is illegible, leave that measure empty and flag it.
+- ACCIDENTALS AND THE KEY. "pitch" is an absolute name, so it has to carry the accidental the note actually sounds — the page prints the accidental once and means it many times. Three rules, in this order:
+  1. The key signature applies to every note of that letter, in every octave, for the whole piece. In D major a notehead on the F line is "F#4", never "F4". Getting this wrong is not cosmetic: two notes joined by a tie are only recognised as tied when their pitch names match, so one mis-spelled notehead can delete an onset.
+  2. An accidental printed in front of a note applies to that letter *in that octave* for the rest of the bar, and then stops. The second and third notes of "F#4 F4 F4" written with one sharp are also "F#4" unless a natural sign cancels it.
+  3. A natural sign cancels either of the above for the rest of the bar. After it, the plain letter is right.
+  Double sharps and double flats are written "F##4" and "Bbb4".
+
 - If the time_signature or key_signature is illegible (cropped off, handwritten unclear, missing from this excerpt), use the literal string "unknown" for that field rather than guessing. Do NOT use "unknown" for any other field — those two are the only ones with this escape hatch.
 - Tempo marking: if the score says "Allegro" without a BPM, infer the conventional range and put it in bpm_hint (Allegro ~120, Andante ~76, etc.)
 - Tuplets have names. Triplets: triplet_breve through triplet_one_twenty_eighth — three of them fill the space of two plain ones, so a bar of six triplet_eighths is 2 beats, not 3. Use them where the score brackets a 3.
