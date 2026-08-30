@@ -39,7 +39,26 @@ Duration = Literal[
     "eighth", "dotted_eighth",
     "sixteenth", "dotted_sixteenth",
     "thirty_second", "dotted_thirty_second",
-    "sixty_fourth",
+    "sixty_fourth", "dotted_sixty_fourth",
+    # **One level finer than each family reached before**, which is the whole
+    # rule. `tools/notation-coverage.py` prints every written value against dots
+    # and the common ratios, and these were the gaps in it that real music
+    # actually contains: a run of 128ths in a cadenza, a dotted 64th in an
+    # ornamental figure, thirty-second triplets in fast passagework, and
+    # whole-note triplets in a slow metre.
+    #
+    # A note with no name here is **dropped**, and a dropped note is a lost
+    # onset that `alignment.py` accumulates into every bar after it — so the
+    # cost of a gap is not the note, it is the rest of the page.
+    #
+    # **What is deliberately still missing**, and it is 31 more values: the
+    # exotic corners of the same cross-product — `septuplet_dotted_breve`,
+    # `quintuplet_dotted_sixteenth` and the like. They are not music. This is a
+    # closed union shared with the app, so every name costs a widening on both
+    # sides; adding them all would more than double it to describe figures no
+    # part contains. The coverage tool prints them as missing on every run, so
+    # the day one turns up it is one line and a measurement, not a discovery.
+    "one_twenty_eighth",
     # A breve, and the double dots.
     #
     # **Both were named as known gaps in `musicxml.py` and both cost notes.**
@@ -76,7 +95,9 @@ Duration = Literal[
     # `validate.py` and `reading.ts` both compare with an epsilon — which is
     # what makes adding them safe rather than a source of false "does not add
     # up" reports.
-    "triplet_half", "triplet_quarter", "triplet_eighth", "triplet_sixteenth",
+    "triplet_breve", "triplet_whole", "triplet_half", "triplet_quarter",
+    "triplet_eighth", "triplet_sixteenth", "triplet_thirty_second",
+    "triplet_sixty_fourth", "triplet_one_twenty_eighth",
     # Quintuplets and septuplets, on exactly the argument that added the
     # triplets above — and they cost more than the triplets did, because of
     # what the importer does when it cannot name a group.
@@ -111,9 +132,13 @@ Duration = Literal[
     # are checked exhaustively rather than assumed — see
     # `test_duration_beats.py`.
     "quintuplet_half", "quintuplet_quarter",
-    "quintuplet_eighth", "quintuplet_sixteenth",
+    "quintuplet_breve", "quintuplet_whole",
+    "quintuplet_eighth", "quintuplet_sixteenth", "quintuplet_thirty_second",
+    "quintuplet_sixty_fourth", "quintuplet_one_twenty_eighth",
     "septuplet_half", "septuplet_quarter",
-    "septuplet_eighth", "septuplet_sixteenth",
+    "septuplet_breve", "septuplet_whole",
+    "septuplet_eighth", "septuplet_sixteenth", "septuplet_thirty_second",
+    "septuplet_sixty_fourth", "septuplet_one_twenty_eighth",
 ]
 
 #: The names a bracket produces and a plain notehead never does.
@@ -151,6 +176,8 @@ DURATION_BEATS: dict[str, float] = {
     "thirty_second": 0.125,
     "dotted_thirty_second": 0.1875,
     "sixty_fourth": 0.0625,
+    "dotted_sixty_fourth": 0.09375,
+    "one_twenty_eighth": 0.03125,
     "double_whole": 8.0,
     # A double dot adds half the dot again: base × 1.75.
     "double_dotted_half": 3.5,
@@ -164,6 +191,13 @@ DURATION_BEATS: dict[str, float] = {
     "triplet_quarter": 2.0 / 3.0,
     "triplet_eighth": 1.0 / 3.0,
     "triplet_sixteenth": 1.0 / 6.0,
+    "triplet_breve": 16.0 / 3.0,
+    "triplet_one_twenty_eighth": 1.0 / 48.0,
+    "triplet_thirty_second": 1.0 / 12.0,
+    "triplet_sixty_fourth": 1.0 / 24.0,
+    # Three whole notes in the time of two: two bars of slow 4/4, and ordinary
+    # in a Adagio. `triplet_half` was already here; this is its parent.
+    "triplet_whole": 8.0 / 3.0,
     # Five in the time of four, and seven in the time of four: the written
     # value scaled by normal/actual, which is the same arithmetic the triplets
     # above are and the same arithmetic `musicxml._duration_name` does on the
@@ -178,10 +212,20 @@ DURATION_BEATS: dict[str, float] = {
     "quintuplet_quarter": 4.0 / 5.0,
     "quintuplet_eighth": 2.0 / 5.0,
     "quintuplet_sixteenth": 1.0 / 5.0,
+    "quintuplet_breve": 32.0 / 5.0,
+    "quintuplet_whole": 16.0 / 5.0,
+    "quintuplet_sixty_fourth": 1.0 / 20.0,
+    "quintuplet_one_twenty_eighth": 1.0 / 40.0,
+    "quintuplet_thirty_second": 1.0 / 10.0,
     "septuplet_half": 8.0 / 7.0,
     "septuplet_quarter": 4.0 / 7.0,
     "septuplet_eighth": 2.0 / 7.0,
     "septuplet_sixteenth": 1.0 / 7.0,
+    "septuplet_breve": 32.0 / 7.0,
+    "septuplet_whole": 16.0 / 7.0,
+    "septuplet_sixty_fourth": 1.0 / 28.0,
+    "septuplet_one_twenty_eighth": 1.0 / 56.0,
+    "septuplet_thirty_second": 1.0 / 14.0,
 }
 
 # Pitch: "rest" or scientific-pitch like "C4", "F#3", "Bb2", "F##4", "Bbb3".

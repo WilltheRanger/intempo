@@ -6,6 +6,84 @@ Operating Principle #5.
 
 ---
 
+## 2026-08-30 — A vision model may correct a bar, but may never read a page
+
+**Context:** the chain has been homr alone since 2026-08-24, when the owner
+called it — *"run homr only, no backup AI"* — because the vision models had
+invented notes: handed a page they could not read, they returned notation nobody
+had printed, at a confidence the app drew as a transcription. That decision was
+right and the evidence for it is in `config.py` beside `OCR_PROVIDER_CHAIN`.
+
+It had a cost nobody had priced. `confirm.retry_with_arithmetic` re-reads the
+bars whose durations do not add up — it names them, asks for those and nothing
+else, and splices the answer back over only those bars. It can only ask a
+provider that `takes_a_note`, and homr is deterministic with no prompt. So since
+that day the branch has logged *"cannot reconsider"* and stopped, on every page
+that needed it. The single mechanism this pipeline had for repairing a misread
+bar has been dead for the whole of its production life.
+
+The owner proposed the resolution on 2026-08-30: *"if the model cant effectively
+read or note or is not that confident we have a Visual llm such as claude to
+review it and correct that bar for the model."*
+
+**Decision:** `OCR_CORRECTOR` names a provider that answers the arithmetic
+retry, and nothing else. Empty by default. The reading is always homr's; a
+corrector can only edit parts of it that arithmetic has already proved untrue.
+
+**Why this is not the thing that was turned off.** The failure was not "a vision
+model was involved". It was that a vision model was asked an **unfalsifiable**
+question — *what is on this page* — and there was nothing to check the answer
+against, so an invention and a reading were the same shape. This question is
+different in the one way that matters:
+
+| | reading a page | correcting a bar |
+|---|---|---|
+| what is asked | what is here | this bar sums to 3 in 4/4, look again |
+| how many bars it may write | all of them | only the ones already proved wrong |
+| what happens if it invents | stored and drawn | still does not sum, discarded |
+
+Four limits, all already in `confirm.py` and all now load-bearing rather than
+theoretical: only bars in `asked_for` are spliced, so a retry aimed at bar 2
+cannot rewrite bar 12; a reply leaving more bars broken than it found is thrown
+away; a metre cannot be lost by omission; and nothing here raises, so a failed
+correction costs the page nothing.
+
+**Alternatives considered.**
+
+*Teach homr to reconsider.* It is an ONNX model with no prompt. Asking it again
+returns the same answer, which is why the branch was dead.
+
+*Send the whole page to a vision model when homr's confidence is low.* This is
+the thing that was turned off, restated. A low-confidence page is exactly the
+page a model is most likely to invent on, and nothing checks the result.
+
+*Ask the musician instead.* `MeasureEditScreen` already does, and stays the
+final authority. But a page with nine broken bars is nine repairs by hand before
+a single practice, and most of them are the same misread beam.
+
+*Leave it dead and widen the vocabulary instead.* Partly done — 17 note values
+were added the same day, and every one closes a real drop. But a bar can fail to
+add up for reasons no vocabulary fixes: a beam misread, a rest missed, a tuplet
+bracket lost.
+
+**Trade-offs accepted.**
+
+- **It costs money per page that needs it**, on a metered API, which is why it
+  is off by default and named rather than implied.
+- **The residual risk is a plausible wrong answer**, and it is real: a corrector
+  told "bar 14 is short" might look at bar 15, return something that sums, and
+  be accepted. The arithmetic guard catches invention that *does not add up*, not
+  invention that does. Sending a crop of the bar would close this, and the bar's
+  position on the page is not something homr's MusicXML reliably carries — see
+  the follow-up below.
+- **The musician is not yet told which bars a corrector touched.** They should
+  be; `Measure` has no field for it and adding one reaches the app, so it is a
+  separate change under the UI gate.
+
+**Follow-up, in order:** mark corrected bars in the score so the caveat line can
+name them; then locate bars on the page — via `<print new-system="yes">` where
+homr emits it — so a correction can be asked about a crop rather than a page.
+
 ## 2026-08-29 — The photograph is kept only where a person said so, and withdrawal deletes
 
 **Context:** migration 007 deletes the page photograph when a musician accepts

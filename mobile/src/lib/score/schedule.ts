@@ -17,48 +17,52 @@ import { flattenNotes, readTies } from '../notation/ties';
 
 /** Beats per note value, at any tempo. A dot adds half again. */
 export const BEATS: Record<Duration, number> = {
-  whole: 4,
-  dotted_whole: 6,
-  half: 2,
-  dotted_half: 3,
-  quarter: 1,
-  dotted_quarter: 1.5,
-  eighth: 0.5,
-  dotted_eighth: 0.75,
-  sixteenth: 0.25,
-  dotted_sixteenth: 0.375,
-  thirty_second: 0.125,
-  dotted_thirty_second: 0.1875,
-  sixty_fourth: 0.0625,
   double_whole: 8,
-  // A double dot adds half the dot again: base x 1.75. Ordinary notation, and
-  // how a march is written — see score_schema.py for what leaving them out
-  // cost on both the import and the OCR side.
-  double_dotted_half: 3.5,
-  double_dotted_quarter: 1.75,
-  double_dotted_eighth: 0.875,
-  // Three in the time of two. Thirds are not exactly representable in binary,
-  // which is why every beat-sum comparison carries a tolerance rather than
-  // testing equality — see TOLERANCE in backend services/ocr/validate.py.
+  dotted_whole: 6,
+  whole: 4,
+  double_dotted_half: 7 / 2,
+  dotted_half: 3,
+  half: 2,
+  double_dotted_quarter: 7 / 4,
+  dotted_quarter: 3 / 2,
+  quarter: 1,
+  double_dotted_eighth: 7 / 8,
+  dotted_eighth: 3 / 4,
+  eighth: 1 / 2,
+  dotted_sixteenth: 3 / 8,
+  sixteenth: 1 / 4,
+  dotted_thirty_second: 3 / 16,
+  thirty_second: 1 / 8,
+  dotted_sixty_fourth: 3 / 32,
+  sixty_fourth: 1 / 16,
+  one_twenty_eighth: 1 / 32,
+  triplet_breve: 16 / 3,
+  triplet_whole: 8 / 3,
   triplet_half: 4 / 3,
   triplet_quarter: 2 / 3,
   triplet_eighth: 1 / 3,
   triplet_sixteenth: 1 / 6,
-  // Five in the time of four, and seven in the time of four. A half is 2
-  // beats, so a quintuplet half is 2 x 4/5 = 8/5.
-  //
-  // Written as a single division of two exact integers, matching score_schema
-  // .py character for character: `test_client_enums.py` compares the two
-  // tables to 1e-12 and evaluates this arithmetic literally, so a decimal
-  // typed to any number of places would be a different double.
+  triplet_thirty_second: 1 / 12,
+  triplet_sixty_fourth: 1 / 24,
+  triplet_one_twenty_eighth: 1 / 48,
+  quintuplet_breve: 32 / 5,
+  quintuplet_whole: 16 / 5,
   quintuplet_half: 8 / 5,
   quintuplet_quarter: 4 / 5,
   quintuplet_eighth: 2 / 5,
   quintuplet_sixteenth: 1 / 5,
+  quintuplet_thirty_second: 1 / 10,
+  quintuplet_sixty_fourth: 1 / 20,
+  quintuplet_one_twenty_eighth: 1 / 40,
+  septuplet_breve: 32 / 7,
+  septuplet_whole: 16 / 7,
   septuplet_half: 8 / 7,
   septuplet_quarter: 4 / 7,
   septuplet_eighth: 2 / 7,
   septuplet_sixteenth: 1 / 7,
+  septuplet_thirty_second: 1 / 14,
+  septuplet_sixty_fourth: 1 / 28,
+  septuplet_one_twenty_eighth: 1 / 56,
 };
 
 /**

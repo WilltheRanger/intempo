@@ -6,6 +6,106 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-30 — The vocabulary has a rule now, and a bar that fails can be re-read
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Asked: *"fix the missing
+ones"*, and *"if the model cant effectively read or note or is not that
+confident we have a Visual llm such as claude to review it and correct that bar
+for the model."*
+
+**Files:** `backend/app/services/score_schema.py`,
+`backend/app/services/ocr/musicxml.py`, `backend/app/prompts/ocr_prompt.txt`,
+`backend/app/config.py`, `backend/app/services/ocr/pipeline.py`,
+`backend/app/tests/{test_musicxml,test_duration_beats,test_corrector}.py`,
+`tools/notation-coverage.py`, `mobile/src/data/types.ts`,
+`mobile/src/lib/score/schedule.ts`, `mobile/src/lib/notation/reading.ts`,
+`DECISIONS.md`.
+
+### First: the coverage matrix I shipped yesterday was partly meaningless
+
+Its fixtures wrote `<duration>8</duration>` at `<divisions>64</divisions>` for
+**every** combination — a flat eighth of a beat, whatever the `<type>` said. The
+importer believes a stated duration over a `<type>` that contradicts it (the
+documented breve rule), so every cell whose fixture happened to land on a named
+length reported `.` regardless of the note it was meant to test. A 128th came
+back named `thirty_second` — four times its length — and the matrix called that
+covered.
+
+Fixed by computing the tick count from the value itself at
+`MATRIX_DIVISIONS = 6720` (= 2⁶ × 3 × 5 × 7, so every length in the
+cross-product is a whole number of ticks), asserting integrality rather than
+rounding, **and** checking that what comes back is worth what was asked for
+rather than merely having a name. Under the honest fixtures `breve 3:2` and
+several others flipped from `.` to `X`.
+
+### The vocabulary now has a statable rule
+
+Before: a patchwork. 128ths had no name at any ratio; quintuplets and septuplets
+stopped at a sixteenth; triplets stopped at a sixteenth going down and a half
+going up. A value with no name is **dropped**, and a dropped note is a lost
+onset that `alignment.py` accumulates into every bar after it.
+
+After — and this is the point, because a rule can be checked and a patchwork
+cannot:
+
+> **Every written value from a breve to a 128th has a name — plain, and as a
+> triplet, quintuplet or septuplet.**
+
+29 names to 46. `test_every_written_value_has_a_name_plain_and_in_the_common_tuplets`
+enforces it as a parametrised sweep, and asserts the *beats*, not just that
+something came back.
+
+Still deliberately out, and printed by the coverage tool on every run: dotted
+values inside tuplets, nonuplets, and anything finer than a 128th.
+
+**Four independent statements of this vocabulary had to agree**, and the tests
+found every one I missed: the `Duration` literal, `DURATION_BEATS`, the app's
+`BEATS` and `DURATION_LABELS`, `EXACT_BEATS` in `test_duration_beats.py`, and
+the duration list in `ocr_prompt.txt`. The app's three were **generated from
+the Python** rather than typed, after two values (`septuplet_half`,
+`septuplet_eighth`) came out rounded to ten decimals and the parity test caught
+the disagreement in the last bits.
+
+### A bar that does not add up can be re-read
+
+**The mechanism existed and had never once run in production.**
+`confirm.retry_with_arithmetic` names the bars whose durations are wrong, asks
+for those and nothing else, and splices the answer over only those bars. It can
+only ask a provider that `takes_a_note` — and since the chain became homr alone
+on 2026-08-24, there has been nobody to ask. The branch logs *"cannot
+reconsider"* and stops, on every page that needs it.
+
+`OCR_CORRECTOR` names a different provider for that one job. Empty by default.
+
+**This is not the vision chain returning**, and the distinction is the whole of
+why it is safe — it is set out in `DECISIONS.md`. Those were asked *what is on
+this page*, which is unfalsifiable, so an invention and a reading were the same
+shape. This asks *bar 14 sums to 3 in 4/4, look again*, which is checkable: the
+bars sent are ones arithmetic has already proved wrong, `_splice` accepts a
+replacement for **only those bars**, and a reply leaving more bars broken than
+it found is discarded. Nothing is originated here.
+
+`test_corrector.py` is nine cases, and all but the first are about a corrector
+misbehaving — which is what this project's own history says to expect. Writing
+them found that the "never raises" guard is thorough enough to have swallowed a
+malformed test double of mine and returned the original reading, silently and
+correctly.
+
+### Honest gaps
+
+- **The residual risk is a plausible wrong answer.** A corrector told "bar 14 is
+  short" might look at bar 15, return something that sums, and be accepted. The
+  guard catches invention that does not add up, not invention that does. Closing
+  it means sending a crop of the bar, and homr's MusicXML does not reliably
+  carry where bars sit on the page.
+- **The musician is not told which bars a corrector touched.** They should be;
+  `Measure` has no field for it and adding one reaches the app, so it sits
+  behind the UI gate.
+- **Nothing here has run against a real corrector.** No API key in this
+  environment and homr only runs on Modal, so every test is against a scripted
+  double. The wiring is verified; the behaviour of an actual model on an actual
+  broken bar is not.
+
 ## 2026-08-29 — Notation coverage, measured: four things were shown wrong rather than admitted
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Asked: *"there's a lot of

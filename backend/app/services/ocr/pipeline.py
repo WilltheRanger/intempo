@@ -86,6 +86,46 @@ PROVIDER_REGISTRY: dict[str, OCRProvider] = {
 }
 
 
+def corrector() -> OCRProvider | None:
+    """The provider that re-reads bars that do not add up, or None.
+
+    Resolved on each call rather than cached: `settings` is read at import in
+    tests and monkeypatched between them, and a cached provider would make the
+    second test in a file run the first one's configuration.
+
+    An unknown name is a misconfiguration and must not take the page down with
+    it — the reading itself is already in hand and is worth keeping. It logs and
+    returns None, which is the same behaviour as not setting one at all.
+    """
+    # Imported here rather than at module scope, as `_chain` does a few lines
+    # down: this module is imported by config-adjacent code and the deferred
+    # import is what keeps that from being a cycle.
+    from app.config import settings
+
+    name = settings.OCR_CORRECTOR.strip()
+    if not name:
+        return None
+    helper = PROVIDER_REGISTRY.get(name)
+    if helper is None:
+        log.warning(
+            "OCR_CORRECTOR names %r, which this build does not know (%s); "
+            "bars that do not add up will not be re-read",
+            name,
+            ", ".join(sorted(PROVIDER_REGISTRY)),
+        )
+        return None
+    if not getattr(helper, "takes_a_note", True):
+        # Naming a deterministic engine here is asking it the question it
+        # cannot be asked, which is the situation this setting exists to escape.
+        log.warning(
+            "OCR_CORRECTOR names %r, which takes no prompt and cannot be asked "
+            "to reconsider anything",
+            name,
+        )
+        return None
+    return helper
+
+
 def get_provider(name: str) -> OCRProvider:
     if name not in PROVIDER_REGISTRY:
         raise OCRError(
@@ -952,13 +992,44 @@ def parse_sheet_music(
                 "; ".join(f.describe() for f in broken),
             )
             if retry and not getattr(provider, "takes_a_note", True):
-                # Said out loud, because a missing `rereading` stage on a page
-                # that plainly needs one otherwise looks like a bug.
-                log.info(
-                    "%s cannot reconsider — no prompt and deterministic — so "
-                    "the arithmetic retry is skipped",
-                    provider.name,
-                )
+                # **Someone else re-reads the bars this provider cannot.**
+                #
+                # homr is deterministic and takes no prompt, so asking it again
+                # returns the same answer — which is why this branch used to
+                # log and stop, on every page that needed it. A provider named
+                # in `OCR_CORRECTOR` does that job instead.
+                #
+                # This is not the vision chain returning. Those were asked to
+                # *read a page*, and on a page they could not read they wrote
+                # notes nobody had printed. The question here is narrower and
+                # checkable in a way that one was not: the bars sent are ones
+                # arithmetic has already proved wrong, `_splice` will accept a
+                # replacement for **only those bars**, and a reply that leaves
+                # more bars broken than it found is thrown away. Nothing is
+                # originated here — the reading is homr's throughout, and this
+                # can only edit the parts of it already known to be untrue.
+                helper = corrector()
+                if helper is not None and helper.name != provider.name:
+                    stage(STAGE_CONFIRMING)
+                    corrected = retry_with_arithmetic(
+                        response.score,
+                        image_bytes,
+                        media_type=media_type,
+                        provider=helper,
+                        context=_note,
+                    )
+                    if not beat_problems(corrected):
+                        return corrected
+                    response = response.model_copy(update={"score": corrected})
+                else:
+                    # Said out loud, because a missing `rereading` stage on a
+                    # page that plainly needs one otherwise looks like a bug.
+                    log.info(
+                        "%s cannot reconsider — no prompt and deterministic — "
+                        "and no OCR_CORRECTOR is set, so the arithmetic retry "
+                        "is skipped",
+                        provider.name,
+                    )
             if retry and getattr(provider, "takes_a_note", True):
                 stage(STAGE_CONFIRMING)
                 corrected = retry_with_arithmetic(

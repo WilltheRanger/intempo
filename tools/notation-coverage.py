@@ -39,12 +39,14 @@ What it still reports as missing is real and is listed at the bottom.
 from __future__ import annotations
 
 import sys
+from fractions import Fraction
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 
 from app.services.ocr.musicxml import score_json_from_musicxml  # noqa: E402
 from app.services.ocr.validate import validate_measures  # noqa: E402
+from app.services.score_schema import DURATION_BEATS  # noqa: E402
 
 HEAD = (
     '<?xml version="1.0"?><score-partwise version="4.0"><part-list>'
@@ -201,7 +203,56 @@ TYPES = ["breve", "whole", "half", "quarter", "eighth", "16th", "32nd", "64th", 
 RATIOS: list[tuple[int, int] | None] = [None, (3, 2), (5, 4), (6, 4), (7, 4), (9, 8)]
 
 
+#: Ticks per quarter for the value matrix.
+#:
+#: **The stated `<duration>` has to agree with the `<type>`, or this measures
+#: the wrong thing entirely.** The first version of this wrote
+#: `<duration>8</duration>` for every combination and `<divisions>64</divisions>`
+#: — a flat eighth of a beat, whatever note value the `<type>` claimed. The
+#: importer believes a stated duration over a `<type>` that contradicts it (see
+#: `_duration_name`, and the breve it was written for), so every cell whose
+#: fixture happened to land on a named length reported `.` no matter what note
+#: it was supposed to be testing. A 128th came back named `thirty_second`, which
+#: is four times its length, and the matrix called that covered.
+#:
+#: 6720 = 2^6 x 3 x 5 x 7, which makes every length in the cross-product a whole
+#: number of ticks: the finest is a septuplet dotted 128th at 3/112 of a quarter.
+#: `_ticks` asserts integrality rather than rounding, because a rounded tick
+#: count reintroduces exactly the disagreement this constant exists to remove.
+MATRIX_DIVISIONS = 6720
+
+#: What each written value is worth in quarter-beats, before dots and ratio.
+_BASE_BEATS = {
+    "breve": Fraction(8),
+    "whole": Fraction(4),
+    "half": Fraction(2),
+    "quarter": Fraction(1),
+    "eighth": Fraction(1, 2),
+    "16th": Fraction(1, 4),
+    "32nd": Fraction(1, 8),
+    "64th": Fraction(1, 16),
+    "128th": Fraction(1, 32),
+    "256th": Fraction(1, 64),
+}
+_DOTS = {0: Fraction(1), 1: Fraction(3, 2), 2: Fraction(7, 4)}
+
+
+def _ticks(kind: str, dots: int, ratio: tuple[int, int] | None) -> int | None:
+    """The tick count for this written value, or None if it is not exact."""
+    beats = _BASE_BEATS[kind] * _DOTS[dots]
+    if ratio is not None:
+        beats *= Fraction(ratio[1], ratio[0])
+    exact = beats * MATRIX_DIVISIONS
+    return int(exact) if exact.denominator == 1 else None
+
+
 def names_a_value(kind: str, dots: int, ratio: tuple[int, int] | None) -> bool:
+    ticks = _ticks(kind, dots, ratio)
+    if ticks is None or ticks < 1:
+        # Not representable at this resolution. Reported as uncovered rather
+        # than silently skipped — a cell nobody can even write a fixture for is
+        # a fact about the matrix, not an absence of one.
+        return False
     modification = (
         ""
         if ratio is None
@@ -209,15 +260,24 @@ def names_a_value(kind: str, dots: int, ratio: tuple[int, int] | None) -> bool:
         f"<normal-notes>{ratio[1]}</normal-notes></time-modification>"
     )
     xml = one_bar(
-        "<note><pitch><step>C</step><octave>4</octave></pitch><duration>8</duration>"
+        f"<note><pitch><step>C</step><octave>4</octave></pitch><duration>{ticks}</duration>"
         f"<type>{kind}</type>{'<dot/>' * dots}{modification}</note>",
-        div=64,
+        div=MATRIX_DIVISIONS,
     )
     try:
         score = score_json_from_musicxml(xml)
     except Exception:  # noqa: BLE001 — a bench reports, it does not raise
         return False
-    return bool(score.measures and score.measures[0].notes)
+    notes = score.measures[0].notes if score.measures else []
+    if not notes:
+        return False
+    # **Named is not enough — it has to be named *correctly*.** Nothing else
+    # here would notice a value that came back under another value's name, and
+    # that is precisely the failure the first version of this shipped with.
+    beats = _BASE_BEATS[kind] * _DOTS[dots] * (
+        Fraction(1) if ratio is None else Fraction(ratio[1], ratio[0])
+    )
+    return abs(DURATION_BEATS[notes[0].duration] - float(beats)) < 1e-9
 
 
 def constructs() -> None:

@@ -48,6 +48,16 @@ _TYPE_TO_DURATION: Final[dict[str, str]] = {
     "16th": "sixteenth",
     "32nd": "thirty_second",
     "64th": "sixty_fourth",
+    # **A 128th is the finest value a part actually prints**, and it was not
+    # here, so every one of them was dropped — a lost onset, which
+    # `alignment.py` accumulates into every bar that follows. Cadenzas and
+    # ornamental runs write them.
+    #
+    # `256th` and finer are deliberately absent: they exist in the MusicXML
+    # vocabulary and not in the repertoire this reads. `tools/notation-coverage.py`
+    # prints them as missing on every run, so the day one turns up it is a line
+    # here and a name in `DURATION_BEATS`, not a discovery.
+    "128th": "one_twenty_eighth",
 }
 #: Three in the time of two, by base value. A file states a tuplet in
 #: `<time-modification>` — `actual-notes` over `normal-notes` — so a triplet is

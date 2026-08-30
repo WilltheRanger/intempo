@@ -100,28 +100,67 @@ export type Dynamics =
   | 'ppp' | 'pp' | 'p' | 'mp' | 'mf' | 'f' | 'ff' | 'fff'
   | 'fp' | 'sfz' | 'sf' | 'fz';
 
+/**
+ * Every note value the server can name.
+ *
+ * **Generated from `DURATION_BEATS` in `backend/app/services/score_schema.py`**
+ * and held to it by `test_client_enums.py`, which compares the two as sets. A
+ * name only the server has means the app cannot read a score it is sent; a name
+ * only the app has means a control offering a value nothing will ever produce.
+ *
+ * The guarantee, which is what makes this a list rather than a patchwork:
+ * **every written value from a breve to a 128th has a name — plain, and as a
+ * triplet, quintuplet or septuplet.** Dotted values inside tuplets, nonuplets,
+ * and anything finer than a 128th do not, and `tools/notation-coverage.py`
+ * prints exactly which on every run.
+ */
 export type Duration =
-  | 'whole' | 'dotted_whole'
-  | 'half' | 'dotted_half'
-  | 'quarter' | 'dotted_quarter'
-  | 'eighth' | 'dotted_eighth'
-  | 'sixteenth' | 'dotted_sixteenth'
-  | 'thirty_second' | 'dotted_thirty_second'
-  | 'sixty_fourth'
   | 'double_whole'
-  | 'double_dotted_half' | 'double_dotted_quarter' | 'double_dotted_eighth'
+  | 'dotted_whole'
+  | 'whole'
+  | 'double_dotted_half'
+  | 'dotted_half'
+  | 'half'
+  | 'double_dotted_quarter'
+  | 'dotted_quarter'
+  | 'quarter'
+  | 'double_dotted_eighth'
+  | 'dotted_eighth'
+  | 'eighth'
+  | 'dotted_sixteenth'
+  | 'sixteenth'
+  | 'dotted_thirty_second'
+  | 'thirty_second'
+  | 'dotted_sixty_fourth'
+  | 'sixty_fourth'
+  | 'one_twenty_eighth'
+  | 'triplet_breve'
+  | 'triplet_whole'
   | 'triplet_half'
   | 'triplet_quarter'
   | 'triplet_eighth'
   | 'triplet_sixteenth'
+  | 'triplet_thirty_second'
+  | 'triplet_sixty_fourth'
+  | 'triplet_one_twenty_eighth'
+  | 'quintuplet_breve'
+  | 'quintuplet_whole'
   | 'quintuplet_half'
   | 'quintuplet_quarter'
   | 'quintuplet_eighth'
   | 'quintuplet_sixteenth'
+  | 'quintuplet_thirty_second'
+  | 'quintuplet_sixty_fourth'
+  | 'quintuplet_one_twenty_eighth'
+  | 'septuplet_breve'
+  | 'septuplet_whole'
   | 'septuplet_half'
   | 'septuplet_quarter'
   | 'septuplet_eighth'
-  | 'septuplet_sixteenth';
+  | 'septuplet_sixteenth'
+  | 'septuplet_thirty_second'
+  | 'septuplet_sixty_fourth'
+  | 'septuplet_one_twenty_eighth';
 
 export type RepeatType = 'repeat' | 'first_ending' | 'second_ending';
 

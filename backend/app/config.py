@@ -75,6 +75,28 @@ class Settings:
     #: than spending the download and blaming the photograph.
     OCR_PROVIDER_CHAIN: str = os.getenv("OCR_PROVIDER_CHAIN", "homr")
 
+    #: Who re-reads the bars that do not add up. Empty means nobody.
+    #:
+    #: **The arithmetic retry has been dead since the chain became homr alone.**
+    #: `confirm.retry_with_arithmetic` names the broken bars, asks for those and
+    #: nothing else, and splices the answer back — but it can only ask a
+    #: provider that `takes_a_note`, and homr is deterministic with no prompt.
+    #: So the branch that runs it logs "cannot reconsider" and stops, on every
+    #: page that needs it.
+    #:
+    #: This names a *different* provider for that one job. It is not the vision
+    #: chain coming back: those read a blank page and returned notes nobody had
+    #: written, which is why they were turned off (2026-08-24, "run homr only,
+    #: no backup AI"). The job here is the opposite shape and is checkable —
+    #: the bars sent are ones arithmetic has already proved wrong, only those
+    #: bars can be replaced (`_splice`), and an answer that leaves more bars
+    #: broken than it found is discarded. A reading is never *originated* here.
+    #:
+    #: Empty by default, deliberately: it costs a metered API call per page that
+    #: needs one, and turning it on is a decision about a bill as well as about
+    #: transcription quality. `claude-sonnet-5` is the intended value.
+    OCR_CORRECTOR: str = os.getenv("OCR_CORRECTOR", "")
+
 
 
     #: How many pages may be read at once.

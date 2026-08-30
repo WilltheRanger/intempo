@@ -3403,3 +3403,75 @@ def test_an_unpitched_note_without_a_display_position_is_still_dropped() -> None
     score = score_json_from_musicxml(_bar_with("<note><unpitched/><duration>4</duration><type>quarter</type></note>"))
 
     assert [n.pitch for n in score.measures[0].notes] == ["C4", "C4", "C4"]
+
+
+# ---------------------------------------------------------------------------
+# The note-value guarantee
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "written",
+    ["breve", "whole", "half", "quarter", "eighth", "16th", "32nd", "64th", "128th"],
+)
+@pytest.mark.parametrize("ratio", [None, (3, 2), (5, 4), (7, 4)])
+def test_every_written_value_has_a_name_plain_and_in_the_common_tuplets(written, ratio) -> None:
+    """**The guarantee, enforced rather than described.**
+
+    Every written value from a breve to a 128th has a name — plain, and as a
+    triplet, quintuplet or septuplet. That is the statable rule the vocabulary
+    was widened to, in place of the patchwork `tools/notation-coverage.py`
+    found: 128ths had no name at any ratio, quintuplet and septuplet families
+    stopped at a sixteenth, and triplets stopped at a sixteenth in one direction
+    and a half in the other.
+
+    A value with no name is **dropped**, and a dropped note is a lost onset that
+    `alignment.py` accumulates into every bar after it — so a gap here costs the
+    rest of the page, not the note.
+
+    Deliberately *not* covered, and printed by the coverage tool on every run:
+    dotted values inside tuplets, nonuplets, and anything finer than a 128th.
+    """
+    from fractions import Fraction
+
+    from app.services.score_schema import DURATION_BEATS
+
+    base = {
+        "breve": Fraction(8), "whole": Fraction(4), "half": Fraction(2),
+        "quarter": Fraction(1), "eighth": Fraction(1, 2), "16th": Fraction(1, 4),
+        "32nd": Fraction(1, 8), "64th": Fraction(1, 16), "128th": Fraction(1, 32),
+    }[written]
+    beats = base if ratio is None else base * Fraction(ratio[1], ratio[0])
+    # 6720 = 2^6 x 3 x 5 x 7, so every length here is a whole number of ticks.
+    # The stated duration must agree with the `<type>`, or the importer believes
+    # the duration and this tests the wrong note — see `MATRIX_DIVISIONS`.
+    ticks = beats * 6720
+    assert ticks.denominator == 1
+
+    modification = (
+        ""
+        if ratio is None
+        else f"<time-modification><actual-notes>{ratio[0]}</actual-notes>"
+        f"<normal-notes>{ratio[1]}</normal-notes></time-modification>"
+    )
+    xml = f"""<?xml version="1.0"?>
+<score-partwise version="4.0"><part-list><score-part id="P1">
+<part-name>V</part-name></score-part></part-list><part id="P1">
+ <measure number="1"><attributes><divisions>6720</divisions>
+   <time><beats>4</beats><beat-type>4</beat-type></time>
+   <clef><sign>G</sign><line>2</line></clef></attributes>
+   <note><pitch><step>C</step><octave>4</octave></pitch>
+   <duration>{int(ticks)}</duration><type>{written}</type>{modification}</note>
+ </measure></part></score-partwise>"""
+
+    score = score_json_from_musicxml(xml)
+    notes = score.measures[0].notes
+
+    assert notes, f"{written} at {ratio} has no name and was dropped"
+    # Named is not enough: it has to be named *correctly*. A value that comes
+    # back under another value's name is the failure the coverage tool itself
+    # shipped with before its fixtures stated a matching duration.
+    assert DURATION_BEATS[notes[0].duration] == pytest.approx(float(beats)), (
+        f"{written} at {ratio} is {float(beats)} beats and came back as "
+        f"{notes[0].duration} ({DURATION_BEATS[notes[0].duration]})"
+    )
