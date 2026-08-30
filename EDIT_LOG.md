@@ -6,6 +6,89 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-30 — Claude is shown the line, not the page
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Owner: *"Im fine with the
+api costs. just have claude read the part where it has trouble with and have it
+decide the notes and put it in the correct format to display."*
+
+**Files:** `backend/app/services/score_schema.py`,
+`backend/app/services/ocr/{musicxml,confirm,pipeline}.py`,
+`backend/app/tests/test_corrector.py`.
+
+### Yesterday's corrector had one hole, and this is it
+
+The residual risk recorded then: a corrector told *"bar 14 is short"* while
+holding a whole page has to **count to fourteen on a photograph**, and a
+miscount returns a plausible correction for the wrong bar — which passes every
+guard, because a wrong bar that happens to add up looks exactly like a right
+one. Arithmetic can catch invention that does not sum. It cannot catch this.
+
+Cropping removes the counting rather than detecting it.
+
+**`Measure.system`** — which staff system a bar was printed on, from
+`<print new-system="yes">`. **Null when the file does not say**, which is most
+files. The first version counted from 0 as bars went by, which gave every bar on
+a file with no layout the answer `0` — a confident claim that a whole part is
+printed on one line. Measured on `orchestral_part.musicxml`, which carries no
+`<print>` at all: 19 bars all reporting system 0, and a re-read would have been
+shown the wrong staff. It is decided before the loop now.
+
+**`retry_by_system`** groups the broken bars by line, and sends each line's crop
+with the bars it holds named *as the page numbers them*. That sentence is
+load-bearing: `confirm.py` already warned that a model told to look at "measure
+3" reads the third bar of the piece rather than the third bar of the line. Shown
+a crop it will renumber from 1 unless told not to, and `_splice` matches on
+those numbers.
+
+**The crop count must equal the system count, or nothing is sent.**
+`crop_systems` cuts by ink density; `Measure.system` comes from the file. They
+are two independent opinions about how many lines are on the page, and when they
+disagree there is no way to know which is right — so it falls back to the whole
+page rather than showing the model music that is not the bar.
+
+### Two flaws my own tests found
+
+**The per-line ask was asking about the whole page.** `retry_by_system` computed
+a note naming that line's bars and then called `retry_with_arithmetic`, which
+recomputes its own list from the entire score. So a crop of line 0 went out
+naming bars from line 1, and `_splice` would have accepted a reply about bars the
+model was never shown — the exact contamination the crop exists to prevent.
+`ask_and_splice` is now the shared core and takes the bars explicitly.
+
+**The "not worse" guard accepted strictly worse music.** It counted *how many*
+bars were broken, so a bar asked about at three beats of four could come back at
+**one** with the count unchanged, and be taken.
+
+Tightening it to "must come back better" broke a test that is older and right:
+*"The model is also fixing pitches, and holding it to strict improvement in beat
+sums alone would throw away those fixes whenever the count happened to stay
+level."* That matters more than it sounds — a tie is validated by two noteheads
+sharing a pitch, so a wrong pitch can delete an onset.
+
+Both are satisfied by measuring **distance from the metre** instead of counting:
+equal distance with different pitches is accepted, as it was; three beats
+becoming one is not. That rule is better than either of the two it replaces.
+
+### A fixture that passed for the wrong reason
+
+`test_one_bad_line_does_not_discard_another_line_s_correction` first broke bar
+**1**. A short first bar is a *pickup*, which is legitimate notation and not a
+problem — so line 0 had nothing to correct and the test proved nothing. Found by
+tracing the run rather than by reading it.
+
+### Honest gaps
+
+- **Still nothing has run against a real corrector**, and now also nothing has
+  run against real crops: no API key here, and homr only runs on Modal. Every
+  test is a scripted double.
+- **Whether homr emits `<print new-system="yes">` is unverified.** audiveris and
+  oemer do; homr could not be run here to check. If it does not, every bar keeps
+  `system=None` and the corrector falls back to the whole page — correct, and
+  the crop path would simply never fire in production without anyone noticing.
+  Worth checking on the first real scan with `OCR_CORRECTOR` set.
+- The musician is still not told which bars a corrector touched.
+
 ## 2026-08-30 — The vocabulary has a rule now, and a bar that fails can be re-read
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Asked: *"fix the missing

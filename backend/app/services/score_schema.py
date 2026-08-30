@@ -496,6 +496,24 @@ class Tuplet(_Strict):
 
 class Measure(_Strict):
     measure_number: int = Field(ge=1)
+    #: Which staff system on the page this bar was printed on, from 0.
+    #:
+    #: **Where the bar is, so a re-read can be asked about the right piece of
+    #: paper.** `OCR_CORRECTOR` sends the bars that do not add up back to a
+    #: model, and sending the whole page with "look at bar 14" asks it to count
+    #: to fourteen on a photograph — which it can get wrong in a way nothing
+    #: downstream detects, because a wrong bar that happens to add up passes
+    #: every guard there is. With this, the crop it is shown contains the bar
+    #: and little else.
+    #:
+    #: Null whenever the file does not say, which is most of the time: it comes
+    #: from `<print new-system="yes">`, and an engraver's export usually omits
+    #: it. Null is not "system 0" and must never be defaulted to one — the whole
+    #: point is knowing when the position is unknown, and a wrong crop is worse
+    #: than no crop. Same rule as `ScoreJson.clef` and `users.instrument`.
+    #:
+    #: Additive, so an app that has never heard of it is unaffected.
+    system: int | None = Field(default=None, ge=0)
     notes: list[Note] = Field(default_factory=list)
     slurs: list[Slur] = Field(default_factory=list)
     #: Empty for the overwhelming majority of measures, and for every score

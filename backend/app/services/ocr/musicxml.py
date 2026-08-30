@@ -1500,7 +1500,35 @@ def score_json_from_musicxml(
             return True
         return ((el.findtext("staff") or "").strip() or "1") == kept_staff
 
+    #: Which staff system the bars are on, counted from the page's first.
+    #:
+    #: `<print new-system="yes">` is the only thing that says, and most files
+    #: never write it — an engraver's export usually carries no layout at all.
+    #: When none appears, every bar keeps `system=None`, which is honestly "not
+    #: known" rather than "all on the first line". `Measure.system` says why the
+    #: difference matters.
+    #:
+    #: The first measure opens system 0 whether or not it is marked; a file that
+    #: marks it as well must not be read as starting on system 1.
+    #: **Decided before the loop, because "no markers" is not "one system".**
+    #: Counting from 0 as bars go by gives every bar on a file with no layout
+    #: the answer `0` — a confident claim that the whole part is printed on one
+    #: line, which for a page of music is never true and would send a re-read a
+    #: crop of the wrong staff. Measured on `orchestral_part.musicxml`, which
+    #: carries no `<print>` at all: 19 bars all reporting system 0.
+    states_its_layout = chosen.find('.//print[@new-system="yes"]') is not None
+    system: int | None = 0 if states_its_layout else None
+    opened_a_system = False
+
     for index, measure_el in enumerate(chosen.iterfind("measure"), start=1):
+        if states_its_layout and measure_el.find('print[@new-system="yes"]') is not None:
+            # The first bar opens system 0 whether or not it is marked. A file
+            # that marks it too must not be read as starting on system 1.
+            if opened_a_system or index > 1:
+                assert system is not None
+                system += 1
+            opened_a_system = True
+
         # **Every** `<attributes>` block in the measure, not the first.
         #
         # A measure may carry more than one, and the first is often only
@@ -1988,6 +2016,7 @@ def score_json_from_musicxml(
         measures.append(
             Measure(
                 measure_number=number if number >= 1 else index,
+                system=system,
                 notes=notes,
                 slurs=slurs,
                 tuplets=tuplets,

@@ -155,17 +155,30 @@ def test_only_the_bars_that_were_asked_about_can_change(wired) -> None:
     assert [f.verdict for f in validate_measures(out)] == ["ok", "ok", "ok"]
 
 
-def test_a_reply_that_breaks_more_than_it_fixes_is_discarded(wired) -> None:
+def test_a_reply_that_does_not_actually_fix_the_bar_is_discarded(wired) -> None:
     """A model asked to fix one bar can return three that are worse. The page in
     hand is kept — it is a real reading with one known-bad bar, and that is
-    better than a rewrite that sounds more confident and is not."""
+    better than a rewrite that sounds more confident and is not.
+
+    **The first version of this test asserted the degraded bar was kept**, which
+    is what the code did: the guard counted *how many* bars were broken, and a
+    bar going from three beats to two leaves that count unchanged. So a reply
+    that answered the question without improving the answer was accepted, and
+    the page got worse while reporting the same number of problems.
+
+    The rule is now **distance** from the metre rather than count — and it had
+    to be, because a strict "must come back better" rule fails a test that is
+    older and right: the re-read fixes pitches too, and a bar whose beats stay
+    equally wrong may have had a notehead corrected. Equal distance is accepted;
+    drifting further is not.
+    """
     original = _score(4, 3, 4)
-    # "Fixes" bar 2 to two beats: still wrong, and no better.
+    # "Fixes" bar 2 from three beats to two: still wrong, and now more wrong.
     helper = wired(_score(4, 2, 4))
 
     out = _retry(original, helper)
 
-    assert [len(m.notes) for m in out.measures] == [4, 2, 4]
+    assert [len(m.notes) for m in out.measures] == [4, 3, 4]
     assert sum(1 for f in validate_measures(out) if f.verdict != "ok") == 1
 
 
@@ -200,3 +213,143 @@ def test_the_corrector_is_told_which_bars_and_why(wired) -> None:
     asked = helper.asked[0]
     assert "measure 2" in asked
     assert "3 beats" in asked and "expected 4" in asked
+
+
+# ---------------------------------------------------------------------------
+# Showing it the line, not the page
+# ---------------------------------------------------------------------------
+#
+# Naming a bar on a whole page asks a model to count to it. A miscount produces
+# a *plausible* correction for the wrong bar, which every guard here accepts
+# because it adds up — so this is the one failure mode arithmetic cannot catch,
+# and cropping removes it instead of detecting it.
+
+
+def _score_on_systems(layout: dict[int, int | None], beats: dict[int, int]) -> ScoreJson:
+    return ScoreJson(
+        time_signature="4/4",
+        clef="bass",
+        ocr_confidence=1.0,
+        measures=[
+            Measure(
+                measure_number=n,
+                system=layout[n],
+                notes=[Note(pitch="D3", duration="quarter") for _ in range(beats[n])],
+            )
+            for n in sorted(layout)
+        ],
+    )
+
+
+def _by_system(score, crops, helper):
+    from app.services.ocr.confirm import retry_by_system
+
+    return retry_by_system(score, crops, media_type="image/jpeg", provider=helper)
+
+
+def test_the_crop_for_the_line_the_broken_bar_is_on_is_the_one_sent(wired) -> None:
+    """Bar 4 is on line 1, so line 1's crop is what the model sees."""
+    layout = {1: 0, 2: 0, 3: 0, 4: 1, 5: 1, 6: 1}
+    score = _score_on_systems(layout, {1: 4, 2: 4, 3: 4, 4: 3, 5: 4, 6: 4})
+    fixed = _score_on_systems(layout, {1: 4, 2: 4, 3: 4, 4: 4, 5: 4, 6: 4})
+    helper = wired(fixed)
+    helper.seen: list[bytes] = []
+    parse = helper.parse
+
+    def record(image_bytes, mime_type="image/jpeg", note=None):
+        helper.seen.append(image_bytes)
+        return parse(image_bytes, mime_type, note)
+
+    helper.parse = record
+
+    out = _by_system(score, [b"<line-0>", b"<line-1>"], helper)
+
+    assert helper.seen == [b"<line-1>"], "the wrong line was sent"
+    assert [f.verdict for f in validate_measures(out)] == ["ok"] * 6
+
+
+def test_the_model_is_told_the_bar_numbers_are_the_page_s(wired) -> None:
+    """**Without this the correction lands on the wrong bar.**
+
+    A model shown a crop numbers what it sees from 1 unless told otherwise, and
+    the bars being asked about are numbered as the page numbers them. `_splice`
+    matches on those numbers, so a reply renumbered from 1 either patches bar 1
+    or matches nothing at all.
+    """
+    layout = {1: 0, 2: 0, 3: 1, 4: 1}
+    score = _score_on_systems(layout, {1: 4, 2: 4, 3: 3, 4: 4})
+    helper = wired(_score_on_systems(layout, {1: 4, 2: 4, 3: 4, 4: 4}))
+
+    _by_system(score, [b"<line-0>", b"<line-1>"], helper)
+
+    asked = helper.asked[0]
+    assert "bars 3 to 4" in asked
+    assert "do not renumber" in asked
+    assert "measure 3" in asked
+
+
+def test_a_crop_count_that_disagrees_with_the_reading_sends_nothing(wired) -> None:
+    """**Two independent opinions about how many lines are on the page.**
+
+    `crop_systems` cuts by ink density; `Measure.system` comes from
+    `<print new-system="yes">`. When they disagree there is no way to tell which
+    is right, and sending the wrong crop is worse than sending the page — the
+    model would be shown music that is not the bar and asked to correct it. So
+    it does nothing and the caller falls back.
+    """
+    layout = {1: 0, 2: 0, 3: 1, 4: 1}
+    score = _score_on_systems(layout, {1: 4, 2: 4, 3: 3, 4: 4})
+    helper = wired(_score_on_systems(layout, {1: 4, 2: 4, 3: 4, 4: 4}))
+
+    out = _by_system(score, [b"a", b"b", b"c"], helper)
+
+    assert helper.asked == [], "it asked despite not knowing which crop to send"
+    assert out is score
+
+
+def test_a_reading_with_no_layout_sends_nothing(wired) -> None:
+    """Most exports carry no `<print new-system="yes">` at all, so every bar's
+    `system` is None. That is honestly "not known", and the caller falls back to
+    the whole page — the behaviour that existed before crops."""
+    layout = {1: None, 2: None, 3: None}
+    score = _score_on_systems(layout, {1: 4, 2: 3, 3: 4})
+    helper = wired(_score_on_systems(layout, {1: 4, 2: 4, 3: 4}))
+
+    out = _by_system(score, [b"a", b"b"], helper)
+
+    assert helper.asked == []
+    assert out is score
+
+
+def test_one_bad_line_does_not_discard_another_line_s_correction(wired) -> None:
+    """The better-or-nothing check runs per line rather than once at the end.
+
+    A model that ruins line 1 and repairs line 0 should leave line 0 repaired;
+    judging the whole page at the end would throw both away together.
+    """
+    # Bar 2 and bar 3 are the broken ones, one per line. **Not bar 1**: a short
+    # first bar is a pickup, which is legitimate notation and not a problem, so
+    # a fixture that breaks bar 1 gives line 0 nothing to correct and the test
+    # passes for the wrong reason. It did, until the run was traced.
+    layout = {1: 0, 2: 0, 3: 1, 4: 1}
+    score = _score_on_systems(layout, {1: 4, 2: 3, 3: 3, 4: 4})
+
+    replies = iter(
+        [
+            _score_on_systems(layout, {1: 4, 2: 4, 3: 3, 4: 4}),  # line 0 fixed
+            _score_on_systems(layout, {1: 4, 2: 4, 3: 1, 4: 4}),  # line 1 made worse
+        ]
+    )
+    helper = wired(_score_on_systems(layout, {1: 4, 2: 4, 3: 4, 4: 4}))
+
+    def reply(image_bytes, mime_type="image/jpeg", note=None):
+        helper.asked.append(note or "")
+        helper.reply = next(replies)
+        return _Corrector.parse(helper, image_bytes, mime_type, note)
+
+    helper.parse = reply
+
+    out = _by_system(score, [b"<line-0>", b"<line-1>"], helper)
+
+    assert len(out.measures[1].notes) == 4, "line 0's repair was thrown away"
+    assert len(out.measures[2].notes) == 3, "line 1's damage was kept instead of refused"
