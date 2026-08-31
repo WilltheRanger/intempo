@@ -6,6 +6,31 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-31 — Practice count-in and long-rest re-entry cues
+
+**Branch:** `feature/practice-count-in-rest-cues`
+
+### Changed
+
+- Added a one-bar, target-tempo count-in before every recording and a cancel
+  action while the musician is preparing to enter.
+- Kept the metronome clock running across the count-in/downbeat boundary so the
+  visible take starts in phase rather than restarting a timer.
+- Added visible long-rest cues that show bars remaining, count the final bar in
+  beats, and name the measure where playing resumes.
+- Derived cues from the same written note-duration clock used by score playback
+  and backend alignment, including the shortened score when rest-skipping is on.
+- Moved the visible take timer to the metronome's monotonic clock so device time
+  corrections cannot jump the cue forward or backward.
+
+### Verification
+
+- Added unit coverage for two-bar rests, shortened one-bar cues, exact re-entry
+  boundaries, tempo scaling, empty measures, isolated rests, and trailing rests.
+- Existing backend alignment coverage verifies that different amounts of
+  leading silence produce the same per-note timing result.
+- Full mobile and backend suites run in pull-request CI.
+
 ## 2026-08-31 — Contextual education replaces the tempo ladder
 
 **Branch:** `feature/contextual-education-today`
