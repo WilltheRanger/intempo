@@ -72,6 +72,30 @@ describe('longRestCues', () => {
     expect(longRestCues(score)).toEqual([]);
   });
 
+  it('follows repeats so every performed re-entry is cued', () => {
+    const score = scoreOf([['note'], ['rest'], ['rest'], ['note']]);
+    score.repeats = [
+      { start_measure: 1, end_measure: 3, type: 'repeat' },
+    ];
+
+    expect(longRestCues(score)).toEqual([
+      {
+        startBeat: 4,
+        endBeat: 12,
+        barEndBeats: [8, 12],
+        bars: 2,
+        resumeMeasure: 1,
+      },
+      {
+        startBeat: 16,
+        endBeat: 24,
+        barEndBeats: [20, 24],
+        bars: 2,
+        resumeMeasure: 4,
+      },
+    ]);
+  });
+
   it('can cue the one kept bar when the skip-rest practice mode is active', () => {
     const cues = longRestCues(scoreOf([['note'], ['rest'], ['note']]), 1);
     expect(cues).toHaveLength(1);

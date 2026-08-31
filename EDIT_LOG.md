@@ -6,6 +6,25 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-31 — Repeat-aware playback and practice cues
+
+**Branch:** `codex/repeat-play-order`
+
+### Changed
+
+- Ported the backend's performed repeat order to the mobile app, including
+  nested sections, first/second endings, and safe fallbacks for invalid OCR
+  repeat references.
+- Made reference playback follow the same repeat order the analyser grades.
+- Made long-rest re-entry cues follow every performed pass, including the return
+  to the opening of a repeated section.
+
+### Verification
+
+- Added mobile coverage for plain, nested, invalid and ending-bearing repeats.
+- Added integration coverage for repeat-aware playback times and re-entry cues.
+- Mobile typecheck, tests, and web build run in pull-request CI.
+
 ## 2026-08-31 — First-take recording setup
 
 **Branch:** `codex/first-take-setup`
