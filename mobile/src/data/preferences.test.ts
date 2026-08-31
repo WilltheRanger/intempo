@@ -75,6 +75,7 @@ describe('defaults', () => {
       metronomeMode: 'off',
       haptics: true,
       reduceMotion: false,
+      practiceSetupSeen: false,
     });
   });
 });
@@ -117,6 +118,7 @@ describe('reading storage it does not trust', () => {
       metronomeMode: 'off',
       haptics: true,
       reduceMotion: false,
+      practiceSetupSeen: false,
     });
   });
 
@@ -145,6 +147,24 @@ describe('reading storage it does not trust', () => {
   });
 });
 
+describe('first-take setup', () => {
+  it('persists that this device has seen the guide', async () => {
+    preferences.setPracticeSetupSeen(true);
+    await vi.waitFor(() => expect(store.get(KEY)).toContain('"practiceSetupSeen":true'));
+
+    await hydratePreferences();
+
+    expect(preferences.current().practiceSetupSeen).toBe(true);
+  });
+
+  it('does not trust a non-boolean stored value', async () => {
+    store.set(KEY, JSON.stringify({ practiceSetupSeen: 'yes' }));
+    await hydratePreferences();
+
+    expect(preferences.current().practiceSetupSeen).toBe(false);
+  });
+});
+
 describe('setting one preference', () => {
   it('leaves the others alone', () => {
     // Order matters here. With `setInstrument` first, everything else is still
@@ -162,6 +182,7 @@ describe('setting one preference', () => {
       metronomeMode: 'visual',
       haptics: false,
       reduceMotion: false,
+      practiceSetupSeen: false,
     });
   });
 });
