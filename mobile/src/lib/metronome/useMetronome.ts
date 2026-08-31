@@ -101,7 +101,7 @@ export function useMetronome({
     // control is locked while recording), and including it would restart the
     // count on a preference write from anywhere else in the app.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active, mode, perBar, pulseBpm]);
+  }, [active, perBar, pulseBpm]);
 
   return {
     beat,
