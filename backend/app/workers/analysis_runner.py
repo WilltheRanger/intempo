@@ -17,10 +17,12 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timedelta, timezone
+from typing import Any
 
 import httpx
 
 from app.db import get_service_client
+from app.services.buckets import AUDIO_BUCKET, object_key_from
 from app.models.analysis import Instrument
 from app.services import audio as audio_svc
 from app.services.analysis import analyze
@@ -84,11 +86,33 @@ def _now_iso() -> str:
     return datetime.now(tz=timezone.utc).isoformat()
 
 
-def download_audio(url: str) -> bytes:
-    """Fetch a recording from its (already ownership-validated) storage URL."""
+def download_audio(url: str, client: Any | None = None) -> bytes:
+    """Fetch a recording from its (already ownership-validated) storage URL.
+
+    Given a service `client`, the object key is re-derived from the URL and the
+    bytes come out of the bucket directly. The stored URL is whatever the app
+    sent at enqueue time — for a take from the phone that is the signed UPLOAD
+    url, a PUT endpoint that expires five minutes after issue, so GETting it
+    later can only ever fail. Same move the score images already make
+    (`buckets.object_key_from`): the key outlives every signature.
+
+    The plain GET stays underneath, for a caller with no client and for a URL
+    whose key cannot be derived — the calibration clip sends a signed download
+    URL and fetches it immediately, inside its lifetime.
+    """
+    if client is not None:
+        key = object_key_from(url, bucket=AUDIO_BUCKET)
+        if key:
+            try:
+                body = client.storage.from_(AUDIO_BUCKET).download(key)
+            except Exception as exc:  # storage3's errors share no useful base
+                raise AudioFetchError(f"storage download failed: {exc}") from exc
+            if len(body) > MAX_AUDIO_BYTES:
+                raise AudioFetchError(f"audio larger than {MAX_AUDIO_BYTES} bytes")
+            return bytes(body)
     try:
-        with httpx.Client(timeout=AUDIO_DOWNLOAD_TIMEOUT, follow_redirects=True) as client:
-            response = client.get(url)
+        with httpx.Client(timeout=AUDIO_DOWNLOAD_TIMEOUT, follow_redirects=True) as http:
+            response = http.get(url)
     except httpx.RequestError as exc:
         raise AudioFetchError(f"download failed: {exc}") from exc
     if response.status_code != 200:
@@ -129,7 +153,7 @@ def run_analysis(analysis_id: str) -> None:
     _update(client, analysis_id, {"status": "processing", "updated_at": _now_iso()})
 
     try:
-        audio_bytes = download_audio(row["audio_url"])
+        audio_bytes = download_audio(row["audio_url"], client)
         score = _load_score(client, row["score_id"], row["user_id"])
         # **The take was played against a shortened score, so judge it against
         # one.** Skipping a long rest the timeline still contains takes an

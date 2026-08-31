@@ -6,6 +6,56 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-31 — A take from the phone can reach the analysis pipeline at all
+
+**Branch:** `fix/mobile-take-upload-403`. Backend only; no UI change.
+
+**Files:** `backend/app/routers/analyses.py`, `backend/app/workers/analysis_runner.py`,
+`backend/app/services/buckets.py`, `backend/app/services/page_image.py`, and their tests.
+
+### What was wrong
+
+Recording on the phone uploaded the audio to storage and then failed every
+time at `POST /v1/analyses` — the musician saw "send it again", the bytes sat
+in the bucket, and the `analyses` table stayed empty. Two bugs stacked:
+
+- `_assert_audio_url_owned_by` hand-rolled its accepted URL shapes and left
+  out the signed-UPLOAD form (`…/object/upload/sign/…`) — the only URL the
+  app holds, since `submitTake` sends back the `upload_url` it was just
+  issued. The score flow accepted that form (`STORAGE_PREFIXES`); this
+  validator predated it and refused every take with a 403. Confirmed live:
+  storage PUTs 200 at 18:56Z, provisioning upsert, then nothing — no scores
+  lookup, no insert.
+- Behind it, `download_audio` GETs the stored URL verbatim. A signed upload
+  URL is a PUT endpoint that expires five minutes after issue, so the first
+  fix alone would have moved the failure from enqueue to the worker.
+
+### Changed
+
+- The validator builds its accepted prefixes from the shared
+  `STORAGE_PREFIXES`, so the two validators cannot drift apart again.
+- `download_audio(url, client=None)`: with a service client it re-derives the
+  object key and reads the bucket directly (size cap kept, storage errors
+  named as `AudioFetchError`); the plain GET remains for the calibration clip
+  and any URL whose key cannot be derived.
+- `STORAGE_PREFIXES` + `object_key_from` moved into `services/buckets` — the
+  worker-safe home — with `page_image` re-exporting them. The Modal image
+  guard (`test_modal_images`) is what caught the first attempt importing the
+  web layer from the worker.
+
+### Verification
+
+- New tests: the signed-upload URL enqueues for its owner and still 403s for
+  another user's prefix; the worker fetches by derived key from the bucket
+  (and must not GET the stored URL), keeps the size cap, names storage errors,
+  and falls back to GET for an underivable URL.
+- Full backend suite green locally, including `test_modal_images`.
+
+### Rollback
+
+Revert the commit; no migration, no config change.
+
+
 ## 2026-08-30 — Today, OCR, bass recording, and Insights usability pass
 
 **Branch:** `feature/today-ocr-bass-insights`

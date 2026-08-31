@@ -27,6 +27,7 @@ from app.models.analysis import (
     MetronomeMode,
 )
 from app.routers.upload import AUDIO_BUCKET
+from app.services.buckets import STORAGE_PREFIXES
 from app.workers.dispatch import start_analysis
 
 router = APIRouter(prefix="/analyses", tags=["analyses"])
@@ -104,11 +105,15 @@ def _assert_audio_url_owned_by(audio_url: str, user_id: UUID) -> None:
     parsed = urlparse(audio_url)
     if parsed.scheme not in {"https", "http"}:
         raise HTTPException(status_code=400, detail="audio_url must be http(s)")
-    prefixes = (
-        f"/storage/v1/object/sign/{AUDIO_BUCKET}/{user_id}/",
-        f"/storage/v1/object/authenticated/{AUDIO_BUCKET}/{user_id}/",
-        f"/storage/v1/object/public/{AUDIO_BUCKET}/{user_id}/",
-    )
+    # Every storage-URL shape the backend itself hands out — critically the
+    # signed-UPLOAD form, `…/object/upload/sign/…`, because that is the only
+    # URL the mobile app ever holds: `submitTake` sends back the `upload_url`
+    # it was issued moments earlier. This list used to be hand-rolled WITHOUT
+    # that form while the score flow accepted it (buckets.STORAGE_PREFIXES),
+    # so every take enqueued from the phone was refused right here with a 403 —
+    # audio safely in the bucket, `analyses` table empty, musician told to try
+    # again. One shared list now, so the two validators cannot drift again.
+    prefixes = tuple(f"{prefix}{AUDIO_BUCKET}/{user_id}/" for prefix in STORAGE_PREFIXES)
     if not any(parsed.path.startswith(p) for p in prefixes):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
