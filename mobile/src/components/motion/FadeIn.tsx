@@ -1,5 +1,5 @@
 import { useEffect, useRef, type ReactNode } from 'react';
-import { Animated, type StyleProp, type ViewStyle } from 'react-native';
+import { Animated, Platform, type StyleProp, type ViewStyle } from 'react-native';
 
 import { EASE_OUT, RISE_DISTANCE, STAGGER_CAP, STAGGER_MS, motion } from '../../design';
 import { useReducedMotion } from '../../lib/useReducedMotion';
@@ -43,7 +43,7 @@ export function FadeIn({ children, index = 0, delay = 0, style }: FadeInProps) {
       duration: motion.base,
       delay: delay + Math.min(index, STAGGER_CAP) * STAGGER_MS,
       easing: EASE_OUT,
-      useNativeDriver: true,
+      useNativeDriver: Platform.OS !== 'web',
     });
     animation.start();
     return () => animation.stop();
