@@ -67,7 +67,9 @@ export function metronomePulse(
   return {
     quarterBeats,
     pulsesPerBar,
-    unitLabel: `${compound ? 'dotted ' : ''}${noteName(denominator)}`,
+    unitLabel: compound
+      ? `dotted ${noteName(denominator / 2)}`
+      : noteName(denominator),
   };
 }
 
