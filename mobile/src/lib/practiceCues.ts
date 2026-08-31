@@ -1,5 +1,5 @@
 import type { ScoreJson, ScoreMeasure } from '../data/types';
-import { secondsPerBeat } from './metronome';
+import { secondsPerBeat } from './metronome/beats';
 import { BEATS } from './score/schedule';
 
 /**
