@@ -13,14 +13,11 @@ import { startClicks } from './click';
  * One hook because the three modes are one feature with three outputs, and
  * splitting them would let the beat they share come from three places.
  *
- * It runs only while recording. Before the take, `ListenButton` already
- * answers "how does this go at this tempo" with the actual notes, and two
- * things counting at once on a screen with one tempo on it is one too many.
- *
- * There is no count-in. A take is aligned against the score by what was
- * played, not by when the file starts, so an offset at the top costs nothing —
- * and a count-in that the recorder captures as silence is a product decision
- * with a UI, not a detail to slip in here.
+ * It runs while the practice clock is active: through the one-bar count-in
+ * and, when the chosen mode is on, through the take. The Record screen owns the
+ * transition because the first beat after a complete count-in bar is the
+ * score's downbeat; this hook owns the shared clock so that transition cannot
+ * restart it or move the pulse.
  */
 
 export interface MetronomeState {
@@ -40,7 +37,7 @@ export interface MetronomeOptions {
   bpm: number;
   /** The score's time signature, for the accent. Absent is fine. */
   timeSignature: string | null | undefined;
-  /** Only ever true during a take. */
+  /** True during the count-in and, when enabled, the take. */
   running: boolean;
 }
 
