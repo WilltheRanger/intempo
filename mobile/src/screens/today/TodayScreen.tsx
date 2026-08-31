@@ -16,14 +16,22 @@ import {
 } from '../../components/primitives';
 import { ContinueSkeleton } from '../../components/skeletons';
 import { useInsights } from '../../data/hooks/useInsights';
-import { useLatestTake } from '../../data/hooks/useLatestTake';
+import { useRecentTakes } from '../../data/hooks/useLatestTake';
 import { useMe } from '../../data/hooks/useMe';
 import { useCurrentPiece, useLibrary } from '../../data/hooks/usePieces';
-import { practiceTempo, usePracticeTempos } from '../../data/practiceTempo';
+import {
+  practiceTempo,
+  tempoLadderFor,
+  usePracticeTempos,
+} from '../../data/practiceTempo';
 import { usePreferences } from '../../data/preferences';
 import type { Piece } from '../../data/types';
 import { describeLoadError } from '../../data/api/describeError';
 import { spacing } from '../../design';
+import {
+  formatLastPracticedShort,
+  joinMetadata,
+} from '../../lib/format';
 import { getGreeting } from '../../lib/greeting';
 import { formatTendency } from '../../lib/tempo';
 import { motion } from '../../design';
@@ -31,6 +39,7 @@ import { suggestionsFor } from '../../lib/today';
 import type { AddPieceOption, TabScreenNavigation } from '../../navigation/types';
 import { WarmupPanel } from './WarmupPanel';
 import { PracticeCard } from './PracticeCard';
+import { TempoLadder } from './TempoLadder';
 import { TodayRow } from './TodayRow';
 
 const AVATAR_SIZE = 36;
@@ -65,7 +74,7 @@ export function TodayScreen() {
   const currentPiece = useCurrentPiece();
   const library = useLibrary();
   const insights = useInsights();
-  const latestTake = useLatestTake();
+  const recentTakes = useRecentTakes(3);
   const me = useMe();
   const [addSheetVisible, setAddSheetVisible] = useState(false);
 
@@ -81,7 +90,7 @@ export function TodayScreen() {
       currentPiece.refetch(),
       library.refetch(),
       insights.refetch(),
-      latestTake.refetch(),
+      recentTakes.refetch(),
       me.refetch(),
     ]);
   }
@@ -110,7 +119,8 @@ export function TodayScreen() {
     }, motion.fast);
   }
 
-  const take = latestTake.data ?? null;
+  const takes = recentTakes.data ?? [];
+  const take = takes[0] ?? null;
 
   const { attention, neglected } = suggestionsFor({
     pieces: library.data ?? [],
@@ -181,6 +191,7 @@ export function TodayScreen() {
 
   const workingBpm = practiceTempo.for(piece.id, piece.markedBpm);
   const hasCurrentTake = take?.pieceId === piece.id;
+  const tempoRungs = tempoLadderFor(workingBpm, piece.markedBpm);
   const summaryDetail = summary
     ? `Across ${summary.sessions === 1 ? '1 session' : `${summary.sessions} sessions`} in the last ${summary.windowDays} days`
     : '';
@@ -204,6 +215,18 @@ export function TodayScreen() {
 
           <FadeIn index={0}>
             <View style={styles.section}>
+              <SectionHeader label="Tempo ladder" />
+              <Card>
+                <TempoLadder
+                  rungs={tempoRungs}
+                  onSelect={(bpm) => practiceTempo.set(piece.id, bpm)}
+                />
+              </Card>
+            </View>
+          </FadeIn>
+
+          <FadeIn index={1}>
+            <View style={styles.section}>
               <SectionHeader label="Warmup" />
               <Card>
                 <WarmupPanel
@@ -213,6 +236,33 @@ export function TodayScreen() {
               </Card>
             </View>
           </FadeIn>
+
+          {takes.length > 0 ? (
+            <FadeIn index={2}>
+              <View style={styles.section}>
+                <SectionHeader label="Recent practice" />
+                <Card>
+                  {takes.map((recentTake, index) => (
+                    <TodayRow
+                      key={recentTake.id}
+                      title={recentTake.pieceTitle}
+                      detail={joinMetadata([
+                        formatLastPracticedShort(recentTake.recordedAt),
+                        `${recentTake.targetBpm} BPM`,
+                        formatTendency(recentTake.verdict),
+                      ])}
+                      onPress={() =>
+                        navigation.navigate('Verdict', {
+                          analysisId: recentTake.id,
+                        })
+                      }
+                      last={index === takes.length - 1}
+                    />
+                  ))}
+                </Card>
+              </View>
+            </FadeIn>
+          ) : null}
         </View>
 
         <View
@@ -221,7 +271,7 @@ export function TodayScreen() {
             isWide ? styles.secondaryColumnWide : styles.secondaryColumnNarrow,
           ]}
         >
-          <FadeIn index={1}>
+          <FadeIn index={3}>
             <View>
               <SectionHeader label="Practice focus" />
               <Card>
@@ -249,7 +299,7 @@ export function TodayScreen() {
           </FadeIn>
 
           {attention || neglected ? (
-            <FadeIn index={2}>
+            <FadeIn index={4}>
               <View style={styles.section}>
                 <SectionHeader label="Repertoire queue" />
                 {attention ? (
@@ -277,7 +327,7 @@ export function TodayScreen() {
           ) : null}
 
           {summary ? (
-            <FadeIn index={3}>
+            <FadeIn index={5}>
               <View style={styles.section}>
                 <SectionHeader label="Practice snapshot" />
                 <TodayRow
