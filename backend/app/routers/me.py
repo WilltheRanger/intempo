@@ -128,6 +128,117 @@ def get_me(payload: dict[str, Any] = Depends(current_jwt_payload)) -> MeResponse
     return _to_response(user_id, row, tier, analyses)
 
 
+def _rows_owned_by(
+    client: Any,
+    table: str,
+    column: str,
+    user_id: UUID,
+) -> list[dict[str, Any]]:
+    return (
+        client.table(table)
+        .select("*")
+        .eq(column, str(user_id))
+        .execute()
+    ).data or []
+
+
+def _without(row: dict[str, Any], *keys: str) -> dict[str, Any]:
+    """Copy a database row without ephemeral storage credentials."""
+    blocked = set(keys)
+    return {key: value for key, value in row.items() if key not in blocked}
+
+
+@router.get("/me/export")
+def export_me(
+    payload: dict[str, Any] = Depends(current_jwt_payload),
+) -> dict[str, Any]:
+    """A portable JSON snapshot of the signed-in musician's account.
+
+    Stored upload URLs are deliberately omitted: they contain short-lived
+    tokens and are not durable data. The export carries the score itself and
+    every analysis result, while naming how many media objects exist so the
+    omission is explicit rather than silent.
+    """
+    user_id = _user_id_from(payload)
+    client = get_service_client()
+    if client is None:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Supabase service-role client is not configured",
+        )
+
+    account_rows = (
+        client.table("users")
+        .select("*")
+        .eq("id", str(user_id))
+        .limit(1)
+        .execute()
+    ).data or []
+    if not account_rows:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="user not found",
+        )
+
+    scores = _rows_owned_by(client, "scores", "user_id", user_id)
+    analyses = _rows_owned_by(client, "analyses", "user_id", user_id)
+    corrections = _rows_owned_by(
+        client, "verdict_corrections", "user_id", user_id
+    )
+    sync_events = _rows_owned_by(client, "sync_events", "user_id", user_id)
+    student_assignments = _rows_owned_by(
+        client, "assignments", "student_user_id", user_id
+    )
+    teacher_assignments = _rows_owned_by(
+        client, "assignments", "teacher_user_id", user_id
+    )
+    owned_studios = _rows_owned_by(
+        client, "studios", "owner_user_id", user_id
+    )
+
+    assignments_by_id: dict[str, dict[str, Any]] = {}
+    for assignment in [*student_assignments, *teacher_assignments]:
+        key = str(assignment.get("id") or len(assignments_by_id))
+        assignments_by_id[key] = assignment
+
+    account = account_rows[0]
+    score_export = [
+        _without(row, "source_image_url", "source_image_urls")
+        for row in scores
+    ]
+    analysis_export = [_without(row, "audio_url") for row in analyses]
+
+    page_count = 0
+    for row in scores:
+        pages = row.get("source_image_urls")
+        if isinstance(pages, list):
+            page_count += len([page for page in pages if page])
+        elif row.get("source_image_url"):
+            page_count += 1
+
+    return {
+        "export_version": 1,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "account": _without(account, "avatar_key"),
+        "library": score_export,
+        "practice_analyses": analysis_export,
+        "verdict_corrections": corrections,
+        "assignments": list(assignments_by_id.values()),
+        "owned_studios": [
+            _without(studio, "invite_code") for studio in owned_studios
+        ],
+        "sync_events": sync_events,
+        "stored_media": {
+            "profile_photo": bool(account.get("avatar_key")),
+            "score_pages": page_count,
+            "practice_recordings": len(
+                [row for row in analyses if row.get("audio_url")]
+            ),
+            "included_in_json": False,
+        },
+    }
+
+
 def _avatar_url(client: Any, key: str | None) -> str | None:
     """Sign a fresh URL for the profile picture.
 

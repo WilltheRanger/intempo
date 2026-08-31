@@ -6,6 +6,29 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-31 — Portable account data export
+
+**Branch:** `codex/account-data-export`
+
+### Changed
+
+- Added an authenticated GET /v1/me/export snapshot containing the musician's
+  account, library score data, practice analyses, corrections, assignments,
+  owned studios, and sync history.
+- Scopes every collection to the signed-in user, de-duplicates assignments
+  where the same account occupies both roles, and strips avatar keys, storage
+  URLs, audio URLs, and studio invite codes from the portable file.
+- Reports media counts explicitly so photos and audio not embedded in the JSON
+  are not silently omitted.
+- Added Download my data under Data & privacy. Web downloads a readable JSON
+  file; native opens the system share/save sheet.
+
+### Verification
+
+- Added backend coverage for authentication, owner scoping, sensitive-token
+  removal, assignment de-duplication, and media accounting.
+- Mobile typecheck, tests, web build, and backend pytest run in pull-request CI.
+
 ## 2026-08-31 — Permanent in-app account deletion
 
 **Branch:** `codex/account-deletion`
