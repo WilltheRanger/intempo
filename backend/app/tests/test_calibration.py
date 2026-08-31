@@ -123,7 +123,7 @@ def test_route_returns_bpm(
     monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
 ) -> None:
     user_id = uuid4()
-    monkeypatch.setattr(calibration_module, "download_audio", lambda _url: _wav_bytes())
+    monkeypatch.setattr(calibration_module, "download_audio", lambda _url, *_a, **_k: _wav_bytes())
     res = client.post(
         "/v1/calibration",
         headers={"Authorization": f"Bearer {make_token(sub=user_id)}"},

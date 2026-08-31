@@ -144,6 +144,66 @@ def test_post_enqueues_and_returns_202(
     assert called == [body["analysis_id"]]  # background task got the new id
 
 
+def _signed_upload_audio_url(user_id: UUID) -> str:
+    # The one storage URL the mobile app ever holds: `submitTake` sends back
+    # the `upload_url` it was issued moments earlier, whose path carries the
+    # extra `upload/` segment.
+    return f"{PROJECT_HOST}/storage/v1/object/upload/sign/audio-uploads/{user_id}/take.wav?token=x"
+
+
+def test_post_accepts_the_signed_upload_url_the_app_holds(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """Every take from the phone died here while its audio sat in the bucket.
+
+    The validator's hand-rolled prefix list lacked the signed-UPLOAD form that
+    the backend's own /v1/upload/audio hands out — the score flow accepted it,
+    this one refused it, and the analyses table stayed empty behind a 403.
+    """
+    user_id = uuid4()
+    score_id = uuid4()
+    fake = FakeSupabase()
+    fake.seed("scores", [{"id": str(score_id), "user_id": str(user_id), "score_json": GOOD_SCORE_JSON}])
+    _install(monkeypatch, fake)
+    called: list[str] = []
+    monkeypatch.setattr(
+        analyses_module, "start_analysis", lambda aid, _tasks: called.append(aid)
+    )
+
+    res = client.post(
+        "/v1/analyses",
+        headers={"Authorization": f"Bearer {make_token(sub=user_id)}"},
+        json={
+            "score_id": str(score_id),
+            "audio_url": _signed_upload_audio_url(user_id),
+            "target_bpm": 120,
+            "bpm_source": "manual",
+        },
+    )
+    assert res.status_code == 202
+    assert called == [res.json()["analysis_id"]]
+
+
+def test_post_rejects_the_signed_upload_url_of_someone_else(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    # Widening the accepted shapes must not widen WHOSE prefix is accepted.
+    user_id = uuid4()
+    fake = FakeSupabase()
+    _install(monkeypatch, fake)
+    res = client.post(
+        "/v1/analyses",
+        headers={"Authorization": f"Bearer {make_token(sub=user_id)}"},
+        json={
+            "score_id": str(uuid4()),
+            "audio_url": _signed_upload_audio_url(uuid4()),
+            "target_bpm": 120,
+            "bpm_source": "manual",
+        },
+    )
+    assert res.status_code == 403
+
+
 def test_full_flow_queued_to_done(
     monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
 ) -> None:
@@ -154,7 +214,7 @@ def test_full_flow_queued_to_done(
     _install(monkeypatch, fake)
     # Real worker runs (TestClient executes BackgroundTasks after response);
     # only stub the storage fetch so the real pipeline analyzes real audio.
-    monkeypatch.setattr(analysis_runner, "download_audio", lambda _url: _wav_bytes())
+    monkeypatch.setattr(analysis_runner, "download_audio", lambda _url, *_a, **_k: _wav_bytes())
 
     token = make_token(sub=user_id)
     post = client.post(
@@ -191,7 +251,7 @@ def test_worker_marks_failed_when_audio_unavailable(monkeypatch: pytest.MonkeyPa
     }])
     monkeypatch.setattr(analysis_runner, "get_service_client", lambda: fake)
 
-    def _boom(_url):
+    def _boom(_url, *_a, **_k):
         raise analysis_runner.AudioFetchError("gone")
 
     monkeypatch.setattr(analysis_runner, "download_audio", _boom)
@@ -378,7 +438,7 @@ def test_the_instrument_decides_the_double_bass_setting(
         [{"id": str(score_id), "user_id": str(user_id), "score_json": GOOD_SCORE_JSON}],
     )
     _install(monkeypatch, fake)
-    monkeypatch.setattr(analysis_runner, "download_audio", lambda _url: _wav_bytes())
+    monkeypatch.setattr(analysis_runner, "download_audio", lambda _url, *_a, **_k: _wav_bytes())
 
     seen: list[bool] = []
     real = analysis_runner.analyze

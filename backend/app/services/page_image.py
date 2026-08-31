@@ -27,7 +27,7 @@ from fastapi import HTTPException, status
 
 from app.config import settings
 from app.db import get_service_client
-from app.services.buckets import SCORE_BUCKET
+from app.services.buckets import SCORE_BUCKET, STORAGE_PREFIXES, object_key_from
 
 log = logging.getLogger("intempo.scores")
 
@@ -105,34 +105,9 @@ def media_type_of(image_bytes: bytes, url: str) -> str:
 
 
 
-STORAGE_PREFIXES = (
-    "/storage/v1/object/sign/",
-    "/storage/v1/object/upload/sign/",
-    "/storage/v1/object/authenticated/",
-    "/storage/v1/object/public/",
-)
-
-
-def object_key_from(image_url: str, bucket: str = SCORE_BUCKET) -> str | None:
-    """`<user_id>/<uuid>.<ext>` out of a stored storage URL, or None.
-
-    `scores.source_image_url` holds the signed *upload* URL, which stops
-    working minutes after the upload — so displaying an image means signing a
-    fresh download, and signing needs the object key rather than the URL. The
-    key is in the URL's path; this pulls it back out.
-
-    Storing the key on the row would be tidier than re-deriving it, and is the
-    right follow-up. It needs a migration and a backfill, and the derivation is
-    safe today because `_assert_image_url_owned_by` has already refused any URL
-    that isn't one of these shapes.
-    """
-    path = urlparse(image_url).path
-    for prefix in STORAGE_PREFIXES:
-        marker = f"{prefix}{bucket}/"
-        if path.startswith(marker):
-            key = path[len(marker) :]
-            return key or None
-    return None
+# Moved to `services/buckets` so the analysis worker can derive an object key
+# without importing this (web-facing) module — re-exported here because the
+# score routers have always read them from this address.
 
 
 

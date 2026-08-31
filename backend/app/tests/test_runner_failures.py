@@ -68,6 +68,71 @@ def _client_raising(exc, monkeypatch) -> None:
 # ---------------------------------------------------------------------------
 
 
+class _FakeBucket:
+    """Stands in for `client.storage.from_(bucket)`, recording what was asked."""
+
+    def __init__(self, store: "_FakeStorage") -> None:
+        self._store = store
+
+    def download(self, key: str) -> bytes:
+        self._store.downloaded.append(key)
+        if isinstance(self._store.body, Exception):
+            raise self._store.body
+        return self._store.body
+
+
+class _FakeStorage:
+    def __init__(self, body) -> None:
+        self.body = body
+        self.buckets: list[str] = []
+        self.downloaded: list[str] = []
+
+    def from_(self, bucket: str) -> _FakeBucket:
+        self.buckets.append(bucket)
+        return _FakeBucket(self)
+
+
+class _FakeServiceClient:
+    def __init__(self, body) -> None:
+        self.storage = _FakeStorage(body)
+
+
+def test_with_a_client_the_bytes_come_from_the_bucket(monkeypatch) -> None:
+    """The stored URL for a phone take is the signed UPLOAD url — a PUT
+    endpoint, expired five minutes after issue. GETting it can only fail, so
+    the worker must re-derive the object key and read the bucket instead."""
+    _client_raising(AssertionError("must not GET the stored URL"), monkeypatch)
+    client = _FakeServiceClient(b"RIFF-bytes")
+    url = "https://p.supabase.invalid/storage/v1/object/upload/sign/audio-uploads/u-1/take.wav?token=x"
+
+    assert download_audio(url, client) == b"RIFF-bytes"
+    assert client.storage.buckets == ["audio-uploads"]
+    assert client.storage.downloaded == ["u-1/take.wav"]
+
+
+def test_the_bucket_path_keeps_the_size_cap(monkeypatch) -> None:
+    client = _FakeServiceClient(b"x" * (MAX_AUDIO_BYTES + 1))
+    url = "https://p.supabase.invalid/storage/v1/object/sign/audio-uploads/u-1/take.wav?token=x"
+    with pytest.raises(AudioFetchError, match="larger than"):
+        download_audio(url, client)
+
+
+def test_a_storage_error_is_named_as_a_fetch_error(monkeypatch) -> None:
+    client = _FakeServiceClient(RuntimeError("bucket said no"))
+    url = "https://p.supabase.invalid/storage/v1/object/sign/audio-uploads/u-1/take.wav?token=x"
+    with pytest.raises(AudioFetchError, match="storage download failed"):
+        download_audio(url, client)
+
+
+def test_an_underivable_url_still_uses_the_plain_get(monkeypatch) -> None:
+    # A client alone is not a licence to guess: a URL whose key cannot be
+    # derived falls back to the direct fetch, unchanged.
+    _client_returning(_Response(200, b"body"), monkeypatch)
+    client = _FakeServiceClient(b"unused")
+    assert download_audio("https://storage.example/take.wav", client) == b"body"
+    assert client.storage.buckets == []
+
+
 def test_a_network_failure_is_named_as_one(monkeypatch) -> None:
     _client_raising(httpx.ConnectError("name resolution failed"), monkeypatch)
 
@@ -154,7 +219,7 @@ def test_a_pipeline_error_ends_the_row_rather_than_leaving_it_running(monkeypatc
     """
     fake, analysis_id = _seeded()
     monkeypatch.setattr(analysis_runner, "get_service_client", lambda: fake)
-    monkeypatch.setattr(analysis_runner, "download_audio", lambda _url: b"not audio")
+    monkeypatch.setattr(analysis_runner, "download_audio", lambda _url, *_a, **_k: b"not audio")
 
     analysis_runner.run_analysis(analysis_id)
 
@@ -170,7 +235,7 @@ def test_a_missing_score_fails_the_take_instead_of_hanging(monkeypatch) -> None:
     fake, analysis_id = _seeded()
     fake.table("scores").rows.clear()
     monkeypatch.setattr(analysis_runner, "get_service_client", lambda: fake)
-    monkeypatch.setattr(analysis_runner, "download_audio", lambda _url: b"wav")
+    monkeypatch.setattr(analysis_runner, "download_audio", lambda _url, *_a, **_k: b"wav")
 
     analysis_runner.run_analysis(analysis_id)
 
@@ -185,7 +250,7 @@ def test_the_row_is_marked_running_before_the_work_starts(monkeypatch) -> None:
     seen: list[str] = []
     monkeypatch.setattr(analysis_runner, "get_service_client", lambda: fake)
 
-    def _record(_url):
+    def _record(_url, *_a, **_k):
         seen.append(fake.table("analyses").rows[0]["status"])
         raise analysis_runner.AudioFetchError("gone")
 

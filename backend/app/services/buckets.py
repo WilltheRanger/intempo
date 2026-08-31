@@ -24,6 +24,8 @@ imports nothing, and cannot drag a web framework into a container again.
 
 from __future__ import annotations
 
+from urllib.parse import urlparse
+
 #: Practice recordings. Read by `analysis_runner`, written by the app.
 AUDIO_BUCKET = "audio-uploads"
 
@@ -32,3 +34,38 @@ SCORE_BUCKET = "score-images"
 
 #: Profile pictures. Persist for the life of the account (migration 009).
 AVATAR_BUCKET = "avatars"
+
+
+#: Every path shape a Supabase storage URL takes, as this backend hands them
+#: out. Shared by the routers' ownership validators AND the workers' key
+#: re-derivation, and it lives HERE — not in page_image — for the same reason
+#: the bucket names do: the analysis worker needs it, and importing the web
+#: layer from a worker is what the module docstring above warns about.
+STORAGE_PREFIXES = (
+    "/storage/v1/object/sign/",
+    "/storage/v1/object/upload/sign/",
+    "/storage/v1/object/authenticated/",
+    "/storage/v1/object/public/",
+)
+
+
+def object_key_from(url: str, bucket: str = SCORE_BUCKET) -> str | None:
+    """`<user_id>/<uuid>.<ext>` out of a stored storage URL, or None.
+
+    Stored URLs hold whatever the app sent at enqueue time — often the signed
+    *upload* URL, which stops working minutes after issue — so fetching the
+    object later means re-deriving its key and signing (or reading) fresh.
+    The key is in the URL's path; this pulls it back out.
+
+    Storing the key on the row would be tidier than re-deriving it, and is the
+    right follow-up. It needs a migration and a backfill, and the derivation is
+    safe today because the routers' ownership validators have already refused
+    any URL that isn't one of these shapes.
+    """
+    path = urlparse(url).path
+    for prefix in STORAGE_PREFIXES:
+        marker = f"{prefix}{bucket}/"
+        if path.startswith(marker):
+            key = path[len(marker) :]
+            return key or None
+    return None
