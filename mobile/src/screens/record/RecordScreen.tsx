@@ -66,9 +66,8 @@ type Phase = 'ready' | 'counting_in' | 'recording' | 'analysing';
 /**
  * Recording a take.
  *
- * The two places the spec allows a number on screen are both here: the target
- * tempo, which the musician set and needs to see, and the elapsed timer, which
- * they are watching. Everywhere else words do the work.
+ * Numbers appear only where a musician has to act on them: target tempo,
+ * elapsed time, the count-in, and the final beats before a re-entry.
  *
  * Capture is real: `lib/audioRecorder` records mono 16-bit PCM into a WAV on
  * both platforms. Where the file goes afterwards is `takeSubmissionSource`'s
@@ -606,13 +605,6 @@ export function RecordScreen() {
   );
 }
 
-/**
- * What went wrong, in a sentence a musician can act on.
- *
- * Never the underlying error: "NotAllowedError" and "Failed to fetch" tell
- * someone holding a violin nothing they can do anything about. Each of these
- * names the next move instead.
- */
 function RestCountdown({ state }: { state: RestCueState }) {
   const finalBar = state.barsRemaining === 1;
   const value = finalBar
@@ -643,6 +635,13 @@ function RestCountdown({ state }: { state: RestCueState }) {
   );
 }
 
+/**
+ * What went wrong, in a sentence a musician can act on.
+ *
+ * Never the underlying error: "NotAllowedError" and "Failed to fetch" tell
+ * someone holding a violin nothing they can do anything about. Each of these
+ * names the next move instead.
+ */
 function messageFor(error: unknown): string {
   if (error instanceof MicrophonePermissionError) {
     return 'InTempo needs the microphone to hear you play. Allow it for InTempo, then start again.';
