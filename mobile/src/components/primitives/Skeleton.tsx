@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { Animated, StyleSheet, View, type DimensionValue, type StyleProp, type ViewStyle } from 'react-native';
+import { Animated, Platform, StyleSheet, View, type DimensionValue, type StyleProp, type ViewStyle } from 'react-native';
 
 import { SKELETON_PULSE, colors, radii, spacing } from '../../design';
 import { useReducedMotion } from '../../lib/useReducedMotion';
@@ -38,12 +38,12 @@ export function Skeleton({ width = '100%', height = 16, radius, style }: Skeleto
         Animated.timing(pulse, {
           toValue: SKELETON_PULSE.to,
           duration: SKELETON_PULSE.duration,
-          useNativeDriver: true,
+          useNativeDriver: Platform.OS !== 'web',
         }),
         Animated.timing(pulse, {
           toValue: SKELETON_PULSE.from,
           duration: SKELETON_PULSE.duration,
-          useNativeDriver: true,
+          useNativeDriver: Platform.OS !== 'web',
         }),
       ]),
     );

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
   PanResponder,
+  Platform,
   StyleSheet,
   View,
   type LayoutChangeEvent,
@@ -194,7 +195,7 @@ function DraggableRow({
     const animation = Animated.timing(shiftY, {
       toValue,
       duration: motion.fast,
-      useNativeDriver: true,
+      useNativeDriver: Platform.OS !== 'web',
     });
     animation.start();
     return () => animation.stop();

@@ -1,6 +1,7 @@
 import { useRef, type ReactNode } from 'react';
 import {
   Animated,
+  Platform,
   Pressable,
   type PressableProps,
   type PressableStateCallbackType,
@@ -35,9 +36,10 @@ export interface PressableScaleProps extends Omit<PressableProps, 'style' | 'chi
  * the response has to feel like it happened *under* the finger, while the
  * release can settle.
  *
- * Scale is a transform, so this runs on the native driver and holds 60fps
+ * Scale is a transform, so native builds use the native driver and hold 60fps
  * regardless of what the JS thread is doing — which matters most exactly when
- * a press kicks off work.
+ * a press kicks off work. Web uses the JavaScript driver because react-native-
+ * web has no native animation module.
  */
 export function PressableScale({
   children,
@@ -56,7 +58,7 @@ export function PressableScale({
       toValue: value,
       duration,
       easing: EASE_OUT,
-      useNativeDriver: true,
+      useNativeDriver: Platform.OS !== 'web',
     }).start();
   }
 

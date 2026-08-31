@@ -344,7 +344,7 @@ export function PieceScoreScreen() {
   const showing: ScoreView = showToggle ? view : hasNotation ? 'notation' : 'original';
 
   return (
-    <ScreenContainer>
+    <ScreenContainer key={showing}>
       <PageHeader
         eyebrow={piece.composer}
         title={piece.title}
