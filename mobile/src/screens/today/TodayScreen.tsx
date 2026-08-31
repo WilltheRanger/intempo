@@ -1,4 +1,5 @@
 import { useNavigation } from '@react-navigation/native';
+import { Plus } from 'lucide-react-native';
 import { useState } from 'react';
 import { Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
 
@@ -9,6 +10,7 @@ import {
   Card,
   EmptyState,
   PageHeader,
+  PrimaryButton,
   ScreenContainer,
   SecondaryButton,
   SectionHeader,
@@ -19,13 +21,9 @@ import { useInsights } from '../../data/hooks/useInsights';
 import { useRecentTakes } from '../../data/hooks/useLatestTake';
 import { useMe } from '../../data/hooks/useMe';
 import { useCurrentPiece, useLibrary } from '../../data/hooks/usePieces';
-import {
-  practiceTempo,
-  tempoLadderFor,
-  usePracticeTempos,
-} from '../../data/practiceTempo';
+import { practiceTempo, usePracticeTempos } from '../../data/practiceTempo';
 import { usePreferences } from '../../data/preferences';
-import type { Piece } from '../../data/types';
+import type { Piece, Verdict } from '../../data/types';
 import { describeLoadError } from '../../data/api/describeError';
 import { spacing } from '../../design';
 import {
@@ -39,7 +37,6 @@ import { suggestionsFor } from '../../lib/today';
 import type { AddPieceOption, TabScreenNavigation } from '../../navigation/types';
 import { WarmupPanel } from './WarmupPanel';
 import { PracticeCard } from './PracticeCard';
-import { TempoLadder } from './TempoLadder';
 import { TodayRow } from './TodayRow';
 
 const AVATAR_SIZE = 52;
@@ -191,7 +188,6 @@ export function TodayScreen() {
 
   const workingBpm = practiceTempo.for(piece.id, piece.markedBpm);
   const hasCurrentTake = take?.pieceId === piece.id;
-  const tempoRungs = tempoLadderFor(workingBpm, piece.markedBpm);
   const summaryDetail = summary
     ? `Across ${summary.sessions === 1 ? '1 session' : `${summary.sessions} sessions`} in the last ${summary.windowDays} days`
     : '';
@@ -202,11 +198,18 @@ export function TodayScreen() {
 
       <View style={[styles.dashboard, isWide && styles.dashboardWide]}>
         <View style={styles.primaryColumn}>
-          <SectionHeader
-            label="Continue practicing"
-            actionLabel="New piece"
-            onActionPress={() => setAddSheetVisible(true)}
-          />
+          <View style={styles.practiceHeader}>
+            <SectionHeader
+              label="Continue practicing"
+              style={styles.practiceHeaderLabel}
+            />
+            <PrimaryButton
+              label="New piece"
+              icon={Plus}
+              size="compact"
+              onPress={() => setAddSheetVisible(true)}
+            />
+          </View>
           <PracticeCard
             piece={piece}
             workingBpm={workingBpm}
@@ -219,13 +222,11 @@ export function TodayScreen() {
 
           <FadeIn index={0}>
             <View style={styles.section}>
-              <SectionHeader label="Tempo ladder" />
-              <Card>
-                <TempoLadder
-                  rungs={tempoRungs}
-                  onSelect={(bpm) => practiceTempo.set(piece.id, bpm)}
-                />
-              </Card>
+              <SectionHeader label="Today's lesson" />
+              <LessonCard
+                lesson={lessonFor(hasCurrentTake && take ? take.verdict : null, piece.title)}
+                onTry={() => openPractice(piece)}
+              />
             </View>
           </FadeIn>
 
@@ -355,6 +356,75 @@ export function TodayScreen() {
   );
 }
 
+interface Lesson {
+  title: string;
+  body: string;
+  exercise: string;
+}
+
+function lessonFor(verdict: Verdict | null, pieceTitle: string): Lesson {
+  if (verdict === 'rushing' || verdict === 'slight_rush') {
+    return {
+      title: 'Make room between the clicks',
+      body:
+        'Rushing often starts in the space between beats. Subdivide before you play so the next note has somewhere exact to land.',
+      exercise:
+        'Count “one-and-two-and” through one phrase, then play it at the same tempo without counting aloud.',
+    };
+  }
+
+  if (verdict === 'dragging' || verdict === 'slight_drag') {
+    return {
+      title: 'Carry the pulse through hard notes',
+      body:
+        'Dragging often begins when the hands wait for the beat before preparing. Let the subdivision keep moving while you set up the next note.',
+      exercise:
+        'Tap steady eighth notes through the hardest phrase first, then play while keeping that motion in your head.',
+    };
+  }
+
+  if (verdict === 'on_tempo') {
+    return {
+      title: 'Repeat the result before adding speed',
+      body:
+        'One steady take is a good sign. A second comparable take shows whether the pulse is dependable rather than accidental.',
+      exercise:
+        'Keep the same tempo and record one more take of the same passage before changing anything.',
+    };
+  }
+
+  return {
+    title: 'Start with an honest baseline',
+    body:
+      'A useful first take is not your fastest attempt. Choose a tempo where you can keep moving after a mistake and hear what your timing normally does.',
+    exercise: `Record one uninterrupted take of ${pieceTitle}. Do not restart—use it as the starting point.`,
+  };
+}
+
+function LessonCard({ lesson, onTry }: { lesson: Lesson; onTry: () => void }) {
+  return (
+    <Card>
+      <Text variant="pieceTitle">{lesson.title}</Text>
+      <Text variant="body" color="textSecondary" style={styles.lessonBody}>
+        {lesson.body}
+      </Text>
+      <View style={styles.lessonExercise}>
+        <Text variant="sectionLabel" color="textSecondary">
+          Try this
+        </Text>
+        <Text variant="body" style={styles.lessonExerciseText}>
+          {lesson.exercise}
+        </Text>
+      </View>
+      <SecondaryButton
+        label="Try it in practice"
+        onPress={onTry}
+        style={styles.lessonAction}
+      />
+    </Card>
+  );
+}
+
 const styles = StyleSheet.create({
   page: {
     width: '100%',
@@ -372,6 +442,17 @@ const styles = StyleSheet.create({
   primaryColumn: {
     flex: 1,
     minWidth: 0,
+  },
+  practiceHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+    marginBottom: spacing.md,
+  },
+  practiceHeaderLabel: {
+    flex: 1,
+    marginBottom: 0,
   },
   secondaryColumn: {
     minWidth: 0,
@@ -395,6 +476,18 @@ const styles = StyleSheet.create({
   },
   pressed: {
     opacity: 0.6,
+  },
+  lessonBody: {
+    marginTop: spacing.sm,
+  },
+  lessonExercise: {
+    marginTop: spacing.xl,
+  },
+  lessonExerciseText: {
+    marginTop: spacing.xs,
+  },
+  lessonAction: {
+    marginTop: spacing.lg,
   },
   focusText: {
     marginTop: spacing.sm,
