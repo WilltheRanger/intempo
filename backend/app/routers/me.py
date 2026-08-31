@@ -26,8 +26,7 @@ from app.models.user import (
     UserTier,
 )
 from app.services.tier_limits import usage_for
-from app.routers.scores import SCORE_BUCKET
-from app.routers.upload import AUDIO_BUCKET
+from app.routers.upload import AUDIO_BUCKET, SCORE_BUCKET
 
 router = APIRouter(tags=["me"])
 log = logging.getLogger("intempo.me")
