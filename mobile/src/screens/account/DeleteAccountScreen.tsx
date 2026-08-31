@@ -76,7 +76,6 @@ export function DeleteAccountScreen() {
         value={confirmation}
         onChangeText={setConfirmation}
         autoCapitalize="characters"
-        autoCorrect={false}
         editable={!deleting}
         style={styles.input}
       />
