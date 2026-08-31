@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { usePreferences } from '../../data/preferences';
 import type { MetronomeMode } from '../../data/types';
 import { impact, ImpactFeedbackStyle } from '../haptics';
-import { beatsPerBar, type Beat } from './beats';
+import { metronomePulse, type Beat } from './beats';
 import { startBeatClock } from './clock';
 import { startClicks } from './click';
 
@@ -56,7 +56,11 @@ export function useMetronome({
   modeRef.current = mode;
 
   const active = running && mode !== 'off';
-  const perBar = beatsPerBar(timeSignature);
+  const pulse = metronomePulse(timeSignature);
+  const perBar = pulse?.pulsesPerBar ?? null;
+  // Stored BPM is always quarter-note BPM. Dividing by the pulse duration
+  // preserves the score's real time while clicking the beat the meter implies.
+  const pulseBpm = bpm / (pulse?.quarterBeats ?? 1);
 
   useEffect(() => {
     if (!active) {
@@ -67,10 +71,10 @@ export function useMetronome({
     // Started **before** the clock, because the clock needs its lead-in. Web
     // books the first click a tenth of a second out and the screen used to
     // pulse that far ahead of it, every beat of every take.
-    const clicks = mode === 'audio_with_headphones' ? startClicks({ bpm, perBar }) : null;
+    const clicks = mode === 'audio_with_headphones' ? startClicks({ bpm: pulseBpm, perBar }) : null;
 
     const clock = startBeatClock({
-      bpm,
+      bpm: pulseBpm,
       perBar,
       leadInS: clicks?.leadInS ?? 0,
       onBeat: (next) => {
@@ -97,7 +101,7 @@ export function useMetronome({
     // control is locked while recording), and including it would restart the
     // count on a preference write from anywhere else in the app.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active, bpm, perBar]);
+  }, [active, perBar, pulseBpm]);
 
   return {
     beat,

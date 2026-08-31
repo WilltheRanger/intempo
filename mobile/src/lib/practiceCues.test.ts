@@ -123,6 +123,20 @@ describe('restCueAt', () => {
     });
   });
 
+  it('counts a 6/8 final bar in dotted-quarter pulses', () => {
+    const compound = longRestCues(
+      scoreOf([['note'], ['rest'], ['rest'], ['note']], ['dotted_half']),
+    );
+
+    expect(restCueAt(compound, 3_000, 60, 1.5)).toMatchObject({
+      barsRemaining: 2,
+      beatsRemainingInBar: 2,
+    });
+    expect(restCueAt(compound, 7_500, 60, 1.5)).toMatchObject({
+      barsRemaining: 1,
+      beatsRemainingInBar: 1,
+    });
+  });
   it('is absent before the rest and on the re-entry downbeat', () => {
     expect(restCueAt(cues, 3_999, 60)).toBeNull();
     expect(restCueAt(cues, 12_000, 60)).toBeNull();

@@ -34,7 +34,7 @@ import {
 } from '../../design';
 import { TempoStepper } from '../../components/practice/TempoStepper';
 import { impact, ImpactFeedbackStyle } from '../../lib/haptics';
-import { beatsPerBar, monotonicNow, useMetronome } from '../../lib/metronome';
+import { metronomePulse, monotonicNow, useMetronome } from '../../lib/metronome';
 import {
   longRestCues,
   restCueAt,
@@ -275,9 +275,12 @@ export function RecordScreen() {
   const countingIn = phase === 'counting_in';
   const capturing = countingIn || recording;
 
-  // One written bar. When OCR cannot provide a usable meter, four quarter-note
-  // beats are the least surprising fallback and match the app's tempo unit.
-  const perBar = beatsPerBar(piece?.score?.time_signature);
+  // One written bar in the pulse a musician actually feels. Score timing and
+  // analysis remain quarter-note based; the pulse only changes where the count
+  // and clicks land. When OCR cannot read the meter, four quarters remain the
+  // least surprising fallback.
+  const pulse = metronomePulse(piece?.score?.time_signature);
+  const perBar = pulse?.pulsesPerBar ?? null;
   const countInBeats = perBar ?? 4;
   /**
    * Practise the notes without sitting through the rests.
@@ -328,7 +331,7 @@ export function RecordScreen() {
   }, [countInBeats, countingIn, metronome.beat?.index]);
 
   const activeRest = recording
-    ? restCueAt(restCues, elapsedMs, targetBpm)
+    ? restCueAt(restCues, elapsedMs, targetBpm, pulse?.quarterBeats ?? 1)
     : null;
 
   if (isPending) {
