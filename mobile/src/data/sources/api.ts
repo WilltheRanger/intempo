@@ -538,6 +538,42 @@ export const apiTakeSource: TakeSource = {
     const score = await getScore(newest.analysis.score_id).catch(() => null);
     return toTake(newest.analysis, newest.result, score);
   },
+
+  async getRecentTakes(limit = 3) {
+    const safeLimit = Math.max(1, Math.round(limit));
+    // Ask for a few extra rows because a finished row with an old or unreadable
+    // result shape is deliberately skipped. The homepage still gets up to the
+    // requested number of real, renderable takes.
+    const analyses = await listAnalyses({
+      status: 'done',
+      limit: safeLimit * 3,
+    });
+    const recent = analyses
+      .slice()
+      .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at))
+      .map((analysis) => ({ analysis, result: asResult(analysis) }))
+      .filter(
+        (
+          entry,
+        ): entry is {
+          analysis: AnalysisResponse;
+          result: AnalysisResultJson;
+        } => entry.result !== null,
+      )
+      .slice(0, safeLimit);
+
+    if (recent.length === 0) {
+      return [];
+    }
+
+    // One score listing instead of one request per row. A missing score only
+    // costs its title; the take and its verdict remain valid practice history.
+    const scores = await listScores().catch(() => []);
+    const scoresById = new Map(scores.map((score) => [score.id, score]));
+    return recent.map(({ analysis, result }) =>
+      toTake(analysis, result, scoresById.get(analysis.score_id) ?? null),
+    );
+  },
 };
 
 /**
