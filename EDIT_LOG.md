@@ -6,6 +6,56 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-30 — First-run polish and signed-in web reliability
+
+**Branch:** `fix/average-user-auth-shell-v2`. App shell and shared UI. **UI work approved by
+the owner** ("yes you can change the ui/copy.layout and sign in").
+
+**Files:** `mobile/src/App.tsx`, `mobile/src/lib/documentTitle.ts` (new),
+`mobile/src/lib/documentTitle.test.ts` (new),
+`mobile/src/screens/auth/AuthScreen.tsx`,
+`mobile/src/components/motion/FadeIn.tsx`,
+`mobile/src/components/motion/PressableScale.tsx`,
+`mobile/src/components/overlays/BottomSheet.tsx`,
+`mobile/src/components/primitives/Skeleton.tsx`,
+`mobile/src/screens/capturedPages/DraggablePageList.tsx`, and
+`mobile/src/screens/pieceScore/PieceScoreScreen.tsx`.
+
+The public web build put the literal title "undefined" in the browser tab,
+stretched the auth form across a desktop window, and did not explain that
+signup sends a confirmation email. The navigator now owns a stable InTempo
+document title, the auth content has a readable desktop measure, and signup
+sets the email-confirmation expectation before submission.
+
+A read-only signed-in production smoke at `idk-41z.pages.dev` exposed the
+shared failure behind several apparently unrelated glitches:
+`useNativeDriver: true` was used on web even though react-native-web has no
+native animation module. The live console warned on every session; Library
+rows could remain transparent while arriving, and a dismissed Add piece sheet
+remained in the accessibility tree after navigation. Every shared animation
+now uses the native driver on iOS/Android and the JavaScript driver on web.
+The score viewer also remounts its scroll shell when switching Notation /
+Original, so the new view begins at its heading instead of inheriting a deep
+scroll position from the previous view.
+
+**Three-foot test:** at 1033×958, Today, Library, Insights, Profile, an existing
+piece, Notation, Original, the Add piece sheet, and the manual-add form were
+readable with a clear primary action. The Library, sheet-dismissal, and
+Notation/Original defects above were reproduced before the fix. Preview
+re-check is required after deployment; camera, upload, microphone, destructive
+"Looks right", preference writes, and sign-out were deliberately not exercised
+against the owner's real account.
+
+**Verification:** read-only production navigation and console inspection
+completed. GitHub CI (mobile tests, typecheck, and web build) is the gate for
+this commit. No backend or database change.
+
+**Rollback:** revert this branch commit. The driver selection is platform-only;
+native behaviour is unchanged. The title/copy/layout changes are isolated to
+the auth shell.
+
+---
+
 ## 2026-08-28 — Migrations 011 and 012 applied to the live database
 
 **Branch:** `main`. No code change — this entry records a deployment-state
