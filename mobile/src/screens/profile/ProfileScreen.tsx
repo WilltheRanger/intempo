@@ -282,9 +282,13 @@ export function ProfileScreen() {
       <Card padded={false}>
         <View style={styles.rows}>
           <LinkRow
+            label="Download my data"
+            divided={false}
+            onPress={() => navigation.navigate('ExportData')}
+          />
+          <LinkRow
             label="Delete account"
             value="Permanent"
-            divided={false}
             onPress={() => navigation.navigate('DeleteAccount')}
           />
         </View>
