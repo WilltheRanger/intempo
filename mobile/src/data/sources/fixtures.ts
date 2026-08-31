@@ -526,6 +526,10 @@ export const fixtureTakeSource: TakeSource = {
   async getLatestTake() {
     return buildFixtureTake();
   },
+
+  async getRecentTakes(limit = 3) {
+    return limit > 0 ? [buildFixtureTake()] : [];
+  },
 };
 
 /** The sample take, built fresh so `recordedAt` is always recent. */
