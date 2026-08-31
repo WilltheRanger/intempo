@@ -288,6 +288,24 @@ export async function signOut(): Promise<void> {
 }
 
 /**
+ * Clears only this device's session after the server has deleted the identity.
+ *
+ * A normal sign-out asks the auth server to revoke a session. Once the user no
+ * longer exists that request may be rejected, leaving stale tokens on the
+ * device. Local scope removes them without asking a deleted account to answer.
+ */
+export async function forgetDeletedSession(): Promise<void> {
+  const supabase = getSupabaseClient();
+  if (!supabase) {
+    return;
+  }
+  const { error } = await supabase.auth.signOut({ scope: 'local' });
+  if (error) {
+    throw error;
+  }
+}
+
+/**
  * The signed-in address, from the session itself.
  *
  * **Not the same thing as `/v1/me`'s email, and the difference bites.**
