@@ -6,6 +6,28 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-30 — Today, OCR, bass recording, and Insights usability pass
+
+**Branch:** `feature/today-ocr-bass-insights`
+
+### Changed
+
+- Added a visible **New piece** action to the populated Today screen and made
+  the profile avatar large enough to balance the greeting.
+- Added camera framing guidance, corrected the captured-pages copy to state that
+  OCR currently reads page 1 only, and made the save/read/review sequence clear.
+- Exposed the active double-bass recording mode and practical microphone
+  guidance without changing detector thresholds that require real bass audio
+  for calibration.
+- Expanded Insights with session/piece/window totals, a next-practice focus,
+  and linked recent sessions while retaining the per-piece timing breakdown.
+
+### Verification
+
+- Existing bass regression coverage verifies the double-bass pipeline,
+  low-register open strings, and fast sixteenth-note onset separation.
+- Mobile typecheck, tests, and web build are run by pull-request CI.
+
 ## 2026-08-30 — Today gains a tempo ladder and recent practice
 
 **Branch:** `feature/tempo-ladder-recent-practice`. Today/home UI and data.
