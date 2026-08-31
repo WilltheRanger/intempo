@@ -278,6 +278,18 @@ export function ProfileScreen() {
         </View>
       </Card>
 
+      <SectionHeader label="Data & privacy" style={styles.section} />
+      <Card padded={false}>
+        <View style={styles.rows}>
+          <LinkRow
+            label="Delete account"
+            value="Permanent"
+            divided={false}
+            onPress={() => navigation.navigate('DeleteAccount')}
+          />
+        </View>
+      </Card>
+
       <SectionHeader label="About" style={styles.section} />
       <Card padded={false}>
         <View style={styles.rows}>

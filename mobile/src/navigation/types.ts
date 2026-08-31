@@ -52,6 +52,7 @@ export type RootStackParamList = {
   MeasureEdit: { pieceId: string; measureNumber: number };
   ChangeEmail: undefined;
   ChangePassword: undefined;
+  DeleteAccount: undefined;
   Acknowledgements: undefined;
   Record: { pieceId: string };
   /** The daily warmup. Reads the instrument from preferences, so no params. */
