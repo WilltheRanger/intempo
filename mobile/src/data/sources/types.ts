@@ -112,6 +112,8 @@ export interface TakeSource {
    * finished anything — the normal state of a new account, not an error.
    */
   getLatestTake(): Promise<TakeResult | null>;
+  /** Finished, readable takes, newest first. */
+  getRecentTakes(limit?: number): Promise<TakeResult[]>;
 }
 
 /**
