@@ -1,11 +1,12 @@
 import { useNavigation } from '@react-navigation/native';
 import { useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
 
 import { FadeIn } from '../../components/motion';
 import { AddPieceSheet } from '../../components/pieces/AddPieceSheet';
 import {
   Avatar,
+  Card,
   EmptyState,
   PageHeader,
   ScreenContainer,
@@ -33,6 +34,7 @@ import { PracticeCard } from './PracticeCard';
 import { TodayRow } from './TodayRow';
 
 const AVATAR_SIZE = 36;
+const WIDE_HOME_BREAKPOINT = 900;
 
 /**
  * Tappable box around the mark.
@@ -76,6 +78,8 @@ const AVATAR_INSET = (AVATAR_TARGET - AVATAR_SIZE) / 2;
  */
 export function TodayScreen() {
   const navigation = useNavigation<TabScreenNavigation<'Today'>>();
+  const { width: viewportWidth } = useWindowDimensions();
+  const isWide = viewportWidth >= WIDE_HOME_BREAKPOINT;
   const currentPiece = useCurrentPiece();
   const library = useLibrary();
   const insights = useInsights();
@@ -150,7 +154,7 @@ export function TodayScreen() {
 
   if (currentPiece.isPending) {
     return (
-      <ScreenContainer>
+      <ScreenContainer contentStyle={styles.page}>
         {header}
         <ContinueSkeleton />
       </ScreenContainer>
@@ -159,7 +163,7 @@ export function TodayScreen() {
 
   if (currentPiece.isError) {
     return (
-      <ScreenContainer onRefresh={refresh}>
+      <ScreenContainer onRefresh={refresh} contentStyle={styles.page}>
         {header}
         <EmptyState
           title="Couldn't load your pieces"
@@ -177,7 +181,7 @@ export function TodayScreen() {
   // duplicated, so all three routes in are offered from the first screen.
   if (!piece) {
     return (
-      <ScreenContainer onRefresh={refresh}>
+      <ScreenContainer onRefresh={refresh} contentStyle={styles.page}>
         {header}
         <EmptyState
           title="Nothing to practice yet"
@@ -195,10 +199,12 @@ export function TodayScreen() {
   }
 
   return (
-    <ScreenContainer onRefresh={refresh}>
+    <ScreenContainer onRefresh={refresh} contentStyle={styles.page}>
       {header}
 
-      <SectionHeader label="Continue practicing" />
+      <View style={[styles.dashboard, isWide && styles.dashboardWide]}>
+        <View style={styles.primaryColumn}>
+          <SectionHeader label="Continue practicing" />
       <PracticeCard
         piece={piece}
         workingBpm={practiceTempo.for(piece.id, piece.markedBpm)}
@@ -218,13 +224,23 @@ export function TodayScreen() {
       <FadeIn index={0}>
         <View style={styles.section}>
           <SectionHeader label="Warmup" />
-          <WarmupPanel
-            instrument={instrument}
-            onStart={() => navigation.navigate('Warmup')}
-          />
+          <Card>
+            <WarmupPanel
+              instrument={instrument}
+              onStart={() => navigation.navigate('Warmup')}
+            />
+          </Card>
         </View>
       </FadeIn>
 
+        </View>
+
+        <View
+          style={[
+            styles.secondaryColumn,
+            isWide ? styles.secondaryColumnWide : styles.secondaryColumnNarrow,
+          ]}
+        >
       {/*
         Label, lead, detail — the shape stays; the lead is sans now.
 
@@ -298,11 +314,39 @@ export function TodayScreen() {
           </View>
         </FadeIn>
       ) : null}
+        </View>
+      </View>
     </ScreenContainer>
   );
 }
 
 const styles = StyleSheet.create({
+  page: {
+    width: '100%',
+    maxWidth: 1180,
+    alignSelf: 'center',
+  },
+  dashboard: {
+    width: '100%',
+  },
+  dashboardWide: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing['3xl'],
+  },
+  primaryColumn: {
+    flex: 1,
+    minWidth: 0,
+  },
+  secondaryColumn: {
+    minWidth: 0,
+  },
+  secondaryColumnWide: {
+    width: 340,
+  },
+  secondaryColumnNarrow: {
+    marginTop: spacing['2xl'],
+  },
   avatar: {
     width: AVATAR_TARGET,
     height: AVATAR_TARGET,
