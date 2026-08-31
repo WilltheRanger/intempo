@@ -107,7 +107,8 @@ function neglectedFrom(
   return {
     pieceId: chosen.id,
     title: chosen.title,
-    detail: formatLastPracticed(chosen.lastPracticedAt) ?? 'Not practiced yet',
+    detail:
+      formatLastPracticed(chosen.lastPracticedAt) ?? 'Ready for a first session',
   };
 }
 
