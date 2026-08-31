@@ -6,6 +6,31 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-31 — Permanent in-app account deletion
+
+**Branch:** `codex/account-deletion`
+
+### Changed
+
+- Added an authenticated DELETE /v1/me endpoint that removes the Supabase auth
+  identity and relies on the schema's cascades for the profile, scores,
+  analyses, corrections, assignments, and sync history.
+- Inventories profile, score-page, and take-audio objects before deletion, then
+  removes them after the identity is gone so a provider failure cannot leave an
+  active account with missing files.
+- Refuses deletion for a studio owner instead of silently deleting shared
+  student data, and reports an actionable conflict.
+- Added an in-app deletion screen under Data & privacy with typed confirmation,
+  a second irreversible-action dialog, accurate consequences, error recovery,
+  local session removal, and account-cache clearing.
+
+### Verification
+
+- Added backend coverage for authentication, cascading identity deletion,
+  object-key recovery and de-duplication, owned-studio protection, identity
+  failure ordering, and storage cleanup failure.
+- Mobile typecheck, tests, web build, and backend pytest run in pull-request CI.
+
 ## 2026-08-31 — Recoverable signed-in account startup
 
 **Branch:** `codex/account-startup-recovery`
