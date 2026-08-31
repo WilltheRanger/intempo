@@ -6,6 +6,27 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-31 — Meter-aware practice pulse
+
+**Branch:** `fix/musical-meter-pulse`
+
+### Changed
+
+- Kept score playback and analysis on their existing quarter-note clock while
+  translating the practice metronome into the pulse implied by the meter.
+- Counted 6/8 in two dotted-quarter pulses, 9/8 in three, 12/8 in four, and
+  cut-time meters in half-note pulses instead of clicking quarter notes that
+  fight the musician's felt beat.
+- Made the one-bar count-in and long-rest re-entry countdown use that same
+  musical pulse. Irregular meters retain their written subdivision because the
+  score data does not yet carry beam grouping.
+
+### Verification
+
+- Added mobile unit coverage for simple, compound, cut-time, and irregular
+  meter pulse conversion, downbeat placement, and compound-meter re-entry
+  countdowns.
+- Mobile typecheck, tests, and web build run in pull-request CI.
 ## 2026-08-31 — Portable account data export
 
 **Branch:** `codex/account-data-export`
