@@ -6,6 +6,25 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-31 — Contextual education replaces the tempo ladder
+
+**Branch:** `feature/contextual-education-today`
+
+### Changed
+
+- Replaced the quiet Today section-label action with a compact filled
+  **New piece** button and plus icon.
+- Removed the tempo ladder from Today.
+- Added a contextual **Today's lesson** card that teaches a different timing
+  exercise for a first baseline, rushing, dragging, or an on-tempo result.
+- Connected the lesson directly to the current piece's practice flow.
+
+### Verification
+
+- Mobile typecheck, tests, and web build are run by pull-request CI.
+- The signed-in production dashboard was reviewed at desktop width before the
+  hierarchy change.
+
 ## 2026-08-30 — Today, OCR, bass recording, and Insights usability pass
 
 **Branch:** `feature/today-ocr-bass-insights`
