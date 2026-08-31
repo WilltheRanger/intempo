@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import {
+  Card,
   EmptyState,
   LoadingState,
   PageHeader,
@@ -33,7 +34,12 @@ import {
 } from '../../design';
 import { TempoStepper } from '../../components/practice/TempoStepper';
 import { impact, ImpactFeedbackStyle } from '../../lib/haptics';
-import { beatsPerBar, useMetronome } from '../../lib/metronome';
+import { beatsPerBar, monotonicNow, useMetronome } from '../../lib/metronome';
+import {
+  longRestCues,
+  restCueAt,
+  type RestCueState,
+} from '../../lib/practiceCues';
 import { shortenLongRests, skippableBars } from '../../lib/notation/longRests';
 import { describeTierLimit } from '../../lib/tierLimit';
 import type { RootNavigation, RootStackParamList } from '../../navigation/types';
@@ -55,14 +61,13 @@ const METRONOME_LABELS = {
  */
 const DEFAULT_ON_MODE: MetronomeMode = 'visual';
 
-type Phase = 'ready' | 'recording' | 'analysing';
+type Phase = 'ready' | 'counting_in' | 'recording' | 'analysing';
 
 /**
  * Recording a take.
  *
- * The two places the spec allows a number on screen are both here: the target
- * tempo, which the musician set and needs to see, and the elapsed timer, which
- * they are watching. Everywhere else words do the work.
+ * Numbers appear only where a musician has to act on them: target tempo,
+ * elapsed time, the count-in, and the final beats before a re-entry.
  *
  * Capture is real: `lib/audioRecorder` records mono 16-bit PCM into a WAV on
  * both platforms. Where the file goes afterwards is `takeSubmissionSource`'s
@@ -137,9 +142,9 @@ export function RecordScreen() {
     if (phase !== 'recording') {
       return;
     }
-    startedAt.current = Date.now() - elapsedMs;
+    startedAt.current = monotonicNow() - elapsedMs;
     const timer = setInterval(
-      () => setElapsedMs(Date.now() - startedAt.current),
+      () => setElapsedMs(monotonicNow() - startedAt.current),
       100,
     );
     return () => clearInterval(timer);
@@ -174,10 +179,19 @@ export function RecordScreen() {
       starting.current = false;
     }
 
-    // Only now: the timer has to agree with the file, and the file starts when
-    // the hardware does, not when the button was pressed.
+    // The recorder starts before the count-in. Its leading silence is intentional:
+    // alignment already ignores startup silence, while beginning the microphone
+    // afterwards would put an unpredictable hardware delay between "one" and
+    // the first playable downbeat.
     setElapsedMs(0);
-    setPhase('recording');
+    setPhase('counting_in');
+  }
+
+  function cancelCountIn() {
+    recorder.current?.cancel();
+    recorder.current = null;
+    setElapsedMs(0);
+    setPhase('ready');
   }
 
   async function stop() {
@@ -254,11 +268,13 @@ export function RecordScreen() {
   }
 
   const recording = phase === 'recording';
+  const countingIn = phase === 'counting_in';
+  const capturing = countingIn || recording;
 
-  // Runs for the length of the take and no longer. The accent follows the
-  // score's own time signature, so "one" lands where the musician is counting
-  // it rather than every four beats regardless.
+  // One written bar. When OCR cannot provide a usable meter, four quarter-note
+  // beats are the least surprising fallback and match the app's tempo unit.
   const perBar = beatsPerBar(piece?.score?.time_signature);
+  const countInBeats = perBar ?? 4;
   /**
    * Practise the notes without sitting through the rests.
    *
@@ -277,12 +293,39 @@ export function RecordScreen() {
     [piece?.score, skipRests],
   );
 
+  const restCues = useMemo(
+    () => longRestCues(heard, skipRests ? 1 : undefined),
+    [heard, skipRests],
+  );
+
+  // A count-in is always visible, even when the take's metronome is off. The
+  // user's chosen mode still controls whether it also clicks or vibrates.
+  const countInMode: MetronomeMode =
+    countingIn && metronomeMode === 'off' ? 'visual' : metronomeMode;
   const metronome = useMetronome({
-    mode: metronomeMode,
+    mode: countInMode,
     bpm: targetBpm,
     timeSignature: piece?.score?.time_signature,
-    running: recording,
+    running: capturing,
   });
+
+  useEffect(() => {
+    if (
+      !countingIn ||
+      metronome.beat === null ||
+      metronome.beat.index < countInBeats
+    ) {
+      return;
+    }
+    // Beat N is the downbeat after N count-in beats. Keeping the metronome
+    // running across this state change preserves phase exactly.
+    setElapsedMs(0);
+    setPhase('recording');
+  }, [countInBeats, countingIn, metronome.beat?.index]);
+
+  const activeRest = recording
+    ? restCueAt(restCues, elapsedMs, targetBpm)
+    : null;
 
   if (isPending) {
     return (
@@ -301,6 +344,55 @@ export function RecordScreen() {
           actionLabel="Back"
           onActionPress={() => navigation.goBack()}
         />
+      </ScreenContainer>
+    );
+  }
+
+  if (phase === 'counting_in') {
+    const remaining = Math.max(
+      1,
+      countInBeats - (metronome.beat?.index ?? 0),
+    );
+    return (
+      <ScreenContainer
+        scrollable={false}
+        contentStyle={styles.screen}
+        footer={
+          <RecordButton
+            active
+            countingIn
+            onPress={cancelCountIn}
+          />
+        }
+      >
+        <PageHeader
+          eyebrow={piece.composer}
+          title={piece.title}
+          onBack={cancelCountIn}
+          backLabel="Cancel count-in"
+        />
+
+        <View style={styles.countIn}>
+          <Text variant="sectionLabel" color="textSecondary">
+            {perBar === null ? 'Four-beat count-in' : 'One-bar count-in'}
+          </Text>
+          <Text
+            variant="heroTitle"
+            style={styles.countInNumber}
+            accessibilityLiveRegion="polite"
+          >
+            {remaining}
+          </Text>
+          <Text variant="body" color="textSecondary" style={styles.countInCopy}>
+            {perBar === null ? 'Start after the count' : 'Start on the next downbeat'}
+          </Text>
+          <BeatIndicator beat={metronome.beat} perBar={perBar} />
+          {metronome.silent ? (
+            <Text variant="metadataSmall" color="textTertiary" style={styles.note}>
+              Haptics are off. Follow the visual count.
+            </Text>
+          ) : null}
+        </View>
       </ScreenContainer>
     );
   }
@@ -354,7 +446,8 @@ export function RecordScreen() {
             />
           ) : null}
           <RecordButton
-            recording={recording}
+            active={recording}
+            countingIn={false}
             onPress={() => void (recording ? stop() : start())}
           />
         </View>
@@ -500,11 +593,45 @@ export function RecordScreen() {
           />
         </View>
 
-        <Text variant="screenTitle" style={styles.timer}>
-          {formatElapsed(elapsedMs)}
-        </Text>
+        {activeRest ? (
+          <RestCountdown state={activeRest} />
+        ) : (
+          <Text variant="screenTitle" style={styles.timer}>
+            {formatElapsed(elapsedMs)}
+          </Text>
+        )}
       </View>
     </ScreenContainer>
+  );
+}
+
+function RestCountdown({ state }: { state: RestCueState }) {
+  const finalBar = state.barsRemaining === 1;
+  const value = finalBar
+    ? state.beatsRemainingInBar
+    : state.barsRemaining;
+  const unit = finalBar
+    ? value === 1
+      ? 'beat to entry'
+      : 'beats to entry'
+    : 'bars to entry';
+
+  return (
+    <Card emphasis style={styles.restCue}>
+      <Text variant="sectionLabel" color="textSecondary">
+        Rest · come in at measure {state.cue.resumeMeasure}
+      </Text>
+      <Text
+        variant="heroTitle"
+        style={styles.restCueNumber}
+        accessibilityLiveRegion="polite"
+      >
+        {value}
+      </Text>
+      <Text variant="body" color="textSecondary">
+        {unit}
+      </Text>
+    </Card>
   );
 }
 
@@ -553,17 +680,24 @@ function formatElapsed(ms: number): string {
  * settle it either way. The label is part of the tap target, not a caption.
  */
 function RecordButton({
-  recording,
+  active,
+  countingIn,
   onPress,
 }: {
-  recording: boolean;
+  active: boolean;
+  countingIn: boolean;
   onPress: () => void;
 }) {
+  const label = countingIn
+    ? 'Cancel count-in'
+    : active
+      ? 'Stop recording'
+      : 'Start recording';
   return (
     <PressableScale
       onPress={onPress}
       accessibilityRole="button"
-      accessibilityLabel={recording ? 'Stop recording' : 'Start recording'}
+      accessibilityLabel={label}
       style={styles.control}
       // More give than the default: this is the one control a musician reaches
       // for without looking, and it has to answer the finger.
@@ -572,7 +706,7 @@ function RecordButton({
       {({ pressed }) => (
         <>
           <View style={[styles.record, pressed && styles.recordPressed]}>
-            {recording ? (
+            {active ? (
               <Square
                 size={ICON_SIZE.lg}
                 strokeWidth={ICON_STROKE_WIDTH}
@@ -587,9 +721,7 @@ function RecordButton({
               />
             )}
           </View>
-          <Text variant="metadata">
-            {recording ? 'Stop recording' : 'Start recording'}
-          </Text>
+          <Text variant="metadata">{label}</Text>
         </>
       )}
     </PressableScale>
@@ -622,6 +754,27 @@ const styles = StyleSheet.create({
   tempo: {
     alignItems: 'center',
     gap: spacing.md,
+  },
+  countIn: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  countInNumber: {
+    marginTop: spacing.xl,
+    fontVariant: ['tabular-nums'],
+  },
+  countInCopy: {
+    marginTop: spacing.sm,
+    marginBottom: spacing.xl,
+  },
+  restCue: {
+    width: '100%',
+    alignItems: 'center',
+  },
+  restCueNumber: {
+    marginTop: spacing.md,
+    fontVariant: ['tabular-nums'],
   },
   bassNote: {
     maxWidth: 320,
