@@ -1,4 +1,11 @@
-export { beatsPerBar, beatAt, secondsPerBeat, type Beat } from './beats';
+export {
+  beatsPerBar,
+  beatAt,
+  metronomePulse,
+  secondsPerBeat,
+  type Beat,
+  type MetronomePulse,
+} from './beats';
 export {
   monotonicNow,
   startBeatClock,
