@@ -209,6 +209,12 @@ export function ScannerScreen() {
           )}
         </ViewfinderPage>
 
+        {ready ? (
+          <Text variant="metadataSmall" color="onDarkMuted" style={styles.guide}>
+            Fill the frame · keep the page flat · avoid shadows
+          </Text>
+        ) : null}
+
         {error ? (
           <Text variant="metadataSmall" color="onDarkMuted" style={styles.error}>
             {error}
@@ -328,8 +334,13 @@ const styles = StyleSheet.create({
   unavailableText: {
     textAlign: 'center',
   },
-  error: {
+  guide: {
     marginTop: spacing.lg,
+    textAlign: 'center',
+    paddingHorizontal: spacing.xl,
+  },
+  error: {
+    marginTop: spacing.md,
     textAlign: 'center',
     paddingHorizontal: spacing.xl,
   },

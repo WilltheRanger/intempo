@@ -42,7 +42,7 @@ import { PracticeCard } from './PracticeCard';
 import { TempoLadder } from './TempoLadder';
 import { TodayRow } from './TodayRow';
 
-const AVATAR_SIZE = 36;
+const AVATAR_SIZE = 52;
 const WIDE_HOME_BREAKPOINT = 900;
 
 /**
@@ -54,7 +54,7 @@ const WIDE_HOME_BREAKPOINT = 900;
  * no effect under react-native-web, so the target couldn't be verified in the
  * one place this build can be driven. A real box behaves the same everywhere.
  */
-const AVATAR_TARGET = 48;
+const AVATAR_TARGET = 52;
 const AVATAR_INSET = (AVATAR_TARGET - AVATAR_SIZE) / 2;
 
 /**
@@ -202,7 +202,11 @@ export function TodayScreen() {
 
       <View style={[styles.dashboard, isWide && styles.dashboardWide]}>
         <View style={styles.primaryColumn}>
-          <SectionHeader label="Continue practicing" />
+          <SectionHeader
+            label="Continue practicing"
+            actionLabel="New piece"
+            onActionPress={() => setAddSheetVisible(true)}
+          />
           <PracticeCard
             piece={piece}
             workingBpm={workingBpm}
@@ -341,6 +345,12 @@ export function TodayScreen() {
           ) : null}
         </View>
       </View>
+
+      <AddPieceSheet
+        visible={addSheetVisible}
+        onClose={() => setAddSheetVisible(false)}
+        onSelect={handleSelectOption}
+      />
     </ScreenContainer>
   );
 }

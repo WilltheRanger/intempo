@@ -151,14 +151,15 @@ export function TranscriptionReviewScreen() {
   return (
     <ScreenContainer>
       <PageHeader
+        eyebrow="Step 2 of 3"
         title="Name this piece"
         onBack={() => navigation.goBack()}
         backLabel="Back to pages"
       />
 
       <Text variant="body" color="textSecondary" style={styles.lede}>
-        Saving adds the piece straight away. Reading the notation happens after
-        that, and you can watch it or leave it running.
+        Name the piece now. After you save it, InTempo reads page 1 and opens
+        the notation for you to check.
       </Text>
 
       <Input
@@ -238,7 +239,7 @@ export function TranscriptionReviewScreen() {
         is watched on the score screen this lands on.
       */}
       <PrimaryButton
-        label="Save piece"
+        label="Save and read page"
         onPress={() => void save()}
         loading={transcribe.isPending}
         disabled={transcribe.isPending}
