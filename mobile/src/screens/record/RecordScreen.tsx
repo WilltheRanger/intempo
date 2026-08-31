@@ -74,7 +74,7 @@ export function RecordScreen() {
   const navigation = useNavigation<RootNavigation>();
   const { params } = useRoute<RouteProp<RootStackParamList, 'Record'>>();
   const { data: piece, isPending } = usePiece(params.pieceId);
-  const { metronomeMode } = usePreferences();
+  const { instrument, metronomeMode } = usePreferences();
 
   // Read through the store so the piece's own marking seeds it and yesterday's
   // choice survives. Subscribing keeps this in step if the tempo is changed
@@ -381,6 +381,17 @@ export function RecordScreen() {
             disabled={recording}
           />
 
+          {instrument === 'double_bass' ? (
+            <Text
+              variant="metadataSmall"
+              color="textSecondary"
+              style={styles.bassNote}
+            >
+              Double-bass detection is on. Keep the microphone uncovered and
+              give bowed attacks a clear start.
+            </Text>
+          ) : null}
+
           {/*
             Locked with the tempo once recording starts: the mode is written
             onto the take, so changing it mid-way would mislabel what was
@@ -611,6 +622,10 @@ const styles = StyleSheet.create({
   tempo: {
     alignItems: 'center',
     gap: spacing.md,
+  },
+  bassNote: {
+    maxWidth: 320,
+    textAlign: 'center',
   },
   timer: {
     textAlign: 'center',

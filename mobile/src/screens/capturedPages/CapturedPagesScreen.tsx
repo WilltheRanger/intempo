@@ -117,7 +117,7 @@ export function CapturedPagesScreen() {
     <ScreenContainer
       footer={
         <PrimaryButton
-          label="Continue"
+          label="Continue with page 1"
           onPress={() => navigation.navigate('Transcribe')}
         />
       }
@@ -131,7 +131,9 @@ export function CapturedPagesScreen() {
       />
 
       <Text variant="metadataSmall" color="textTertiary" style={styles.hint}>
-        Drag to reorder — pages transcribe in this order.
+        {pages.length === 1
+          ? 'This is the page InTempo will read.'
+          : 'Only page 1 will be uploaded and read. Put the clearest page first.'}
       </Text>
 
       <DraggablePageList
