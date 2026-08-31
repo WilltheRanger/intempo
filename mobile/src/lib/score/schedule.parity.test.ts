@@ -80,7 +80,7 @@ describe('scheduleScore against the server timeline', () => {
         measure_number,
         slurs: [],
         notes: [
-          { pitch: 'C3', duration: 'quarter', tied_to_next: false },
+          { pitch: 'C3', duration: 'quarter' as const, tied_to_next: false },
         ],
       })),
     };
