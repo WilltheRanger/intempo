@@ -49,8 +49,8 @@ describe('musical pulse', () => {
   it.each([
     ['4/4', { quarterBeats: 1, pulsesPerBar: 4, unitLabel: 'quarter' }],
     ['2/2', { quarterBeats: 2, pulsesPerBar: 2, unitLabel: 'half' }],
-    ['6/8', { quarterBeats: 1.5, pulsesPerBar: 2, unitLabel: 'dotted eighth' }],
-    ['9/8', { quarterBeats: 1.5, pulsesPerBar: 3, unitLabel: 'dotted eighth' }],
+    ['6/8', { quarterBeats: 1.5, pulsesPerBar: 2, unitLabel: 'dotted quarter' }],
+    ['9/8', { quarterBeats: 1.5, pulsesPerBar: 3, unitLabel: 'dotted quarter' }],
     ['7/8', { quarterBeats: 0.5, pulsesPerBar: 7, unitLabel: 'eighth' }],
   ])('translates %s without changing the quarter-note clock', (signature, expected) => {
     expect(metronomePulse(signature)).toEqual(expected);
