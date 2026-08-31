@@ -22,6 +22,7 @@ import {
   hydratePracticeTempos,
   practiceTempo,
   tempoFor,
+  tempoLadderFor,
 } from './practiceTempo';
 
 /**
@@ -162,5 +163,40 @@ describe('hydrating from storage', () => {
     await vi.waitFor(() => expect(store.get(KEY)).toBeTruthy());
 
     expect(JSON.parse(store.get(KEY)!)).toEqual({ kept: 76 });
+  });
+});
+
+
+describe('tempoLadderFor', () => {
+  it('builds from the working tempo toward a higher marked tempo', () => {
+    expect(tempoLadderFor(80, 92)).toEqual([
+      { bpm: 80, label: 'Current', selected: true },
+      { bpm: 84, label: 'Next', selected: false },
+      { bpm: 92, label: 'Marked', selected: false },
+    ]);
+  });
+
+  it('uses the marked tempo as the top rung once it is close', () => {
+    expect(tempoLadderFor(88, 92)).toEqual([
+      { bpm: 84, label: 'Warm up', selected: false },
+      { bpm: 88, label: 'Current', selected: true },
+      { bpm: 92, label: 'Marked', selected: false },
+    ]);
+  });
+
+  it('builds up to the marked tempo when the musician has reached it', () => {
+    expect(tempoLadderFor(92, 92)).toEqual([
+      { bpm: 84, label: 'Warm up', selected: false },
+      { bpm: 88, label: 'Build', selected: false },
+      { bpm: 92, label: 'Marked', selected: true },
+    ]);
+  });
+
+  it('offers clearly suggested steps when the score has no marking', () => {
+    expect(tempoLadderFor(80, null)).toEqual([
+      { bpm: 80, label: 'Current', selected: true },
+      { bpm: 84, label: 'Next', selected: false },
+      { bpm: 88, label: 'Stretch', selected: false },
+    ]);
   });
 });
