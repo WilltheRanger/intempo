@@ -27,12 +27,10 @@ import parity from '../../../../fixtures/timeline/parity.json';
  * the server stops producing them. Whichever side drifts, its own suite goes
  * red.
  *
- * The fixture leaves out repeats and slurs on purpose. The two walks differ on
- * both, deliberately, and each side has its reason written down: the server
- * writes repeats out because the musician plays them twice, while playback
- * plays straight through; the server emits no onset under a bow stroke because
- * there is no attack, while playback sounds the note because you want to hear
- * it. Those are decisions. Everything in the fixture is arithmetic.
+ * The fixture leaves out slurs on purpose. The server emits no onset under a
+ * bow stroke because there is no attack, while playback still sounds the note
+ * because a reference has to be audible. Repeats are no longer an intentional
+ * difference: both walks now follow the performed order.
  */
 
 interface Fixture {
@@ -66,6 +64,35 @@ describe('scheduleScore against the server timeline', () => {
     const gaps = schedule.notes.slice(1).map((n, i) => n.startS - schedule.notes[i].startS);
 
     expect(Math.max(...gaps)).toBeGreaterThan(60 / fixture.bpm);
+  });
+
+  it('follows the same repeat order the backend grades', () => {
+    const repeated: ScoreJson = {
+      clef: 'bass',
+      time_signature: '4/4',
+      key_signature: null,
+      tempo_marking: null,
+      bpm_hint: 120,
+      ocr_confidence: 1,
+      notes_to_human: '',
+      repeats: [{ start_measure: 1, end_measure: 2, type: 'repeat' }],
+      measures: [1, 2, 3].map((measure_number) => ({
+        measure_number,
+        slurs: [],
+        notes: [
+          { pitch: 'C3', duration: 'quarter', tied_to_next: false },
+        ],
+      })),
+    };
+
+    const performed = scheduleScore(repeated, 120, { articulation: 1 });
+
+    expect(performed.notes.map((note) => note.measureNumber)).toEqual([
+      1, 2, 1, 2, 3,
+    ]);
+    expect(performed.notes.map((note) => note.startS)).toEqual([
+      0, 0.5, 1, 1.5, 2,
+    ]);
   });
 
   it('folds a real tie into one note and leaves a fake one alone', () => {
