@@ -6,6 +6,40 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-30 — Profile photos can be changed after onboarding
+
+**Branch:** `feature/profile-photo-edit`. Profile UI. **UI work approved by the owner.**
+
+**File:** `mobile/src/screens/profile/ProfileScreen.tsx`.
+
+The Profile avatar was a dead control: tapping it revealed "Changing your
+photo isn't available yet", although onboarding already shipped the complete
+signed-upload and profile-update path. Profile now uses that same path. A
+musician chooses and crops a square image, sees the local preview immediately,
+the image is normalised to a browser-safe format by Expo, uploaded through the
+existing signed URL, and only then saved to the account. The control is disabled
+while either request is in flight, the pending state is named, and upload/save
+errors remain beside the photo so a failed change does not look successful.
+
+**Three-foot design check:** the avatar remains secondary to the Profile
+heading and account details; the new one-line cue explains the control without
+adding another button or card. Phone and desktop preview re-check is required
+after Cloudflare deploy.
+
+**Verification:** the upload and PATCH hooks are the same production paths used
+by required onboarding. Mobile tests, typecheck and Expo web build are the gate
+for this branch. No backend, schema or storage-policy change.
+
+**Known limit:** if the object upload succeeds and the profile PATCH fails, the
+new object is orphaned. That is the existing upload-retention hole recorded in
+`CLAUDE.md`; this change does not delete unreferenced objects without the
+owner's retention decision.
+
+**Rollback:** revert this commit. Existing avatars and onboarding are
+wire-compatible.
+
+---
+
 ## 2026-08-30 — First-run polish and signed-in web reliability
 
 **Branch:** `fix/average-user-auth-shell-v2`. App shell and shared UI. **UI work approved by
