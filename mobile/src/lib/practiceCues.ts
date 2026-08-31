@@ -50,7 +50,7 @@ export interface RestCueState {
   cue: LongRestCue;
   /** Includes the silent bar currently being counted. */
   barsRemaining: number;
-  /** Beats left in the current silent bar. */
+  /** Felt pulses left in the current silent bar. */
   beatsRemainingInBar: number;
 }
 
@@ -113,6 +113,7 @@ export function restCueAt(
   cues: LongRestCue[],
   elapsedMs: number,
   bpm: number,
+  quarterBeatsPerPulse = 1,
 ): RestCueState | null {
   const elapsedBeats = Math.max(0, elapsedMs) / 1000 / secondsPerBeat(bpm);
   const cue = cues.find(
@@ -130,9 +131,13 @@ export function restCueAt(
 
   // Subtract a hair before ceil so an exact beat boundary reads 3, not 4
   // because of floating-point residue from the timer.
+  const pulseSize =
+    Number.isFinite(quarterBeatsPerPulse) && quarterBeatsPerPulse > 0
+      ? quarterBeatsPerPulse
+      : 1;
   const beatsRemainingInBar = Math.max(
     1,
-    Math.ceil(cue.barEndBeats[barIndex] - elapsedBeats - 1e-9),
+    Math.ceil((cue.barEndBeats[barIndex] - elapsedBeats) / pulseSize - 1e-9),
   );
 
   return {

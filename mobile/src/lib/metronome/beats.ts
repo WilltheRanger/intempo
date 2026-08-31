@@ -1,36 +1,48 @@
 /**
- * Where the bar lines fall.
+ * The pulse a musician feels in a bar.
  *
- * The only thing a metronome needs from a score beyond the tempo: which beats
- * are downbeats, so the accent lands where the musician is counting "one".
- *
- * Pure, and separate from anything that ticks, because getting this wrong is
- * silent — an accent on the wrong beat still sounds like a metronome, just one
- * that quietly fights the player.
+ * Score durations and analysis stay on a quarter-note clock. This translates
+ * that clock into the note value a metronome should actually click, so 6/8 is
+ * two dotted-quarter pulses instead of three quarter-note clicks.
  */
 
-/**
- * A beat is a quarter note, everywhere in this app.
- *
- * `scheduleScore` scales its beat counts by 60/bpm with `quarter: 1`, so a
- * tempo of 80 means eighty quarter notes a minute. The metronome has to count
- * in the same unit or the clicks and the reference playback would disagree
- * about what the number on screen means.
- */
 const QUARTERS_PER_WHOLE = 4;
-
 const TIME_SIGNATURE = /^(\d{1,2})\s*\/\s*(\d{1,2})$/;
 
+export interface MetronomePulse {
+  /** Duration of one felt pulse on the app's quarter-note score clock. */
+  quarterBeats: number;
+  /** Felt pulses in one complete bar. */
+  pulsesPerBar: number;
+  /** Plain-language note value, for future tempo labels. */
+  unitLabel: string;
+}
+
+function noteName(denominator: number): string {
+  const names: Record<number, string> = {
+    1: 'whole',
+    2: 'half',
+    4: 'quarter',
+    8: 'eighth',
+    16: 'sixteenth',
+    32: 'thirty-second',
+    64: 'sixty-fourth',
+  };
+  return names[denominator] ?? `${denominator}th-note`;
+}
+
 /**
- * Quarter-note beats in one bar, or null when there's no sensible accent.
+ * How this meter should be counted, without changing what stored BPM means.
  *
- * Null is a real answer, not a failure: OCR is allowed to return the literal
- * string `"unknown"` for an illegible header, and 9/8 comes to four and a half
- * quarters, which would put "one" halfway through a click. In both cases every
- * beat is struck the same, which is a metronome that is merely plain rather
- * than one that is wrong.
+ * Compound meters divide into groups of three: 6/8 is two dotted quarters,
+ * 9/8 is three, and 12/8 is four. Simple and irregular meters use the written
+ * denominator. For an irregular meter such as 7/8 the source score does not
+ * carry beam grouping, so seven eighth-note pulses are honest; inventing 2+2+3
+ * would put an accent somewhere the page never specified.
  */
-export function beatsPerBar(timeSignature: string | null | undefined): number | null {
+export function metronomePulse(
+  timeSignature: string | null | undefined,
+): MetronomePulse | null {
   if (!timeSignature) {
     return null;
   }
@@ -38,18 +50,33 @@ export function beatsPerBar(timeSignature: string | null | undefined): number | 
   if (!match) {
     return null;
   }
-  const [, top, bottom] = match;
-  const numerator = Number(top);
-  const denominator = Number(bottom);
+  const numerator = Number(match[1]);
+  const denominator = Number(match[2]);
   if (numerator <= 0 || denominator <= 0) {
     return null;
   }
 
-  const quarters = (numerator * QUARTERS_PER_WHOLE) / denominator;
-  // A bar that isn't a whole number of quarter notes has no beat to accent.
-  return Number.isInteger(quarters) && quarters > 0 ? quarters : null;
+  const writtenUnit = QUARTERS_PER_WHOLE / denominator;
+  const compound = numerator > 3 && numerator % 3 === 0;
+  const quarterBeats = writtenUnit * (compound ? 3 : 1);
+  const pulsesPerBar = compound ? numerator / 3 : numerator;
+  if (!Number.isFinite(quarterBeats) || quarterBeats <= 0 || pulsesPerBar <= 0) {
+    return null;
+  }
+
+  return {
+    quarterBeats,
+    pulsesPerBar,
+    unitLabel: compound
+      ? `dotted ${noteName(denominator / 2)}`
+      : noteName(denominator),
+  };
 }
 
+/** Felt pulses in one bar, or null when the meter is unusable. */
+export function beatsPerBar(timeSignature: string | null | undefined): number | null {
+  return metronomePulse(timeSignature)?.pulsesPerBar ?? null;
+}
 /**
  * Seconds between beats. Guarded so a nonsense tempo cannot break the clock.
  *
