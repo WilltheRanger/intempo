@@ -44,6 +44,7 @@ import { shortenLongRests, skippableBars } from '../../lib/notation/longRests';
 import { describeTierLimit } from '../../lib/tierLimit';
 import type { RootNavigation, RootStackParamList } from '../../navigation/types';
 import { BeatIndicator } from './BeatIndicator';
+import { PracticeSetup } from './PracticeSetup';
 import { ListenButton } from '../../components/score/ListenButton';
 
 const METRONOME_LABELS = {
@@ -79,7 +80,7 @@ export function RecordScreen() {
   const navigation = useNavigation<RootNavigation>();
   const { params } = useRoute<RouteProp<RootStackParamList, 'Record'>>();
   const { data: piece, isPending } = usePiece(params.pieceId);
-  const { instrument, metronomeMode } = usePreferences();
+  const { instrument, metronomeMode, practiceSetupSeen } = usePreferences();
 
   // Read through the store so the piece's own marking seeds it and yesterday's
   // choice survives. Subscribing keeps this in step if the tempo is changed
@@ -87,6 +88,9 @@ export function RecordScreen() {
   usePracticeTempos();
   const targetBpm = practiceTempo.for(params.pieceId, piece?.markedBpm ?? null);
   const [phase, setPhase] = useState<Phase>('ready');
+  // The first recording on this device gets a short orientation before the
+  // system permission prompt. It can always be reopened from the ready screen.
+  const [showSetup, setShowSetup] = useState(!practiceSetupSeen);
   const [elapsedMs, setElapsedMs] = useState(0);
   const [problem, setProblem] = useState<string | null>(null);
   const [truncated, setTruncated] = useState(false);
@@ -348,6 +352,26 @@ export function RecordScreen() {
     );
   }
 
+  if (showSetup) {
+    return (
+      <PracticeSetup
+        title={piece.title}
+        composer={piece.composer}
+        onBack={() => {
+          if (practiceSetupSeen) {
+            setShowSetup(false);
+          } else {
+            navigation.goBack();
+          }
+        }}
+        onContinue={() => {
+          preferences.setPracticeSetupSeen(true);
+          setShowSetup(false);
+        }}
+      />
+    );
+  }
+
   if (phase === 'counting_in') {
     const remaining = Math.max(
       1,
@@ -591,6 +615,22 @@ export function RecordScreen() {
             // lands in the microphone as phantom onsets (§4).
             disabled={recording}
           />
+
+          {!recording ? (
+            <Pressable
+              onPress={() => setShowSetup(true)}
+              accessibilityRole="button"
+              accessibilityLabel="Open recording tips"
+              style={({ pressed }) => [
+                styles.metronome,
+                pressed && styles.metronomePressed,
+              ]}
+            >
+              <Text variant="metadataSmall" color="textPrimary">
+                Recording tips
+              </Text>
+            </Pressable>
+          ) : null}
         </View>
 
         {activeRest ? (
