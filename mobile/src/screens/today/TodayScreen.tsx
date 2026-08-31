@@ -10,6 +10,7 @@ import {
   EmptyState,
   PageHeader,
   ScreenContainer,
+  SecondaryButton,
   SectionHeader,
   Text,
 } from '../../components/primitives';
@@ -24,7 +25,6 @@ import type { Piece } from '../../data/types';
 import { describeLoadError } from '../../data/api/describeError';
 import { spacing } from '../../design';
 import { getGreeting } from '../../lib/greeting';
-import { factFor } from '../../lib/facts';
 import { formatTendency } from '../../lib/tempo';
 import { motion } from '../../design';
 import { suggestionsFor } from '../../lib/today';
@@ -49,32 +49,14 @@ const AVATAR_TARGET = 48;
 const AVATAR_INSET = (AVATAR_TARGET - AVATAR_SIZE) / 2;
 
 /**
- * Today: the piece to pick back up, then a few reasons to look elsewhere.
+ * Today is a practice dashboard, not a miniature library.
  *
- * **The card is a card again**, and it is the only one on the screen. A piece,
- * its tempo and the action that starts it are one object and earn the box
- * (§3 law 3); what follows are separate suggestions, so they get rules instead.
- *
- * The order is deliberate: the two things to play first — the piece you are on
- * and the warmup — then the fact, then the two blocks you read rather than act
- * on. The last two are doors to other screens, so they belong at the foot of
- * this one.
- *
- * **What is not here is the library preview.** Three rows of the Library tab
- * once sat at the bottom of this screen, which made its lower two-thirds a
- * copy of a destination one tap away. The rows below are not that: each names
- * a piece *and the reason it is being raised*. A row without a reason would be
- * a list, and a list belongs in the Library.
- *
- * **Nor is there a "Last take" section any more.** `getCurrentPiece` resolves
- * through the newest analysis, so the piece being continued and the piece last
- * recorded are the same piece by construction — the section was a second copy
- * of the card. Its one piece of information, the pipeline's verdict sentence,
- * moved onto the card where it belongs.
- *
- * Every block hides itself when its data is absent, so a new account with one
- * piece and no analyses sees a card and nothing else — which is the truth
- * about a new account rather than a screen full of empty furniture.
+ * The first column gets someone playing: resume the current piece, then warm
+ * up. The supporting column answers the next three useful questions: what
+ * should this take accomplish, what else needs attention, and what pattern is
+ * showing up across recent sessions. Every block is either an action or an
+ * explanation of real practice data; decorative trivia does not compete with
+ * the session a musician came here to start.
  */
 export function TodayScreen() {
   const navigation = useNavigation<TabScreenNavigation<'Today'>>();
@@ -129,7 +111,6 @@ export function TodayScreen() {
   }
 
   const take = latestTake.data ?? null;
-  const fact = factFor();
 
   const { attention, neglected } = suggestionsFor({
     pieces: library.data ?? [],
@@ -198,6 +179,12 @@ export function TodayScreen() {
     );
   }
 
+  const workingBpm = practiceTempo.for(piece.id, piece.markedBpm);
+  const hasCurrentTake = take?.pieceId === piece.id;
+  const summaryDetail = summary
+    ? `Across ${summary.sessions === 1 ? '1 session' : `${summary.sessions} sessions`} in the last ${summary.windowDays} days`
+    : '';
+
   return (
     <ScreenContainer onRefresh={refresh} contentStyle={styles.page}>
       {header}
@@ -205,34 +192,27 @@ export function TodayScreen() {
       <View style={[styles.dashboard, isWide && styles.dashboardWide]}>
         <View style={styles.primaryColumn}>
           <SectionHeader label="Continue practicing" />
-      <PracticeCard
-        piece={piece}
-        workingBpm={practiceTempo.for(piece.id, piece.markedBpm)}
-        // Only when it is genuinely this piece's take. Against the API it
-        // always is; a fixture or a deleted score could disagree, and a
-        // verdict about a different piece on this card would be a lie.
-        lastTakeHeadline={take && take.pieceId === piece.id ? take.headline : null}
-        onContinue={() => openPractice(piece)}
-      />
+          <PracticeCard
+            piece={piece}
+            workingBpm={workingBpm}
+            // Only when it is genuinely this piece's take. Against the API it
+            // always is; a fixture or a deleted score could disagree, and a
+            // verdict about a different piece on this card would be a lie.
+            lastTakeHeadline={hasCurrentTake ? take.headline : null}
+            onContinue={() => openPractice(piece)}
+          />
 
-      {/*
-        Straight after the piece you are working. Both are things to play, so
-        they belong together — the fact below them is the only block on the
-        screen that asks nothing of you, and it reads better once the playing
-        is done.
-      */}
-      <FadeIn index={0}>
-        <View style={styles.section}>
-          <SectionHeader label="Warmup" />
-          <Card>
-            <WarmupPanel
-              instrument={instrument}
-              onStart={() => navigation.navigate('Warmup')}
-            />
-          </Card>
-        </View>
-      </FadeIn>
-
+          <FadeIn index={0}>
+            <View style={styles.section}>
+              <SectionHeader label="Warmup" />
+              <Card>
+                <WarmupPanel
+                  instrument={instrument}
+                  onStart={() => navigation.navigate('Warmup')}
+                />
+              </Card>
+            </View>
+          </FadeIn>
         </View>
 
         <View
@@ -241,79 +221,74 @@ export function TodayScreen() {
             isWide ? styles.secondaryColumnWide : styles.secondaryColumnNarrow,
           ]}
         >
-      {/*
-        Label, lead, detail — the shape stays; the lead is sans now.
+          <FadeIn index={1}>
+            <View>
+              <SectionHeader label="Practice focus" />
+              <Card>
+                <Text variant="pieceTitle">
+                  {hasCurrentTake
+                    ? 'Make the next take comparable'
+                    : 'Set your first benchmark'}
+                </Text>
+                <Text
+                  variant="body"
+                  color="textSecondary"
+                  style={styles.focusText}
+                >
+                  {hasCurrentTake
+                    ? `Stay at ${workingBpm} BPM and record one more honest run. Comparing two takes shows whether the change held.`
+                    : `Record one honest run of ${piece.title}. InTempo will map where your tempo holds and where it drifts.`}
+                </Text>
+                <SecondaryButton
+                  label={hasCurrentTake ? 'Record another take' : 'Record first take'}
+                  onPress={() => openPractice(piece)}
+                  style={styles.focusAction}
+                />
+              </Card>
+            </View>
+          </FadeIn>
 
-        On this screen `pieceTitle` renders five times and three of them name
-        something you can play: the warmup above and the two suggestions below.
-        A serif lead put the fact in the repertoire's voice while sitting in
-        the middle of that run — and five of the twenty-four leads in
-        `facts.ts` are outright names of things ("The Chaconne", "Il Cannone",
-        "The wolf tone"), so on those days the block was indistinguishable from
-        a suggestion row.
+          {attention || neglected ? (
+            <FadeIn index={2}>
+              <View style={styles.section}>
+                <SectionHeader label="Repertoire queue" />
+                {attention ? (
+                  <TodayRow
+                    title={attention.title}
+                    detail={attention.detail}
+                    onPress={() =>
+                      navigation.navigate('PieceDetail', { pieceId: attention.pieceId })
+                    }
+                    last={!neglected}
+                  />
+                ) : null}
+                {neglected ? (
+                  <TodayRow
+                    title={neglected.title}
+                    detail={neglected.detail}
+                    onPress={() =>
+                      navigation.navigate('PieceDetail', { pieceId: neglected.pieceId })
+                    }
+                    last
+                  />
+                ) : null}
+              </View>
+            </FadeIn>
+          ) : null}
 
-        Nothing here is misaligned; the geometry was checked and is exact. It
-        is the *meaning* of a style that was wrong, which is why it read as off
-        without being locatable. The block is a footnote by its own docstring,
-        and sans is it saying so (§3 law 4).
-      */}
-      <FadeIn index={1}>
-        <View>
-          <SectionHeader label="Did you know" />
-          <Text variant="body">{fact.lead}</Text>
-          <Text
-            variant="metadataSmall"
-            color="textSecondary"
-            style={styles.factText}
-          >
-            {fact.text}
-          </Text>
-        </View>
-      </FadeIn>
-
-      {attention || neglected ? (
-        <FadeIn index={2}>
-          <View style={styles.section}>
-            <SectionHeader label="Also worth a look" />
-            {attention ? (
-              <TodayRow
-                title={attention.title}
-                detail={attention.detail}
-                onPress={() =>
-                  navigation.navigate('PieceDetail', { pieceId: attention.pieceId })
-                }
-                last={!neglected}
-              />
-            ) : null}
-            {neglected ? (
-              <TodayRow
-                title={neglected.title}
-                detail={neglected.detail}
-                onPress={() =>
-                  navigation.navigate('PieceDetail', { pieceId: neglected.pieceId })
-                }
-                last
-              />
-            ) : null}
-          </View>
-        </FadeIn>
-      ) : null}
-
-      {summary ? (
-        <FadeIn index={3}>
-          <View style={styles.section}>
-            <SectionHeader label={`Last ${summary.windowDays} days`} />
-            <TodayRow
-              title={formatTendency(summary.verdict)}
-              detail={
-                summary.sessions === 1 ? '1 session' : `${summary.sessions} sessions`
-              }
-              onPress={() => navigation.navigate('Insights')}
-              last
-            />
-          </View>
-        </FadeIn>
-      ) : null}
+          {summary ? (
+            <FadeIn index={3}>
+              <View style={styles.section}>
+                <SectionHeader label="Practice snapshot" />
+                <TodayRow
+                  title={formatTendency(summary.verdict)}
+                  detail={summaryDetail}
+                  onPress={() => navigation.navigate('Insights')}
+                  last
+                />
+              </View>
+            </FadeIn>
+          ) : null}
         </View>
       </View>
     </ScreenContainer>
@@ -361,8 +336,11 @@ const styles = StyleSheet.create({
   pressed: {
     opacity: 0.6,
   },
-  factText: {
-    marginTop: 2,
+  focusText: {
+    marginTop: spacing.sm,
+  },
+  focusAction: {
+    marginTop: spacing.lg,
   },
   section: {
     // One step tighter than it was. At 32pt the blocks read as separate pages
