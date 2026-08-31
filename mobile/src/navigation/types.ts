@@ -53,6 +53,7 @@ export type RootStackParamList = {
   ChangeEmail: undefined;
   ChangePassword: undefined;
   DeleteAccount: undefined;
+  ExportData: undefined;
   Acknowledgements: undefined;
   Record: { pieceId: string };
   /** The daily warmup. Reads the instrument from preferences, so no params. */
