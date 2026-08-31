@@ -28,6 +28,13 @@ export interface Preferences {
    * who has already asked for it.
    */
   reduceMotion: boolean;
+  /**
+   * Whether this device has shown the first-take microphone and count-in guide.
+   *
+   * Device-local because microphone placement and permission belong to the
+   * hardware, not to a score or an account.
+   */
+  practiceSetupSeen: boolean;
 }
 
 const DEFAULTS: Preferences = {
@@ -35,6 +42,7 @@ const DEFAULTS: Preferences = {
   metronomeMode: 'off',
   haptics: true,
   reduceMotion: false,
+  practiceSetupSeen: false,
 };
 
 const STORAGE_KEY = 'intempo.preferences.v1';
@@ -100,6 +108,10 @@ export async function hydratePreferences(): Promise<void> {
         typeof saved.reduceMotion === 'boolean'
           ? saved.reduceMotion
           : DEFAULTS.reduceMotion,
+      practiceSetupSeen:
+        typeof saved.practiceSetupSeen === 'boolean'
+          ? saved.practiceSetupSeen
+          : DEFAULTS.practiceSetupSeen,
     };
     listeners.forEach((listener) => listener());
   } catch {
@@ -149,5 +161,9 @@ export const preferences = {
 
   setReduceMotion(reduceMotion: boolean): void {
     commit({ ...current, reduceMotion });
+  },
+
+  setPracticeSetupSeen(practiceSetupSeen: boolean): void {
+    commit({ ...current, practiceSetupSeen });
   },
 };
