@@ -258,7 +258,7 @@ export function TodayScreen() {
         and sans is it saying so (§3 law 4).
       */}
       <FadeIn index={1}>
-        <View style={styles.section}>
+        <View>
           <SectionHeader label="Did you know" />
           <Text variant="body">{fact.lead}</Text>
           <Text
