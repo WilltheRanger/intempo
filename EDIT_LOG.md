@@ -6,6 +6,23 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-31 — Recoverable signed-in account startup
+
+**Branch:** `codex/account-startup-recovery`
+
+### Changed
+
+- Held the signed-in app until the account profile is actually restored, so one
+  failed request no longer opens four tabs that each look independently broken.
+- Added a clear startup state for a waking service and an actionable failure
+  state with Try again and Back to sign in.
+- Prevented an unavailable profile from silently bypassing required onboarding.
+- Cleared account-scoped cached data when returning to sign in from recovery.
+
+### Verification
+
+- Mobile typecheck, tests, and web build run in pull-request CI.
+
 ## 2026-08-31 — Repeat-aware playback and practice cues
 
 **Branch:** `codex/repeat-play-order`
