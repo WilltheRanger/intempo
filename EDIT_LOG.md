@@ -6,6 +6,44 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-30 — Today content becomes a set of practice decisions
+
+**Branch:** `design/home-actionable-content`. Today/home UI and copy.
+**UI, copy and layout changes were approved by the owner.**
+
+**Files:** `mobile/src/screens/today/TodayScreen.tsx`,
+`mobile/src/lib/today.ts`.
+
+The responsive shell exposed a deeper content problem: below the current-piece
+card, the screen offered unrelated trivia, a vague “Also worth a look” label,
+and a generic date window. Those blocks filled space without helping a musician
+choose or understand the next action.
+
+The trivia block is removed. A new Practice focus card explains why to record
+the next take: a new musician is invited to establish a first benchmark, while
+someone with a prior take is asked to keep the tempo fixed and make the next
+take comparable. Suggested pieces now form a Repertoire queue and retain a
+specific reason for appearing; a never-practiced piece says it is ready for a
+first session instead of reporting an absence. Aggregate analysis is presented
+as a Practice snapshot with both session count and time window.
+
+No streaks, goals, minutes or other data are invented. Every claim comes from
+the existing current-piece, take, library or insights data, and every action
+uses an existing navigation path.
+
+**Three-foot test:** the primary practice card remains dominant. The supporting
+rail now reads as a short sequence—focus, queue, snapshot—instead of unrelated
+editorial fragments. On phones the same content follows the playing blocks in
+one column. Production visual re-check is required after Cloudflare deploys.
+
+**Verification:** mobile tests, TypeScript and the Expo web build are the merge
+gates. Backend and legacy frontend checks remain required repository gates.
+
+**Rollback:** revert this change; the responsive dashboard remains intact and
+the previous trivia and suggestion copy return.
+
+---
+
 ## 2026-08-30 — Today becomes a responsive practice dashboard
 
 **Branch:** `design/home-practice-dashboard`. Today/home UI. **UI, copy and layout changes were
