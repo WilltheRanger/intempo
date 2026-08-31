@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   Animated,
   Modal,
+  Platform,
   Pressable,
   StyleSheet,
   View,
@@ -49,7 +50,7 @@ export function BottomSheet({
       Animated.timing(progress, {
         toValue: 1,
         duration: reduceMotion ? 0 : motion.base,
-        useNativeDriver: true,
+        useNativeDriver: Platform.OS !== 'web',
       }).start();
       return;
     }
@@ -57,7 +58,7 @@ export function BottomSheet({
     Animated.timing(progress, {
       toValue: 0,
       duration: reduceMotion ? 0 : motion.fast,
-      useNativeDriver: true,
+      useNativeDriver: Platform.OS !== 'web',
     }).start(({ finished }) => {
       if (finished) {
         setMounted(false);
