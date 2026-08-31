@@ -37,7 +37,7 @@ const COPY: Record<AuthMode, { lede: string; submit: string }> = {
     submit: 'Sign in',
   },
   signUp: {
-    lede: 'Create an account to start building a library.',
+    lede: 'Create an account to start building a library. We’ll email you a confirmation link.',
     submit: 'Create account',
   },
   reset: {
