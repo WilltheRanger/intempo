@@ -6,6 +6,43 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-30 — Today becomes a responsive practice dashboard
+
+**Branch:** `design/home-practice-dashboard`. Today/home UI. **UI, copy and layout changes were
+approved by the owner.**
+
+**File:** `mobile/src/screens/today/TodayScreen.tsx`.
+
+At 1033×958 the live home screen had no desktop composition: every block
+stretched across the viewport, the warmup's compact Start button sat almost a
+thousand pixels from its title and notation, and the fact and suggestion rows
+floated in large unused ivory areas. The underlying content was useful; the
+page had no grid to explain its hierarchy.
+
+Today now has a centred 1180-point reading measure. At 900 points and above it
+becomes a two-column practice dashboard: the current piece and warmup form the
+wide playing column; the daily fact, suggested repertoire and recent tendency
+form a 340-point supporting rail. Below the breakpoint the same groups stack in
+their existing mobile order. The warmup is placed on a bounded Card surface so
+its title, notation, tempo and Start action read as one object instead of an
+action floating at the far edge of the window.
+
+**Three-foot test:** the pre-change signed-in production screen was reviewed at
+1033×958. From three feet the current piece was the only coherent object; the
+warmup action and lower sections did not visually belong to their text. The new
+grid keeps one dominant left column and one visibly quieter right rail, with
+both column headings aligned at the same starting line. Phone behaviour is a
+single reading column with no reordered controls. Deployed visual re-check is
+required after Cloudflare builds the branch.
+
+**Verification:** no data flow, navigation target or copy meaning changed.
+Mobile tests, TypeScript and the Expo web build are the merge gates.
+
+**Rollback:** revert this commit; the previous single-column Today remains
+wire-compatible.
+
+---
+
 ## 2026-08-30 — Profile photos can be changed after onboarding
 
 **Branch:** `feature/profile-photo-edit`. Profile UI. **UI work approved by the owner.**
