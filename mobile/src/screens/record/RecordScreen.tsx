@@ -374,7 +374,7 @@ export function RecordScreen() {
 
         <View style={styles.countIn}>
           <Text variant="sectionLabel" color="textSecondary">
-            One-bar count-in
+            {perBar === null ? 'Four-beat count-in' : 'One-bar count-in'}
           </Text>
           <Text
             variant="heroTitle"
@@ -384,7 +384,7 @@ export function RecordScreen() {
             {remaining}
           </Text>
           <Text variant="body" color="textSecondary" style={styles.countInCopy}>
-            Start on the next downbeat
+            {perBar === null ? 'Start after the count' : 'Start on the next downbeat'}
           </Text>
           <BeatIndicator beat={metronome.beat} perBar={perBar} />
           {metronome.silent ? (
