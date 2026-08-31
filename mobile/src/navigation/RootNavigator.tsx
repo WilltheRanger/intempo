@@ -7,6 +7,7 @@ import { useMe } from '../data/hooks/useMe';
 import { colors } from '../design';
 import { shouldOnboard } from '../lib/onboarding';
 import { AcknowledgementsScreen } from '../screens/account/AcknowledgementsScreen';
+import { AccountStartupScreen } from '../screens/account/AccountStartupScreen';
 import { ChangeEmailScreen } from '../screens/account/ChangeEmailScreen';
 import { ChangePasswordScreen } from '../screens/account/ChangePasswordScreen';
 import { AddPieceScreen } from '../screens/addPiece/AddPieceScreen';
@@ -91,15 +92,38 @@ export function RootNavigator() {
  * one would put this screen's concern into every other caller.
  */
 function SignedInApp() {
-  const { data: me } = useMe();
+  const {
+    data: me,
+    isPending,
+    isError,
+    error,
+    isFetching,
+    refetch,
+  } = useMe();
 
-  // Held in front of the app the way sign-in and the password reset are, and
-  // for the same reason: there is nothing behind it to go back to. It is not a
-  // pushed route, so it needs no `reset` on the way out — saving flips
-  // `onboarded` and this falls away.
-  //
-  // Only a definite `false` gates. While `/v1/me` is in flight the app opens;
-  // see `shouldOnboard` for why that direction and not the other.
+  // Restore the account before mounting any tab. A failed /v1/me used to open
+  // the app anyway, so Today, Library, Insights and Profile each rendered a
+  // different error for the same unavailable account. It also bypassed
+  // onboarding because "unknown" was treated as "already done".
+  if (isPending) {
+    return <AccountStartupScreen />;
+  }
+
+  if (isError || !me) {
+    return (
+      <AccountStartupScreen
+        error={error ?? new Error('The server returned no account profile.')}
+        retrying={isFetching}
+        onRetry={() => {
+          void refetch();
+        }}
+      />
+    );
+  }
+
+  // Held in front of the app the way sign-in and password recovery are. Saving
+  // invalidates `me`; the refetched profile carries `onboarded_at`, and this
+  // gate falls away without a navigation reset.
   if (shouldOnboard(me)) {
     return <OnboardingScreen />;
   }
