@@ -198,7 +198,7 @@ export function TodayScreen() {
             // Only when it is genuinely this piece's take. Against the API it
             // always is; a fixture or a deleted score could disagree, and a
             // verdict about a different piece on this card would be a lie.
-            lastTakeHeadline={hasCurrentTake ? take.headline : null}
+            lastTakeHeadline={hasCurrentTake && take ? take.headline : null}
             onContinue={() => openPractice(piece)}
           />
 
