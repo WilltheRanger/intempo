@@ -1,5 +1,6 @@
 import type { ScoreJson, ScoreMeasure } from '../data/types';
 import { secondsPerBeat } from './metronome/beats';
+import { measuresInPlayOrder } from './score/playOrder';
 import { BEATS } from './score/schedule';
 
 /**
@@ -67,7 +68,7 @@ export function longRestCues(
     return [];
   }
 
-  const measures = score.measures ?? [];
+  const measures = measuresInPlayOrder(score);
   const cues: LongRestCue[] = [];
   const minimum = Math.max(1, Math.floor(minimumBars));
   let clock = 0;
