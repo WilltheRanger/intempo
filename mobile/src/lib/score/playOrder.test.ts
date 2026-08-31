@@ -19,7 +19,7 @@ function scoreWith(repeats: ScoreRepeat[], bars = 4): ScoreJson {
       notes: [
         {
           pitch: 'C3',
-          duration: 'whole',
+          duration: 'whole' as const,
           tied_to_next: false,
         },
       ],
