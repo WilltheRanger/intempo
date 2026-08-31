@@ -6,6 +6,26 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-31 — First-take recording setup
+
+**Branch:** `codex/first-take-setup`
+
+### Changed
+
+- Added a one-time, device-local guide before the first recording that explains
+  microphone placement, avoiding speaker bleed, the tempo-synced count-in, and
+  long-rest re-entry cues before the system permission prompt appears.
+- Added a Recording tips action to every ready practice screen so the guide is
+  never a one-shot instruction the musician cannot find again.
+- Persisted only that this device has seen the guide; the setting does not alter
+  score data, analysis, or another device.
+
+### Verification
+
+- Added preference coverage for the default, persisted, and malformed stored
+  setup states.
+- Mobile typecheck, tests, and web build run in pull-request CI.
+
 ## 2026-08-31 — Practice count-in and long-rest re-entry cues
 
 **Branch:** `feature/practice-count-in-rest-cues`
