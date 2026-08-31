@@ -6,6 +6,45 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-30 — Today gains a tempo ladder and recent practice
+
+**Branch:** `feature/tempo-ladder-recent-practice`. Today/home UI and data.
+**UI, copy and layout changes were approved by the owner.**
+
+**Files:** `mobile/src/screens/today/TempoLadder.tsx`,
+`mobile/src/screens/today/TodayScreen.tsx`,
+`mobile/src/data/practiceTempo.ts`, `mobile/src/data/hooks/useLatestTake.ts`,
+`mobile/src/data/sources/types.ts`, `mobile/src/data/sources/api.ts`,
+`mobile/src/data/sources/fixtures.ts`, and the tempo tests.
+
+Today now shows two pieces of practice state the musician can act on. The Tempo
+ladder derives three useful BPM rungs from the remembered working tempo and the
+score's marked tempo. Choosing a rung writes through the existing per-piece
+tempo store, so the featured card and Record screen immediately agree with it.
+When a score has no readable marking, the higher rungs are explicitly labelled
+as suggestions rather than attributed to the page.
+
+Recent practice lists up to three real finished, readable takes, newest first,
+with date, target BPM and verdict. Each row opens the existing verdict screen.
+The API adapter uses the existing analyses listing and one score listing; there
+is no new endpoint or schema. New accounts see neither invented sessions nor
+an empty history panel.
+
+**Three-foot test:** the dominant current-piece card remains first. The ladder
+reads as one compact horizontal control, while recent sessions form a bounded
+list below the playing tools. On narrow screens the rungs remain equal-width
+touch targets and the history stays in the established single-column order.
+Production visual re-check is required after Cloudflare deploys.
+
+**Verification:** ladder cases are covered by unit tests. Mobile tests,
+TypeScript and the Expo web build are the implementation gates; the repository's
+backend and legacy frontend checks remain required.
+
+**Rollback:** revert this change. Existing takes and remembered working tempos
+are untouched because no storage format or backend data changed.
+
+---
+
 ## 2026-08-30 — Today content becomes a set of practice decisions
 
 **Branch:** `design/home-actionable-content`. Today/home UI and copy.
