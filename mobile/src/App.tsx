@@ -13,6 +13,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { ApiError, warmApi } from './data/api/client';
 import { describeFixtureReason, IS_LIVE_BACKEND } from './data/environment';
+import { formatDocumentTitle } from './lib/documentTitle';
 import { hydratePracticeTempos } from './data/practiceTempo';
 import { hydratePreferences } from './data/preferences';
 import { colors, fontsToLoad } from './design';
@@ -179,7 +180,10 @@ export default function App() {
         */}
         <StatusBar style="dark" />
         {typographyReady ? (
-          <NavigationContainer theme={navigationTheme}>
+          <NavigationContainer
+            theme={navigationTheme}
+            documentTitle={{ formatter: formatDocumentTitle }}
+          >
             <RootNavigator />
           </NavigationContainer>
         ) : (
