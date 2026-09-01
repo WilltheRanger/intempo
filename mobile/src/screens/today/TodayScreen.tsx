@@ -204,6 +204,9 @@ export function TodayScreen() {
   const workingBpm = practiceTempo.for(piece.id, piece.markedBpm);
   const hasCurrentTake = take?.pieceId === piece.id;
   const hasNotation = (piece.score?.measures.length ?? 0) > 0;
+  const readingNotation =
+    piece.transcriptionStatus === 'queued' ||
+    piece.transcriptionStatus === 'reading';
   const summaryDetail = summary
     ? `Across ${summary.sessions === 1 ? '1 session' : `${summary.sessions} sessions`} in the last ${summary.windowDays} days`
     : '';
@@ -293,8 +296,10 @@ export function TodayScreen() {
               <SectionHeader label="Practice focus" />
               <Card>
                 <Text variant="pieceTitle">
-                  {!hasNotation
-                    ? 'Add the music first'
+                  {readingNotation
+                    ? 'Reading your sheet music'
+                    : !hasNotation
+                      ? 'Add the music first'
                     : hasCurrentTake
                       ? 'Make the next take comparable'
                       : 'Set your first benchmark'}
@@ -304,16 +309,20 @@ export function TodayScreen() {
                   color="textSecondary"
                   style={styles.focusText}
                 >
-                  {!hasNotation
-                    ? `Attach the sheet music for ${piece.title} so InTempo can follow notes, rests, and re-entries before recording.`
+                  {readingNotation
+                    ? 'InTempo is turning the pages into notation. Practice recording will unlock when that reading finishes.'
+                    : !hasNotation
+                      ? `Attach the sheet music for ${piece.title} so InTempo can follow notes, rests, and re-entries before recording.`
                     : hasCurrentTake
                       ? `Stay at ${formatTempo(workingBpm, piece.score?.tempo_beat_unit)} and record one more honest run. Comparing two takes shows whether the change held.`
                       : `Record one honest run of ${piece.title}. InTempo will map where your tempo holds and where it drifts.`}
                 </Text>
                 <SecondaryButton
                   label={
-                    !hasNotation
-                      ? 'Add sheet music'
+                    readingNotation
+                      ? 'View reading progress'
+                      : !hasNotation
+                        ? 'Add sheet music'
                       : hasCurrentTake
                         ? 'Record another take'
                         : 'Record first take'
