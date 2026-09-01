@@ -159,6 +159,16 @@ export interface StaveNote {
    * notes, has no measure numbers to give and omits it.
    */
   measureNumber?: number;
+  /**
+   * The accidental to actually print, decided against the key signature and
+   * the bar so far.
+   *
+   * Set by `spellAccidentals`, which `engrave` runs over every note before
+   * laying anything out. `null` is a real answer — "print nothing" — and is
+   * different from absent, which means nobody has spelled this note and the
+   * accidental in its own name should be drawn.
+   */
+  printed?: Accidental;
 }
 
 /**
@@ -642,7 +652,11 @@ function headRoom(head: HeadRequest | null, lineGap: number): number {
 /** The room each item needs before it, beyond the ordinary column. */
 function extraRoom(items: StaveItem[], lineGap: number): number[] {
   return items.map((item) =>
-    isNote(item) ? lineGap * accidentalRoom(accidentalOf(item.pitch)) : 0,
+    // The **printed** glyph, not the one in the pitch name. Reserving room from
+    // the name gives a suppressed sharp a column it never uses and gives a
+    // printed natural — which no pitch name ever carries — no room at all, so
+    // it would sit through the notehead before it.
+    isNote(item) ? lineGap * accidentalRoom(printedAccidental(item)) : 0,
   );
 }
 
@@ -693,6 +707,104 @@ export function accidentalOf(pitch: string): Accidental {
     return null;
   }
   return ACCIDENTAL_BY_SUFFIX[match[2]] ?? null;
+}
+
+/** How many semitones a pitch name alters its letter by: -2 to +2. */
+export function alterationOf(pitch: string): number {
+  const match = PITCH.exec(pitch);
+  if (!match || !match[2]) {
+    return 0;
+  }
+  return { '#': 1, b: -1, '##': 2, bb: -2 }[match[2] as '#' | 'b' | '##' | 'bb'] ?? 0;
+}
+
+const GLYPH_FOR_ALTERATION: Record<number, Accidental> = {
+  [-2]: 'double-flat',
+  [-1]: 'flat',
+  0: 'natural',
+  1: 'sharp',
+  2: 'double-sharp',
+};
+
+/**
+ * Decide which accidentals to actually print.
+ *
+ * **The engraver printed one before every altered note and none anywhere else**,
+ * on top of a key signature, which gets both halves of the convention wrong:
+ *
+ *  - A piece in D major came out with two sharps in the signature *and* a sharp
+ *    on every F and every C. Legal, and it reads as a machine transcribing
+ *    pitches rather than as a page of music.
+ *  - Far worse, an **F natural in D major printed nothing at all**. The pitch
+ *    names from OCR are absolute — MusicXML's `<alter>` already includes the
+ *    key signature, so a written F natural arrives as plain `F4` — and a bare F
+ *    under a two-sharp signature is read by any musician as F sharp. That is a
+ *    wrong note printed as though it were right, which is the one thing this
+ *    module's docstring says it must never do.
+ *
+ * The rule, which is a convention with no room for invention: an accidental is
+ * printed only when the note differs from what is already in force. In force
+ * means the key signature for that letter, in every octave, unless an earlier
+ * accidental in the same bar has overridden it **at that exact staff position**
+ * — an accidental binds to the octave it is written in, not to the letter.
+ *
+ * Bars reset it, which is why the pass is over the whole score in order rather
+ * than per system. Systems break on bar lines (`packSystems`), so no bar's
+ * memory ever has to cross one.
+ *
+ * Returns new items; nothing is mutated. Rests and multi-rests pass through
+ * untouched.
+ */
+export function spellAccidentals(
+  items: StaveItem[],
+  key: { pitch: string; kind: 'sharp' | 'flat' }[] = [],
+): StaveItem[] {
+  // The signature, by letter. A key signature applies to every octave of the
+  // letter it marks, which is why this is keyed by letter and the bar's memory
+  // below is keyed by staff position.
+  const byLetter = new Map<number, number>();
+  for (const accidental of key) {
+    const match = PITCH.exec(accidental.pitch);
+    if (match) {
+      byLetter.set(LETTERS[match[1]], accidental.kind === 'sharp' ? 1 : -1);
+    }
+  }
+
+  let bar = new Map<number, number>();
+  let started = false;
+
+  return items.map((item) => {
+    if (item.barBefore || !started) {
+      bar = new Map();
+      started = true;
+    }
+    if (!isNote(item)) {
+      return item;
+    }
+    const step = stepOf(item.pitch);
+    if (step === null) {
+      return { ...item, printed: null };
+    }
+    const want = alterationOf(item.pitch);
+    const letter = ((step % 7) + 7) % 7;
+    const inForce = bar.has(step) ? (bar.get(step) as number) : (byLetter.get(letter) ?? 0);
+    if (want === inForce) {
+      return { ...item, printed: null };
+    }
+    bar.set(step, want);
+    return { ...item, printed: GLYPH_FOR_ALTERATION[want] ?? null };
+  });
+}
+
+/**
+ * What to draw before this notehead.
+ *
+ * The spelled answer when there is one, and the note's own accidental when
+ * nothing has spelled it — so a caller that builds items by hand and lays them
+ * out directly still gets its sharps.
+ */
+export function printedAccidental(note: StaveNote): Accidental {
+  return note.printed !== undefined ? note.printed : accidentalOf(note.pitch);
 }
 
 /** `F#4` reads as `F♯` — the octave is on the staff, and the sharp is a glyph. */
@@ -884,7 +996,7 @@ function layoutSystem(
     // eighth, and the thing this module's own docstring forbids: "Drawing less
     // and admitting it is honest; drawing something else is not."
     const step = stepOf(note.pitch) ?? 0;
-    const accidental = accidentalOf(note.pitch);
+    const accidental = printedAccidental(note);
     const y = -(step - middleStep) * halfGap;
     const stemUp = y > 0;
     // Everything a quarter or shorter has a black notehead.
@@ -1305,7 +1417,11 @@ export function engrave(
   const nameRow = options.nameRow ?? true;
   const beatQuarters = options.beatQuarters ?? DEFAULTS.beatQuarters;
 
-  const capped = options.maxNotes ? truncateAtBar(notes, options.maxNotes) : notes;
+  const truncated = options.maxNotes ? truncateAtBar(notes, options.maxNotes) : notes;
+  // **Before anything is packed or measured.** Which accidentals print depends
+  // on the key signature and on what came earlier in the same bar, so it is a
+  // property of the score in order — not of a system, which is a slice of it.
+  const capped = spellAccidentals(truncated, options.head?.key ?? []);
 
   const perSystem = options.maxWidth
     ? Math.max(1, Math.floor((options.maxWidth - leftPad - rightPad) / noteGap))

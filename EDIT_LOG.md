@@ -6,6 +6,72 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-01 — An F natural in D major was printed as an F sharp
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. A notation-correctness bug,
+found by auditing what the engraver does with a key signature now that it draws
+one.
+
+**Files:** `mobile/src/lib/notation/engrave.ts`,
+`mobile/src/lib/notation/spelling.test.ts` (new).
+
+The engraver printed an accidental for **every** altered pitch and none for
+anything else, on top of the key signature it had started drawing earlier this
+session. That gets both halves of the convention wrong, and only one of them is
+cosmetic.
+
+- **Cosmetic:** a piece in D major came out with two sharps in the signature
+  *and* a sharp on every F and every C. Legal, and it reads as a machine listing
+  pitches rather than as a page of music — the opposite of the MuseScore look
+  the owner asked for.
+- **Not cosmetic:** an **F natural in D major printed nothing at all.** Pitch
+  names out of OCR are absolute — MusicXML's `<alter>` already carries the key
+  signature, so a written F natural arrives as plain `F4` (`musicxml.py`,
+  `_ALTER_SUFFIX`) — and a bare F under a two-sharp signature is read by every
+  musician as F sharp. A wrong note, printed exactly like the right ones around
+  it, which is the failure `engrave.ts`'s own docstring is written against.
+
+Nothing else in the app could catch it. The **sound** was right the whole time
+(`frequencyOf` reads the absolute name), the beat check passes, and the page
+simply showed a different note from the one on the stand.
+
+### The rule
+
+`spellAccidentals` runs over the whole score in order before anything is packed
+or measured, and prints a glyph only when the note differs from what is already
+in force. In force means the key signature for that **letter, in every octave**,
+unless an earlier accidental in the same bar has overridden it **at that exact
+staff position** — an accidental binds to the octave it is written in, the
+signature binds to the letter. Those two opposite bindings are the whole
+convention and both are asserted.
+
+Over the score rather than per system because bars reset it and a system is a
+slice; `packSystems` breaks only on barlines, so no bar's memory has to cross
+one. Room reservation reads the **printed** glyph too — a suppressed sharp used
+to keep a column it never used, and a printed natural (which no pitch name ever
+carries) would have had no room at all and sat through the notehead before it.
+
+`printedAccidental` falls back to the note's own name when nothing has spelled
+it, so the warmup — which authors its own notes and prints no signature — still
+gets its sharps.
+
+**Measured on the D major fixture** (`fixture-bach-bwv1001`), counting Bravura
+accidental codepoints in the rendered SVG: **6 sharps before, 4 after**. Four is
+two systems' worth of key signature and nothing else; the two inline sharps that
+the signature already spelled are gone. Screenshotted.
+
+**Not covered, deliberately:** a courtesy accidental (the natural some editions
+add on the same letter an octave away) and a tie carrying an accidental across a
+barline without reprinting it. Both are editorial preferences rather than rules;
+the strict reading is what is implemented, and one test says so where a reader
+would otherwise assume an omission.
+
+**Tests:** 701 pass, up 14.
+
+**Rollback:** revert the commit.
+
+---
+
 ## 2026-09-01 — The review screen told you that you had removed pages you never took
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. The other thing the route
