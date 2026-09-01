@@ -11,8 +11,6 @@ from __future__ import annotations
 from urllib.parse import urlparse
 from uuid import UUID
 
-from fastapi import HTTPException, status
-
 from app.config import settings
 from app.services.buckets import AUDIO_BUCKET
 
@@ -23,6 +21,10 @@ STORAGE_PREFIXES = (
     "/storage/v1/object/public/",
 )
 SIGNED_AUDIO_DOWNLOAD_TTL_SECONDS = 60 * 60
+
+
+class InvalidAudioReference(ValueError):
+    """A recording reference is malformed or belongs to another account."""
 
 
 class AudioStorageError(RuntimeError):
@@ -64,9 +66,8 @@ def owned_audio_key(reference: str, user_id: UUID) -> str:
         or "\\" in filename
         or filename in {".", ".."}
     ):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="recording reference must name audio owned by your account",
+        raise InvalidAudioReference(
+            "recording reference must name audio owned by your account"
         )
     return key
 
