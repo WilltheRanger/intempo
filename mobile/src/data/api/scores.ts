@@ -28,23 +28,30 @@ export function getScore(id: string): Promise<ScoreResponse> {
  * backend rejects a body that mixes them, so these are separate shapes rather
  * than one shape with optional halves.
  */
-export type CreateScoreInput = TranscribedScoreInput | HandEnteredScoreInput;
+export type CreateScoreInput =
+  | StrictTranscribedScoreInput
+  | HandEnteredScoreInput;
 
-interface TranscribedScoreDetails {
+/**
+ * Fields the mobile client can send for a photographed score.
+ *
+ * Kept as an interface because the backend's request-shape contract test reads
+ * these declarations directly. `StrictTranscribedScoreInput` below adds the
+ * exactly-one-of rule that TypeScript needs.
+ */
+export interface TranscribedScoreInput {
+  image_url?: string;
+  image_urls?: string[];
   title: string;
   composer?: string | null;
   movement?: string | null;
 }
 
-export type TranscribedScoreInput =
-  | (TranscribedScoreDetails & {
-      image_url: string;
-      image_urls?: never;
-    })
-  | (TranscribedScoreDetails & {
-      image_urls: string[];
-      image_url?: never;
-    });
+type StrictTranscribedScoreInput = TranscribedScoreInput &
+  (
+    | { image_url: string; image_urls?: never }
+    | { image_urls: string[]; image_url?: never }
+  );
 
 export interface HandEnteredScoreInput {
   image_url?: never;
