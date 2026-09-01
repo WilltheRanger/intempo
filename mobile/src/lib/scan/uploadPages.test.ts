@@ -10,7 +10,7 @@ const pages: CapturedPage[] = [
 ];
 
 describe('uploadPages', () => {
-  it('uploads sequentially and returns URLs in the chosen page order', async () => {
+  it('uploads sequentially and returns durable keys in the chosen page order', async () => {
     const started: string[] = [];
     let finishFirst!: (url: string) => void;
     const first = new Promise<string>((resolve) => {
@@ -22,7 +22,7 @@ describe('uploadPages', () => {
       if (page.id === 'page-1') {
         return first;
       }
-      return `https://upload.test/${page.id}`;
+      return `user-1/${page.id}`;
     });
 
     const pending = uploadPages(pages, { upload });
@@ -30,11 +30,11 @@ describe('uploadPages', () => {
 
     expect(started).toEqual(['page-1']);
 
-    finishFirst('https://upload.test/page-1');
+    finishFirst('user-1/page-1');
     await expect(pending).resolves.toEqual([
-      'https://upload.test/page-1',
-      'https://upload.test/page-2',
-      'https://upload.test/page-3',
+      'user-1/page-1',
+      'user-1/page-2',
+      'user-1/page-3',
     ]);
     expect(started).toEqual(['page-1', 'page-2', 'page-3']);
   });
@@ -43,7 +43,7 @@ describe('uploadPages', () => {
     const seen: unknown[] = [];
     const upload: PageUploader = async (page, options) => {
       options?.onProgress?.(25, 100);
-      return `https://upload.test/${page.id}`;
+      return `user-1/${page.id}`;
     };
 
     await uploadPages(pages.slice(0, 2), {
@@ -65,7 +65,7 @@ describe('uploadPages', () => {
       if (page.id === 'page-2') {
         throw failure;
       }
-      return `https://upload.test/${page.id}`;
+      return `user-1/${page.id}`;
     };
 
     await expect(uploadPages(pages, { upload })).rejects.toBe(failure);
@@ -77,7 +77,7 @@ describe('uploadPages', () => {
     const signals: Array<AbortSignal | undefined> = [];
     const upload: PageUploader = async (page, options) => {
       signals.push(options?.signal);
-      return `https://upload.test/${page.id}`;
+      return `user-1/${page.id}`;
     };
 
     await uploadPages(pages, { upload, signal: controller.signal });
