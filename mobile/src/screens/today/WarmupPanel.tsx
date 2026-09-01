@@ -53,7 +53,14 @@ export function WarmupPanel({ instrument, onStart }: WarmupPanelProps) {
         scrolls sideways competes with the page it is advertising.
       */}
       <View style={styles.stave} pointerEvents="none">
-        <Stave notes={warmup.notes} clef={warmup.clef} maxNotes={PREVIEW_NOTES} />
+        <Stave
+          notes={warmup.notes}
+          clef={warmup.clef}
+          // A clef here too — see the warmup page for why. This preview is the
+          // more-seen of the two staves in the app.
+          head={{ clef: warmup.clef, key: [], time: null }}
+          maxNotes={PREVIEW_NOTES}
+        />
       </View>
 
       <View style={styles.footer}>

@@ -6,6 +6,49 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-01 — A stave that placed notes by clef and never drew one
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`.
+
+**Files:** `mobile/src/screens/warmup/WarmupScreen.tsx`,
+`mobile/src/screens/today/WarmupPanel.tsx`.
+
+The daily warmup — the stave on Today and the page behind it — drew five lines,
+noteheads and a row of note names, and **no clef**.
+
+`Stave`'s own note explains why: *"The warmup is a study-book exercise: a bare
+stave with the note names underneath, and the instrument named beside it."* That
+character is right and is not what changed. This is one argument that decision
+did not have:
+
+> The noteheads are **already placed by `warmup.clef`**. The same scale sits on
+> different lines for a violinist and a bassist, and the app knows which. A
+> stave that asserts staff positions while refusing to say which clef they are
+> in is asking a musician to read a diagram.
+
+So the clef is drawn and nothing else is: no key signature and no metre. A scale
+has no metre, and the accidentals stay inline where the note names underneath
+already spell them out — which is the study-book character the note describes,
+kept.
+
+**Verified on both clefs**, which is the whole point of the change: violin gives
+a treble clef over D major, and switching the profile to double bass gives a
+bass clef with its dots straddling the F line over G major — G A B C D E F♯ G up
+and back down. Screenshotted at 3-4x; the clef is drawn whole and unclipped in
+the Today preview too, where at 1x it had looked cut.
+
+**Checked and found correct, so it is not chased again:** the warmup page's line
+*"Change your instrument in your profile"* names a control that does exist —
+`SegmentedControl` renders as a `tablist`, not a button, which is why a first
+pass over the profile screen's buttons did not find it. The profile itself is
+comprehensive: plan and quota, email and password, instrument and metronome
+mode, haptics and reduced motion, data download and account deletion, version,
+help, privacy, terms, acknowledgements and sign-out.
+
+**Rollback:** revert the commit.
+
+---
+
 ## 2026-09-01 — The verdict screen said "Back to the piece" twice and meant two things
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Back to the consumer side.
