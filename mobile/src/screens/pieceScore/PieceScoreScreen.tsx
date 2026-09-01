@@ -449,6 +449,7 @@ export function PieceScoreScreen() {
               scale={STAVE_SCALE}
               justify
               beatQuarters={stave.beatQuarters}
+              closesWithRepeat={stave.closesWithRepeat}
               // **The page's own furniture.** `key_signature` has been read
               // off the page since Batch 2 and shown only as text, so a piece
               // in E major was engraved with four accidentals missing from

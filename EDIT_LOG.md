@@ -6,6 +6,70 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-01 — The app played repeats it never drew
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Seventh finding of the
+music-accuracy audit, and the same shape as the other six.
+
+**Files:** `mobile/src/lib/notation/engrave.ts`, `fromScore.ts`,
+`components/notation/Stave.tsx`, `screens/pieceScore/PieceScoreScreen.tsx`,
+`mobile/src/lib/notation/repeats.test.ts` (new).
+
+`scheduleScore` runs `measuresInPlayOrder` — a careful TypeScript port of the
+backend's `expand_repeats`, first and second endings included — so Listen has
+always played bars 1–8 twice for a piece with a repeat. **The page showed one
+straight run of eight bars with no `:||` anywhere.** The app disagreed with
+itself, audibly, and a musician following along on its own score got lost at
+bar 8. The font subset has carried the barline and repeat-dot range since it was
+written.
+
+`barlines` was a bare `number[]`; it is now `{ x, repeat }`, with `both` a real
+value because a section ending where the next begins is one barline with dots on
+either side.
+
+### Three placements, each of which loses the sign if you get it wrong
+
+- **A repeat closing on the score's last measure** has no item after it to carry
+  a flag, so `staveScoreFor` returns `closesWithRepeat` and the engraver is told.
+- **A repeat closing at a system break** is marked on the first item of the next
+  run, and a system draws no barline before its first item — so the sign
+  vanished entirely. It now lands on the closing barline of the line that
+  finishes the section, which is what a printed part does. Found by seeding a
+  repeat that happened to break that way; the first version drew nothing at all
+  and I nearly logged it as working.
+- **A repeat starting on the first measure gets no sign.** There is no barline
+  to hang one on and a printed part does not draw one there either.
+
+### The spacing took two goes and the second was the one that mattered
+
+The opening sign's lower dot printed **inside the notehead of the bar it
+opens** — the two are at the same height whenever that note sits in the third
+space, which on a treble staff is any C5. Reserving room before the item did not
+help, and the reason is worth writing down: the barline sits *midway* in the gap
+it interrupts, so widening the gap moved the barline and the note right
+together and the distance between them never changed. The barline is shifted
+left into the room instead, which spends it on the right where an opening sign
+reaches. A closing sign reaches left and already had it.
+
+**Verified** by seeding a repeat over bars 2–3 of the demo score and looking at
+it at 4x: `||:` opening system one with both dots clear of the notehead, `:||`
+closing the piece. Four circles in the DOM, two per sign. Fixture restored
+byte-identical, route sweep clean.
+
+**Known limit, deliberately not started here:** first and second **ending
+brackets** are not drawn. A piece with them now shows the repeat signs without
+the `1.`/`2.` brackets, so a musician would repeat and play the same ending
+twice. That is closer to right than drawing nothing — playback already takes the
+endings — but it is half an instruction, and the bracket is the next piece of
+work. `measuresInPlayOrder` already parses them, and `EngravedTuplet` is the
+geometry to copy.
+
+**Tests:** 771 pass, up 9.
+
+**Rollback:** revert the commit.
+
+---
+
 ## 2026-09-01 — Two things a real repertoire title broke
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. The other half of the

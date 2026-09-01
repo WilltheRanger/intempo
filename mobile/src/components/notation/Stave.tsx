@@ -1,4 +1,4 @@
-import Svg, { G, Line, Path, Rect, Text as SvgText } from 'react-native-svg';
+import Svg, { Circle, G, Line, Path, Rect, Text as SvgText } from 'react-native-svg';
 
 import type { Articulation, Clef } from '../../data/types';
 import { colors, fontFamily, MUSIC_EM_IN_SPACES, typography } from '../../design';
@@ -184,6 +184,11 @@ export interface StaveProps {
    */
   beatQuarters?: number;
   /**
+   * The score's final barline closes a repeated section — `staveScoreFor`
+   * computes it, for the same reason it computes `beatQuarters`.
+   */
+  closesWithRepeat?: boolean;
+  /**
    * Print each note's letter under the system.
    *
    * On by default: the warmup is an exercise for a student, and the letters
@@ -268,6 +273,7 @@ export function Stave({
   scale = 1,
   justify = false,
   beatQuarters,
+  closesWithRepeat,
   head,
   showNoteNames = true,
   highlightMeasure = null,
@@ -287,6 +293,7 @@ export function Stave({
     maxNotes,
     justify,
     beatQuarters,
+    closesWithRepeat,
     head,
     // Also stops the layout reserving the row's height, so hiding the names
     // doesn't leave a band of empty space under every system.
@@ -348,7 +355,11 @@ export function Stave({
             />
           ))}
 
-          {system.barlines.map((x, index) => {
+          {system.barlines.map((barline, index) => {
+            const { x, repeat } = barline;
+            const top = system.staffLines[0];
+            const bottom = system.staffLines[4];
+            const thick = lineGap * 0.4;
             // **The last barline of the last system ends the piece**, and a
             // printed part says so with a thin line and a thick one. Drawn
             // rather than set from the font because it is two rectangles whose
@@ -357,37 +368,58 @@ export function Stave({
             const ends =
               systemIndex === layout.systems.length - 1 &&
               index === system.barlines.length - 1;
-            if (!ends) {
+
+            const thin = (at: number) => (
+              <Line
+                x1={at}
+                y1={top}
+                x2={at}
+                y2={bottom}
+                stroke={rule}
+                strokeWidth={STAFF_STROKE * 1.2 * scale}
+              />
+            );
+            const heavy = (at: number) => (
+              <Rect x={at} y={top} width={thick} height={bottom - top} fill={rule} />
+            );
+            /*
+              The two dots of a repeat sign, in the second and third spaces —
+              either side of the middle line, which is where an engraver puts
+              them on a five-line staff whatever the clef.
+            */
+            const dots = (at: number) => (
+              <>
+                <Circle cx={at} cy={top + lineGap * 1.5} r={lineGap * 0.18} fill={rule} />
+                <Circle cx={at} cy={top + lineGap * 2.5} r={lineGap * 0.18} fill={rule} />
+              </>
+            );
+
+            if (repeat) {
+              // `:||` closes: dots, thin, heavy, reading left to right into the
+              // barline. `||:` opens: heavy, thin, dots, reading out of it.
+              // `both` is the two back to back sharing one heavy rule, which is
+              // how a section ending where the next begins is printed.
+              const gap = lineGap * 0.34;
+              const closes = repeat === 'end' || repeat === 'both';
+              const opens = repeat === 'start' || repeat === 'both';
               return (
-                <Line
-                  key={`bar-${index}`}
-                  x1={x}
-                  y1={system.staffLines[0]}
-                  x2={x}
-                  y2={system.staffLines[4]}
-                  stroke={rule}
-                  strokeWidth={STAFF_STROKE * 1.2 * scale}
-                />
+                <G key={`bar-${index}`}>
+                  {closes ? dots(x - thick - gap * 2.2) : null}
+                  {closes ? thin(x - thick - gap) : null}
+                  {heavy(x - thick / 2)}
+                  {opens ? thin(x + thick / 2 + gap) : null}
+                  {opens ? dots(x + thick / 2 + gap * 2.2) : null}
+                </G>
               );
             }
-            const thick = lineGap * 0.4;
+
+            if (!ends) {
+              return <G key={`bar-${index}`}>{thin(x)}</G>;
+            }
             return (
               <G key={`bar-${index}`}>
-                <Line
-                  x1={x - thick - lineGap * 0.4}
-                  y1={system.staffLines[0]}
-                  x2={x - thick - lineGap * 0.4}
-                  y2={system.staffLines[4]}
-                  stroke={rule}
-                  strokeWidth={STAFF_STROKE * 1.2 * scale}
-                />
-                <Rect
-                  x={x - thick}
-                  y={system.staffLines[0]}
-                  width={thick}
-                  height={system.staffLines[4] - system.staffLines[0]}
-                  fill={rule}
-                />
+                {thin(x - thick - lineGap * 0.4)}
+                {heavy(x - thick)}
               </G>
             );
           })}

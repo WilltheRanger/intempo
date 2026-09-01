@@ -38,6 +38,14 @@ export interface StaveScore {
   undrawable: number;
   /** The beat this score's beams break at, in quarter notes. */
   beatQuarters: number;
+  /**
+   * The score's final barline closes a repeated section.
+   *
+   * Every other repeat sign rides on the item after it; a repeat ending on the
+   * last measure has no such item, so this is the one the engraver has to be
+   * told.
+   */
+  closesWithRepeat: boolean;
 }
 
 /**
@@ -203,6 +211,42 @@ export function staveScoreFor(score: ScoreJson): StaveScore {
   /** Global, so two slurs in neighbouring bars never merge into one arc. */
   let slurId = 0;
 
+  /**
+   * Where the repeat signs go, by measure number.
+   *
+   * A span `[s, e]` puts an opening sign on the barline **before** measure `s`
+   * and a closing one on the barline before measure `e + 1` — which is the
+   * barline *after* `e`, and the same line either way. When `e` is the last
+   * measure there is no `e + 1`, so the score's final barline carries it and
+   * `closesWithRepeat` says so; the engraver has no item there to read a flag
+   * from.
+   *
+   * A repeat starting on the first measure gets no opening sign. There is no
+   * barline before it to hang one on, and a printed part does not draw one
+   * there either — the section is understood to start at the beginning.
+   */
+  const opensRepeat = new Set<number>();
+  const closesRepeat = new Set<number>();
+  let closesWithRepeat = false;
+  {
+    const numbers = score.measures.map((m) => m.measure_number);
+    const last = numbers[numbers.length - 1];
+    const first = numbers[0];
+    for (const repeat of score.repeats ?? []) {
+      if (repeat.type !== 'repeat') {
+        continue;
+      }
+      if (repeat.start_measure !== first) {
+        opensRepeat.add(repeat.start_measure);
+      }
+      if (repeat.end_measure === last) {
+        closesWithRepeat = true;
+      } else {
+        closesRepeat.add(repeat.end_measure + 1);
+      }
+    }
+  }
+
   let index = 0;
   while (index < score.measures.length) {
     if (isSilent(score.measures[index])) {
@@ -291,6 +335,14 @@ export function staveScoreFor(score: ScoreJson): StaveScore {
           ...(mark ? { tuplet: mark } : {}),
           ...(quarters !== undefined ? { quarters } : {}),
           ...(opensMeasure ? { barBefore: true } : {}),
+          // A bar can open on a rest, and its repeat sign has to ride with
+          // whichever item takes the barline — not only with a note.
+          ...(opensMeasure && opensRepeat.has(measure.measure_number)
+            ? { repeatStartsBefore: true }
+            : {}),
+          ...(opensMeasure && closesRepeat.has(measure.measure_number)
+            ? { repeatEndsBefore: true }
+            : {}),
         });
         opensMeasure = false;
         continue;
@@ -340,6 +392,12 @@ export function staveScoreFor(score: ScoreJson): StaveScore {
         ...(mark ? { tuplet: mark } : {}),
         ...(quarters !== undefined ? { quarters } : {}),
         ...(opensMeasure ? { barBefore: true } : {}),
+        ...(opensMeasure && opensRepeat.has(measure.measure_number)
+          ? { repeatStartsBefore: true }
+          : {}),
+        ...(opensMeasure && closesRepeat.has(measure.measure_number)
+          ? { repeatEndsBefore: true }
+          : {}),
       });
       noteCount += 1;
       opensMeasure = false;
@@ -399,6 +457,7 @@ export function staveScoreFor(score: ScoreJson): StaveScore {
     rests,
     undrawable,
     beatQuarters: beamBeatQuarters(score.time_signature),
+    closesWithRepeat,
   };
 }
 

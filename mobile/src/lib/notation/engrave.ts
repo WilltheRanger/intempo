@@ -153,6 +153,15 @@ export interface StaveNote {
   /** Starts a new bar before this note. */
   barBefore?: boolean;
   /**
+   * The barline before this item carries repeat dots.
+   *
+   * Both can be true at once: a section that ends where the next one begins is
+   * printed `:||:`, one barline with dots on either side. Set by `fromScore`
+   * from `ScoreJson.repeats`.
+   */
+  repeatStartsBefore?: boolean;
+  repeatEndsBefore?: boolean;
+  /**
    * Which bar of the score this came from, when the caller knows.
    *
    * Only so a playhead can say where it is. The warmup, which authors its own
@@ -225,6 +234,8 @@ export interface StaveRest {
   quarters?: number;
   tuplet?: Tuplet;
   barBefore?: boolean;
+  repeatStartsBefore?: boolean;
+  repeatEndsBefore?: boolean;
   measureNumber?: number;
 }
 
@@ -241,6 +252,8 @@ export interface StaveMultiRest {
   /** How many bars of silence. Printed above the block. */
   bars: number;
   barBefore?: boolean;
+  repeatStartsBefore?: boolean;
+  repeatEndsBefore?: boolean;
   measureNumber?: number;
 }
 
@@ -423,6 +436,22 @@ export interface EngravedMultiRest {
 }
 
 /** One bar's horizontal extent on a system. */
+/**
+ * A barline, and whether it carries repeat dots.
+ *
+ * **This was a bare `number[]`**, and the app played repeats it never drew:
+ * `scheduleScore` runs `measuresInPlayOrder`, which expands them, so Listen
+ * played bars 1–8 twice over a page showing one straight run of eight with no
+ * `:||` anywhere. A musician following the app's own score got lost at bar 8.
+ *
+ * `both` is a real value rather than a convenience: a section ending where the
+ * next one begins is one barline printed with dots on either side.
+ */
+export interface EngravedBarline {
+  x: number;
+  repeat: 'start' | 'end' | 'both' | null;
+}
+
 export interface MeasureSpan {
   measureNumber: number;
   from: number;
@@ -569,7 +598,7 @@ export interface EngravedSystem {
   /** Y of each of the five staff lines, top first. Absolute in the drawing. */
   staffLines: number[];
   /** X of each barline, including the one that ends the system. */
-  barlines: number[];
+  barlines: EngravedBarline[];
   notes: EngravedNote[];
   rests: EngravedRest[];
   multiRests: EngravedMultiRest[];
@@ -604,6 +633,14 @@ export interface Engraving {
 }
 
 export interface EngraveOptions {
+  /**
+   * The score's very last barline ends a repeated section.
+   *
+   * Every other repeat sign is carried by the item after it (`repeatEndsBefore`).
+   * A repeat closing on the final measure has no such item, so it is the one
+   * that has to be passed in. `staveScoreFor` computes it.
+   */
+  closesWithRepeat?: boolean;
   /** Distance between adjacent staff lines. Everything scales from this. */
   lineGap?: number;
   /** Horizontal distance between noteheads. */
@@ -849,9 +886,43 @@ function extraRoom(items: StaveItem[], lineGap: number): number[] {
     // accidental, plus a notehead's width when a member sits a second away and
     // has to move across the stem. Reserving only the principal's would put a
     // three-accidental chord through the note before it.
-    isNote(item) ? lineGap * noteRoom(item) : 0,
+    lineGap * ((isNote(item) ? noteRoom(item) : 0) + repeatRoom(item)),
   );
 }
+
+/**
+ * The extra width a repeat sign asks for, in staff spaces.
+ *
+ * **A repeat barline is wider than a plain one and needs to be given room.**
+ * Without this the opening sign's lower dot printed hard against the notehead
+ * of the bar it opens — the two are at the same height whenever that note sits
+ * in the third space, which on a treble staff is a C5 and on a bass staff a
+ * D3, neither of them rare. Measured at the score screen's own scale: 2.3px of
+ * clearance, which at that size reads as one smudged mark.
+ *
+ * Reserved *before* the marked item, which is where it has to go for both
+ * signs: the barline sits midway in the gap it interrupts, so widening the gap
+ * moves the barline right and opens space on its left for a closing sign as
+ * well as on its right for an opening one.
+ */
+function repeatRoom(item: StaveItem): number {
+  const starts = item.repeatStartsBefore === true;
+  const ends = item.repeatEndsBefore === true;
+  if (starts && ends) {
+    return REPEAT_SIGN_ROOM * 2;
+  }
+  return starts || ends ? REPEAT_SIGN_ROOM : 0;
+}
+
+/**
+ * How much room one repeat sign takes beyond a plain barline, in staff spaces.
+ *
+ * The sign is a heavy rule, a thin one and two dots — about 0.95 spaces from
+ * the barline's centre to the outside of the dots, and the same again on the
+ * other side for `:||:`. This is that reach plus a comfortable gap, so the dots
+ * never touch a notehead.
+ */
+const REPEAT_SIGN_ROOM = 1.4;
 
 const DEFAULTS = {
   lineGap: 9,
@@ -1179,6 +1250,8 @@ function layoutSystem(
   nameRow: boolean,
   beatQuarters: number,
   headRequest: HeadRequest | null,
+  /** Whether this system's closing barline ends a repeated section. */
+  closesWithRepeat: boolean,
 ): { system: EngravedSystem; top: number; bottom: number } {
   const halfGap = lineGap / 2;
   const middleStep = MIDDLE_LINE_STEP[clef];
@@ -1186,7 +1259,7 @@ function layoutSystem(
   const engravedNotes: EngravedNote[] = [];
   const engravedRests: EngravedRest[] = [];
   const multiRests: EngravedMultiRest[] = [];
-  const barlines: number[] = [];
+  const barlines: EngravedBarline[] = [];
   const beams: EngravedBeam[] = [];
   const tuplets: EngravedTuplet[] = [];
   const slurs: EngravedSlur[] = [];
@@ -1247,7 +1320,25 @@ function layoutSystem(
     if (item.barBefore && index > 0) {
       // The line sits midway in the gap it interrupts, so it belongs to
       // neither of the notes on either side.
-      barlines.push(x - noteGap / 2);
+      const kind = repeatKind(item);
+      /*
+        **An opening sign needs its room on the right, and the barline has to
+        move to give it.** `extraRoom` widens the gap *before* the item, and
+        the barline sits midway in that gap — so both moved right together and
+        the distance from the sign to the note it opens stayed exactly what it
+        always was. Measured: the lower dot printed inside the notehead of the
+        bar it opens, which on a treble staff is any C5 and on a bass staff any
+        D3.
+
+        Shifting the barline left by the room spends it on the right side,
+        where an opening sign reaches. A closing sign reaches left and already
+        has it. `both` reserves twice and sits in the middle of it.
+      */
+      const opens = kind === 'start' || kind === 'both';
+      barlines.push({
+        x: x - noteGap / 2 - (opens ? lineGap * REPEAT_SIGN_ROOM : 0),
+        repeat: kind,
+      });
       closeSpan(x - noteGap / 2);
       spanFrom = x - noteGap / 2;
       spanMeasure = undefined;
@@ -1421,7 +1512,9 @@ function layoutSystem(
   });
 
   const right = x - noteGap / 2 + rightPad;
-  barlines.push(right);
+  // The closing barline of this system. A repeat that ends on the score's last
+  // measure has no following item to carry the flag, so the caller says.
+  barlines.push({ x: right, repeat: closesWithRepeat ? 'end' : null });
   closeSpan(x - noteGap / 2);
 
   // Beam runs of eighths, broken at barlines: a beam across a barline would
@@ -1820,6 +1913,21 @@ function articulationEdge(
   return mark.y + (mark.above ? -reach : reach);
 }
 
+/**
+ * The repeat dots a barline carries, from the item that follows it.
+ *
+ * Both flags at once is `both` — a section ending where the next begins, one
+ * barline with dots on either side.
+ */
+function repeatKind(item: StaveItem): EngravedBarline['repeat'] {
+  const starts = item.repeatStartsBefore === true;
+  const ends = item.repeatEndsBefore === true;
+  if (starts && ends) {
+    return 'both';
+  }
+  return starts ? 'start' : ends ? 'end' : null;
+}
+
 /** How far from a notehead's centre a slur's end springs, in staff spaces. */
 const SLUR_CLEARANCE = 1.1;
 
@@ -1998,6 +2106,26 @@ export function engrave(
             noteGap * MAX_JUSTIFY_STRETCH,
           )
         : noteGap;
+    /**
+     * What this system's closing barline carries.
+     *
+     * Two cases, and the second is the one that lost information silently.
+     *
+     *  - The **last** system closes the piece, so a repeat ending on the final
+     *    measure lands here — nothing follows it to carry a flag, which is why
+     *    `closesWithRepeat` is passed in at all.
+     *  - A repeat ending **at a system break** is marked on the first item of
+     *    the *next* run, and `layoutSystem` draws no barline before its first
+     *    item — so the sign was dropped. A printed part puts it at the end of
+     *    the line that finishes the section, which is here.
+     */
+    const runIndex = runs.indexOf(run);
+    const isLastRun = runIndex === runs.length - 1;
+    const opensNext = runs[runIndex + 1]?.[0];
+    const closesWithRepeat = isLastRun
+      ? options.closesWithRepeat === true
+      : opensNext?.repeatEndsBefore === true;
+
     const laid = layoutSystem(
       run,
       clef,
@@ -2008,6 +2136,7 @@ export function engrave(
       nameRow,
       beatQuarters,
       headRequest,
+      closesWithRepeat,
     );
     systems.push(shift(laid.system, cursor - laid.top));
     cursor += laid.bottom - laid.top + gap;

@@ -115,7 +115,7 @@ describe('multi-bar rests', () => {
     // Wider than a notehead by a long way — it has to read as a stretch of
     // silence rather than as another symbol on the line.
     expect(block.width).toBeGreaterThan(opts.lineGap * 2);
-    expect(system.barlines[0]).toBeLessThan(block.x);
+    expect(system.barlines[0].x).toBeLessThan(block.x);
   });
 
   it('puts its number above the staff, and makes room for it', () => {
@@ -436,7 +436,7 @@ describe('accidentals', () => {
       justify: true,
     });
 
-    expect(engraving.systems[0].barlines.at(-1)).toBeLessThanOrEqual(320);
+    expect(engraving.systems[0].barlines.at(-1)!.x).toBeLessThanOrEqual(320);
   });
 });
 
