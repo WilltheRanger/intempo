@@ -6,6 +6,64 @@ Operating Principle #5.
 
 ---
 
+## 2026-09-01 — Ship a music font rather than draw notation by hand
+
+**Context:** the owner asked for the transcription to read as a page —
+*"instead of writing like how were doing where you scroll and what not. Make
+it generate a sort of sheet music page look, like how you see on music score
+or flat io."*
+
+The obstacle is real and `engrave.ts` had already named it: *"a clef is a piece
+of calligraphy; a hand-approximated treble clef in an app for classical
+musicians would be the first thing a reader noticed and the last thing they
+forgave."* So it drew **no clef at all**, which was the right call given the
+options it had. The same reasoning had kept the key signature off the page:
+`key_signature` has been read since Batch 2 and shown only as text, so a piece
+in E major was engraved with four accidentals missing from every system.
+
+**Alternatives considered:**
+
+1. **Hand-authored SVG paths for the clefs.** The cheapest, and it is precisely
+   the near-miss `engrave.ts` refused. A treble clef is a spiral with four
+   centuries of settled proportion; an approximation is legible and wrong, and
+   a musician sees it instantly.
+2. **Keep drawing nothing.** Honest, and what shipped. It also means the app
+   can never show a key signature, which is not a stylistic omission — it is
+   music the page contains and the screen does not.
+3. **Bundle the full Bravura.** 889 KB for a few thousand glyphs, of which this
+   app draws forty.
+4. **Bundle a subset of Bravura.** ← chosen. **22 KB.**
+
+**Decision:** `mobile/assets/fonts/Bravura.otf`, subset in-repo by
+`tools/subset-bravura.py`, loaded alongside the app's text faces and used by
+`Stave` for clefs, key signatures and time signatures.
+
+Bravura is the reference implementation of SMuFL and the font MuseScore ships;
+flat.io and MuseScore look the way they do largely because of it. It is SIL
+Open Font License 1.1, so it can be redistributed inside an application. The
+licence text sits beside the font and the Acknowledgements screen lists it —
+a page that credits every MIT package while omitting the one file with an
+actual attribution requirement would be backwards.
+
+**Why a font and not paths, beyond the drawing quality.** A SMuFL em is four
+staff spaces *by definition*, so `fontSize = 4 * lineGap` renders every glyph
+at exactly the right size for that staff, at any scale, with no per-glyph fudge
+factor and no second set of numbers to keep in step with the engraver's
+geometry. That property is the reason SMuFL exists.
+
+**Trade-offs accepted.** 22 KB of binary in the repository, and a font is not
+reviewable in a diff — which is why the subset is produced by a checked-in
+script against a named upstream rather than pasted in. A glyph used without
+being added to that script's ranges renders as **nothing at all**, silently: a
+music font has no tofu box. The codepoint table in `Stave.tsx` says so at the
+point where someone would add one.
+
+Noteheads, rests and flags are still drawn by hand and still look right; moving
+them onto the font is a further change with its own geometry to re-verify, and
+it is not part of this decision.
+
+---
+
 ## 2026-09-01 — The count-in is audible, and the pre-roll is thrown away
 
 **Context:** the owner asked for a conductor's count-in — *"when they click the

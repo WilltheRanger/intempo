@@ -1,13 +1,36 @@
 import Svg, { Circle, Ellipse, G, Line, Path, Rect, Text as SvgText } from 'react-native-svg';
 
 import type { Clef } from '../../data/types';
-import { colors, fontFamily, typography } from '../../design';
+import { colors, fontFamily, MUSIC_EM_IN_SPACES, typography } from '../../design';
 import {
   BEAM_THICKNESS_FACTOR,
   engrave,
   type NoteValue,
   type StaveItem,
 } from '../../lib/notation/engrave';
+
+/**
+ * SMuFL codepoints. The standard's own names are the comments.
+ *
+ * Bravura is subset to exactly these (`tools/subset-bravura.py`), so a glyph
+ * added here needs adding there too — otherwise it renders as nothing at all,
+ * silently, which is the failure mode a music font has instead of tofu.
+ */
+const GLYPH = {
+  gClef: '\uE050',
+  cClef: '\uE05C',
+  fClef: '\uE062',
+  sharp: '\uE262',
+  flat: '\uE260',
+  timeDigit: (n: number) => String(n).split('').map((d) => String.fromCharCode(0xe080 + Number(d))).join(''),
+} as const;
+
+const CLEF_GLYPH: Record<Clef, string> = {
+  treble: GLYPH.gClef,
+  bass: GLYPH.fClef,
+  alto: GLYPH.cClef,
+  tenor: GLYPH.cClef,
+};
 
 export interface StaveProps {
   /** Notes, rests and multi-bar rests, in reading order. */
@@ -39,6 +62,20 @@ export interface StaveProps {
   scale?: number;
   /** Stretch systems to fill `maxWidth`. */
   justify?: boolean;
+  /**
+   * Open each system with a clef and key signature, and the first with the
+   * metre — what a printed page does.
+   *
+   * Off by default. The warmup is a study-book exercise: a bare stave with the
+   * note names underneath, and the instrument named beside it. A screen for
+   * reading a real piece needs the page's own furniture instead, and
+   * `showNoteNames={false}` is the other half of that same choice.
+   */
+  head?: {
+    clef: Clef | null;
+    key: { pitch: string; kind: 'sharp' | 'flat' }[];
+    time: { beats: number; unit: number } | null;
+  };
   /**
    * The beat beams break at, in quarter notes — `staveScoreFor` computes it.
    *
@@ -127,6 +164,7 @@ export function Stave({
   scale = 1,
   justify = false,
   beatQuarters,
+  head,
   showNoteNames = true,
   highlightMeasure = null,
 }: StaveProps) {
@@ -145,11 +183,14 @@ export function Stave({
     maxNotes,
     justify,
     beatQuarters,
+    head,
     // Also stops the layout reserving the row's height, so hiding the names
     // doesn't leave a band of empty space under every system.
     nameRow: showNoteNames,
   });
 
+  // A SMuFL em is four staff spaces, so this is the one number every glyph needs.
+  const musicSize = lineGap * MUSIC_EM_IN_SPACES;
   const headRx = lineGap * HEAD_RX_FACTOR;
   const headRy = lineGap * HEAD_RY_FACTOR;
   const beamNode = lineGap * BEAM_THICKNESS_FACTOR;
@@ -216,6 +257,72 @@ export function Stave({
               strokeWidth={STAFF_STROKE * 1.2 * scale}
             />
           ))}
+
+          {/*
+            **The page's own furniture, drawn from Bravura.**
+
+            `engrave.ts` refused to draw a clef and gave the right reason — a
+            hand-approximated treble clef is the first thing a musician notices
+            and the last thing they forgive. That is answered rather than
+            accepted: these are the reference SMuFL drawings, the same ones
+            MuseScore prints, subset to 22 KB.
+
+            **Sized in staff spaces.** A SMuFL em is four staff spaces by
+            definition, so `fontSize = 4 * lineGap` renders every glyph at
+            exactly the right size for this staff, at any scale, with no
+            per-glyph fudge factor. That is the whole reason notation is a font
+            here rather than a set of paths.
+          */}
+          {system.head.clef && clef ? (
+            <SvgText
+              x={system.head.clef.x}
+              y={system.head.clef.y}
+              fill={ink}
+              fontSize={musicSize}
+              fontFamily={fontFamily.music}
+            >
+              {CLEF_GLYPH[clef]}
+            </SvgText>
+          ) : null}
+
+          {system.head.key.map((accidental, index) => (
+            <SvgText
+              key={`key-${index}`}
+              x={accidental.x}
+              y={accidental.y}
+              fill={ink}
+              fontSize={musicSize}
+              fontFamily={fontFamily.music}
+            >
+              {accidental.kind === 'sharp' ? GLYPH.sharp : GLYPH.flat}
+            </SvgText>
+          ))}
+
+          {system.head.time ? (
+            <G>
+              {/* Numerator and denominator sit centred on the second and fourth
+                  lines, which is where the two halves of a printed metre go —
+                  each digit's own centre is its baseline in a SMuFL font. */}
+              <SvgText
+                x={system.head.time.x}
+                y={system.staffLines[1]}
+                fill={ink}
+                fontSize={musicSize}
+                fontFamily={fontFamily.music}
+              >
+                {GLYPH.timeDigit(system.head.time.beats)}
+              </SvgText>
+              <SvgText
+                x={system.head.time.x}
+                y={system.staffLines[3]}
+                fill={ink}
+                fontSize={musicSize}
+                fontFamily={fontFamily.music}
+              >
+                {GLYPH.timeDigit(system.head.time.unit)}
+              </SvgText>
+            </G>
+          ) : null}
 
           {system.multiRests.map((block, index) => (
             <G key={`multirest-${index}`}>

@@ -48,6 +48,10 @@ import {
 } from '../../lib/notation/reading';
 import type { Clef } from '../../data/types';
 import type { RootNavigation, RootStackParamList } from '../../navigation/types';
+import {
+  keySignatureFor,
+  timeSignatureDigits,
+} from '../../lib/notation/keySignature';
 
 /** Read from a stand, not glanced at — the same size the warmup page uses. */
 const STAVE_SCALE = 1.25;
@@ -426,7 +430,13 @@ export function PieceScoreScreen() {
       ) : null}
 
       {showing === 'notation' && hasNotation && stave ? (
-        <View style={styles.plate} onLayout={measure}>
+        <View style={styles.plate}>
+          {/* **Measured inside the paper's margins, not outside them.**
+              `onLayout` reports a view's border box, so measuring the padded
+              page handed the stave the paper's full width and every system ran
+              off the right edge. This inner view has no padding of its own, so
+              its width is the width the music may use. */}
+          <View onLayout={measure}>
           {width === null ? null : (
             <Stave
               notes={stave.items}
@@ -436,6 +446,19 @@ export function PieceScoreScreen() {
               scale={STAVE_SCALE}
               justify
               beatQuarters={stave.beatQuarters}
+              // **The page's own furniture.** `key_signature` has been read
+              // off the page since Batch 2 and shown only as text, so a piece
+              // in E major was engraved with four accidentals missing from
+              // every system and an inline sharp on every note that needed
+              // one. That is a list of pitches, not a line of music.
+              head={{
+                clef: piece.score?.clef ?? null,
+                key: keySignatureFor(
+                  piece.score?.key_signature,
+                  piece.score?.clef ?? UNREAD_CLEF_PLACEMENT,
+                ),
+                time: timeSignatureDigits(piece.score?.time_signature),
+              }}
               // A letter under every note is a study-book aid. On repertoire it
               // reads as a crib, so the clef is stated as metadata above
               // instead — which is where a clef belongs on a screen for reading
@@ -443,7 +466,12 @@ export function PieceScoreScreen() {
               showNoteNames={false}
             />
           )}
+          </View>
+        </View>
+      ) : null}
 
+      {showing === 'notation' && hasNotation && stave ? (
+        <>
           {/*
             Hear what was read, at the tempo the page marked.
 
@@ -505,7 +533,11 @@ export function PieceScoreScreen() {
               </Pressable>
             ) : null}
           </View>
+        </>
+      ) : null}
 
+      {showing === 'notation' && hasNotation && stave ? (
+        <>
           {/*
             What the reading is unsure about, in order of how much it matters.
 
@@ -658,7 +690,7 @@ export function PieceScoreScreen() {
               {setClef.error.message}
             </Text>
           ) : null}
-        </View>
+        </>
       ) : null}
 
       {showing === 'original' && hasPages ? (
@@ -852,8 +884,33 @@ const styles = StyleSheet.create({
   scoreMeta: {
     marginTop: spacing.sm,
   },
+  /**
+   * The paper.
+   *
+   * **The one place in this app where a surface is the right answer**, and it
+   * is worth saying why, because §3 law 3 rules out exactly this move and law
+   * 6 calls a container an exception rather than a default. The exception here
+   * is not decorative: what is being shown *is* a page of music, and the whole
+   * of the owner's request was that it read as one — "make it generate a sort
+   * of sheet music page look, like how you see on music score or flat io".
+   * Every engraving application on earth draws white paper for the same reason
+   * a printed part is white: staff lines and noteheads are black ink, and ink
+   * on paper is what a musician's eye is trained on.
+   *
+   * White, not the app's warm ivory, and squared off rather than rounded — a
+   * rounded page is a card pretending to be paper. The hairline is the sheet's
+   * edge; there is no shadow, because a page lying on a stand does not float.
+   */
   plate: {
     marginTop: spacing.xl,
+    backgroundColor: colors.surface,
+    borderWidth: BORDER_WIDTH,
+    borderColor: colors.border,
+    paddingVertical: spacing.xl,
+    paddingHorizontal: spacing.lg,
+    // Full-bleed to the screen edges: a page with the app's own margin either
+    // side of it reads as a card in a list. Sheet music fills the paper.
+    marginHorizontal: -spacing.lg,
   },
   caveat: {
     marginTop: spacing.lg,

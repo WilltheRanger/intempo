@@ -50,6 +50,24 @@ const PITCH = /^([A-G])(##|bb|#|b)?(-?\d+)$/;
  * vertical position on the staff is derived from these four numbers, which is
  * why they are written out rather than computed from a clef's octave.
  */
+/**
+ * Which staff line each clef names, measured in **lines from the middle one**.
+ *
+ * A clef is not a decoration placed near the staff; it is a letter drawn
+ * around one specific line, and that line is what makes every other position
+ * mean something. The G clef's spiral centres on the G line (one below the
+ * middle in treble), the F clef's two dots straddle the F line (one above the
+ * middle in bass), and the C clef's waist is the middle line itself.
+ *
+ * Positive is upward, which is the opposite of screen `y` — the caller negates.
+ */
+const CLEF_LINE: Record<Clef, number> = {
+  treble: -1,
+  bass: 1,
+  alto: 0,
+  tenor: 1,
+};
+
 const MIDDLE_LINE_STEP: Record<Clef, number> = {
   treble: 4 * 7 + LETTERS.B,
   bass: 3 * 7 + LETTERS.D,
@@ -273,6 +291,55 @@ const BEAM_PITCH = BEAM_THICKNESS_FACTOR * 1.5;
 /** How far a stub reaches, capped so it never touches the next stem. */
 const STUB_FACTOR = 1.1;
 
+/**
+ * How much room the opening of a system needs, in staff spaces.
+ *
+ * Bravura's own advance widths, plus the space an engraver leaves after each
+ * element. They are constants rather than measurements because measuring text
+ * in `react-native-svg` means a round trip through layout, and these glyphs
+ * never change size relative to the staff — a SMuFL em *is* four staff spaces.
+ */
+const CLEF_WIDTH = 3.2;
+const ACCIDENTAL_WIDTH = 1.0;
+const TIME_WIDTH = 2.0;
+/** Between the head and the first note, so the music does not touch the metre. */
+const HEAD_GAP = 1.0;
+
+/**
+ * What every system opens with: clef, key signature, and — on the first
+ * system only — the time signature.
+ *
+ * **The engraver drew none of these.** It said so and gave a reason: *"a clef
+ * is a piece of calligraphy; a hand-approximated treble clef in an app for
+ * classical musicians would be the first thing a reader noticed and the last
+ * thing they forgave."* That reasoning was right and it is now answered rather
+ * than accepted — `Stave` draws these from Bravura, the reference SMuFL font,
+ * which is the same drawing MuseScore prints.
+ *
+ * A key signature was the more serious omission. `key_signature` has been read
+ * off the page since Batch 2 and shown as *text*, so a piece in E major was
+ * engraved with four accidentals missing from every system. That is a list of
+ * pitches, not a line of music.
+ *
+ * Positions only. Which codepoint draws a sharp is presentation, and lives
+ * with the thing that draws it.
+ */
+export interface EngravedHead {
+  /**
+   * The clef's baseline: `x` is its left edge, `y` the staff line it names —
+   * a G clef curls around the G line, an F clef's dots straddle the F line.
+   * Null when nothing knew the clef.
+   */
+  clef: { x: number; y: number } | null;
+  /** Key accidentals in printing order, each centred on its own `y`. */
+  key: { x: number; y: number; kind: 'sharp' | 'flat' }[];
+  /**
+   * The metre, on the first system only — which is where a page prints it, and
+   * repeating it every line would read as a metre change.
+   */
+  time: { x: number; beats: number; unit: number } | null;
+}
+
 export interface EngravedSystem {
   /** Y of each of the five staff lines, top first. Absolute in the drawing. */
   staffLines: number[];
@@ -295,6 +362,8 @@ export interface EngravedSystem {
    */
   measureSpans: MeasureSpan[];
   beams: EngravedBeam[];
+  /** Clef, key and metre at the left edge. Empty when none was asked for. */
+  head: EngravedHead;
   /** Baseline for the note names printed under this system. */
   nameY: number;
   /** Right edge of this system's staff lines. */
@@ -361,6 +430,20 @@ export interface EngraveOptions {
    * 4/4 and has no time signature to pass.
    */
   beatQuarters?: number;
+  /**
+   * Open every system with a clef and key signature, and the first with the
+   * metre.
+   *
+   * Off unless asked for. The warmup draws a bare exercise stave and prints
+   * note names underneath instead, which is what a study book does; a screen
+   * for reading a real piece needs the page's own furniture.
+   */
+  head?: {
+    /** Null when nothing read one, which `ScoreJson.clef` allows. */
+    clef: Clef | null;
+    key: { pitch: string; kind: 'sharp' | 'flat' }[];
+    time: { beats: number; unit: number } | null;
+  };
 }
 
 /** Half the notehead's height, in staff gaps. Mirrors `Stave`'s HEAD_RY. */
@@ -423,6 +506,22 @@ const ACCIDENTAL_OFFSET_FACTOR = 1.55;
  * a column for.
  */
 const ACCIDENTAL_ROOM_FACTOR = 1.6;
+
+/** How wide a system's opening is, so justification can spend what is left. */
+function headRoom(head: HeadRequest | null, lineGap: number): number {
+  if (!head) {
+    return 0;
+  }
+  let width = 0;
+  if (head.clef) {
+    width += CLEF_WIDTH;
+  }
+  width += head.key.length * ACCIDENTAL_WIDTH;
+  if (head.time) {
+    width += TIME_WIDTH;
+  }
+  return width > 0 ? (width + HEAD_GAP) * lineGap : 0;
+}
 
 /** The room each item needs before it, beyond the ordinary column. */
 function extraRoom(items: StaveItem[], lineGap: number): number[] {
@@ -527,6 +626,17 @@ export function packSystems(
  * The middle staff line is 0 here; the caller shifts the whole thing once it
  * knows how tall the system turned out to be.
  */
+/** What a system opens with, before it is placed. */
+export interface HeadRequest {
+  /** Draw a clef. Null when nothing read one — see `ScoreJson.clef`. */
+  clef: Clef | null;
+  key: { pitch: string; kind: 'sharp' | 'flat' }[];
+  /** Only the first system gets one; the caller decides which system that is. */
+  time: { beats: number; unit: number } | null;
+}
+
+const NO_HEAD: EngravedHead = { clef: null, key: [], time: null };
+
 function layoutSystem(
   notes: StaveItem[],
   clef: Clef,
@@ -536,6 +646,7 @@ function layoutSystem(
   rightPad: number,
   nameRow: boolean,
   beatQuarters: number,
+  headRequest: HeadRequest | null,
 ): { system: EngravedSystem; top: number; bottom: number } {
   const halfGap = lineGap / 2;
   const middleStep = MIDDLE_LINE_STEP[clef];
@@ -548,12 +659,48 @@ function layoutSystem(
   const stemLength = lineGap * STEM_FACTOR;
   const thickness = lineGap * BEAM_THICKNESS_FACTOR;
 
+  // **The opening, laid out before anything else, because it decides where the
+  // music starts.** A clef, then the key signature, then the metre — the order
+  // every printed page uses, and the order a reader's eye expects.
+  const head: EngravedHead = headRequest ? { clef: null, key: [], time: null } : NO_HEAD;
+  let headX = leftPad;
+  if (headRequest) {
+    if (headRequest.clef) {
+      head.clef = {
+        x: headX,
+        // Each clef names one line, and sits on it: G curls around the G line,
+        // F's dots straddle the F line, C is centred on the middle line.
+        y: -CLEF_LINE[headRequest.clef] * lineGap,
+      };
+      headX += lineGap * CLEF_WIDTH;
+    }
+    for (const accidental of headRequest.key) {
+      const step = stepOf(accidental.pitch);
+      if (step === null) {
+        continue;
+      }
+      head.key.push({
+        x: headX,
+        y: -(step - middleStep) * halfGap,
+        kind: accidental.kind,
+      });
+      headX += lineGap * ACCIDENTAL_WIDTH;
+    }
+    if (headRequest.time) {
+      head.time = { x: headX, ...headRequest.time };
+      headX += lineGap * TIME_WIDTH;
+    }
+    if (headX > leftPad) {
+      headX += lineGap * HEAD_GAP;
+    }
+  }
+
   const room = extraRoom(notes, lineGap);
-  let x = leftPad + room[0];
+  let x = headX + room[0];
   // Where each bar starts and stops on this system. Tracked as the loop walks
   // because only the loop knows which item belongs to which bar.
   const measureSpans: MeasureSpan[] = [];
-  let spanFrom = leftPad - noteGap / 2;
+  let spanFrom = headX - noteGap / 2;
   let spanMeasure: number | undefined;
 
   function closeSpan(to: number) {
@@ -858,6 +1005,7 @@ function layoutSystem(
       multiRests,
       measureSpans,
       beams,
+      head,
       nameY,
       width: right,
     },
@@ -894,6 +1042,11 @@ function shift(system: EngravedSystem, dy: number): EngravedSystem {
       numberY: block.numberY + dy,
     })),
     beams: system.beams.map((beam) => ({ ...beam, y: beam.y + dy })),
+    head: {
+      clef: system.head.clef ? { ...system.head.clef, y: system.head.clef.y + dy } : null,
+      key: system.head.key.map((a) => ({ ...a, y: a.y + dy })),
+      time: system.head.time,
+    },
   };
 }
 
@@ -942,10 +1095,22 @@ export function engrave(
     // would hand out width that is already taken and the system would run past
     // its own right margin.
     const reserved = extraRoom(run, lineGap).reduce((a, b) => a + b, 0);
+    // The clef and key signature take their room out of the same width, and
+    // they take it from **every** system — the metre only from the first, which
+    // is why this is computed per run rather than once.
+    const headRequest: HeadRequest | null = options.head
+      ? {
+          clef: options.head.clef,
+          key: options.head.key,
+          time: systems.length === 0 ? options.head.time : null,
+        }
+      : null;
+    const headWidth = headRoom(headRequest, lineGap);
     const stretched =
       options.justify && options.maxWidth && run.length > 1
         ? Math.min(
-            (options.maxWidth - leftPad - rightPad - reserved) / (run.length - 0.5),
+            (options.maxWidth - leftPad - rightPad - reserved - headWidth) /
+              (run.length - 0.5),
             noteGap * MAX_JUSTIFY_STRETCH,
           )
         : noteGap;
@@ -958,6 +1123,7 @@ export function engrave(
       rightPad,
       nameRow,
       beatQuarters,
+      headRequest,
     );
     systems.push(shift(laid.system, cursor - laid.top));
     cursor += laid.bottom - laid.top + gap;

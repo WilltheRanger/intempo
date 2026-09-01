@@ -6,6 +6,105 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-01 — A clef, a key signature, and paper
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Sixth batch of the owner's
+list of 2026-09-01: *"Make it generate a sort of sheet music page look, like
+how you see on music score or flat io."*
+
+**Files:** `mobile/assets/fonts/Bravura.otf` + `Bravura-LICENSE.txt` (new),
+`tools/subset-bravura.py` (new), `mobile/src/lib/notation/keySignature.ts` +
+test, `mobile/src/lib/notation/engrave.ts`,
+`mobile/src/components/notation/Stave.tsx`,
+`mobile/src/screens/pieceScore/PieceScoreScreen.tsx`,
+`mobile/src/design/typography.ts`, `scripts/generate-licences.mjs`,
+`mobile/src/data/licences.ts`.
+
+### The thing that was actually missing
+
+`engrave.ts` drew no clef and gave the right reason: a hand-approximated
+treble clef is the first thing a musician notices and the last thing they
+forgive. That reasoning is now **answered rather than accepted** — the app
+ships Bravura, the reference SMuFL font, subset in-repo from 889 KB to
+**22 KB**. Full argument and the three alternatives in `DECISIONS.md`.
+
+The clef was the visible omission. The **key signature** was the serious one:
+`key_signature` has been read off the page since Batch 2 and shown only as
+text in the metadata line, so a piece in E major was engraved with four
+accidentals missing from every system and an inline sharp on each note that
+happened to need one. That is a list of pitches, not a line of music.
+
+### Where the accidentals go, and the two rows I got wrong
+
+`keySignature.ts` holds the sharp and flat orders per clef. They are
+conventions with no room for invention, and I copied tenor's two rows from
+bass. The test that caught it is the one asserting the rule the whole table has
+to satisfy: **nothing strays more than one step off the staff, on any clef, in
+any key**. One step off is real and printed — treble's third sharp sits in the
+space above the top line — but a wrong octave shows up immediately. Tenor's
+staff sits a third below alto's, so alto's positions transplanted there put the
+first sharp above the top line.
+
+`accidentalCount` returns **null** for "unknown", for absent, and for anything
+unreadable, rather than 0. C major and "nobody could read the header" print the
+same thing, and the caller has to be able to tell them apart.
+
+### Sized in staff spaces, never in points
+
+A SMuFL em is four staff spaces by definition, so `fontSize = 4 * lineGap`
+renders every glyph at exactly the right size for the staff at any scale, with
+no per-glyph fudge factor. `layoutSystem` reserves the head's width and
+justification spends what is left, so the music starts after the metre instead
+of under it.
+
+Verified at 6× from the running build: the G clef's spiral centres on the G
+line, and the 4/4's two digits sit on the second and fourth lines. Those are
+the two things that would be quietly wrong if the baseline convention were
+misread, and both are right.
+
+### The paper
+
+`styles.plate` is white, squared off, full-bleed, with a hairline edge and no
+shadow. §3 law 3 rules out exactly this move and law 6 calls a container an
+exception — the exception here is that what is being shown **is** a page, and
+ink on paper is what a musician's eye is trained on. Rounded corners would make
+it a card pretending to be paper; a shadow would make it float, and a page on a
+stand does not.
+
+Two bugs fixed in doing it, both found by looking:
+
+- **The systems ran off the right edge.** `onLayout` reports a view's *border
+  box*, so measuring the padded page handed the stave the paper's full width.
+  An inner unpadded view is what gets measured now.
+- **The paper swallowed the Listen button.** The controls were inside the
+  plate. A Listen button is app chrome, not part of the page.
+
+### The three-foot test
+
+*Before:* staves floating on the app's ivory ground with no clef and no key —
+from across the room, a diagram.
+
+*After:* first the title in 36pt serif, second the white page of music, third
+the Listen control below it on the app ground. The page and the title are both
+strong but they do not compete: they are stacked in reading order and different
+in kind, which is what a title above a document is.
+
+**mobile: 622 passed, 53 files. `tsc --noEmit` clean.** Warmup unaffected — it
+passes no `head`, because a study-book exercise prints note names under a bare
+stave and names its instrument beside it.
+
+### Not done
+
+- **Noteheads, rests and flags are still drawn by hand.** They look right, and
+  moving them onto the font has its own geometry to re-verify.
+- **No final thin-thick barline**, and bar 1 of the fixture is still tight —
+  sixteen sixteenths, four accidentals and now a clef and metre in 350 px.
+- A glyph used without being added to `tools/subset-bravura.py` renders as
+  **nothing at all**, silently. A music font has no tofu box. The codepoint
+  table in `Stave.tsx` says so where someone would add one.
+
+---
+
 ## 2026-09-01 — Four instruments instead of a test tone
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Fifth batch of the owner's

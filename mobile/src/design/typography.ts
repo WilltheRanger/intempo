@@ -20,7 +20,26 @@ export const fontFamily = {
   serifMedium: 'Newsreader_500Medium',
   sansRegular: 'Inter_400Regular',
   sansMedium: 'Inter_500Medium',
+  /**
+   * Notation. **Not typography with an unusual alphabet** — a treble clef, a
+   * quarter rest and a sharp are drawings with centuries of settled
+   * proportion, and this is the reference font for them (Bravura, SIL OFL 1.1,
+   * the font MuseScore ships). `engrave.ts` drew no clef at all rather than a
+   * bad one; this is what lets it draw a good one.
+   *
+   * Subset to the forty glyphs this app uses — 22 KB rather than 889 KB. See
+   * `tools/subset-bravura.py`, and `assets/fonts/Bravura-LICENSE.txt`.
+   *
+   * **Sized in staff spaces, never in points.** A SMuFL font puts four staff
+   * spaces in one em, so a glyph drawn at `fontSize = 4 * lineGap` is exactly
+   * the right size for that staff — which is the whole reason these are a font
+   * rather than paths.
+   */
+  music: 'Bravura',
 } as const;
+
+/** One em of a SMuFL font is four staff spaces. */
+export const MUSIC_EM_IN_SPACES = 4;
 
 /** Passed to `useFonts` at app start. */
 export const fontsToLoad = {
@@ -28,6 +47,8 @@ export const fontsToLoad = {
   Newsreader_500Medium,
   Inter_400Regular,
   Inter_500Medium,
+  // A file rather than a package: this one is subset in-repo.
+  Bravura: require('../../assets/fonts/Bravura.otf'),
 };
 
 /**

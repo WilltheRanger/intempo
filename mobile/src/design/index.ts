@@ -5,6 +5,7 @@ export {
   typography,
   fontFamily,
   fontsToLoad,
+  MUSIC_EM_IN_SPACES,
   type TypographyToken,
 } from './typography';
 export {
