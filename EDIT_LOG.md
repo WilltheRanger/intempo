@@ -6,6 +6,77 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-01 — Insights was four white boxes with no first thing to look at
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Seventh iteration of the
+consumer-grade loop.
+
+**Files:** `mobile/src/screens/insights/InsightsScreen.tsx`,
+`mobile/src/screens/insights/PieceInsightRow.tsx`,
+`mobile/src/screens/insights/copy.ts` + test,
+`mobile/src/components/skeletons/InsightsSkeleton.tsx`.
+
+### The three-foot test, before
+
+Screenshot of the running build: **a column of four white rounded cards on the
+beige ground, all the same weight.** Naming what I noticed first, second and
+third was not possible — nothing led. That is §3 law 4 failing, and laws 3 and
+6 are why: every section had been turned into a card, so the only visual
+language on the screen was the box.
+
+Worse, the 36pt serif went to the word **"Insights"** — the one word on the
+screen that says nothing, since the tab under the reader's thumb is already
+labelled that — while the sentence a musician opened the tab for, *"You tend to
+rush"*, sat a size down inside a box. Law 8 exactly, inverted: the container
+was doing the work the type scale should do.
+
+### What changed
+
+- **The finding is the title.** `PageHeader` now takes the tendency; the screen
+  name moved into the eyebrow as `Insights · last 30 days`, where a screen the
+  tab bar already names belongs.
+- **No cards.** The tendency, its sentence, its bar and the two end labels are
+  one thought and typography groups them. The lists are ruled rows — which is
+  what the Library one tab away is, and it is the same list of the same pieces;
+  boxing them here and not there made one thing look like two.
+- **The row of three big numbers is gone.** "34 sessions" was already in the
+  sentence under the title and "30 days" already in the eyebrow — two thirds of
+  that block was the screen repeating itself in a larger typeface. The third, a
+  count of pieces, is one scroll of the list below (§3 law 10).
+- **`PieceInsightRow` had no `onPress`.** A screen that names your pieces,
+  measures them and does not open them is a report, not an app — and it is the
+  one place a musician has just been told which piece needs work. It opens the
+  piece now.
+- **"Next focus" is a row, not a card with a button in it.** `TodayRow` already
+  is "a title, a reason, and a tap", which is exactly what this is. Its copy
+  went from three sentences to one, because a card was what the three sentences
+  needed.
+- **The skeleton drew a card the loaded screen no longer has.** A bordered box
+  resolving into text on the page ground is a layout jump at the moment a
+  reader is deciding where to look. It now has the shape of what arrives.
+- Copy rules moved to `screens/insights/copy.ts` and are tested. There is no
+  React Native testing library here (`DECISIONS.md`, 2026-08-24), so a plural
+  rule inside a `.tsx` is a rule nothing checks — and "1 sessions" reads fine
+  in review.
+
+### The three-foot test, after
+
+Screenshot again: first **"You play steadily"** in 36pt serif, second the ochre
+deviation bar directly under it, third the list of pieces. One dominant focal
+point, secondary information receding, and the ochre used as an accent on
+progress only (law 5).
+
+**mobile: 558 passed, `tsc --noEmit` clean.**
+
+### Observed, not fixed
+
+At 1280px the web build has **no maximum content width** — the rows and the
+deviation bars run the full 2000px of a laptop screen. This is app-wide, not
+this screen, and predates this change. `ScreenContainer` is where it would be
+fixed. Recorded here so it is not discovered twice.
+
+---
+
 ## 2026-09-01 — Four engraving faults a screenshot found and no test could
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Sixth iteration of the
