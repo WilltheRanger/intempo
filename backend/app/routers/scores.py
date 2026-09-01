@@ -493,9 +493,24 @@ def _sign_downloads(keys: list[str]) -> dict[str, tuple[str, datetime]]:
 
 
 def _with_image_urls(rows: list[dict[str, Any]]) -> list[ScoreResponse]:
-    """Rows to responses, signing every recoverable image in one call."""
+    """Rows to responses, signing every recoverable image in one call.
+
+    **A discarded photograph is not signed.** Signing does not check that the
+    object exists, so a row whose page was deleted by `POST /:id/accept` went on
+    being handed a perfectly well-formed URL that 404s — and the app has no way
+    to tell that from a slow download. What a musician saw on a piece they had
+    accepted was a large empty box where the photograph used to be, an "Original"
+    tab that showed nothing, and no explanation. The row already records that the
+    page is gone; this is that record being believed.
+
+    `source_image_url` is deliberately left alone on the row. It still holds the
+    key, which is what `_object_key_from` needs if the deletion has to be
+    audited — the response is the only place the absence has to show.
+    """
     keys = {}
     for row in rows:
+        if row.get("page_image_discarded_at"):
+            continue
         key = _object_key_from(row.get("source_image_url") or "")
         if key:
             keys[row["id"]] = key

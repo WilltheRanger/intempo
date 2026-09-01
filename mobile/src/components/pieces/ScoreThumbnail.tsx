@@ -1,4 +1,5 @@
 import { Image } from 'expo-image';
+import { useEffect, useState } from 'react';
 import {
   StyleSheet,
   View,
@@ -9,6 +10,7 @@ import {
 
 import { BORDER_WIDTH, colors, motion, radii } from '../../design';
 import type { ThumbnailSource } from '../../data/types';
+import { sourceIdentity } from '../../lib/imageSource';
 
 export interface ScoreThumbnailProps {
   source: ThumbnailSource | null;
@@ -25,19 +27,43 @@ export interface ScoreThumbnailProps {
  * When there is no image — which is every piece coming from the live API
  * today, since score images sit in a private bucket with no read endpoint —
  * it falls back to ruled staff lines rather than a grey box or a music icon.
+ *
+ * **And when the image fails to arrive, which is not the same thing.** A
+ * signed URL is well-formed whether or not the object behind it is still
+ * there, so a photograph deleted on accept went on being signed and handed
+ * over, and what a musician saw on a piece they had accepted was a large empty
+ * box at whatever height the caller had asked for. The server no longer signs
+ * a discarded page (`_with_image_urls`), which is the fix; this is the belt to
+ * that pair of braces, because a signed URL can also simply expire, and the
+ * failure mode should be the placeholder that already exists rather than a
+ * hole the size of a page.
  */
 export function ScoreThumbnail({
   source,
   radius = radii.sm,
   style,
 }: ScoreThumbnailProps) {
-  if (source === null) {
+  const [failed, setFailed] = useState(false);
+
+  // A new source is a new chance. Without this, one dead URL would keep the
+  // placeholder in place after the piece's page had been replaced.
+  //
+  // Keyed on the identity **inside** the source rather than on the object: a
+  // `{ uri, cacheKey }` is built where the API response is mapped, and a
+  // refetch that returns the same URL builds a new object. Depending on the
+  // object would clear the failure on every such render, so a genuinely dead
+  // URL would retry, fail, and reset in a loop.
+  const identity = sourceIdentity(source);
+  useEffect(() => setFailed(false), [identity]);
+
+  if (source === null || failed) {
     return <StaffPlaceholder radius={radius} style={style} />;
   }
 
   return (
     <Image
       source={source}
+      onError={() => setFailed(true)}
       style={[
         styles.image,
         { borderRadius: radius },

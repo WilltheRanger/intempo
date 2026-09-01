@@ -6,6 +6,60 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-01 — The large empty box on a piece whose photograph was deleted
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Second batch of the owner's
+list of 2026-09-01: *"when photos are deleted it creates some really large box
+for that piece."*
+
+**Files:** `backend/app/routers/scores.py`, `backend/app/tests/test_scores_router.py`,
+`mobile/src/components/pieces/ScoreThumbnail.tsx`,
+`mobile/src/lib/imageSource.ts` + test.
+
+### What it was
+
+**Signing a URL does not check that the object exists.** `_with_image_urls`
+signed `source_image_url` for every row it returned, including rows whose page
+had been deleted by `POST /:id/accept` — the row keeps the key on purpose, so
+the deletion can be audited. So the app was handed a perfectly well-formed
+download URL for a photograph that is gone, `thumbnail` was non-null,
+`hasPages` was true, and the piece screen drew an `Image` at `PAGE_HEIGHT` that
+could never load: a large empty box, an "Original" tab that showed nothing, and
+no explanation. The row has recorded `page_image_discarded_at` all along; it
+simply was not being believed.
+
+Every screen's absent-photograph handling was already correct and none of it
+ran, because from the app's point of view the photograph was present.
+
+### Two changes, and only the first is the fix
+
+- **The server does not sign a discarded page.** One condition in
+  `_with_image_urls`, and it skips the signing round trip as well as the null
+  — asking storage for a key whose object is gone is a request to be told
+  nothing. Two tests: one that the discarded row's `image_url` is null *and*
+  that `create_signed_urls` was never called, and one that a page still there
+  is still signed — without the second, the first would pass by never signing
+  anything again.
+- **`ScoreThumbnail` falls back to its ruled-staff placeholder on a load
+  error.** Belt to those braces: a signed URL can also expire, and the failure
+  should be the placeholder that already exists rather than a hole the size of
+  a page.
+
+The retry rule has a trap in it, which is why it is a tested module rather than
+three lines in the component: a new source clears the failure, and if "new" is
+decided by object identity then a refetch that returns the *same* photograph
+builds a new `{ uri, cacheKey }` — so a genuinely dead URL retries, fails,
+resets and flickers. `sourceIdentity` reads the storage path out of the source,
+which is the photograph's identity across token rotations. It lives in
+`lib/imageSource.ts` beside `stableImage` because the component imports
+`expo-image` and a module that does cannot be loaded under vitest at all.
+
+**mobile: 579 passed. backend: `test_scores_router.py` + `test_multi_page_api.py`
+92 passed.** The full backend suite was still running when this was written; the
+two files touched are green.
+
+---
+
 ## 2026-09-01 — Sound: the session nobody configured, and a real count-in
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. First batch of the owner's
