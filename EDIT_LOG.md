@@ -6,6 +6,24 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-31 — Active-tab keyboard containment
+
+**Branch:** `fix/inactive-tab-keyboard-focus`
+
+### Changed
+
+- Wrapped tab scenes in a platform-aware focus boundary.
+- Uses the web platform's inert primitive so buttons and fields in previously
+  visited, hidden tabs cannot receive keyboard focus or pointer input.
+- Keeps inactive native scenes hidden from VoiceOver and TalkBack descendants
+  while preserving tab state and scroll position.
+
+### Verification
+
+- Reproduced the issue against the deployed signed-in app: hidden Today and
+  Library controls retained tabindex 0 while Insights was active.
+- Mobile typecheck, tests, and web build run in pull-request CI; the preview is
+  rechecked with keyboard-focus inspection before merge.
 ## 2026-08-31 — Meter-aware practice pulse
 
 **Branch:** `fix/musical-meter-pulse`
