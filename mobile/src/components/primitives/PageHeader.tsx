@@ -88,7 +88,13 @@ const styles = StyleSheet.create({
   },
   titleRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    // **Top, not centre.** Centred is right for a one-line title and wrong for
+    // every longer one: a real repertoire title — "Sonata for Violin and Piano
+    // No. 9 in A major, Op. 47 'Kreutzer'" — runs to five lines at 320pt, and a
+    // centred action lands in the *middle of the paragraph*, reading as a mark
+    // inside the text rather than as a control beside it. Every platform header
+    // aligns its trailing action to the first line, for this reason.
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
     gap: spacing.lg,
   },

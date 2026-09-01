@@ -11,7 +11,6 @@ import { colors, spacing } from '../../design';
 
 interface PracticeSetupProps {
   title: string;
-  composer?: string | null;
   onBack: () => void;
   onContinue: () => void;
 }
@@ -26,7 +25,6 @@ interface PracticeSetupProps {
  */
 export function PracticeSetup({
   title,
-  composer,
   onBack,
   onContinue,
 }: PracticeSetupProps) {
@@ -45,16 +43,26 @@ export function PracticeSetup({
         </View>
       }
     >
+      {/*
+        **The tips are the subject; the piece is the context.**
+
+        This had the piece as the screen title *and* "Before your first take"
+        as a second heading of the same weight, one under the other — two
+        competing focal points (§3 law 4). At 320pt with a real repertoire
+        title it was four lines of serif followed by two more, and the actual
+        subject of the screen was below the fold.
+
+        The piece moves to the eyebrow, where a one-time interstitial about
+        microphone technique should carry it. The composer goes: on a screen
+        that is not about the music, it is one more thing to read.
+      */}
       <PageHeader
-        eyebrow={composer ?? undefined}
-        title={title}
+        eyebrow={title}
+        title="Before your first take"
         onBack={onBack}
         backLabel="Back to the piece"
       />
 
-      <Text variant="screenTitle" style={styles.heading}>
-        Before your first take
-      </Text>
       <Text variant="body" color="textSecondary" style={styles.lede}>
         Three details make the timing feedback much more reliable.
       </Text>
@@ -112,9 +120,6 @@ function SetupStep({
 }
 
 const styles = StyleSheet.create({
-  heading: {
-    marginTop: spacing['2xl'],
-  },
   lede: {
     marginTop: spacing.sm,
   },

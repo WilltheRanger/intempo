@@ -6,6 +6,47 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-01 — Two things a real repertoire title broke
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. The other half of the
+small-screen pass: **hostile content**. The fixtures are short, tidy titles;
+real repertoire is not. Seeded *"Sonata for Violin and Piano No. 9 in A major,
+Op. 47 'Kreutzer'"* by Ralph Vaughan Williams with a two-clause movement and
+swept at 320pt.
+
+**Files:** `mobile/src/components/primitives/PageHeader.tsx`,
+`mobile/src/screens/record/PracticeSetup.tsx`,
+`mobile/src/screens/record/RecordScreen.tsx`.
+
+Nothing overflowed — the library truncates to two lines with an ellipsis and
+the detail screens wrap and scroll, which is right. Two composition failures
+that only a long title exposes:
+
+- **The header's trailing action sat in the middle of the title.** `titleRow`
+  was `alignItems: 'center'`, which is correct for one line and wrong for every
+  longer one: at 320pt the title runs to **five lines** and the `⋮` landed
+  between *"Piano No. 9 in"* and *"A major, Op."*, reading as a mark inside the
+  paragraph rather than a control beside it. Aligned to the first line now,
+  which is what every platform header does. One line changed, every screen with
+  a header action fixed.
+
+- **The recording-tips screen had two screen titles.** The piece as the header
+  title *and* "Before your first take" immediately under it at the same weight —
+  two competing focal points (§3 law 4). With a real title that is four lines of
+  serif followed by two more, and the actual subject of the screen is below the
+  fold. The piece is the **eyebrow** now and the tips are the title, because a
+  one-time interstitial about microphone technique is not about the music. The
+  composer prop went with it: on a screen that is not about the piece, it is one
+  more thing to read, and it was passed in from `RecordScreen` for no other
+  purpose.
+
+**Verified** at 320pt before and after: the `⋮` on the first line, and the tips
+screen leading with its own subject and the first tip visible without scrolling.
+
+**Rollback:** revert the commit.
+
+---
+
 ## 2026-09-01 — On a 320pt phone the measure editor could not edit or save
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Found by walking every

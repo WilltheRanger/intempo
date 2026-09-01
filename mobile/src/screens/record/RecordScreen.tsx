@@ -442,7 +442,6 @@ export function RecordScreen() {
     return (
       <PracticeSetup
         title={piece.title}
-        composer={piece.composer}
         onBack={() => {
           if (practiceSetupSeen) {
             setShowSetup(false);
