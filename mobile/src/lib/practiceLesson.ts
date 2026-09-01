@@ -74,3 +74,27 @@ export function practiceLessonFor({
       `Start ${pieceTitle} at ${tempo} and record one uninterrupted take. Do not restart—use it as the starting point.`,
   };
 }
+
+/** Contextual setup lesson shown while a piece has no readable notation yet. */
+export function notationSetupLesson(
+  pieceTitle: string,
+  reading: boolean,
+): PracticeLesson {
+  return reading
+    ? {
+        context: `Preparing ${pieceTitle}`,
+        title: 'Keep the page open for review',
+        body:
+          'When the reading finishes, compare the digital notation with the original pages before recording.',
+        exercise:
+          'Review any highlighted measures, correct them, and accept the transcription when it matches the page.',
+      }
+    : {
+        context: `Before practising ${pieceTitle}`,
+        title: 'Give the recording something to follow',
+        body:
+          'Timing feedback is only meaningful when InTempo knows the written notes, rests, and repeats.',
+        exercise:
+          'Photograph or import the complete part in page order. Check the transcription before your first take.',
+      };
+}
