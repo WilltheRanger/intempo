@@ -6,6 +6,85 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-01 — The editor could not undo the fault the page sent it to fix
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Follows the entry below:
+having drawn ties, the obvious next question was whether a wrong one can be
+corrected. It could not.
+
+**Files:** `mobile/src/screens/measureEdit/MeasureEditScreen.tsx`,
+`mobile/src/screens/switchState.test.ts` (new).
+
+### A dead end with directions on it
+
+`validate.py` flags a **broken tie** — a curve between two different pitches,
+which is a slur written as a tie or a misread notehead — and `PieceScoreScreen`
+turns that into a caveat line that takes the musician to this editor. The
+editor could change durations, rests, pitch, and add or delete notes. It had no
+control at all for the tie itself.
+
+So one of the two readings was fixable (correct the notehead) and the other was
+not (say "that is not a tie"), and the app never distinguished them. **Tie to
+next** is now a switch beside Rest.
+
+It sits with Rest and not with the pitch controls because those two are the
+marks that change the *timeline*. A tie removes an onset: `scheduleScore` folds
+a tied pair into one sound and `alignment.py` expects one attack, so a tie the
+page never had costs the musician a note the analysis is waiting for — the same
+argument that put pitch in this screen in the first place.
+
+**Turning a note into a rest clears the tie.** `readTies` already ignores a tie
+on a rest, so nothing misreads it today; leaving the flag set stores a tie the
+page never had, and it would reappear the moment the rest became a note again.
+The control is hidden on a rest for the same reason — a switch that means
+nothing where it is shown is worse than no switch.
+
+### `aria-checked`, found for the third time
+
+react-native-web emits `aria-checked` and does **not** derive it from
+`accessibilityState`. A switch with only `accessibilityState={{ checked }}`
+announces its label on the web build and never its state: "Rest", never "Rest,
+on". `PieceScoreScreen` and `RecordScreen` each carry a comment saying so, and
+`ToggleRow` was fixed when the profile was audited — and this screen's rest
+toggle had it wrong the whole time in between.
+
+Three independent discoveries of one fact is what a test is for.
+`switchState.test.ts` reads the source of every screen and component, finds
+every `accessibilityRole="switch"`, and asserts the element carries
+`aria-checked=`. Source text because there is no React Native testing library
+here (`DECISIONS.md`, 2026-08-24) — the same approach `cameraResolution.test.ts`
+takes.
+
+**It passed twice while checking nothing**, and both failures are worth
+recording because they are the standard ways this kind of test lies:
+
+1. `import.meta.glob` was aliased to a variable. It is a **compile-time Vite
+   transform** and has to be called literally; aliased, it matched no files and
+   every assertion passed vacuously. There is now an explicit case asserting the
+   glob found switches at all.
+2. The assertion looked for the string `aria-checked`, and the comment
+   *explaining* `aria-checked` sits inside the very element it describes — so
+   deleting the prop left the word behind. Comments are stripped before
+   scanning, and the needle is `aria-checked=`, with the equals.
+
+It also enumerated all 84 `.tsx` files, reporting 80 green cases that examined
+nothing; it now runs over the four files that actually declare a switch.
+
+**Verified** by deleting the prop from `ToggleRow` and watching the guard fail
+with the file named, then restoring it (`diff -q`, identical). In the browser at
+iPhone-13 size: `Rest=false | Tie to the next note=false`, tapping the tie
+reports `true` and enables Save, and on a rest the tie control is gone.
+
+**Tests:** 790 pass, up 5.
+
+**Known, unfixed:** the fixture take still reports 12 measures for a demo score
+with 3, and the count-in screen has two controls both labelled "Cancel
+count-in".
+
+**Rollback:** revert the commit.
+
+---
+
 ## 2026-09-01 — Two noteheads, one sound, and nothing joining them
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Eighth finding of the

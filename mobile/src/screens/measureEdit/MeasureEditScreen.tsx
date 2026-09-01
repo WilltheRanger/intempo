@@ -312,10 +312,23 @@ export function MeasureEditScreen() {
       */}
       <Pressable
         onPress={() =>
-          change({ pitch: current?.pitch === 'rest' ? (original?.notes[selected]?.pitch ?? 'C4') : 'rest' })
+          change(
+            current?.pitch === 'rest'
+              ? { pitch: original?.notes[selected]?.pitch ?? 'C4' }
+              : // **A rest cannot be tied.** `readTies` already ignores a tie
+                // on a rest, so nothing misreads it — but leaving the flag set
+                // stores a tie the page never had, and it would reappear the
+                // moment the rest was turned back into a note.
+                { pitch: 'rest', tied_to_next: false },
+          )
         }
         accessibilityRole="switch"
+        // **Both spellings.** react-native-web emits `aria-checked` and does
+        // not derive it from `accessibilityState`, so on the web this switch
+        // announced its label and never whether it was on. Two other screens
+        // already knew this and said so in their own comments; this one did not.
         accessibilityState={{ checked: current?.pitch === 'rest' }}
+        aria-checked={current?.pitch === 'rest'}
         style={[styles.chip, styles.restToggle, current?.pitch === 'rest' && styles.chipOn]}
       >
         <Text
@@ -325,6 +338,47 @@ export function MeasureEditScreen() {
           Rest
         </Text>
       </Pressable>
+
+      {/*
+        **A tie, because the app flags a broken one and could not fix it.**
+
+        `validate.py` reports a tie between two different pitches — a slur
+        written as a tie, or a misread notehead — and the score screen sends the
+        musician here to correct it. The editor could change the *pitch*, which
+        fixes one of those two readings, and had no way at all to say "that is
+        not a tie". A screen that names a fault and offers no way to repair it
+        is a dead end with directions on it.
+
+        It is also the same argument that put pitch here: a tie removes an
+        onset. `scheduleScore` folds a tied note into one sound and
+        `alignment.py` expects one attack, so a tie the page never had costs the
+        musician a note the analysis is waiting for.
+
+        Beside the rest toggle rather than with the pitch controls, because
+        those two are the marks that change the *timeline*; pitch below is read
+        by nothing in the analysis.
+      */}
+      {current && current.pitch !== 'rest' ? (
+        <Pressable
+          onPress={() => change({ tied_to_next: !current.tied_to_next })}
+          accessibilityRole="switch"
+          accessibilityLabel="Tie to the next note"
+          accessibilityState={{ checked: current.tied_to_next === true }}
+          aria-checked={current.tied_to_next === true}
+          style={[
+            styles.chip,
+            styles.restToggle,
+            current.tied_to_next && styles.chipOn,
+          ]}
+        >
+          <Text
+            variant="metadataSmall"
+            color={current.tied_to_next ? 'actionText' : 'textPrimary'}
+          >
+            Tie to next
+          </Text>
+        </Pressable>
+      ) : null}
 
       {/*
         Pitch, one row below the durations and deliberately quieter.
