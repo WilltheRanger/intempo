@@ -6,6 +6,27 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-31 — In-app help and connection diagnostics
+
+**Branch:** `feat/help-connection-diagnostics`
+
+### Changed
+
+- Added Help & connection under Profile with a read-only service check that
+  tests both the public health endpoint and the signed-in account.
+- Distinguishes a sleeping or unreachable service, an expired session, and an
+  account request failure instead of presenting every problem as “no connection.”
+- Added practical recording guidance for microphone placement, double-bass
+  attacks, headphone metronomes, count-ins, and long-rest re-entry cues.
+- Added scan guidance for lighting, page framing, multi-page order, and review
+  of measures the transcription could not verify.
+
+### Verification
+
+- Added mobile tests for connected, service-unreachable, expired-session, and
+  account-unreachable diagnostic outcomes and request order.
+- Mobile typecheck, tests, and web build run in pull-request CI.
+
 ## 2026-08-31 — Operable bottom-sheet close control
 
 **Branch:** `fix/bottom-sheet-close-button`
