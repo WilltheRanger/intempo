@@ -42,7 +42,11 @@ import type { RootNavigation } from '../../navigation/types';
  * grants access to that file alone — asking for the whole library first would
  * request more than this screen uses.
  */
-export function ImportPagesScreen() {
+export function ImportPagesScreen({
+  attachToPieceId,
+}: {
+  attachToPieceId?: string;
+}) {
   const navigation = useNavigation<RootNavigation>();
   // Read once: nothing about the device changes while the screen is open.
   const [hasUsableCamera] = useState(() =>
@@ -77,7 +81,9 @@ export function ImportPagesScreen() {
 
       // A fresh session, exactly as opening the scanner does — importing is
       // starting a new piece, not adding to whatever was photographed earlier.
-      captureSession.importAll(assets.map((asset) => asset.uri));
+      captureSession.importAll(assets.map((asset) => asset.uri), {
+        attachToPieceId,
+      });
       navigation.replace('CapturedPages');
     } catch (cause) {
       setError(

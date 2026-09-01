@@ -48,6 +48,8 @@ let pages: CapturedPage[] = [];
 let nextId = 1;
 /** Set by the upload step, consumed by the save in the same page order. */
 let uploadedImageUrls: string[] = [];
+/** Existing manual piece these pages should be read into, rather than duplicated. */
+let attachmentPieceId: string | null = null;
 /**
  * The page a retake is going to replace, while one is in flight.
  *
@@ -96,9 +98,10 @@ export function useCapturedPages(): CapturedPage[] {
 
 export const captureSession = {
   /** Clears the session, retake included. Called when the scanner opens fresh. */
-  reset(): void {
+  reset(options: { attachToPieceId?: string } = {}): void {
     nextId = 1;
     uploadedImageUrls = [];
+    attachmentPieceId = options.attachToPieceId ?? null;
     retakingId = null;
     commit([]);
   },
@@ -142,7 +145,10 @@ export const captureSession = {
    * earlier, so this resets — but in one commit rather than a reset followed by
    * a loop of appends, which published an empty list to every subscriber first.
    */
-  importAll(sources: CapturedSource[]): void {
+  importAll(
+    sources: CapturedSource[],
+    options: { attachToPieceId?: string } = {},
+  ): void {
     if (sources.length > MAX_SCAN_PAGES) {
       throw new Error(
         `A score can have at most ${MAX_SCAN_PAGES} pages in one scan.`,
@@ -150,6 +156,7 @@ export const captureSession = {
     }
     nextId = 1;
     uploadedImageUrls = [];
+    attachmentPieceId = options.attachToPieceId ?? null;
     retakingId = null;
     commit(sources.map((source) => ({ id: `page-${nextId++}`, source })));
   },
@@ -223,5 +230,10 @@ export const captureSession = {
 
   uploadedImageUrls(): string[] {
     return [...uploadedImageUrls];
+  },
+
+  /** Existing library entry that receives this scan, when there is one. */
+  attachmentPieceId(): string | null {
+    return attachmentPieceId;
   },
 };

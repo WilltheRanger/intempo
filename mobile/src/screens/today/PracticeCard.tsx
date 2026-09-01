@@ -1,4 +1,4 @@
-import { Play } from 'lucide-react-native';
+import { FileMusic, Play } from 'lucide-react-native';
 import { StyleSheet, View } from 'react-native';
 
 import { ScoreThumbnail } from '../../components/pieces/ScoreThumbnail';
@@ -61,6 +61,11 @@ export function PracticeCard({
   lastTakeHeadline,
   onContinue,
 }: PracticeCardProps) {
+  const hasNotation = (piece.score?.measures.length ?? 0) > 0;
+  const readingNotation =
+    piece.transcriptionStatus === 'queued' ||
+    piece.transcriptionStatus === 'reading';
+
   return (
     <Card emphasis padded={false}>
       <ScoreThumbnail source={piece.thumbnail} radius={0} style={styles.banner} />
@@ -118,9 +123,23 @@ export function PracticeCard({
           </Text>
         ) : null}
 
+        {!hasNotation ? (
+          <Text variant="metadataSmall" color="textSecondary" style={styles.setup}>
+            {readingNotation
+              ? 'Reading the pages now. Practice unlocks when the notation is ready.'
+              : 'Add the score so InTempo can follow the written notes and rests.'}
+          </Text>
+        ) : null}
+
         <PrimaryButton
-          label="Continue practice"
-          icon={Play}
+          label={
+            hasNotation
+              ? 'Continue practice'
+              : readingNotation
+                ? 'View reading progress'
+                : 'Add sheet music'
+          }
+          icon={hasNotation ? Play : FileMusic}
           onPress={onContinue}
           style={styles.action}
         />
@@ -150,6 +169,9 @@ const styles = StyleSheet.create({
     marginTop: spacing.md,
   },
   verdict: {
+    marginTop: spacing.sm,
+  },
+  setup: {
     marginTop: spacing.sm,
   },
   action: {
