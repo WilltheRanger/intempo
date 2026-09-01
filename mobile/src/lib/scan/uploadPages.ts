@@ -1,7 +1,5 @@
 import type { UploadOptions } from '../../data/api/upload';
 import type { CapturedPage } from '../../data/captureSession';
-import { uploadPage } from './uploadPage';
-
 export interface PageUploadProgress {
   /** One-based position of the page currently moving. */
   page: number;
@@ -18,8 +16,8 @@ export type PageUploader = (
 export interface UploadPagesOptions {
   signal?: AbortSignal;
   onProgress?: (progress: PageUploadProgress) => void;
-  /** Test seam. Production always uses the real page uploader. */
-  upload?: PageUploader;
+  /** Platform uploader supplied by the screen; tests can stay runtime-free. */
+  upload: PageUploader;
 }
 
 /**
@@ -34,7 +32,7 @@ export async function uploadPages(
   pages: readonly CapturedPage[],
   options: UploadPagesOptions = {},
 ): Promise<string[]> {
-  const send = options.upload ?? uploadPage;
+  const send = options.upload;
   const urls: string[] = [];
 
   for (const [index, page] of pages.entries()) {
