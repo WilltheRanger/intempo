@@ -12,7 +12,11 @@ import {
   SecondaryButton,
   Text,
 } from '../../components/primitives';
-import { captureSession, useCapturedPages } from '../../data/captureSession';
+import {
+  captureSession,
+  MAX_SCAN_PAGES,
+  useCapturedPages,
+} from '../../data/captureSession';
 import { spacing } from '../../design';
 import type { RootNavigation } from '../../navigation/types';
 import { DraggablePageList } from './DraggablePageList';
@@ -53,12 +57,17 @@ export function CapturedPagesScreen() {
   // route meant the Today tab — with the pages still in the session and
   // nothing able to reach them, since the only screens that navigate here both
   // start a new one.
+  const atPageLimit = pages.length >= MAX_SCAN_PAGES;
+
   const scannerBelow =
     navigation.getState()?.routes.some((route) => route.name === 'Scanner') ?? false;
 
   // "Add page" means the viewfinder either way. `adding` is what stops a
   // freshly pushed one resetting the scan it was opened to extend.
   function addPage() {
+    if (atPageLimit) {
+      return;
+    }
     if (scannerBelow) {
       navigation.goBack();
       return;
@@ -117,7 +126,7 @@ export function CapturedPagesScreen() {
     <ScreenContainer
       footer={
         <PrimaryButton
-          label="Continue with page 1"
+          label={pages.length === 1 ? "Continue with 1 page" : `Continue with ${pages.length} pages`}
           onPress={() => navigation.navigate('Transcribe')}
         />
       }
@@ -133,7 +142,7 @@ export function CapturedPagesScreen() {
       <Text variant="metadataSmall" color="textTertiary" style={styles.hint}>
         {pages.length === 1
           ? 'This is the page InTempo will read.'
-          : 'Only page 1 will be uploaded and read. Put the clearest page first.'}
+          : 'InTempo uploads and reads every page in this order.'}
       </Text>
 
       <DraggablePageList
@@ -144,12 +153,18 @@ export function CapturedPagesScreen() {
         onNudge={(id, direction) => captureSession.move(id, direction)}
       />
 
-      <SecondaryButton
-        label="Add page"
-        icon={Plus}
-        onPress={addPage}
-        style={styles.addPage}
-      />
+      {atPageLimit ? (
+        <Text variant="metadataSmall" color="textTertiary" style={styles.addPage}>
+          A scan can contain up to {MAX_SCAN_PAGES} pages.
+        </Text>
+      ) : (
+        <SecondaryButton
+          label="Add page"
+          icon={Plus}
+          onPress={addPage}
+          style={styles.addPage}
+        />
+      )}
 
       <ConfirmDialog
         visible={pendingDelete !== null}
