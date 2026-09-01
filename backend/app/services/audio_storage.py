@@ -97,6 +97,19 @@ def readable_audio_url(client, reference: str) -> str:
             key, SIGNED_AUDIO_DOWNLOAD_TTL_SECONDS
         )
     except Exception as exc:  # provider/SDK failures vary
+        # Historical rows may already carry a GET-capable signed/public URL.
+        # Keep them usable during a rolling deploy and in degraded storage
+        # clients. Never fall back for upload/authenticated URLs: neither is a
+        # readable private URL without a fresh signature.
+        path = urlparse(reference).path
+        if any(
+            path.startswith(prefix)
+            for prefix in (
+                f"/storage/v1/object/sign/{AUDIO_BUCKET}/",
+                f"/storage/v1/object/public/{AUDIO_BUCKET}/",
+            )
+        ):
+            return reference
         raise AudioStorageError(f"could not sign recording download: {exc}") from exc
 
     if isinstance(signed, dict):
