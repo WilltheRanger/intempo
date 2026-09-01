@@ -1,6 +1,8 @@
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { StyleSheet, View } from 'react-native';
+import { useIsFocused } from '@react-navigation/native';
+import type { ReactNode } from 'react';
+import { Platform, StyleSheet, View } from 'react-native';
 
 import { useAuthStatus } from '../data/auth/useAuthStatus';
 import { useMe } from '../data/hooks/useMe';
@@ -36,16 +38,81 @@ import type { RootStackParamList, TabParamList } from './types';
 const Tab = createBottomTabNavigator<TabParamList>();
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
+function TabScene({ children }: { children: ReactNode }) {
+  const focused = useIsFocused();
+
+  // React Navigation correctly hides inactive scenes from screen readers, but
+  // on web aria-hidden does not remove descendant buttons from the keyboard
+  // order. A musician tabbing through Insights could therefore land on every
+  // control in the invisible Today and Library screens first. HTML inert is
+  // the platform primitive that blocks focus, pointer input and accessibility
+  // exposure together. Native keeps its own equivalent flags.
+  if (Platform.OS === 'web') {
+    return (
+      <div
+        aria-hidden={!focused}
+        inert={focused ? undefined : true}
+        style={{ display: 'flex', flex: 1, minHeight: 0 }}
+      >
+        {children}
+      </div>
+    );
+  }
+
+  return (
+    <View
+      style={styles.tabScene}
+      accessibilityElementsHidden={!focused}
+      importantForAccessibility={focused ? 'auto' : 'no-hide-descendants'}
+      pointerEvents={focused ? 'auto' : 'none'}
+    >
+      {children}
+    </View>
+  );
+}
+
+function TodayTab() {
+  return (
+    <TabScene>
+      <TodayScreen />
+    </TabScene>
+  );
+}
+
+function LibraryTab() {
+  return (
+    <TabScene>
+      <LibraryScreen />
+    </TabScene>
+  );
+}
+
+function InsightsTab() {
+  return (
+    <TabScene>
+      <InsightsScreen />
+    </TabScene>
+  );
+}
+
+function ProfileTab() {
+  return (
+    <TabScene>
+      <ProfileScreen />
+    </TabScene>
+  );
+}
+
 function TabNavigator() {
   return (
     <Tab.Navigator
       tabBar={(props) => <BottomTabBar {...props} />}
       screenOptions={{ headerShown: false }}
     >
-      <Tab.Screen name="Today" component={TodayScreen} />
-      <Tab.Screen name="Library" component={LibraryScreen} />
-      <Tab.Screen name="Insights" component={InsightsScreen} />
-      <Tab.Screen name="Profile" component={ProfileScreen} />
+      <Tab.Screen name="Today" component={TodayTab} />
+      <Tab.Screen name="Library" component={LibraryTab} />
+      <Tab.Screen name="Insights" component={InsightsTab} />
+      <Tab.Screen name="Profile" component={ProfileTab} />
     </Tab.Navigator>
   );
 }
@@ -165,6 +232,9 @@ function SignedInApp() {
 }
 
 const styles = StyleSheet.create({
+  tabScene: {
+    flex: 1,
+  },
   holding: {
     flex: 1,
     backgroundColor: colors.bg,
