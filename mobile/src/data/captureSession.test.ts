@@ -171,29 +171,29 @@ describe('importing pages', () => {
     expect(seen).toEqual([3]);
   });
 
-  it('clears the upload from the scan it replaces', () => {
-    // A signed URL from the previous scan would let the save go through
-    // against a page nobody chose.
+  it('clears the uploaded keys from the scan it replaces', () => {
+    // A key from the previous scan would let the save go through against a
+    // page nobody chose.
     scanOf(1);
-    captureSession.setUploadedImageUrls([
-      'https://example.test/page-1',
-      'https://example.test/page-2',
+    captureSession.setUploadedImageKeys([
+      'user/page-1.jpg',
+      'user/page-2.jpg',
     ]);
 
     captureSession.importAll([PAGE(5)]);
-    expect(captureSession.uploadedImageUrls()).toEqual([]);
+    expect(captureSession.uploadedImageKeys()).toEqual([]);
   });
 
-  it('preserves every uploaded URL in page order', () => {
-    const urls = [
-      'https://example.test/page-1',
-      'https://example.test/page-2',
-      'https://example.test/page-3',
+  it('preserves every uploaded object key in page order', () => {
+    const keys = [
+      'user/page-1.jpg',
+      'user/page-2.jpg',
+      'user/page-3.jpg',
     ];
 
-    captureSession.setUploadedImageUrls(urls);
+    captureSession.setUploadedImageKeys(keys);
 
-    expect(captureSession.uploadedImageUrls()).toEqual(urls);
+    expect(captureSession.uploadedImageKeys()).toEqual(keys);
   });
 
   it('refuses an imported score beyond the server page limit', () => {
