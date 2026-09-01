@@ -6,6 +6,74 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-01 — What the app looks like at twice the text size
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`.
+
+**Files:** `mobile/src/components/primitives/PageHeader.tsx`,
+`screens/profile/LinkRow.tsx`, `screens/profile/ProfileScreen.tsx`,
+`screens/account/AcknowledgementsScreen.tsx`.
+
+### The audit
+
+`Text` does not set `allowFontScaling`, so it defaults to **true** and every
+word in the app grows with the iOS Larger Text setting. That is the right
+default and it is also an obligation: the layouts have to survive it, and
+nothing here had ever been looked at above 1×.
+
+Simulated by scaling every `fontSize` and `lineHeight` in `typography.ts` in a
+throwaway build, then sweeping all 22 routes for text pushed off-screen or
+clipped by an ancestor.
+
+**At 1.5× one thing failed. At 2× three did.** For an app that has never been
+tested at any size but its own, that is a better result than I expected, and
+the three are worth having.
+
+### `flexShrink` does not shrink anything on the web build
+
+Twice over, and it is the same CSS fact both times: **a flex item's `min-width`
+is `auto` — its own content — so an unbreakable token cannot be shrunk.**
+React Native's layout treats it as `0`, so `minWidth: 0` is a no-op on device
+and the fix in the one place these screens can be driven.
+
+- `LinkRow`'s value had `flexShrink: 1` *and* `numberOfLines={1}` and still ran
+  11pt off the screen with neither taking effect.
+- Profile's identity email had two lines allowed and used one, because
+  "you@example.com" has nowhere to break. It also takes `wordBreak: 'break-all'`
+  on web — the same shim shape as `ToggleRow` and `Input`, and a no-op on
+  device, where React Native already breaks a word too long for its line.
+  Breaking rather than truncating because that block exists to say *which
+  account you are in*, and "you@examp…" does not.
+
+### A title and its action that could not share a line
+
+`PageHeader`'s title row was `nowrap` with only the title able to shrink, so at
+2× Library's **"Add piece" ran 58pt off the screen** — not moved, gone. It
+wraps now: the action drops below the title when they cannot fit, which costs
+nothing at any size where they can.
+
+### A sixteen-letter word
+
+"Acknowledgements" at 2× is 588pt on a 350pt column, and a page title wraps at
+word boundaries, so no container fixes it. The screen is called **"Open
+source"** now — two words, so it can always wrap; it says what the screen
+actually holds; and it is the term the stores use. The Profile row that opens
+it says the same.
+
+**Verified** at 2× on all 22 routes: clean. And at 1× and at 320pt: both
+sweeps still clean, so none of this cost anything at ordinary sizes.
+
+**Not done:** iOS's largest accessibility sizes go beyond 2×, and the real
+setting scales text without scaling the layout constants around it — this
+scaled the ramp, which is close but not the same thing. A device is still the
+only way to see the real one.
+
+**Tests:** 940, unchanged — these are layout facts a source test cannot hold.
+
+**Rollback:** revert the commit.
+
+---
+
 ## 2026-09-01 — Eight touch targets that only existed on a phone
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. From a layout audit at

@@ -2,7 +2,7 @@ import { useNavigation } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
 import { useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, View } from 'react-native';
 
 import appConfig from '../../../app.json';
 import { ConfirmDialog } from '../../components/overlays/ConfirmDialog';
@@ -319,7 +319,7 @@ export function ProfileScreen() {
             onPress={() => navigation.navigate('Legal', { document: 'terms' })}
           />
           <LinkRow
-            label="Acknowledgements"
+            label="Open source"
             onPress={() => navigation.navigate('Acknowledgements')}
           />
         </View>
@@ -398,6 +398,22 @@ const styles = StyleSheet.create({
   },
   identityEmail: {
     flexShrink: 1,
+    /**
+     * **An email address has nowhere to break.**
+     *
+     * `flexShrink` cannot act while CSS `min-width` is `auto` — its content —
+     * so at 2x text "you@example.com" ran 11pt off a 390pt screen with two
+     * lines allowed and neither of them used. Zero lets it shrink; breaking
+     * mid-word lets it use the second line rather than be truncated, which
+     * matters here because this block exists to say *which account you are
+     * in* and "you@examp…" does not.
+     *
+     * Web only, and the same shape as the shims in `ToggleRow` and `Input`:
+     * React Native already breaks a word too long for its line, so on device
+     * this is a no-op.
+     */
+    minWidth: 0,
+    ...Platform.select({ web: { wordBreak: 'break-all' as const }, default: {} }),
   },
   settingCard: {
     marginBottom: spacing.md,

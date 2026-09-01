@@ -97,6 +97,15 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     justifyContent: 'space-between',
     gap: spacing.lg,
+    /**
+     * **The action drops below the title when they cannot share a line.**
+     * At iOS's larger text sizes they often cannot: measured at 2x type,
+     * Library's "Add piece" ran 58pt off a 390pt screen because the row was
+     * `nowrap` and only the title could shrink. Wrapping costs nothing at any
+     * size where they do fit, and it is the difference between a control that
+     * moves and a control that is gone.
+     */
+    flexWrap: 'wrap',
   },
   title: {
     flexShrink: 1,
