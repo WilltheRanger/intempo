@@ -6,6 +6,27 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-31 — Edited scans cannot reuse stale uploads
+
+**Branch:** `fix/invalidate-edited-scan-uploads`
+
+### Changed
+
+- Bound completed page uploads to the exact captured pixels and page order that
+  produced them.
+- A retake, reorder, addition, or removal now clears the old uploaded object
+  keys so Continue must send the edited scan before it can be saved.
+- Preserved completed uploads when no page actually changed, including a
+  cancelled retake, an out-of-range move, and removal of an unknown page.
+- Prevented the naming screen from saving an old photograph or old page order
+  merely because the edited scan happened to contain the same number of pages.
+
+### Verification
+
+- Added capture-session coverage for reorder, retake, removal, cancelled
+  retake, and no-op commands after a completed upload.
+- Mobile typecheck, tests, web build, and backend tests run in pull-request CI.
+
 ## 2026-08-31 — Non-expiring score page references
 
 **Branch:** `fix/durable-score-page-references`
