@@ -61,7 +61,7 @@ export function TranscriptionReviewScreen() {
 
   function openReading(pieceId: string) {
     // The scan is finished with; leaving it in place would let a later save
-    // reuse an expired upload URL or attach to the wrong piece.
+    // reuse the previous scan's object keys or attach to the wrong piece.
     captureSession.reset();
     const tabs = navigation
       .getState()
