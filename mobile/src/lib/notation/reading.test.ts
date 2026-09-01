@@ -95,9 +95,45 @@ describe('problemMeasures', () => {
   });
 });
 
+describe('describeBeats and the opening bar', () => {
+  it('calls a short first measure a pickup rather than unbalanced', () => {
+    // The edit screen's headline. Without this it read "1 of 4 beats" over a
+    // red-flag caveat, on the opening bar of most real repertoire, and invited
+    // a correction to a bar that was already right.
+    const described = describeBeats([{ duration: 'quarter' }], '4/4', {
+      first: true,
+    });
+    expect(described.balanced).toBe(true);
+    expect(described.text).toBe('1 of 4 beats — a pickup');
+  });
+
+  it('says nothing of the sort about the same bar later in the piece', () => {
+    const described = describeBeats([{ duration: 'quarter' }], '4/4');
+    expect(described.balanced).toBe(false);
+    expect(described.text).toBe('1 of 4 beats');
+  });
+
+  it('does not forgive a first measure that is too long', () => {
+    // The server's rule is `actual < expected`, and a five-beat opening bar in
+    // 4/4 is a misreading whichever bar it is.
+    const described = describeBeats(
+      [{ duration: 'whole' }, { duration: 'quarter' }],
+      '4/4',
+      { first: true },
+    );
+    expect(described.balanced).toBe(false);
+  });
+
+  it('does not forgive an empty first measure', () => {
+    const described = describeBeats([], '4/4', { first: true });
+    expect(described.balanced).toBe(false);
+  });
+});
+
 describe('describeBeats', () => {
   it('says the total against the meter', () => {
     expect(describeBeats([{ duration: 'half' }, { duration: 'quarter' }], '4/4')).toEqual({
+      pickup: false,
       text: '3 of 4 beats',
       balanced: false,
       expected: 4,
@@ -129,7 +165,12 @@ describe('describeBeats', () => {
     // "Saying '4 beats' is still useful; claiming it is right would not be."
     const described = describeBeats([{ duration: 'whole' }], null);
 
-    expect(described).toEqual({ text: '4 beats', balanced: true, expected: null });
+    expect(described).toEqual({
+      text: '4 beats',
+      balanced: true,
+      expected: null,
+      pickup: false,
+    });
   });
 
   it('does not show a confident wrong number for an uncountable bar', () => {
@@ -137,6 +178,7 @@ describe('describeBeats', () => {
       text: 'Beats not counted',
       balanced: true,
       expected: null,
+      pickup: false,
     });
   });
 });

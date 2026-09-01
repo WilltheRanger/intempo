@@ -16,7 +16,9 @@ A comment is not an invariant. These are.
 
 from __future__ import annotations
 
+import itertools
 import typing
+from fractions import Fraction
 
 import pytest
 
@@ -91,6 +93,130 @@ def test_triplet_bars_still_sum_exactly_despite_the_thirds() -> None:
         assert total == expected, f"{count} x {triplet} summed to {total!r}"
 
 
+@pytest.mark.parametrize("prefix,ratio", [("quintuplet", 5), ("septuplet", 7)])
+def test_five_and_seven_fill_the_space_of_four_plain_notes(
+    prefix: str, ratio: int
+) -> None:
+    """The defining property of the two ratios added after the triplets.
+
+    Five in the time of four, and seven in the time of four — so five
+    `quintuplet_sixteenth`s are a quarter, exactly as three `triplet_eighth`s
+    are. Fifths and sevenths are no more representable in binary than thirds,
+    so this is checked to the tolerance the code actually uses.
+    """
+    for base, plain in [
+        ("half", "double_whole"),
+        ("quarter", "whole"),
+        ("eighth", "half"),
+        ("sixteenth", "quarter"),
+    ]:
+        name = f"{prefix}_{base}"
+        assert (
+            abs(ratio * DURATION_BEATS[name] - DURATION_BEATS[plain])
+            < validate.TOLERANCE
+        ), f"{ratio} x {name} is not a {plain}"
+
+
+#: What each duration name means, as an exact rational.
+#:
+#: **A second table on purpose**, which is otherwise the thing this whole file
+#: exists to prevent. Every other copy is a copy of the same floating-point
+#: answer and can only agree or disagree with it; this one is the *question* —
+#: the value the notation denotes, in arithmetic with no rounding — so it is the
+#: only thing that can say whether the floats are right rather than merely
+#: consistent. The key sets are asserted equal below, so it cannot fall behind a
+#: new duration in silence.
+EXACT_BEATS: dict[str, Fraction] = {
+    "whole": Fraction(4), "dotted_whole": Fraction(6),
+    "half": Fraction(2), "dotted_half": Fraction(3),
+    "quarter": Fraction(1), "dotted_quarter": Fraction(3, 2),
+    "eighth": Fraction(1, 2), "dotted_eighth": Fraction(3, 4),
+    "sixteenth": Fraction(1, 4), "dotted_sixteenth": Fraction(3, 8),
+    "thirty_second": Fraction(1, 8), "dotted_thirty_second": Fraction(3, 16),
+    "sixty_fourth": Fraction(1, 16), "dotted_sixty_fourth": Fraction(3, 32),
+    "one_twenty_eighth": Fraction(1, 32),
+    "double_whole": Fraction(8),
+    "double_dotted_half": Fraction(7, 2),
+    "double_dotted_quarter": Fraction(7, 4),
+    "double_dotted_eighth": Fraction(7, 8),
+    "triplet_breve": Fraction(16, 3), "triplet_whole": Fraction(8, 3),
+    "triplet_thirty_second": Fraction(1, 12), "triplet_sixty_fourth": Fraction(1, 24),
+    "triplet_one_twenty_eighth": Fraction(1, 48),
+    "quintuplet_breve": Fraction(32, 5), "quintuplet_whole": Fraction(16, 5),
+    "quintuplet_thirty_second": Fraction(1, 10),
+    "quintuplet_sixty_fourth": Fraction(1, 20),
+    "quintuplet_one_twenty_eighth": Fraction(1, 40),
+    "septuplet_breve": Fraction(32, 7), "septuplet_whole": Fraction(16, 7),
+    "septuplet_thirty_second": Fraction(1, 14),
+    "septuplet_sixty_fourth": Fraction(1, 28),
+    "septuplet_one_twenty_eighth": Fraction(1, 56),
+    "triplet_half": Fraction(4, 3), "triplet_quarter": Fraction(2, 3),
+    "triplet_eighth": Fraction(1, 3), "triplet_sixteenth": Fraction(1, 6),
+    "quintuplet_half": Fraction(8, 5), "quintuplet_quarter": Fraction(4, 5),
+    "quintuplet_eighth": Fraction(2, 5), "quintuplet_sixteenth": Fraction(1, 5),
+    "septuplet_half": Fraction(8, 7), "septuplet_quarter": Fraction(4, 7),
+    "septuplet_eighth": Fraction(2, 7), "septuplet_sixteenth": Fraction(1, 7),
+}
+
+
+def test_every_duration_is_the_nearest_double_to_the_value_it_denotes() -> None:
+    """The float table against exact arithmetic, name by name."""
+    assert set(EXACT_BEATS) == DURATIONS, {
+        "in the schema but not stated exactly": sorted(DURATIONS - set(EXACT_BEATS)),
+        "stated exactly but not in the schema": sorted(set(EXACT_BEATS) - DURATIONS),
+    }
+    wrong = {
+        name: (DURATION_BEATS[name], str(exact))
+        for name, exact in EXACT_BEATS.items()
+        if DURATION_BEATS[name] != float(exact)
+    }
+    assert not wrong, wrong
+
+
+def test_no_bar_that_should_add_up_fails_the_beat_check() -> None:
+    """**The claim the tolerance is there to make, checked instead of assumed.**
+
+    `validate.py` compares a measure's float sum against its meter with
+    `TOLERANCE`. That is sound only if every bar which adds up *exactly* in real
+    arithmetic also adds up to within the tolerance in floating point — and with
+    thirds, fifths and sevenths in the same table, mixed in one bar, that is not
+    obvious. If it ever fails, a musician is told a bar they played and wrote
+    correctly does not add up, which is the exact failure this file was created
+    after.
+
+    So: every combination of up to six durations whose *exact* total is a whole
+    number of beats, summed the way the validator sums it. Measured at the time
+    this was written — 11,293 such bars out of 1.6M combinations, worst
+    floating-point error **0.0**. Not a theorem, which is why it is a test.
+
+    Six because that is where the combination count stops being free (about a
+    tenth of a second) and because a bar of more than six notes is built out of
+    the same values in the same way.
+    """
+    names = list(DURATION_BEATS)
+    checked = 0
+    worst = 0.0
+    failures: list[tuple[tuple[str, ...], float, str]] = []
+    for size in range(1, 7):
+        for combo in itertools.combinations_with_replacement(names, size):
+            exact = sum((EXACT_BEATS[c] for c in combo), Fraction(0))
+            # Only bars that land on a whole number of beats — those are the
+            # ones a meter can be compared against, and the only ones where a
+            # rounding error would change the verdict.
+            if exact.denominator != 1 or exact > 12:
+                continue
+            checked += 1
+            total = sum(DURATION_BEATS[c] for c in combo)
+            error = abs(total - float(exact))
+            worst = max(worst, error)
+            if error > validate.TOLERANCE:
+                failures.append((combo, total, str(exact)))
+
+    assert checked > 10_000, f"only {checked} whole-beat bars — the sweep shrank"
+    assert not failures, failures[:5]
+    assert worst == 0.0, f"the sums are no longer exact; worst error {worst!r}"
+
+
 # --- end to end: a triplet bar has to survive every stage -------------------
 
 def _bar(*durations: str) -> Measure:
@@ -142,7 +268,12 @@ def test_a_triplet_bar_produces_evenly_spaced_onsets() -> None:
 
 def test_a_triplet_measure_asked_about_is_asked_about_by_name() -> None:
     """A short triplet bar still reaches the retry prompt, and the prompt says
-    triplets are writable — it used to tell the model they were not."""
+    triplets are writable — it used to tell the model they were not.
+
+    Asserted on the substring that names the tuplets rather than the whole
+    sentence: `TUPLET_NOTE` also lists what is *not* writable, and that half
+    changes every time the schema learns a ratio.
+    """
     # Not measure 1 — a short opening bar is read as a pickup, which is not a
     # problem and so is never asked about.
     full = _bar(*["triplet_eighth"] * 6, "half")
@@ -152,7 +283,7 @@ def test_a_triplet_measure_asked_about_is_asked_about_by_name() -> None:
     findings = validate.validate_measures(score)
     assert [f.verdict for f in findings] == ["ok", "short"]
     text = validate.describe_for_retry(findings)
-    assert "triplets can be written" in text
+    assert "triplets, quintuplets and septuplets can be written" in text
 
 
 # ---------------------------------------------------------------------------

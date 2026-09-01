@@ -69,6 +69,9 @@ export function InstrumentChoice({ value, onChange, label }: InstrumentChoicePro
             key={instrument.value}
             onPress={() => onChange(instrument.value)}
             accessibilityRole="radio"
+            // A radio announces itself with `aria-checked`; the native prop
+            // does not produce it. See `ariaState.test.ts`.
+            aria-checked={selected}
             accessibilityState={{ selected }}
             accessibilityLabel={instrument.label}
             style={({ pressed }) => [

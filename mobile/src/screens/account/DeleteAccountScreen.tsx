@@ -2,6 +2,7 @@ import { useNavigation } from '@react-navigation/native';
 import { useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
+import { useGoBack } from '../../navigation/useGoBack';
 
 import { ConfirmDialog } from '../../components/overlays/ConfirmDialog';
 import {
@@ -22,6 +23,7 @@ import type { RootNavigation } from '../../navigation/types';
  */
 export function DeleteAccountScreen() {
   const navigation = useNavigation<RootNavigation>();
+  const goBack = useGoBack({ tab: 'Profile' });
   const queryClient = useQueryClient();
   const [confirmation, setConfirmation] = useState('');
   const [confirming, setConfirming] = useState(false);
@@ -54,7 +56,7 @@ export function DeleteAccountScreen() {
     <ScreenContainer>
       <PageHeader
         title="Delete account"
-        onBack={() => navigation.goBack()}
+        onBack={goBack}
         backLabel="Back to profile"
       />
 

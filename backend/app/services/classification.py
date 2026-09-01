@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
+from typing import Literal
 
 import numpy as np
 
@@ -36,6 +37,17 @@ class Direction(str, Enum):
     rush = "rush"  # ahead / early
     drag = "drag"  # behind / late
     on = "on"  # within the inner tolerance band
+
+
+#: Why a note's deviation was not measured against a time the page states.
+#:
+#: A closed set rather than a sentence, so the app writes the words a musician
+#: reads and the pipeline only says which case it is. The three are genuinely
+#: different things — a tempo change is the page withdrawing the steady beat, a
+#: fermata is the page handing one length to the player, an ornament is *this
+#: code* having guessed — and only the last is a limitation rather than
+#: notation.
+UntimedReason = Literal["tempo_change", "fermata", "ornament"]
 
 
 @dataclass
@@ -60,6 +72,25 @@ class Delta:
     #: The slowing or speeding lurched at this note, rather than flowing.
     #: Always false outside a tempo change.
     uneven: bool = False
+    #: This note's deviation was measured against a time the **page states**.
+    #:
+    #: False for the four cases `band` is forced to `on` for, which are not the
+    #: same reason wearing four names: a `rit.` says the beat stops being
+    #: steady; a fermata says one length is not written down at all; an ornament
+    #: and the note it decorates are placed by `ORNAMENT_SHARE`, a number this
+    #: code invented. In every one of them the deviation is real and it is not
+    #: an error, so anything that averages, plots or judges deltas has to be
+    #: able to leave them out — and `under_tempo_change` alone only covered the
+    #: first. Default True so a `Delta` built without it behaves as before.
+    timed: bool = True
+    #: Which of those it was, when `timed` is false. `None` when it is true.
+    #:
+    #: **The app said "Not timed" and stopped there**, which reads as the app
+    #: failing rather than as the page speaking. It is not the same sentence as
+    #: "this bar is held" — one is an apology and the other is a reading. The
+    #: reason was known at exactly this line and thrown away one field short of
+    #: the screen that needed it.
+    untimed_reason: UntimedReason | None = None
 
 
 def classify_band(delta_pct: float, *, config: AudioConfig | None = None) -> Band:
@@ -217,14 +248,22 @@ def compute_deltas(
         # it decorates are placed here by an assumption this code made — see
         # `ORNAMENT_SHARE`. Timing a musician against a number we invented is
         # the one thing that would be worse than not placing them at all.
-        band = (
-            Band.on
+        # **Ordered, and the order is a statement about what to say first.** A
+        # note can be under a `rit.` *and* after a fermata; the tempo change is
+        # the broader fact — it covers a passage rather than one length — so it
+        # is named first. The ornament pair comes last because it is the
+        # narrowest: it describes two notes, not a bar.
+        reason: UntimedReason | None = (
+            "tempo_change"
             if note.under_tempo_change
-            or note.after_fermata
-            or note.is_grace_note
-            or note.after_grace_note
-            else classify_band(delta_pct, config=cfg)
+            else "fermata"
+            if note.after_fermata
+            else "ornament"
+            if note.is_grace_note or note.after_grace_note
+            else None
         )
+        timed = reason is None
+        band = classify_band(delta_pct, config=cfg) if timed else Band.on
         deltas.append(
             Delta(
                 global_index=note.global_index,
@@ -236,8 +275,10 @@ def compute_deltas(
                 band=band,
                 direction=_direction(delta_pct, band),
                 is_slur_interior=note.is_slur_interior,
+                untimed_reason=reason,
                 under_tempo_change=note.under_tempo_change,
                 uneven=note.measure_number in uneven,
+                timed=timed,
             )
         )
     return deltas
@@ -254,14 +295,29 @@ def rolling_trend(
     Accepts either `Delta` objects or a raw list of signed %-of-beat
     values. Output is rush-positive (ahead = +), length equal to the
     input, using an expanding window until `window` samples are
-    available (so the first few notes still get a value). Slur-interior
-    notes are excluded — their timing is musically free.
+    available (so the first few notes still get a value).
+
+    Two kinds of note are excluded. **Slur-interior** ones, because their
+    timing is musically free. And notes that were **not timed** at all, for a
+    stronger reason: `compute_deltas` refuses to band them — a `rit.`, a
+    fermata, an ornament and the note it decorates — so their deviation is real
+    and is not an error. Leaving them in drew a trend line diving at the end of
+    any piece that closes with a `rit.`, on the same screen whose measure list
+    says those bars were not timed.
+
+    `timed` rather than `under_tempo_change`: this excluded the ritardando and
+    left the fermata and the ornament in, which is the same mistake one name
+    narrower.
     """
     cfg = config or load_audio_config()
     win = window if window is not None else cfg.trend.window
 
     if deltas and isinstance(deltas[0], Delta):
-        values = [-d.delta_pct for d in deltas if not d.is_slur_interior]  # rush-positive
+        values = [
+            -d.delta_pct  # rush-positive
+            for d in deltas
+            if not d.is_slur_interior and d.timed
+        ]
     else:
         values = [float(v) for v in deltas]  # type: ignore[arg-type]
 

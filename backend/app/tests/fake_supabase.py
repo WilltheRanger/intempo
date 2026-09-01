@@ -53,6 +53,17 @@ class _Query:
         self._filters.append(("gte", col, val))
         return self
 
+    def is_(self, col: str, val: Any) -> "_Query":
+        # PostgREST spells "IS NULL" as `.is_(col, "null")`, with the string
+        # `"null"` rather than None. Only that form is modelled, because only
+        # that form is used.
+        self._filters.append(("is", col, val))
+        return self
+
+    @property
+    def not_(self) -> "_Not":
+        return _Not(self)
+
     def limit(self, n: int) -> "_Query":
         self._limit = n
         return self
@@ -73,17 +84,37 @@ class _Query:
                 return False
             if kind == "gte" and not (str(row.get(col)) >= str(val)):
                 return False
+            if kind == "is" and row.get(col) is not None:
+                return False
+            if kind == "not is" and row.get(col) is None:
+                return False
         return True
 
     def execute(self) -> _Result:
         return self._table._execute(self)
 
 
+class _Not:
+    """`query.not_.is_(col, "null")`, which is how PostgREST spells IS NOT NULL.
+
+    A separate object because `not_` is a property on the real client that
+    returns a builder, and modelling it as one keeps the call site in the
+    application identical to the one that runs against Supabase.
+    """
+
+    def __init__(self, query: "_Query"):
+        self._query = query
+
+    def is_(self, col: str, _val: Any) -> "_Query":
+        self._query._filters.append(("not is", col, None))
+        return self._query
+
+
 class _Table:
     def __init__(self, rows: list[dict]):
         self.rows = rows
 
-    def insert(self, payload: dict) -> _Query:
+    def insert(self, payload: dict | list[dict]) -> _Query:
         return _Query(self, "insert", payload)
 
     def select(self, *_cols, count: str | None = None) -> _Query:
@@ -99,17 +130,23 @@ class _Table:
 
     def _execute(self, q: _Query) -> _Result:
         if q._op == "insert":
-            row = dict(q._payload or {})
-            row.setdefault("id", str(uuid4()))
-            row.setdefault("created_at", _iso())
-            row.setdefault("updated_at", _iso())
-            row.setdefault("metronome_mode", "off")
-            row.setdefault("result_json", None)
-            row.setdefault("failure_reason", None)
-            row.setdefault("alignment_quality", None)
-            row.setdefault("finished_at", None)
-            self.rows.append(row)
-            return _Result([dict(row)])
+            # A list payload is a bulk insert, which is how `training_corrections`
+            # writes every bar of one save in a single call.
+            payload = q._payload if isinstance(q._payload, list) else [q._payload or {}]
+            written: list[dict[str, Any]] = []
+            for one in payload:
+                row = dict(one)
+                row.setdefault("id", str(uuid4()))
+                row.setdefault("created_at", _iso())
+                row.setdefault("updated_at", _iso())
+                row.setdefault("metronome_mode", "off")
+                row.setdefault("result_json", None)
+                row.setdefault("failure_reason", None)
+                row.setdefault("alignment_quality", None)
+                row.setdefault("finished_at", None)
+                self.rows.append(row)
+                written.append(dict(row))
+            return _Result(written)
 
         matched = [r for r in self.rows if q._matches(r)]
         # The count is of everything matching, before any limit — that is what

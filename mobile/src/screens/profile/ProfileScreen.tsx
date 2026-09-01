@@ -2,7 +2,7 @@ import { useNavigation } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
 import { useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, View } from 'react-native';
 
 import appConfig from '../../../app.json';
 import { ConfirmDialog } from '../../components/overlays/ConfirmDialog';
@@ -44,7 +44,7 @@ import { ToggleRow } from './ToggleRow';
  * like a control and isn't one.
  */
 export function ProfileScreen() {
-  const { data: musician, isPending, isError, error } = useMe();
+  const { data: musician, isPending, isError, error, isFetching, refetch } = useMe();
   const settings = usePreferences();
   const navigation = useNavigation<RootNavigation>();
   const queryClient = useQueryClient();
@@ -122,8 +122,12 @@ export function ProfileScreen() {
       <ScreenContainer>
         <PageHeader title="Profile" />
         <EmptyState
+          fill
           title="Couldn't load your account"
           description={describeLoadError(error)}
+          actionLabel={isFetching ? 'Trying…' : 'Try again'}
+          onActionPress={() => void refetch()}
+          actionDisabled={isFetching}
         />
       </ScreenContainer>
     );
@@ -254,7 +258,8 @@ export function ProfileScreen() {
             style={styles.settingNote}
           >
             Use headphones — a metronome over the speaker ends up in the
-            recording and throws the analysis off.
+            recording and throws the analysis off. This is the take only; the
+            count-in always ticks, and is discarded before anything is sent.
           </Text>
         ) : null}
       </Card>
@@ -307,7 +312,15 @@ export function ProfileScreen() {
             onPress={() => navigation.navigate('Help')}
           />
           <LinkRow
-            label="Acknowledgements"
+            label="Privacy"
+            onPress={() => navigation.navigate('Legal', { document: 'privacy' })}
+          />
+          <LinkRow
+            label="Terms"
+            onPress={() => navigation.navigate('Legal', { document: 'terms' })}
+          />
+          <LinkRow
+            label="Open source"
             onPress={() => navigation.navigate('Acknowledgements')}
           />
         </View>
@@ -386,6 +399,22 @@ const styles = StyleSheet.create({
   },
   identityEmail: {
     flexShrink: 1,
+    /**
+     * **An email address has nowhere to break.**
+     *
+     * `flexShrink` cannot act while CSS `min-width` is `auto` — its content —
+     * so at 2x text "you@example.com" ran 11pt off a 390pt screen with two
+     * lines allowed and neither of them used. Zero lets it shrink; breaking
+     * mid-word lets it use the second line rather than be truncated, which
+     * matters here because this block exists to say *which account you are
+     * in* and "you@examp…" does not.
+     *
+     * Web only, and the same shape as the shims in `ToggleRow` and `Input`:
+     * React Native already breaks a word too long for its line, so on device
+     * this is a no-op.
+     */
+    minWidth: 0,
+    ...Platform.select({ web: { wordBreak: 'break-all' as const }, default: {} }),
   },
   settingCard: {
     marginBottom: spacing.md,

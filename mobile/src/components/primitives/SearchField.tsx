@@ -86,7 +86,7 @@ export function SearchField({
           onPress={() => onChangeText('')}
           accessibilityRole="button"
           accessibilityLabel="Clear search"
-          hitSlop={spacing.md}
+          style={styles.target}
         >
           <X
             size={ICON_SIZE.md}
@@ -100,6 +100,19 @@ export function SearchField({
 }
 
 const styles = StyleSheet.create({
+  /**
+   * Padded to a real touch target, not `hitSlop`-ed to one.
+   *
+   * **`hitSlop` does nothing on the web build.** Measured in Chromium: a click
+   * 8pt above this control — well inside a 12pt slop — did not activate it,
+   * while a click on the visible 18pt box did. `PlaybackSettings` reached the
+   * same conclusion from the other direction: "a hit area nothing can see is a
+   * hit area nothing checks."
+   */
+  target: {
+    minHeight: MIN_TOUCH_TARGET,
+    justifyContent: 'center',
+  },
   field: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -120,6 +133,10 @@ const styles = StyleSheet.create({
   },
   input: {
     flex: 1,
+    // **Full height, so the target is the field and not the text.** The
+    // container is `MIN_TOUCH_TARGET` tall; the input inside it measured 24pt,
+    // so half the row looked tappable and was not.
+    alignSelf: 'stretch',
     ...typography.body,
     color: colors.textPrimary,
     // Android centres poorly without this; iOS ignores it.

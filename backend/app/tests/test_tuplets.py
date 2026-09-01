@@ -92,19 +92,25 @@ def test_a_group_running_past_the_measure_is_caught() -> None:
 def test_a_ratio_the_durations_cannot_express_is_reported() -> None:
     """The case the beat sum is blind to, stated as arithmetic.
 
-    Five notes bracketed 5:4, approximated as three triplet eighths plus two
-    more — the durations sum to a plausible number and nothing else in the
-    system can tell. Only the printed ratio can.
+    Five notes bracketed **5:6** — a quintuplet in a compound metre, replacing
+    six — approximated as three triplet eighths plus two more. The durations sum
+    to a plausible number and nothing else in the system can tell. Only the
+    printed ratio can.
+
+    5:4 until `Duration` learned to name quintuplets, at which point this became
+    a test that a *writable* ratio is reported unwritable. 5:6 is the same
+    situation the 5:4 case used to be in, and is what the schema now documents
+    as the remaining gap.
     """
     measure = _measure(
         ["triplet_eighth"] * 3 + ["sixteenth"] * 2,
-        [Tuplet(start_note_index=0, end_note_index=4, actual_notes=5, normal_notes=4)],
+        [Tuplet(start_note_index=0, end_note_index=4, actual_notes=5, normal_notes=6)],
     )
     (fault,) = tuplet_faults([measure])
     assert fault.reason == "unwritable"
     # The message named 3:2 as the only writable ratio. It is not any more —
-    # duplets, quadruplets and sextuplets all land on written values — so what
-    # it says now is the thing that is still true of 5:4.
+    # duplets, quadruplets, sextuplets, quintuplets and septuplets all land on
+    # values with names — so what it says now is what is still true of 5:6.
     assert "no written value survives it" in fault.describe()
 
 
@@ -264,12 +270,30 @@ def test_a_three_in_two_bracket_over_plain_values_is_still_caught() -> None:
     assert fault.reason == "durations"
 
 
-def test_five_in_the_time_of_four_still_has_no_name() -> None:
-    """A fifth of a beat has no notehead, and guessing the nearest triplet
-    would put notes at times nobody played."""
-    measure = _measure(["triplet_eighth"] * 5 + ["quarter"] * 3, [_bracket(5, 4, through=4)])
+def test_five_in_the_time_of_six_still_has_no_name() -> None:
+    """Six fifths of a sixteenth has no notehead, and guessing the nearest
+    triplet would put notes at times nobody played.
+
+    Five in the time of *four* used to be this test, and is now writable —
+    `quintuplet_sixteenth`. Five in the time of six, which is how a quintuplet is
+    bracketed in a compound metre, still is not.
+    """
+    measure = _measure(["triplet_eighth"] * 5 + ["quarter"] * 3, [_bracket(5, 6, through=4)])
     (fault,) = tuplet_faults([measure])
     assert fault.reason == "unwritable"
+
+
+def test_five_in_the_time_of_four_now_has_one() -> None:
+    """The other half of the pair above, so the boundary is pinned from both
+    sides: a bar of quintuplet sixteenths is ordinary notation and must not be
+    reported as a fault."""
+    measure = _measure(
+        ["quintuplet_sixteenth"] * 5 + ["quarter"] * 3, [_bracket(5, 4, through=4)]
+    )
+    assert tuplet_faults([measure]) == []
+    (finding,) = validate_measures(_score(measure))
+    assert finding.actual_beats == pytest.approx(4.0)
+    assert finding.is_problem is False
 
 
 # --------------------------------------------------------------------------
@@ -305,6 +329,27 @@ def _bracketed(kind: str, actual: int, normal: int, count: int) -> str:
     return one * count
 
 
+def _nameless(count: int = 9) -> str:
+    """A bracketed group no `Duration` can write, one note at a time.
+
+    **These cases need a ratio that has no name, not a quintuplet.** They were
+    written with `5:4` sixteenths, which was the ordinary unwritable ratio until
+    `Duration` learned `quintuplet_sixteenth` — at which point every one of them
+    silently stopped testing what it says it tests, because the notes came back
+    named and no rest was ever flushed. Same expiry as the examples in
+    `test_score_schema.test_a_duration_this_schema_cannot_express_is_still_fatal`,
+    third time in this repository.
+
+    Nine in the time of eight thirty-seconds: each note is 1/9 of a beat, which
+    no notehead writes, and a nonuplet is real notation rather than a value
+    invented to fail. A group's *total* is `base x normal` and does not depend
+    on how many notes are inside it, so this comes to a **quarter** — exactly
+    what the 5:4 group it replaces came to, which is why these cases keep their
+    shape and their surrounding bars.
+    """
+    return _bracketed("32nd", 9, 8, count)
+
+
 def test_a_quintuplet_keeps_its_length_as_a_rest() -> None:
     """**Because a bar short by a beat moves every bar after it.**
 
@@ -315,7 +360,7 @@ def test_a_quintuplet_keeps_its_length_as_a_rest() -> None:
     page was expected a beat early.
     """
     score = score_json_from_musicxml(
-        _xml(_QUARTER + _bracketed("16th", 5, 4, 5) + _QUARTER * 2)
+        _xml(_QUARTER + _nameless() + _QUARTER * 2)
     )
     assert [(n.pitch, n.duration) for n in score.measures[0].notes] == [
         ("A3", "quarter"),
@@ -333,7 +378,7 @@ def test_the_rest_stands_where_the_group_stood() -> None:
     so a rest emitted after the note it preceded swaps two onsets in time.
     """
     score = score_json_from_musicxml(
-        _xml(_QUARTER * 2 + _bracketed("16th", 5, 4, 5) + _QUARTER)
+        _xml(_QUARTER * 2 + _nameless() + _QUARTER)
     )
     assert [n.pitch for n in score.measures[0].notes] == ["A3", "A3", "rest", "A3"]
 
@@ -341,18 +386,32 @@ def test_the_rest_stands_where_the_group_stood() -> None:
 def test_a_group_that_runs_to_the_barline_is_still_flushed() -> None:
     """There is no following note to flush it, so the measure end must."""
     score = score_json_from_musicxml(
-        _xml(_QUARTER * 3 + _bracketed("16th", 5, 4, 5))
+        _xml(_QUARTER * 3 + _nameless())
     )
     assert [n.pitch for n in score.measures[0].notes] == ["A3", "A3", "A3", "rest"]
     assert [f.verdict for f in validate_measures(score)] == ["ok"]
 
 
-def test_a_septuplet_of_thirty_seconds_is_a_quarter_too() -> None:
+def test_a_septuplet_of_thirty_seconds_is_read_rather_than_silenced() -> None:
+    """Seven in the time of eight thirty-seconds is a quarter, and this used to
+    assert that the quarter came back as **one rest**.
+
+    It comes back as seven notes now. That is the whole point of naming
+    septuplets: keeping the group's length was the best that could be done while
+    its parts had no names, and it cost every onset inside the bracket — a
+    musician playing seven notes was measured against a bar that expected
+    silence. Each note is an eighth of a beat... which `septuplet_sixteenth`
+    (1/7 of a quarter) is not, so the ratio here is 7:8 and lands on
+    `septuplet_quarter` scaled down: see the beats table.
+    """
     score = score_json_from_musicxml(
         _xml(_QUARTER + _bracketed("32nd", 7, 8, 7) + _QUARTER * 2)
     )
+    notes = score.measures[0].notes
     assert [f.verdict for f in validate_measures(score)] == ["ok"]
-    assert sum(1 for n in score.measures[0].notes if n.pitch == "rest") == 1
+    assert not any(n.pitch == "rest" for n in notes), "no onset may be lost"
+    assert [n.duration for n in notes[1:8]] == ["septuplet_sixteenth"] * 7
+    assert score.measures[0].unwritable_notes == 0
 
 
 def test_half_a_group_leaves_the_bar_visibly_short() -> None:
@@ -370,7 +429,7 @@ def test_half_a_group_leaves_the_bar_visibly_short() -> None:
             "</measure>",
             '</measure><measure number="2">'
             + _QUARTER
-            + _bracketed("16th", 5, 4, 4)
+            + _nameless(8)
             + _QUARTER * 2
             + "</measure>",
             1,
@@ -390,13 +449,60 @@ def test_a_ratio_that_does_have_a_name_is_not_turned_into_silence() -> None:
     assert [n.duration for n in score.measures[0].notes[1:4]] == ["triplet_eighth"] * 3
 
 
+@pytest.mark.parametrize(
+    "kind,actual,normal,count,name",
+    [
+        ("16th", 5, 4, 5, "quintuplet_sixteenth"),
+        ("eighth", 5, 4, 5, "quintuplet_eighth"),
+        ("16th", 7, 4, 7, "septuplet_sixteenth"),
+        # Seven in the time of *eight* is the compound-metre spelling of a
+        # septuplet. It needs no name of its own: it lands on the same length
+        # `septuplet_quarter` denotes, and the beats-to-name lookup finds it.
+        ("eighth", 7, 8, 7, "septuplet_quarter"),
+    ],
+)
+def test_a_bracket_an_engraver_writes_keeps_every_onset(
+    kind: str, actual: int, normal: int, count: int, name: str
+) -> None:
+    """**The measurement this change was made for.**
+
+    Before `Duration` named these, `_unnameable_tuplet_beats` kept the group's
+    *length* and wrote it as rests — the right trade when the alternative is
+    moving every later bar, and completely silent to every check here. Measured
+    on the first case below, a 4/4 bar read correctly off the page:
+
+        onsets in the transcription   3 of 8
+        beat-sum verdict              ok, 4.0 of 4.0
+        the only trace                unwritable_notes = 5
+
+    `alignment.py` matches what was played against that timeline, so a musician
+    playing the quintuplet was scored against a bar expecting silence there.
+
+    The bar has to stay correct as well as complete, which is why the verdict
+    and the total are asserted alongside the onsets: a duration that recovers
+    the notes but not the length would move every bar after it instead.
+    """
+    tail = 4 - (DURATION_BEATS[name] * count)
+    body = _bracketed(kind, actual, normal, count) + _QUARTER * int(round(tail))
+    score = score_json_from_musicxml(_xml(body))
+    (measure,) = score.measures
+    (finding,) = validate_measures(score)
+
+    assert [n.duration for n in measure.notes[:count]] == [name] * count
+    assert not any(n.pitch == "rest" for n in measure.notes), "no onset may be lost"
+    assert measure.unwritable_notes == 0
+    assert finding.verdict == "ok"
+    assert finding.actual_beats == pytest.approx(4.0)
+    assert finding.is_problem is False
+
+
 def test_the_notes_are_still_declared_lost() -> None:
     """Keeping the time is not the same as reading the notes, and the count is
     still the count of notes this schema could not write."""
     score = score_json_from_musicxml(
-        _xml(_QUARTER + _bracketed("16th", 5, 4, 5) + _QUARTER * 2)
+        _xml(_QUARTER + _nameless() + _QUARTER * 2)
     )
-    assert "5 note(s)" in score.notes_to_human
+    assert "9 note(s)" in score.notes_to_human
     assert "kept as a rest" in score.notes_to_human
     assert score.ocr_confidence < 0.5
 
@@ -415,9 +521,9 @@ def test_the_measure_carries_what_the_reading_lost() -> None:
     this the app has nothing at all to show.
     """
     score = score_json_from_musicxml(
-        _xml(_QUARTER + _bracketed("16th", 5, 4, 5) + _QUARTER * 2)
+        _xml(_QUARTER + _nameless() + _QUARTER * 2)
     )
-    assert score.measures[0].unwritable_notes == 5
+    assert score.measures[0].unwritable_notes == 9
     assert [f.verdict for f in validate_measures(score)] == ["ok"]
 
 
@@ -429,7 +535,7 @@ def test_a_clean_page_carries_nothing() -> None:
 
 def test_it_becomes_a_concern_on_a_bar_whose_beats_add_up() -> None:
     score = score_json_from_musicxml(
-        _xml(_QUARTER + _bracketed("16th", 5, 4, 5) + _QUARTER * 2)
+        _xml(_QUARTER + _nameless() + _QUARTER * 2)
     )
     (finding,) = validate_measures(score)
     assert finding.is_problem is True
@@ -468,7 +574,7 @@ def test_a_bar_the_musician_rewrites_stops_claiming_it_lost_notes() -> None:
     The bar a musician had just repaired kept telling them it was broken.
     """
     read = score_json_from_musicxml(
-        _xml(_QUARTER + _bracketed("16th", 5, 4, 5) + _QUARTER * 2)
+        _xml(_QUARTER + _nameless() + _QUARTER * 2)
     )
     stored = read.model_dump(mode="json")
 
@@ -492,24 +598,24 @@ def test_a_bar_the_musician_rewrites_stops_claiming_it_lost_notes() -> None:
 def test_a_bar_saved_untouched_keeps_its_count() -> None:
     """Renaming a piece, or fixing a slur three bars away, is not a repair."""
     read = score_json_from_musicxml(
-        _xml(_QUARTER + _bracketed("16th", 5, 4, 5) + _QUARTER * 2)
+        _xml(_QUARTER + _nameless() + _QUARTER * 2)
     )
     stored = read.model_dump(mode="json")
     assert (
-        clear_unwritable_where_rewritten(read, stored).measures[0].unwritable_notes == 5
+        clear_unwritable_where_rewritten(read, stored).measures[0].unwritable_notes == 9
     )
 
 
 def test_a_bar_that_did_not_exist_when_the_page_was_read_carries_nothing() -> None:
     read = score_json_from_musicxml(
-        _xml(_QUARTER + _bracketed("16th", 5, 4, 5) + _QUARTER * 2)
+        _xml(_QUARTER + _nameless() + _QUARTER * 2)
     )
     invented = read.measures[0].model_copy(update={"measure_number": 9})
     with_new_bar = read.model_copy(update={"measures": [*read.measures, invented]})
     cleared = clear_unwritable_where_rewritten(
         with_new_bar, read.model_dump(mode="json")
     )
-    assert cleared.measures[0].unwritable_notes == 5
+    assert cleared.measures[0].unwritable_notes == 9
     assert cleared.measures[-1].unwritable_notes == 0
 
 
@@ -517,7 +623,7 @@ def test_stored_measures_are_matched_by_number_not_position() -> None:
     """A bar inserted in the middle shifts every index after it, and clearing
     the wrong bar's count is the same mistake as naming the wrong bar."""
     read = score_json_from_musicxml(
-        _xml(_QUARTER + _bracketed("16th", 5, 4, 5) + _QUARTER * 2)
+        _xml(_QUARTER + _nameless() + _QUARTER * 2)
     )
     stored = read.model_dump(mode="json")
     shifted = read.model_copy(
@@ -531,4 +637,4 @@ def test_stored_measures_are_matched_by_number_not_position() -> None:
         }
     )
     cleared = clear_unwritable_where_rewritten(shifted, stored)
-    assert cleared.measures[1].unwritable_notes == 5
+    assert cleared.measures[1].unwritable_notes == 9

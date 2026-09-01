@@ -1,5 +1,5 @@
-import type { Clef, Instrument, ScoreJson } from '../data/types';
-import type { StaveNote } from './notation/engrave';
+import type { Clef, Duration, Instrument, ScoreJson } from '../data/types';
+import type { NoteValue, StaveNote } from './notation/engrave';
 
 /**
  * The daily warmup: a few bars written for the instrument in your hands.
@@ -256,12 +256,26 @@ export function warmupFor(instrument: Instrument, now: Date = new Date()): Warmu
   return set[dayIndex(now) % set.length];
 }
 
-const VALUE_DURATIONS = {
+/**
+ * A drawn note value, as the duration name the player and the beat check use.
+ *
+ * Exhaustive over `NoteValue` on purpose: the engraver learned to draw
+ * sixteenths, and a warmup written in them would otherwise fail to compile
+ * here rather than sound wrong at runtime.
+ */
+export const VALUE_DURATIONS: Record<NoteValue, Duration> = {
+  // The schema calls the plain value `double_whole` and the tuplet forms
+  // `triplet_breve`. The engraver draws one shape and calls it what an
+  // engraver calls it; the mapping lives here rather than in either.
+  breve: 'double_whole',
   whole: 'whole',
   half: 'half',
   quarter: 'quarter',
   eighth: 'eighth',
-} as const;
+  sixteenth: 'sixteenth',
+  thirty_second: 'thirty_second',
+  sixty_fourth: 'sixty_fourth',
+};
 
 /**
  * The warmup as a score the existing player can sound.

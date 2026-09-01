@@ -10,11 +10,13 @@ is sent — so the request stays well under the 500ms DoD.
 from __future__ import annotations
 
 from typing import Any
+from urllib.parse import urlparse
 from uuid import UUID
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from app.services import pending_uploads
 from app.auth import current_user_id, current_user_id_provisioned
 from app.services.audio_storage import InvalidAudioReference, durable_audio_reference
 from app.services.tier_limits import tier_of, usage_for
@@ -105,6 +107,23 @@ def _service_client():
             detail="Supabase service-role client is not configured",
         )
     return client
+
+
+def _object_keys_in(urls: list[str]) -> list[str]:
+    """The `{user}/{uuid}.{ext}` keys inside a list of storage URLs.
+
+    The path after the bucket name, which is the only part storage cares
+    about — and the same shape `scores._object_key_from` recovers, arrived at
+    from the other direction because these URLs are the ones the client was
+    handed rather than ones this service signed.
+    """
+    keys: list[str] = []
+    for url in urls:
+        path = urlparse(url or "").path
+        marker = f"/{AUDIO_BUCKET}/"
+        if marker in path:
+            keys.append(path.split(marker, 1)[1].lstrip("/"))
+    return keys
 
 
 def _assert_score_owned(client, score_id: UUID, user_id: UUID) -> None:
@@ -237,6 +256,15 @@ def create_analysis(
         raise HTTPException(status_code=500, detail="failed to enqueue analysis")
 
     analysis_id = rows[0]["id"]
+    # A row points at the audio now. Same rule and same ordering as
+    # `create_score`: claimed after the insert, never before, or a failed
+    # submit would strand the take's audio.
+    # **The canonical reference, not the request field.** `audio_key` and
+    # `audio_url` are two spellings of one object and only one of them is sent;
+    # `durable_audio_reference` is what the row stores, so it is what has to be
+    # claimed. Reading `body.audio_url` here would silently claim nothing for
+    # every new client, and the take's audio would be swept an hour later.
+    pending_uploads.claim(AUDIO_BUCKET, _object_keys_in([audio_reference]))
     # Where this runs is `dispatch`'s business, not this endpoint's.
     start_analysis(str(analysis_id), background_tasks)
     return CreateAnalysisResponse(analysis_id=analysis_id, status="queued")

@@ -70,7 +70,10 @@ def test_chord_members_are_not_counted(score) -> None:
     beat-sum check would then report a correctly-read measure as long — sending
     a repair pass at the one measure that did not need one.
     """
-    assert [n.pitch for n in score.measures[1].notes] == ["D3", "D3", "F#3"]
+    # `Ebb3` joined this list when the pitch grammar learned to spell a double
+    # accidental. It was being dropped, which is why the expected list was three
+    # notes long — nothing about chords changed.
+    assert [n.pitch for n in score.measures[1].notes] == ["D3", "D3", "F#3", "Ebb3"]
 
 
 def test_grace_notes_are_not_counted(score) -> None:
@@ -90,17 +93,33 @@ def test_first_measure_sums_to_the_metre(score) -> None:
     assert rows[0].verdict == "ok"
 
 
-def test_an_unrepresentable_note_is_dropped_and_declared(score) -> None:
-    """E-double-flat has no name in the pitch grammar.
+def test_the_double_flat_in_this_excerpt_is_now_read(score) -> None:
+    """**This test asserted the opposite, and its premise has gone.**
 
-    Writing "Eb3" instead would be a wrong note that reads as a confident one.
-    Dropping it leaves the measure short, which the beat-sum check can see, and
-    the count is reported rather than buried.
+    It read: *"E-double-flat has no name in the pitch grammar. Writing 'Eb3'
+    instead would be a wrong note that reads as a confident one. Dropping it
+    leaves the measure short, which the beat-sum check can see."* Every clause
+    was true, and the choice it described was between two damaging options —
+    the grammar was the thing that was wrong, because a dropped note is a lost
+    **onset** and `alignment.py` accumulates durations.
+
+    Measured on this fixture, which is a real bass excerpt and carries a real
+    `Ebb3`:
+
+    | | dropped | spelled |
+    |---|---|---|
+    | measure 2 | `short` | `ok` |
+    | confidence | 6/7 | **1.00** |
+    | `notes_to_human` | "1 note(s)…" | empty |
+
+    The half of the old reasoning that survives is tested next door: past a
+    double there is still no spelling, and those still drop.
     """
-    assert "1 note(s)" in score.notes_to_human
-    assert score.ocr_confidence == pytest.approx(6 / 7, abs=1e-3)
+    assert score.notes_to_human == ""
+    assert score.ocr_confidence == pytest.approx(1.0)
     rows = validate_measures(score)
-    assert rows[1].verdict == "short"
+    assert [row.verdict for row in rows] == ["ok", "ok"]
+    assert all(row.unwritable_notes == 0 for row in rows)
 
 
 def test_namespaced_document_is_read() -> None:
@@ -1166,15 +1185,20 @@ def test_a_triplet_is_still_a_triplet() -> None:
 
 
 def test_a_ratio_with_no_name_is_still_dropped_rather_than_guessed() -> None:
-    """A quintuplet has no name in this schema, and the nearest triplet would
-    put notes at times nobody played. It is dropped and declared — which the
-    beat check then sees."""
-    five_four = (
+    """A ratio landing on no named length is dropped rather than approximated —
+    the nearest triplet would put notes at times nobody played. It is dropped
+    and declared, which the beat check then sees.
+
+    Five in the time of four was this test's example, and is now
+    `quintuplet_sixteenth`. Five in the time of **six** — how a quintuplet is
+    bracketed in a compound metre — still lands on nothing.
+    """
+    five_six = (
         "<time-modification><actual-notes>5</actual-notes>"
-        "<normal-notes>4</normal-notes></time-modification>"
+        "<normal-notes>6</normal-notes></time-modification>"
     )
     score = score_json_from_musicxml(
-        _part(_bar(1, _voiceless("quarter", 12) * 3 + _voiceless("16th", 2, five_four), _D4))
+        _part(_bar(1, _voiceless("quarter", 12) * 3 + _voiceless("16th", 2, five_six), _D4))
     )
 
     assert len(score.measures[0].notes) == 3
@@ -1461,18 +1485,30 @@ def test_a_second_multi_bar_rest_is_numbered_after_the_first() -> None:
 #: file can state, and a duration this schema has no name for, so it is
 #: dropped rather than approximated.
 _FINE = (
-    "<attributes><divisions>60</divisions>"
+    "<attributes><divisions>72</divisions>"
     "<time><beats>4</beats><beat-type>4</beat-type></time></attributes>"
 )
 _FINE_QUARTER = (
     '<note><pitch><step>D</step><octave>3</octave></pitch>'
-    "<duration>60</duration><type>quarter</type></note>"
+    "<duration>72</duration><type>quarter</type></note>"
 )
-_QUINTUPLET = (
-    '<note><pitch><step>D</step><octave>3</octave></pitch><duration>12</duration>'
-    "<type>16th</type><time-modification><actual-notes>5</actual-notes>"
-    "<normal-notes>4</normal-notes></time-modification></note>"
-) * 5
+#: A bracketed group this schema cannot name, worth exactly a quarter.
+#:
+#: Nine thirty-seconds in the time of eight — a ninth of a beat each, which no
+#: notehead writes. It was a 5:4 quintuplet of sixteenths until `Duration`
+#: learned `quintuplet_sixteenth`, at which point these three cases stopped
+#: testing the dropped-note sentence and started testing that a bar reads
+#: correctly, which they assert nothing about.
+#:
+#: A group's total is `base x normal` and does not depend on how many notes are
+#: inside it, so this is still a quarter and the bars around it are unchanged.
+#: `divisions` went 60 -> 72 for the same reason: sixty ticks to the quarter
+#: cannot divide into nine.
+_NAMELESS_GROUP = (
+    '<note><pitch><step>D</step><octave>3</octave></pitch><duration>8</duration>'
+    "<type>32nd</type><time-modification><actual-notes>9</actual-notes>"
+    "<normal-notes>8</normal-notes></time-modification></note>"
+) * 9
 
 
 def test_the_dropped_note_sentence_names_the_bar() -> None:
@@ -1487,13 +1523,13 @@ def test_the_dropped_note_sentence_names_the_bar() -> None:
     Which makes this sentence the **only** trace, where it used to be merely
     the most reliable one. The bar adds up, so the beat check is silent by
     design rather than by the accident this test was first written about — a
-    short first measure being forgiven as a pickup. Either way "5 note(s) were
+    short first measure being forgiven as a pickup. Either way "9 note(s) were
     dropped" does not say where to look, and naming the bar is the one thing a
     musician can act on.
     """
     score = score_json_from_musicxml(
         _part(
-            _bar(1, _QUINTUPLET + _FINE_QUARTER * 3, _FINE)
+            _bar(1, _NAMELESS_GROUP + _FINE_QUARTER * 3, _FINE)
             + _bar(2, _FINE_QUARTER * 4)
         )
     )
@@ -1518,7 +1554,7 @@ def test_the_named_bar_is_the_one_after_the_rests_moved_it() -> None:
         _part(
             _bar(1, _FINE_QUARTER * 4, _FINE)
             + _bar(2, "", _MULTI_REST_4)
-            + _bar(3, _QUINTUPLET + _FINE_QUARTER * 3)
+            + _bar(3, _NAMELESS_GROUP + _FINE_QUARTER * 3)
         )
     )
 
@@ -1530,9 +1566,9 @@ def test_several_damaged_bars_are_all_named() -> None:
     score = score_json_from_musicxml(
         _part(
             _bar(1, _FINE_QUARTER * 4, _FINE)
-            + _bar(2, _QUINTUPLET + _FINE_QUARTER * 3)
+            + _bar(2, _NAMELESS_GROUP + _FINE_QUARTER * 3)
             + _bar(3, _FINE_QUARTER * 4)
-            + _bar(4, _QUINTUPLET + _FINE_QUARTER * 3)
+            + _bar(4, _NAMELESS_GROUP + _FINE_QUARTER * 3)
         )
     )
 
@@ -2996,3 +3032,446 @@ def test_a_page_with_no_fermata_marks_none() -> None:
     score = score_json_from_musicxml(_part(_bar(1, _A_QUARTER * 4, _FOUR_FOUR)))
 
     assert not any(n.fermata for m in score.measures for n in m.notes)
+
+
+# ---------------------------------------------------------------------------
+# A clef that changes partway down the page
+# ---------------------------------------------------------------------------
+
+_CELLO_NOTE = (
+    "<note><pitch><step>C</step><octave>3</octave></pitch>"
+    "<duration>4</duration><type>whole</type></note>"
+)
+#: 4/4 in bass clef, one division to the quarter — so `<duration>4</duration>`
+#: on a `whole` agrees with its type and no contradiction rule fires.
+_BASS_FOUR_FOUR = (
+    "<attributes><divisions>1</divisions>"
+    "<time><beats>4</beats><beat-type>4</beat-type></time>"
+    "<clef><sign>F</sign><line>4</line></clef></attributes>"
+)
+
+
+def _clef_change(sign: str, line: str) -> str:
+    return f"<attributes><clef><sign>{sign}</sign><line>{line}</line></clef></attributes>"
+
+
+def test_a_clef_printed_mid_piece_lands_on_its_measure() -> None:
+    """**A single clef for a whole part is a simplification the repertoire does
+    not honour.**
+
+    A cello or bass part moving into tenor for a high passage and back again is
+    ordinary writing. Before this the second clef had nowhere to go, so every
+    bar after the change was captioned — and drawn — in a clef the page had
+    stopped using.
+
+    Modelled exactly like `Measure.time_signature`: the header keeps the clef
+    the page *opens* in, and the change sits on the bar that prints it.
+    """
+    score = score_json_from_musicxml(
+        _part(
+            _bar(1, _CELLO_NOTE, _BASS_FOUR_FOUR)
+            + _bar(2, _CELLO_NOTE)
+            + _bar(3, _clef_change("C", "4") + _CELLO_NOTE)
+            + _bar(4, _CELLO_NOTE)
+        )
+    )
+    assert score.clef == "bass", "the header is the clef the page opens in"
+    assert [m.clef for m in score.measures] == [None, None, "tenor", None]
+
+
+def test_a_return_to_the_opening_clef_is_recorded_too() -> None:
+    """**The bug a header comparison would have shipped with.**
+
+    Bar 5 states bass, which equals the header — so comparing the stated clef
+    against `score.clef` records the departure at bar 3 and silently drops the
+    return, leaving every bar from 5 on drawn a fourth out of place. It is
+    compared against the clef in force instead.
+    """
+    score = score_json_from_musicxml(
+        _part(
+            _bar(1, _CELLO_NOTE, _BASS_FOUR_FOUR)
+            + _bar(2, _clef_change("C", "4") + _CELLO_NOTE)
+            + _bar(3, _CELLO_NOTE)
+            + _bar(4, _clef_change("F", "4") + _CELLO_NOTE)
+        )
+    )
+    assert [m.clef for m in score.measures] == [None, "tenor", None, "bass"]
+
+
+def test_a_clef_restated_without_changing_is_not_a_change() -> None:
+    """Engravers restate the clef at the start of a system. Recording that as a
+    change would put a caption on a bar where nothing happened."""
+    score = score_json_from_musicxml(
+        _part(
+            _bar(1, _CELLO_NOTE, _BASS_FOUR_FOUR)
+            + _bar(2, _clef_change("F", "4") + _CELLO_NOTE)
+        )
+    )
+    assert [m.clef for m in score.measures] == [None, None]
+
+
+# ---------------------------------------------------------------------------
+# Both notes of a double stop
+# ---------------------------------------------------------------------------
+
+
+def test_a_chord_keeps_its_other_noteheads() -> None:
+    """**One attack, two noteheads.**
+
+    The chord member is still not counted — the timeline is built from
+    durations and a second note would make the bar overrun — but it is no
+    longer thrown away. A double stop read as a single pitch draws a stave the
+    page does not show, and gives `MeasureEditScreen` nowhere to put the fix.
+    """
+    chord_member = (
+        "<note><chord/><pitch><step>A</step><octave>3</octave></pitch>"
+        "<duration>4</duration><type>whole</type></note>"
+    )
+    score = score_json_from_musicxml(
+        _part(_bar(1, _CELLO_NOTE + chord_member, _BASS_FOUR_FOUR))
+    )
+    (measure,) = score.measures
+    assert len(measure.notes) == 1, "a chord is one onset, as it always was"
+    assert measure.notes[0].pitch == "C3"
+    assert measure.notes[0].chord_pitches == ["A3"]
+    assert [f.verdict for f in validate_measures(score)] == ["ok"]
+
+
+def test_a_plain_note_carries_no_chord_pitches() -> None:
+    score = score_json_from_musicxml(_part(_bar(1, _CELLO_NOTE, _BASS_FOUR_FOUR)))
+    assert score.measures[0].notes[0].chord_pitches == []
+
+
+# ---------------------------------------------------------------------------
+# A bar of rest, written the way MusicXML says to write one
+# ---------------------------------------------------------------------------
+#
+# `<rest measure="yes"/>` with no `<type>`: the third and most canonical of the
+# three spellings of a bar of rest, and the one that was dropped. See
+# `_duration_name`.
+
+
+def _part_with_a_bars_rest(beats: int = 4, beat_type: int = 4, rest_ticks: int = 16) -> str:
+    """Play a bar, rest a bar, play a bar — an orchestral part in miniature."""
+    played = "".join(
+        "<note><pitch><step>D</step><octave>3</octave></pitch>"
+        "<duration>4</duration><type>quarter</type></note>"
+        for _ in range(beats)
+    )
+    return f"""<?xml version="1.0"?>
+<score-partwise version="4.0"><part-list><score-part id="P1">
+<part-name>Bass</part-name></score-part></part-list><part id="P1">
+ <measure number="1"><attributes><divisions>4</divisions>
+   <time><beats>{beats}</beats><beat-type>{beat_type}</beat-type></time>
+   <clef><sign>F</sign><line>4</line></clef></attributes>{played}</measure>
+ <measure number="2">
+   <note><rest measure="yes"/><duration>{rest_ticks}</duration><voice>1</voice></note>
+ </measure>
+ <measure number="3">{played}</measure>
+</part></score-partwise>"""
+
+
+def test_a_measure_rest_is_a_bar_of_rest_not_an_empty_bar() -> None:
+    """**It used to vanish, and an empty bar is not a quiet bar.**
+
+    Dropped, the bar came through with no notes at all, which costs three
+    separate things: `validate.py` calls it a hole rather than a bar of rest,
+    `alignment.py` accumulates durations so every later bar is judged a bar
+    early, and `_refuse_if_it_is_not_a_reading` counts empty bars against the
+    page.
+    """
+    score = score_json_from_musicxml(_part_with_a_bars_rest())
+
+    bar = score.measures[1]
+    assert [n.duration for n in bar.notes] == ["whole"]
+    assert [n.pitch for n in bar.notes] == ["rest"]
+    assert [f.verdict for f in validate_measures(score)] == ["ok", "ok", "ok"]
+
+
+@pytest.mark.parametrize(
+    "beats,beat_type,expected",
+    [(4, 4, "whole"), (2, 4, "half"), (3, 4, "dotted_half")],
+)
+def test_a_bars_rest_is_worth_the_bar_it_is_in(beats, beat_type, expected) -> None:
+    """The metre decides its length, and an existing rule already owns that.
+
+    Importing it as `whole` hands it to `_whole_rests_that_mean_a_bar`, which
+    shortens a lone whole rest to the bar it sits in. Reusing that rule is the
+    point: a fourth thing computing bar lengths is a fourth thing that has to
+    agree with the other three.
+    """
+    score = score_json_from_musicxml(_part_with_a_bars_rest(beats, beat_type))
+
+    assert [n.duration for n in score.measures[1].notes] == [expected]
+    assert all(f.verdict == "ok" for f in validate_measures(score))
+
+
+def test_a_bars_rest_does_not_believe_its_own_duration() -> None:
+    """**Because one of them was 9.5 beats in a bar of 4.**
+
+    `audiveris_phone_photo.musicxml` carries `<duration>57</duration>` at six
+    divisions on a measure rest. Reading the stated length would put nine and a
+    half beats in a four-beat bar — and `alignment.py` accumulates, so it moves
+    every onset after it. What the tag *means* is "this bar, whatever it holds";
+    what it says is not evidence about anything.
+    """
+    score = score_json_from_musicxml(_part_with_a_bars_rest(rest_ticks=57))
+
+    assert [n.duration for n in score.measures[1].notes] == ["whole"]
+    assert all(f.verdict == "ok" for f in validate_measures(score))
+
+
+def test_an_ordinary_rest_is_untouched_by_the_measure_rest_rule() -> None:
+    """`measure="no"`, and a rest that states its own type, are ordinary rests.
+
+    The rule keys on the attribute alone. Widening it to "a rest with no type"
+    would swallow genuinely unreadable notes and silently call them bars of
+    rest, which is the failure mode this whole module is written against.
+    """
+    typed = _part_with_a_bars_rest().replace(
+        '<rest measure="yes"/><duration>16</duration>',
+        '<rest measure="no"/><duration>4</duration><type>quarter</type>',
+    )
+    score = score_json_from_musicxml(typed)
+
+    assert [n.duration for n in score.measures[1].notes] == ["quarter"]
+
+
+def test_a_part_that_is_mostly_rest_is_not_refused_as_holes() -> None:
+    """**The severest consequence, and the one a bass player would meet first.**
+
+    `_refuse_if_it_is_not_a_reading` turns a page away when empty bars
+    outnumber music — "more holes than music", which is the right rule and was
+    firing on the wrong pages. An orchestral bass part is mostly counting
+    rests, so dropping them made the part *itself* look like a failed read.
+
+    Measured on a 12-bar part with 9 bars of rest: 8 empty bars and 0.33
+    confidence, refused outright as "8 of the 12 bars on this page came out
+    empty". With the rule: no empty bars, 1.00, accepted.
+    """
+    from app.services.ocr.homr_provider import (
+        _refuse_if_it_is_not_a_reading,
+        confidence_from_arithmetic,
+    )
+
+    head = (
+        '<measure number="1"><attributes><divisions>4</divisions>'
+        "<time><beats>4</beats><beat-type>4</beat-type></time>"
+        "<clef><sign>F</sign><line>4</line></clef></attributes>"
+        "<note><pitch><step>D</step><octave>3</octave></pitch>"
+        "<duration>16</duration><type>whole</type></note></measure>"
+    )
+    bars = [head]
+    for number in range(2, 13):
+        if number % 4 == 0:
+            bars.append(
+                f'<measure number="{number}">'
+                + "".join(
+                    "<note><pitch><step>G</step><octave>2</octave></pitch>"
+                    "<duration>4</duration><type>quarter</type></note>"
+                    for _ in range(4)
+                )
+                + "</measure>"
+            )
+        else:
+            bars.append(
+                f'<measure number="{number}">'
+                '<note><rest measure="yes"/><duration>16</duration>'
+                "<voice>1</voice></note></measure>"
+            )
+    xml = (
+        '<?xml version="1.0"?><score-partwise version="4.0"><part-list>'
+        '<score-part id="P1"><part-name>Bass</part-name></score-part>'
+        '</part-list><part id="P1">' + "".join(bars) + "</part></score-partwise>"
+    )
+
+    score = score_json_from_musicxml(xml)
+    findings = validate_measures(score)
+
+    assert [m.measure_number for m in score.measures if not m.notes] == []
+    assert confidence_from_arithmetic(findings) == 1.0
+    # Does not raise.
+    _refuse_if_it_is_not_a_reading("homr", score, findings)
+
+
+# ---------------------------------------------------------------------------
+# Double accidentals
+# ---------------------------------------------------------------------------
+
+
+def _bar_with(first_note: str) -> str:
+    plain = (
+        "<note><pitch><step>C</step><octave>4</octave></pitch>"
+        "<duration>4</duration><type>quarter</type></note>"
+    )
+    return f"""<?xml version="1.0"?>
+<score-partwise version="4.0"><part-list><score-part id="P1">
+<part-name>V</part-name></score-part></part-list><part id="P1">
+ <measure number="1"><attributes><divisions>4</divisions>
+   <time><beats>4</beats><beat-type>4</beat-type></time>
+   <clef><sign>G</sign><line>2</line></clef></attributes>
+   {first_note}{plain * 3}</measure>
+</part></score-partwise>"""
+
+
+def _altered_note(alter: int, step: str = "F") -> str:
+    return (
+        f"<note><pitch><step>{step}</step><alter>{alter}</alter>"
+        "<octave>4</octave></pitch><duration>4</duration>"
+        "<type>quarter</type></note>"
+    )
+
+
+@pytest.mark.parametrize(
+    "alter,step,spelled",
+    [(2, "F", "F##4"), (-2, "B", "Bbb4"), (1, "F", "F#4"), (-1, "B", "Bb4"), (0, "F", "F4")],
+)
+def test_an_accidental_is_spelled_rather_than_dropped(alter, step, spelled) -> None:
+    """**A dropped note is a lost onset, not a lost symbol.**
+
+    Double accidentals were outside the pitch grammar, and `_pitch_name`
+    returned None for them — so the note vanished, the bar came up a beat short,
+    and because `alignment.py` accumulates durations every bar after it was
+    judged against music that is not there. The comment there weighed dropping
+    against naming the natural and picked the lesser harm; both are harmful, and
+    the grammar is the thing that was wrong.
+
+    Ordinary in this repertoire: any chromatic passage in a sharp key writes a
+    double sharp, and Kreutzer, Bach and Paganini are full of them.
+    """
+    score = score_json_from_musicxml(_bar_with(_altered_note(alter, step)))
+
+    assert [n.pitch for n in score.measures[0].notes] == [spelled, "C4", "C4", "C4"]
+    assert [f.verdict for f in validate_measures(score)] == ["ok"]
+
+
+@pytest.mark.parametrize("alter", [3, -3, 7])
+def test_a_triple_accidental_is_still_refused(alter) -> None:
+    """Past a double there is no spelling here, and inventing one is the
+    wrong-note outcome the grammar exists to avoid. It drops, and the short bar
+    is what the validator sees — the same trade as before, now made only where
+    there is genuinely no answer."""
+    score = score_json_from_musicxml(_bar_with(_altered_note(alter)))
+
+    assert [n.pitch for n in score.measures[0].notes] == ["C4", "C4", "C4"]
+
+
+def test_a_quarter_tone_alter_does_not_become_a_natural() -> None:
+    """`alter="0.5"` is a quarter-tone. It has no spelling here, and rounding it
+    to 0 would put a natural on the page where a three-quarter-sharp was
+    printed — a wrong note presented as a right one."""
+    score = score_json_from_musicxml(
+        _bar_with(
+            "<note><pitch><step>F</step><alter>0.5</alter><octave>4</octave></pitch>"
+            "<duration>4</duration><type>quarter</type></note>"
+        )
+    )
+
+    assert [n.pitch for n in score.measures[0].notes] == ["C4", "C4", "C4"]
+
+
+def test_an_unpitched_note_keeps_the_place_it_was_printed() -> None:
+    """**A notehead with no frequency is still a notehead.**
+
+    `<unpitched>` is how percussion is written, and how a string part writes a
+    body tap or col legno battuto. It was dropped for having no `<pitch>`, which
+    costs the *onset* — and `alignment.py` accumulates, so every bar after it is
+    judged against music that is not there. On a part written entirely this way
+    every note dropped and the page was refused for coming out empty.
+
+    `display-step` and `display-octave` are the staff position the engraver
+    drew, so that is what the note keeps. Nothing downstream wants a frequency:
+    the verdict reads pitch only as `== "rest"`, and a tie compares two of them
+    for equality.
+    """
+    score = score_json_from_musicxml(
+        _bar_with(
+            "<note><unpitched><display-step>E</display-step>"
+            "<display-octave>4</display-octave></unpitched>"
+            "<duration>4</duration><type>quarter</type></note>"
+        )
+    )
+
+    assert [n.pitch for n in score.measures[0].notes] == ["E4", "C4", "C4", "C4"]
+    assert [f.verdict for f in validate_measures(score)] == ["ok"]
+
+
+def test_an_unpitched_note_without_a_display_position_is_still_dropped() -> None:
+    """`<unpitched/>` empty is legal MusicXML and says nothing about where the
+    notehead sits. Putting it somewhere would be inventing the one thing the
+    element was supposed to carry."""
+    score = score_json_from_musicxml(_bar_with("<note><unpitched/><duration>4</duration><type>quarter</type></note>"))
+
+    assert [n.pitch for n in score.measures[0].notes] == ["C4", "C4", "C4"]
+
+
+# ---------------------------------------------------------------------------
+# The note-value guarantee
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "written",
+    ["breve", "whole", "half", "quarter", "eighth", "16th", "32nd", "64th", "128th"],
+)
+@pytest.mark.parametrize("ratio", [None, (3, 2), (5, 4), (7, 4)])
+def test_every_written_value_has_a_name_plain_and_in_the_common_tuplets(written, ratio) -> None:
+    """**The guarantee, enforced rather than described.**
+
+    Every written value from a breve to a 128th has a name — plain, and as a
+    triplet, quintuplet or septuplet. That is the statable rule the vocabulary
+    was widened to, in place of the patchwork `tools/notation-coverage.py`
+    found: 128ths had no name at any ratio, quintuplet and septuplet families
+    stopped at a sixteenth, and triplets stopped at a sixteenth in one direction
+    and a half in the other.
+
+    A value with no name is **dropped**, and a dropped note is a lost onset that
+    `alignment.py` accumulates into every bar after it — so a gap here costs the
+    rest of the page, not the note.
+
+    Deliberately *not* covered, and printed by the coverage tool on every run:
+    dotted values inside tuplets, nonuplets, and anything finer than a 128th.
+    """
+    from fractions import Fraction
+
+    from app.services.score_schema import DURATION_BEATS
+
+    base = {
+        "breve": Fraction(8), "whole": Fraction(4), "half": Fraction(2),
+        "quarter": Fraction(1), "eighth": Fraction(1, 2), "16th": Fraction(1, 4),
+        "32nd": Fraction(1, 8), "64th": Fraction(1, 16), "128th": Fraction(1, 32),
+    }[written]
+    beats = base if ratio is None else base * Fraction(ratio[1], ratio[0])
+    # 6720 = 2^6 x 3 x 5 x 7, so every length here is a whole number of ticks.
+    # The stated duration must agree with the `<type>`, or the importer believes
+    # the duration and this tests the wrong note — see `MATRIX_DIVISIONS`.
+    ticks = beats * 6720
+    assert ticks.denominator == 1
+
+    modification = (
+        ""
+        if ratio is None
+        else f"<time-modification><actual-notes>{ratio[0]}</actual-notes>"
+        f"<normal-notes>{ratio[1]}</normal-notes></time-modification>"
+    )
+    xml = f"""<?xml version="1.0"?>
+<score-partwise version="4.0"><part-list><score-part id="P1">
+<part-name>V</part-name></score-part></part-list><part id="P1">
+ <measure number="1"><attributes><divisions>6720</divisions>
+   <time><beats>4</beats><beat-type>4</beat-type></time>
+   <clef><sign>G</sign><line>2</line></clef></attributes>
+   <note><pitch><step>C</step><octave>4</octave></pitch>
+   <duration>{int(ticks)}</duration><type>{written}</type>{modification}</note>
+ </measure></part></score-partwise>"""
+
+    score = score_json_from_musicxml(xml)
+    notes = score.measures[0].notes
+
+    assert notes, f"{written} at {ratio} has no name and was dropped"
+    # Named is not enough: it has to be named *correctly*. A value that comes
+    # back under another value's name is the failure the coverage tool itself
+    # shipped with before its fixtures stated a matching duration.
+    assert DURATION_BEATS[notes[0].duration] == pytest.approx(float(beats)), (
+        f"{written} at {ratio} is {float(beats)} beats and came back as "
+        f"{notes[0].duration} ({DURATION_BEATS[notes[0].duration]})"
+    )

@@ -1,3 +1,4 @@
+import { useGoBack } from '../../navigation/useGoBack';
 import { useNavigation } from '@react-navigation/native';
 import { useState } from 'react';
 import {
@@ -12,6 +13,7 @@ import {
   Input,
   PageHeader,
   PrimaryButton,
+  RevealPasswordAction,
   ScreenContainer,
   SecondaryButton,
   Text,
@@ -21,7 +23,7 @@ import {
   signIn,
   updatePassword,
 } from '../../data/auth/session';
-import { spacing } from '../../design';
+import { MIN_TOUCH_TARGET, spacing } from '../../design';
 import {
   describeAuthError,
   validateNewPassword,
@@ -37,6 +39,7 @@ import {
  */
 export function ChangePasswordScreen() {
   const navigation = useNavigation();
+  const goBack = useGoBack({ tab: 'Profile' });
 
   const [currentPassword, setCurrentPassword] = useState('');
   const [password, setPassword] = useState('');
@@ -85,7 +88,7 @@ export function ChangePasswordScreen() {
       <ScreenContainer>
         <PageHeader
           title="Password changed"
-          onBack={() => navigation.goBack()}
+          onBack={goBack}
           backLabel="Back to profile"
         />
         <Text variant="body" color="textSecondary">
@@ -93,7 +96,7 @@ export function ChangePasswordScreen() {
         </Text>
         <SecondaryButton
           label="Done"
-          onPress={() => navigation.goBack()}
+          onPress={goBack}
           style={styles.done}
         />
       </ScreenContainer>
@@ -108,7 +111,7 @@ export function ChangePasswordScreen() {
       <ScreenContainer>
         <PageHeader
           title="Change password"
-          onBack={() => navigation.goBack()}
+          onBack={goBack}
           backLabel="Back to profile"
         />
 
@@ -134,7 +137,7 @@ export function ChangePasswordScreen() {
             textContentType="newPassword"
             editable={!busy}
             action={
-              <RevealAction
+              <RevealPasswordAction
                 revealed={revealed}
                 onPress={() => setRevealed((shown) => !shown)}
               />
@@ -178,30 +181,20 @@ export function ChangePasswordScreen() {
   );
 }
 
-/** Shared by both new-password fields, so one tap reveals the pair. */
-function RevealAction({
-  revealed,
-  onPress,
-}: {
-  revealed: boolean;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable
-      onPress={onPress}
-      accessibilityRole="button"
-      accessibilityLabel={revealed ? 'Hide password' : 'Show password'}
-      hitSlop={spacing.md}
-      style={({ pressed }) => (pressed ? styles.pressed : undefined)}
-    >
-      <Text variant="sectionAction" color="textPrimary">
-        {revealed ? 'Hide' : 'Show'}
-      </Text>
-    </Pressable>
-  );
-}
-
 const styles = StyleSheet.create({
+  /**
+   * Padded to a real touch target, not `hitSlop`-ed to one.
+   *
+   * **`hitSlop` does nothing on the web build.** Measured in Chromium on this
+   * very control: a click 8pt above it — inside its 12pt slop — did not
+   * activate it, while a click on the visible 18pt box did. And 18 + 2×12 is
+   * 42, which would have been two points short of `MIN_TOUCH_TARGET` even
+   * where it does work.
+   */
+  target: {
+    minHeight: MIN_TOUCH_TARGET,
+    justifyContent: 'center',
+  },
   flex: {
     flex: 1,
   },

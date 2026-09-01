@@ -20,12 +20,14 @@ is the part that can be established for free.
   from the transcription itself** when the header cannot be read: if most
   measures agree on a beat count, that count is the meter, and the measures that
   disagree are the suspects. See `infer_beats_per_measure`.
-- **Tuplets.** `Duration` now names triplets — `triplet_eighth` and friends —
-  so a 3:2 passage *can* be written correctly and a bar of them sums. What
-  still cannot be written is a quintuplet, a septuplet, or a dotted triplet.
-  Those approximate and will not sum, and flagging that as a transcription
-  error would be blaming the reader for the schema's remaining gap — see
-  `TUPLET_NOTE`.
+- **Tuplets.** `Duration` names triplets, quintuplets and septuplets —
+  `triplet_eighth`, `quintuplet_sixteenth` and friends — so 3:2, 5:4 and 7:4
+  passages *can* be written correctly and a bar of them sums. A dotted triplet
+  resolves too, because the product lands on a written value. What still cannot
+  be written is a ratio landing on none of those lengths, such as a 5:6 group in
+  a compound metre. Those approximate and will not sum, and flagging that as a
+  transcription error would be blaming the reader for the schema's remaining
+  gap — see `TUPLET_NOTE`.
 - **A pickup measure**, which is short by design. Only the first measure can be
   one, so only the first measure gets that benefit of the doubt.
 """
@@ -59,8 +61,10 @@ from app.services.score_schema import (
 TOLERANCE = 1e-6
 
 TUPLET_NOTE = (
-    "triplets can be written, but no other tuplet can — a quintuplet, a "
-    "septuplet or a dotted triplet has to be approximated and will not sum"
+    "triplets, quintuplets and septuplets can be written, and so can a dotted "
+    "triplet — a ratio landing on none of those lengths (a 5:6 group in a "
+    "compound metre, a triplet of thirty-seconds) still has to be approximated "
+    "and will not sum"
 )
 
 Verdict = Literal["ok", "short", "long", "empty", "pickup", "unverifiable"]

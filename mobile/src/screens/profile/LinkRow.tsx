@@ -92,8 +92,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.sm,
     flexShrink: 1,
+    /**
+     * **`flexShrink` alone does not shrink it on the web build.** A flex item's
+     * CSS `min-width` is `auto`, which is its content, so a long unbreakable
+     * value — an email address — pushed the row past the screen edge with
+     * `numberOfLines={1}` set and never truncating. Measured at 2x type:
+     * "you@example.com" ran 11pt off a 390pt screen.
+     *
+     * React Native's own layout treats this as 0 already, so it is a no-op on
+     * device and a fix in the one place these screens can be driven.
+     */
+    minWidth: 0,
   },
   value: {
     flexShrink: 1,
+    minWidth: 0,
   },
 });

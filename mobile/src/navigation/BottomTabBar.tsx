@@ -80,6 +80,9 @@ export function BottomTabBar({
             onPress={handlePress}
             accessibilityRole="tab"
             accessibilityState={{ selected: focused }}
+            // Which tab you are on, for a screen reader. The bar is the app's
+            // primary furniture and it announced four identical tabs.
+            aria-selected={focused}
             accessibilityLabel={label}
             style={styles.tab}
           >

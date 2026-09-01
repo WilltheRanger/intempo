@@ -41,7 +41,7 @@ from app.services.ocr.gemini_provider import (
     gemini_flash_provider,
     gemini_pro_provider,
 )
-from app.services.ocr.confirm import retry_with_arithmetic
+from app.services.ocr.confirm import retry_by_system, retry_with_arithmetic
 from app.services.score_schema import (
     DURATION_BEATS,
     Measure,
@@ -84,6 +84,88 @@ PROVIDER_REGISTRY: dict[str, OCRProvider] = {
     gemini_pro_provider.name: gemini_pro_provider,
     homr_provider.name: homr_provider,
 }
+
+
+def _ask_the_corrector(
+    score: ScoreJson,
+    image_bytes: bytes,
+    *,
+    media_type: str,
+    helper: OCRProvider,
+    context: str | None,
+) -> ScoreJson:
+    """Re-read the broken bars, showing the line they are on where possible.
+
+    **A crop first, the page as the fallback.** Naming a bar on a whole page
+    asks the model to count to it, and a miscount yields a *plausible*
+    correction for the wrong bar — which passes every guard downstream, because
+    it adds up. `retry_by_system` removes the counting rather than detecting it,
+    and returns the score untouched whenever it cannot: no layout in the file,
+    or a crop count that disagrees with it.
+
+    Falling back to the page is deliberate rather than a shrug. Most exports
+    carry no `<print new-system="yes">` at all, so the whole-page ask is the
+    common case, and it is the behaviour this had before crops existed.
+    """
+    if context is None:
+        # `context` is set when the reading itself came from a crop. Cropping a
+        # crop would be cutting a line out of a line, and the numbers in the
+        # note are already that crop's.
+        crops: list[bytes] = []
+        try:
+            crops = crop_systems(image_bytes)
+        except Exception as exc:  # noqa: BLE001 — a failed crop must not lose the page
+            log.info("could not cut the page into lines for the re-read: %s", exc)
+        if crops:
+            cropped = retry_by_system(
+                score, crops, media_type=media_type, provider=helper
+            )
+            if cropped is not score:
+                return cropped
+
+    return retry_with_arithmetic(
+        score, image_bytes, media_type=media_type, provider=helper, context=context
+    )
+
+
+def corrector() -> OCRProvider | None:
+    """The provider that re-reads bars that do not add up, or None.
+
+    Resolved on each call rather than cached: `settings` is read at import in
+    tests and monkeypatched between them, and a cached provider would make the
+    second test in a file run the first one's configuration.
+
+    An unknown name is a misconfiguration and must not take the page down with
+    it — the reading itself is already in hand and is worth keeping. It logs and
+    returns None, which is the same behaviour as not setting one at all.
+    """
+    # Imported here rather than at module scope, as `_chain` does a few lines
+    # down: this module is imported by config-adjacent code and the deferred
+    # import is what keeps that from being a cycle.
+    from app.config import settings
+
+    name = settings.OCR_CORRECTOR.strip()
+    if not name:
+        return None
+    helper = PROVIDER_REGISTRY.get(name)
+    if helper is None:
+        log.warning(
+            "OCR_CORRECTOR names %r, which this build does not know (%s); "
+            "bars that do not add up will not be re-read",
+            name,
+            ", ".join(sorted(PROVIDER_REGISTRY)),
+        )
+        return None
+    if not getattr(helper, "takes_a_note", True):
+        # Naming a deterministic engine here is asking it the question it
+        # cannot be asked, which is the situation this setting exists to escape.
+        log.warning(
+            "OCR_CORRECTOR names %r, which takes no prompt and cannot be asked "
+            "to reconsider anything",
+            name,
+        )
+        return None
+    return helper
 
 
 def get_provider(name: str) -> OCRProvider:
@@ -154,6 +236,30 @@ def _default_chain() -> list[OCRProvider]:
             f"known: {sorted(PROVIDER_REGISTRY)}"
         )
     return chain
+
+
+def configured_reader() -> str | None:
+    """The chain that will read a page, named, for the record on the row.
+
+    **The chain, not the winner, and the difference is a limitation rather than
+    a choice.** `parse_sheet_music` returns a `ScoreJson` and no telemetry, so
+    which provider actually produced a reading is not recoverable by its caller
+    — and every caller would have to change to make it so. What *is* knowable is
+    the configuration in force when the page was read, which for a one-provider
+    chain is the same fact and for a longer one narrows it to a list.
+
+    It exists because a correction with nothing to attribute it to is not a
+    training example: "this bar was read wrong" is a complaint, and "this bar
+    was read wrong by this reader" is data. See migration 013.
+
+    Returns None rather than raising when the chain cannot be resolved at all —
+    a transcription that is about to fail for that reason should fail in the
+    pipeline with its own message, not here while recording a name.
+    """
+    try:
+        return ",".join(p.name for p in _default_chain()) or None
+    except Exception:  # noqa: BLE001 — an unusable chain is the pipeline's error
+        return None
 
 
 #: A step the pipeline actually took, reported as it happens.
@@ -929,13 +1035,44 @@ def parse_sheet_music(
                 "; ".join(f.describe() for f in broken),
             )
             if retry and not getattr(provider, "takes_a_note", True):
-                # Said out loud, because a missing `rereading` stage on a page
-                # that plainly needs one otherwise looks like a bug.
-                log.info(
-                    "%s cannot reconsider — no prompt and deterministic — so "
-                    "the arithmetic retry is skipped",
-                    provider.name,
-                )
+                # **Someone else re-reads the bars this provider cannot.**
+                #
+                # homr is deterministic and takes no prompt, so asking it again
+                # returns the same answer — which is why this branch used to
+                # log and stop, on every page that needed it. A provider named
+                # in `OCR_CORRECTOR` does that job instead.
+                #
+                # This is not the vision chain returning. Those were asked to
+                # *read a page*, and on a page they could not read they wrote
+                # notes nobody had printed. The question here is narrower and
+                # checkable in a way that one was not: the bars sent are ones
+                # arithmetic has already proved wrong, `_splice` will accept a
+                # replacement for **only those bars**, and a reply that leaves
+                # more bars broken than it found is thrown away. Nothing is
+                # originated here — the reading is homr's throughout, and this
+                # can only edit the parts of it already known to be untrue.
+                helper = corrector()
+                if helper is not None and helper.name != provider.name:
+                    stage(STAGE_CONFIRMING)
+                    corrected = _ask_the_corrector(
+                        response.score,
+                        image_bytes,
+                        media_type=media_type,
+                        helper=helper,
+                        context=_note,
+                    )
+                    if not beat_problems(corrected):
+                        return corrected
+                    response = response.model_copy(update={"score": corrected})
+                else:
+                    # Said out loud, because a missing `rereading` stage on a
+                    # page that plainly needs one otherwise looks like a bug.
+                    log.info(
+                        "%s cannot reconsider — no prompt and deterministic — "
+                        "and no OCR_CORRECTOR is set, so the arithmetic retry "
+                        "is skipped",
+                        provider.name,
+                    )
             if retry and getattr(provider, "takes_a_note", True):
                 stage(STAGE_CONFIRMING)
                 corrected = retry_with_arithmetic(

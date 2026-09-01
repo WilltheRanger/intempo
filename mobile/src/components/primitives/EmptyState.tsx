@@ -21,6 +21,18 @@ export interface EmptyStateProps {
    * started two readings of the same page.
    */
   actionDisabled?: boolean;
+  /**
+   * Centre in the height left over, for a state that *is* the whole screen.
+   *
+   * Off by default because this is also used inside a list — Library's "No
+   * matches" sits under a search field with rows above it, and centring that
+   * in the page would pull it away from what it is about.
+   *
+   * On, the message and its action sit in the middle of the screen rather than
+   * in the top quarter with two thirds of the page empty beneath them, and the
+   * action lands near the thumb instead of near the status bar (§3 law 7).
+   */
+  fill?: boolean;
 }
 
 /** Shown when a screen has nothing to display. Plain and unapologetic. */
@@ -31,9 +43,10 @@ export function EmptyState({
   actionLabel,
   onActionPress,
   actionDisabled = false,
+  fill = false,
 }: EmptyStateProps) {
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, fill && styles.filled]}>
       {Icon ? (
         <Icon
           size={ICON_SIZE.lg}
@@ -70,6 +83,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: spacing['3xl'],
     paddingHorizontal: spacing.lg,
+  },
+  filled: {
+    // Needs `flexGrow` on `ScreenContainer`'s content container to have any
+    // effect — see the note there.
+    flex: 1,
+    justifyContent: 'center',
   },
   icon: {
     marginBottom: spacing.lg,
