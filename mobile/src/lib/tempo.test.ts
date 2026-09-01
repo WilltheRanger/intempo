@@ -1,7 +1,15 @@
 import { describe, expect, it } from 'vitest';
 
 import type { Tolerance } from '../data/types';
-import { fullScaleFor, sharedFullScaleFor } from './tempo';
+import {
+  displayTempoBpm,
+  formatTempo,
+  formatWorkingTempo,
+  fullScaleFor,
+  quarterBpmFromDisplay,
+  sharedFullScaleFor,
+  tempoDisplayRange,
+} from './tempo';
 
 /**
  * The charts used to hold their own copy of `20`, with a comment admitting it
@@ -87,5 +95,30 @@ describe('symmetric thresholds', () => {
     expect(fullScaleFor(shipped, 7)).toBe(20);
     expect(fullScaleFor(shipped, -7)).toBe(20);
     expect(sharedFullScaleFor(shipped)).toBe(20);
+  });
+});
+
+describe('printed tempo units', () => {
+  it('shows a dotted-quarter mark without changing the quarter-note clock', () => {
+    expect(displayTempoBpm(90, 'dotted_quarter')).toBe(60);
+    expect(quarterBpmFromDisplay(60, 'dotted_quarter')).toBe(90);
+    expect(formatTempo(90, 'dotted_quarter')).toBe('60 dotted-quarter-note BPM');
+  });
+
+  it('converts eighth- and half-note marks in both directions', () => {
+    expect(displayTempoBpm(60, 'eighth')).toBe(120);
+    expect(quarterBpmFromDisplay(120, 'eighth')).toBe(60);
+    expect(displayTempoBpm(120, 'half')).toBe(60);
+    expect(quarterBpmFromDisplay(60, 'half')).toBe(120);
+  });
+
+  it('keeps old scores on the quarter-note display they already used', () => {
+    expect(formatTempo(80, null)).toBe('80 BPM');
+    expect(formatWorkingTempo(76, 92)).toBe('Working at 76  ·  marked 92 BPM');
+  });
+
+  it('derives safe displayed bounds from the quarter-BPM contract', () => {
+    expect(tempoDisplayRange('dotted_quarter')).toEqual({ min: 14, max: 200 });
+    expect(tempoDisplayRange('eighth')).toEqual({ min: 40, max: 600 });
   });
 });
