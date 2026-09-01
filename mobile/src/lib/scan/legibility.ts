@@ -251,15 +251,87 @@ export function legibilityOf(samples: PageSamples | null): Legibility {
 }
 
 /**
- * The sentence for a page that will not read, or null for one that might.
+ * How many pixels of staff spacing one row of a photographed page is worth.
+ *
+ * Two measurements of the same real page, both already recorded in this
+ * repository: 25 px between staff lines at 4284x5712 (25/5712 = 0.00438), and
+ * 4 px at 1280x960 (4/960 = 0.00417). They agree to within 5%, which is what
+ * makes the number usable — it is a property of engraved music on a page, not
+ * of one camera.
+ *
+ * The larger of the two is deliberate. It gives the smallest page height that
+ * could clear the floor, so `MIN_PAGE_ROWS` is the *optimistic* bound and the
+ * app only blames the camera when even a generous reading says the camera is
+ * the problem.
+ */
+const SPACING_PER_PAGE_ROW = 25 / 5712;
+
+/**
+ * The shortest photograph of a whole page that could clear the server's floor.
+ *
+ * Under this, framing is not the variable. A musician who has already filled
+ * the frame cannot fill it harder, and "move in until one page fills the frame"
+ * becomes advice they have followed and will be given again — which is the
+ * failure this project has written down before: **advice must be followable**.
+ * The web build is where this bites. A browser hands the page whatever stream
+ * it feels like, `captureImage` draws its canvas at exactly that size, and no
+ * amount of asking changes what Safari decides to give.
+ */
+export const MIN_PAGE_ROWS = Math.ceil(SERVER_FLOOR / SPACING_PER_PAGE_ROW);
+
+/**
+ * Which way out of a page that will not read.
+ *
+ * `retake` is the same camera, closer. `cameraApp` is the phone's own camera
+ * app, which is not subject to the browser's stream size and returns the
+ * sensor's full picture.
+ */
+export type AdviceRoute = 'retake' | 'cameraApp';
+
+export interface Advice {
+  /** One line, in a musician's terms. */
+  message: string;
+  route: AdviceRoute;
+}
+
+/**
+ * What to say about a page that will not read, or null for one that might.
  *
  * Names the thing to change, not the thing that is wrong: "too small to read"
- * describes the file, and the musician is holding a camera. Filling the frame
- * with one page is the whole of the advice and it is followable at the shutter,
- * which is the point of asking here rather than after the upload.
+ * describes the file, and the musician is holding a camera.
+ *
+ * **Two different problems produce the same measurement**, and the advice for
+ * one is useless for the other. A page photographed from across the desk has
+ * plenty of pixels and too little page in them: move in. A page photographed
+ * through a stream the browser capped has filled the frame already and still
+ * has too few pixels: nothing the musician does at the shutter can help, and
+ * the way out is the camera app. `pageRows` — the height in pixels of the
+ * rectangle that will actually be uploaded — is what separates them.
+ *
+ * Omitting `pageRows` gives the old behaviour: without knowing the size of the
+ * photograph, "move in" is the safer of the two, because it is at least always
+ * true that a closer page is easier to read.
  */
-export function adviceFor(legibility: Legibility): string | null {
-  return legibility.verdict === 'tooSmall'
-    ? 'Too far away to read the notes. Move in until one page fills the frame, then take it again.'
-    : null;
+export function adviceFor(
+  legibility: Legibility,
+  pageRows?: number,
+): Advice | null {
+  if (legibility.verdict !== 'tooSmall') {
+    return null;
+  }
+  if (typeof pageRows === 'number' && pageRows > 0 && pageRows < MIN_PAGE_ROWS) {
+    return {
+      // Two clauses and no more. It has to say *the camera*, not you — and it
+      // has to head off the thing a musician would otherwise try next, which is
+      // the advice the other branch gives.
+      message:
+        "This camera can't see the notes clearly enough, however close you get. Your phone's camera app can.",
+      route: 'cameraApp',
+    };
+  }
+  return {
+    message:
+      'Too far away to read the notes. Move in until one page fills the frame, then take it again.',
+    route: 'retake',
+  };
 }

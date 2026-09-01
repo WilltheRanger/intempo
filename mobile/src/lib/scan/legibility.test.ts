@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   CLIENT_FLOOR,
+  MIN_PAGE_ROWS,
   SERVER_FLOOR,
   adviceFor,
   legibilityOf,
@@ -161,7 +162,8 @@ describe('the verdict', () => {
   it('warns about a page that is plainly too far away', () => {
     const verdict = legibilityOf(ruledPage({ spacing: 4, height: 600, systems: 8 }));
     expect(verdict.verdict).toBe('tooSmall');
-    expect(adviceFor(verdict)).toContain('fills the frame');
+    expect(adviceFor(verdict)?.message).toContain('fills the frame');
+    expect(adviceFor(verdict)?.route).toBe('retake');
   });
 
   it('stays silent when it could not measure anything', () => {
@@ -171,5 +173,44 @@ describe('the verdict', () => {
 
   it('gives no advice about a page it is happy with', () => {
     expect(adviceFor({ verdict: 'ok', spacing: 20 })).toBeNull();
+  });
+
+  describe('which of the two problems it is', () => {
+    const tooSmall = { verdict: 'tooSmall', spacing: 4 } as const;
+
+    it('blames the camera when no framing could have cleared the floor', () => {
+      // A 1920x1080 stream cropped to the viewfinder is 799x1080 — the whole
+      // page, filling the frame, at four pixels between staff lines. "Move in"
+      // is advice that has already been followed.
+      const advice = adviceFor(tooSmall, 1080);
+      expect(advice?.route).toBe('cameraApp');
+      expect(advice?.message).toContain('camera app');
+      expect(advice?.message).not.toContain('fills the frame');
+    });
+
+    it('blames the distance when the photograph was big enough to work', () => {
+      // A page this tall has the pixels; if the staves are still four apart,
+      // the page is small inside them.
+      const advice = adviceFor(tooSmall, MIN_PAGE_ROWS * 2);
+      expect(advice?.route).toBe('retake');
+    });
+
+    it('falls back to "move in" when the size is not known', () => {
+      // The gentler of the two and the only one that is always true: a closer
+      // page is easier to read whatever the camera did.
+      expect(adviceFor(tooSmall)?.route).toBe('retake');
+      expect(adviceFor(tooSmall, 0)?.route).toBe('retake');
+    });
+
+    it('sets the floor from the page, not from one photograph', () => {
+      // Both measurements of the real page agree to within 5%: 25px of staff
+      // spacing at 5712 rows, 4px at 960. The floor has to sit between the
+      // heights those imply for the server's 8px, or it is fitted to a camera.
+      expect(MIN_PAGE_ROWS).toBeGreaterThan(SERVER_FLOOR / (25 / 5712) - 5);
+      expect(MIN_PAGE_ROWS).toBeLessThan(SERVER_FLOOR / (4 / 960) + 5);
+      // And a 4K capture cropped to the viewfinder — 1598x2160 — must clear it,
+      // or the app would send someone to the camera app from its best case.
+      expect(MIN_PAGE_ROWS).toBeLessThanOrEqual(2160);
+    });
   });
 });

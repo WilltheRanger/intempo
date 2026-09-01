@@ -9,7 +9,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ScoreThumbnail } from '../../components/pieces/ScoreThumbnail';
 import { Text } from '../../components/primitives/Text';
 import { impact, ImpactFeedbackStyle } from '../../lib/haptics';
-import { adviceFor, legibilityOf } from '../../lib/scan/legibility';
+import { adviceFor, legibilityOf, type Advice } from '../../lib/scan/legibility';
+import { photographWithSystemCamera } from '../../lib/scan/systemCamera';
 import { pageSamples } from '../../lib/scan/pageSamples';
 import {
   captureSession,
@@ -27,7 +28,7 @@ import {
 } from '../../design';
 import type { RootNavigation, RootStackParamList } from '../../navigation/types';
 import { ViewfinderPage } from './ViewfinderPage';
-import { cropToViewfinder } from '../../lib/scan/framing';
+import { cropToViewfinder, PAGE_ASPECT, visibleRegion } from '../../lib/scan/framing';
 
 const CAPTURE_BUTTON_SIZE = 68;
 
@@ -70,7 +71,7 @@ export function ScannerScreen() {
   const [error, setError] = useState<string | null>(null);
   //: The page just taken that will not read, and why. Null when the last shot
   //: was fine, could not be measured, or has been retaken.
-  const [doubt, setDoubt] = useState<{ id: string; advice: string } | null>(null);
+  const [doubt, setDoubt] = useState<{ id: string; advice: Advice } | null>(null);
   /**
    * Whether the retake in flight was started *here*, at the viewfinder.
    *
@@ -193,7 +194,13 @@ export function ScannerScreen() {
       // page it replaced sat, which is not the end of the list.
       const taken = captureSession.current().find((page) => page.source === framed);
       if (taken) {
-        void checkItReads(taken.id, framed);
+        // **The rectangle that will be uploaded, not the sensor's frame.** The
+        // crop is what the reader gets, and its height is what decides whether
+        // any framing could have worked — see `adviceFor`. Recomputed rather
+        // than measured because `visibleRegion` is the same arithmetic
+        // `cropToViewfinder` just used, and it is pure.
+        const region = visibleRegion(photo.width, photo.height, PAGE_ASPECT);
+        void checkItReads(taken.id, framed, region?.height ?? photo.height);
       }
     } catch (cause) {
       setError(
@@ -214,8 +221,8 @@ export function ScannerScreen() {
    * deliberately more permissive than the server so it can never talk someone
    * out of a photograph that would have read.
    */
-  async function checkItReads(id: string, uri: string) {
-    const advice = adviceFor(legibilityOf(await pageSamples(uri)));
+  async function checkItReads(id: string, uri: string, pageRows?: number) {
+    const advice = adviceFor(legibilityOf(await pageSamples(uri)), pageRows);
     if (advice) {
       setDoubt({ id, advice });
     }
@@ -230,6 +237,54 @@ export function ScannerScreen() {
     captureSession.beginRetake(doubt.id);
     retakingHere.current = true;
     setDoubt(null);
+  }
+
+  /**
+   * Re-shoot the doubtful page with the phone's own camera app.
+   *
+   * Offered only when this camera demonstrably cannot do better — see
+   * `adviceFor`. It goes through the **same** retake swap as the button beside
+   * it: the page stays where it is until a photograph replaces it, so a
+   * cancelled camera app leaves the scan exactly as it was. That is the rule
+   * `captureSession` was written around and it must not grow an exception here.
+   */
+  async function retakeWithSystemCamera() {
+    if (!doubt || busy) {
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    const id = doubt.id;
+    try {
+      captureSession.beginRetake(id);
+      const uri = await photographWithSystemCamera();
+      if (!uri) {
+        // Cancelled, or the camera app gave nothing back. Put the scan back
+        // the way it was rather than leaving a retake pending on a page the
+        // musician is still looking at.
+        captureSession.cancelRetake();
+        return;
+      }
+      // No viewfinder crop: the camera app had no page window, so there is
+      // nothing it promised to crop to. The whole photograph is the page.
+      captureSession.capture(uri);
+      impact(ImpactFeedbackStyle.Medium);
+      setDoubt(null);
+      // Checked again, with the size left unstated: nothing here measured the
+      // camera app's output, and a page that is still too small after using it
+      // needs "move in", not the same suggestion a second time.
+      const taken = captureSession.current().find((page) => page.source === uri);
+      if (taken) {
+        void checkItReads(taken.id, uri);
+      }
+    } catch (cause) {
+      captureSession.cancelRetake();
+      setError(
+        cause instanceof Error ? cause.message : 'That photo could not be taken.',
+      );
+    } finally {
+      setBusy(false);
+    }
   }
 
   function handleDone() {
@@ -326,16 +381,28 @@ export function ScannerScreen() {
         {doubt && !error ? (
           <View style={styles.doubt}>
             <Text variant="metadataSmall" color="accent" style={styles.doubtText}>
-              {doubt.advice}
+              {doubt.advice.message}
             </Text>
+            {/*
+              One way out, and which one depends on what went wrong. Offering
+              both would put the musician in front of a choice they have no way
+              to make: only the app knows whether this camera could have done
+              better.
+            */}
             <Text
               variant="metadataSmall"
               color="actionText"
-              onPress={retakeDoubtful}
+              onPress={
+                doubt.advice.route === 'cameraApp'
+                  ? () => void retakeWithSystemCamera()
+                  : retakeDoubtful
+              }
               accessibilityRole="button"
               style={styles.doubtAction}
             >
-              Take this page again
+              {doubt.advice.route === 'cameraApp'
+                ? 'Open the camera app'
+                : 'Take this page again'}
             </Text>
           </View>
         ) : null}

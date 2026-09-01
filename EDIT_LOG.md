@@ -6,6 +6,97 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-01 — "Move in until one page fills the frame" was advice they had followed
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Owner's report, still open:
+*"Fix scan sheet music. When you use the in app camera it uploads in low
+resolution and doesnt work for some reason."*
+
+**Files:** `mobile/src/lib/scan/legibility.ts` + test,
+`mobile/src/lib/scan/systemCamera.ts` (new),
+`mobile/src/screens/scanner/ScannerScreen.tsx`.
+
+The `expo-camera` patch earlier this session stopped the app *asking* for
+640x480. It cannot stop a browser answering with it, and on the web build the
+answer is the photograph: `captureImage` draws its canvas at exactly
+`video.videoWidth/videoHeight`.
+
+### Two problems, one measurement, and only one of them was named
+
+`legibilityOf` returns `tooSmall` when the staff lines are under six pixels
+apart. That happens for two unrelated reasons:
+
+- the page was photographed from across the desk — plenty of pixels, not
+  enough page in them. **Move in.**
+- the browser handed over a small stream — the page already fills the frame and
+  there still are not enough pixels. **Nothing at the shutter helps.**
+
+The app said "move in until one page fills the frame" for both. In the second
+case that is advice the musician has already followed, given again, forever —
+the failure this project wrote down in August as *advice must be followable in
+this app*, and the loop the owner was describing.
+
+`adviceFor` now takes the height of the rectangle that will actually be
+uploaded and picks between them. The threshold is derived from two measurements
+of the same real page already in this repository — 25 px of staff spacing at
+5712 rows, 4 px at 960, which agree to within 5% — so `MIN_PAGE_ROWS` is 1829,
+and the **larger** ratio is used deliberately: it gives the most optimistic
+bound, so the app only blames the camera when a generous reading still says the
+camera is at fault. A 4K capture cropped to the viewfinder is 1598x2160 and
+clears it; a 1920x1080 one is 799x1080 and cannot, however it is framed. Both
+are asserted.
+
+### The way out is the phone's own camera app
+
+`photographWithSystemCamera` is `expo-image-picker`'s `launchCameraAsync` with
+the back camera, which on web sets `capture="environment"` on a file input —
+the system camera, at the sensor's full resolution, with no `getUserMedia` and
+so nothing for the browser to cap. On a real app build it is the native camera.
+
+It goes through the **same retake swap** as the button it replaces:
+`beginRetake` removes nothing, so a cancelled camera app leaves the scan exactly
+as it was. That rule is why `captureSession` exists in the shape it does and it
+does not get an exception here.
+
+Only one route is offered at a time. Showing both would ask the musician to
+choose between two diagnoses when only the app knows which applies.
+
+### Measured, end to end, in Chromium
+
+A real fixture page (`01_simple_printed.jpg`) fed to the browser as a 640x480
+fake camera device — a page held up to a webcam, which is exactly the failing
+case:
+
+- Before the shutter: the stream is 640x480 even when asked for 3840x2160.
+- After it: **"This camera can't see the notes clearly enough, however close you
+  get. Your phone's camera app can."** with **Open the camera app**, where it
+  used to say "move in".
+- Tapping it opens a file input carrying `capture="environment"`.
+- Handing that a full-resolution page leaves the scan at **1 page**, not two —
+  the swap, not an append — with a dense thumbnail and no warning.
+
+**Three-foot test on the screenshot:** first the page in the viewfinder, second
+the white shutter ring in the thumb zone, third the ochre advice line. Subject,
+action, advice — one focal point, secondary receding, no card added, structure
+still from the frame corners. Passes.
+
+### Honest status
+
+The route is verified in Chromium, which is not the platform it is for: what
+iOS Safari's `getUserMedia` actually caps at, and what the iOS camera app hands
+back, are **not measured here** and cannot be without a device. What is measured
+is that the branch fires on a genuinely too-small page, that the advice changes,
+and that the replacement lands as a swap.
+
+**Known limit, unfixed:** a browser older than Safari 16.4 fires no `cancel`
+event on a file input, so a cancelled camera app would leave the retake pending
+and the shutter disabled. The close button already recovers it (`handleClose`
+cancels the retake), and 16.4 is this build's floor for other reasons.
+
+**Rollback:** revert the commit. No migration, no API change.
+
+---
+
 ## 2026-09-01 — Listen worked once, and four separate things could cause that
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Owner's report: *"Listen
