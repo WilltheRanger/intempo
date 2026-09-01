@@ -13,6 +13,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.tests.test_attach_score_pages import _manual_row
 from app.tests.test_scores_router import (
     PROJECT_HOST,
     _install_supabase,
@@ -101,6 +102,30 @@ def test_every_key_in_a_multi_page_scan_is_canonicalised_in_order(
     ]
     assert stored["source_image_urls"] == expected
     assert stored["source_image_url"] == expected[0]
+
+
+def test_attaching_notation_uses_the_same_durable_reference(
+    api: TestClient, monkeypatch, make_token
+) -> None:
+    user_id, score_id = uuid4(), uuid4()
+    key = f"{user_id}/{uuid4()}.png"
+    client = _install_supabase(
+        monkeypatch, returning_row=_manual_row(score_id, user_id)
+    )
+    _stub_worker(monkeypatch)
+
+    response = api.post(
+        f"/v1/scores/{score_id}/transcription",
+        json={"image_url": key},
+        headers=_auth(make_token, user_id),
+    )
+
+    assert response.status_code == 200, response.text
+    stored = client.table.return_value.update.call_args.args[0]
+    assert stored["source_image_url"] == (
+        f"{PROJECT_HOST}/storage/v1/object/authenticated/score-images/{key}"
+    )
+    assert stored["source_image_urls"] == [stored["source_image_url"]]
 
 
 @pytest.mark.parametrize(
