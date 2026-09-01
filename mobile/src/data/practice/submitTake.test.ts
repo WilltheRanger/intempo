@@ -37,7 +37,10 @@ const TAKE = {
 beforeEach(() => {
   vi.clearAllMocks();
   current.mockReturnValue({ instrument: 'double_bass' });
-  requestAudioUpload.mockResolvedValue({ upload_url: 'https://storage.example/put?t=1' });
+  requestAudioUpload.mockResolvedValue({
+    upload_url: 'https://storage.example/put?t=1',
+    object_key: 'user-1/take.wav',
+  });
   uploadToSignedUrl.mockResolvedValue(undefined);
   createAnalysis.mockResolvedValue({ analysis_id: 'analysis-9' });
 });
@@ -66,9 +69,9 @@ describe('submitTake', () => {
     expect(createAnalysis.mock.calls[0][0].instrument).toBe('violin');
   });
 
-  it('uploads to storage and points the row at the same URL', async () => {
-    // Audio never streams through the API. The backend checks the URL is under
-    // this user's prefix, so the worker can trust the address it stored.
+  it('uses the upload URL only for PUT and sends the durable key', async () => {
+    // The five-minute upload permission is not a download URL and must never
+    // be what the analysis row depends on.
     await submitTake(TAKE);
 
     expect(requestAudioUpload).toHaveBeenCalledWith('take-2026-05-17.wav');
@@ -77,7 +80,8 @@ describe('submitTake', () => {
       TAKE.audio,
       'audio/wav',
     );
-    expect(createAnalysis.mock.calls[0][0].audio_url).toBe('https://storage.example/put?t=1');
+    expect(createAnalysis.mock.calls[0][0].audio_key).toBe('user-1/take.wav');
+    expect(createAnalysis.mock.calls[0][0]).not.toHaveProperty('audio_url');
   });
 
   it('says the tempo came from the musician, not from a clip', async () => {
@@ -100,8 +104,53 @@ describe('submitTake', () => {
     expect(createAnalysis).not.toHaveBeenCalled();
   });
 
-  it('returns the id to poll', async () => {
-    await expect(submitTake(TAKE)).resolves.toBe('analysis-9');
+  it('returns the durable progress needed to resume', async () => {
+    await expect(submitTake(TAKE)).resolves.toEqual({
+      audioKey: 'user-1/take.wav',
+      analysisId: 'analysis-9',
+    });
+  });
+
+  it('does not upload the WAV again after storage already accepted it', async () => {
+    await submitTake({
+      ...TAKE,
+      resume: { audioKey: 'user-1/already-there.wav' },
+    });
+
+    expect(requestAudioUpload).not.toHaveBeenCalled();
+    expect(uploadToSignedUrl).not.toHaveBeenCalled();
+    expect(createAnalysis.mock.calls[0][0].audio_key).toBe(
+      'user-1/already-there.wav',
+    );
+  });
+
+  it('does not enqueue again when the analysis id is already known', async () => {
+    await expect(
+      submitTake({
+        ...TAKE,
+        resume: {
+          audioKey: 'user-1/already-there.wav',
+          analysisId: 'analysis-existing',
+        },
+      }),
+    ).resolves.toEqual({
+      audioKey: 'user-1/already-there.wav',
+      analysisId: 'analysis-existing',
+    });
+
+    expect(requestAudioUpload).not.toHaveBeenCalled();
+    expect(uploadToSignedUrl).not.toHaveBeenCalled();
+    expect(createAnalysis).not.toHaveBeenCalled();
+  });
+
+  it('carries the accepted object key when enqueue fails', async () => {
+    createAnalysis.mockRejectedValue(new Error('Connection dropped'));
+
+    const failure = submitTake(TAKE);
+    await expect(failure).rejects.toMatchObject({
+      message: 'Connection dropped',
+      resume: { audioKey: 'user-1/take.wav' },
+    });
   });
 });
 
