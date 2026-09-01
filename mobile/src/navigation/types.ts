@@ -16,7 +16,11 @@ export type AddPieceOption = 'scan' | 'import' | 'notation' | 'manual';
 export type RootStackParamList = {
   Tabs: undefined;
   /** Scan has its own screen; this covers the other two options. */
-  AddPiece: { option: Exclude<AddPieceOption, 'scan'> };
+  AddPiece: {
+    option: Exclude<AddPieceOption, 'scan'>;
+    /** Existing manual piece that imported pages should be read into. */
+    attachToPieceId?: string;
+  };
   /**
    * `adding` is set only when the scan is already in progress — "Add page"
    * from the review list.
@@ -29,7 +33,9 @@ export type RootStackParamList = {
    * the screen to guess from a session that looks the same either way — a
    * lingering scan someone abandoned looks exactly like one they are adding to.
    */
-  Scanner: { adding?: boolean } | undefined;
+  Scanner:
+    | { adding?: boolean; attachToPieceId?: string }
+    | undefined;
   /** Pages live in the shared capture session, not in params. */
   CapturedPages: undefined;
   Transcribe: undefined;
