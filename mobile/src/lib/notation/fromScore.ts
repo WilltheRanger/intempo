@@ -43,12 +43,55 @@ export interface StaveScore {
  * and below need a second beam or flag. Adding them means adding glyphs to
  * `engrave.ts`, not entries here.
  */
-const DRAWABLE: Partial<Record<string, NoteValue>> = {
-  whole: 'whole',
-  half: 'half',
-  quarter: 'quarter',
-  eighth: 'eighth',
+const DRAWABLE: Partial<Record<string, { value: NoteValue; dots: number }>> = {
+  whole: { value: 'whole', dots: 0 },
+  half: { value: 'half', dots: 0 },
+  quarter: { value: 'quarter', dots: 0 },
+  eighth: { value: 'eighth', dots: 0 },
+  // **The commonest thing this could not draw.** `tools/engraver-coverage.py`
+  // across the corpus: 30 of the 53 notes with no glyph were sixteenths, and
+  // the worst page drew 40% of its notes. Three notes in five missing is not a
+  // stave of that music.
+  sixteenth: { value: 'sixteenth', dots: 0 },
+  // A dot is the same notehead with one more mark, so these are not new values
+  // — see `NoteValue`. Leaving a dot off draws a dotted quarter as a quarter,
+  // which is a shorter note presented as though the page said so.
+  dotted_half: { value: 'half', dots: 1 },
+  dotted_quarter: { value: 'quarter', dots: 1 },
+  dotted_eighth: { value: 'eighth', dots: 1 },
 };
+
+/**
+ * What a *rest* can be drawn as, which is less than a note can.
+ *
+ * **Deliberately narrower.** `Stave.tsx` draws four rest shapes — whole, half,
+ * quarter, eighth — and a value it does not know falls through to the eighth
+ * hook. So teaching the note set about sixteenths without splitting this would
+ * have drawn every sixteenth rest as an **eighth rest**: silence twice as long
+ * as the page prints, in the same ink as the rests around it that are right.
+ * Exactly the substitution the note change was made to stop.
+ *
+ * Dots are absent here for the same reason: nothing draws one on a rest yet.
+ */
+const DRAWABLE_RESTS: Partial<Record<string, { value: NoteValue; dots: number }>> = {
+  whole: { value: 'whole', dots: 0 },
+  half: { value: 'half', dots: 0 },
+  quarter: { value: 'quarter', dots: 0 },
+  eighth: { value: 'eighth', dots: 0 },
+};
+
+/**
+ * **Tuplets are still left out, and that is a decision rather than a gap.**
+ *
+ * A `triplet_eighth` is written as an ordinary eighth under a bracket marked 3,
+ * and this engraver draws no brackets. Drawing the notehead alone would put
+ * three eighths where the page has three triplet-eighths — a bar that reads as
+ * half again as long as it is, in the same ink as the notes around it that are
+ * right. That is the one thing `fromScore` exists to refuse.
+ *
+ * 12 of the corpus's remaining undrawn notes are tuplets. They stay counted in
+ * `undrawable`, and the screen says so.
+ */
 
 /** A bar holding notes, none of which is one. */
 function isSilent(measure: ScoreMeasure): boolean {
@@ -110,7 +153,11 @@ export function staveScoreFor(score: ScoreJson): StaveScore {
     let opensMeasure = index > 0;
 
     for (const note of measure.notes) {
-      const value = DRAWABLE[note.duration];
+      const drawn =
+        note.pitch === 'rest'
+          ? DRAWABLE_RESTS[note.duration]
+          : DRAWABLE[note.duration];
+      const value = drawn?.value;
       if (note.pitch === 'rest') {
         if (!value) {
           rests += 1;
@@ -143,6 +190,7 @@ export function staveScoreFor(score: ScoreJson): StaveScore {
       items.push({
         pitch: note.pitch,
         value,
+        dots: drawn!.dots,
         measureNumber: measure.measure_number,
         ...(opensMeasure ? { barBefore: true } : {}),
       });

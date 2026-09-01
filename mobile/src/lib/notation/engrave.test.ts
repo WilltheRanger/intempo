@@ -128,3 +128,75 @@ describe('multi-bar rests', () => {
     expect(laid.systems[0].beams).toHaveLength(1);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Flags, beams and dots
+// ---------------------------------------------------------------------------
+//
+// `tools/engraver-coverage.py` measured what this could not draw: 53 of 393
+// notes in the corpus had no glyph, and the worst page drew 40% of its notes.
+// Sixteenths were 30 of those 53 — the commonest subdivision after the eighth.
+
+describe('note tails', () => {
+  const clef = 'bass' as const;
+  const opts = { lineGap: 10, noteGap: 30, leftPad: 20, rightPad: 10 };
+  const notesOf = (...values: string[]) =>
+    values.map((value) => ({ pitch: 'D3', value }) as never);
+  const first = (items: unknown[]) => engrave(items as never, clef, opts).systems[0];
+
+  it('flags a lone eighth, because an unflagged one is a quarter', () => {
+    // **Beams were only drawn over runs of two or more.** A single eighth — one
+    // between rests, or the last in a bar — came out as a filled notehead on a
+    // plain stem, which is exactly a quarter: a note drawn at twice its length
+    // with nothing to say otherwise.
+    const system = first(notesOf('quarter', 'eighth', 'quarter'));
+    const eighth = system.notes[1];
+
+    expect(eighth.flags).toBe(1);
+    expect(system.notes[0].flags).toBe(0);
+  });
+
+  it('gives a sixteenth two tails and a quarter none', () => {
+    const system = first(notesOf('sixteenth', 'quarter'));
+
+    expect(system.notes[0].flags).toBe(2);
+    expect(system.notes[1].flags).toBe(0);
+  });
+
+  it('takes the flags off a note a beam picked up', () => {
+    // Flags are set on every note as it is engraved and cleared by the beam,
+    // so a note cannot end up carrying both.
+    const system = first(notesOf('eighth', 'eighth', 'eighth'));
+
+    expect(system.beams).toHaveLength(1);
+    expect(system.notes.every((n) => n.flags === 0)).toBe(true);
+  });
+
+  it('doubles the beam over a run holding a sixteenth', () => {
+    // One beam over a run containing a sixteenth reads as a run of eighths —
+    // notes at twice their length, in the same ink as the ones that are right.
+    const system = first(notesOf('sixteenth', 'sixteenth'));
+
+    expect(system.beams[0].count).toBe(2);
+  });
+
+  it('takes the beam count from the thinnest note in the run', () => {
+    const system = first(notesOf('eighth', 'sixteenth'));
+
+    expect(system.beams[0].count).toBe(2);
+  });
+
+  it('carries the augmentation dot through to the glyph', () => {
+    // A dot adds half the value again. Dropping it draws a dotted quarter as a
+    // quarter — a shorter note, drawn as though the page said so.
+    const system = first([{ pitch: 'B4', value: 'quarter', dots: 1 }]);
+
+    expect(system.notes[0].dots).toBe(1);
+  });
+
+  it('fills every notehead a quarter or shorter, and no other', () => {
+    const system = first(notesOf('whole', 'half', 'quarter', 'eighth', 'sixteenth'));
+
+    expect(system.notes.map((n) => n.filled)).toEqual([false, false, true, true, true]);
+  });
+});

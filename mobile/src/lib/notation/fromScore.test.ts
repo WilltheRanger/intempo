@@ -10,7 +10,7 @@ import { describeOmissions, describeUndrawnScore, staveScoreFor } from './fromSc
  *
  * `engrave.ts` draws four note values, the four rests that match them, and a
  * multi-bar rest. The rule this module exists to keep is that nothing is
- * **rounded**: a sixteenth does not become an eighth to make it drawable.
+ * **rounded**: a triplet eighth does not become an eighth to make it drawable.
  * Rhythm is the entire subject of this app, so a stave that misreports it is
  * the one picture it must never draw.
  *
@@ -18,7 +18,8 @@ import { describeOmissions, describeUndrawnScore, staveScoreFor } from './fromSc
  * nothing. On the orchestral part fixture that deleted six bars of nineteen,
  * and the note before a silence sat against the note after it.
  *
- * The consequence is that an ordinary part — sixteenths, dotted eighths — can
+ * The consequence is that a part using tuplets or values finer than a
+ * sixteenth can
  * lose every note, and until now the screen rendered the title, the
  * photograph, and nothing else. No explanation, no action, no sign anything
  * had been read. It usually had been.
@@ -78,12 +79,17 @@ describe('what survives the trip', () => {
   });
 
   it('leaves out what it cannot draw rather than rounding it', () => {
-    // The rule the module exists for. A sixteenth drawn as an eighth is a
+    // The rule the module exists for: a note drawn as a longer one is a
     // rhythmically wrong line of music presented as a right one.
-    const stave = staveScoreFor(scoreOf('sixteenth', 'dotted_quarter', 'triplet_eighth'));
+    //
+    // **The examples changed with the engraver, and the rule did not.**
+    // Sixteenths and dotted values are drawn now; a triplet still is not,
+    // because it is an ordinary eighth under a bracket this cannot draw and
+    // drawing the notehead alone makes the bar read half again as long.
+    const stave = staveScoreFor(scoreOf('triplet_eighth', 'thirty_second'));
 
     expect(stave.items).toHaveLength(0);
-    expect(stave.undrawable).toBe(3);
+    expect(stave.undrawable).toBe(2);
   });
 
   it('draws rests, and does not count them as missing', () => {
@@ -117,7 +123,7 @@ describe('what survives the trip', () => {
     // of a phrase.
     const score = scoreOf('quarter');
     score.measures.push(
-      { measure_number: 2, notes: [{ pitch: 'E2', duration: 'sixteenth' }], slurs: [] } as never,
+      { measure_number: 2, notes: [{ pitch: 'E2', duration: 'triplet_eighth' }], slurs: [] } as never,
       { measure_number: 3, notes: [{ pitch: 'G2', duration: 'quarter' }], slurs: [] } as never,
     );
 
@@ -189,7 +195,7 @@ describe('describeUndrawnScore', () => {
   it('explains a page whose every note is undrawable', () => {
     // The screenshot this was found from: a bass part in sixteenths and dotted
     // eighths, rendering as a title and a photograph and nothing else.
-    const said = describeUndrawnScore(staveScoreFor(scoreOf('sixteenth', 'dotted_eighth')));
+    const said = describeUndrawnScore(staveScoreFor(scoreOf('triplet_eighth', 'thirty_second')));
 
     expect(said).toMatch(/can't draw yet/i);
     // It has to say the reading survived, or a musician reads a blank stave as
@@ -235,7 +241,7 @@ describe('describeOmissions', () => {
   it('names both kinds of omission, and gets the plurals right', () => {
     // A *drawable* rest is no longer an omission — that is the change. What is
     // still one is a rest whose value has no glyph, exactly as for a note.
-    const score = scoreOf('quarter', 'sixteenth');
+    const score = scoreOf('quarter', 'triplet_eighth');
     score.measures[0].notes.push({ pitch: 'rest', duration: 'thirty_second' } as never);
 
     const said = describeOmissions(staveScoreFor(score));
@@ -251,7 +257,7 @@ describe('describeOmissions', () => {
 
   it('says the engraving is incomplete rather than approximate', () => {
     // The distinction the whole module turns on, said to the musician.
-    expect(describeOmissions(staveScoreFor(scoreOf('sixteenth')))).toMatch(
+    expect(describeOmissions(staveScoreFor(scoreOf('triplet_eighth')))).toMatch(
       /incomplete rather than approximate/i,
     );
   });

@@ -57,12 +57,36 @@ const MIDDLE_LINE_STEP: Record<Clef, number> = {
   tenor: 3 * 7 + LETTERS.A,
 };
 
-export type NoteValue = 'whole' | 'half' | 'quarter' | 'eighth';
+/**
+ * The note values this engraver can draw.
+ *
+ * **`sixteenth` was the single commonest thing it could not.** Measured across
+ * the corpus by `tools/engraver-coverage.py`: 30 of the 53 notes with no glyph
+ * were sixteenths, and the worst page drew 40% of its notes. A stave missing
+ * three notes in five is not a stave of that music.
+ *
+ * Dots are not values here — they are a flag on the note (`dots`), because
+ * `dotted_quarter` and `quarter` are the same notehead and the same stem with
+ * one extra mark, and enumerating every combination doubles this union for no
+ * gain.
+ */
+export type NoteValue = 'whole' | 'half' | 'quarter' | 'eighth' | 'sixteenth';
+
+/** How many beams or flags a value carries. Whole, half and quarter carry none. */
+export const TAILS: Record<NoteValue, number> = {
+  whole: 0,
+  half: 0,
+  quarter: 0,
+  eighth: 1,
+  sixteenth: 2,
+};
 
 export interface StaveNote {
   /** Scientific pitch, e.g. `D4`, `F#4`. Flats are not drawn — see `Accidental`. */
   pitch: string;
   value: NoteValue;
+  /** Augmentation dots, 0 or 1. A dotted quarter is `quarter` with `dots: 1`. */
+  dots?: number;
   /** Starts a new bar before this note. */
   barBefore?: boolean;
   /**
@@ -134,6 +158,24 @@ export interface EngravedNote {
   ledgers: number[];
   /** The note's letter and accidental, for the row under the system. */
   name: string;
+  /**
+   * Augmentation dots printed after the notehead. 0 or 1.
+   *
+   * A dot adds half the note's value again, and leaving it off turns a dotted
+   * quarter into a quarter — a shorter note drawn as though the page said so,
+   * which is the failure this module is written against.
+   */
+  dots: number;
+  /**
+   * Flags on an unbeamed note: 1 for an eighth, 2 for a sixteenth, 0 otherwise.
+   *
+   * **Set for every note first and cleared when a beam claims it.** Beams were
+   * only ever emitted for runs of two or more, so a lone eighth — one between
+   * rests, or at the end of a bar — was drawn as a filled notehead with a plain
+   * stem, which is a *quarter*. It read as a note twice its length and nothing
+   * said otherwise.
+   */
+  flags: number;
 }
 
 /**
@@ -174,6 +216,8 @@ export interface MeasureSpan {
 }
 
 export interface EngravedBeam {
+  /** How many parallel beams: 1 for eighths, 2 where a sixteenth is in the run. */
+  count: number;
   from: number;
   to: number;
   y: number;
@@ -475,7 +519,8 @@ function layoutSystem(
     const step = stepOf(note.pitch) ?? 0;
     const y = -(step - middleStep) * halfGap;
     const stemUp = y > 0;
-    const filled = note.value === 'quarter' || note.value === 'eighth';
+    // Everything a quarter or shorter has a black notehead.
+    const filled = note.value !== 'whole' && note.value !== 'half';
 
     engravedNotes.push({
       x,
@@ -484,6 +529,9 @@ function layoutSystem(
       stemUp,
       accidental: accidentalOf(note.pitch),
       name: displayName(note.pitch),
+      dots: note.dots ?? 0,
+      // Cleared below for any note a beam picks up.
+      flags: TAILS[note.value],
       stem:
         note.value === 'whole'
           ? null
@@ -525,11 +573,24 @@ function layoutSystem(
           to: beamY,
         };
       }
+      // The thinnest note in the group decides how many beams it carries.
+      // Drawing one beam over a run holding a sixteenth reads as a run of
+      // eighths — the same lie as no flag at all. Read before the flags are
+      // cleared, because the flag count *is* the beam count.
+      const count = Math.max(1, ...group.map((n) => n.flags));
+
+      // **A beamed note has no flags.** Flags are set on every note as it is
+      // engraved, because most notes are not beamed and a lone eighth without
+      // one is drawn as a quarter. A beam replaces them.
+      for (const n of group) {
+        n.flags = 0;
+      }
       beams.push({
         from: group[0].stem!.x,
         to: group[group.length - 1].stem!.x,
         y: beamY,
         stemUp,
+        count,
       });
     }
     run = [];
@@ -552,12 +613,18 @@ function layoutSystem(
     }
     const index = noteAt;
     noteAt += 1;
-    if (item.value === 'eighth' && !(item.barBefore && run.length > 0)) {
+    // **Anything with a tail beams, not eighths alone.** This read
+    // `value === 'eighth'`, which was the whole of what the engraver could
+    // draw at the time — so when sixteenths arrived they were never grouped,
+    // and two of them side by side came out as two separately flagged notes
+    // where a page prints one double beam.
+    const beamable = TAILS[item.value] > 0;
+    if (beamable && !(item.barBefore && run.length > 0)) {
       run.push(index);
       return;
     }
     flush();
-    if (item.value === 'eighth') {
+    if (beamable) {
       run.push(index);
     }
   });

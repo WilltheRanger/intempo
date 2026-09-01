@@ -28,18 +28,39 @@ from __future__ import annotations
 
 import collections
 import json
+import re
 import sys
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "backend"))
 
-#: Mirrors `DRAWABLE` in `mobile/src/lib/notation/fromScore.ts`.
+#: What the app can actually draw, **read from the app** rather than copied.
 #:
-#: Absent by design rather than oversight: `dotted_*` needs a dot, `sixteenth`
-#: and below need a second beam or flag. Widening it means adding glyphs to
-#: `engrave.ts`, not entries here.
-DRAWABLE = {"whole", "half", "quarter", "eighth"}
+#: This was a hand-kept set — `{"whole", "half", "quarter", "eighth"}` — with a
+#: comment saying it mirrored `DRAWABLE` in `fromScore.ts`. It stopped
+#: mirroring it the moment the engraver learned sixteenths and dots, and the
+#: tool went on reporting 13% of the corpus as undrawable when the real figure
+#: had changed. A measuring instrument that keeps its own copy of what it is
+#: measuring will eventually measure the copy.
+#:
+#: Parsed rather than imported because there is no TypeScript runtime here, and
+#: it is one regex against a literal this project writes by hand anyway.
+def _drawable() -> set[str]:
+    source = (REPO / "mobile" / "src" / "lib" / "notation" / "fromScore.ts").read_text()
+    start = source.index("const DRAWABLE:")
+    body = source[start : source.index("};", start)]
+    names = set(re.findall(r"^\s*([a-z_]+):\s*\{", body, re.M))
+    if not names:
+        raise SystemExit(
+            "could not read DRAWABLE out of fromScore.ts — the shape changed, "
+            "and guessing here would report a coverage figure for an engraver "
+            "that does not exist"
+        )
+    return names
+
+
+DRAWABLE = _drawable()
 
 
 def _pages():

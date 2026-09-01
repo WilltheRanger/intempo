@@ -6,6 +6,100 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-31 — The stave could not draw a sixteenth
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Fifth iteration of the
+consumer-grade loop, on the music side.
+
+**Files:** `mobile/src/lib/notation/engrave.ts` + test,
+`mobile/src/lib/notation/fromScore.ts` + test,
+`mobile/src/components/notation/Stave.tsx`, `mobile/src/lib/warmup.ts`,
+`tools/engraver-coverage.py`.
+
+### Measured before deciding
+
+`tools/engraver-coverage.py`, on the corpus:
+
+    53 of 393 notes have no glyph (13%)
+    worst page: orchestral_part.json at 40% drawn
+
+    sixteenth        30   <- no glyph
+    dotted_eighth     7   <- no glyph
+    triplet_quarter   6   <- no glyph
+    triplet_eighth    6   <- no glyph
+    dotted_quarter    4   <- no glyph
+
+A sixteenth is the commonest subdivision after the eighth, and a musician
+looking at the worst page saw **two notes in five**. That is not a stave of
+their music.
+
+After:
+
+    12 of 393 notes have no glyph (3%)
+    worst page at 71% drawn
+
+### Three glyphs, and one of them was already wrong
+
+**Sixteenths** — a second beam, and two flags unbeamed.
+
+**Dots**, as a field on the note rather than new values in `NoteValue`: a dotted
+quarter is the same notehead and stem with one more mark, and enumerating the
+combinations doubles the union for nothing. The dot lifts into the space above
+when the note sits on a line, which is where an engraver puts it.
+
+**Flags on a lone note, which had never existed.** Beams were only emitted for
+runs of two or more, so a single eighth — one between rests, or the last in a
+bar — was drawn as a filled notehead on a plain stem. That is a **quarter**. It
+had been reading at twice its length, in the same ink as the notes around it
+that were right, since the engraver was written.
+
+And the beam walker keyed on `value === 'eighth'`, which was the whole of what
+could be drawn when it was written — so sixteenths were never grouped at all
+until `TAILS[value] > 0` replaced it.
+
+### The rest set stayed narrow, deliberately
+
+`Stave.tsx` draws four rest shapes and falls through to the eighth hook for
+anything else. Teaching the note set about sixteenths without splitting the two
+would have drawn every sixteenth **rest** as an eighth rest — silence at twice
+its length, which is the same substitution the note work was done to stop. There
+are two tables now, and the rest one is shorter.
+
+### Tuplets are still left out, and that is the decision
+
+A `triplet_eighth` is an ordinary eighth under a bracket marked 3, and this
+engraver draws no brackets. Drawing the notehead alone puts three eighths where
+the page has three triplet-eighths — a bar reading half again as long as it is.
+The 12 remaining undrawn notes are all tuplets, still counted, still named on
+screen.
+
+### The measuring instrument was measuring a copy
+
+`engraver-coverage.py` kept its own `DRAWABLE = {"whole", "half", "quarter",
+"eighth"}` under a comment saying it mirrored `fromScore.ts`. It stopped
+mirroring it the moment the engraver changed, and went on reporting 13% when the
+real figure was 3%. It reads the app's own table now, and refuses to run rather
+than guess if the shape changes.
+
+### Tests
+
+`mobile` 46 files / 537 passed, `tsc` clean. Seven new cases on the engraved
+geometry: a lone eighth carries one flag, a sixteenth two, a beam clears them,
+a run holding a sixteenth gets a double beam from the thinnest note in it, and
+only notes a quarter or shorter are filled.
+
+Six existing tests used sixteenths and dotted values as their examples of "what
+this cannot draw". Rewritten to use a triplet, which still is not — the rule
+they test is unchanged and only the example moved.
+
+### Not verified
+
+**The glyphs have not been seen.** No fixture score contains a sixteenth or a
+dot, so the screenshot of `/pieces/fixture-kreutzer-02/score` shows quarters and
+eighths and proves nothing about the new shapes. The geometry is unit-tested
+exactly; the *drawing* is not, and a flag curving the wrong way would pass every
+test here. A fixture with fine values, or a real scan, is what would settle it.
+
 ## 2026-08-31 — Two bugs that only a link could reach, both mine
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Fourth iteration of the

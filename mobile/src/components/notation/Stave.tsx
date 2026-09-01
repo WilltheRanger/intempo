@@ -1,4 +1,4 @@
-import Svg, { Ellipse, G, Line, Path, Rect, Text as SvgText } from 'react-native-svg';
+import Svg, { Circle, Ellipse, G, Line, Path, Rect, Text as SvgText } from 'react-native-svg';
 
 import type { Clef } from '../../data/types';
 import { colors, fontFamily, typography } from '../../design';
@@ -70,6 +70,18 @@ const RIGHT_PAD = 12;
 /** Noteheads are wider than they are tall, and tilted. */
 const HEAD_RX_FACTOR = 0.62;
 const HEAD_RY_FACTOR = 0.46;
+/**
+ * Whether a notehead sits on a staff line rather than in a space.
+ *
+ * An engraver puts an augmentation dot in the space above when the note is on
+ * a line, because a dot centred on a line is hard to pick out against it. The
+ * staff's lines are `lineGap` apart and the middle line is y=0, so a note is on
+ * a line whenever its offset is a whole number of gaps.
+ */
+function onLine(y: number, lineGap: number): boolean {
+  return Math.abs(Math.round(y / lineGap) * lineGap - y) < lineGap * 0.1;
+}
+
 const HEAD_TILT = -20;
 const STROKE = 1.1;
 /**
@@ -295,6 +307,51 @@ export function Stave({
                 strokeWidth={note.filled ? 0 : stroke * 1.3}
               />
 
+              {/*
+                **Flags, for a note no beam picked up.** Beams are only drawn
+                over runs of two or more, so a lone eighth — one between rests,
+                or the last of a bar — was a filled notehead on a plain stem,
+                which is a *quarter*. It read as twice its length with nothing
+                to say otherwise.
+
+                Drawn from the stem tip, curving back towards the notehead, and
+                stacked downwards for a sixteenth's second flag.
+              */}
+              {note.stem && note.flags > 0
+                ? Array.from({ length: note.flags }, (_unused, tail) => {
+                    const tip = note.stem!.to + (note.stemUp ? tail : -tail) * lineGap * 0.8;
+                    const drop = note.stemUp ? lineGap * 1.5 : -lineGap * 1.5;
+                    return (
+                      <Path
+                        key={`flag-${tail}`}
+                        d={
+                          `M ${note.stem!.x} ${tip} ` +
+                          `q ${lineGap * 0.9} ${drop * 0.45} ${lineGap * 0.75} ${drop}`
+                        }
+                        stroke={ink}
+                        strokeWidth={stroke * 1.6}
+                        fill="none"
+                        strokeLinecap="round"
+                      />
+                    );
+                  })
+                : null}
+
+              {/*
+                The augmentation dot: half the note's value again. Sits after
+                the head, and lifts into the space above when the note is on a
+                line — where an engraver puts it, because a dot centred on a
+                line is hard to see against it.
+              */}
+              {note.dots > 0 ? (
+                <Circle
+                  cx={note.x + headRx * 2.1}
+                  cy={note.y - (onLine(note.y, lineGap) ? lineGap / 2 : 0)}
+                  r={stroke * 1.5}
+                  fill={ink}
+                />
+              ) : null}
+
               {showNoteNames ? (
                 <SvgText
                   x={note.x}
@@ -310,19 +367,28 @@ export function Stave({
             </G>
           ))}
 
-          {system.beams.map((beam, index) => (
-            <Line
-              key={`beam-${index}`}
-              x1={beam.from}
-              // Half a thickness in from the stem end, so the beam sits flush
-              // with the tip rather than overhanging it.
-              y1={beam.y + (beam.stemUp ? beamNode / 2 : -beamNode / 2)}
-              x2={beam.to}
-              y2={beam.y + (beam.stemUp ? beamNode / 2 : -beamNode / 2)}
-              stroke={ink}
-              strokeWidth={beamNode}
-            />
-          ))}
+          {system.beams.flatMap((beam, index) =>
+            // **One line per beam.** A run holding a sixteenth carries two, and
+            // drawing a single one over it reads as a run of eighths — notes
+            // twice their length, in the same ink as the ones that are right.
+            Array.from({ length: beam.count }, (_unused, tail) => {
+              const y =
+                beam.y +
+                (beam.stemUp ? beamNode / 2 : -beamNode / 2) +
+                (beam.stemUp ? tail : -tail) * beamNode * 2.2;
+              return (
+                <Line
+                  key={`beam-${index}-${tail}`}
+                  x1={beam.from}
+                  y1={y}
+                  x2={beam.to}
+                  y2={y}
+                  stroke={ink}
+                  strokeWidth={beamNode}
+                />
+              );
+            }),
+          )}
         </G>
       ))}
     </Svg>
