@@ -46,8 +46,8 @@ export const MAX_SCAN_PAGES = 12;
  */
 let pages: CapturedPage[] = [];
 let nextId = 1;
-/** Set by the upload step, consumed by the save in the same page order. */
-let uploadedImageUrls: string[] = [];
+/** Durable object keys set by upload, consumed by save in the same page order. */
+let uploadedImageKeys: string[] = [];
 /** Existing manual piece these pages should be read into, rather than duplicated. */
 let attachmentPieceId: string | null = null;
 /**
@@ -100,7 +100,7 @@ export const captureSession = {
   /** Clears the session, retake included. Called when the scanner opens fresh. */
   reset(options: { attachToPieceId?: string } = {}): void {
     nextId = 1;
-    uploadedImageUrls = [];
+    uploadedImageKeys = [];
     attachmentPieceId = options.attachToPieceId ?? null;
     retakingId = null;
     commit([]);
@@ -155,7 +155,7 @@ export const captureSession = {
       );
     }
     nextId = 1;
-    uploadedImageUrls = [];
+    uploadedImageKeys = [];
     attachmentPieceId = options.attachToPieceId ?? null;
     retakingId = null;
     commit(sources.map((source) => ({ id: `page-${nextId++}`, source })));
@@ -219,17 +219,18 @@ export const captureSession = {
   /**
    * Remembers where every ordered page landed, for the save that follows.
    *
-   * These are signed upload URLs that expire five minutes after issue. They
-   * remain in the same order as `current()`; sending only the first one was
-   * how a multi-page scan silently became a one-page score.
+   * These are owner-prefixed object keys, not signed upload URLs. They remain
+   * valid while the musician names the piece, and remain in the same order as
+   * `current()`; sending only the first one was how a multi-page scan silently
+   * became a one-page score.
    */
-  setUploadedImageUrls(urls: string[]): void {
-    uploadedImageUrls = [...urls];
+  setUploadedImageKeys(keys: string[]): void {
+    uploadedImageKeys = [...keys];
     notify();
   },
 
-  uploadedImageUrls(): string[] {
-    return [...uploadedImageUrls];
+  uploadedImageKeys(): string[] {
+    return [...uploadedImageKeys];
   },
 
   /** Existing library entry that receives this scan, when there is one. */
