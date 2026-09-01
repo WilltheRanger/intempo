@@ -62,6 +62,9 @@ export function PracticeCard({
   onContinue,
 }: PracticeCardProps) {
   const hasNotation = (piece.score?.measures.length ?? 0) > 0;
+  const readingNotation =
+    piece.transcriptionStatus === 'queued' ||
+    piece.transcriptionStatus === 'reading';
 
   return (
     <Card emphasis padded={false}>
@@ -122,12 +125,20 @@ export function PracticeCard({
 
         {!hasNotation ? (
           <Text variant="metadataSmall" color="textSecondary" style={styles.setup}>
-            Add the score so InTempo can follow the written notes and rests.
+            {readingNotation
+              ? 'Reading the pages now. Practice unlocks when the notation is ready.'
+              : 'Add the score so InTempo can follow the written notes and rests.'}
           </Text>
         ) : null}
 
         <PrimaryButton
-          label={hasNotation ? 'Continue practice' : 'Add sheet music'}
+          label={
+            hasNotation
+              ? 'Continue practice'
+              : readingNotation
+                ? 'View reading progress'
+                : 'Add sheet music'
+          }
           icon={hasNotation ? Play : FileMusic}
           onPress={onContinue}
           style={styles.action}
