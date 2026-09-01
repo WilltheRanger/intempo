@@ -138,6 +138,39 @@ class CreateScoreRequest(BaseModel):
         return [self.image_url] if self.image_url else []
 
 
+class AttachScorePagesRequest(BaseModel):
+    """Photographs to read into an existing scoreless library entry."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    image_url: str | None = Field(default=None, min_length=1, max_length=2048)
+    image_urls: list[str] | None = Field(default=None)
+
+    @model_validator(mode="after")
+    def _one_page_form(self) -> "AttachScorePagesRequest":
+        if self.image_url is not None and self.image_urls is not None:
+            raise ValueError(
+                "send image_urls for a scan; image_url is the single-page form "
+                "and the two cannot both be given"
+            )
+        pages = self.pages()
+        if not pages:
+            raise ValueError("attach at least one page")
+        if len(pages) > MAX_PAGES:
+            raise ValueError(
+                f"a scan may hold at most {MAX_PAGES} pages; "
+                f"this one has {len(pages)}"
+            )
+        if any(not url or len(url) > 2048 for url in pages):
+            raise ValueError("every attached page must be a URL")
+        return self
+
+    def pages(self) -> list[str]:
+        if self.image_urls is not None:
+            return list(self.image_urls)
+        return [self.image_url] if self.image_url else []
+
+
 #: The most pages one scan may hold.
 #:
 #: **A ceiling on the bill, stated as a choice rather than measured** — the
@@ -677,6 +710,77 @@ def create_score(
     # uploaded without a second request. This used to return an unsigned row,
     # which meant POST was the one response whose `image_url` was always null.
     return _with_image_urls(rows)[0]
+
+
+@router.post("/{score_id}/transcription", response_model=ScoreResponse)
+def attach_score_pages(
+    score_id: UUID,
+    body: AttachScorePagesRequest,
+    user_id: UUID = Depends(current_user_id),
+) -> ScoreResponse:
+    """Read sheet music into an existing hand-entered piece.
+
+    A manual library entry is useful for a metronome, but it has no notes for
+    recording analysis to follow. This turns that same entry into a photographed
+    score instead of forcing the musician to create a duplicate and lose the
+    title, tempo and any history already attached to it.
+    """
+    pages = body.pages()
+    for url in pages:
+        _assert_image_url_owned_by(url, user_id)
+
+    client = _service_client()
+    existing = (
+        client.table("scores")
+        .select("*")
+        .eq("id", str(score_id))
+        .eq("user_id", str(user_id))
+        .limit(1)
+        .execute()
+    ).data or []
+    if not existing:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="score not found"
+        )
+
+    row = existing[0]
+    state = row.get("transcription_status") or "done"
+    if state in {"queued", "reading"}:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="this piece is already being read",
+        )
+    if pages_of(row) or (row.get("score_json") or {}).get("measures"):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="this piece already has notation",
+        )
+
+    update = {
+        "source_image_url": pages[0],
+        "source_image_urls": pages,
+        "score_json": _awaiting_transcription().model_dump(mode="json"),
+        "ocr_confidence": None,
+        "transcription_status": "queued",
+        "transcription_stage": None,
+        "transcription_error": None,
+        "transcription_accepted_at": None,
+        "page_image_discarded_at": None,
+    }
+    updated = (
+        client.table("scores")
+        .update(update)
+        .eq("id", str(score_id))
+        .eq("user_id", str(user_id))
+        .execute()
+    ).data or []
+    if not updated:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="score not found"
+        )
+
+    start_transcription(str(score_id))
+    return _with_image_urls(updated)[0]
 
 
 @router.post("/import", response_model=ScoreResponse, status_code=status.HTTP_201_CREATED)
