@@ -4,6 +4,7 @@ import { colors, radii, spacing } from '../../design';
 import { PrimaryButton } from '../primitives/PrimaryButton';
 import { SecondaryButton } from '../primitives/SecondaryButton';
 import { Text } from '../primitives/Text';
+import { useInertAppRoot } from './modalAccessibility';
 
 export interface ConfirmDialogProps {
   visible: boolean;
@@ -36,6 +37,8 @@ export function ConfirmDialog({
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
+  useInertAppRoot(visible);
+
   return (
     <Modal
       visible={visible}
