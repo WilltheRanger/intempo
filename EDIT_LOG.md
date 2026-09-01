@@ -6,6 +6,77 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-01 — Staccato dots the page had and the app did not
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Sixth finding of the
+music-accuracy audit, and the last of the notation gaps I know about.
+
+**Files:** `tools/subset-bravura.py`, `mobile/assets/fonts/Bravura.otf`,
+`mobile/src/lib/notation/engrave.ts`, `fromScore.ts`,
+`components/notation/Stave.tsx`, `mobile/src/lib/score/schedule.ts`,
+`mobile/src/lib/notation/articulations.test.ts` (new).
+
+`ScoreNote.articulation` — staccato, tenuto, accent — has been read off the page
+since Batch 2 and used by nothing. Not drawn, not played.
+
+A staccato dot is **not decoration**: it changes what you play. A page that
+omits it teaches the passage wrong, and a musician copying what they hear then
+records a take judged against written durations they were never shown. Same for
+tenuto, in the other direction.
+
+### Drawn
+
+Six glyphs added to the Bravura subset (`E4A0-E4A5`), which is six rather than
+three because Bravura draws the above and below forms separately — an accent
+points differently and a tenuto sits at a different height, so mirroring one in
+the renderer produces a mark a reader sees as wrong. Subset 24.7 KB → 25.2 KB.
+
+The mark goes **on the side away from the stem**, measured against the outermost
+notehead so a chord's mark clears the whole stack. Widths come from the font
+(`ARTICULATION_WIDTHS`) because a staccato dot is a third of a space and an
+accent is one and a third — one constant centres two of the three wrong.
+
+**Heights come from the font too, and had to.** The "above" glyphs sit entirely
+above their origin, so an accent above a high note was drawn 0.98 spaces past
+the top of the box measured for the system, and the SVG viewport clipped its
+tip. `ARTICULATION_HEIGHTS` is read out of the glyph bounds; the system's
+extents and any slur passing over now use the mark's far edge, not its origin.
+Measured before and after on the same page: system height 176 → 191, tips
+intact.
+
+**A slur clears an articulation on its side.** Both go on the notehead side, so
+a slur measured from the noteheads alone is drawn straight through a row of
+staccato dots.
+
+### Played
+
+`ARTICULATION_LENGTH`: staccato sounds half its written value, tenuto sounds all
+of it and overrides the default 0.85 gap entirely, and an **accent sounds
+exactly like an unmarked note** — it changes weight, not length, and this player
+has no dynamics. That last one is asserted rather than left implicit so a future
+reader does not take the omission for an oversight.
+
+Articulation changes how long a note sounds and **never when the next one
+starts** — otherwise a staccato passage would run ahead of the beat and every
+bar after it be judged early. Asserted.
+
+**Verified** by temporarily marking the demo score with all three, plus a slur
+over two staccato notes and two accents on stem-down notes: dots and a tenuto
+line below the low notes, accents above the high ones, the slur sitting below
+the dots, and nothing clipped. Screenshotted at 4x, fixture restored
+byte-identical, route sweep clean.
+
+**Tests:** 744 pass, up 12.
+
+**Still unread by the app:** `grace_notes`, which is a count and not pitches —
+there is nothing to draw from a number, so this is a backend question before it
+is an app one.
+
+**Rollback:** revert the commit, and re-run `tools/subset-bravura.py` against a
+full Bravura to restore the smaller font.
+
+---
+
 ## 2026-09-01 — The app kept every slur correct and drew none of them
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Fifth finding of the

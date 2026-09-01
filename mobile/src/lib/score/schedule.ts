@@ -144,6 +144,29 @@ export interface ScheduleOptions {
 const DEFAULT_ARTICULATION = 0.85;
 
 /**
+ * How long a marked note actually sounds, as a fraction of its written value.
+ *
+ * **Because a staccato dot is an instruction, not a decoration.** The page says
+ * play it short; a reference that plays it long teaches the passage wrong, and
+ * a musician copying what they hear then records a take the analysis judges
+ * against the written durations they were never shown.
+ *
+ * A half is the conventional reading of a staccato quarter and it is what a
+ * metronome-and-scale app should give: short enough to be unmistakably detached,
+ * long enough to keep the pitch audible. Tenuto is the opposite instruction —
+ * hold it for its whole value — so it overrides the default gap entirely rather
+ * than shortening it slightly less.
+ *
+ * An accent changes weight, not length, and this player has no dynamics; it
+ * therefore sounds exactly like an unmarked note. Saying so here is the point —
+ * a future reader should not have to wonder whether it was forgotten.
+ */
+const ARTICULATION_LENGTH: Record<string, number> = {
+  staccato: 0.5,
+  tenuto: 1,
+};
+
+/**
  * Walk the score, emitting one entry per sounded note.
  *
  * Rests advance the clock and emit nothing. Ties are folded into the note they
@@ -193,12 +216,16 @@ export function scheduleScore(
     }
 
     const durationS = beats * secondsPerBeat;
+    // The note's own marking wins over the global gap; without one, the gap.
+    const sounded =
+      durationS *
+      (ARTICULATION_LENGTH[note.articulation ?? ''] ?? articulation);
     const frequency = note.pitch === 'rest' ? null : frequencyOf(note.pitch);
 
     if (frequency !== null) {
       notes.push({
         startS: clock,
-        durationS: durationS * articulation,
+        durationS: sounded,
         frequency,
         measureNumber: measureOf[i],
         globalIndex,
@@ -218,7 +245,7 @@ export function scheduleScore(
         }
         notes.push({
           startS: clock,
-          durationS: durationS * articulation,
+          durationS: sounded,
           frequency: chordHz,
           measureNumber: measureOf[i],
           globalIndex: globalIndex - 1,

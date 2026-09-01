@@ -1,6 +1,6 @@
 import Svg, { G, Line, Path, Rect, Text as SvgText } from 'react-native-svg';
 
-import type { Clef } from '../../data/types';
+import type { Articulation, Clef } from '../../data/types';
 import { colors, fontFamily, MUSIC_EM_IN_SPACES, typography } from '../../design';
 import {
   BEAM_THICKNESS_FACTOR,
@@ -27,6 +27,13 @@ const GLYPH = {
   doubleSharp: '\uE263',
   doubleFlat: '\uE264',
   augmentationDot: '\uE1E7',
+  /** articAccent/Staccato/TenutoAbove and their Below twins. */
+  accentAbove: '\uE4A0',
+  accentBelow: '\uE4A1',
+  staccatoAbove: '\uE4A2',
+  staccatoBelow: '\uE4A3',
+  tenutoAbove: '\uE4A4',
+  tenutoBelow: '\uE4A5',
   /** tuplet0..9 — small and bold-italic, not the time signature's digits. */
   tupletDigit: (n: number) =>
     String(n)
@@ -44,6 +51,20 @@ const GLYPH = {
  * an F♯♯ as an F♯: a different note, printed as though it were right. Bravura
  * has all five, and they are the same drawings a printed part uses.
  */
+/**
+ * The two glyphs each articulation has.
+ *
+ * **Not one glyph flipped.** Bravura draws the above and below forms
+ * separately — an accent points differently and a tenuto sits at a different
+ * height — so mirroring in the renderer produces a mark a reader notices as
+ * wrong.
+ */
+const ARTICULATION_GLYPH: Record<Articulation, { above: string; below: string }> = {
+  staccato: { above: GLYPH.staccatoAbove, below: GLYPH.staccatoBelow },
+  tenuto: { above: GLYPH.tenutoAbove, below: GLYPH.tenutoBelow },
+  accent: { above: GLYPH.accentAbove, below: GLYPH.accentBelow },
+};
+
 const ACCIDENTAL_GLYPH: Record<NonNullable<Accidental>, string> = {
   sharp: GLYPH.sharp,
   flat: GLYPH.flat,
@@ -593,6 +614,30 @@ export function Stave({
               >
                 {NOTEHEAD[note.value].glyph}
               </SvgText>
+
+              {/*
+                **Staccato, tenuto, accent.** Read off the page since Batch 2
+                and drawn nowhere until now. A staccato dot is not decoration:
+                it changes what you play, and a page that omits it teaches the
+                passage wrong.
+
+                Two glyphs per mark, above and below, because they are not
+                mirror images in Bravura — flipping one in the renderer is
+                visibly a reversed mark.
+              */}
+              {note.articulation ? (
+                <SvgText
+                  x={note.articulation.x}
+                  y={note.articulation.y}
+                  fill={ink}
+                  fontSize={musicSize}
+                  fontFamily={fontFamily.music}
+                >
+                  {ARTICULATION_GLYPH[note.articulation.kind][
+                    note.articulation.above ? 'above' : 'below'
+                  ]}
+                </SvgText>
+              ) : null}
 
               {/*
                 **Flags, for a note no beam picked up.** Beams are only drawn

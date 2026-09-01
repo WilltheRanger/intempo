@@ -1,4 +1,4 @@
-import type { Clef } from '../../data/types';
+import type { Articulation, Clef } from '../../data/types';
 
 /**
  * Where every mark on a few bars of notation goes.
@@ -179,6 +179,15 @@ export interface StaveNote {
    */
   slur?: number;
   /**
+   * A staccato dot, a tenuto line or an accent, from `ScoreNote.articulation`.
+   *
+   * Read off the page since Batch 2 and drawn nowhere. A staccato dot is not
+   * decoration — it changes what you play — and on a page that shows the notes
+   * without it, a musician practising from the app plays the passage wrong and
+   * the analysis has no way to know.
+   */
+  articulation?: Articulation;
+  /**
    * The chord's members with their accidentals decided, set by
    * `spellAccidentals` alongside `printed`.
    *
@@ -249,6 +258,45 @@ export function isNote(item: StaveItem): item is StaveNote {
   return 'pitch' in item;
 }
 
+/**
+ * How wide each articulation is, in staff spaces — Bravura's own advances.
+ *
+ * A staccato dot is a third of a space and an accent is one and a third, so one
+ * constant standing in for all three centres two of them wrong.
+ */
+export const ARTICULATION_WIDTHS: Record<Articulation, number> = {
+  staccato: 0.336,
+  tenuto: 1.352,
+  accent: 1.356,
+};
+
+/**
+ * How far each articulation reaches from its own origin, in staff spaces.
+ *
+ * Bravura's glyph bounds, read out of the font. **The "above" glyphs sit
+ * entirely above their origin and the "below" ones entirely below it**, so the
+ * placement needs no adjustment — but the system's height does, and so does a
+ * slur passing over them.
+ *
+ * Without this an accent above a high note was drawn 0.98 spaces past the top
+ * of the box measured for the system, and the tip was clipped off by the SVG
+ * viewport. Measured, not estimated: an accent is five times a tenuto's reach
+ * and three times a staccato dot's.
+ */
+export const ARTICULATION_HEIGHTS: Record<Articulation, number> = {
+  staccato: 0.34,
+  tenuto: 0.19,
+  accent: 0.98,
+};
+
+/**
+ * How far from the notehead's centre an articulation sits, in staff spaces.
+ *
+ * Outside the notehead and inside anything else. It goes on the side away from
+ * the stem, which is where a reader looks for it and where there is room.
+ */
+const ARTICULATION_CLEARANCE = 1.05;
+
 export type Accidental =
   | 'sharp'
   | 'flat'
@@ -294,6 +342,13 @@ export interface EngravedNote {
   accidental: Accidental;
   /** Centre of the accidental, when there is one. Meaningless when there isn't. */
   accidentalX: number;
+  /**
+   * The articulation to draw, with the position it is drawn at.
+   *
+   * `above` picks between the two glyphs, which are not mirror images of one
+   * another in Bravura and must not be flipped in the renderer.
+   */
+  articulation: { kind: Articulation; x: number; y: number; above: boolean } | null;
   /** Y positions of ledger lines this note needs, above or below the staff. */
   ledgers: number[];
   /**
@@ -1268,6 +1323,14 @@ function layoutSystem(
     // Everything a quarter or shorter has a black notehead.
     const filled = note.value !== 'whole' && note.value !== 'half';
 
+    // **On the side away from the stem**, which is where a reader looks for it
+    // and the only side with room. Placed against the outermost notehead so a
+    // chord's mark clears the whole stack, and pushed to the next whole space
+    // when it would land on a staff line — a staccato dot centred on a line is
+    // hard to see against it, which is the same reason the augmentation dot
+    // lifts.
+    const articulation = note.articulation ?? null;
+
     // A head a **second** from its neighbour cannot share the column. It goes
     // to the far side of the stem, which is what an engraver does and what
     // keeps two adjacent noteheads from printing on top of each other.
@@ -1329,6 +1392,19 @@ function layoutSystem(
           ),
         ),
       ).sort((a, b) => a - b),
+      articulation: articulation
+        ? (() => {
+            const above = !stemUp;
+            const edge = above ? highest : lowest;
+            return {
+              kind: articulation,
+              // Centred on the note's column, from the glyph's left edge.
+              x: x - (lineGap * ARTICULATION_WIDTHS[articulation]) / 2,
+              y: edge + (above ? -1 : 1) * lineGap * ARTICULATION_CLEARANCE,
+              above,
+            };
+          })()
+        : null,
       // The principal is `y`/`accidental` above; these are the rest.
       // **Accidentals hang off the note's column, not off a displaced head.**
       // A head pushed across the stem sits further right; measuring its
@@ -1637,6 +1713,11 @@ function layoutSystem(
         head.y + HEAD_RADIUS_FACTOR * lineGap,
       );
     }
+    // An accent above a high note is the topmost ink on the system; measured
+    // without it the box clips the mark off.
+    if (note.articulation) {
+      extents.push(articulationEdge(note.articulation, lineGap));
+    }
   }
 
   // Rests reach outside the noteheads' box too — a quarter rest spans the
@@ -1724,6 +1805,21 @@ function layoutSystem(
   };
 }
 
+/**
+ * The far edge of an articulation mark, where the glyph actually stops.
+ *
+ * `y` is its origin; the glyph reaches away from the staff from there. Anything
+ * measuring room — the system's height, a slur passing over — has to use this
+ * or it is measuring the mark's near edge and clipping the rest.
+ */
+function articulationEdge(
+  mark: NonNullable<EngravedNote['articulation']>,
+  lineGap: number,
+): number {
+  const reach = ARTICULATION_HEIGHTS[mark.kind] * lineGap;
+  return mark.y + (mark.above ? -reach : reach);
+}
+
 /** How far from a notehead's centre a slur's end springs, in staff spaces. */
 const SLUR_CLEARANCE = 1.1;
 
@@ -1758,7 +1854,16 @@ function arcOver(notes: EngravedNote[], lineGap: number): EngravedSlur {
 
   // Every notehead of every note in the run, chords included: an arc measured
   // from the principals alone would cut through a double stop's upper note.
-  const ys = notes.flatMap((note) => [note.y, ...note.chord.map((head) => head.y)]);
+  const ys = notes.flatMap((note) => [
+    note.y,
+    ...note.chord.map((head) => head.y),
+    // **Articulations sit under the slur, not through it.** Both go on the
+    // notehead side, so a slur measured from the noteheads alone is drawn
+    // straight across a row of staccato dots.
+    ...(note.articulation && note.articulation.above === above
+      ? [articulationEdge(note.articulation, lineGap)]
+      : []),
+  ]);
   const edge = above ? Math.min(...ys) : Math.max(...ys);
   const y = edge + (above ? -1 : 1) * lineGap * SLUR_CLEARANCE;
 
@@ -1795,6 +1900,9 @@ function shift(system: EngravedSystem, dy: number): EngravedSystem {
       // The rest of the chord moves with it. Missed here, a double stop's upper
       // note would stay behind on the first system's baseline.
       chord: note.chord.map((head) => ({ ...head, y: head.y + dy })),
+      articulation: note.articulation
+        ? { ...note.articulation, y: note.articulation.y + dy }
+        : null,
       stem: note.stem
         ? { ...note.stem, from: note.stem.from + dy, to: note.stem.to + dy }
         : null,

@@ -336,6 +336,7 @@ export function staveScoreFor(score: ScoreJson): StaveScore {
         dots: drawn!.dots,
         measureNumber: measure.measure_number,
         ...(chord.length > 0 ? { chord } : {}),
+        ...(note.articulation ? { articulation: note.articulation } : {}),
         ...(mark ? { tuplet: mark } : {}),
         ...(quarters !== undefined ? { quarters } : {}),
         ...(opensMeasure ? { barBefore: true } : {}),
