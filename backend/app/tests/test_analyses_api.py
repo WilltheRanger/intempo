@@ -40,7 +40,13 @@ def client() -> TestClient:
 
 
 def _audio_url(user_id: UUID) -> str:
-    return f"{PROJECT_HOST}/storage/v1/object/sign/audio-uploads/{user_id}/take.wav?token=x"
+    # Every real /upload/audio call creates a new object key. A fixed filename
+    # makes two independent test takes look like one retried submission now
+    # that enqueue correctly deduplicates one uploaded object.
+    return (
+        f"{PROJECT_HOST}/storage/v1/object/sign/audio-uploads/"
+        f"{user_id}/{uuid4()}.wav?token=x"
+    )
 
 
 def _wav_bytes(bpm: float = 120.0, n: int = 8) -> bytes:
@@ -59,6 +65,11 @@ def _install(monkeypatch: pytest.MonkeyPatch, fake: FakeSupabase) -> None:
     # flow is consistent.
     monkeypatch.setattr(analyses_module, "get_service_client", lambda: fake)
     monkeypatch.setattr(analysis_runner, "get_service_client", lambda: fake)
+    # Storage signing itself is covered in test_audio_storage. This fake models
+    # database state only, so worker-flow tests keep their supplied readable URL.
+    monkeypatch.setattr(
+        analysis_runner, "readable_audio_url", lambda _client, reference: reference
+    )
 
 
 # ---- auth / validation ----------------------------------------------------
@@ -142,6 +153,63 @@ def test_post_enqueues_and_returns_202(
     body = res.json()
     assert body["status"] == "queued"
     assert called == [body["analysis_id"]]  # background task got the new id
+
+
+def test_audio_key_is_stored_durably_and_retry_is_idempotent(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """A lost POST response must not upload, charge or enqueue the take twice."""
+    user_id = uuid4()
+    score_id = uuid4()
+    fake = FakeSupabase()
+    fake.seed(
+        "scores",
+        [{"id": str(score_id), "user_id": str(user_id), "score_json": GOOD_SCORE_JSON}],
+    )
+    _install(monkeypatch, fake)
+    called: list[str] = []
+    monkeypatch.setattr(
+        analyses_module, "start_analysis", lambda aid, _tasks: called.append(aid)
+    )
+    headers = {"Authorization": f"Bearer {make_token(sub=user_id)}"}
+    body = {
+        "score_id": str(score_id),
+        "audio_key": f"{user_id}/take.wav",
+        "target_bpm": 120,
+        "bpm_source": "manual",
+    }
+
+    first = client.post("/v1/analyses", headers=headers, json=body)
+    second = client.post("/v1/analyses", headers=headers, json=body)
+
+    assert first.status_code == second.status_code == 202
+    assert first.json()["analysis_id"] == second.json()["analysis_id"]
+    assert len(fake.table("analyses").rows) == 1
+    stored = fake.table("analyses").rows[0]["audio_url"]
+    assert f"/object/authenticated/audio-uploads/{user_id}/take.wav" in stored
+    assert "token=" not in stored
+    assert called == [first.json()["analysis_id"]]
+
+
+def test_post_rejects_another_accounts_audio_key(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    user_id = uuid4()
+    fake = FakeSupabase()
+    _install(monkeypatch, fake)
+
+    res = client.post(
+        "/v1/analyses",
+        headers={"Authorization": f"Bearer {make_token(sub=user_id)}"},
+        json={
+            "score_id": str(uuid4()),
+            "audio_key": f"{uuid4()}/take.wav",
+            "target_bpm": 120,
+            "bpm_source": "manual",
+        },
+    )
+
+    assert res.status_code == 403
 
 
 def test_full_flow_queued_to_done(

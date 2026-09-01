@@ -18,6 +18,10 @@ import { bpmForMarking } from '../../lib/tempoMarking';
 import { preferences, usePreferences } from '../../data/preferences';
 import { PressableScale } from '../../components/motion';
 import { takeSubmissionSource } from '../../data/sources';
+import {
+  TakeSubmissionError,
+  type TakeSubmissionState,
+} from '../../data/practice/submitTake';
 import type { MetronomeMode } from '../../data/types';
 import {
   EmptyRecordingError,
@@ -161,7 +165,11 @@ export function RecordScreen() {
   // A ref rather than state: nothing renders from the blob, and re-rendering
   // between a failure and a retry must not lose it. `pendingTake` below is the
   // state the button reads.
-  const unsent = useRef<{ audio: Blob; filename: string } | null>(null);
+  const unsent = useRef<{
+    audio: Blob;
+    filename: string;
+    resume?: TakeSubmissionState;
+  } | null>(null);
   const [pendingTake, setPendingTake] = useState(false);
   /** The open "you are about to lose this" dialog, or null. */
   const [leavePrompt, setLeavePrompt] = useState<
@@ -353,7 +361,11 @@ export function RecordScreen() {
    * Separate from `stop` so a retry runs the same path with the same bytes
    * rather than a second code path that could diverge from the first.
    */
-  async function send(recording: { audio: Blob; filename: string }) {
+  async function send(recording: {
+    audio: Blob;
+    filename: string;
+    resume?: TakeSubmissionState;
+  }) {
     goPhase('analysing');
     setProblem(null);
     try {
@@ -364,6 +376,7 @@ export function RecordScreen() {
         metronomeMode,
         audio: recording.audio,
         filename: recording.filename,
+        resume: recording.resume,
         // **Sent, not just applied on the phone.** The metronome counted a
         // shortened piece, so the analysis has to judge a shortened one — see
         // `SubmitTakeInput.skipLongRests` for what happens when it does not.
@@ -381,7 +394,14 @@ export function RecordScreen() {
       // move until next month, so offering "Send again" would be offering the
       // same refusal. Everything else is worth one tap.
       const retriable = describeTierLimit(error) === null;
-      unsent.current = retriable ? recording : null;
+      // A failed step reports the last server-issued key/id it reached. Hold
+      // that beside the WAV so retry resumes there rather than paying for the
+      // completed upload or creating a second analysis.
+      const resumable =
+        error instanceof TakeSubmissionError
+          ? { ...recording, resume: error.resume }
+          : recording;
+      unsent.current = retriable ? resumable : null;
       setPendingTake(retriable);
       // Back to the top of the screen with the tempo still set, so the reply
       // to a failed take is one tap rather than a re-setup.
