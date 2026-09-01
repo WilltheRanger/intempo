@@ -12,8 +12,11 @@ export const BPM_STEP = 2;
 export interface TempoStepperProps {
   label: string;
   bpm: number;
-  /** Given the new value, already clamped to the range the backend accepts. */
+  /** Given the new value, in this control's displayed beat unit. */
   onChange: (bpm: number) => void;
+  unitLabel?: string;
+  minBpm?: number;
+  maxBpm?: number;
   disabled?: boolean;
   style?: StyleProp<ViewStyle>;
 }
@@ -30,6 +33,9 @@ export function TempoStepper({
   label,
   bpm,
   onChange,
+  unitLabel = 'BPM',
+  minBpm = MIN_BPM,
+  maxBpm = MAX_BPM,
   disabled = false,
   style,
 }: TempoStepperProps) {
@@ -44,21 +50,21 @@ export function TempoStepper({
           icon={Minus}
           label="Slower"
           onPress={() => onChange(bpm - BPM_STEP)}
-          disabled={disabled || bpm <= MIN_BPM}
+          disabled={disabled || bpm <= minBpm}
         />
         <View style={styles.reading}>
           <Text variant="screenTitle" style={styles.bpm}>
             {bpm}
           </Text>
           <Text variant="metadata" color="textTertiary">
-            BPM
+            {unitLabel}
           </Text>
         </View>
         <IconButton
           icon={Plus}
           label="Faster"
           onPress={() => onChange(bpm + BPM_STEP)}
-          disabled={disabled || bpm >= MAX_BPM}
+          disabled={disabled || bpm >= maxBpm}
         />
       </View>
     </View>

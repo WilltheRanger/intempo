@@ -32,6 +32,7 @@ def test_minimal_payload_parses() -> None:
     assert score.ocr_confidence == 0.95
     assert score.notes_to_human == ""
     assert score.tempo_marking is None
+    assert score.tempo_beat_unit is None
     assert score.bpm_hint is None
 
 
@@ -40,6 +41,7 @@ def test_full_payload_round_trip() -> None:
         "time_signature": "3/4",
         "key_signature": "G major",
         "tempo_marking": "Allegro",
+        "tempo_beat_unit": "dotted_quarter",
         "bpm_hint": 120,
         "clef": "bass",
         "measures": [
@@ -303,6 +305,17 @@ def test_slur_end_before_start_rejected() -> None:
 def test_repeat_invalid_type_rejected() -> None:
     with pytest.raises(ValidationError):
         Repeat.model_validate({"start_measure": 1, "end_measure": 2, "type": "fine"})
+
+
+def test_tempo_beat_unit_uses_score_duration_names() -> None:
+    score = ScoreJson.model_validate(
+        {**MINIMAL_PAYLOAD, "tempo_beat_unit": "dotted_quarter", "bpm_hint": 90}
+    )
+    assert score.tempo_beat_unit == "dotted_quarter"
+    with pytest.raises(ValidationError):
+        ScoreJson.model_validate(
+            {**MINIMAL_PAYLOAD, "tempo_beat_unit": "crotchet", "bpm_hint": 90}
+        )
 
 
 def test_bpm_hint_range() -> None:

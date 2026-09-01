@@ -6,6 +6,32 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-31 — Printed tempo-unit accuracy
+
+**Branch:** `codex/printed-tempo-unit`
+
+### Changed
+
+- Preserved the note value printed beside a metronome mark while keeping the
+  analysis engine's quarter-note clock unchanged.
+- Defined OCR tempo output unambiguously: photographed dotted-quarter, eighth,
+  and half-note marks are converted to quarter-note BPM for timing and retain
+  their original beat unit for display.
+- Made MusicXML imports retain the printed unit even when an authoritative
+  playback tempo is present, and default sound-only tempos to quarter notes.
+- Updated Today, practice setup, practice history, and verdict screens to show
+  the tempo number and unit a musician sees on the page. Tempo adjustments are
+  converted back to the internal clock before recording and analysis.
+
+### Verification
+
+- Added backend tests for beat-unit conversion, preservation, playback-tempo
+  precedence, sound-only tempos, and schema validation.
+- Added mobile tests for dotted-quarter, eighth, half, legacy-quarter display,
+  round-trip conversion, and safe control bounds.
+- Backend pytest plus mobile tests, typecheck, and web build run in pull-request
+  CI.
+
 ## 2026-08-31 — Modal keyboard containment
 
 **Branch:** `fix/modal-keyboard-containment`
