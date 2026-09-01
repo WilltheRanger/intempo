@@ -305,6 +305,7 @@ export function PieceDetailScreen() {
           {hasPages ? (
             <ScoreThumbnail
               source={piece.thumbnail}
+              composer={piece.composer}
               radius={0}
               style={styles.banner}
             />

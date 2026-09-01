@@ -10,10 +10,18 @@ import {
 
 import { BORDER_WIDTH, colors, motion, radii } from '../../design';
 import type { ThumbnailSource } from '../../data/types';
+import { coverFor } from '../../lib/composerPortrait';
 import { sourceIdentity } from '../../lib/imageSource';
 
 export interface ScoreThumbnailProps {
   source: ThumbnailSource | null;
+  /**
+   * Who wrote it, so a piece with no photograph can show its composer.
+   *
+   * Optional and it stays optional: the scanner's page list and the review
+   * screen show pages, not pieces, and have no composer to give.
+   */
+  composer?: string | null;
   /** Corner radius token. Cards use `sm`; the featured banner squares off. */
   radius?: number;
   /** Layout only — width, height, aspect ratio. */
@@ -40,6 +48,7 @@ export interface ScoreThumbnailProps {
  */
 export function ScoreThumbnail({
   source,
+  composer,
   radius = radii.sm,
   style,
 }: ScoreThumbnailProps) {
@@ -56,13 +65,20 @@ export function ScoreThumbnail({
   const identity = sourceIdentity(source);
   useEffect(() => setFailed(false), [identity]);
 
-  if (source === null || failed) {
+  // **The page first, then the composer, then the ruled staff.** A picture of
+  // the actual page is what the musician took; a portrait only ever fills a
+  // hole. `coverFor` owns that order and is tested — the rule is easy to
+  // invert by accident and the result would be a library that shows Beethoven
+  // where it has a photograph of the part.
+  const cover = coverFor({ thumbnail: failed ? null : source, composer: composer ?? null });
+
+  if (cover.kind === 'staff') {
     return <StaffPlaceholder radius={radius} style={style} />;
   }
 
   return (
     <Image
-      source={source}
+      source={cover.source}
       onError={() => setFailed(true)}
       style={[
         styles.image,
@@ -72,9 +88,16 @@ export function ScoreThumbnail({
         style as StyleProp<ImageStyle>,
       ]}
       contentFit="cover"
-      // Pinned explicitly so every row crops from the same place regardless of
-      // the source image's aspect ratio. `cover` never distorts the notation.
-      contentPosition="center"
+      // **Pinned, and a portrait pins somewhere else.** A page crop is pinned
+      // to the centre so every row crops from the same place whatever the
+      // source's aspect ratio; a portrait is pinned to its subject's face, so
+      // the same file works as a square in the Library and as a wide banner on
+      // Today. One image, two shapes — see `composerPortrait.ts`.
+      contentPosition={
+        cover.kind === 'portrait'
+          ? { left: `${cover.focus.x}%`, top: `${cover.focus.y}%` }
+          : 'center'
+      }
       transition={motion.fast}
       accessible={false}
     />

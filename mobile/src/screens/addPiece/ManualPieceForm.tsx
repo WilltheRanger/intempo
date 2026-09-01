@@ -14,6 +14,7 @@ import { usePreferences } from '../../data/preferences';
 import { spacing } from '../../design';
 import { clefFor } from '../../lib/instrument';
 import type { RootNavigation } from '../../navigation/types';
+import { ComposerField } from '../../components/pieces/ComposerField';
 
 /** The backend's `bpm_hint` bounds. Rejecting here saves a round trip. */
 const MIN_BPM = 20;
@@ -126,15 +127,7 @@ export function ManualPieceForm() {
         returnKeyType="next"
         style={styles.first}
       />
-      <Input
-        label="Composer"
-        value={composer}
-        onChangeText={setComposer}
-        placeholder="Optional"
-        autoCapitalize="words"
-        returnKeyType="next"
-        style={styles.field}
-      />
+      <ComposerField value={composer} onChangeText={setComposer} style={styles.field} />
       <Input
         label="Movement"
         value={movement}

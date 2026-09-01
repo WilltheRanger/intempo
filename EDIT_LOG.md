@@ -6,6 +6,92 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-01 — Composer suggestions, and the seam a portrait will drop into
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Last batch of the owner's
+list of 2026-09-01: *"if they choose a composer (let them have a dropdown +
+search), some composers are tied to a picture of them selves such as beethoven,
+so thats the cover. Make sure you have a good looking one for a sqaure aspect
+ration and one for that rectangle look."*
+
+**Files:** `mobile/src/lib/composers.ts` + test,
+`mobile/src/lib/composerPortrait.ts` + test,
+`mobile/src/components/pieces/ComposerField.tsx` (new),
+`mobile/src/components/pieces/ScoreThumbnail.tsx`,
+`mobile/src/components/primitives/Input.tsx`, `ManualPieceForm.tsx`,
+`PieceRow.tsx`, `PracticeCard.tsx`, `PieceDetailScreen.tsx`.
+
+### The portraits are not here, and the reason is not a shortcut
+
+**Wikimedia Commons is refused by this environment's network policy** — 403 on
+CONNECT — and I do not retry a policy denial. Every composer on the list is
+long dead and their portraits are public domain, but sourcing them properly
+means reading each file's licence metadata and recording provenance the way
+`fixtures/scores/SOURCES.md` does. Shipping pictures whose provenance I could
+not check into something bound for an App Store would be worse than shipping
+none.
+
+So the seam is built, complete and tested, with the table empty. Filling it is
+a data change: a file in `assets/composers/`, a row in `PORTRAITS`, and every
+cover in the app picks it up. A test asserts rows are keyed on canonical names,
+because a row keyed "Beethoven" would never be found and nothing would say so.
+
+### One image, two crops
+
+The request named two shapes. Two files per composer is the obvious answer and
+the wrong one — they drift, they double the bytes, and a portrait cropped twice
+by hand is two decisions to get right instead of one.
+
+A **focal point** does it with one file: `expo-image`'s `contentPosition` takes
+percentages, so a portrait whose face sits a third of the way down keeps that
+face centred whether the frame is a square Library thumbnail or Today's wide
+banner. That is the difference between a portrait and a picture of a forehead.
+
+### The page always wins
+
+`coverFor` is page → portrait → ruled staff, and it is a tested module rather
+than a condition in a component because the order is easy to invert by accident
+and the result would be a library showing Beethoven where it has a photograph
+of the actual part. A portrait may only ever fill a hole.
+
+### Suggestions, not a picker
+
+`ComposerField` is a text field that helps. Nothing rejects, corrects, or
+requires a selection — a musician working on a living composer, or a name
+spelled the way their edition spells it, types it and is left alone. The list
+disappears the moment what is typed already names someone known.
+
+`canonical` matches **exactly**, never by prefix: a prefix match decides "Bar"
+is Bartók while it is still being typed, and rewrites a living composer's name
+into a dead one's. Suggesting is a different function with different rules —
+surname first, because a musician thinks in surnames and so does the spine of
+the book.
+
+### Fifteen aliases that were doing nothing
+
+A test asserting no two keys collide found that fifteen of the alias entries
+were **self**-collisions: `normalise` strips diacritics, so "antonin dvorak" is
+already what "Antonín Dvořák" normalises to. They restated what the normaliser
+does and hid the fact that it does it. What is left is genuinely different — a
+run-together initial ("JS Bach", one word to the normaliser), a transliteration
+("Shostakovitch"), a variant spelling ("Haendel").
+
+The test I wrote first claimed too much — that all four spellings of Bach
+normalise to one string — and "JS Bach" legitimately does not. Rewritten to
+assert the property that matters: all four reach the same composer.
+
+### One bug introduced and caught by the compiler
+
+`Input` already used `onFocus`/`onBlur` for its own focus ring. Passing a
+caller's handlers straight through would have removed the ring from every field
+that used one. They compose now.
+
+**mobile: 642 passed, 56 files. `tsc --noEmit` clean.** Driven in the browser:
+typing "bee" offers "Ludwig van Beethoven · 1770–1827", and the field keeps its
+focus ring.
+
+---
+
 ## 2026-09-01 — A clef, a key signature, and paper
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Sixth batch of the owner's

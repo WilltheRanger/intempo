@@ -68,7 +68,12 @@ export function PracticeCard({
 
   return (
     <Card emphasis padded={false}>
-      <ScoreThumbnail source={piece.thumbnail} radius={0} style={styles.banner} />
+      <ScoreThumbnail
+        source={piece.thumbnail}
+        composer={piece.composer}
+        radius={0}
+        style={styles.banner}
+      />
 
       <View style={styles.body}>
         <Text variant="heroTitle" numberOfLines={2}>
