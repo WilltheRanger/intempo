@@ -6,6 +6,28 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-31 — Scanned ornament timing
+
+**Branch:** `codex/scan-ornament-timing`
+
+### Changed
+
+- Updated the photo-reading contract to preserve fermatas and grace-note
+  attacks in the score metadata the alignment engine already understands.
+- Fermatas keep their printed duration and mark the following arrival as
+  unmeasurable, so a written hold is not reported as dragging.
+- Grace notes remain outside the bar's duration sum but are counted on the main
+  note they decorate, so played ornaments are not mistaken for extra attacks.
+- Added the same optional metadata to the app's shared score types so edits and
+  future score views do not discard it.
+
+### Verification
+
+- Added a prompt-contract test proving the instructed ornament shape validates
+  through the production score schema.
+- Existing MusicXML, grace-note alignment, fermata classification, backend,
+  mobile typecheck, tests, and web build run in pull-request CI.
+
 ## 2026-08-31 — Printed tempo-unit accuracy
 
 **Branch:** `codex/printed-tempo-unit`
