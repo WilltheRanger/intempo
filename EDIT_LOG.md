@@ -6,6 +6,74 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-01 — The rest of the notation moves onto the font
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. The consistency gap the
+last entry named and left open.
+
+**Files:** `mobile/src/components/notation/Stave.tsx`,
+`mobile/src/lib/notation/engrave.ts`, `mobile/src/lib/notation/fromScore.ts`
++ test.
+
+Noteheads, rests, flags and the augmentation dot are Bravura glyphs now. The
+clefs, key signature, metre and accidentals already were, and a page drawn half
+in a music font and half in hand-rolled SVG is visible if you look for it.
+
+### What the hand-drawn versions were, in their own words
+
+The `Rest` component: *"The quarter and eighth are calligraphic figures
+rendered as strokes. They read correctly at the size this draws them and they
+are not typeset music. The alternative was to count them as undrawable and
+leave holes in the bar, which for a part written in quarter rests is most of
+the bar."* Both options were bad and it picked the better one. There is a third
+now.
+
+### Three things the font made correct rather than merely tidier
+
+- **A whole note is 1.688 staff spaces wide and a half is 1.180.** One ellipse
+  drew all three noteheads at one size, so a whole note was drawn at a half's
+  width — at a glance, the wrong one of the two. `EngravedNote` carries its
+  `value` now, because `filled` says black or hollow and not *which* hollow.
+- **A sixteenth's flag is one drawing, not the eighth's flag twice.** The font
+  has the shape with both hooks and the right spacing between them.
+- **A sixteenth rest is drawn at all.** `DRAWABLE_RESTS` deliberately stopped
+  at the eighth, and its comment said why: `Stave` drew four shapes by hand and
+  an unknown value fell through to the eighth-rest hook, so drawing a sixteenth
+  rest would have printed silence twice as long as the page prints. The glyph
+  table is typed over the whole of `NoteValue` now, so there is no fall-through
+  left to be wrong about — and a sixteenth rest is a real thing on a real page
+  that this was quietly dropping.
+
+### Two tests whose premise changed
+
+`still refuses to round a rest it has no glyph for` used a sixteenth rest as
+its example, and a sixteenth rest has a glyph now. The **rule** is unchanged
+and still tested; the examples moved to a dotted rest and a thirty-second,
+which genuinely have none. A new test asserts the sixteenth rest is drawn,
+which is the other half of the same change.
+
+### Verified
+
+Screenshotted at 1× and 6×. At six times: a properly tilted notehead, the
+augmentation dot in the space beside it, a real eighth rest, and the flat from
+the last entry — all in one drawing tradition. `engraver-coverage.py` is
+unchanged at 3% with no glyph, worst page 71%, which is expected: it counts
+notes the engraver cannot place at all, and this changed how the placeable ones
+are *drawn*.
+
+**mobile: 648 passed, 55 files. `tsc --noEmit` clean.**
+
+### What is still hand-drawn, and should be
+
+Staff lines, stems, beams, ledger lines and barlines. These are rules and
+rectangles whose length depends on the music around them, not glyphs — Bravura
+has barline glyphs but they are sized for a staff drawn at the font's own
+scale, and a beam is by definition a line between two stems this engraver
+places. The multi-bar rest keeps its drawn block for the same reason: its width
+is the bar count, not a fixed advance.
+
+---
+
 ## 2026-09-01 — A B flat was drawn as a B
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. The standing instruction,

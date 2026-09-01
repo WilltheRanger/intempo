@@ -108,11 +108,17 @@ describe('what survives the trip', () => {
   });
 
   it('still refuses to round a rest it has no glyph for', () => {
-    // The same rule as the notes, and it has to be the same rule: a sixteenth
-    // rest drawn as a quarter rest is a bar that no longer adds up.
+    // The same rule as the notes, and it has to be the same rule: a rest drawn
+    // at the wrong length is a bar that no longer adds up.
+    //
+    // The examples changed when the rests moved onto Bravura — a sixteenth
+    // rest has a glyph now, and used to be one of these. A **dotted** rest
+    // still has none, because nothing draws a dot on a rest, and neither does
+    // a thirty-second. The rule is what is being tested; these are only the
+    // shortest way to reach it today.
     const score = scoreOf('quarter');
     score.measures[0].notes.push(
-      { pitch: 'rest', duration: 'sixteenth' } as never,
+      { pitch: 'rest', duration: 'thirty_second' } as never,
       { pitch: 'rest', duration: 'dotted_half' } as never,
     );
 
@@ -120,6 +126,20 @@ describe('what survives the trip', () => {
 
     expect(stave.items.filter(isRest)).toHaveLength(0);
     expect(stave.rests).toBe(2);
+  });
+
+  it('draws a sixteenth rest, which it used to drop', () => {
+    // It was dropped on purpose: `Stave` drew four rest shapes by hand and an
+    // unknown value fell through to the eighth-rest hook, so drawing it would
+    // have printed silence twice as long as the page prints. The glyph table
+    // is exhaustive now and there is no fall-through left.
+    const score = scoreOf('quarter');
+    score.measures[0].notes.push({ pitch: 'rest', duration: 'sixteenth' } as never);
+
+    const stave = staveScoreFor(score);
+
+    expect(stave.items.filter(isRest).map((r) => r.rest)).toEqual(['sixteenth']);
+    expect(stave.rests).toBe(0);
   });
 
   it('never leaves a barline on the wrong note', () => {
@@ -225,10 +245,12 @@ describe('describeUndrawnScore', () => {
   });
 
   it('distinguishes undrawable rest values from undrawable note values', () => {
+    // Dotted rests, not sixteenths: a sixteenth rest has a glyph now. Nothing
+    // draws a dot on a rest, so these are still the undrawable ones.
     const score = scoreOf();
     score.measures[0].notes.push(
-      { pitch: 'rest', duration: 'sixteenth' } as never,
-      { pitch: 'rest', duration: 'sixteenth' } as never,
+      { pitch: 'rest', duration: 'dotted_quarter' } as never,
+      { pitch: 'rest', duration: 'dotted_quarter' } as never,
     );
 
     const rests = describeUndrawnScore(staveScoreFor(score));

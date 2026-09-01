@@ -98,22 +98,27 @@ const DRAWABLE: Partial<Record<string, { value: NoteValue; dots: number }>> = {
 };
 
 /**
- * What a *rest* can be drawn as, which is less than a note can.
+ * What a *rest* can be drawn as.
  *
- * **Deliberately narrower.** `Stave.tsx` draws four rest shapes — whole, half,
- * quarter, eighth — and a value it does not know falls through to the eighth
- * hook. So teaching the note set about sixteenths without splitting this would
- * have drawn every sixteenth rest as an **eighth rest**: silence twice as long
- * as the page prints, in the same ink as the rests around it that are right.
- * Exactly the substitution the note change was made to stop.
+ * **It used to be narrower than the notes, and the reason has gone.** `Stave`
+ * drew four rest shapes by hand and a value it did not know fell through to
+ * the eighth-rest hook — so a sixteenth rest would have come out as an eighth:
+ * silence twice as long as the page prints, in the same ink as the rests
+ * around it that are right. Keeping this table short was how that was stopped.
  *
- * Dots are absent here for the same reason: nothing draws one on a rest yet.
+ * The rests are Bravura glyphs now, in a table typed over the whole of
+ * `NoteValue`, so there is no fall-through left to be wrong about — and a
+ * sixteenth rest is a real thing on a real page that this was quietly
+ * dropping.
+ *
+ * Dots are still absent: nothing draws one on a rest.
  */
 const DRAWABLE_RESTS: Partial<Record<string, { value: NoteValue; dots: number }>> = {
   whole: { value: 'whole', dots: 0 },
   half: { value: 'half', dots: 0 },
   quarter: { value: 'quarter', dots: 0 },
   eighth: { value: 'eighth', dots: 0 },
+  sixteenth: { value: 'sixteenth', dots: 0 },
 };
 
 /**

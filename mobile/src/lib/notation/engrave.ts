@@ -205,6 +205,15 @@ export interface EngravedNote {
   x: number;
   /** Centre of the notehead. */
   y: number;
+  /**
+   * Which notehead to draw.
+   *
+   * `filled` says black or hollow; this says *which* hollow one. A whole note's
+   * head is 1.69 staff spaces wide and a half's is 1.18 — the same shape at the
+   * same size for both is a whole note drawn too narrow or a half drawn too
+   * fat, and at a glance the wrong one of the two.
+   */
+  value: NoteValue;
   filled: boolean;
   /** Whole notes carry none. */
   stem: { x: number; from: number; to: number } | null;
@@ -812,6 +821,7 @@ function layoutSystem(
     engravedNotes.push({
       x,
       y,
+      value: note.value,
       filled,
       stemUp,
       accidental,

@@ -1,4 +1,4 @@
-import Svg, { Circle, Ellipse, G, Line, Path, Rect, Text as SvgText } from 'react-native-svg';
+import Svg, { G, Line, Rect, Text as SvgText } from 'react-native-svg';
 
 import type { Clef } from '../../data/types';
 import { colors, fontFamily, MUSIC_EM_IN_SPACES, typography } from '../../design';
@@ -26,6 +26,7 @@ const GLYPH = {
   natural: '\uE261',
   doubleSharp: '\uE263',
   doubleFlat: '\uE264',
+  augmentationDot: '\uE1E7',
   timeDigit: (n: number) => String(n).split('').map((d) => String.fromCharCode(0xe080 + Number(d))).join(''),
 } as const;
 
@@ -43,6 +44,58 @@ const ACCIDENTAL_GLYPH: Record<NonNullable<Accidental>, string> = {
   natural: GLYPH.natural,
   'double-sharp': GLYPH.doubleSharp,
   'double-flat': GLYPH.doubleFlat,
+};
+
+/**
+ * Noteheads, and the widths Bravura gives them, in staff spaces.
+ *
+ * A whole note is **1.688** spaces wide and a half is **1.180** — read out of
+ * the font, not estimated. The hand-drawn ellipse these replace used one size
+ * for all three, so a whole note was drawn at a half's width: at a glance, the
+ * wrong one of the two.
+ *
+ * The black notehead's half-width, 0.59, is also why the stems have always
+ * looked attached — `engrave.ts` has offset them by 0.62 staff spaces since
+ * long before there was a font to check it against.
+ */
+const NOTEHEAD: Record<NoteValue, { glyph: string; halfWidth: number }> = {
+  whole: { glyph: '\uE0A2', halfWidth: 0.844 },
+  half: { glyph: '\uE0A3', halfWidth: 0.59 },
+  quarter: { glyph: '\uE0A4', halfWidth: 0.59 },
+  eighth: { glyph: '\uE0A4', halfWidth: 0.59 },
+  sixteenth: { glyph: '\uE0A4', halfWidth: 0.59 },
+};
+
+/**
+ * Rests.
+ *
+ * The hand-drawn versions said what they were: *"calligraphic figures rendered
+ * as strokes. They read correctly at the size this draws them and they are not
+ * typeset music."* The comment also named the only alternative it had — count
+ * them undrawable and leave holes in the bar — which for a part written in
+ * quarter rests is most of the bar. A third option exists now.
+ */
+/** Rests are 1.0–1.3 spaces wide; half of the commonest is close enough to centre them all. */
+const REST_HALF_WIDTH = 0.54;
+
+const REST_GLYPH: Record<NoteValue, string> = {
+  whole: '\uE4E3',
+  half: '\uE4E4',
+  quarter: '\uE4E5',
+  eighth: '\uE4E6',
+  sixteenth: '\uE4E7',
+};
+
+/**
+ * Flags, by how many the note carries.
+ *
+ * **One glyph, not two stacked.** A sixteenth's flag is a single drawing with
+ * both hooks in it and the right spacing between them; drawing the eighth's
+ * flag twice is an approximation of a shape the font already has.
+ */
+const FLAG_GLYPH: Record<number, { up: string; down: string }> = {
+  1: { up: '\uE240', down: '\uE241' },
+  2: { up: '\uE242', down: '\uE243' },
 };
 
 const CLEF_GLYPH: Record<Clef, string> = {
@@ -132,9 +185,6 @@ const LINE_GAP = 9;
 const NOTE_GAP = 30;
 const LEFT_PAD = 22;
 const RIGHT_PAD = 12;
-/** Noteheads are wider than they are tall, and tilted. */
-const HEAD_RX_FACTOR = 0.62;
-const HEAD_RY_FACTOR = 0.46;
 /**
  * Whether a notehead sits on a staff line rather than in a space.
  *
@@ -147,7 +197,6 @@ function onLine(y: number, lineGap: number): boolean {
   return Math.abs(Math.round(y / lineGap) * lineGap - y) < lineGap * 0.1;
 }
 
-const HEAD_TILT = -20;
 const STROKE = 1.1;
 /**
  * Staff lines are thinner than stems and lighter than noteheads, but they are
@@ -158,9 +207,6 @@ const STAFF_STROKE = 0.9;
 /** Half the height of the little upright strokes on a multi-bar rest's ends. */
 const MULTI_REST_SERIF_FACTOR = 0.55;
 const MULTI_REST_NUMBER_SIZE = 1.5;
-/** A rest bar is about as wide as a notehead and rather flatter. */
-const REST_WIDTH_FACTOR = 1.4;
-const REST_HEIGHT_FACTOR = 0.58;
 
 /**
  * Engraved notation, wrapped onto as many systems as it takes.
@@ -211,8 +257,6 @@ export function Stave({
 
   // A SMuFL em is four staff spaces, so this is the one number every glyph needs.
   const musicSize = lineGap * MUSIC_EM_IN_SPACES;
-  const headRx = lineGap * HEAD_RX_FACTOR;
-  const headRy = lineGap * HEAD_RY_FACTOR;
   const beamNode = lineGap * BEAM_THICKNESS_FACTOR;
   const stroke = STROKE * scale;
 
@@ -418,15 +462,22 @@ export function Stave({
               The multi-bar block is large enough that full ink would make it
               the first thing seen on the page, which is the wrong subject. */}
           {system.rests.map((rest, index) => (
-            <Rest
+            <SvgText
               key={`rest-${index}`}
-              x={rest.x}
+              // A rest glyph's origin is on the staff line it belongs to and
+              // its own left edge, so it is centred here by half its width.
+              // `engrave.ts` already decides *which* line: a whole rest hangs
+              // below the second from the top, a half stands on the middle
+              // one, and drawn the same way round every bar of rest in the app
+              // would be a beat wrong to anyone who reads music.
+              x={rest.x - lineGap * REST_HALF_WIDTH}
               y={rest.y}
-              value={rest.value}
-              ink={ink}
-              lineGap={lineGap}
-              stroke={stroke}
-            />
+              fill={ink}
+              fontSize={musicSize}
+              fontFamily={fontFamily.music}
+            >
+              {REST_GLYPH[rest.value]}
+            </SvgText>
           ))}
 
           {system.notes.map((note, index) => (
@@ -434,9 +485,9 @@ export function Stave({
               {note.ledgers.map((y, ledger) => (
                 <Line
                   key={`ledger-${ledger}`}
-                  x1={note.x - headRx * 1.7}
+                  x1={note.x - lineGap * (NOTEHEAD[note.value].halfWidth + 0.28)}
                   y1={y}
-                  x2={note.x + headRx * 1.7}
+                  x2={note.x + lineGap * (NOTEHEAD[note.value].halfWidth + 0.28)}
                   y2={y}
                   stroke={ink}
                   strokeWidth={stroke}
@@ -466,16 +517,18 @@ export function Stave({
                 />
               ) : null}
 
-              <Ellipse
-                cx={note.x}
-                cy={note.y}
-                rx={headRx}
-                ry={headRy}
-                transform={`rotate(${HEAD_TILT} ${note.x} ${note.y})`}
-                fill={note.filled ? ink : 'none'}
-                stroke={ink}
-                strokeWidth={note.filled ? 0 : stroke * 1.3}
-              />
+              {/* Drawn from the left edge, because that is where text is
+                  drawn from; the baseline runs through the notehead's own
+                  vertical centre, which is what `note.y` is. */}
+              <SvgText
+                x={note.x - lineGap * NOTEHEAD[note.value].halfWidth}
+                y={note.y}
+                fill={ink}
+                fontSize={musicSize}
+                fontFamily={fontFamily.music}
+              >
+                {NOTEHEAD[note.value].glyph}
+              </SvgText>
 
               {/*
                 **Flags, for a note no beam picked up.** Beams are only drawn
@@ -487,25 +540,21 @@ export function Stave({
                 Drawn from the stem tip, curving back towards the notehead, and
                 stacked downwards for a sixteenth's second flag.
               */}
-              {note.stem && note.flags > 0
-                ? Array.from({ length: note.flags }, (_unused, tail) => {
-                    const tip = note.stem!.to + (note.stemUp ? tail : -tail) * lineGap * 0.8;
-                    const drop = note.stemUp ? lineGap * 1.5 : -lineGap * 1.5;
-                    return (
-                      <Path
-                        key={`flag-${tail}`}
-                        d={
-                          `M ${note.stem!.x} ${tip} ` +
-                          `q ${lineGap * 0.9} ${drop * 0.45} ${lineGap * 0.75} ${drop}`
-                        }
-                        stroke={ink}
-                        strokeWidth={stroke * 1.6}
-                        fill="none"
-                        strokeLinecap="round"
-                      />
-                    );
-                  })
-                : null}
+              {note.stem && FLAG_GLYPH[note.flags] ? (
+                // The origin of a flag glyph is the stem's own end, so this is
+                // the one mark on the staff that needs no offset at all.
+                <SvgText
+                  x={note.stem.x}
+                  y={note.stem.to}
+                  fill={ink}
+                  fontSize={musicSize}
+                  fontFamily={fontFamily.music}
+                >
+                  {note.stemUp
+                    ? FLAG_GLYPH[note.flags].up
+                    : FLAG_GLYPH[note.flags].down}
+                </SvgText>
+              ) : null}
 
               {/*
                 The augmentation dot: half the note's value again. Sits after
@@ -514,12 +563,15 @@ export function Stave({
                 line is hard to see against it.
               */}
               {note.dots > 0 ? (
-                <Circle
-                  cx={note.x + headRx * 2.1}
-                  cy={note.y - (onLine(note.y, lineGap) ? lineGap / 2 : 0)}
-                  r={stroke * 1.5}
+                <SvgText
+                  x={note.x + lineGap * (NOTEHEAD[note.value].halfWidth + 0.3)}
+                  y={note.y - (onLine(note.y, lineGap) ? lineGap / 2 : 0)}
                   fill={ink}
-                />
+                  fontSize={musicSize}
+                  fontFamily={fontFamily.music}
+                >
+                  {GLYPH.augmentationDot}
+                </SvgText>
               ) : null}
 
               {showNoteNames ? (
@@ -559,105 +611,4 @@ export function Stave({
   );
 }
 
-/**
- * A rest, drawn rather than set in type — the same reasoning as `Sharp`, and
- * the same risk `engrave.ts` names about clefs: a badly approximated glyph is
- * the first thing a musician notices and the last thing they forgive.
- *
- * **Two of these are exact and two are approximations, and the difference is
- * worth knowing.** A whole and a half rest genuinely *are* rectangles — the
- * only thing to get right is which line they touch, and they are opposites:
- * the whole hangs below the second line from the top, the half sits on the
- * middle line. Drawn the same way round, every bar of rest in the app would be
- * a beat wrong to anyone who reads music.
- *
- * The quarter and eighth are calligraphic figures rendered as strokes. They
- * read correctly at the size this draws them and they are not typeset music.
- * The alternative was to count them as undrawable and leave holes in the bar,
- * which for a part written in quarter rests is most of the bar.
- */
-function Rest({
-  x,
-  y,
-  value,
-  ink,
-  lineGap,
-  stroke,
-}: {
-  x: number;
-  y: number;
-  value: NoteValue;
-  ink: string;
-  lineGap: number;
-  stroke: number;
-}) {
-  const g = lineGap;
-  if (value === 'whole' || value === 'half') {
-    const w = g * REST_WIDTH_FACTOR;
-    const h = g * REST_HEIGHT_FACTOR;
-    return (
-      <Rect
-        x={x - w / 2}
-        // Hanging below its line, or standing on it.
-        y={value === 'whole' ? y : y - h}
-        width={w}
-        height={h}
-        fill={ink}
-      />
-    );
-  }
-
-  if (value === 'quarter') {
-    return (
-      <G>
-        <Path
-          d={`M ${x - g * 0.38} ${y - g * 1.05} L ${x + g * 0.34} ${y - g * 0.34} L ${x - g * 0.2} ${y + g * 0.1} L ${x + g * 0.4} ${y + g * 0.78}`}
-          fill="none"
-          stroke={ink}
-          strokeWidth={g * 0.26}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-        {/* The terminal curl. Without it the zigzag reads as a chevron — the
-            first render of this looked like a "<" from across the room. */}
-        <Path
-          d={`M ${x + g * 0.4} ${y + g * 0.78} q ${-g * 0.5} ${-g * 0.18} ${-g * 0.34} ${g * 0.34}`}
-          fill="none"
-          stroke={ink}
-          strokeWidth={g * 0.2}
-          strokeLinecap="round"
-        />
-      </G>
-    );
-  }
-
-  // An eighth rest: one slanted stroke, a filled hook at its head, and the
-  // short bar that joins them.
-  return (
-    <G>
-      <Path
-        d={`M ${x + g * 0.36} ${y - g * 0.72} L ${x - g * 0.24} ${y + g * 0.95}`}
-        fill="none"
-        stroke={ink}
-        strokeWidth={g * 0.17}
-        strokeLinecap="round"
-      />
-      <Ellipse
-        cx={x - g * 0.06}
-        cy={y - g * 0.5}
-        rx={g * 0.26}
-        ry={g * 0.21}
-        transform={`rotate(-18 ${x - g * 0.06} ${y - g * 0.5})`}
-        fill={ink}
-      />
-      <Path
-        d={`M ${x + g * 0.36} ${y - g * 0.72} L ${x + g * 0.1} ${y - g * 0.62}`}
-        fill="none"
-        stroke={ink}
-        strokeWidth={g * 0.15}
-        strokeLinecap="round"
-      />
-    </G>
-  );
-}
 
