@@ -756,6 +756,24 @@ export function Stave({
             thing — it says exactly what a slur says and does not pretend to be
             calligraphy.
           */}
+          {/*
+            **Ties.** Drawn like a slur because they are the same shape, kept in
+            their own array because they are not the same thing: a slur phrases
+            notes, a tie says two noteheads are one sound. The app has folded
+            ties in playback since `scheduleScore` was written and drawn nothing
+            on the page, so a held note read as two attacks.
+          */}
+          {system.ties.map((tie, index) => (
+            <Path
+              key={`tie-${index}`}
+              d={`M ${tie.from.x} ${tie.from.y} Q ${tie.control.x} ${tie.control.y} ${tie.to.x} ${tie.to.y}`}
+              stroke={ink}
+              strokeWidth={stroke * 1.3}
+              strokeLinecap="round"
+              fill="none"
+            />
+          ))}
+
           {system.slurs.map((slur, index) => (
             <Path
               key={`slur-${index}`}

@@ -1,5 +1,6 @@
 import type { ScoreJson, ScoreMeasure } from '../../data/types';
 import { isNote, stepOf } from './engrave';
+import { readTies } from './ties';
 import { BEATS } from '../score/schedule';
 import type { Duration } from '../../data/types';
 import type { NoteValue, StaveItem } from './engrave';
@@ -214,6 +215,29 @@ export function staveScoreFor(score: ScoreJson): StaveScore {
   let slurId = 0;
 
   /**
+   * Which notes continue a tie, read the way the backend reads them.
+   *
+   * `readTies` is already the app's mirror of `score_schema.read_ties` — one
+   * pitch to itself, across barlines, never a slur — and `scheduleScore` folds
+   * exactly these into one long note. Reusing it is the point: the curve drawn
+   * on the page and the note held in the speaker have to come from one reading,
+   * or the app shows a tie it does not play or plays one it does not show.
+   *
+   * Indexed against the flat note list, so the offset of each measure is
+   * precomputed — the walk below can collapse whole measures into a multi-bar
+   * rest, and a running counter would drift the moment it did.
+   */
+  const tieReading = readTies(score.measures);
+  const flatOffset: number[] = [];
+  {
+    let total = 0;
+    for (const measure of score.measures) {
+      flatOffset.push(total);
+      total += measure.notes.length;
+    }
+  }
+
+  /**
    * Where the repeat signs go, by measure number.
    *
    * A span `[s, e]` puts an opening sign on the barline **before** measure `s`
@@ -405,6 +429,18 @@ export function staveScoreFor(score: ScoreJson): StaveScore {
         return false;
       });
 
+      /*
+        **A tie needs both a start and an end that were drawn.** A continuation
+        whose start was dropped — an unplaceable pitch, a duration this build
+        cannot draw — has nothing to curve back to, and a curve to nowhere is
+        worse than none. `tiesToNext` is set on the start when the *next* note
+        is a continuation, which is what the half-curve at a line break needs.
+      */
+      const flatIndex = flatOffset[index] + noteIndexInMeasure;
+      const continues = tieReading.absorbed[flatIndex] === true;
+      const startsTie = tieReading.absorbed[flatIndex + 1] === true;
+      const previousDrawn = items.length > 0 && isNote(items[items.length - 1]);
+
       itemOfNote.set(noteIndexInMeasure, items.length);
       items.push({
         pitch: note.pitch,
@@ -422,6 +458,8 @@ export function staveScoreFor(score: ScoreJson): StaveScore {
         ...(opensMeasure && closesRepeat.has(measure.measure_number)
           ? { repeatEndsBefore: true }
           : {}),
+        ...(continues && previousDrawn ? { tiedFromPrevious: true } : {}),
+        ...(startsTie ? { tiesToNext: true } : {}),
       });
       noteCount += 1;
       opensMeasure = false;

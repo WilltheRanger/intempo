@@ -6,6 +6,72 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-01 — Two noteheads, one sound, and nothing joining them
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Eighth finding of the
+music-accuracy audit, and the last field on `ScoreNote` the app was not reading.
+
+**Files:** `mobile/src/lib/notation/engrave.ts`, `fromScore.ts`,
+`components/notation/Stave.tsx`,
+`mobile/src/lib/notation/ties.engrave.test.ts` (new).
+
+`tied_to_next` has been read off the page since Batch 2. `ties.ts` mirrors the
+backend's reading of it — one pitch to itself, across barlines, never a slur —
+and `scheduleScore` folds those notes into **one long note**. The page drew two
+separate noteheads with nothing joining them.
+
+Three readings of the same bar: the app plays one note, `alignment.py` expects
+one attack, and the page shows two. Two of them agree with each other and
+neither agrees with the thing the musician is looking at.
+
+### The reading is shared, not reimplemented
+
+`fromScore` calls the same `readTies` that `scheduleScore` does. That is the
+whole point: a curve is drawn exactly where a note is held, so the app cannot
+show a tie it does not play or play one it does not show. It is indexed against
+the flat note list with a **precomputed per-measure offset**, because the walk
+can collapse several measures into one multi-bar rest and a running counter
+would drift the first time it did.
+
+A continuation whose start was dropped — an unplaceable pitch — draws nothing. A
+curve back to nowhere is worse than no curve.
+
+### The half-curves are the ordinary case, not the exotic one
+
+A tie broken by a line break is drawn as a curve trailing off the end of the
+first system and another leading in on the second. Ties across barlines are the
+commonest kind there is and `packSystems` breaks on barlines, so this happens
+constantly; without it a tie at a break simply vanishes.
+
+The leading half needed room reserved for it. At the start of a system the first
+note sits at the left margin with no gap to borrow, so the curve came out
+**zero-length, on top of the notehead** — a speck. `TIE_ARRIVAL_ROOM` is spent
+between the head and the note, which also widens the gap before a tied note
+mid-system, which is what an engraver does anyway: a tie needs somewhere to be.
+Sized by looking at it, twice.
+
+### Kept apart from slurs on purpose
+
+Same shape, same renderer, different array. A slur phrases notes; a tie says two
+noteheads are one sound. Sharing the array would mean a future change to how
+slurs are placed quietly moving ties.
+
+**Verified** by seeding a tie inside bar 1 and one across the bar 2 → bar 3 line
+break, at 4x: a full curve under the two D4s, a trailing half off the end of
+system one, a leading half arriving at the whole note on system two. Fixture
+restored byte-identical, route sweep clean.
+
+**Tests:** 785 pass, up 8.
+
+With this the app draws every field the pipeline reads: clefs, key and time
+signatures, spelled accidentals, noteheads and stems, beams and flags, dots,
+rests and multi-bar rests, tuplets, chords, slurs, articulations, repeats,
+endings, and ties.
+
+**Rollback:** revert the commit.
+
+---
+
 ## 2026-09-01 — First and second endings, which finish the repeat
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. The piece of work the entry

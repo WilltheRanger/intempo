@@ -188,6 +188,19 @@ export interface StaveNote {
    */
   slur?: number;
   /**
+   * This note continues a tie from the one before it — no new attack.
+   *
+   * From `readTies`, which is the app's mirror of the backend's tie reading:
+   * one pitch to itself, across barlines, and never a slur. `scheduleScore`
+   * has folded these into one long note since it was written, so the page has
+   * been drawing **two separate noteheads with nothing joining them** for a
+   * sound the app plays as one — which a musician reads as two attacks. That
+   * is a wrong rhythm printed as a right one.
+   */
+  tiedFromPrevious?: boolean;
+  /** A tie leaves this note. Needed for the half-curve at a line break. */
+  tiesToNext?: boolean;
+  /**
    * A staccato dot, a tenuto line or an accent, from `ScoreNote.articulation`.
    *
    * Read off the page since Batch 2 and drawn nowhere. A staccato dot is not
@@ -647,6 +660,15 @@ export interface EngravedSystem {
   beams: EngravedBeam[];
   tuplets: EngravedTuplet[];
   slurs: EngravedSlur[];
+  /**
+   * Ties, in the same shape as slurs and deliberately in their own array.
+   *
+   * They are drawn the same way and they mean different things: a slur is a
+   * phrase mark over any notes, a tie joins one pitch to itself and removes an
+   * attack. Keeping them apart means a change to how slurs are placed cannot
+   * quietly move ties.
+   */
+  ties: EngravedSlur[];
   endings: EngravedEnding[];
   /** Clef, key and metre at the left edge. Empty when none was asked for. */
   head: EngravedHead;
@@ -925,7 +947,8 @@ function extraRoom(items: StaveItem[], lineGap: number): number[] {
     // accidental, plus a notehead's width when a member sits a second away and
     // has to move across the stem. Reserving only the principal's would put a
     // three-accidental chord through the note before it.
-    lineGap * ((isNote(item) ? noteRoom(item) : 0) + repeatRoom(item)),
+    lineGap *
+      ((isNote(item) ? noteRoom(item) : 0) + repeatRoom(item) + tieRoom(item)),
   );
 }
 
@@ -944,6 +967,27 @@ function extraRoom(items: StaveItem[], lineGap: number): number[] {
  * moves the barline right and opens space on its left for a closing sign as
  * well as on its right for an opening one.
  */
+/**
+ * Room before a note a tie arrives at, in staff spaces.
+ *
+ * A tie has to start somewhere left of the notehead it reaches. Mid-system it
+ * borrows the ordinary note gap; **at the start of a system there is no gap to
+ * borrow** — the first note sits at the left margin — and the leading half of a
+ * tie broken by a line break had nowhere to go, coming out as a zero-length
+ * curve on top of the notehead. Reserving it here works for both, because the
+ * first item's room is spent between the head and the note.
+ *
+ * Sized so the leading half is long enough to read as a curve rather than as a
+ * speck: `TIE_INSET` is spent before it starts, so this has to exceed it by a
+ * visible margin. It widens the gap before every tied note by the same amount,
+ * which is what an engraver does anyway — a tie needs somewhere to be.
+ */
+const TIE_ARRIVAL_ROOM = 1.7;
+
+function tieRoom(item: StaveItem): number {
+  return isNote(item) && item.tiedFromPrevious === true ? TIE_ARRIVAL_ROOM : 0;
+}
+
 function repeatRoom(item: StaveItem): number {
   const starts = item.repeatStartsBefore === true;
   const ends = item.repeatEndsBefore === true;
@@ -1305,6 +1349,7 @@ function layoutSystem(
   const tuplets: EngravedTuplet[] = [];
   const slurs: EngravedSlur[] = [];
   const endings: EngravedEnding[] = [];
+  const ties: EngravedSlur[] = [];
   const stemLength = lineGap * STEM_FACTOR;
   const thickness = lineGap * BEAM_THICKNESS_FACTOR;
 
@@ -1872,6 +1917,51 @@ function layoutSystem(
   }
 
   /**
+   * Ties: a short curve joining one notehead to the next of the same pitch.
+   *
+   * **Three cases, and the two half-curves are not decoration.** A tie whose
+   * ends are both on this system is one curve between them. A tie broken by a
+   * line break is drawn as a curve trailing off the end of the first system and
+   * another leading in on the second — which is what a printed part does, and
+   * without it a tie across a break simply vanishes. Ties across barlines are
+   * the commonest kind there is, and `packSystems` breaks on barlines, so this
+   * is the ordinary case rather than the exotic one.
+   *
+   * On the side away from the stem, springing from just outside each notehead
+   * and flatter than a slur — a tie says "this is one note", not "phrase
+   * these".
+   */
+  {
+    let noteIndex = 0;
+    let previous: EngravedNote | null = null;
+    let previousItem: StaveNote | null = null;
+
+    for (const item of notes) {
+      if (!isNote(item)) {
+        continue;
+      }
+      const engraved = engravedNotes[noteIndex];
+      noteIndex += 1;
+
+      if (item.tiedFromPrevious) {
+        if (previous) {
+          ties.push(tieBetween(previous, engraved, lineGap));
+        } else {
+          // The tie's start is on the system before this one.
+          ties.push(tieInFrom(engraved, headX, lineGap));
+        }
+      }
+      previous = engraved;
+      previousItem = item;
+    }
+
+    // And the other half: a tie leaving the last note of this system.
+    if (previousItem?.tiesToNext && previous) {
+      ties.push(tieOutTo(previous, right, lineGap));
+    }
+  }
+
+  /**
    * Slurs, one arc per run of consecutive notes carrying the same id.
    *
    * Runs rather than endpoints, so a slur cut by a system break simply becomes
@@ -1965,6 +2055,7 @@ function layoutSystem(
       beams,
       tuplets,
       slurs,
+      ties,
       endings,
       head,
       nameY,
@@ -2007,6 +2098,79 @@ function repeatKind(item: StaveItem): EngravedBarline['repeat'] {
     return 'both';
   }
   return starts ? 'start' : ends ? 'end' : null;
+}
+
+/** How far outside a notehead a tie springs, in staff spaces. */
+const TIE_INSET = 0.75;
+
+/** How far a tie clears the notehead it curves away from, in staff spaces. */
+const TIE_CLEARANCE = 0.55;
+
+/** A tie's arc height, in staff spaces. Flatter than a slur, deliberately. */
+const TIE_BULGE = 0.55;
+
+/** How far a half tie reaches toward the edge of its system, in staff spaces. */
+const TIE_HALF_REACH = 1.8;
+
+/**
+ * Which side of the notehead a tie curves to.
+ *
+ * Away from the stem, like a slur — but read from the note that **starts** the
+ * tie, because that is the one whose stem the curve has to avoid. Positive is
+ * down the page.
+ */
+function tieSide(note: EngravedNote): number {
+  return note.stemUp ? 1 : -1;
+}
+
+/** The curve joining two noteheads of the same pitch. */
+function tieBetween(
+  from: EngravedNote,
+  to: EngravedNote,
+  lineGap: number,
+): EngravedSlur {
+  const side = tieSide(from);
+  const y = from.y + side * lineGap * TIE_CLEARANCE;
+  const left = from.x + lineGap * TIE_INSET;
+  const right = to.x - lineGap * TIE_INSET;
+  return {
+    from: { x: left, y },
+    to: { x: right, y },
+    // A quadratic reaches half way to its control point, so the visible arc is
+    // half of this.
+    control: { x: (left + right) / 2, y: y + side * 2 * lineGap * TIE_BULGE },
+  };
+}
+
+/**
+ * The half of a tie that leaves the last note of a system.
+ *
+ * Stops short of the closing barline rather than touching it: a tie that runs
+ * into the barline reads as joined to it.
+ */
+function tieOutTo(from: EngravedNote, edge: number, lineGap: number): EngravedSlur {
+  const side = tieSide(from);
+  const y = from.y + side * lineGap * TIE_CLEARANCE;
+  const left = from.x + lineGap * TIE_INSET;
+  const right = Math.min(edge - lineGap * 0.5, left + lineGap * TIE_HALF_REACH);
+  return {
+    from: { x: left, y },
+    to: { x: right, y: y + side * lineGap * TIE_BULGE },
+    control: { x: (left + right) / 2, y: y + side * 2 * lineGap * TIE_BULGE },
+  };
+}
+
+/** The half of a tie that arrives at the first note of a system. */
+function tieInFrom(to: EngravedNote, headX: number, lineGap: number): EngravedSlur {
+  const side = tieSide(to);
+  const y = to.y + side * lineGap * TIE_CLEARANCE;
+  const right = to.x - lineGap * TIE_INSET;
+  const left = Math.max(headX, right - lineGap * TIE_HALF_REACH);
+  return {
+    from: { x: left, y: y + side * lineGap * TIE_BULGE },
+    to: { x: right, y },
+    control: { x: (left + right) / 2, y: y + side * 2 * lineGap * TIE_BULGE },
+  };
 }
 
 /** How far above the system's topmost ink an ending bracket sits. */
@@ -2128,6 +2292,11 @@ function shift(system: EngravedSystem, dy: number): EngravedSystem {
       ...ending,
       y: ending.y + dy,
       labelY: ending.labelY + dy,
+    })),
+    ties: system.ties.map((tie) => ({
+      from: { ...tie.from, y: tie.from.y + dy },
+      to: { ...tie.to, y: tie.to.y + dy },
+      control: { ...tie.control, y: tie.control.y + dy },
     })),
     slurs: system.slurs.map((slur) => ({
       from: { ...slur.from, y: slur.from.y + dy },
