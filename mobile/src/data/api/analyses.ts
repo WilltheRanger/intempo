@@ -36,7 +36,8 @@ export function getAnalysis(id: string): Promise<AnalysisResponse> {
 
 export interface CreateAnalysisInput {
   score_id: string;
-  audio_url: string;
+  /** Durable owner-prefixed key returned by POST /v1/upload/audio. */
+  audio_key: string;
   target_bpm: number;
   bpm_source: 'manual' | 'calibration_clip';
   metronome_mode: MetronomeMode;
