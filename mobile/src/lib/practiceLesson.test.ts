@@ -50,7 +50,7 @@ describe('practiceLessonFor', () => {
     });
 
     expect(lesson.title).toBe('Repeat the result before adding speed');
-    expect(lesson.exercise).toContain('30 BPM');
+    expect(lesson.exercise).toContain('30 half-note BPM');
     expect(lesson.exercise).toContain('before changing the tempo');
   });
 });
