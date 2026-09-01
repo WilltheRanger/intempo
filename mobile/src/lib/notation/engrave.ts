@@ -162,6 +162,16 @@ export interface StaveNote {
    */
   quarters?: number;
   tuplet?: Tuplet;
+  /**
+   * A dynamic printed at this note — `mf`, `sfz`, and the rest.
+   *
+   * **Read from the page since Batch 2 and drawn by nothing until now.**
+   * `musicxml.py` pulls it out of an imported file, `ScoreNote.dynamics`
+   * carries it, the app's own type declares it, and the engraving dropped it —
+   * so a piece imported from MuseScore lost every marking it had, on the
+   * screen that offers itself as "the notes read from the page".
+   */
+  dynamic?: string;
   /** Augmentation dots, 0, 1 or 2. A dotted quarter is `quarter` with `dots: 1`. */
   dots?: number;
   /** Starts a new bar before this note. */
@@ -684,11 +694,31 @@ export interface EngravedSystem {
    */
   ties: EngravedSlur[];
   endings: EngravedEnding[];
+  /**
+   * Dynamics, on one baseline for the whole system.
+   *
+   * A printed part lines them up rather than following each note's own depth —
+   * a row of marks at different heights reads as noise, and the eye uses the
+   * line itself to find them.
+   */
+  dynamics: EngravedDynamic[];
   /** Clef, key and metre at the left edge. Empty when none was asked for. */
   head: EngravedHead;
   /** Baseline for the note names printed under this system. */
   nameY: number;
   /** Right edge of this system's staff lines. */
+  width: number;
+}
+
+/** One dynamic marking, already composed into the glyphs that spell it. */
+export interface EngravedDynamic {
+  /** Centre of the notehead it belongs to. */
+  x: number;
+  /** The shared baseline. */
+  y: number;
+  /** The letters, as Bravura codepoints — `mf` is two glyphs, `sfz` three. */
+  glyphs: string;
+  /** Advance width, so the renderer can centre it without measuring text. */
   width: number;
 }
 
@@ -821,6 +851,25 @@ const MULTI_REST_NUMBER_FACTOR = 1.1;
 const MAX_JUSTIFY_STRETCH = 1.5;
 
 /**
+ * The narrowest a column may be, in staff spaces.
+ *
+ * A notehead is 1.18 spaces wide, so anything under that prints one note
+ * through the next. Set just above it: this is a floor for music that does not
+ * fit, not a spacing preference.
+ *
+ * **It is half a mechanism.** Reaching it means the system now wants more
+ * width than it was given, and the engraver cannot fix that — it breaks only
+ * at barlines and the bar that hit the floor is a single bar. The component's
+ * `fitWidth` is the other half: it shrinks the whole engraving until the
+ * widest system fits, so the notes get smaller rather than closer. Without the
+ * floor the layout has no way to *say* it needs more room — it silently
+ * spends the shortfall on the gaps, and 16 sixteenths came out at 0.95 spaces
+ * a column with the noteheads printing into each other, inside a system of
+ * exactly the right width.
+ */
+const MIN_COLUMN = 1.4;
+
+/**
  * How far left of its notehead an accidental's centre sits, in staff gaps.
  *
  * Moved here from the component with `accidentalX`: where a mark goes is
@@ -949,9 +998,41 @@ function headRoom(head: HeadRequest | null, lineGap: number): number {
   return width > 0 ? (width + HEAD_GAP) * lineGap : 0;
 }
 
+/**
+ * The gap between two neighbouring dynamics, in staff spaces.
+ *
+ * Only ever between two of them — vertical clearance is what keeps a mark off
+ * the notes. `mf` and `sfz` on adjacent quarters printed as `mfsfz`, one word,
+ * which is what this is for.
+ */
+const DYNAMIC_GAP = 0.6;
+
+/**
+ * How far an item's dynamic reaches either side of its notehead, in staff
+ * spaces, or null when it carries none.
+ *
+ * The mark is drawn centred on the note, so the pen starts half an advance to
+ * the left and the ink runs from there. Reaching from the *ink* rather than
+ * the advance matters: `f` overhangs its pen by 0.56 spaces on the left.
+ */
+function dynamicReach(
+  item: StaveItem | undefined,
+): { left: number; right: number } | null {
+  if (!item || !isNote(item) || !item.dynamic) {
+    return null;
+  }
+  const spelled = spellDynamic(item.dynamic, 1);
+  return spelled
+    ? {
+        left: spelled.width / 2 - spelled.left,
+        right: spelled.right - spelled.width / 2,
+      }
+    : null;
+}
+
 /** The room each item needs before it, beyond the ordinary column. */
 function extraRoom(items: StaveItem[], lineGap: number): number[] {
-  return items.map((item) =>
+  return items.map((item, index) =>
     // The **printed** glyph, not the one in the pitch name. Reserving room from
     // the name gives a suppressed sharp a column it never uses and gives a
     // printed natural — which no pitch name ever carries — no room at all, so
@@ -962,7 +1043,19 @@ function extraRoom(items: StaveItem[], lineGap: number): number[] {
     // has to move across the stem. Reserving only the principal's would put a
     // three-accidental chord through the note before it.
     lineGap *
-      ((isNote(item) ? noteRoom(item) : 0) + repeatRoom(item) + tieRoom(item)),
+      ((isNote(item) ? noteRoom(item) : 0) +
+        repeatRoom(item) +
+        tieRoom(item) +
+        // Two marks in a row need the room between their centres that their
+        // own halves take up. Nothing is reserved when either side is
+        // unmarked, so an isolated `p` does not widen the music around it.
+        (() => {
+          const previous = dynamicReach(items[index - 1]);
+          const here = dynamicReach(item);
+          return previous && here
+            ? previous.right + here.left + DYNAMIC_GAP
+            : 0;
+        })()),
   );
 }
 
@@ -1302,18 +1395,23 @@ export function splitBars(notes: StaveItem[]): StaveItem[][] {
  */
 export function packSystems(
   bars: StaveItem[][],
-  notesPerSystem: number,
+  costs: number[],
+  budget: number,
 ): StaveItem[][] {
   const systems: StaveItem[][] = [];
   let current: StaveItem[] = [];
+  let spent = 0;
 
-  for (const bar of bars) {
-    if (current.length > 0 && current.length + bar.length > notesPerSystem) {
+  bars.forEach((bar, index) => {
+    const cost = costs[index] ?? 0;
+    if (current.length > 0 && spent + cost > budget) {
       systems.push(current);
       current = [];
+      spent = 0;
     }
     current = current.concat(bar);
-  }
+    spent += cost;
+  });
   if (current.length > 0) {
     systems.push(current);
   }
@@ -1404,6 +1502,28 @@ function layoutSystem(
   }
 
   const room = extraRoom(notes, lineGap);
+
+  /**
+   * How far to the next column.
+   *
+   * **Floored here rather than on `noteGap`**, because `noteGap` is only the
+   * part of the distance that justification controls: an item that reserves
+   * room gets that on top, and flooring the base would inflate every system
+   * whose notes ask for room — measured, it pushed the Kreutzer study from 348
+   * points wide to 405 on a 390-point screen.
+   *
+   * The floor exists because the division that produces `noteGap` under
+   * `justify` has none of its own. It subtracts the reservations from the
+   * available width and divides what is left, which goes negative as soon as a
+   * system reserves more than it has — a bar of dynamics does it outright, and
+   * a chromatic run on a narrow phone comes within a staff space. The columns
+   * that reserve nothing then take the whole shortfall: four marked notes
+   * followed by eight plain ones squeezed the plain ones to 0.56 staff spaces,
+   * half a notehead, and they printed through each other.
+   */
+  const columnStep = (index: number) =>
+    Math.max(noteGap + (room[index] ?? 0), lineGap * MIN_COLUMN);
+
   let x = headX + room[0];
   // Where each bar starts and stops on this system. Tracked as the loop walks
   // because only the loop knows which item belongs to which bar.
@@ -1458,7 +1578,7 @@ function layoutSystem(
         bars: item.bars,
         numberY: staffLines[0] - lineGap * MULTI_REST_NUMBER_FACTOR,
       });
-      x += noteGap + (room[index + 1] ?? 0);
+      x += columnStep(index + 1);
       return;
     }
 
@@ -1474,7 +1594,7 @@ function layoutSystem(
             ? 0
             : 0;
       engravedRests.push({ x, y, value: item.rest, dots: item.dots ?? 0 });
-      x += noteGap + (room[index + 1] ?? 0);
+      x += columnStep(index + 1);
       return;
     }
 
@@ -1609,7 +1729,7 @@ function layoutSystem(
       })),
     });
 
-    x += noteGap + (room[index + 1] ?? 0);
+    x += columnStep(index + 1);
   });
 
   const right = x - noteGap / 2 + rightPad;
@@ -2062,6 +2182,54 @@ function layoutSystem(
     extents.push(y);
   }
 
+  /**
+   * Dynamics, on one baseline under the whole system.
+   *
+   * Placed last, because the baseline is measured from everything already on
+   * the system — a stem reaching below the staff, a low ledger line, a rest.
+   * A printed part lines them up rather than following each note's own depth.
+   */
+  const dynamics: EngravedDynamic[] = [];
+  {
+    const marked = notes.flatMap((item, index) =>
+      isNote(item) && item.dynamic ? [{ item, index }] : [],
+    );
+    if (marked.length > 0) {
+      let noteIndex = 0;
+      const positionOf = new Map<number, number>();
+      notes.forEach((item, index) => {
+        if (isNote(item)) {
+          positionOf.set(index, noteIndex);
+          noteIndex += 1;
+        }
+      });
+      const spelledMarks = marked.flatMap(({ item, index }) => {
+        const engraved = engravedNotes[positionOf.get(index) ?? -1];
+        const spelled = engraved && spellDynamic(item.dynamic ?? '', lineGap);
+        return engraved && spelled ? [{ engraved, spelled }] : [];
+      });
+      if (spelledMarks.length > 0) {
+        // The tallest mark on the system sets the baseline and the deepest
+        // sets the box, so a row of them stays level and none of them touches
+        // anything. An `f` next to an `m` pushes both down; that is what a
+        // printed part does too.
+        const ascent = Math.max(...spelledMarks.map((m) => m.spelled.ascent));
+        const descent = Math.max(...spelledMarks.map((m) => m.spelled.descent));
+        const baseline =
+          Math.max(...extents) + lineGap * DYNAMIC_CLEARANCE + ascent;
+        for (const { engraved, spelled } of spelledMarks) {
+          dynamics.push({
+            x: engraved.x,
+            y: baseline,
+            glyphs: spelled.glyphs,
+            width: spelled.width,
+          });
+        }
+        extents.push(baseline + descent);
+      }
+    }
+  }
+
   const nameY = Math.max(...extents) + lineGap * NAME_ROW_FACTOR;
 
   return {
@@ -2077,6 +2245,7 @@ function layoutSystem(
       slurs,
       ties,
       endings,
+      dynamics,
       head,
       nameY,
       width: right,
@@ -2146,6 +2315,128 @@ function repeatKind(item: StaveItem): EngravedBarline['repeat'] {
     return 'both';
   }
   return starts ? 'start' : ends ? 'end' : null;
+}
+
+/**
+ * The letters a dynamic is spelled with, and how wide each is.
+ *
+ * Measured out of Bravura, like the notehead widths and the flag overshoots.
+ * Every one of the schema's twelve marks is a run of these five, which is how
+ * an engraver sets them and why the font provides letters rather than words.
+ */
+const DYNAMIC_LETTERS: Record<
+  string,
+  {
+    glyph: string;
+    width: number;
+    /**
+     * Where the ink is, relative to the pen and the baseline, in staff spaces.
+     *
+     * `left`/`right` are signed, positive rightwards; `top`/`bottom` are how
+     * far the glyph rises above and falls below the baseline, both positive.
+     * Read straight out of the font — `fontTools`' `BoundsPen` over
+     * `Bravura.otf`, divided by a quarter of the em, which is a staff space in
+     * SMuFL. **Not the advance width**: `f` is drawn 0.56 spaces to the *left*
+     * of its own pen and rises 1.78 above its baseline, and both of those are
+     * why the first version of this collided with a note.
+     */
+    ink: { left: number; right: number; top: number; bottom: number };
+  }
+> = {
+  p: {
+    glyph: '\uE520',
+    width: 1.46,
+    ink: { left: -0.36, right: 1.46, top: 1.1, bottom: 0.57 },
+  },
+  m: {
+    glyph: '\uE521',
+    width: 1.75,
+    ink: { left: -0.08, right: 1.78, top: 1.1, bottom: 0.04 },
+  },
+  f: {
+    glyph: '\uE522',
+    width: 1.46,
+    ink: { left: -0.56, right: 1.46, top: 1.78, bottom: 0.61 },
+  },
+  s: {
+    glyph: '\uE524',
+    width: 0.92,
+    ink: { left: 0, right: 0.92, top: 1.09, bottom: 0.04 },
+  },
+  z: {
+    glyph: '\uE525',
+    width: 0.98,
+    ink: { left: -0.12, right: 0.98, top: 1.07, bottom: 0.04 },
+  },
+};
+
+/**
+ * The white the dynamics keep between themselves and the music, in staff
+ * spaces.
+ *
+ * **From the top of the tallest letter, not from its baseline.** The first
+ * version put the *baseline* this far under the system's lowest ink, which
+ * reads as the same thing and is not: `f` rises 1.78 spaces above its own
+ * baseline, so a clearance of 1.4 drew it 0.38 spaces *into* the music. On the
+ * one fixture that carries a printed dynamic — Wohlfahrt No. 28, whose first
+ * note is a D4, below the staff in treble — the `f` and the notehead fused
+ * into a single blob. Every unit test passed: they knew where the baseline was
+ * and the font's own metrics were nowhere in the calculation.
+ */
+const DYNAMIC_CLEARANCE = 0.7;
+
+/**
+ * The glyphs a dynamic is spelled with and the box they occupy, or null if it
+ * is not one this draws.
+ *
+ * `width` is the advance the letters take, which is what centres the mark on
+ * its notehead. `left`, `right`, `ascent` and `descent` are where the *ink*
+ * goes, which is what keeps it off everything else — the two differ by more
+ * than half a staff space for `f`, so a placement that uses the advance for
+ * both is a placement that overlaps.
+ */
+export function spellDynamic(
+  mark: string,
+  lineGap: number,
+): {
+  glyphs: string;
+  width: number;
+  left: number;
+  right: number;
+  ascent: number;
+  descent: number;
+} | null {
+  let glyphs = '';
+  let pen = 0;
+  let left = Infinity;
+  let right = -Infinity;
+  let ascent = 0;
+  let descent = 0;
+  for (const letter of mark) {
+    const found = DYNAMIC_LETTERS[letter];
+    // **Dropped rather than approximated**, the same rule the note values
+    // follow: a mark spelled with a letter this has no glyph for would come
+    // out as a shorter mark, which is a different instruction.
+    if (!found) {
+      return null;
+    }
+    glyphs += found.glyph;
+    left = Math.min(left, pen + found.ink.left);
+    right = Math.max(right, pen + found.ink.right);
+    ascent = Math.max(ascent, found.ink.top);
+    descent = Math.max(descent, found.ink.bottom);
+    pen += found.width;
+  }
+  return glyphs
+    ? {
+        glyphs,
+        width: pen * lineGap,
+        left: left * lineGap,
+        right: right * lineGap,
+        ascent: ascent * lineGap,
+        descent: descent * lineGap,
+      }
+    : null;
 }
 
 /** How far outside a notehead a tie springs, in staff spaces. */
@@ -2310,6 +2601,7 @@ function shift(system: EngravedSystem, dy: number): EngravedSystem {
   return {
     staffLines: system.staffLines.map((y) => y + dy),
     barlines: system.barlines,
+    dynamics: system.dynamics.map((mark) => ({ ...mark, y: mark.y + dy })),
     nameY: system.nameY + dy,
     width: system.width,
     notes: system.notes.map((note) => ({
@@ -2385,10 +2677,56 @@ export function engrave(
   // property of the score in order — not of a system, which is a slice of it.
   const capped = spellAccidentals(truncated, options.head?.key ?? []);
 
-  const perSystem = options.maxWidth
-    ? Math.max(1, Math.floor((options.maxWidth - leftPad - rightPad) / noteGap))
-    : capped.length;
-  const runs = options.maxWidth ? packSystems(splitBars(capped), perSystem) : [capped];
+  /**
+   * Where the lines break.
+   *
+   * **By the width a bar will take, not by how many notes are in it.** The
+   * count was blind to `extraRoom` — accidentals, repeat signs, ties and now
+   * dynamics all reserve room the packer never knew it was spending — so a
+   * system could be handed more music than it had width for. `justify` then
+   * divided a *negative* remainder among the columns and the notes walked
+   * backwards through each other. Reached first by a bar of dynamics, where
+   * `ppp` printed through the `pp` after it; a chromatic run gets within a
+   * staff space of it on a narrow phone.
+   *
+   * The room a bar asks for is measured over the whole piece rather than per
+   * system, so a bar that opens a line is costed as if it followed the one
+   * before. That over-estimates by at most one item's reservation, which is
+   * the safe direction: it breaks a line early, never late.
+   */
+  const bars = splitBars(capped);
+  const runs = options.maxWidth
+    ? (() => {
+        const room = extraRoom(capped, lineGap);
+        let cursor = 0;
+        const costs = bars.map((bar) => {
+          const cost = bar.reduce(
+            (total, _item, index) => total + noteGap + (room[cursor + index] ?? 0),
+            0,
+          );
+          cursor += bar.length;
+          return cost;
+        });
+        // The head is on every system, so it is off the budget for all of
+        // them; the metre only on the first, and costing it everywhere breaks
+        // a line one bar early at worst.
+        const head = options.head
+          ? headRoom(
+              {
+                clef: options.head.clef,
+                key: options.head.key,
+                time: options.head.time,
+              },
+              lineGap,
+            )
+          : 0;
+        const budget = Math.max(
+          noteGap,
+          (options.maxWidth ?? 0) - leftPad - rightPad - head,
+        );
+        return packSystems(bars, costs, budget);
+      })()
+    : [capped];
 
   const padding = PADDING_FACTOR * lineGap;
   const gap = lineGap * SYSTEM_GAP_FACTOR;
@@ -2422,6 +2760,11 @@ export function engrave(
     const stretched =
       options.justify && options.maxWidth && run.length > 1
         ? Math.min(
+            // Can come out negative: the reservations are not part of this
+            // division and can exceed the whole system. `layoutSystem` floors
+            // each column as it spends it — see `step` — because it is the
+            // *distance* that has to clear a notehead, and an item that
+            // reserves room already has more of one than this.
             (options.maxWidth - leftPad - rightPad - reserved - headWidth) /
               (run.length - 0.5),
             noteGap * MAX_JUSTIFY_STRETCH,

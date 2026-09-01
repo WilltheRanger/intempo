@@ -48,6 +48,9 @@ RANGES = [
     "E0A2-E0A4",  # noteheadWhole, noteheadHalf, noteheadBlack
     "E4E2-E4E9",  # restDoubleWhole..rest64th
     "E4EE",  # restHBar — the multi-bar rest
+    # Dynamics, composed from letters the way an engraver sets them: every one
+    # of the schema's twelve is some run of p, m, f, s and z.
+    "E520-E525",  # dynamicPiano … dynamicZ
     # Flags to the 64th. `rest128th` and `flag128th` are deliberately outside:
     # five beams at this stave size is a smudge rather than a rhythm, and
     # `staveScoreFor` counts what it cannot draw and the screen says so — which

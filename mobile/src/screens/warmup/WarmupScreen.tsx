@@ -139,6 +139,9 @@ export function WarmupScreen() {
             */
             head={{ clef: warmup.clef, key: [], time: null }}
             maxWidth={plateWidth - SCREEN_GUTTER * 2}
+            // Breaks between bars, then shrinks whatever a break cannot fix —
+            // see `PieceScoreScreen` for the bar this exists for.
+            fitWidth={plateWidth - SCREEN_GUTTER * 2}
             scale={STAVE_SCALE}
             justify
           />

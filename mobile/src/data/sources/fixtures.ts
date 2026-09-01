@@ -128,6 +128,37 @@ const DEMO_SCORE: ScoreJson = {
 };
 
 /**
+ * The same music with the dynamic its page actually prints.
+ *
+ * **Dynamics are drawn, so one has to be here.** `musicxml.py` has pulled them
+ * out since Batch 2 and `ScoreNote.dynamics` has carried them just as long;
+ * nothing put them on a stave until now, and a state with no fixture is a
+ * state nobody looks at — which has cost this project four times already.
+ *
+ * The mark is not invented. `fixtures/scores/SOURCES.md` records that the
+ * opening staff of Wohlfahrt Op. 45 No. 28 prints an **f**, and the cached
+ * reading of that page (`02_medium_printed.jpg`) is the one place in the whole
+ * fixture corpus where a dynamic survives OCR — a single `f`, on the first
+ * note. This is that note. No. 1's entry in the same file says its line has
+ * "no titles or dynamics", which is why the two studies no longer share a
+ * score and why nothing was added to No. 1.
+ */
+const DYNAMIC_SCORE: ScoreJson = {
+  ...DEMO_SCORE,
+  tempo_marking: 'Allegretto',
+  measures: DEMO_SCORE.measures.map((measure, index) =>
+    index === 0
+      ? {
+          ...measure,
+          notes: measure.notes.map((note, at) =>
+            at === 0 ? { ...note, dynamics: 'f' as const } : note,
+          ),
+        }
+      : measure,
+  ),
+};
+
+/**
  * The same music, with nothing having read a clef off the page.
  *
  * A real state, not a broken one: `ScoreJson.clef` is nullable because an
@@ -295,7 +326,7 @@ const FIXTURE_PIECES: FixturePiece[] = [
     practicedDaysAgo: 12,
     thumbnail: require('../../../assets/fixtures/02_medium_printed.jpg'),
     markedBpm: MARKED_BPM,
-    score: DEMO_SCORE,
+    score: DYNAMIC_SCORE,
   },
   {
     id: 'fixture-wohlfahrt-01',

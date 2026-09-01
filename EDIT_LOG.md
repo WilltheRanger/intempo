@@ -6,6 +6,130 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-01 — Dynamics are drawn, and doing it exposed a spacing bug older than they are
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`.
+
+**Files:** `mobile/src/lib/notation/engrave.ts`,
+`components/notation/Stave.tsx`, `lib/notation/fromScore.ts`,
+`screens/pieceScore/PieceScoreScreen.tsx`, `screens/warmup/WarmupScreen.tsx`,
+`data/sources/fixtures.ts`, `assets/fonts/Bravura.otf`,
+`tools/subset-bravura.py`, plus `lib/notation/dynamics.test.ts` (new) and
+`engrave.test.ts`.
+
+### What was missing
+
+`musicxml.py` has read dynamics off an imported part since Batch 2,
+`ScoreNote.dynamics` has carried them just as long, and the engraver drew
+none of them. An imported MuseScore part lost every marking on the screen
+that offers itself as "the notes read from the page".
+
+They are now set from the font's own letters — `p`, `m`, `f`, `s`, `z`
+(U+E520–U+E525, added to the Bravura subset, 27.0 → 44.3 KB) — because every
+one of the schema's twelve marks is a run of those five, which is how an
+engraver sets them and why SMuFL provides letters rather than words. A mark
+spelled with a letter there is no glyph for draws **nothing**, the same rule
+the note values follow: half of `dim.` is a different instruction.
+
+### The bug a unit test could not have found
+
+The first version placed the marks 1.4 staff spaces below the system's lowest
+ink and every test passed. A 4× screenshot showed the `f` and the first
+notehead **fused into a single blob**.
+
+The clearance was measured to the mark's *baseline*. Bravura's `f` rises
+**1.78** staff spaces above its own baseline — read out of the font with
+`fontTools`' `BoundsPen`, not estimated — so 1.4 spaces of clearance drew it
+0.38 spaces up *into* the music. Every test knew where the baseline was and
+not one of them knew how tall the letter was. `DYNAMIC_LETTERS` now carries
+each glyph's measured ink box, the baseline is set from the *top* of the
+tallest mark on the system, and `dynamics.test.ts` asks the font.
+
+A second one only a screenshot caught, earlier the same session: `mf` and
+`sfz` on adjacent quarters printed as `mfsfz`, one word. Neighbouring marks
+now reserve the room their ink takes — ink, not advance, because `f` overhangs
+its own pen by 0.56 spaces on the left.
+
+### The older bug underneath it
+
+Widening the columns for those marks pushed a system past the width it had,
+and it turned out nothing had ever stopped that. **The packer counted notes
+while the layout spent width**: `extraRoom` — accidentals, repeat signs, ties,
+now dynamics — was invisible to it. `justify` then divided a *negative*
+remainder among the columns, and the columns that reserved nothing took the
+whole shortfall. Measured: four marked notes followed by eight plain ones
+squeezed the plain columns to **0.56 staff spaces**, half a notehead, so they
+printed through each other — inside a system of exactly the right width, which
+is why no overflow check would ever have seen it.
+
+Three changes, each verified by putting the old behaviour back and watching
+the new test fail:
+
+- `packSystems` breaks on a **width budget**, not a note count. Costs are
+  measured over the whole piece rather than per system, which over-estimates a
+  line-opening bar by at most one reservation — the safe direction, since it
+  breaks early rather than late.
+- Every column is floored at `MIN_COLUMN` (1.4 staff spaces, just over the
+  1.18 a notehead occupies) **where it is spent**, not on the base gap. That
+  distinction is load-bearing: flooring the base inflates every system whose
+  notes reserve room, and it pushed the Kreutzer study from 348 points wide to
+  405 on a 390-point screen before I moved it.
+- `PieceScoreScreen` and `WarmupScreen` now pass `fitWidth` alongside
+  `maxWidth`. They are not alternatives: `maxWidth` breaks the music into
+  systems and can only break at a barline, so a bar denser than one line can
+  hold stays over-wide however many systems it gets. `fitWidth` shrinks the
+  whole engraving until it fits. The floor is what lets a system *say* it needs
+  more room; `fitWidth` is what answers.
+
+Measured on the Kreutzer fixture at the score screen's own parameters, opening
+bar of sixteen sixteenths: min column 0.95 spaces before (noteheads touching,
+system 348 wide), 1.40 after (system 397 wide, shrunk to 352 by `fitWidth`,
+inside a 390-point viewport). Every stave-bearing route re-measured: Today
+335, Wohlfahrt 348, Kreutzer 352, Paganini 348, Warmup 311 — none overflowing,
+where Kreutzer had been at 405.
+
+### The fixture, because a state with no fixture is a state nobody looks at
+
+`fixture-wohlfahrt-28` now carries a dynamic. It is **not invented**:
+`fixtures/scores/SOURCES.md` records that the opening staff of Wohlfahrt Op. 45
+No. 28 prints an **f**, and the cached reading of that page is the only place
+in the entire fixture corpus where a dynamic survives OCR — one `f`, on the
+first note. That is the note it is on. No. 1's entry in the same file says its
+line has "no titles or dynamics", which is why the two studies no longer share
+a score and why nothing was added to No. 1.
+
+### Three-foot test
+
+**Piece score** — the serif piece title first, the white notation panel
+second, the Notation/Original toggle and Listen third. The dynamic is a small
+mark inside the music and competes with nothing; that is the point of it.
+**Warmup** — "D major, one octave" first, the four staves second, the "Play at
+72 BPM" footer third. Both unchanged in hierarchy by this work.
+
+### Tests
+
+971 passing, `tsc` clean, web build green. Four new guards, each verified to
+fail when what it guards is reverted: the mark's top clearing the music (fails
+by 0.42 staff spaces), neighbouring marks' ink not overlapping (fails by 7.1
+points at lineGap 16), a column never narrower than a notehead (fails at 9.2
+against 18.9), and every one of the twelve marks drawing. 23-route sweep clean;
+320-point narrow probe shows only the two findings already accepted (the
+`aria-hidden` switch track, the measure editor's horizontal scroller).
+
+### Honest status
+
+Verified visually against the running build, not against a real photographed
+page. The OCR prompt still says "Do NOT report articulation or dynamics.
+Nothing reads them", which is now false on both counts — changing it is a
+pipeline decision for the owner, not one to make in passing.
+
+### Rollback
+
+`git revert` the commit. The Bravura subset regenerates with
+`tools/subset-bravura.py`.
+
+---
+
 ## 2026-09-01 — Every screen-level empty state sat in the top quarter
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. The layout question I

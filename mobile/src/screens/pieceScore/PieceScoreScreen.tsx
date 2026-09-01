@@ -461,6 +461,17 @@ export function PieceScoreScreen() {
               highlightMeasure={soundingMeasure}
               clef={piece.score?.clef ?? UNREAD_CLEF_PLACEMENT}
               maxWidth={width}
+              // **Both, and they do different jobs.** `maxWidth` breaks the
+              // music into systems, but it can only break at a barline — so a
+              // bar denser than one line can hold stays over-wide however many
+              // systems it is given. `fitWidth` then shrinks the whole
+              // engraving until it fits, which is the only remedy left.
+              //
+              // Without it the layout squeezed the columns instead: the
+              // Kreutzer study's opening bar of sixteen sixteenths came out at
+              // 0.95 staff spaces a column, narrower than the 1.18 a notehead
+              // occupies, so the noteheads printed into each other.
+              fitWidth={width}
               scale={STAVE_SCALE}
               justify
               beatQuarters={stave.beatQuarters}

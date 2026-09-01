@@ -497,6 +497,9 @@ export function staveScoreFor(score: ScoreJson): StaveScore {
         measureNumber: measure.measure_number,
         ...(chord.length > 0 ? { chord } : {}),
         ...(note.articulation ? { articulation: note.articulation } : {}),
+        // Read from the page since Batch 2 and drawn by nothing until now. An
+        // imported MuseScore file carries these; the engraving dropped them.
+        ...(note.dynamics ? { dynamic: note.dynamics } : {}),
         ...(mark ? { tuplet: mark } : {}),
         ...(quarters !== undefined ? { quarters } : {}),
         ...(opensMeasure ? { barBefore: true } : {}),

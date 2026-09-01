@@ -903,6 +903,27 @@ export function Stave({
             </G>
           ))}
 
+          {/*
+            Dynamics, in the font's own letters rather than in italic type.
+            `p`, `m`, `f`, `s` and `z` are drawings in a music font for the
+            same reason a clef is: they have a settled weight and slant that a
+            bold italic sans does not reproduce. Centred on the notehead using
+            the advance widths measured out of Bravura, so nothing here has to
+            measure text at render time.
+          */}
+          {system.dynamics.map((mark, index) => (
+            <SvgText
+              key={`dynamic-${index}`}
+              x={mark.x - mark.width / 2}
+              y={mark.y}
+              fill={ink}
+              fontSize={musicSize}
+              fontFamily={fontFamily.music}
+            >
+              {mark.glyphs}
+            </SvgText>
+          ))}
+
           {system.tuplets.map((tuplet, index) => {
             const half = lineGap * TUPLET_NUMBER_HALF_WIDTH;
             return (

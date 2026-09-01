@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { engrave, type EngravedSystem } from './engrave';
+import {
+  engrave,
+  spellDynamic,
+  type EngravedSystem,
+  type StaveItem,
+} from './engrave';
 
 /**
  * The beamed groups on a system: one entry per run of stems joined together.
@@ -497,6 +502,115 @@ describe('accidentals, all five of them', () => {
       const note = noteOf(pitch);
       const right = note.accidentalX + opts.lineGap * widths[note.accidental!];
       expect(right).toBeLessThan(note.x - opts.lineGap * 0.59);
+    }
+  });
+});
+
+/**
+ * Where the lines break, and what happens when the music does not fit.
+ *
+ * The packer counted notes while the layout spent width. Nothing noticed until
+ * dynamics arrived, because they are the first thing to reserve enough room
+ * for the difference to matter — but the mechanism was always there, and every
+ * accidental, repeat sign and tie had been quietly overdrawing the same
+ * account.
+ *
+ * The failure is not an overflow, which is what makes it hard to see:
+ * `justify` always lands on exactly `maxWidth`. It fits by handing the columns
+ * a **negative** remainder, and the notes then print through each other inside
+ * a system of precisely the right width.
+ */
+describe('systems fit the width they are given', () => {
+  const MARKS = [
+    'ppp', 'pp', 'p', 'mp', 'mf', 'f', 'ff', 'fff', 'fp', 'sfz', 'sf', 'fz',
+  ] as const;
+
+  /** Every note carries a dynamic — the heaviest reservation there is. */
+  const marked: StaveItem[] = MARKS.map((dynamic, index) => ({
+    pitch: 'D4',
+    value: 'quarter' as const,
+    barBefore: index % 4 === 0,
+    dynamic,
+  }));
+
+  it.each([9, 12, 16])(
+    'keeps neighbouring marks apart at lineGap %i',
+    (lineGap) => {
+      const out = engrave(marked, 'treble', {
+        maxWidth: 330,
+        justify: true,
+        lineGap,
+      });
+
+      for (const system of out.systems) {
+        // Marks come back in the order their notes do, so the spelling of the
+        // nth mark on a system is recoverable from where it started.
+        const first = MARKS.findIndex(
+          (mark) =>
+            spellDynamic(mark, lineGap)?.glyphs === system.dynamics[0]?.glyphs,
+        );
+        for (let i = 1; i < system.dynamics.length; i += 1) {
+          const before = system.dynamics[i - 1];
+          const here = system.dynamics[i];
+          const beforeInk = spellDynamic(MARKS[first + i - 1], lineGap);
+          const hereInk = spellDynamic(MARKS[first + i], lineGap);
+          if (!beforeInk || !hereInk) {
+            throw new Error('every mark in this list is one the engraver draws');
+          }
+          const ends = before.x - before.width / 2 + beforeInk.right;
+          const starts = here.x - here.width / 2 + hereInk.left;
+
+          expect(starts).toBeGreaterThan(ends);
+        }
+      }
+    },
+  );
+
+  it('holds the columns open in a bar wider than the system', () => {
+    // The packer breaks between bars and never inside one, so a bar with more
+    // in it than a system can hold is the case it cannot solve — and the
+    // remainder handed to `justify` is then hugely negative. The notes that
+    // reserve nothing take all of it: four marked notes followed by eight
+    // plain ones squeezed the plain columns to 0.56 staff spaces, half a
+    // notehead, so they printed through each other. The system overflows
+    // instead, which is visible.
+    const mixed: StaveItem[] = [
+      ...[0, 1, 2, 3].map((index) => ({
+        pitch: 'D4',
+        value: 'quarter' as const,
+        barBefore: index === 0,
+        dynamic: 'sfz' as const,
+      })),
+      ...[0, 1, 2, 3, 4, 5, 6, 7].map(() => ({
+        pitch: 'D4',
+        value: 'quarter' as const,
+      })),
+    ];
+    const lineGap = 16;
+
+    const [system] = engrave(mixed, 'treble', {
+      maxWidth: 330,
+      justify: true,
+      lineGap,
+    }).systems;
+
+    const xs = system.notes.map((note) => note.x);
+    for (let i = 1; i < xs.length; i += 1) {
+      expect(xs[i] - xs[i - 1]).toBeGreaterThan(1.18 * lineGap);
+    }
+  });
+
+  it('gives every column at least a notehead of room', () => {
+    // A notehead is 1.18 staff spaces wide. A column narrower than that prints
+    // one note through the next whatever else is right.
+    const lineGap = 16;
+    const out = engrave(marked, 'treble', { maxWidth: 330, justify: true, lineGap });
+
+    for (const system of out.systems) {
+      const xs = system.notes.map((note) => note.x);
+      for (let i = 1; i < xs.length; i += 1) {
+        expect(xs[i] - xs[i - 1]).toBeGreaterThan(1.18 * lineGap);
+      }
     }
   });
 });
