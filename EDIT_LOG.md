@@ -6,6 +6,48 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-01 — On a 320pt phone the measure editor could not edit or save
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Found by walking every
+route at **320x568** — an iPhone SE, the smallest screen still in real use, and
+a width nothing in this project had been tested at.
+
+**Files:** `mobile/src/screens/measureEdit/MeasureEditScreen.tsx`.
+
+Eleven of twelve routes are clean at that size. The measure editor is not, and
+it fails in the two ways that matter most for a screen whose whole job is
+repairing a misread bar:
+
+- **The note strip collapsed to zero height.** The screen was a fixed column
+  (`scrollable={false}`); at 320pt the duration chips wrap to more rows, the
+  column overflows, and flexbox takes the deficit out of the one child that can
+  shrink. Measured: **280x0 at 320pt against 350x19 at 390pt** — and 19 is
+  itself a squeezed 56. No notes on screen means no note to select, which means
+  the editor cannot edit anything at all.
+- **"Save this bar" was clipped off the bottom**, along with Add note and
+  Delete note. Even if you could make a correction, you could not keep it.
+
+The screen scrolls now and Save is pinned in the footer. A scroll view cannot
+squeeze its children, which fixes the first; a footer is always on screen, which
+fixes the second. The error line moved into the footer with the button it
+belongs to — a save that failed must not report it above the fold. The
+`flex: 1` spacer that pushed the controls down in the fixed column is gone: a
+scroll view has no slack to absorb, so it only added a stretch of empty scroll.
+
+**Measured after:** the strip is **56pt at both widths**, and at 320pt the
+screen scrolls 717 into 483 with every control reachable — all five notes, all
+ten durations, the pitch controls, Add note, Delete note and Save.
+
+**The two remaining "overflows" at 320pt are both intended** and were checked
+rather than assumed: the Today warmup preview is deliberately clipped
+("a block that scrolls sideways competes with the page it is advertising"), and
+the note strip is a horizontal ScrollView, so content past the edge is the
+point.
+
+**Rollback:** revert the commit.
+
+---
+
 ## 2026-09-01 — The accent failed contrast as text, and nothing was checking
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. The other measurable half

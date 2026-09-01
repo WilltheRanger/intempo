@@ -173,7 +173,41 @@ export function MeasureEditScreen() {
   const current = working[selected];
 
   return (
-    <ScreenContainer scrollable={false}>
+    /*
+      **Scrolling, and Save pinned.** This screen was a fixed column with the
+      Save button as its last child, which broke twice on a 320pt phone — an
+      iPhone SE, still in use:
+
+       - The duration chips wrap to more rows at that width, so the column
+         overflowed, and flexbox took the deficit out of the one child that
+         could shrink: the note strip, which collapsed to **zero height**.
+         Measured 280x0 at 320pt against 350x19 at 390pt. No notes on screen
+         means no note to select, which means the editor cannot edit anything.
+       - **Save was clipped off the bottom** along with Add note and Delete
+         note, so a correction could not be kept either.
+
+      A scroll view cannot squeeze its children, which fixes the first, and the
+      footer is always on screen, which fixes the second. The error line goes in
+      the footer with the button it belongs to: a save that failed must not
+      report it above the fold.
+    */
+    <ScreenContainer
+      footer={
+        <View>
+          {error ? (
+            <Text variant="metadataSmall" color="textSecondary" style={styles.footerError}>
+              {error}
+            </Text>
+          ) : null}
+          <PrimaryButton
+            label="Save this bar"
+            onPress={() => void save()}
+            loading={correct.isPending}
+            disabled={correct.isPending || notes === null}
+          />
+        </View>
+      }
+    >
       <PageHeader
         eyebrow={piece.title}
         title={`Bar ${params.measureNumber}`}
@@ -207,7 +241,6 @@ export function MeasureEditScreen() {
               : 'Tap a note, then choose what it should be.'}
       </Text>
 
-      <View style={styles.spacer} />
 
       {/*
         The bar, in reading order. Horizontal because that is how the music is
@@ -363,19 +396,6 @@ export function MeasureEditScreen() {
       </View>
 
 
-      {error ? (
-        <Text variant="metadataSmall" color="textSecondary" style={styles.error}>
-          {error}
-        </Text>
-      ) : null}
-
-      <PrimaryButton
-        label="Save this bar"
-        onPress={() => void save()}
-        loading={correct.isPending}
-        disabled={correct.isPending || notes === null}
-        style={styles.save}
-      />
     </ScreenContainer>
   );
 }
@@ -413,8 +433,8 @@ const styles = StyleSheet.create({
     borderBottomWidth: 2,
     borderBottomColor: colors.accent,
   },
-  spacer: {
-    flex: 1,
+  footerError: {
+    marginBottom: spacing.md,
   },
   durations: {
     flexDirection: 'row',
@@ -445,11 +465,5 @@ const styles = StyleSheet.create({
   },
   chipOff: {
     opacity: 0.4,
-  },
-  error: {
-    marginTop: spacing.lg,
-  },
-  save: {
-    marginTop: spacing.xl,
   },
 });
