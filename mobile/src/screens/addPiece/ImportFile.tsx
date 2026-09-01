@@ -2,6 +2,7 @@ import { useNavigation } from '@react-navigation/native';
 import * as DocumentPicker from 'expo-document-picker';
 import { File as FSFile } from 'expo-file-system';
 import { FileMusic } from 'lucide-react-native';
+import { ComposerField } from '../../components/pieces/ComposerField';
 import { useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
@@ -277,12 +278,17 @@ export function ImportFileScreen() {
             returnKeyType="next"
             style={styles.first}
           />
-          <Input
-            label="Composer"
+          {/*
+            **The route most likely to produce a variant spelling.** The name
+            comes out of the file — "J.S. Bach", "BACH", "Johann Sebastian
+            Bach (1685-1750)" — and this was the one place that offered no way
+            to settle on one of them. Four spellings of Bach are four rows and
+            four covers in a library, which is half of why `composers.ts`
+            exists.
+          */}
+          <ComposerField
             value={composer}
             onChangeText={setComposer}
-            placeholder="Optional"
-            autoCapitalize="words"
             returnKeyType="done"
             onSubmitEditing={() => void save()}
             style={styles.field}

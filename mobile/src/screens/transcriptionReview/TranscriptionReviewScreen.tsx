@@ -1,5 +1,6 @@
 import { useNavigation } from '@react-navigation/native';
 import { ChevronLeft, ChevronRight } from 'lucide-react-native';
+import { ComposerField } from '../../components/pieces/ComposerField';
 import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
@@ -156,12 +157,11 @@ export function TranscriptionReviewScreen() {
             autoCapitalize="words"
             style={styles.first}
           />
-          <Input
-            label="Composer"
+          {/* The commonest way a piece enters the library, and it had the
+              plainest field of the three. */}
+          <ComposerField
             value={composer}
             onChangeText={setComposer}
-            placeholder="Optional"
-            autoCapitalize="words"
             style={styles.field}
           />
 

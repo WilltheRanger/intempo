@@ -10,6 +10,7 @@ import {
 } from 'lucide-react-native';
 import { useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
+import { ComposerField } from '../../components/pieces/ComposerField';
 
 import { BottomSheet } from '../../components/overlays/BottomSheet';
 import { ConfirmDialog } from '../../components/overlays/ConfirmDialog';
@@ -271,12 +272,11 @@ export function PieceDetailScreen() {
             serif
             autoCapitalize="words"
           />
-          <Input
-            label="Composer"
+          {/* Correcting a name afterwards is exactly when a musician reaches
+              for the spelling the rest of their library uses. */}
+          <ComposerField
             value={draftComposer}
             onChangeText={setDraftComposer}
-            placeholder="Optional"
-            autoCapitalize="words"
             style={styles.editField}
           />
           <Input

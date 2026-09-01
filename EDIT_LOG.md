@@ -6,6 +6,83 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-01 — The composer suggestions never worked, on the one screen that had them
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`.
+
+**Files:** `mobile/src/components/pieces/ComposerField.tsx`,
+`screens/addPiece/ImportFile.tsx`,
+`screens/transcriptionReview/TranscriptionReviewScreen.tsx`,
+`screens/pieceDetail/PieceDetailScreen.tsx`,
+`mobile/src/screens/composerField.test.ts` (new).
+
+### Tapping "Ludwig van Beethoven" left the field reading `bee`
+
+The owner asked for this feature — *"if they choose a composer (let them have a
+dropdown + search)"* — and the component exists, is documented, and **did
+nothing**. The list appeared, the right name was in it, and tapping it closed
+the list and changed no text. Which looks exactly like a selection that worked
+and then didn't take.
+
+Diagnosed rather than guessed at, after two wrong fixes:
+
+1. `onPressIn` set a guard so `onBlur` would not close the list. No change.
+2. `onPressOut` stopped closing it, in case the order was wrong. No change.
+3. Instrumented the handlers: **only `blur` ever fired.** No press handler ran
+   at all.
+4. Raw DOM listeners on the row itself, capture phase:
+   `row:pointerdown → row:mousedown → row:REMOVED`.
+
+The press blurs the input, `focused` goes false, and the row unmounts **between
+the mousedown and the mouseup** — so there is no press for a press handler to
+run. No guard inside the press can fix it, because the press handler is the
+thing that never runs; and no timer can, because a `setTimeout` queued on the
+mousedown fires a millisecond later while a real finger lifts after a hundred.
+
+### So the list is not tied to focus any more
+
+`open` is set by **typing**, and cleared by the three things that mean the field
+is answered: a suggestion chosen, the text already naming somebody
+(`canonical`), or nothing typed at all. Focus re-opens it only when there is
+text to suggest about — on a blank field it would drop five rows the moment the
+field is touched and push the rest of the form down by them.
+
+The cost is that a half-typed name whose musician moved on leaves its row on
+screen. It is stable rather than jumping, it is still tappable, and it goes as
+soon as the name settles. Against a feature that did not work at all, that is
+the trade taken.
+
+### And now every screen has it
+
+Three of the four screens that ask for a composer used a bare `Input`, and the
+one with the good field was `ManualPieceForm` — the least-used of the routes.
+The worst omission was the **MusicXML import**, where the name arrives out of
+the file as "J.S. Bach" or "BACH" or "Johann Sebastian Bach (1685-1750)": the
+route most likely to produce a variant spelling, and the one with no way to
+settle it. Naming a scan and renaming a piece are now the same field too.
+
+That matters for exactly the reason the component's own docstring gives: four
+ways of writing Bach are four rows and four covers in a library, and
+`portraitFor` matches on the canonical name.
+
+`composerField.test.ts` reads every screen and component and asserts that
+anything asking for a composer asks through `ComposerField` — a source-text
+guard, the third of its kind here, because a fifth screen will want a composer
+one day.
+
+**Verified** in Chromium at iPhone-13 size, on the two screens reachable
+without a file: focusing a blank field shows no rows, typing `bee` shows one,
+tapping it fills the field with "Ludwig van Beethoven" and closes the list. On
+the rename form, pre-filled with a name `canonical` already knows, focus shows
+nothing — which is the settled case working. 23-route sweep clean, `.env`
+restored byte-identical.
+
+**Tests:** 925, up 6.
+
+**Rollback:** revert the commit.
+
+---
+
 ## 2026-09-01 — The fermata and the ornament, which the entry below left undone
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Closes the "known,
