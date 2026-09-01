@@ -690,6 +690,24 @@ export interface MeasureVerdict {
   band: Band;
   direction: Direction;
   verdict: Verdict;
+  /**
+   * A written tempo change covers this measure, so it was **not timed**.
+   *
+   * The pipeline forces `band` to `on` here by refusal — the page has said the
+   * beat will not be steady, so the tolerance bands measure nothing — while
+   * still reporting the real `deviationPct`. Carrying only those two would put
+   * a large deviation next to the word for no deviation. `readMeasure` is the
+   * one place that decides what a row like this says.
+   */
+  underTempoChange: boolean;
+  /**
+   * The change lurched somewhere in this measure instead of flowing.
+   *
+   * The only thing worth saying about a bar the bands refused, and the pipeline
+   * already computes it: `uneven_measures` reads 9 ms for an even slowing and
+   * 44 for a lurch.
+   */
+  uneven: boolean;
 }
 
 /**

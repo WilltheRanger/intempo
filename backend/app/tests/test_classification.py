@@ -17,12 +17,19 @@ from app.services.classification import (
 from app.services.score_schema import Measure, Note, ScoreJson
 
 
-def _delta(pct: float, measure: int = 1, idx: int = 0, slur: bool = False) -> Delta:
+def _delta(
+    pct: float,
+    measure: int = 1,
+    idx: int = 0,
+    slur: bool = False,
+    under_tempo_change: bool = False,
+) -> Delta:
     band = classify_band(pct)
     direction = Direction.on if band is Band.on else (Direction.rush if pct < 0 else Direction.drag)
     return Delta(
         global_index=idx, measure_number=measure, expected_ms=0.0, actual_ms=0.0,
         delta_ms=pct * 5.0, delta_pct=pct, band=band, direction=direction, is_slur_interior=slur,
+        under_tempo_change=under_tempo_change,
     )
 
 
@@ -68,6 +75,28 @@ def test_rolling_trend_is_rush_positive() -> None:
 def test_rolling_trend_excludes_slur_interior() -> None:
     deltas = [_delta(-8.0, idx=0), _delta(-8.0, idx=1, slur=True), _delta(-8.0, idx=2)]
     assert len(rolling_trend(deltas)) == 2  # interior note dropped
+
+
+def test_rolling_trend_excludes_notes_under_a_written_tempo_change() -> None:
+    """A `rit.` is not a drift, and the trend line said it was.
+
+    `compute_deltas` already refuses to band these notes — the page has said
+    the beat will not be steady, so their deviation is the musician doing what
+    was asked. Leaving them in the trend drew a line diving at the end of any
+    piece closing with a ritardando, on the same screen whose measure list
+    says those bars were not timed.
+
+    The same exclusion slur-interior notes get, one line above, for a weaker
+    reason.
+    """
+    steady = [_delta(-2.0, idx=i) for i in range(3)]
+    rit = [_delta(40.0, idx=3 + i, under_tempo_change=True) for i in range(3)]
+
+    trend = rolling_trend(steady + rit)
+
+    assert len(trend) == 3
+    # Every point still reports the steady playing, not a collapse into drag.
+    assert all(v > 0 for v in trend)
 
 
 def test_rolling_trend_accepts_raw_floats() -> None:

@@ -6,6 +6,97 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-01 — A written rit. reported as "On the beat", with a long bar beside it
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`.
+
+**Files:** `mobile/src/lib/verdict/measureReading.ts` (new) + test,
+`mobile/src/data/types.ts`, `data/sources/api.ts` (+ test),
+`data/sources/fixtures.ts`, `screens/verdict/MeasureRow.tsx`,
+`backend/app/services/classification.py`, `app/tests/test_classification.py`.
+
+### Three statements about one bar, two contradicting the third
+
+`compute_deltas` forces `band` to `on` for every note under a written tempo
+change — the tolerance bands measure distance from a *steady* beat and the page
+has said there is none — while still reporting the **real** `avg_delta_pct`.
+Both facts are correct. The app carried neither through `toTake` and rendered
+what was left, so a bar where a musician slowed exactly as marked came out as:
+
+- a deviation bar pushed hard to one side,
+- coloured as though nothing were wrong,
+- labelled **"On the beat"**,
+- revealing **-30%** on a tap.
+
+The app took credit on the musician's behalf for a bar nobody judged, and drew
+a large error next to the word for no error. `types.ts` already carried the
+comment — *"Nothing renders this yet, and when something does: a rushing or
+dragging colour here would be colouring a bar the page said would not be
+steady"* — which describes the right fix for a field that was being dropped one
+file away.
+
+### What a row like that says now
+
+`readMeasure` owns it. **"Not timed"**, in the tertiary ink, with an empty
+track. Not "Tempo change": every other entry in that column answers *how did I
+play this bar* — "On tempo", "Slight rush", "Rushing" — and "Tempo change"
+answers a different question, about what is printed. It also wrapped to two
+lines at 13pt and made one row of twelve taller than the rest. The full
+sentence lives in the accessibility label, where there is room:
+*"Measure 11: under a written tempo change, not timed."*
+
+**"Uneven" is the one thing worth saying about such a bar**, and the pipeline
+already worked it out and threw it away at the client boundary.
+`uneven_measures` measures how much each interval grew against what the take
+usually does — an even slowing reads 9 ms where a lurch reads 44. That row is
+ochre, because it *is* a remark about playing.
+
+### The averages, and the trend
+
+`meanDeviationOf` now skips untimed bars: averaging a refused number into "how
+steadily was this played" answers the question with something nobody judged. A
+take that is entirely a `rit.` yields no number at all — the same answer the
+window filter and the failed-run filter give.
+
+**`rolling_trend` excludes them too, which is a backend change.** It already
+excluded slur-interior notes, "their timing is musically free"; a note under a
+written change qualifies for a stronger reason — `compute_deltas` refuses to
+band it at all. Without this the trend line dived at the end of every piece that
+closes with a ritardando, on the same screen whose measure list now says those
+bars were not timed. One line, one test, and the precedent was on the line above.
+
+### The fixture carries a tempo change now
+
+Deliberate, and the argument is already in that file: `UNREAD_CLEF_SCORE` exists
+because "the fixture build had no piece in it, so the screen that handles the
+case could not be looked at without a live backend — which is how it came to
+caption the guess *Treble clef* for as long as it did." Same here. Bars 11 and
+12 of the sample take are under a change, with large deviations and `band: on`,
+because that combination is exactly what used to render wrong.
+
+### Three-foot test
+
+The measure list: the bar numbers and the words first, the coloured deviation
+bars second, the two empty tracks at the end third — which read as *nothing was
+measured here*, which is what they mean. One line per row, rhythm intact.
+
+**Verified** in Chromium at iPhone-13 size: bars 1–10 unchanged, bar 11 reads
+"Not timed" with an empty track and reveals no figure on tap, bar 12 reads
+"Uneven" in ochre. Accessibility labels read back in full. 23-route sweep clean,
+`.env` restored byte-identical.
+
+**Known, unfixed:** `compute_deltas` also refuses to band notes after a fermata
+and grace notes and the notes they decorate, for reasons just as good. `Delta`
+does not carry those flags, so neither the trend nor the row can distinguish
+them yet, and they still show as "On tempo". Widening `Delta` and `PerMeasure`
+is the same shape of change as this one and wants its own.
+
+**Tests:** 914 in the app, up 8; 1829 in the backend, up 1.
+
+**Rollback:** revert the commit.
+
+---
+
 ## 2026-09-01 — 100% of a corpus with no short notes in it
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`.

@@ -235,3 +235,62 @@ describe('toPiece', () => {
     expect(piece.markedBpm).toBe(96);
   });
 });
+
+describe('bars the pipeline refused to judge', () => {
+  it('keeps a written tempo change out of the mean', async () => {
+    // **The bar under a `rit.` reports a real, large deviation** — the
+    // musician did slow, exactly as the page asked — while the pipeline forces
+    // its band to `on` because the tolerance bands measure distance from a
+    // steady beat and the page has said there is none. Averaging it in answers
+    // "how steadily was this played" with a number nobody judged.
+    listAnalyses.mockResolvedValue([
+      analysis({
+        result_json: {
+          status: 'ok',
+          verdict: 'Steady',
+          verdict_direction: 'drag',
+          per_measure: [
+            { measure_number: 1, avg_delta_pct: 4, worst_band: 'on' },
+            {
+              measure_number: 2,
+              avg_delta_pct: 40,
+              worst_band: 'on',
+              under_tempo_change: true,
+            },
+          ],
+          tolerance: null,
+        },
+      }),
+    ]);
+
+    const insights = await apiInsightsSource.getInsights();
+
+    // The mean of the timed bar alone, flipped: -4, not the -22 both would give.
+    expect(insights!.meanDeviationPct).toBeCloseTo(-4, 9);
+  });
+
+  it('says nothing at all about a take that was entirely a tempo change', async () => {
+    listAnalyses.mockResolvedValue([
+      analysis({
+        result_json: {
+          status: 'ok',
+          verdict: 'Steady',
+          verdict_direction: 'on',
+          per_measure: [
+            {
+              measure_number: 1,
+              avg_delta_pct: 40,
+              worst_band: 'on',
+              under_tempo_change: true,
+            },
+          ],
+          tolerance: null,
+        },
+      }),
+    ]);
+
+    // Nothing in it was timed, so there is no number — the same answer the
+    // window filter and the failed-run filter give, and for the same reason.
+    expect(await apiInsightsSource.getInsights()).toBeNull();
+  });
+});

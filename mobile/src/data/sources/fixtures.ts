@@ -1,3 +1,4 @@
+import { wasTimed } from '../../lib/verdict/measureReading';
 import { verdictFor } from '../../lib/tempo';
 import type {
   Band,
@@ -622,7 +623,29 @@ export const fixtureInsightsSource: InsightsSource = {
  * middle, recovering at the end. That is the commonest real fault and the one
  * the trend line exists to show.
  */
-const FIXTURE_MEASURES: { measure: number; notes: number; dragPct: number; band: Band }[] = [
+/**
+ * The sample take's bars.
+ *
+ * The last two carry a **written tempo change**, which is not decoration: it
+ * is the only way that state can be looked at without a live backend and a
+ * page that prints a `rit.`. `UNREAD_CLEF_SCORE` a few hundred lines up exists
+ * for exactly this reason and says so — the case with no fixture is the case
+ * that ships wrong, which is how the app came to caption a guessed clef
+ * "Treble clef" for as long as it did.
+ *
+ * `dragPct` on those two is deliberately large. The pipeline reports the real
+ * deviation for a bar under a change while forcing its `band` to `on`, and
+ * that combination is what the screen used to render as a long bar labelled
+ * "On the beat".
+ */
+const FIXTURE_MEASURES: {
+  measure: number;
+  notes: number;
+  dragPct: number;
+  band: Band;
+  underTempoChange?: boolean;
+  uneven?: boolean;
+}[] = [
   { measure: 1, notes: 4, dragPct: -1.2, band: 'on' },
   { measure: 2, notes: 4, dragPct: -2.8, band: 'on' },
   { measure: 3, notes: 4, dragPct: -4.4, band: 'on' },
@@ -633,8 +656,15 @@ const FIXTURE_MEASURES: { measure: number; notes: number; dragPct: number; band:
   { measure: 8, notes: 4, dragPct: -12.1, band: 'rush_drag' },
   { measure: 9, notes: 4, dragPct: -8.4, band: 'slight' },
   { measure: 10, notes: 4, dragPct: -5.1, band: 'slight' },
-  { measure: 11, notes: 4, dragPct: -2.2, band: 'on' },
-  { measure: 12, notes: 4, dragPct: 1.6, band: 'on' },
+  { measure: 11, notes: 4, dragPct: 22.4, band: 'on', underTempoChange: true },
+  {
+    measure: 12,
+    notes: 4,
+    dragPct: 31.8,
+    band: 'on',
+    underTempoChange: true,
+    uneven: true,
+  },
 ];
 
 const FIXTURE_TAKE_ID = 'fixture-take-1';
@@ -671,6 +701,8 @@ function buildFixtureTake(): TakeResult {
       band: m.band,
       direction,
       verdict: verdictFor(m.band, direction),
+      underTempoChange: m.underTempoChange === true,
+      uneven: m.uneven === true,
     };
   });
 
@@ -695,7 +727,11 @@ function buildFixtureTake(): TakeResult {
     verdict: verdictFor('rush_drag', 'rush'),
     lowConfidence: false,
     measures,
-    trend: measures.map((m) => m.deviationPct),
+    // Only the timed bars — which is what the pipeline now sends too:
+    // `rolling_trend` excludes notes under a written change, the same
+    // exclusion slur-interior notes already had. A fixture that disagreed with
+    // the wire would be a demo of a screen the product does not have.
+    trend: measures.filter(wasTimed).map((m) => m.deviationPct),
     tolerance: FIXTURE_TOLERANCE,
     missedNotes: 1,
     extraNotes: 0,

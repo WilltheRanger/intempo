@@ -254,14 +254,25 @@ def rolling_trend(
     Accepts either `Delta` objects or a raw list of signed %-of-beat
     values. Output is rush-positive (ahead = +), length equal to the
     input, using an expanding window until `window` samples are
-    available (so the first few notes still get a value). Slur-interior
-    notes are excluded — their timing is musically free.
+    available (so the first few notes still get a value).
+
+    Two kinds of note are excluded. **Slur-interior** ones, because their
+    timing is musically free. And notes **under a written tempo change**, for a
+    stronger reason: `compute_deltas` refuses to band them at all — the page
+    has said the beat will not be steady there, so their deviation is not an
+    error, it is the musician doing what the page asked. Leaving them in drew a
+    trend line diving at the end of any piece that closes with a `rit.`, on the
+    same screen whose measure list says those bars were not timed.
     """
     cfg = config or load_audio_config()
     win = window if window is not None else cfg.trend.window
 
     if deltas and isinstance(deltas[0], Delta):
-        values = [-d.delta_pct for d in deltas if not d.is_slur_interior]  # rush-positive
+        values = [
+            -d.delta_pct  # rush-positive
+            for d in deltas
+            if not d.is_slur_interior and not d.under_tempo_change
+        ]
     else:
         values = [float(v) for v in deltas]  # type: ignore[arg-type]
 
