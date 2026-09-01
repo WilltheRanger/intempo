@@ -5,7 +5,9 @@ import type {
   MeasureVerdict,
   Tolerance,
   Verdict,
+  TempoBeatUnit,
 } from '../data/types';
+import { BEATS } from './score/schedule';
 
 /**
  * The pipeline's band and direction, in the words the UI shows.
@@ -81,6 +83,55 @@ export function sharedFullScaleFor(tolerance: Tolerance | null): number {
   return Math.max(tolerance.rushing_outer_pct, tolerance.dragging_outer_pct);
 }
 
+/** Quarter-note BPM expressed in the note value printed on the page. */
+export function displayTempoBpm(
+  quarterBpm: number,
+  unit: TempoBeatUnit | null | undefined,
+): number {
+  return Math.round(quarterBpm / BEATS[unit ?? 'quarter']);
+}
+
+/** A displayed metronome number returned to the quarter-note timing clock. */
+export function quarterBpmFromDisplay(
+  displayedBpm: number,
+  unit: TempoBeatUnit | null | undefined,
+): number {
+  return Math.round(displayedBpm * BEATS[unit ?? 'quarter']);
+}
+
+/** The readable unit beside a tempo number. */
+export function tempoUnitLabel(
+  unit: TempoBeatUnit | null | undefined,
+): string {
+  const value = unit ?? 'quarter';
+  if (value === 'quarter') {
+    return 'BPM';
+  }
+  const words = value.replaceAll('_', '-');
+  return value === 'double_whole' ? 'breve BPM' : `${words}-note BPM`;
+}
+
+/** A complete tempo label using the number a musician sees on the page. */
+export function formatTempo(
+  quarterBpm: number,
+  unit: TempoBeatUnit | null | undefined,
+): string {
+  return `${displayTempoBpm(quarterBpm, unit)} ${tempoUnitLabel(unit)}`;
+}
+
+/** Display-space bounds corresponding to the backend's quarter-BPM bounds. */
+export function tempoDisplayRange(
+  unit: TempoBeatUnit | null | undefined,
+  minQuarterBpm = 20,
+  maxQuarterBpm = 300,
+): { min: number; max: number } {
+  const beats = BEATS[unit ?? 'quarter'];
+  return {
+    min: Math.ceil(minQuarterBpm / beats),
+    max: Math.floor(maxQuarterBpm / beats),
+  };
+}
+
 /**
  * "Working at 76  ·  marked 92".
  *
@@ -96,11 +147,14 @@ export function sharedFullScaleFor(tolerance: Tolerance | null): number {
 export function formatWorkingTempo(
   workingBpm: number,
   markedBpm: number | null,
+  unit?: TempoBeatUnit | null,
 ): string {
+  const working = displayTempoBpm(workingBpm, unit);
+  const label = tempoUnitLabel(unit);
   if (markedBpm === null || markedBpm === workingBpm) {
-    return `${workingBpm} BPM`;
+    return `${working} ${label}`;
   }
-  return `Working at ${workingBpm}  ·  marked ${markedBpm}`;
+  return `Working at ${working}  ·  marked ${displayTempoBpm(markedBpm, unit)} ${label}`;
 }
 
 const VERDICT_LABELS: Record<Verdict, string> = {
