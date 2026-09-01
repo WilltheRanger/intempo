@@ -34,7 +34,13 @@ def _manual_row(score_id, user_id):
         user_id,
         source_image_url=None,
         source_image_urls=None,
-        score_json={**GOOD_PAYLOAD, "measures": []},
+        score_json={
+            **GOOD_PAYLOAD,
+            "clef": "bass",
+            "time_signature": "3/4",
+            "bpm_hint": 88,
+            "measures": [],
+        },
         ocr_confidence=None,
         transcription_status="done",
     )
@@ -76,6 +82,9 @@ def test_attaching_pages_reuses_the_piece_and_queues_a_read(
     assert written["source_image_url"] == pages[0]
     assert written["source_image_urls"] == pages
     assert written["score_json"]["measures"] == []
+    assert written["score_json"]["clef"] == "bass"
+    assert written["score_json"]["time_signature"] == "3/4"
+    assert written["score_json"]["bpm_hint"] == 88
     assert written["transcription_status"] == "queued"
     assert enqueued == [str(score_id)]
     client.table.return_value.insert.assert_not_called()
