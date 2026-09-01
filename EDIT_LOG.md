@@ -6,6 +6,34 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-31 — Non-expiring score page references
+
+**Branch:** `fix/durable-score-page-references`
+
+### Changed
+
+- Stopped carrying five-minute signed upload URLs from page transfer into the
+  piece-naming and score-creation steps.
+- The app now keeps owner-prefixed storage object keys in the capture session,
+  preserving page order without giving the musician a timer to race.
+- The score API accepts those durable keys, verifies that every key belongs to
+  the signed-in account, and stores token-free private-storage references that
+  can be re-signed whenever the worker or UI needs the page.
+- Kept older installed clients compatible: legacy signed upload URLs are still
+  accepted, but are canonicalised before persistence so their expiring tokens
+  never become the score's source of truth.
+- Applied the same durable-reference path to adding notation to an existing
+  manual piece.
+
+### Verification
+
+- Added backend coverage for durable single-page creation, ordered multi-page
+  creation, notation attachment, legacy-client compatibility, foreign keys,
+  nested keys, path traversal, and arbitrary external URLs.
+- Updated mobile upload and capture-session tests to require object keys rather
+  than token-bearing URLs and to preserve their page order.
+- Mobile typecheck, tests, web build, and backend tests run in pull-request CI.
+
 ## 2026-08-31 — Retry-safe onboarding photo submission
 
 **Branch:** `fix/defer-onboarding-avatar-upload`

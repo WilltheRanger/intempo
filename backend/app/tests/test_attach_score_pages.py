@@ -12,6 +12,7 @@ from app.main import app
 from app.routers.scores import AttachScorePagesRequest, MAX_PAGES
 from app.tests.test_scores_router import (
     GOOD_PAYLOAD,
+    PROJECT_HOST,
     _install_supabase,
     _row_for,
     _signed_url,
@@ -79,8 +80,16 @@ def test_attaching_pages_reuses_the_piece_and_queues_a_read(
 
     assert response.status_code == 200, response.text
     written = client.table.return_value.update.call_args.args[0]
-    assert written["source_image_url"] == pages[0]
-    assert written["source_image_urls"] == pages
+    expected = [
+        (
+            f"{PROJECT_HOST}/storage/v1/object/authenticated/score-images/"
+            f"{user_id}/p{position}.jpg"
+        )
+        for position in (1, 2)
+    ]
+    assert written["source_image_url"] == expected[0]
+    assert written["source_image_urls"] == expected
+    assert all("token=" not in page for page in expected)
     assert written["score_json"]["measures"] == []
     assert written["score_json"]["clef"] == "bass"
     assert written["score_json"]["time_signature"] == "3/4"

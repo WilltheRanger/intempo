@@ -94,7 +94,7 @@ export function TranscribeScreen() {
 
     void (async () => {
       try {
-        const urls = await uploadPages(pages, {
+        const keys = await uploadPages(pages, {
           upload: uploadPage,
           signal: abort.signal,
           onProgress: ({ page, sent, total: pageTotal }) => {
@@ -106,7 +106,7 @@ export function TranscribeScreen() {
         if (!live) {
           return;
         }
-        captureSession.setUploadedImageUrls(urls);
+        captureSession.setUploadedImageKeys(keys);
         // `replace`, so Back from the review returns to the pages rather than
         // to an upload that has nothing left to do.
         navigation.replace('TranscriptionReview');

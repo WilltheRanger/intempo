@@ -5,15 +5,13 @@ import { apiFetch } from './client';
  * POST /v1/upload/score-image — presigned PUT straight to Supabase Storage.
  * Files never stream through FastAPI.
  *
- * Pass the returned `upload_url` to `POST /v1/scores` as `image_url`: it is
- * the only form the backend's validator accepts, because `public_url` comes
- * back as a bare bucket path with no scheme. It expires five minutes after
- * issue, so create the score in the same flow as the upload rather than
- * storing it for later.
+ * Use `upload_url` only for the PUT. Once storage accepts the bytes, pass the
+ * returned owner-prefixed `object_key` to `POST /v1/scores` as the page
+ * reference. Unlike the upload permission it does not expire while later pages
+ * are still moving or while the musician names the piece.
  *
- * That expiry is why `scores.source_image_url` is never rendered. Displaying
- * a score image reads `image_url` from `/v1/scores`, which the backend signs
- * fresh on every read and returns with `image_url_expires_at`.
+ * The backend validates ownership, stores a token-free private-storage
+ * reference, and signs a fresh `image_url` for every read.
  */
 export function requestScoreImageUpload(
   filename: string,
