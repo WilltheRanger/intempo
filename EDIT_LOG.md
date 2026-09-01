@@ -6,6 +6,30 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-31 — Retry-safe onboarding photo submission
+
+**Branch:** `fix/defer-onboarding-avatar-upload`
+
+### Changed
+
+- Kept a chosen onboarding photograph local until the musician presses
+  Continue, so replacing a picture or leaving the screen no longer creates an
+  unused avatar object.
+- Made Continue perform the upload and profile save as one visible action while
+  preserving their safe ordering: the account is saved only after the upload
+  returns an object key.
+- Retained a successful object key when the profile save fails, so a retry
+  reuses the upload instead of creating duplicate files.
+- Kept the full action visibly busy during both network requests and returned
+  upload failures to the same Continue action with a retry instruction.
+
+### Verification
+
+- Added rule coverage proving a local photograph enables Continue while a form
+  with neither a selection nor an existing object key still names the photo as
+  missing.
+- Mobile typecheck, tests, and web build run in pull-request CI.
+
 ## 2026-08-31 — Attach notation before recording manual pieces
 
 **Branch:** `feat/attach-notation-manual-piece`

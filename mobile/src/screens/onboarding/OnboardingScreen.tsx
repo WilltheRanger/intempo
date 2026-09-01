@@ -70,21 +70,18 @@ import {
  * 2. **The four instruments** — the answer that changes the app.
  * 3. **Continue**, in the thumb zone, with the still-needed line under it.
  *
- * ## Nothing is written until Continue
+ * ## Nothing is sent until Continue
  *
- * The photograph uploads when it is chosen, because that is slow and the bytes
- * may as well be moving while a name is typed — but the account is not pointed
- * at it until the save. Someone who picks a picture and then backs out leaves
- * an orphan in the bucket rather than a profile they did not agree to, which
- * is the right way round. (Orphaned uploads are a known, unfixed hole — see
- * the capture-path notes in `CLAUDE.md`. This screen adds a second way to make
- * one; it does not add a new problem.)
+ * Choosing a photograph only creates a local preview. Continue uploads it and
+ * then saves the resulting object key with the rest of the profile. Changing
+ * the selection or leaving this screen therefore does not strand an unused
+ * object in storage.
  *
- * **The upload, not the preview, is the requirement.** The circle fills the
- * moment a picture is picked, from the local file. If the upload then fails
- * there is no object key, nothing the account can be pointed at, and Continue
- * stays shut — so the failure says to try again rather than offering to carry
- * on without it.
+ * The upload and profile save are one visible action but remain two network
+ * requests. If the upload succeeds and the save fails, its object key stays in
+ * state and the next Continue retries only the save. That avoids a duplicate
+ * upload on an unreliable connection and keeps the button busy until the
+ * onboarding gate actually lifts.
  *
  * ## It navigates nowhere
  *
@@ -106,6 +103,10 @@ export function OnboardingScreen() {
   const [name, setName] = useState('');
   const [instrument, setInstrument] = useState<Instrument | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
+  const [selectedPhoto, setSelectedPhoto] = useState<{
+    uri: string;
+    mimeType: string;
+  } | null>(null);
   const [avatarKey, setAvatarKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -130,36 +131,50 @@ export function OnboardingScreen() {
 
     const asset = result.assets[0];
     setPreview(asset.uri);
-    // Cleared before the attempt, not only on failure: a second pick that
-    // fails must not leave the first picture's key behind, or Continue would
-    // save a photograph the musician has already replaced on screen.
+    setSelectedPhoto({
+      uri: asset.uri,
+      mimeType: asset.mimeType ?? 'image/jpeg',
+    });
+    // A new local choice supersedes any key retained from a previous Continue.
+    // Nothing is uploaded from the picker: abandoning or replacing this choice
+    // must not create an unused storage object.
     setAvatarKey(null);
-    try {
-      setAvatarKey(
-        await upload.mutateAsync({
-          uri: asset.uri,
-          mimeType: asset.mimeType ?? 'image/jpeg',
-        }),
-      );
-    } catch (cause) {
-      // The preview stays. The picture they chose is still the picture they
-      // chose, and clearing it would read as the app rejecting the photograph
-      // rather than failing to send it.
-      setError(
-        cause instanceof Error
-          ? `${cause.message} Tap the circle to try again.`
-          : 'That photo could not be sent. Tap the circle to try again.',
-      );
-    }
   }
 
   async function finish() {
     setError(null);
+
+    let key = avatarKey;
+    if (!key && selectedPhoto) {
+      try {
+        key = await upload.mutateAsync(selectedPhoto);
+        // Retain a successful upload across a profile-save failure. Retrying
+        // Continue will reuse this key instead of creating another object.
+        setAvatarKey(key);
+      } catch (cause) {
+        setError(
+          cause instanceof Error
+            ? `${cause.message} Try Continue again.`
+            : 'That photo could not be sent. Try Continue again.',
+        );
+        return;
+      }
+    }
+
+    if (!key) {
+      // The button is disabled in this state; this guard also protects direct
+      // calls and future changes to the form rules.
+      setError('Choose a photo before continuing.');
+      return;
+    }
+
     try {
       // The mutation resolves only once `me` has been refetched, so the button
       // stays in its loading state right up to the moment the gate lifts —
       // rather than going idle for a frame under a screen that hasn't moved.
-      await save.mutateAsync(profileUpdateFor({ name, instrument, avatarKey }));
+      await save.mutateAsync(
+        profileUpdateFor({ name, instrument, avatarKey: key }),
+      );
     } catch (cause) {
       setError(
         cause instanceof Error
@@ -169,7 +184,12 @@ export function OnboardingScreen() {
     }
   }
 
-  const missing = missingFromOnboarding({ name, instrument, avatarKey });
+  const missing = missingFromOnboarding({
+    name,
+    instrument,
+    avatarKey,
+    photoSelected: Boolean(selectedPhoto),
+  });
   const stillNeeded = describeMissing(missing);
   const busy = save.isPending || upload.isPending;
 
@@ -180,7 +200,7 @@ export function OnboardingScreen() {
           <PrimaryButton
             label="Continue"
             onPress={() => void finish()}
-            loading={save.isPending}
+            loading={busy}
             disabled={busy || missing.length > 0}
           />
           {/*

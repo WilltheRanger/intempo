@@ -18,8 +18,17 @@ export interface OnboardingAnswers {
   /** As typed, untrimmed. Trimming is this module's job, not the screen's. */
   name: string;
   instrument: Instrument | null;
-  /** The object key from `useUploadAvatar`, or null if none was chosen or it failed. */
+  /** The object key from `useUploadAvatar`, once the upload has finished. */
   avatarKey: string | null;
+  /**
+   * Whether a local photograph is ready to upload when Continue is pressed.
+   *
+   * Optional so profile-update callers and older tests remain honest: an
+   * existing object key is enough on its own. Onboarding deliberately treats a
+   * local selection as complete before the bytes have moved; sending them is
+   * part of finishing, not part of choosing.
+   */
+  photoSelected?: boolean;
 }
 
 /**
@@ -56,6 +65,11 @@ export const MISSING_LABELS: Record<OnboardingRequirement, string> = {
  * A name of only spaces is not a name, matching what the server stores: it
  * strips and writes NULL, so accepting one here would let someone through to
  * an account with no name on it.
+ *
+ * A selected local photograph is enough to enable Continue. The screen uploads
+ * it as the first part of finishing and does not save the profile until an
+ * object key exists. Requiring the key here would force the old behaviour:
+ * uploading as an unrelated side effect of choosing.
  */
 export function missingFromOnboarding(
   answers: OnboardingAnswers,
@@ -64,7 +78,7 @@ export function missingFromOnboarding(
   if (!answers.name.trim()) {
     missing.push('name');
   }
-  if (!answers.avatarKey) {
+  if (!answers.avatarKey && !answers.photoSelected) {
     missing.push('photo');
   }
   if (!answers.instrument) {
