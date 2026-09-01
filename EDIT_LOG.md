@@ -6,6 +6,78 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-01 — "Back to score" went nowhere, on every screen
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. The third find from
+pressing controls rather than screenshotting them.
+
+**Files:** `mobile/src/navigation/useGoBack.ts` (new), `goBack.test.ts` (new),
+and the twenty screens that offer a back control.
+
+### Forty-four dead controls
+
+`navigation.goBack()` does nothing on the first screen of a stack. Every back
+control in the app was exactly that — 44 call sites across 20 screens, none
+guarded — and **arriving directly at a screen is the ordinary case in the web
+build on Cloudflare Pages.**
+
+Measured in Chromium before the change:
+
+```
+/legal/privacy                  "Back"            → /legal/privacy
+/add/manual                     "Back"            → /add/manual
+/pieces/:id/bars/3              "Back to score"   → /pieces/:id/bars/3
+/help                           "Back to profile" → /help
+/warmup                         "Back to today"   → /warmup
+```
+
+That is worse than a dead button. Three of those labels **name a destination**
+— and the label was already the right answer, sitting next to a call that
+ignored it.
+
+### The fallback was already written down
+
+`useGoBack(fallback)` calls `goBack()` when there is history and navigates to
+the fallback when there is not. Nothing had to be invented for the fallbacks:
+each screen's own `backLabel` says where it goes. "Back to profile" → the
+Profile tab; "Back to score" → that piece's `PieceScore`; "Back to the piece" →
+its `PieceDetail`.
+
+A tab fallback goes through `Tabs` as a nested screen, which *replaces* rather
+than stacking — arriving at Today with a back arrow pointing at a screen you
+were never on is its own kind of wrong.
+
+`VerdictScreen` is the one that cannot name its piece up front: the two error
+branches run before the take has loaded, so the fallback is the Library there
+and the piece once there is one. The success path already navigated to the
+piece by name and is untouched.
+
+### Verified both ways round
+
+Opened directly, each control now goes where its label says: `"Back to score" →
+/pieces/:id/score`, `"Back to profile" → /profile`, `"Back to today" → /`.
+
+And walked in with real history — Library → piece → score → bar 3 — the three
+back presses return through score, piece, library exactly as before. The point
+of `canGoBack()` is that the ordinary path is untouched, and that had to be
+seen rather than assumed.
+
+`goBack.test.ts` asserts no screen contains a bare `navigation.goBack()` again,
+and that the hook is actually wired in at least fifteen of them — a list of
+offenders that is empty because the glob matched nothing would otherwise pass.
+
+**Also found by the same probe and *not* bugs:** pressing an option that is
+already selected changes nothing (the current instrument, the current metronome
+mode, the note already being edited, the view already showing), and "Choose
+images" / "Change photo" open an OS picker a headless browser has no answer
+for.
+
+**Tests:** 936, up 2.
+
+**Rollback:** revert the commit.
+
+---
+
 ## 2026-09-01 — Nine more controls with a state nothing announced
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Found by taking the lesson

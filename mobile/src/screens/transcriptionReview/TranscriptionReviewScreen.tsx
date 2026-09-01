@@ -1,5 +1,6 @@
 import { useNavigation } from '@react-navigation/native';
 import { ChevronLeft, ChevronRight } from 'lucide-react-native';
+import { useGoBack } from '../../navigation/useGoBack';
 import { ComposerField } from '../../components/pieces/ComposerField';
 import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
@@ -47,6 +48,7 @@ const PAGE_HEIGHT = 300;
  */
 export function TranscriptionReviewScreen() {
   const navigation = useNavigation<RootNavigation>();
+  const goBack = useGoBack({ tab: 'Library' });
   const pages = useCapturedPages();
   const transcribe = useTranscribePage();
   const attachmentPieceId = captureSession.attachmentPieceId();
@@ -125,7 +127,7 @@ export function TranscriptionReviewScreen() {
           title="Nothing to review"
           description="Capture a page of sheet music first."
           actionLabel="Back"
-          onActionPress={() => navigation.goBack()}
+          onActionPress={goBack}
         />
       </ScreenContainer>
     );
@@ -136,7 +138,7 @@ export function TranscriptionReviewScreen() {
       <PageHeader
         eyebrow="Step 2 of 3"
         title={attachmentPieceId ? 'Attach sheet music' : 'Name this piece'}
-        onBack={() => navigation.goBack()}
+        onBack={goBack}
         backLabel="Back to pages"
       />
 

@@ -1,4 +1,5 @@
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
+import { useGoBack } from '../../navigation/useGoBack';
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
@@ -51,6 +52,16 @@ export function VerdictScreen() {
     queryFn: () => takeSource.getTake(params.analysisId),
   });
 
+  /**
+   * The piece is only known once the take has loaded, and these branches run
+   * when it has not or when it failed. `Library` is the honest fallback there:
+   * the success path below navigates to the piece by name, which is what a
+   * verdict's back control should do when there is a piece to name.
+   */
+  const goBack = useGoBack(
+    take ? { route: 'PieceDetail', params: { pieceId: take.pieceId } } : { tab: 'Library' },
+  );
+
   if (isPending) {
     return (
       <ScreenContainer>
@@ -66,7 +77,7 @@ export function VerdictScreen() {
           title="Couldn't load this take"
           description="It may have been removed, or the analysis never finished."
           actionLabel="Back"
-          onActionPress={() => navigation.goBack()}
+          onActionPress={goBack}
         />
       </ScreenContainer>
     );
@@ -98,7 +109,7 @@ export function VerdictScreen() {
         <PageHeader
           eyebrow={take.pieceTitle}
           title="This take didn't get analysed"
-          onBack={() => navigation.goBack()}
+          onBack={goBack}
           backLabel="Back to the piece"
         />
         <Text variant="body" color="textSecondary">
@@ -127,7 +138,7 @@ export function VerdictScreen() {
         <PageHeader
           eyebrow={take.pieceTitle}
           title="Nothing to measure"
-          onBack={() => navigation.goBack()}
+          onBack={goBack}
           backLabel="Back to the piece"
         />
         <Text variant="body" color="textSecondary">

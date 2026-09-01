@@ -1,4 +1,5 @@
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
+import { useGoBack } from '../../navigation/useGoBack';
 import { useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
@@ -56,6 +57,10 @@ import type { RootStackParamList } from '../../navigation/types';
 export function MeasureEditScreen() {
   const navigation = useNavigation();
   const { params } = useRoute<RouteProp<RootStackParamList, 'MeasureEdit'>>();
+  const goBack = useGoBack({
+    route: 'PieceScore',
+    params: { pieceId: params.pieceId },
+  });
   const { data: piece, isPending } = usePiece(params.pieceId);
   const correct = useCorrectScore(params.pieceId);
 
@@ -93,7 +98,7 @@ export function MeasureEditScreen() {
           title="That measure isn't there"
           description="It may have been corrected already, or the piece re-read."
           actionLabel="Back"
-          onActionPress={() => navigation.goBack()}
+          onActionPress={goBack}
         />
       </ScreenContainer>
     );
@@ -162,7 +167,7 @@ export function MeasureEditScreen() {
     };
     try {
       await correct.mutateAsync(corrected);
-      navigation.goBack();
+      goBack();
     } catch (cause) {
       setError(
         cause instanceof Error ? cause.message : 'That could not be saved. Try again.',
@@ -211,7 +216,7 @@ export function MeasureEditScreen() {
       <PageHeader
         eyebrow={piece.title}
         title={`Bar ${params.measureNumber}`}
-        onBack={() => navigation.goBack()}
+        onBack={goBack}
         backLabel="Back to score"
       />
 

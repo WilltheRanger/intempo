@@ -57,6 +57,7 @@ import { PlaybackSettings } from '../../components/score/PlaybackSettings';
 import { scheduleScore, startableMeasures } from '../../lib/score';
 import { ConfirmDialog } from '../../components/overlays/ConfirmDialog';
 import { leavingRecord, type RecordPhase } from '../../lib/record/leaving';
+import { useGoBack } from '../../navigation/useGoBack';
 
 const METRONOME_LABELS = {
   off: 'Metronome off',
@@ -96,6 +97,7 @@ type Phase = RecordPhase;
 export function RecordScreen() {
   const navigation = useNavigation<RootNavigation>();
   const { params } = useRoute<RouteProp<RootStackParamList, 'Record'>>();
+  const goBack = useGoBack({ route: 'PieceDetail', params: { pieceId: params.pieceId } });
   const { data: piece, isPending } = usePiece(params.pieceId);
   const { instrument, metronomeMode, practiceSetupSeen } = usePreferences();
 
@@ -314,7 +316,7 @@ export function RecordScreen() {
     if (held) {
       held();
     } else {
-      navigation.goBack();
+      goBack();
     }
   }
 
@@ -498,7 +500,7 @@ export function RecordScreen() {
           title="Couldn't open this piece"
           description="It may have been removed from your library."
           actionLabel="Back"
-          onActionPress={() => navigation.goBack()}
+          onActionPress={goBack}
         />
       </ScreenContainer>
     );
@@ -534,7 +536,7 @@ export function RecordScreen() {
           if (practiceSetupSeen) {
             setShowSetup(false);
           } else {
-            navigation.goBack();
+            goBack();
           }
         }}
         onContinue={() => {
@@ -577,7 +579,7 @@ export function RecordScreen() {
         <PageHeader
           eyebrow={piece.composer}
           title={piece.title}
-          onBack={() => navigation.goBack()}
+          onBack={goBack}
           // **The same words as every other phase of this screen.** It said
           // "Cancel count-in" — which the record button below it also says, so
           // a screen reader announced one label for two controls, and the
@@ -669,7 +671,7 @@ export function RecordScreen() {
       <PageHeader
         eyebrow={piece.composer}
         title={piece.title}
-        onBack={() => navigation.goBack()}
+        onBack={goBack}
         backLabel="Back to the piece"
       />
 

@@ -10,6 +10,7 @@ import {
 } from 'lucide-react-native';
 import { useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
+import { useGoBack } from '../../navigation/useGoBack';
 import { ComposerField } from '../../components/pieces/ComposerField';
 
 import { BottomSheet } from '../../components/overlays/BottomSheet';
@@ -91,6 +92,7 @@ function measureAt(schedule: Schedule | null, elapsedS: number): number | null {
  */
 export function PieceDetailScreen() {
   const navigation = useNavigation<RootNavigation>();
+  const goBack = useGoBack({ tab: 'Library' });
   const { params } = useRoute<RouteProp<RootStackParamList, 'PieceDetail'>>();
   const { data: piece, isPending, isError } = usePiece(params.pieceId);
 
@@ -142,7 +144,7 @@ export function PieceDetailScreen() {
       await deletePiece.mutateAsync(params.pieceId);
       // The piece this screen is about no longer exists, so there is nothing
       // to return to it for.
-      navigation.goBack();
+      goBack();
     } catch (cause) {
       // Nearly always the "this piece has takes" rule, which is a fact about
       // the musician's history rather than a failure — so it stays on screen
@@ -183,7 +185,7 @@ export function PieceDetailScreen() {
           title="Couldn't open this piece"
           description="It may have been removed from your library."
           actionLabel="Back"
-          onActionPress={() => navigation.goBack()}
+          onActionPress={goBack}
         />
       </ScreenContainer>
     );
@@ -231,7 +233,7 @@ export function PieceDetailScreen() {
     >
       <PageHeader
         title={piece.title}
-        onBack={() => navigation.goBack()}
+        onBack={goBack}
         backLabel="Back to library"
         action={
           <IconButton

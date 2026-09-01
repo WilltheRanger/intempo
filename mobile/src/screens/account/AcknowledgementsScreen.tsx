@@ -1,5 +1,6 @@
 import { useNavigation } from '@react-navigation/native';
 import { StyleSheet, View } from 'react-native';
+import { useGoBack } from '../../navigation/useGoBack';
 
 import {
   Card,
@@ -23,13 +24,14 @@ import { BORDER_WIDTH, colors, spacing } from '../../design';
  */
 export function AcknowledgementsScreen() {
   const navigation = useNavigation();
+  const goBack = useGoBack({ tab: 'Profile' });
 
   return (
     <ScreenContainer>
       <PageHeader
         eyebrow={`${LICENCES.length} packages`}
         title="Acknowledgements"
-        onBack={() => navigation.goBack()}
+        onBack={goBack}
         backLabel="Back to profile"
       />
 

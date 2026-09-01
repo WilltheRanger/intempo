@@ -1,5 +1,6 @@
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import { StyleSheet, View } from 'react-native';
+import { useGoBack } from '../../navigation/useGoBack';
 
 import { PageHeader, ScreenContainer, Text } from '../../components/primitives';
 import { spacing } from '../../design';
@@ -24,6 +25,7 @@ import type { RootStackParamList, RootNavigation } from '../../navigation/types'
  */
 export function LegalScreen() {
   const navigation = useNavigation<RootNavigation>();
+  const goBack = useGoBack({ tab: 'Profile' });
   const { params } = useRoute<RouteProp<RootStackParamList, 'Legal'>>();
   // **A URL can name a document that does not exist**, and this crashed on
   // one: `DOCUMENTS['nope']` is undefined and `document.title` then throws into
@@ -40,7 +42,7 @@ export function LegalScreen() {
       <ScreenContainer>
         <PageHeader
           title="Not found"
-          onBack={() => navigation.goBack()}
+          onBack={goBack}
           backLabel="Back"
         />
         <Text variant="body" color="textSecondary" style={styles.updated}>
@@ -55,7 +57,7 @@ export function LegalScreen() {
     <ScreenContainer>
       <PageHeader
         title={document.title}
-        onBack={() => navigation.goBack()}
+        onBack={goBack}
         backLabel="Back"
       />
 

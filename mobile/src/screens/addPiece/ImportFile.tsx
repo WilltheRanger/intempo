@@ -2,6 +2,7 @@ import { useNavigation } from '@react-navigation/native';
 import * as DocumentPicker from 'expo-document-picker';
 import { File as FSFile } from 'expo-file-system';
 import { FileMusic } from 'lucide-react-native';
+import { useGoBack } from '../../navigation/useGoBack';
 import { ComposerField } from '../../components/pieces/ComposerField';
 import { useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
@@ -81,6 +82,7 @@ interface Chosen {
  */
 export function ImportFileScreen() {
   const navigation = useNavigation<RootNavigation>();
+  const goBack = useGoBack({ tab: 'Library' });
   const importPiece = useImportPiece();
 
   const [busy, setBusy] = useState(false);
@@ -184,7 +186,7 @@ export function ImportFileScreen() {
     <ScreenContainer>
       <PageHeader
         title="Open a notation file"
-        onBack={() => navigation.goBack()}
+        onBack={goBack}
         backLabel="Back"
       />
 

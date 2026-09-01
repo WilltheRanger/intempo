@@ -1,6 +1,7 @@
 import { useNavigation } from '@react-navigation/native';
 import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
+import { useGoBack } from '../../navigation/useGoBack';
 
 import {
   Input,
@@ -52,6 +53,7 @@ const TIME_SIGNATURE = /^\d{1,2}\/\d{1,2}$/;
  */
 export function ManualPieceForm() {
   const navigation = useNavigation<RootNavigation>();
+  const goBack = useGoBack({ tab: 'Library' });
   const { instrument } = usePreferences();
   const createPiece = useCreatePiece();
 
@@ -113,7 +115,7 @@ export function ManualPieceForm() {
     <ScreenContainer>
       <PageHeader
         title="Add manually"
-        onBack={() => navigation.goBack()}
+        onBack={goBack}
         backLabel="Back"
       />
 

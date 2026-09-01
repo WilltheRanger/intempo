@@ -1,4 +1,5 @@
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
+import { useGoBack } from '../../navigation/useGoBack';
 import { useMemo, useState } from 'react';
 import {
   Pressable,
@@ -143,6 +144,10 @@ type ScoreView = 'notation' | 'original';
 export function PieceScoreScreen() {
   const navigation = useNavigation<RootNavigation>();
   const { params } = useRoute<RouteProp<RootStackParamList, 'PieceScore'>>();
+  const goBack = useGoBack({
+    route: 'PieceDetail',
+    params: { pieceId: params.pieceId },
+  });
   const { data: piece, isPending, isError } = usePiece(params.pieceId);
 
   const accept = useAcceptTranscription(params.pieceId);
@@ -258,7 +263,7 @@ export function PieceScoreScreen() {
           title="Couldn't open this score"
           description="The piece may have been removed from your library."
           actionLabel="Back"
-          onActionPress={() => navigation.goBack()}
+          onActionPress={goBack}
         />
       </ScreenContainer>
     );
@@ -279,7 +284,7 @@ export function PieceScoreScreen() {
         <PageHeader
           eyebrow={piece.composer}
           title={piece.title}
-          onBack={() => navigation.goBack()}
+          onBack={goBack}
           backLabel="Back to piece"
         />
         <TranscribingPanel piece={piece} />
@@ -296,7 +301,7 @@ export function PieceScoreScreen() {
         <PageHeader
           eyebrow={piece.composer}
           title={piece.title}
-          onBack={() => navigation.goBack()}
+          onBack={goBack}
           backLabel="Back to piece"
         />
         {/*
@@ -387,7 +392,7 @@ export function PieceScoreScreen() {
       <PageHeader
         eyebrow={piece.composer}
         title={piece.title}
-        onBack={() => navigation.goBack()}
+        onBack={goBack}
         backLabel="Back to piece"
       />
 

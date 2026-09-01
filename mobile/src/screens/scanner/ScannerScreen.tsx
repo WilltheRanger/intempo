@@ -1,4 +1,5 @@
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
+import { useGoBack } from '../../navigation/useGoBack';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { StatusBar } from 'expo-status-bar';
 import { Images, X, Zap, ZapOff } from 'lucide-react-native';
@@ -63,6 +64,7 @@ const CAPTURE_BUTTON_SIZE = 68;
  */
 export function ScannerScreen() {
   const navigation = useNavigation<RootNavigation>();
+  const goBack = useGoBack({ tab: 'Library' });
   const route = useRoute<RouteProp<RootStackParamList, 'Scanner'>>();
   const insets = useSafeAreaInsets();
   const pages = useCapturedPages();
@@ -344,7 +346,7 @@ export function ScannerScreen() {
       navigation.navigate('CapturedPages');
       return;
     }
-    navigation.goBack();
+    goBack();
   }
 
   return (

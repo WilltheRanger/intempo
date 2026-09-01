@@ -1,4 +1,5 @@
 import { useNavigation } from '@react-navigation/native';
+import { useGoBack } from '../../navigation/useGoBack';
 import { ChevronLeft } from 'lucide-react-native';
 import { useState } from 'react';
 import { StyleSheet, View, type LayoutChangeEvent } from 'react-native';
@@ -40,6 +41,7 @@ import { ListenButton } from '../../components/score/ListenButton';
  */
 export function WarmupScreen() {
   const navigation = useNavigation<RootNavigation>();
+  const goBack = useGoBack({ tab: 'Today' });
   const { instrument } = usePreferences();
 
   // The remembered tempo is keyed by piece id everywhere else; a warmup's id
@@ -89,7 +91,7 @@ export function WarmupScreen() {
         <IconButton
           icon={ChevronLeft}
           label="Back to today"
-          onPress={() => navigation.goBack()}
+          onPress={goBack}
           style={styles.back}
         />
         <Text variant="button">Warmup</Text>

@@ -1,5 +1,6 @@
 import { useNavigation } from '@react-navigation/native';
 import { Layers, Plus } from 'lucide-react-native';
+import { useGoBack } from '../../navigation/useGoBack';
 import { useState } from 'react';
 import { StyleSheet } from 'react-native';
 
@@ -32,6 +33,7 @@ import { DraggablePageList } from './DraggablePageList';
  */
 export function CapturedPagesScreen() {
   const navigation = useNavigation<RootNavigation>();
+  const goBack = useGoBack({ tab: 'Library' });
   const pages = useCapturedPages();
   // A captured page can't be recovered — the photo is gone with it — and the
   // bin sits a thumb's width from the drag handle.
@@ -69,7 +71,7 @@ export function CapturedPagesScreen() {
       return;
     }
     if (scannerBelow) {
-      navigation.goBack();
+      goBack();
       return;
     }
     navigation.navigate('Scanner', { adding: true });
@@ -105,7 +107,7 @@ export function CapturedPagesScreen() {
       <ScreenContainer>
         <PageHeader
           title="Review pages"
-          onBack={() => navigation.goBack()}
+          onBack={goBack}
           backLabel={scannerBelow ? 'Back to the scanner' : 'Back'}
         />
         {/*
@@ -148,7 +150,7 @@ export function CapturedPagesScreen() {
       <PageHeader
         eyebrow={pageCountLabel(pages.length)}
         title="Review pages"
-        onBack={() => navigation.goBack()}
+        onBack={goBack}
         // It said "Back to the scanner" on a route with no scanner on it.
         backLabel={scannerBelow ? 'Back to the scanner' : 'Back'}
       />

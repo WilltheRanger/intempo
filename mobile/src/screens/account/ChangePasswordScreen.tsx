@@ -1,3 +1,4 @@
+import { useGoBack } from '../../navigation/useGoBack';
 import { useNavigation } from '@react-navigation/native';
 import { useState } from 'react';
 import {
@@ -37,6 +38,7 @@ import {
  */
 export function ChangePasswordScreen() {
   const navigation = useNavigation();
+  const goBack = useGoBack({ tab: 'Profile' });
 
   const [currentPassword, setCurrentPassword] = useState('');
   const [password, setPassword] = useState('');
@@ -85,7 +87,7 @@ export function ChangePasswordScreen() {
       <ScreenContainer>
         <PageHeader
           title="Password changed"
-          onBack={() => navigation.goBack()}
+          onBack={goBack}
           backLabel="Back to profile"
         />
         <Text variant="body" color="textSecondary">
@@ -93,7 +95,7 @@ export function ChangePasswordScreen() {
         </Text>
         <SecondaryButton
           label="Done"
-          onPress={() => navigation.goBack()}
+          onPress={goBack}
           style={styles.done}
         />
       </ScreenContainer>
@@ -108,7 +110,7 @@ export function ChangePasswordScreen() {
       <ScreenContainer>
         <PageHeader
           title="Change password"
-          onBack={() => navigation.goBack()}
+          onBack={goBack}
           backLabel="Back to profile"
         />
 

@@ -1,4 +1,5 @@
 import { useNavigation } from '@react-navigation/native';
+import { useGoBack } from '../../navigation/useGoBack';
 import { useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
@@ -55,6 +56,7 @@ function describeScanFailure(cause: unknown): string {
 
 export function TranscribeScreen() {
   const navigation = useNavigation<RootNavigation>();
+  const goBack = useGoBack({ tab: 'Library' });
   const pages = useCapturedPages();
   const total = pages.length;
   const [error, setError] = useState<string | null>(null);
@@ -140,7 +142,7 @@ export function TranscribeScreen() {
           title="Nothing to transcribe"
           description="Capture at least one page first."
           actionLabel="Back"
-          onActionPress={() => navigation.goBack()}
+          onActionPress={goBack}
         />
       </ScreenContainer>
     );
@@ -153,7 +155,7 @@ export function TranscribeScreen() {
           title="Transcription needs the backend"
           description="This build runs on sample data, so there is nothing to read your photograph. Add a piece manually instead."
           actionLabel="Back to pages"
-          onActionPress={() => navigation.goBack()}
+          onActionPress={goBack}
         />
       </ScreenContainer>
     );
@@ -166,7 +168,7 @@ export function TranscribeScreen() {
           title={total === 1 ? "The page didn't upload" : "The pages didn't upload"}
           description={error}
           actionLabel="Back to pages"
-          onActionPress={() => navigation.goBack()}
+          onActionPress={goBack}
         />
       </ScreenContainer>
     );
@@ -209,7 +211,7 @@ export function TranscribeScreen() {
       </View>
 
       <View style={styles.actions}>
-        <SecondaryButton label="Cancel" onPress={() => navigation.goBack()} />
+        <SecondaryButton label="Cancel" onPress={goBack} />
       </View>
     </ScreenContainer>
   );
