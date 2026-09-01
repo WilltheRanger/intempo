@@ -1,4 +1,5 @@
 import { useNavigation } from '@react-navigation/native';
+import { useGoBack } from '../../navigation/useGoBack';
 import { ChevronLeft } from 'lucide-react-native';
 import { useState } from 'react';
 import { StyleSheet, View, type LayoutChangeEvent } from 'react-native';
@@ -40,6 +41,7 @@ import { ListenButton } from '../../components/score/ListenButton';
  */
 export function WarmupScreen() {
   const navigation = useNavigation<RootNavigation>();
+  const goBack = useGoBack({ tab: 'Today' });
   const { instrument } = usePreferences();
 
   // The remembered tempo is keyed by piece id everywhere else; a warmup's id
@@ -89,7 +91,7 @@ export function WarmupScreen() {
         <IconButton
           icon={ChevronLeft}
           label="Back to today"
-          onPress={() => navigation.goBack()}
+          onPress={goBack}
           style={styles.back}
         />
         <Text variant="button">Warmup</Text>
@@ -121,7 +123,25 @@ export function WarmupScreen() {
           <Stave
             notes={warmup.notes}
             clef={warmup.clef}
+            /*
+              **A clef, and nothing else.** `Stave`'s note on `head` says the
+              warmup is "a study-book exercise: a bare stave with the note names
+              underneath", and that character is right — this is a reference
+              card, not a page to read from.
+
+              The clef is the exception, because the noteheads are *already*
+              placed by `warmup.clef`: the same scale sits on different lines
+              for a violinist and a bassist. A stave that asserts staff
+              positions while refusing to say which clef they are in is asking
+              a musician to read a diagram. No key signature and no metre — a
+              scale has no metre, and the accidentals stay inline where the note
+              names underneath already spell them out.
+            */
+            head={{ clef: warmup.clef, key: [], time: null }}
             maxWidth={plateWidth - SCREEN_GUTTER * 2}
+            // Breaks between bars, then shrinks whatever a break cannot fix —
+            // see `PieceScoreScreen` for the bar this exists for.
+            fitWidth={plateWidth - SCREEN_GUTTER * 2}
             scale={STAVE_SCALE}
             justify
           />

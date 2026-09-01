@@ -112,6 +112,20 @@ export function useCapturedPages(): CapturedPage[] {
   return useSyncExternalStore(subscribeToCaptureSession, getSnapshot, getSnapshot);
 }
 
+/**
+ * Whether this session has ever held a page.
+ *
+ * An empty session has two meanings and the screens that render it say
+ * different things: a scan whose pages were all removed ("you've removed every
+ * page") and one that never had any — which is what a refresh or a deep link to
+ * `/scan/pages` produces, and which the routing deliberately allows. Telling
+ * someone they removed pages they never took is a small lie about their own
+ * actions, which is the kind that is most disorienting.
+ *
+ * Not derivable from `pages`: both cases are the empty array.
+ */
+let everHeldPages = false;
+
 export const captureSession = {
   /** Clears the session, retake included. Called when the scanner opens fresh. */
   reset(options: { attachToPieceId?: string } = {}): void {
@@ -119,6 +133,7 @@ export const captureSession = {
     uploadedImageKeys = [];
     attachmentPieceId = options.attachToPieceId ?? null;
     retakingId = null;
+    everHeldPages = false;
     commit([]);
   },
 
@@ -138,6 +153,7 @@ export const captureSession = {
     retakingId = null;
 
     if (target !== null && pages.some((page) => page.id === target)) {
+      everHeldPages = true;
       commit(pages.map((page) => (page.id === target ? { ...page, source } : page)));
       return 'replaced';
     }
@@ -150,6 +166,7 @@ export const captureSession = {
     if (pages.length >= MAX_SCAN_PAGES) {
       return 'full';
     }
+    everHeldPages = true;
     commit([...pages, { id: `page-${nextId++}`, source }]);
     return 'added';
   },
@@ -174,6 +191,8 @@ export const captureSession = {
     uploadedImageKeys = [];
     attachmentPieceId = options.attachToPieceId ?? null;
     retakingId = null;
+    // A replacement, not an addition: this resets the session above.
+    everHeldPages = sources.length > 0;
     commit(sources.map((source) => ({ id: `page-${nextId++}`, source })));
   },
 
@@ -230,6 +249,16 @@ export const captureSession = {
 
   current(): CapturedPage[] {
     return pages;
+  },
+
+  /**
+   * Whether anything was ever in this session — see `everHeldPages`.
+   *
+   * Read by the review screen to tell "you removed them all" from "there was
+   * never anything here", which are the same empty array.
+   */
+  hasHeldPages(): boolean {
+    return everHeldPages;
   },
 
   /**

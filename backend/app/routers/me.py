@@ -15,6 +15,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 
+from app.services import pending_uploads
 from app.auth import current_jwt_payload
 from app.db import get_service_client
 from app.models.user import (
@@ -26,6 +27,7 @@ from app.models.user import (
     UserTier,
 )
 from app.services.tier_limits import usage_for
+from app.services.training import may_keep_corrections
 from app.routers.upload import AUDIO_BUCKET, SCORE_BUCKET
 
 router = APIRouter(tags=["me"])
@@ -290,6 +292,11 @@ def _to_response(
         display_name=row.get("display_name"),
         avatar_url=_avatar_url(client, row.get("avatar_key")),
         onboarded_at=row.get("onboarded_at"),
+        # The rule, not `bool(row.get(...))` — consent fails closed and there is
+        # one place that decides what that means. A row from a database without
+        # 013 has no key here and comes back false, which is correct: a
+        # deployment that cannot store consent has not got any.
+        training_consent=may_keep_corrections(row),
     )
 
 
@@ -321,7 +328,7 @@ def update_me(
     # the only thing that knows the old key, and after the write it knows a
     # different one.
     current: dict[str, Any] = {}
-    if "avatar_key" in sent or body.onboarded:
+    if "avatar_key" in sent or body.onboarded or "training_consent" in sent:
         rows = (
             client.table("users")
             .select("*")
@@ -348,6 +355,22 @@ def update_me(
         update["display_name"] = cleaned or None
     if "avatar_key" in sent:
         update["avatar_key"] = _own_avatar_key(user_id, body.avatar_key)
+    withdrawing = False
+    if "training_consent" in sent:
+        # **Granting is idempotent; withdrawing is an instruction.**
+        #
+        # Re-granting keeps the original timestamp: a consent record answers
+        # "when did they agree to this", and re-stamping it every time a screen
+        # saves would make the answer the date of the last save. Withdrawing
+        # clears it and, below, deletes what was kept — a switch that turns off
+        # while the data it authorised stays is not a withdrawal, it is a
+        # cosmetic control over somebody's photographs.
+        if body.training_consent:
+            if not may_keep_corrections(current):
+                update["training_consent_at"] = datetime.now(timezone.utc).isoformat()
+        else:
+            withdrawing = bool(may_keep_corrections(current))
+            update["training_consent_at"] = None
     if body.onboarded and not current.get("onboarded_at"):
         # Only ever forward, and only once. There is no route back to "never
         # asked", and re-stamping the timestamp on an account that is already
@@ -364,9 +387,10 @@ def update_me(
         update["onboarded_at"] = datetime.now(timezone.utc).isoformat()
 
     if not update:
-        if body.onboarded:
-            # Already onboarded, and nothing else was sent. A second tap, a
-            # retried request — not an error, and not a reason to write.
+        if body.onboarded or "training_consent" in sent:
+            # Already onboarded, or already consenting and consenting again. A
+            # second tap, a retried request, a screen saving its own state back
+            # — not an error, and not a reason to write.
             return _to_response(
                 user_id,
                 current,
@@ -398,9 +422,60 @@ def update_me(
     if superseded and superseded != row.get("avatar_key"):
         _remove_avatar(client, superseded)
 
+    # The row points at this one now, so the sweeper must leave it alone. After
+    # the write, like every other claim: a failed update would otherwise strand
+    # the picture it did not save.
+    if row.get("avatar_key"):
+        pending_uploads.claim(AVATAR_BUCKET, [str(row["avatar_key"])])
+
+    # Same ordering rule, and here it matters more: the consent has to be gone
+    # from the row before anything is deleted on the strength of it being gone.
+    if withdrawing:
+        _forget_training_data(client, user_id)
+
     return _to_response(user_id, row, UserTier(row.get("tier", UserTier.free.value)), None)
 
 
+def _forget_training_data(client: Any, user_id: UUID) -> None:
+    """Delete what consent was keeping: the corrections, and the photographs.
+
+    **Withdrawal is the only part of this feature that has to actually work.**
+    Failing to *record* a correction costs a training row nobody was promised;
+    failing to delete one after being asked keeps a person's photographs
+    against their word. So this is the one path here that reports its failures
+    rather than swallowing them — not by failing the request, which would leave
+    the switch stuck on, but by leaving the row's `page_image_retained_at` set
+    so a later sweep can still find what was missed.
+
+    The corrections go first and by user id, so a row whose score has since been
+    deleted goes with them. The photographs follow per score, because each one
+    needs its own storage call and one refusal must not strand the rest.
+    """
+    # Imported here rather than at module scope: `routers.scores` imports the
+    # transcription worker, and a top-level import of it from here is a cycle.
+    from app.routers.scores import discard_pages_of
+
+    try:
+        client.table("training_corrections").delete().eq(
+            "user_id", str(user_id)
+        ).execute()
+    except Exception:  # noqa: BLE001 — pre-013 database, or the table is gone
+        log.warning("could not delete corrections for %s", user_id, exc_info=True)
+
+    try:
+        rows = (
+            client.table("scores")
+            .select("id, source_image_url, source_image_urls, page_image_retained_at")
+            .eq("user_id", str(user_id))
+            .not_.is_("page_image_retained_at", "null")
+            .execute()
+        ).data or []
+    except Exception:  # noqa: BLE001 — pre-013 column
+        log.warning("could not list retained pages for %s", user_id, exc_info=True)
+        return
+
+    for score in rows:
+        discard_pages_of(client, score)
 def _storage_key(url: str | None, bucket: str) -> str | None:
     """Recover an object key from any Supabase storage URL shape we issue."""
     if not url:

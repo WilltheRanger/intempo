@@ -88,6 +88,25 @@ STAGE_READING_HUMAN = "Reading the notation"
 _SYSTEM_COUNT = re.compile(rf"^{re.escape(STAGE_READING)}:system (\d+) of (\d+)$")
 
 
+def _reading_page(page_number: int, total: int) -> str:
+    """The words for the page a multi-page scan is on — `Reading page 2 of 3`.
+
+    **A count, in the words, because there is no other way to say it.** A scan
+    is every page of one part and they are read one after another, so a
+    seven-page part is seven times the wait a one-page part was. All of it used
+    to report "Reading the notation" — true from the first page to the last, and
+    a bar that did not move once across the whole of it. The comment in
+    `_read_one_page` called that "a limitation rather than a design" and named
+    this as the fix, waiting on the UI gate; the gate was given on 2026-08-29.
+
+    The app reads the count as pages *finished*, so this places the bar at
+    `(n - 1) / total` of the reading band — page 2 means page 1 is read and page
+    2 has not started. See `fixtures/stages/parity.json`, which both sides are
+    tested against.
+    """
+    return f"Reading page {page_number} of {total}"
+
+
 def _human_stage(stage: str) -> str:
     """The words that go on the screen for one pipeline stage.
 
@@ -356,16 +375,26 @@ def _read_pages(client, score_id: str, urls: list[str]) -> None:
         _fail(client, score_id, "Something went wrong assembling the pages.")
         return
 
+    from app.services.ocr.pipeline import configured_reader
+
+    finished = {
+        "score_json": score.model_dump(mode="json"),
+        "ocr_confidence": score.ocr_confidence,
+        "transcription_status": "done",
+        "transcription_stage": None,
+        "transcription_error": None,
+    }
+    # **Attempted with the reader's name, retried without it.** `_update`
+    # swallows a failed write so a lost stage update cannot end a run — which is
+    # right for a stage and catastrophic here, because this is the write that
+    # stores the transcription and moves the row off `reading`. A database
+    # without 013 rejects the whole statement over one unknown column, and the
+    # scan would sit reading forever until the sweeper gave up on it.
     _update(
         client,
         score_id,
-        {
-            "score_json": score.model_dump(mode="json"),
-            "ocr_confidence": score.ocr_confidence,
-            "transcription_status": "done",
-            "transcription_stage": None,
-            "transcription_error": None,
-        },
+        {**finished, "transcription_reader": configured_reader()},
+        fallback=finished,
     )
     log.info(
         "transcription %s: %d page(s), %d measures, confidence %.2f",
@@ -411,7 +440,16 @@ def _read_one_page(
             _update(client, score_id, {"transcription_stage": _human_stage(stage)})
 
     if not single:
-        _update(client, score_id, {"transcription_stage": STAGE_READING_HUMAN})
+        # The page counter, in place of the per-stave one. Suppressing the
+        # stave reports is what keeps the two from fighting over the bar: page
+        # 2 opening at "Reading stave 1 of 9" after page 1 finished at "9 of 9"
+        # walks it backwards, which is exactly what `transcriptionProgress.ts`
+        # exists to prevent.
+        _update(
+            client,
+            score_id,
+            {"transcription_stage": _reading_page(page_number, total)},
+        )
 
     try:
         fetch_url = readable_url(image_url)
@@ -520,20 +558,41 @@ def _fetch_score(client, score_id: str) -> dict | None:
     return None
 
 
-def _update(client, score_id: str, patch: dict) -> None:
+def _update(client, score_id: str, patch: dict, *, fallback: dict | None = None) -> None:
     """Write one patch, and never let a failed write end the run.
 
     A stage update is a courtesy to whoever is watching; losing one costs a
     line of text. Losing the transcription because storage hiccuped while
     reporting progress would be an absurd trade, so this swallows rather than
     raises — and the terminal writes are logged loudly enough to notice.
+
+    `fallback` is a second, narrower patch to try when the first is refused. It
+    exists for the deploy window in front of a migration: PostgREST rejects the
+    whole statement over one column the database has not got, and swallowing
+    that on the write which stores the transcription would leave the row
+    `reading` forever. Same reasoning as `score_pages.PAGE_COLUMNS`, at the one
+    other place a write names a new column.
     """
-    try:
-        client.table("scores").update({**patch, "updated_at": _now_iso()}).eq(
-            "id", score_id
-        ).execute()
-    except Exception:  # noqa: BLE001
-        log.warning("transcription %s: could not write %s", score_id, sorted(patch), exc_info=True)
+    for attempt in (patch, fallback):
+        if attempt is None:
+            continue
+        try:
+            client.table("scores").update({**attempt, "updated_at": _now_iso()}).eq(
+                "id", score_id
+            ).execute()
+            return
+        except Exception:  # noqa: BLE001
+            if attempt is patch and fallback is not None:
+                log.warning(
+                    "transcription %s: retrying without %s",
+                    score_id,
+                    sorted(set(patch) - set(fallback)),
+                )
+                continue
+            log.warning(
+                "transcription %s: could not write %s",
+                score_id, sorted(attempt), exc_info=True,
+            )
 
 
 def _fail(client, score_id: str, reason: str) -> None:

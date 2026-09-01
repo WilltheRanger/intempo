@@ -13,12 +13,27 @@ import {
   spacing,
 } from '../../design';
 import { impact, ImpactFeedbackStyle } from '../../lib/haptics';
-import { scheduleScore, type PlaybackHandle } from '../../lib/score';
+import {
+  scheduleScore,
+  startAtMeasure,
+  voiceForInstrument,
+  type PlaybackHandle,
+} from '../../lib/score';
+import { usePreferences } from '../../data/preferences';
 import { playSchedule } from '../../lib/scorePlayer';
 
 export interface ListenButtonProps {
   score: ScoreJson | null;
   bpm: number;
+  /**
+   * Which bar to enter on. The first bar of the piece unless said.
+   *
+   * A whole movement is a long way to sit through to check bar 40, and
+   * repeating a passage is what practice *is*. `startAtMeasure` trims the
+   * schedule rather than the score, which is what makes a repeated bar mean
+   * the first time it comes round.
+   */
+  fromMeasure?: number;
   /** Locked during a take. */
   disabled?: boolean;
   /**
@@ -52,9 +67,11 @@ export interface ListenButtonProps {
 export function ListenButton({
   score,
   bpm,
+  fromMeasure,
   disabled = false,
   onProgress,
 }: ListenButtonProps) {
+  const { instrument } = usePreferences();
   const [playing, setPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
   const handle = useRef<PlaybackHandle | null>(null);
@@ -94,14 +111,29 @@ export function ListenButton({
     }
 
     impact(ImpactFeedbackStyle.Light);
-    const schedule = scheduleScore(score as ScoreJson, bpm);
+    const whole = scheduleScore(score as ScoreJson, bpm);
+    const schedule =
+      fromMeasure === undefined ? whole : startAtMeasure(whole, fromMeasure);
     if (schedule.notes.length === 0) {
       return;
     }
 
-    setPlaying(true);
     setProgress(0);
-    handle.current = playSchedule(schedule, {
+    // **The button follows the player, it does not lead it.** `setPlaying(true)`
+    // used to run before the schedule was handed over, so a playback that could
+    // not start left the label on Stop with nothing sounding — press again and
+    // you stop silence, press a third time and it works. That is the shape the
+    // owner reported as *"Listen only works on the first listen"*, and it is
+    // reachable whenever `playSchedule` declines: no Web Audio at all, or a
+    // browser that refuses another context.
+    const started = playSchedule(schedule, {
+      // **The instrument in the musician's hands.** Every Listen in the app
+      // used to play the same four-harmonic reference tone, whoever was
+      // holding whatever — which is what the owner meant by "that default
+      // computer sound". Read from the device preference rather than the
+      // account because it always has a value (`usePreferences`), so there is
+      // no screen here that needs a "no instrument yet" branch.
+      voice: voiceForInstrument(instrument),
       onProgress: (elapsed, total) => {
         setProgress(total > 0 ? elapsed / total : 0);
         report.current?.(elapsed, total);
@@ -113,6 +145,12 @@ export function ListenButton({
         report.current?.(0, 0);
       },
     });
+
+    // A schedule with nothing playable calls `onEnd` before this line, so read
+    // the handle rather than assuming: it is the only thing that knows.
+    const sounding = started.isPlaying();
+    handle.current = sounding ? started : null;
+    setPlaying(sounding);
   }
 
   return (

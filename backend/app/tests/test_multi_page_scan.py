@@ -240,7 +240,7 @@ def test_a_one_page_scan_still_reports_every_step(one_page) -> None:
 
 
 def test_a_multi_page_scan_does_not_walk_the_bar_backwards(one_page) -> None:
-    """**The reason a multi-page read reports one coarse stage.**
+    """**The reason a multi-page read reports the page and nothing finer.**
 
     The bar's positions are keyed on the worker's words and rise in the order
     the worker reaches them (`fixtures/stages/parity.json`). Page 2 starting
@@ -248,15 +248,42 @@ def test_a_multi_page_scan_does_not_walk_the_bar_backwards(one_page) -> None:
     walks it backwards, which reads as the scan having restarted and is the
     exact failure `transcriptionProgress.ts` exists to prevent.
 
-    So a multi-page read says "Reading the notation" for the whole of it:
-    coarse, true throughout, and monotone. The honest fix is a page counter in
-    the words, which is new copy on a screen and waits for the UI gate.
+    This test used to assert that the whole read said "Reading the notation",
+    and its docstring called the page counter "the honest fix … waiting for the
+    UI gate". The gate was given on 2026-08-29 and the counter shipped, so the
+    expected words change — but the invariant does not, and it is the invariant
+    that matters: page 2 reports **one** stage, its own, and no per-stave step
+    that would send the bar back to the bottom of the band.
     """
     rows = _Rows()
     stages = one_page()
 
     runner._read_one_page(rows, "s1", "b.jpg", 2, 3)
 
-    assert stages == [runner.STAGE_READING_HUMAN], (
+    assert stages == ["Reading page 2 of 3"], (
         f"page 2 reported a step that would move the bar: {stages}"
     )
+
+
+def test_the_page_counter_rises_across_the_pages_of_one_scan() -> None:
+    """What the app does with those words, checked here as well.
+
+    `transcriptionProgress.test.ts` holds the app to the same fixture, so this
+    is the server half of the same guarantee: consecutive pages must not
+    produce words the app places in a decreasing order. Reading it off
+    `_reading_page` rather than off the fixture is deliberate — the fixture is
+    what both sides are compared against, and a test that only ever consults
+    the fixture cannot notice the worker drifting away from it.
+    """
+    band_start, band_end = 0.3, 0.8
+    total = 5
+    placed = []
+    for page in range(1, total + 1):
+        words = runner._reading_page(page, total)
+        assert words == f"Reading page {page} of {total}"
+        # The app's rule, restated: the count is pages *finished*.
+        placed.append(band_start + (band_end - band_start) * ((page - 1) / total))
+
+    assert placed == sorted(placed)
+    assert placed[0] == band_start
+    assert placed[-1] < band_end

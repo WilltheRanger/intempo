@@ -16,6 +16,7 @@ from uuid import UUID
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.services import pending_uploads
 from app.auth import current_user_id, current_user_id_provisioned
 from app.services.tier_limits import tier_of, usage_for
 from app.db import get_service_client
@@ -93,6 +94,23 @@ def _service_client():
             detail="Supabase service-role client is not configured",
         )
     return client
+
+
+def _object_keys_in(urls: list[str]) -> list[str]:
+    """The `{user}/{uuid}.{ext}` keys inside a list of storage URLs.
+
+    The path after the bucket name, which is the only part storage cares
+    about — and the same shape `scores._object_key_from` recovers, arrived at
+    from the other direction because these URLs are the ones the client was
+    handed rather than ones this service signed.
+    """
+    keys: list[str] = []
+    for url in urls:
+        path = urlparse(url or "").path
+        marker = f"/{AUDIO_BUCKET}/"
+        if marker in path:
+            keys.append(path.split(marker, 1)[1].lstrip("/"))
+    return keys
 
 
 def _assert_audio_url_owned_by(audio_url: str, user_id: UUID) -> None:
@@ -213,6 +231,10 @@ def create_analysis(
         raise HTTPException(status_code=500, detail="failed to enqueue analysis")
 
     analysis_id = rows[0]["id"]
+    # A row points at the audio now. Same rule and same ordering as
+    # `create_score`: claimed after the insert, never before, or a failed
+    # submit would strand the take's audio.
+    pending_uploads.claim(AUDIO_BUCKET, _object_keys_in([body.audio_url]))
     # Where this runs is `dispatch`'s business, not this endpoint's.
     start_analysis(str(analysis_id), background_tasks)
     return CreateAnalysisResponse(analysis_id=analysis_id, status="queued")

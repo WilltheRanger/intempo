@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { stableImage } from './imageSource';
+import { sourceIdentity, stableImage } from './imageSource';
 
 describe('stableImage', () => {
   it('pins the cache key to the path, not the token', () => {
@@ -37,5 +37,36 @@ describe('stableImage', () => {
     expect(stableImage(null)).toBeNull();
     expect(stableImage(undefined)).toBeNull();
     expect(stableImage('')).toBeNull();
+  });
+});
+
+/**
+ * The rule behind `ScoreThumbnail`'s retry, which can be wrong without looking
+ * wrong: a dead URL that resets its own failure retries, fails and flickers.
+ */
+describe('sourceIdentity', () => {
+  it('is the storage path, not the signed URL', () => {
+    // The token rotates for the same photograph; the path does not.
+    const first = { uri: 'https://x/object/sign/a.jpg?token=one', cacheKey: '/a.jpg' };
+    const second = { uri: 'https://x/object/sign/a.jpg?token=two', cacheKey: '/a.jpg' };
+
+    expect(sourceIdentity(first)).toBe(sourceIdentity(second));
+  });
+
+  it('separates two different photographs', () => {
+    expect(sourceIdentity({ uri: 'u', cacheKey: '/a.jpg' })).not.toBe(
+      sourceIdentity({ uri: 'u', cacheKey: '/b.jpg' }),
+    );
+  });
+
+  it('passes a bundled asset and a bare string straight through', () => {
+    // `require()` gives a number; fixtures give a string.
+    expect(sourceIdentity(42)).toBe(42);
+    expect(sourceIdentity('./page.jpg')).toBe('./page.jpg');
+    expect(sourceIdentity(null)).toBeNull();
+  });
+
+  it('falls back to the uri when there is no cache key', () => {
+    expect(sourceIdentity({ uri: 'https://x/a.jpg', cacheKey: '' })).toBe('https://x/a.jpg');
   });
 });

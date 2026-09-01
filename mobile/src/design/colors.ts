@@ -60,6 +60,26 @@ export const colors = {
   accent: '#9A7B4F',
 
   /**
+   * The accent, as **small text on a light ground**.
+   *
+   * `accent` measures **3.54:1** on the page and 3.95:1 on a card. That clears
+   * WCAG AA for large text and for a non-text mark — a progress fill, an active
+   * indicator, a favourite — which is nearly everywhere it is used. It does not
+   * clear the 4.5:1 that body-sized text needs, and it was being used at
+   * `metadataSmall` for the playback settings, the "fix this bar" cues and the
+   * clef control: text a musician has to read, at 3.54.
+   *
+   * Darkened only as far as AA needed, exactly as the verdict hues below were:
+   * **4.90:1** on the page and 5.47:1 on a card.
+   *
+   * **Two tokens rather than one darker accent**, because the scanner is the
+   * app's one dark screen and `accent` already measures 4.52:1 against its ink
+   * ground — where this darker one would fall to **3.26** and fail. Neither
+   * value is right on both grounds; which ground the text sits on decides.
+   */
+  accentText: '#7F6541',
+
+  /**
    * Primary action surface and its label.
    *
    * These two double as the palette for full-bleed dark surfaces — the camera

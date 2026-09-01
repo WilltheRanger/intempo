@@ -1,3 +1,4 @@
+import { wasTimed } from '../../lib/verdict/measureReading';
 import { verdictFor } from '../../lib/tempo';
 import type {
   Band,
@@ -9,6 +10,7 @@ import type {
   ScoreJson,
   ScoreNote,
   TakeResult,
+  UntimedReason,
 } from '../types';
 import { PIECE_HAS_RECORDINGS } from './types';
 import type {
@@ -42,6 +44,27 @@ interface FixturePiece
   > {
   /** Resolved to an ISO timestamp at read time so it never goes stale. */
   practicedDaysAgo: number | null;
+  /**
+   * Anything about the reading that is not "finished, and accepted by nobody".
+   *
+   * **A state with no fixture is a state nobody has looked at**, and that has
+   * now cost this project twice: a null clef was captioned "Treble clef" for
+   * weeks, and the ruled-staff cover drew an 84×154 box of pure padding
+   * because no piece here had ever lacked a photograph. `reading` and `failed`
+   * were in the same position — they are what a musician sees in the moments
+   * *after scanning a page*, which is the most-reached screen the app has for
+   * a new user, and neither had ever been on screen in a build anyone can run.
+   */
+  reading?: Partial<
+    Pick<
+      Piece,
+      | 'transcriptionStatus'
+      | 'transcriptionStage'
+      | 'transcriptionError'
+      | 'transcriptionAccepted'
+      | 'pageImageDiscarded'
+    >
+  >;
 }
 
 /**
@@ -106,6 +129,37 @@ const DEMO_SCORE: ScoreJson = {
 };
 
 /**
+ * The same music with the dynamic its page actually prints.
+ *
+ * **Dynamics are drawn, so one has to be here.** `musicxml.py` has pulled them
+ * out since Batch 2 and `ScoreNote.dynamics` has carried them just as long;
+ * nothing put them on a stave until now, and a state with no fixture is a
+ * state nobody looks at — which has cost this project four times already.
+ *
+ * The mark is not invented. `fixtures/scores/SOURCES.md` records that the
+ * opening staff of Wohlfahrt Op. 45 No. 28 prints an **f**, and the cached
+ * reading of that page (`02_medium_printed.jpg`) is the one place in the whole
+ * fixture corpus where a dynamic survives OCR — a single `f`, on the first
+ * note. This is that note. No. 1's entry in the same file says its line has
+ * "no titles or dynamics", which is why the two studies no longer share a
+ * score and why nothing was added to No. 1.
+ */
+const DYNAMIC_SCORE: ScoreJson = {
+  ...DEMO_SCORE,
+  tempo_marking: 'Allegretto',
+  measures: DEMO_SCORE.measures.map((measure, index) =>
+    index === 0
+      ? {
+          ...measure,
+          notes: measure.notes.map((note, at) =>
+            at === 0 ? { ...note, dynamics: 'f' as const } : note,
+          ),
+        }
+      : measure,
+  ),
+};
+
+/**
  * The same music, with nothing having read a clef off the page.
  *
  * A real state, not a broken one: `ScoreJson.clef` is nullable because an
@@ -116,6 +170,135 @@ const DEMO_SCORE: ScoreJson = {
  * caption the guess "Treble clef" for as long as it did.
  */
 const UNREAD_CLEF_SCORE: ScoreJson = { ...DEMO_SCORE, clef: null };
+
+/**
+ * A study written across the engraver's whole range, so the glyphs can be *seen*.
+ *
+ * **Why a second fixture score exists at all.** `DEMO_SCORE` is quarters and a
+ * whole note, and every fixture piece shared it — so the sixteenths, the
+ * augmentation dots, the flag on a lone eighth and the second beam had unit
+ * tests for their geometry and no picture anywhere in the app. A flag curving
+ * the wrong way, a dot sitting on a line instead of in the space beside it, or
+ * a stub pointing away from its beat all pass every assertion in
+ * `engrave.test.ts` and are obvious the moment a musician looks at them.
+ *
+ * Six bars, each carrying one thing that was previously undrawable:
+ *
+ * 1. sixteenths in fours — double beams, four groups
+ * 2. dotted eighth + sixteenth — the stub, which is the rhythm that was drawn
+ *    wrong (two full beams says both notes are sixteenths)
+ * 3. a dotted quarter, an eighth alone between rests — the flag — and a flat
+ * 4. a triplet, bracketed
+ * 5. a half rest
+ * 6. a whole note
+ *
+ * A minor, so the only accidental is the leading note: this engraver draws no
+ * key signature, so a piece in D major would print a sharp on every F and the
+ * picture would be about accidentals instead of about rhythm.
+ *
+ * Not a transcription of anything. The Kreutzer study it stands in for is
+ * genuinely a page of continuous sixteenths (`fixtures/scores/SOURCES.md`),
+ * which is why it is the piece that carries this rather than the Bach.
+ */
+function note(pitch: string, duration: string): ScoreNote {
+  return { pitch, duration, tied_to_next: false } as ScoreNote;
+}
+
+function rest(duration: string): ScoreNote {
+  return { pitch: 'rest', duration, tied_to_next: false } as ScoreNote;
+}
+
+const FINE_VALUES_SCORE: ScoreJson = {
+  time_signature: '4/4',
+  key_signature: 'A minor',
+  tempo_marking: 'Allegro moderato',
+  bpm_hint: 84,
+  clef: 'treble',
+  measures: [
+    {
+      measure_number: 1,
+      notes: ['A4', 'B4', 'C5', 'D5', 'E5', 'F5', 'G#5', 'A5', 'G#5', 'F5', 'E5', 'D5', 'C5', 'B4', 'A4', 'G#4'].map(
+        (pitch) => note(pitch, 'sixteenth'),
+      ),
+      slurs: [],
+    },
+    {
+      measure_number: 2,
+      notes: [
+        note('A4', 'dotted_eighth'),
+        note('B4', 'sixteenth'),
+        note('C5', 'dotted_eighth'),
+        note('D5', 'sixteenth'),
+        note('E5', 'quarter'),
+        note('D5', 'quarter'),
+      ],
+      slurs: [],
+    },
+    {
+      measure_number: 3,
+      notes: [
+        note('C5', 'dotted_quarter'),
+        rest('eighth'),
+        // A flat, deliberately. Until Bravura landed, `accidentalOf` returned
+        // only sharps and this note was engraved as a plain B — a different
+        // note, printed as though it were right.
+        note('Bb4', 'quarter'),
+        rest('eighth'),
+        note('A4', 'eighth'),
+      ],
+      slurs: [],
+    },
+    {
+      measure_number: 4,
+      // A triplet, which was dropped entirely until `engrave.ts` could draw the
+      // bracket: three eighths with no bracket over them is a bar half again as
+      // long as the page says, in the same ink as the bars that are right.
+      notes: [
+        note('E5', 'triplet_quarter'),
+        note('D5', 'triplet_quarter'),
+        note('C5', 'triplet_quarter'),
+        note('B4', 'quarter'),
+        note('A4', 'quarter'),
+      ],
+      slurs: [],
+    },
+    {
+      measure_number: 5,
+      notes: [note('C5', 'half'), rest('half')],
+      slurs: [],
+    },
+    {
+      measure_number: 6,
+      // **A fermata over the final long note**, which is where most of them
+      // are printed. It is here because a fermata is now drawn and a state
+      // with no fixture is a state nobody looks at — and because this is the
+      // mark that explains the app's own output: `classification.py` refuses
+      // to time the note *after* a fermata, so a verdict shows a note it
+      // declined to judge and the stave has to say why.
+      notes: [{ ...note('A4', 'whole'), fermata: true }],
+      slurs: [],
+    },
+  ],
+  repeats: [],
+  ocr_confidence: 1,
+  notes_to_human: 'Fixture score. Not OCR output.',
+};
+
+/**
+ * A page headed with a word and no metronome mark — which is most of the
+ * repertoire printed before about 1830, and the case the practice tempo used
+ * to answer with a flat 80.
+ *
+ * `bpm_hint` is null because nothing on such a page states a number, and the
+ * importer only fills it from a mark it has actually read. What the app does
+ * with the word instead is a convention (`lib/tempoMarking.ts`), which is why
+ * the Record screen names the marking underneath the number it seeded.
+ */
+const WORD_MARKED_SCORE: ScoreJson = {
+  ...DEMO_SCORE,
+  tempo_marking: 'Quasi presto',
+  bpm_hint: null,
+};
 
 const FIXTURE_PIECES: FixturePiece[] = [
   {
@@ -138,8 +321,9 @@ const FIXTURE_PIECES: FixturePiece[] = [
     movement: null,
     practicedDaysAgo: 5,
     thumbnail: require('../../../assets/fixtures/03_complex_printed.jpg'),
-    markedBpm: MARKED_BPM,
-    score: DEMO_SCORE,
+    markedBpm: 84,
+    // The one piece with fine values in it — see `FINE_VALUES_SCORE`.
+    score: FINE_VALUES_SCORE,
   },
   {
     id: 'fixture-wohlfahrt-28',
@@ -149,7 +333,7 @@ const FIXTURE_PIECES: FixturePiece[] = [
     practicedDaysAgo: 12,
     thumbnail: require('../../../assets/fixtures/02_medium_printed.jpg'),
     markedBpm: MARKED_BPM,
-    score: DEMO_SCORE,
+    score: DYNAMIC_SCORE,
   },
   {
     id: 'fixture-wohlfahrt-01',
@@ -194,18 +378,101 @@ const FIXTURE_PIECES: FixturePiece[] = [
     movement: null,
     practicedDaysAgo: null,
     thumbnail: require('../../../assets/fixtures/03_complex_printed.jpg'),
+    // No metronome mark on the page — see `WORD_MARKED_SCORE`.
+    markedBpm: null,
+    score: WORD_MARKED_SCORE,
+  },
+  {
+    /**
+     * **A piece whose photograph is gone, which is the ordinary end state.**
+     *
+     * `POST /v1/scores/:id/accept` discards the page once a musician has
+     * confirmed the reading — deliberately, and it is the only thing that
+     * does. So a library that has been used for a while is mostly pieces that
+     * look like this, and until now **not one fixture did**: every cover in
+     * every sweep came from a photograph, and the fallback path was never on
+     * screen.
+     *
+     * That gap has already cost this project once. `UNREAD_CLEF_SCORE` a few
+     * hundred lines up exists because the same was true of a null clef — "the
+     * fixture build had no piece in it, so the screen that handles the case
+     * could not be looked at without a live backend, which is how it came to
+     * caption the guess *Treble clef* for as long as it did." The owner
+     * reported this one too: a deleted photograph "creates some really large
+     * box for that piece."
+     *
+     * The composer is one `canonical` knows, so this is also the piece that
+     * will show a portrait the day `PORTRAITS` has one.
+     */
+    id: 'fixture-brahms-sonata-1',
+    title: 'Violin Sonata No. 1 in G major, Op. 78',
+    composer: 'Johannes Brahms',
+    movement: 'I. Vivace ma non troppo',
+    practicedDaysAgo: 3,
+    thumbnail: null,
     markedBpm: MARKED_BPM,
     score: DEMO_SCORE,
+    // The photograph is gone *because* the reading was accepted. Saying so
+    // keeps the two facts from disagreeing — the score screen stops asking a
+    // musician to confirm a reading they have already confirmed.
+    reading: { transcriptionAccepted: true, pageImageDiscarded: true },
+  },
+  {
+    /**
+     * **A page still being read**, which is where a musician lands the moment
+     * they finish a scan — the most-reached screen the app has for someone
+     * new, and one no fixture had ever put on screen.
+     *
+     * The stage is one the worker really writes (`fixtures/stages/parity.json`
+     * is the contract) and it is the one with measured progress inside it, so
+     * this exercises the stave counter rather than only the static bar.
+     */
+    id: 'fixture-reading-in-progress',
+    title: 'Sonata in A minor, D. 385',
+    composer: 'Franz Schubert',
+    movement: null,
+    practicedDaysAgo: null,
+    thumbnail: require('../../../assets/fixtures/02_medium_printed.jpg'),
+    markedBpm: null,
+    score: null,
+    reading: {
+      transcriptionStatus: 'reading',
+      transcriptionStage: 'Reading stave 3 of 7',
+    },
+  },
+  {
+    /**
+     * **A page the reader could not make sense of.**
+     *
+     * The reason is one `_FAILURE_REASONS` actually produces, and it is the
+     * one written for a musician rather than for a server log — the whole
+     * point of that table. A fixture that invented its own wording would be
+     * checking a screen against a sentence the product never sends.
+     */
+    id: 'fixture-reading-failed',
+    title: 'Concerto in A minor, Op. 3 No. 6',
+    composer: 'Antonio Vivaldi',
+    movement: null,
+    practicedDaysAgo: null,
+    thumbnail: require('../../../assets/fixtures/04_handwritten_clean.jpg'),
+    markedBpm: null,
+    score: null,
+    reading: {
+      transcriptionStatus: 'failed',
+      transcriptionError:
+        'A flatter, better-lit shot of the page usually fixes it.',
+    },
   },
 ];
 
-function toPiece({ practicedDaysAgo, ...piece }: FixturePiece): Piece {
+function toPiece({ practicedDaysAgo, reading, ...piece }: FixturePiece): Piece {
+  const state = { ...TRANSCRIBED, ...reading };
   if (practicedDaysAgo === null) {
-    return { ...piece, ...TRANSCRIBED, lastPracticedAt: null };
+    return { ...piece, ...state, lastPracticedAt: null };
   }
   const practicedAt = new Date();
   practicedAt.setDate(practicedAt.getDate() - practicedDaysAgo);
-  return { ...piece, ...TRANSCRIBED, lastPracticedAt: practicedAt.toISOString() };
+  return { ...piece, ...state, lastPracticedAt: practicedAt.toISOString() };
 }
 
 /**
@@ -497,7 +764,33 @@ export const fixtureInsightsSource: InsightsSource = {
  * middle, recovering at the end. That is the commonest real fault and the one
  * the trend line exists to show.
  */
-const FIXTURE_MEASURES: { measure: number; notes: number; dragPct: number; band: Band }[] = [
+/**
+ * The sample take's bars.
+ *
+ * The last two carry a **written tempo change**, which is not decoration: it
+ * is the only way that state can be looked at without a live backend and a
+ * page that prints a `rit.`. `UNREAD_CLEF_SCORE` a few hundred lines up exists
+ * for exactly this reason and says so — the case with no fixture is the case
+ * that ships wrong, which is how the app came to caption a guessed clef
+ * "Treble clef" for as long as it did.
+ *
+ * `dragPct` on those two is deliberately large. The pipeline reports the real
+ * deviation for a bar under a change while forcing its `band` to `on`, and
+ * that combination is what the screen used to render as a long bar labelled
+ * "On the beat".
+ */
+const FIXTURE_MEASURES: {
+  measure: number;
+  notes: number;
+  dragPct: number;
+  band: Band;
+  underTempoChange?: boolean;
+  uneven?: boolean;
+  /** Zero for a bar nothing in which was timed — a held chord, an ornament. */
+  timedNotes?: number;
+  /** Which of the three it was, when the whole bar went unjudged. */
+  untimedReason?: UntimedReason;
+}[] = [
   { measure: 1, notes: 4, dragPct: -1.2, band: 'on' },
   { measure: 2, notes: 4, dragPct: -2.8, band: 'on' },
   { measure: 3, notes: 4, dragPct: -4.4, band: 'on' },
@@ -508,8 +801,27 @@ const FIXTURE_MEASURES: { measure: number; notes: number; dragPct: number; band:
   { measure: 8, notes: 4, dragPct: -12.1, band: 'rush_drag' },
   { measure: 9, notes: 4, dragPct: -8.4, band: 'slight' },
   { measure: 10, notes: 4, dragPct: -5.1, band: 'slight' },
-  { measure: 11, notes: 4, dragPct: -2.2, band: 'on' },
-  { measure: 12, notes: 4, dragPct: 1.6, band: 'on' },
+  { measure: 11, notes: 4, dragPct: 22.4, band: 'on', underTempoChange: true },
+  {
+    measure: 12,
+    notes: 4,
+    dragPct: 31.8,
+    band: 'on',
+    underTempoChange: true,
+    uneven: true,
+  },
+  // **A fermata, not a tempo change.** The final chord is held: the mark says
+  // its length is not written down at all, so nothing in the bar can be timed
+  // against the page. The second way a bar goes unjudged, and the one that
+  // read "On tempo" until the pipeline started reporting `timed_note_count`.
+  {
+    measure: 13,
+    notes: 1,
+    dragPct: 64.0,
+    band: 'on',
+    timedNotes: 0,
+    untimedReason: 'fermata',
+  },
 ];
 
 const FIXTURE_TAKE_ID = 'fixture-take-1';
@@ -546,6 +858,10 @@ function buildFixtureTake(): TakeResult {
       band: m.band,
       direction,
       verdict: verdictFor(m.band, direction),
+      underTempoChange: m.underTempoChange === true,
+      uneven: m.uneven === true,
+      timedNoteCount: m.timedNotes ?? m.notes,
+      untimedReason: m.untimedReason ?? null,
     };
   });
 
@@ -570,7 +886,11 @@ function buildFixtureTake(): TakeResult {
     verdict: verdictFor('rush_drag', 'rush'),
     lowConfidence: false,
     measures,
-    trend: measures.map((m) => m.deviationPct),
+    // Only the timed bars — which is what the pipeline now sends too:
+    // `rolling_trend` excludes notes under a written change, the same
+    // exclusion slur-interior notes already had. A fixture that disagreed with
+    // the wire would be a demo of a screen the product does not have.
+    trend: measures.filter(wasTimed).map((m) => m.deviationPct),
     tolerance: FIXTURE_TOLERANCE,
     missedNotes: 1,
     extraNotes: 0,

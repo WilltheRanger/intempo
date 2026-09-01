@@ -121,4 +121,23 @@ describe('printed tempo units', () => {
     expect(tempoDisplayRange('dotted_quarter')).toEqual({ min: 14, max: 200 });
     expect(tempoDisplayRange('eighth')).toEqual({ min: 40, max: 600 });
   });
+
+  it('never lets a stepper at its limit store a tempo outside the real one', () => {
+    // **What the conversion is for.** `PlaybackSettings` steps in the page's
+    // printed unit and stores quarters, so a stepper handed the raw 20–300
+    // would let a dotted-quarter tempo reach 300, which is **450** on the clock
+    // the score and the analysis run on. Both ends, every unit the pipeline
+    // can report.
+    const units = [
+      'whole', 'dotted_half', 'half', 'dotted_quarter', 'quarter',
+      'dotted_eighth', 'eighth', 'sixteenth',
+    ] as const;
+
+    for (const unit of units) {
+      const { min, max } = tempoDisplayRange(unit, 20, 300);
+      expect(quarterBpmFromDisplay(max, unit), `${unit} max`).toBeLessThanOrEqual(300);
+      expect(quarterBpmFromDisplay(min, unit), `${unit} min`).toBeGreaterThanOrEqual(20);
+      expect(min, `${unit} range`).toBeLessThan(max);
+    }
+  });
 });

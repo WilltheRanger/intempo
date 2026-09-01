@@ -48,6 +48,16 @@ _TYPE_TO_DURATION: Final[dict[str, str]] = {
     "16th": "sixteenth",
     "32nd": "thirty_second",
     "64th": "sixty_fourth",
+    # **A 128th is the finest value a part actually prints**, and it was not
+    # here, so every one of them was dropped — a lost onset, which
+    # `alignment.py` accumulates into every bar that follows. Cadenzas and
+    # ornamental runs write them.
+    #
+    # `256th` and finer are deliberately absent: they exist in the MusicXML
+    # vocabulary and not in the repertoire this reads. `tools/notation-coverage.py`
+    # prints them as missing on every run, so the day one turns up it is a line
+    # here and a name in `DURATION_BEATS`, not a discovery.
+    "128th": "one_twenty_eighth",
 }
 #: Three in the time of two, by base value. A file states a tuplet in
 #: `<time-modification>` — `actual-notes` over `normal-notes` — so a triplet is
@@ -103,7 +113,14 @@ _FLAT_KEYS: Final[list[str]] = [
     "Ab major", "Db major", "Gb major", "Cb major",
 ]
 
-_ALTER_SUFFIX: Final[dict[int, str]] = {-1: "b", 0: "", 1: "#"}
+#: How a `<alter>` value is spelled in a pitch name.
+#:
+#: ±2 are double accidentals. They were absent, so `_pitch_name` returned
+#: None for them and the note was dropped — see `PITCH_PATTERN`, which now
+#: admits them. Anything beyond ±2 (a triple accidental, or a quarter-tone
+#: written as `alter="0.5"`) is still None: those have no spelling here and
+#: inventing one would be the wrong-note outcome this avoids.
+_ALTER_SUFFIX: Final[dict[int, str]] = {-2: "bb", -1: "b", 0: "", 1: "#", 2: "##"}
 
 _ARTICULATION_TAGS: Final[dict[str, str]] = {
     "staccato": "staccato",
@@ -212,10 +229,52 @@ def _rests_for_gap(beats: float) -> list[str]:
     return out if abs(left) < 1e-9 else []
 
 
+def _is_a_bars_rest(note: ET.Element) -> bool:
+    """`<rest measure="yes"/>` — the rest that fills whatever bar it is in.
+
+    MusicXML's own way of writing a bar of rest, and the shape an orchestral
+    part is mostly made of. It carries no `<type>`, because the glyph it draws
+    depends on the metre rather than on a note value.
+    """
+    rest = note.find("rest")
+    return rest is not None and (rest.get("measure") or "").strip().lower() == "yes"
+
+
 def _duration_name(note: ET.Element, divisions: int | None = None) -> str | None:
     kind = _text(note.find("type"))
     if kind is None:
-        return None
+        # **A bar of rest, and the third spelling of one.**
+        #
+        # `_expand_multiple_rests` handles `<multiple-rest>`, several bars at
+        # once. `_whole_rests_that_mean_a_bar` handles the whole-rest *glyph*,
+        # `<type>whole</type>`. This is the one in between and the most
+        # canonical of the three — a single bar of rest, written as MusicXML
+        # says to write it: `<rest measure="yes"/>` and no `<type>` at all,
+        # because which glyph it draws depends on the metre.
+        #
+        # It was dropped, and dropping it is expensive three times over. The
+        # bar comes through **empty**, so: `validate.py` calls it a hole rather
+        # than a bar of rest and the reading's confidence falls; `alignment.py`
+        # accumulates durations, so a musician who counts the rest correctly is
+        # judged a bar early for the whole of the rest of the page — the exact
+        # damage `_expand_multiple_rests` exists to prevent; and
+        # `_refuse_if_it_is_not_a_reading` counts empty bars against the page,
+        # so a part with more rest than music — which a bass part frequently
+        # is — could be **refused outright** as bars that "came out empty".
+        #
+        # Measured on a three-bar part, play/rest/play: 0.67 confidence with
+        # bar 2 `empty`, against 1.00 with this. Found in
+        # `audiveris_phone_photo.musicxml`, which carries one.
+        #
+        # **Named `whole`, deliberately, rather than measured from
+        # `<duration>`.** Two reasons, and the second is the load-bearing one:
+        # `<duration>` on these is not trustworthy — the one in that fixture
+        # says 57 ticks at 6 divisions, which is 9.5 beats in a bar of 4 — and
+        # `_whole_rests_that_mean_a_bar` already owns the question of what a
+        # bar of rest is worth in this metre, including inferring the metre
+        # when the page never states one. Handing this to that rule reuses it
+        # rather than writing a fourth thing that has to agree with it.
+        return "whole" if _is_a_bars_rest(note) else None
     base = _TYPE_TO_DURATION.get(kind)
     if base is None:
         return None
@@ -286,11 +345,20 @@ def _duration_name(note: ET.Element, divisions: int | None = None) -> str | None
     # lands on a written value, and a dotted triplet eighth lands exactly on an
     # eighth.
     #
-    # What is still dropped is what genuinely has no name: 5:4, 7:8, a triplet
-    # of thirty-seconds. Naming those needs new members in a `Duration` the app
-    # shares, and the honest alternative — replacing the whole group with rests
-    # that sum to it — needs the group, which is a `<tuplet>` bracket this
-    # module does not yet read.
+    # 5:4 and 7:4 were on that list until `Duration` learned to name them, and
+    # they were the expensive two: `_unnameable_tuplet_beats` keeps a group's
+    # *length* as rests, so a quintuplet read correctly off the page produced a
+    # bar that summed perfectly with five of its onsets replaced by silence —
+    # invisible to every check here. Measured before naming them, on a 4/4 bar
+    # of a 5:4 quintuplet of sixteenths and three quarters: 3 onsets of 8, and
+    # the beat check said `ok`.
+    #
+    # What is still dropped is what genuinely has no name: a ratio landing on
+    # none of the values in `DURATION_BEATS` — 5:6 in a compound metre, a
+    # triplet of thirty-seconds. Naming those needs new members in a `Duration`
+    # the app shares, and the honest alternative — replacing the whole group
+    # with rests that sum to it — is what `_unnameable_tuplet_beats` already
+    # does, at the cost above.
     stated_actual = _text(note.find("time-modification/actual-notes"))
     ratio = _tuplet_ratio(note)
     if ratio is not None:
@@ -651,20 +719,57 @@ def _pitch_name(note: ET.Element) -> str | None:
         return "rest"
     pitch = note.find("pitch")
     if pitch is None:
-        return None
+        # **`<unpitched>` is a note, at a place on the staff rather than a
+        # frequency.** It is how percussion is written, and how a string part
+        # writes a body tap or col legno battuto — a notehead with a real
+        # attack, printed on a line the player reads.
+        #
+        # It was dropped for having no `<pitch>`, which costs the onset, and
+        # `alignment.py` accumulates, so every later bar is judged against music
+        # that is not there. On a part written entirely this way — a percussion
+        # part — *every* note dropped and the page was refused as empty bars.
+        #
+        # `display-step` and `display-octave` are exactly the staff position the
+        # engraver drew, so the note keeps the place it was printed in. Nothing
+        # downstream asks a pitch to be a frequency: the verdict reads it only
+        # as `== "rest"`, and a tie compares two of them for equality.
+        pitch = note.find("unpitched")
+        if pitch is None:
+            return None
+        step = _text(pitch.find("display-step"))
+        octave = _text(pitch.find("display-octave"))
+        if step is None or octave is None:
+            return None
+        name = f"{step}{octave}"
+        return name if PITCH_PATTERN.match(name) else None
     step = _text(pitch.find("step"))
     octave = _text(pitch.find("octave"))
     if step is None or octave is None:
         return None
+    # **Truncating a fractional alter turns a microtone into a natural.**
+    #
+    # `<alter>` is a semitone count and MusicXML allows fractions for
+    # microtones: 0.5 is a quarter-sharp, 1.5 a three-quarter-sharp, -0.5 a
+    # quarter-flat. `int(float(...))` rounded 0.5 down to 0, so a quarter-sharp
+    # was written out as a plain natural — a wrong note printed exactly like the
+    # right ones around it, which is the one outcome this function's own comment
+    # says it exists to avoid, arrived at by arithmetic rather than by choice.
+    #
+    # There is no spelling for a microtone here, so it drops, like a triple
+    # accidental. A short bar is visible to the beat check and to the musician;
+    # a natural where a quarter-sharp was printed is visible to nobody.
+    raw = _text(pitch.find("alter"))
     try:
-        alter = int(float(_text(pitch.find("alter")) or "0"))
+        exact = float(raw) if raw else 0.0
     except ValueError:
-        alter = 0
-    suffix = _ALTER_SUFFIX.get(alter)
+        exact = 0.0
+    alter = int(exact) if exact.is_integer() else None
+    suffix = _ALTER_SUFFIX.get(alter) if alter is not None else None
     if suffix is None:
-        # Double sharps and flats are not in the pitch grammar. Naming the
-        # natural instead would be a wrong note, so drop it and let the note
-        # count fall short, which the validator can see.
+        # Past a double accidental, or a microtone. Naming the natural instead
+        # would be a wrong note, so drop it and let the note count fall short,
+        # which the validator can see. Doubles used to land here too and no
+        # longer do; microtones used to skip this entirely and be *rounded*.
         return None
     name = f"{step}{suffix}{octave}"
     # **Asked here, not left to the model to reject.**
@@ -1339,6 +1444,9 @@ def score_json_from_musicxml(
     chosen = _choose_part(root, part)
 
     clef: str | None = None
+    #: The clef in force as the measures are walked, which is not the header
+    #: once the part changes clef. See where `measure_clef` is set.
+    running_clef: str | None = None
     time_signature: str | None = None
     key_signature: str | None = None
     tempo_marking: str | None = None
@@ -1387,7 +1495,35 @@ def score_json_from_musicxml(
             return True
         return ((el.findtext("staff") or "").strip() or "1") == kept_staff
 
+    #: Which staff system the bars are on, counted from the page's first.
+    #:
+    #: `<print new-system="yes">` is the only thing that says, and most files
+    #: never write it — an engraver's export usually carries no layout at all.
+    #: When none appears, every bar keeps `system=None`, which is honestly "not
+    #: known" rather than "all on the first line". `Measure.system` says why the
+    #: difference matters.
+    #:
+    #: The first measure opens system 0 whether or not it is marked; a file that
+    #: marks it as well must not be read as starting on system 1.
+    #: **Decided before the loop, because "no markers" is not "one system".**
+    #: Counting from 0 as bars go by gives every bar on a file with no layout
+    #: the answer `0` — a confident claim that the whole part is printed on one
+    #: line, which for a page of music is never true and would send a re-read a
+    #: crop of the wrong staff. Measured on `orchestral_part.musicxml`, which
+    #: carries no `<print>` at all: 19 bars all reporting system 0.
+    states_its_layout = chosen.find('.//print[@new-system="yes"]') is not None
+    system: int | None = 0 if states_its_layout else None
+    opened_a_system = False
+
     for index, measure_el in enumerate(chosen.iterfind("measure"), start=1):
+        if states_its_layout and measure_el.find('print[@new-system="yes"]') is not None:
+            # The first bar opens system 0 whether or not it is marked. A file
+            # that marks it too must not be read as starting on system 1.
+            if opened_a_system or index > 1:
+                assert system is not None
+                system += 1
+            opened_a_system = True
+
         # **Every** `<attributes>` block in the measure, not the first.
         #
         # A measure may carry more than one, and the first is often only
@@ -1403,6 +1539,7 @@ def score_json_from_musicxml(
         # presented 2/2 and F major as the page's header, on a page that starts
         # in cut-common somewhere else entirely.
         measure_time: str | None = None
+        measure_clef: str | None = None
         # A multi-bar rest is *this* many bars, and reading it as one is how a
         # bass part loses most of its music. Handled after the attributes loop,
         # because the metre it needs may be stated in this very measure.
@@ -1434,10 +1571,32 @@ def score_json_from_musicxml(
                 ),
                 None,
             )
-            if clef is None and clef_el is not None:
+            if clef_el is not None:
                 sign = _text(clef_el.find("sign")) or ""
                 line = _text(clef_el.find("line")) or ""
-                clef = _CLEF_BY_SIGN_LINE.get((sign, line))
+                stated_clef = _CLEF_BY_SIGN_LINE.get((sign, line))
+                if clef is None:
+                    clef = stated_clef
+                if stated_clef is not None and stated_clef != running_clef:
+                    # **A clef printed mid-piece is a change of clef**, exactly
+                    # as a metre printed mid-piece is a change of metre, and it
+                    # belongs on the measure for the same reason. A cello part
+                    # moving into tenor for a high passage is ordinary writing;
+                    # overwriting the header with it would caption the whole
+                    # page — including everything before the change — with a
+                    # clef it does not use, which is the failure
+                    # `ScoreJson.clef` is nullable to avoid.
+                    #
+                    # **Compared against the running clef, not the header.** A
+                    # part that moves into tenor at bar 20 and back to bass at
+                    # bar 40 states bass at 40, which equals the header — so
+                    # comparing against the header would record the departure
+                    # and silently drop the return, leaving every bar after 40
+                    # captioned tenor. `clef` stays the clef the page opens in,
+                    # which is what a reader wants when nothing says otherwise.
+                    if running_clef is not None:
+                        measure_clef = stated_clef
+                    running_clef = stated_clef
 
             time_el = attributes.find("time")
             beats = _text(time_el.find("beats")) if time_el is not None else None
@@ -1599,7 +1758,25 @@ def score_json_from_musicxml(
             # built from durations, so counting the second note of a chord
             # would make the measure overrun and the beat-sum check would call
             # a correctly-read measure long.
+            #
+            # **Not counted, and no longer thrown away.** Skipping it outright
+            # was right about the timeline and lost the music: a double stop is
+            # two noteheads and the reading kept one, so a stave drawn from it
+            # shows a single note where the page has two and the edit screen has
+            # nowhere to put the other. `chord_pitches` is additive — it changes
+            # no duration and adds no onset — so the count stays exactly as it
+            # was. See `Note.chord_pitches`.
             if note_el.find("chord") is not None:
+                member = _pitch_name(note_el)
+                # `not_filtered` rather than `notes`: it holds every note built
+                # in this measure including ones the voice filter dropped, so
+                # its last entry is always the notehead this one is stacked on.
+                # A chord member of a dropped note lands on a dropped note,
+                # which is where it belongs.
+                if member and member != "rest" and not_filtered:
+                    principal = not_filtered[-1]
+                    if principal.pitch != "rest" and member not in principal.chord_pitches:
+                        principal.chord_pitches.append(member)
                 continue
             # **A grace note has no duration and is still an attack.**
             #
@@ -1835,10 +2012,12 @@ def score_json_from_musicxml(
         measures.append(
             Measure(
                 measure_number=number if number >= 1 else index,
+                system=system,
                 notes=notes,
                 slurs=slurs,
                 tuplets=tuplets,
                 time_signature=measure_time,
+                clef=measure_clef,  # type: ignore[arg-type]
                 unwritable_notes=dropped_here,
             )
         )

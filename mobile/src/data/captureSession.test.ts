@@ -293,3 +293,42 @@ describe('attaching pages to an existing piece', () => {
     expect(captureSession.attachmentPieceId()).toBeNull();
   });
 });
+
+describe('an empty session', () => {
+  it('knows the difference between emptied and never filled', () => {
+    // The two look identical from `current()` — both are `[]` — and the review
+    // screen says different things about them. Telling someone they removed
+    // pages they never took is a small lie about their own actions.
+    captureSession.reset();
+    expect(captureSession.hasHeldPages()).toBe(false);
+
+    captureSession.capture(PAGE(1));
+    captureSession.remove(captureSession.current()[0].id);
+
+    expect(captureSession.current()).toHaveLength(0);
+    expect(captureSession.hasHeldPages()).toBe(true);
+  });
+
+  it('forgets once a new scan starts', () => {
+    captureSession.capture(PAGE(1));
+    captureSession.reset();
+
+    expect(captureSession.hasHeldPages()).toBe(false);
+  });
+
+  it('counts an import as having held pages', () => {
+    captureSession.reset();
+    captureSession.importAll([PAGE(1), PAGE(2)]);
+
+    expect(captureSession.hasHeldPages()).toBe(true);
+  });
+
+  it('does not carry the answer from the scan before it', () => {
+    // `importAll` replaces the session, so what the previous one held is not
+    // a fact about this one.
+    captureSession.capture(PAGE(1));
+    captureSession.importAll([]);
+
+    expect(captureSession.hasHeldPages()).toBe(false);
+  });
+});

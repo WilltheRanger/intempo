@@ -89,6 +89,12 @@ class MeResponse(BaseModel):
     #: not been shown, and that is the only thing that decides whether to show
     #: it.
     onboarded_at: datetime | None = None
+    #: Whether their corrections may be kept to improve the reader.
+    #:
+    #: A boolean here, not the timestamp the column holds. *When* they agreed is
+    #: a fact the consent record needs and a screen has no use for; what a
+    #: screen needs is which way the switch is set.
+    training_consent: bool = False
 
 
 class UpdateMeRequest(BaseModel):
@@ -110,3 +116,12 @@ class UpdateMeRequest(BaseModel):
     #: Set by the client when the onboarding screen is finished or skipped.
     #: Only ever true — there is no route back to "never asked".
     onboarded: bool | None = None
+    #: Whether their corrections to a reading may be kept and used to improve
+    #: it, and the photograph kept alongside them.
+    #:
+    #: **A boolean that travels in both directions**, unlike `onboarded`. That
+    #: one is a record of being asked and can only ever go forward; this is a
+    #: permission, and a permission that cannot be taken back is not one.
+    #: `false` withdraws it, and withdrawal deletes what was kept — see
+    #: `update_me`.
+    training_consent: bool | None = None

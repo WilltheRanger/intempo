@@ -1,6 +1,7 @@
 import { useNavigation } from '@react-navigation/native';
 import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
+import { useGoBack } from '../../navigation/useGoBack';
 
 import {
   Card,
@@ -18,6 +19,7 @@ import type { RootNavigation } from '../../navigation/types';
 
 export function ExportDataScreen() {
   const navigation = useNavigation<RootNavigation>();
+  const goBack = useGoBack({ tab: 'Profile' });
   const [preparing, setPreparing] = useState(false);
   const [done, setDone] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -45,7 +47,7 @@ export function ExportDataScreen() {
     <ScreenContainer>
       <PageHeader
         title="Download your data"
-        onBack={() => navigation.goBack()}
+        onBack={goBack}
         backLabel="Back to profile"
       />
 

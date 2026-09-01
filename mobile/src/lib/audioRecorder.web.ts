@@ -252,6 +252,11 @@ export async function startRecording(): Promise<Recorder> {
         truncated,
       };
     },
+    discardCapturedSoFar() {
+      chunks.length = 0;
+      samples = 0;
+      truncated = false;
+    },
     cancel() {
       void teardown();
       chunks.length = 0;

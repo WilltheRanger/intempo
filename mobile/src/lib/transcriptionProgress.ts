@@ -66,6 +66,27 @@ const READING_BAND: readonly [number, number] = [0.3, 0.8];
 const STAVE_COUNT = /^Reading stave (\d+) of (\d+)$/;
 
 /**
+ * The worker's words for a multi-page scan — `Reading page 2 of 3`.
+ *
+ * A scan is every page of one part and the pages are read one after another.
+ * Until this existed the whole of that reported "Reading the notation": true
+ * from the first page to the last, and a bar that never moved across a wait
+ * that is now N times longer than it used to be. The worker's own comment
+ * called it "a limitation rather than a design" and named this as the fix.
+ *
+ * **The count is pages finished, not the page in hand.** `Reading page 2 of 3`
+ * places the bar at 1/3 of the band: page 1 is read, page 2 has not started.
+ * Placing it at 2/3 would claim a page that is still being read, and the whole
+ * point of this file is that the bar reports what has happened rather than what
+ * is expected to.
+ *
+ * Per-stave counts are suppressed on a multi-page scan, so the two never fight:
+ * page 2 opening at `Reading stave 1 of 9` after page 1 finished at `9 of 9`
+ * walks the bar backwards, which is the failure this module exists to prevent.
+ */
+const PAGE_COUNT = /^Reading page (\d+) of (\d+)$/;
+
+/**
  * The bar's position for a reported stage, given where it already is.
  *
  * A stage this build does not recognise **holds** the bar. That is what the
@@ -83,6 +104,17 @@ export function progressFor(stage: string | null | undefined, held: number): num
   const known = STAGE_PROGRESS[stage];
   if (known !== undefined) return known;
 
+  const pages = PAGE_COUNT.exec(stage);
+  if (pages) {
+    // Pages *behind* the one in hand — see `PAGE_COUNT`.
+    const done = Number(pages[1]) - 1;
+    const total = Number(pages[2]);
+    if (total > 0 && done >= 0 && done < total) {
+      return withinReading(done / total);
+    }
+    return held;
+  }
+
   const counted = STAVE_COUNT.exec(stage);
   if (counted) {
     const done = Number(counted[1]);
@@ -92,10 +124,15 @@ export function progressFor(stage: string | null | undefined, held: number): num
     // `9 of 7` is a server saying something impossible; neither is worth
     // drawing.
     if (total > 0 && done >= 0 && done <= total) {
-      const [start, end] = READING_BAND;
-      return start + (end - start) * (done / total);
+      return withinReading(done / total);
     }
   }
 
   return held;
+}
+
+/** A fraction of the work of reading, as a position on the whole bar. */
+function withinReading(fraction: number): number {
+  const [start, end] = READING_BAND;
+  return start + (end - start) * fraction;
 }

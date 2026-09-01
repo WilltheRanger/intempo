@@ -14,6 +14,7 @@ from app.workers.analysis_runner import (
     sweep_stuck_analyses,
 )
 from app.services.ocr.pipeline import _default_chain, unknown_provider_names
+from app.services import pending_uploads
 from app.workers.transcription_runner import sweep_stuck_transcriptions
 
 log = logging.getLogger("intempo")
@@ -40,6 +41,11 @@ async def _sweep_periodically() -> None:
         # awake stops with you. `sweep_stuck_transcriptions` contains its own
         # failure, so one bad sweep costs one sweep.
         await asyncio.to_thread(sweep_stuck_transcriptions)
+        # And the objects nothing ever claimed. Cheap — an indexed query on a
+        # table that is empty in the steady state — and the only path by which
+        # an abandoned photograph is ever removed. See
+        # `services/pending_uploads` for the invariant it maintains.
+        await asyncio.to_thread(pending_uploads.sweep_unclaimed)
 
 
 def _report_reader_configuration() -> None:

@@ -29,6 +29,17 @@ export interface OnboardingAnswers {
    * part of finishing, not part of choosing.
    */
   photoSelected?: boolean;
+  /**
+   * The account already has a photograph on it.
+   *
+   * **Because onboarding can be answered across two sittings.** `PATCH /v1/me`
+   * stores what it is given and stamps `onboarded_at` only once the resulting
+   * row carries all three — so someone who chose a photo, was interrupted, and
+   * came back has that photograph on their account and this screen in front of
+   * them again. Asking for it a second time is asking for the one answer that
+   * cannot be given by thinking, twice.
+   */
+  storedPhoto?: boolean;
 }
 
 /**
@@ -69,7 +80,8 @@ export const MISSING_LABELS: Record<OnboardingRequirement, string> = {
  * A selected local photograph is enough to enable Continue. The screen uploads
  * it as the first part of finishing and does not save the profile until an
  * object key exists. Requiring the key here would force the old behaviour:
- * uploading as an unrelated side effect of choosing.
+ * uploading as an unrelated side effect of choosing. So is one already on the
+ * account — see `storedPhoto`.
  */
 export function missingFromOnboarding(
   answers: OnboardingAnswers,
@@ -78,7 +90,7 @@ export function missingFromOnboarding(
   if (!answers.name.trim()) {
     missing.push('name');
   }
-  if (!answers.avatarKey && !answers.photoSelected) {
+  if (!answers.avatarKey && !answers.photoSelected && !answers.storedPhoto) {
     missing.push('photo');
   }
   if (!answers.instrument) {

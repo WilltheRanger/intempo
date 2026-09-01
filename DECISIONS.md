@@ -6,6 +6,537 @@ Operating Principle #5.
 
 ---
 
+## 2026-09-01 — Grafting two glyphs from an older Bravura, over the alternatives
+
+**Context.** Fermatas needed drawing (`EDIT_LOG.md`, same date). The glyphs are
+`E4C0`/`E4C1`, which the shipped subset does not contain. The shipped subset is
+Bravura **1.482**; every Bravura reachable from this environment is **1.392** —
+the npm packages, the copy vendored by Audiveris on this machine. Steinberg's
+own release and the CDNs that mirror it are refused by the egress proxy.
+
+**Decision.** Graft `fermataAbove` and `fermataBelow` from 1.392 into the 1.482
+subset with `fontTools.merge`, and add `E4C0-E4C1` to `tools/subset-bravura.py`
+so a future regeneration against a real 1.482 ends the special case without
+anyone needing to remember it.
+
+**Alternatives considered.**
+
+- *Regenerate the whole subset from 1.392.* Rejected on a measurement: **45 of
+  the 76 shipped glyphs differ** between 1.392 and 1.482 — the treble clef,
+  every accidental, every flag, three of four noteheads. Two new marks are not
+  worth silently redrawing most of the app's notation, and the redrawn version
+  is the older one.
+- *Draw the fermata as a path.* Rejected. It is the rule this project already
+  argued out for the treble clef: hand-approximated notation is the first thing
+  a musician notices. A fermata is simpler than a clef, which makes it a
+  tempting exception, and the exception is how the rule stops meaning anything.
+- *Wait for the owner to supply 1.482.* Rejected as the default but it is the
+  real fix, which is why the script and this entry both say so. Blocking a
+  correctness fix — a musician being told they dragged a note the page told
+  them to hold — on a font-file errand is the wrong trade.
+
+**Why the graft is safe here specifically, and how that was checked.** All six
+articulation glyphs (`E4A0-E4A5`) and the augmentation dot are byte-identical
+across the two versions while the core glyphs are not: the marks were left
+alone in the release that redrew the clefs. The fermatas sit in the same block
+as those marks. That is evidence, not proof — no 1.482 fermata exists here to
+compare against — and it is the strongest available. The merge was then
+verified to alter **zero** previously shipped glyphs and to reproduce both new
+ones byte-for-byte from the source.
+
+**Trade-off accepted.** The shipped binary is no longer purely the script's
+output, which is exactly the failure mode the script's own docstring warns
+about ("a checked-in binary nobody can regenerate is a binary nobody can
+update"). Mitigated by writing the divergence into the script itself rather
+than a commit message, and by making the regeneration path already correct.
+
+---
+
+## 2026-09-01 — Measure the engraver against the schema, over against the fixtures
+
+**Context:** `tools/engraver-coverage.py` reported **100% of every page in the
+corpus**, 0 of 393 notes without a glyph. Four of the schema's forty-six
+durations had no glyph at all, and the corpus could not see it: not one of the
+ten fixture pages contains a note shorter than a sixteenth. The same tool once
+read 5% missing with a worst page of 67% while the first real orchestral part
+photographed scored **0%** and rendered as a title and a photograph.
+
+The tool's own header already said why — "every fixture here is a page somebody
+chose in order to check something" — and then went on reporting the number that
+sentence disowns.
+
+**Alternatives considered:**
+
+1. **Grow the corpus.** The direct reading of the problem, and it does not
+   converge: any set of pages is a set somebody chose, and the failure mode is
+   precisely the page nobody thought to add. It also costs a real page per gap,
+   which is the scarcest thing this project has.
+2. **Trust the worst page instead of the average.** Already the rule, already in
+   `CLAUDE.md`, and it did not help — the worst page was also 100%.
+3. **Measure against the vocabulary the backend is allowed to send.** Taken.
+   `score_schema.DURATION_BEATS` is closed, shared with the app, and load-bearing
+   on both sides; every value in it can arrive on a real page tomorrow.
+
+**Decision:** coverage is reported against the schema as well as the corpus.
+`tools/engraver-coverage.py` prints both tables, and
+`mobile/src/lib/notation/durations.test.ts` asserts the app side of it — every
+duration draws except a named list of four. `CLAUDE.md` §7b now says to read the
+schema table, because a rule that says "read the worst page" was satisfied by a
+corpus where the worst page was perfect.
+
+**Trade-offs accepted:**
+
+- **The schema number says nothing about real pages.** A page can be read wrong
+  in a hundred ways that have nothing to do with which durations exist. The
+  corpus table stays for exactly that reason; this is a second measurement, not
+  a replacement.
+- **A named exception list has to be maintained.** `DELIBERATELY_UNDRAWN` will
+  go stale the day something in it becomes drawable — but it fails loudly then,
+  which is the opposite of how the corpus number went stale.
+- **It made four values drawable that no page here needs.** The 32nd, the 64th,
+  the double dot and the breve cost a wider font subset (25.2 KB → 27.0 KB) and
+  a second dot in the renderer. A Kreutzer study is thirty-seconds; a march is
+  written with double dots. They are not exotic, they were only absent from the
+  fixtures.
+
+---
+
+## 2026-09-01 — One AudioContext for the life of the page, over one per playback
+
+**Context:** the owner reported that Listen works once and not again, on every
+screen that has the button. Both web players built an `AudioContext` when they
+started and closed it when they finished.
+
+**Alternatives considered:**
+
+1. **A context per playback, closed at the end.** What shipped. It is the
+   obvious reading of "acquire, use, release", and it is wrong on the platform
+   that matters most here: iOS Safari caps how many audio contexts a page may
+   hold and `close()` does not reliably return the slot. The failure is
+   invisible — the button toggles, the schedule is built, every oscillator is
+   created and started, and nothing comes out — so nothing short of counting
+   contexts notices it.
+2. **A context per playback, closed more carefully.** Chasing every path that
+   can skip the close: a hidden page that never delivers the ending frame, an
+   unmount mid-play, an exception. Each is fixable; the set is not closed, and
+   every miss is permanent for that page.
+3. **One context, created lazily, never closed.** Taken.
+
+**Decision:** `lib/audio/context.web.ts` owns a single context, built on the
+first sound and resumed before every play. Web Audio is built for this — a
+context is a mixer, not a sound — and the resource being conserved is the thing
+iOS actually meters.
+
+**Trade-offs accepted:**
+
+- **A running context costs something when nothing is playing.** Real, and
+  small: an idle context with nothing connected does no work beyond holding an
+  audio thread. Against it, the leak the old code produced was a context that
+  could never be reclaimed at all.
+- **Cancellation had to be rebuilt.** The metronome was using `close()` as its
+  cancel — a click booked 250 ms ahead must not sound after the take ends — so
+  each run now owns a gain node and disconnects it. Same silence, nothing else
+  taken down with it. This is the part a future edit is most likely to undo by
+  accident, so it is asserted directly.
+- **One context is shared between the player and the click track.** They cannot
+  be independently interrupted. Nothing wants that: they are the same app
+  making sound to the same person, and a metronome another part of the app can
+  duck is the failure logged against `interruptionMode` on the native side.
+
+The recorder keeps its own context (`audioRecorder.web.ts`). It is not sharing
+a mixer with playback; it is an analyser on a microphone stream with a
+different lifetime, and iOS gives recording its own session anyway.
+
+---
+
+## 2026-09-01 — Ship a music font rather than draw notation by hand
+
+**Context:** the owner asked for the transcription to read as a page —
+*"instead of writing like how were doing where you scroll and what not. Make
+it generate a sort of sheet music page look, like how you see on music score
+or flat io."*
+
+The obstacle is real and `engrave.ts` had already named it: *"a clef is a piece
+of calligraphy; a hand-approximated treble clef in an app for classical
+musicians would be the first thing a reader noticed and the last thing they
+forgave."* So it drew **no clef at all**, which was the right call given the
+options it had. The same reasoning had kept the key signature off the page:
+`key_signature` has been read since Batch 2 and shown only as text, so a piece
+in E major was engraved with four accidentals missing from every system.
+
+**Alternatives considered:**
+
+1. **Hand-authored SVG paths for the clefs.** The cheapest, and it is precisely
+   the near-miss `engrave.ts` refused. A treble clef is a spiral with four
+   centuries of settled proportion; an approximation is legible and wrong, and
+   a musician sees it instantly.
+2. **Keep drawing nothing.** Honest, and what shipped. It also means the app
+   can never show a key signature, which is not a stylistic omission — it is
+   music the page contains and the screen does not.
+3. **Bundle the full Bravura.** 889 KB for a few thousand glyphs, of which this
+   app draws forty.
+4. **Bundle a subset of Bravura.** ← chosen. **22 KB.**
+
+**Decision:** `mobile/assets/fonts/Bravura.otf`, subset in-repo by
+`tools/subset-bravura.py`, loaded alongside the app's text faces and used by
+`Stave` for clefs, key signatures and time signatures.
+
+Bravura is the reference implementation of SMuFL and the font MuseScore ships;
+flat.io and MuseScore look the way they do largely because of it. It is SIL
+Open Font License 1.1, so it can be redistributed inside an application. The
+licence text sits beside the font and the Acknowledgements screen lists it —
+a page that credits every MIT package while omitting the one file with an
+actual attribution requirement would be backwards.
+
+**Why a font and not paths, beyond the drawing quality.** A SMuFL em is four
+staff spaces *by definition*, so `fontSize = 4 * lineGap` renders every glyph
+at exactly the right size for that staff, at any scale, with no per-glyph fudge
+factor and no second set of numbers to keep in step with the engraver's
+geometry. That property is the reason SMuFL exists.
+
+**Trade-offs accepted.** 22 KB of binary in the repository, and a font is not
+reviewable in a diff — which is why the subset is produced by a checked-in
+script against a named upstream rather than pasted in. A glyph used without
+being added to that script's ranges renders as **nothing at all**, silently: a
+music font has no tofu box. The codepoint table in `Stave.tsx` says so at the
+point where someone would add one.
+
+Noteheads, rests and flags are still drawn by hand and still look right; moving
+them onto the font is a further change with its own geometry to re-verify, and
+it is not part of this decision.
+
+---
+
+## 2026-09-01 — Record the upload, rather than walking the bucket
+
+**Context:** CLAUDE.md has carried this since 2026-08-24 under its own heading,
+and explicitly said what it needed: *"Known hole, unfixed: orphaned uploads. An
+upload that never becomes a score row is permanent and unreachable… This
+contradicts the rule above it; it needs a lifecycle decision, not a patch."*
+
+The rule it contradicts is *"The photograph is deleted only when a person
+accepts the reading."* That rule is about **who decides**, and it is right. It
+says nothing about photographs that never became a reading at all, and those
+have no path out — no row, so no accept, no delete, and no request a musician
+could make about their own file.
+
+Three ordinary things produce one: backing out of the naming screen after the
+upload finishes, a save that fails after the bytes land, and a transcribe
+retried against a fresh key. None is an error.
+
+**Alternatives considered:**
+
+1. **Sweep the bucket.** List the storage bucket and delete what no `scores`
+   row references. Correct, and it scales badly: objects live under
+   `{user_id}/{uuid}`, so it is one list request per user folder per sweep,
+   forever, almost always to be told there is nothing to do. It also cannot
+   state the invariant — it can only keep rediscovering it.
+2. **Delete from the client when the musician backs out.** Handles the common
+   case and none of the others: an app killed mid-flow, a crash, a lost
+   network. It cannot be the only mechanism, and as a second one it is extra
+   surface for a case the sweeper already covers.
+3. **Create the row first, upload second.** Removes the window entirely and
+   reverses the whole capture flow — the scanner uploads pages before there is
+   a title to name a piece with, and asking for one first is a worse product to
+   fix a storage leak.
+4. **Record the upload in a table, and sweep that.** ← chosen.
+
+**Decision:** `pending_uploads` (migration 014). The upload endpoint inserts a
+row when it signs a key; the endpoints that consume an object delete it. The
+sweeper — already running on a timer for stuck analyses and transcriptions —
+deletes objects whose row is older than `UNCLAIMED_TTL_HOURS` (24), and their
+rows.
+
+It makes the invariant sayable, which the bucket walk never could: **every
+object in these buckets has a row somewhere** — a `scores` row because it
+became a piece, an `analyses` row because it became a take, a `users` row
+because it became a face, or a `pending_uploads` row because it has not become
+anything yet. An object with no row is now a bug rather than a Tuesday.
+
+**Trade-offs accepted.**
+
+- **A day of latency.** An abandoned photograph sits for up to 24 hours. The
+  gap between minting a key and creating the row is seconds, so an hour would
+  do; a day is chosen because sweeping too early deletes a page somebody is
+  still using and sweeping too late costs a few megabytes for a few hours.
+- **Bookkeeping that can fail.** `record` never raises: failing to record costs
+  a swept object later, and failing the *upload* because the bookkeeping failed
+  costs the musician their page. So the invariant is best-effort at the
+  recording end — an unrecorded object is exactly as orphaned as before, which
+  is no worse than the status quo it replaces.
+- **Two orderings that must not be inverted**, and both are tested. A key is
+  claimed *after* the row exists, never before, or a failed save strands the
+  object — one of the three cases this was written for. And the sweeper removes
+  the **object before the row**: a row deleted first leaks its object silently
+  and permanently, which is this bug reintroduced one level down.
+
+All three buckets, not just `score-images`. A take's audio and an avatar are
+minted the same way and abandoned the same way; only the page had ever been
+talked about.
+
+---
+
+## 2026-09-01 — The count-in is audible, and the pre-roll is thrown away
+
+**Context:** the owner asked for a conductor's count-in — *"when they click the
+record give them a haptic and tick sound countdown for when to start, just like
+how an conductor does when he counts you in."*
+
+The obstacle is real and is why the count-in was silent. `alignment.py` measures
+every onset **from the first one it detects**, so a click over the phone's
+speaker while the microphone is open does not merely add noise: it becomes the
+note the entire take is judged against, and every measure after it is reported
+against a timeline that started on a metronome tick. That is the whole reason
+the audible metronome mode is named `audio_with_headphones` and is the
+musician's own assertion rather than something the app detects.
+
+And the microphone is deliberately already open: `start()` opens the recorder
+*before* the count so that no unpredictable hardware start-up delay lands
+between "four" and the downbeat, in an app whose subject is exactly where notes
+land.
+
+**Alternatives considered:**
+
+1. **Count in before opening the microphone.** Removes the leak completely and
+   reintroduces the delay the current ordering exists to avoid — 100–300ms of
+   variable latency at the one instant that must not be variable.
+2. **Send the count-in and have the backend trim it.** A new field on the take,
+   a new contract between two implementations, and the app's word for something
+   the server cannot check.
+3. **Keep the count-in silent unless headphones are asserted.** What it did.
+   Nobody is counted in on speaker, which is most takes.
+4. **Discard the pre-roll in the app.** ← chosen.
+
+**Decision:** `Recorder.discardCapturedSoFar()` drops everything captured so far
+and keeps recording; the Record screen calls it on the downbeat, at the same
+instant it flips out of `counting_in`. The count-in ticks and taps whatever the
+take's metronome is set to — including "off", because a count-in is not the
+metronome feature, it is how a take starts — and those seconds never leave the
+phone.
+
+**Trade-offs accepted.** The clicks are still *recorded*, briefly, so a bug that
+failed to call the discard would leak them; the call sits on the same line as
+the phase change so that the two cannot drift apart, and `countIn.ts` states the
+rule where it is tested. The downbeat's own accent click is inside the kept
+audio by one click-length; it coincides with the note the musician plays, so it
+adds no onset the alignment does not already expect there. And the take's
+metronome is unchanged: after the count, only `audio_with_headphones` clicks,
+because that audio cannot be discarded.
+
+---
+
+## 2026-08-30 — A vision model may correct a bar, but may never read a page
+
+**Context:** the chain has been homr alone since 2026-08-24, when the owner
+called it — *"run homr only, no backup AI"* — because the vision models had
+invented notes: handed a page they could not read, they returned notation nobody
+had printed, at a confidence the app drew as a transcription. That decision was
+right and the evidence for it is in `config.py` beside `OCR_PROVIDER_CHAIN`.
+
+It had a cost nobody had priced. `confirm.retry_with_arithmetic` re-reads the
+bars whose durations do not add up — it names them, asks for those and nothing
+else, and splices the answer back over only those bars. It can only ask a
+provider that `takes_a_note`, and homr is deterministic with no prompt. So since
+that day the branch has logged *"cannot reconsider"* and stopped, on every page
+that needed it. The single mechanism this pipeline had for repairing a misread
+bar has been dead for the whole of its production life.
+
+The owner proposed the resolution on 2026-08-30: *"if the model cant effectively
+read or note or is not that confident we have a Visual llm such as claude to
+review it and correct that bar for the model."*
+
+**Decision:** `OCR_CORRECTOR` names a provider that answers the arithmetic
+retry, and nothing else. Empty by default. The reading is always homr's; a
+corrector can only edit parts of it that arithmetic has already proved untrue.
+
+**Why this is not the thing that was turned off.** The failure was not "a vision
+model was involved". It was that a vision model was asked an **unfalsifiable**
+question — *what is on this page* — and there was nothing to check the answer
+against, so an invention and a reading were the same shape. This question is
+different in the one way that matters:
+
+| | reading a page | correcting a bar |
+|---|---|---|
+| what is asked | what is here | this bar sums to 3 in 4/4, look again |
+| how many bars it may write | all of them | only the ones already proved wrong |
+| what happens if it invents | stored and drawn | still does not sum, discarded |
+
+Four limits, all already in `confirm.py` and all now load-bearing rather than
+theoretical: only bars in `asked_for` are spliced, so a retry aimed at bar 2
+cannot rewrite bar 12; a reply leaving more bars broken than it found is thrown
+away; a metre cannot be lost by omission; and nothing here raises, so a failed
+correction costs the page nothing.
+
+**Alternatives considered.**
+
+*Teach homr to reconsider.* It is an ONNX model with no prompt. Asking it again
+returns the same answer, which is why the branch was dead.
+
+*Send the whole page to a vision model when homr's confidence is low.* This is
+the thing that was turned off, restated. A low-confidence page is exactly the
+page a model is most likely to invent on, and nothing checks the result.
+
+*Ask the musician instead.* `MeasureEditScreen` already does, and stays the
+final authority. But a page with nine broken bars is nine repairs by hand before
+a single practice, and most of them are the same misread beam.
+
+*Leave it dead and widen the vocabulary instead.* Partly done — 17 note values
+were added the same day, and every one closes a real drop. But a bar can fail to
+add up for reasons no vocabulary fixes: a beam misread, a rest missed, a tuplet
+bracket lost.
+
+**Trade-offs accepted.**
+
+- **It costs money per page that needs it**, on a metered API, which is why it
+  is off by default and named rather than implied.
+- **The residual risk is a plausible wrong answer**, and it is real: a corrector
+  told "bar 14 is short" might look at bar 15, return something that sums, and
+  be accepted. The arithmetic guard catches invention that *does not add up*, not
+  invention that does. Sending a crop of the bar would close this, and the bar's
+  position on the page is not something homr's MusicXML reliably carries — see
+  the follow-up below.
+- **The musician is not yet told which bars a corrector touched.** They should
+  be; `Measure` has no field for it and adding one reaches the app, so it is a
+  separate change under the UI gate.
+
+**Follow-up, in order:** mark corrected bars in the score so the caveat line can
+name them; then locate bars on the page — via `<print new-system="yes">` where
+homr emits it — so a correction can be asked about a crop rather than a page.
+
+## 2026-08-29 — The photograph is kept only where a person said so, and withdrawal deletes
+
+**Context:** migration 007 deletes the page photograph when a musician accepts
+the reading, and every reason it gives still stands — a page is megabytes of
+JPEG whose one remaining purpose has just been served. What changed is that
+there is now a second purpose: the page, the reading, and the correction made
+against it are the training example that makes the reader better, and that is
+the one asset here nobody can buy.
+
+**Decision:** keep the photograph *only* where the account has explicitly
+agreed, record corrections the same way, and make withdrawal delete both. With
+no consent, nothing about the existing behaviour changes in any way — this is
+007 with a gate in front of it, not a reversal of it.
+
+**Alternatives considered:**
+
+- **Keep every photograph and ask later.** The cheapest way to start the
+  flywheel, and it takes the decision away from the person whose photographs
+  they are. Also a storage bill that grows with every scan, on a project already
+  near its egress cap.
+- **Infer consent from something already stored** — the tier, an existing
+  privacy setting, having shared to a studio. All of these are a way of not
+  asking, and none of them is what the person agreed to.
+- **A boolean rather than a timestamp.** A consent record has to answer *when*
+  they agreed, because the wording changes and a boolean cannot say which
+  wording it belongs to. Re-granting therefore keeps the original timestamp
+  rather than re-stamping, or the answer becomes the date of the last save.
+- **Keep a `withdrawn_at` tombstone.** Useful for an audit trail, and it is a
+  row recording that someone once consented, retained after they asked to be
+  forgotten. NULL means all three of "never asked", "declined" and "withdrew",
+  because all three mean the same thing to every caller.
+- **Store the whole `ScoreJson` before and after.** The obvious shape, and it
+  stores sixty-eight unchanged bars twice to say nothing about them, then makes
+  whoever trains on it diff the signal back out. One row per corrected measure.
+
+**Failing closed, which is the opposite of the sibling rule.** `shouldOnboard`
+deliberately fails *open* — a slow or failed `/v1/me` opens the app rather than
+holding it behind a network request (2026-08-25) — because the cost of guessing
+wrong there is one screen shown twice. Here the cost is keeping a person's
+photographs without being told to, so every uncertainty is a no: no row, no
+timestamp, a value that is not a timestamp, a lookup that threw. `may_keep_
+corrections` takes the row rather than a user id specifically so it cannot do
+IO, because a consent check that can time out is one that can fail open.
+
+**What is deliberately weaker than it should be:** the training example wants an
+*image crop* of the bar, and the finest pointer available is the page key plus a
+measure number. homr knows where each measure sits and neither `musicxml.py` nor
+the schema carries it. Recording the honest pointer now is what makes
+re-locating the bar possible later; inventing a crop we do not have would not.
+
+**Known cost, accepted:** retention makes the bucket grow where it used to
+shrink, on a project whose egress is the thing being watched. It is bounded by
+being opt-in and by nobody being able to opt in until the consent screen
+exists — but when that screen ships, storage growth becomes a real number to
+watch rather than a hypothetical.
+
+---
+
+## 2026-08-29 — Tuplet names are additive; the pitch grammar is not, so it waits
+
+**Context:** two gaps in the schema were discarding music that homr had read
+correctly. Both looked like one-line widenings. Only one of them is.
+
+Measured before deciding, on fixtures in this repository:
+
+    5:4 quintuplet, bar otherwise correct   3 of 8 onsets kept, beat check "ok"
+    Ebb3 in bass_excerpt.musicxml           note dropped, bar 3.0 of 4.0, "short"
+
+**Decision:** ship the tuplet names (`quintuplet_*`, `septuplet_*`) now. Leave
+`PITCH_PATTERN` alone, and record why here rather than leaving the next person
+to rediscover the cost.
+
+**Why the two are not the same size.** A duration is a *number*: adding a name
+adds a row to one table, and every consumer either reads that table
+(`DURATION_BEATS`, substituted into both browser tools by `sandbox_shared`) or
+is forced by `Record<Duration, …>` to declare it. The compiler and
+`test_client_enums` between them find every site. A pitch is a *string that
+five separate places parse*, and only one of them imports the canonical
+pattern. An audit of every consumer found:
+
+- **`engrave.ts`** — `stepOf` returns null on an unparseable pitch and the
+  caller draws the notehead at `step === null ? 0`, i.e. **on the middle staff
+  line**. A double sharp would silently engrave as B4 in treble. There is also
+  no flat glyph at all today (`accidentalOf` only ever returns `'sharp'`), so
+  `##`/`bb` need new glyphs before they can be drawn at all.
+- **`schedule.ts`** — `frequencyOf` returns null, and the note is dropped from
+  playback while the clock still advances. Silent, not desynced.
+- **`reading.ts`** — `stepPitch` and `cycleAccidental` return the pitch
+  unchanged on a non-match, so the ▲/▼ and accidental controls become no-ops on
+  **exactly the notes a musician would open the editor to fix**.
+- **`frontend/src/lib/score.ts`** — a second grammar feeding `canSave`, so an
+  imported score containing one would be unsaveable in the web editor.
+- **`scan-bench.template.html`** — a third copy of the engraver; it degrades
+  visibly (`?`) rather than silently, which is the only one that fails well.
+
+So widening the regex alone converts "one note is missing, the bar is short,
+and the beat check says so" into "the bar looks complete and a notehead is
+drawn a seventh out of place." That is strictly worse by this codebase's own
+standard — the rule that keeps `ScoreJson.clef` nullable, because a bass part
+labelled "Treble clef" is worse than no label. **A wrong notehead presented as
+a right one is the failure mode, not the missing note.**
+
+**Alternatives considered:**
+
+- **Widen the grammar and fix the four TS parsers in the same change.** The
+  honest version, and what should eventually happen. It needs new accidental
+  glyphs on the stave and a `cycleAccidental` that can reach and clear a double
+  — both design decisions about a screen, which CLAUDE.md §2 gates. Not
+  something to decide inside a schema change.
+- **Widen the grammar now, fix the engraver later.** Rejected on the paragraph
+  above: it trades a visible failure for an invisible one.
+- **Keep the note's time as a rest**, the way an unwritable tuplet does. This
+  is the tempting middle and it is wrong here for a reason that does not apply
+  to tuplets: a tuplet's parts were *unnameable*, so a rest was the best
+  available answer, whereas `Ebb3` is a note this app could name if it chose to.
+  Writing a rest would make the bar sum correctly and silence the one check
+  that currently catches it. Today the bar comes up short, the musician is
+  shown a concern, and `MeasureEditScreen` can already correct pitch — so the
+  existing behaviour is a working repair path, not a dead end.
+
+**What it costs to wait:** a dropped note also shortens its bar, and
+`alignment.py` accumulates durations, so every later bar on the page is judged
+early. That is real. It is bounded by being *reported* — `unwritable_notes` and
+the short verdict both fire — which is what makes waiting tolerable rather than
+free. Double accidentals are common in sharp keys and romantic repertoire, so
+this should not wait indefinitely.
+
+**Also worth converging when that happens:** the copies already disagree about
+octaves. The canonical pattern ends `-?\d` (one digit); `engrave.ts`,
+`schedule.ts` and both scan-bench copies use `(-?\d+)`. `A99` is rejected by the
+backend and happily engraved by the app today.
+
+---
+
 ## 2026-08-27 — Skipping a long rest is a fact about the take, not a playback setting
 
 **Context:** an orchestral part is mostly waiting, and practising the notes
