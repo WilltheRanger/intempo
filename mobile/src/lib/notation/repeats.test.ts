@@ -89,6 +89,111 @@ describe('turning a repeat span into marks', () => {
   });
 });
 
+describe('endings', () => {
+  it('reads a first ending as a closed bracket and a second as an open one', () => {
+    // **The whole reading of the bracket.** A first ending is closed at the
+    // right because the repeat sends you back from there; the last one is open
+    // because you carry on. Drawing both the same says nothing.
+    const stave = staveScoreFor(
+      scoreOf(6, [
+        repeat(1, 4),
+        { start_measure: 4, end_measure: 4, type: 'first_ending' },
+        { start_measure: 5, end_measure: 6, type: 'second_ending' },
+      ]),
+    );
+    expect(stave.endings).toEqual([
+      { label: '1.', from: 4, to: 4, closed: true },
+      { label: '2.', from: 5, to: 6, closed: false },
+    ]);
+  });
+
+  it('has none when the score has none', () => {
+    expect(staveScoreFor(scoreOf(4, [repeat(1, 4)])).endings).toEqual([]);
+  });
+});
+
+describe('drawing an ending', () => {
+  // **With `measureNumber`.** A bracket spans measures, and `measureSpans` —
+  // which is what it is measured from — carries whatever the items say. Items
+  // out of `staveScoreFor` always number their measures; hand-built ones have
+  // to, or the bracket has nothing to span.
+  const bar = (number: number, extra: Partial<StaveItem> = {}): StaveItem =>
+    ({ pitch: 'C4', value: 'whole', measureNumber: number, ...extra }) as StaveItem;
+
+  const fourBars = () =>
+    Array.from({ length: 4 }, (_, i) =>
+      bar(i + 1, i > 0 ? { barBefore: true } : {}),
+    );
+
+  it('spans the measures it names and hooks down at the left', () => {
+    const drawn = engrave(fourBars(), 'treble', {
+      endings: [{ label: '1.', from: 3, to: 3, closed: true }],
+    });
+    const [ending] = drawn.systems[0].endings;
+    expect(ending.label).toBe('1.');
+    expect(ending.to).toBeGreaterThan(ending.from);
+    expect(ending.hook).toBeGreaterThan(0);
+  });
+
+  it('closes at the right only for an ending that is closed', () => {
+    const closed = engrave(fourBars(), 'treble', {
+      endings: [{ label: '1.', from: 3, to: 3, closed: true }],
+    }).systems[0].endings[0];
+    const open = engrave(fourBars(), 'treble', {
+      endings: [{ label: '2.', from: 3, to: 3, closed: false }],
+    }).systems[0].endings[0];
+
+    expect(closed.closesRight).toBe(true);
+    expect(open.closesRight).toBe(false);
+  });
+
+  it('sits above everything else on the system', () => {
+    // It has to clear beams, slurs, articulations and a tuplet bracket, which
+    // is why it is built after every other extent is known rather than in the
+    // note loop.
+    const drawn = engrave(
+      [
+        bar(1),
+        bar(2, { barBefore: true }),
+        {
+          pitch: 'C6',
+          value: 'quarter',
+          barBefore: true,
+          measureNumber: 3,
+          articulation: 'accent',
+        } as StaveItem,
+      ],
+      'treble',
+      { endings: [{ label: '1.', from: 3, to: 3, closed: true }] },
+    );
+    const system = drawn.systems[0];
+    const ink = [
+      ...system.notes.map((n) => n.y),
+      ...system.notes.flatMap((n) => (n.articulation ? [n.articulation.y] : [])),
+      ...system.staffLines,
+    ];
+    expect(system.endings[0].y).toBeLessThan(Math.min(...ink));
+  });
+
+  it('hooks at the right only on the system that finishes it', () => {
+    // A bracket cut by a line break covers the measures each system holds; only
+    // the one holding its last measure closes.
+    const many = Array.from({ length: 10 }, (_, i) =>
+      bar(i + 1, i > 0 ? { barBefore: true } : {}),
+    );
+    const drawn = engrave(many, 'treble', {
+      maxWidth: 150,
+      lineGap: 5,
+      noteGap: 16,
+      endings: [{ label: '1.', from: 1, to: 10, closed: true }],
+    });
+    expect(drawn.systems.length).toBeGreaterThan(1);
+    const closing = drawn.systems.map((s) => s.endings[0]?.closesRight);
+    expect(closing.slice(0, -1).every((c) => c === false)).toBe(true);
+    expect(closing.at(-1)).toBe(true);
+  });
+});
+
 describe('drawing them', () => {
   const bar = (extra: Partial<StaveItem> = {}): StaveItem =>
     ({ pitch: 'C4', value: 'whole', ...extra }) as StaveItem;

@@ -46,6 +46,8 @@ export interface StaveScore {
    * told.
    */
   closesWithRepeat: boolean;
+  /** First- and second-time ending brackets, by measure number. */
+  endings: { label: string; from: number; to: number; closed: boolean }[];
 }
 
 /**
@@ -225,6 +227,19 @@ export function staveScoreFor(score: ScoreJson): StaveScore {
    * barline before it to hang one on, and a printed part does not draw one
    * there either — the section is understood to start at the beginning.
    */
+  /**
+   * First- and second-time endings, as brackets over measure ranges.
+   *
+   * Closed at the right for a first ending — the repeat sends you back from
+   * there — and open for the last one, because you carry on. That is the whole
+   * reading of the bracket.
+   *
+   * The label is the ordinal with a full stop, which is what a printed part
+   * uses. A third ending would be `3.`; the pipeline only reports two, so
+   * anything else is named by its index rather than guessed at.
+   */
+  const endings: { label: string; from: number; to: number; closed: boolean }[] = [];
+
   const opensRepeat = new Set<number>();
   const closesRepeat = new Set<number>();
   let closesWithRepeat = false;
@@ -233,6 +248,15 @@ export function staveScoreFor(score: ScoreJson): StaveScore {
     const last = numbers[numbers.length - 1];
     const first = numbers[0];
     for (const repeat of score.repeats ?? []) {
+      if (repeat.type === 'first_ending' || repeat.type === 'second_ending') {
+        endings.push({
+          label: repeat.type === 'first_ending' ? '1.' : '2.',
+          from: repeat.start_measure,
+          to: repeat.end_measure,
+          closed: repeat.type === 'first_ending',
+        });
+        continue;
+      }
       if (repeat.type !== 'repeat') {
         continue;
       }
@@ -458,6 +482,7 @@ export function staveScoreFor(score: ScoreJson): StaveScore {
     undrawable,
     beatQuarters: beamBeatQuarters(score.time_signature),
     closesWithRepeat,
+    endings,
   };
 }
 

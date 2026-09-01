@@ -6,6 +6,63 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-01 — First and second endings, which finish the repeat
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. The piece of work the entry
+below names as the next one.
+
+**Files:** `mobile/src/lib/notation/engrave.ts`, `fromScore.ts`,
+`components/notation/Stave.tsx`, `screens/pieceScore/PieceScoreScreen.tsx`,
+`mobile/src/lib/notation/repeats.test.ts`.
+
+The repeat signs went in without brackets, which told a musician to go back and
+said nothing about playing a different bar the second time — half an
+instruction, on a page whose playback has taken the endings since
+`measuresInPlayOrder` was written.
+
+**Closed at the right for a first ending, open for the last one.** That
+difference is the whole reading of the bracket: the repeat sends you back from a
+first ending, and you carry on out of the final one. Drawing both the same says
+nothing, and it is the assertion the test leads with.
+
+### Spanned from measures, not from items
+
+A bracket covers *bars*, and `measureSpans` already records where each one
+starts and stops on each system. That is also what makes a bracket cut by a line
+break come out right with no special case: each system covers the bars it holds,
+and only the system holding the ending's **last** bar hooks down at the right.
+
+Built after every other extent is known, because it has to clear beams, slurs,
+articulations and a tuplet bracket — anywhere else on the system and it would
+have to guess.
+
+### Two placement bugs, both visible only when drawn
+
+- **The number printed through the bracket line.** Its baseline was the hook's
+  end, and a numeral's cap reaches about 0.9 spaces above its baseline — so the
+  digit crossed the rule it hangs from. The hook is deeper now and the baseline
+  is measured against the cap rather than against the hook.
+- **A bracket opening a system started inside the key signature.** A measure
+  that opens a system has its span begin half a note-gap before the music, which
+  is harmless for a barline — none is drawn there — and prints a bracket over
+  the sharps. Clamped to the head's right edge.
+
+**Test premise moved:** four new cases failed at first because hand-built stave
+items carry no `measureNumber`, and a bracket spanned from `measureSpans` has
+nothing to span without one. Items out of `staveScoreFor` always number their
+measures; the fixtures in the test now do too, and say why.
+
+**Verified** by seeding a repeat over bars 1–2 with a first ending on bar 2 and a
+second on bar 3, at 4x: `1.` closed at both ends over bar 2 with the closing
+`:||` after it, `2.` hooked at the left and open at the right on the next
+system. Fixture restored byte-identical, route sweep clean.
+
+**Tests:** 777 pass, up 6.
+
+**Rollback:** revert the commit.
+
+---
+
 ## 2026-09-01 — The app played repeats it never drew
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Seventh finding of the

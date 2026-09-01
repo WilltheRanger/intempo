@@ -188,6 +188,8 @@ export interface StaveProps {
    * computes it, for the same reason it computes `beatQuarters`.
    */
   closesWithRepeat?: boolean;
+  /** First- and second-time ending brackets — `staveScoreFor` computes them. */
+  endings?: { label: string; from: number; to: number; closed: boolean }[];
   /**
    * Print each note's letter under the system.
    *
@@ -274,6 +276,7 @@ export function Stave({
   justify = false,
   beatQuarters,
   closesWithRepeat,
+  endings,
   head,
   showNoteNames = true,
   highlightMeasure = null,
@@ -294,6 +297,7 @@ export function Stave({
     justify,
     beatQuarters,
     closesWithRepeat,
+    endings,
     head,
     // Also stops the layout reserving the row's height, so hiding the names
     // doesn't leave a band of empty space under every system.
@@ -761,6 +765,55 @@ export function Stave({
               strokeLinecap="round"
               fill="none"
             />
+          ))}
+
+          {/*
+            **Ending brackets — the other half of a repeat.** The repeat signs
+            went in without them, which told a musician to go back and said
+            nothing about playing a different bar the second time.
+
+            The number is set in the app's own label face rather than from
+            Bravura: an engraver prints it in a plain roman, and the font's
+            tuplet digits are small bold italics meant for a different job.
+          */}
+          {system.endings.map((ending, index) => (
+            <G key={`ending-${index}`}>
+              <Line
+                x1={ending.from}
+                y1={ending.y}
+                x2={ending.to}
+                y2={ending.y}
+                stroke={rule}
+                strokeWidth={stroke}
+              />
+              <Line
+                x1={ending.from}
+                y1={ending.y}
+                x2={ending.from}
+                y2={ending.y + ending.hook}
+                stroke={rule}
+                strokeWidth={stroke}
+              />
+              {ending.closesRight ? (
+                <Line
+                  x1={ending.to}
+                  y1={ending.y}
+                  x2={ending.to}
+                  y2={ending.y + ending.hook}
+                  stroke={rule}
+                  strokeWidth={stroke}
+                />
+              ) : null}
+              <SvgText
+                x={ending.from + lineGap * 0.5}
+                y={ending.labelY}
+                fill={label}
+                fontSize={ending.labelSize}
+                fontFamily={typography.metadataSmall.fontFamily}
+              >
+                {ending.label}
+              </SvgText>
+            </G>
           ))}
 
           {system.tuplets.map((tuplet, index) => {

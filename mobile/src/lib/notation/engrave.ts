@@ -582,6 +582,35 @@ export interface EngravedSlur {
   control: { x: number; y: number };
 }
 
+/**
+ * A first- or second-time ending bracket.
+ *
+ * **The other half of a repeat.** The repeat signs went in without these, which
+ * told a musician to go back and said nothing about playing a different bar the
+ * second time — half an instruction. `measuresInPlayOrder` has taken the
+ * endings since it was written, so the app *played* the right notes over a page
+ * that could not explain them.
+ *
+ * Closed at the right for a first ending, because the repeat sends you back
+ * from there; open for the last one, because you carry on. That difference is
+ * the whole reading of the bracket and is not decoration.
+ */
+export interface EngravedEnding {
+  from: number;
+  to: number;
+  y: number;
+  /** Where the number's baseline sits, already offset from `y`. */
+  labelY: number;
+  /** The number's font size. */
+  labelSize: number;
+  /** How far the end hooks drop. Positive is down the page. */
+  hook: number;
+  /** "1." or "2." — printed at the left, inside the bracket. */
+  label: string;
+  /** Whether the right end hooks down, or runs on. */
+  closesRight: boolean;
+}
+
 export interface EngravedTuplet {
   from: number;
   to: number;
@@ -618,6 +647,7 @@ export interface EngravedSystem {
   beams: EngravedBeam[];
   tuplets: EngravedTuplet[];
   slurs: EngravedSlur[];
+  endings: EngravedEnding[];
   /** Clef, key and metre at the left edge. Empty when none was asked for. */
   head: EngravedHead;
   /** Baseline for the note names printed under this system. */
@@ -633,6 +663,15 @@ export interface Engraving {
 }
 
 export interface EngraveOptions {
+  /**
+   * First- and second-time endings, by measure number.
+   *
+   * Given to the engraving whole rather than marked on items, because a bracket
+   * spans *measures* and `measureSpans` already knows where each one starts and
+   * stops on each system — which is also what makes a bracket split by a line
+   * break come out right without any special case.
+   */
+  endings?: { label: string; from: number; to: number; closed: boolean }[];
   /**
    * The score's very last barline ends a repeated section.
    *
@@ -1252,6 +1291,8 @@ function layoutSystem(
   headRequest: HeadRequest | null,
   /** Whether this system's closing barline ends a repeated section. */
   closesWithRepeat: boolean,
+  /** Endings that may cross this system, by measure number. */
+  endingSpans: NonNullable<EngraveOptions['endings']>,
 ): { system: EngravedSystem; top: number; bottom: number } {
   const halfGap = lineGap / 2;
   const middleStep = MIDDLE_LINE_STEP[clef];
@@ -1263,6 +1304,7 @@ function layoutSystem(
   const beams: EngravedBeam[] = [];
   const tuplets: EngravedTuplet[] = [];
   const slurs: EngravedSlur[] = [];
+  const endings: EngravedEnding[] = [];
   const stemLength = lineGap * STEM_FACTOR;
   const thickness = lineGap * BEAM_THICKNESS_FACTOR;
 
@@ -1872,6 +1914,44 @@ function layoutSystem(
     close();
   }
 
+  /**
+   * Ending brackets, above everything else on the system.
+   *
+   * Built here rather than in the note loop because they have to clear the
+   * whole system — beams, slurs, articulations, a tuplet bracket — and only
+   * here is that known. Spanned from `measureSpans`, so a bracket cut by a line
+   * break simply covers the measures this system holds, with the right-hand
+   * hook only on the system that actually finishes it.
+   */
+  for (const ending of endingSpans) {
+    const spans = measureSpans.filter(
+      (span) =>
+        span.measureNumber !== undefined &&
+        span.measureNumber >= ending.from &&
+        span.measureNumber <= ending.to,
+    );
+    if (spans.length === 0) {
+      continue;
+    }
+    const y = Math.min(...extents) - lineGap * ENDING_CLEARANCE;
+    endings.push({
+      // **Never back into the clef.** A measure that opens a system has its
+      // span start half a note-gap before the music, which is inside the key
+      // signature — harmless for a barline, which is not drawn there, and a
+      // bracket printed over the sharps otherwise.
+      from: Math.max(headX, Math.min(...spans.map((span) => span.from))),
+      to: Math.max(...spans.map((span) => span.to)),
+      y,
+      hook: lineGap * ENDING_HOOK,
+      labelY: y + lineGap * ENDING_LABEL_BASELINE,
+      labelSize: lineGap * ENDING_LABEL_SIZE,
+      label: ending.label,
+      closesRight:
+        ending.closed && spans.some((span) => span.measureNumber === ending.to),
+    });
+    extents.push(y);
+  }
+
   const nameY = Math.max(...extents) + lineGap * NAME_ROW_FACTOR;
 
   return {
@@ -1885,6 +1965,7 @@ function layoutSystem(
       beams,
       tuplets,
       slurs,
+      endings,
       head,
       nameY,
       width: right,
@@ -1927,6 +2008,24 @@ function repeatKind(item: StaveItem): EngravedBarline['repeat'] {
   }
   return starts ? 'start' : ends ? 'end' : null;
 }
+
+/** How far above the system's topmost ink an ending bracket sits. */
+const ENDING_CLEARANCE = 1.2;
+
+/**
+ * How far the bracket's end hooks drop, in staff spaces.
+ *
+ * Deep enough to hold the number under the line rather than through it: the
+ * numeral's cap reaches about 0.9 spaces above its baseline, and the baseline
+ * sits at `ENDING_LABEL_BASELINE`.
+ */
+const ENDING_HOOK = 1.35;
+
+/** Where the number's baseline sits below the bracket, in staff spaces. */
+const ENDING_LABEL_BASELINE = 1.15;
+
+/** The number's size, in staff spaces. */
+const ENDING_LABEL_SIZE = 1.3;
 
 /** How far from a notehead's centre a slur's end springs, in staff spaces. */
 const SLUR_CLEARANCE = 1.1;
@@ -2025,6 +2124,11 @@ function shift(system: EngravedSystem, dy: number): EngravedSystem {
     })),
     beams: system.beams.map((beam) => ({ ...beam, y: beam.y + dy })),
     tuplets: system.tuplets.map((t) => ({ ...t, y: t.y + dy })),
+    endings: system.endings.map((ending) => ({
+      ...ending,
+      y: ending.y + dy,
+      labelY: ending.labelY + dy,
+    })),
     slurs: system.slurs.map((slur) => ({
       from: { ...slur.from, y: slur.from.y + dy },
       to: { ...slur.to, y: slur.to.y + dy },
@@ -2137,6 +2241,7 @@ export function engrave(
       beatQuarters,
       headRequest,
       closesWithRepeat,
+      options.endings ?? [],
     );
     systems.push(shift(laid.system, cursor - laid.top));
     cursor += laid.bottom - laid.top + gap;
