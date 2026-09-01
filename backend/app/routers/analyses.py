@@ -16,7 +16,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, s
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.auth import current_user_id, current_user_id_provisioned
-from app.services.audio_storage import durable_audio_reference
+from app.services.audio_storage import InvalidAudioReference, durable_audio_reference
 from app.services.tier_limits import tier_of, usage_for
 from app.db import get_service_client
 from app.models.analysis import (
@@ -177,7 +177,17 @@ def create_analysis(
     user_id: UUID = Depends(current_user_id_provisioned),
 ) -> CreateAnalysisResponse:
     client = _service_client()
-    audio_reference = durable_audio_reference(body.audio_reference(), user_id)
+    try:
+        audio_reference = durable_audio_reference(body.audio_reference(), user_id)
+    except InvalidAudioReference as exc:
+        # The storage helper also runs in the standalone worker image, which
+        # deliberately does not install FastAPI. Translate its plain domain
+        # error at the web boundary rather than importing the web framework
+        # into worker code.
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(exc),
+        ) from exc
     _assert_score_owned(client, body.score_id, user_id)
 
     # One uploaded object is one take. If the POST response was lost, the
