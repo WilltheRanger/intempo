@@ -13,7 +13,7 @@ import { ApiError } from '../../data/api/client';
 import { UploadError } from '../../data/api/upload';
 import { captureSession, useCapturedPages } from '../../data/captureSession';
 import { IS_LIVE_BACKEND } from '../../data/environment';
-import { ScanUploadError } from '../../lib/scan/uploadPage';
+import { ScanUploadError, uploadPage } from '../../lib/scan/uploadPage';
 import { uploadPages } from '../../lib/scan/uploadPages';
 import { spacing } from '../../design';
 import type { RootNavigation } from '../../navigation/types';
@@ -95,6 +95,7 @@ export function TranscribeScreen() {
     void (async () => {
       try {
         const urls = await uploadPages(pages, {
+          upload: uploadPage,
           signal: abort.signal,
           onProgress: ({ page, sent, total: pageTotal }) => {
             if (live) {
