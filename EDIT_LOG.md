@@ -6,6 +6,26 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-31 — Modal keyboard containment
+
+**Branch:** `fix/modal-keyboard-containment`
+
+### Changed
+
+- Made the app root inert while a bottom sheet or confirmation dialog is open
+  on web, matching the modal behavior users already get from native platforms.
+- Prevents Tab, pointer input, and assistive technology from entering the
+  hidden screen behind an overlay.
+- Counts nested overlays so closing a confirmation over a sheet cannot
+  accidentally reactivate the covered app.
+- Keeps the root inert through the bottom sheet's dismissal animation.
+
+### Verification
+
+- Reproduced against production: with Add piece open, the homepage and every
+  bottom tab remained at tabindex 0 outside the aria-modal dialog.
+- Mobile typecheck, tests, and web build run in pull-request CI; production is
+  rechecked by advancing focus through the open sheet before merge.
 ## 2026-08-31 — Active-tab keyboard containment
 
 **Branch:** `fix/inactive-tab-keyboard-focus`
