@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { practiceLessonFor } from './practiceLesson';
+import { notationSetupLesson, practiceLessonFor } from './practiceLesson';
 
 describe('practiceLessonFor', () => {
   it('gives a first-take lesson that names the piece and working tempo', () => {
@@ -52,5 +52,23 @@ describe('practiceLessonFor', () => {
     expect(lesson.title).toBe('Repeat the result before adding speed');
     expect(lesson.exercise).toContain('30 half-note BPM');
     expect(lesson.exercise).toContain('before changing the tempo');
+  });
+});
+
+describe('notationSetupLesson', () => {
+  it('explains why a manual piece needs sheet music', () => {
+    const lesson = notationSetupLesson('Solo No. 1', false);
+
+    expect(lesson.context).toContain('Solo No. 1');
+    expect(lesson.body).toContain('notes, rests, and repeats');
+    expect(lesson.exercise).toContain('page order');
+  });
+
+  it('switches to transcription review while the pages are being read', () => {
+    const lesson = notationSetupLesson('Solo No. 1', true);
+
+    expect(lesson.context).toBe('Preparing Solo No. 1');
+    expect(lesson.title).toContain('review');
+    expect(lesson.exercise).toContain('highlighted measures');
   });
 });
