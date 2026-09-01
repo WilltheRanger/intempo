@@ -6,6 +6,55 @@ Operating Principle #5.
 
 ---
 
+## 2026-09-01 — Measure the engraver against the schema, over against the fixtures
+
+**Context:** `tools/engraver-coverage.py` reported **100% of every page in the
+corpus**, 0 of 393 notes without a glyph. Four of the schema's forty-six
+durations had no glyph at all, and the corpus could not see it: not one of the
+ten fixture pages contains a note shorter than a sixteenth. The same tool once
+read 5% missing with a worst page of 67% while the first real orchestral part
+photographed scored **0%** and rendered as a title and a photograph.
+
+The tool's own header already said why — "every fixture here is a page somebody
+chose in order to check something" — and then went on reporting the number that
+sentence disowns.
+
+**Alternatives considered:**
+
+1. **Grow the corpus.** The direct reading of the problem, and it does not
+   converge: any set of pages is a set somebody chose, and the failure mode is
+   precisely the page nobody thought to add. It also costs a real page per gap,
+   which is the scarcest thing this project has.
+2. **Trust the worst page instead of the average.** Already the rule, already in
+   `CLAUDE.md`, and it did not help — the worst page was also 100%.
+3. **Measure against the vocabulary the backend is allowed to send.** Taken.
+   `score_schema.DURATION_BEATS` is closed, shared with the app, and load-bearing
+   on both sides; every value in it can arrive on a real page tomorrow.
+
+**Decision:** coverage is reported against the schema as well as the corpus.
+`tools/engraver-coverage.py` prints both tables, and
+`mobile/src/lib/notation/durations.test.ts` asserts the app side of it — every
+duration draws except a named list of four. `CLAUDE.md` §7b now says to read the
+schema table, because a rule that says "read the worst page" was satisfied by a
+corpus where the worst page was perfect.
+
+**Trade-offs accepted:**
+
+- **The schema number says nothing about real pages.** A page can be read wrong
+  in a hundred ways that have nothing to do with which durations exist. The
+  corpus table stays for exactly that reason; this is a second measurement, not
+  a replacement.
+- **A named exception list has to be maintained.** `DELIBERATELY_UNDRAWN` will
+  go stale the day something in it becomes drawable — but it fails loudly then,
+  which is the opposite of how the corpus number went stale.
+- **It made four values drawable that no page here needs.** The 32nd, the 64th,
+  the double dot and the breve cost a wider font subset (25.2 KB → 27.0 KB) and
+  a second dot in the renderer. A Kreutzer study is thirty-seconds; a march is
+  written with double dots. They are not exotic, they were only absent from the
+  fixtures.
+
+---
+
 ## 2026-09-01 — One AudioContext for the life of the page, over one per playback
 
 **Context:** the owner reported that Listen works once and not again, on every

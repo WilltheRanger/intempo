@@ -5,9 +5,9 @@
 
 **Why this exists.** A musician photographed a String Bass part — theme and
 variations, runs of sixteenths, dotted rhythms, multi-bar rests — and the piece
-screen rendered the title, the photograph, and nothing else. `engrave.ts` draws
-four note values and no rests, `staveScoreFor` drops everything else, and every
-note on that page was dropped.
+screen rendered the title, the photograph, and nothing else. At the time
+`engrave.ts` drew four note values and no rests, `staveScoreFor` dropped
+everything else, and every note on that page was dropped.
 
 The screen now says so. The question this answers is the next one: **is the
 engraver's range a real problem or a rare one**, and which values would buy the
@@ -20,7 +20,11 @@ this repository could have predicted that, because nothing in this repository
 looks like one.
 
 So the number to watch is not the average. It is the **worst page**, and the
-corpus does not contain a bad one.
+corpus does not contain a bad one — which is why this now prints a second
+table that does not depend on the corpus at all: **every duration the schema
+can send**, drawable or not. The corpus reached 100% while four of the
+schema's forty-six values had no glyph, because not one fixture page contains
+a note shorter than a sixteenth.
 
 **The tool has twice measured the wrong thing**, which is worth keeping in
 view given what it is for:
@@ -153,6 +157,26 @@ def _pages():
         yield path.name, [(n.pitch, n.duration) for m in score.measures for n in m.notes]
 
 
+def _schema_coverage() -> None:
+    """What the app can draw of everything the backend is allowed to send.
+
+    The corpus answers "how much of these ten pages", which flatters the
+    engraver by exactly as much as the corpus is unrepresentative. This answers
+    "how much of the vocabulary", which no choice of fixtures can flatter.
+    """
+    from app.services.score_schema import DURATION_BEATS
+
+    undrawn = [
+        duration
+        for duration in sorted(DURATION_BEATS)
+        if not (_drawn("note", duration) and _drawn("rest", duration))
+    ]
+    total = len(DURATION_BEATS)
+    print(f"\nof the schema's {total} durations, {total - len(undrawn)} draw.")
+    for duration in undrawn:
+        print(f"  {duration:26}    <- no glyph")
+
+
 def main() -> int:
     grand: collections.Counter[tuple[str | None, str | None]] = collections.Counter()
     # Starts empty rather than at 100: when every page is fully drawable
@@ -190,6 +214,7 @@ def main() -> int:
     print(f"\n{missing} of {everything} notes have no glyph ({100 * missing / everything:.0f}%)")
     if worst:
         print(f"worst page: {worst[1]} at {worst[0]:.0f}% drawn")
+    _schema_coverage()
     print(
         "\nRead the worst page, not the average — and read what this corpus is."
         "\nEvery fixture in it is a page somebody chose to check something with."

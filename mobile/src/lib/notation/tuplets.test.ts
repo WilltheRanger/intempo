@@ -60,7 +60,7 @@ describe('tuplets reach the stave at all', () => {
   it('still refuses a tuplet whose base value has no glyph', () => {
     // A bracket marked 3 over notes drawn at the wrong length is worse than no
     // bracket: it asserts a ratio about something already wrong.
-    const stave = staveScoreFor(scoreOf('triplet_thirty_second'));
+    const stave = staveScoreFor(scoreOf('triplet_one_twenty_eighth'));
 
     expect(stave.noteCount).toBe(0);
     expect(stave.undrawable).toBe(1);

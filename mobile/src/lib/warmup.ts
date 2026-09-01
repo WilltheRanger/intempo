@@ -263,12 +263,18 @@ export function warmupFor(instrument: Instrument, now: Date = new Date()): Warmu
  * sixteenths, and a warmup written in them would otherwise fail to compile
  * here rather than sound wrong at runtime.
  */
-const VALUE_DURATIONS: Record<NoteValue, Duration> = {
+export const VALUE_DURATIONS: Record<NoteValue, Duration> = {
+  // The schema calls the plain value `double_whole` and the tuplet forms
+  // `triplet_breve`. The engraver draws one shape and calls it what an
+  // engraver calls it; the mapping lives here rather than in either.
+  breve: 'double_whole',
   whole: 'whole',
   half: 'half',
   quarter: 'quarter',
   eighth: 'eighth',
   sixteenth: 'sixteenth',
+  thirty_second: 'thirty_second',
+  sixty_fourth: 'sixty_fourth',
 };
 
 /**

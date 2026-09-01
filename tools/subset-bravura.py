@@ -35,7 +35,7 @@ OUT = REPO / "mobile" / "assets" / "fonts" / "Bravura.otf"
 #: The SMuFL codepoints this app draws, and nothing else.
 #:
 #: Ranges rather than a list where the whole range is used: all ten time
-#: signature digits, the five accidentals, the four flags. `E030-E043` is the
+#: signature digits, the five accidentals, the eight flags. `E030-E043` is the
 #: barline and repeat-dot set, included because a final barline drawn as a
 #: rectangle is the one part of a page that always looks hand-made.
 RANGES = [
@@ -44,10 +44,15 @@ RANGES = [
     "E05C",  # cClef
     "E080-E089",  # timeSig0..9
     "E260-E264",  # flat, natural, sharp, double sharp, double flat
+    "E0A0",  # noteheadDoubleWhole — the breve
     "E0A2-E0A4",  # noteheadWhole, noteheadHalf, noteheadBlack
-    "E4E3-E4E7",  # restWhole, restHalf, restQuarter, rest8th, rest16th
+    "E4E2-E4E9",  # restDoubleWhole..rest64th
     "E4EE",  # restHBar — the multi-bar rest
-    "E240-E243",  # flag8thUp/Down, flag16thUp/Down
+    # Flags to the 64th. `rest128th` and `flag128th` are deliberately outside:
+    # five beams at this stave size is a smudge rather than a rhythm, and
+    # `staveScoreFor` counts what it cannot draw and the screen says so — which
+    # is a better answer than an illegible mark presented as a reading.
+    "E240-E247",  # flag8thUp/Down .. flag64thUp/Down
     "E1E7",  # augmentationDot
     "E030-E043",  # barlines and repeat dots
     # Articulations: accent, staccato and tenuto, above and below. Six glyphs

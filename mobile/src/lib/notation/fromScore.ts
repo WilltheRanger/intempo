@@ -88,9 +88,10 @@ export function beamBeatQuarters(timeSignature: string | null): number {
 /**
  * The durations that survive the trip.
  *
- * Absent by design rather than oversight: `dotted_*` needs a dot, `sixteenth`
- * and below need a second beam or flag. Adding them means adding glyphs to
- * `engrave.ts`, not entries here.
+ * What is still absent is `one_twenty_eighth` and the tuplet forms of it,
+ * which the schema has. Five beams at this stave size is a smudge rather than
+ * a rhythm, and `staveScoreFor` counts what it cannot draw and the screen says
+ * so — a better answer than an illegible mark presented as a reading.
  */
 const DRAWABLE: Partial<Record<string, { value: NoteValue; dots: number }>> = {
   whole: { value: 'whole', dots: 0 },
@@ -108,6 +109,33 @@ const DRAWABLE: Partial<Record<string, { value: NoteValue; dots: number }>> = {
   dotted_half: { value: 'half', dots: 1 },
   dotted_quarter: { value: 'quarter', dots: 1 },
   dotted_eighth: { value: 'eighth', dots: 1 },
+  // **Not in this corpus, and that is the reason to add them rather than not
+  // to.** `tools/engraver-coverage.py` reported 100% across every fixture in
+  // the repository with these absent, because not one of the ten pages has a
+  // note shorter than a sixteenth — and the tool's own header says the corpus
+  // is pages somebody chose to check something with. A Kreutzer study, a
+  // cadenza or any written-out ornament is thirty-seconds, and the app would
+  // have drawn that page as holes with a line under it saying how many.
+  thirty_second: { value: 'thirty_second', dots: 0 },
+  dotted_thirty_second: { value: 'thirty_second', dots: 1 },
+  sixty_fourth: { value: 'sixty_fourth', dots: 0 },
+  dotted_sixty_fourth: { value: 'sixty_fourth', dots: 1 },
+  // A dot is a mark, not a value, so every value can carry one — and two.
+  dotted_whole: { value: 'whole', dots: 1 },
+  dotted_sixteenth: { value: 'sixteenth', dots: 1 },
+  // **Double dots, which the schema added because a march is written with
+  // them** — the first real page this project has seen is headed *Alla
+  // marcia*. `Stave` drew one dot whatever the count until this went in, so
+  // these could not have been listed here before it.
+  double_dotted_half: { value: 'half', dots: 2 },
+  double_dotted_quarter: { value: 'quarter', dots: 2 },
+  double_dotted_eighth: { value: 'eighth', dots: 2 },
+  // The breve. The schema calls the plain value `double_whole` and the tuplet
+  // forms `triplet_breve`, so both names are here — `tupletOf` strips the
+  // prefix and looks up what is left, and one of the two spellings would
+  // otherwise draw and the other would not.
+  double_whole: { value: 'breve', dots: 0 },
+  breve: { value: 'breve', dots: 0 },
 };
 
 /**
@@ -141,6 +169,26 @@ const DRAWABLE_RESTS: Partial<Record<string, { value: NoteValue; dots: number }>
   dotted_half: { value: 'half', dots: 1 },
   dotted_quarter: { value: 'quarter', dots: 1 },
   dotted_eighth: { value: 'eighth', dots: 1 },
+  thirty_second: { value: 'thirty_second', dots: 0 },
+  dotted_thirty_second: { value: 'thirty_second', dots: 1 },
+  sixty_fourth: { value: 'sixty_fourth', dots: 0 },
+  dotted_sixty_fourth: { value: 'sixty_fourth', dots: 1 },
+  // A dot is a mark, not a value, so every value can carry one — and two.
+  dotted_whole: { value: 'whole', dots: 1 },
+  dotted_sixteenth: { value: 'sixteenth', dots: 1 },
+  // **Double dots, which the schema added because a march is written with
+  // them** — the first real page this project has seen is headed *Alla
+  // marcia*. `Stave` drew one dot whatever the count until this went in, so
+  // these could not have been listed here before it.
+  double_dotted_half: { value: 'half', dots: 2 },
+  double_dotted_quarter: { value: 'quarter', dots: 2 },
+  double_dotted_eighth: { value: 'eighth', dots: 2 },
+  // The breve. The schema calls the plain value `double_whole` and the tuplet
+  // forms `triplet_breve`, so both names are here — `tupletOf` strips the
+  // prefix and looks up what is left, and one of the two spellings would
+  // otherwise draw and the other would not.
+  double_whole: { value: 'breve', dots: 0 },
+  breve: { value: 'breve', dots: 0 },
 };
 
 /**

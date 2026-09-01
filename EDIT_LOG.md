@@ -6,6 +6,102 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-01 — 100% of a corpus with no short notes in it
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`.
+
+**Files:** `mobile/src/lib/notation/engrave.ts`, `fromScore.ts`,
+`components/notation/Stave.tsx`, `mobile/src/lib/warmup.ts` (+ test),
+`mobile/src/lib/notation/durations.test.ts` (new), `fromScore.test.ts`,
+`tuplets.test.ts`, `tools/subset-bravura.py`, `tools/engraver-coverage.py`,
+`mobile/assets/fonts/Bravura.otf`, `CLAUDE.md`, `DECISIONS.md`.
+
+### The number was right and it was measuring the wrong thing
+
+`tools/engraver-coverage.py` reported **0 of 393 notes with no glyph** across
+every fixture in the repository, worst page 100%. Against the **schema** — the
+closed `Duration` union the backend is allowed to send — the app could draw
+**33 of 46**. The corpus cannot see the difference because not one of its ten
+pages holds a note shorter than a sixteenth, and the tool's own header already
+said why: every fixture in it is a page somebody chose to check something with.
+
+`DECISIONS.md` carries the call. In short: growing the corpus does not converge,
+because the failure is the page nobody thought to add.
+
+### What now draws — 42 of 46
+
+Thirty-seconds and sixty-fourths (three and four tails), their rests, dotted
+sixteenths, dotted wholes, **double dots**, and the breve with its rest. The
+tuplet forms came free: `tupletOf` strips the prefix and looks up what is left,
+which is also why `breve` and `double_whole` are both keys — the schema spells
+the plain value one way and `triplet_breve` the other, and one spelling in the
+table would have left the other silently dropped.
+
+**`Stave` drew one dot whatever the count.** So a double-dotted quarter came out
+as a dotted quarter: 1.5 beats where the page says 1.75, in the same ink as the
+notes beside it that are right — exactly the substitution `fromScore` refuses to
+make with values, happening a layer down with dots. A double dot adds three
+quarters of the base value and is how a march is written; the first real page
+this project has seen is headed *Alla marcia*.
+
+Adding to `NoteValue` forced three tables to answer — `QUARTERS`, `TAILS`, and
+`warmup.ts`'s `VALUE_DURATIONS` — which is what that union's comment promises
+and it held.
+
+### The flag that fell outside the box
+
+Measured out of Bravura: **every flag reaches the same 3.25 staff spaces back
+toward the notehead**, whatever its value, so an eighth and a sixteenth sit
+entirely inside a 3.5-space stem. The extra hooks of a thirty-second and a
+sixty-fourth stack the *other* way, past the stem tip — 0.69 and 1.50 spaces.
+The system's height is measured from `stem.to`, so a sixty-fourth's outer hooks
+were cut off. `flagEdge` puts them in the extents, the same fix and the same
+shape as the accent above a high note.
+
+**My first test of this asserted the wrong thing** — that the box grows for
+every added value. It grew for the sixty-fourth and not the thirty-second,
+because the box already carried 0.8 spaces of slack and 0.69 fits inside it.
+The rule is that no flag falls outside, not that every value costs height; the
+test now says that, per value, with the font measurement written into it
+independently of the engraver's own table.
+
+### Four values still refused, and named
+
+`one_twenty_eighth` and its three tuplet forms. Five beams at this stave size is
+a smudge rather than a rhythm, and `staveScoreFor` counts what it leaves out and
+the screen says so — a better answer to a musician than an illegible mark
+presented as a reading. `DELIBERATELY_UNDRAWN` in `durations.test.ts` is the
+list, so the day one becomes drawable the list gets shorter and the test says so.
+
+### Tests whose examples expired, again
+
+Eight failures, all of the same kind and all the good kind: `thirty_second`,
+`sixty_fourth` and `double_dotted_half` were the tests' examples of *undrawable*
+and they now draw. The invariant — never drawn at a length the page does not
+print — is untouched; the examples moved to the 128th family. One of them says
+so in its own comment: *"If a future change makes both of these drawable,
+replace them; do not weaken the assertion."* That is the fourth time that test's
+example has moved.
+
+### Verified
+
+Rendered a sampler page at 4× with every new value on it: three- and four-beam
+groups, a lone thirty-second with three flag hooks, a breve and a breve rest, a
+dotted whole, and a double-dotted half rest with both dots clear of each other
+and of the staff line. An ordinary Kreutzer page re-rendered identically —
+sixteenths beamed in twos, the dotted-eighth-plus-sixteenth figure with its
+secondary beam stub. Font subset 25.2 KB → 27.0 KB, six new glyphs confirmed
+present in the built `.otf`. The sampler build patched `fixtures.ts`, restored
+from a copy with `diff -q`; `.env` likewise. 23-route sweep clean.
+
+**Tests:** 904 pass, up 98 — most of them `it.each` over the schema's durations,
+as notes and as rests.
+
+**Rollback:** revert the commit. The font is regenerated by
+`tools/subset-bravura.py` from the upstream Bravura.
+
+---
+
 ## 2026-09-01 — Four tabs that said "check your connection" and gave nothing to press
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`.

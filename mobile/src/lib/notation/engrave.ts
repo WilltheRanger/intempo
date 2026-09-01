@@ -88,7 +88,15 @@ const MIDDLE_LINE_STEP: Record<Clef, number> = {
  * one extra mark, and enumerating every combination doubles this union for no
  * gain.
  */
-export type NoteValue = 'whole' | 'half' | 'quarter' | 'eighth' | 'sixteenth';
+export type NoteValue =
+  | 'breve'
+  | 'whole'
+  | 'half'
+  | 'quarter'
+  | 'eighth'
+  | 'sixteenth'
+  | 'thirty_second'
+  | 'sixty_fourth';
 
 /**
  * How long each value lasts, in quarter notes.
@@ -98,20 +106,26 @@ export type NoteValue = 'whole' | 'half' | 'quarter' | 'eighth' | 'sixteenth';
  * answer both questions at once.
  */
 export const QUARTERS: Record<NoteValue, number> = {
+  breve: 8,
   whole: 4,
   half: 2,
   quarter: 1,
   eighth: 0.5,
   sixteenth: 0.25,
+  thirty_second: 0.125,
+  sixty_fourth: 0.0625,
 };
 
 /** How many beams or flags a value carries. Whole, half and quarter carry none. */
 export const TAILS: Record<NoteValue, number> = {
+  breve: 0,
   whole: 0,
   half: 0,
   quarter: 0,
   eighth: 1,
   sixteenth: 2,
+  thirty_second: 3,
+  sixty_fourth: 4,
 };
 
 /**
@@ -148,7 +162,7 @@ export interface StaveNote {
    */
   quarters?: number;
   tuplet?: Tuplet;
-  /** Augmentation dots, 0 or 1. A dotted quarter is `quarter` with `dots: 1`. */
+  /** Augmentation dots, 0, 1 or 2. A dotted quarter is `quarter` with `dots: 1`. */
   dots?: number;
   /** Starts a new bar before this note. */
   barBefore?: boolean;
@@ -241,7 +255,7 @@ export interface StaveNote {
  */
 export interface StaveRest {
   rest: NoteValue;
-  /** Augmentation dots, 0 or 1. */
+  /** Augmentation dots, 0, 1 or 2. */
   dots?: number;
   /** As on `StaveNote` — a rest inside a tuplet is part of the group. */
   quarters?: number;
@@ -391,7 +405,7 @@ export interface EngravedNote {
   /** The note's letter and accidental, for the row under the system. */
   name: string;
   /**
-   * Augmentation dots printed after the notehead. 0 or 1.
+   * Augmentation dots printed after the notehead. 0, 1 or 2.
    *
    * A dot adds half the note's value again, and leaving it off turns a dotted
    * quarter into a quarter — a shorter note drawn as though the page said so,
@@ -425,7 +439,7 @@ export interface EngravedRest {
   y: number;
   value: NoteValue;
   /**
-   * Augmentation dots, 0 or 1. Same mark, same meaning, same reason as a note's.
+   * Augmentation dots, 0, 1 or 2. Same mark, same meaning, same reason as a note's.
    *
    * A dotted quarter rest was the **last** thing in the whole corpus with no
    * glyph, and it was undrawable only because nothing had put the dot after a
@@ -1898,6 +1912,12 @@ function layoutSystem(
     if (note.articulation) {
       extents.push(articulationEdge(note.articulation, lineGap));
     }
+    // A thirty-second's outer hooks stack past the stem tip — see
+    // `FLAG_OVERSHOOT`. Measured from `stem.to` alone they are cut off.
+    const flag = flagEdge(note, lineGap);
+    if (flag !== null) {
+      extents.push(flag);
+    }
   }
 
   // Rests reach outside the noteheads' box too — a quarter rest spans the
@@ -2077,6 +2097,34 @@ function layoutSystem(
  * measuring room — the system's height, a slur passing over — has to use this
  * or it is measuring the mark's near edge and clipping the rest.
  */
+/**
+ * How far a flag reaches past the end of its stem, in staff spaces, by how
+ * many hooks it has.
+ *
+ * **Measured out of Bravura, not estimated** — the same rule the notehead
+ * widths and `ARTICULATION_HEIGHTS` follow. Every flag is drawn from the stem
+ * tip and reaches 3.25 spaces back toward the notehead whatever its value, so
+ * the eighth and the sixteenth sit entirely inside a 3.5-space stem and need
+ * nothing. The extra hooks of a thirty-second and a sixty-fourth stack the
+ * *other* way, past the tip: 0.60 and 1.39 spaces up, 0.69 and 1.50 down.
+ *
+ * The system's box is measured from `stem.to`, so without this the outer hooks
+ * of a high thirty-second are simply cut off — the same way an accent above a
+ * high note was, and for the same reason.
+ *
+ * The larger of each up/down pair, so one number is right in both directions.
+ */
+const FLAG_OVERSHOOT: Record<number, number> = { 1: 0.06, 2: 0.05, 3: 0.69, 4: 1.50 };
+
+/** The outermost point a note's flag reaches, or null if it carries none. */
+function flagEdge(note: EngravedNote, lineGap: number): number | null {
+  if (note.flags === 0 || !note.stem) {
+    return null;
+  }
+  const reach = (FLAG_OVERSHOOT[note.flags] ?? 0) * lineGap;
+  return note.stem.to + (note.stemUp ? -reach : reach);
+}
+
 function articulationEdge(
   mark: NonNullable<EngravedNote['articulation']>,
   lineGap: number,

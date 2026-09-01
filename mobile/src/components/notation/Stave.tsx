@@ -86,11 +86,19 @@ const ACCIDENTAL_GLYPH: Record<NonNullable<Accidental>, string> = {
  * long before there was a font to check it against.
  */
 const NOTEHEAD: Record<NoteValue, { glyph: string; halfWidth: number }> = {
+  // `noteheadDoubleWhole` — the whole-note oval with a vertical stroke each
+  // side. Wider than every other head, which is why the width is measured
+  // rather than shared.
+  breve: { glyph: '\uE0A0', halfWidth: 1.198 },
   whole: { glyph: '\uE0A2', halfWidth: 0.844 },
   half: { glyph: '\uE0A3', halfWidth: 0.59 },
   quarter: { glyph: '\uE0A4', halfWidth: 0.59 },
   eighth: { glyph: '\uE0A4', halfWidth: 0.59 },
   sixteenth: { glyph: '\uE0A4', halfWidth: 0.59 },
+  // Every value from a quarter down is the same black notehead; what separates
+  // them is the number of tails. See `TAILS`.
+  thirty_second: { glyph: '\uE0A4', halfWidth: 0.59 },
+  sixty_fourth: { glyph: '\uE0A4', halfWidth: 0.59 },
 };
 
 /**
@@ -105,12 +113,37 @@ const NOTEHEAD: Record<NoteValue, { glyph: string; halfWidth: number }> = {
 /** Rests are 1.0–1.3 spaces wide; half of the commonest is close enough to centre them all. */
 const REST_HALF_WIDTH = 0.54;
 
+/**
+ * The gap from the notehead's edge to the first dot, and between dots.
+ *
+ * **There can be two.** A double dot adds three quarters of the base value and
+ * is how a march is written — the first real page this project has seen is
+ * headed *Alla marcia*. This drew `dots > 0 ? one dot : nothing`, so a
+ * double-dotted quarter came out as a dotted quarter: 1.5 beats where the page
+ * says 1.75, in the same ink as the notes around it that are right. That is
+ * exactly the substitution `fromScore` refuses to make with values, and it was
+ * happening here with dots.
+ */
+const DOT_GAP = 0.3;
+const DOT_PITCH = 0.42;
+
+/** The dots after a note or rest, laid out from its right-hand edge. */
+function dotOffsets(dots: number, halfWidth: number): number[] {
+  return Array.from(
+    { length: dots },
+    (_unused, index) => halfWidth + DOT_GAP + index * DOT_PITCH,
+  );
+}
+
 const REST_GLYPH: Record<NoteValue, string> = {
+  breve: '\uE4E2',
   whole: '\uE4E3',
   half: '\uE4E4',
   quarter: '\uE4E5',
   eighth: '\uE4E6',
   sixteenth: '\uE4E7',
+  thirty_second: '\uE4E8',
+  sixty_fourth: '\uE4E9',
 };
 
 /**
@@ -123,6 +156,8 @@ const REST_GLYPH: Record<NoteValue, string> = {
 const FLAG_GLYPH: Record<number, { up: string; down: string }> = {
   1: { up: '\uE240', down: '\uE241' },
   2: { up: '\uE242', down: '\uE243' },
+  3: { up: '\uE244', down: '\uE245' },
+  4: { up: '\uE246', down: '\uE247' },
 };
 
 const CLEF_GLYPH: Record<Clef, string> = {
@@ -552,9 +587,10 @@ export function Stave({
             >
               {REST_GLYPH[rest.value]}
             </SvgText>
-            {rest.dots > 0 ? (
+            {dotOffsets(rest.dots, REST_HALF_WIDTH).map((offset, dot) => (
               <SvgText
-                x={rest.x + lineGap * (REST_HALF_WIDTH + 0.3)}
+                key={`dot-${dot}`}
+                x={rest.x + lineGap * offset}
                 y={rest.y - (onLine(rest.y, lineGap) ? lineGap / 2 : 0)}
                 fill={ink}
                 fontSize={musicSize}
@@ -562,7 +598,7 @@ export function Stave({
               >
                 {GLYPH.augmentationDot}
               </SvgText>
-            ) : null}
+            ))}
             </G>
           ))}
 
@@ -707,17 +743,20 @@ export function Stave({
                 line — where an engraver puts it, because a dot centred on a
                 line is hard to see against it.
               */}
-              {note.dots > 0 ? (
-                <SvgText
-                  x={note.x + lineGap * (NOTEHEAD[note.value].halfWidth + 0.3)}
-                  y={note.y - (onLine(note.y, lineGap) ? lineGap / 2 : 0)}
-                  fill={ink}
-                  fontSize={musicSize}
-                  fontFamily={fontFamily.music}
-                >
-                  {GLYPH.augmentationDot}
-                </SvgText>
-              ) : null}
+              {dotOffsets(note.dots, NOTEHEAD[note.value].halfWidth).map(
+                (offset, dot) => (
+                  <SvgText
+                    key={`dot-${dot}`}
+                    x={note.x + lineGap * offset}
+                    y={note.y - (onLine(note.y, lineGap) ? lineGap / 2 : 0)}
+                    fill={ink}
+                    fontSize={musicSize}
+                    fontFamily={fontFamily.music}
+                  >
+                    {GLYPH.augmentationDot}
+                  </SvgText>
+                ),
+              )}
 
               {showNoteNames ? (
                 <SvgText

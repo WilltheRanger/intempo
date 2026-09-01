@@ -150,16 +150,23 @@ Conventions the redesign established — **follow these, don't re-litigate them:
 7. **Sheet music is the visual identity.** Use `sheet/SheetCrop` (deterministic
    SVG engraving) — never abstract placeholder rectangles. Swap for real page
    crops when OCR uploads land.
-7b. **`engrave.ts` draws four note values and no rests**, and
-   `staveScoreFor` drops everything else rather than rounding it — a sixteenth
-   drawn as an eighth is a rhythmically wrong line of music presented as a
-   right one. Measured by `tools/engraver-coverage.py`: across every fixture in
-   the repository only **5%** of notes have no glyph and the worst page still
-   draws 67%, which is why this looked adequate. The first real orchestral part
-   photographed — variations, runs of sixteenths, dotted rhythms, multi-bar
-   rests — scored **0%** and rendered as a title and a photograph. Read the
-   worst page, never the average, and note that nothing in the corpus resembles
-   real repertoire.
+7b. **`staveScoreFor` drops what it cannot draw rather than rounding it** — a
+   sixteenth drawn as an eighth is a rhythmically wrong line of music presented
+   as a right one — and the screen says how many it left out. As of 2026-09-01
+   the engraver draws **42 of the schema's 46 durations**: whole through
+   sixty-fourth and the breve, single and double dots, rests at every one of
+   those values, and the triplet/quintuplet/septuplet forms. What it refuses is
+   the 128th family, named in `DELIBERATELY_UNDRAWN` — five beams at this stave
+   size is a smudge, and a counted omission beats an illegible mark presented as
+   a reading.
+   **Measure against the schema, never against the corpus.**
+   `tools/engraver-coverage.py` reported **100% of every fixture** while four
+   values had no glyph at all, because not one page in the repository contains a
+   note shorter than a sixteenth — and it once reported 5% missing and a worst
+   page of 67% while the first real orchestral part photographed scored **0%**
+   and rendered as a title and a photograph. The corpus is pages somebody chose
+   to check something with. The tool prints both tables now;
+   `notation/durations.test.ts` holds the schema side.
 8. **No developer or demo UI in the product.** The `PreviewBadge` was removed
    for this reason; don't add environment banners to shipped screens.
 9. **Motion is Framer Motion** (`motion` package, import from `motion/react`),
