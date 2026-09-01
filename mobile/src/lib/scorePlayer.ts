@@ -4,7 +4,7 @@ import { File, Paths } from 'expo-file-system';
 import { prepareForPlayback } from './audio/session';
 import { encodeWavBytes } from './audio/wav';
 import type { Schedule } from './score/schedule';
-import { DEFAULT_VOICE, VOICES, type VoiceName } from './score/voice';
+import { DEFAULT_VOICE, harmonicsFor, VOICES, type VoiceName } from './score/voice';
 import type { PlaybackHandle, PlayOptions } from './score/player.types';
 
 /**
@@ -43,6 +43,11 @@ function render(schedule: Schedule, voice: VoiceName): Int16Array {
     const attack = Math.max(1, Math.floor(spec.attackS * SAMPLE_RATE));
     const release = Math.max(1, Math.floor(spec.releaseS * SAMPLE_RATE));
     const sustainEnd = Math.max(attack, length - release);
+    // **Computed per note, not per voice.** An instrument's body resonances sit
+    // at fixed frequencies, so which harmonic they lift depends on the note —
+    // see `harmonicsFor`. A single amplitude list would be a waveform being
+    // transposed, which is what a synthesiser sounds like.
+    const harmonics = harmonicsFor(spec, note.frequency);
 
     for (let i = 0; i < length; i += 1) {
       const at = start + i;
@@ -61,8 +66,8 @@ function render(schedule: Schedule, voice: VoiceName): Int16Array {
 
       const t = i / SAMPLE_RATE;
       let sample = 0;
-      for (let h = 0; h < spec.harmonics.length; h += 1) {
-        sample += spec.harmonics[h] * Math.sin(2 * Math.PI * note.frequency * (h + 1) * t);
+      for (let h = 0; h < harmonics.length; h += 1) {
+        sample += harmonics[h] * Math.sin(2 * Math.PI * note.frequency * (h + 1) * t);
       }
       mix[at] += sample * envelope * spec.gain;
     }

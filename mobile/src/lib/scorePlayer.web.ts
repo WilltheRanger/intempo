@@ -1,5 +1,5 @@
 import type { Schedule } from './score/schedule';
-import { DEFAULT_VOICE, VOICES, type VoiceName } from './score/voice';
+import { DEFAULT_VOICE, harmonicsFor, VOICES, type VoiceName } from './score/voice';
 import type { PlaybackHandle, PlayOptions } from './score/player.types';
 
 /**
@@ -31,7 +31,9 @@ export function playSchedule(
   const context = new AudioContextCtor();
   const spec = VOICES[voice as VoiceName] ?? VOICES[DEFAULT_VOICE];
 
-  // Headroom: four harmonics summing at once would clip an unscaled master.
+  // Headroom. The partials are normalised to sum to one, so the worst case
+  // is a peak of one per note; this leaves room for notes overlapping through
+  // their release tails.
   const master = context.createGain();
   master.gain.value = spec.gain;
   master.connect(context.destination);
@@ -39,31 +41,67 @@ export function playSchedule(
   const startedAt = context.currentTime + 0.08; // a beat of slack to schedule in
   const sources: OscillatorNode[] = [];
 
+  /**
+   * One wave per pitch, one oscillator per note.
+   *
+   * This used to create an oscillator **per harmonic per note**. Four
+   * harmonics made that invisible; a violin's twenty-eight would make a
+   * hundred-note piece into nearly three thousand nodes, all scheduled up
+   * front, on a phone browser.
+   *
+   * A `PeriodicWave` carries the whole harmonic series in one oscillator, and
+   * the series depends only on the fundamental (`harmonicsFor` — the body
+   * resonances are fixed in frequency, so two notes an octave apart genuinely
+   * need different waves), so it caches by pitch. A piece has a couple of
+   * dozen distinct pitches and hundreds of notes.
+   *
+   * `disableNormalization: true` because the amplitudes are already normalised
+   * to sum to one — which bounds the peak at one — and letting Web Audio
+   * renormalise would make the register balance differ from the native
+   * renderer, where nothing does.
+   */
+  const waves = new Map<number, PeriodicWave>();
+  function waveFor(frequency: number): PeriodicWave {
+    const cached = waves.get(frequency);
+    if (cached) {
+      return cached;
+    }
+    const harmonics = harmonicsFor(spec, frequency);
+    // Index 0 is DC and stays zero; harmonic n sits at index n. Sines, so the
+    // amplitudes go in the imaginary part.
+    const real = new Float32Array(harmonics.length + 1);
+    const imag = new Float32Array(harmonics.length + 1);
+    harmonics.forEach((amplitude, index) => {
+      imag[index + 1] = amplitude;
+    });
+    const wave = context.createPeriodicWave(real, imag, { disableNormalization: true });
+    waves.set(frequency, wave);
+    return wave;
+  }
+
   for (const note of schedule.notes) {
     const at = startedAt + note.startS;
     const until = at + note.durationS;
 
-    spec.harmonics.forEach((amplitude, index) => {
-      const oscillator = context.createOscillator();
-      const envelope = context.createGain();
+    const oscillator = context.createOscillator();
+    const envelope = context.createGain();
 
-      oscillator.type = 'sine';
-      oscillator.frequency.value = note.frequency * (index + 1);
+    oscillator.setPeriodicWave(waveFor(note.frequency));
+    oscillator.frequency.value = note.frequency;
 
-      // Ramps rather than steps: a gain that jumps produces a click, and a
-      // click is an onset, which is the one artefact this app must not teach
-      // someone to hear as part of the music.
-      envelope.gain.setValueAtTime(0, at);
-      envelope.gain.linearRampToValueAtTime(amplitude, at + spec.attackS);
-      envelope.gain.setValueAtTime(amplitude, Math.max(until - spec.releaseS, at + spec.attackS));
-      envelope.gain.linearRampToValueAtTime(0, until);
+    // Ramps rather than steps: a gain that jumps produces a click, and a
+    // click is an onset, which is the one artefact this app must not teach
+    // someone to hear as part of the music.
+    envelope.gain.setValueAtTime(0, at);
+    envelope.gain.linearRampToValueAtTime(1, at + spec.attackS);
+    envelope.gain.setValueAtTime(1, Math.max(until - spec.releaseS, at + spec.attackS));
+    envelope.gain.linearRampToValueAtTime(0, until);
 
-      oscillator.connect(envelope);
-      envelope.connect(master);
-      oscillator.start(at);
-      oscillator.stop(until + 0.02);
-      sources.push(oscillator);
-    });
+    oscillator.connect(envelope);
+    envelope.connect(master);
+    oscillator.start(at);
+    oscillator.stop(until + 0.02);
+    sources.push(oscillator);
   }
 
   let stopped = false;

@@ -13,7 +13,13 @@ import {
   spacing,
 } from '../../design';
 import { impact, ImpactFeedbackStyle } from '../../lib/haptics';
-import { scheduleScore, startAtMeasure, type PlaybackHandle } from '../../lib/score';
+import {
+  scheduleScore,
+  startAtMeasure,
+  voiceForInstrument,
+  type PlaybackHandle,
+} from '../../lib/score';
+import { usePreferences } from '../../data/preferences';
 import { playSchedule } from '../../lib/scorePlayer';
 
 export interface ListenButtonProps {
@@ -65,6 +71,7 @@ export function ListenButton({
   disabled = false,
   onProgress,
 }: ListenButtonProps) {
+  const { instrument } = usePreferences();
   const [playing, setPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
   const handle = useRef<PlaybackHandle | null>(null);
@@ -114,6 +121,13 @@ export function ListenButton({
     setPlaying(true);
     setProgress(0);
     handle.current = playSchedule(schedule, {
+      // **The instrument in the musician's hands.** Every Listen in the app
+      // used to play the same four-harmonic reference tone, whoever was
+      // holding whatever — which is what the owner meant by "that default
+      // computer sound". Read from the device preference rather than the
+      // account because it always has a value (`usePreferences`), so there is
+      // no screen here that needs a "no instrument yet" branch.
+      voice: voiceForInstrument(instrument),
       onProgress: (elapsed, total) => {
         setProgress(total > 0 ? elapsed / total : 0);
         report.current?.(elapsed, total);

@@ -6,6 +6,104 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-01 — Four instruments instead of a test tone
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Fifth batch of the owner's
+list of 2026-09-01: *"Add actual instruments for their chosen instrument so we
+wont use that default computer sound to play the notes."*
+
+**Files:** `mobile/src/lib/score/voice.ts` + test, `index.ts`,
+`mobile/src/lib/scorePlayer.ts`, `mobile/src/lib/scorePlayer.web.ts`,
+`mobile/src/components/score/ListenButton.tsx`.
+
+### The decision being reversed, and by whom
+
+`voice.ts` argued for the single tone it shipped: *"a synthesised
+approximation that almost sounds like a cello is worse than a clean tone that
+obviously isn't one, because the near-miss invites the comparison."* The owner
+overruled it. They are right about the symptom — four harmonics with a fixed
+spectrum is a test signal, and a musician checking a transcription against one
+listens past the sound rather than to it.
+
+These are **synthesised, not sampled**, and nothing in the app implies
+otherwise. `reference` is kept and reachable, deliberately: it is the answer if
+the strings turn out to sit in the uncanny valley the old comment warned about,
+and that is a judgement needing ears and a device.
+
+### What makes it an instrument rather than a transposed waveform
+
+A violin's spectrum is not a shape you slide up and down the keyboard. The
+string gives a near-sawtooth; the **body** then filters it through resonances
+that sit at the same frequencies whatever is being played. Play a G3 and the
+body's main resonance lands on the fourth harmonic and blooms; play a G5 and
+it lands on the fundamental. That difference between registers *is* the voice,
+and a fixed list of amplitudes cannot express it — which is why a
+fixed-spectrum synth and a naively transposed sampler sound synthetic in the
+same way.
+
+So a voice is a **string slope plus body resonances in hertz**, and
+`harmonicsFor` evaluates them against the note actually being played. Both
+renderers already looped over per-harmonic amplitudes, so each changed by one
+line.
+
+### The physics I was missing, found by the tests failing
+
+Four assertions failed on the first attempt, and each was the model being
+wrong rather than the test. The last one mattered: every voice put its loudest
+partial on the **fundamental** at the bottom of its range, which is the one
+place no real instrument does. A wooden box only pushes air efficiently above
+its air resonance; below it radiation falls away steeply however hard the
+string is driven. `radiationHz` is that roll-off, second order. It is why a
+violin's open G sounds thin in its fundamental, and why a double bass's low E
+at 41 Hz — under the 60 Hz air resonance, and under what a phone reproduces at
+all — is heard almost entirely through the harmonics above it.
+
+Tuned numerically rather than guessed. Measured, and asserted:
+
+    centroid at middle C   violin 1642 > viola 1255 > cello 942 > bass 721 Hz
+    violin loudest partial G3 -> 2nd,  E5 -> 1st
+    double bass low E      loudest partial 3rd; fundamental the weakest of three
+    cello centroid         C2 574 Hz -> C4 942 Hz, a ratio of 1.6, not 4
+
+That last one is the audible corollary: an instrument does not get four times
+brighter when you play four times higher. A transposed spectrum does exactly
+that. The `reference` voice, which has no body, is asserted to behave that old
+way — so the tests pin the difference to the resonances rather than to
+anything else that changed.
+
+### One oscillator per note, not one per harmonic
+
+The web renderer created an `OscillatorNode` **per harmonic per note**. Four
+harmonics made that invisible; a violin's twenty-eight would have made a
+hundred-note piece nearly three thousand nodes, scheduled up front, on a phone
+browser. A `PeriodicWave` carries the whole series in one oscillator, cached by
+pitch — the series depends only on the fundamental, so two notes an octave
+apart genuinely need different waves, and a piece has a couple of dozen
+distinct pitches and hundreds of notes.
+
+Measured in the browser on the fixture study: **29 oscillators, 9 periodic
+waves** for 29 notes at 9 pitches. The old path would have made 812. No console
+errors; Listen plays.
+
+`disableNormalization: true`, because the amplitudes already sum to one — which
+bounds the peak at one — and letting Web Audio renormalise would make the
+register balance differ from the native renderer, where nothing does.
+
+### Wiring
+
+Every Listen in the app played the same tone whoever was holding whatever.
+`ListenButton` now reads the device instrument preference — which always has a
+value, so no screen needs a "no instrument yet" branch — and plays it. That is
+the record screen, the warmup, the piece screen and the score screen, all of
+which share this button.
+
+**mobile: 608 passed, 51 files. `tsc --noEmit` clean.**
+
+**Unverified: how they actually sound.** The spectra are measured and the node
+counts are measured; nothing here has been listened to.
+
+---
+
 ## 2026-09-01 — The scanner photographed something other than what you framed
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Fourth batch of the
