@@ -11,6 +11,7 @@ import {
   SectionHeader,
   Text,
 } from '../../components/primitives';
+import { apiFetch } from '../../data/api/client';
 import { IS_LIVE_BACKEND } from '../../data/environment';
 import {
   checkAppConnection,
@@ -84,7 +85,9 @@ export function HelpScreen() {
     }
     setChecking(true);
     try {
-      setReport(await checkAppConnection());
+      setReport(
+        await checkAppConnection((path, options) => apiFetch(path, options)),
+      );
     } finally {
       setChecking(false);
     }
