@@ -42,8 +42,15 @@ export function useTranscribePage() {
           'Transcription needs the backend. This build is running on sample data, so there is nothing to read the photograph. Add a piece manually instead.',
         );
       }
+      if (input.imageUrls.length === 0) {
+        throw new Error('At least one uploaded page is required.');
+      }
+      const images =
+        input.imageUrls.length === 1
+          ? { image_url: input.imageUrls[0] }
+          : { image_urls: input.imageUrls };
       const score = await createScore({
-        image_urls: input.imageUrls,
+        ...images,
         title: input.title,
         composer: input.composer,
         movement: input.movement,
