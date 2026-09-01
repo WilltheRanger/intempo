@@ -269,7 +269,28 @@ def create_analysis(
         insert_payload["skip_long_rests"] = True
     if body.from_measure is not None:
         insert_payload["from_measure"] = body.from_measure
-    inserted = client.table("analyses").insert(insert_payload).execute()
+    try:
+        inserted = client.table("analyses").insert(insert_payload).execute()
+    except Exception as exc:  # noqa: BLE001 — see below for the one case kept
+        # **A deployment that has not run migration 015 must refuse the bar,
+        # not the take, and must say so in words a musician can act on.** The
+        # precedent (012, `skip_long_rests`) had no path here at all: an insert
+        # naming a column the table does not have is a raw 500, and the app
+        # shows "something went wrong" for a request that was entirely
+        # reasonable. Worse would be quietly dropping the key and analysing
+        # from bar 1 — that is the misalignment this whole feature exists to
+        # prevent, reintroduced by a missing column. So: the take is refused,
+        # the reason names the one thing the musician can change, and
+        # `/v1/ready` names the migration for whoever runs the server.
+        if body.from_measure is not None and "from_measure" in str(exc):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    "Recording from a chosen bar isn't available on this server "
+                    "yet. Start the take from bar 1."
+                ),
+            ) from exc
+        raise
     rows = inserted.data or []
     if not rows:
         raise HTTPException(status_code=500, detail="failed to enqueue analysis")

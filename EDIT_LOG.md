@@ -6,6 +6,47 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-01 — A chosen bar on a database that cannot store one
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`.
+
+**Files:** `backend/app/routers/analyses.py`, `backend/app/tests/test_analyses_api.py`.
+
+Migration 015 (`analyses.from_measure`) is written and not applied, and #40
+is about to deploy code that writes to it. I checked what the precedent did
+for that window and it did nothing: 012 (`skip_long_rests`) had no path for a
+missing column, so an insert naming it is a raw 500 and the app says
+"something went wrong" for a request that was entirely reasonable.
+
+Two wrong answers and one right one:
+
+- **Drop the key and insert anyway.** The take is then analysed from bar 1
+  while the musician played from bar 40 — misaligned at every onset, which is
+  the exact failure the feature exists to prevent, reintroduced by a missing
+  column. Silent, and worse than the 500.
+- **The raw 500.** Honest but useless: it names nothing the musician can act
+  on.
+- **Refuse the bar, not the take, with followable advice.** *"Recording from a
+  chosen bar isn't available on this server yet. Start the take from bar 1."*
+  The picker lets them do exactly that. `/v1/ready` already names the
+  migration for whoever runs the server, so both audiences get the sentence
+  meant for them.
+
+Scoped to the one case: the except re-raises unless `from_measure` was sent
+**and** the error names that column. A take from the start never carries the
+key, so it never enters the branch — tested both ways. The guard was also
+verified by removing it and watching the refusal test fail.
+
+### Tests
+
+backend 1855 passed + 3 xfailed. mobile unchanged at 1010.
+
+### Rollback
+
+`git revert`. Once 015 is applied the branch is never reached.
+
+---
+
 ## 2026-09-01 — The bar picker shows the music
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. The owner, on the control
