@@ -84,6 +84,22 @@ export function createScore(input: CreateScoreInput): Promise<ScoreResponse> {
   });
 }
 
+export interface AttachScorePagesInput {
+  image_url?: string;
+  image_urls?: string[];
+}
+
+/** POST /v1/scores/:id/transcription — read pages into a manual piece. */
+export function attachScorePages(
+  id: string,
+  input: AttachScorePagesInput,
+): Promise<ScoreResponse> {
+  return apiFetch<ScoreResponse>(`/v1/scores/${id}/transcription`, {
+    method: 'POST',
+    body: input,
+  });
+}
+
 export interface UpdateScoreInput {
   title?: string;
   composer?: string | null;
