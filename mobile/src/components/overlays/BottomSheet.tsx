@@ -9,9 +9,11 @@ import {
   type LayoutChangeEvent,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { X } from 'lucide-react-native';
 
 import { BORDER_WIDTH, colors, motion, radii, spacing } from '../../design';
 import { useReducedMotion } from '../../lib/useReducedMotion';
+import { IconButton } from '../primitives/IconButton';
 import { Text } from '../primitives/Text';
 import { useInertAppRoot } from './modalAccessibility';
 
@@ -92,8 +94,9 @@ export function BottomSheet({
           <Pressable
             style={StyleSheet.absoluteFill}
             onPress={onClose}
-            accessibilityRole="button"
-            accessibilityLabel="Close"
+            // Pointer dismissal only. A full-screen invisible button is a poor
+            // keyboard target and was focused before the sheet's real choices.
+            accessible={false}
           />
         </Animated.View>
 
@@ -116,11 +119,14 @@ export function BottomSheet({
         >
           <View style={styles.handle} />
 
-          {title ? (
-            <Text variant="pieceTitle" style={styles.title}>
-              {title}
-            </Text>
-          ) : null}
+          <View style={styles.header}>
+            {title ? (
+              <Text variant="pieceTitle" style={styles.title}>
+                {title}
+              </Text>
+            ) : null}
+            <IconButton icon={X} label="Close" onPress={onClose} />
+          </View>
 
           {children}
         </Animated.View>
@@ -158,8 +164,15 @@ const styles = StyleSheet.create({
     borderRadius: radii.pill,
     backgroundColor: colors.border,
   },
-  title: {
-    marginTop: spacing.lg,
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: spacing.md,
+    marginTop: spacing.md,
     marginBottom: spacing.xs,
+  },
+  title: {
+    flex: 1,
   },
 });
