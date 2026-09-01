@@ -55,6 +55,7 @@ import { PracticeSetup } from './PracticeSetup';
 import { ListenButton } from '../../components/score/ListenButton';
 import { PlaybackSettings } from '../../components/score/PlaybackSettings';
 import { scheduleScore, startableMeasures } from '../../lib/score';
+import { startFromMeasure } from '../../lib/score/startFrom';
 import { ConfirmDialog } from '../../components/overlays/ConfirmDialog';
 import { leavingRecord, type RecordPhase } from '../../lib/record/leaving';
 import { useGoBack } from '../../navigation/useGoBack';
@@ -367,6 +368,10 @@ export function RecordScreen() {
         // shortened piece, so the analysis has to judge a shortened one — see
         // `SubmitTakeInput.skipLongRests` for what happens when it does not.
         skipLongRests: skipRests,
+        // Sent, not just applied on the phone: the analysis happens after the
+        // response, so the row is the only thing that survives to say which
+        // bar was played first.
+        fromMeasure: startFrom,
       });
       unsent.current = null;
       setPendingTake(false);
@@ -423,10 +428,16 @@ export function RecordScreen() {
   );
 
   /**
-   * Which bar Listen enters on. The take is unaffected — see the note beside
-   * `PlaybackSettings` below.
+   * Which bar the musician enters on — for the take as well as for Listen.
+   *
+   * **It used to govern Listen alone**, and the comment here said so: the
+   * analysis built its timeline from the whole score, so a take that began at
+   * bar 40 would have been compared against bar 1 onward and reported wrong
+   * from its first note. The request now carries the bar, migration 015 stores
+   * it, and the worker trims the score to match — the same arrangement
+   * `skip_long_rests` has, and for the same reason.
    */
-  const [chosenListenFrom, setChosenListenFrom] = useState<number | null>(null);
+  const [chosenStartFrom, setChosenStartFrom] = useState<number | null>(null);
   const listenSchedule = useMemo(
     () => (heard ? scheduleScore(heard, targetBpm) : null),
     [heard, targetBpm],
@@ -435,15 +446,29 @@ export function RecordScreen() {
     () => (listenSchedule ? startableMeasures(listenSchedule) : []),
     [listenSchedule],
   );
-  const listenFrom =
-    chosenListenFrom !== null && startable.includes(chosenListenFrom)
-      ? chosenListenFrom
+  const startFrom =
+    chosenStartFrom !== null && startable.includes(chosenStartFrom)
+      ? chosenStartFrom
       : (startable[0] ?? 1);
-  const setListenFrom = setChosenListenFrom;
+  const setStartFrom = setChosenStartFrom;
+
+  /**
+   * The piece as the take will actually be played: from the entry bar on.
+   *
+   * **The cues are measured in beats from the first bar played**, so cues
+   * computed from the whole score fire at the wrong moments for a take that
+   * began partway in — and the count-in would lead into the wrong music. The
+   * server trims the same way before it builds the timeline;
+   * `fixtures/practice/start_at.json` is the contract between the two.
+   */
+  const takeScore = useMemo(
+    () => (heard ? startFromMeasure(heard, startFrom) : null),
+    [heard, startFrom],
+  );
 
   const restCues = useMemo(
-    () => longRestCues(heard, skipRests ? 1 : undefined),
-    [heard, skipRests],
+    () => longRestCues(takeScore, skipRests ? 1 : undefined),
+    [takeScore, skipRests],
   );
 
   // **The count-in is not the metronome setting.** It ticks, taps and counts
@@ -821,22 +846,22 @@ export function RecordScreen() {
             // about to judge.
             score={heard}
             bpm={targetBpm}
-            fromMeasure={listenFrom}
+            fromMeasure={startFrom}
             // Silenced the moment a take starts: anything through the speaker
             // lands in the microphone as phantom onsets (§4).
             disabled={recording}
           />
 
-          {/* Listening only. **The take still starts at bar 1**, because where
-              a recording begins is not the app's to decide alone: the analysis
-              builds its expected timeline from the whole score, so a take that
-              began at bar 40 and did not say so would be compared against bar 1
-              onwards and reported as wrong from the first note. Hearing a
-              passage before playing it needs no such agreement. */}
+          {/* **One bar for both**, which is what makes it safe to say so. The
+              take carries this bar to the server, which trims the score before
+              building its timeline — so hearing the passage and recording it
+              now start in the same place, and the analysis is told which. */}
           <PlaybackSettings
+            entry="take"
+            score={heard}
             bars={startable}
-            fromMeasure={listenFrom}
-            onFromMeasureChange={setListenFrom}
+            fromMeasure={startFrom}
+            onFromMeasureChange={setStartFrom}
             bpm={targetBpm}
             beatUnit={tempoBeatUnit}
             disabled={recording}

@@ -35,6 +35,10 @@ from app.routers.analyses import CreateAnalysisRequest
 
 REPO = Path(__file__).resolve().parents[3]
 PRACTICE_TEMPO_TS = REPO / "mobile" / "src" / "data" / "practiceTempo.ts"
+#: Where the fallback tempo is *defined*. `practiceTempo` re-exports it: the
+#: pure module owns it because anything may import that one, and this file has
+#: to read the definition rather than the re-export.
+SCHEDULE_TS = REPO / "mobile" / "src" / "lib" / "score" / "schedule.ts"
 
 
 def _bounds(model: type[BaseModel], field: str) -> tuple[float, float]:
@@ -85,10 +89,16 @@ def test_the_app_offers_exactly_what_the_api_accepts() -> None:
 def test_the_app_falls_back_inside_the_range() -> None:
     """A piece whose tempo OCR never found still has to start somewhere, and
     that somewhere has to be a tempo the API will take."""
-    source = PRACTICE_TEMPO_TS.read_text()
+    source = SCHEDULE_TS.read_text()
     match = re.search(r"export const FALLBACK_BPM\s*=\s*(-?\d+(?:\.\d+)?)", source)
 
-    assert match, "the app no longer names a fallback tempo"
+    assert match, (
+        f"no `export const FALLBACK_BPM = <number>` in {SCHEDULE_TS.name}. It "
+        "moved there from `practiceTempo.ts`, which now re-exports it; if it "
+        "has moved again, follow it rather than deleting this check — a "
+        "fallback outside the API's range is a 422 on the one request a "
+        "musician makes after playing."
+    )
     assert MIN_TARGET_BPM <= float(match.group(1)) <= MAX_TARGET_BPM
 
 

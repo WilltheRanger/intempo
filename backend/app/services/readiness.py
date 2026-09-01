@@ -114,6 +114,7 @@ REQUIRED_COLUMNS: tuple[tuple[str, str, str], ...] = (
     # is the right piece — but an error a musician meets by using a control the
     # app offered them is worth naming here before they meet it.
     ("analyses", "skip_long_rests", "012"),
+    ("analyses", "from_measure", "015"),
     # 013. All three degrade quietly on purpose — every caller narrows its
     # select or retries its write without them, because the alternative was a
     # save that 500s and a scan that sits `reading` forever during the window

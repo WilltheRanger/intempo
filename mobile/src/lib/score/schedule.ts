@@ -77,6 +77,19 @@ export const BEATS: Record<Duration, number> = {
  */
 const UNKNOWN_DURATION_BEATS = 1;
 
+/**
+ * The tempo to use when there is no usable one.
+ *
+ * **Defined here, in the module with no dependencies**, and re-exported by
+ * `data/practiceTempo` — which reaches for AsyncStorage and so cannot be
+ * imported by anything that wants to stay testable. One number rather than
+ * two that have to be remembered to agree.
+ *
+ * Reached by a tempo that is not a number at all, which a clamp does not
+ * catch: `Math.max` and `Math.min` both pass `NaN` straight through.
+ */
+export const FALLBACK_BPM = 80;
+
 /** Semitones above C for each letter, before any accidental. */
 const SEMITONES: Record<string, number> = {
   C: 0,
@@ -183,7 +196,14 @@ export function scheduleScore(
   bpm: number,
   { articulation = DEFAULT_ARTICULATION, leadInS = 0 }: ScheduleOptions = {},
 ): Schedule {
-  const secondsPerBeat = 60 / Math.max(1, bpm);
+  // **`Math.max(1, NaN)` is `NaN`**, so clamping alone does not make this
+  // safe. A non-finite tempo propagated into every note's start and duration,
+  // and `playSchedule` then handed `NaN` to `oscillator.stop()`, which throws
+  // — out of the loop, after earlier notes had already been `start()`ed, with
+  // no handle returned to stop them. A note sounding that nothing can silence,
+  // from one bad number.
+  const beatsPerMinute = Number.isFinite(bpm) ? Math.max(1, bpm) : FALLBACK_BPM;
+  const secondsPerBeat = 60 / beatsPerMinute;
   const notes: ScheduledNote[] = [];
 
   let clock = leadInS;

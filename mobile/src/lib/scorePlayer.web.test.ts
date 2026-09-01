@@ -172,17 +172,114 @@ describe('playing a score in a browser', () => {
     // iOS suspends the audio context with the page, so `currentTime` stops
     // while wall time runs on. A sweep that trusted its own deadline would end
     // a piece that has not played a note of its second half.
+    //
+    // **Frozen after the music started**, which is what that sentence
+    // describes and what this test is for. Freezing it from the very first
+    // instant is a different situation with the same readings — nothing has
+    // been heard, and waiting forever is the bug below — so the two are now
+    // tested apart.
     const playSchedule = await loadPlaySchedule();
     const onEnd = vi.fn();
     playSchedule(twoSeconds(), { onEnd });
+
+    // Half a second of music, then the clock stops dead.
+    audioNow += 0.5;
+    vi.advanceTimersByTime(500);
+    expect(onEnd).not.toHaveBeenCalled();
 
     // Ten seconds of wall time, no audio time at all.
     vi.advanceTimersByTime(10_000);
     expect(onEnd).not.toHaveBeenCalled();
 
-    // The clock comes back and the piece finishes.
+    // The clock comes back and the piece finishes. Two seconds of wall time,
+    // because the sweep re-arms for the whole remaining duration each pass —
+    // so the next look is up to that far away, not on a fixed tick.
     audioNow += 3;
+    vi.advanceTimersByTime(2000);
+    expect(onEnd).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses a schedule it cannot measure, rather than throwing mid-way', async () => {
+    /*
+      **`oscillator.start()` and `.stop()` throw on a non-finite time**, and the
+      throw escaped the scheduling loop — after earlier notes had already been
+      started, with no handle returned to stop them and `onEnd` never called.
+      A note left sounding that nothing in the app could silence, from one bad
+      number, plus an exception thrown out of a press handler.
+
+      `scheduleScore` no longer produces such a schedule; this is the second
+      lock on the same door, because the door is the one that leaves sound on.
+    */
+    const playSchedule = await loadPlaySchedule();
+    const onEnd = vi.fn();
+
+    const handle = playSchedule(
+      {
+        bpm: Number.NaN,
+        durationS: Number.NaN,
+        notes: [
+          {
+            startS: 0,
+            durationS: Number.NaN,
+            frequency: 440,
+            measureNumber: 1,
+            globalIndex: 0,
+          },
+        ],
+      },
+      { onEnd },
+    );
+
+    expect(onEnd).toHaveBeenCalledTimes(1);
+    expect(handle.isPlaying()).toBe(false);
+    // Refused before anything was built, so the page's one context is unspent.
+    expect(contexts).toHaveLength(0);
+  });
+
+  it('gives up when the clock never starts at all, instead of hanging', async () => {
+    /*
+      **The reported bug.** *"It gets stuck when I enter the app and listen to
+      something I scanned a day ago."*
+
+      A context that is `suspended` or — Safari's own state — `interrupted`
+      has a frozen `currentTime`, and `resume()` is a promise nobody awaits
+      that a browser is free to refuse. Both end conditions then fail open:
+      `tick` compares elapsed time against a value that never grows, and
+      `sweepForEnd` re-checks the audio clock *on purpose* and re-arms. The
+      button says Stop for a piece that never started, and the only way out is
+      to press it twice.
+
+      Ending is honest here rather than a cut-off: not a note was heard.
+    */
+    const playSchedule = await loadPlaySchedule();
+    const onEnd = vi.fn();
+    const handle = playSchedule(twoSeconds(), { onEnd });
+
+    // Wall time passes; the audio clock never moves off its starting value.
+    vi.advanceTimersByTime(3000);
+
+    expect(onEnd).toHaveBeenCalledTimes(1);
+    expect(handle.isPlaying()).toBe(false);
+  });
+
+  it('keeps waiting while the page is hidden, however long that is', async () => {
+    // A frozen clock on a hidden page is explained: the musician walked away
+    // rather than being failed. The give-up window is spent only while they
+    // are looking at it.
+    const playSchedule = await loadPlaySchedule();
+    const onEnd = vi.fn();
+    vi.stubGlobal('document', { hidden: true });
+    playSchedule(twoSeconds(), { onEnd });
+
+    vi.advanceTimersByTime(30_000);
+    expect(onEnd).not.toHaveBeenCalled();
+
+    // Back on screen, and it still gets its full window to start.
+    vi.stubGlobal('document', { hidden: false });
     vi.advanceTimersByTime(1000);
+    expect(onEnd).not.toHaveBeenCalled();
+
+    vi.advanceTimersByTime(2000);
     expect(onEnd).toHaveBeenCalledTimes(1);
   });
 

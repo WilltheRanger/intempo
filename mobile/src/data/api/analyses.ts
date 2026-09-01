@@ -60,6 +60,15 @@ export interface CreateAnalysisInput {
    * actually skips a rest.
    */
   skip_long_rests?: boolean;
+  /**
+   * The bar the musician entered on, as numbered on the page.
+   *
+   * Omitted for a take from the beginning, which is what every take before
+   * this field meant. The server trims the score to match before it builds a
+   * timeline — a timeline that still contains the bars nobody played is
+   * misaligned at every onset.
+   */
+  from_measure?: number;
 }
 
 /**

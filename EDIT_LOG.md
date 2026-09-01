@@ -6,6 +6,427 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-01 — A chosen bar on a database that cannot store one
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`.
+
+**Files:** `backend/app/routers/analyses.py`, `backend/app/tests/test_analyses_api.py`.
+
+Migration 015 (`analyses.from_measure`) is written and not applied, and #40
+is about to deploy code that writes to it. I checked what the precedent did
+for that window and it did nothing: 012 (`skip_long_rests`) had no path for a
+missing column, so an insert naming it is a raw 500 and the app says
+"something went wrong" for a request that was entirely reasonable.
+
+Two wrong answers and one right one:
+
+- **Drop the key and insert anyway.** The take is then analysed from bar 1
+  while the musician played from bar 40 — misaligned at every onset, which is
+  the exact failure the feature exists to prevent, reintroduced by a missing
+  column. Silent, and worse than the 500.
+- **The raw 500.** Honest but useless: it names nothing the musician can act
+  on.
+- **Refuse the bar, not the take, with followable advice.** *"Recording from a
+  chosen bar isn't available on this server yet. Start the take from bar 1."*
+  The picker lets them do exactly that. `/v1/ready` already names the
+  migration for whoever runs the server, so both audiences get the sentence
+  meant for them.
+
+Scoped to the one case: the except re-raises unless `from_measure` was sent
+**and** the error names that column. A take from the start never carries the
+key, so it never enters the branch — tested both ways. The guard was also
+verified by removing it and watching the refusal test fail.
+
+### Tests
+
+backend 1855 passed + 3 xfailed. mobile unchanged at 1010.
+
+### Rollback
+
+`git revert`. Once 015 is applied the branch is never reached.
+
+---
+
+## 2026-09-01 — The bar picker shows the music
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. The owner, on the control
+that shipped an hour earlier: *"Why is it like you click on text and it gives
+you all the bars — should there be a better UI or design for that?"* Yes.
+
+**Files:** `mobile/src/components/notation/Stave.tsx`,
+`components/score/StartBarPicker.tsx` (new), `components/score/PlaybackSettings.tsx`,
+`lib/score/stepBar.ts` (new) + test, `screens/record/RecordScreen.tsx`,
+`screens/pieceScore/PieceScoreScreen.tsx`.
+
+### What was wrong with it
+
+Two things, and the owner named both. The trigger was accent-coloured text
+reading "Start at bar 1" — it did not look like a control, because it wasn't
+styled as one. And tapping it opened a scrolling list: "Bar 1, Bar 2 … Bar 74".
+That asks a musician to find a place in a piece the way a spreadsheet would. A
+musician knows where they want to start because they can *see* it — the run
+after the double bar, the entry after the long rest — and a list of numbers
+throws that away.
+
+### The picker is the stave
+
+`Stave` gained `onMeasurePress` and `pressableMeasures`. The geometry already
+existed: `measureSpans` is what the playhead wash is drawn from, so each bar
+that sounds now gets a transparent `Rect` on top of everything else, the full
+staff height plus a space either side. `fill="transparent"` rather than
+`"none"` — SVG hit-tests painted area, and `none` is not painted, so it would
+draw nothing *and* catch nothing. Verified on the web build: a tap on bar 2's
+target moved the readout from 1 to 2.
+
+The chosen bar carries the same wash the playhead does, because "you are here"
+is what both of them mean. The sheet is engraved at the score screen's own
+scale and fitted to its width, so a bar here looks like the same bar there.
+
+A stepper underneath, for precision rather than discovery: a bar of sixteenths
+on a phone is narrow, and a thumb that lands one bar off should be one tap from
+right rather than another aim. It walks the list of bars that sound
+(`stepBar`), never adding one, so it cannot land on a bar of rest. The sheet
+stays open after a tap for the same reason — closing on every tap would make it
+the list of numbers with extra steps.
+
+### The trigger is a setting row
+
+Where the bar decides what the take is, it is a real setting and now looks like
+one: a full-width labelled row, "Start at" left, "Bar 1 ›" right, hairlines
+above and below — the same furniture as every other setting row in the app. On
+the score screen, where nothing is recorded, the quiet "Listen from bar 1 ·
+92 BPM" sentence stays; it opens the same picker.
+
+**`alignSelf: 'stretch'` is load-bearing.** The Record screen's control column
+centres its children, and the first build rendered the row only as wide as its
+content — "Start atBar 1", touching, with hairlines the width of the words.
+Measured after: 350 of 390 points, 280 of 320.
+
+### Three-foot test
+
+**The sheet:** the stave first, "Start the take at" second, the stepper
+readout third. The music is the picker, which is the point. **The record
+screen:** the tempo first, the record button second, the Listen/Start-at pair
+third — the row recedes, as a secondary setting should (§3 law 4), and is
+unmistakably a control.
+
+### Tests
+
+1010 passing, `tsc` clean, 23-route sweep clean, narrow probe unchanged.
+`stepBar.test.ts` holds the stepping rule; the tap targets and the row were
+verified on the running build rather than claimed.
+
+### Rollback
+
+`git revert`. Both callers still pass `bars`, so reverting to the list is a
+one-file change if it were ever wanted.
+
+---
+
+## 2026-09-01 — A take can start partway in
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Reported by the owner:
+*"you can't currently choose which bar you want to start at when starting
+record."*
+
+**Files:** `backend/app/services/start_at.py` (new) + tests,
+`backend/app/migrations/015_analysis_from_measure.sql` (new),
+`routers/analyses.py`, `workers/analysis_runner.py`, `services/readiness.py`,
+`fixtures/practice/start_at.json` (new), `mobile/src/lib/score/startFrom.ts`
+(new) + parity test, `lib/score/entryCopy.ts` (new) + test,
+`components/score/PlaybackSettings.tsx`, `screens/record/RecordScreen.tsx`,
+`data/practice/submitTake.ts`, `data/api/analyses.ts`,
+`screens/entryBar.test.ts` (new).
+
+The picker existed and governed nothing but playback. Its own comment said so:
+a bare "From bar 1" on the Record screen *"reads as where the take starts —
+which it is not, and which would be a promise about the analysis that nothing
+keeps."* Someone working on bar 40 had to play the preceding thirty-nine to be
+told anything about it.
+
+### The same arrangement as `skip_long_rests`, for the same reason
+
+The take was played against a different score than the one on file, so the
+analysis has to judge it against that one. `from_measure` travels on the
+request, migration 015 stores it, and the worker trims the score before
+`build_timeline` — **entry bar first, rest-shortening second**, because
+`shorten_long_rests` rewrites bars and trimming after it would ask for bar 14
+of a score whose bar 14 is no longer the page's.
+
+Validated at enqueue against the bars the piece actually has. Left to the
+worker, a bar the piece lacks becomes `alignment_failed` — "check you're on the
+right piece" — for a take of exactly the right piece.
+
+### Three rules in the trim, and the third is the one that matters
+
+Bars keep the numbers they have on the page — a verdict about bar fourteen has
+to say fourteen. A repeat opening before the entry bar is dropped, spanning
+ones included: someone starting mid-passage plays straight on. And **a tempo
+change still in force at the entry bar is carried to it**: a `rit.` at bar 3 is
+still in force at bar 4, and the analysis refuses to time notes under a written
+change — dropping it would report a musician dragging for slowing exactly as
+the page told them to. That is `under_tempo_change`'s whole reason for
+existing, reintroduced by trimming.
+
+### Two implementations, one contract
+
+The app trims too, because `longRestCues` measures beats from the first bar
+played and cues computed from bar 1 fire at the wrong moments for a take that
+began at bar 12. Two walks over a score in two languages, no way to share code,
+and a drift means the take is judged against a different score than it was
+played to — the exact thing this exists to avoid. `fixtures/practice/start_at.json`
+holds eight cases and both sides run them.
+
+### The label had to change, and it lives in a module
+
+"Listen from bar 9" now understates what the control does on the Record
+screen; "Start at bar 9" on the score screen would claim a recording that is
+not happening. `PlaybackSettings` takes `entry: 'listen' | 'take'` and
+`entryCopy.ts` holds the words, with a test that the take's label never says
+"listen" — the quiet failure being a musician setting the bar to hear a passage
+and unknowingly recording from there.
+
+### Honest status
+
+The control itself is still the one that was there: a tappable line that opens
+a list of bar numbers. The owner has called that out as poor, and it is —
+picking a bar by number in a list of seventy is not how a musician thinks about
+a piece. A picker that shows the music is the next change.
+
+Verified against the fixtures build, not a real take. mobile 1006, backend
+1853 + 3 xfailed, `tsc` clean. Migration 015 is **written and not applied**;
+the column is nullable and the worker reads it with `.get`, so a database
+without it records from bar 1 as before.
+
+### Rollback
+
+`git revert`. The request field defaults to null and the column is nullable, so
+a revert of either side alone is also safe.
+
+---
+
+## 2026-09-01 — Today goes back to the cards, on the owner's call
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`.
+
+**Files:** `mobile/src/screens/today/PracticeCard.tsx` (restored),
+`TodayScreen.tsx`.
+
+I rebuilt Today in the #9 branch under *"Make Today a starting point rather
+than a dashboard"* — deleted `PracticeCard.tsx` and replaced the card
+composition with an uncarded one: serif title at full size, full-bleed sheet
+crop, verdict as plain text, Continue pinned in the thumb zone. The reasoning
+was §3 laws 3 and 8, and it is still a defensible reading of them.
+
+**It was the wrong call to make unasked.** The owner had shipped that card
+layout, uses it daily, and when shown both asked for the cards back. §2 says to
+stop and ask before UI work; I had been treating the standing `/loop` line
+*"that includes layout and ui/ux"* as a blanket go-ahead, and it is not one for
+rewriting a screen somebody else designed and is happily using. A design law is
+an argument to bring to the owner, not a mandate to act on over them.
+
+Restored wholesale from `1d4ce13` — the version that shipped and that they
+know — rather than reconstructed, because a reconstruction would have been my
+reading of their screen a second time.
+
+### What was kept from the rebuild, and why
+
+- **The cover fix.** Their screenshot shows the defect it closes: an empty grey
+  box with one hairline where the score strip should be. `ScoreThumbnail` was
+  not restored, so the old card now draws a real crop, or a stave placeholder
+  that measures its own box with `onLayout`. Visible in the before/after.
+- **The retry action on the load-error state**, which the restore dropped and
+  `loadErrors.test.ts` caught within a minute. A screen that says it could not
+  load your pieces and offers nothing to do about it is a dead end;
+  pull-to-refresh is not discoverable and does not exist at all on web, which
+  is where most of this is used. That guard existing is the reason a wholesale
+  revert was safe to attempt.
+
+Everything else in the restored file is theirs, untouched.
+
+### Three-foot test
+
+"Good evening" first, the piece card second, "Add a new piece" third. Their
+composition, and it holds — the card is the one thing on the screen that
+genuinely groups (a piece, its tempo, its last verdict and its action are one
+object), which is what law 3 actually reserves cards for.
+
+### Tests
+
+998 passing, `tsc` clean.
+
+### Rollback
+
+`git revert`. My version is at `afdaa2f:mobile/src/screens/today/TodayScreen.tsx`
+if it is ever wanted.
+
+---
+
+## 2026-09-01 — Recording from partway into a piece: the plumbing
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`.
+
+**Files:** `backend/app/services/start_at.py` (new) + two tests,
+`migrations/015_analysis_from_measure.sql` (new), `routers/analyses.py`,
+`workers/analysis_runner.py`, `services/readiness.py`,
+`app/tests/test_tempo_range.py`, `mobile/src/lib/score/startFrom.ts` (new) +
+parity test, `data/api/analyses.ts`, `data/practice/submitTake.ts`,
+`fixtures/practice/start_at.json` (new).
+
+Reported from real use: *"you also can't currently choose which bar you want
+to start at of the music when starting record."* True, and the record screen's
+own comment said so — it already had a bar picker, driving **Listen only**,
+with a note explaining that the take still starts at bar 1 because "the
+analysis builds its expected timeline from the whole score, so a take that
+began at bar 40 and did not say so would be compared against bar 1 onwards and
+reported as wrong from the first note."
+
+That is exactly right, and it is the thing this change makes possible to say.
+
+### The same shape as `skip_long_rests`, deliberately
+
+The take was played against a different score than the one on file, so the
+analysis has to judge it against that one. `from_measure` travels with the
+take — request, row (migration 015), then the worker trims before
+`build_timeline`. Null means from the beginning, which is what every take
+recorded before this column meant.
+
+**Trimmed before the rests are shortened**, and the order is load-bearing:
+`shorten_long_rests` rewrites bars, so trimming after it would be asking for
+bar 14 of a score whose bar 14 is no longer the page's bar 14.
+
+### Three rules, and one of them is the whole point
+
+1. **Bars keep their printed numbers.** Not rebased to one: a verdict about the
+   fourteenth bar has to say fourteen.
+2. **A repeat that opens before the entry bar is dropped**, including one that
+   spans it — someone starting mid-passage plays straight on rather than
+   jumping back to a sign they never passed.
+3. **The tempo change still in force is carried to the entry bar.** A `rit.`
+   printed at bar 3 is still in force at bar 4, and `classification.py` refuses
+   to time notes under a written change. Dropping it would report a musician
+   dragging for slowing exactly as the page told them to — the failure
+   `under_tempo_change` exists to prevent, reintroduced by trimming.
+
+### Two implementations, one contract
+
+The app needs the trim too: `longRestCues` measures its beats from the first
+bar played, so cues computed from bar 1 fire at the wrong moments for a take
+that began at bar 12. Two walks over a score in two languages with no way to
+share code — the same situation as `long_rests.json`, so the same answer.
+`fixtures/practice/start_at.json` holds eight cases and both sides run them.
+
+### A guard I broke and followed
+
+`FALLBACK_BPM` moved to `lib/score/schedule` (the pure module owns it; the
+other reaches for AsyncStorage and cannot be imported by anything testable).
+`test_tempo_range.py` greps the app source for it and started failing — a
+cross-language check doing its job. Pointed at the new file, with a message
+telling the next person to follow the constant rather than delete the check.
+
+### Honest status
+
+**The plumbing, not the feature.** The contract, the trim on both sides, the
+column and the validation are done and tested; the record screen does not yet
+send `from_measure`, and its long-rest cues are still measured from bar 1. That
+is the next commit. Migration 015 is written and **not applied** — until it is,
+the column does not exist and the field is silently dropped, which is the same
+degrade path 012 shipped with.
+
+mobile 998 tests, backend 1853 passed + 3 xfailed, `tsc` clean.
+
+### Rollback
+
+`git revert`. The column is nullable and the app does not send the field yet,
+so reverting either side alone is safe.
+
+---
+
+## 2026-09-01 — Listen could get stuck, three ways
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`, restarted from `main`
+after #9 merged.
+
+**Files:** `mobile/src/lib/scorePlayer.web.ts` + test,
+`mobile/src/lib/score/schedule.ts` + test (new),
+`mobile/src/data/practiceTempo.ts`.
+
+Reported from real use: *"it gets stuck when I enter the app and listen to
+something I scanned a day ago."* I could not reproduce the exact environment,
+so I went looking for every way the button can enter "playing" and never
+leave. There were three, and each produces that sentence.
+
+### 1. A clock that never starts
+
+`resumeAudio` fires `context.resume()` and does not await it, and a browser is
+free to refuse: a context created outside a gesture is born `suspended`, and
+Safari parks one in `interrupted` after a call, another app, or the page being
+backgrounded. `currentTime` is then frozen — and **both** end conditions fail
+open. `tick` compares elapsed time against a value that never grows;
+`sweepForEnd` re-checks the audio clock *deliberately* and re-arms. The button
+says Stop for a piece that never started, and the only way out is to press it
+twice, which is exactly the shape of the older *"Listen only works the first
+time"* report.
+
+`watchForStart` gives the clock two seconds of **wall** time to move — wall,
+because the audio clock is the thing under suspicion and cannot also be the
+judge — asking it to resume on each look, and ends honestly if it never does.
+Not a note was heard, so this is giving up rather than cutting off.
+
+**Time on a hidden page is given back, not spent.** A frozen clock behind a
+locked screen is explained rather than broken, and that case already had a
+guard I nearly broke — see below.
+
+### 2. A tempo that is not a number
+
+`Math.max(1, bpm)` looks like a clamp and is not one: `Math.max(1, NaN)` is
+`NaN`. A non-finite tempo propagated into every note's start and duration, and
+`oscillator.stop()` **throws** on a non-finite time — out of the middle of the
+scheduling loop, after earlier notes had already been `start()`ed, with no
+handle returned to stop them and `onEnd` never called. A note left sounding
+that nothing in the app could silence, plus an exception thrown out of a press
+handler.
+
+Fixed at three points, because the cost of missing it is a sound that cannot be
+stopped: `scheduleScore` substitutes `FALLBACK_BPM`, `playSchedule` refuses a
+schedule whose duration is not a finite positive number, and it skips any
+individual note whose times are not finite. `tempoFor` also clamps on the way
+out — `typeof NaN === 'number'`, so its `typeof` guard admitted one.
+
+`FALLBACK_BPM` now has one definition, in `lib/score/schedule`, re-exported by
+`data/practiceTempo`. The pure module owns it because the other one reaches for
+AsyncStorage and cannot be imported by anything that wants to stay testable —
+which the first version of the new test found the hard way.
+
+### A test that was guarding two things and only meant one
+
+`waits rather than cutting the piece off when the audio clock froze` failed
+against the watchdog. Its comment describes protecting *"a piece that has not
+played a note of its second half"* — but it froze the clock from the very first
+instant, so it also asserted that a playback which never started must wait
+forever. Same readings, opposite right answers.
+
+Split: that test now freezes the clock **after** half a second of music, which
+is what its own sentence describes, and the never-started case has its own test
+beside it. Both, plus the refusal, verified by reverting the guard and watching
+them fail.
+
+### Honest status
+
+**Not confirmed as the reported bug.** I could not reproduce it — the live site
+is unreachable from here and there is no phone. What I can say is that all
+three of these produce that exact symptom, all three were reachable, and all
+three are now closed. If it recurs, the next thing to look at is what the piece
+screen does while a scan's row is still `reading`.
+
+990 tests, `tsc` clean.
+
+### Rollback
+
+`git revert`.
+
+---
+
 ## 2026-09-01 — "Not timed" was the app's word, not the page's
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. The other half of the
