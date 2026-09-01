@@ -6,6 +6,105 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-01 — Leaving mid-take threw the take away and said nothing
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`.
+
+**Files:** `mobile/src/screens/record/RecordScreen.tsx`,
+`mobile/src/lib/record/leaving.ts` (new), `leaving.test.ts` (new).
+
+### The cleanup was right, and that was the problem
+
+`RecordScreen` releases the microphone on unmount — "leaving mid-take, back
+gesture, a deep link, anything, has to release the microphone. Nothing else
+will." Correct, and **silent**, because there is nothing to say about a
+microphone. What went with it was the recording: two minutes of playing, one
+reflex tap on the back chevron, gone, with no dialog and nothing to undo it.
+
+Leaving now goes through `leavingRecord`. It asks about exactly two things —
+a take being recorded, and a finished take whose upload failed and which the
+screen is at that moment offering to send again. Both are audio that exists only
+in memory. Everything else leaves without a word.
+
+**No duration threshold.** "Longer than N seconds" puts a number in front of the
+question actually being asked, which is whether anything would be lost; and by
+the time the phase is `recording` the musician has already sat through a whole
+count-in bar, so there is no accidental-tap case left for a threshold to absorb.
+
+### `beforeRemove`, not the chevron
+
+The chevron is the one exit that is *not* the risk. The swipe-back gesture,
+Android's system back and the browser's back button all remove the screen
+without touching a control the app drew, so a guard on the button would have
+covered the deliberate exit and missed every accidental one. The listener holds
+the navigation, raises the dialog, and replays the held `event.data.action` if
+the musician confirms — so back goes where back was going.
+
+### The bug this introduced, and the shape of it
+
+`beforeRemove` fires **inside** the `navigation.replace` call, before React has
+committed anything set on the lines above it. So a listener closed over `phase`
+and `pendingTake` is one render stale exactly when it is consulted — and the
+first thing that broke was the success path: a retried take is accepted, `send`
+clears the held take and replaces the screen with the verdict, and the guard,
+still seeing an unsent take, blocked it and asked whether to discard a take that
+had just been accepted. Refs are the fix, not a dependency array: `phaseRef` is
+written by `goPhase` at the same instant as the state, and the guard reads
+`unsent.current` rather than `pendingTake`.
+
+This is the second reason the rule sits in a module. It could not have been
+tested where it was, and the failure was invisible in the diff.
+
+### Two controls, one label
+
+On the count-in screen the chevron read **"Cancel count-in"** — the same words
+the record button below it announces — and it did something no other chevron in
+this app does: it cancelled the count and stayed put. A screen reader announced
+one label for two controls, and the glyph meant one thing in one phase and
+another in the next. The header now says "Back to the piece" in every phase, and
+means it. Nothing in the rule stops the count-in or releases the microphone:
+the screen's unmount cleanup does the first and `useMetronome`'s does the second,
+whichever way the musician left, and repeating them would be a second place for
+them to be wrong.
+
+`Phase` is now an alias of the module's `RecordPhase`. Two copies of that union
+would let a phase be added to the screen and not to the rule, where an unknown
+phase falls through to "just leave" — the answer that loses a take.
+
+### Three-foot test
+
+On the screenshot: **"Discard this take?"** first, the two buttons second, the
+dimmed piece title behind third. One question, two answers, nothing else. The
+button that keeps the recording says "Keep recording" rather than "Cancel" —
+half the words on this screen are already about cancelling something.
+
+**Open, deliberately not changed:** the destructive answer is the filled ink
+button and the safe one is outlined, here and in every other `ConfirmDialog` in
+the app. Fixing that means either a danger colour the palette does not have or
+inverting the emphasis of every destructive confirm — a look-and-feel decision
+for the owner, not a side effect of this change. The wording and the left/right
+positions already carry it.
+
+**Verified** in Chromium at iPhone-13 size against a fresh fixtures build, with
+a fake microphone: count-in announces `["Back to the piece", "Cancel count-in"]`
+— one each; browser back mid-take is blocked at `/record` with the dialog up;
+"Keep recording" leaves it recording; "Discard" lands on the piece; and a take
+carried through to Stop reaches `/analyses/fixture-take-1` with no dialog at
+all. 23-route sweep clean, no console errors, no horizontal overflow. Fixture
+`.env` restored byte-identical.
+
+**Lesson, again:** the first run of this probe measured a **three-hour-old
+bundle**. `pkill -f "serve -s dist"` matched the very shell running it and killed
+that instead, so my own server never bound and the stale one kept the port. The
+tell was the app showing behaviour whose string was not in the bundle on disk.
+Never `pkill -f` a pattern that appears in your own command line; kill by PID.
+
+**Tests:** 797 pass, up 7.
+
+**Rollback:** revert the commit.
+
+---
+
 ## 2026-09-01 — The editor could not undo the fault the page sent it to fix
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Follows the entry below:

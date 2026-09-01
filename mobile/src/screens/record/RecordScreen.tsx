@@ -55,6 +55,8 @@ import { PracticeSetup } from './PracticeSetup';
 import { ListenButton } from '../../components/score/ListenButton';
 import { PlaybackSettings } from '../../components/score/PlaybackSettings';
 import { scheduleScore, startableMeasures } from '../../lib/score';
+import { ConfirmDialog } from '../../components/overlays/ConfirmDialog';
+import { leavingRecord, type RecordPhase } from '../../lib/record/leaving';
 
 const METRONOME_LABELS = {
   off: 'Metronome off',
@@ -71,7 +73,13 @@ const METRONOME_LABELS = {
  */
 const DEFAULT_ON_MODE: MetronomeMode = 'visual';
 
-type Phase = 'ready' | 'counting_in' | 'recording' | 'analysing';
+/**
+ * One union, not two. `leavingRecord` decides what each phase is worth asking
+ * about, and a copy here would let a new phase be added to the screen and not
+ * to the rule — where an unknown phase falls through to "just leave", which is
+ * the answer that loses a take.
+ */
+type Phase = RecordPhase;
 
 /**
  * Recording a take.
@@ -152,6 +160,10 @@ export function RecordScreen() {
   // state the button reads.
   const unsent = useRef<{ audio: Blob; filename: string } | null>(null);
   const [pendingTake, setPendingTake] = useState(false);
+  /** The open "you are about to lose this" dialog, or null. */
+  const [leavePrompt, setLeavePrompt] = useState<
+    Extract<ReturnType<typeof leavingRecord>, { kind: 'confirm' }> | null
+  >(null);
 
   // Leaving mid-take — back gesture, a deep link, anything — has to release
   // the microphone. Nothing else will.
@@ -161,6 +173,65 @@ export function RecordScreen() {
       recorder.current = null;
     },
     [],
+  );
+
+  /**
+   * **The phase the guard reads, written at the same instant as the state.**
+   *
+   * `beforeRemove` fires inside the `navigation.replace` call, before React has
+   * committed anything set beside it — so a listener closed over `phase` and
+   * `pendingTake` is one render stale exactly when it is consulted. The case
+   * that broke: a retried take succeeds, `send` clears the held take and
+   * replaces the screen with the verdict, and the guard — still seeing the take
+   * as unsent — blocked the navigation and asked whether to discard a take that
+   * had just been accepted. Refs are the fix, not a dependency array.
+   */
+  const phaseRef = useRef<Phase>('ready');
+  function goPhase(next: Phase) {
+    phaseRef.current = next;
+    setPhase(next);
+  }
+
+  /** Set once the musician has said yes, so the guard lets the second go through. */
+  const leaving = useRef(false);
+  /** The navigation `beforeRemove` held back, replayed if they confirm. */
+  const blocked = useRef<(() => void) | null>(null);
+
+  /**
+   * **The cleanup above is correct and silent, which is the whole problem.**
+   * Releasing the microphone also throws away what it captured, so leaving
+   * mid-take lost the recording on one reflex tap with nothing said about it.
+   *
+   * `beforeRemove` rather than an `onPress` on the chevron, because the chevron
+   * is the one way out that is *not* the risk: the swipe-back gesture, Android's
+   * system back and the browser's back button all remove this screen without
+   * touching a control the app drew. A guard on the button would have covered
+   * the deliberate exit and missed every accidental one.
+   *
+   * What is worth asking about lives in `lib/record/leaving.ts`, where it can
+   * be tested — there is no React Native testing library here.
+   */
+  useEffect(
+    () =>
+      navigation.addListener('beforeRemove', (event) => {
+        if (leaving.current) {
+          return;
+        }
+        const answer = leavingRecord({
+          phase: phaseRef.current,
+          // The ref, not `pendingTake`: `send` clears it synchronously on the
+          // line above the navigation that fires this listener.
+          unsentTake: unsent.current !== null,
+          pieceTitle: piece?.title,
+        });
+        if (answer.kind !== 'confirm') {
+          return;
+        }
+        event.preventDefault();
+        blocked.current = () => navigation.dispatch(event.data.action);
+        setLeavePrompt(answer);
+      }),
+    [navigation, piece?.title],
   );
 
   // Turning the metronome back on restores the mode it was on, rather than
@@ -220,26 +291,43 @@ export function RecordScreen() {
     // afterwards would put an unpredictable hardware delay between "one" and
     // the first playable downbeat.
     setElapsedMs(0);
-    setPhase('counting_in');
+    goPhase('counting_in');
   }
 
   function cancelCountIn() {
     recorder.current?.cancel();
     recorder.current = null;
     setElapsedMs(0);
-    setPhase('ready');
+    goPhase('ready');
+  }
+
+  /** Confirmed: the audio goes, and so does the screen. */
+  function confirmLeave() {
+    recorder.current?.cancel();
+    recorder.current = null;
+    unsent.current = null;
+    setLeavePrompt(null);
+    // Past the guard below, then the navigation that was held back.
+    leaving.current = true;
+    const held = blocked.current;
+    blocked.current = null;
+    if (held) {
+      held();
+    } else {
+      navigation.goBack();
+    }
   }
 
   async function stop() {
     const active = recorder.current;
     recorder.current = null;
     if (!active) {
-      setPhase('ready');
+      goPhase('ready');
       return;
     }
 
     impact(ImpactFeedbackStyle.Medium);
-    setPhase('analysing');
+    goPhase('analysing');
 
     let recording;
     try {
@@ -247,7 +335,7 @@ export function RecordScreen() {
     } catch (error) {
       setProblem(messageFor(error));
       setElapsedMs(0);
-      setPhase('ready');
+      goPhase('ready');
       return;
     }
 
@@ -263,7 +351,7 @@ export function RecordScreen() {
    * rather than a second code path that could diverge from the first.
    */
   async function send(recording: { audio: Blob; filename: string }) {
-    setPhase('analysing');
+    goPhase('analysing');
     setProblem(null);
     try {
       const analysisId = await takeSubmissionSource.submit({
@@ -292,7 +380,7 @@ export function RecordScreen() {
       // to a failed take is one tap rather than a re-setup.
       setProblem(messageFor(error));
       setElapsedMs(0);
-      setPhase('ready');
+      goPhase('ready');
     }
   }
 
@@ -388,7 +476,7 @@ export function RecordScreen() {
     // music does, and is what lets the count-in be audible at all.
     recorder.current?.discardCapturedSoFar();
     setElapsedMs(0);
-    setPhase('recording');
+    goPhase('recording');
   }, [countInBeats, countingIn, metronome.beat?.index]);
 
   const activeRest = recording
@@ -489,8 +577,12 @@ export function RecordScreen() {
         <PageHeader
           eyebrow={piece.composer}
           title={piece.title}
-          onBack={cancelCountIn}
-          backLabel="Cancel count-in"
+          onBack={() => navigation.goBack()}
+          // **The same words as every other phase of this screen.** It said
+          // "Cancel count-in" — which the record button below it also says, so
+          // a screen reader announced one label for two controls, and the
+          // chevron did something no other chevron in the app does.
+          backLabel="Back to the piece"
         />
 
         <View style={styles.countIn}>
@@ -773,6 +865,21 @@ export function RecordScreen() {
           </Text>
         )}
       </View>
+
+      {/*
+        Only this view can raise it: the count-in leaves outright, and by
+        `analysing` the audio is already on its way. Both cases that hold
+        unsent audio — a live take, and one whose upload failed — are here.
+      */}
+      <ConfirmDialog
+        visible={leavePrompt !== null}
+        title={leavePrompt?.title ?? ''}
+        message={leavePrompt?.message ?? ''}
+        confirmLabel={leavePrompt?.confirmLabel ?? ''}
+        cancelLabel={leavePrompt?.cancelLabel}
+        onConfirm={confirmLeave}
+        onCancel={() => setLeavePrompt(null)}
+      />
     </ScreenContainer>
   );
 }
