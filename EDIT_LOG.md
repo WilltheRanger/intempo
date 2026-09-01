@@ -6,6 +6,54 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-01 — The verdict screen said "Back to the piece" twice and meant two things
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Back to the consumer side.
+
+**Files:** `mobile/src/screens/verdict/VerdictScreen.tsx`.
+
+This is the payoff screen — the thing the whole product exists to show — and it
+was the most cramped screen in the app.
+
+- **"Back to the piece" appeared twice**: as the label on the chevron at the top
+  *and* as a full-width secondary button under the primary. The same words
+  offering the same thing in two places (§3 law 10).
+- **They went to different places.** The chevron called `goBack()`, which after
+  a take returns to the Record screen; the button `replace`d with the piece. One
+  of them was a control promising a destination it did not deliver, which is the
+  same defect as advice naming a route that does not exist. The chevron now does
+  what it says.
+- The second button cost about **65pt** of a screen whose measure list was
+  showing **three rows of twelve** — the part a musician actually works from.
+  Four rows now, with one action in the footer.
+- **The measure list lost its card.** Twelve rows that already divide themselves
+  with a hairline apiece do not need a box drawn round them — the same call as
+  the library's list and the piece screen's destinations.
+- **So did the trend chart**, which was then the only card left and therefore
+  the only white surface on an ivory page. That gave the summary more weight
+  than the twelve rows of detail below it, which are the same data. A rule above
+  and below marks it off as a figure without making it a panel.
+
+Zero cards on the screen now.
+
+**Three-foot test on the screenshot:** first the verdict headline in large
+serif, second "Record again" as an ink block in the thumb zone, third the ochre
+trend line — the one coloured thing above the fold. The metadata line, the
+section labels and the rows all recede.
+
+**Verified** in the running build: the chevron lands on
+`/pieces/fixture-bach-bwv1001`, "Back to the piece" appears once in the button
+list, no console errors, route sweep clean.
+
+**Noticed, not fixed:** the fixture take reports twelve measures for a demo
+score that has three. That is sample data being loose rather than an app fault —
+the fixture wants a long take to exercise the chart and the list — but it does
+make the demo build internally inconsistent if anyone reads both screens.
+
+**Rollback:** revert the commit.
+
+---
+
 ## 2026-09-01 — Staccato dots the page had and the app did not
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Sixth finding of the
