@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { ApiError } from './api/client';
 import { checkAppConnection } from './supportDiagnostics';
 
 describe('checkAppConnection', () => {
@@ -31,7 +30,7 @@ describe('checkAppConnection', () => {
       .fn()
       .mockResolvedValueOnce({ ok: true })
       .mockRejectedValueOnce(
-        new ApiError(401, '/v1/me', 'Your session has ended.'),
+        Object.assign(new Error('Your session has ended.'), { status: 401 }),
       );
 
     await expect(checkAppConnection(request)).resolves.toEqual({
