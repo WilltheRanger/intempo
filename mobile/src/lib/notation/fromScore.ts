@@ -294,11 +294,30 @@ export function staveScoreFor(score: ScoreJson): StaveScore {
         undrawable += 1;
         continue;
       }
+      // **The other notes of a chord**, which the app has been dropping since
+      // the backend started reading them. A double stop is not decoration on a
+      // string part — the demo fixture is Bach's G minor Sonata, whose first
+      // bar is a four-note chord — and drawing one notehead where the page has
+      // four is drawing something else, which is the thing this module refuses
+      // to do everywhere else.
+      //
+      // Filtered by the same rule as the principal: a pitch this engraver
+      // cannot place is left out rather than put somewhere it does not belong.
+      // The count follows, so the caveat line still adds up.
+      const chord = (note.chord_pitches ?? []).filter((pitch) => {
+        if (stepOf(pitch) !== null) {
+          return true;
+        }
+        undrawable += 1;
+        return false;
+      });
+
       items.push({
         pitch: note.pitch,
         value,
         dots: drawn!.dots,
         measureNumber: measure.measure_number,
+        ...(chord.length > 0 ? { chord } : {}),
         ...(mark ? { tuplet: mark } : {}),
         ...(quarters !== undefined ? { quarters } : {}),
         ...(opensMeasure ? { barBefore: true } : {}),

@@ -160,6 +160,23 @@ export interface StaveNote {
    */
   measureNumber?: number;
   /**
+   * The other pitches sounding with this one, from `ScoreNote.chord_pitches`.
+   *
+   * A double stop, or a chord. They share the principal's onset and value —
+   * that is what makes them chord members rather than notes — so only the
+   * pitches differ, and the timeline counts the group once.
+   */
+  chord?: string[];
+  /**
+   * The chord's members with their accidentals decided, set by
+   * `spellAccidentals` alongside `printed`.
+   *
+   * Separate from `chord` for the same reason `printed` is separate from the
+   * pitch name: absent means nobody spelled them, and `null` inside means
+   * "print nothing", which is a real answer.
+   */
+  chordPrinted?: { pitch: string; accidental: Accidental }[];
+  /**
    * The accidental to actually print, decided against the key signature and
    * the bar so far.
    *
@@ -268,6 +285,17 @@ export interface EngravedNote {
   accidentalX: number;
   /** Y positions of ledger lines this note needs, above or below the staff. */
   ledgers: number[];
+  /**
+   * The rest of the chord: one entry per additional notehead, at its own
+   * staff position.
+   *
+   * `x` is absolute rather than an offset because a head a **second** away
+   * from its neighbour cannot share the column — two noteheads a step apart
+   * overlap into an unreadable blob — so it is pushed to the far side of the
+   * stem. That is not a refinement; it is the difference between a chord and a
+   * smudge.
+   */
+  chord: { x: number; y: number; accidental: Accidental; accidentalX: number }[];
   /** The note's letter and accidental, for the row under the system. */
   name: string;
   /**
@@ -608,6 +636,25 @@ const ACCIDENTAL_GAP = 0.28;
 const HEAD_HALF = 0.59;
 
 /**
+ * A whole notehead's width, in staff spaces — twice `HEAD_HALF`.
+ *
+ * How far a chord member a **second** from its neighbour is pushed sideways, so
+ * the two heads sit beside each other across the stem instead of on top of one
+ * another.
+ */
+const HEAD_WIDTH = HEAD_HALF * 2;
+
+/**
+ * How far apart stacked chord accidentals sit, in staff spaces.
+ *
+ * A column per head. Wide enough for the widest glyph (a double flat is 1.65)
+ * plus air, because the alternative is measuring what each column actually
+ * holds — which an engraver does and which would be a second layout pass for a
+ * case that is two or three noteheads.
+ */
+const ACCIDENTAL_COLUMN = 1.9;
+
+/**
  * The extra column width a note carrying an accidental is given.
  *
  * **Because an accidental had no width at all**, and in a dense bar that is
@@ -626,6 +673,62 @@ const HEAD_HALF = 0.59;
  * How much room an accidental asks for, in staff spaces, gaps included.
  * A double flat needs nearly twice what a sharp does.
  */
+/**
+ * Every accidental this note prints, in the column order they are stacked in.
+ *
+ * **Columns are counted among the heads that actually print something**, not
+ * among all of them. Indexing by chord position pushed a lone flat on the
+ * second member two columns out — far enough to land on the previous note — and
+ * the room reserved for it, computed the same wrong way, did not cover it
+ * either. One rule, used by the layout and by `extraRoom`, so they cannot
+ * disagree about where the glyphs go.
+ *
+ * Top of the chord first, which is the order an engraver reads them in.
+ */
+function accidentalStack(
+  note: StaveNote,
+): { pitch: string; accidental: NonNullable<Accidental> }[] {
+  const heads: { pitch: string; accidental: Accidental }[] = [
+    { pitch: note.pitch, accidental: printedAccidental(note) },
+    ...(note.chordPrinted ??
+      (note.chord ?? []).map((pitch) => ({ pitch, accidental: accidentalOf(pitch) }))),
+  ];
+  return heads
+    .filter(
+      (head): head is { pitch: string; accidental: NonNullable<Accidental> } =>
+        head.accidental !== null && stepOf(head.pitch) !== null,
+    )
+    .sort((a, b) => (stepOf(b.pitch) as number) - (stepOf(a.pitch) as number));
+}
+
+/** Whether any two of this note's heads are one staff position apart. */
+function hasSecond(note: StaveNote): boolean {
+  const steps = [note.pitch, ...(note.chord ?? [])]
+    .map(stepOf)
+    .filter((step): step is number => step !== null)
+    .sort((a, b) => a - b);
+  return steps.some((step, i) => i > 0 && step - steps[i - 1] === 1);
+}
+
+/**
+ * The horizontal room one item needs to the left of its column.
+ *
+ * The whole accidental stack measured as it will actually be drawn, plus a
+ * notehead's width when a head has to move across the stem.
+ */
+function noteRoom(note: StaveNote): number {
+  const stack = accidentalStack(note);
+  const widest = stack.reduce(
+    (most, head) => Math.max(most, ACCIDENTAL_WIDTHS[head.accidental]),
+    0,
+  );
+  const columns =
+    stack.length === 0
+      ? 0
+      : HEAD_HALF + ACCIDENTAL_GAP * 2 + widest + ACCIDENTAL_COLUMN * (stack.length - 1);
+  return columns + (hasSecond(note) ? HEAD_WIDTH : 0);
+}
+
 function accidentalRoom(accidental: Accidental): number {
   if (!accidental) {
     return 0;
@@ -656,7 +759,12 @@ function extraRoom(items: StaveItem[], lineGap: number): number[] {
     // the name gives a suppressed sharp a column it never uses and gives a
     // printed natural — which no pitch name ever carries — no room at all, so
     // it would sit through the notehead before it.
-    isNote(item) ? lineGap * accidentalRoom(printedAccidental(item)) : 0,
+    //
+    // A chord asks for its whole stack: one column per member that prints an
+    // accidental, plus a notehead's width when a member sits a second away and
+    // has to move across the stem. Reserving only the principal's would put a
+    // three-accidental chord through the note before it.
+    isNote(item) ? lineGap * noteRoom(item) : 0,
   );
 }
 
@@ -785,15 +893,119 @@ export function spellAccidentals(
     if (step === null) {
       return { ...item, printed: null };
     }
-    const want = alterationOf(item.pitch);
-    const letter = ((step % 7) + 7) % 7;
-    const inForce = bar.has(step) ? (bar.get(step) as number) : (byLetter.get(letter) ?? 0);
-    if (want === inForce) {
-      return { ...item, printed: null };
+    // **The whole chord, in staff order, sharing one bar memory.** A chord is
+    // one moment: an F sharp in it puts F sharp in force for the rest of the
+    // bar exactly as a single note would, and its own members are spelled
+    // against what the members below them already established.
+    const spell = (pitch: string): Accidental => {
+      const at = stepOf(pitch);
+      if (at === null) {
+        return null;
+      }
+      const alteration = alterationOf(pitch);
+      const letterOf = ((at % 7) + 7) % 7;
+      const holds = bar.has(at) ? (bar.get(at) as number) : (byLetter.get(letterOf) ?? 0);
+      if (alteration === holds) {
+        return null;
+      }
+      bar.set(at, alteration);
+      return GLYPH_FOR_ALTERATION[alteration] ?? null;
+    };
+
+    const printed = spell(item.pitch);
+    const members = item.chord ?? [];
+    if (members.length === 0) {
+      return { ...item, printed };
     }
-    bar.set(step, want);
-    return { ...item, printed: GLYPH_FOR_ALTERATION[want] ?? null };
+    return {
+      ...item,
+      printed,
+      chordPrinted: members.map((pitch) => ({ pitch, accidental: spell(pitch) })),
+    };
   });
+}
+
+/**
+ * One chord's noteheads: principal first, then the rest in staff order.
+ *
+ * **Sorted, because the stem and the accidental columns both depend on order.**
+ * `chord_pitches` arrives in the order the importer met them in the MusicXML,
+ * which is not necessarily by pitch.
+ *
+ * A member whose pitch cannot be placed is dropped here as well as in
+ * `fromScore` — this is the last line of that defence, and a notehead put on
+ * the middle line under a name it does not have is the failure the whole module
+ * is written against.
+ */
+function chordHeads(
+  note: StaveNote,
+  middleStep: number,
+  halfGap: number,
+): { pitch: string; y: number; accidental: Accidental }[] {
+  const principalStep = stepOf(note.pitch) ?? 0;
+  const principal = {
+    pitch: note.pitch,
+    step: principalStep,
+    y: -(principalStep - middleStep) * halfGap,
+    accidental: printedAccidental(note),
+  };
+
+  // Spelled if something spelled them, and from their own names if not — the
+  // same fallback `printedAccidental` gives the principal, for a caller that
+  // builds items by hand.
+  const members = note.chordPrinted
+    ? note.chordPrinted
+    : (note.chord ?? []).map((pitch) => ({ pitch, accidental: accidentalOf(pitch) }));
+
+  const rest: typeof principal[] = [];
+  for (const member of members) {
+    const step = stepOf(member.pitch);
+    if (step === null) {
+      continue;
+    }
+    rest.push({
+      pitch: member.pitch,
+      step,
+      y: -(step - middleStep) * halfGap,
+      accidental: member.accidental,
+    });
+  }
+  rest.sort((a, b) => a.step - b.step);
+  return [principal, ...rest].map(({ pitch, y, accidental }) => ({
+    pitch,
+    y,
+    accidental,
+  }));
+}
+
+/**
+ * Which noteheads have to move off the column.
+ *
+ * Two heads a **second** apart overlap into an unreadable blob, so an engraver
+ * puts the second of the pair on the far side of the stem. Walks the chord from
+ * the bottom of the staff up, displacing alternate members of each run of
+ * adjacent steps — a cluster of three ends up left, right, left.
+ *
+ * Returns one flag per head, in the order `chordHeads` gave them.
+ */
+function displacedHeads(
+  heads: { y: number }[],
+  halfGap: number,
+): boolean[] {
+  const order = heads
+    .map((head, index) => ({ index, y: head.y }))
+    .sort((a, b) => b.y - a.y); // lowest on the staff first
+  const out = heads.map(() => false);
+  let previous: number | null = null;
+  let displaced = false;
+  for (const head of order) {
+    const isSecond =
+      previous !== null && Math.abs(Math.abs(head.y - previous) - halfGap) < halfGap / 100;
+    displaced = isSecond && !displaced;
+    out[head.index] = displaced;
+    previous = head.y;
+  }
+  return out;
 }
 
 /**
@@ -998,9 +1210,53 @@ function layoutSystem(
     const step = stepOf(note.pitch) ?? 0;
     const accidental = printedAccidental(note);
     const y = -(step - middleStep) * halfGap;
-    const stemUp = y > 0;
+
+    /**
+     * Every notehead of this note, principal first, ordered low step to high.
+     *
+     * The chord's own accidentals are spelled by `spellChord`, against the
+     * same key and bar the principal was spelled against.
+     */
+    const heads = chordHeads(note, middleStep, halfGap);
+
+    // **The head furthest from the middle line decides the stem**, which for a
+    // chord is not necessarily the principal: a double stop is written with the
+    // lower note as the principal and the stem is set by whichever end reaches
+    // further from the centre. Ties go down, the same convention as a beamed
+    // group.
+    //
+    // `y` is negative above the middle line, so the two reaches have to be
+    // measured from zero rather than compared as absolute values — `|lowest| >=
+    // |highest|` looks equivalent and makes every single note stem up, because
+    // for one note the two are the same number.
+    const highest = Math.min(...heads.map((head) => head.y));
+    const lowest = Math.max(...heads.map((head) => head.y));
+    const reachAbove = Math.max(0, -highest);
+    const reachBelow = Math.max(0, lowest);
+    const stemUp = reachBelow > reachAbove;
     // Everything a quarter or shorter has a black notehead.
     const filled = note.value !== 'whole' && note.value !== 'half';
+
+    // A head a **second** from its neighbour cannot share the column. It goes
+    // to the far side of the stem, which is what an engraver does and what
+    // keeps two adjacent noteheads from printing on top of each other.
+    const seconds = displacedHeads(heads, halfGap);
+    const headX = (which: number) =>
+      seconds[which] ? (stemUp ? x + lineGap * HEAD_WIDTH : x - lineGap * HEAD_WIDTH) : x;
+
+    // Where each printing accidental sits. The stack and its column order come
+    // from `accidentalStack`, which is also what `extraRoom` measured — so the
+    // glyphs and the space reserved for them are the same arithmetic. Columns
+    // are counted among the heads that **print** something: indexing by chord
+    // position pushed a lone flat on the second member two columns out, far
+    // enough to land on the previous note, with room reserved for one column
+    // and two drawn.
+    const stack = accidentalStack(note);
+    const columnFor = new Map(stack.map((head, column) => [head.pitch, column]));
+    const accidentalXFor = (glyph: Accidental, pitch: string) =>
+      x -
+      lineGap * (HEAD_HALF + ACCIDENTAL_GAP + (glyph ? ACCIDENTAL_WIDTHS[glyph] : 0)) -
+      lineGap * ACCIDENTAL_COLUMN * (columnFor.get(pitch) ?? 0);
 
     engravedNotes.push({
       x,
@@ -1012,10 +1268,7 @@ function layoutSystem(
       // **The glyph's left edge**, because that is where text is drawn from,
       // and placed by the width of the accidental actually being drawn rather
       // than by one constant standing in for all five.
-      accidentalX:
-        x -
-        lineGap *
-          (HEAD_HALF + ACCIDENTAL_GAP + (accidental ? ACCIDENTAL_WIDTHS[accidental] : 0)),
+      accidentalX: accidentalXFor(accidental, note.pitch),
       name: displayName(note.pitch),
       dots: note.dots ?? 0,
       // Cleared below for any note a beam picks up.
@@ -1028,10 +1281,33 @@ function layoutSystem(
               // left. Centring them is the single most obvious tell that
               // notation was drawn by someone who doesn't read it.
               x: stemUp ? x + lineGap * 0.62 : x - lineGap * 0.62,
-              from: y,
-              to: stemUp ? y - stemLength : y + stemLength,
+              // **From the far end of the chord, not from the principal.** A
+              // stem that starts at the middle note of a chord leaves the
+              // outer one floating unattached.
+              from: stemUp ? lowest : highest,
+              to: stemUp ? highest - stemLength : lowest + stemLength,
             },
-      ledgers: ledgerLinesFor(y, staffLines[0], staffLines[4], lineGap),
+      // **Every head's, merged.** A chord reaching above the staff needs the
+      // lines for its top note, and computing them from the principal alone
+      // left an upper double-stop notehead floating in space with nothing
+      // under it to say which pitch it was.
+      ledgers: Array.from(
+        new Set(
+          heads.flatMap((head) =>
+            ledgerLinesFor(head.y, staffLines[0], staffLines[4], lineGap),
+          ),
+        ),
+      ).sort((a, b) => a - b),
+      // The principal is `y`/`accidental` above; these are the rest.
+      // **Accidentals hang off the note's column, not off a displaced head.**
+      // A head pushed across the stem sits further right; measuring its
+      // accidental from there would put the glyph inside the chord.
+      chord: heads.slice(1).map((head, i) => ({
+        x: headX(i + 1),
+        y: head.y,
+        accidental: head.accidental,
+        accidentalX: accidentalXFor(head.accidental, head.pitch),
+      })),
     });
 
     x += noteGap + (room[index + 1] ?? 0);
@@ -1321,6 +1597,15 @@ function layoutSystem(
       extents.push(note.stem.to);
     }
     extents.push(...note.ledgers);
+    // A chord's outer head is often further out than its principal, and the
+    // system's height is measured here — a box sized from the principal alone
+    // clips the top note of every double stop.
+    for (const head of note.chord) {
+      extents.push(
+        head.y - HEAD_RADIUS_FACTOR * lineGap,
+        head.y + HEAD_RADIUS_FACTOR * lineGap,
+      );
+    }
   }
 
   // Rests reach outside the noteheads' box too — a quarter rest spans the
@@ -1375,6 +1660,9 @@ function shift(system: EngravedSystem, dy: number): EngravedSystem {
       ...note,
       y: note.y + dy,
       ledgers: note.ledgers.map((y) => y + dy),
+      // The rest of the chord moves with it. Missed here, a double stop's upper
+      // note would stay behind on the first system's baseline.
+      chord: note.chord.map((head) => ({ ...head, y: head.y + dy })),
       stem: note.stem
         ? { ...note.stem, from: note.stem.from + dy, to: note.stem.to + dy }
         : null,

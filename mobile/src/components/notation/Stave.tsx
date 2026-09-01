@@ -535,6 +535,41 @@ export function Stave({
                 </SvgText>
               ) : null}
 
+              {/*
+                **The rest of the chord.** Drawn before the stem so the stem
+                crosses them, exactly as it does the principal, and after the
+                ledger lines, which are already the union across every head.
+
+                A double stop is not decoration on a string part — the demo
+                fixture is Bach's G minor Sonata, whose first bar is a four-note
+                chord — and one notehead where the page has four is the thing
+                this whole module refuses to do.
+              */}
+              {note.chord.map((head, member) => (
+                <G key={`chord-${member}`}>
+                  {head.accidental ? (
+                    <SvgText
+                      x={head.accidentalX}
+                      y={head.y}
+                      fill={ink}
+                      fontSize={musicSize}
+                      fontFamily={fontFamily.music}
+                    >
+                      {ACCIDENTAL_GLYPH[head.accidental]}
+                    </SvgText>
+                  ) : null}
+                  <SvgText
+                    x={head.x - lineGap * NOTEHEAD[note.value].halfWidth}
+                    y={head.y}
+                    fill={ink}
+                    fontSize={musicSize}
+                    fontFamily={fontFamily.music}
+                  >
+                    {NOTEHEAD[note.value].glyph}
+                  </SvgText>
+                </G>
+              ))}
+
               {note.stem ? (
                 <Line
                   x1={note.stem.x}

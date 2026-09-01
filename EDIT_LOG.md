@@ -6,6 +6,78 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-01 — A four-note chord was drawn as one note and played as one pitch
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Fourth finding of the
+music-accuracy audit, and the largest.
+
+**Files:** `mobile/src/lib/notation/engrave.ts`, `fromScore.ts`,
+`components/notation/Stave.tsx`, `mobile/src/lib/score/schedule.ts`,
+`mobile/src/lib/notation/chords.test.ts` (new).
+
+`musicxml.py` has read `<chord>` members into `ScoreNote.chord_pitches` for a
+long time, carefully — a chord member shares its predecessor's onset, a rolled
+grace chord counts as one attack. **Nothing in the app ever read the field.**
+`grep chord_pitches src/` returned the type definition and nothing else.
+
+So a double stop was engraved as a single notehead and played back as a single
+pitch. On a string part that is not an edge case: the app's own demo fixture is
+Bach's G minor Sonata, whose first bar is a four-note chord. Drawing one head
+where the page has four is drawing *something else*, which is the thing
+`engrave.ts`'s docstring says it must never do.
+
+### The four geometric rules, each of which is garbage if dropped
+
+- **A head a second from its neighbour moves across the stem.** Two noteheads
+  one staff position apart print on top of each other; without the displacement
+  a second and a third look identical, which is a different chord.
+- **The stem runs from the far head**, not from the principal, or the outer
+  notehead floats with nothing joining it to the chord. Direction comes from
+  whichever end reaches further from the middle line — and that had to be
+  measured from zero rather than by comparing absolute values, because for a
+  single note the two are the same number and the first version made **every**
+  stem point up. Caught by two existing tests.
+- **Ledger lines are the union across every head.** Computed from the principal
+  alone, a chord reaching above the staff left its top note in space.
+- **Accidentals get a column each, counted among the heads that print one.**
+  Indexing by chord position pushed a lone flat on the second member two columns
+  out — far enough to land on the previous note — while the room reserved for it,
+  computed the same wrong way, covered one column. Both now come from
+  `accidentalStack`, so the glyphs and the space cannot disagree. The highest
+  note's accidental sits nearest the noteheads, which is the convention and is
+  the opposite of what the first test assumed.
+
+Chord members are spelled by `spellAccidentals` against the **same bar memory**
+as everything else: a chord is one moment, so an F sharp in it puts F sharp in
+force for the rest of the bar exactly as a single note would.
+
+### And it sounds now
+
+`scheduleScore` emits every member at the principal's onset and duration, with
+the **same `globalIndex`** — a playhead names the moment you are hearing and a
+chord is one moment. The clock is advanced once, or a bar containing a double
+stop would run long and every bar after it be judged early. All three asserted.
+
+**Verified** by temporarily giving the demo score four chords covering every
+rule — a four-note stack, a second, a chord with two ledger lines and a natural,
+and a chord with two flats — building, and reading the engraved geometry out of
+the layout rather than off the screenshot: stems attached to the far head, the
+second displaced by a notehead's width, two ledger lines under the C6, two flats
+in separate columns with the higher nearer the heads. Screenshotted at 4x.
+Fixture restored and confirmed byte-identical; the full route sweep is clean and
+the D major page is back to four sharps, which is two systems of key signature
+and nothing else.
+
+**Tests:** 723 pass, up 13.
+
+**Known limit:** the note-name row under a system still names the principal
+only. It is shown on the warmup, which authors its own notes and has no chords;
+on a score the row is off. Worth revisiting if it is ever turned on there.
+
+**Rollback:** revert the commit.
+
+---
+
 ## 2026-09-01 — The app called the opening bar of most real repertoire a misreading
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Third finding of the

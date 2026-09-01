@@ -204,6 +204,26 @@ export function scheduleScore(
         globalIndex,
       });
       globalIndex += 1;
+
+      // **The rest of the chord, at the same instant.** A double stop played
+      // back as its lower note alone is not the piece: the demo fixture opens
+      // with a four-note chord, and Listen sounded one of them. They share the
+      // onset and the duration — that is what makes them chord members — and
+      // they take the **same** `globalIndex`, because a playhead names the
+      // moment you are hearing and a chord is one moment.
+      for (const member of note.chord_pitches ?? []) {
+        const chordHz = frequencyOf(member);
+        if (chordHz === null) {
+          continue;
+        }
+        notes.push({
+          startS: clock,
+          durationS: durationS * articulation,
+          frequency: chordHz,
+          measureNumber: measureOf[i],
+          globalIndex: globalIndex - 1,
+        });
+      }
     }
 
     clock += durationS;
