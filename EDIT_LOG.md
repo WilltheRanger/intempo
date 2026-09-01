@@ -6,6 +6,72 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-01 — The piece screen was three cards in a column
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Found by sweeping all 23
+routes in the running build and looking at them, which is a thing that had not
+been done end to end this session.
+
+**Files:** `mobile/src/screens/pieceDetail/PieceDetailScreen.tsx`.
+
+The sweep found no blank screens, no horizontal overflow and no console errors
+anywhere — the app is in good shape. What it did find is that `PieceDetail`,
+which is where you land from both Library and Today, rendered as **three
+bordered cards stacked down the page**: the score thumbnail with "Continue
+practice" inside it, a "Playback" box holding a label and a Listen pill, and a
+box around two navigation rows.
+
+Each card had a comment defending itself against §3 law 3, and each argument
+was locally reasonable. The composition was still a stack of boxes, which is
+what the law is about.
+
+### What it is now
+
+- **The page crop is a band, edge to edge**, cancelling the screen gutter with
+  `SCREEN_GUTTER` — the one thing on the screen that reaches the edges, because
+  it is a picture and everything else is set in a column. Hairlines top and
+  bottom: a page crop is nearly white on an ivory page, and one border left the
+  top edge floating, which reads as a crop that failed.
+- **One line of facts replaces two cards**: when you last played it, how long it
+  is, and the tempo it will be heard at. The middle item becomes the playhead
+  while something is sounding — `Measure 3 of 6` — so the line changes in one
+  place rather than being swapped out. Typography doing what a box was doing
+  (§3 law 8).
+- **The two destinations are ruled rows on the page.** The library separates
+  forty of these with a hairline apiece; a box around two of them groups nothing
+  the rule between them does not already say.
+- **"Continue practice" moved to the footer.** It is the one thing this screen
+  is for, and it used to sit a third of the way down, inside a card, level with
+  the score band — so the screen opened with two things competing to be looked
+  at first (§3 laws 4 and 7).
+- **Listen stays in the flow**, with the piece rather than with the decision to
+  practise. Choosing a tempo and a starting bar is deliberately *not* duplicated
+  here: `PieceScore` already has both, and it is the screen where you can see
+  the bars you would be choosing between.
+
+Zero cards on the default path. The two that remain are genuine grouping — the
+rename form (three fields and two buttons) and the "add sheet music" block on a
+piece that has none.
+
+**Three-foot test, on the screenshot, at 390 and at 1280:** first the title in
+large serif, second "Continue practice" as a solid ink block at the bottom,
+third the sheet band. The facts line, Listen and the ruled rows all recede.
+A title and an anchored action are not two focal points fighting — they are
+identity and action, in different places doing different jobs — but it is the
+closest this screen comes to law 4 and it is worth saying so rather than
+claiming it is settled.
+
+Desktop holds the 560pt reading measure, with the band reaching the measure's
+edges rather than the window's.
+
+**Verified:** both a practised piece and an unpractised one, at both widths, no
+console errors. 683 tests still pass; this screen has none of its own, which is
+the standing gap — there is no React Native testing library here.
+
+**Rollback:** revert the commit.
+
+---
+
 ## 2026-09-01 — A refused camera was a dead end with directions on it
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. The other half of "make the
