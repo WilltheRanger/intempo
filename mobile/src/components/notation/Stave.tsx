@@ -271,6 +271,26 @@ export interface StaveProps {
    * sit on.
    */
   highlightMeasure?: number | null;
+  /**
+   * Called with a bar's number when it is tapped.
+   *
+   * **The stave is the bar picker.** A musician chooses where to start by
+   * looking at the music, not by reading a number in a list of seventy — and
+   * the geometry for this already existed: `measureSpans` is what the playhead
+   * wash is drawn from. With this set, each span in `pressableMeasures` gets a
+   * transparent target on top of everything else, the full height of the
+   * staff plus a space either side, so a bar of sixteenths on a phone is as
+   * easy to hit as a bar of whole notes.
+   */
+  onMeasurePress?: (measureNumber: number) => void;
+  /**
+   * Which bars accept a tap. Omitted, every bar does.
+   *
+   * The caller knows which bars actually sound — `startableMeasures` — and a
+   * bar of rests has nothing to enter on. Leaving it untappable is more honest
+   * than snapping to a neighbour the musician did not choose.
+   */
+  pressableMeasures?: number[];
 }
 
 const LINE_GAP = 9;
@@ -339,6 +359,8 @@ export function Stave({
   head,
   showNoteNames = true,
   highlightMeasure = null,
+  onMeasurePress,
+  pressableMeasures,
 }: StaveProps) {
   const dark = tone === 'dark';
   const ink = dark ? colors.actionText : colors.textPrimary;
@@ -1025,6 +1047,30 @@ export function Stave({
               strokeWidth={beamNode}
             />
           ))}
+
+          {/* Last, so they are on top of every mark and receive the tap.
+              `transparent` rather than `none`: SVG hit-tests painted area, and
+              a fill of `none` is not painted, so it would draw nothing *and*
+              catch nothing. */}
+          {onMeasurePress
+            ? system.measureSpans
+                .filter(
+                  (span) =>
+                    !pressableMeasures ||
+                    pressableMeasures.includes(span.measureNumber),
+                )
+                .map((span) => (
+                  <Rect
+                    key={`target-${span.measureNumber}`}
+                    x={span.from}
+                    y={system.staffLines[0] - lineGap}
+                    width={span.to - span.from}
+                    height={lineGap * 6}
+                    fill="transparent"
+                    onPress={() => onMeasurePress(span.measureNumber)}
+                  />
+                ))
+            : null}
         </G>
       ))}
     </Svg>

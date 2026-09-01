@@ -6,6 +6,82 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-01 — The bar picker shows the music
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. The owner, on the control
+that shipped an hour earlier: *"Why is it like you click on text and it gives
+you all the bars — should there be a better UI or design for that?"* Yes.
+
+**Files:** `mobile/src/components/notation/Stave.tsx`,
+`components/score/StartBarPicker.tsx` (new), `components/score/PlaybackSettings.tsx`,
+`lib/score/stepBar.ts` (new) + test, `screens/record/RecordScreen.tsx`,
+`screens/pieceScore/PieceScoreScreen.tsx`.
+
+### What was wrong with it
+
+Two things, and the owner named both. The trigger was accent-coloured text
+reading "Start at bar 1" — it did not look like a control, because it wasn't
+styled as one. And tapping it opened a scrolling list: "Bar 1, Bar 2 … Bar 74".
+That asks a musician to find a place in a piece the way a spreadsheet would. A
+musician knows where they want to start because they can *see* it — the run
+after the double bar, the entry after the long rest — and a list of numbers
+throws that away.
+
+### The picker is the stave
+
+`Stave` gained `onMeasurePress` and `pressableMeasures`. The geometry already
+existed: `measureSpans` is what the playhead wash is drawn from, so each bar
+that sounds now gets a transparent `Rect` on top of everything else, the full
+staff height plus a space either side. `fill="transparent"` rather than
+`"none"` — SVG hit-tests painted area, and `none` is not painted, so it would
+draw nothing *and* catch nothing. Verified on the web build: a tap on bar 2's
+target moved the readout from 1 to 2.
+
+The chosen bar carries the same wash the playhead does, because "you are here"
+is what both of them mean. The sheet is engraved at the score screen's own
+scale and fitted to its width, so a bar here looks like the same bar there.
+
+A stepper underneath, for precision rather than discovery: a bar of sixteenths
+on a phone is narrow, and a thumb that lands one bar off should be one tap from
+right rather than another aim. It walks the list of bars that sound
+(`stepBar`), never adding one, so it cannot land on a bar of rest. The sheet
+stays open after a tap for the same reason — closing on every tap would make it
+the list of numbers with extra steps.
+
+### The trigger is a setting row
+
+Where the bar decides what the take is, it is a real setting and now looks like
+one: a full-width labelled row, "Start at" left, "Bar 1 ›" right, hairlines
+above and below — the same furniture as every other setting row in the app. On
+the score screen, where nothing is recorded, the quiet "Listen from bar 1 ·
+92 BPM" sentence stays; it opens the same picker.
+
+**`alignSelf: 'stretch'` is load-bearing.** The Record screen's control column
+centres its children, and the first build rendered the row only as wide as its
+content — "Start atBar 1", touching, with hairlines the width of the words.
+Measured after: 350 of 390 points, 280 of 320.
+
+### Three-foot test
+
+**The sheet:** the stave first, "Start the take at" second, the stepper
+readout third. The music is the picker, which is the point. **The record
+screen:** the tempo first, the record button second, the Listen/Start-at pair
+third — the row recedes, as a secondary setting should (§3 law 4), and is
+unmistakably a control.
+
+### Tests
+
+1010 passing, `tsc` clean, 23-route sweep clean, narrow probe unchanged.
+`stepBar.test.ts` holds the stepping rule; the tap targets and the row were
+verified on the running build rather than claimed.
+
+### Rollback
+
+`git revert`. Both callers still pass `bars`, so reverting to the list is a
+one-file change if it were ever wanted.
+
+---
+
 ## 2026-09-01 — A take can start partway in
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Reported by the owner:

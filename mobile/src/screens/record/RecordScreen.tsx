@@ -858,6 +858,7 @@ export function RecordScreen() {
               now start in the same place, and the analysis is told which. */}
           <PlaybackSettings
             entry="take"
+            score={heard}
             bars={startable}
             fromMeasure={startFrom}
             onFromMeasureChange={setStartFrom}

@@ -522,6 +522,7 @@ export function PieceScoreScreen() {
               }
             />
             <PlaybackSettings
+              score={heard}
               bars={startable}
               fromMeasure={listenFrom}
               onFromMeasureChange={setFromMeasure}
