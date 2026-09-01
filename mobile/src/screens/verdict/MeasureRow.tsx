@@ -61,6 +61,7 @@ export function MeasureRow({
       accessibilityState={
         reading.revealsFigure ? { selected: revealed } : undefined
       }
+      aria-pressed={reading.revealsFigure ? revealed : undefined}
       accessibilityLabel={reading.accessibilityLabel}
       accessibilityHint={
         reading.revealsFigure

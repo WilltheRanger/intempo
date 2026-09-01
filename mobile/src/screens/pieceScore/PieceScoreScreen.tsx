@@ -830,6 +830,7 @@ export function PieceScoreScreen() {
               }}
               accessibilityRole="button"
               accessibilityState={{ selected: piece.score?.clef === clef }}
+              aria-pressed={piece.score?.clef === clef}
               style={styles.clefRow}
             >
               <Text
@@ -848,6 +849,7 @@ export function PieceScoreScreen() {
             }}
             accessibilityRole="button"
             accessibilityState={{ selected: !piece.score?.clef }}
+            aria-pressed={!piece.score?.clef}
             style={styles.clefRow}
           >
             <Text

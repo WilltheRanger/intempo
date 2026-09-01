@@ -135,6 +135,7 @@ export function PlaybackSettings({
               }}
               accessibilityRole="button"
               accessibilityState={{ selected: bar === fromMeasure }}
+              aria-pressed={bar === fromMeasure}
               style={styles.barRow}
             >
               <Text variant="body">Bar {bar}</Text>

@@ -262,6 +262,7 @@ export function MeasureEditScreen() {
             }}
             accessibilityRole="button"
             accessibilityState={{ selected: i === selected }}
+            aria-pressed={i === selected}
             accessibilityLabel={`Note ${i + 1}, ${DURATION_LABELS[note.duration] ?? note.duration}${
               note.pitch === 'rest' ? ', rest' : `, ${note.pitch}`
             }`}
@@ -291,6 +292,7 @@ export function MeasureEditScreen() {
             onPress={() => change({ duration })}
             accessibilityRole="button"
             accessibilityState={{ selected: current?.duration === duration }}
+            aria-pressed={current?.duration === duration}
             style={[styles.chip, current?.duration === duration && styles.chipOn]}
           >
             <Text

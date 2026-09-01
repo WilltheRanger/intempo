@@ -386,6 +386,7 @@ export function ScannerScreen() {
             accessibilityRole="button"
             accessibilityLabel={flashOn ? 'Turn flash off' : 'Turn flash on'}
             accessibilityState={{ selected: flashOn }}
+            aria-pressed={flashOn}
             style={styles.iconButton}
           >
             <FlashIcon

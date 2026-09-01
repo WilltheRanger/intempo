@@ -6,6 +6,73 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-01 — Nine more controls with a state nothing announced
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Found by taking the lesson
+of the entry below — that a screenshot sweep cannot see a control that renders
+and does nothing — and **pressing** things across the app instead of looking at
+them.
+
+**Files:** `mobile/src/components/primitives/SegmentedControl.tsx`,
+`components/profile/InstrumentChoice.tsx`, `components/score/PlaybackSettings.tsx`,
+`navigation/BottomTabBar.tsx`, `screens/scanner/ScannerScreen.tsx`,
+`screens/measureEdit/MeasureEditScreen.tsx`,
+`screens/pieceScore/PieceScoreScreen.tsx`, `screens/verdict/MeasureRow.tsx`,
+`screens/ariaState.test.ts` (was `switchState.test.ts`).
+
+### The same react-native-web fact, for the fourth time
+
+`accessibilityState` produces no ARIA attribute. `switchState.test.ts` was
+written two days ago because that fact had been discovered three separate times
+— and it only checked `role="switch"`. An audit of the score screen found the
+segmented control announcing "Notation, tab" and "Original, tab" with **no
+indication of which was showing**, and a grep then found **nine** controls in
+the same state: both segmented controls, the bottom tab bar, the clef chooser,
+the instrument choice, the measure editor's note and duration pickers, the
+"listen from bar" picker, the scanner's flash toggle, and the verdict rows.
+There was not one `aria-selected`, `aria-pressed` or `aria-checked` in the
+codebase outside the four switches.
+
+**The bottom tab bar announced four identical tabs.** That is the app's primary
+furniture, on every screen.
+
+### The attribute depends on the role, and the wrong one is as silent as none
+
+`aria-selected` on a plain button is ignored by assistive technology, so this is
+a pairing rather than a presence: `tab` → `aria-selected`, `radio`/`switch`/
+`checkbox` → `aria-checked`, `button` → `aria-pressed`. Roles were left exactly
+as they were; only the attribute each role needs was added.
+
+`ariaState.test.ts` replaces `switchState.test.ts` and checks the pairing over
+every `accessibilityState` in the tree. A role decided at render time —
+`MeasureRow` is a button only when it has a figure to reveal — is checked more
+weakly, for *some* ARIA state, and says in its message that it could not read
+the role. Verified failing by deleting `aria-selected` from `SegmentedControl`.
+
+### Verified on the running app, not only in the source
+
+Read off the DOM: the score view reports `Notation selected=false / Original
+selected=true`; the bottom tab bar marks exactly one tab `selected=true` on each
+of the four routes; the measure editor's pickers report `pressed=true` on the
+note and the duration actually chosen; Profile's switches report `checked`.
+
+**Also checked and not a bug:** "Digital score" and "Original pages" on the
+piece screen both navigate to `/score`, which looked like two names for one
+destination. They carry `?view=notation` and `?view=original`, and the screen
+opens on the right one.
+
+**Noted, not changed:** `SegmentedControl` is `role="tab"` everywhere, including
+where it is a *setting* — the instrument and the metronome mode on Profile.
+`tab` implies a tabpanel that does not exist there; `radiogroup` would be more
+truthful. It announces correctly either way, so this is a semantics question for
+its own change rather than a fault to patch in this one.
+
+**Tests:** 934, up 9.
+
+**Rollback:** revert the commit.
+
+---
+
 ## 2026-09-01 — The composer suggestions never worked, on the one screen that had them
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`.
