@@ -6,6 +6,62 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-01 — Every screen-level empty state sat in the top quarter
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. The layout question I
+deferred twice, settled with the measurement rather than the theory.
+
+**Files:** `mobile/src/components/primitives/ScreenContainer.tsx`,
+`primitives/EmptyState.tsx`, and the nine screens with a screen-level empty
+state.
+
+### Why nothing had worked before
+
+The obvious fix — `flex: 1` on the empty state — does nothing, and that is why
+this sat unfixed. **A `ScrollView`'s content container is sized by its
+content**, so a child asking for the leftover height is asking a box that has
+none to give. `ScreenContainer`'s content style now carries `flexGrow: 1`,
+which makes the container at least a viewport tall and changes nothing else:
+with no `justifyContent` there, shorter content still stacks from the top and
+longer content still scrolls.
+
+`EmptyState` takes `fill`, and the message and its action then sit in the
+middle of the screen. Measured on "Couldn't open this piece" at iPhone-13
+size: the block moved from the top quarter — with roughly seventy per cent of
+the screen blank beneath it and its only exit near the status bar — to the
+vertical centre.
+
+### Opt-in, because it is not always right
+
+`fill` is off by default and the nine screen-level states pass it. Library's
+"No matches" does not: it sits under a search field with the search still on
+screen, and centring it in the page would pull it away from the thing it is
+about. Measured after: it stays at y=216 with the field ending at 143 —
+attached, as before.
+
+### Three-foot test
+
+"Couldn't open this piece" first, "Back" second, the space around them third.
+The emptiness reads as composition now rather than as a screen that failed to
+finish drawing — which is what it read as before, and §3 law 7 is the other
+half: the only way off that screen was a control at the top of it.
+
+**Also this tick, and nothing to fix:** read the other agent's open PR #39
+(durable audio keys, idempotent enqueue, resumable retries). It is sound and it
+is doing for recordings what `upload.ts` already documents for pages and
+avatars — *"Use `upload_url` only for the PUT … Never the URL."* It touches
+`RecordScreen.send()`, which I have been editing, so it will want a merge; my
+branch is currently **0 behind main**, so there is nothing to merge yet. CI on
+my own branch caught the type error from two entries below, exactly as it
+should have.
+
+**Tests:** 944, unchanged — layout facts a source test cannot hold. 23-route
+sweep clean.
+
+**Rollback:** revert the commit.
+
+---
+
 ## 2026-09-01 — The password screen that needed the Show control most was the one without it
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Second use of the recipe

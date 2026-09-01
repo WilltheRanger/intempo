@@ -260,6 +260,7 @@ export function PieceScoreScreen() {
     return (
       <ScreenContainer>
         <EmptyState
+          fill
           title="Couldn't open this score"
           description="The piece may have been removed from your library."
           actionLabel="Back"
@@ -319,6 +320,7 @@ export function PieceScoreScreen() {
           megabytes to solve a problem the megabytes never caused.
         */}
         <EmptyState
+          fill
           title="This page couldn't be read"
           description={
             piece.transcriptionError ??
@@ -439,6 +441,7 @@ export function PieceScoreScreen() {
 
       {!hasNotation && !hasPages ? (
         <EmptyState
+          fill
           title="No score to show"
           description="This piece was typed in by hand, so there are no notes read from a page and no photograph. Photograph the music to get both."
         />

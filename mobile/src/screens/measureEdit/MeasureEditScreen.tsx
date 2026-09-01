@@ -95,6 +95,7 @@ export function MeasureEditScreen() {
     return (
       <ScreenContainer>
         <EmptyState
+          fill
           title="That measure isn't there"
           description="It may have been corrected already, or the piece re-read."
           actionLabel="Back"

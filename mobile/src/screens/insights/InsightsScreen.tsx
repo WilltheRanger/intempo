@@ -100,6 +100,7 @@ export function InsightsScreen() {
       <ScreenContainer onRefresh={refresh}>
         <PageHeader title="Insights" />
         <EmptyState
+          fill
           title="Couldn't load your practice"
           description={describeLoadError(error)}
           actionLabel={insightsQuery.isFetching ? 'Trying…' : 'Try again'}
@@ -117,6 +118,7 @@ export function InsightsScreen() {
       <ScreenContainer onRefresh={refresh}>
         <PageHeader title="Insights" />
         <EmptyState
+          fill
           icon={ChartLine}
           title="No practice recorded yet"
           description={step.description}

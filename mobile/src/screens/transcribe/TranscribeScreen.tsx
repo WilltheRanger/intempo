@@ -139,6 +139,7 @@ export function TranscribeScreen() {
     return (
       <ScreenContainer>
         <EmptyState
+          fill
           title="Nothing to transcribe"
           description="Capture at least one page first."
           actionLabel="Back"
@@ -152,6 +153,7 @@ export function TranscribeScreen() {
     return (
       <ScreenContainer>
         <EmptyState
+          fill
           title="Transcription needs the backend"
           description="This build runs on sample data, so there is nothing to read your photograph. Add a piece manually instead."
           actionLabel="Back to pages"
@@ -165,6 +167,7 @@ export function TranscribeScreen() {
     return (
       <ScreenContainer>
         <EmptyState
+          fill
           title={total === 1 ? "The page didn't upload" : "The pages didn't upload"}
           description={error}
           actionLabel="Back to pages"

@@ -182,6 +182,7 @@ export function PieceDetailScreen() {
     return (
       <ScreenContainer>
         <EmptyState
+          fill
           title="Couldn't open this piece"
           description="It may have been removed from your library."
           actionLabel="Back"

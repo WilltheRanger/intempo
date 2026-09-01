@@ -122,6 +122,7 @@ export function ProfileScreen() {
       <ScreenContainer>
         <PageHeader title="Profile" />
         <EmptyState
+          fill
           title="Couldn't load your account"
           description={describeLoadError(error)}
           actionLabel={isFetching ? 'Trying…' : 'Try again'}

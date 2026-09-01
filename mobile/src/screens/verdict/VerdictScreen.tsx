@@ -74,6 +74,7 @@ export function VerdictScreen() {
     return (
       <ScreenContainer>
         <EmptyState
+          fill
           title="Couldn't load this take"
           description="It may have been removed, or the analysis never finished."
           actionLabel="Back"

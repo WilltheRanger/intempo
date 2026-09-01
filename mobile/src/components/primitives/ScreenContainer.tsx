@@ -206,6 +206,17 @@ const styles = StyleSheet.create({
     width: '100%',
     maxWidth: CONTENT_MAX_WIDTH,
     alignSelf: 'center',
+    /**
+     * **So a child can ask for the height that is left.**
+     *
+     * A `ScrollView`'s content container is sized by its content, so `flex: 1`
+     * on a child of it does nothing — which is why every screen-level
+     * `EmptyState` sat in the top quarter with the rest of the screen blank
+     * beneath it. `flexGrow` makes the container at least a viewport tall and
+     * changes nothing else: with no `justifyContent` here, shorter content
+     * still stacks from the top and longer content still scrolls.
+     */
+    flexGrow: 1,
   },
   /**
    * The footer holds the measure too.

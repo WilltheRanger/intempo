@@ -187,6 +187,7 @@ export function TodayScreen() {
       <ScreenContainer onRefresh={refresh}>
         {header}
         <EmptyState
+          fill
           title="Couldn't load your pieces"
           description={describeLoadError(currentPiece.error)}
           actionLabel={currentPiece.isFetching ? 'Trying…' : 'Try again'}

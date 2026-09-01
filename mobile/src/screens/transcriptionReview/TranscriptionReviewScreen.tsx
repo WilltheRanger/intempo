@@ -124,6 +124,7 @@ export function TranscriptionReviewScreen() {
     return (
       <ScreenContainer>
         <EmptyState
+          fill
           title="Nothing to review"
           description="Capture a page of sheet music first."
           actionLabel="Back"
