@@ -459,10 +459,22 @@ export function RecordScreen() {
   }
 
   if (phase === 'counting_in') {
-    const remaining = Math.max(
-      1,
-      countInBeats - (metronome.beat?.index ?? 0),
-    );
+    /**
+     * The beat being counted, the way a conductor counts it: **up**.
+     *
+     * This was `countInBeats - beat.index` — a countdown — while the dots below
+     * it fill left to right. So on the last click of the bar the screen showed
+     * a large **1** with the *fourth* dot lit, and a musician glancing at it
+     * could read "beat one" and come in a whole beat early. On an app whose
+     * entire job is measuring whether you came in on time, that is the one
+     * mistake the count-in must not invite.
+     *
+     * Counting up also matches the two things already on the screen: the dots,
+     * and "Start on the next downbeat" — which is a sentence about the beat
+     * *after* four, not about a countdown reaching zero. A conductor never
+     * counts down.
+     */
+    const counted = Math.min(countInBeats, (metronome.beat?.index ?? 0) + 1);
     return (
       <ScreenContainer
         scrollable={false}
@@ -491,7 +503,7 @@ export function RecordScreen() {
             style={styles.countInNumber}
             accessibilityLiveRegion="polite"
           >
-            {remaining}
+            {counted}
           </Text>
           <Text variant="body" color="textSecondary" style={styles.countInCopy}>
             {perBar === null ? 'Start after the count' : 'Start on the next downbeat'}

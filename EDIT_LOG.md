@@ -6,6 +6,53 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-01 — The count-in counted down while its dots counted up
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Found by walking the whole
+record→verdict loop in the browser with a fake microphone, which nothing in this
+session had done.
+
+**Files:** `mobile/src/screens/record/RecordScreen.tsx`.
+
+**The loop works end to end.** Piece → recording tips → tempo → count-in →
+recording → "Listening back" → verdict, on an emulated iPhone with the
+microphone granted, no console errors anywhere. That is worth writing down: the
+spine of the product is intact.
+
+One defect, and it is on the beat itself. The big number during the count-in was
+`countInBeats - beat.index` — a **countdown** — while the dots under it fill
+left to right. So on the last click of the bar the screen showed a large **1**
+with the *fourth* dot lit. A musician glancing at that can read "beat one" and
+come in a whole beat early, which on an app whose entire job is measuring
+whether you came in on time is the one mistake a count-in must not invite.
+
+It counts up now. That matches the dots, and it matches the sentence already on
+the screen — *"Start on the next downbeat"* is about the beat **after** four,
+not about a countdown reaching zero. It also matches what the owner asked for:
+*"just like how an conductor does when he counts you in."* A conductor never
+counts down.
+
+**Measured, four samples through one bar at 84 BPM:**
+
+```
+before (reconstructed)   after
+  4  O...                  1  O...
+  3  .O..                   2  .O..
+  2  ..O.                   3  ..O.
+  1  ...O                   4  ...O
+```
+
+**Noticed, not changed:** the count-in screen has two controls both labelled
+"Cancel count-in" — the header chevron and the big stop button — and they do the
+same thing, so a screen reader announces it twice. Both labels are *accurate*;
+inventing a different one for the chevron would be worse than the redundancy,
+and removing the chevron takes away a standard escape from a focused screen.
+Left alone deliberately.
+
+**Rollback:** revert the commit.
+
+---
+
 ## 2026-09-01 — Touch targets: an audit, and the four things it found
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. I have changed a lot of UI
