@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
 import { MAX_BPM, MIN_BPM } from '../../data/practiceTempo';
 import type { TempoBeatUnit } from '../../data/types';
@@ -11,13 +11,31 @@ import {
   tempoDisplayRange,
   tempoUnitLabel,
 } from '../../lib/tempo';
+import {
+  entryAccessibilityLabel,
+  entryLabel,
+  entrySheetTitle,
+  type EntryScope,
+} from '../../lib/score/entryCopy';
+import { ChevronRight } from 'lucide-react-native';
+import type { ScoreJson } from '../../data/types';
+import { ICON_SIZE, ICON_STROKE_WIDTH, colors } from '../../design';
 import { BottomSheet } from '../overlays/BottomSheet';
+import { StartBarPicker } from './StartBarPicker';
 import { TempoStepper } from '../practice/TempoStepper';
 import { Text } from '../primitives/Text';
 
 export interface PlaybackSettingsProps {
   /** Bars that can be entered on, in playing order. `startableMeasures`. */
   bars: number[];
+  /**
+   * The music, for the picker to draw.
+   *
+   * Without it the sheet falls back to nothing at all rather than to the old
+   * list of numbers: a picker that sometimes shows the music and sometimes a
+   * spreadsheet is two controls wearing one name.
+   */
+  score?: ScoreJson | null;
   fromMeasure: number;
   onFromMeasureChange: (measure: number) => void;
   bpm: number;
@@ -43,6 +61,15 @@ export interface PlaybackSettingsProps {
    * pages print.
    */
   beatUnit?: TempoBeatUnit | null;
+  /**
+   * What the chosen bar governs, which decides what this calls itself.
+   *
+   * `'take'` on the Record screen, where the request carries the bar and the
+   * worker trims the score to match. `'listen'` everywhere nothing is being
+   * recorded. Passed rather than inferred: a control that guesses what it
+   * controls is one whose label cannot be trusted.
+   */
+  entry?: EntryScope;
   disabled?: boolean;
 }
 
@@ -67,6 +94,8 @@ export function PlaybackSettings({
   bpm,
   onBpmChange,
   beatUnit,
+  entry = 'listen',
+  score = null,
   disabled = false,
 }: PlaybackSettingsProps) {
   const [pickingBar, setPickingBar] = useState(false);
@@ -79,6 +108,61 @@ export function PlaybackSettings({
     return null;
   }
 
+  // The sheet is the same whichever trigger opened it. Choosing a bar keeps
+  // the sheet open: the stepper is there for the tap that landed one bar off,
+  // and closing on every tap would make it a list of numbers with extra steps.
+  const barSheet = (
+    <BottomSheet
+      visible={pickingBar}
+      onClose={() => setPickingBar(false)}
+      title={entrySheetTitle(entry)}
+    >
+      {score ? (
+        <StartBarPicker
+          score={score}
+          bars={bars}
+          value={fromMeasure}
+          onChange={onFromMeasureChange}
+        />
+      ) : null}
+    </BottomSheet>
+  );
+
+  // **A setting gets a row; a playback tweak gets a line.** Where the bar
+  // decides what the take is — and so what the analysis judges — it is a real
+  // setting and looks like one: a labelled row with its value and a chevron,
+  // the same furniture as every other setting in the app. Accent-coloured
+  // text saying "Start at bar 1" did not read as a control at all, and the
+  // owner said so.
+  if (entry === 'take' && canPickBar) {
+    return (
+      <>
+        <Pressable
+          onPress={() => setPickingBar(true)}
+          disabled={disabled}
+          accessibilityRole="button"
+          accessibilityLabel={entryAccessibilityLabel(entry, fromMeasure)}
+          style={({ pressed }) => [styles.settingRow, pressed && styles.pressed]}
+        >
+          <Text variant="body" color={disabled ? 'textTertiary' : 'textSecondary'}>
+            Start at
+          </Text>
+          <View style={styles.settingValue}>
+            <Text variant="body" color={disabled ? 'textTertiary' : 'textPrimary'}>
+              Bar {fromMeasure}
+            </Text>
+            <ChevronRight
+              size={ICON_SIZE.sm}
+              strokeWidth={ICON_STROKE_WIDTH}
+              color={disabled ? colors.textTertiary : colors.textSecondary}
+            />
+          </View>
+        </Pressable>
+        {barSheet}
+      </>
+    );
+  }
+
   return (
     <View style={styles.row}>
       {canPickBar ? (
@@ -86,16 +170,15 @@ export function PlaybackSettings({
           onPress={() => setPickingBar(true)}
           disabled={disabled}
           accessibilityRole="button"
-          accessibilityLabel={`Listen from bar ${fromMeasure}. Change.`}
+          accessibilityLabel={entryAccessibilityLabel(entry, fromMeasure)}
           style={({ pressed }) => [styles.target, pressed && styles.pressed]}
         >
-          {/* **"Listen from", not "From".** On the Record screen this line sits
-              between the Listen button and "Recording tips", and a bare "From
-              bar 1" there reads as where the *take* starts — which it is not,
-              and which would be a promise about the analysis that nothing
-              keeps. */}
+          {/* The words depend on what the bar governs — see `entryCopy`. This
+              used to say "Listen from" on both screens, with a comment saying
+              a bare "From bar 1" on the Record screen "reads as where the take
+              starts, which it is not". It is now, so it says so. */}
           <Text variant="metadataSmall" color={disabled ? 'textTertiary' : 'accentText'}>
-            Listen from bar {fromMeasure}
+            {entryLabel(entry, fromMeasure)}
           </Text>
         </Pressable>
       ) : null}
@@ -120,34 +203,7 @@ export function PlaybackSettings({
         </Pressable>
       ) : null}
 
-      <BottomSheet
-        visible={pickingBar}
-        onClose={() => setPickingBar(false)}
-        title="Start from"
-      >
-        <ScrollView style={styles.barList}>
-          {bars.map((bar) => (
-            <Pressable
-              key={bar}
-              onPress={() => {
-                setPickingBar(false);
-                onFromMeasureChange(bar);
-              }}
-              accessibilityRole="button"
-              accessibilityState={{ selected: bar === fromMeasure }}
-              aria-pressed={bar === fromMeasure}
-              style={styles.barRow}
-            >
-              <Text variant="body">Bar {bar}</Text>
-              {bar === fromMeasure ? (
-                <Text variant="metadataSmall" color="accentText">
-                  Current
-                </Text>
-              ) : null}
-            </Pressable>
-          ))}
-        </ScrollView>
-      </BottomSheet>
+      {barSheet}
 
       <BottomSheet
         visible={pickingTempo}
@@ -209,14 +265,26 @@ const styles = StyleSheet.create({
   pressed: {
     opacity: 0.6,
   },
-  barList: {
-    maxHeight: 320,
-  },
-  barRow: {
+  settingRow: {
+    // **Full width, whatever the parent centres.** The Record screen's control
+    // column centres its children, and a `space-between` row that is only as
+    // wide as its content puts "Start at" and "Bar 1" touching. A setting row
+    // spans the screen the way every other setting row in the app does.
+    alignSelf: 'stretch',
+    minHeight: MIN_TOUCH_TARGET,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: spacing.md,
+    marginTop: spacing.lg,
+    paddingVertical: spacing.sm,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+  },
+  settingValue: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
   },
   tempoSheet: {
     paddingBottom: spacing.lg,

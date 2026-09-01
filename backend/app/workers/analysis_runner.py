@@ -26,6 +26,7 @@ from app.services import audio as audio_svc
 from app.services.audio_storage import AudioStorageError, readable_audio_url
 from app.services.analysis import analyze
 from app.services.long_rests import shorten_long_rests
+from app.services.start_at import start_from_measure
 from app.services.score_schema import ScoreJson
 
 log = logging.getLogger("intempo.analysis")
@@ -143,6 +144,13 @@ def run_analysis(analysis_id: str) -> None:
         # The same transformation the app applied to play and count it. The rule
         # lives in `fixtures/practice/long_rests.json` because there is no way to
         # share the walk between the two languages; see `services/long_rests.py`.
+        # **The entry bar first, the rest-shortening second**, and the order is
+        # load-bearing: `shorten_long_rests` rewrites bars, so trimming after it
+        # would be asking for bar 14 of a score whose bar 14 is no longer the
+        # page's bar 14. Trimming first keeps `from_measure` meaning what the
+        # musician read off the page.
+        if row.get("from_measure"):
+            score = start_from_measure(score, int(row["from_measure"]))
         if row.get("skip_long_rests"):
             score = shorten_long_rests(score).score
         y, sr = audio_svc.load_audio_bytes(audio_bytes)
