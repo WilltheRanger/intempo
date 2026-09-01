@@ -79,3 +79,17 @@ describe('the published documents', () => {
     }
   });
 });
+
+describe('a document id that does not exist', () => {
+  it('is not in DOCUMENTS, so the screen must handle the gap', () => {
+    // **This crashed the app.** `/legal/nope` reached `DOCUMENTS['nope']`,
+    // which is undefined, and reading `.title` off it threw into the error
+    // boundary — "Something broke", from a mistyped or stale link.
+    //
+    // The route type says `'privacy' | 'terms'`, and that is precisely what
+    // made it easy to miss: TypeScript checks the callers it can see, and a URL
+    // is not one of them.
+    expect(DOCUMENTS['nope' as keyof typeof DOCUMENTS]).toBeUndefined();
+    expect(Object.keys(DOCUMENTS).sort()).toEqual(['privacy', 'terms']);
+  });
+});

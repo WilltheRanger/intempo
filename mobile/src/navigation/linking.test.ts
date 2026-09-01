@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { pathsByScreen } from './linking';
+import { pathsByScreen, screenConfig } from './linking';
 // `?raw` so the route list is read from the file that declares it, the way
 // `pickerTypes.test.ts` reads a patch — there is no runtime type to reflect on.
 import typesSource from './types.ts?raw';
@@ -62,5 +62,47 @@ describe('deep linking', () => {
     expect(paths.MeasureEdit).toContain(':measureNumber');
     expect(paths.Verdict).toContain(':analysisId');
     expect(paths.AddPiece).toContain(':option');
+  });
+});
+
+describe('parameters that are not strings', () => {
+  it('parses the measure number back into a number', () => {
+    // **`5 === "5"` is false**, and that is the whole bug. A URL parameter
+    // always arrives as text; `MeasureEditScreen` compares it to
+    // `measure_number` with `===`, so without a `parse` the editor opens from a
+    // link, matches no measure, and still titles itself "Bar 5". It looks like
+    // it worked. Nothing but a cold open would notice.
+    const config = screenConfig?.screens as Record<string, unknown>;
+    const measureEdit = config.MeasureEdit as {
+      path: string;
+      parse?: Record<string, (value: string) => unknown>;
+    };
+
+    expect(measureEdit.parse?.measureNumber).toBeTypeOf('function');
+    expect(measureEdit.parse!.measureNumber('5')).toBe(5);
+    expect(measureEdit.parse!.measureNumber('5')).not.toBe('5');
+  });
+
+  it('parses every numeric parameter some screen declares', () => {
+    // Read from `types.ts` rather than listed here, so a route added with a
+    // numeric parameter fails this instead of shipping unparsed.
+    const numeric: Array<[string, string]> = [];
+    for (const line of typesSource.split('\n')) {
+      const route = /^ {2}([A-Z][A-Za-z]*)\??: \{(.*)\};$/.exec(line);
+      if (!route) continue;
+      for (const param of route[2].matchAll(/([a-zA-Z]+)\??: number/g)) {
+        numeric.push([route[1], param[1]]);
+      }
+    }
+    expect(numeric.length, 'no numeric route parameters found to check').toBeGreaterThan(0);
+
+    const config = screenConfig?.screens as Record<string, unknown>;
+    for (const [route, param] of numeric) {
+      const entry = config[route] as { parse?: Record<string, unknown> } | string;
+      expect(
+        typeof entry === 'object' && typeof entry.parse?.[param] === 'function',
+        `${route}.${param} is a number but its path does not parse it`,
+      ).toBe(true);
+    }
   });
 });

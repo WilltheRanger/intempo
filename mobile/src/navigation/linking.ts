@@ -57,7 +57,20 @@ export const screenConfig: LinkingOptions<RootStackParamList>['config'] = {
       // A piece and the things that belong to it.
       PieceDetail: 'pieces/:pieceId',
       PieceScore: 'pieces/:pieceId/score',
-      MeasureEdit: 'pieces/:pieceId/bars/:measureNumber',
+      // **The one route whose parameter is not a string.**
+      //
+      // `MeasureEdit` takes `measureNumber: number`, and a URL parameter always
+      // arrives as text — React Navigation does not coerce it. Without `parse`,
+      // `/pieces/x/bars/5` hands the screen `"5"`, and the screen does
+      // `m.measure_number === params.measureNumber`, which is `5 === "5"` and
+      // therefore false. The editor opens, finds no measure, and still titles
+      // itself "Bar 5" — a screen that looks like it worked and did not, from a
+      // link and only from a link.
+      MeasureEdit: {
+        path: 'pieces/:pieceId/bars/:measureNumber',
+        parse: { measureNumber: (value: string) => Number(value) },
+        stringify: { measureNumber: (value: number) => String(value) },
+      },
       Record: 'pieces/:pieceId/record',
       Verdict: 'analyses/:analysisId',
       Warmup: 'warmup',
@@ -99,6 +112,9 @@ export function pathsByScreen(): Record<string, string> {
     for (const [name, value] of Object.entries(screens)) {
       if (typeof value === 'string') {
         found[name] = value;
+      } else if (value && typeof value === 'object' && 'path' in value) {
+        // The `{ path, parse }` form, used where a parameter is not a string.
+        found[name] = (value as { path: string }).path;
       } else if (value && typeof value === 'object' && 'screens' in value) {
         walk((value as { screens: Record<string, unknown> }).screens);
       }

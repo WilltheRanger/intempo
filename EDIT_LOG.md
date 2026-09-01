@@ -6,6 +6,86 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-31 — Two bugs that only a link could reach, both mine
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Fourth iteration of the
+consumer-grade loop, spent checking the two previous ones rather than adding
+anything.
+
+**Files:** `mobile/src/navigation/linking.ts` + test,
+`mobile/src/screens/legal/LegalScreen.tsx`, `mobile/src/lib/legal.test.ts`.
+
+### `5 === "5"` is false
+
+`MeasureEdit` takes `measureNumber: number`. A URL parameter always arrives as
+**text**, and React Navigation does not coerce it — so `/pieces/x/bars/5` handed
+the screen `"5"`, and the screen does:
+
+    m.measure_number === params.measureNumber
+
+which is `5 === "5"`. The editor opened, matched no measure, and still titled
+itself **"Bar 5"**. A screen that looks like it worked and did not, reachable
+from a link and from nothing else.
+
+Shipped in iteration 2, where the linking test checked that the *path* contained
+`:measureNumber` — true, and not the question. `parse` and `stringify` are on
+that route now, and `pathsByScreen` understands the `{ path, parse }` form or
+the route would have vanished from the map.
+
+The new test reads the numeric parameters out of `types.ts` rather than listing
+them, so a route added next month with a number in it fails here instead of
+shipping unparsed.
+
+Verified cold in the browser: `/pieces/fixture-bach-bwv1001/bars/3` now reads
+**"Bar 3 · 4 of 4 beats · This bar adds up."**
+
+### A legal document that does not exist crashed the app
+
+`/legal/nope` reached `DOCUMENTS['nope']`, which is `undefined`, and reading
+`.title` off it threw into the error boundary: **"Something broke — InTempo hit
+an error it couldn't recover from."** A typo, a truncated share or a stale link
+was enough to take the whole app down.
+
+Shipped in iteration 3, an hour earlier. The route's type says
+`'privacy' | 'terms'`, and that is exactly what made it easy to miss:
+TypeScript checks the callers it can see, and **a URL is not one of them**. Two
+bugs in two iterations, both from trusting a type at a boundary the type does
+not cover.
+
+It renders a "Not found" screen now, naming where the two documents actually
+are, with a way back.
+
+### The rest of the cold-open pass
+
+Every parameterised route opened from a fresh page load:
+
+| URL | result |
+|---|---|
+| `/pieces/:id` | the piece, with its composer and movement |
+| `/pieces/:id/score` | the notation, clef and metre |
+| `/pieces/:id/bars/3` | the bar editor, on the right bar |
+| `/pieces/:id/record` | the record screen |
+| `/add/manual` | the hand-entry form |
+| `/scan/pages` | the review list, honestly empty |
+| `/pieces/does-not-exist` | *"Couldn't open this piece. It may have been removed from your library."* |
+
+That last one is somebody else's work and it is the right answer — a named
+state with a route out, not a spinner and not a crash.
+
+An unknown path such as `/nonsense` falls back to Today. That is React
+Navigation's default and it is acceptable; a "page not found" would be kinder
+and is not a bug.
+
+### Tests
+
+`mobile` 46 files / 530 passed, `tsc` clean.
+
+### Not verified
+
+**Offline behaviour.** The fixtures build serves seeded data and needs no
+network, so switching the browser offline proved nothing. Testing it honestly
+needs the live build and Supabase keys, which this session does not have.
+
 ## 2026-08-31 — A privacy policy and terms, written from the code
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Third iteration of the

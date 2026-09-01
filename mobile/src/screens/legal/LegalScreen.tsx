@@ -25,7 +25,31 @@ import type { RootStackParamList, RootNavigation } from '../../navigation/types'
 export function LegalScreen() {
   const navigation = useNavigation<RootNavigation>();
   const { params } = useRoute<RouteProp<RootStackParamList, 'Legal'>>();
-  const document = DOCUMENTS[params.document];
+  // **A URL can name a document that does not exist**, and this crashed on
+  // one: `DOCUMENTS['nope']` is undefined and `document.title` then throws into
+  // the error boundary, so `/legal/nope` took the whole app down with
+  // "Something broke". A stale link, a typo or a truncated share is enough.
+  //
+  // The route's *type* says `'privacy' | 'terms'`, which is exactly the
+  // reassurance that made this easy to miss: TypeScript checks the callers it
+  // can see, and a URL is not one of them.
+  const document = DOCUMENTS[params.document] ?? null;
+
+  if (!document) {
+    return (
+      <ScreenContainer>
+        <PageHeader
+          title="Not found"
+          onBack={() => navigation.goBack()}
+          backLabel="Back"
+        />
+        <Text variant="body" color="textSecondary" style={styles.updated}>
+          There is no document at this address. The privacy policy and the terms
+          are both in Profile, under About.
+        </Text>
+      </ScreenContainer>
+    );
+  }
 
   return (
     <ScreenContainer>
