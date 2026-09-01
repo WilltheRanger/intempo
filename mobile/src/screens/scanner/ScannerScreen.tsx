@@ -3,7 +3,7 @@ import { CameraView, useCameraPermissions } from 'expo-camera';
 import { StatusBar } from 'expo-status-bar';
 import { Images, X, Zap, ZapOff } from 'lucide-react-native';
 import { useEffect, useRef, useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ScoreThumbnail } from '../../components/pieces/ScoreThumbnail';
@@ -11,6 +11,7 @@ import { Text } from '../../components/primitives/Text';
 import { impact, ImpactFeedbackStyle } from '../../lib/haptics';
 import { adviceFor, legibilityOf, type Advice } from '../../lib/scan/legibility';
 import { photographWithSystemCamera } from '../../lib/scan/systemCamera';
+import { cameraFallback, type FallbackRoute } from '../../lib/scan/cameraFallback';
 import { pageSamples } from '../../lib/scan/pageSamples';
 import {
   captureSession,
@@ -118,6 +119,14 @@ export function ScannerScreen() {
   const lastPage = pages[pages.length - 1];
   const FlashIcon = flashOn ? Zap : ZapOff;
   const ready = permission?.granted === true;
+  // What to say, and offer, when there is no viewfinder. Null while there is
+  // one — see `cameraFallback`, which owns both because the screen it serves
+  // cannot be tested.
+  const fallback = cameraFallback({
+    granted: permission ? permission.granted : null,
+    canAskAgain: permission?.canAskAgain ?? true,
+    os: Platform.OS,
+  });
   const retaking = captureSession.retaking() !== null;
   const canCapture = ready && (retaking || pages.length < MAX_SCAN_PAGES);
 
@@ -291,6 +300,40 @@ export function ScannerScreen() {
     navigation.navigate('CapturedPages');
   }
 
+  /**
+   * The one way forward offered when there is no viewfinder.
+   *
+   * A first page, not a retake: this runs before anything has been
+   * photographed, so it goes through `capture` on the session the effect above
+   * has already reset — the same path the shutter takes.
+   */
+  async function takeFallbackRoute(route: FallbackRoute) {
+    if (route === 'import') {
+      navigation.navigate('AddPiece', { option: 'import' });
+      return;
+    }
+    if (busy) {
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const uri = await photographWithSystemCamera();
+      if (!uri) {
+        return;
+      }
+      captureSession.capture(uri);
+      impact(ImpactFeedbackStyle.Medium);
+      navigation.navigate('CapturedPages');
+    } catch (cause) {
+      setError(
+        cause instanceof Error ? cause.message : 'That photo could not be taken.',
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
   function handleClose() {
     // Abandoning a retake goes back to the pages, not out of the flow. The
     // rest of the scan is still in the session, and this screen is the only
@@ -330,19 +373,30 @@ export function ScannerScreen() {
           {pageCountLabel(pages.length)}
         </Text>
 
-        <Pressable
-          onPress={() => setFlashOn((on) => !on)}
-          accessibilityRole="button"
-          accessibilityLabel={flashOn ? 'Turn flash off' : 'Turn flash on'}
-          accessibilityState={{ selected: flashOn }}
-          style={styles.iconButton}
-        >
-          <FlashIcon
-            size={ICON_SIZE.lg}
-            strokeWidth={ICON_STROKE_WIDTH}
-            color={flashOn ? colors.actionText : colors.onDarkMuted}
-          />
-        </Pressable>
+        {/*
+          **Gone when there is no camera**, rather than dimmed. It is a torch on
+          a camera that is not running: it controls nothing, explains nothing,
+          and on the refused-permission screen it sat in the top corner beside a
+          real way forward. §3 law 10 — every element must justify its presence.
+          The empty view keeps the count centred.
+        */}
+        {ready ? (
+          <Pressable
+            onPress={() => setFlashOn((on) => !on)}
+            accessibilityRole="button"
+            accessibilityLabel={flashOn ? 'Turn flash off' : 'Turn flash on'}
+            accessibilityState={{ selected: flashOn }}
+            style={styles.iconButton}
+          >
+            <FlashIcon
+              size={ICON_SIZE.lg}
+              strokeWidth={ICON_STROKE_WIDTH}
+              color={flashOn ? colors.actionText : colors.onDarkMuted}
+            />
+          </Pressable>
+        ) : (
+          <View style={styles.iconButton} />
+        )}
       </View>
 
       <View style={styles.viewfinder}>
@@ -360,8 +414,14 @@ export function ScannerScreen() {
           ) : (
             <View style={styles.unavailable}>
               <Text variant="metadataSmall" color="onDarkMuted" style={styles.unavailableText}>
-                {cameraMessage(permission)}
+                {fallback?.message}
               </Text>
+              {fallback?.action ? (
+                <FallbackAction
+                  action={fallback.action}
+                  onPress={(route) => void takeFallbackRoute(route)}
+                />
+              ) : null}
             </View>
           )}
         </ViewfinderPage>
@@ -499,16 +559,31 @@ export function ScannerScreen() {
  * someone tapping a dead shutter with no idea whether to change a setting, plug
  * in a webcam, or give up and type the piece in.
  */
-function cameraMessage(
-  permission: ReturnType<typeof useCameraPermissions>[0],
-): string {
-  if (!permission) {
-    return 'Starting the camera…';
-  }
-  if (!permission.canAskAgain) {
-    return 'InTempo does not have camera access. Turn it on in your device settings, or add the piece by hand instead.';
-  }
-  return 'InTempo needs your camera to photograph sheet music.';
+/**
+ * The single control under the no-viewfinder message.
+ *
+ * Its own component only so the narrowing survives: `fallback.action` is
+ * checked at the call site and TypeScript cannot carry that through a closure
+ * on an object field.
+ */
+function FallbackAction({
+  action,
+  onPress,
+}: {
+  action: { label: string; route: FallbackRoute };
+  onPress: (route: FallbackRoute) => void;
+}) {
+  return (
+    <Text
+      variant="metadataSmall"
+      color="actionText"
+      onPress={() => onPress(action.route)}
+      accessibilityRole="button"
+      style={styles.unavailableAction}
+    >
+      {action.label}
+    </Text>
+  );
 }
 
 function pageCountLabel(count: number): string {
@@ -531,6 +606,11 @@ const styles = StyleSheet.create({
   },
   unavailableText: {
     textAlign: 'center',
+  },
+  unavailableAction: {
+    marginTop: spacing.lg,
+    textAlign: 'center',
+    textDecorationLine: 'underline',
   },
   guide: {
     marginTop: spacing.lg,

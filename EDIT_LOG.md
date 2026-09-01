@@ -6,6 +6,70 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-01 — A refused camera was a dead end with directions on it
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. The other half of "make the
+scan work from start to finish".
+
+**Files:** `mobile/src/lib/scan/cameraFallback.ts` (new) + test,
+`mobile/src/screens/scanner/ScannerScreen.tsx`.
+
+With camera access permanently refused the scanner said: *"InTempo does not
+have camera access. Turn it on in your device settings, or add the piece by
+hand instead."* Two routes named and **neither reachable from the screen saying
+it** — there is no settings control here, and the one icon in the corner goes
+to image import, not to typing a piece in. Same rule as the entry above it:
+advice must name a route that exists in this app.
+
+It was also platform-wrong. "Device settings" is right on a phone with the app
+installed and meaningless in a browser, where the permission belongs to the site
+and lives behind the address bar — and on the web there is a **better** answer
+than any settings screen, because the phone's own camera app needs no
+`getUserMedia` grant at all. A browser that has refused the camera can still
+photograph the page.
+
+`cameraFallback` owns the message and the one control to offer, and the screen
+renders whatever it says. Five states, and the two that are easy to collapse are
+kept apart on purpose: *not yet* (`granted === null`, the answer is still
+coming) must not show the refusal copy, or a working camera looks broken for
+half a second; and *still to be asked* offers nothing, because a control there
+would stack a second decision on the system prompt already on screen.
+
+The test that matters is the last one: across every combination of state, a
+message that names a way forward must come with the control for it. That is the
+rule the old copy broke, and it is asserted rather than described.
+
+**The flash toggle is gone when there is no camera**, rather than dimmed. It is
+a torch on a camera that is not running — it controls nothing and explains
+nothing, and it sat in the top corner beside the real way out (§3 law 10). The
+disabled shutter stays: its position is the screen's structure and its
+accessibility label already says "Capture page unavailable".
+
+**Three-foot test** on the forced-state screenshot: first the underlined "Open
+the camera app", second the sentence above it, third the frame corners and the
+dimmed shutter. On a screen with no viewfinder the way forward *is* the subject,
+so that ordering is the right one. Nothing added, one thing removed.
+
+### Honest status
+
+`canAskAgain: false` **cannot be produced in this environment** — headless
+Chromium reports `prompt` for the camera whether or not `Browser.setPermission`
+has denied it — so the branch was screenshotted by temporarily hardcoding the
+state, building, capturing, and restoring the file (verified byte-identical
+afterwards). The rule itself is unit-tested across all fifteen state
+combinations. The two states the browser does produce here — "starting" and
+"needs your camera" — are verified in the running build.
+
+**Worth writing down:** in the middle of this I deleted the moved-aside `.env`
+before the `EXIT` trap ran, so the restore came from the separate guard copy
+rather than from the file itself. The outcome was correct only because the guard
+exists. Copy first, move second, and delete the aside copy *after* the trap has
+fired, not before.
+
+**Rollback:** revert the commit.
+
+---
+
 ## 2026-09-01 — "Move in until one page fills the frame" was advice they had followed
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Owner's report, still open:
