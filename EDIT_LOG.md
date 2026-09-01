@@ -6,6 +6,27 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-31 — Prominent add-piece action and contextual practice lessons
+
+**Branch:** `feat/today-piece-action-lessons`
+
+### Changed
+
+- Replaced the compact New piece pill beside the section heading with a full,
+  descriptive action row immediately below the current-piece card.
+- The action now explains that a musician can scan sheet music, import a score,
+  or enter a piece manually before opening the shared Add piece sheet.
+- Removed the obsolete TempoLadder component from the repository.
+- Moved practice lessons into a tested, data-driven model. Every lesson now
+  names the current piece, uses its displayed working tempo, and responds to
+  the latest rushing, dragging, on-tempo, or first-take state.
+
+### Verification
+
+- Added mobile tests for first-take, rushing, dragging, and on-tempo lesson
+  selection, including piece and printed-tempo context.
+- Mobile typecheck, tests, and web build run in pull-request CI.
+
 ## 2026-08-31 — In-app help and connection diagnostics
 
 **Branch:** `feat/help-connection-diagnostics`
