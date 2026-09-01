@@ -6,6 +6,93 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-01 — Four tabs that said "check your connection" and gave nothing to press
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`.
+
+**Files:** `mobile/src/screens/today/TodayScreen.tsx`,
+`library/LibraryScreen.tsx`, `insights/InsightsScreen.tsx`,
+`profile/ProfileScreen.tsx`, `insights/copy.ts` + `copy.test.ts`,
+`mobile/src/screens/loadErrors.test.ts` (new).
+
+### The most-reached broken state in the app
+
+Every tab a musician lives in rendered the same dead end when a fetch failed:
+a title, `describeLoadError(...)`, and **no action**. Pull-to-refresh is the
+unwritten answer, and it is invisible — and on the web build with a mouse it
+does not exist at all. `AccountStartupScreen` has had a "Try again" button since
+it was written, so the pattern was never in doubt; it just was never applied to
+the four screens in the tab bar. A flaky connection is the ordinary case on a
+phone, which makes this the most-reached broken state in the product rather than
+an edge one.
+
+All four now offer "Try again", reading "Trying…" and refusing further taps
+while the refetch is in flight — `EmptyState.actionDisabled` exists precisely
+because a label that changed while the button stayed pressable once started two
+readings of the same page.
+
+`loadErrors.test.ts` reads the source of every screen, finds every
+`EmptyState` whose description is a `describeLoadError(...)`, and asserts it
+carries both `actionLabel` and `onActionPress`. Same technique as
+`switchState.test.ts` and for the same reason: no React Native testing library
+here, and four screens making one mistake is what a test is for. Verified
+failing by deleting the props from `LibraryScreen`.
+
+**The startup gate covers the first load, and only that.** My first probe made
+every fixture read throw and got "Couldn't open your account" on all four tabs —
+`AccountStartupScreen` catches a cold start before any tab renders. These four
+states are reached by the *second* failure: the account opened, the network
+dropped, a tab refetched. Worth writing down, because it is why they were easy
+to miss.
+
+### An empty state that named an action it did not offer
+
+Insights told a musician with no history to "record yourself playing a piece"
+and gave them nothing to press. Today had exactly this bug and carries a comment
+about the fix; Insights kept it.
+
+`firstStep(pieceCount)` decides what to offer, because the answer is not one
+thing: an **empty library** needs a piece before a take is possible at all, so
+"Record a take" would be the same dead end one screen further on. Empty library
+→ "Add your first piece", opening the same `AddPieceSheet` that Today and
+Library open. A library with pieces → the Library tab, labelled "Record this
+piece" for one and "Choose a piece to record" for more — picking one on the
+musician's behalf would open the microphone on something they did not choose.
+
+The rule is in `copy.ts` with the other sentences this screen assembles, where
+it is tested; the screen owns the navigating.
+
+`useLibrary()` on Insights shares React Query's cache with the Library tab, so
+on a phone that has opened the app it costs nothing.
+
+### Three-foot test
+
+Insights, day one: **"No practice recorded yet"** first, **"Add your first
+piece"** second, the tab bar third. Load failure: the title, then "Try again",
+then the tab bar. One question, one answer, on both.
+
+**Noted, not changed:** a screen-level empty state sits in the top third with
+the rest of the screen blank below it, which reads as unfinished rather than
+composed, and puts its action outside the thumb zone (§3 law 7). Today's
+first-run screen already does the right thing with a footer. Fixing it properly
+means changing how `EmptyState` lays out inside `ScreenContainer`'s ScrollView —
+`flex: 1` does nothing there without `flexGrow` on the content container — and
+that wants measuring, not guessing, so it is its own change.
+
+**Verified** in Chromium at iPhone-13 size against three builds: the shipping
+fixtures build, one where the reads fail (Today, Library and Insights each show
+"Try again"; Profile's own source was untouched and the guard test covers it),
+and one with an empty account, where Insights offers "Add your first piece", the
+sheet opens, and choosing "Photograph sheet music" lands on `/scan`. The
+throwaway builds patched `fixtures.ts`; it was restored from a copy and checked
+with `diff -q`, as was `.env`. 23-route sweep clean.
+
+**Tests:** 806 pass, up 9.
+
+**Rollback:** revert the commit.
+
+---
+
 ## 2026-09-01 — Leaving mid-take threw the take away and said nothing
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`.

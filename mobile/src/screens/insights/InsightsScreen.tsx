@@ -1,8 +1,10 @@
 import { useNavigation } from '@react-navigation/native';
 import { ChartLine } from 'lucide-react-native';
+import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { FadeIn } from '../../components/motion';
+import { AddPieceSheet } from '../../components/pieces/AddPieceSheet';
 import {
   EmptyState,
   PageHeader,
@@ -12,19 +14,20 @@ import {
 } from '../../components/primitives';
 import { InsightsSkeleton } from '../../components/skeletons';
 import { useInsights } from '../../data/hooks/useInsights';
+import { useLibrary } from '../../data/hooks/usePieces';
 import { useRecentTakes } from '../../data/hooks/useLatestTake';
 import { describeLoadError } from '../../data/api/describeError';
-import { spacing } from '../../design';
+import { motion, spacing } from '../../design';
 import {
   formatLastPracticedShort,
   joinMetadata,
 } from '../../lib/format';
 import { formatTendency, formatTendencyDetail } from '../../lib/tempo';
-import type { TabScreenNavigation } from '../../navigation/types';
+import type { AddPieceOption, TabScreenNavigation } from '../../navigation/types';
 import { TodayRow } from '../today/TodayRow';
 import { DeviationBar } from './DeviationBar';
 import { PieceInsightRow } from './PieceInsightRow';
-import { focusReason, windowLabel } from './copy';
+import { firstStep, focusReason, windowLabel } from './copy';
 
 /**
  * Practice history that explains the pattern and makes it useful.
@@ -53,6 +56,12 @@ export function InsightsScreen() {
   const navigation = useNavigation<TabScreenNavigation<'Insights'>>();
   const insightsQuery = useInsights();
   const recentTakes = useRecentTakes(5);
+  // Shares React Query's cache with the Library tab, so on a phone that has
+  // opened the app this costs nothing. It is read for one reason: what to
+  // offer a musician with no practice history depends on whether they have
+  // anything to record yet.
+  const library = useLibrary();
+  const [addSheetVisible, setAddSheetVisible] = useState(false);
   const {
     data: insights,
     isPending,
@@ -62,6 +71,19 @@ export function InsightsScreen() {
 
   async function refresh() {
     await Promise.all([insightsQuery.refetch(), recentTakes.refetch()]);
+  }
+
+  function handleSelectOption(option: AddPieceOption) {
+    setAddSheetVisible(false);
+    // Let the sheet finish dismissing before the push, so the two animations
+    // don't overlap — the same wait Today and Library use.
+    setTimeout(() => {
+      if (option === 'scan') {
+        navigation.navigate('Scanner');
+        return;
+      }
+      navigation.navigate('AddPiece', { option });
+    }, motion.fast);
   }
 
   if (isPending) {
@@ -80,19 +102,38 @@ export function InsightsScreen() {
         <EmptyState
           title="Couldn't load your practice"
           description={describeLoadError(error)}
+          actionLabel={insightsQuery.isFetching ? 'Trying…' : 'Try again'}
+          onActionPress={() => void refresh()}
+          actionDisabled={insightsQuery.isFetching}
         />
       </ScreenContainer>
     );
   }
 
   if (!insights) {
+    // Which way out this offers depends on the library — see `firstStep`.
+    const step = firstStep(library.data?.length ?? 0);
     return (
       <ScreenContainer onRefresh={refresh}>
         <PageHeader title="Insights" />
         <EmptyState
           icon={ChartLine}
           title="No practice recorded yet"
-          description="Record yourself playing a piece and InTempo will show you where the tempo held and where it drifted."
+          description={step.description}
+          actionLabel={step.label}
+          onActionPress={() => {
+            if (step.destination === 'add') {
+              setAddSheetVisible(true);
+              return;
+            }
+            navigation.navigate('Library');
+          }}
+        />
+
+        <AddPieceSheet
+          visible={addSheetVisible}
+          onClose={() => setAddSheetVisible(false)}
+          onSelect={handleSelectOption}
         />
       </ScreenContainer>
     );

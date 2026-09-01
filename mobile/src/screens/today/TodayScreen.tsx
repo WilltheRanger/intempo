@@ -189,6 +189,9 @@ export function TodayScreen() {
         <EmptyState
           title="Couldn't load your pieces"
           description={describeLoadError(currentPiece.error)}
+          actionLabel={currentPiece.isFetching ? 'Trying…' : 'Try again'}
+          onActionPress={() => void refresh()}
+          actionDisabled={currentPiece.isFetching}
         />
       </ScreenContainer>
     );

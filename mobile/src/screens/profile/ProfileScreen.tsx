@@ -44,7 +44,7 @@ import { ToggleRow } from './ToggleRow';
  * like a control and isn't one.
  */
 export function ProfileScreen() {
-  const { data: musician, isPending, isError, error } = useMe();
+  const { data: musician, isPending, isError, error, isFetching, refetch } = useMe();
   const settings = usePreferences();
   const navigation = useNavigation<RootNavigation>();
   const queryClient = useQueryClient();
@@ -124,6 +124,9 @@ export function ProfileScreen() {
         <EmptyState
           title="Couldn't load your account"
           description={describeLoadError(error)}
+          actionLabel={isFetching ? 'Trying…' : 'Try again'}
+          onActionPress={() => void refetch()}
+          actionDisabled={isFetching}
         />
       </ScreenContainer>
     );

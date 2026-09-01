@@ -23,3 +23,44 @@ export function focusReason(sessions: number): string {
   const count = sessions === 1 ? '1 session' : `${sessions} sessions`;
   return `Your clearest timing pattern, across ${count}. Record another take and compare.`;
 }
+
+/**
+ * What a musician with no practice history should do next, and where.
+ *
+ * **The screen used to name an action it did not offer.** "Record yourself
+ * playing a piece and InTempo will show you where the tempo held and where it
+ * drifted" — with nothing on the screen to press, on the tab a brand-new
+ * account is one thumb-reach from. The Today screen had exactly this bug and
+ * a comment recording the fix; Insights kept it.
+ *
+ * Which action it is depends on something this screen does not otherwise care
+ * about: an empty library needs a piece before a take is even possible, and
+ * sending someone to a record button they cannot use is the same dead end one
+ * screen further on.
+ */
+export interface NextStep {
+  description: string;
+  label: string;
+  /** Where the button goes. The screen owns the navigating; this owns the choice. */
+  destination: 'add' | 'library';
+}
+
+export function firstStep(pieceCount: number): NextStep {
+  if (pieceCount === 0) {
+    return {
+      description:
+        'Add a piece and record yourself playing it. InTempo will show you where the tempo held and where it drifted.',
+      label: 'Add your first piece',
+      destination: 'add',
+    };
+  }
+  return {
+    description:
+      'Record yourself playing a piece and InTempo will show you where the tempo held and where it drifted.',
+    // Not "Record a take": with more than one piece in the library there is no
+    // one take to start, and picking one on the musician's behalf would open
+    // the microphone on something they did not choose.
+    label: pieceCount === 1 ? 'Record this piece' : 'Choose a piece to record',
+    destination: 'library',
+  };
+}
