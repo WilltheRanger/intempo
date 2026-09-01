@@ -32,6 +32,7 @@ from app.auth import current_user_id, current_user_id_provisioned
 from app.config import settings
 from app.db import get_service_client
 from app.routers.upload import SCORE_BUCKET
+from app.services import pending_uploads
 from app.services.ocr.musicxml import MusicXMLError, score_json_from_musicxml
 from app.workers.dispatch import start_transcription
 from app.services.score_pages import pages_of, select_with_pages
@@ -492,6 +493,14 @@ def _sign_downloads(keys: list[str]) -> dict[str, tuple[str, datetime]]:
     return {**cached, **fresh}
 
 
+def _object_keys_in(urls: list[str]) -> list[str]:
+    """The storage keys inside a list of upload references, skipping any that
+    are not one — a hand-entered piece has none, and a malformed reference is
+    already refused by validation."""
+    keys = [_object_key_from(url or "") for url in urls]
+    return [key for key in keys if key]
+
+
 def _with_image_urls(rows: list[dict[str, Any]]) -> list[ScoreResponse]:
     """Rows to responses, signing every recoverable image in one call.
 
@@ -873,6 +882,12 @@ def create_score(
             detail="failed to persist score",
         )
 
+    # **Claimed only after the row exists.** A row now points at these objects,
+    # so the sweeper must leave them alone — and clearing them before the
+    # insert would strand every object of a save that then failed, which is one
+    # of the three cases `pending_uploads` was written for.
+    pending_uploads.claim(SCORE_BUCKET, _object_keys_in(body.pages()))
+
     if not manual:
         # After the insert, so the worker cannot look for a row that is not
         # there yet, and after the response is sent, which is what
@@ -961,6 +976,8 @@ def attach_score_pages(
             status_code=status.HTTP_404_NOT_FOUND, detail="score not found"
         )
 
+    # The row points at them now, same as `create_score`.
+    pending_uploads.claim(SCORE_BUCKET, _object_keys_in(pages))
     start_transcription(str(score_id))
     return _with_image_urls(updated)[0]
 

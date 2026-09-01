@@ -82,11 +82,17 @@ def test_the_loop_keeps_sweeping_and_stops_when_cancelled(
 
     monkeypatch.setattr(main_module, "SWEEP_INTERVAL_SECONDS", 0.01)
     monkeypatch.setattr(main_module, "sweep_once", counted)
-    # The loop sweeps scores as well as analyses. Left unstubbed this reaches
-    # for a real Supabase client and a real network call — which is how the
-    # transcription sweeper being added to the loop was noticed here: this test
-    # started failing on a proxy 403 rather than on anything about sweeping.
+    # **Everything else the loop calls has to be stubbed too.** Left unstubbed
+    # each one reaches for a real Supabase client and a real network call, and
+    # this test then fails on a proxy 403 rather than on anything about
+    # sweeping. That has now happened twice — once when the transcription
+    # sweeper joined the loop, once when the unclaimed-upload sweeper did — so
+    # if you are reading this because the test is failing that way again, the
+    # answer is a line below rather than anything wrong with the loop.
     monkeypatch.setattr(main_module, "sweep_stuck_transcriptions", lambda: 0)
+    monkeypatch.setattr(
+        main_module.pending_uploads, "sweep_unclaimed", lambda: 0
+    )
 
     async def drive() -> bool:
         task = asyncio.create_task(main_module._sweep_periodically())

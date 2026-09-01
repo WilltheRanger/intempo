@@ -6,6 +6,60 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-01 — An upload nobody could delete, including its owner
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. The oldest item on the
+known-holes list, open since 2026-08-24.
+
+**Files:** `backend/app/migrations/014_pending_uploads.sql` (new),
+`backend/app/services/pending_uploads.py` (new) + test,
+`backend/app/routers/upload.py`, `scores.py`, `analyses.py`, `me.py`,
+`backend/app/main.py`, `backend/app/tests/test_sweeper.py`.
+
+CLAUDE.md said what this needed rather than what it was: *"it needs a lifecycle
+decision, not a patch."* The decision, the three alternatives and the
+trade-offs are in `DECISIONS.md`; this is what changed.
+
+`pending_uploads` is written when a key is signed and deleted when a row claims
+the object. The sweeper already on the timer deletes what is still unclaimed
+after a day. **All three buckets** — a take's audio and an avatar are minted
+the same way and abandoned the same way, and only the page had ever been talked
+about.
+
+### The two orderings, which are the whole of it
+
+- **Claim after the row exists, never before.** Clearing a key before the
+  insert would strand every object of a save that then failed — one of the
+  three cases this was written for.
+- **Sweep the object before the row.** A row deleted first leaks its object
+  permanently and silently, which is this bug reintroduced one level down. A
+  row that outlives a failed deletion is swept again next pass and costs one
+  wasted request.
+
+Both are tested by asserting the *sequence*, not the outcome — an ordering that
+happens to work is an ordering that has not been checked.
+
+### What is deliberately best-effort
+
+`record` never raises. Failing to record costs a swept object later; failing
+the **upload** because the bookkeeping failed costs the musician their page,
+which is the thing the bookkeeping exists to protect. So an unrecorded object
+is exactly as orphaned as it was before — no worse than the status quo, and
+that is the right direction for this trade.
+
+### A test that predicted its own failure
+
+`test_sweeper.py` failed on a proxy 403 rather than on anything about sweeping,
+because the loop now calls a third thing and the test stubs the others. Its own
+comment already described this happening once before, when the transcription
+sweeper joined the loop. The comment now says it has happened twice and tells
+the next person the answer is a stub rather than a bug.
+
+**backend: 1828 passed, 3 xfailed.** The migration is written and **not
+applied** — it needs running against the project like 011–013 did.
+
+---
+
 ## 2026-09-01 — Tuplets, and a measuring instrument that was wrong twice
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. The last gap on the music

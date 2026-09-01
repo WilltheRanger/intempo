@@ -15,6 +15,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 
+from app.services import pending_uploads
 from app.auth import current_jwt_payload
 from app.db import get_service_client
 from app.models.user import (
@@ -420,6 +421,12 @@ def update_me(
     # that is still the current one.
     if superseded and superseded != row.get("avatar_key"):
         _remove_avatar(client, superseded)
+
+    # The row points at this one now, so the sweeper must leave it alone. After
+    # the write, like every other claim: a failed update would otherwise strand
+    # the picture it did not save.
+    if row.get("avatar_key"):
+        pending_uploads.claim(AVATAR_BUCKET, [str(row["avatar_key"])])
 
     # Same ordering rule, and here it matters more: the consent has to be gone
     # from the row before anything is deleted on the strength of it being gone.

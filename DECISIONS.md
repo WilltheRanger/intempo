@@ -64,6 +64,75 @@ it is not part of this decision.
 
 ---
 
+## 2026-09-01 — Record the upload, rather than walking the bucket
+
+**Context:** CLAUDE.md has carried this since 2026-08-24 under its own heading,
+and explicitly said what it needed: *"Known hole, unfixed: orphaned uploads. An
+upload that never becomes a score row is permanent and unreachable… This
+contradicts the rule above it; it needs a lifecycle decision, not a patch."*
+
+The rule it contradicts is *"The photograph is deleted only when a person
+accepts the reading."* That rule is about **who decides**, and it is right. It
+says nothing about photographs that never became a reading at all, and those
+have no path out — no row, so no accept, no delete, and no request a musician
+could make about their own file.
+
+Three ordinary things produce one: backing out of the naming screen after the
+upload finishes, a save that fails after the bytes land, and a transcribe
+retried against a fresh key. None is an error.
+
+**Alternatives considered:**
+
+1. **Sweep the bucket.** List the storage bucket and delete what no `scores`
+   row references. Correct, and it scales badly: objects live under
+   `{user_id}/{uuid}`, so it is one list request per user folder per sweep,
+   forever, almost always to be told there is nothing to do. It also cannot
+   state the invariant — it can only keep rediscovering it.
+2. **Delete from the client when the musician backs out.** Handles the common
+   case and none of the others: an app killed mid-flow, a crash, a lost
+   network. It cannot be the only mechanism, and as a second one it is extra
+   surface for a case the sweeper already covers.
+3. **Create the row first, upload second.** Removes the window entirely and
+   reverses the whole capture flow — the scanner uploads pages before there is
+   a title to name a piece with, and asking for one first is a worse product to
+   fix a storage leak.
+4. **Record the upload in a table, and sweep that.** ← chosen.
+
+**Decision:** `pending_uploads` (migration 014). The upload endpoint inserts a
+row when it signs a key; the endpoints that consume an object delete it. The
+sweeper — already running on a timer for stuck analyses and transcriptions —
+deletes objects whose row is older than `UNCLAIMED_TTL_HOURS` (24), and their
+rows.
+
+It makes the invariant sayable, which the bucket walk never could: **every
+object in these buckets has a row somewhere** — a `scores` row because it
+became a piece, an `analyses` row because it became a take, a `users` row
+because it became a face, or a `pending_uploads` row because it has not become
+anything yet. An object with no row is now a bug rather than a Tuesday.
+
+**Trade-offs accepted.**
+
+- **A day of latency.** An abandoned photograph sits for up to 24 hours. The
+  gap between minting a key and creating the row is seconds, so an hour would
+  do; a day is chosen because sweeping too early deletes a page somebody is
+  still using and sweeping too late costs a few megabytes for a few hours.
+- **Bookkeeping that can fail.** `record` never raises: failing to record costs
+  a swept object later, and failing the *upload* because the bookkeeping failed
+  costs the musician their page. So the invariant is best-effort at the
+  recording end — an unrecorded object is exactly as orphaned as before, which
+  is no worse than the status quo it replaces.
+- **Two orderings that must not be inverted**, and both are tested. A key is
+  claimed *after* the row exists, never before, or a failed save strands the
+  object — one of the three cases this was written for. And the sweeper removes
+  the **object before the row**: a row deleted first leaks its object silently
+  and permanently, which is this bug reintroduced one level down.
+
+All three buckets, not just `score-images`. A take's audio and an avatar are
+minted the same way and abandoned the same way; only the page had ever been
+talked about.
+
+---
+
 ## 2026-09-01 — The count-in is audible, and the pre-roll is thrown away
 
 **Context:** the owner asked for a conductor's count-in — *"when they click the
