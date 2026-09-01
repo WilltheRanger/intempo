@@ -16,7 +16,15 @@ export interface CapturedPage {
 }
 
 /** What became of an image the session was handed. */
-export type CaptureOutcome = 'added' | 'replaced';
+export type CaptureOutcome = 'added' | 'replaced' | 'full';
+
+/**
+ * Maximum pages the backend accepts for one scan.
+ *
+ * Shared by the camera and image picker so the app refuses page 13 before it
+ * photographs or uploads anything. The server enforces the same ceiling.
+ */
+export const MAX_SCAN_PAGES = 12;
 
 /**
  * The pages captured in the current scan, shared between the scanner and the
@@ -38,8 +46,8 @@ export type CaptureOutcome = 'added' | 'replaced';
  */
 let pages: CapturedPage[] = [];
 let nextId = 1;
-/** Set by the transcribe step, consumed by the save. See `setUploadedImageUrl`. */
-let uploadedImageUrl: string | null = null;
+/** Set by the upload step, consumed by the save in the same page order. */
+let uploadedImageUrls: string[] = [];
 /**
  * The page a retake is going to replace, while one is in flight.
  *
@@ -90,7 +98,7 @@ export const captureSession = {
   /** Clears the session, retake included. Called when the scanner opens fresh. */
   reset(): void {
     nextId = 1;
-    uploadedImageUrl = null;
+    uploadedImageUrls = [];
     retakingId = null;
     commit([]);
   },
@@ -116,9 +124,13 @@ export const captureSession = {
     }
 
     // The page being retaken is no longer in the session — deleted from
-    // another screen, or a session reset underneath. Append rather than drop:
-    // a photograph someone has just taken is never thrown away, and an extra
-    // page at the end is visible and removable in a way a discarded one is not.
+    // another screen, or a session reset underneath. Append rather than drop
+    // while there is room. The camera checks this before taking a photograph;
+    // the guard here keeps programmatic callers from creating a scan the API
+    // will refuse after every page has already uploaded.
+    if (pages.length >= MAX_SCAN_PAGES) {
+      return 'full';
+    }
     commit([...pages, { id: `page-${nextId++}`, source }]);
     return 'added';
   },
@@ -131,8 +143,13 @@ export const captureSession = {
    * a loop of appends, which published an empty list to every subscriber first.
    */
   importAll(sources: CapturedSource[]): void {
+    if (sources.length > MAX_SCAN_PAGES) {
+      throw new Error(
+        `A score can have at most ${MAX_SCAN_PAGES} pages in one scan.`,
+      );
+    }
     nextId = 1;
-    uploadedImageUrl = null;
+    uploadedImageUrls = [];
     retakingId = null;
     commit(sources.map((source) => ({ id: `page-${nextId++}`, source })));
   },
@@ -193,21 +210,18 @@ export const captureSession = {
   },
 
   /**
-   * Remembers where the uploaded page landed, for the save that follows.
+   * Remembers where every ordered page landed, for the save that follows.
    *
-   * The value is a **signed upload URL that expires five minutes after
-   * issue** — the only form `POST /v1/scores` accepts. It lives here rather
-   * than in route params because the review screen can be left and returned
-   * to, and because `reset()` must be able to clear it: a stale URL from a
-   * previous scan is worse than none, since the save would fail against an
-   * expired signature with nothing on screen explaining why.
+   * These are signed upload URLs that expire five minutes after issue. They
+   * remain in the same order as `current()`; sending only the first one was
+   * how a multi-page scan silently became a one-page score.
    */
-  setUploadedImageUrl(url: string | null): void {
-    uploadedImageUrl = url;
+  setUploadedImageUrls(urls: string[]): void {
+    uploadedImageUrls = [...urls];
     notify();
   },
 
-  uploadedImageUrl(): string | null {
-    return uploadedImageUrl;
+  uploadedImageUrls(): string[] {
+    return [...uploadedImageUrls];
   },
 };
