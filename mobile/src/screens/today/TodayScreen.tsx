@@ -234,12 +234,29 @@ export function TodayScreen() {
             <View style={styles.section}>
               <SectionHeader label="Practice lesson" />
               <LessonCard
-                lesson={practiceLessonFor({
-                  verdict: hasCurrentTake && take ? take.verdict : null,
-                  pieceTitle: piece.title,
-                  workingBpm,
-                  beatUnit: piece.score?.tempo_beat_unit,
-                })}
+                lesson={
+                  !hasNotation
+                    ? {
+                        context: readingNotation
+                          ? `Preparing ${piece.title}`
+                          : `Before practising ${piece.title}`,
+                        title: readingNotation
+                          ? 'Keep the page open for review'
+                          : 'Give the recording something to follow',
+                        body: readingNotation
+                          ? 'When the reading finishes, compare the digital notation with the original pages before recording.'
+                          : 'Timing feedback is only meaningful when InTempo knows the written notes, rests, and repeats.',
+                        exercise: readingNotation
+                          ? 'Review any highlighted measures, correct them, and accept the transcription when it matches the page.'
+                          : 'Photograph or import the complete part in page order. Check the transcription before your first take.',
+                      }
+                    : practiceLessonFor({
+                        verdict: hasCurrentTake && take ? take.verdict : null,
+                        pieceTitle: piece.title,
+                        workingBpm,
+                        beatUnit: piece.score?.tempo_beat_unit,
+                      })
+                }
                 onTry={() => openPractice(piece)}
               />
             </View>
