@@ -29,6 +29,7 @@ import {
   colors,
   ICON_SIZE,
   ICON_STROKE_WIDTH,
+  motion,
   radii,
   spacing,
 } from '../../design';
@@ -42,7 +43,6 @@ import {
   type PracticeLesson,
 } from '../../lib/practiceLesson';
 import { formatTempo, formatTendency } from '../../lib/tempo';
-import { motion } from '../../design';
 import { suggestionsFor } from '../../lib/today';
 import type { AddPieceOption, TabScreenNavigation } from '../../navigation/types';
 import { WarmupPanel } from './WarmupPanel';
@@ -383,7 +383,11 @@ function AddPieceAction({ onPress }: { onPress: () => void }) {
       </View>
       <View style={styles.addPieceCopy}>
         <Text variant="button">Add a new piece</Text>
-        <Text variant="metadataSmall" color="textSecondary" style={styles.addPieceDetail}>
+        <Text
+          variant="metadataSmall"
+          color="textSecondary"
+          style={styles.addPieceDetail}
+        >
           Scan sheet music, import a score, or enter it manually.
         </Text>
       </View>
@@ -489,8 +493,8 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfacePressed,
   },
   addPieceIcon: {
-    width: 40,
-    height: 40,
+    width: spacing['4xl'],
+    height: spacing['4xl'],
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.actionBg,
