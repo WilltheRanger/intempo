@@ -6,6 +6,33 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-31 — Retry-safe durable recording handoff
+
+**Branch:** `codex/durable-audio-retry`
+
+### Changed
+
+- Stopped storing a five-minute signed upload permission as the analysis
+  worker's recording URL.
+- The app now sends the owner-prefixed audio object key; the API validates it
+  and stores a token-free private-storage reference.
+- The worker signs a fresh download URL immediately before reading the WAV, so
+  queued work and retries do not depend on the upload token.
+- Made one uploaded audio object idempotent at enqueue: a repeated request
+  returns the existing analysis instead of charging quota or running twice.
+- Recording retries now preserve completed upload and enqueue progress, so they
+  reuse the WAV or resume polling the same analysis instead of starting over.
+- Kept older installed clients compatible by accepting and canonicalising their
+  legacy storage URLs.
+
+### Verification
+
+- Added backend coverage for durable key ownership, token-free persistence,
+  fresh download signing, private-storage failure, and idempotent enqueue.
+- Added mobile coverage for durable-key submission and retries after upload or
+  enqueue.
+- Mobile typecheck, tests, web build, and backend tests run in pull-request CI.
+
 ## 2026-08-31 — Edited scans cannot reuse stale uploads
 
 **Branch:** `fix/invalidate-edited-scan-uploads`
