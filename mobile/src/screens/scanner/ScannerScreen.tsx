@@ -277,7 +277,11 @@ export function ScannerScreen() {
           disabled={!canCapture || busy}
           accessibilityRole="button"
           accessibilityLabel={
-            canCapture ? "Capture page" : `Maximum of ${MAX_SCAN_PAGES} pages reached`
+            !ready
+              ? 'Capture page unavailable'
+              : canCapture
+                ? 'Capture page'
+                : `Maximum of ${MAX_SCAN_PAGES} pages reached`
           }
           accessibilityState={{ disabled: !canCapture || busy }}
           style={({ pressed }) => [
