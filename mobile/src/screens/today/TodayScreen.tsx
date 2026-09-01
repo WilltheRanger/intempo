@@ -1,5 +1,5 @@
 import { useNavigation } from '@react-navigation/native';
-import { Plus } from 'lucide-react-native';
+import { ChevronRight, Plus } from 'lucide-react-native';
 import { useState } from 'react';
 import { Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
 
@@ -10,7 +10,6 @@ import {
   Card,
   EmptyState,
   PageHeader,
-  PrimaryButton,
   ScreenContainer,
   SecondaryButton,
   SectionHeader,
@@ -23,16 +22,28 @@ import { useMe } from '../../data/hooks/useMe';
 import { useCurrentPiece, useLibrary } from '../../data/hooks/usePieces';
 import { practiceTempo, usePracticeTempos } from '../../data/practiceTempo';
 import { usePreferences } from '../../data/preferences';
-import type { Piece, Verdict } from '../../data/types';
+import type { Piece } from '../../data/types';
 import { describeLoadError } from '../../data/api/describeError';
-import { spacing } from '../../design';
+import {
+  BORDER_WIDTH,
+  colors,
+  CONTROL_HEIGHT,
+  ICON_SIZE,
+  ICON_STROKE_WIDTH,
+  motion,
+  radii,
+  spacing,
+} from '../../design';
 import {
   formatLastPracticedShort,
   joinMetadata,
 } from '../../lib/format';
 import { getGreeting } from '../../lib/greeting';
+import {
+  practiceLessonFor,
+  type PracticeLesson,
+} from '../../lib/practiceLesson';
 import { formatTempo, formatTendency } from '../../lib/tempo';
-import { motion } from '../../design';
 import { suggestionsFor } from '../../lib/today';
 import type { AddPieceOption, TabScreenNavigation } from '../../navigation/types';
 import { WarmupPanel } from './WarmupPanel';
@@ -198,18 +209,7 @@ export function TodayScreen() {
 
       <View style={[styles.dashboard, isWide && styles.dashboardWide]}>
         <View style={styles.primaryColumn}>
-          <View style={styles.practiceHeader}>
-            <SectionHeader
-              label="Continue practicing"
-              style={styles.practiceHeaderLabel}
-            />
-            <PrimaryButton
-              label="New piece"
-              icon={Plus}
-              size="compact"
-              onPress={() => setAddSheetVisible(true)}
-            />
-          </View>
+          <SectionHeader label="Continue practicing" />
           <PracticeCard
             piece={piece}
             workingBpm={workingBpm}
@@ -220,11 +220,18 @@ export function TodayScreen() {
             onContinue={() => openPractice(piece)}
           />
 
+          <AddPieceAction onPress={() => setAddSheetVisible(true)} />
+
           <FadeIn index={0}>
             <View style={styles.section}>
-              <SectionHeader label="Today's lesson" />
+              <SectionHeader label="Practice lesson" />
               <LessonCard
-                lesson={lessonFor(hasCurrentTake && take ? take.verdict : null, piece.title)}
+                lesson={practiceLessonFor({
+                  verdict: hasCurrentTake && take ? take.verdict : null,
+                  pieceTitle: piece.title,
+                  workingBpm,
+                  beatUnit: piece.score?.tempo_beat_unit,
+                })}
                 onTry={() => openPractice(piece)}
               />
             </View>
@@ -356,55 +363,59 @@ export function TodayScreen() {
   );
 }
 
-interface Lesson {
-  title: string;
-  body: string;
-  exercise: string;
+function AddPieceAction({ onPress }: { onPress: () => void }) {
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel="Add a new piece"
+      accessibilityHint="Scan sheet music, import a score, or enter a piece manually"
+      style={({ pressed }) => [
+        styles.addPieceAction,
+        pressed && styles.addPieceActionPressed,
+      ]}
+    >
+      <View style={styles.addPieceIcon}>
+        <Plus
+          size={ICON_SIZE.md}
+          strokeWidth={ICON_STROKE_WIDTH}
+          color={colors.actionText}
+        />
+      </View>
+      <View style={styles.addPieceCopy}>
+        <Text variant="button">Add a new piece</Text>
+        <Text
+          variant="metadataSmall"
+          color="textSecondary"
+          style={styles.addPieceDetail}
+        >
+          Scan sheet music, import a score, or enter it manually.
+        </Text>
+      </View>
+      <ChevronRight
+        size={ICON_SIZE.md}
+        strokeWidth={ICON_STROKE_WIDTH}
+        color={colors.textTertiary}
+      />
+    </Pressable>
+  );
 }
 
-function lessonFor(verdict: Verdict | null, pieceTitle: string): Lesson {
-  if (verdict === 'rushing' || verdict === 'slight_rush') {
-    return {
-      title: 'Make room between the clicks',
-      body:
-        'Rushing often starts in the space between beats. Subdivide before you play so the next note has somewhere exact to land.',
-      exercise:
-        'Count “one-and-two-and” through one phrase, then play it at the same tempo without counting aloud.',
-    };
-  }
-
-  if (verdict === 'dragging' || verdict === 'slight_drag') {
-    return {
-      title: 'Carry the pulse through hard notes',
-      body:
-        'Dragging often begins when the hands wait for the beat before preparing. Let the subdivision keep moving while you set up the next note.',
-      exercise:
-        'Tap steady eighth notes through the hardest phrase first, then play while keeping that motion in your head.',
-    };
-  }
-
-  if (verdict === 'on_tempo') {
-    return {
-      title: 'Repeat the result before adding speed',
-      body:
-        'One steady take is a good sign. A second comparable take shows whether the pulse is dependable rather than accidental.',
-      exercise:
-        'Keep the same tempo and record one more take of the same passage before changing anything.',
-    };
-  }
-
-  return {
-    title: 'Start with an honest baseline',
-    body:
-      'A useful first take is not your fastest attempt. Choose a tempo where you can keep moving after a mistake and hear what your timing normally does.',
-    exercise: `Record one uninterrupted take of ${pieceTitle}. Do not restart—use it as the starting point.`,
-  };
-}
-
-function LessonCard({ lesson, onTry }: { lesson: Lesson; onTry: () => void }) {
+function LessonCard({
+  lesson,
+  onTry,
+}: {
+  lesson: PracticeLesson;
+  onTry: () => void;
+}) {
   return (
     <Card>
-      <Text variant="pieceTitle">{lesson.title}</Text>
+      <Text variant="sectionLabel" color="textSecondary">
+        {lesson.context}
+      </Text>
+      <Text variant="pieceTitle" style={styles.lessonTitle}>
+        {lesson.title}
+      </Text>
       <Text variant="body" color="textSecondary" style={styles.lessonBody}>
         {lesson.body}
       </Text>
@@ -443,17 +454,6 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
   },
-  practiceHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: spacing.md,
-    marginBottom: spacing.md,
-  },
-  practiceHeaderLabel: {
-    flex: 1,
-    marginBottom: 0,
-  },
   secondaryColumn: {
     minWidth: 0,
   },
@@ -476,6 +476,40 @@ const styles = StyleSheet.create({
   },
   pressed: {
     opacity: 0.6,
+  },
+  addPieceAction: {
+    minHeight: CONTROL_HEIGHT + spacing['2xl'],
+    marginTop: spacing.md,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    backgroundColor: colors.surface,
+    borderWidth: BORDER_WIDTH,
+    borderColor: colors.borderStrong,
+    borderRadius: radii.md,
+  },
+  addPieceActionPressed: {
+    backgroundColor: colors.surfacePressed,
+  },
+  addPieceIcon: {
+    width: spacing['4xl'],
+    height: spacing['4xl'],
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.actionBg,
+    borderRadius: radii.sm,
+  },
+  addPieceCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  addPieceDetail: {
+    marginTop: spacing.xs,
+  },
+  lessonTitle: {
+    marginTop: spacing.xs,
   },
   lessonBody: {
     marginTop: spacing.sm,
