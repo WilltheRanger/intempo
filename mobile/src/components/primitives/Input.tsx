@@ -54,6 +54,15 @@ export interface InputProps {
   textContentType?: TextInputProps['textContentType'];
   returnKeyType?: TextInputProps['returnKeyType'];
   onSubmitEditing?: TextInputProps['onSubmitEditing'];
+  /**
+   * Focus and blur, passed straight through.
+   *
+   * Added for `ComposerField`, which shows its suggestions only while the
+   * field has focus — a list that stays after you have tapped away is a list
+   * that will not go away.
+   */
+  onFocus?: TextInputProps['onFocus'];
+  onBlur?: TextInputProps['onBlur'];
   editable?: boolean;
   style?: StyleProp<ViewStyle>;
 }
@@ -78,6 +87,8 @@ export function Input({
   textContentType,
   returnKeyType,
   onSubmitEditing,
+  onFocus,
+  onBlur,
   editable = true,
   style,
 }: InputProps) {
@@ -95,8 +106,18 @@ export function Input({
       <TextInput
         value={value}
         onChangeText={onChangeText}
-        onFocus={() => setFocused(true)}
-        onBlur={() => setFocused(false)}
+        // **Composed, not replaced.** This field draws its own focus ring, so
+        // a caller's `onFocus` has to run alongside it rather than instead of
+        // it — handing the prop straight to `TextInput` silently removed the
+        // ring from every field that used one.
+        onFocus={(event) => {
+          setFocused(true);
+          onFocus?.(event);
+        }}
+        onBlur={(event) => {
+          setFocused(false);
+          onBlur?.(event);
+        }}
         placeholder={placeholder}
         placeholderTextColor={colors.textTertiary}
         underlineColorAndroid="transparent"

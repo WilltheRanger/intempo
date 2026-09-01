@@ -235,3 +235,98 @@ describe('toPiece', () => {
     expect(piece.markedBpm).toBe(96);
   });
 });
+
+describe('bars the pipeline refused to judge', () => {
+  it('keeps a written tempo change out of the mean', async () => {
+    // **The bar under a `rit.` reports a real, large deviation** — the
+    // musician did slow, exactly as the page asked — while the pipeline forces
+    // its band to `on` because the tolerance bands measure distance from a
+    // steady beat and the page has said there is none. Averaging it in answers
+    // "how steadily was this played" with a number nobody judged.
+    listAnalyses.mockResolvedValue([
+      analysis({
+        result_json: {
+          status: 'ok',
+          verdict: 'Steady',
+          verdict_direction: 'drag',
+          per_measure: [
+            { measure_number: 1, avg_delta_pct: 4, worst_band: 'on' },
+            {
+              measure_number: 2,
+              avg_delta_pct: 40,
+              worst_band: 'on',
+              under_tempo_change: true,
+            },
+          ],
+          tolerance: null,
+        },
+      }),
+    ]);
+
+    const insights = await apiInsightsSource.getInsights();
+
+    // The mean of the timed bar alone, flipped: -4, not the -22 both would give.
+    expect(insights!.meanDeviationPct).toBeCloseTo(-4, 9);
+  });
+
+  it('says nothing at all about a take that was entirely a tempo change', async () => {
+    listAnalyses.mockResolvedValue([
+      analysis({
+        result_json: {
+          status: 'ok',
+          verdict: 'Steady',
+          verdict_direction: 'on',
+          per_measure: [
+            {
+              measure_number: 1,
+              avg_delta_pct: 40,
+              worst_band: 'on',
+              under_tempo_change: true,
+            },
+          ],
+          tolerance: null,
+        },
+      }),
+    ]);
+
+    // Nothing in it was timed, so there is no number — the same answer the
+    // window filter and the failed-run filter give, and for the same reason.
+    expect(await apiInsightsSource.getInsights()).toBeNull();
+  });
+});
+
+describe('a bar nothing in which was timed', () => {
+  it('stays out of the mean even without a tempo change', async () => {
+    // A held final chord under a fermata. `under_tempo_change` is false — the
+    // page did not mark a `rit.` — and the bar is still not a verdict.
+    listAnalyses.mockResolvedValue([
+      analysis({
+        result_json: {
+          status: 'ok',
+          verdict: 'Steady',
+          verdict_direction: 'drag',
+          per_measure: [
+            { measure_number: 1, avg_delta_pct: 4, worst_band: 'on', timed_note_count: 4 },
+            { measure_number: 2, avg_delta_pct: 64, worst_band: 'on', timed_note_count: 0 },
+          ],
+          tolerance: null,
+        },
+      }),
+    ]);
+
+    const insights = await apiInsightsSource.getInsights();
+
+    expect(insights!.meanDeviationPct).toBeCloseTo(-4, 9);
+  });
+
+  it('counts a take stored before the field existed exactly as before', async () => {
+    // No `timed_note_count` anywhere. Every bar is a verdict, which is what
+    // those rows meant — reading a missing field as zero would silently drop
+    // every measure of every take already recorded.
+    listAnalyses.mockResolvedValue([analysis()]);
+
+    const insights = await apiInsightsSource.getInsights();
+
+    expect(insights!.meanDeviationPct).toBeCloseTo(-8, 9);
+  });
+});

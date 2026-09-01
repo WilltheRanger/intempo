@@ -12,6 +12,7 @@ import {
   SectionHeader,
   Text,
 } from '../../components/primitives';
+import { useMe } from '../../data/hooks/useMe';
 import { useUpdateProfile, useUploadAvatar } from '../../data/hooks/useProfile';
 import type { Instrument } from '../../data/types';
 import {
@@ -99,9 +100,27 @@ import {
 export function OnboardingScreen() {
   const save = useUpdateProfile();
   const upload = useUploadAvatar();
+  /**
+   * **What the account already knows, because this screen can be answered
+   * twice.** `PATCH /v1/me` stores what it is given and stamps `onboarded_at`
+   * only once the resulting row carries all three answers — so someone who
+   * typed their name, chose a photograph, was interrupted, and came back
+   * arrives here with those two already on their account. This screen started
+   * from nothing and asked for all three again, including the photograph,
+   * which is the one answer that cannot be given by thinking.
+   */
+  const { data: me } = useMe();
 
-  const [name, setName] = useState('');
-  const [instrument, setInstrument] = useState<Instrument | null>(null);
+  // Drafts, not values: `null` means "not answered on this screen", which is
+  // what lets an empty name field be told apart from a name nobody has typed
+  // yet. Clearing the field really clears it.
+  const [nameDraft, setNameDraft] = useState<string | null>(null);
+  const [instrumentDraft, setInstrumentDraft] = useState<Instrument | null>(null);
+  const name = nameDraft ?? me?.displayName ?? '';
+  const instrument = instrumentDraft ?? me?.instrument ?? null;
+  const setName = setNameDraft;
+  const setInstrument = setInstrumentDraft;
+  const storedPhoto = Boolean(me?.avatarUrl);
   const [preview, setPreview] = useState<string | null>(null);
   const [selectedPhoto, setSelectedPhoto] = useState<{
     uri: string;
@@ -109,6 +128,9 @@ export function OnboardingScreen() {
   } | null>(null);
   const [avatarKey, setAvatarKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  /** The just-chosen photograph if there is one, otherwise the account's. */
+  const shownPhoto = preview ?? me?.avatarUrl ?? null;
 
   async function pickPhoto() {
     setError(null);
@@ -161,9 +183,10 @@ export function OnboardingScreen() {
       }
     }
 
-    if (!key) {
+    if (!key && !storedPhoto) {
       // The button is disabled in this state; this guard also protects direct
-      // calls and future changes to the form rules.
+      // calls and future changes to the form rules. A photograph already on
+      // the account counts — the server reads the resulting row, not the body.
       setError('Choose a photo before continuing.');
       return;
     }
@@ -189,6 +212,7 @@ export function OnboardingScreen() {
     instrument,
     avatarKey,
     photoSelected: Boolean(selectedPhoto),
+    storedPhoto,
   });
   const stillNeeded = describeMissing(missing);
   const busy = save.isPending || upload.isPending;
@@ -243,7 +267,7 @@ export function OnboardingScreen() {
           <Pressable
             onPress={() => void pickPhoto()}
             accessibilityRole="button"
-            accessibilityLabel={preview ? 'Change photo' : 'Add a photo'}
+            accessibilityLabel={shownPhoto ? 'Change photo' : 'Add a photo'}
           >
             {/*
               An empty slot, not the brand mark. `Avatar`'s placeholder is the
@@ -252,8 +276,8 @@ export function OnboardingScreen() {
               the thing that pulled the eye (§3 law 4). It is also the wrong
               statement: there is no picture here, and the mark reads as one.
             */}
-            {preview ? (
-              <Avatar source={preview} size={PHOTO_SIZE} />
+            {shownPhoto ? (
+              <Avatar source={shownPhoto} size={PHOTO_SIZE} />
             ) : (
               <View style={styles.emptyPhoto}>
                 <Camera

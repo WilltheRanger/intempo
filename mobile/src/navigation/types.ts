@@ -60,6 +60,13 @@ export type RootStackParamList = {
   ChangePassword: undefined;
   DeleteAccount: undefined;
   ExportData: undefined;
+  /**
+   * The privacy policy or the terms.
+   *
+   * One screen and a parameter rather than two routes: the two documents are
+   * the same shape, and both stores expect both to be reachable in the app.
+   */
+  Legal: { document: 'privacy' | 'terms' };
   Help: undefined;
   Acknowledgements: undefined;
   Record: { pieceId: string };

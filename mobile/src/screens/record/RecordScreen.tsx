@@ -14,6 +14,7 @@ import {
 } from '../../components/primitives';
 import { usePiece } from '../../data/hooks/usePieces';
 import { practiceTempo, usePracticeTempos } from '../../data/practiceTempo';
+import { bpmForMarking } from '../../lib/tempoMarking';
 import { preferences, usePreferences } from '../../data/preferences';
 import { PressableScale } from '../../components/motion';
 import { takeSubmissionSource } from '../../data/sources';
@@ -52,6 +53,11 @@ import type { RootNavigation, RootStackParamList } from '../../navigation/types'
 import { BeatIndicator } from './BeatIndicator';
 import { PracticeSetup } from './PracticeSetup';
 import { ListenButton } from '../../components/score/ListenButton';
+import { PlaybackSettings } from '../../components/score/PlaybackSettings';
+import { scheduleScore, startableMeasures } from '../../lib/score';
+import { ConfirmDialog } from '../../components/overlays/ConfirmDialog';
+import { leavingRecord, type RecordPhase } from '../../lib/record/leaving';
+import { useGoBack } from '../../navigation/useGoBack';
 
 const METRONOME_LABELS = {
   off: 'Metronome off',
@@ -68,7 +74,13 @@ const METRONOME_LABELS = {
  */
 const DEFAULT_ON_MODE: MetronomeMode = 'visual';
 
-type Phase = 'ready' | 'counting_in' | 'recording' | 'analysing';
+/**
+ * One union, not two. `leavingRecord` decides what each phase is worth asking
+ * about, and a copy here would let a new phase be added to the screen and not
+ * to the rule — where an unknown phase falls through to "just leave", which is
+ * the answer that loses a take.
+ */
+type Phase = RecordPhase;
 
 /**
  * Recording a take.
@@ -85,6 +97,7 @@ type Phase = 'ready' | 'counting_in' | 'recording' | 'analysing';
 export function RecordScreen() {
   const navigation = useNavigation<RootNavigation>();
   const { params } = useRoute<RouteProp<RootStackParamList, 'Record'>>();
+  const goBack = useGoBack({ route: 'PieceDetail', params: { pieceId: params.pieceId } });
   const { data: piece, isPending } = usePiece(params.pieceId);
   const { instrument, metronomeMode, practiceSetupSeen } = usePreferences();
 
@@ -92,7 +105,27 @@ export function RecordScreen() {
   // choice survives. Subscribing keeps this in step if the tempo is changed
   // elsewhere; the store is the source of truth, not this component.
   usePracticeTempos();
-  const targetBpm = practiceTempo.for(params.pieceId, piece?.markedBpm ?? null);
+  /**
+   * What the page says the tempo is, and how it says it.
+   *
+   * A metronome mark first, because it is a *reading*. Failing that, the
+   * conventional speed of a printed word — a page headed "Allegro moderato"
+   * and nothing else left `markedBpm` null, and the practice tempo fell back
+   * to 80: a moderately fast movement offered at a walking pace, on most of
+   * the standard repertoire, since editors wrote words rather than marks until
+   * well into the nineteenth century.
+   *
+   * The word is a convention and not a reading, so the screen says so under
+   * the control rather than presenting the number as the page's own.
+   */
+  const marking = piece?.score?.tempo_marking ?? null;
+  const markingBpm = piece?.markedBpm === null || piece?.markedBpm === undefined
+    ? bpmForMarking(marking)
+    : null;
+  const targetBpm = practiceTempo.for(
+    params.pieceId,
+    piece?.markedBpm ?? markingBpm,
+  );
   const tempoBeatUnit = piece?.score?.tempo_beat_unit ?? null;
   const displayedBpm = displayTempoBpm(targetBpm, tempoBeatUnit);
   const displayedRange = tempoDisplayRange(tempoBeatUnit);
@@ -129,6 +162,10 @@ export function RecordScreen() {
   // state the button reads.
   const unsent = useRef<{ audio: Blob; filename: string } | null>(null);
   const [pendingTake, setPendingTake] = useState(false);
+  /** The open "you are about to lose this" dialog, or null. */
+  const [leavePrompt, setLeavePrompt] = useState<
+    Extract<ReturnType<typeof leavingRecord>, { kind: 'confirm' }> | null
+  >(null);
 
   // Leaving mid-take — back gesture, a deep link, anything — has to release
   // the microphone. Nothing else will.
@@ -138,6 +175,65 @@ export function RecordScreen() {
       recorder.current = null;
     },
     [],
+  );
+
+  /**
+   * **The phase the guard reads, written at the same instant as the state.**
+   *
+   * `beforeRemove` fires inside the `navigation.replace` call, before React has
+   * committed anything set beside it — so a listener closed over `phase` and
+   * `pendingTake` is one render stale exactly when it is consulted. The case
+   * that broke: a retried take succeeds, `send` clears the held take and
+   * replaces the screen with the verdict, and the guard — still seeing the take
+   * as unsent — blocked the navigation and asked whether to discard a take that
+   * had just been accepted. Refs are the fix, not a dependency array.
+   */
+  const phaseRef = useRef<Phase>('ready');
+  function goPhase(next: Phase) {
+    phaseRef.current = next;
+    setPhase(next);
+  }
+
+  /** Set once the musician has said yes, so the guard lets the second go through. */
+  const leaving = useRef(false);
+  /** The navigation `beforeRemove` held back, replayed if they confirm. */
+  const blocked = useRef<(() => void) | null>(null);
+
+  /**
+   * **The cleanup above is correct and silent, which is the whole problem.**
+   * Releasing the microphone also throws away what it captured, so leaving
+   * mid-take lost the recording on one reflex tap with nothing said about it.
+   *
+   * `beforeRemove` rather than an `onPress` on the chevron, because the chevron
+   * is the one way out that is *not* the risk: the swipe-back gesture, Android's
+   * system back and the browser's back button all remove this screen without
+   * touching a control the app drew. A guard on the button would have covered
+   * the deliberate exit and missed every accidental one.
+   *
+   * What is worth asking about lives in `lib/record/leaving.ts`, where it can
+   * be tested — there is no React Native testing library here.
+   */
+  useEffect(
+    () =>
+      navigation.addListener('beforeRemove', (event) => {
+        if (leaving.current) {
+          return;
+        }
+        const answer = leavingRecord({
+          phase: phaseRef.current,
+          // The ref, not `pendingTake`: `send` clears it synchronously on the
+          // line above the navigation that fires this listener.
+          unsentTake: unsent.current !== null,
+          pieceTitle: piece?.title,
+        });
+        if (answer.kind !== 'confirm') {
+          return;
+        }
+        event.preventDefault();
+        blocked.current = () => navigation.dispatch(event.data.action);
+        setLeavePrompt(answer);
+      }),
+    [navigation, piece?.title],
   );
 
   // Turning the metronome back on restores the mode it was on, rather than
@@ -197,26 +293,43 @@ export function RecordScreen() {
     // afterwards would put an unpredictable hardware delay between "one" and
     // the first playable downbeat.
     setElapsedMs(0);
-    setPhase('counting_in');
+    goPhase('counting_in');
   }
 
   function cancelCountIn() {
     recorder.current?.cancel();
     recorder.current = null;
     setElapsedMs(0);
-    setPhase('ready');
+    goPhase('ready');
+  }
+
+  /** Confirmed: the audio goes, and so does the screen. */
+  function confirmLeave() {
+    recorder.current?.cancel();
+    recorder.current = null;
+    unsent.current = null;
+    setLeavePrompt(null);
+    // Past the guard below, then the navigation that was held back.
+    leaving.current = true;
+    const held = blocked.current;
+    blocked.current = null;
+    if (held) {
+      held();
+    } else {
+      goBack();
+    }
   }
 
   async function stop() {
     const active = recorder.current;
     recorder.current = null;
     if (!active) {
-      setPhase('ready');
+      goPhase('ready');
       return;
     }
 
     impact(ImpactFeedbackStyle.Medium);
-    setPhase('analysing');
+    goPhase('analysing');
 
     let recording;
     try {
@@ -224,7 +337,7 @@ export function RecordScreen() {
     } catch (error) {
       setProblem(messageFor(error));
       setElapsedMs(0);
-      setPhase('ready');
+      goPhase('ready');
       return;
     }
 
@@ -240,7 +353,7 @@ export function RecordScreen() {
    * rather than a second code path that could diverge from the first.
    */
   async function send(recording: { audio: Blob; filename: string }) {
-    setPhase('analysing');
+    goPhase('analysing');
     setProblem(null);
     try {
       const analysisId = await takeSubmissionSource.submit({
@@ -269,7 +382,7 @@ export function RecordScreen() {
       // to a failed take is one tap rather than a re-setup.
       setProblem(messageFor(error));
       setElapsedMs(0);
-      setPhase('ready');
+      goPhase('ready');
     }
   }
 
@@ -309,20 +422,41 @@ export function RecordScreen() {
     [piece?.score, skipRests],
   );
 
+  /**
+   * Which bar Listen enters on. The take is unaffected — see the note beside
+   * `PlaybackSettings` below.
+   */
+  const [chosenListenFrom, setChosenListenFrom] = useState<number | null>(null);
+  const listenSchedule = useMemo(
+    () => (heard ? scheduleScore(heard, targetBpm) : null),
+    [heard, targetBpm],
+  );
+  const startable = useMemo(
+    () => (listenSchedule ? startableMeasures(listenSchedule) : []),
+    [listenSchedule],
+  );
+  const listenFrom =
+    chosenListenFrom !== null && startable.includes(chosenListenFrom)
+      ? chosenListenFrom
+      : (startable[0] ?? 1);
+  const setListenFrom = setChosenListenFrom;
+
   const restCues = useMemo(
     () => longRestCues(heard, skipRests ? 1 : undefined),
     [heard, skipRests],
   );
 
-  // A count-in is always visible, even when the take's metronome is off. The
-  // user's chosen mode still controls whether it also clicks or vibrates.
-  const countInMode: MetronomeMode =
-    countingIn && metronomeMode === 'off' ? 'visual' : metronomeMode;
+  // **The count-in is not the metronome setting.** It ticks, taps and counts
+  // on screen whatever the take is set to, the way a conductor counts you in —
+  // you cannot start together with something that has not given you the beat.
+  // What the take may then produce is a different question, and the microphone
+  // answers it: see `lib/metronome/countIn.ts`.
   const metronome = useMetronome({
-    mode: countInMode,
+    mode: metronomeMode,
     bpm: targetBpm,
     timeSignature: piece?.score?.time_signature,
     running: capturing,
+    countingIn,
   });
 
   useEffect(() => {
@@ -335,8 +469,16 @@ export function RecordScreen() {
     }
     // Beat N is the downbeat after N count-in beats. Keeping the metronome
     // running across this state change preserves phase exactly.
+    //
+    // **The pre-roll goes here.** The microphone has been open since before
+    // the count — deliberately, so no hardware start-up delay lands between
+    // "four" and the downbeat — which means the count-in's clicks are in the
+    // capture, and `alignment.py` measures every onset from the first one it
+    // detects. Dropping what has been captured makes the file begin where the
+    // music does, and is what lets the count-in be audible at all.
+    recorder.current?.discardCapturedSoFar();
     setElapsedMs(0);
-    setPhase('recording');
+    goPhase('recording');
   }, [countInBeats, countingIn, metronome.beat?.index]);
 
   const activeRest = recording
@@ -358,7 +500,7 @@ export function RecordScreen() {
           title="Couldn't open this piece"
           description="It may have been removed from your library."
           actionLabel="Back"
-          onActionPress={() => navigation.goBack()}
+          onActionPress={goBack}
         />
       </ScreenContainer>
     );
@@ -390,12 +532,11 @@ export function RecordScreen() {
     return (
       <PracticeSetup
         title={piece.title}
-        composer={piece.composer}
         onBack={() => {
           if (practiceSetupSeen) {
             setShowSetup(false);
           } else {
-            navigation.goBack();
+            goBack();
           }
         }}
         onContinue={() => {
@@ -407,10 +548,22 @@ export function RecordScreen() {
   }
 
   if (phase === 'counting_in') {
-    const remaining = Math.max(
-      1,
-      countInBeats - (metronome.beat?.index ?? 0),
-    );
+    /**
+     * The beat being counted, the way a conductor counts it: **up**.
+     *
+     * This was `countInBeats - beat.index` — a countdown — while the dots below
+     * it fill left to right. So on the last click of the bar the screen showed
+     * a large **1** with the *fourth* dot lit, and a musician glancing at it
+     * could read "beat one" and come in a whole beat early. On an app whose
+     * entire job is measuring whether you came in on time, that is the one
+     * mistake the count-in must not invite.
+     *
+     * Counting up also matches the two things already on the screen: the dots,
+     * and "Start on the next downbeat" — which is a sentence about the beat
+     * *after* four, not about a countdown reaching zero. A conductor never
+     * counts down.
+     */
+    const counted = Math.min(countInBeats, (metronome.beat?.index ?? 0) + 1);
     return (
       <ScreenContainer
         scrollable={false}
@@ -426,8 +579,12 @@ export function RecordScreen() {
         <PageHeader
           eyebrow={piece.composer}
           title={piece.title}
-          onBack={cancelCountIn}
-          backLabel="Cancel count-in"
+          onBack={goBack}
+          // **The same words as every other phase of this screen.** It said
+          // "Cancel count-in" — which the record button below it also says, so
+          // a screen reader announced one label for two controls, and the
+          // chevron did something no other chevron in the app does.
+          backLabel="Back to the piece"
         />
 
         <View style={styles.countIn}>
@@ -439,7 +596,7 @@ export function RecordScreen() {
             style={styles.countInNumber}
             accessibilityLiveRegion="polite"
           >
-            {remaining}
+            {counted}
           </Text>
           <Text variant="body" color="textSecondary" style={styles.countInCopy}>
             {perBar === null ? 'Start after the count' : 'Start on the next downbeat'}
@@ -514,7 +671,7 @@ export function RecordScreen() {
       <PageHeader
         eyebrow={piece.composer}
         title={piece.title}
-        onBack={() => navigation.goBack()}
+        onBack={goBack}
         backLabel="Back to the piece"
       />
 
@@ -539,6 +696,17 @@ export function RecordScreen() {
             }
             disabled={recording}
           />
+
+          {markingBpm !== null && marking ? (
+            <Text
+              variant="metadataSmall"
+              color="textSecondary"
+              style={styles.bassNote}
+            >
+              The page is marked {marking} and gives no metronome mark. This is
+              what that usually means — move it to what you play.
+            </Text>
+          ) : null}
 
           {instrument === 'double_bass' ? (
             <Text
@@ -653,8 +821,24 @@ export function RecordScreen() {
             // about to judge.
             score={heard}
             bpm={targetBpm}
+            fromMeasure={listenFrom}
             // Silenced the moment a take starts: anything through the speaker
             // lands in the microphone as phantom onsets (§4).
+            disabled={recording}
+          />
+
+          {/* Listening only. **The take still starts at bar 1**, because where
+              a recording begins is not the app's to decide alone: the analysis
+              builds its expected timeline from the whole score, so a take that
+              began at bar 40 and did not say so would be compared against bar 1
+              onwards and reported as wrong from the first note. Hearing a
+              passage before playing it needs no such agreement. */}
+          <PlaybackSettings
+            bars={startable}
+            fromMeasure={listenFrom}
+            onFromMeasureChange={setListenFrom}
+            bpm={targetBpm}
+            beatUnit={tempoBeatUnit}
             disabled={recording}
           />
 
@@ -683,6 +867,21 @@ export function RecordScreen() {
           </Text>
         )}
       </View>
+
+      {/*
+        Only this view can raise it: the count-in leaves outright, and by
+        `analysing` the audio is already on its way. Both cases that hold
+        unsent audio — a live take, and one whose upload failed — are here.
+      */}
+      <ConfirmDialog
+        visible={leavePrompt !== null}
+        title={leavePrompt?.title ?? ''}
+        message={leavePrompt?.message ?? ''}
+        confirmLabel={leavePrompt?.confirmLabel ?? ''}
+        cancelLabel={leavePrompt?.cancelLabel}
+        onConfirm={confirmLeave}
+        onCancel={() => setLeavePrompt(null)}
+      />
     </ScreenContainer>
   );
 }

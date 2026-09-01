@@ -50,6 +50,12 @@ export function SegmentedControl<T extends string>({
             onPress={() => onChange(option.value)}
             accessibilityRole="tab"
             accessibilityState={{ selected }}
+            // **react-native-web does not derive this from
+            // `accessibilityState`.** Without it a screen reader announces
+            // "Notation, tab" and "Original, tab" and never which one is
+            // showing — and selection here is carried by a fill, so that is
+            // the only signal there was.
+            aria-selected={selected}
             accessibilityLabel={option.label}
             style={({ pressed }) => [
               styles.segment,

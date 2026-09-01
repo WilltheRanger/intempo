@@ -1,5 +1,6 @@
 import { useNavigation } from '@react-navigation/native';
 import { StyleSheet, View } from 'react-native';
+import { useGoBack } from '../../navigation/useGoBack';
 
 import {
   Card,
@@ -23,13 +24,21 @@ import { BORDER_WIDTH, colors, spacing } from '../../design';
  */
 export function AcknowledgementsScreen() {
   const navigation = useNavigation();
+  const goBack = useGoBack({ tab: 'Profile' });
 
   return (
     <ScreenContainer>
+      {/*
+        **Two words, and that is the load-bearing part.** "Acknowledgements" is
+        sixteen characters with nowhere to break, and a page title has to wrap
+        at a word boundary — at 2x text it ran 218pt off a 390pt screen, which
+        no amount of shrinking the container fixes. "Open source" wraps, says
+        what the screen actually holds, and is the term the stores use.
+      */}
       <PageHeader
         eyebrow={`${LICENCES.length} packages`}
-        title="Acknowledgements"
-        onBack={() => navigation.goBack()}
+        title="Open source"
+        onBack={goBack}
         backLabel="Back to profile"
       />
 

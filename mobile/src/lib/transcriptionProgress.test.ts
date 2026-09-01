@@ -95,4 +95,48 @@ describe('progressFor', () => {
       expect(progressFor(words, 0.3)).toBe(STAGE_PROGRESS['Reading the notation']);
     }
   });
+  describe('a multi-page scan', () => {
+    it('places every page of the contract exactly where the fixture says', () => {
+      for (const { words, progress } of parity.per_page) {
+        expect(progressFor(words, 0), words).toBeCloseTo(progress, 5);
+      }
+    });
+
+    it('never walks backwards from one page to the next', () => {
+      // The failure the whole module exists to prevent. Page 2 must not sit
+      // below page 1, whatever the arithmetic works out to.
+      const placed = parity.per_page
+        .filter((entry) => entry.total === 3)
+        .map((entry) => progressFor(entry.words, 0));
+      placed.slice(1).forEach((position, index) => {
+        expect(position).toBeGreaterThanOrEqual(placed[index]);
+      });
+    });
+
+    it('stays inside the reading band', () => {
+      const [start, end] = parity._reading_band;
+      for (const { words } of parity.per_page) {
+        const placed = progressFor(words, 0);
+        expect(placed, words).toBeGreaterThanOrEqual(start);
+        expect(placed, words).toBeLessThanOrEqual(end);
+      }
+    });
+
+    it('never claims the page it is still reading', () => {
+      // `Reading page 1 of 3` means no page is finished, so it sits at the
+      // bottom of the band. Placing it at 1/3 would report a page as read
+      // while it is still being read.
+      expect(progressFor('Reading page 1 of 3', 0)).toBe(parity._reading_band[0]);
+    });
+
+    it('holds the bar on a count that cannot be a count', () => {
+      for (const impossible of [
+        'Reading page 0 of 3',
+        'Reading page 4 of 3',
+        'Reading page 1 of 0',
+      ]) {
+        expect(progressFor(impossible, 0.7), impossible).toBe(0.7);
+      }
+    });
+  });
 });

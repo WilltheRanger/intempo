@@ -88,11 +88,39 @@ const styles = StyleSheet.create({
   },
   titleRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    // **Top, not centre.** Centred is right for a one-line title and wrong for
+    // every longer one: a real repertoire title — "Sonata for Violin and Piano
+    // No. 9 in A major, Op. 47 'Kreutzer'" — runs to five lines at 320pt, and a
+    // centred action lands in the *middle of the paragraph*, reading as a mark
+    // inside the text rather than as a control beside it. Every platform header
+    // aligns its trailing action to the first line, for this reason.
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
     gap: spacing.lg,
+    /**
+     * **The action drops below the title when they cannot share a line.**
+     * At iOS's larger text sizes they often cannot: measured at 2x type,
+     * Library's "Add piece" ran 58pt off a 390pt screen because the row was
+     * `nowrap` and only the title could shrink. Wrapping costs nothing at any
+     * size where they do fit, and it is the difference between a control that
+     * moves and a control that is gone.
+     */
+    flexWrap: 'wrap',
   },
   title: {
-    flexShrink: 1,
+    /**
+     * **`flex: 1`, not `flexShrink: 1`, and the difference is `flexWrap`.**
+     *
+     * Flex decides wrapping from items' *base* sizes and only then shrinks, so
+     * with `flexShrink` alone a long title demanded its full content width, the
+     * line broke, and the action dropped below it — orphaned under a two-line
+     * piece title at ordinary text size. That was a regression from adding
+     * `flexWrap` for the large-text case, and it is why both are needed: a base
+     * of zero means the title never forces a wrap, it just takes what is left
+     * and sets its own text over as many lines as it needs. The wrap then fires
+     * only when the *action* genuinely cannot fit, which is what it was added
+     * for.
+     */
+    flex: 1,
   },
 });

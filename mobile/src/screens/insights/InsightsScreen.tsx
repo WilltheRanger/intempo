@@ -1,31 +1,33 @@
 import { useNavigation } from '@react-navigation/native';
 import { ChartLine } from 'lucide-react-native';
+import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { FadeIn } from '../../components/motion';
+import { AddPieceSheet } from '../../components/pieces/AddPieceSheet';
 import {
-  Card,
   EmptyState,
   PageHeader,
   ScreenContainer,
-  SecondaryButton,
   SectionHeader,
   Text,
 } from '../../components/primitives';
 import { InsightsSkeleton } from '../../components/skeletons';
 import { useInsights } from '../../data/hooks/useInsights';
+import { useLibrary } from '../../data/hooks/usePieces';
 import { useRecentTakes } from '../../data/hooks/useLatestTake';
 import { describeLoadError } from '../../data/api/describeError';
-import { spacing } from '../../design';
+import { motion, spacing } from '../../design';
 import {
   formatLastPracticedShort,
   joinMetadata,
 } from '../../lib/format';
 import { formatTendency, formatTendencyDetail } from '../../lib/tempo';
-import type { TabScreenNavigation } from '../../navigation/types';
+import type { AddPieceOption, TabScreenNavigation } from '../../navigation/types';
 import { TodayRow } from '../today/TodayRow';
 import { DeviationBar } from './DeviationBar';
 import { PieceInsightRow } from './PieceInsightRow';
+import { firstStep, focusReason, windowLabel } from './copy';
 
 /**
  * Practice history that explains the pattern and makes it useful.
@@ -33,11 +35,33 @@ import { PieceInsightRow } from './PieceInsightRow';
  * All metrics come from finished analyses. The screen keeps the aggregate
  * tendency, then turns it into a next practice action and links back to the
  * individual takes that produced it.
+ *
+ * **The finding is the title.** This screen used to open with "Insights" set
+ * in 36pt serif — the one word on it that says nothing, since the tab under
+ * the reader's thumb is already labelled that — and put the sentence a
+ * musician came for, "You tend to rush", a size down inside a white box. Four
+ * boxes in fact, stacked on the page ground, each carrying the same visual
+ * weight: from three feet away the screen read as a column of white rectangles
+ * with no first thing to look at (§3 laws 3, 4 and 8). The screen name moved
+ * into the eyebrow, where a screen the tab bar already names belongs, and the
+ * verdict took the title.
+ *
+ * **Nothing here is a card any more.** The tendency, its bar and its two end
+ * labels are one thought, and typography groups them — a border around them
+ * only says a second time what the type already said. The lists below are
+ * ruled rows, which is what the Library beside them is, and it is the same
+ * list of the same pieces.
  */
 export function InsightsScreen() {
   const navigation = useNavigation<TabScreenNavigation<'Insights'>>();
   const insightsQuery = useInsights();
   const recentTakes = useRecentTakes(5);
+  // Shares React Query's cache with the Library tab, so on a phone that has
+  // opened the app this costs nothing. It is read for one reason: what to
+  // offer a musician with no practice history depends on whether they have
+  // anything to record yet.
+  const library = useLibrary();
+  const [addSheetVisible, setAddSheetVisible] = useState(false);
   const {
     data: insights,
     isPending,
@@ -47,6 +71,19 @@ export function InsightsScreen() {
 
   async function refresh() {
     await Promise.all([insightsQuery.refetch(), recentTakes.refetch()]);
+  }
+
+  function handleSelectOption(option: AddPieceOption) {
+    setAddSheetVisible(false);
+    // Let the sheet finish dismissing before the push, so the two animations
+    // don't overlap — the same wait Today and Library use.
+    setTimeout(() => {
+      if (option === 'scan') {
+        navigation.navigate('Scanner');
+        return;
+      }
+      navigation.navigate('AddPiece', { option });
+    }, motion.fast);
   }
 
   if (isPending) {
@@ -63,21 +100,42 @@ export function InsightsScreen() {
       <ScreenContainer onRefresh={refresh}>
         <PageHeader title="Insights" />
         <EmptyState
+          fill
           title="Couldn't load your practice"
           description={describeLoadError(error)}
+          actionLabel={insightsQuery.isFetching ? 'Trying…' : 'Try again'}
+          onActionPress={() => void refresh()}
+          actionDisabled={insightsQuery.isFetching}
         />
       </ScreenContainer>
     );
   }
 
   if (!insights) {
+    // Which way out this offers depends on the library — see `firstStep`.
+    const step = firstStep(library.data?.length ?? 0);
     return (
       <ScreenContainer onRefresh={refresh}>
         <PageHeader title="Insights" />
         <EmptyState
+          fill
           icon={ChartLine}
           title="No practice recorded yet"
-          description="Record yourself playing a piece and InTempo will show you where the tempo held and where it drifted."
+          description={step.description}
+          actionLabel={step.label}
+          onActionPress={() => {
+            if (step.destination === 'add') {
+              setAddSheetVisible(true);
+              return;
+            }
+            navigation.navigate('Library');
+          }}
+        />
+
+        <AddPieceSheet
+          visible={addSheetVisible}
+          onClose={() => setAddSheetVisible(false)}
+          onSelect={handleSelectOption}
         />
       </ScreenContainer>
     );
@@ -85,66 +143,48 @@ export function InsightsScreen() {
 
   const focus = insights.pieces[0] ?? null;
   const takes = recentTakes.data ?? [];
+  const tendency = formatTendency(insights.verdict);
 
   return (
     <ScreenContainer onRefresh={refresh}>
-      <PageHeader eyebrow={windowLabel(insights.windowDays)} title="Insights" />
+      <PageHeader
+        eyebrow={`Insights · ${windowLabel(insights.windowDays)}`}
+        title={tendency}
+      />
 
-      <Card emphasis>
-        <Text variant="sectionLabel" color="textSecondary">
-          Tempo tendency
+      <Text variant="body" color="textSecondary">
+        {formatTendencyDetail(insights.verdict, insights.sessions)}
+      </Text>
+
+      <DeviationBar
+        deviationPct={insights.meanDeviationPct}
+        tolerance={insights.tolerance}
+        accessibilityLabel={`${tendency} across your recent practice`}
+        style={styles.bar}
+      />
+
+      <View style={styles.legend}>
+        <Text variant="metadataSmall" color="textTertiary">
+          Behind the beat
         </Text>
-
-        <Text variant="pieceTitle" style={styles.tendency}>
-          {formatTendency(insights.verdict)}
+        <Text variant="metadataSmall" color="textTertiary">
+          Ahead of the beat
         </Text>
-
-        <Text variant="body" color="textSecondary" style={styles.detail}>
-          {formatTendencyDetail(insights.verdict, insights.sessions)}
-        </Text>
-
-        <DeviationBar
-          deviationPct={insights.meanDeviationPct}
-          tolerance={insights.tolerance}
-          accessibilityLabel={`${formatTendency(insights.verdict)} across your recent practice`}
-          style={styles.bar}
-        />
-
-        <View style={styles.legend}>
-          <Text variant="metadataSmall" color="textTertiary">
-            Behind the beat
-          </Text>
-          <Text variant="metadataSmall" color="textTertiary">
-            Ahead of the beat
-          </Text>
-        </View>
-      </Card>
-
-      <Card style={styles.stats}>
-        <Metric value={String(insights.sessions)} label="Sessions" />
-        <Metric value={String(insights.pieces.length)} label="Pieces" />
-        <Metric value={String(insights.windowDays)} label="Days" />
-      </Card>
+      </View>
 
       {focus ? (
         <FadeIn index={0}>
           <View style={styles.section}>
             <SectionHeader label="Next focus" />
-            <Card>
-              <Text variant="pieceTitle">{focus.title}</Text>
-              <Text variant="body" color="textSecondary" style={styles.detail}>
-                This piece shows your strongest timing pattern across{' '}
-                {sessionLabel(focus.sessions)}. Record another comfortable take
-                and compare it with the last one.
-              </Text>
-              <SecondaryButton
-                label="Practice this piece"
-                onPress={() =>
-                  navigation.navigate('Record', { pieceId: focus.pieceId })
-                }
-                style={styles.action}
-              />
-            </Card>
+            <TodayRow
+              title={focus.title}
+              detail={focusReason(focus.sessions)}
+              detailLines={3}
+              onPress={() =>
+                navigation.navigate('Record', { pieceId: focus.pieceId })
+              }
+              last
+            />
           </View>
         </FadeIn>
       ) : null}
@@ -153,33 +193,43 @@ export function InsightsScreen() {
         <FadeIn index={1}>
           <View style={styles.section}>
             <SectionHeader label="Recent sessions" />
-            <Card>
-              {takes.map((take, index) => (
-                <TodayRow
-                  key={take.id}
-                  title={take.pieceTitle}
-                  detail={joinMetadata([
-                    formatLastPracticedShort(take.recordedAt),
-                    `${take.targetBpm} BPM`,
-                    formatTendency(take.verdict),
-                  ])}
-                  onPress={() =>
-                    navigation.navigate('Verdict', { analysisId: take.id })
-                  }
-                  last={index === takes.length - 1}
-                />
-              ))}
-            </Card>
+            {takes.map((take, index) => (
+              <TodayRow
+                key={take.id}
+                title={take.pieceTitle}
+                detail={joinMetadata([
+                  formatLastPracticedShort(take.recordedAt),
+                  `${take.targetBpm} BPM`,
+                  formatTendency(take.verdict),
+                ])}
+                onPress={() =>
+                  navigation.navigate('Verdict', { analysisId: take.id })
+                }
+                last={index === takes.length - 1}
+              />
+            ))}
           </View>
         </FadeIn>
       ) : null}
 
-      <SectionHeader label="By piece" style={styles.section} />
-
-      <View style={styles.pieces}>
+      <View style={styles.section}>
+        {/* **Where the row of big numbers went.** "34 sessions" is already in
+            the sentence under the title and "30 days" is already in the
+            eyebrow, so two thirds of that block was the screen repeating
+            itself in a larger typeface. The third, a count of pieces, is one
+            scroll of this list — and a heading reading "4 pieces" beside
+            "Next focus" and "Recent sessions" names a quantity where its
+            neighbours name a section. */}
+        <SectionHeader label="By piece" />
         {insights.pieces.map((piece, index) => (
           <FadeIn key={piece.pieceId} index={index + 2}>
-            <PieceInsightRow insight={piece} />
+            <PieceInsightRow
+              insight={piece}
+              last={index === insights.pieces.length - 1}
+              onPress={() =>
+                navigation.navigate('PieceDetail', { pieceId: piece.pieceId })
+              }
+            />
           </FadeIn>
         ))}
       </View>
@@ -187,32 +237,7 @@ export function InsightsScreen() {
   );
 }
 
-function Metric({ value, label }: { value: string; label: string }) {
-  return (
-    <View style={styles.metric}>
-      <Text variant="pieceTitle">{value}</Text>
-      <Text variant="metadataSmall" color="textSecondary" style={styles.metricLabel}>
-        {label}
-      </Text>
-    </View>
-  );
-}
-
-function windowLabel(days: number): string {
-  return days === 1 ? 'Last day' : `Last ${days} days`;
-}
-
-function sessionLabel(sessions: number): string {
-  return sessions === 1 ? '1 session' : `${sessions} sessions`;
-}
-
 const styles = StyleSheet.create({
-  tendency: {
-    marginTop: spacing.sm,
-  },
-  detail: {
-    marginTop: spacing.sm,
-  },
   bar: {
     marginTop: spacing.xl,
   },
@@ -221,24 +246,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     marginTop: spacing.sm,
   },
-  stats: {
-    flexDirection: 'row',
-    marginTop: spacing.md,
-  },
-  metric: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  metricLabel: {
-    marginTop: spacing.xs,
-  },
   section: {
     marginTop: spacing['2xl'],
-  },
-  action: {
-    marginTop: spacing.lg,
-  },
-  pieces: {
-    gap: spacing.md,
   },
 });

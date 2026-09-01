@@ -10,6 +10,7 @@ import {
 import {
   Input,
   PrimaryButton,
+  RevealPasswordAction,
   ScreenContainer,
   Text,
 } from '../../components/primitives';
@@ -20,7 +21,7 @@ import {
   signIn,
   signUp,
 } from '../../data/auth/session';
-import { spacing } from '../../design';
+import { MIN_TOUCH_TARGET, spacing } from '../../design';
 import {
   describeAuthError,
   needsPassword,
@@ -207,8 +208,8 @@ export function AuthScreen() {
             }}
             accessibilityRole="button"
             accessibilityLabel="Back to sign in"
-            hitSlop={spacing.md}
             style={({ pressed }) => [
+              styles.target,
               styles.switch,
               pressed && styles.switchPressed,
             ]}
@@ -268,21 +269,10 @@ export function AuthScreen() {
               onSubmitEditing={() => void submit()}
               editable={!busy}
               action={
-                <Pressable
+                <RevealPasswordAction
+                  revealed={revealed}
                   onPress={() => setRevealed((shown) => !shown)}
-                  accessibilityRole="button"
-                  accessibilityLabel={
-                    revealed ? 'Hide password' : 'Show password'
-                  }
-                  hitSlop={spacing.md}
-                  style={({ pressed }) =>
-                    pressed ? styles.switchPressed : undefined
-                  }
-                >
-                  <Text variant="sectionAction" color="textPrimary">
-                    {revealed ? 'Hide' : 'Show'}
-                  </Text>
-                </Pressable>
+                />
               }
               style={styles.field}
             />
@@ -294,8 +284,10 @@ export function AuthScreen() {
                 onPress={() => go('magicLink')}
                 accessibilityRole="button"
                 accessibilityLabel="Email me a sign-in link instead"
-                hitSlop={spacing.sm}
-                style={({ pressed }) => (pressed ? styles.switchPressed : undefined)}
+                style={({ pressed }) => [
+                  styles.target,
+                  pressed ? styles.switchPressed : undefined,
+                ]}
               >
                 <Text variant="sectionAction" color="textPrimary">
                   Email me a link
@@ -306,8 +298,10 @@ export function AuthScreen() {
                 onPress={() => go('reset')}
                 accessibilityRole="button"
                 accessibilityLabel="Forgot your password"
-                hitSlop={spacing.sm}
-                style={({ pressed }) => (pressed ? styles.switchPressed : undefined)}
+                style={({ pressed }) => [
+                  styles.target,
+                  pressed ? styles.switchPressed : undefined,
+                ]}
               >
                 <Text variant="sectionAction" color="textPrimary">
                   Forgot your password?
@@ -326,8 +320,8 @@ export function AuthScreen() {
               onPress={() => go('signIn')}
               accessibilityRole="button"
               accessibilityLabel="Use a password instead"
-              hitSlop={spacing.sm}
               style={({ pressed }) => [
+                styles.target,
                 styles.forgot,
                 pressed && styles.switchPressed,
               ]}
@@ -362,8 +356,8 @@ export function AuthScreen() {
           accessibilityLabel={
             mode === 'signUp' ? 'Sign in instead' : 'Create an account'
           }
-          hitSlop={spacing.md}
           style={({ pressed }) => [
+            styles.target,
             styles.switch,
             pressed && styles.switchPressed,
           ]}
@@ -383,6 +377,19 @@ export function AuthScreen() {
 }
 
 const styles = StyleSheet.create({
+  /**
+   * Padded to a real touch target, not `hitSlop`-ed to one.
+   *
+   * **`hitSlop` does nothing on the web build**, which is where these controls
+   * are reached today. Measured in Chromium: a click 8pt above a control with
+   * a 12pt slop did not activate it, while a click on its visible 18pt box
+   * did. Every link on the sign-in screen was one line of type — under half
+   * the platform minimum — with a hit area that existed only on device.
+   */
+  target: {
+    minHeight: MIN_TOUCH_TARGET,
+    justifyContent: 'center',
+  },
   flex: {
     flex: 1,
   },

@@ -150,16 +150,23 @@ Conventions the redesign established — **follow these, don't re-litigate them:
 7. **Sheet music is the visual identity.** Use `sheet/SheetCrop` (deterministic
    SVG engraving) — never abstract placeholder rectangles. Swap for real page
    crops when OCR uploads land.
-7b. **`engrave.ts` draws four note values and no rests**, and
-   `staveScoreFor` drops everything else rather than rounding it — a sixteenth
-   drawn as an eighth is a rhythmically wrong line of music presented as a
-   right one. Measured by `tools/engraver-coverage.py`: across every fixture in
-   the repository only **5%** of notes have no glyph and the worst page still
-   draws 67%, which is why this looked adequate. The first real orchestral part
-   photographed — variations, runs of sixteenths, dotted rhythms, multi-bar
-   rests — scored **0%** and rendered as a title and a photograph. Read the
-   worst page, never the average, and note that nothing in the corpus resembles
-   real repertoire.
+7b. **`staveScoreFor` drops what it cannot draw rather than rounding it** — a
+   sixteenth drawn as an eighth is a rhythmically wrong line of music presented
+   as a right one — and the screen says how many it left out. As of 2026-09-01
+   the engraver draws **42 of the schema's 46 durations**: whole through
+   sixty-fourth and the breve, single and double dots, rests at every one of
+   those values, and the triplet/quintuplet/septuplet forms. What it refuses is
+   the 128th family, named in `DELIBERATELY_UNDRAWN` — five beams at this stave
+   size is a smudge, and a counted omission beats an illegible mark presented as
+   a reading.
+   **Measure against the schema, never against the corpus.**
+   `tools/engraver-coverage.py` reported **100% of every fixture** while four
+   values had no glyph at all, because not one page in the repository contains a
+   note shorter than a sixteenth — and it once reported 5% missing and a worst
+   page of 67% while the first real orchestral part photographed scored **0%**
+   and rendered as a title and a photograph. The corpus is pages somebody chose
+   to check something with. The tool prints both tables now;
+   `notation/durations.test.ts` holds the schema side.
 8. **No developer or demo UI in the product.** The `PreviewBadge` was removed
    for this reason; don't add environment banners to shipped screens.
 9. **Motion is Framer Motion** (`motion` package, import from `motion/react`),
@@ -503,12 +510,40 @@ actually made here.
   setting the scanner does not have and a file importer that refuses JPEGs. Its
   test asserted that *some* advice was given, which is how it survived. When
   writing an error, name a route that exists.
-- **Known hole, unfixed: orphaned uploads.** An upload that never becomes a
-  score row is permanent and unreachable — the only storage deletion is reached
-  from `POST /:id/accept` keyed off an existing row, so backing out of the
-  naming screen, a failed save, or a retried transcribe each leave a photograph
-  in the bucket forever. This contradicts the rule above it; it needs a
-  lifecycle decision, not a patch.
+- **Every object in these buckets has a row somewhere.** A `scores` row because
+  it became a piece, an `analyses` row because it became a take, a
+  `users.avatar_url` because it became a face, or a `pending_uploads` row
+  because it has not become anything yet. An object with no row is a bug rather
+  than a Tuesday. This replaced the standing "orphaned uploads" hole, where an
+  upload that never became a score row was unreachable forever — backing out of
+  the naming screen, a failed save or a retried transcribe each stranded a
+  musician's photograph with no request that could remove it, including theirs.
+  Two orderings hold it: **claim after the row exists** (clearing first strands
+  every save that then fails) and **sweep the object before the row** (a row
+  deleted first leaks its object silently, which is the same bug one level
+  down). `record` never raises — failing the upload because the bookkeeping
+  failed costs the musician their page, which is the thing the bookkeeping
+  exists to protect. **Migration 014 is written and not yet applied**, so on a
+  deployment that has not run it the sweeper finds nothing and the hole is
+  still open.
+
+**Four screens a fixtures build can never reach**, because they sit behind
+auth or account state rather than behind a route: `AuthScreen` (`signedOut`),
+`SetPasswordScreen` (`recovering`), `AccountStartupScreen` (`loading`) and
+`OnboardingScreen` (`onboarded === false`). Every sweep in this repository
+misses all four. To look at one, flip the single value that gates it in a
+**throwaway build** — `useAuthStatus`'s fixture default, or `onboarded` on the
+fixture musician — and restore it with a `diff -q` check, the same discipline
+`.env` gets. `SignedInApp` takes a third: a `?startup=loading|error` query
+parameter forced into its two branches renders both `AccountStartupScreen`
+states. A state with no fixture is a state nobody has looked at, and that has
+now cost this project **five** times: a guessed clef captioned as read, an
+84×154 box of padding where a cover should be, two post-scan screens never
+rendered, onboarding asking a returning musician for a photograph their
+account already had, and — the first time anyone looked at it, 2026-09-01 —
+`AccountStartupScreen` holding a centred spinner between two left-aligned
+sentences, with the one button the screen exists to offer sitting at the
+vertical middle of the phone.
 
 **Honest DoD status:** no batch is tagged `batch-N-done`. Every remaining gate
 (live magic-link auth, upload→OCR→save, mic→analysis) is blocked on Supabase

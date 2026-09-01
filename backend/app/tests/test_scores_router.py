@@ -930,6 +930,52 @@ def test_accepting_twice_is_not_an_error(
     sb.storage.from_.return_value.remove.assert_not_called()
 
 
+def test_a_discarded_photograph_is_not_signed(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """**The large empty box on an accepted piece.**
+
+    Signing does not check that the object exists. A row whose page was deleted
+    by `POST /:id/accept` kept its `source_image_url`, so it went on being handed
+    a perfectly well-formed URL that 404s — and the app cannot tell that from a
+    slow download. What a musician saw on a piece they had accepted was a large
+    empty box where the photograph used to be and an "Original" tab that showed
+    nothing.
+    """
+    user_id, score_id = uuid4(), uuid4()
+    row = _row_for(
+        score_id,
+        user_id,
+        transcription_accepted_at="2026-08-24T00:00:00+00:00",
+        page_image_discarded_at="2026-08-24T00:00:00+00:00",
+    )
+    sb = _install_supabase(monkeypatch, returning_row=row)
+    _install_storage(sb, signed=[])
+
+    res = client.get(f"/v1/scores/{score_id}", headers={"Authorization": f"Bearer {make_token(sub=user_id)}"})
+
+    assert res.status_code == 200, res.text
+    assert res.json()["image_url"] is None
+    # Not merely null in the response — never asked for. Signing a key whose
+    # object is gone is a round trip to be told nothing.
+    sb.storage.from_.return_value.create_signed_urls.assert_not_called()
+
+
+def test_a_photograph_that_is_still_there_is_signed(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """The other half, so the guard above cannot pass by signing nothing ever."""
+    user_id, score_id = uuid4(), uuid4()
+    row = _row_for(score_id, user_id)
+    sb = _install_supabase(monkeypatch, returning_row=row)
+    _install_storage(sb, signed=[])
+
+    res = client.get(f"/v1/scores/{score_id}", headers={"Authorization": f"Bearer {make_token(sub=user_id)}"})
+
+    assert res.status_code == 200, res.text
+    sb.storage.from_.return_value.create_signed_urls.assert_called_once()
+
+
 def test_accepting_someone_elses_score_is_404(
     monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
 ) -> None:

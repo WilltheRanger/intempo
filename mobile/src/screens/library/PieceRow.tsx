@@ -49,7 +49,11 @@ export function PieceRow({ piece, onPress, last = false }: PieceRowProps) {
       activeScale={0.99}
     >
       <View style={[styles.row, !last && styles.ruled]}>
-        <ScoreThumbnail source={piece.thumbnail} style={styles.thumbnail} />
+        <ScoreThumbnail
+          source={piece.thumbnail}
+          composer={piece.composer}
+          style={styles.thumbnail}
+        />
 
         <View style={styles.details}>
           <Text variant="pieceTitle" numberOfLines={2}>
