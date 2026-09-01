@@ -12,7 +12,9 @@ You are reading sheet music for a string instrument: a single-staff part, one no
       "measure_number": 1,
       "notes": [
         {"pitch": "D3" | "rest", "duration": one of the DURATION NAMES listed below},
-        {"pitch": "F#3", "duration": "eighth", "tied_to_next": true}
+        {"pitch": "F#3", "duration": "eighth", "tied_to_next": true},
+        {"pitch": "A3", "duration": "quarter", "fermata": true},
+        {"pitch": "B3", "duration": "quarter", "grace_notes": 2}
       ],
       "slurs": [
         {"start_note_index": 0, "end_note_index": 3}
@@ -32,8 +34,11 @@ You are reading sheet music for a string instrument: a single-staff part, one no
 Write it as compact JSON on one line — no indentation, no line breaks between fields.
 
 A note has TWO required keys, "pitch" and "duration". Add "tied_to_next": true
-only for a note actually tied into the next one; omit it otherwise. Do not emit
-any other key on a note.
+only for a note actually tied into the next one. Add "fermata": true only when
+the fermata symbol is printed over that note. Grace notes do not get entries of
+their own: add "grace_notes": N to the main note they decorate, where N is the
+number of grace-note attacks before it. Omit all three optional keys when they
+do not apply. Do not emit any other key on a note.
 
 Both of those instructions exist for the same reason, and it is not tidiness.
 Every note you write costs output, and a page of orchestral parts has well over
@@ -77,8 +82,9 @@ Rules:
 - A MULTI-MEASURE REST is a thick horizontal bar with a NUMBER printed above it, and the number is how many bars of silence it stands for. Emit that many measures, each holding a single rest for the full bar. Emitting one measure instead leaves the piece short by every bar the number stood for, and nothing downstream can notice — one whole rest in 4/4 adds up perfectly, so the beat check passes and the musician is told their recording does not match the page. This is ordinary in orchestral parts; do not skip it.
 - A BAR REPEAT SIGN — the slanted stroke with a dot either side (%), standing alone in a measure — means "play the previous measure again". Write the previous measure's notes out again. Two of them stacked means the previous *two* measures.
 - NAVIGATION MARKS you cannot represent: D.C., D.S., al Fine, al Coda, To Coda, the segno and coda symbols. The score format holds ordinary repeats and first/second endings and nothing else. Read the page straight through, top to bottom, once, and say in notes_to_human exactly which mark you saw and where. Silently rearranging the music into playing order, or silently ignoring the mark, both produce a page that cannot be checked against a real performance.
-- A FERMATA (the dot under an arc) means the note is held for as long as the player likes. There is no duration for that. Keep the note's printed value and name the measure in notes_to_human, so the timing report can be read with it in mind.
-- DOUBLE STOPS AND CHORDS: two or more noteheads stacked on one stem sound together, so they are ONE entry, not several. Emit the lowest note only. Emitting both makes the measure overrun, and the program then reports a correctly-read bar as having too many beats and asks a musician to fix something that is right. The MusicXML importer drops chord members for exactly this reason, and the two readers have to agree. Same for a grace note, which has no duration of its own: leave it out and give its beat to the note it decorates.
+- A FERMATA (the dot under an arc) means the note is held for as long as the player likes. Keep the note's printed duration and add "fermata": true to that note. Do not lengthen its written duration. This flag makes the timing report refuse to call the next arrival late for obeying the hold.
+- DOUBLE STOPS AND CHORDS: two or more noteheads stacked on one stem sound together, so they are ONE entry, not several. Emit the lowest note only. Emitting both makes the measure overrun, and the program then reports a correctly-read bar as having too many beats and asks a musician to fix something that is right. The MusicXML importer drops chord members for exactly this reason, and the two readers have to agree.
+- GRACE NOTES have no duration of their own but they are audible attacks. Do not emit them as notes in the measure. Instead, count the grace notes immediately before a main note and add "grace_notes": N to that main note. A grace chord counts as one attack. Do not attach grace_notes to a rest or cue. This keeps the bar length correct while preventing played ornaments from being mistaken for extra notes.
 - Slurs: indicate by note index within the measure, 0-indexed. These matter more than they look: the analysis excludes slurred notes from the timing verdict, because a note taken under a bow stroke is not attacked and has no onset to be early or late. Getting them wrong marks real rushing as unmeasurable, or measures a note that was never articulated.
 - Do NOT report articulation (staccato, tenuto, accent) or dynamics. Nothing reads them, and asking for them on every note costs output that a long page needs for its notes.
 - Output ONLY the JSON object, no preamble or markdown fences.
