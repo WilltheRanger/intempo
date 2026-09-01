@@ -211,6 +211,65 @@ describe('importing pages', () => {
   });
 });
 
+describe('editing pages after they were uploaded', () => {
+  const KEYS = [
+    'user/page-1.jpg',
+    'user/page-2.jpg',
+    'user/page-3.jpg',
+  ];
+
+  function uploadedScan(): void {
+    scanOf(3);
+    captureSession.setUploadedImageKeys(KEYS);
+  }
+
+  it('invalidates the old order when pages are reordered', () => {
+    uploadedScan();
+    captureSession.move(captureSession.current()[0].id, 1);
+
+    expect(captureSession.uploadedImageKeys()).toEqual([]);
+    expect(sources()).toEqual([PAGE(2), PAGE(1), PAGE(3)]);
+  });
+
+  it('invalidates the old photograph when a page is retaken', () => {
+    uploadedScan();
+    const second = captureSession.current()[1];
+
+    captureSession.beginRetake(second.id);
+    captureSession.capture('file:///retaken.jpg');
+
+    expect(captureSession.uploadedImageKeys()).toEqual([]);
+    expect(sources()[1]).toBe('file:///retaken.jpg');
+  });
+
+  it('invalidates the uploaded set when a page is removed', () => {
+    uploadedScan();
+    captureSession.remove(captureSession.current()[1].id);
+
+    expect(captureSession.uploadedImageKeys()).toEqual([]);
+    expect(sources()).toEqual([PAGE(1), PAGE(3)]);
+  });
+
+  it('keeps the upload while a retake is only considered and cancelled', () => {
+    uploadedScan();
+    const second = captureSession.current()[1];
+
+    captureSession.beginRetake(second.id);
+    captureSession.cancelRetake();
+
+    expect(captureSession.uploadedImageKeys()).toEqual(KEYS);
+    expect(sources()).toEqual([PAGE(1), PAGE(2), PAGE(3)]);
+  });
+
+  it('keeps the upload after a no-op page command', () => {
+    uploadedScan();
+    captureSession.move(captureSession.current()[0].id, -1);
+    captureSession.remove('not-a-page');
+
+    expect(captureSession.uploadedImageKeys()).toEqual(KEYS);
+  });
+});
+
 describe('attaching pages to an existing piece', () => {
   it('keeps the target through an imported scan', () => {
     captureSession.importAll([PAGE(1), PAGE(2)], {
