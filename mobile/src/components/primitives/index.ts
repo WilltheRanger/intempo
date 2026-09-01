@@ -23,6 +23,10 @@ export {
 export { EmptyState, type EmptyStateProps } from './EmptyState';
 export { LoadingState, type LoadingStateProps } from './LoadingState';
 export {
+  RevealPasswordAction,
+  type RevealPasswordActionProps,
+} from './RevealPasswordAction';
+export {
   Skeleton,
   SkeletonText,
   type SkeletonProps,

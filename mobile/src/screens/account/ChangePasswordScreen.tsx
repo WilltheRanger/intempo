@@ -13,6 +13,7 @@ import {
   Input,
   PageHeader,
   PrimaryButton,
+  RevealPasswordAction,
   ScreenContainer,
   SecondaryButton,
   Text,
@@ -136,7 +137,7 @@ export function ChangePasswordScreen() {
             textContentType="newPassword"
             editable={!busy}
             action={
-              <RevealAction
+              <RevealPasswordAction
                 revealed={revealed}
                 onPress={() => setRevealed((shown) => !shown)}
               />
@@ -177,31 +178,6 @@ export function ChangePasswordScreen() {
         </View>
       </ScreenContainer>
     </KeyboardAvoidingView>
-  );
-}
-
-/** Shared by both new-password fields, so one tap reveals the pair. */
-function RevealAction({
-  revealed,
-  onPress,
-}: {
-  revealed: boolean;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable
-      onPress={onPress}
-      accessibilityRole="button"
-      accessibilityLabel={revealed ? 'Hide password' : 'Show password'}
-      style={({ pressed }) => [
-        styles.target,
-        pressed ? styles.pressed : undefined,
-      ]}
-    >
-      <Text variant="sectionAction" color="textPrimary">
-        {revealed ? 'Hide' : 'Show'}
-      </Text>
-    </Pressable>
   );
 }
 

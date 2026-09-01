@@ -6,6 +6,56 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-01 — The password screen that needed the Show control most was the one without it
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Second use of the recipe
+added to `CLAUDE.md` in the entry below: forcing a gated screen into a
+throwaway build to look at it.
+
+**Files:** `mobile/src/components/primitives/RevealPasswordAction.tsx` (new),
+`primitives/index.ts`, `screens/auth/SetPasswordScreen.tsx`,
+`screens/auth/AuthScreen.tsx`, `screens/account/ChangePasswordScreen.tsx`,
+`mobile/src/lib/onboarding.test.ts`.
+
+### `SetPasswordScreen`, rendered for the first time
+
+Reached by following a password-reset link — a recovery path, and one of the
+four screens no sweep can see. It holds up well: no overflow and no undersized
+control at 320 or 390, and its validation says the right things ("Those two
+passwords don't match", "Passwords need at least 6 characters").
+
+One real gap. **Three screens take a password and only two offered a Show
+control** — and the one without it is where someone types a *brand-new*
+password twice on a phone keyboard with no way to check either. The second
+field exists precisely because the first cannot be read.
+
+`RevealPasswordAction` is now one component instead of two near-copies, used by
+all three. Where a screen has two new-password fields it sits on the first and
+governs both — one tap reveals the pair, since hiding one while showing the
+other would be a strange thing to offer.
+
+Measured on each: set-password reveals both new fields together;
+change-password reveals its two new fields and **leaves the current one
+hidden**, which is right; sign-in reveals the password and leaves the email
+field alone. All three 44pt.
+
+**Not a bug, though it looked like one:** Cancel appeared dead on that screen.
+It calls `signOut()`, and the forced build has no session to sign out of. The
+probe's artefact, not the product's.
+
+### And a slip of my own, from the entry below
+
+`npx tsc --noEmit` was not run before that commit — only the tests — and the
+onboarding tests it added omit a required `avatarKey`, so **the last commit
+does not typecheck.** Fixed here. Tests passing is not the check; the two are
+different questions and I answered one of them.
+
+**Tests:** 944. 23-route sweep and the 320pt probe both clean.
+
+**Rollback:** revert the commit.
+
+---
+
 ## 2026-09-01 — Onboarding asked twice for the answer that costs something
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`.

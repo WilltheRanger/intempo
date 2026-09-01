@@ -10,6 +10,7 @@ import {
 import {
   Input,
   PrimaryButton,
+  RevealPasswordAction,
   ScreenContainer,
   Text,
 } from '../../components/primitives';
@@ -268,21 +269,10 @@ export function AuthScreen() {
               onSubmitEditing={() => void submit()}
               editable={!busy}
               action={
-                <Pressable
+                <RevealPasswordAction
+                  revealed={revealed}
                   onPress={() => setRevealed((shown) => !shown)}
-                  accessibilityRole="button"
-                  accessibilityLabel={
-                    revealed ? 'Hide password' : 'Show password'
-                  }
-                  style={({ pressed }) => [
-                    styles.target,
-                    pressed ? styles.switchPressed : undefined,
-                  ]}
-                >
-                  <Text variant="sectionAction" color="textPrimary">
-                    {revealed ? 'Hide' : 'Show'}
-                  </Text>
-                </Pressable>
+                />
               }
               style={styles.field}
             />
