@@ -307,6 +307,14 @@ export function ProfileScreen() {
             onPress={() => navigation.navigate('Help')}
           />
           <LinkRow
+            label="Privacy"
+            onPress={() => navigation.navigate('Legal', { document: 'privacy' })}
+          />
+          <LinkRow
+            label="Terms"
+            onPress={() => navigation.navigate('Legal', { document: 'terms' })}
+          />
+          <LinkRow
             label="Acknowledgements"
             onPress={() => navigation.navigate('Acknowledgements')}
           />

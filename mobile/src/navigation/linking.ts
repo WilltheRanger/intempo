@@ -77,6 +77,10 @@ export const screenConfig: LinkingOptions<RootStackParamList>['config'] = {
       ChangePassword: 'account/password',
       DeleteAccount: 'account/delete',
       ExportData: 'account/export',
+      // **Namespaced, not a bare `:document`.** A single-segment parameter
+      // matches *any* one-segment path, so `/help` and `/library` would resolve
+      // to the legal screen with document="help" depending on match order.
+      Legal: 'legal/:document',
       Help: 'help',
       Acknowledgements: 'acknowledgements',
   },

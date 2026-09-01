@@ -6,6 +6,83 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-31 — A privacy policy and terms, written from the code
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Third iteration of the
+consumer-grade loop.
+
+**Files:** `mobile/src/lib/legal.ts` (new) + test (new),
+`mobile/src/screens/legal/LegalScreen.tsx` (new),
+`mobile/src/navigation/{types,RootNavigator,linking}`,
+`mobile/src/screens/profile/ProfileScreen.tsx`.
+
+### The gap
+
+Both stores refuse a submission without a privacy policy, and this app holds
+more than most: an email address, a name, a photograph of the musician,
+photographs of the music they are working from, and audio recordings of them
+playing. It also sends pages to two companies that are not us. None of that was
+written down anywhere a musician could read it.
+
+### Written from the code, not from a template
+
+Every retention sentence names behaviour that actually exists. A page
+photograph goes when the reading is accepted — nothing else deletes it, not a
+confidence score and not a timer, because the photograph is what the reading is
+checked against. Deleting a piece deletes its photographs. The processor list is
+the four services `backend/app/` actually talks to: Supabase, Modal, Anthropic,
+and Google, which is off. The training paragraph describes
+`013_training_corrections.sql`, which is consent-gated and withdrawable.
+
+`legal.test.ts` holds it there. It fails if any of the four processors stops
+being named — a policy that omits a processor is the one error here that
+matters — if the four questions a policy exists to answer lose their headings,
+or if the terms stop saying the reading can be wrong. The app's whole output is
+an automated reading and a verdict measured against it, and the rest of this
+codebase is careful never to claim accuracy it has not measured; the terms had
+to match that or they would promise something nothing else does.
+
+The copyright paragraph is specific to this app rather than boilerplate: a
+musician photographs printed music, and most printed music is somebody's
+copyright.
+
+### The publisher's details are null, not plausible
+
+`OWNER.entity`, `OWNER.contact` and `OWNER.jurisdiction` are `null`. A policy
+naming a company nobody registered, at an address nobody reads, in a
+jurisdiction nobody chose, looks exactly like a finished one and would ship. The
+screen renders those lines only when they exist, so an unfilled field is silence
+rather than a lie, and `missingOwnerDetails()` is the checklist for whoever
+prepares the submission. Same stance the pipeline takes on a clef it has not
+read.
+
+### Three-foot test — the document screen
+
+Title first, section labels marching down the page second, body third. **No
+cards**: a policy is continuous prose and boxing each section breaks the one
+thing a reader needs, which is to go top to bottom without losing the thread
+(§3 law 3). The hierarchy is typographic, which is what a type scale is for
+(law 8). Verified on a screenshot of the running build.
+
+### One bug caught before it shipped
+
+The route was first given the path `:document`, which is a **single-segment
+wildcard** — it matches any one-segment URL, so `/help` and `/library` would
+have resolved to the legal screen with `document="help"` depending on match
+order. Namespaced to `legal/:document`, and `/help` and `/library` were then
+opened cold to confirm they still land where they should.
+
+### Tests
+
+`mobile` 46 files / 527 passed, `tsc` clean. Both documents opened cold at
+`/legal/privacy` and `/legal/terms` in the running build.
+
+### Not done
+
+The same words have to be hosted at a public URL — both stores ask for a link,
+not only an in-app screen — and the three `OWNER` fields have to be filled in
+before either is submitted.
+
 ## 2026-08-31 — The web build had one URL, and Back left the app
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Second iteration of the
