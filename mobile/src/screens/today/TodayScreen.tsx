@@ -1,20 +1,21 @@
 import { useNavigation } from '@react-navigation/native';
 import { ChevronRight, Plus } from 'lucide-react-native';
 import { useState } from 'react';
-import { Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
 import { FadeIn } from '../../components/motion';
 import { AddPieceSheet } from '../../components/pieces/AddPieceSheet';
 import {
   Avatar,
-  Card,
   EmptyState,
+  MetadataRow,
   PageHeader,
+  PrimaryButton,
   ScreenContainer,
-  SecondaryButton,
   SectionHeader,
   Text,
 } from '../../components/primitives';
+import { ScoreThumbnail } from '../../components/pieces/ScoreThumbnail';
 import { ContinueSkeleton } from '../../components/skeletons';
 import { useInsights } from '../../data/hooks/useInsights';
 import { useRecentTakes } from '../../data/hooks/useLatestTake';
@@ -34,25 +35,28 @@ import {
   radii,
   spacing,
 } from '../../design';
-import {
-  formatLastPracticedShort,
-  joinMetadata,
-} from '../../lib/format';
 import { getGreeting } from '../../lib/greeting';
 import {
   notationSetupLesson,
   practiceLessonFor,
   type PracticeLesson,
 } from '../../lib/practiceLesson';
-import { formatTempo, formatTendency } from '../../lib/tempo';
+import { formatTempo } from '../../lib/tempo';
 import { suggestionsFor } from '../../lib/today';
 import type { AddPieceOption, TabScreenNavigation } from '../../navigation/types';
 import { WarmupPanel } from './WarmupPanel';
-import { PracticeCard } from './PracticeCard';
 import { TodayRow } from './TodayRow';
 
 const AVATAR_SIZE = 52;
-const WIDE_HOME_BREAKPOINT = 900;
+
+/**
+ * The sheet crop under the title.
+ *
+ * Wide and shallow: it is a *crop* of a page, not a page, and giving it more
+ * height would put the second focal point on the screen — the piece's name is
+ * the first thing to read here, and a tall photograph would win.
+ */
+const BANNER_HEIGHT = 96;
 
 /**
  * Tappable box around the mark.
@@ -78,12 +82,13 @@ const AVATAR_INSET = (AVATAR_TARGET - AVATAR_SIZE) / 2;
  */
 export function TodayScreen() {
   const navigation = useNavigation<TabScreenNavigation<'Today'>>();
-  const { width: viewportWidth } = useWindowDimensions();
-  const isWide = viewportWidth >= WIDE_HOME_BREAKPOINT;
   const currentPiece = useCurrentPiece();
   const library = useLibrary();
   const insights = useInsights();
-  const recentTakes = useRecentTakes(3);
+  // One: the newest take supplies the headline under the title and the
+  // verdict the lesson is chosen from. The list of recent takes moved to
+  // Insights, which is where a list of recent takes belongs.
+  const recentTakes = useRecentTakes(1);
   const me = useMe();
   const [addSheetVisible, setAddSheetVisible] = useState(false);
 
@@ -154,11 +159,19 @@ export function TodayScreen() {
     </Pressable>
   ) : null;
 
+  /**
+   * The greeting, for the screens that have no piece to name.
+   *
+   * On the main screen it is an eyebrow instead — see `greetingRow`. A "Good
+   * morning" set in 36pt serif above a piece title set in 36pt serif is two
+   * headings of equal weight and no first thing to look at (§3 law 4), and of
+   * the two the greeting is the one that says nothing.
+   */
   const header = <PageHeader title={getGreeting()} action={avatar} />;
 
   if (currentPiece.isPending) {
     return (
-      <ScreenContainer contentStyle={styles.page}>
+      <ScreenContainer>
         {header}
         <ContinueSkeleton />
       </ScreenContainer>
@@ -167,7 +180,7 @@ export function TodayScreen() {
 
   if (currentPiece.isError) {
     return (
-      <ScreenContainer onRefresh={refresh} contentStyle={styles.page}>
+      <ScreenContainer onRefresh={refresh}>
         {header}
         <EmptyState
           title="Couldn't load your pieces"
@@ -185,7 +198,7 @@ export function TodayScreen() {
   // duplicated, so all three routes in are offered from the first screen.
   if (!piece) {
     return (
-      <ScreenContainer onRefresh={refresh} contentStyle={styles.page}>
+      <ScreenContainer onRefresh={refresh}>
         {header}
         <EmptyState
           title="Nothing to practice yet"
@@ -212,176 +225,133 @@ export function TodayScreen() {
     ? `Across ${summary.sessions === 1 ? '1 session' : `${summary.sessions} sessions`} in the last ${summary.windowDays} days`
     : '';
 
+  const lesson = !hasNotation
+    ? notationSetupLesson(piece.title, readingNotation)
+    : practiceLessonFor({
+        verdict: hasCurrentTake && take ? take.verdict : null,
+        pieceTitle: piece.title,
+        workingBpm,
+        beatUnit: piece.score?.tempo_beat_unit,
+      });
+
   return (
-    <ScreenContainer onRefresh={refresh} contentStyle={styles.page}>
-      {header}
-
-      <View style={[styles.dashboard, isWide && styles.dashboardWide]}>
-        <View style={styles.primaryColumn}>
-          <SectionHeader label="Continue practicing" />
-          <PracticeCard
-            piece={piece}
-            workingBpm={workingBpm}
-            // Only when it is genuinely this piece's take. Against the API it
-            // always is; a fixture or a deleted score could disagree, and a
-            // verdict about a different piece on this card would be a lie.
-            lastTakeHeadline={hasCurrentTake && take ? take.headline : null}
-            onContinue={() => openPractice(piece)}
-          />
-
-          <AddPieceAction onPress={() => setAddSheetVisible(true)} />
-
-          <FadeIn index={0}>
-            <View style={styles.section}>
-              <SectionHeader label="Practice lesson" />
-              <LessonCard
-                lesson={
-                  !hasNotation
-                    ? notationSetupLesson(piece.title, readingNotation)
-                    : practiceLessonFor({
-                        verdict: hasCurrentTake && take ? take.verdict : null,
-                        pieceTitle: piece.title,
-                        workingBpm,
-                        beatUnit: piece.score?.tempo_beat_unit,
-                      })
-                }
-                onTry={() => openPractice(piece)}
-              />
-            </View>
-          </FadeIn>
-
-          <FadeIn index={1}>
-            <View style={styles.section}>
-              <SectionHeader label="Warmup" />
-              <Card>
-                <WarmupPanel
-                  instrument={instrument}
-                  onStart={() => navigation.navigate('Warmup')}
-                />
-              </Card>
-            </View>
-          </FadeIn>
-
-          {takes.length > 0 ? (
-            <FadeIn index={2}>
-              <View style={styles.section}>
-                <SectionHeader label="Recent practice" />
-                <Card>
-                  {takes.map((recentTake, index) => (
-                    <TodayRow
-                      key={recentTake.id}
-                      title={recentTake.pieceTitle}
-                      detail={joinMetadata([
-                        formatLastPracticedShort(recentTake.recordedAt),
-                        formatTempo(recentTake.targetBpm, recentTake.tempoBeatUnit),
-                        formatTendency(recentTake.verdict),
-                      ])}
-                      onPress={() =>
-                        navigation.navigate('Verdict', {
-                          analysisId: recentTake.id,
-                        })
-                      }
-                      last={index === takes.length - 1}
-                    />
-                  ))}
-                </Card>
-              </View>
-            </FadeIn>
-          ) : null}
-        </View>
-
-        <View
-          style={[
-            styles.secondaryColumn,
-            isWide ? styles.secondaryColumnWide : styles.secondaryColumnNarrow,
-          ]}
-        >
-          <FadeIn index={3}>
-            <View>
-              <SectionHeader label="Practice focus" />
-              <Card>
-                <Text variant="pieceTitle">
-                  {readingNotation
-                    ? 'Reading your sheet music'
-                    : !hasNotation
-                      ? 'Add the music first'
-                    : hasCurrentTake
-                      ? 'Make the next take comparable'
-                      : 'Set your first benchmark'}
-                </Text>
-                <Text
-                  variant="body"
-                  color="textSecondary"
-                  style={styles.focusText}
-                >
-                  {readingNotation
-                    ? 'InTempo is turning the pages into notation. Practice recording will unlock when that reading finishes.'
-                    : !hasNotation
-                      ? `Attach the sheet music for ${piece.title} so InTempo can follow notes, rests, and re-entries before recording.`
-                    : hasCurrentTake
-                      ? `Stay at ${formatTempo(workingBpm, piece.score?.tempo_beat_unit)} and record one more honest run. Comparing two takes shows whether the change held.`
-                      : `Record one honest run of ${piece.title}. InTempo will map where your tempo holds and where it drifts.`}
-                </Text>
-                <SecondaryButton
-                  label={
-                    readingNotation
-                      ? 'View reading progress'
-                      : !hasNotation
-                        ? 'Add sheet music'
-                      : hasCurrentTake
-                        ? 'Record another take'
-                        : 'Record first take'
-                  }
-                  onPress={() => openPractice(piece)}
-                  style={styles.focusAction}
-                />
-              </Card>
-            </View>
-          </FadeIn>
-
-          {attention || neglected ? (
-            <FadeIn index={4}>
-              <View style={styles.section}>
-                <SectionHeader label="Repertoire queue" />
-                {attention ? (
-                  <TodayRow
-                    title={attention.title}
-                    detail={attention.detail}
-                    onPress={() =>
-                      navigation.navigate('PieceDetail', { pieceId: attention.pieceId })
-                    }
-                    last={!neglected}
-                  />
-                ) : null}
-                {neglected ? (
-                  <TodayRow
-                    title={neglected.title}
-                    detail={neglected.detail}
-                    onPress={() =>
-                      navigation.navigate('PieceDetail', { pieceId: neglected.pieceId })
-                    }
-                    last
-                  />
-                ) : null}
-              </View>
-            </FadeIn>
-          ) : null}
-
-          {summary ? (
-            <FadeIn index={5}>
-              <View style={styles.section}>
-                <SectionHeader label="Practice snapshot" />
-                <TodayRow
-                  title={formatTendency(summary.verdict)}
-                  detail={summaryDetail}
-                  onPress={() => navigation.navigate('Insights')}
-                  last
-                />
-              </View>
-            </FadeIn>
-          ) : null}
-        </View>
+    <ScreenContainer
+      onRefresh={refresh}
+     
+      footer={
+        <PrimaryButton
+          label={readingNotation ? 'See how the reading is going' : 'Continue practice'}
+          onPress={() => openPractice(piece)}
+        />
+      }
+    >
+      <View style={styles.greetingRow}>
+        <Text variant="metadata" color="textTertiary">
+          {getGreeting()}
+        </Text>
+        {avatar}
       </View>
+
+      {/*
+        **The piece is the title of this screen.**
+
+        Today used to open with the greeting in 36pt serif and put the piece a
+        size down inside a white card — one of five stacked on the page ground.
+        The greeting is the least informative thing here and it was the
+        loudest. It is an eyebrow now, which is what a greeting is.
+      */}
+      <Text variant="screenTitle" numberOfLines={3} style={styles.pieceTitle}>
+        {piece.title}
+      </Text>
+      <MetadataRow
+        items={[piece.composer, piece.movement, formatTempo(workingBpm, piece.score?.tempo_beat_unit)]}
+        style={styles.pieceMeta}
+      />
+
+      {/*
+        Sheet music is the app's visual identity, so the piece brings its own
+        page with it — full bleed, because a crop of engraving inset behind a
+        margin reads as a stock photograph.
+      */}
+      <ScoreThumbnail
+        source={piece.thumbnail}
+        composer={piece.composer}
+        radius={0}
+        style={styles.banner}
+      />
+
+      {/*
+        Why this piece, in the pipeline's own sentence. Quiet: it is the reason
+        for the button at the bottom, not a heading of its own.
+      */}
+      {hasCurrentTake && take?.headline ? (
+        <Text variant="body" color="textSecondary" style={styles.headline}>
+          {take.headline}
+        </Text>
+      ) : null}
+
+      <FadeIn index={0}>
+        <View style={styles.section}>
+          <SectionHeader label={lesson.context} />
+          <Text variant="pieceTitle">{lesson.title}</Text>
+          <Text variant="body" color="textSecondary" style={styles.lessonBody}>
+            {lesson.body}
+          </Text>
+          {/*
+            **The exercise is the lesson.** The rest explains why; this is the
+            thing to actually do at the stand, and in the card version it was
+            the last of four blocks behind a "Try it in practice" button that
+            did the same thing as the button at the bottom of the screen.
+          */}
+          <Text variant="body" style={styles.lessonExercise}>
+            {lesson.exercise}
+          </Text>
+        </View>
+      </FadeIn>
+
+      <FadeIn index={1}>
+        <View style={styles.section}>
+          <SectionHeader label="Warmup" />
+          <WarmupPanel
+            instrument={instrument}
+            onStart={() => navigation.navigate('Warmup')}
+          />
+        </View>
+      </FadeIn>
+
+      {attention || neglected ? (
+        <FadeIn index={2}>
+          <View style={styles.section}>
+            <SectionHeader label="Also needs work" />
+            {attention ? (
+              <TodayRow
+                title={attention.title}
+                detail={attention.detail}
+                onPress={() =>
+                  navigation.navigate('PieceDetail', { pieceId: attention.pieceId })
+                }
+                last={!neglected}
+              />
+            ) : null}
+            {neglected ? (
+              <TodayRow
+                title={neglected.title}
+                detail={neglected.detail}
+                onPress={() =>
+                  navigation.navigate('PieceDetail', { pieceId: neglected.pieceId })
+                }
+                last
+              />
+            ) : null}
+          </View>
+        </FadeIn>
+      ) : null}
+
+      <FadeIn index={3}>
+        <View style={styles.section}>
+          <AddPieceAction onPress={() => setAddSheetVisible(true)} />
+        </View>
+      </FadeIn>
 
       <AddPieceSheet
         visible={addSheetVisible}
@@ -399,27 +369,20 @@ function AddPieceAction({ onPress }: { onPress: () => void }) {
       accessibilityRole="button"
       accessibilityLabel="Add a new piece"
       accessibilityHint="Scan sheet music, import a score, or enter a piece manually"
-      style={({ pressed }) => [
-        styles.addPieceAction,
-        pressed && styles.addPieceActionPressed,
-      ]}
+      style={({ pressed }) => [styles.addRow, pressed && styles.pressed]}
     >
-      <View style={styles.addPieceIcon}>
+      {/* An outlined mark, not a filled one. This was a black square inside a
+          white card — the same weight as the screen's one primary action, for
+          the thing you do occasionally rather than the thing you came to do. */}
+      <View style={styles.addMark}>
         <Plus
           size={ICON_SIZE.md}
           strokeWidth={ICON_STROKE_WIDTH}
-          color={colors.actionText}
+          color={colors.textPrimary}
         />
       </View>
-      <View style={styles.addPieceCopy}>
-        <Text variant="button">Add a new piece</Text>
-        <Text
-          variant="metadataSmall"
-          color="textSecondary"
-          style={styles.addPieceDetail}
-        >
-          Scan sheet music, import a score, or enter it manually.
-        </Text>
+      <View style={styles.addBody}>
+        <Text variant="body">Add a new piece</Text>
       </View>
       <ChevronRight
         size={ICON_SIZE.md}
@@ -430,138 +393,67 @@ function AddPieceAction({ onPress }: { onPress: () => void }) {
   );
 }
 
-function LessonCard({
-  lesson,
-  onTry,
-}: {
-  lesson: PracticeLesson;
-  onTry: () => void;
-}) {
-  return (
-    <Card>
-      <Text variant="sectionLabel" color="textSecondary">
-        {lesson.context}
-      </Text>
-      <Text variant="pieceTitle" style={styles.lessonTitle}>
-        {lesson.title}
-      </Text>
-      <Text variant="body" color="textSecondary" style={styles.lessonBody}>
-        {lesson.body}
-      </Text>
-      <View style={styles.lessonExercise}>
-        <Text variant="sectionLabel" color="textSecondary">
-          Try this
-        </Text>
-        <Text variant="body" style={styles.lessonExerciseText}>
-          {lesson.exercise}
-        </Text>
-      </View>
-      <SecondaryButton
-        label="Try it in practice"
-        onPress={onTry}
-        style={styles.lessonAction}
-      />
-    </Card>
-  );
-}
-
 const styles = StyleSheet.create({
-  page: {
-    width: '100%',
-    maxWidth: 1180,
-    alignSelf: 'center',
-  },
-  dashboard: {
-    width: '100%',
-  },
-  dashboardWide: {
+  greetingRow: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: spacing['3xl'],
-  },
-  primaryColumn: {
-    flex: 1,
-    minWidth: 0,
-  },
-  secondaryColumn: {
-    minWidth: 0,
-  },
-  secondaryColumnWide: {
-    width: 340,
-  },
-  secondaryColumnNarrow: {
-    marginTop: spacing['2xl'],
-  },
-  avatar: {
-    width: AVATAR_TARGET,
-    height: AVATAR_TARGET,
-    margin: -AVATAR_INSET,
     alignItems: 'center',
-    justifyContent: 'center',
-    // No vertical nudge: the row centres the mark on the greeting's line box,
-    // and the greeting's ink — cap of "G" down to the tail of "g" — is centred
-    // in that box to within a fifth of a point. Measured off the rendered
-    // type, not the font metrics.
+    justifyContent: 'space-between',
+    gap: spacing.lg,
+    paddingTop: spacing.lg,
   },
-  pressed: {
-    opacity: 0.6,
-  },
-  addPieceAction: {
-    minHeight: CONTROL_HEIGHT + spacing['2xl'],
+  pieceTitle: {
     marginTop: spacing.md,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-    backgroundColor: colors.surface,
-    borderWidth: BORDER_WIDTH,
-    borderColor: colors.borderStrong,
-    borderRadius: radii.md,
   },
-  addPieceActionPressed: {
-    backgroundColor: colors.surfacePressed,
+  pieceMeta: {
+    marginTop: spacing.sm,
   },
-  addPieceIcon: {
-    width: spacing['4xl'],
-    height: spacing['4xl'],
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.actionBg,
-    borderRadius: radii.sm,
+  /**
+   * Full bleed, out through the screen's own gutter.
+   *
+   * A crop of engraving inset behind a margin reads as a stock photograph of
+   * sheet music; edge to edge it reads as the page itself.
+   */
+  banner: {
+    marginTop: spacing.lg,
+    marginHorizontal: -spacing.lg,
+    height: BANNER_HEIGHT,
   },
-  addPieceCopy: {
-    flex: 1,
-    minWidth: 0,
-  },
-  addPieceDetail: {
-    marginTop: spacing.xs,
-  },
-  lessonTitle: {
-    marginTop: spacing.xs,
+  headline: {
+    marginTop: spacing.lg,
   },
   lessonBody: {
     marginTop: spacing.sm,
   },
   lessonExercise: {
-    marginTop: spacing.xl,
-  },
-  lessonExerciseText: {
-    marginTop: spacing.xs,
-  },
-  lessonAction: {
-    marginTop: spacing.lg,
-  },
-  focusText: {
-    marginTop: spacing.sm,
-  },
-  focusAction: {
-    marginTop: spacing.lg,
+    marginTop: spacing.md,
   },
   section: {
-    // One step tighter than it was. At 32pt the blocks read as separate pages
-    // of a document rather than as parts of one screen — which is most of what
-    // made this feel like a web page.
     marginTop: spacing['2xl'],
+  },
+  avatar: {
+    margin: -AVATAR_INSET,
+    padding: AVATAR_INSET,
+    borderRadius: AVATAR_TARGET / 2,
+  },
+  pressed: {
+    opacity: 0.7,
+  },
+  addRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    minHeight: CONTROL_HEIGHT,
+  },
+  addMark: {
+    width: ICON_SIZE.md + spacing.sm,
+    height: ICON_SIZE.md + spacing.sm,
+    borderRadius: radii.sm,
+    borderWidth: BORDER_WIDTH,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  addBody: {
+    flex: 1,
   },
 });

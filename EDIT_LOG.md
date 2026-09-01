@@ -6,6 +6,96 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-01 — Today was a dashboard; it should be a starting point
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. The owner's list is done;
+this is the standing instruction, on the screen opened every session.
+
+**Files:** `mobile/src/screens/today/TodayScreen.tsx`,
+`mobile/src/screens/today/PracticeCard.tsx` (deleted),
+`mobile/src/components/primitives/ScreenContainer.tsx`, `index.ts`.
+
+### What was there
+
+**Seven sections, five of them cards**, and — the finding that decided the
+shape of the fix — **three separate buttons that all called `openPractice`**:
+the practice card's "Continue practice", the lesson card's "Try it in
+practice", and a "Practice focus" card's own button. One action, three
+controls, none of them in the thumb zone (§3 laws 4, 7 and 10).
+
+Three of the seven were other screens' content:
+
+- **Recent practice** is Insights' "Recent sessions", one tab away.
+- **Practice snapshot** is Insights' headline, with a row that links *to*
+  Insights — which is what the tab bar is for.
+- **Practice focus** restated the lesson in different words and ended in the
+  third copy of the button.
+
+And the 36pt serif went to **"Good morning"** — the least informative thing on
+the screen — while the piece a musician came to play sat a size down inside a
+white card. The same inversion Insights had, on the landing screen.
+
+### What it is now
+
+The piece is the title. The greeting is an eyebrow. Under it: composer,
+movement and working tempo as one quiet line, then a full-bleed crop of the
+score — sheet music is the app's visual identity, and a crop inset behind a
+margin reads as a stock photograph of sheet music rather than as the page.
+Then the pipeline's own sentence about the last take, which is the *reason* for
+the button; then the lesson, whole, on the page ground.
+
+**One action, pinned to the bottom.** `ScreenContainer` already had a footer
+slot and the Record screen already used it. On a screen whose entire purpose is
+"start practising", the thing to press should be under the thumb and always
+there, not somewhere in a scroll (§3 law 7).
+
+The lesson lost its card and kept all four of its parts. The **exercise** is
+the lesson — the thing to actually do at the stand — and in the card version it
+was the last of four blocks behind a button that duplicated the one at the
+bottom of the screen.
+
+`PracticeCard.tsx` is deleted; `useRecentTakes(3)` is now `(1)`, because one
+take is all that is left to show.
+
+### A reading measure, on every screen
+
+While checking Today at 1280px I fixed the thing I noted two iterations ago and
+did not act on: **the web build had no maximum content width**. A laptop
+browser set a piece title in 36pt serif across two thousand pixels, ran a
+deviation bar the width of a desk, and put a library row's composer a foot from
+its title.
+
+`CONTENT_MAX_WIDTH` is in `ScreenContainer`, so no screen has to remember, and
+the footer gets it too — it sits outside the scroll area, and a full-width
+action bar under a 560pt column reads as another screen's furniture. The
+footer's *background* still spans the window, because a bar that stops short of
+the edges is a floating card and §3 law 9 is explicit that this is app
+furniture.
+
+Verified at 1280 on Today, Library, Insights and the score screen.
+
+### The three-foot test
+
+*Before:* a column of white boxes with a greeting on top. Naming what I noticed
+first was not possible.
+
+*After:* first **the piece title** in 36pt serif, second the sheet crop under
+it, third the ink button pinned at the bottom. One dominant focal point, the
+primary action in the thumb zone, nothing in a card.
+
+**mobile: 642 passed, 56 files. `tsc --noEmit` clean.**
+
+### Removed content, said plainly
+
+Recent practice and the practice snapshot are gone from Today. They are not
+lost — Insights has both, in more detail, and it is a tab away. If the owner
+wants them back on Today the argument would be that a musician should not have
+to change tabs to see them, which is a real argument; the counter-argument, and
+the reason I removed them, is that a screen showing everything shows nothing
+first.
+
+---
+
 ## 2026-09-01 — Composer suggestions, and the seam a portrait will drop into
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Last batch of the owner's

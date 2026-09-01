@@ -163,7 +163,7 @@ export function ScreenContainer({
             footerInset,
           ]}
         >
-          {footer}
+          <View style={styles.footerRow}>{footer}</View>
         </View>
       ) : null}
     </SafeAreaView>
@@ -172,6 +172,15 @@ export function ScreenContainer({
 
 /** The horizontal gutter, exported so full-bleed sections can cancel it out. */
 export const SCREEN_GUTTER = spacing.xl;
+
+/**
+ * How wide the column of content is allowed to get.
+ *
+ * A reading measure. This is a phone product built to the web as well, and a
+ * laptop browser will happily set a piece title in 36pt serif across two
+ * thousand pixels if nothing stops it.
+ */
+export const CONTENT_MAX_WIDTH = 560;
 
 const styles = StyleSheet.create({
   safeArea: {
@@ -183,6 +192,34 @@ const styles = StyleSheet.create({
   },
   content: {
     paddingHorizontal: SCREEN_GUTTER,
+    // **A reading measure, on every screen.**
+    //
+    // This app is a phone product and it is also the web build on Cloudflare
+    // Pages, so a laptop browser gave every row the full two thousand pixels:
+    // a piece title in 36pt serif running the width of a desk, a deviation bar
+    // two thousand pixels long, a library row whose composer sat a foot from
+    // its title. A printed page has a measure for the same reason.
+    //
+    // Here rather than on each screen so no screen has to remember. Screens
+    // that set their own `contentStyle` still win, which is what that prop is
+    // for.
+    width: '100%',
+    maxWidth: CONTENT_MAX_WIDTH,
+    alignSelf: 'center',
+  },
+  /**
+   * The footer holds the measure too.
+   *
+   * It sits outside the scroll area, so it does not inherit `content` — and a
+   * full-width action bar under a 560pt column reads as a different screen's
+   * furniture. The background still spans the window, because a bar that stops
+   * short of the edges is a floating card, and §3 law 9 is explicit that this
+   * is app furniture.
+   */
+  footerRow: {
+    width: '100%',
+    maxWidth: CONTENT_MAX_WIDTH,
+    alignSelf: 'center',
   },
   footer: {
     backgroundColor: colors.bg,

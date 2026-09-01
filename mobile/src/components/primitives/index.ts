@@ -1,6 +1,7 @@
 export { Text, type TextProps } from './Text';
 export {
   ScreenContainer,
+  CONTENT_MAX_WIDTH,
   SCREEN_GUTTER,
   type ScreenContainerProps,
 } from './ScreenContainer';
