@@ -169,12 +169,13 @@ export class ScanUploadError extends Error {
 }
 
 /**
- * Uploads one captured page and returns the URL to create a score from.
+ * Uploads one captured page and returns its durable private-storage key.
  *
- * The value returned is the **signed upload URL**, not a download URL, because
- * that is the only form `POST /v1/scores` accepts — see `api/upload.ts`. It
- * expires five minutes after issue, so the caller must create the score in the
- * same flow rather than storing it.
+ * The signed URL authorises only this PUT and expires after five minutes. It is
+ * never carried into the naming screen: on a slow multi-page scan page one can
+ * be older than five minutes before the final page arrives. The object key is
+ * stable, owner-prefixed, and the score API canonicalises it to a private
+ * storage reference after checking that it belongs to the caller.
  */
 export async function uploadPage(
   page: CapturedPage,
@@ -266,5 +267,5 @@ export async function uploadPage(
   // the several ways this can fail actually happened — re-wrapping it would
   // replace a specific sentence with a general one.
   await uploadToSignedUrl(signed.upload_url, bytes, contentType, options);
-  return signed.upload_url;
+  return signed.object_key;
 }
