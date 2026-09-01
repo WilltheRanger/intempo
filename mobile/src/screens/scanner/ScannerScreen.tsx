@@ -27,6 +27,7 @@ import {
 } from '../../design';
 import type { RootNavigation, RootStackParamList } from '../../navigation/types';
 import { ViewfinderPage } from './ViewfinderPage';
+import { cropToViewfinder } from '../../lib/scan/framing';
 
 const CAPTURE_BUTTON_SIZE = 68;
 
@@ -131,7 +132,21 @@ export function ScannerScreen() {
     setError(null);
     try {
       const photo = await camera.current?.takePictureAsync({
-        quality: 0.8,
+        // **0.95, not 0.8.** This is the *first* encode; `shrink.ts` exists to
+        // trade quality away later and only when a page has to fit under a
+        // limit, and its own ladder starts at 0.9 — so capturing at 0.8 meant
+        // the ladder's gentlest rung re-encoded an already-lossy JPEG and made
+        // it larger. JPEG artefacts land hardest on exactly what this
+        // photographs: one-pixel staff lines on white paper.
+        quality: 0.95,
+        // **On web this is the difference between a JPEG and a 20 MB PNG.**
+        // `expo-camera`'s browser implementation defaults `imageType` to
+        // `'png'` and `toDataURL` ignores `quality` for anything but `'jpg'`,
+        // so a 3840x2160 capture arrived as a lossless data URI an order of
+        // magnitude too large — held in JS memory, per page — and the quality
+        // above was silently discarded. Ignored on iOS and Android, which
+        // encode JPEG regardless.
+        imageType: 'jpg',
         // The bytes are uploaded from this URI, and holding a whole page as a
         // base64 string in JS memory for every page is how a scanner runs a
         // phone out of heap.
@@ -140,12 +155,23 @@ export function ScannerScreen() {
       if (!photo?.uri) {
         throw new Error('The camera returned no image.');
       }
+
+      // **What the viewfinder showed, not what the sensor saw.** The preview
+      // is a portrait page window filled with `cover`, so it crops; the capture
+      // did not. Measured here: a 3840x2160 stream behind a 296x408 window
+      // means a page that fills the frame occupies 41% of the saved file's
+      // width, with two and a half times more desk than the musician chose.
+      // "Fill the frame" is printed under the viewfinder, and until now it
+      // could be followed exactly and still hand the reader a small, distant
+      // page. Falls back to the uncropped photograph — a slightly-too-wide
+      // page is a page, and losing the shot to image processing is worse.
+      const framed = await cropToViewfinder(photo.uri, photo.width, photo.height);
       impact(ImpactFeedbackStyle.Medium);
       // Where it lands is the session's decision, not this screen's — see
       // `capture`. A retake swaps the new photograph in where the old one sat
       // and you are finished; an ordinary capture leaves you here for the next
       // page.
-      const outcome = captureSession.capture(photo.uri);
+      const outcome = captureSession.capture(framed);
       if (outcome === 'full') {
         setError(`A score can have at most ${MAX_SCAN_PAGES} pages in one scan.`);
         return;
@@ -165,9 +191,9 @@ export function ScannerScreen() {
       //
       // Found by source rather than by position: a replacement sits where the
       // page it replaced sat, which is not the end of the list.
-      const taken = captureSession.current().find((page) => page.source === photo.uri);
+      const taken = captureSession.current().find((page) => page.source === framed);
       if (taken) {
-        void checkItReads(taken.id, photo.uri);
+        void checkItReads(taken.id, framed);
       }
     } catch (cause) {
       setError(

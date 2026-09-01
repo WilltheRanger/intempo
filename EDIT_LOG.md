@@ -6,6 +6,96 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-01 — The scanner photographed something other than what you framed
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Fourth batch of the
+owner's list of 2026-09-01: *"Fix scan sheet music. When you use the in app
+camera it uploads in low resolution and doesnt work for some reason."*
+
+**Files:** `mobile/src/lib/scan/framing.ts` + test,
+`mobile/src/screens/scanner/ScannerScreen.tsx`,
+`mobile/src/screens/scanner/ViewfinderPage.tsx`.
+
+### Measured first, and the first two suspects were wrong
+
+- **Native capture resolution is already maximal.** `expo-camera` defaults iOS
+  to `PictureSize.photo` → `AVCaptureSession.Preset.photo`, the full still
+  resolution, and Android to `ResolutionStrategy.HIGHEST_AVAILABLE_STRATEGY`.
+  Read out of the package's own Swift and Kotlin. Nothing to fix.
+- **The web resolution patch is applied and working.** I doubted it because a
+  `grep -c` for `3840` in the bundle returned 3 and they were all an unrelated
+  video-quality enum — `grep -c` counts *lines*, and a minified bundle is one
+  line. Probed the running build in Chromium instead: `videoWidth 3840,
+  videoHeight 2160`. The patch is there.
+
+Two real defects turned up in the probe.
+
+### 1. The photograph was not what the musician framed
+
+    stream 3840x2160 · preview box 296x408 · object-fit: cover · saved 3840x2160
+
+The viewfinder is a portrait page window and fills it with `cover`, which
+**crops**. The capture did not. So a page that exactly fills the frame occupies
+about **41% of the width** of the saved file, with two and a half times more
+desk than the musician chose to include. "Fill the frame" is printed under the
+viewfinder, and until now it could be followed precisely and still hand the
+reader a small, distant page — which is what `too_small_to_read` and
+`crop_systems` then have to deal with, on a picture that is mostly not music.
+
+`visibleRegion` computes the rectangle `cover` actually showed, and
+`cropToViewfinder` applies it. `PAGE_ASPECT` moved into that module and
+`ViewfinderPage` imports it back, because the crop and the preview being the
+same shape is the entire guarantee and two copies of `0.74` is two shapes.
+
+The crop never grows the image, is centred, returns **null** when the capture
+already matches the window — so a caller skips a decode-and-re-encode of a
+large photograph rather than doing one to change nothing — and falls back to
+the uncropped page on any failure. A slightly-too-wide page is a page; losing
+the shot to image processing is losing the shot.
+
+### 2. On web every photograph was a PNG, and `quality` was discarded
+
+`expo-camera`'s browser implementation defaults `imageType` to `'png'`, and its
+`toDataURL` passes `quality` through **only** for `'jpg'`. So a 3840x2160
+capture arrived as a lossless data URI an order of magnitude larger than it
+needed to be, held in JS memory per page, and the `quality: 0.8` this screen
+asked for was silently dropped.
+
+This one already has a scar in the tree. `uploadPage.ts` reads: *"a phone
+stored PNG bytes under a JPEG content type, and the vision API — which checks —
+rejected the page with a 400."* That workaround was treating the symptom.
+
+`imageType: 'jpg'` fixes it at the source, and the capture quality goes from
+0.8 to **0.95**: this is the *first* encode, `shrink.ts` exists to trade
+quality away later and only when a page must fit under a limit, and its ladder
+starts at 0.9 — so capturing at 0.8 meant the gentlest rung re-encoded an
+already-lossy JPEG and made it larger. JPEG artefacts land hardest on exactly
+what this photographs, one-pixel staff lines on white paper.
+
+### Measured after
+
+    dimensions   3840x2160  ->  1598x2160   (= round(2160 x 0.74), the framed page)
+    format       image/png  ->  image/jpeg
+
+Driven in the real browser with a fake camera: shutter pressed, page captured,
+the legibility warning still fires, and the review thumbnail is now
+portrait-shaped — the same shape as the frame the page was composed in, where
+before it was the whole landscape sensor frame.
+
+**mobile: 596 passed, 50 files. `tsc --noEmit` clean.**
+
+### Not addressed
+
+A phone **browser** gets its pixels from `getUserMedia`, which is a video
+pipeline and is capped well below the 12-megapixel still the system camera
+app produces. A `<input type="file" accept="image/*" capture="environment">`
+route would hand the same page over at full sensor resolution on iOS and
+Android alike. That is a different capture flow, not a setting, and it is not
+done — noted because it is the remaining ceiling on the web build, and neither
+of the defects above was it.
+
+---
+
 ## 2026-09-01 — Listen from a bar, at a tempo you chose
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Third batch of the owner's
