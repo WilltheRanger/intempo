@@ -30,7 +30,7 @@ export interface UploadPagesOptions {
  */
 export async function uploadPages(
   pages: readonly CapturedPage[],
-  options: UploadPagesOptions = {},
+  options: UploadPagesOptions,
 ): Promise<string[]> {
   const send = options.upload;
   const urls: string[] = [];
