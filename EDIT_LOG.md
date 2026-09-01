@@ -6,6 +6,33 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-31 — Attach notation before recording manual pieces
+
+**Branch:** `feat/attach-notation-manual-piece`
+
+### Changed
+
+- Added a server action that reads one or more ordered page photographs into an
+  existing scoreless library entry instead of creating a duplicate piece.
+- Manual pieces now explain that sheet music is required for note, rest,
+  repeat, long-rest, and tempo alignment, with direct camera and image-library
+  actions.
+- Preserved the existing piece id, title, working tempo, and practice history
+  while its newly attached pages are queued for transcription.
+- Today routes scoreless pieces into setup, shows reading progress when a scan
+  is already running, and replaces premature recording advice with contextual
+  notation lessons.
+- Added a final recording-screen prerequisite so no direct route can begin an
+  analysis take when the piece contains no measurable notation.
+
+### Verification
+
+- Added backend coverage for multi-page attachment, page ownership, page
+  limits, duplicate-notation refusal, and in-progress-read refusal.
+- Added mobile coverage for attachment-target persistence and scoreless setup
+  lessons, plus a request-shape contract between the new client and API body.
+- Mobile typecheck, tests, web build, and backend tests run in pull-request CI.
+
 ## 2026-08-31 — Complete multi-page score intake
 
 **Branch:** `fix/mobile-multi-page-scan`
