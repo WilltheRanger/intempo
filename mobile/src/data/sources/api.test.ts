@@ -294,3 +294,39 @@ describe('bars the pipeline refused to judge', () => {
     expect(await apiInsightsSource.getInsights()).toBeNull();
   });
 });
+
+describe('a bar nothing in which was timed', () => {
+  it('stays out of the mean even without a tempo change', async () => {
+    // A held final chord under a fermata. `under_tempo_change` is false — the
+    // page did not mark a `rit.` — and the bar is still not a verdict.
+    listAnalyses.mockResolvedValue([
+      analysis({
+        result_json: {
+          status: 'ok',
+          verdict: 'Steady',
+          verdict_direction: 'drag',
+          per_measure: [
+            { measure_number: 1, avg_delta_pct: 4, worst_band: 'on', timed_note_count: 4 },
+            { measure_number: 2, avg_delta_pct: 64, worst_band: 'on', timed_note_count: 0 },
+          ],
+          tolerance: null,
+        },
+      }),
+    ]);
+
+    const insights = await apiInsightsSource.getInsights();
+
+    expect(insights!.meanDeviationPct).toBeCloseTo(-4, 9);
+  });
+
+  it('counts a take stored before the field existed exactly as before', async () => {
+    // No `timed_note_count` anywhere. Every bar is a verdict, which is what
+    // those rows meant — reading a missing field as zero would silently drop
+    // every measure of every take already recorded.
+    listAnalyses.mockResolvedValue([analysis()]);
+
+    const insights = await apiInsightsSource.getInsights();
+
+    expect(insights!.meanDeviationPct).toBeCloseTo(-8, 9);
+  });
+});

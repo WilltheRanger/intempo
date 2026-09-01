@@ -454,8 +454,17 @@ export interface PerNoteResult {
 export interface PerMeasureResult {
   measure_number: number;
   note_count: number;
-  /** Drag-positive. */
+  /** Drag-positive, over the notes that were **timed**. */
   avg_delta_pct: number;
+  /**
+   * How many of `note_count` were measured against a time the page states.
+   *
+   * Absent on a result stored before the field existed — read as "all of
+   * them", which is what those rows meant. Zero means nothing in the bar was
+   * timed and `avg_delta_pct` fell back to the whole bar, so it must not be
+   * read as a verdict.
+   */
+  timed_note_count?: number | null;
   worst_band: Band;
   direction: Direction;
   /**
@@ -708,6 +717,15 @@ export interface MeasureVerdict {
    * 44 for a lurch.
    */
   uneven: boolean;
+  /**
+   * How many notes in the bar were measured against a time the page states.
+   *
+   * Null on a take analysed before the pipeline reported it — read as "all of
+   * them". Zero means the bar was not timed at all, which a `rit.` is only one
+   * cause of: a fermata says one length is not written down, and an ornament
+   * and the note it decorates are placed by a number the pipeline invented.
+   */
+  timedNoteCount: number | null;
 }
 
 /**

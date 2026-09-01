@@ -287,7 +287,10 @@ function meanDeviationOf(result: AnalysisResultJson): number | null {
   // those into "how steadily was this played" answers the question with a
   // number the pipeline explicitly refused to judge.
   const measures = (result.per_measure ?? []).filter((m) =>
-    wasTimed({ underTempoChange: m.under_tempo_change === true }),
+    wasTimed({
+      underTempoChange: m.under_tempo_change === true,
+      timedNoteCount: m.timed_note_count ?? null,
+    }),
   );
   if (measures.length === 0) {
     return null;
@@ -442,6 +445,7 @@ function toTake(
     // `lib/verdict/measureReading.ts`.
     underTempoChange: m.under_tempo_change === true,
     uneven: m.uneven === true,
+    timedNoteCount: m.timed_note_count ?? null,
   }));
 
   return {

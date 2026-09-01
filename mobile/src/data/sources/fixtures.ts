@@ -645,6 +645,8 @@ const FIXTURE_MEASURES: {
   band: Band;
   underTempoChange?: boolean;
   uneven?: boolean;
+  /** Zero for a bar nothing in which was timed — a held chord, an ornament. */
+  timedNotes?: number;
 }[] = [
   { measure: 1, notes: 4, dragPct: -1.2, band: 'on' },
   { measure: 2, notes: 4, dragPct: -2.8, band: 'on' },
@@ -665,6 +667,11 @@ const FIXTURE_MEASURES: {
     underTempoChange: true,
     uneven: true,
   },
+  // **A fermata, not a tempo change.** The final chord is held: the mark says
+  // its length is not written down at all, so nothing in the bar can be timed
+  // against the page. The second way a bar goes unjudged, and the one that
+  // read "On tempo" until the pipeline started reporting `timed_note_count`.
+  { measure: 13, notes: 1, dragPct: 64.0, band: 'on', timedNotes: 0 },
 ];
 
 const FIXTURE_TAKE_ID = 'fixture-take-1';
@@ -703,6 +710,7 @@ function buildFixtureTake(): TakeResult {
       verdict: verdictFor(m.band, direction),
       underTempoChange: m.underTempoChange === true,
       uneven: m.uneven === true,
+      timedNoteCount: m.timedNotes ?? m.notes,
     };
   });
 

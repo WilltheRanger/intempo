@@ -60,6 +60,17 @@ class Delta:
     #: The slowing or speeding lurched at this note, rather than flowing.
     #: Always false outside a tempo change.
     uneven: bool = False
+    #: This note's deviation was measured against a time the **page states**.
+    #:
+    #: False for the four cases `band` is forced to `on` for, which are not the
+    #: same reason wearing four names: a `rit.` says the beat stops being
+    #: steady; a fermata says one length is not written down at all; an ornament
+    #: and the note it decorates are placed by `ORNAMENT_SHARE`, a number this
+    #: code invented. In every one of them the deviation is real and it is not
+    #: an error, so anything that averages, plots or judges deltas has to be
+    #: able to leave them out — and `under_tempo_change` alone only covered the
+    #: first. Default True so a `Delta` built without it behaves as before.
+    timed: bool = True
 
 
 def classify_band(delta_pct: float, *, config: AudioConfig | None = None) -> Band:
@@ -217,14 +228,13 @@ def compute_deltas(
         # it decorates are placed here by an assumption this code made — see
         # `ORNAMENT_SHARE`. Timing a musician against a number we invented is
         # the one thing that would be worse than not placing them at all.
-        band = (
-            Band.on
-            if note.under_tempo_change
+        timed = not (
+            note.under_tempo_change
             or note.after_fermata
             or note.is_grace_note
             or note.after_grace_note
-            else classify_band(delta_pct, config=cfg)
         )
+        band = classify_band(delta_pct, config=cfg) if timed else Band.on
         deltas.append(
             Delta(
                 global_index=note.global_index,
@@ -238,6 +248,7 @@ def compute_deltas(
                 is_slur_interior=note.is_slur_interior,
                 under_tempo_change=note.under_tempo_change,
                 uneven=note.measure_number in uneven,
+                timed=timed,
             )
         )
     return deltas
@@ -257,12 +268,16 @@ def rolling_trend(
     available (so the first few notes still get a value).
 
     Two kinds of note are excluded. **Slur-interior** ones, because their
-    timing is musically free. And notes **under a written tempo change**, for a
-    stronger reason: `compute_deltas` refuses to band them at all — the page
-    has said the beat will not be steady there, so their deviation is not an
-    error, it is the musician doing what the page asked. Leaving them in drew a
-    trend line diving at the end of any piece that closes with a `rit.`, on the
-    same screen whose measure list says those bars were not timed.
+    timing is musically free. And notes that were **not timed** at all, for a
+    stronger reason: `compute_deltas` refuses to band them — a `rit.`, a
+    fermata, an ornament and the note it decorates — so their deviation is real
+    and is not an error. Leaving them in drew a trend line diving at the end of
+    any piece that closes with a `rit.`, on the same screen whose measure list
+    says those bars were not timed.
+
+    `timed` rather than `under_tempo_change`: this excluded the ritardando and
+    left the fermata and the ornament in, which is the same mistake one name
+    narrower.
     """
     cfg = config or load_audio_config()
     win = window if window is not None else cfg.trend.window
@@ -271,7 +286,7 @@ def rolling_trend(
         values = [
             -d.delta_pct  # rush-positive
             for d in deltas
-            if not d.is_slur_interior and not d.under_tempo_change
+            if not d.is_slur_interior and d.timed
         ]
     else:
         values = [float(v) for v in deltas]  # type: ignore[arg-type]

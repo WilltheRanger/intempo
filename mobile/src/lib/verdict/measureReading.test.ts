@@ -24,6 +24,7 @@ function measure(over: Partial<MeasureVerdict> = {}): MeasureVerdict {
     verdict: 'on_tempo',
     underTempoChange: false,
     uneven: false,
+    timedNoteCount: 4,
     ...over,
   };
 }
@@ -107,5 +108,42 @@ describe('the label fits the column it sits in', () => {
       .toBeLessThanOrEqual(longestExisting);
     expect(readMeasure(measure({ underTempoChange: true, uneven: true })).label.length)
       .toBeLessThanOrEqual(longestExisting);
+  });
+});
+
+describe('a measure with nothing in it that could be timed', () => {
+  it('says so, whatever the reason', () => {
+    // **A `rit.` is not the only way.** A fermata says one length is not
+    // written down at all; an ornament and the note it decorates are placed by
+    // a number the pipeline invented. A bar made entirely of those — a held
+    // final chord, a bar that is one ornamented note — read "On tempo": the app
+    // agreeing a bar was played in time when nothing in it was timed.
+    const reading = readMeasure(
+      measure({ timedNoteCount: 0, deviationPct: -64, verdict: 'on_tempo' }),
+    );
+
+    expect(reading.label).toBe('Not timed');
+    expect(reading.showsDeviation).toBe(false);
+    expect(reading.revealsFigure).toBe(false);
+    expect(reading.accessibilityLabel).toContain('timed against the page');
+  });
+
+  it('leaves a bar alone when the take predates the count', () => {
+    // `null` is an analysis stored before the pipeline reported it. Those rows
+    // meant "all of them", and reading them as "none" would relabel every
+    // measure of every take a musician has already recorded.
+    const reading = readMeasure(
+      measure({ timedNoteCount: null, band: 'rush_drag', verdict: 'rushing' }),
+    );
+
+    expect(reading.label).toBe('Rushing');
+    expect(reading.showsDeviation).toBe(true);
+  });
+
+  it('keeps such a bar out of an average', () => {
+    expect(wasTimed({ timedNoteCount: 0 })).toBe(false);
+    expect(wasTimed({ timedNoteCount: 3 })).toBe(true);
+    expect(wasTimed({ timedNoteCount: null })).toBe(true);
+    expect(wasTimed({})).toBe(true);
   });
 });

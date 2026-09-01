@@ -6,6 +6,83 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-01 — The fermata and the ornament, which the entry below left undone
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Closes the "known,
+unfixed" paragraph of the entry below it.
+
+**Files:** `backend/app/services/classification.py`, `analysis.py`,
+`app/tests/test_classification.py`, `test_analysis.py`;
+`mobile/src/lib/verdict/measureReading.ts` (+ test), `data/types.ts`,
+`data/sources/api.ts` (+ test), `data/sources/fixtures.ts`,
+`screens/verdict/MeasureRow.tsx`, `VerdictScreen.tsx`.
+
+### One fact, not four booleans
+
+`compute_deltas` forces `band` to `on` for four kinds of note, and they are not
+one reason wearing four names. A `rit.` says the beat stops being steady. A
+**fermata** says one length is not written down at all — the mark exists
+precisely to hand it to the player. An **ornament** and the note it decorates
+are placed by `ORNAMENT_SHARE`, a number this code invented to split the
+difference between two readings an engraver may have meant.
+
+What they share is that the deviation is real and is **not an error**, and only
+the first had a name on the wire. `Delta.timed` is that fact, computed in the
+same expression that decides the band, so the two can never disagree.
+
+### A bar's average included numbers the pipeline had refused
+
+`worst_band` was always safe — an untimed note's band is `on`, so it cannot be
+the worst. `avg_delta_pct` was not, and it is the number the app draws as the
+bar's deviation bar. **One grace note in a bar of eight moved that bar's whole
+reading**, measured against a time nothing on the page states.
+
+It is now the mean over timed notes, falling back to the whole bar when nothing
+in it was timed — a field that is sometimes absent is worse than one that is
+sometimes not a verdict, and `timed_note_count` is what says which.
+
+`rolling_trend` filters on `timed` rather than `under_tempo_change`: the
+narrower name excluded the ritardando and left the fermata and the ornament in,
+which is the same mistake one word smaller.
+
+### "Not timed" is now reachable three ways
+
+`readMeasure` reports it for `timedNoteCount === 0` as well as for a tempo
+change. A bar made **entirely** of untimed notes is short and common — a held
+final chord, a bar that is one ornamented note — and it read "On tempo": the app
+agreeing that a bar was played in time when nothing in it was timed.
+
+`null` is a take analysed before the pipeline reported the count, and reads as
+"all of them". Reading a missing field as zero would have relabelled every
+measure of every take a musician has already recorded.
+
+### A tap that answered nothing
+
+Those rows were still buttons under a line reading *"Tap a measure for its
+timing."* Tapping highlighted them and did nothing. They are not buttons now,
+and the line is only drawn when some measure has a figure behind it — an
+instruction for an interaction the screen does not offer is the same dead end
+as an empty state naming an action it has no route to, which is the entry two
+above this one. The explanation stays on the row, as text: *"Measure 13:
+nothing here could be timed against the page."*
+
+### Three-foot test
+
+Unchanged from the entry below — the numbers and the words first, the coloured
+bars second, the empty tracks third. Bar 13 joins 11 and 12 in reading as
+*nothing was measured here*.
+
+**Verified** in Chromium at iPhone-13 size: rows 1–10 are buttons and reveal
+their figure (`5 → +12%`); rows 11, 12 and 13 have no button role and carry
+their full sentence as their label. 23-route sweep clean, `.env` restored
+byte-identical.
+
+**Tests:** 919 in the app, up 5; 1831 in the backend, up 2.
+
+**Rollback:** revert the commit.
+
+---
+
 ## 2026-09-01 — A written rit. reported as "On the beat", with a long bar beside it
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`.

@@ -30,6 +30,11 @@ def _delta(
         global_index=idx, measure_number=measure, expected_ms=0.0, actual_ms=0.0,
         delta_ms=pct * 5.0, delta_pct=pct, band=band, direction=direction, is_slur_interior=slur,
         under_tempo_change=under_tempo_change,
+        # The two travel together in `compute_deltas`: a note under a change is
+        # one whose deviation was not measured against a time the page states.
+        # Setting only the first here made the trend test pass against a `Delta`
+        # the pipeline never produces.
+        timed=not under_tempo_change,
     )
 
 

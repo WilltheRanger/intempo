@@ -19,6 +19,7 @@ import type { TakeResult } from '../../data/types';
 import { BORDER_WIDTH, colors, spacing } from '../../design';
 import { formatTakeVerdict, formatTempo } from '../../lib/tempo';
 import type { RootNavigation, RootStackParamList } from '../../navigation/types';
+import { readMeasure } from '../../lib/verdict/measureReading';
 import { MEASURE_COLUMNS, MeasureRow } from './MeasureRow';
 import { TrendLine } from './TrendLine';
 
@@ -246,9 +247,17 @@ export function VerdictScreen() {
         ))}
       </View>
 
-      <Text variant="metadataSmall" color="textTertiary" style={styles.tip}>
-        Tap a measure for its timing.
-      </Text>
+      {/*
+        Only when some measure has a figure behind it. A take that is entirely
+        a `rit.`, or one bar of held chord, has no row that answers a tap — and
+        an instruction for an interaction the screen does not offer is the same
+        dead end as an empty state naming an action it has no route to.
+      */}
+      {take.measures.some((m) => readMeasure(m).revealsFigure) ? (
+        <Text variant="metadataSmall" color="textTertiary" style={styles.tip}>
+          Tap a measure for its timing.
+        </Text>
+      ) : null}
     </ScreenContainer>
   );
 }

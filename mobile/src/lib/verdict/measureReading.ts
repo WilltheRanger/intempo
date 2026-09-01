@@ -45,6 +45,16 @@ export interface MeasureReading {
   accessibilityLabel: string;
 }
 
+/**
+ * Whether anything in the bar was measured against a time the page states.
+ *
+ * `null` is an older take, from before the pipeline reported the count: read
+ * as "all of them", which is what those rows meant.
+ */
+function nothingTimed(measure: MeasureVerdict): boolean {
+  return measure.timedNoteCount === 0;
+}
+
 export function readMeasure(measure: MeasureVerdict): MeasureReading {
   if (measure.underTempoChange) {
     // **"Uneven" is the one thing worth saying about a bar like this**, and
@@ -72,6 +82,27 @@ export function readMeasure(measure: MeasureVerdict): MeasureReading {
     };
   }
 
+  if (nothingTimed(measure)) {
+    // **A `rit.` is not the only way a bar goes unjudged**, and the other two
+    // are ordinary notation. A fermata says one length is not written down at
+    // all — the mark exists precisely to hand it to the player — so the
+    // interval after it cannot be measured against a written value. An ornament
+    // and the note it decorates are placed by `ORNAMENT_SHARE`, a number the
+    // pipeline invented to split the difference between two readings an
+    // engraver may have meant.
+    //
+    // A bar made *entirely* of those is short and common: a held final
+    // chord, a bar that is one ornamented note. It read "On tempo" — the app
+    // agreeing that a bar was played in time when nothing in it was timed.
+    return {
+      label: 'Not timed',
+      tone: 'textTertiary',
+      showsDeviation: false,
+      revealsFigure: false,
+      accessibilityLabel: `Measure ${measure.measure}: nothing here could be timed against the page`,
+    };
+  }
+
   const label = formatVerdict(measure.verdict);
   return {
     label,
@@ -89,6 +120,9 @@ export function readMeasure(measure: MeasureVerdict): MeasureReading {
  * would otherwise have those bars' real deviations pulled into the mean that
  * describes how steadily it was played.
  */
-export function wasTimed(measure: { underTempoChange?: boolean }): boolean {
-  return measure.underTempoChange !== true;
+export function wasTimed(measure: {
+  underTempoChange?: boolean;
+  timedNoteCount?: number | null;
+}): boolean {
+  return measure.underTempoChange !== true && measure.timedNoteCount !== 0;
 }

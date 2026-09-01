@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 
 from app.services.analysis import analyze
+from app.services.classification import Band, Direction, classify_band
 from app.services.score_schema import Measure, Note, ScoreJson
 from app.tests.audio_helpers import evenly_spaced, synth_click_track, write_wav
 
@@ -348,3 +349,80 @@ def test_a_take_too_short_to_compare_is_not_accused(tmp_path) -> None:
 
     assert not _take_is_much_longer_than_the_page(np.array([1.0]), np.arange(20.0))
     assert not _take_is_much_longer_than_the_page(np.arange(20.0), np.array([1.0]))
+
+
+def test_a_bars_average_leaves_out_the_notes_that_were_not_timed() -> None:
+    """One grace note used to move a whole bar's reading.
+
+    `compute_deltas` refuses to band four kinds of note — under a `rit.`, after
+    a fermata, an ornament, and the note an ornament decorates — because in
+    each the deviation is real and is not an error. `worst_band` was already
+    safe, since an untimed note's band is `on`. `avg_delta_pct` was not, and it
+    is the number the app draws as the bar's deviation bar.
+
+    An ornament is the sharpest case: its "expected" time is `ORNAMENT_SHARE`
+    splitting the difference between two readings an engraver may have meant —
+    a number this code invented — so a delta measured against it can move a bar
+    a musician played perfectly.
+    """
+    from app.services.analysis import _summarize_measures
+    from app.services.classification import Delta
+
+    def delta(pct: float, idx: int, timed: bool = True) -> Delta:
+        return Delta(
+            global_index=idx,
+            measure_number=1,
+            expected_ms=0.0,
+            actual_ms=0.0,
+            delta_ms=pct * 5.0,
+            delta_pct=pct,
+            band=classify_band(pct) if timed else Band.on,
+            direction=Direction.on,
+            is_slur_interior=False,
+            timed=timed,
+        )
+
+    steady = [delta(2.0, i) for i in range(3)]
+    ornament = delta(90.0, 3, timed=False)
+
+    (bar,) = _summarize_measures(steady + [ornament])
+
+    assert bar.note_count == 4
+    assert bar.timed_note_count == 3
+    # 2.0, not the 24.0 that averaging the ornament in gives.
+    assert bar.avg_delta_pct == 2.0
+
+
+def test_a_bar_with_nothing_timed_still_reports_a_number() -> None:
+    """A bar that is entirely a `rit.` has to say something.
+
+    Falling back to the whole bar keeps `avg_delta_pct` a number on every
+    measure — a field that is sometimes absent is worse than one that is
+    sometimes not a verdict. `timed_note_count == 0` is what says so, and the
+    app reads that rather than the average.
+    """
+    from app.services.analysis import _summarize_measures
+    from app.services.classification import Delta
+
+    rit = [
+        Delta(
+            global_index=i,
+            measure_number=1,
+            expected_ms=0.0,
+            actual_ms=0.0,
+            delta_ms=200.0,
+            delta_pct=40.0,
+            band=Band.on,
+            direction=Direction.on,
+            is_slur_interior=False,
+            under_tempo_change=True,
+            timed=False,
+        )
+        for i in range(3)
+    ]
+
+    (bar,) = _summarize_measures(rit)
+
+    assert bar.timed_note_count == 0
+    assert bar.avg_delta_pct == 40.0
+    assert bar.under_tempo_change is True

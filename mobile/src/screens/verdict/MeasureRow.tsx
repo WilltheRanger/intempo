@@ -51,9 +51,16 @@ export function MeasureRow({
 
   return (
     <Pressable
-      onPress={onToggle}
-      accessibilityRole="button"
-      accessibilityState={{ selected: revealed }}
+      // **Not a button when there is nothing behind it.** These rows have no
+      // figure to reveal — the bar was not timed — so a tap highlighted them
+      // and did nothing, under a line that says "Tap a measure for its
+      // timing." A control that answers nothing is worse than no control
+      // (§3 law 10). The explanation is still in the label, read as text.
+      onPress={reading.revealsFigure ? onToggle : undefined}
+      accessibilityRole={reading.revealsFigure ? 'button' : 'text'}
+      accessibilityState={
+        reading.revealsFigure ? { selected: revealed } : undefined
+      }
       accessibilityLabel={reading.accessibilityLabel}
       accessibilityHint={
         reading.revealsFigure
@@ -65,14 +72,14 @@ export function MeasureRow({
       // block rather than as a row of the list.
       style={({ pressed }) => [
         styles.row,
-        revealed && styles.rowRevealed,
-        pressed && styles.pressed,
+        showFigure && styles.rowRevealed,
+        pressed && reading.revealsFigure && styles.pressed,
       ]}
     >
       <View style={[styles.inner, divided && styles.divided]}>
         <Text
           variant="metadata"
-          color={revealed ? 'textPrimary' : 'textTertiary'}
+          color={showFigure ? 'textPrimary' : 'textTertiary'}
           style={styles.number}
         >
           {measure.measure}
