@@ -47,7 +47,6 @@ from app.services.score_schema import (
 # and signing readable ones for display.
 from app.services.page_image import (
     SIGNED_DOWNLOAD_TTL_SECONDS,
-    STORAGE_PREFIXES as _STORAGE_PREFIXES,
     object_key_from as _object_key_from,
 )
 
@@ -77,7 +76,7 @@ class CreateScoreRequest(BaseModel):
     #: `image_urls` is the one to send; this is what a build from before
     #: multi-page scanning has.
     image_url: str | None = Field(default=None, min_length=1, max_length=2048)
-    #: Every page of the part, in page order.
+    #: Every page reference (durable object key or legacy URL), in page order.
     #:
     #: Order is the caller's, settled before it uploads anything
     #: (`lib/scan/drag.ts`), so there is no ordering decision here to get wrong.
@@ -118,7 +117,7 @@ class CreateScoreRequest(BaseModel):
                 )
             for url in self.image_urls:
                 if not url or len(url) > 2048:
-                    raise ValueError("every entry in image_urls must be a URL")
+                    raise ValueError("every entry in image_urls must be a page reference")
         if self.pages() == []:
             if self.clef is None:
                 raise ValueError(
@@ -133,7 +132,7 @@ class CreateScoreRequest(BaseModel):
         return self
 
     def pages(self) -> list[str]:
-        """The pages this request is for, in page order. Empty means by hand."""
+        """Page references in order. Empty means the piece was entered by hand."""
         if self.image_urls is not None:
             return list(self.image_urls)
         return [self.image_url] if self.image_url else []
@@ -163,7 +162,7 @@ class AttachScorePagesRequest(BaseModel):
                 f"this one has {len(pages)}"
             )
         if any(not url or len(url) > 2048 for url in pages):
-            raise ValueError("every attached page must be a URL")
+            raise ValueError("every attached page must be a page reference")
         return self
 
     def pages(self) -> list[str]:
