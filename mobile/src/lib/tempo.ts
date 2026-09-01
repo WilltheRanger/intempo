@@ -107,7 +107,7 @@ export function tempoUnitLabel(
   if (value === 'quarter') {
     return 'BPM';
   }
-  const words = value.replaceAll('_', '-');
+  const words = value.replace(/_/g, '-');
   return value === 'double_whole' ? 'breve BPM' : `${words}-note BPM`;
 }
 
