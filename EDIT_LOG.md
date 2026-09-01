@@ -6,6 +6,38 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-01 — The review screen told you that you had removed pages you never took
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. The other thing the route
+sweep turned up.
+
+**Files:** `mobile/src/data/captureSession.ts` + test,
+`mobile/src/screens/capturedPages/CapturedPagesScreen.tsx`.
+
+Opening `/scan/pages` with nothing in the session said **"No pages left — you've
+removed every page."** Nothing had been removed. That path is not a corner case
+either: `linking.ts` makes the scan steps linkable on purpose, so *"someone who
+refreshes mid-scan should land on the step they were on and find it empty, which
+is recoverable"* — this is that landing, and the first thing it does is describe
+an action the musician did not take.
+
+An empty session means two things and `current()` cannot tell them apart, both
+being `[]`. `everHeldPages` is the fact, set by `capture` and `importAll`,
+cleared by `reset`, and deliberately **not** cleared by `remove` — removing the
+last page is exactly the case that must still say "you removed them".
+
+`importAll` sets it rather than or-ing it, because that call replaces the
+session: what the scan before it held is not a fact about this one. Tested.
+
+Copy now: *"No pages yet — photograph a page of sheet music to start a scan"*,
+with the action reading **Photograph a page** rather than **Add page**, since
+there is nothing yet to add to. Verified in the running build by opening the
+route cold.
+
+**Rollback:** revert the commit.
+
+---
+
 ## 2026-09-01 — The piece screen was three cards in a column
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Found by sweeping all 23

@@ -100,6 +100,7 @@ export function CapturedPagesScreen() {
   }
 
   if (pages.length === 0) {
+    const everHeld = captureSession.hasHeldPages();
     return (
       <ScreenContainer>
         <PageHeader
@@ -107,11 +108,24 @@ export function CapturedPagesScreen() {
           onBack={() => navigation.goBack()}
           backLabel={scannerBelow ? 'Back to the scanner' : 'Back'}
         />
+        {/*
+          **Two empty states, because empty means two things.** A scan whose
+          pages were all removed, and one that never had any — which is what a
+          refresh or a link straight to `/scan/pages` produces, and which the
+          routing allows on purpose so a refresh lands on the step you were on.
+          They are the same empty array, so the session is asked
+          (`hasHeldPages`); telling someone they removed pages they never took
+          is a small lie about their own actions.
+        */}
         <EmptyState
           icon={Layers}
-          title="No pages left"
-          description="You've removed every page. Capture at least one to continue."
-          actionLabel="Add page"
+          title={everHeld ? 'No pages left' : 'No pages yet'}
+          description={
+            everHeld
+              ? "You've removed every page. Capture at least one to continue."
+              : 'Photograph a page of sheet music to start a scan.'
+          }
+          actionLabel={everHeld ? 'Add page' : 'Photograph a page'}
           onActionPress={addPage}
         />
       </ScreenContainer>
