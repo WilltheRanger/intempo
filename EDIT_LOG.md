@@ -6,6 +6,76 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-01 — The placeholder that had never rendered, and a regression from yesterday's fix
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`.
+
+**Files:** `mobile/src/components/pieces/ScoreThumbnail.tsx`,
+`components/primitives/PageHeader.tsx`, `data/sources/fixtures.ts`.
+
+### "It creates some really large box for that piece"
+
+The owner reported this weeks ago and part of it was fixed at the time: the
+server stopped signing a URL for a page it had discarded. The rest of it was
+still there, in the fallback that fix hands over to.
+
+`StaffPlaceholder` draws five ruled lines and insets them with
+`paddingVertical: '22%'` / `paddingHorizontal: '12%'` — and **a percentage
+cannot say "of myself".** CSS and Yoga both resolve percentage padding against
+the *parent's width*. In a 350pt library row that is 77pt top and bottom and
+42pt each side, on a thumbnail asked to be 52×38. Measured: the box came out
+**84×154, holding nothing but padding**, and the row grew from 67pt to 179pt.
+A large empty rectangle where the cover should be, which is exactly the words
+the owner used.
+
+The inset is measured from the box's own layout now — 22% of its height, 12%
+of its width, which is what the percentages were reaching for. Measured after:
+52×38, `padding: 8.36px 6.24px`, row back to 91pt, five hairlines sitting where
+every other row's sheet-music crop sits.
+
+### It had never rendered anywhere
+
+**Every fixture piece carried a photograph**, so `cover.kind === 'staff'` was
+unreachable in the only build these screens can be driven in. Its docstring
+described ruled lines; nothing had ever drawn them.
+
+That is the second time this exact gap has cost something. `UNREAD_CLEF_SCORE`
+exists one file over because the same was true of a null clef — *"the fixture
+build had no piece in it, so the screen that handles the case could not be
+looked at without a live backend, which is how it came to caption the guess
+Treble clef for as long as it did."*
+
+There is a piece with no photograph in the fixtures now, and it is not an edge
+case: `POST /v1/scores/:id/accept` discards the page once a musician confirms
+the reading, so **a library that has been used for a while is mostly pieces
+that look like this.** Its composer is one `canonical` knows, so it is also the
+piece that will show a portrait the day `PORTRAITS` has one.
+
+### And a regression from the entry below
+
+That new piece's screen showed its ⋮ orphaned on its own line under a two-line
+title — caused by the `flexWrap: 'wrap'` added yesterday for the large-text
+case. **Flex decides wrapping from items' base sizes and only then shrinks**,
+so with `flexShrink: 1` a long title demanded its full content width and broke
+the line instead of taking what was left.
+
+`flex: 1` on the title fixes both: a base of zero means the title never forces
+a wrap, so the action stays beside it and the title sets its own text over as
+many lines as it needs — and the wrap still fires when the *action* genuinely
+cannot fit, which is what it was for. Verified on both piece screens at 1×
+(title and action share a line, `y: 68` for each) and across all 22 routes at
+2× (still clean).
+
+Worth recording plainly: yesterday's fix was verified at 2× and not at 1×, and
+the thing it broke was the ordinary case.
+
+**Tests:** 940, unchanged — layout facts a source test cannot hold. 23-route
+sweep and the 320pt probe both clean.
+
+**Rollback:** revert the commit.
+
+---
+
 ## 2026-09-01 — What the app looks like at twice the text size
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`.

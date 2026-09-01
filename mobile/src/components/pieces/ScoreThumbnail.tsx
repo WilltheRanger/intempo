@@ -106,6 +106,25 @@ export function ScoreThumbnail({
 
 const STAFF_LINE_COUNT = 5;
 
+/** How far the ruled lines sit inside the box, as fractions of it. */
+const STAFF_INSET_Y = 0.22;
+const STAFF_INSET_X = 0.12;
+
+/**
+ * Five ruled lines, inset proportionally in whatever box it is given.
+ *
+ * **The inset is measured, because a percentage cannot say "of myself".** CSS
+ * and Yoga both resolve percentage padding against the *parent's width*, so
+ * `paddingVertical: '22%'` on a 52x38 thumbnail inside a 350pt row came to 77pt
+ * top and bottom: the box grew to 84x154 and held nothing but padding — a large
+ * empty rectangle where the piece's cover should be, which is exactly what the
+ * owner reported for a piece whose photograph had been deleted.
+ *
+ * It had never rendered. Every fixture piece carried a photograph, so this
+ * branch was unreachable in the only build these screens can be driven in —
+ * the same gap `UNREAD_CLEF_SCORE` was added to close, one file over. There is
+ * a piece with no photograph in the fixtures now.
+ */
 function StaffPlaceholder({
   radius,
   style,
@@ -113,8 +132,30 @@ function StaffPlaceholder({
   radius: number;
   style?: StyleProp<ViewStyle>;
 }) {
+  const [box, setBox] = useState<{ width: number; height: number } | null>(null);
+
   return (
-    <View style={[styles.placeholder, { borderRadius: radius }, style]}>
+    <View
+      onLayout={(event) => {
+        const { width, height } = event.nativeEvent.layout;
+        setBox((current) =>
+          current && current.width === width && current.height === height
+            ? current
+            : { width, height },
+        );
+      }}
+      style={[
+        styles.placeholder,
+        { borderRadius: radius },
+        style,
+        box
+          ? {
+              paddingVertical: box.height * STAFF_INSET_Y,
+              paddingHorizontal: box.width * STAFF_INSET_X,
+            }
+          : null,
+      ]}
+    >
       {Array.from({ length: STAFF_LINE_COUNT }, (_, index) => (
         <View key={index} style={styles.staffLine} />
       ))}
@@ -129,8 +170,9 @@ const styles = StyleSheet.create({
   placeholder: {
     backgroundColor: colors.surfacePressed,
     justifyContent: 'space-evenly',
-    paddingVertical: '22%',
-    paddingHorizontal: '12%',
+    // No padding until the box has been measured — see `StaffPlaceholder`. A
+    // frame of lines flush to the edges is a frame; a percentage here is a
+    // permanently wrong box.
     overflow: 'hidden',
   },
   staffLine: {

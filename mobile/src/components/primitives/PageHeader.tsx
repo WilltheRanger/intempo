@@ -108,6 +108,19 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
   },
   title: {
-    flexShrink: 1,
+    /**
+     * **`flex: 1`, not `flexShrink: 1`, and the difference is `flexWrap`.**
+     *
+     * Flex decides wrapping from items' *base* sizes and only then shrinks, so
+     * with `flexShrink` alone a long title demanded its full content width, the
+     * line broke, and the action dropped below it — orphaned under a two-line
+     * piece title at ordinary text size. That was a regression from adding
+     * `flexWrap` for the large-text case, and it is why both are needed: a base
+     * of zero means the title never forces a wrap, it just takes what is left
+     * and sets its own text over as many lines as it needs. The wrap then fires
+     * only when the *action* genuinely cannot fit, which is what it was added
+     * for.
+     */
+    flex: 1,
   },
 });

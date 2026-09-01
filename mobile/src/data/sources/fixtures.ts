@@ -323,6 +323,37 @@ const FIXTURE_PIECES: FixturePiece[] = [
     markedBpm: null,
     score: WORD_MARKED_SCORE,
   },
+  {
+    /**
+     * **A piece whose photograph is gone, which is the ordinary end state.**
+     *
+     * `POST /v1/scores/:id/accept` discards the page once a musician has
+     * confirmed the reading — deliberately, and it is the only thing that
+     * does. So a library that has been used for a while is mostly pieces that
+     * look like this, and until now **not one fixture did**: every cover in
+     * every sweep came from a photograph, and the fallback path was never on
+     * screen.
+     *
+     * That gap has already cost this project once. `UNREAD_CLEF_SCORE` a few
+     * hundred lines up exists because the same was true of a null clef — "the
+     * fixture build had no piece in it, so the screen that handles the case
+     * could not be looked at without a live backend, which is how it came to
+     * caption the guess *Treble clef* for as long as it did." The owner
+     * reported this one too: a deleted photograph "creates some really large
+     * box for that piece."
+     *
+     * The composer is one `canonical` knows, so this is also the piece that
+     * will show a portrait the day `PORTRAITS` has one.
+     */
+    id: 'fixture-brahms-sonata-1',
+    title: 'Violin Sonata No. 1 in G major, Op. 78',
+    composer: 'Johannes Brahms',
+    movement: 'I. Vivace ma non troppo',
+    practicedDaysAgo: 3,
+    thumbnail: null,
+    markedBpm: MARKED_BPM,
+    score: DEMO_SCORE,
+  },
 ];
 
 function toPiece({ practicedDaysAgo, ...piece }: FixturePiece): Piece {
