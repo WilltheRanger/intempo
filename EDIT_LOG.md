@@ -6,6 +6,116 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-01 — Listen worked once, and four separate things could cause that
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Owner's report: *"Listen
+also only works on first listen but when I come back it doesn't work, for all
+listening buttons."*
+
+**Files:** `mobile/src/lib/audio/context.web.ts` (new) + test,
+`mobile/src/lib/audio/session.web.ts` (rewritten),
+`mobile/src/lib/scorePlayer.web.ts` + test (new),
+`mobile/src/lib/metronome/click.web.ts`, `click.web.test.ts`,
+`mobile/src/components/score/ListenButton.tsx`.
+
+"For all listening buttons" is the useful half of the report: the four screens
+share one `ListenButton`, so the fault is below it. It is not *in* it either —
+pressing Listen four times in Chromium always worked. What follows is four
+defects that each produce that one sentence, none of which the app reports as
+anything but success: the button toggles, the schedule is built, every
+oscillator is created and started, and nothing comes out.
+
+### 1. A context per playback, closed at the end
+
+`scorePlayer.web.ts` and `click.web.ts` each built an `AudioContext` when they
+started and closed it when they finished. That is tidy and it is the shape of
+the commonest "audio works once on iPhone" bug there is: iOS Safari caps how
+many contexts a page may hold and `close()` does not reliably give the slot
+back. It is also what a long piece plus a locked screen produces with no cap
+involved — `requestAnimationFrame` stops on a hidden page, so the tick that
+ends playback never runs, so `close()` never runs, and the context leaks.
+
+`lib/audio/context.web.ts` now owns one context for the life of the page,
+resumed on every play and never closed. Web Audio is designed for this; a
+context is a mixer, not a sound.
+
+The metronome had to give up `close()` as its **cancellation mechanism**, which
+is what it was really using it for — a click booked 250 ms ahead must not sound
+after the take has ended. Each run now owns a gain node and disconnects it,
+which silences everything already booked through it and leaves the mixer
+standing.
+
+**Measured, on the built bundle, four presses in one page load:** before, four
+contexts and four closes; after, **one context, zero closes**, 32 oscillators
+on every press, label resetting each time. Three consecutive takes still book
+clicks at the same rate.
+
+### 2. The end of a piece was only visible to `requestAnimationFrame`
+
+Frames are not delivered to a hidden page. Lock the phone mid-Listen and the
+frame that would notice the end never arrives, `finish()` never runs, and the
+handle says playing forever. Coming back, the button still says **Stop** for a
+piece that ended minutes ago: the next press stops silence and only the press
+after that plays.
+
+`sweepForEnd` is a timer alongside the frame loop. It **re-checks the audio
+clock rather than trusting its own deadline**, because the two come apart in
+exactly this situation — iOS suspends the context with the page, freezing
+`currentTime` while wall time runs on — so waking early means waiting again,
+never cutting a piece off mid-phrase.
+
+**Measured** by stopping frame delivery mid-piece on both bundles (a 17 s
+fixture, read 26 s later): before, `Stop listening`; after, `Listen at this
+tempo`.
+
+### 3. The button announced playing before anything played
+
+`setPlaying(true)` ran before `playSchedule` was called, so a playback that
+could not start left the label on Stop with nothing sounding. It now reads
+`started.isPlaying()` — the handle is the only thing that knows.
+
+### 4. `navigator.audioSession` was never set, and the comment said it couldn't be
+
+`session.web.ts` was a no-op whose comment read *"the browser has no audio
+session, and no silent switch to override"*. True of a laptop, false of the
+device this app's users hold: **iOS Safari applies the ring/silent switch to
+Web Audio.** So the `setAudioModeAsync` fix logged earlier for the same
+complaint was a no-op on the build the owner is actually using — the app is not
+on the App Store, so the phone is running the web build. It now sets
+`audioSession.type = 'playback'`, which is Safari's own override for this.
+
+`audioContext()` also no longer throws: iOS throws from the constructor at the
+cap, and a throw out of a press handler flips the label and plays nothing,
+which is this bug wearing a different hat.
+
+### Honest status
+
+Items 1–3 are measured in Chromium on the built bundle, before and after. Item
+4 is **not verified on hardware** — there is no iPhone here, and the ring/silent
+switch is the one thing that cannot be checked without one. What is checked is
+that it is called on every path that makes a sound and that it cannot throw.
+The second-run click behaviour is unit-tested rather than measured in-page; the
+in-page repeat evidence is for Listen, which shares the context.
+
+**Three-foot test:** not applicable — no screen composition changed. The only
+visible difference is a button that stops saying Stop when the music stops.
+
+**Tests:** 673 pass (58 files), up 26. `scorePlayer.web.ts` and
+`context.web.ts` had no tests at all; both now have them, driven against a stub
+context because "how many contexts exist" and "when does `onEnd` fire" are
+structural and need no sound.
+
+**Also worth writing down:** the first run of this verification measured the
+*old* bundle and said the fix had not worked. A `serve` process from earlier in
+the session still held port 4187 against a stale `dist-fixtures`, my own server
+failed to bind, and the probe cheerfully reported four contexts. The tell was a
+stack frame naming a chunk that did not exist in `dist`. Check what the port is
+actually serving before believing a probe that disagrees with the source.
+
+**Rollback:** revert the commit. Nothing migrated, no API change.
+
+---
+
 ## 2026-09-01 — An upload nobody could delete, including its owner
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. The oldest item on the

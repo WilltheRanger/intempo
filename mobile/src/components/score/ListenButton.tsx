@@ -118,9 +118,15 @@ export function ListenButton({
       return;
     }
 
-    setPlaying(true);
     setProgress(0);
-    handle.current = playSchedule(schedule, {
+    // **The button follows the player, it does not lead it.** `setPlaying(true)`
+    // used to run before the schedule was handed over, so a playback that could
+    // not start left the label on Stop with nothing sounding — press again and
+    // you stop silence, press a third time and it works. That is the shape the
+    // owner reported as *"Listen only works on the first listen"*, and it is
+    // reachable whenever `playSchedule` declines: no Web Audio at all, or a
+    // browser that refuses another context.
+    const started = playSchedule(schedule, {
       // **The instrument in the musician's hands.** Every Listen in the app
       // used to play the same four-harmonic reference tone, whoever was
       // holding whatever — which is what the owner meant by "that default
@@ -139,6 +145,12 @@ export function ListenButton({
         report.current?.(0, 0);
       },
     });
+
+    // A schedule with nothing playable calls `onEnd` before this line, so read
+    // the handle rather than assuming: it is the only thing that knows.
+    const sounding = started.isPlaying();
+    handle.current = sounding ? started : null;
+    setPlaying(sounding);
   }
 
   return (

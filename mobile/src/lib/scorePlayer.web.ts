@@ -1,3 +1,5 @@
+import { audioContext, resumeAudio } from './audio/context.web';
+import { prepareForPlayback } from './audio/session.web';
 import type { Schedule } from './score/schedule';
 import { DEFAULT_VOICE, harmonicsFor, VOICES, type VoiceName } from './score/voice';
 import type { PlaybackHandle, PlayOptions } from './score/player.types';
@@ -13,22 +15,47 @@ import type { PlaybackHandle, PlayOptions } from './score/player.types';
  *
  * The playhead is the one thing that does use a frame loop — it only has to
  * be right to the frame, and it reads the audio clock rather than counting.
+ * It is not, however, allowed to be the only thing that notices the end: see
+ * `sweepForEnd`.
  */
+
+/**
+ * How far past the computed end the sweep waits before looking again.
+ *
+ * Small and only there so a wake-up a millisecond early re-arms once instead of
+ * spinning. The check itself is against the audio clock, so this is slack, not
+ * a schedule.
+ */
+const END_SWEEP_SLACK_MS = 50;
+
+/** Schedule and play a score, returning a handle that can stop it. */
 export function playSchedule(
   schedule: Schedule,
   { voice = DEFAULT_VOICE, onProgress, onEnd }: PlayOptions = {},
 ): PlaybackHandle {
-  const AudioContextCtor =
-    window.AudioContext ??
-    (window as unknown as { webkitAudioContext?: typeof AudioContext })
-      .webkitAudioContext;
-
-  if (!AudioContextCtor || schedule.notes.length === 0) {
+  // Asked in this order on purpose: a score with nothing in it must not be the
+  // thing that spends the page's one audio context. Building it is otherwise
+  // free, but on iOS a context is a capped resource and this branch is reached
+  // by every screen that renders a Listen for a piece still being read.
+  if (schedule.notes.length === 0) {
     onEnd?.();
     return { stop: () => {}, isPlaying: () => false };
   }
 
-  const context = new AudioContextCtor();
+  const maybeContext = audioContext();
+  if (!maybeContext) {
+    onEnd?.();
+    return { stop: () => {}, isPlaying: () => false };
+  }
+
+  // **Shared, and asked to run before anything is scheduled.** A context per
+  // playback is the commonest "audio works once on iPhone" bug there is — see
+  // `lib/audio/context.web.ts`. Resuming inside the tap is what makes the
+  // *first* one audible; sharing it is what makes the second one work.
+  const context = maybeContext;
+  void prepareForPlayback();
+  resumeAudio(context);
+
   const spec = VOICES[voice as VoiceName] ?? VOICES[DEFAULT_VOICE];
 
   // Headroom. The partials are normalised to sum to one, so the worst case
@@ -106,6 +133,7 @@ export function playSchedule(
 
   let stopped = false;
   let frame = 0;
+  let sweep: ReturnType<typeof setTimeout> | undefined;
 
   function tick() {
     if (stopped) {
@@ -120,12 +148,45 @@ export function playSchedule(
     frame = requestAnimationFrame(tick);
   }
 
+  /**
+   * The second way playback can end, and the one that matters when nobody is
+   * looking.
+   *
+   * **`requestAnimationFrame` does not run on a hidden page.** Lock the phone,
+   * take a call, or switch apps during a Listen and `tick` simply stops being
+   * called — so the frame that would have noticed the end never arrives,
+   * `finish()` never runs, and the handle reports `isPlaying()` forever. What
+   * the musician sees on coming back is a button that still says Stop for a
+   * piece that finished minutes ago: the next press stops silence, and only the
+   * press after that plays. From the outside that is *"Listen doesn't work when
+   * I come back"*.
+   *
+   * A timer is throttled on a hidden page but it is not stopped, and an overdue
+   * one fires on the way back. It **re-checks the audio clock rather than
+   * trusting itself**, because the two clocks come apart in exactly this
+   * situation: iOS suspends the audio context with the page, freezing
+   * `currentTime` while wall time keeps going. Waking up early therefore means
+   * waiting again, not cutting a piece off mid-phrase.
+   */
+  function sweepForEnd() {
+    if (stopped) {
+      return;
+    }
+    const remaining = schedule.durationS - (context.currentTime - startedAt);
+    if (remaining <= 0) {
+      finish();
+      return;
+    }
+    sweep = setTimeout(sweepForEnd, remaining * 1000 + END_SWEEP_SLACK_MS);
+  }
+
   function finish() {
     if (stopped) {
       return;
     }
     stopped = true;
     cancelAnimationFrame(frame);
+    clearTimeout(sweep);
     sources.forEach((source) => {
       try {
         source.stop();
@@ -133,17 +194,19 @@ export function playSchedule(
         // Already finished on its own; nothing to do.
       }
     });
-    void context.close();
+    // **Disconnected, not closed.** The context outlives this playback and
+    // every one after it; what has to go is this play's own mixer node, or the
+    // graph grows by one gain per Listen for the life of the page.
+    try {
+      master.disconnect();
+    } catch {
+      // Already gone.
+    }
     onEnd?.();
   }
 
-  // Autoplay policy hands back a suspended context even from a tap on some
-  // browsers; without this the notes are scheduled into a clock that isn't
-  // running and nothing sounds.
-  if (context.state === 'suspended') {
-    void context.resume();
-  }
   frame = requestAnimationFrame(tick);
+  sweepForEnd();
 
   return {
     stop: finish,

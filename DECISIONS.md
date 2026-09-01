@@ -6,6 +6,54 @@ Operating Principle #5.
 
 ---
 
+## 2026-09-01 — One AudioContext for the life of the page, over one per playback
+
+**Context:** the owner reported that Listen works once and not again, on every
+screen that has the button. Both web players built an `AudioContext` when they
+started and closed it when they finished.
+
+**Alternatives considered:**
+
+1. **A context per playback, closed at the end.** What shipped. It is the
+   obvious reading of "acquire, use, release", and it is wrong on the platform
+   that matters most here: iOS Safari caps how many audio contexts a page may
+   hold and `close()` does not reliably return the slot. The failure is
+   invisible — the button toggles, the schedule is built, every oscillator is
+   created and started, and nothing comes out — so nothing short of counting
+   contexts notices it.
+2. **A context per playback, closed more carefully.** Chasing every path that
+   can skip the close: a hidden page that never delivers the ending frame, an
+   unmount mid-play, an exception. Each is fixable; the set is not closed, and
+   every miss is permanent for that page.
+3. **One context, created lazily, never closed.** Taken.
+
+**Decision:** `lib/audio/context.web.ts` owns a single context, built on the
+first sound and resumed before every play. Web Audio is built for this — a
+context is a mixer, not a sound — and the resource being conserved is the thing
+iOS actually meters.
+
+**Trade-offs accepted:**
+
+- **A running context costs something when nothing is playing.** Real, and
+  small: an idle context with nothing connected does no work beyond holding an
+  audio thread. Against it, the leak the old code produced was a context that
+  could never be reclaimed at all.
+- **Cancellation had to be rebuilt.** The metronome was using `close()` as its
+  cancel — a click booked 250 ms ahead must not sound after the take ends — so
+  each run now owns a gain node and disconnects it. Same silence, nothing else
+  taken down with it. This is the part a future edit is most likely to undo by
+  accident, so it is asserted directly.
+- **One context is shared between the player and the click track.** They cannot
+  be independently interrupted. Nothing wants that: they are the same app
+  making sound to the same person, and a metronome another part of the app can
+  duck is the failure logged against `interruptionMode` on the native side.
+
+The recorder keeps its own context (`audioRecorder.web.ts`). It is not sharing
+a mixer with playback; it is an analyser on a microphone stream with a
+different lifetime, and iOS gives recording its own session anyway.
+
+---
+
 ## 2026-09-01 — Ship a music font rather than draw notation by hand
 
 **Context:** the owner asked for the transcription to read as a page —
