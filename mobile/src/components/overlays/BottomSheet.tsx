@@ -13,6 +13,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BORDER_WIDTH, colors, motion, radii, spacing } from '../../design';
 import { useReducedMotion } from '../../lib/useReducedMotion';
 import { Text } from '../primitives/Text';
+import { useInertAppRoot } from './modalAccessibility';
 
 export interface BottomSheetProps {
   visible: boolean;
@@ -43,6 +44,10 @@ export function BottomSheet({
   const progress = useRef(new Animated.Value(0)).current;
   const [mounted, setMounted] = useState(visible);
   const [sheetHeight, setSheetHeight] = useState(0);
+
+  // The web Modal is a portal next to #root. Keep that root inert for the
+  // complete enter/exit animation so keyboard focus cannot slip behind it.
+  useInertAppRoot(mounted);
 
   useEffect(() => {
     if (visible) {
