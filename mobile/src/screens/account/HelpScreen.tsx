@@ -125,6 +125,7 @@ export function HelpScreen() {
       <Card padded={false}>
         <View style={styles.rows}>
           <Tip
+            first
             title="Place the phone nearby"
             detail="Keep the microphone uncovered and away from a music stand that can rattle. For double bass, clear bowed or plucked attacks are easier to follow than a distant room recording."
           />
