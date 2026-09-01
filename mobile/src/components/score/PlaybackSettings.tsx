@@ -3,7 +3,7 @@ import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { MAX_BPM, MIN_BPM } from '../../data/practiceTempo';
 import type { TempoBeatUnit } from '../../data/types';
-import { spacing } from '../../design';
+import { MIN_TOUCH_TARGET, spacing } from '../../design';
 import {
   displayTempoBpm,
   formatTempo,
@@ -87,7 +87,7 @@ export function PlaybackSettings({
           disabled={disabled}
           accessibilityRole="button"
           accessibilityLabel={`Listen from bar ${fromMeasure}. Change.`}
-          style={({ pressed }) => (pressed ? styles.pressed : undefined)}
+          style={({ pressed }) => [styles.target, pressed && styles.pressed]}
         >
           {/* **"Listen from", not "From".** On the Record screen this line sits
               between the Listen button and "Recording tips", and a bare "From
@@ -112,7 +112,7 @@ export function PlaybackSettings({
           disabled={disabled}
           accessibilityRole="button"
           accessibilityLabel={`Playback tempo ${formatTempo(bpm, beatUnit)}. Change.`}
-          style={({ pressed }) => (pressed ? styles.pressed : undefined)}
+          style={({ pressed }) => [styles.target, pressed && styles.pressed]}
         >
           <Text variant="metadataSmall" color={disabled ? 'textTertiary' : 'accent'}>
             {formatTempo(bpm, beatUnit)}
@@ -182,6 +182,19 @@ export function PlaybackSettings({
 }
 
 const styles = StyleSheet.create({
+  /**
+   * Padded to a real touch target.
+   *
+   * These are one line of `metadataSmall`, which measured **18pt tall** — a
+   * control at less than half the platform minimum, on the two settings this
+   * panel exists for. Padding rather than `hitSlop` because padding is in the
+   * layout and can be measured; a hit area nothing can see is a hit area
+   * nothing checks.
+   */
+  target: {
+    minHeight: MIN_TOUCH_TARGET,
+    justifyContent: 'center',
+  },
   row: {
     flexDirection: 'row',
     alignItems: 'center',

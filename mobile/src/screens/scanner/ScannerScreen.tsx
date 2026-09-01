@@ -704,7 +704,12 @@ const styles = StyleSheet.create({
     backgroundColor: colors.actionText,
   },
   doneButton: {
+    // Both axes. "Done" is four characters, which measured 40pt wide — a target
+    // that clears the minimum vertically and misses it horizontally is still a
+    // target that misses it.
     minHeight: MIN_TOUCH_TARGET,
+    minWidth: MIN_TOUCH_TARGET,
     justifyContent: 'center',
+    alignItems: 'flex-end',
   },
 });

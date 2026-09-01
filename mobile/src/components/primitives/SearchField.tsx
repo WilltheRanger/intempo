@@ -120,6 +120,10 @@ const styles = StyleSheet.create({
   },
   input: {
     flex: 1,
+    // **Full height, so the target is the field and not the text.** The
+    // container is `MIN_TOUCH_TARGET` tall; the input inside it measured 24pt,
+    // so half the row looked tappable and was not.
+    alignSelf: 'stretch',
     ...typography.body,
     color: colors.textPrimary,
     // Android centres poorly without this; iOS ignores it.

@@ -6,6 +6,54 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-01 — Touch targets: an audit, and the four things it found
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. I have changed a lot of UI
+this session and had not once checked what any of it is like to *hit*.
+
+**Files:** `mobile/src/screens/profile/ToggleRow.tsx`,
+`mobile/src/components/score/PlaybackSettings.tsx`,
+`mobile/src/components/primitives/SearchField.tsx`,
+`mobile/src/screens/scanner/ScannerScreen.tsx`.
+
+A probe walks ten routes as an emulated iPhone and measures every interactive
+element for a label and for the 44pt platform minimum. Four findings, all real:
+
+- **Every switch on the profile was a 40x20 target.** The row is two hundred
+  points wide and only a thumbnail-sized rectangle in its corner did anything.
+  The whole row is the control now — it carries `role="switch"`, its label, and
+  its checked state, and the switch itself is the picture of it. Measured:
+  40x20 → **316x94**, and pressing the label toggles.
+- **Two switches were announced per setting.** `accessible={false}` does not
+  stop react-native-web rendering its own `input[type=checkbox][role=switch]`
+  inside, so a screen reader met the row (labelled, stateless) *and* the input
+  (stateful, unlabelled). `aria-hidden` on the wrapper removes the second.
+- **`accessibilityState` alone gave no state on web.** RNW emits `aria-checked`
+  and does not derive it from `accessibilityState`; measured, the row announced
+  "switch, Haptic feedback" and never said whether it was on. Both spellings are
+  set now — one for React Native, one for the browser.
+- **The two playback settings were 18pt tall.** "Listen from bar 1" and the
+  tempo — the two controls that panel exists for — were a single line of
+  `metadataSmall` with no padding, at under half the minimum. Padded to 44
+  rather than given a `hitSlop`, because padding is in the layout and can be
+  measured; a hit area nothing can see is a hit area nothing checks.
+- **The scanner's "Done" was 40pt wide.** It cleared the minimum vertically and
+  missed it horizontally, which is still missing it.
+
+**One finding that was the probe's fault, recorded so nobody "fixes" it.** The
+library's search input measures 284x42 — but the *field* around it is 350x44,
+and React Native's border-box sizing leaves the input two points shorter than
+its container. A click two points inside the field's top edge, outside the
+input's own box, focuses it. Measured rather than argued. The probe now also
+skips `aria-hidden` subtrees, so it reports the accessibility tree rather than
+the DOM.
+
+After: **every route clean** except that one, which is not a defect.
+
+**Rollback:** revert the commit.
+
+---
+
 ## 2026-09-01 — The first screen a new account sees was composed as an error message
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Found by emptying the
