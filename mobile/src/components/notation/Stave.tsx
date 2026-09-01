@@ -1,4 +1,4 @@
-import Svg, { G, Line, Rect, Text as SvgText } from 'react-native-svg';
+import Svg, { G, Line, Path, Rect, Text as SvgText } from 'react-native-svg';
 
 import type { Clef } from '../../data/types';
 import { colors, fontFamily, MUSIC_EM_IN_SPACES, typography } from '../../design';
@@ -664,6 +664,28 @@ export function Stave({
             line through the digit is what an engraver never draws, and it is
             the tell that the number is an afterthought.
           */}
+          {/*
+            **Slurs — the bowing.** A Kreutzer étude without them is a page a
+            string player cannot bow, and `spans.ts` has been keeping
+            `measure.slurs` correct through every edit while nothing drew them.
+
+            A quadratic Bézier, stroked and not filled: a real engraver's slur
+            tapers from the ends to the middle, which needs two curves and a
+            fill. A single stroked arc of even weight is the honest simpler
+            thing — it says exactly what a slur says and does not pretend to be
+            calligraphy.
+          */}
+          {system.slurs.map((slur, index) => (
+            <Path
+              key={`slur-${index}`}
+              d={`M ${slur.from.x} ${slur.from.y} Q ${slur.control.x} ${slur.control.y} ${slur.to.x} ${slur.to.y}`}
+              stroke={ink}
+              strokeWidth={stroke * 1.3}
+              strokeLinecap="round"
+              fill="none"
+            />
+          ))}
+
           {system.tuplets.map((tuplet, index) => {
             const half = lineGap * TUPLET_NUMBER_HALF_WIDTH;
             return (

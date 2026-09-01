@@ -6,6 +6,80 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-01 — The app kept every slur correct and drew none of them
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Fifth finding of the
+music-accuracy audit, and the last of the "backend reads it, app ignores it"
+class in notation.
+
+**Files:** `mobile/src/lib/notation/engrave.ts`, `fromScore.ts`,
+`components/notation/Stave.tsx`, `mobile/src/lib/notation/slurs.test.ts` (new).
+
+`spans.ts` has kept `measure.slurs` pointing at the right notes through every
+insert and delete since the measure editor shipped — a careful, tested module
+whose whole job is that the marks survive editing. `engrave.ts` drew none of
+them, and said so in its own docstring: *"no key signatures, no slurs, no
+dynamics, no chords, no rests"*. Three of those five are now false, and this is
+the fourth.
+
+On a string part a slur is not an ornament. It is **the bowing**. A Kreutzer
+étude without its slurs is a page a string player cannot bow, which is a
+different failure from a page with a wrong note on it and a worse one for the
+instrument this app was built for.
+
+### The indexing is the part that is easy to get wrong
+
+Slurs address `measure.notes`; the engraver draws `items`, and the two are not
+the same list — a note it cannot place makes no item, and repeats and long-rest
+blocks insert items of their own. A slur mapped naively lands on the wrong
+notes, which is worse than none: a bowing instruction for a passage that is not
+there. `itemOfNote` is recorded as the items are emitted, so the mapping is
+never reconstructed after the fact.
+
+Three rules on top of it, each tested:
+
+- **An endpoint on a rest or on a dropped note moves inward** to the nearest
+  note that was drawn. A slur over four notes with one unreadable in the middle
+  is still the bowing for the other three.
+- **A slur left covering one note is dropped.** A one-note arc is a smudge over
+  a notehead.
+- **Ids are global, not per measure.** Two slurs in neighbouring bars sharing an
+  id would draw as **one** arc across the barline — a single long bow where the
+  page asks for two.
+
+### An id per note, not a start and an end
+
+A slur is drawn as one arc per run of consecutive notes carrying the same id.
+That is not a shortcut: it means a slur cut by a system break becomes a shorter
+arc on each system with no cross-system bookkeeping, which is exactly what a
+printed page does. `ScoreSlur` carries no nesting number, so overlapping slurs
+cannot be expressed by the data and are not expressible here either.
+
+**The arc goes opposite the stems** — the notehead side — which is the reverse
+of the tuplet bracket twenty lines below it, and I wrote it the same way round
+as the bracket at first. The comment said the right thing and the expression
+said the other one, so every slur was drawn through the stems it was supposed to
+arc over. The test caught it; the comment now records the trap.
+
+It is measured against **every** notehead including chord members, or the arc
+cuts through a double stop's upper note.
+
+A single stroked quadratic Bézier of even weight, deliberately: a real
+engraver's slur tapers from the ends to the middle, which needs two curves and a
+fill. The simpler arc says exactly what a slur says without pretending to be
+calligraphy.
+
+**Verified** by temporarily slurring the demo score — one long slur over a bar
+of four and two short ones in the next — building, and looking at it at 4x:
+below the notes because the stems are up, not crossing the barline, springing
+from the outer noteheads. Fixture restored, byte-identical; route sweep clean.
+
+**Tests:** 732 pass, up 9.
+
+**Rollback:** revert the commit.
+
+---
+
 ## 2026-09-01 — A four-note chord was drawn as one note and played as one pitch
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Fourth finding of the

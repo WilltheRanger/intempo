@@ -168,6 +168,17 @@ export interface StaveNote {
    */
   chord?: string[];
   /**
+   * Which slur covers this note, if any.
+   *
+   * **An id, not a start/end pair.** A slur is drawn as one arc per run of
+   * consecutive notes carrying the same id, which means a slur broken by a
+   * system break becomes two arcs with no special case — exactly what an
+   * engraver draws. `fromScore` assigns the ids; `ScoreSlur` carries no nesting
+   * number, so overlapping slurs cannot be expressed by the data and are not
+   * expressible here either.
+   */
+  slur?: number;
+  /**
    * The chord's members with their accidentals decided, set by
    * `spellAccidentals` alongside `printed`.
    *
@@ -469,6 +480,24 @@ export interface EngravedHead {
  * side, which is where an engraver puts it, and broken in the middle for the
  * number.
  */
+/**
+ * A slur, as a quadratic curve the renderer can draw without arithmetic.
+ *
+ * **Bowing, on a page for string players.** A Kreutzer étude without its slurs
+ * is a page you cannot bow, and the app has been keeping `measure.slurs`
+ * correct through every edit (`spans.ts`) while drawing none of them.
+ *
+ * It arcs away from the stems — an engraver puts a slur on the notehead side —
+ * and springs from just outside the outer noteheads rather than from their
+ * centres, so it reads as touching the notes rather than crossing them.
+ */
+export interface EngravedSlur {
+  from: { x: number; y: number };
+  to: { x: number; y: number };
+  /** The single control point of a quadratic Bézier. */
+  control: { x: number; y: number };
+}
+
 export interface EngravedTuplet {
   from: number;
   to: number;
@@ -504,6 +533,7 @@ export interface EngravedSystem {
   measureSpans: MeasureSpan[];
   beams: EngravedBeam[];
   tuplets: EngravedTuplet[];
+  slurs: EngravedSlur[];
   /** Clef, key and metre at the left edge. Empty when none was asked for. */
   head: EngravedHead;
   /** Baseline for the note names printed under this system. */
@@ -1104,6 +1134,7 @@ function layoutSystem(
   const barlines: number[] = [];
   const beams: EngravedBeam[] = [];
   const tuplets: EngravedTuplet[] = [];
+  const slurs: EngravedSlur[] = [];
   const stemLength = lineGap * STEM_FACTOR;
   const thickness = lineGap * BEAM_THICKNESS_FACTOR;
 
@@ -1624,6 +1655,49 @@ function layoutSystem(
     extents.push(block.numberY - lineGap * MULTI_REST_NUMBER_FACTOR, block.y + block.halfHeight);
   }
 
+  /**
+   * Slurs, one arc per run of consecutive notes carrying the same id.
+   *
+   * Runs rather than endpoints, so a slur cut by a system break simply becomes
+   * a shorter run on each system — which is what a printed page does, and needs
+   * no cross-system bookkeeping at all.
+   *
+   * A run of one note draws nothing: a slur has to join two notes to mean
+   * anything, and a single-note arc is a smudge over a notehead.
+   */
+  {
+    let run: { id: number; notes: EngravedNote[] } | null = null;
+    let noteIndex = 0;
+
+    const close = () => {
+      if (run && run.notes.length > 1) {
+        slurs.push(arcOver(run.notes, lineGap));
+      }
+      run = null;
+    };
+
+    for (const item of notes) {
+      if (!isNote(item)) {
+        // A rest inside a slur is unusual and legal; it does not break the arc,
+        // which is why this only skips rather than closing the run.
+        continue;
+      }
+      const engraved = engravedNotes[noteIndex];
+      noteIndex += 1;
+      if (item.slur === undefined) {
+        close();
+        continue;
+      }
+      if (run && run.id === item.slur) {
+        run.notes.push(engraved);
+      } else {
+        close();
+        run = { id: item.slur, notes: [engraved] };
+      }
+    }
+    close();
+  }
+
   const nameY = Math.max(...extents) + lineGap * NAME_ROW_FACTOR;
 
   return {
@@ -1636,6 +1710,7 @@ function layoutSystem(
       measureSpans,
       beams,
       tuplets,
+      slurs,
       head,
       nameY,
       width: right,
@@ -1646,6 +1721,63 @@ function layoutSystem(
     // regardless would leave a band of empty space under every system —
     // reserved for labels that are not being drawn.
     bottom: nameRow ? nameY : Math.max(...extents) + lineGap * BARE_BOTTOM_FACTOR,
+  };
+}
+
+/** How far from a notehead's centre a slur's end springs, in staff spaces. */
+const SLUR_CLEARANCE = 1.1;
+
+/** The shallowest and deepest a slur arcs, in staff spaces. */
+const SLUR_MIN_BULGE = 0.9;
+const SLUR_MAX_BULGE = 2.6;
+
+/**
+ * How much of the span becomes arc height. A long slur is flatter in
+ * proportion, which is what keeps a six-note slur from looking like a rainbow.
+ */
+const SLUR_SPAN_FACTOR = 0.06;
+
+/**
+ * The curve over one run of slurred notes.
+ *
+ * **On the notehead side**, which is the opposite of the stems — a slur drawn
+ * through a group's stems is the same mistake as a tuplet bracket on the wrong
+ * side, and it is one an engraver never makes. The group's own stems decide,
+ * by majority; a tie goes above, where there is more room than under a staff
+ * that also carries a name row.
+ */
+function arcOver(notes: EngravedNote[], lineGap: number): EngravedSlur {
+  // **Opposite the stems**, which is the reverse of the tuplet bracket a few
+  // lines down — a bracket goes on the stem side, a slur on the notehead side.
+  // Written the same way round as the bracket at first, which put every slur
+  // through the stems it was supposed to arc over; the comment said the right
+  // thing and the expression said the other one.
+  const ups = notes.filter((note) => note.stemUp).length;
+  const downs = notes.length - ups;
+  const above = downs >= ups;
+
+  // Every notehead of every note in the run, chords included: an arc measured
+  // from the principals alone would cut through a double stop's upper note.
+  const ys = notes.flatMap((note) => [note.y, ...note.chord.map((head) => head.y)]);
+  const edge = above ? Math.min(...ys) : Math.max(...ys);
+  const y = edge + (above ? -1 : 1) * lineGap * SLUR_CLEARANCE;
+
+  const from = notes[0];
+  const to = notes[notes.length - 1];
+  const span = to.x - from.x;
+  const bulge =
+    lineGap *
+    Math.min(SLUR_MAX_BULGE, SLUR_MIN_BULGE + (span / lineGap) * SLUR_SPAN_FACTOR);
+
+  return {
+    from: { x: from.x, y },
+    to: { x: to.x, y },
+    control: {
+      x: (from.x + to.x) / 2,
+      // Twice the bulge: a quadratic Bézier reaches only half way to its
+      // control point, so the visible arc height is half of this.
+      y: y + (above ? -2 : 2) * bulge,
+    },
   };
 }
 
@@ -1677,6 +1809,11 @@ function shift(system: EngravedSystem, dy: number): EngravedSystem {
     })),
     beams: system.beams.map((beam) => ({ ...beam, y: beam.y + dy })),
     tuplets: system.tuplets.map((t) => ({ ...t, y: t.y + dy })),
+    slurs: system.slurs.map((slur) => ({
+      from: { ...slur.from, y: slur.from.y + dy },
+      to: { ...slur.to, y: slur.to.y + dy },
+      control: { ...slur.control, y: slur.control.y + dy },
+    })),
     head: {
       clef: system.head.clef ? { ...system.head.clef, y: system.head.clef.y + dy } : null,
       key: system.head.key.map((a) => ({ ...a, y: a.y + dy })),

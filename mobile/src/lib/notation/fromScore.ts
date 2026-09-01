@@ -1,5 +1,5 @@
 import type { ScoreJson, ScoreMeasure } from '../../data/types';
-import { stepOf } from './engrave';
+import { isNote, stepOf } from './engrave';
 import { BEATS } from '../score/schedule';
 import type { Duration } from '../../data/types';
 import type { NoteValue, StaveItem } from './engrave';
@@ -200,6 +200,8 @@ export function staveScoreFor(score: ScoreJson): StaveScore {
   let noteCount = 0;
   let rests = 0;
   let undrawable = 0;
+  /** Global, so two slurs in neighbouring bars never merge into one arc. */
+  let slurId = 0;
 
   let index = 0;
   while (index < score.measures.length) {
@@ -236,7 +238,22 @@ export function staveScoreFor(score: ScoreJson): StaveScore {
      */
     let inTuplet: { count: number; taken: number } | null = null;
 
+    /**
+     * Where each of this measure's notes ended up in `items`, by its index in
+     * `measure.notes`.
+     *
+     * **Slurs address notes by index and items are not notes.** A rest is an
+     * item, a note this engraver cannot place is no item at all, and a repeat
+     * or a long-rest block inserts items of its own — so `start_note_index: 2`
+     * is almost never item 2. Mapping it after the fact is how a slur ends up
+     * over the wrong notes, which is worse than no slur: it is a bowing
+     * instruction for a passage that is not there.
+     */
+    const itemOfNote = new Map<number, number>();
+    let noteIndexInMeasure = -1;
+
     for (const note of measure.notes) {
+      noteIndexInMeasure += 1;
       const tuplet = tupletOf(note.duration);
       const written = tuplet ? tuplet.base : note.duration;
       const drawn =
@@ -312,6 +329,7 @@ export function staveScoreFor(score: ScoreJson): StaveScore {
         return false;
       });
 
+      itemOfNote.set(noteIndexInMeasure, items.length);
       items.push({
         pitch: note.pitch,
         value,
@@ -325,6 +343,52 @@ export function staveScoreFor(score: ScoreJson): StaveScore {
       noteCount += 1;
       opensMeasure = false;
     }
+
+    /**
+     * The measure's slurs, as ids on the items they cover.
+     *
+     * **An endpoint that fell on a rest or on a note this engraver dropped
+     * moves inward** to the nearest note that was actually drawn, rather than
+     * being discarded or left dangling: a slur over four notes with one
+     * unreadable in the middle is still a slur over the other three, and that
+     * is the bowing.
+     *
+     * A slur that ends up covering one note is dropped. A slur has to join two
+     * notes to mean anything; a one-note arc is a smudge over a notehead.
+     *
+     * The counter is global rather than per measure on purpose. Two slurs in
+     * neighbouring bars that shared an id would be drawn as **one** arc across
+     * the barline — a single long bow where the page asks for two.
+     */
+    for (const slur of measure.slurs ?? []) {
+      let from: number | undefined;
+      for (let n = slur.start_note_index; n <= slur.end_note_index; n += 1) {
+        const at = itemOfNote.get(n);
+        if (at !== undefined) {
+          from = at;
+          break;
+        }
+      }
+      let to: number | undefined;
+      for (let n = slur.end_note_index; n >= slur.start_note_index; n -= 1) {
+        const at = itemOfNote.get(n);
+        if (at !== undefined) {
+          to = at;
+          break;
+        }
+      }
+      if (from === undefined || to === undefined || from >= to) {
+        continue;
+      }
+      slurId += 1;
+      for (let at = from; at <= to; at += 1) {
+        const item = items[at];
+        if (isNote(item)) {
+          item.slur = slurId;
+        }
+      }
+    }
+
     index += 1;
   }
 
