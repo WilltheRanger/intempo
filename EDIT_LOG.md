@@ -6,6 +6,26 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-31 — Operable bottom-sheet close control
+
+**Branch:** `fix/bottom-sheet-close-button`
+
+### Changed
+
+- Added a visible Close button to every bottom sheet instead of exposing the
+  full-screen backdrop as an invisible keyboard button.
+- Kept backdrop clicks as pointer-only dismissal while making the sheet header
+  the first clear, operable keyboard target.
+- Preserved Escape dismissal and the existing inert boundary around the page
+  behind the sheet.
+
+### Verification
+
+- Reproduced on the deployed Add piece sheet: focus landed on an invisible
+  Close button whose Enter activation did not dismiss the modal.
+- Mobile typecheck, tests, and web build run in pull-request CI; the deployed
+  sheet is rechecked with Enter and Escape after merge.
+
 ## 2026-08-31 — Scanned ornament timing
 
 **Branch:** `codex/scan-ornament-timing`
