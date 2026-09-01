@@ -28,6 +28,26 @@ import type { PlaybackHandle, PlayOptions } from './score/player.types';
  */
 const END_SWEEP_SLACK_MS = 50;
 
+/**
+ * How long to give the audio clock to start moving, in wall-clock ms.
+ *
+ * **The failure this catches is a context that never runs.** `resume()` is a
+ * promise nobody awaits and a browser may simply refuse it — Safari parks a
+ * context in `interrupted` after a phone call, another app, or the page being
+ * backgrounded, and a context created outside a gesture is born `suspended`.
+ * When that happens `currentTime` is frozen, so *both* end conditions fail
+ * open: `tick` compares against a value that never grows, and `sweepForEnd`
+ * deliberately re-checks the audio clock and re-arms. The button says Stop for
+ * a piece that never started, forever, and pressing it stops silence.
+ *
+ * Measured against **wall** time on purpose. The audio clock is the thing
+ * under suspicion, so it cannot also be the judge.
+ */
+const START_TIMEOUT_MS = 2000;
+
+/** How often to look, while waiting for it. */
+const START_POLL_MS = 120;
+
 /** Schedule and play a score, returning a handle that can stop it. */
 export function playSchedule(
   schedule: Schedule,
@@ -37,7 +57,17 @@ export function playSchedule(
   // thing that spends the page's one audio context. Building it is otherwise
   // free, but on iOS a context is a capped resource and this branch is reached
   // by every screen that renders a Listen for a piece still being read.
-  if (schedule.notes.length === 0) {
+  //
+  // A schedule that cannot be *measured* is refused in the same breath and for
+  // a sharper reason: every comparison against `NaN` is false, so `tick` never
+  // reaches the end and `sweepForEnd` re-arms forever. Nothing sounds, the
+  // button stays on Stop, and the only way out is to press it twice. One
+  // non-finite tempo reaching `scheduleScore` did that.
+  if (
+    schedule.notes.length === 0 ||
+    !Number.isFinite(schedule.durationS) ||
+    schedule.durationS <= 0
+  ) {
     onEnd?.();
     return { stop: () => {}, isPlaying: () => false };
   }
@@ -110,6 +140,17 @@ export function playSchedule(
     const at = startedAt + note.startS;
     const until = at + note.durationS;
 
+    // **A note whose times are not numbers is skipped, not scheduled.**
+    // `oscillator.start()` and `.stop()` throw on a non-finite time, and the
+    // throw escaped this loop — after earlier notes had already been started,
+    // with no handle returned to stop them and `onEnd` never called. The
+    // button stayed as it was and a note could be left sounding with nothing
+    // able to silence it. One `NaN` tempo did that; `scheduleScore` no longer
+    // produces one, and this is the second lock on the same door.
+    if (!Number.isFinite(at) || !Number.isFinite(until) || until <= at) {
+      continue;
+    }
+
     const oscillator = context.createOscillator();
     const envelope = context.createGain();
 
@@ -134,6 +175,8 @@ export function playSchedule(
   let stopped = false;
   let frame = 0;
   let sweep: ReturnType<typeof setTimeout> | undefined;
+  let startCheck: ReturnType<typeof setTimeout> | undefined;
+  let visibleSince = Date.now();
 
   function tick() {
     if (stopped) {
@@ -180,6 +223,44 @@ export function playSchedule(
     sweep = setTimeout(sweepForEnd, remaining * 1000 + END_SWEEP_SLACK_MS);
   }
 
+  /**
+   * The third way playback can end: it never began.
+   *
+   * Distinguished from the second — a piece paused partway by a locked screen,
+   * which `sweepForEnd` correctly waits out — by asking only whether the clock
+   * has moved **at all**. A playback that got going and then stopped has
+   * already passed `startedAt` and never reaches here; one that never got going
+   * has not, and waiting for it forever is the bug.
+   *
+   * Each look also asks the context to run again. A refused resume is not
+   * permanent: the gesture that was missing a moment ago may have arrived, and
+   * asking costs nothing when it is already running.
+   */
+  function watchForStart() {
+    if (stopped || context.currentTime > startedAt) {
+      return;
+    }
+    // **A hidden page explains a frozen clock, so it does not count.** iOS
+    // suspends the context along with the page; the musician has not been
+    // failed, they have walked away. Time spent hidden is given back rather
+    // than spent, so coming back to a piece that never started still gets its
+    // full two seconds to begin.
+    if (typeof document !== 'undefined' && document.hidden) {
+      visibleSince = Date.now();
+      startCheck = setTimeout(watchForStart, START_POLL_MS);
+      return;
+    }
+    if (Date.now() - visibleSince < START_TIMEOUT_MS) {
+      resumeAudio(context);
+      startCheck = setTimeout(watchForStart, START_POLL_MS);
+      return;
+    }
+    // Nothing was heard, so ending is honest rather than a cut-off. The caller
+    // puts the button back and the next press builds a fresh schedule — which
+    // is what the musician was doing by hand, twice, to get sound out of it.
+    finish();
+  }
+
   function finish() {
     if (stopped) {
       return;
@@ -187,6 +268,7 @@ export function playSchedule(
     stopped = true;
     cancelAnimationFrame(frame);
     clearTimeout(sweep);
+    clearTimeout(startCheck);
     sources.forEach((source) => {
       try {
         source.stop();
@@ -207,6 +289,7 @@ export function playSchedule(
 
   frame = requestAnimationFrame(tick);
   sweepForEnd();
+  watchForStart();
 
   return {
     stop: finish,
