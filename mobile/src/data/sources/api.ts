@@ -439,6 +439,7 @@ function toTake(
     composer: score?.composer ?? null,
     recordedAt: analysis.created_at,
     targetBpm: analysis.target_bpm,
+    tempoBeatUnit: score?.score_json?.tempo_beat_unit ?? null,
     failure: null,
     status: result.status,
     headline: result.verdict,
@@ -473,6 +474,7 @@ function toFailedTake(
     composer: score?.composer ?? null,
     recordedAt: analysis.created_at,
     targetBpm: analysis.target_bpm,
+    tempoBeatUnit: score?.score_json?.tempo_beat_unit ?? null,
     failure: {
       recoverable: analysis.status === 'failed_recoverable',
       reason: analysis.failure_reason,
