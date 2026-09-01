@@ -254,7 +254,8 @@ export function ProfileScreen() {
             style={styles.settingNote}
           >
             Use headphones — a metronome over the speaker ends up in the
-            recording and throws the analysis off.
+            recording and throws the analysis off. This is the take only; the
+            count-in always ticks, and is discarded before anything is sent.
           </Text>
         ) : null}
       </Card>

@@ -19,6 +19,21 @@ export interface Recorder {
   stop(): Promise<Recording>;
   /** Abandons the take without producing a file. Safe to call twice. */
   cancel(): void;
+  /**
+   * Throw away everything captured up to now and keep recording.
+   *
+   * **This is what makes an audible count-in safe.** The microphone opens
+   * before the count, on purpose — starting it afterwards would put an
+   * unpredictable hardware delay between "four" and the downbeat, in an app
+   * whose entire subject is where notes land. So the count-in's clicks are in
+   * the capture, and `alignment.py` measures every onset from *the first one
+   * it detects*: a click over the phone's speaker would become the note the
+   * whole take is judged against.
+   *
+   * Called on the downbeat, it drops the pre-roll — the clicks, the room, and
+   * the hardware's start-up — and the file begins where the music does.
+   */
+  discardCapturedSoFar(): void;
 }
 
 /**

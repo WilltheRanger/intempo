@@ -134,11 +134,11 @@ export function HelpScreen() {
           />
           <Tip
             title="Use headphones for an audible click"
-            detail="A speaker metronome enters the recording and can be mistaken for your attacks. Visual and haptic modes do not leak into the microphone."
+            detail="During the take, a metronome over the speaker enters the recording and can be mistaken for your attacks; visual and haptic modes do not. The count-in is the exception — it always ticks out loud, and those seconds are discarded before the take is sent."
           />
           <Tip
             title="Count-in and long rests"
-            detail="Every take starts with one full bar. During a long rest, InTempo shows the measure you return in and counts the final pulses to your entrance."
+            detail="Every take starts with one full bar, counted out loud and in your hand whatever the metronome is set to. During a long rest, InTempo shows the measure you return in and counts the final pulses to your entrance."
           />
         </View>
       </Card>

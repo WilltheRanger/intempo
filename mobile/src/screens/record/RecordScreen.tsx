@@ -14,6 +14,7 @@ import {
 } from '../../components/primitives';
 import { usePiece } from '../../data/hooks/usePieces';
 import { practiceTempo, usePracticeTempos } from '../../data/practiceTempo';
+import { bpmForMarking } from '../../lib/tempoMarking';
 import { preferences, usePreferences } from '../../data/preferences';
 import { PressableScale } from '../../components/motion';
 import { takeSubmissionSource } from '../../data/sources';
@@ -92,7 +93,27 @@ export function RecordScreen() {
   // choice survives. Subscribing keeps this in step if the tempo is changed
   // elsewhere; the store is the source of truth, not this component.
   usePracticeTempos();
-  const targetBpm = practiceTempo.for(params.pieceId, piece?.markedBpm ?? null);
+  /**
+   * What the page says the tempo is, and how it says it.
+   *
+   * A metronome mark first, because it is a *reading*. Failing that, the
+   * conventional speed of a printed word — a page headed "Allegro moderato"
+   * and nothing else left `markedBpm` null, and the practice tempo fell back
+   * to 80: a moderately fast movement offered at a walking pace, on most of
+   * the standard repertoire, since editors wrote words rather than marks until
+   * well into the nineteenth century.
+   *
+   * The word is a convention and not a reading, so the screen says so under
+   * the control rather than presenting the number as the page's own.
+   */
+  const marking = piece?.score?.tempo_marking ?? null;
+  const markingBpm = piece?.markedBpm === null || piece?.markedBpm === undefined
+    ? bpmForMarking(marking)
+    : null;
+  const targetBpm = practiceTempo.for(
+    params.pieceId,
+    piece?.markedBpm ?? markingBpm,
+  );
   const tempoBeatUnit = piece?.score?.tempo_beat_unit ?? null;
   const displayedBpm = displayTempoBpm(targetBpm, tempoBeatUnit);
   const displayedRange = tempoDisplayRange(tempoBeatUnit);
@@ -314,15 +335,17 @@ export function RecordScreen() {
     [heard, skipRests],
   );
 
-  // A count-in is always visible, even when the take's metronome is off. The
-  // user's chosen mode still controls whether it also clicks or vibrates.
-  const countInMode: MetronomeMode =
-    countingIn && metronomeMode === 'off' ? 'visual' : metronomeMode;
+  // **The count-in is not the metronome setting.** It ticks, taps and counts
+  // on screen whatever the take is set to, the way a conductor counts you in —
+  // you cannot start together with something that has not given you the beat.
+  // What the take may then produce is a different question, and the microphone
+  // answers it: see `lib/metronome/countIn.ts`.
   const metronome = useMetronome({
-    mode: countInMode,
+    mode: metronomeMode,
     bpm: targetBpm,
     timeSignature: piece?.score?.time_signature,
     running: capturing,
+    countingIn,
   });
 
   useEffect(() => {
@@ -335,6 +358,14 @@ export function RecordScreen() {
     }
     // Beat N is the downbeat after N count-in beats. Keeping the metronome
     // running across this state change preserves phase exactly.
+    //
+    // **The pre-roll goes here.** The microphone has been open since before
+    // the count — deliberately, so no hardware start-up delay lands between
+    // "four" and the downbeat — which means the count-in's clicks are in the
+    // capture, and `alignment.py` measures every onset from the first one it
+    // detects. Dropping what has been captured makes the file begin where the
+    // music does, and is what lets the count-in be audible at all.
+    recorder.current?.discardCapturedSoFar();
     setElapsedMs(0);
     setPhase('recording');
   }, [countInBeats, countingIn, metronome.beat?.index]);
@@ -539,6 +570,17 @@ export function RecordScreen() {
             }
             disabled={recording}
           />
+
+          {markingBpm !== null && marking ? (
+            <Text
+              variant="metadataSmall"
+              color="textSecondary"
+              style={styles.bassNote}
+            >
+              The page is marked {marking} and gives no metronome mark. This is
+              what that usually means — move it to what you play.
+            </Text>
+          ) : null}
 
           {instrument === 'double_bass' ? (
             <Text

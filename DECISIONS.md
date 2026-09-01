@@ -6,6 +6,55 @@ Operating Principle #5.
 
 ---
 
+## 2026-09-01 — The count-in is audible, and the pre-roll is thrown away
+
+**Context:** the owner asked for a conductor's count-in — *"when they click the
+record give them a haptic and tick sound countdown for when to start, just like
+how an conductor does when he counts you in."*
+
+The obstacle is real and is why the count-in was silent. `alignment.py` measures
+every onset **from the first one it detects**, so a click over the phone's
+speaker while the microphone is open does not merely add noise: it becomes the
+note the entire take is judged against, and every measure after it is reported
+against a timeline that started on a metronome tick. That is the whole reason
+the audible metronome mode is named `audio_with_headphones` and is the
+musician's own assertion rather than something the app detects.
+
+And the microphone is deliberately already open: `start()` opens the recorder
+*before* the count so that no unpredictable hardware start-up delay lands
+between "four" and the downbeat, in an app whose subject is exactly where notes
+land.
+
+**Alternatives considered:**
+
+1. **Count in before opening the microphone.** Removes the leak completely and
+   reintroduces the delay the current ordering exists to avoid — 100–300ms of
+   variable latency at the one instant that must not be variable.
+2. **Send the count-in and have the backend trim it.** A new field on the take,
+   a new contract between two implementations, and the app's word for something
+   the server cannot check.
+3. **Keep the count-in silent unless headphones are asserted.** What it did.
+   Nobody is counted in on speaker, which is most takes.
+4. **Discard the pre-roll in the app.** ← chosen.
+
+**Decision:** `Recorder.discardCapturedSoFar()` drops everything captured so far
+and keeps recording; the Record screen calls it on the downbeat, at the same
+instant it flips out of `counting_in`. The count-in ticks and taps whatever the
+take's metronome is set to — including "off", because a count-in is not the
+metronome feature, it is how a take starts — and those seconds never leave the
+phone.
+
+**Trade-offs accepted.** The clicks are still *recorded*, briefly, so a bug that
+failed to call the discard would leak them; the call sits on the same line as
+the phase change so that the two cannot drift apart, and `countIn.ts` states the
+rule where it is tested. The downbeat's own accent click is inside the kept
+audio by one click-length; it coincides with the note the musician plays, so it
+adds no onset the alignment does not already expect there. And the take's
+metronome is unchanged: after the count, only `audio_with_headphones` clicks,
+because that audio cannot be discarded.
+
+---
+
 ## 2026-08-30 — A vision model may correct a bar, but may never read a page
 
 **Context:** the chain has been homr alone since 2026-08-24, when the owner

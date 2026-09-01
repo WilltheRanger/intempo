@@ -212,6 +212,22 @@ const FINE_VALUES_SCORE: ScoreJson = {
   notes_to_human: 'Fixture score. Not OCR output.',
 };
 
+/**
+ * A page headed with a word and no metronome mark — which is most of the
+ * repertoire printed before about 1830, and the case the practice tempo used
+ * to answer with a flat 80.
+ *
+ * `bpm_hint` is null because nothing on such a page states a number, and the
+ * importer only fills it from a mark it has actually read. What the app does
+ * with the word instead is a convention (`lib/tempoMarking.ts`), which is why
+ * the Record screen names the marking underneath the number it seeded.
+ */
+const WORD_MARKED_SCORE: ScoreJson = {
+  ...DEMO_SCORE,
+  tempo_marking: 'Quasi presto',
+  bpm_hint: null,
+};
+
 const FIXTURE_PIECES: FixturePiece[] = [
   {
     id: 'fixture-bach-bwv1001',
@@ -290,8 +306,9 @@ const FIXTURE_PIECES: FixturePiece[] = [
     movement: null,
     practicedDaysAgo: null,
     thumbnail: require('../../../assets/fixtures/03_complex_printed.jpg'),
-    markedBpm: MARKED_BPM,
-    score: DEMO_SCORE,
+    // No metronome mark on the page — see `WORD_MARKED_SCORE`.
+    markedBpm: null,
+    score: WORD_MARKED_SCORE,
   },
 ];
 

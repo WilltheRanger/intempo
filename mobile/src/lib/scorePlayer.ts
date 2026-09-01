@@ -1,6 +1,7 @@
 import { AudioModule } from 'expo-audio';
 import { File, Paths } from 'expo-file-system';
 
+import { prepareForPlayback } from './audio/session';
 import { encodeWavBytes } from './audio/wav';
 import type { Schedule } from './score/schedule';
 import { DEFAULT_VOICE, VOICES, type VoiceName } from './score/voice';
@@ -123,6 +124,11 @@ export function playSchedule(
   // happens off the call that started playback.
   void (async () => {
     try {
+      // **Before anything is rendered, not after.** A take leaves iOS in the
+      // recording session (`audioRecorder.ts` deliberately lets `AudioStream`
+      // own it), and an unconfigured session obeys the ring/silent switch —
+      // which is how Listen came to play nothing at all on a phone on silent.
+      await prepareForPlayback();
       const pcm = render(schedule, voice);
       const bytes = encodeWavBytes({
         chunks: [pcm],

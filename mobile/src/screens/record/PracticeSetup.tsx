@@ -69,13 +69,13 @@ export function PracticeSetup({
         <SetupStep
           number="2"
           title="Keep speaker sound out of the take"
-          body="Use headphones for the audio metronome. Visual and haptic modes stay silent in the room."
+          body="The count-in always ticks out loud, and those seconds are thrown away before anything is sent. After it, use headphones if you want the metronome audible — the microphone would hear the room."
         />
         <View style={styles.divider} />
         <SetupStep
           number="3"
           title="Enter on the next downbeat"
-          body="Start gives you one full bar in tempo. During a long written rest, the screen counts down to the exact measure where you return."
+          body="Start counts you in for one full bar, out loud and in your hand. During a long written rest, the screen counts down to the exact measure where you return."
         />
       </Card>
 

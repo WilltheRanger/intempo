@@ -6,6 +6,94 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-01 — Sound: the session nobody configured, and a real count-in
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. First batch of the owner's
+list of 2026-09-01 — the three items about sound, plus the tempo default.
+
+**Files:** `mobile/src/lib/audio/session.ts` (+ `.web.ts`),
+`mobile/src/lib/metronome/countIn.ts` + test, `useMetronome.ts`, `click.ts`,
+`mobile/src/lib/scorePlayer.ts`, `mobile/src/lib/audio/types.ts`,
+`audioRecorder.ts` + `.web.ts`, `mobile/src/lib/tempoMarking.ts` + test,
+`mobile/src/App.tsx`, `RecordScreen.tsx`, `PracticeSetup.tsx`,
+`HelpScreen.tsx`, `ProfileScreen.tsx`, `fixtures.ts`.
+
+### "On iPhone when my phone is on silent the audio during playback doesn't play"
+
+**Nothing in the app had ever configured the audio session.** No call to
+`setAudioModeAsync` existed anywhere — so iOS used whatever category the
+session happened to be in, which respects the ring/silent switch. A musician
+with their phone on silent, which is most musicians in most practice rooms,
+pressed Listen and heard nothing. Nothing was broken in the player; the
+operating system was doing what an unconfigured session asks for.
+
+`lib/audio/session.ts` asks for `playsInSilentMode: true` and `doNotMix` — a
+metronome another app can duck is a metronome that vanishes under the beat it
+is giving you. It is applied at launch **and** before every player, because
+recording takes the session away: `AudioStream.start()` puts iOS in `.record`
+with mode `.measurement` and `stop()` deactivates it, which is right and is why
+`audioRecorder.ts` deliberately does not fight it — but what is left afterwards
+is not a playback session.
+
+**Unverified on hardware**, and it is the one thing here that can only be
+verified there. This typechecks against `expo-audio`'s documented `AudioMode`
+and has never made a sound.
+
+### "Give them a haptic and tick sound countdown, just like a conductor"
+
+The count-in used to inherit the take's metronome mode, so with the metronome
+off or on visual it counted in silence — and it could not simply be turned up,
+because `alignment.py` measures every onset **from the first one it detects**.
+A click over the speaker while the microphone is open becomes the note the
+whole take is judged against.
+
+`Recorder.discardCapturedSoFar()` resolves it: the count ticks and taps
+whatever the mode says, and on the downbeat the pre-roll — clicks, room, and
+the hardware's start-up — is dropped, so the file begins where the music does.
+Full reasoning and the three alternatives in `DECISIONS.md`.
+
+The rules are in `lib/metronome/countIn.ts` rather than in the screen, because
+there is no React Native testing library here and this is four booleans that
+all look plausible whichever way round they are. One of the tests asserts that
+the count-in and the take **differ** for every mode but the audible one — if
+they ever agree, the count-in has stopped being a count-in.
+
+Three pieces of copy promised the silence this breaks — the first-take
+orientation, Help, and the Profile metronome note. All three now say the
+count-in is loud and that those seconds are discarded.
+
+### "Default the tempo to the identified tempo on the page. If not there, 80."
+
+Already true for a *metronome mark*: `tempoFor` reads the remembered tempo,
+then `bpm_hint`, then 80. The gap was a page headed with a **word**. The
+importer fills `bpm_hint` only from a mark it has actually read, so "Allegro
+moderato" and nothing else left it null — and most of the standard repertoire
+printed before about 1830 is marked with words, so most real pages fell to 80.
+A moderately fast movement offered at a walking pace.
+
+`lib/tempoMarking.ts` gives twenty-odd terms their conventional speed. It is a
+**convention, not a reading**, so it stays on this side of the wire and the
+screen names the marking under the number: *"The page is marked Quasi presto
+and gives no metronome mark. This is what that usually means — move it to what
+you play."* The ordering in the table is load-bearing and tested: a
+shortest-first scan reads "Allegro moderato" as a plain Allegro and "Andante
+moderato" as a Moderato, one too fast and one much too fast.
+
+A fixture piece now carries a word marking and no mark, so the path is visible
+in the sample build. Screenshotted: Paganini's Caprice 24 seeds at **176** from
+"Quasi presto", where it used to open at 80.
+
+**mobile: 575 passed, 48 files. `tsc --noEmit` clean.**
+
+### Still open from the owner's list
+
+Start-at-a-measure, playback tempo and measure choice, sheet-music page layout,
+the oversized box on a piece whose photograph was deleted, composer picker with
+portraits, real instrument samples, and the in-app camera's low-resolution
+upload. None attempted yet.
+
+---
+
 ## 2026-09-01 — Insights was four white boxes with no first thing to look at
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Seventh iteration of the

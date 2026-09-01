@@ -16,6 +16,7 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { screenConfig } from './navigation/linking';
 import { ApiError, warmApi } from './data/api/client';
 import { describeFixtureReason, IS_LIVE_BACKEND } from './data/environment';
+import { prepareForPlayback } from './lib/audio/session';
 import { formatDocumentTitle } from './lib/documentTitle';
 import { hydratePracticeTempos } from './data/practiceTempo';
 import { hydratePreferences } from './data/preferences';
@@ -152,6 +153,12 @@ export default function App() {
   useEffect(() => {
     void hydratePreferences();
     void hydratePracticeTempos();
+    // Ask iOS to let this app be heard on a phone that is on silent, once, at
+    // launch. Every player asserts it again before it makes a sound — the
+    // recorder takes the session away and does not give it back in a state
+    // that plays — but doing it here means the *first* tap is not the one that
+    // races a category change.
+    void prepareForPlayback();
     // Start waking the host now rather than when the first screen asks.
     //
     // The API sleeps when idle and takes about 75 seconds to come back, and
