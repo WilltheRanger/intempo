@@ -366,13 +366,20 @@ export function PieceScoreScreen() {
           </Text>
         </Pressable>
         {/*
-          The piece is still real and still practisable — it is in the library,
-          it has a title and a tempo, and the metronome does not need notes.
-          Saying so stops a failed read reading as a lost piece.
+          **It said "you can practise it with the metronome", and you cannot.**
+          `PieceDetailScreen` gates its practice button on `hasNotation`, and
+          there is no other route to the metronome — so a musician who read
+          that sentence and went looking found a screen offering to photograph
+          the page instead. That screen is right: recording without notation
+          produces a take nothing can align, and it says so plainly ("InTempo
+          needs the written notes and rests to follow your playing"). The
+          promise was the only thing out of step.
+
+          What is still true, and worth saying, is that the piece is not lost.
         */}
         <Text variant="metadataSmall" color="textTertiary" style={styles.caveat}>
-          The piece is still in your library. You can practise it with the
-          metronome; only the verdict needs the notation.
+          The piece is still in your library, with its title and its tempo.
+          Only the notation is missing.
         </Text>
         {hasPages ? (
           <ScoreThumbnail source={piece.thumbnail} style={styles.pageWhileReading} />

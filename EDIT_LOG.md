@@ -6,6 +6,66 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-01 — Fixtures for the states nobody had looked at, and a promise the app could not keep
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Acting on the entry below
+rather than waiting to trip over the next one.
+
+**Files:** `mobile/src/data/sources/fixtures.ts`,
+`screens/pieceScore/PieceScoreScreen.tsx`, `screens/addPiece/ManualPieceForm.tsx`.
+
+### Reading and failed had never been on screen
+
+Every fixture piece was `transcriptionStatus: 'done'`. So the two states a
+musician meets **immediately after scanning a page** — the most-reached screen
+the app has for someone new — had never been rendered in the only build these
+screens can be driven in. Third time this gap has appeared: the null clef, the
+missing cover, and now these.
+
+`FixturePiece` takes a `reading` override, and there are pieces for both. The
+stage on the in-progress one is a word the worker really writes
+(`fixtures/stages/parity.json` is the contract) and it is the one with
+*measured* progress inside it, so it exercises the stave counter rather than
+only the static bar. The failure reason is one `_FAILURE_REASONS` actually
+produces — a fixture that invented its own wording would be checking a screen
+against a sentence the product never sends.
+
+Both read well. The progress bar measured **180 of 350pt = 51.4%** for "Reading
+stave 3 of 7", which is 0.30 + (3/7) × 0.50 to the decimal — the measured-
+progress rule doing exactly what it claims.
+
+The Brahms piece added below also now says `transcriptionAccepted: true` and
+`pageImageDiscarded: true`, because its photograph is gone *for that reason*.
+Its score screen correctly stops asking it to be confirmed.
+
+### "You can practise it with the metronome" — you cannot
+
+The failed-read screen said it, and the manual-add screen said it, and both
+were wrong. `PieceDetailScreen` gates its practice button on `hasNotation`, and
+**there is no other route to the metronome**. A musician who read that sentence
+and went looking found a screen offering to photograph the page instead.
+
+That screen is the one that is right: recording without notation produces a
+take nothing can align, and it says so plainly — *"InTempo needs the written
+notes and rests to follow your playing."* Three places described this and one of
+them was out of step with the other two and with the code.
+
+Both lines say what is actually true now: the piece keeps its title, its tempo
+and its history, and only the notation is missing.
+
+**Not taken, and it is a real option:** making the promise true instead — a
+metronome-only practice screen for a piece with no notation. It is worth having
+(a failed scan or a hand-entered piece still wants a metronome at the piece's
+tempo) and it is a feature, not a copy fix: the record button would have to be
+suppressed rather than produce an unalignable take. That is the owner's call,
+not something to invent inside a correction.
+
+**Tests:** 940, unchanged. 23-route sweep and the 320pt probe both clean.
+
+**Rollback:** revert the commit.
+
+---
+
 ## 2026-09-01 — The placeholder that had never rendered, and a regression from yesterday's fix
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`.

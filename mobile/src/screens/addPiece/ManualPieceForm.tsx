@@ -36,10 +36,14 @@ const TIME_SIGNATURE = /^\d{1,2}\/\d{1,2}$/;
  *
  * **What it cannot do, and says so.** Four fields describe a piece; they don't
  * transcribe it. Without notes the analysis pipeline has nothing to align a
- * recording against, so a piece added here can be opened and practised with
- * the metronome but will not produce a verdict. The line under the button says
+ * recording against, so `PieceDetailScreen` offers no practice button for such
+ * a piece and asks for the sheet music instead. The line under the button says
  * that in the musician's own terms rather than letting them find out after a
  * take.
+ *
+ * It used to say the piece "can be practised with the metronome", which was
+ * never true — there is no route to the metronome that does not go through
+ * that button.
  *
  * The clef is not asked for. It comes from the instrument in the profile,
  * which is right for nearly every piece a player works on — and "which clef is
@@ -173,10 +177,16 @@ export function ManualPieceForm() {
         style={styles.submit}
       />
 
+      {/*
+        The same correction as the failed-read screen: this promised metronome
+        practice, and the piece screen gates its practice button on having
+        notation. Photographing the music is the actual next step, and it is
+        the one this now names.
+      */}
       <Text variant="metadataSmall" color="textTertiary" style={styles.caveat}>
-        A piece added this way has no notes behind it, so you can practise it
-        with the metronome but it won&apos;t be analysed. Photograph the music
-        to get verdicts.
+        A piece added this way has no notes behind it, so it can hold your
+        tempo and your practice history but cannot be recorded against.
+        Photograph the music to get verdicts.
       </Text>
     </ScreenContainer>
   );

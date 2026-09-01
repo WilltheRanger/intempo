@@ -43,6 +43,27 @@ interface FixturePiece
   > {
   /** Resolved to an ISO timestamp at read time so it never goes stale. */
   practicedDaysAgo: number | null;
+  /**
+   * Anything about the reading that is not "finished, and accepted by nobody".
+   *
+   * **A state with no fixture is a state nobody has looked at**, and that has
+   * now cost this project twice: a null clef was captioned "Treble clef" for
+   * weeks, and the ruled-staff cover drew an 84×154 box of pure padding
+   * because no piece here had ever lacked a photograph. `reading` and `failed`
+   * were in the same position — they are what a musician sees in the moments
+   * *after scanning a page*, which is the most-reached screen the app has for
+   * a new user, and neither had ever been on screen in a build anyone can run.
+   */
+  reading?: Partial<
+    Pick<
+      Piece,
+      | 'transcriptionStatus'
+      | 'transcriptionStage'
+      | 'transcriptionError'
+      | 'transcriptionAccepted'
+      | 'pageImageDiscarded'
+    >
+  >;
 }
 
 /**
@@ -353,16 +374,67 @@ const FIXTURE_PIECES: FixturePiece[] = [
     thumbnail: null,
     markedBpm: MARKED_BPM,
     score: DEMO_SCORE,
+    // The photograph is gone *because* the reading was accepted. Saying so
+    // keeps the two facts from disagreeing — the score screen stops asking a
+    // musician to confirm a reading they have already confirmed.
+    reading: { transcriptionAccepted: true, pageImageDiscarded: true },
+  },
+  {
+    /**
+     * **A page still being read**, which is where a musician lands the moment
+     * they finish a scan — the most-reached screen the app has for someone
+     * new, and one no fixture had ever put on screen.
+     *
+     * The stage is one the worker really writes (`fixtures/stages/parity.json`
+     * is the contract) and it is the one with measured progress inside it, so
+     * this exercises the stave counter rather than only the static bar.
+     */
+    id: 'fixture-reading-in-progress',
+    title: 'Sonata in A minor, D. 385',
+    composer: 'Franz Schubert',
+    movement: null,
+    practicedDaysAgo: null,
+    thumbnail: require('../../../assets/fixtures/02_medium_printed.jpg'),
+    markedBpm: null,
+    score: null,
+    reading: {
+      transcriptionStatus: 'reading',
+      transcriptionStage: 'Reading stave 3 of 7',
+    },
+  },
+  {
+    /**
+     * **A page the reader could not make sense of.**
+     *
+     * The reason is one `_FAILURE_REASONS` actually produces, and it is the
+     * one written for a musician rather than for a server log — the whole
+     * point of that table. A fixture that invented its own wording would be
+     * checking a screen against a sentence the product never sends.
+     */
+    id: 'fixture-reading-failed',
+    title: 'Concerto in A minor, Op. 3 No. 6',
+    composer: 'Antonio Vivaldi',
+    movement: null,
+    practicedDaysAgo: null,
+    thumbnail: require('../../../assets/fixtures/04_handwritten_clean.jpg'),
+    markedBpm: null,
+    score: null,
+    reading: {
+      transcriptionStatus: 'failed',
+      transcriptionError:
+        'A flatter, better-lit shot of the page usually fixes it.',
+    },
   },
 ];
 
-function toPiece({ practicedDaysAgo, ...piece }: FixturePiece): Piece {
+function toPiece({ practicedDaysAgo, reading, ...piece }: FixturePiece): Piece {
+  const state = { ...TRANSCRIBED, ...reading };
   if (practicedDaysAgo === null) {
-    return { ...piece, ...TRANSCRIBED, lastPracticedAt: null };
+    return { ...piece, ...state, lastPracticedAt: null };
   }
   const practicedAt = new Date();
   practicedAt.setDate(practicedAt.getDate() - practicedDaysAgo);
-  return { ...piece, ...TRANSCRIBED, lastPracticedAt: practicedAt.toISOString() };
+  return { ...piece, ...state, lastPracticedAt: practicedAt.toISOString() };
 }
 
 /**
