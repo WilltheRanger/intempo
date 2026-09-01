@@ -14,6 +14,7 @@ import { ChangeEmailScreen } from '../screens/account/ChangeEmailScreen';
 import { ChangePasswordScreen } from '../screens/account/ChangePasswordScreen';
 import { DeleteAccountScreen } from '../screens/account/DeleteAccountScreen';
 import { ExportDataScreen } from '../screens/account/ExportDataScreen';
+import { HelpScreen } from '../screens/account/HelpScreen';
 import { AddPieceScreen } from '../screens/addPiece/AddPieceScreen';
 import { AuthScreen } from '../screens/auth/AuthScreen';
 import { SetPasswordScreen } from '../screens/auth/SetPasswordScreen';
@@ -220,6 +221,7 @@ function SignedInApp() {
       <Stack.Screen name="ChangePassword" component={ChangePasswordScreen} />
       <Stack.Screen name="DeleteAccount" component={DeleteAccountScreen} />
       <Stack.Screen name="ExportData" component={ExportDataScreen} />
+      <Stack.Screen name="Help" component={HelpScreen} />
       <Stack.Screen
         name="Acknowledgements"
         component={AcknowledgementsScreen}
