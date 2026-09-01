@@ -303,6 +303,10 @@ export function ProfileScreen() {
             divided={false}
           />
           <LinkRow
+            label="Help & connection"
+            onPress={() => navigation.navigate('Help')}
+          />
+          <LinkRow
             label="Acknowledgements"
             onPress={() => navigation.navigate('Acknowledgements')}
           />
