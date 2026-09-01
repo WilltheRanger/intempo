@@ -6,6 +6,84 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-31 — The web build had one URL, and Back left the app
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Second iteration of the
+consumer-grade loop, and the first that looked at the app rather than the code.
+
+**Files:** `mobile/src/navigation/linking.ts` (new) + test (new),
+`mobile/src/App.tsx`.
+
+### Found by walking the app, not by reading it
+
+A Playwright walk of the shipping web build fell over after two taps, and the
+reason was not the script. `NavigationContainer` was mounted with **no
+`linking`**, so React Navigation kept the whole stack in memory and never
+touched browser history. Measured:
+
+    tap Profile               -> http://127.0.0.1:4180/
+    open "Download my data"   -> http://127.0.0.1:4180/
+    press browser Back        -> about:blank      (left the app entirely)
+
+One omission, three consumer failures, on the build that ships to Cloudflare
+Pages:
+
+- **Back quits the app** instead of going back a screen — the one gesture every
+  web user has, and it does the most destructive thing available.
+- **A refresh loses your place**, always returning to Today.
+- **Nothing is linkable.** A musician cannot send a piece to their teacher or
+  keep a tab open on the score they are working through.
+
+### Fixed, and verified in the browser rather than asserted
+
+    tap Profile               -> /profile
+    open "Download my data"   -> /account/export
+    press browser Back        -> /profile          ✅
+
+Seven deep links opened cold, each landing on the right screen: `/library`,
+`/insights`, `/profile`, `/account/export`, `/help`, `/acknowledgements`,
+`/warmup`.
+
+The native builds get their deep links out of the same change — `app.json` has
+declared the `intempo` scheme all along and nothing was using it.
+
+**Paths are written to age, not to mirror the navigator**: `/pieces/:pieceId`
+rather than `/PieceDetail`, because the URL is the part a musician might paste
+to somebody and the screen names are ours. Nesting follows meaning, so
+`/pieces/x/score` is guessable and correct.
+
+The scan steps are linkable too, which is a deliberate call rather than an
+oversight: the captured pages live in memory, so someone who refreshes mid-scan
+lands on the step they were on and finds it empty. That is recoverable and
+legible; landing on Today wondering where the scan went is neither.
+
+### The test is the part that lasts
+
+`linking.test.ts` reads the route names out of `navigation/types.ts` and fails
+if any screen has no path. A screen without one is not a small omission — it is
+a screen the Back button walks out of the app from, and nothing else in the
+suite would notice. It also refuses two screens sharing a path, and checks that
+the parameter names in a path match what the screen reads, because a path saying
+`:pieceId` for a screen reading `params.id` opens empty **only from a link** —
+the one route nobody tests by hand.
+
+`linking.ts` deliberately imports no runtime. `expo-linking` reaches
+`react-native`, whose Flow syntax vitest cannot parse, so importing it here
+would make the file untestable and the test is the whole point. The prefixes are
+composed in `App.tsx`, which no test imports — the same split, for the same
+reason, as the lazy import in `lib/scan/shrink.ts`.
+
+### Tests
+
+`mobile` 45 files / 519 passed, `tsc` clean.
+
+### Not done
+
+Route-level: `PieceDetail`, `PieceScore`, `MeasureEdit`, `Record` and `Verdict`
+have paths but were not opened cold in this pass, because the fixture ids are
+not stable across builds. The four parameterless account routes and all four
+tabs were.
+
 ## 2026-08-31 — Reconciling with 26 commits of another agent's work
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. First iteration of a

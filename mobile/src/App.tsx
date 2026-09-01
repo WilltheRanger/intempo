@@ -10,7 +10,10 @@ import { StatusBar } from 'expo-status-bar';
 import { View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
+import * as Linking from 'expo-linking';
+
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { screenConfig } from './navigation/linking';
 import { ApiError, warmApi } from './data/api/client';
 import { describeFixtureReason, IS_LIVE_BACKEND } from './data/environment';
 import { formatDocumentTitle } from './lib/documentTitle';
@@ -113,6 +116,19 @@ const navigationTheme: Theme = {
  */
 const FONT_TIMEOUT_MS = 5000;
 
+/**
+ * Where the app answers from.
+ *
+ * Composed here rather than in `navigation/linking.ts` because `expo-linking`
+ * reaches `react-native`, and a module that imports it cannot be unit-tested —
+ * see the note there. The route map is the part worth testing; the prefixes are
+ * one line of configuration.
+ */
+const linking = {
+  prefixes: [Linking.createURL('/'), 'https://intempo.app', 'https://www.intempo.app'],
+  config: screenConfig,
+};
+
 export default function App() {
   const [fontsLoaded, fontError] = useFonts(fontsToLoad);
   const [fontsTimedOut, setFontsTimedOut] = useState(false);
@@ -183,6 +199,10 @@ export default function App() {
           <NavigationContainer
             theme={navigationTheme}
             documentTitle={{ formatter: formatDocumentTitle }}
+            // Without this the whole app is one URL: back leaves the site,
+            // a refresh returns to Today, and nothing can be linked to.
+            // See `navigation/linking.ts`.
+            linking={linking}
           >
             <RootNavigator />
           </NavigationContainer>
