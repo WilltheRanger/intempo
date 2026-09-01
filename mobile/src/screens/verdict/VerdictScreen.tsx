@@ -19,7 +19,7 @@ import { VerdictSkeleton } from '../../components/skeletons';
 import { takeSource } from '../../data/sources';
 import type { TakeResult } from '../../data/types';
 import { spacing } from '../../design';
-import { formatTakeVerdict } from '../../lib/tempo';
+import { formatTakeVerdict, formatTempo } from '../../lib/tempo';
 import type { RootNavigation, RootStackParamList } from '../../navigation/types';
 import { MEASURE_COLUMNS, MeasureRow } from './MeasureRow';
 import { TrendLine } from './TrendLine';
@@ -179,7 +179,7 @@ export function VerdictScreen() {
       <MetadataRow
         variant="metadataSmall"
         items={[
-          `Target ${take.targetBpm} BPM`,
+          `Target ${formatTempo(take.targetBpm, take.tempoBeatUnit)}`,
           measureLabel(take.measures.length),
           take.missedNotes > 0 ? noteLabel(take.missedNotes) : null,
         ]}
