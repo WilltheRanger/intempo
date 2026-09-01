@@ -1,6 +1,10 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import { captureSession, subscribeToCaptureSession } from './captureSession';
+import {
+  captureSession,
+  MAX_SCAN_PAGES,
+  subscribeToCaptureSession,
+} from './captureSession';
 
 /**
  * The scan between the shutter and the upload.
@@ -171,9 +175,38 @@ describe('importing pages', () => {
     // A signed URL from the previous scan would let the save go through
     // against a page nobody chose.
     scanOf(1);
-    captureSession.setUploadedImageUrl('https://example.test/signed');
+    captureSession.setUploadedImageUrls([
+      'https://example.test/page-1',
+      'https://example.test/page-2',
+    ]);
 
     captureSession.importAll([PAGE(5)]);
-    expect(captureSession.uploadedImageUrl()).toBeNull();
+    expect(captureSession.uploadedImageUrls()).toEqual([]);
+  });
+
+  it('preserves every uploaded URL in page order', () => {
+    const urls = [
+      'https://example.test/page-1',
+      'https://example.test/page-2',
+      'https://example.test/page-3',
+    ];
+
+    captureSession.setUploadedImageUrls(urls);
+
+    expect(captureSession.uploadedImageUrls()).toEqual(urls);
+  });
+
+  it('refuses an imported score beyond the server page limit', () => {
+    expect(() => scanOf(MAX_SCAN_PAGES + 1)).toThrow(
+      `at most ${MAX_SCAN_PAGES} pages`,
+    );
+    expect(captureSession.current()).toEqual([]);
+  });
+
+  it('does not append a camera page beyond the server page limit', () => {
+    scanOf(MAX_SCAN_PAGES);
+
+    expect(captureSession.capture(PAGE(MAX_SCAN_PAGES + 1))).toBe('full');
+    expect(captureSession.current()).toHaveLength(MAX_SCAN_PAGES);
   });
 });
