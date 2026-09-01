@@ -6,6 +6,86 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-01 — Recording from partway into a piece: the plumbing
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`.
+
+**Files:** `backend/app/services/start_at.py` (new) + two tests,
+`migrations/015_analysis_from_measure.sql` (new), `routers/analyses.py`,
+`workers/analysis_runner.py`, `services/readiness.py`,
+`app/tests/test_tempo_range.py`, `mobile/src/lib/score/startFrom.ts` (new) +
+parity test, `data/api/analyses.ts`, `data/practice/submitTake.ts`,
+`fixtures/practice/start_at.json` (new).
+
+Reported from real use: *"you also can't currently choose which bar you want
+to start at of the music when starting record."* True, and the record screen's
+own comment said so — it already had a bar picker, driving **Listen only**,
+with a note explaining that the take still starts at bar 1 because "the
+analysis builds its expected timeline from the whole score, so a take that
+began at bar 40 and did not say so would be compared against bar 1 onwards and
+reported as wrong from the first note."
+
+That is exactly right, and it is the thing this change makes possible to say.
+
+### The same shape as `skip_long_rests`, deliberately
+
+The take was played against a different score than the one on file, so the
+analysis has to judge it against that one. `from_measure` travels with the
+take — request, row (migration 015), then the worker trims before
+`build_timeline`. Null means from the beginning, which is what every take
+recorded before this column meant.
+
+**Trimmed before the rests are shortened**, and the order is load-bearing:
+`shorten_long_rests` rewrites bars, so trimming after it would be asking for
+bar 14 of a score whose bar 14 is no longer the page's bar 14.
+
+### Three rules, and one of them is the whole point
+
+1. **Bars keep their printed numbers.** Not rebased to one: a verdict about the
+   fourteenth bar has to say fourteen.
+2. **A repeat that opens before the entry bar is dropped**, including one that
+   spans it — someone starting mid-passage plays straight on rather than
+   jumping back to a sign they never passed.
+3. **The tempo change still in force is carried to the entry bar.** A `rit.`
+   printed at bar 3 is still in force at bar 4, and `classification.py` refuses
+   to time notes under a written change. Dropping it would report a musician
+   dragging for slowing exactly as the page told them to — the failure
+   `under_tempo_change` exists to prevent, reintroduced by trimming.
+
+### Two implementations, one contract
+
+The app needs the trim too: `longRestCues` measures its beats from the first
+bar played, so cues computed from bar 1 fire at the wrong moments for a take
+that began at bar 12. Two walks over a score in two languages with no way to
+share code — the same situation as `long_rests.json`, so the same answer.
+`fixtures/practice/start_at.json` holds eight cases and both sides run them.
+
+### A guard I broke and followed
+
+`FALLBACK_BPM` moved to `lib/score/schedule` (the pure module owns it; the
+other reaches for AsyncStorage and cannot be imported by anything testable).
+`test_tempo_range.py` greps the app source for it and started failing — a
+cross-language check doing its job. Pointed at the new file, with a message
+telling the next person to follow the constant rather than delete the check.
+
+### Honest status
+
+**The plumbing, not the feature.** The contract, the trim on both sides, the
+column and the validation are done and tested; the record screen does not yet
+send `from_measure`, and its long-rest cues are still measured from bar 1. That
+is the next commit. Migration 015 is written and **not applied** — until it is,
+the column does not exist and the field is silently dropped, which is the same
+degrade path 012 shipped with.
+
+mobile 998 tests, backend 1853 passed + 3 xfailed, `tsc` clean.
+
+### Rollback
+
+`git revert`. The column is nullable and the app does not send the field yet,
+so reverting either side alone is safe.
+
+---
+
 ## 2026-09-01 — Listen could get stuck, three ways
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`, restarted from `main`

@@ -59,6 +59,14 @@ class CreateAnalysisRequest(BaseModel):
     #: Defaults false, which is every client that has never heard of it and
     #: every take recorded before it existed.
     skip_long_rests: bool = False
+    #: The bar the musician entered on, as numbered on the page.
+    #:
+    #: Null means from the beginning, which is what every take before this
+    #: field meant. Validated against the score at enqueue rather than trusted:
+    #: a bar the piece does not have would build a timeline with nothing in it
+    #: and report `alignment_failed` — "check you're on the right piece" — for
+    #: a take of exactly the right piece.
+    from_measure: int | None = Field(default=None, ge=1)
 
 
 class CreateAnalysisResponse(BaseModel):
@@ -78,6 +86,7 @@ class AnalysisResponse(BaseModel):
     #: Whether this take was played with the long rests shortened. Null on a
     #: deployment whose `analyses` table predates the column.
     skip_long_rests: bool | None = None
+    from_measure: int | None = None
     result_json: dict[str, Any] | None = None
     failure_reason: str | None = None
     alignment_quality: float | None = None
@@ -134,17 +143,48 @@ def _assert_audio_url_owned_by(audio_url: str, user_id: UUID) -> None:
         )
 
 
-def _assert_score_owned(client, score_id: UUID, user_id: UUID) -> None:
+def _assert_score_owned(client, score_id: UUID, user_id: UUID) -> dict[str, Any]:
+    """The score row, or 404. Returned rather than discarded so the caller can
+    ask questions of it — `from_measure` has to be checked against the bars the
+    piece actually has, and re-fetching the same row to do it would be a second
+    round trip for a value already in hand."""
     res = (
         client.table("scores")
-        .select("id")
+        .select("id, score_json")
         .eq("id", str(score_id))
         .eq("user_id", str(user_id))
         .limit(1)
         .execute()
     )
-    if not (res.data or []):
+    rows = res.data or []
+    if not rows:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="score not found")
+    return rows[0]
+
+
+def _assert_measure_in_score(row: dict[str, Any], from_measure: int | None) -> None:
+    """Refuse a bar the piece does not have, while it can still be said.
+
+    Left to the worker this becomes `alignment_failed` and *"check you're on
+    the right piece"* — for a take of exactly the right piece, entered at a bar
+    that is not on it. The app only offers bars the score contains, so reaching
+    this means something is out of step, and saying so is more use than a
+    verdict nobody can act on.
+
+    A score still being read has no measures yet and no bar can be checked
+    against it; that take is refused by the worker on its own terms, so this
+    stays quiet rather than inventing a second reason.
+    """
+    if from_measure is None:
+        return
+    measures = ((row.get("score_json") or {}).get("measures")) or []
+    if not measures:
+        return
+    if not any(m.get("measure_number") == from_measure for m in measures):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"this piece has no bar {from_measure}",
+        )
 
 
 def _row_to_response(row: dict[str, Any]) -> AnalysisResponse:
@@ -163,6 +203,7 @@ def _row_to_response(row: dict[str, Any]) -> AnalysisResponse:
         # the same as false, and the verdict screen can say so if it ever needs
         # to explain why a take was judged against the whole page.
         skip_long_rests=row.get("skip_long_rests"),
+        from_measure=row.get("from_measure"),
         result_json=row.get("result_json"),
         failure_reason=row.get("failure_reason"),
         alignment_quality=row.get("alignment_quality"),
@@ -205,7 +246,8 @@ def create_analysis(
 ) -> CreateAnalysisResponse:
     _assert_audio_url_owned_by(body.audio_url, user_id)
     client = _service_client()
-    _assert_score_owned(client, body.score_id, user_id)
+    score_row = _assert_score_owned(client, body.score_id, user_id)
+    _assert_measure_in_score(score_row, body.from_measure)
     _assert_within_quota(client, user_id)
 
     insert_payload = {
@@ -225,6 +267,8 @@ def create_analysis(
     # worse than an error at submit.
     if body.skip_long_rests:
         insert_payload["skip_long_rests"] = True
+    if body.from_measure is not None:
+        insert_payload["from_measure"] = body.from_measure
     inserted = client.table("analyses").insert(insert_payload).execute()
     rows = inserted.data or []
     if not rows:
