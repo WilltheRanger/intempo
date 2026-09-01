@@ -68,6 +68,22 @@ function notify(): void {
 }
 
 function commit(next: CapturedPage[]): void {
+  const changed =
+    next.length !== pages.length ||
+    next.some(
+      (page, index) =>
+        page.id !== pages[index]?.id || page.source !== pages[index]?.source,
+    );
+
+  // Uploaded keys describe the exact pixels in the exact order that existed
+  // when the transfer ran. A retake, reorder, addition or removal makes that
+  // snapshot stale even when the number of pages is unchanged. Keeping it
+  // would let Save attach the old photograph or old page order while the
+  // review screen shows the edited one.
+  if (changed) {
+    uploadedImageKeys = [];
+  }
+
   pages = next;
   notify();
 }
