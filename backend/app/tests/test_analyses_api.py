@@ -586,3 +586,102 @@ def test_a_take_that_did_not_skip_writes_no_key_at_all(
         == 202
     )
     assert "skip_long_rests" not in fake.table("analyses").rows[1]
+
+
+# ---------------------------------------------------------------------------
+# Recording from a chosen bar on a database that cannot store one
+# ---------------------------------------------------------------------------
+
+
+def _install_insert_that_lacks_from_measure(monkeypatch, fake) -> None:
+    """A table whose `analyses` predates migration 015.
+
+    The real client raises from `execute()` with PostgREST's message naming
+    the column. Only an insert that *carries* the key fails — every other take
+    is unaffected, which is what a missing nullable column actually does.
+    """
+    table = fake.table("analyses")
+    real_insert = table.insert
+
+    def insert(payload):
+        if isinstance(payload, dict) and "from_measure" in payload:
+            class _Boom:
+                def execute(self):
+                    raise RuntimeError(
+                        'column "from_measure" of relation "analyses" does not exist'
+                    )
+
+            return _Boom()
+        return real_insert(payload)
+
+    monkeypatch.setattr(table, "insert", insert)
+
+
+def test_a_chosen_bar_on_a_pre_015_database_is_refused_with_advice(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """**The bar is refused, not the take, and not quietly.**
+
+    Dropping the key and analysing from bar 1 would be the misalignment this
+    feature exists to prevent, reintroduced by a missing column. A raw 500 —
+    the 012 precedent — shows "something went wrong" for a request that was
+    entirely reasonable. The refusal names the one thing the musician can
+    change, and the picker lets them change it.
+    """
+    user_id = uuid4()
+    score_id = uuid4()
+    fake = FakeSupabase()
+    fake.seed(
+        "scores",
+        [{"id": str(score_id), "user_id": str(user_id), "score_json": GOOD_SCORE_JSON}],
+    )
+    _install(monkeypatch, fake)
+    _install_insert_that_lacks_from_measure(monkeypatch, fake)
+    monkeypatch.setattr(analyses_module, "start_analysis", lambda *_: None)
+
+    res = client.post(
+        "/v1/analyses",
+        headers={"Authorization": f"Bearer {make_token(sub=user_id)}"},
+        json={
+            "score_id": str(score_id),
+            "audio_url": _audio_url(user_id),
+            "target_bpm": 120,
+            "bpm_source": "manual",
+            "from_measure": 2,
+        },
+    )
+
+    assert res.status_code == 400
+    assert "bar 1" in res.json()["detail"]
+    assert len(fake.table("analyses").rows) == 0
+
+
+def test_a_take_from_the_start_still_works_on_a_pre_015_database(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    """The column is nullable and the key is only sent when a bar was chosen,
+    so every take that does not choose one is untouched by the migration."""
+    user_id = uuid4()
+    score_id = uuid4()
+    fake = FakeSupabase()
+    fake.seed(
+        "scores",
+        [{"id": str(score_id), "user_id": str(user_id), "score_json": GOOD_SCORE_JSON}],
+    )
+    _install(monkeypatch, fake)
+    _install_insert_that_lacks_from_measure(monkeypatch, fake)
+    monkeypatch.setattr(analyses_module, "start_analysis", lambda *_: None)
+
+    res = client.post(
+        "/v1/analyses",
+        headers={"Authorization": f"Bearer {make_token(sub=user_id)}"},
+        json={
+            "score_id": str(score_id),
+            "audio_url": _audio_url(user_id),
+            "target_bpm": 120,
+            "bpm_source": "manual",
+        },
+    )
+
+    assert res.status_code == 202
+    assert len(fake.table("analyses").rows) == 1

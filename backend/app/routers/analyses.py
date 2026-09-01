@@ -63,6 +63,14 @@ class CreateAnalysisRequest(BaseModel):
     #: Defaults false, which is every client that has never heard of it and
     #: every take recorded before it existed.
     skip_long_rests: bool = False
+    #: The bar the musician entered on, as numbered on the page.
+    #:
+    #: Null means from the beginning, which is what every take before this
+    #: field meant. Validated against the score at enqueue rather than trusted:
+    #: a bar the piece does not have would build a timeline with nothing in it
+    #: and report `alignment_failed` — "check you're on the right piece" — for
+    #: a take of exactly the right piece.
+    from_measure: int | None = Field(default=None, ge=1)
 
     @model_validator(mode="after")
     def _one_audio_reference(self) -> "CreateAnalysisRequest":
@@ -91,6 +99,7 @@ class AnalysisResponse(BaseModel):
     #: Whether this take was played with the long rests shortened. Null on a
     #: deployment whose `analyses` table predates the column.
     skip_long_rests: bool | None = None
+    from_measure: int | None = None
     result_json: dict[str, Any] | None = None
     failure_reason: str | None = None
     alignment_quality: float | None = None
@@ -126,17 +135,48 @@ def _object_keys_in(urls: list[str]) -> list[str]:
     return keys
 
 
-def _assert_score_owned(client, score_id: UUID, user_id: UUID) -> None:
+def _assert_score_owned(client, score_id: UUID, user_id: UUID) -> dict[str, Any]:
+    """The score row, or 404. Returned rather than discarded so the caller can
+    ask questions of it — `from_measure` has to be checked against the bars the
+    piece actually has, and re-fetching the same row to do it would be a second
+    round trip for a value already in hand."""
     res = (
         client.table("scores")
-        .select("id")
+        .select("id, score_json")
         .eq("id", str(score_id))
         .eq("user_id", str(user_id))
         .limit(1)
         .execute()
     )
-    if not (res.data or []):
+    rows = res.data or []
+    if not rows:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="score not found")
+    return rows[0]
+
+
+def _assert_measure_in_score(row: dict[str, Any], from_measure: int | None) -> None:
+    """Refuse a bar the piece does not have, while it can still be said.
+
+    Left to the worker this becomes `alignment_failed` and *"check you're on
+    the right piece"* — for a take of exactly the right piece, entered at a bar
+    that is not on it. The app only offers bars the score contains, so reaching
+    this means something is out of step, and saying so is more use than a
+    verdict nobody can act on.
+
+    A score still being read has no measures yet and no bar can be checked
+    against it; that take is refused by the worker on its own terms, so this
+    stays quiet rather than inventing a second reason.
+    """
+    if from_measure is None:
+        return
+    measures = ((row.get("score_json") or {}).get("measures")) or []
+    if not measures:
+        return
+    if not any(m.get("measure_number") == from_measure for m in measures):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"this piece has no bar {from_measure}",
+        )
 
 
 def _row_to_response(row: dict[str, Any]) -> AnalysisResponse:
@@ -155,6 +195,7 @@ def _row_to_response(row: dict[str, Any]) -> AnalysisResponse:
         # the same as false, and the verdict screen can say so if it ever needs
         # to explain why a take was judged against the whole page.
         skip_long_rests=row.get("skip_long_rests"),
+        from_measure=row.get("from_measure"),
         result_json=row.get("result_json"),
         failure_reason=row.get("failure_reason"),
         alignment_quality=row.get("alignment_quality"),
@@ -207,7 +248,8 @@ def create_analysis(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=str(exc),
         ) from exc
-    _assert_score_owned(client, body.score_id, user_id)
+    score_row = _assert_score_owned(client, body.score_id, user_id)
+    _assert_measure_in_score(score_row, body.from_measure)
 
     # One uploaded object is one take. If the POST response was lost, the
     # recording screen retries with the same key; return the existing row
@@ -250,7 +292,30 @@ def create_analysis(
     # worse than an error at submit.
     if body.skip_long_rests:
         insert_payload["skip_long_rests"] = True
-    inserted = client.table("analyses").insert(insert_payload).execute()
+    if body.from_measure is not None:
+        insert_payload["from_measure"] = body.from_measure
+    try:
+        inserted = client.table("analyses").insert(insert_payload).execute()
+    except Exception as exc:  # noqa: BLE001 — see below for the one case kept
+        # **A deployment that has not run migration 015 must refuse the bar,
+        # not the take, and must say so in words a musician can act on.** The
+        # precedent (012, `skip_long_rests`) had no path here at all: an insert
+        # naming a column the table does not have is a raw 500, and the app
+        # shows "something went wrong" for a request that was entirely
+        # reasonable. Worse would be quietly dropping the key and analysing
+        # from bar 1 — that is the misalignment this whole feature exists to
+        # prevent, reintroduced by a missing column. So: the take is refused,
+        # the reason names the one thing the musician can change, and
+        # `/v1/ready` names the migration for whoever runs the server.
+        if body.from_measure is not None and "from_measure" in str(exc):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    "Recording from a chosen bar isn't available on this server "
+                    "yet. Start the take from bar 1."
+                ),
+            ) from exc
+        raise
     rows = inserted.data or []
     if not rows:
         raise HTTPException(status_code=500, detail="failed to enqueue analysis")

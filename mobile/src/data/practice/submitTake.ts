@@ -50,6 +50,16 @@ export interface SubmitTakeInput {
    * and that is as true of a two-bar rest as a twenty-bar one.
    */
   skipLongRests?: boolean;
+  /**
+   * Which bar the take started on, when it was not the first.
+   *
+   * **The same rule as `skipLongRests`**: the take was played against a
+   * different score than the one on file, so the analysis has to judge it
+   * against that one. Practising a passage is most of what practice is, and
+   * until this existed a musician working on bar 40 had to play the preceding
+   * thirty-nine to be told anything about it.
+   */
+  fromMeasure?: number | null;
 }
 
 export interface SubmittedTakeState extends TakeSubmissionState {
@@ -71,6 +81,7 @@ export async function submitTake({
   filename,
   resume = {},
   skipLongRests = false,
+  fromMeasure = null,
 }: SubmitTakeInput): Promise<SubmittedTakeState> {
   const state: TakeSubmissionState = { ...resume };
 
@@ -97,6 +108,11 @@ export async function submitTake({
       // fact about the musician, not about this take.
       instrument: preferences.current().instrument,
       skip_long_rests: skipLongRests,
+      // Omitted rather than sent as 1: a take from the top and a take that
+      // happens to start at bar 1 are the same performance, and the column
+      // is nullable so the row can say "from the beginning" rather than
+      // claim a choice nobody made.
+      ...(fromMeasure && fromMeasure > 1 ? { from_measure: fromMeasure } : {}),
     });
     state.analysisId = analysis_id;
     return { ...state, analysisId: analysis_id };
