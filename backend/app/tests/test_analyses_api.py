@@ -40,7 +40,13 @@ def client() -> TestClient:
 
 
 def _audio_url(user_id: UUID) -> str:
-    return f"{PROJECT_HOST}/storage/v1/object/sign/audio-uploads/{user_id}/take.wav?token=x"
+    # Every real /upload/audio call creates a new object key. A fixed filename
+    # makes two independent test takes look like one retried submission now
+    # that enqueue correctly deduplicates one uploaded object.
+    return (
+        f"{PROJECT_HOST}/storage/v1/object/sign/audio-uploads/"
+        f"{user_id}/{uuid4()}.wav?token=x"
+    )
 
 
 def _wav_bytes(bpm: float = 120.0, n: int = 8) -> bytes:
@@ -59,6 +65,11 @@ def _install(monkeypatch: pytest.MonkeyPatch, fake: FakeSupabase) -> None:
     # flow is consistent.
     monkeypatch.setattr(analyses_module, "get_service_client", lambda: fake)
     monkeypatch.setattr(analysis_runner, "get_service_client", lambda: fake)
+    # Storage signing itself is covered in test_audio_storage. This fake models
+    # database state only, so worker-flow tests keep their supplied readable URL.
+    monkeypatch.setattr(
+        analysis_runner, "readable_audio_url", lambda _client, reference: reference
+    )
 
 
 # ---- auth / validation ----------------------------------------------------
