@@ -6,6 +6,63 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-01 — Looking at the last screen nobody had ever seen
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`.
+
+**Files:** `mobile/src/screens/account/AccountStartupScreen.tsx`,
+`components/primitives/LoadingState.tsx`, `CLAUDE.md`.
+
+`AccountStartupScreen` was the last of the four auth-gated screens no route
+sweep can reach. It is the screen every signed-in session passes through — the
+app holds every tab until `/v1/me` answers — and nothing had ever rendered it.
+Forced into both branches with a `?startup=loading|error` parameter in a
+throwaway build, restored with `diff -q`.
+
+Two defects, both compositional, neither visible in any test:
+
+**A centred spinner between two left-aligned sentences.** `LoadingState`
+centres, which is right for its other five callers — all of them a bare
+spinner filling a panel — and wrong here, the only one that passes a label. It
+put a lone widget on the middle axis while every line of type sat on the left
+margin (§3 law 5), and split the caption off from the sentence it belongs to.
+`LoadingState` now takes `layout="inline"`: a row on the margin, spinner then
+caption. **Named, not inferred from `label`** — a component that re-aligns
+itself because a prop happens to be set is one whose layout cannot be read off
+the call site. The caption needs `flex: 1` to wrap, because a row sizes its
+children from their content and an unbroken sentence is one token as far as
+that is concerned.
+
+**The one button the screen exists to offer, at the vertical middle.**
+Message and actions were a single centred block: "Try again" measured at
+y=439 of 844. Everything on this screen is one decision, so §3 law 7 bears on
+it harder than on almost any other. The message now takes the space above and
+centres in it; the actions sit at the foot. Measured after: "Try again" at
+y=719, "Back to sign in" at 783, with `ScreenContainer`'s bottom inset below
+them.
+
+### Three-foot test
+
+**Loading** — "Opening your practice space" first, "Restoring your library…"
+second, the spinner and its caption third. **Error** — "Couldn't open your
+account" first, "Try again" second, "Back to sign in" third. One focal point
+each; the space between message and actions reads as composition rather than
+as a layout that failed.
+
+### Tests
+
+971 passing, `tsc` clean, web build green. 23-route sweep clean; narrow probe
+unchanged (the two accepted findings only). No new test: this is a composition
+choice, not a rule that can silently break, and claiming a guard for it would
+be claiming cover this does not have.
+
+### Rollback
+
+`git revert`. `LoadingState`'s default is unchanged, so the other five callers
+are untouched either way.
+
+---
+
 ## 2026-09-01 — Dynamics are drawn, and doing it exposed a spacing bug older than they are
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`.

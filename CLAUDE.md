@@ -524,11 +524,16 @@ auth or account state rather than behind a route: `AuthScreen` (`signedOut`),
 misses all four. To look at one, flip the single value that gates it in a
 **throwaway build** — `useAuthStatus`'s fixture default, or `onboarded` on the
 fixture musician — and restore it with a `diff -q` check, the same discipline
-`.env` gets. A state with no fixture is a state nobody has looked at, and that
-has now cost this project four times: a guessed clef captioned as read, an
+`.env` gets. `SignedInApp` takes a third: a `?startup=loading|error` query
+parameter forced into its two branches renders both `AccountStartupScreen`
+states. A state with no fixture is a state nobody has looked at, and that has
+now cost this project **five** times: a guessed clef captioned as read, an
 84×154 box of padding where a cover should be, two post-scan screens never
-rendered, and onboarding asking a returning musician for a photograph their
-account already had.
+rendered, onboarding asking a returning musician for a photograph their
+account already had, and — the first time anyone looked at it, 2026-09-01 —
+`AccountStartupScreen` holding a centred spinner between two left-aligned
+sentences, with the one button the screen exists to offer sitting at the
+vertical middle of the phone.
 
 **Honest DoD status:** no batch is tagged `batch-N-done`. Every remaining gate
 (live magic-link auth, upload→OCR→save, mic→analysis) is blocked on Supabase
