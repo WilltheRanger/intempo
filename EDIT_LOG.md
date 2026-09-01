@@ -6,6 +6,88 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-01 — A take can start partway in
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Reported by the owner:
+*"you can't currently choose which bar you want to start at when starting
+record."*
+
+**Files:** `backend/app/services/start_at.py` (new) + tests,
+`backend/app/migrations/015_analysis_from_measure.sql` (new),
+`routers/analyses.py`, `workers/analysis_runner.py`, `services/readiness.py`,
+`fixtures/practice/start_at.json` (new), `mobile/src/lib/score/startFrom.ts`
+(new) + parity test, `lib/score/entryCopy.ts` (new) + test,
+`components/score/PlaybackSettings.tsx`, `screens/record/RecordScreen.tsx`,
+`data/practice/submitTake.ts`, `data/api/analyses.ts`,
+`screens/entryBar.test.ts` (new).
+
+The picker existed and governed nothing but playback. Its own comment said so:
+a bare "From bar 1" on the Record screen *"reads as where the take starts —
+which it is not, and which would be a promise about the analysis that nothing
+keeps."* Someone working on bar 40 had to play the preceding thirty-nine to be
+told anything about it.
+
+### The same arrangement as `skip_long_rests`, for the same reason
+
+The take was played against a different score than the one on file, so the
+analysis has to judge it against that one. `from_measure` travels on the
+request, migration 015 stores it, and the worker trims the score before
+`build_timeline` — **entry bar first, rest-shortening second**, because
+`shorten_long_rests` rewrites bars and trimming after it would ask for bar 14
+of a score whose bar 14 is no longer the page's.
+
+Validated at enqueue against the bars the piece actually has. Left to the
+worker, a bar the piece lacks becomes `alignment_failed` — "check you're on the
+right piece" — for a take of exactly the right piece.
+
+### Three rules in the trim, and the third is the one that matters
+
+Bars keep the numbers they have on the page — a verdict about bar fourteen has
+to say fourteen. A repeat opening before the entry bar is dropped, spanning
+ones included: someone starting mid-passage plays straight on. And **a tempo
+change still in force at the entry bar is carried to it**: a `rit.` at bar 3 is
+still in force at bar 4, and the analysis refuses to time notes under a written
+change — dropping it would report a musician dragging for slowing exactly as
+the page told them to. That is `under_tempo_change`'s whole reason for
+existing, reintroduced by trimming.
+
+### Two implementations, one contract
+
+The app trims too, because `longRestCues` measures beats from the first bar
+played and cues computed from bar 1 fire at the wrong moments for a take that
+began at bar 12. Two walks over a score in two languages, no way to share code,
+and a drift means the take is judged against a different score than it was
+played to — the exact thing this exists to avoid. `fixtures/practice/start_at.json`
+holds eight cases and both sides run them.
+
+### The label had to change, and it lives in a module
+
+"Listen from bar 9" now understates what the control does on the Record
+screen; "Start at bar 9" on the score screen would claim a recording that is
+not happening. `PlaybackSettings` takes `entry: 'listen' | 'take'` and
+`entryCopy.ts` holds the words, with a test that the take's label never says
+"listen" — the quiet failure being a musician setting the bar to hear a passage
+and unknowingly recording from there.
+
+### Honest status
+
+The control itself is still the one that was there: a tappable line that opens
+a list of bar numbers. The owner has called that out as poor, and it is —
+picking a bar by number in a list of seventy is not how a musician thinks about
+a piece. A picker that shows the music is the next change.
+
+Verified against the fixtures build, not a real take. mobile 1006, backend
+1853 + 3 xfailed, `tsc` clean. Migration 015 is **written and not applied**;
+the column is nullable and the worker reads it with `.get`, so a database
+without it records from bar 1 as before.
+
+### Rollback
+
+`git revert`. The request field defaults to null and the column is nullable, so
+a revert of either side alone is also safe.
+
+---
+
 ## 2026-09-01 — Today goes back to the cards, on the owner's call
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`.

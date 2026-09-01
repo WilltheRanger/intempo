@@ -11,6 +11,12 @@ import {
   tempoDisplayRange,
   tempoUnitLabel,
 } from '../../lib/tempo';
+import {
+  entryAccessibilityLabel,
+  entryLabel,
+  entrySheetTitle,
+  type EntryScope,
+} from '../../lib/score/entryCopy';
 import { BottomSheet } from '../overlays/BottomSheet';
 import { TempoStepper } from '../practice/TempoStepper';
 import { Text } from '../primitives/Text';
@@ -43,6 +49,15 @@ export interface PlaybackSettingsProps {
    * pages print.
    */
   beatUnit?: TempoBeatUnit | null;
+  /**
+   * What the chosen bar governs, which decides what this calls itself.
+   *
+   * `'take'` on the Record screen, where the request carries the bar and the
+   * worker trims the score to match. `'listen'` everywhere nothing is being
+   * recorded. Passed rather than inferred: a control that guesses what it
+   * controls is one whose label cannot be trusted.
+   */
+  entry?: EntryScope;
   disabled?: boolean;
 }
 
@@ -67,6 +82,7 @@ export function PlaybackSettings({
   bpm,
   onBpmChange,
   beatUnit,
+  entry = 'listen',
   disabled = false,
 }: PlaybackSettingsProps) {
   const [pickingBar, setPickingBar] = useState(false);
@@ -86,16 +102,15 @@ export function PlaybackSettings({
           onPress={() => setPickingBar(true)}
           disabled={disabled}
           accessibilityRole="button"
-          accessibilityLabel={`Listen from bar ${fromMeasure}. Change.`}
+          accessibilityLabel={entryAccessibilityLabel(entry, fromMeasure)}
           style={({ pressed }) => [styles.target, pressed && styles.pressed]}
         >
-          {/* **"Listen from", not "From".** On the Record screen this line sits
-              between the Listen button and "Recording tips", and a bare "From
-              bar 1" there reads as where the *take* starts — which it is not,
-              and which would be a promise about the analysis that nothing
-              keeps. */}
+          {/* The words depend on what the bar governs — see `entryCopy`. This
+              used to say "Listen from" on both screens, with a comment saying
+              a bare "From bar 1" on the Record screen "reads as where the take
+              starts, which it is not". It is now, so it says so. */}
           <Text variant="metadataSmall" color={disabled ? 'textTertiary' : 'accentText'}>
-            Listen from bar {fromMeasure}
+            {entryLabel(entry, fromMeasure)}
           </Text>
         </Pressable>
       ) : null}
@@ -123,7 +138,7 @@ export function PlaybackSettings({
       <BottomSheet
         visible={pickingBar}
         onClose={() => setPickingBar(false)}
-        title="Start from"
+        title={entrySheetTitle(entry)}
       >
         <ScrollView style={styles.barList}>
           {bars.map((bar) => (
