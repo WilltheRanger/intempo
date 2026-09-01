@@ -174,3 +174,43 @@ describe('saying what is still needed', () => {
     );
   });
 });
+
+describe('coming back to a half-answered onboarding', () => {
+  /**
+   * `PATCH /v1/me` stores what it is given and stamps `onboarded_at` only once
+   * the resulting row carries all three answers. So a musician who typed their
+   * name, chose a photograph, and was interrupted arrives here again with both
+   * on their account — and the screen used to start from nothing and ask for
+   * all three, including the one answer that cannot be given by thinking.
+   */
+  it('does not ask again for a photograph the account already has', () => {
+    expect(
+      missingFromOnboarding({ name: 'Alex', instrument: 'violin', storedPhoto: true }),
+    ).toEqual([]);
+  });
+
+  it('still asks when there is no photograph anywhere', () => {
+    expect(
+      missingFromOnboarding({ name: 'Alex', instrument: 'violin' }),
+    ).toEqual(['photo']);
+    expect(
+      missingFromOnboarding({ name: 'Alex', instrument: 'violin', storedPhoto: false }),
+    ).toEqual(['photo']);
+  });
+
+  it('treats a stored photograph exactly as a chosen or uploaded one', () => {
+    // Three ways to satisfy the same requirement, and the screen must not care
+    // which: `avatarKey` after an upload, `photoSelected` before one, and this.
+    const answers = { name: 'Alex', instrument: 'violin' } as const;
+    expect(missingFromOnboarding({ ...answers, avatarKey: 'k' })).toEqual([]);
+    expect(missingFromOnboarding({ ...answers, photoSelected: true })).toEqual([]);
+    expect(missingFromOnboarding({ ...answers, storedPhoto: true })).toEqual([]);
+  });
+
+  it('does not let a stored photograph excuse the other two', () => {
+    expect(missingFromOnboarding({ name: '', instrument: null, storedPhoto: true })).toEqual([
+      'name',
+      'instrument',
+    ]);
+  });
+});

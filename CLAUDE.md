@@ -517,6 +517,19 @@ actually made here.
   in the bucket forever. This contradicts the rule above it; it needs a
   lifecycle decision, not a patch.
 
+**Four screens a fixtures build can never reach**, because they sit behind
+auth or account state rather than behind a route: `AuthScreen` (`signedOut`),
+`SetPasswordScreen` (`recovering`), `AccountStartupScreen` (`loading`) and
+`OnboardingScreen` (`onboarded === false`). Every sweep in this repository
+misses all four. To look at one, flip the single value that gates it in a
+**throwaway build** — `useAuthStatus`'s fixture default, or `onboarded` on the
+fixture musician — and restore it with a `diff -q` check, the same discipline
+`.env` gets. A state with no fixture is a state nobody has looked at, and that
+has now cost this project four times: a guessed clef captioned as read, an
+84×154 box of padding where a cover should be, two post-scan screens never
+rendered, and onboarding asking a returning musician for a photograph their
+account already had.
+
 **Honest DoD status:** no batch is tagged `batch-N-done`. Every remaining gate
 (live magic-link auth, upload→OCR→save, mic→analysis) is blocked on Supabase
 keys and a real device — none of it can be closed in-session, and the screens

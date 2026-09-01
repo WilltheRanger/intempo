@@ -6,6 +6,65 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-01 — Onboarding asked twice for the answer that costs something
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`.
+
+**Files:** `mobile/src/screens/onboarding/OnboardingScreen.tsx`,
+`mobile/src/lib/onboarding.ts` (+ test), `CLAUDE.md`.
+
+### Four screens no sweep has ever seen
+
+Continuing the entry below: I stopped tripping over unrendered states and
+listed them. Four screens sit behind auth or account state rather than behind a
+route, so **every sweep in this repository misses all four** — `AuthScreen`,
+`SetPasswordScreen`, `AccountStartupScreen` and `OnboardingScreen`.
+
+Onboarding is the consequential one. It is the first thing a new account sees,
+all three answers are mandatory with no Skip, and it had never been on screen.
+Now recorded in `CLAUDE.md` with the recipe for looking at each: flip the one
+value that gates it in a throwaway build, restore with `diff -q`.
+
+### It started from nothing, and the account was not nothing
+
+The screen held `useState('')` for the name and `useState(null)` for the
+instrument, and never read `/v1/me`. But **onboarding can be answered across
+two sittings**: `PATCH /v1/me` stores what it is given and stamps
+`onboarded_at` only once the *resulting row* carries all three. So someone who
+typed their name, chose a photograph, and was interrupted comes back with both
+on their account — and was asked for all three again.
+
+Including the photograph. `lib/onboarding.ts` says in its own words why that
+one matters: *"the only answer that cannot be supplied by thinking — someone
+signing up away from a picture they are happy with has to stop and find one,
+and the app is shut until they do."* This made them pay that cost twice.
+
+Rendered before: **"Still needed: your name, a photo and your instrument"** on
+an account that already had a name and an instrument. After: **"Still needed: a
+photo"**, with the name field carrying "Alex" and Violin marked
+`aria-checked="true"`.
+
+### Drafts, not values
+
+`nameDraft ?? me?.displayName ?? ''`. `null` means "not answered on this
+screen", which is what lets an empty field be told apart from one nobody has
+touched — so clearing the name really clears it rather than the stored value
+reasserting itself on the next render. Verified: clearing gives *"Still needed:
+your name and a photo."*
+
+`storedPhoto` is a third way to satisfy the same requirement, beside
+`avatarKey` (uploaded) and `photoSelected` (chosen, not yet uploaded), and the
+guard before saving accepts it too — the server reads the resulting row, not
+the body, so a `PATCH` carrying no `avatar_key` still completes an account that
+has one. The rule lives in `lib/onboarding.ts` where it is tested, including
+that a stored photograph does not excuse the other two.
+
+**Tests:** 944, up 4. 23-route sweep clean.
+
+**Rollback:** revert the commit.
+
+---
+
 ## 2026-09-01 — Fixtures for the states nobody had looked at, and a promise the app could not keep
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Acting on the entry below
