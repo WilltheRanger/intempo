@@ -6,6 +6,96 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-01 — "Not timed" was the app's word, not the page's
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. The other half of the
+fermata work below, and a correction to `CLAUDE.md` that had gone stale.
+
+**Files:** `backend/app/services/classification.py`, `analysis.py` + tests,
+`mobile/src/data/types.ts`, `data/sources/api.ts`, `fixtures.ts`,
+`lib/verdict/measureReading.ts` + test, `CLAUDE.md`.
+
+### The sentence that was wrong
+
+Three different things made a bar go unjudged, and the app had one phrase for
+all of them. A `rit.` is the page withdrawing the steady beat. A fermata is the
+page handing one length to the player. An ornament is **this code** admitting
+it guessed — `ORNAMENT_SHARE` splits the difference between two readings an
+engraver may have meant.
+
+Only the third is a limitation. The other two are instructions, followed
+correctly. Reporting all three as "Not timed" made a musician who held a final
+chord exactly as written read it as the app failing to measure them — and the
+app *had* measured them; it had been told not to judge.
+
+`Delta` knew which case it was on the line that computes `timed`, and threw it
+away one field short of the screen. It now carries `untimed_reason`, and so do
+`PerNote` and `PerMeasure`.
+
+### Two conditions on naming it, and dropping either makes it a lie
+
+`_shared_untimed_reason` gives a reason only when the bar is **wholly** untimed
+and its untimed notes **agree**. A caption on the row has to explain the whole
+row: naming one on a bar that also has measured notes captions a verdict with
+something that explains part of it, and a bar holding both a fermata and an
+ornament has no single answer. `None` therefore means "no single reason" as
+well as "an older take", and both land on the same wording — which is why they
+can share a value rather than needing two.
+
+The order is a statement too: tempo change, then fermata, then ornament,
+broadest first. A note can be under a `rit.` *and* after a fermata.
+
+### The words
+
+"Held", in the same column as "On tempo", "Slight rush" and "Rushing" — so it
+answers the same question, *how did I play this bar?*, in one word that does
+not wrap at 13pt. The sentence goes in the spoken label, where there is room:
+*"held — the page marks a fermata, so its length is yours."* Ochre is not used;
+this is not a judgement about playing.
+
+An ornament still reads "Not timed", because for that one the phrase is
+accurate — the spoken label now says why: *"an ornament is placed by an
+estimate rather than by the page."*
+
+### Also: CLAUDE.md said orphaned uploads were an open hole
+
+They were closed on this branch on 2026-08-31 (`pending_uploads`, the sweeper,
+and the claim points). The document that is read at the start of every session
+still described the hole and asked for "a lifecycle decision, not a patch" —
+so the next session would have either re-solved it or believed the app leaks
+photographs. Replaced with the invariant that now holds, the two orderings that
+hold it, and the part that is still true: **migration 014 is written and not
+applied**, so on a deployment that has not run it the sweeper finds nothing.
+
+### Three-foot test — the verdict screen
+
+Unchanged in hierarchy: the trend chart first, the measure-by-measure column
+second, "Record again" third and in the thumb zone. Verified on the fixture
+take: bars 11 and 12 read "Not timed" and "Uneven" under the written change,
+bar 13 now reads "Held".
+
+### Tests
+
+**mobile 983, backend 1837 passed + 3 xfailed**, `tsc` clean, web build green,
+23-route sweep clean. Six new cases: three in `test_classification.py` that a
+fermata, an ornament and an ordinary note each report what they should, and
+three in `test_analysis.py` for the two conditions on naming a bar's reason.
+Four more in `measureReading.test.ts` for the words themselves.
+
+### Honest status
+
+Verified against the fixture take, not a real recording of a real page with a
+real fermata on it. The stored analyses on any existing deployment have no
+`untimed_reason`, so they keep the old wording — which is the intended
+behaviour, not a gap.
+
+### Rollback
+
+`git revert`. Both new fields default to `None`/`null`, so a revert of the app
+alone or the backend alone is also safe.
+
+---
+
 ## 2026-09-01 — The mark that explains the app's own silence
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`.

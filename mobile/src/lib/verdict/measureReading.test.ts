@@ -25,6 +25,7 @@ function measure(over: Partial<MeasureVerdict> = {}): MeasureVerdict {
     underTempoChange: false,
     uneven: false,
     timedNoteCount: 4,
+    untimedReason: null,
     ...over,
   };
 }
@@ -145,5 +146,62 @@ describe('a measure with nothing in it that could be timed', () => {
     expect(wasTimed({ timedNoteCount: 3 })).toBe(true);
     expect(wasTimed({ timedNoteCount: null })).toBe(true);
     expect(wasTimed({})).toBe(true);
+  });
+});
+
+describe('a bar the page said not to judge', () => {
+  it('says it is held when the page marks a fermata', () => {
+    // **"Not timed" is the app's word, not the page's.** It reads as a failure
+    // to measure, which is right for an ornament — where the pipeline is
+    // admitting it guessed — and wrong here, where a composer gave an
+    // instruction and the musician followed it. A held final chord is not a
+    // bar the app could not judge; it is a bar it was told not to.
+    const reading = readMeasure(
+      measure({ timedNoteCount: 0, untimedReason: 'fermata', deviationPct: 64 }),
+    );
+
+    expect(reading.label).toBe('Held');
+    expect(reading.accessibilityLabel).toContain('fermata');
+    expect(reading.showsDeviation).toBe(false);
+    expect(reading.revealsFigure).toBe(false);
+  });
+
+  it('still says not timed for an ornament, because that one is a guess', () => {
+    const reading = readMeasure(
+      measure({ timedNoteCount: 0, untimedReason: 'ornament' }),
+    );
+
+    expect(reading.label).toBe('Not timed');
+    expect(reading.accessibilityLabel).toContain('estimate');
+  });
+
+  it('falls back to the old wording when no reason is given', () => {
+    // Two cases share this: a take analysed before the pipeline reported a
+    // reason, and a bar whose untimed notes disagree. Both mean "no single
+    // reason", and the honest silence is better than a headline that only
+    // explains half the bar.
+    const reading = readMeasure(
+      measure({ timedNoteCount: 0, untimedReason: null }),
+    );
+
+    expect(reading.label).toBe('Not timed');
+    expect(reading.accessibilityLabel).toContain(
+      'nothing here could be timed against the page',
+    );
+  });
+
+  it('lets a written tempo change answer first', () => {
+    // A bar can be both. The tempo change covers a passage and is the broader
+    // fact, and it has its own reading with "Uneven" in it.
+    const reading = readMeasure(
+      measure({
+        underTempoChange: true,
+        uneven: true,
+        timedNoteCount: 0,
+        untimedReason: 'tempo_change',
+      }),
+    );
+
+    expect(reading.label).toBe('Uneven');
   });
 });

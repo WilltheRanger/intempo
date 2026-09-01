@@ -426,3 +426,91 @@ def test_a_bar_with_nothing_timed_still_reports_a_number() -> None:
     assert bar.timed_note_count == 0
     assert bar.avg_delta_pct == 40.0
     assert bar.under_tempo_change is True
+
+
+def test_a_wholly_held_bar_reports_why_it_was_not_timed() -> None:
+    """**"Not timed" reads as the app failing; "held" reads as the page.**
+
+    A bar that is one held chord — the commonest last bar there is — went
+    unjudged for a reason the pipeline knew and dropped one field short of the
+    screen. The app then had a single sentence covering a fermata, an ornament
+    and a `rit.`, which are three different things and only one of them is a
+    limitation of this code.
+    """
+    from app.services.analysis import _summarize_measures
+    from app.services.classification import Delta
+
+    def held(idx: int, reason: str) -> Delta:
+        return Delta(
+            global_index=idx,
+            measure_number=1,
+            expected_ms=0.0,
+            actual_ms=0.0,
+            delta_ms=0.0,
+            delta_pct=40.0,
+            band=Band.on,
+            direction=Direction.on,
+            is_slur_interior=False,
+            timed=False,
+            untimed_reason=reason,  # type: ignore[arg-type]
+        )
+
+    (bar,) = _summarize_measures([held(0, "fermata"), held(1, "fermata")])
+
+    assert bar.timed_note_count == 0
+    assert bar.untimed_reason == "fermata"
+
+
+def test_a_bar_whose_untimed_notes_disagree_names_no_reason() -> None:
+    """A fermata *and* an ornament in one bar has no single answer, and
+    inventing a headline for it would be worse than the honest silence the app
+    already falls back to."""
+    from app.services.analysis import _summarize_measures
+    from app.services.classification import Delta
+
+    def untimed(idx: int, reason: str) -> Delta:
+        return Delta(
+            global_index=idx,
+            measure_number=1,
+            expected_ms=0.0,
+            actual_ms=0.0,
+            delta_ms=0.0,
+            delta_pct=10.0,
+            band=Band.on,
+            direction=Direction.on,
+            is_slur_interior=False,
+            timed=False,
+            untimed_reason=reason,  # type: ignore[arg-type]
+        )
+
+    (bar,) = _summarize_measures([untimed(0, "fermata"), untimed(1, "ornament")])
+
+    assert bar.untimed_reason is None
+
+
+def test_a_bar_with_any_timed_note_names_no_reason() -> None:
+    """The reason captions the whole row, so it may only be given when it
+    explains the whole row. A bar with measured notes in it has a verdict, and
+    that verdict is what the row should say."""
+    from app.services.analysis import _summarize_measures
+    from app.services.classification import Delta
+
+    def note(idx: int, timed: bool, reason: str | None = None) -> Delta:
+        return Delta(
+            global_index=idx,
+            measure_number=1,
+            expected_ms=0.0,
+            actual_ms=0.0,
+            delta_ms=0.0,
+            delta_pct=2.0,
+            band=Band.on,
+            direction=Direction.on,
+            is_slur_interior=False,
+            timed=timed,
+            untimed_reason=reason,  # type: ignore[arg-type]
+        )
+
+    (bar,) = _summarize_measures([note(0, True), note(1, False, "fermata")])
+
+    assert bar.timed_note_count == 1
+    assert bar.untimed_reason is None

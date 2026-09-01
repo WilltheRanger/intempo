@@ -1,5 +1,5 @@
 import type { ColorToken } from '../../design';
-import type { MeasureVerdict } from '../../data/types';
+import type { MeasureVerdict, UntimedReason } from '../../data/types';
 import { formatVerdict, verdictColorFor } from '../tempo';
 
 /**
@@ -55,6 +55,47 @@ function nothingTimed(measure: MeasureVerdict): boolean {
   return measure.timedNoteCount === 0;
 }
 
+/**
+ * What to call a bar nothing in which could be timed.
+ *
+ * **"Not timed" was the app's word for all three, and it is the app's word,
+ * not the page's.** It reads as a failure to measure — which is exactly right
+ * for `ornament`, where the pipeline is admitting it guessed, and wrong for
+ * the other two, where the page gave an instruction and the musician followed
+ * it. A held final chord is not a bar the app could not judge; it is a bar the
+ * composer said not to.
+ *
+ * The labels sit in the same column as "On tempo", "Slight rush", "Rushing",
+ * so they answer the same question — *how did I play this bar?* — in one or
+ * two words. The sentence goes in the spoken label, where there is room.
+ *
+ * `unsaid` covers two cases on purpose: a take analysed before the pipeline
+ * reported a reason, and a bar whose untimed notes disagree. Both mean "no
+ * single reason", which is one sentence.
+ */
+const UNTIMED_WORDS: Record<
+  UntimedReason | 'unsaid',
+  { label: string; spoken: string } | null
+> = {
+  fermata: {
+    label: 'Held',
+    spoken: 'held — the page marks a fermata, so its length is yours',
+  },
+  // Reached only through the branch above in practice, since a bar under a
+  // change is caught by `underTempoChange` first. Here so the table is total
+  // rather than relying on that ordering staying true.
+  tempo_change: {
+    label: 'Not timed',
+    spoken: 'under a written tempo change, not timed',
+  },
+  ornament: {
+    label: 'Not timed',
+    spoken:
+      'not timed — an ornament is placed by an estimate rather than by the page',
+  },
+  unsaid: null,
+};
+
 export function readMeasure(measure: MeasureVerdict): MeasureReading {
   if (measure.underTempoChange) {
     // **"Uneven" is the one thing worth saying about a bar like this**, and
@@ -83,6 +124,16 @@ export function readMeasure(measure: MeasureVerdict): MeasureReading {
   }
 
   if (nothingTimed(measure)) {
+    const named = UNTIMED_WORDS[measure.untimedReason ?? 'unsaid'];
+    if (named) {
+      return {
+        label: named.label,
+        tone: 'textTertiary',
+        showsDeviation: false,
+        revealsFigure: false,
+        accessibilityLabel: `Measure ${measure.measure}: ${named.spoken}`,
+      };
+    }
     // **A `rit.` is not the only way a bar goes unjudged**, and the other two
     // are ordinary notation. A fermata says one length is not written down at
     // all — the mark exists precisely to hand it to the player — so the

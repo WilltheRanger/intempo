@@ -446,6 +446,7 @@ function toTake(
     underTempoChange: m.under_tempo_change === true,
     uneven: m.uneven === true,
     timedNoteCount: m.timed_note_count ?? null,
+    untimedReason: m.untimed_reason ?? null,
   }));
 
   return {

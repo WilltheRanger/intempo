@@ -510,12 +510,22 @@ actually made here.
   setting the scanner does not have and a file importer that refuses JPEGs. Its
   test asserted that *some* advice was given, which is how it survived. When
   writing an error, name a route that exists.
-- **Known hole, unfixed: orphaned uploads.** An upload that never becomes a
-  score row is permanent and unreachable — the only storage deletion is reached
-  from `POST /:id/accept` keyed off an existing row, so backing out of the
-  naming screen, a failed save, or a retried transcribe each leave a photograph
-  in the bucket forever. This contradicts the rule above it; it needs a
-  lifecycle decision, not a patch.
+- **Every object in these buckets has a row somewhere.** A `scores` row because
+  it became a piece, an `analyses` row because it became a take, a
+  `users.avatar_url` because it became a face, or a `pending_uploads` row
+  because it has not become anything yet. An object with no row is a bug rather
+  than a Tuesday. This replaced the standing "orphaned uploads" hole, where an
+  upload that never became a score row was unreachable forever — backing out of
+  the naming screen, a failed save or a retried transcribe each stranded a
+  musician's photograph with no request that could remove it, including theirs.
+  Two orderings hold it: **claim after the row exists** (clearing first strands
+  every save that then fails) and **sweep the object before the row** (a row
+  deleted first leaks its object silently, which is the same bug one level
+  down). `record` never raises — failing the upload because the bookkeeping
+  failed costs the musician their page, which is the thing the bookkeeping
+  exists to protect. **Migration 014 is written and not yet applied**, so on a
+  deployment that has not run it the sweeper finds nothing and the hole is
+  still open.
 
 **Four screens a fixtures build can never reach**, because they sit behind
 auth or account state rather than behind a route: `AuthScreen` (`signedOut`),

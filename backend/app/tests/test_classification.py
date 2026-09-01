@@ -128,3 +128,72 @@ def test_generate_verdict_uses_bpm_not_percent() -> None:
     verdict = generate_verdict(deltas, target_bpm=120.0)
     assert "BPM" in verdict.text
     assert "%" not in verdict.text
+
+
+# ---------------------------------------------------------------------------
+# Why a note went unjudged
+# ---------------------------------------------------------------------------
+#
+# `timed` said *that* a note was not measured against a written time; nothing
+# said *which* of the three reasons it was. The app therefore had one sentence
+# for all of them — "Not timed" — which reads as the app failing rather than as
+# the page speaking. "This bar is held" is a reading; "not timed" is an apology.
+#
+# The reason was known at the line that computes `timed` and thrown away one
+# field short of the screen that needed it.
+
+
+def _scored(fermata_at: tuple[int, int] | None = None, graces_at: tuple[int, int] | None = None):
+    """Two bars of quarters, optionally with one fermata and one ornament."""
+    measures = []
+    for number in (1, 2):
+        notes = []
+        for index in range(4):
+            notes.append(
+                Note(
+                    pitch="D3",
+                    duration="quarter",
+                    fermata=fermata_at == (number, index),
+                    grace_notes=2 if graces_at == (number, index) else 0,
+                )
+            )
+        measures.append(Measure(measure_number=number, notes=notes))
+    return ScoreJson(
+        time_signature="4/4", clef="bass", measures=measures, ocr_confidence=1.0
+    )
+
+
+def _deltas_for(score: ScoreJson):
+    """Played exactly as written, so nothing is a deviation and the only thing
+    under test is which notes the pipeline declined to judge, and why."""
+    timeline = build_timeline(score, 60.0)
+    detected = np.array([n.onset_s for n in timeline.notes], dtype=float)
+    cleaned = CleanedAlignment(matched=[(i, i) for i in range(len(timeline.notes))])
+    return compute_deltas(cleaned, detected, timeline, 60.0)
+
+
+def test_a_note_after_a_fermata_says_so() -> None:
+    """The mark exists precisely to hand the length to the player, so there is
+    no written value for the interval after it to be measured against."""
+    deltas = _deltas_for(_scored(fermata_at=(1, 3)))
+
+    held = [d for d in deltas if not d.timed]
+
+    assert [d.untimed_reason for d in held] == ["fermata"]
+
+
+def test_an_ornament_and_the_note_it_decorates_say_ornament() -> None:
+    """The narrowest of the three, and the only one that is a limitation of
+    this code rather than something printed on the page: `ORNAMENT_SHARE` is a
+    number the pipeline invented to split the difference between two readings
+    an engraver may have meant."""
+    deltas = _deltas_for(_scored(graces_at=(2, 1)))
+
+    assert {d.untimed_reason for d in deltas if not d.timed} == {"ornament"}
+
+
+def test_a_note_the_page_states_a_time_for_gives_no_reason() -> None:
+    deltas = _deltas_for(_scored())
+
+    assert all(d.timed for d in deltas)
+    assert all(d.untimed_reason is None for d in deltas)

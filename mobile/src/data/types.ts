@@ -96,6 +96,15 @@ export type Clef = 'treble' | 'bass' | 'alto' | 'tenor';
 
 export type Articulation = 'staccato' | 'tenuto' | 'accent';
 
+/**
+ * Why a note's deviation was not measured against a time the page states.
+ *
+ * Mirrors `classification.UntimedReason`. A closed set rather than a sentence,
+ * so the words a musician reads are written here, in the app, next to the rest
+ * of its copy — and the pipeline only says which case it is.
+ */
+export type UntimedReason = 'tempo_change' | 'fermata' | 'ornament';
+
 export type Dynamics =
   | 'ppp' | 'pp' | 'p' | 'mp' | 'mf' | 'f' | 'ff' | 'fff'
   | 'fp' | 'sfz' | 'sf' | 'fz';
@@ -465,6 +474,14 @@ export interface PerMeasureResult {
    * read as a verdict.
    */
   timed_note_count?: number | null;
+  /**
+   * Why nothing in the bar was timed, when every untimed note agrees.
+   *
+   * Absent on an older result, and absent when the bar's untimed notes give
+   * different reasons — `_shared_untimed_reason` refuses to pick one, since a
+   * caption on the whole row has to explain the whole row.
+   */
+  untimed_reason?: UntimedReason | null;
   worst_band: Band;
   direction: Direction;
   /**
@@ -726,6 +743,20 @@ export interface MeasureVerdict {
    * and the note it decorates are placed by a number the pipeline invented.
    */
   timedNoteCount: number | null;
+  /**
+   * Why nothing in the bar was timed, when every untimed note agrees.
+   *
+   * **`timedNoteCount: 0` said the app could not judge the bar; this says who
+   * decided that.** Two of the three are the page speaking — a fermata hands
+   * one length to the player, a tempo change withdraws the steady beat — and
+   * only `ornament` is a limitation of the pipeline, which places a grace note
+   * and the note it decorates by a number it invented. Reporting all three as
+   * "Not timed" made the page's own instructions look like the app failing.
+   *
+   * Null for an older take, and also for a bar whose untimed notes disagree.
+   * Both mean "no single reason", which is one sentence, so they share a value.
+   */
+  untimedReason: UntimedReason | null;
 }
 
 /**

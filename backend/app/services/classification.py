@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
+from typing import Literal
 
 import numpy as np
 
@@ -36,6 +37,17 @@ class Direction(str, Enum):
     rush = "rush"  # ahead / early
     drag = "drag"  # behind / late
     on = "on"  # within the inner tolerance band
+
+
+#: Why a note's deviation was not measured against a time the page states.
+#:
+#: A closed set rather than a sentence, so the app writes the words a musician
+#: reads and the pipeline only says which case it is. The three are genuinely
+#: different things — a tempo change is the page withdrawing the steady beat, a
+#: fermata is the page handing one length to the player, an ornament is *this
+#: code* having guessed — and only the last is a limitation rather than
+#: notation.
+UntimedReason = Literal["tempo_change", "fermata", "ornament"]
 
 
 @dataclass
@@ -71,6 +83,14 @@ class Delta:
     #: able to leave them out — and `under_tempo_change` alone only covered the
     #: first. Default True so a `Delta` built without it behaves as before.
     timed: bool = True
+    #: Which of those it was, when `timed` is false. `None` when it is true.
+    #:
+    #: **The app said "Not timed" and stopped there**, which reads as the app
+    #: failing rather than as the page speaking. It is not the same sentence as
+    #: "this bar is held" — one is an apology and the other is a reading. The
+    #: reason was known at exactly this line and thrown away one field short of
+    #: the screen that needed it.
+    untimed_reason: UntimedReason | None = None
 
 
 def classify_band(delta_pct: float, *, config: AudioConfig | None = None) -> Band:
@@ -228,12 +248,21 @@ def compute_deltas(
         # it decorates are placed here by an assumption this code made — see
         # `ORNAMENT_SHARE`. Timing a musician against a number we invented is
         # the one thing that would be worse than not placing them at all.
-        timed = not (
-            note.under_tempo_change
-            or note.after_fermata
-            or note.is_grace_note
-            or note.after_grace_note
+        # **Ordered, and the order is a statement about what to say first.** A
+        # note can be under a `rit.` *and* after a fermata; the tempo change is
+        # the broader fact — it covers a passage rather than one length — so it
+        # is named first. The ornament pair comes last because it is the
+        # narrowest: it describes two notes, not a bar.
+        reason: UntimedReason | None = (
+            "tempo_change"
+            if note.under_tempo_change
+            else "fermata"
+            if note.after_fermata
+            else "ornament"
+            if note.is_grace_note or note.after_grace_note
+            else None
         )
+        timed = reason is None
         band = classify_band(delta_pct, config=cfg) if timed else Band.on
         deltas.append(
             Delta(
@@ -246,6 +275,7 @@ def compute_deltas(
                 band=band,
                 direction=_direction(delta_pct, band),
                 is_slur_interior=note.is_slur_interior,
+                untimed_reason=reason,
                 under_tempo_change=note.under_tempo_change,
                 uneven=note.measure_number in uneven,
                 timed=timed,

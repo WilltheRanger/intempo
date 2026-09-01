@@ -10,6 +10,7 @@ import type {
   ScoreJson,
   ScoreNote,
   TakeResult,
+  UntimedReason,
 } from '../types';
 import { PIECE_HAS_RECORDINGS } from './types';
 import type {
@@ -787,6 +788,8 @@ const FIXTURE_MEASURES: {
   uneven?: boolean;
   /** Zero for a bar nothing in which was timed — a held chord, an ornament. */
   timedNotes?: number;
+  /** Which of the three it was, when the whole bar went unjudged. */
+  untimedReason?: UntimedReason;
 }[] = [
   { measure: 1, notes: 4, dragPct: -1.2, band: 'on' },
   { measure: 2, notes: 4, dragPct: -2.8, band: 'on' },
@@ -811,7 +814,14 @@ const FIXTURE_MEASURES: {
   // its length is not written down at all, so nothing in the bar can be timed
   // against the page. The second way a bar goes unjudged, and the one that
   // read "On tempo" until the pipeline started reporting `timed_note_count`.
-  { measure: 13, notes: 1, dragPct: 64.0, band: 'on', timedNotes: 0 },
+  {
+    measure: 13,
+    notes: 1,
+    dragPct: 64.0,
+    band: 'on',
+    timedNotes: 0,
+    untimedReason: 'fermata',
+  },
 ];
 
 const FIXTURE_TAKE_ID = 'fixture-take-1';
@@ -851,6 +861,7 @@ function buildFixtureTake(): TakeResult {
       underTempoChange: m.underTempoChange === true,
       uneven: m.uneven === true,
       timedNoteCount: m.timedNotes ?? m.notes,
+      untimedReason: m.untimedReason ?? null,
     };
   });
 
