@@ -34,6 +34,12 @@ import {
 } from '../../design';
 import { TempoStepper } from '../../components/practice/TempoStepper';
 import { impact, ImpactFeedbackStyle } from '../../lib/haptics';
+import {
+  displayTempoBpm,
+  quarterBpmFromDisplay,
+  tempoDisplayRange,
+  tempoUnitLabel,
+} from '../../lib/tempo';
 import { metronomePulse, monotonicNow, useMetronome } from '../../lib/metronome';
 import {
   longRestCues,
@@ -87,6 +93,9 @@ export function RecordScreen() {
   // elsewhere; the store is the source of truth, not this component.
   usePracticeTempos();
   const targetBpm = practiceTempo.for(params.pieceId, piece?.markedBpm ?? null);
+  const tempoBeatUnit = piece?.score?.tempo_beat_unit ?? null;
+  const displayedBpm = displayTempoBpm(targetBpm, tempoBeatUnit);
+  const displayedRange = tempoDisplayRange(tempoBeatUnit);
   const [phase, setPhase] = useState<Phase>('ready');
   // The first recording on this device gets a short orientation before the
   // system permission prompt. It can always be reopened from the ready screen.
@@ -496,8 +505,16 @@ export function RecordScreen() {
         <View style={styles.tempo}>
           <TempoStepper
             label="Target tempo"
-            bpm={targetBpm}
-            onChange={(next) => practiceTempo.set(params.pieceId, next)}
+            bpm={displayedBpm}
+            unitLabel={tempoUnitLabel(tempoBeatUnit)}
+            minBpm={displayedRange.min}
+            maxBpm={displayedRange.max}
+            onChange={(next) =>
+              practiceTempo.set(
+                params.pieceId,
+                quarterBpmFromDisplay(next, tempoBeatUnit),
+              )
+            }
             disabled={recording}
           />
 
