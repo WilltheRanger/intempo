@@ -4,10 +4,11 @@ import { pieceKeys } from './usePieces';
 import { createScore } from '../api/scores';
 import { IS_LIVE_BACKEND } from '../environment';
 import type { Piece } from '../types';
+import { toPiece } from '../sources/api';
 
 export interface TranscribeInput {
-  /** The signed upload URL from `uploadPage`. Expires five minutes after issue. */
-  imageUrl: string;
+  /** Ordered signed upload URLs from `uploadPage`. */
+  imageUrls: string[];
   title: string;
   composer: string | null;
   /** e.g. "I. Adagio". Null for music with no movements. */
@@ -15,11 +16,11 @@ export interface TranscribeInput {
 }
 
 /**
- * Creating a score from an uploaded page — the step that runs OCR.
+ * Creating a score from uploaded pages — the step that runs OCR.
  *
  * Not on `PieceSource` like the other writes, and deliberately so: there is no
  * fixture equivalent. Every other seam has two honest implementations, but
- * "read this photograph" cannot be faked without inventing notes that were
+ * "read these photographs" cannot be faked without inventing notes that were
  * never on the page, and a fabricated transcription is the single most
  * misleading thing this app could produce. A build with no backend refuses
  * instead — see below.
@@ -41,27 +42,20 @@ export function useTranscribePage() {
           'Transcription needs the backend. This build is running on sample data, so there is nothing to read the photograph. Add a piece manually instead.',
         );
       }
+      if (input.imageUrls.length === 0) {
+        throw new Error('At least one uploaded page is required.');
+      }
+      const images =
+        input.imageUrls.length === 1
+          ? { image_url: input.imageUrls[0] }
+          : { image_urls: input.imageUrls };
       const score = await createScore({
-        image_url: input.imageUrl,
+        ...images,
         title: input.title,
         composer: input.composer,
         movement: input.movement,
       });
-      return {
-        id: score.id,
-        title: score.title,
-        composer: score.composer,
-        movement: score.movement,
-        lastPracticedAt: null,
-        thumbnail: score.image_url,
-        markedBpm: score.score_json?.bpm_hint ?? null,
-        score: score.score_json ?? null,
-        transcriptionStatus: score.transcription_status ?? 'done',
-        transcriptionStage: score.transcription_stage ?? null,
-        transcriptionError: score.transcription_error ?? null,
-        transcriptionAccepted: Boolean(score.transcription_accepted_at),
-        pageImageDiscarded: Boolean(score.page_image_discarded_at),
-      };
+      return toPiece(score);
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: pieceKeys.all });

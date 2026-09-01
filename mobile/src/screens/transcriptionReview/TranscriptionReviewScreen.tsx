@@ -55,7 +55,7 @@ export function TranscriptionReviewScreen() {
   const [pageIndex, setPageIndex] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
-  const imageUrl = captureSession.uploadedImageUrl();
+  const imageUrls = captureSession.uploadedImageUrls();
 
   async function save() {
     const trimmed = title.trim();
@@ -63,9 +63,9 @@ export function TranscriptionReviewScreen() {
       setError('Give the piece a title — it is how you will find it again.');
       return;
     }
-    if (!imageUrl) {
+    if (imageUrls.length !== pages.length) {
       setError(
-        'The uploaded page has expired. Go back and send it again.',
+        'The uploaded pages are incomplete. Go back and send them again.',
       );
       return;
     }
@@ -73,7 +73,7 @@ export function TranscriptionReviewScreen() {
     setError(null);
     try {
       const piece = await transcribe.mutateAsync({
-        imageUrl,
+        imageUrls,
         title: trimmed,
         composer: composer.trim() || null,
         movement: movement.trim() || null,
@@ -158,8 +158,8 @@ export function TranscriptionReviewScreen() {
       />
 
       <Text variant="body" color="textSecondary" style={styles.lede}>
-        Name the piece now. After you save it, InTempo reads page 1 and opens
-        the notation for you to check.
+        Name the piece now. After you save it, InTempo reads every page in
+        order and opens the notation for you to check.
       </Text>
 
       <Input
@@ -190,10 +190,9 @@ export function TranscriptionReviewScreen() {
       />
 
       {/*
-        The page stays visible while they type, because the title is usually
-        printed on it. Paging through is kept for the same reason — the title
-        can be on a different sheet from the one that opens the scan — even
-        though only the first page is transcribed.
+        Every page stays available while they type, because title, movement and
+        composer can be printed on different sheets. This order is also the
+        order the worker reads and joins.
       */}
       {pages.length > 1 ? (
         <View style={styles.pageNav}>
@@ -220,13 +219,6 @@ export function TranscriptionReviewScreen() {
         style={styles.page}
       />
 
-      {pages.length > 1 ? (
-        <Text variant="metadataSmall" color="textTertiary" style={styles.caveat}>
-          Only the first page is transcribed. A score spanning several pages
-          isn&apos;t supported yet.
-        </Text>
-      ) : null}
-
       {error ? (
         <Text variant="metadataSmall" color="textSecondary" style={styles.error}>
           {error}
@@ -239,7 +231,7 @@ export function TranscriptionReviewScreen() {
         is watched on the score screen this lands on.
       */}
       <PrimaryButton
-        label="Save and read page"
+        label={pages.length === 1 ? "Save and read page" : `Save and read ${pages.length} pages`}
         onPress={() => void save()}
         loading={transcribe.isPending}
         disabled={transcribe.isPending}
@@ -269,9 +261,6 @@ const styles = StyleSheet.create({
     width: '100%',
     height: PAGE_HEIGHT,
     marginTop: spacing.xl,
-  },
-  caveat: {
-    marginTop: spacing.md,
   },
   error: {
     marginTop: spacing.lg,

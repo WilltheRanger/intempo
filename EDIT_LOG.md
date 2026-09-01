@@ -6,6 +6,33 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-31 — Complete multi-page score intake
+
+**Branch:** `fix/mobile-multi-page-scan`
+
+### Changed
+
+- Uploads every photographed or imported page sequentially and preserves the
+  musician's chosen page order through score creation and transcription.
+- Shows measured per-page transfer progress and names the page currently being
+  sent instead of silently processing only the first page.
+- Enforces the backend's 12-page ceiling in the camera, image picker, and
+  capture-session boundary before an unsupported page can be photographed or
+  uploaded.
+- Sends the backend's supported `image_urls` request for multi-page scans while
+  retaining the single-page contract for hand-entered pieces.
+- Reworded scan, review, and failure states so they accurately describe every
+  selected page.
+
+### Verification
+
+- Added mobile tests for ordered sequential uploads, per-page progress,
+  cancellation signal forwarding, early failure, URL ordering, and camera or
+  import page-limit enforcement.
+- Existing backend multi-page API tests cover ordered three-page creation,
+  ownership, acceptance, and cleanup.
+- Mobile typecheck, tests, and web build run in pull-request CI.
+
 ## 2026-08-31 — Prominent add-piece action and contextual practice lessons
 
 **Branch:** `feat/today-piece-action-lessons`

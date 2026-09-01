@@ -9,7 +9,11 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ScoreThumbnail } from '../../components/pieces/ScoreThumbnail';
 import { Text } from '../../components/primitives/Text';
 import { impact, ImpactFeedbackStyle } from '../../lib/haptics';
-import { captureSession, useCapturedPages } from '../../data/captureSession';
+import {
+  captureSession,
+  MAX_SCAN_PAGES,
+  useCapturedPages,
+} from '../../data/captureSession';
 import {
   BORDER_WIDTH,
   colors,
@@ -95,9 +99,15 @@ export function ScannerScreen() {
   const lastPage = pages[pages.length - 1];
   const FlashIcon = flashOn ? Zap : ZapOff;
   const ready = permission?.granted === true;
+  const retaking = captureSession.retaking() !== null;
+  const canCapture = ready && (retaking || pages.length < MAX_SCAN_PAGES);
 
   async function handleCapture() {
     if (!ready || busy) {
+      return;
+    }
+    if (!retaking && pages.length >= MAX_SCAN_PAGES) {
+      setError(`A score can have at most ${MAX_SCAN_PAGES} pages in one scan.`);
       return;
     }
     setBusy(true);
@@ -118,7 +128,12 @@ export function ScannerScreen() {
       // `capture`. A retake swaps the new photograph in where the old one sat
       // and you are finished; an ordinary capture leaves you here for the next
       // page.
-      if (captureSession.capture(photo.uri) === 'replaced') {
+      const outcome = captureSession.capture(photo.uri);
+      if (outcome === 'full') {
+        setError(`A score can have at most ${MAX_SCAN_PAGES} pages in one scan.`);
+        return;
+      }
+      if (outcome === 'replaced') {
         navigation.navigate('CapturedPages');
       }
     } catch (cause) {
@@ -215,9 +230,9 @@ export function ScannerScreen() {
           </Text>
         ) : null}
 
-        {error ? (
+        {error || (!retaking && pages.length >= MAX_SCAN_PAGES) ? (
           <Text variant="metadataSmall" color="onDarkMuted" style={styles.error}>
-            {error}
+            {error ?? `Maximum of ${MAX_SCAN_PAGES} pages reached. Tap Done to continue.`}
           </Text>
         ) : null}
       </View>
@@ -259,14 +274,20 @@ export function ScannerScreen() {
 
         <Pressable
           onPress={() => void handleCapture()}
-          disabled={!ready || busy}
+          disabled={!canCapture || busy}
           accessibilityRole="button"
-          accessibilityLabel="Capture page"
-          accessibilityState={{ disabled: !ready || busy }}
+          accessibilityLabel={
+            !ready
+              ? 'Capture page unavailable'
+              : canCapture
+                ? 'Capture page'
+                : `Maximum of ${MAX_SCAN_PAGES} pages reached`
+          }
+          accessibilityState={{ disabled: !canCapture || busy }}
           style={({ pressed }) => [
             styles.captureRing,
             pressed && styles.capturePressed,
-            (!ready || busy) && styles.captureDisabled,
+            (!canCapture || busy) && styles.captureDisabled,
           ]}
         >
           <View style={styles.captureCore} />
