@@ -5,11 +5,11 @@ import type { NoteValue, StaveItem } from './engrave';
 /**
  * A parsed score, turned into something the engraver can draw.
  *
- * **Nothing is rounded.** `engrave.ts` draws four note values — whole, half,
- * quarter, eighth — and no rests. A `score_json` from OCR can hold dotted
- * values, sixteenths, thirty-seconds and rests, and the tempting move is to
- * map each to the nearest drawable thing: a sixteenth becomes an eighth, a
- * dotted half becomes a half, a rest disappears.
+ * **Nothing is rounded.** `engrave.ts` draws whole through sixteenth, with
+ * dots, and four rest values. A `score_json` from OCR can hold thirty-seconds,
+ * tuplets and doubly-dotted values besides, and the tempting move is to map
+ * each to the nearest drawable thing: a thirty-second becomes a sixteenth, a
+ * triplet eighth becomes a plain one.
  *
  * That would put a rhythmically wrong line of music in front of a musician and
  * say nothing about it — which is worse than drawing less. Rhythm is the entire
@@ -34,6 +34,42 @@ export interface StaveScore {
   rests: number;
   /** Notes whose value the engraver cannot draw: dots, sixteenths, shorter. */
   undrawable: number;
+  /** The beat this score's beams break at, in quarter notes. */
+  beatQuarters: number;
+}
+
+/**
+ * The beat a beam may not cross, in quarter notes, read off the time signature.
+ *
+ * **Compound metres count in threes.** 6/8 has two beats of three eighths, not
+ * six of one, and beaming its eighths in pairs is the mark of software that has
+ * only ever been shown 4/4. The test is the numerator, not the name: a
+ * numerator divisible by three over an eighth or sixteenth is compound, which
+ * covers 6/8, 9/8, 12/8 and 3/16, and 3/8 too — where the whole bar is one
+ * group, which is what an engraver prints.
+ *
+ * Everything else beams at the denominator's own value: quarters in 4/4 and
+ * 3/4, halves in cut time.
+ *
+ * An unreadable or absent time signature gives a quarter. That is a guess, and
+ * it is a safe one to make here in a way it is not in `problemMeasures` —
+ * assuming 4/4 there would report every waltz on the page as wrong, whereas
+ * here the cost is a beam grouped in the wrong place on a page whose metre
+ * nothing knows.
+ */
+export function beamBeatQuarters(timeSignature: string | null): number {
+  const match = /^(\d+)\s*\/\s*(\d+)$/.exec((timeSignature ?? '').trim());
+  if (!match) {
+    return 1;
+  }
+  const beats = Number(match[1]);
+  const unit = Number(match[2]);
+  if (!Number.isFinite(beats) || !Number.isFinite(unit) || beats <= 0 || unit <= 0) {
+    return 1;
+  }
+  const oneUnit = 4 / unit;
+  const compound = beats % 3 === 0 && (unit === 8 || unit === 16);
+  return compound ? oneUnit * 3 : oneUnit;
 }
 
 /**
@@ -200,7 +236,13 @@ export function staveScoreFor(score: ScoreJson): StaveScore {
     index += 1;
   }
 
-  return { items, noteCount, rests, undrawable };
+  return {
+    items,
+    noteCount,
+    rests,
+    undrawable,
+    beatQuarters: beamBeatQuarters(score.time_signature),
+  };
 }
 
 /**

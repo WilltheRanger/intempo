@@ -6,6 +6,134 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-01 — Four engraving faults a screenshot found and no test could
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Sixth iteration of the
+consumer-grade loop, continuing the music side.
+
+**Files:** `mobile/src/lib/notation/engrave.ts` + test,
+`mobile/src/lib/notation/fromScore.ts` + test,
+`mobile/src/components/notation/Stave.tsx`,
+`mobile/src/screens/pieceScore/PieceScoreScreen.tsx`,
+`mobile/src/data/sources/fixtures.ts`.
+
+### Why: the previous entry's own honest gap
+
+It ended: *"**The glyphs have not been seen.** No fixture score contains a
+sixteenth or a dot… a flag curving the wrong way would pass every test here.
+A fixture with fine values, or a real scan, is what would settle it."*
+
+So one was written. `FINE_VALUES_SCORE` in `fixtures.ts` is six bars, each
+carrying one thing that used to be undrawable — sixteenths in fours, a
+dotted-eighth pair, a lone eighth between rests, a dotted quarter, a dotted
+half, a half rest — and it is attached to the Kreutzer étude, which is
+genuinely a page of continuous sixteenths (`fixtures/scores/SOURCES.md`). It
+is in A minor because this engraver draws no key signature, so a study in D
+major would print a sharp on every F and the picture would be about
+accidentals instead of about rhythm.
+
+Then the screen was built and looked at. **Four faults, none of which any
+assertion in the repository could have caught, because each of them is about
+where ink lands rather than what the data says.**
+
+### 1. Beams did not break at the beat
+
+The opening bar engraved as **one beam sixteen notes long** — a black slab
+across the system, every stem stretched to meet the lowest note in the bar. It
+is not a rhythm anyone can count and no engraver prints it.
+
+`engrave` now takes `beatQuarters` and breaks a run whenever a note *starts*
+on a beat. Checked on the start, not the end, so a dotted eighth keeps the
+sixteenth that finishes its beat — which is exactly how the pair is printed.
+Rests advance the clock, barlines reset it. `beamBeatQuarters` in
+`fromScore.ts` reduces a time signature to the only thing this needs from it,
+and it counts **compound metres in threes**: 6/8 is two beats of three
+eighths, and beaming its eighths in pairs is the tell of notation drawn by
+something that has only ever been shown 4/4.
+
+Measured, on the scale-run fixture: longest stem 11.75 staff gaps as one
+group, **under 6** beamed a beat at a time.
+
+### 2. A second beam spanned notes that do not carry one
+
+`EngravedBeam` carried a `count` and the component drew that many parallel
+lines across the whole run. Right only when every note in the run is the same
+value — and a **dotted eighth followed by a sixteenth** is the commonest
+rhythm in string writing and the commonest counter-example: two full beams
+across the pair says *both notes are sixteenths*, so the bar is drawn a beat
+and a half short of the page, in the same confident ink as the bars that are
+right.
+
+A beam is now one line at one level. Level 1 spans the group; each level above
+spans only the notes that carry it, in maximal runs, with a **stub** where a
+note carries a level alone — pointing back toward the note it shares a beat
+with, forward only when there is nothing behind it. The component draws lines
+and no longer computes where they go.
+
+### 3. A group's stems followed its first note, not its furthest
+
+Bar 1's closing group — C5 down to G#4 — opened on the one note above the
+middle line, so all four stems pointed down and the beam hung below the staff.
+Engraving's rule is the extreme note; ties go down.
+
+### 4. An accidental had no width
+
+Columns are evenly spaced, so sixteen sixteenths on a phone get about 1.6
+staff gaps each — and a sharp drawn 1.55 gaps left of its notehead therefore
+landed squarely on the **previous note**. Four of them did, and every test
+passed.
+
+Even columns are the rule for *duration* — this file spaces a whole note and a
+sixteenth alike on purpose. That was never an argument for refusing an
+accidental the room it physically occupies. A note carrying one now widens its
+column, and the room is spent **before** justification divides the width up,
+or the system would run past its own right margin. `accidentalX` moved onto
+`EngravedNote`: where a mark goes is geometry, and the component had been
+keeping its own copy of the notehead's half-width to place it.
+
+### The three-foot test
+
+*Before:* the first thing the eye hits from across the room is a **black
+horizontal slab** in the first system — heavier than the title above it. Second
+the title, third the toggle. Two competing focal points and the wrong one wins:
+the hierarchy was being decided by an engraving bug.
+
+*After:* first the title, second the notation block reading as four lines of
+music that get airier down the page, third the Listen button in the thumb zone.
+One dominant focal point, secondary information receding. Unchanged
+composition — the fix was inside the notation, not around it.
+
+### Tests
+
+Nine added: beat grouping (sixteens in fours, the dotted pair, a rest as time
+passing, barline reset, compound time, stem length), stem direction, and two
+on accidental room. Six rewritten — their *premise* changed, not their
+invariant: they used runs of eighths as the innocuous example, and two eighths
+are now a beat, so they say the same things about sixteenths. `groups()`
+counts beamed groups rather than beam lines, which stopped being the same
+number the moment a group could produce two.
+
+**mobile: 552 passed, 46 files. `tsc --noEmit` clean.** Rebuilt the fixtures
+web bundle and screenshotted at 1× and 6× — the sixteenth beams, the stub, the
+flag on the lone eighth, the augmentation dot beside a note on a line, and the
+half rest were each read off the picture. `mobile/.env` was moved aside under a
+`trap … EXIT` for each build and verified byte-identical afterwards.
+
+### Not done
+
+- `tools/engraver-coverage.py` is unchanged at **3% with no glyph, worst page
+  71%** — this work was about how the drawn notes *look*, not which are drawn.
+  The 12 remaining are tuplets and still need a bracket.
+- **Bar 1 is legible but tight.** Sixteen sixteenths with four accidentals in
+  350 CSS px is genuinely more than that width holds at `STAVE_SCALE`; the
+  noteheads nearly touch. Reserving accidental room bought the collision back
+  but not comfort. The real answer is scale or a wrapping rule that can break a
+  bar, and neither is a small change — noted, not attempted.
+- The staff lines still rule past the final barline on a short system. That is
+  a deliberate decision from an earlier entry (manuscript paper), left alone.
+
+---
+
 ## 2026-08-31 — The stave could not draw a sixteenth
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Fifth iteration of the

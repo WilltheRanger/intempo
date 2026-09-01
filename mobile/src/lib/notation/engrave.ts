@@ -72,6 +72,21 @@ const MIDDLE_LINE_STEP: Record<Clef, number> = {
  */
 export type NoteValue = 'whole' | 'half' | 'quarter' | 'eighth' | 'sixteenth';
 
+/**
+ * How long each value lasts, in quarter notes.
+ *
+ * Only beam grouping needs this — the engraver otherwise measures in columns,
+ * not in time. Kept here beside `TAILS` so a value added to `NoteValue` has to
+ * answer both questions at once.
+ */
+export const QUARTERS: Record<NoteValue, number> = {
+  whole: 4,
+  half: 2,
+  quarter: 1,
+  eighth: 0.5,
+  sixteenth: 0.25,
+};
+
 /** How many beams or flags a value carries. Whole, half and quarter carry none. */
 export const TAILS: Record<NoteValue, number> = {
   whole: 0,
@@ -154,6 +169,8 @@ export interface EngravedNote {
   stem: { x: number; from: number; to: number } | null;
   stemUp: boolean;
   accidental: Accidental;
+  /** Centre of the accidental, when there is one. Meaningless when there isn't. */
+  accidentalX: number;
   /** Y positions of ledger lines this note needs, above or below the staff. */
   ledgers: number[];
   /** The note's letter and accidental, for the row under the system. */
@@ -215,15 +232,46 @@ export interface MeasureSpan {
   to: number;
 }
 
+/**
+ * One beam line, at one level, over one run of stems.
+ *
+ * **A group can need several of these, and that is the whole point.** This used
+ * to be a single beam per group carrying a `count`, drawn as that many parallel
+ * lines across the entire run — which is right only when every note in the run
+ * is the same value. A dotted eighth followed by a sixteenth is the commonest
+ * rhythm in string writing and the commonest counter-example: two full beams
+ * across the pair says *both notes are sixteenths*, so the bar is drawn a beat
+ * and a half short of what the page says, in the same confident ink as the bars
+ * that are right.
+ *
+ * So level 1 spans the group, and each level above it spans only the notes that
+ * actually carry it. A note carrying a level its neighbours do not gets a
+ * **stub** — the short partial beam an engraver draws — pointing back toward
+ * the note it shares a beat with.
+ */
 export interface EngravedBeam {
-  /** How many parallel beams: 1 for eighths, 2 where a sixteenth is in the run. */
-  count: number;
+  /** 1 is the beam at the stem tips; 2 sits inside it, toward the noteheads. */
+  level: number;
   from: number;
   to: number;
+  /** Centre of this beam line, already offset for its level. */
   y: number;
   /** Beams follow their stems, so they sit under down-stemmed groups. */
   stemUp: boolean;
 }
+
+/**
+ * Beam thickness, and centre-to-centre spacing, as fractions of `lineGap`.
+ *
+ * Exported because the engraver has to know the thickness to stack the levels
+ * and the component has to know it to stroke them, and a second copy of a
+ * number that decides where a line lands is how the two drift apart.
+ */
+export const BEAM_THICKNESS_FACTOR = 0.5;
+const BEAM_PITCH = BEAM_THICKNESS_FACTOR * 1.5;
+
+/** How far a stub reaches, capped so it never touches the next stem. */
+const STUB_FACTOR = 1.1;
 
 export interface EngravedSystem {
   /** Y of each of the five staff lines, top first. Absolute in the drawing. */
@@ -304,6 +352,15 @@ export interface EngraveOptions {
    * returned, so a caller that wants the geometry can have it.
    */
   nameRow?: boolean;
+  /**
+   * The beat beams break at, in quarter notes. One quarter unless said.
+   *
+   * A time signature, reduced to the only thing this file needs from it. 4/4
+   * and 3/4 beam in quarters, cut time in halves, 6/8 in dotted quarters —
+   * and the default is right for the warmup, which authors its own notes in
+   * 4/4 and has no time signature to pass.
+   */
+  beatQuarters?: number;
 }
 
 /** Half the notehead's height, in staff gaps. Mirrors `Stave`'s HEAD_RY. */
@@ -341,11 +398,47 @@ const MULTI_REST_NUMBER_FACTOR = 1.1;
  */
 const MAX_JUSTIFY_STRETCH = 1.5;
 
+/**
+ * How far left of its notehead an accidental's centre sits, in staff gaps.
+ *
+ * Moved here from the component with `accidentalX`: where a mark goes is
+ * geometry, and the component had to know the notehead's own half-width to
+ * place it, which is a second copy of a number this file already owns.
+ */
+const ACCIDENTAL_OFFSET_FACTOR = 1.55;
+
+/**
+ * The extra column width a note carrying an accidental is given.
+ *
+ * **Because an accidental had no width at all**, and in a dense bar that is
+ * not a near miss. Columns are evenly spaced, so a bar of sixteen sixteenths
+ * on a phone gets about 1.6 staff gaps each — and a sharp drawn 1.55 gaps to
+ * the left of its notehead therefore landed squarely on the *previous* note.
+ * Four of them did, in the fixture study's opening bar, and every test passed.
+ *
+ * Even columns are the rule for *duration* — this file spaces a whole note and
+ * a sixteenth alike on purpose, because these are read at a glance and even
+ * columns make the beat obvious. That was never an argument for refusing an
+ * accidental the room it physically occupies, which is what an engraver widens
+ * a column for.
+ */
+const ACCIDENTAL_ROOM_FACTOR = 1.6;
+
+/** The room each item needs before it, beyond the ordinary column. */
+function extraRoom(items: StaveItem[], lineGap: number): number[] {
+  return items.map((item) =>
+    isNote(item) && accidentalOf(item.pitch) !== null
+      ? lineGap * ACCIDENTAL_ROOM_FACTOR
+      : 0,
+  );
+}
+
 const DEFAULTS = {
   lineGap: 9,
   noteGap: 30,
   leftPad: 22,
   rightPad: 12,
+  beatQuarters: 1,
 };
 
 /** Diatonic step of a pitch, ignoring its accidental. */
@@ -442,6 +535,7 @@ function layoutSystem(
   leftPad: number,
   rightPad: number,
   nameRow: boolean,
+  beatQuarters: number,
 ): { system: EngravedSystem; top: number; bottom: number } {
   const halfGap = lineGap / 2;
   const middleStep = MIDDLE_LINE_STEP[clef];
@@ -452,8 +546,10 @@ function layoutSystem(
   const barlines: number[] = [];
   const beams: EngravedBeam[] = [];
   const stemLength = lineGap * STEM_FACTOR;
+  const thickness = lineGap * BEAM_THICKNESS_FACTOR;
 
-  let x = leftPad;
+  const room = extraRoom(notes, lineGap);
+  let x = leftPad + room[0];
   // Where each bar starts and stops on this system. Tracked as the loop walks
   // because only the loop knows which item belongs to which bar.
   const measureSpans: MeasureSpan[] = [];
@@ -489,7 +585,7 @@ function layoutSystem(
         bars: item.bars,
         numberY: staffLines[0] - lineGap * MULTI_REST_NUMBER_FACTOR,
       });
-      x += noteGap;
+      x += noteGap + (room[index + 1] ?? 0);
       return;
     }
 
@@ -505,7 +601,7 @@ function layoutSystem(
             ? 0
             : 0;
       engravedRests.push({ x, y, value: item.rest });
-      x += noteGap;
+      x += noteGap + (room[index + 1] ?? 0);
       return;
     }
 
@@ -528,6 +624,7 @@ function layoutSystem(
       filled,
       stemUp,
       accidental: accidentalOf(note.pitch),
+      accidentalX: x - lineGap * ACCIDENTAL_OFFSET_FACTOR,
       name: displayName(note.pitch),
       dots: note.dots ?? 0,
       // Cleared below for any note a beam picks up.
@@ -546,7 +643,7 @@ function layoutSystem(
       ledgers: ledgerLinesFor(y, staffLines[0], staffLines[4], lineGap),
     });
 
-    x += noteGap;
+    x += noteGap + (room[index + 1] ?? 0);
   });
 
   const right = x - noteGap / 2 + rightPad;
@@ -559,12 +656,29 @@ function layoutSystem(
   const flush = () => {
     if (run.length > 1) {
       const group = run.map((i) => engravedNotes[i]);
-      const stemUp = group[0].stemUp;
+      // **The note furthest from the middle line decides, not the first one.**
+      // A group takes one direction for all its stems, and taking it from
+      // whichever note happens to come first points the beam the wrong way
+      // whenever the run moves across the staff — the fixture study's closing
+      // group, C5 down to G#4, opened on the one note above the middle line
+      // and hung its beam below the staff with four long stems reaching down
+      // to it. Engraving's rule is the extreme note, and ties go down.
+      const middle = staffLines[2];
+      const furthest = group.reduce((a, b) =>
+        Math.abs(b.y - middle) > Math.abs(a.y - middle) ? b : a,
+      );
+      const stemUp = furthest.y > middle;
       // All stems in a beamed group point the same way and reach the same
       // line — the extreme note decides, and the rest are lengthened to meet.
+      // Two beams need more stem than one, or the inner beam lands on the
+      // notehead of the shortest-stemmed note in the run. Lengthened by
+      // exactly the depth of the stack, so the **innermost** beam ends up
+      // where a single beam would have been and a run of sixteenths is not
+      // drawn with visibly longer stems than the eighths beside it.
+      const extra = (Math.max(1, ...group.map((n) => n.flags)) - 1) * lineGap * BEAM_PITCH;
       const beamY = stemUp
-        ? Math.min(...group.map((n) => n.stem!.to))
-        : Math.max(...group.map((n) => n.stem!.to));
+        ? Math.min(...group.map((n) => n.stem!.to)) - extra
+        : Math.max(...group.map((n) => n.stem!.to)) + extra;
       for (const n of group) {
         n.stemUp = stemUp;
         n.stem = {
@@ -573,11 +687,10 @@ function layoutSystem(
           to: beamY,
         };
       }
-      // The thinnest note in the group decides how many beams it carries.
-      // Drawing one beam over a run holding a sixteenth reads as a run of
-      // eighths — the same lie as no flag at all. Read before the flags are
-      // cleared, because the flag count *is* the beam count.
-      const count = Math.max(1, ...group.map((n) => n.flags));
+      // How many beams each note wants. Read before the flags are cleared,
+      // because the flag count *is* the beam count for that note.
+      const tails = group.map((n) => Math.max(1, n.flags));
+      const deepest = Math.max(...tails);
 
       // **A beamed note has no flags.** Flags are set on every note as it is
       // engraved, because most notes are not beamed and a lone eighth without
@@ -585,13 +698,59 @@ function layoutSystem(
       for (const n of group) {
         n.flags = 0;
       }
+
+      const stemX = group.map((n) => n.stem!.x);
+      const levelY = (level: number) =>
+        beamY +
+        (stemUp ? 1 : -1) * (thickness / 2 + (level - 1) * lineGap * BEAM_PITCH);
+
+      // Level 1 spans the whole group; every level above it spans only the
+      // notes that carry it, in maximal runs, with a stub where a note carries
+      // a level alone.
       beams.push({
-        from: group[0].stem!.x,
-        to: group[group.length - 1].stem!.x,
-        y: beamY,
+        level: 1,
+        from: stemX[0],
+        to: stemX[stemX.length - 1],
+        y: levelY(1),
         stemUp,
-        count,
       });
+      for (let level = 2; level <= deepest; level += 1) {
+        let start = -1;
+        for (let i = 0; i <= tails.length; i += 1) {
+          const carries = i < tails.length && tails[i] >= level;
+          if (carries && start < 0) {
+            start = i;
+          } else if (!carries && start >= 0) {
+            const end = i - 1;
+            if (end > start) {
+              beams.push({
+                level,
+                from: stemX[start],
+                to: stemX[end],
+                y: levelY(level),
+                stemUp,
+              });
+            } else {
+              // A stub, pointing back toward the note this one shares a beat
+              // with — forward only when there is nothing behind it.
+              const backward = start > 0;
+              const neighbour = stemX[backward ? start - 1 : start + 1];
+              const reach = Math.min(
+                lineGap * STUB_FACTOR,
+                Math.abs(neighbour - stemX[start]) * 0.45,
+              );
+              beams.push({
+                level,
+                from: backward ? stemX[start] - reach : stemX[start],
+                to: backward ? stemX[start] : stemX[start] + reach,
+                y: levelY(level),
+                stemUp,
+              });
+            }
+            start = -1;
+          }
+        }
+      }
     }
     run = [];
   };
@@ -602,17 +761,49 @@ function layoutSystem(
   // index would have joined a beam to whichever notehead happened to sit at
   // that position, which on a part with rests in it is a different note.
   let noteAt = 0;
+  // Where we are inside the current bar, in quarter notes. **Beams break at
+  // the beat**, and without this they do not: the fixture study's bar of
+  // sixteen sixteenths came out under one beam sixteen notes long, which is
+  // not how anyone writes it and not something a reader can count. Every stem
+  // in a group also reaches the same line, so one bar-long group dragged the
+  // stems of the high notes down to meet the lowest note in the bar.
+  //
+  // Reset by `barBefore`, so a bar whose notes this build cannot draw — a
+  // triplet, say, dropped by `fromScore` — groups its survivors from a
+  // position that is short by whatever was left out. That is a beam in a
+  // slightly wrong place on a bar already labelled incomplete, not a wrong
+  // rhythm, and it is the price of not carrying durations for notes there is
+  // no glyph for.
+  let atBeat = 0;
   notes.forEach((item) => {
+    if (item.barBefore) {
+      atBeat = 0;
+    }
     if (!isNote(item)) {
       // **A rest breaks a beam**, which is engraving and not an accident of
       // this loop: a beam over a silence would group notes that are not a
       // group. A multi-bar rest breaks it for the same reason, twenty times
       // over.
       flush();
+      // It still takes time, and the beat clock has to keep it — a bar of
+      // "rest, then four sixteenths" groups from the wrong place otherwise.
+      // A multi-bar rest ends its bar, so the clock restarts at the next
+      // `barBefore` regardless.
+      if (isRest(item)) {
+        atBeat += QUARTERS[item.rest];
+      }
       return;
     }
     const index = noteAt;
     noteAt += 1;
+    // A group may not straddle a beat. Checked on the note's *start*, so a
+    // dotted eighth ending at 0.75 keeps its sixteenth and the next beat opens
+    // a new group — which is exactly how a dotted-eighth pair is printed.
+    const onABeat = Math.abs(atBeat / beatQuarters - Math.round(atBeat / beatQuarters)) < 1e-9;
+    if (onABeat && atBeat > 0) {
+      flush();
+    }
+    atBeat += QUARTERS[item.value] * (item.dots ? 1.5 : 1);
     // **Anything with a tail beams, not eighths alone.** This read
     // `value === 'eighth'`, which was the whole of what the engraver could
     // draw at the time — so when sixteenths arrived they were never grouped,
@@ -724,6 +915,7 @@ export function engrave(
   const leftPad = options.leftPad ?? DEFAULTS.leftPad;
   const rightPad = options.rightPad ?? DEFAULTS.rightPad;
   const nameRow = options.nameRow ?? true;
+  const beatQuarters = options.beatQuarters ?? DEFAULTS.beatQuarters;
 
   const capped = options.maxNotes ? truncateAtBar(notes, options.maxNotes) : notes;
 
@@ -746,14 +938,27 @@ export function engrave(
     // A system's width is leftPad + (n - ½) gaps + rightPad, because the final
     // barline sits half a gap past the last note. Solve that for the gap that
     // makes it exactly `maxWidth`.
+    // The accidentals' room is spent before the columns are, or justification
+    // would hand out width that is already taken and the system would run past
+    // its own right margin.
+    const reserved = extraRoom(run, lineGap).reduce((a, b) => a + b, 0);
     const stretched =
       options.justify && options.maxWidth && run.length > 1
         ? Math.min(
-            (options.maxWidth - leftPad - rightPad) / (run.length - 0.5),
+            (options.maxWidth - leftPad - rightPad - reserved) / (run.length - 0.5),
             noteGap * MAX_JUSTIFY_STRETCH,
           )
         : noteGap;
-    const laid = layoutSystem(run, clef, lineGap, stretched, leftPad, rightPad, nameRow);
+    const laid = layoutSystem(
+      run,
+      clef,
+      lineGap,
+      stretched,
+      leftPad,
+      rightPad,
+      nameRow,
+      beatQuarters,
+    );
     systems.push(shift(laid.system, cursor - laid.top));
     cursor += laid.bottom - laid.top + gap;
     width = Math.max(width, laid.system.width);

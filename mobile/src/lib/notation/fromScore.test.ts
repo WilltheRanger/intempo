@@ -2,7 +2,12 @@ import { describe, expect, it } from 'vitest';
 
 import type { ScoreJson } from '../../data/types';
 import { isMultiRest, isNote, isRest, type StaveItem } from './engrave';
-import { describeOmissions, describeUndrawnScore, staveScoreFor } from './fromScore';
+import {
+  beamBeatQuarters,
+  describeOmissions,
+  describeUndrawnScore,
+  staveScoreFor,
+} from './fromScore';
 
 /**
  * Turning a read page into something the engraver can draw — and admitting
@@ -307,5 +312,47 @@ describe('a pitch the engraver cannot place', () => {
 
     expect(out.noteCount).toBe(3);
     expect(out.undrawable).toBe(0);
+  });
+});
+
+describe('beamBeatQuarters', () => {
+  it('beams simple metres at their own denominator', () => {
+    expect(beamBeatQuarters('4/4')).toBe(1);
+    expect(beamBeatQuarters('3/4')).toBe(1);
+    // Cut time counts in halves, so four eighths make one group.
+    expect(beamBeatQuarters('2/2')).toBe(2);
+  });
+
+  it('beams compound metres in threes', () => {
+    // 6/8 is two beats of three eighths, not six of one. Beaming its eighths
+    // in pairs is the tell of notation drawn by something that has only ever
+    // been shown 4/4.
+    expect(beamBeatQuarters('6/8')).toBe(1.5);
+    expect(beamBeatQuarters('9/8')).toBe(1.5);
+    expect(beamBeatQuarters('12/8')).toBe(1.5);
+    // 3/8 too, where the beat *is* the bar — which is what an engraver prints.
+    expect(beamBeatQuarters('3/8')).toBe(1.5);
+    expect(beamBeatQuarters('6/16')).toBe(0.75);
+  });
+
+  it('does not read a numerator divisible by three over a quarter as compound', () => {
+    // 3/4 and 6/4 are simple. The denominator is half the test.
+    expect(beamBeatQuarters('6/4')).toBe(1);
+  });
+
+  it('tolerates the spacing the backend tolerates', () => {
+    // `beatsPerMeasure` learned this the hard way — a metre OCR read as
+    // " 4 / 4 " switched the app's beat check off while the server went on
+    // flagging the same bars. Same regex shape, same tolerance.
+    expect(beamBeatQuarters(' 6 / 8 ')).toBe(1.5);
+  });
+
+  it('falls back to a quarter when nothing states a metre', () => {
+    // A guess, and a safe one here in a way it is not in `problemMeasures`:
+    // the cost is a beam grouped in the wrong place, not every waltz on the
+    // page reported as wrong.
+    expect(beamBeatQuarters(null)).toBe(1);
+    expect(beamBeatQuarters('unknown')).toBe(1);
+    expect(beamBeatQuarters('4/0')).toBe(1);
   });
 });

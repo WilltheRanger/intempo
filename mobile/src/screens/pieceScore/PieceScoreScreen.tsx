@@ -401,6 +401,7 @@ export function PieceScoreScreen() {
               maxWidth={width}
               scale={STAVE_SCALE}
               justify
+              beatQuarters={stave.beatQuarters}
               // A letter under every note is a study-book aid. On repertoire it
               // reads as a crib, so the clef is stated as metadata above
               // instead — which is where a clef belongs on a screen for reading

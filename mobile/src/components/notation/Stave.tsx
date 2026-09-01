@@ -3,6 +3,7 @@ import Svg, { Circle, Ellipse, G, Line, Path, Rect, Text as SvgText } from 'reac
 import type { Clef } from '../../data/types';
 import { colors, fontFamily, typography } from '../../design';
 import {
+  BEAM_THICKNESS_FACTOR,
   engrave,
   type NoteValue,
   type StaveItem,
@@ -38,6 +39,13 @@ export interface StaveProps {
   scale?: number;
   /** Stretch systems to fill `maxWidth`. */
   justify?: boolean;
+  /**
+   * The beat beams break at, in quarter notes — `staveScoreFor` computes it.
+   *
+   * A quarter unless said, which is right for the warmup: it authors its own
+   * notes in 4/4 and has no time signature to pass.
+   */
+  beatQuarters?: number;
   /**
    * Print each note's letter under the system.
    *
@@ -90,7 +98,6 @@ const STROKE = 1.1;
  * a staff, and the notes float in the middle of nothing.
  */
 const STAFF_STROKE = 0.9;
-const BEAM_FACTOR = 0.55;
 /** Half the height of the little upright strokes on a multi-bar rest's ends. */
 const MULTI_REST_SERIF_FACTOR = 0.55;
 const MULTI_REST_NUMBER_SIZE = 1.5;
@@ -119,6 +126,7 @@ export function Stave({
   maxNotes,
   scale = 1,
   justify = false,
+  beatQuarters,
   showNoteNames = true,
   highlightMeasure = null,
 }: StaveProps) {
@@ -136,6 +144,7 @@ export function Stave({
     maxWidth,
     maxNotes,
     justify,
+    beatQuarters,
     // Also stops the layout reserving the row's height, so hiding the names
     // doesn't leave a band of empty space under every system.
     nameRow: showNoteNames,
@@ -143,7 +152,7 @@ export function Stave({
 
   const headRx = lineGap * HEAD_RX_FACTOR;
   const headRy = lineGap * HEAD_RY_FACTOR;
-  const beamNode = lineGap * BEAM_FACTOR;
+  const beamNode = lineGap * BEAM_THICKNESS_FACTOR;
   const stroke = STROKE * scale;
 
   return (
@@ -277,7 +286,7 @@ export function Stave({
 
               {note.accidental === 'sharp' ? (
                 <Sharp
-                  x={note.x - lineGap * 1.55}
+                  x={note.accidentalX}
                   y={note.y}
                   ink={ink}
                   lineGap={lineGap}
@@ -367,28 +376,22 @@ export function Stave({
             </G>
           ))}
 
-          {system.beams.flatMap((beam, index) =>
-            // **One line per beam.** A run holding a sixteenth carries two, and
-            // drawing a single one over it reads as a run of eighths — notes
-            // twice their length, in the same ink as the ones that are right.
-            Array.from({ length: beam.count }, (_unused, tail) => {
-              const y =
-                beam.y +
-                (beam.stemUp ? beamNode / 2 : -beamNode / 2) +
-                (beam.stemUp ? tail : -tail) * beamNode * 2.2;
-              return (
-                <Line
-                  key={`beam-${index}-${tail}`}
-                  x1={beam.from}
-                  y1={y}
-                  x2={beam.to}
-                  y2={y}
-                  stroke={ink}
-                  strokeWidth={beamNode}
-                />
-              );
-            }),
-          )}
+          {system.beams.map((beam, index) => (
+            // **One line per beam, and the engraver decided where it goes.**
+            // This used to stack `beam.count` lines across the whole run,
+            // which draws a dotted eighth followed by a sixteenth as two
+            // sixteenths. Which notes carry which beam is notation, not
+            // drawing, so it lives in `engrave.ts` with the rest of it.
+            <Line
+              key={`beam-${index}`}
+              x1={beam.from}
+              y1={beam.y}
+              x2={beam.to}
+              y2={beam.y}
+              stroke={ink}
+              strokeWidth={beamNode}
+            />
+          ))}
         </G>
       ))}
     </Svg>

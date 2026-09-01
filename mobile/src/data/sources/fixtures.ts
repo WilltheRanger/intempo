@@ -117,6 +117,101 @@ const DEMO_SCORE: ScoreJson = {
  */
 const UNREAD_CLEF_SCORE: ScoreJson = { ...DEMO_SCORE, clef: null };
 
+/**
+ * A study written across the engraver's whole range, so the glyphs can be *seen*.
+ *
+ * **Why a second fixture score exists at all.** `DEMO_SCORE` is quarters and a
+ * whole note, and every fixture piece shared it — so the sixteenths, the
+ * augmentation dots, the flag on a lone eighth and the second beam had unit
+ * tests for their geometry and no picture anywhere in the app. A flag curving
+ * the wrong way, a dot sitting on a line instead of in the space beside it, or
+ * a stub pointing away from its beat all pass every assertion in
+ * `engrave.test.ts` and are obvious the moment a musician looks at them.
+ *
+ * Six bars, each carrying one thing that was previously undrawable:
+ *
+ * 1. sixteenths in fours — double beams, four groups
+ * 2. dotted eighth + sixteenth — the stub, which is the rhythm that was drawn
+ *    wrong (two full beams says both notes are sixteenths)
+ * 3. a dotted quarter, and an eighth alone between rests — the flag
+ * 4. a dotted half
+ * 5. a half rest
+ * 6. a whole note
+ *
+ * A minor, so the only accidental is the leading note: this engraver draws no
+ * key signature, so a piece in D major would print a sharp on every F and the
+ * picture would be about accidentals instead of about rhythm.
+ *
+ * Not a transcription of anything. The Kreutzer study it stands in for is
+ * genuinely a page of continuous sixteenths (`fixtures/scores/SOURCES.md`),
+ * which is why it is the piece that carries this rather than the Bach.
+ */
+function note(pitch: string, duration: string): ScoreNote {
+  return { pitch, duration, tied_to_next: false } as ScoreNote;
+}
+
+function rest(duration: string): ScoreNote {
+  return { pitch: 'rest', duration, tied_to_next: false } as ScoreNote;
+}
+
+const FINE_VALUES_SCORE: ScoreJson = {
+  time_signature: '4/4',
+  key_signature: 'A minor',
+  tempo_marking: 'Allegro moderato',
+  bpm_hint: 84,
+  clef: 'treble',
+  measures: [
+    {
+      measure_number: 1,
+      notes: ['A4', 'B4', 'C5', 'D5', 'E5', 'F5', 'G#5', 'A5', 'G#5', 'F5', 'E5', 'D5', 'C5', 'B4', 'A4', 'G#4'].map(
+        (pitch) => note(pitch, 'sixteenth'),
+      ),
+      slurs: [],
+    },
+    {
+      measure_number: 2,
+      notes: [
+        note('A4', 'dotted_eighth'),
+        note('B4', 'sixteenth'),
+        note('C5', 'dotted_eighth'),
+        note('D5', 'sixteenth'),
+        note('E5', 'quarter'),
+        note('D5', 'quarter'),
+      ],
+      slurs: [],
+    },
+    {
+      measure_number: 3,
+      notes: [
+        note('C5', 'dotted_quarter'),
+        rest('eighth'),
+        note('B4', 'quarter'),
+        rest('eighth'),
+        note('A4', 'eighth'),
+      ],
+      slurs: [],
+    },
+    {
+      measure_number: 4,
+      notes: [note('E5', 'dotted_half'), note('D5', 'quarter')],
+      slurs: [],
+    },
+    {
+      measure_number: 5,
+      notes: [note('C5', 'half'), rest('half')],
+      slurs: [],
+    },
+    {
+      measure_number: 6,
+      notes: [note('A4', 'whole')],
+      slurs: [],
+    },
+  ],
+  repeats: [],
+  ocr_confidence: 1,
+  notes_to_human: 'Fixture score. Not OCR output.',
+};
+
 const FIXTURE_PIECES: FixturePiece[] = [
   {
     id: 'fixture-bach-bwv1001',
@@ -138,8 +233,9 @@ const FIXTURE_PIECES: FixturePiece[] = [
     movement: null,
     practicedDaysAgo: 5,
     thumbnail: require('../../../assets/fixtures/03_complex_printed.jpg'),
-    markedBpm: MARKED_BPM,
-    score: DEMO_SCORE,
+    markedBpm: 84,
+    // The one piece with fine values in it — see `FINE_VALUES_SCORE`.
+    score: FINE_VALUES_SCORE,
   },
   {
     id: 'fixture-wohlfahrt-28',
