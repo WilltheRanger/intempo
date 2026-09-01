@@ -30,6 +30,7 @@ from pathlib import Path
 
 from app.services.ocr.pipeline import STAGE_CONFIRMING, STAGE_READING, STAGE_SPLITTING
 from app.workers.transcription_runner import (
+    _reading_page,
     STAGE_FETCHING,
     STAGE_READING_HUMAN,
     _human_stage,
@@ -98,6 +99,33 @@ def test_a_finished_stave_is_reported_with_its_count() -> None:
     """
     for case in _contract()["per_stave"]:
         assert _human_stage(case["pipeline_stage"]) == case["words"], case
+
+
+def test_a_multi_page_scan_reports_the_page_it_is_on() -> None:
+    """The words the app's `PAGE_COUNT` is keyed on.
+
+    A multi-page read used to report "Reading the notation" for the whole of
+    it — true from the first page to the last, and a bar that never moved
+    across a wait N times longer than a single page's.
+    """
+    for case in _contract()["per_page"]:
+        assert _reading_page(case["page"], case["total"]) == case["words"], case
+
+
+def test_the_page_counter_is_never_used_for_a_single_page_scan() -> None:
+    """A one-page scan keeps the per-stave counter, which is finer.
+
+    The two counters must never both be live: page 2 opening at "Reading stave
+    1 of 9" after page 1 finished at "9 of 9" walks the bar backwards. The
+    worker guarantees it by reporting the page counter only when `single` is
+    false and suppressing `report()` in the same branch — this holds the
+    fixture to the same split so a contract that described both at once would
+    fail here.
+    """
+    assert all(case["total"] > 1 for case in _contract()["per_page"]), (
+        "the per_page contract must not describe a one-page scan; that is the "
+        "per_stave counter's job and the two cannot both drive the bar"
+    )
 
 
 def test_a_page_read_whole_never_names_the_engine_that_read_it() -> None:

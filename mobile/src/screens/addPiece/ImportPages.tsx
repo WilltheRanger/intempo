@@ -1,6 +1,7 @@
 import { useNavigation } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
 import { Images } from 'lucide-react-native';
+import { useGoBack } from '../../navigation/useGoBack';
 import { useState } from 'react';
 import { Platform, StyleSheet } from 'react-native';
 
@@ -48,6 +49,7 @@ export function ImportPagesScreen({
   attachToPieceId?: string;
 }) {
   const navigation = useNavigation<RootNavigation>();
+  const goBack = useGoBack({ tab: 'Library' });
   // Read once: nothing about the device changes while the screen is open.
   const [hasUsableCamera] = useState(() =>
     cameraCanPhotographAPage(deviceHints(Platform.OS)),
@@ -100,7 +102,7 @@ export function ImportPagesScreen({
     <ScreenContainer>
       <PageHeader
         title="Import score"
-        onBack={() => navigation.goBack()}
+        onBack={goBack}
         backLabel="Back"
       />
 

@@ -114,6 +114,8 @@ export function LibraryScreen() {
         results={results}
         query={query}
         onClearSearch={() => setQuery('')}
+        onRetry={() => void refresh()}
+        retrying={library.isFetching}
         onOpenPiece={(piece) =>
           navigation.navigate('PieceDetail', { pieceId: piece.id })
         }
@@ -138,6 +140,9 @@ interface LibraryContentProps {
   query: string;
   onClearSearch: () => void;
   onOpenPiece: (piece: Piece) => void;
+  /** Fetch again after a failure — see the comment on the error state below. */
+  onRetry: () => void;
+  retrying: boolean;
 }
 
 function LibraryContent({
@@ -149,6 +154,8 @@ function LibraryContent({
   query,
   onClearSearch,
   onOpenPiece,
+  onRetry,
+  retrying,
 }: LibraryContentProps) {
   if (isPending) {
     return (
@@ -160,9 +167,17 @@ function LibraryContent({
 
   if (isError) {
     return (
+      // **A load failure is the one empty state that is not empty of options.**
+      // It said "check your connection" and gave nothing to press: pull to
+      // refresh is invisible, and on the web build with a mouse it does not
+      // exist at all. `AccountStartupScreen` has had this button since it was
+      // written; the four tabs did not.
       <EmptyState
         title="Couldn't load your library"
         description={describeLoadError(error)}
+        actionLabel={retrying ? 'Trying…' : 'Try again'}
+        onActionPress={onRetry}
+        actionDisabled={retrying}
       />
     );
   }

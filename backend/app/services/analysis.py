@@ -33,6 +33,7 @@ from app.services.classification import (
     Band,
     Delta,
     Direction,
+    UntimedReason,
     compute_deltas,
     generate_verdict,
     rolling_trend,
@@ -50,6 +51,14 @@ class PerNote(BaseModel):
     band: Band
     direction: Direction
     is_slur_interior: bool
+    #: This note's deviation was measured against a time the page states —
+    #: see `classification.Delta.timed`. False for a `rit.`, a fermata, an
+    #: ornament and the note it decorates.
+    timed: bool = True
+    #: Which of those, when `timed` is false. `None` on a result stored before
+    #: this field existed, which reads as "not said" rather than as a fourth
+    #: reason.
+    untimed_reason: UntimedReason | None = None
     #: A written tempo change covers this note's measure, so `band` and
     #: `direction` are `on` by refusal rather than by measurement — see
     #: `classification.Delta`.
@@ -61,7 +70,31 @@ class PerNote(BaseModel):
 class PerMeasure(BaseModel):
     measure_number: int
     note_count: int
+    #: The mean deviation of the notes that were **timed**.
+    #:
+    #: A bar with one grace note in it used to average that note's deviation in
+    #: with the rest — and its "expected" time is `ORNAMENT_SHARE` splitting the
+    #: difference between two readings an engraver may have meant, a number this
+    #: code invented. The app draws this as the bar's deviation, so one ornament
+    #: moved a bar's whole reading. `worst_band` never had the problem, because
+    #: an untimed note's band is `on`.
     avg_delta_pct: float
+    #: How many of `note_count` were actually measured.
+    #:
+    #: `None` on a result stored before this field existed — read as "all of
+    #: them", which is what those rows meant. Zero means the bar was not timed
+    #: at all and `avg_delta_pct` falls back to the whole bar, because a field
+    #: that is sometimes absent is worse than one that is sometimes unjudged.
+    timed_note_count: int | None = None
+    #: Why nothing in this bar was timed, when every untimed note agrees.
+    #:
+    #: **Only when they agree, and only when the bar is wholly untimed.** A bar
+    #: holding a fermata *and* an ornament has no single answer, and inventing
+    #: a headline for it would be worse than the honest silence the app already
+    #: falls back to. `None` therefore means "no single reason" as well as "an
+    #: older result" — both land on the same wording, which is why they can
+    #: share a value.
+    untimed_reason: UntimedReason | None = None
     worst_band: Band
     direction: Direction
     #: A written tempo change covers this measure. A screen showing a rushing
@@ -128,6 +161,25 @@ class AnalysisResult(BaseModel):
 _BAND_SEVERITY = {Band.on: 0, Band.slight: 1, Band.rush_drag: 2, Band.severe: 3}
 
 
+def _shared_untimed_reason(
+    group: list[Delta], timed: list[Delta]
+) -> UntimedReason | None:
+    """The one reason a whole bar went unjudged, or None if there isn't one.
+
+    Two conditions, and dropping either produces a sentence that is not true.
+    The bar must be **wholly** untimed — naming a reason on a bar that also has
+    measured notes in it would caption the whole row with something that
+    explains part of it. And the untimed notes must **agree**: a bar holding
+    both a fermata and an ornament has no single answer, and the app's existing
+    wording for "nothing here could be timed" is the honest thing to fall back
+    to.
+    """
+    if timed or not group:
+        return None
+    reasons = {d.untimed_reason for d in group}
+    return reasons.pop() if len(reasons) == 1 else None
+
+
 def _summarize_measures(deltas: list[Delta]) -> list[PerMeasure]:
     by_measure: dict[int, list[Delta]] = defaultdict(list)
     for d in deltas:
@@ -138,7 +190,11 @@ def _summarize_measures(deltas: list[Delta]) -> list[PerMeasure]:
     summaries: list[PerMeasure] = []
     for measure_number in sorted(by_measure):
         group = by_measure[measure_number]
-        avg_pct = float(np.mean([d.delta_pct for d in group]))
+        timed = [d for d in group if d.timed]
+        # The whole bar only when nothing in it was timed — a bar that is
+        # entirely a `rit.` still has to report something, and `timed_note_count`
+        # is what says the number should not be read as a verdict.
+        avg_pct = float(np.mean([d.delta_pct for d in (timed or group)]))
         worst = max(group, key=lambda d: _BAND_SEVERITY[d.band])
         if avg_pct < 0:
             direction = Direction.rush
@@ -155,6 +211,8 @@ def _summarize_measures(deltas: list[Delta]) -> list[PerMeasure]:
                 direction=direction,
                 under_tempo_change=any(d.under_tempo_change for d in group),
                 uneven=any(d.uneven for d in group),
+                timed_note_count=len(timed),
+                untimed_reason=_shared_untimed_reason(group, timed),
             )
         )
     return summaries
@@ -369,6 +427,8 @@ def analyze(
             is_slur_interior=d.is_slur_interior,
             under_tempo_change=d.under_tempo_change,
             uneven=d.uneven,
+            timed=d.timed,
+            untimed_reason=d.untimed_reason,
         )
         for d in deltas
     ]

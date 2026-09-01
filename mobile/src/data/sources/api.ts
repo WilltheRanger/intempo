@@ -6,6 +6,7 @@ import { createScore, deleteScore, getScore, listScores, updateScore } from '../
 import { getAuthAvatarUrl } from '../auth/session';
 import { stableImage } from '../../lib/imageSource';
 import { verdictFor } from '../../lib/tempo';
+import { wasTimed } from '../../lib/verdict/measureReading';
 import type {
   AnalysisResponse,
   AnalysisResultJson,
@@ -281,7 +282,16 @@ function toRushPositive(dragPositivePct: number): number {
 
 /** The mean deviation of a finished take, rush-positive, or null. */
 function meanDeviationOf(result: AnalysisResultJson): number | null {
-  const measures = result.per_measure ?? [];
+  // **Only the bars that were timed.** A four-bar `rit.` played exactly as
+  // marked reports a real, large deviation on each of its bars, and averaging
+  // those into "how steadily was this played" answers the question with a
+  // number the pipeline explicitly refused to judge.
+  const measures = (result.per_measure ?? []).filter((m) =>
+    wasTimed({
+      underTempoChange: m.under_tempo_change === true,
+      timedNoteCount: m.timed_note_count ?? null,
+    }),
+  );
   if (measures.length === 0) {
     return null;
   }
@@ -430,6 +440,13 @@ function toTake(
     band: m.worst_band,
     direction: m.direction,
     verdict: verdictFor(m.worst_band, m.direction),
+    // **Both were dropped here**, and the screen then drew a bar under a
+    // written `rit.` as a large deviation labelled "On the beat". See
+    // `lib/verdict/measureReading.ts`.
+    underTempoChange: m.under_tempo_change === true,
+    uneven: m.uneven === true,
+    timedNoteCount: m.timed_note_count ?? null,
+    untimedReason: m.untimed_reason ?? null,
   }));
 
   return {

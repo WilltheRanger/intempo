@@ -15,6 +15,19 @@ const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
 
 const names = Object.keys({ ...pkg.dependencies, ...pkg.devDependencies }).sort();
 
+/**
+ * Things the app ships that npm does not know about.
+ *
+ * Bravura is a font file checked into `assets/fonts`, subset in-repo by
+ * `tools/subset-bravura.py`. It is redistributed under the SIL Open Font
+ * License, which requires the notice — and a licence page that lists every
+ * MIT package while omitting the one file with an attribution requirement
+ * would be exactly backwards.
+ */
+const VENDORED = [
+  { name: 'Bravura (music font)', version: 'subset', licence: 'OFL-1.1' },
+];
+
 const entries = names.flatMap((name) => {
   let manifest;
   try {
@@ -31,7 +44,8 @@ const entries = names.flatMap((name) => {
   return [{ name, version: manifest.version, licence }];
 });
 
-const body = entries
+const body = [...entries, ...VENDORED]
+  .sort((a, b) => a.name.localeCompare(b.name))
   .map(
     (e) =>
       `  { name: '${e.name}', version: '${e.version}', licence: '${e.licence}' },`,

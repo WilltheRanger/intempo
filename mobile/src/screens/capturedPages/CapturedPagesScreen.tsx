@@ -1,5 +1,6 @@
 import { useNavigation } from '@react-navigation/native';
 import { Layers, Plus } from 'lucide-react-native';
+import { useGoBack } from '../../navigation/useGoBack';
 import { useState } from 'react';
 import { StyleSheet } from 'react-native';
 
@@ -32,6 +33,7 @@ import { DraggablePageList } from './DraggablePageList';
  */
 export function CapturedPagesScreen() {
   const navigation = useNavigation<RootNavigation>();
+  const goBack = useGoBack({ tab: 'Library' });
   const pages = useCapturedPages();
   // A captured page can't be recovered — the photo is gone with it — and the
   // bin sits a thumb's width from the drag handle.
@@ -69,7 +71,7 @@ export function CapturedPagesScreen() {
       return;
     }
     if (scannerBelow) {
-      navigation.goBack();
+      goBack();
       return;
     }
     navigation.navigate('Scanner', { adding: true });
@@ -100,18 +102,32 @@ export function CapturedPagesScreen() {
   }
 
   if (pages.length === 0) {
+    const everHeld = captureSession.hasHeldPages();
     return (
       <ScreenContainer>
         <PageHeader
           title="Review pages"
-          onBack={() => navigation.goBack()}
+          onBack={goBack}
           backLabel={scannerBelow ? 'Back to the scanner' : 'Back'}
         />
+        {/*
+          **Two empty states, because empty means two things.** A scan whose
+          pages were all removed, and one that never had any — which is what a
+          refresh or a link straight to `/scan/pages` produces, and which the
+          routing allows on purpose so a refresh lands on the step you were on.
+          They are the same empty array, so the session is asked
+          (`hasHeldPages`); telling someone they removed pages they never took
+          is a small lie about their own actions.
+        */}
         <EmptyState
           icon={Layers}
-          title="No pages left"
-          description="You've removed every page. Capture at least one to continue."
-          actionLabel="Add page"
+          title={everHeld ? 'No pages left' : 'No pages yet'}
+          description={
+            everHeld
+              ? "You've removed every page. Capture at least one to continue."
+              : 'Photograph a page of sheet music to start a scan.'
+          }
+          actionLabel={everHeld ? 'Add page' : 'Photograph a page'}
           onActionPress={addPage}
         />
       </ScreenContainer>
@@ -134,7 +150,7 @@ export function CapturedPagesScreen() {
       <PageHeader
         eyebrow={pageCountLabel(pages.length)}
         title="Review pages"
-        onBack={() => navigation.goBack()}
+        onBack={goBack}
         // It said "Back to the scanner" on a route with no scanner on it.
         backLabel={scannerBelow ? 'Back to the scanner' : 'Back'}
       />

@@ -5,6 +5,7 @@ export {
   typography,
   fontFamily,
   fontsToLoad,
+  MUSIC_EM_IN_SPACES,
   type TypographyToken,
 } from './typography';
 export {
@@ -20,9 +21,23 @@ export {
 } from './motion';
 
 /**
- * Minimum comfortable touch target, in points. Anything interactive should
- * meet this even when its visible box is smaller — use `hitSlop` to make up
- * the difference rather than inflating the visual element.
+ * Minimum comfortable touch target, in points.
+ *
+ * Anything interactive must meet this, and it must meet it with **layout** —
+ * `minHeight` and padding — not with `hitSlop`.
+ *
+ * **`hitSlop` has no effect under react-native-web**, which is the build these
+ * screens are actually driven and shipped in today. Measured in Chromium on
+ * the password screen's Show control: a click 8pt above it, well inside its
+ * 12pt slop, did not activate it; a click on its visible 18pt box did.
+ *
+ * This advice used to read "use `hitSlop` to make up the difference rather
+ * than inflating the visual element", and eight controls followed it — every
+ * link on the sign-in screen among them. Two other files had already
+ * discovered the truth and written it down beside their own fix
+ * (`PlaybackSettings`, `TodayScreen`) while this line went on recommending the
+ * thing that does not work. A hit area nothing can see is a hit area nothing
+ * checks; a padded box behaves the same everywhere and can be measured.
  */
 export const MIN_TOUCH_TARGET = 44;
 

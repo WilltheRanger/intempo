@@ -1,6 +1,7 @@
 import { useNavigation } from '@react-navigation/native';
 import { useCallback, useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
+import { useGoBack } from '../../navigation/useGoBack';
 
 import appConfig from '../../../app.json';
 import {
@@ -76,6 +77,7 @@ function copyFor(report: ConnectionReport | null, checking: boolean): Copy {
  */
 export function HelpScreen() {
   const navigation = useNavigation();
+  const goBack = useGoBack({ tab: 'Profile' });
   const [report, setReport] = useState<ConnectionReport | null>(null);
   const [checking, setChecking] = useState(false);
 
@@ -106,7 +108,7 @@ export function HelpScreen() {
       <PageHeader
         eyebrow={`Version ${appConfig.expo.version}`}
         title="Help & connection"
-        onBack={() => navigation.goBack()}
+        onBack={goBack}
         backLabel="Back to profile"
       />
 
@@ -134,11 +136,11 @@ export function HelpScreen() {
           />
           <Tip
             title="Use headphones for an audible click"
-            detail="A speaker metronome enters the recording and can be mistaken for your attacks. Visual and haptic modes do not leak into the microphone."
+            detail="During the take, a metronome over the speaker enters the recording and can be mistaken for your attacks; visual and haptic modes do not. The count-in is the exception — it always ticks out loud, and those seconds are discarded before the take is sent."
           />
           <Tip
             title="Count-in and long rests"
-            detail="Every take starts with one full bar. During a long rest, InTempo shows the measure you return in and counts the final pulses to your entrance."
+            detail="Every take starts with one full bar, counted out loud and in your hand whatever the metronome is set to. During a long rest, InTempo shows the measure you return in and counts the final pulses to your entrance."
           />
         </View>
       </Card>

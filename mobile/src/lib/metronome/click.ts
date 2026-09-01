@@ -1,6 +1,7 @@
 import { AudioModule } from 'expo-audio';
 import { File, Paths } from 'expo-file-system';
 
+import { prepareForPlayback } from '../audio/session';
 import { encodeWavBytes } from '../audio/wav';
 import { startBeatClock } from './clock';
 import type { ClickTrack, ClickTrackOptions } from './click.types';
@@ -86,6 +87,12 @@ export function startClicks({ bpm, perBar }: ClickTrackOptions): ClickTrack {
     }
     files = [];
   }
+
+  // The session, before the players. A metronome that the ring switch can
+  // silence is a metronome that is off exactly when a practice room is quiet.
+  // Not awaited: this returns a `ClickTrack` synchronously and the first beat
+  // is a whole beat away, which is far longer than setting a category takes.
+  void prepareForPlayback();
 
   try {
     const plainFile = writeClick('intempo-click.wav', CLICK_HZ);

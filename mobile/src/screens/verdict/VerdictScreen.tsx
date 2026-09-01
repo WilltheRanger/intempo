@@ -1,16 +1,15 @@
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
+import { useGoBack } from '../../navigation/useGoBack';
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import {
-  Card,
   EmptyState,
   MetadataRow,
   PageHeader,
   PrimaryButton,
   ScreenContainer,
-  SecondaryButton,
   SectionHeader,
   Text,
 } from '../../components/primitives';
@@ -18,9 +17,10 @@ import { FadeIn } from '../../components/motion';
 import { VerdictSkeleton } from '../../components/skeletons';
 import { takeSource } from '../../data/sources';
 import type { TakeResult } from '../../data/types';
-import { spacing } from '../../design';
+import { BORDER_WIDTH, colors, spacing } from '../../design';
 import { formatTakeVerdict, formatTempo } from '../../lib/tempo';
 import type { RootNavigation, RootStackParamList } from '../../navigation/types';
+import { readMeasure } from '../../lib/verdict/measureReading';
 import { MEASURE_COLUMNS, MeasureRow } from './MeasureRow';
 import { TrendLine } from './TrendLine';
 
@@ -52,6 +52,16 @@ export function VerdictScreen() {
     queryFn: () => takeSource.getTake(params.analysisId),
   });
 
+  /**
+   * The piece is only known once the take has loaded, and these branches run
+   * when it has not or when it failed. `Library` is the honest fallback there:
+   * the success path below navigates to the piece by name, which is what a
+   * verdict's back control should do when there is a piece to name.
+   */
+  const goBack = useGoBack(
+    take ? { route: 'PieceDetail', params: { pieceId: take.pieceId } } : { tab: 'Library' },
+  );
+
   if (isPending) {
     return (
       <ScreenContainer>
@@ -64,10 +74,11 @@ export function VerdictScreen() {
     return (
       <ScreenContainer>
         <EmptyState
+          fill
           title="Couldn't load this take"
           description="It may have been removed, or the analysis never finished."
           actionLabel="Back"
-          onActionPress={() => navigation.goBack()}
+          onActionPress={goBack}
         />
       </ScreenContainer>
     );
@@ -99,7 +110,7 @@ export function VerdictScreen() {
         <PageHeader
           eyebrow={take.pieceTitle}
           title="This take didn't get analysed"
-          onBack={() => navigation.goBack()}
+          onBack={goBack}
           backLabel="Back to the piece"
         />
         <Text variant="body" color="textSecondary">
@@ -128,7 +139,7 @@ export function VerdictScreen() {
         <PageHeader
           eyebrow={take.pieceTitle}
           title="Nothing to measure"
-          onBack={() => navigation.goBack()}
+          onBack={goBack}
           backLabel="Back to the piece"
         />
         <Text variant="body" color="textSecondary">
@@ -145,29 +156,29 @@ export function VerdictScreen() {
     take.measures[take.measures.length - 1]?.measure ?? take.measures.length;
 
   return (
+    /*
+      **One action, not two.** "Back to the piece" was a full-width secondary
+      button under the primary *and* the label on the chevron at the top — the
+      same words twice, one of them saying what the other already offered. It
+      cost about 65pt of a screen whose measure list was showing three rows of
+      twelve, which is the part of this screen a musician actually works from.
+
+      The two also went to different places under the same words: the chevron
+      called `goBack()`, which after a take returns to the Record screen, while
+      the button `replace`d with the piece. The chevron now does what it says.
+    */
     <ScreenContainer
       footer={
-        <View style={styles.actions}>
-          <PrimaryButton
-            label="Record again"
-            onPress={() =>
-              navigation.replace('Record', { pieceId: take.pieceId })
-            }
-          />
-          <SecondaryButton
-            label="Back to the piece"
-            onPress={() =>
-              navigation.replace('PieceDetail', { pieceId: take.pieceId })
-            }
-            style={styles.secondary}
-          />
-        </View>
+        <PrimaryButton
+          label="Record again"
+          onPress={() => navigation.replace('Record', { pieceId: take.pieceId })}
+        />
       }
     >
       <PageHeader
         eyebrow={take.pieceTitle}
         title={formatTakeVerdict(take.measures)}
-        onBack={() => navigation.goBack()}
+        onBack={() => navigation.navigate('PieceDetail', { pieceId: take.pieceId })}
         backLabel="Back to the piece"
       />
 
@@ -203,7 +214,7 @@ export function VerdictScreen() {
         the rule, ahead and behind either side of it, measure numbers at each
         end — so prose explaining it would only repeat what it already says.
       */}
-      <Card>
+      <View style={styles.chart}>
         <TrendLine
           trend={take.trend}
           tolerance={take.tolerance}
@@ -211,7 +222,7 @@ export function VerdictScreen() {
           lastMeasure={lastMeasure}
           accessibilityLabel={`Tempo drift across ${take.measures.length} measures`}
         />
-      </Card>
+      </View>
 
       <SectionHeader label="Measure by measure" style={styles.section} />
       {/*
@@ -223,29 +234,42 @@ export function VerdictScreen() {
           Behind ← Target → Ahead
         </Text>
       </View>
-      {/* No wrapper padding: each row owns its gutter so the selected one can
-          tint edge to edge. */}
-      <Card padded={false}>
+      {/*
+        **Ruled rows on the page, not a card.** Twelve rows that already divide
+        themselves with a hairline apiece do not need a box drawn round them
+        (§3 law 3) — the same call as the library's own list and the piece
+        screen's destinations. Each row owns its gutter, so a selected one still
+        tints edge to edge.
+      */}
+      <View style={styles.measures}>
         {take.measures.map((measure, index) => (
           <FadeIn key={measure.measure} index={index}>
-          <MeasureRow
-            measure={measure}
-            tolerance={take.tolerance}
-            revealed={revealed === measure.measure}
-            onToggle={() =>
-              setRevealed((current) =>
-                current === measure.measure ? null : measure.measure,
-              )
-            }
-            divided={index > 0}
-          />
+            <MeasureRow
+              measure={measure}
+              tolerance={take.tolerance}
+              revealed={revealed === measure.measure}
+              onToggle={() =>
+                setRevealed((current) =>
+                  current === measure.measure ? null : measure.measure,
+                )
+              }
+              divided={index > 0}
+            />
           </FadeIn>
         ))}
-      </Card>
+      </View>
 
-      <Text variant="metadataSmall" color="textTertiary" style={styles.tip}>
-        Tap a measure for its timing.
-      </Text>
+      {/*
+        Only when some measure has a figure behind it. A take that is entirely
+        a `rit.`, or one bar of held chord, has no row that answers a tap — and
+        an instruction for an interaction the screen does not offer is the same
+        dead end as an empty state naming an action it has no route to.
+      */}
+      {take.measures.some((m) => readMeasure(m).revealsFigure) ? (
+        <Text variant="metadataSmall" color="textTertiary" style={styles.tip}>
+          Tap a measure for its timing.
+        </Text>
+      ) : null}
     </ScreenContainer>
   );
 }
@@ -287,10 +311,24 @@ const styles = StyleSheet.create({
     marginTop: spacing.md,
     textAlign: 'center',
   },
-  actions: {
-    gap: spacing.md,
+  /**
+   * The chart, ruled rather than boxed.
+   *
+   * It was the last card on the screen and therefore the only white surface on
+   * an ivory page, which gave the summary more weight than the twelve rows of
+   * detail below it — the same data, and the part a musician works from. A rule
+   * above and below marks it off as a figure without making it a panel (§3
+   * laws 3 and 6).
+   */
+  chart: {
+    marginTop: spacing.md,
+    paddingVertical: spacing.md,
+    borderTopWidth: BORDER_WIDTH,
+    borderBottomWidth: BORDER_WIDTH,
+    borderColor: colors.border,
   },
-  secondary: {
-    marginTop: 0,
+  measures: {
+    borderTopWidth: BORDER_WIDTH,
+    borderTopColor: colors.border,
   },
 });

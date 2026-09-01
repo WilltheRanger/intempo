@@ -1,0 +1,59 @@
+diff --git a/node_modules/expo-camera/build/web/WebCameraUtils.js b/node_modules/expo-camera/build/web/WebCameraUtils.js
+index 9fc05b8..4796cf2 100644
+--- a/node_modules/expo-camera/build/web/WebCameraUtils.js
++++ b/node_modules/expo-camera/build/web/WebCameraUtils.js
+@@ -65,14 +65,39 @@ function getSupportedConstraints() {
+     }
+     return null;
+ }
+-export function getIdealConstraints(preferredCameraType, width, height) {
++// --- InTempo patch: ask the camera for enough pixels to read music. ---
++//
++// `useWebCameraStream` calls `getPreferredStreamDevice(preferredType)` with no
++// width or height, so this fell through to `MinimumConstraints` — literally
++// `{ audio: false, video: true }`. The browser then picks, and every browser
++// picks 640x480. Measured in this repo's own Chromium: `video: true` gives
++// 640x480, the constraint below gives 3840x2160.
++//
++// `captureImage` draws the canvas at exactly `video.videoWidth/Height`, so that
++// 640x480 *is* the photograph the app uploads. It is also precisely the case
++// the server refuses: `too_small_to_read` wants 8 source pixels between staff
++// lines, and a page of music at 480 rows has around 4. A musician photographing
++// a page through the web build was told their photograph was too hard to read,
++// having been shown a sharp preview of it.
++//
++// `ideal` rather than `exact` on purpose: a camera that cannot reach 4K returns
++// its best mode instead of failing to open at all.
++//
++// The early return below was also inverted — it returned `MinimumConstraints`
++// when the caller *had* supplied valid constraints, and built the preferred
++// ones only when it had not, at which point `width`/`height` were undefined. It
++// is unreachable from this package's own call site either way; it is dropped
++// here rather than left as a trap for anyone who starts passing a size.
++//
++// See mobile/src/lib/platform/pageCamera.ts, which tests that this patch is
++// applied — an expo-camera upgrade silently drops it otherwise.
++const INTEMPO_IDEAL_WIDTH = 3840;
++const INTEMPO_IDEAL_HEIGHT = 2160;
++export function getIdealConstraints(preferredCameraType, width = INTEMPO_IDEAL_WIDTH, height = INTEMPO_IDEAL_HEIGHT) {
+     const preferredConstraints = {
+         audio: false,
+         video: {},
+     };
+-    if (hasValidConstraints(preferredCameraType, width, height)) {
+-        return MinimumConstraints;
+-    }
+     const supports = getSupportedConstraints();
+     // TODO(Bacon): Test this
+     if (!supports || !supports.facingMode || !supports.width || !supports.height) {
+@@ -94,8 +119,8 @@ export function getIdealConstraints(preferredCameraType, width, height) {
+         }
+     }
+     if (isMediaTrackConstraints(preferredConstraints.video)) {
+-        preferredConstraints.video.width = width;
+-        preferredConstraints.video.height = height;
++        preferredConstraints.video.width = { ideal: width };
++        preferredConstraints.video.height = { ideal: height };
+     }
+     return preferredConstraints;
+ }

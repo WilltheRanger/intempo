@@ -66,6 +66,20 @@ export interface MeResponse {
    * not been shown, and that is the only thing that decides whether to show it.
    */
   onboarded_at: string | null;
+  /**
+   * Whether their corrections to a reading may be kept to improve it, and the
+   * photograph kept alongside them.
+   *
+   * A boolean, though the column is a timestamp: *when* they agreed is a fact
+   * the consent record needs and a screen has no use for. Defaults false and
+   * a server without migration 013 returns false, which is correct — a
+   * deployment that cannot store consent has not got any.
+   *
+   * **Nothing in the app sets this yet.** The switch and its wording are a
+   * screen, and screens go through the owner (CLAUDE.md §2), so the field is
+   * here and the control is not.
+   */
+  training_consent: boolean;
 }
 
 /** Analyses used this calendar month, and what the ceiling is. */
@@ -82,24 +96,80 @@ export type Clef = 'treble' | 'bass' | 'alto' | 'tenor';
 
 export type Articulation = 'staccato' | 'tenuto' | 'accent';
 
+/**
+ * Why a note's deviation was not measured against a time the page states.
+ *
+ * Mirrors `classification.UntimedReason`. A closed set rather than a sentence,
+ * so the words a musician reads are written here, in the app, next to the rest
+ * of its copy — and the pipeline only says which case it is.
+ */
+export type UntimedReason = 'tempo_change' | 'fermata' | 'ornament';
+
 export type Dynamics =
   | 'ppp' | 'pp' | 'p' | 'mp' | 'mf' | 'f' | 'ff' | 'fff'
   | 'fp' | 'sfz' | 'sf' | 'fz';
 
+/**
+ * Every note value the server can name.
+ *
+ * **Generated from `DURATION_BEATS` in `backend/app/services/score_schema.py`**
+ * and held to it by `test_client_enums.py`, which compares the two as sets. A
+ * name only the server has means the app cannot read a score it is sent; a name
+ * only the app has means a control offering a value nothing will ever produce.
+ *
+ * The guarantee, which is what makes this a list rather than a patchwork:
+ * **every written value from a breve to a 128th has a name — plain, and as a
+ * triplet, quintuplet or septuplet.** Dotted values inside tuplets, nonuplets,
+ * and anything finer than a 128th do not, and `tools/notation-coverage.py`
+ * prints exactly which on every run.
+ */
 export type Duration =
-  | 'whole' | 'dotted_whole'
-  | 'half' | 'dotted_half'
-  | 'quarter' | 'dotted_quarter'
-  | 'eighth' | 'dotted_eighth'
-  | 'sixteenth' | 'dotted_sixteenth'
-  | 'thirty_second' | 'dotted_thirty_second'
-  | 'sixty_fourth'
   | 'double_whole'
-  | 'double_dotted_half' | 'double_dotted_quarter' | 'double_dotted_eighth'
+  | 'dotted_whole'
+  | 'whole'
+  | 'double_dotted_half'
+  | 'dotted_half'
+  | 'half'
+  | 'double_dotted_quarter'
+  | 'dotted_quarter'
+  | 'quarter'
+  | 'double_dotted_eighth'
+  | 'dotted_eighth'
+  | 'eighth'
+  | 'dotted_sixteenth'
+  | 'sixteenth'
+  | 'dotted_thirty_second'
+  | 'thirty_second'
+  | 'dotted_sixty_fourth'
+  | 'sixty_fourth'
+  | 'one_twenty_eighth'
+  | 'triplet_breve'
+  | 'triplet_whole'
   | 'triplet_half'
   | 'triplet_quarter'
   | 'triplet_eighth'
-  | 'triplet_sixteenth';
+  | 'triplet_sixteenth'
+  | 'triplet_thirty_second'
+  | 'triplet_sixty_fourth'
+  | 'triplet_one_twenty_eighth'
+  | 'quintuplet_breve'
+  | 'quintuplet_whole'
+  | 'quintuplet_half'
+  | 'quintuplet_quarter'
+  | 'quintuplet_eighth'
+  | 'quintuplet_sixteenth'
+  | 'quintuplet_thirty_second'
+  | 'quintuplet_sixty_fourth'
+  | 'quintuplet_one_twenty_eighth'
+  | 'septuplet_breve'
+  | 'septuplet_whole'
+  | 'septuplet_half'
+  | 'septuplet_quarter'
+  | 'septuplet_eighth'
+  | 'septuplet_sixteenth'
+  | 'septuplet_thirty_second'
+  | 'septuplet_sixty_fourth'
+  | 'septuplet_one_twenty_eighth';
 
 /** The note value counted by the metronome number printed on the page. */
 export type TempoBeatUnit = Duration;
@@ -113,6 +183,19 @@ export interface ScoreNote {
   articulation?: Articulation | null;
   tied_to_next: boolean;
   dynamics?: Dynamics | null;
+  /**
+   * The other noteheads struck together with this one — a double stop, a chord.
+   *
+   * Additive, and deliberately outside the timeline: `pitch` is still the one
+   * pitch and `duration` still governs when the next note starts, because a
+   * chord is one attack. What this carries is the part the reading used to
+   * drop, so a stave can draw both noteheads instead of one.
+   *
+   * Absent on every score written before it was recorded. **Nothing draws it
+   * yet** — `engrave.ts` places one notehead per note, and giving it a second
+   * is a change to the stave, so it goes through the owner (CLAUDE.md §2).
+   */
+  chord_pitches?: string[];
   /** The printed duration is intentionally held beyond its written value. */
   fermata?: boolean;
   /** Audible grace-note attacks immediately before this main note. */
@@ -180,6 +263,20 @@ export interface ScoreMeasure {
    * measure, as `MeasureEditScreen` does, is enough.
    */
   time_signature?: string | null;
+  /**
+   * The clef, when it **changes** at this measure. Absent everywhere else, and
+   * absent on every score written before it was recorded.
+   *
+   * The same shape as `time_signature` above and carrying the same obligation:
+   * anything rebuilding a measure has to preserve it, or the change is lost and
+   * every bar after it is captioned — and drawn — in a clef the page stopped
+   * using. A cello or bass part moving into tenor for a high passage is
+   * ordinary writing, not an edge case.
+   *
+   * `ScoreScore.clef` stays the clef the page **opens** in, which is what a
+   * reader wants when nothing says otherwise.
+   */
+  clef?: Clef | null;
   /**
    * How many notes the reading saw in this bar and could not write.
    *
@@ -366,8 +463,25 @@ export interface PerNoteResult {
 export interface PerMeasureResult {
   measure_number: number;
   note_count: number;
-  /** Drag-positive. */
+  /** Drag-positive, over the notes that were **timed**. */
   avg_delta_pct: number;
+  /**
+   * How many of `note_count` were measured against a time the page states.
+   *
+   * Absent on a result stored before the field existed — read as "all of
+   * them", which is what those rows meant. Zero means nothing in the bar was
+   * timed and `avg_delta_pct` fell back to the whole bar, so it must not be
+   * read as a verdict.
+   */
+  timed_note_count?: number | null;
+  /**
+   * Why nothing in the bar was timed, when every untimed note agrees.
+   *
+   * Absent on an older result, and absent when the bar's untimed notes give
+   * different reasons — `_shared_untimed_reason` refuses to pick one, since a
+   * caption on the whole row has to explain the whole row.
+   */
+  untimed_reason?: UntimedReason | null;
   worst_band: Band;
   direction: Direction;
   /**
@@ -602,6 +716,47 @@ export interface MeasureVerdict {
   band: Band;
   direction: Direction;
   verdict: Verdict;
+  /**
+   * A written tempo change covers this measure, so it was **not timed**.
+   *
+   * The pipeline forces `band` to `on` here by refusal — the page has said the
+   * beat will not be steady, so the tolerance bands measure nothing — while
+   * still reporting the real `deviationPct`. Carrying only those two would put
+   * a large deviation next to the word for no deviation. `readMeasure` is the
+   * one place that decides what a row like this says.
+   */
+  underTempoChange: boolean;
+  /**
+   * The change lurched somewhere in this measure instead of flowing.
+   *
+   * The only thing worth saying about a bar the bands refused, and the pipeline
+   * already computes it: `uneven_measures` reads 9 ms for an even slowing and
+   * 44 for a lurch.
+   */
+  uneven: boolean;
+  /**
+   * How many notes in the bar were measured against a time the page states.
+   *
+   * Null on a take analysed before the pipeline reported it — read as "all of
+   * them". Zero means the bar was not timed at all, which a `rit.` is only one
+   * cause of: a fermata says one length is not written down, and an ornament
+   * and the note it decorates are placed by a number the pipeline invented.
+   */
+  timedNoteCount: number | null;
+  /**
+   * Why nothing in the bar was timed, when every untimed note agrees.
+   *
+   * **`timedNoteCount: 0` said the app could not judge the bar; this says who
+   * decided that.** Two of the three are the page speaking — a fermata hands
+   * one length to the player, a tempo change withdraws the steady beat — and
+   * only `ornament` is a limitation of the pipeline, which places a grace note
+   * and the note it decorates by a number it invented. Reporting all three as
+   * "Not timed" made the page's own instructions look like the app failing.
+   *
+   * Null for an older take, and also for a bar whose untimed notes disagree.
+   * Both mean "no single reason", which is one sentence, so they share a value.
+   */
+  untimedReason: UntimedReason | null;
 }
 
 /**

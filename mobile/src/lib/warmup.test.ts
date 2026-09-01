@@ -2,7 +2,14 @@ import { describe, expect, it } from 'vitest';
 
 import type { Instrument } from '../data/types';
 import { BEATS } from './score/schedule';
-import { INSTRUMENT_LABELS, dayIndex, warmupFor, warmupScore } from './warmup';
+import type { NoteValue } from './notation/engrave';
+import {
+  INSTRUMENT_LABELS,
+  VALUE_DURATIONS,
+  dayIndex,
+  warmupFor,
+  warmupScore,
+} from './warmup';
 
 /**
  * The daily warmups — hand-authored music, checked as music.
@@ -121,13 +128,17 @@ describe('range discipline', () => {
 
 describe('bar arithmetic', () => {
   /** The bars, as the file's own `barBefore` flags divide them. */
-  function bars(notes: { pitch: string; value: keyof typeof BEATS; barBefore?: boolean }[]) {
+  // `NoteValue` and `Duration` are two vocabularies for the same thing and
+  // `VALUE_DURATIONS` is the bridge, so this counts through it rather than
+  // assuming the two unions have matching names — `breve` and `double_whole`
+  // are the same note.
+  function bars(notes: { pitch: string; value: NoteValue; barBefore?: boolean }[]) {
     const out: number[][] = [];
     for (const note of notes) {
       if (note.barBefore || out.length === 0) {
         out.push([]);
       }
-      out[out.length - 1].push(BEATS[note.value]);
+      out[out.length - 1].push(BEATS[VALUE_DURATIONS[note.value]]);
     }
     return out;
   }

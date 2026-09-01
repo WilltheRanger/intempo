@@ -33,3 +33,28 @@ export function stableImage(url: string | null | undefined): ThumbnailSource | n
     return url;
   }
 }
+
+/**
+ * What makes two sources the same picture.
+ *
+ * `ScoreThumbnail` falls back to its ruled-staff placeholder when an image
+ * fails to load, and a *new* source has to clear that failure. Deciding "new"
+ * by object identity does not work: a `{ uri, cacheKey }` is built where the
+ * API response is mapped, so a refetch returning the same photograph builds a
+ * new object — and a genuinely dead URL would then retry, fail, reset, and
+ * flicker. The identity has to come from inside the source.
+ *
+ * Here rather than in the component because the component imports
+ * `expo-image`, and a module that does cannot be loaded under vitest at all —
+ * the same reason `captureSession` and `transcriptionProgress` are modules.
+ */
+export function sourceIdentity(
+  source: ThumbnailSource | null,
+): string | number | null {
+  if (source === null || typeof source !== 'object') {
+    return source;
+  }
+  // The cache key is the storage path, which is the object's identity — the
+  // `uri` carries a token that rotates for the same photograph.
+  return source.cacheKey || source.uri;
+}

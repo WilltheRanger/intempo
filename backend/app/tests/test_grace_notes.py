@@ -166,31 +166,45 @@ def test_a_grace_whose_note_this_schema_drops_rides_on() -> None:
     """The decorated note is gone and the attack was still made.
 
     The same rule that governs the dropped note governs its ornament: an onset
-    lost outright is worse than one placed a little late. E-double-flat has no
-    name in the pitch grammar, so it goes; the grace lands on the next real
-    note instead of vanishing with it.
+    lost outright is worse than one placed a little late, so the grace lands on
+    the next real note instead of vanishing with it.
+
+    **The example changed and the rule did not.** This used to use an
+    E-double-flat, which the pitch grammar refused. It no longer does — see
+    `PITCH_PATTERN` — so the case needs a note that is still genuinely
+    unspellable, and a *triple* accidental is one.
     """
-    double_flat = (
-        "<note><pitch><step>E</step><alter>-2</alter><octave>3</octave></pitch>"
+    triple_sharp = (
+        "<note><pitch><step>E</step><alter>3</alter><octave>3</octave></pitch>"
         "<duration>4</duration><type>quarter</type></note>"
     )
-    score = _one_bar(_note() + _grace() + double_flat + _note() + _note())
+    score = _one_bar(_note() + _grace() + triple_sharp + _note() + _note())
     assert [n.grace_notes for n in score.measures[0].notes] == [0, 1, 0]
 
 
-def test_the_bundled_fixture_loses_its_ornament_at_the_end_of_the_page() -> None:
-    """`bass_excerpt.musicxml` prints one before its very last note, and that
-    note is the double-flat this schema drops.
+def test_the_bundled_fixture_keeps_the_ornament_on_its_last_note() -> None:
+    """**This asserted the ornament was lost, and it is not lost any more.**
 
-    So there is nothing left for the count to ride to, and it is lost — the one
-    place where the rule above cannot help. Asserted rather than left to
-    chance: it is what makes the *page-end* behaviour visible, and a change
-    that quietly attached it to an earlier note would be worse.
+    `bass_excerpt.musicxml` prints a grace before its very last note, and that
+    note is an `Ebb3`. The pitch grammar refused a double accidental, so the
+    note was dropped — and because it was the *last* note there was nothing
+    further along for the grace to ride to, so the ornament went with it. The
+    old docstring called that "the one place where the rule above cannot help",
+    which was true of the grammar it was written against.
+
+    Widening the grammar recovered both in one move: the note is read, and the
+    grace that decorates it is counted on it. Worth keeping as a test because it
+    is the only case in the corpus where a dropped note took an ornament with
+    it, and because it measures the page-*end* path specifically.
     """
     from app.tests.test_musicxml import FIXTURE
 
     score = score_json_from_musicxml(FIXTURE.read_text(encoding="utf-8"))
-    assert sum(n.grace_notes for m in score.measures for n in m.notes) == 0
+
+    last = score.measures[-1].notes[-1]
+    assert last.pitch == "Ebb3"
+    assert last.grace_notes == 1
+    assert sum(n.grace_notes for m in score.measures for n in m.notes) == 1
 
 
 # --------------------------------------------------------------------------

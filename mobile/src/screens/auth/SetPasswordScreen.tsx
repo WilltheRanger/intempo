@@ -3,6 +3,7 @@ import { KeyboardAvoidingView, Platform, StyleSheet, View } from 'react-native';
 
 import {
   Input,
+  RevealPasswordAction,
   PrimaryButton,
   ScreenContainer,
   SecondaryButton,
@@ -35,6 +36,14 @@ export function SetPasswordScreen() {
   const [password, setPassword] = useState('');
   const [repeated, setRepeated] = useState('');
   const [busy, setBusy] = useState(false);
+  /**
+   * **Shared by both fields, and this screen had no reveal at all.** It is
+   * where someone who has just followed a reset link types a brand-new
+   * password twice on a phone keyboard with no way to check either — the
+   * screen a Show control helps most, and the only one of the three without
+   * it.
+   */
+  const [revealed, setRevealed] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function submit() {
@@ -74,7 +83,13 @@ export function SetPasswordScreen() {
           label="New password"
           value={password}
           onChangeText={setPassword}
-          secureTextEntry
+          secureTextEntry={!revealed}
+          action={
+            <RevealPasswordAction
+              revealed={revealed}
+              onPress={() => setRevealed((shown) => !shown)}
+            />
+          }
           autoCapitalize="none"
           autoComplete="new-password"
           textContentType="newPassword"
@@ -86,7 +101,7 @@ export function SetPasswordScreen() {
           label="Repeat new password"
           value={repeated}
           onChangeText={setRepeated}
-          secureTextEntry
+          secureTextEntry={!revealed}
           autoCapitalize="none"
           autoComplete="new-password"
           textContentType="newPassword"

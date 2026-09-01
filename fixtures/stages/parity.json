@@ -24,21 +24,94 @@
     "Reading the notation",
     "Checking the bar counts"
   ],
-  "_reading_band": [0.3, 0.8],
+  "_reading_band": [
+    0.3,
+    0.8
+  ],
   "_per_stave_why": [
     "A page is read one stave at a time, so the reading step has real measured",
-    "progress inside it — the worker knows it has finished 3 of 7. There is no",
+    "progress inside it \u2014 the worker knows it has finished 3 of 7. There is no",
     "static key for that: the count is in the words, and the app places them by",
     "interpolating across _reading_band. 'Reading the notation' sits at the top",
     "of that band, not below it, so a split page that falls back to being read",
     "whole does not walk the bar backwards."
   ],
   "per_stave": [
-    { "pipeline_stage": "reading:system 1 of 7", "words": "Reading stave 1 of 7" },
-    { "pipeline_stage": "reading:system 4 of 7", "words": "Reading stave 4 of 7" },
-    { "pipeline_stage": "reading:system 7 of 7", "words": "Reading stave 7 of 7" },
-    { "pipeline_stage": "reading:system 1 of 1", "words": "Reading stave 1 of 1" },
-    { "pipeline_stage": "reading:system 24 of 24", "words": "Reading stave 24 of 24" }
+    {
+      "pipeline_stage": "reading:system 1 of 7",
+      "words": "Reading stave 1 of 7"
+    },
+    {
+      "pipeline_stage": "reading:system 4 of 7",
+      "words": "Reading stave 4 of 7"
+    },
+    {
+      "pipeline_stage": "reading:system 7 of 7",
+      "words": "Reading stave 7 of 7"
+    },
+    {
+      "pipeline_stage": "reading:system 1 of 1",
+      "words": "Reading stave 1 of 1"
+    },
+    {
+      "pipeline_stage": "reading:system 24 of 24",
+      "words": "Reading stave 24 of 24"
+    }
+  ],
+  "_per_page_why": [
+    "A scan is every page of one part, and the pages are read one after",
+    "another. Before this existed a multi-page read reported 'Reading the",
+    "notation' for the whole of it \u2014 true throughout, and a bar that did",
+    "not move once from the first page to the last. The worker's own",
+    "comment called that 'a limitation rather than a design' and said the",
+    "honest fix was a page counter in the words, waiting on the UI gate.",
+    "",
+    "The count is pages *finished*, so 'Reading page 2 of 3' places the bar",
+    "at 1/3 of the reading band: page 1 is done and page 2 has not started.",
+    "It never overstates, and it is measured rather than timed.",
+    "",
+    "Per-stave counts are suppressed on a multi-page scan, so the two",
+    "counters never fight over the bar: page 2 starting again at 'Reading",
+    "stave 1 of 9' would walk it backwards, which is the failure",
+    "transcriptionProgress.ts exists to prevent."
+  ],
+  "per_page": [
+    {
+      "page": 1,
+      "total": 3,
+      "words": "Reading page 1 of 3",
+      "progress": 0.3
+    },
+    {
+      "page": 2,
+      "total": 3,
+      "words": "Reading page 2 of 3",
+      "progress": 0.466667
+    },
+    {
+      "page": 3,
+      "total": 3,
+      "words": "Reading page 3 of 3",
+      "progress": 0.633333
+    },
+    {
+      "page": 1,
+      "total": 2,
+      "words": "Reading page 1 of 2",
+      "progress": 0.3
+    },
+    {
+      "page": 2,
+      "total": 2,
+      "words": "Reading page 2 of 2",
+      "progress": 0.55
+    },
+    {
+      "page": 12,
+      "total": 12,
+      "words": "Reading page 12 of 12",
+      "progress": 0.758333
+    }
   ],
   "_whole_page_why": [
     "A page read whole reports the provider's name, which is deliberately never",
@@ -46,7 +119,13 @@
     "not ask about. Both forms collapse to the same words."
   ],
   "whole_page": [
-    { "pipeline_stage": "reading:claude-sonnet-5", "words": "Reading the notation" },
-    { "pipeline_stage": "reading:gemini-2.5-flash", "words": "Reading the notation" }
+    {
+      "pipeline_stage": "reading:claude-sonnet-5",
+      "words": "Reading the notation"
+    },
+    {
+      "pipeline_stage": "reading:gemini-2.5-flash",
+      "words": "Reading the notation"
+    }
   ]
 }

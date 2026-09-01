@@ -6,6 +6,4450 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-01 — "Not timed" was the app's word, not the page's
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. The other half of the
+fermata work below, and a correction to `CLAUDE.md` that had gone stale.
+
+**Files:** `backend/app/services/classification.py`, `analysis.py` + tests,
+`mobile/src/data/types.ts`, `data/sources/api.ts`, `fixtures.ts`,
+`lib/verdict/measureReading.ts` + test, `CLAUDE.md`.
+
+### The sentence that was wrong
+
+Three different things made a bar go unjudged, and the app had one phrase for
+all of them. A `rit.` is the page withdrawing the steady beat. A fermata is the
+page handing one length to the player. An ornament is **this code** admitting
+it guessed — `ORNAMENT_SHARE` splits the difference between two readings an
+engraver may have meant.
+
+Only the third is a limitation. The other two are instructions, followed
+correctly. Reporting all three as "Not timed" made a musician who held a final
+chord exactly as written read it as the app failing to measure them — and the
+app *had* measured them; it had been told not to judge.
+
+`Delta` knew which case it was on the line that computes `timed`, and threw it
+away one field short of the screen. It now carries `untimed_reason`, and so do
+`PerNote` and `PerMeasure`.
+
+### Two conditions on naming it, and dropping either makes it a lie
+
+`_shared_untimed_reason` gives a reason only when the bar is **wholly** untimed
+and its untimed notes **agree**. A caption on the row has to explain the whole
+row: naming one on a bar that also has measured notes captions a verdict with
+something that explains part of it, and a bar holding both a fermata and an
+ornament has no single answer. `None` therefore means "no single reason" as
+well as "an older take", and both land on the same wording — which is why they
+can share a value rather than needing two.
+
+The order is a statement too: tempo change, then fermata, then ornament,
+broadest first. A note can be under a `rit.` *and* after a fermata.
+
+### The words
+
+"Held", in the same column as "On tempo", "Slight rush" and "Rushing" — so it
+answers the same question, *how did I play this bar?*, in one word that does
+not wrap at 13pt. The sentence goes in the spoken label, where there is room:
+*"held — the page marks a fermata, so its length is yours."* Ochre is not used;
+this is not a judgement about playing.
+
+An ornament still reads "Not timed", because for that one the phrase is
+accurate — the spoken label now says why: *"an ornament is placed by an
+estimate rather than by the page."*
+
+### Also: CLAUDE.md said orphaned uploads were an open hole
+
+They were closed on this branch on 2026-08-31 (`pending_uploads`, the sweeper,
+and the claim points). The document that is read at the start of every session
+still described the hole and asked for "a lifecycle decision, not a patch" —
+so the next session would have either re-solved it or believed the app leaks
+photographs. Replaced with the invariant that now holds, the two orderings that
+hold it, and the part that is still true: **migration 014 is written and not
+applied**, so on a deployment that has not run it the sweeper finds nothing.
+
+### Three-foot test — the verdict screen
+
+Unchanged in hierarchy: the trend chart first, the measure-by-measure column
+second, "Record again" third and in the thumb zone. Verified on the fixture
+take: bars 11 and 12 read "Not timed" and "Uneven" under the written change,
+bar 13 now reads "Held".
+
+### Tests
+
+**mobile 983, backend 1837 passed + 3 xfailed**, `tsc` clean, web build green,
+23-route sweep clean. Six new cases: three in `test_classification.py` that a
+fermata, an ornament and an ordinary note each report what they should, and
+three in `test_analysis.py` for the two conditions on naming a bar's reason.
+Four more in `measureReading.test.ts` for the words themselves.
+
+### Honest status
+
+Verified against the fixture take, not a real recording of a real page with a
+real fermata on it. The stored analyses on any existing deployment have no
+`untimed_reason`, so they keep the old wording — which is the intended
+behaviour, not a gap.
+
+### Rollback
+
+`git revert`. Both new fields default to `None`/`null`, so a revert of the app
+alone or the backend alone is also safe.
+
+---
+
+## 2026-09-01 — The mark that explains the app's own silence
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`.
+
+**Files:** `mobile/src/lib/notation/engrave.ts`, `fromScore.ts`,
+`components/notation/Stave.tsx`, `data/sources/fixtures.ts`,
+`assets/fonts/Bravura.otf`, `tools/subset-bravura.py`, `DECISIONS.md`,
+plus `lib/notation/fermata.test.ts` (new).
+
+### Why this one is not just another missing marking
+
+Dynamics were read since Batch 2 and drawn by nothing, and that cost the page
+some of its meaning. A fermata is worse, because the app *acts* on it.
+`classification.py` refuses to time the note **after** a fermata — the page has
+said that length belongs to the player, so there is no written value to measure
+against, and `Delta.timed` goes false. `PerNote.timed` carries that to the app.
+
+So a musician opened a verdict, found a note the app had declined to judge, and
+went to the score screen to see why — where the mark that *is* the reason was
+not drawn. Every mechanism for explaining the refusal existed except the one a
+musician would actually look at.
+
+The path was complete apart from the drawing: `musicxml.py` reads
+`notations/fermata`, `score_schema.ScoreNote.fermata` carries it, the app's own
+`ScoreNote` declares it, `alignment.py` marks `after_fermata`, and
+`engrave.ts` had never heard of it. Grepping the whole notation layer for
+"fermata" returned nothing at all.
+
+### Where it goes
+
+Above the music, always — Bravura's below-staff form is a separate drawing, not
+a flip, and it is for the lower voice of a two-voice staff, which this engraver
+does not have. The baseline clears the highest of: the top staff line, the
+note's own topmost notehead, its ledger lines, an articulation sitting above
+it, and — the one that needed thinking about — **the beam**, which is drawn
+*at* the stem tip and has thickness of its own, so the tip alone is half a beam
+short of the ink.
+
+Per note rather than levelled across the system, which is the one place this
+differs from the dynamics directly below it in the same file: a printed part
+hangs a fermata off its own note, and levelling would float a mark over a low
+note up to meet a high one elsewhere in the bar.
+
+### Grace notes are deliberately not drawn
+
+`ScoreNote.grace_notes` is a **count**, not notes — the schema says so, and for
+a good reason: a grace note has no duration. Drawing *n* small noteheads at
+pitches nobody read would be inventing notation, which is the rule
+`staveScoreFor` already follows when it drops a value it cannot draw. So they
+stay undrawn, and this paragraph exists so the next person does not have to
+rediscover why.
+
+### The font, which was the hard part
+
+The glyphs are `E4C0`/`E4C1` and the shipped subset did not have them. The
+subset is Bravura **1.482**; every Bravura reachable from here is **1.392**.
+The full reasoning, the three alternatives and the trade-off accepted are in
+`DECISIONS.md`. The short version: regenerating from 1.392 would have redrawn
+**45 of the 76 shipped glyphs** — measured, including the treble clef and three
+of four noteheads — to fit two marks in, so instead the two glyphs were grafted
+with `fontTools.merge`, verified to alter zero existing glyphs and to reproduce
+both new ones byte-for-byte. `E4C0-E4C1` is now in `subset-bravura.py` so a
+regeneration against a real 1.482 ends the special case by itself.
+
+### Three-foot test
+
+The score screen is unchanged in hierarchy: the serif piece title first, the
+white notation panel second, the Notation/Original toggle and Listen third. The
+fermata is a small mark inside the music and competes with nothing — which is
+the whole point of a sign that exists to be read while playing past it.
+
+### Tests
+
+979 passing, `tsc` clean, web build green, 23-route sweep clean, narrow probe
+unchanged. Eight new cases, and **three of them were checked by breaking what
+they guard**: the staff floor, the beam allowance and the box. The beam one
+failed to fail on the first attempt — written over a D4, whose stem tip never
+reaches the top staff line, so the staff floor decided the height and the beam
+allowance was never consulted. Rewritten over a G4, where it binds. A test that
+cannot fail is a test that is not testing.
+
+### Honest status
+
+Verified against the running web build and the fixture, not against a real
+photographed page carrying a real fermata. The verdict screen still says only
+"Not timed" for such a note — the stave now explains it, the verdict does not
+name it, and whether it should is a separate change.
+
+### Rollback
+
+`git revert`. The font can be rebuilt with `tools/subset-bravura.py` given a
+Bravura 1.482, which is the better state anyway.
+
+---
+
+## 2026-09-01 — Looking at the last screen nobody had ever seen
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`.
+
+**Files:** `mobile/src/screens/account/AccountStartupScreen.tsx`,
+`components/primitives/LoadingState.tsx`, `CLAUDE.md`.
+
+`AccountStartupScreen` was the last of the four auth-gated screens no route
+sweep can reach. It is the screen every signed-in session passes through — the
+app holds every tab until `/v1/me` answers — and nothing had ever rendered it.
+Forced into both branches with a `?startup=loading|error` parameter in a
+throwaway build, restored with `diff -q`.
+
+Two defects, both compositional, neither visible in any test:
+
+**A centred spinner between two left-aligned sentences.** `LoadingState`
+centres, which is right for its other five callers — all of them a bare
+spinner filling a panel — and wrong here, the only one that passes a label. It
+put a lone widget on the middle axis while every line of type sat on the left
+margin (§3 law 5), and split the caption off from the sentence it belongs to.
+`LoadingState` now takes `layout="inline"`: a row on the margin, spinner then
+caption. **Named, not inferred from `label`** — a component that re-aligns
+itself because a prop happens to be set is one whose layout cannot be read off
+the call site. The caption needs `flex: 1` to wrap, because a row sizes its
+children from their content and an unbroken sentence is one token as far as
+that is concerned.
+
+**The one button the screen exists to offer, at the vertical middle.**
+Message and actions were a single centred block: "Try again" measured at
+y=439 of 844. Everything on this screen is one decision, so §3 law 7 bears on
+it harder than on almost any other. The message now takes the space above and
+centres in it; the actions sit at the foot. Measured after: "Try again" at
+y=719, "Back to sign in" at 783, with `ScreenContainer`'s bottom inset below
+them.
+
+### Three-foot test
+
+**Loading** — "Opening your practice space" first, "Restoring your library…"
+second, the spinner and its caption third. **Error** — "Couldn't open your
+account" first, "Try again" second, "Back to sign in" third. One focal point
+each; the space between message and actions reads as composition rather than
+as a layout that failed.
+
+### Tests
+
+971 passing, `tsc` clean, web build green. 23-route sweep clean; narrow probe
+unchanged (the two accepted findings only). No new test: this is a composition
+choice, not a rule that can silently break, and claiming a guard for it would
+be claiming cover this does not have.
+
+### Rollback
+
+`git revert`. `LoadingState`'s default is unchanged, so the other five callers
+are untouched either way.
+
+---
+
+## 2026-09-01 — Dynamics are drawn, and doing it exposed a spacing bug older than they are
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`.
+
+**Files:** `mobile/src/lib/notation/engrave.ts`,
+`components/notation/Stave.tsx`, `lib/notation/fromScore.ts`,
+`screens/pieceScore/PieceScoreScreen.tsx`, `screens/warmup/WarmupScreen.tsx`,
+`data/sources/fixtures.ts`, `assets/fonts/Bravura.otf`,
+`tools/subset-bravura.py`, plus `lib/notation/dynamics.test.ts` (new) and
+`engrave.test.ts`.
+
+### What was missing
+
+`musicxml.py` has read dynamics off an imported part since Batch 2,
+`ScoreNote.dynamics` has carried them just as long, and the engraver drew
+none of them. An imported MuseScore part lost every marking on the screen
+that offers itself as "the notes read from the page".
+
+They are now set from the font's own letters — `p`, `m`, `f`, `s`, `z`
+(U+E520–U+E525, added to the Bravura subset, 27.0 → 44.3 KB) — because every
+one of the schema's twelve marks is a run of those five, which is how an
+engraver sets them and why SMuFL provides letters rather than words. A mark
+spelled with a letter there is no glyph for draws **nothing**, the same rule
+the note values follow: half of `dim.` is a different instruction.
+
+### The bug a unit test could not have found
+
+The first version placed the marks 1.4 staff spaces below the system's lowest
+ink and every test passed. A 4× screenshot showed the `f` and the first
+notehead **fused into a single blob**.
+
+The clearance was measured to the mark's *baseline*. Bravura's `f` rises
+**1.78** staff spaces above its own baseline — read out of the font with
+`fontTools`' `BoundsPen`, not estimated — so 1.4 spaces of clearance drew it
+0.38 spaces up *into* the music. Every test knew where the baseline was and
+not one of them knew how tall the letter was. `DYNAMIC_LETTERS` now carries
+each glyph's measured ink box, the baseline is set from the *top* of the
+tallest mark on the system, and `dynamics.test.ts` asks the font.
+
+A second one only a screenshot caught, earlier the same session: `mf` and
+`sfz` on adjacent quarters printed as `mfsfz`, one word. Neighbouring marks
+now reserve the room their ink takes — ink, not advance, because `f` overhangs
+its own pen by 0.56 spaces on the left.
+
+### The older bug underneath it
+
+Widening the columns for those marks pushed a system past the width it had,
+and it turned out nothing had ever stopped that. **The packer counted notes
+while the layout spent width**: `extraRoom` — accidentals, repeat signs, ties,
+now dynamics — was invisible to it. `justify` then divided a *negative*
+remainder among the columns, and the columns that reserved nothing took the
+whole shortfall. Measured: four marked notes followed by eight plain ones
+squeezed the plain columns to **0.56 staff spaces**, half a notehead, so they
+printed through each other — inside a system of exactly the right width, which
+is why no overflow check would ever have seen it.
+
+Three changes, each verified by putting the old behaviour back and watching
+the new test fail:
+
+- `packSystems` breaks on a **width budget**, not a note count. Costs are
+  measured over the whole piece rather than per system, which over-estimates a
+  line-opening bar by at most one reservation — the safe direction, since it
+  breaks early rather than late.
+- Every column is floored at `MIN_COLUMN` (1.4 staff spaces, just over the
+  1.18 a notehead occupies) **where it is spent**, not on the base gap. That
+  distinction is load-bearing: flooring the base inflates every system whose
+  notes reserve room, and it pushed the Kreutzer study from 348 points wide to
+  405 on a 390-point screen before I moved it.
+- `PieceScoreScreen` and `WarmupScreen` now pass `fitWidth` alongside
+  `maxWidth`. They are not alternatives: `maxWidth` breaks the music into
+  systems and can only break at a barline, so a bar denser than one line can
+  hold stays over-wide however many systems it gets. `fitWidth` shrinks the
+  whole engraving until it fits. The floor is what lets a system *say* it needs
+  more room; `fitWidth` is what answers.
+
+Measured on the Kreutzer fixture at the score screen's own parameters, opening
+bar of sixteen sixteenths: min column 0.95 spaces before (noteheads touching,
+system 348 wide), 1.40 after (system 397 wide, shrunk to 352 by `fitWidth`,
+inside a 390-point viewport). Every stave-bearing route re-measured: Today
+335, Wohlfahrt 348, Kreutzer 352, Paganini 348, Warmup 311 — none overflowing,
+where Kreutzer had been at 405.
+
+### The fixture, because a state with no fixture is a state nobody looks at
+
+`fixture-wohlfahrt-28` now carries a dynamic. It is **not invented**:
+`fixtures/scores/SOURCES.md` records that the opening staff of Wohlfahrt Op. 45
+No. 28 prints an **f**, and the cached reading of that page is the only place
+in the entire fixture corpus where a dynamic survives OCR — one `f`, on the
+first note. That is the note it is on. No. 1's entry in the same file says its
+line has "no titles or dynamics", which is why the two studies no longer share
+a score and why nothing was added to No. 1.
+
+### Three-foot test
+
+**Piece score** — the serif piece title first, the white notation panel
+second, the Notation/Original toggle and Listen third. The dynamic is a small
+mark inside the music and competes with nothing; that is the point of it.
+**Warmup** — "D major, one octave" first, the four staves second, the "Play at
+72 BPM" footer third. Both unchanged in hierarchy by this work.
+
+### Tests
+
+971 passing, `tsc` clean, web build green. Four new guards, each verified to
+fail when what it guards is reverted: the mark's top clearing the music (fails
+by 0.42 staff spaces), neighbouring marks' ink not overlapping (fails by 7.1
+points at lineGap 16), a column never narrower than a notehead (fails at 9.2
+against 18.9), and every one of the twelve marks drawing. 23-route sweep clean;
+320-point narrow probe shows only the two findings already accepted (the
+`aria-hidden` switch track, the measure editor's horizontal scroller).
+
+### Honest status
+
+Verified visually against the running build, not against a real photographed
+page. The OCR prompt still says "Do NOT report articulation or dynamics.
+Nothing reads them", which is now false on both counts — changing it is a
+pipeline decision for the owner, not one to make in passing.
+
+### Rollback
+
+`git revert` the commit. The Bravura subset regenerates with
+`tools/subset-bravura.py`.
+
+---
+
+## 2026-09-01 — Every screen-level empty state sat in the top quarter
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. The layout question I
+deferred twice, settled with the measurement rather than the theory.
+
+**Files:** `mobile/src/components/primitives/ScreenContainer.tsx`,
+`primitives/EmptyState.tsx`, and the nine screens with a screen-level empty
+state.
+
+### Why nothing had worked before
+
+The obvious fix — `flex: 1` on the empty state — does nothing, and that is why
+this sat unfixed. **A `ScrollView`'s content container is sized by its
+content**, so a child asking for the leftover height is asking a box that has
+none to give. `ScreenContainer`'s content style now carries `flexGrow: 1`,
+which makes the container at least a viewport tall and changes nothing else:
+with no `justifyContent` there, shorter content still stacks from the top and
+longer content still scrolls.
+
+`EmptyState` takes `fill`, and the message and its action then sit in the
+middle of the screen. Measured on "Couldn't open this piece" at iPhone-13
+size: the block moved from the top quarter — with roughly seventy per cent of
+the screen blank beneath it and its only exit near the status bar — to the
+vertical centre.
+
+### Opt-in, because it is not always right
+
+`fill` is off by default and the nine screen-level states pass it. Library's
+"No matches" does not: it sits under a search field with the search still on
+screen, and centring it in the page would pull it away from the thing it is
+about. Measured after: it stays at y=216 with the field ending at 143 —
+attached, as before.
+
+### Three-foot test
+
+"Couldn't open this piece" first, "Back" second, the space around them third.
+The emptiness reads as composition now rather than as a screen that failed to
+finish drawing — which is what it read as before, and §3 law 7 is the other
+half: the only way off that screen was a control at the top of it.
+
+**Also this tick, and nothing to fix:** read the other agent's open PR #39
+(durable audio keys, idempotent enqueue, resumable retries). It is sound and it
+is doing for recordings what `upload.ts` already documents for pages and
+avatars — *"Use `upload_url` only for the PUT … Never the URL."* It touches
+`RecordScreen.send()`, which I have been editing, so it will want a merge; my
+branch is currently **0 behind main**, so there is nothing to merge yet. CI on
+my own branch caught the type error from two entries below, exactly as it
+should have.
+
+**Tests:** 944, unchanged — layout facts a source test cannot hold. 23-route
+sweep clean.
+
+**Rollback:** revert the commit.
+
+---
+
+## 2026-09-01 — The password screen that needed the Show control most was the one without it
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Second use of the recipe
+added to `CLAUDE.md` in the entry below: forcing a gated screen into a
+throwaway build to look at it.
+
+**Files:** `mobile/src/components/primitives/RevealPasswordAction.tsx` (new),
+`primitives/index.ts`, `screens/auth/SetPasswordScreen.tsx`,
+`screens/auth/AuthScreen.tsx`, `screens/account/ChangePasswordScreen.tsx`,
+`mobile/src/lib/onboarding.test.ts`.
+
+### `SetPasswordScreen`, rendered for the first time
+
+Reached by following a password-reset link — a recovery path, and one of the
+four screens no sweep can see. It holds up well: no overflow and no undersized
+control at 320 or 390, and its validation says the right things ("Those two
+passwords don't match", "Passwords need at least 6 characters").
+
+One real gap. **Three screens take a password and only two offered a Show
+control** — and the one without it is where someone types a *brand-new*
+password twice on a phone keyboard with no way to check either. The second
+field exists precisely because the first cannot be read.
+
+`RevealPasswordAction` is now one component instead of two near-copies, used by
+all three. Where a screen has two new-password fields it sits on the first and
+governs both — one tap reveals the pair, since hiding one while showing the
+other would be a strange thing to offer.
+
+Measured on each: set-password reveals both new fields together;
+change-password reveals its two new fields and **leaves the current one
+hidden**, which is right; sign-in reveals the password and leaves the email
+field alone. All three 44pt.
+
+**Not a bug, though it looked like one:** Cancel appeared dead on that screen.
+It calls `signOut()`, and the forced build has no session to sign out of. The
+probe's artefact, not the product's.
+
+### And a slip of my own, from the entry below
+
+`npx tsc --noEmit` was not run before that commit — only the tests — and the
+onboarding tests it added omit a required `avatarKey`, so **the last commit
+does not typecheck.** Fixed here. Tests passing is not the check; the two are
+different questions and I answered one of them.
+
+**Tests:** 944. 23-route sweep and the 320pt probe both clean.
+
+**Rollback:** revert the commit.
+
+---
+
+## 2026-09-01 — Onboarding asked twice for the answer that costs something
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`.
+
+**Files:** `mobile/src/screens/onboarding/OnboardingScreen.tsx`,
+`mobile/src/lib/onboarding.ts` (+ test), `CLAUDE.md`.
+
+### Four screens no sweep has ever seen
+
+Continuing the entry below: I stopped tripping over unrendered states and
+listed them. Four screens sit behind auth or account state rather than behind a
+route, so **every sweep in this repository misses all four** — `AuthScreen`,
+`SetPasswordScreen`, `AccountStartupScreen` and `OnboardingScreen`.
+
+Onboarding is the consequential one. It is the first thing a new account sees,
+all three answers are mandatory with no Skip, and it had never been on screen.
+Now recorded in `CLAUDE.md` with the recipe for looking at each: flip the one
+value that gates it in a throwaway build, restore with `diff -q`.
+
+### It started from nothing, and the account was not nothing
+
+The screen held `useState('')` for the name and `useState(null)` for the
+instrument, and never read `/v1/me`. But **onboarding can be answered across
+two sittings**: `PATCH /v1/me` stores what it is given and stamps
+`onboarded_at` only once the *resulting row* carries all three. So someone who
+typed their name, chose a photograph, and was interrupted comes back with both
+on their account — and was asked for all three again.
+
+Including the photograph. `lib/onboarding.ts` says in its own words why that
+one matters: *"the only answer that cannot be supplied by thinking — someone
+signing up away from a picture they are happy with has to stop and find one,
+and the app is shut until they do."* This made them pay that cost twice.
+
+Rendered before: **"Still needed: your name, a photo and your instrument"** on
+an account that already had a name and an instrument. After: **"Still needed: a
+photo"**, with the name field carrying "Alex" and Violin marked
+`aria-checked="true"`.
+
+### Drafts, not values
+
+`nameDraft ?? me?.displayName ?? ''`. `null` means "not answered on this
+screen", which is what lets an empty field be told apart from one nobody has
+touched — so clearing the name really clears it rather than the stored value
+reasserting itself on the next render. Verified: clearing gives *"Still needed:
+your name and a photo."*
+
+`storedPhoto` is a third way to satisfy the same requirement, beside
+`avatarKey` (uploaded) and `photoSelected` (chosen, not yet uploaded), and the
+guard before saving accepts it too — the server reads the resulting row, not
+the body, so a `PATCH` carrying no `avatar_key` still completes an account that
+has one. The rule lives in `lib/onboarding.ts` where it is tested, including
+that a stored photograph does not excuse the other two.
+
+**Tests:** 944, up 4. 23-route sweep clean.
+
+**Rollback:** revert the commit.
+
+---
+
+## 2026-09-01 — Fixtures for the states nobody had looked at, and a promise the app could not keep
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Acting on the entry below
+rather than waiting to trip over the next one.
+
+**Files:** `mobile/src/data/sources/fixtures.ts`,
+`screens/pieceScore/PieceScoreScreen.tsx`, `screens/addPiece/ManualPieceForm.tsx`.
+
+### Reading and failed had never been on screen
+
+Every fixture piece was `transcriptionStatus: 'done'`. So the two states a
+musician meets **immediately after scanning a page** — the most-reached screen
+the app has for someone new — had never been rendered in the only build these
+screens can be driven in. Third time this gap has appeared: the null clef, the
+missing cover, and now these.
+
+`FixturePiece` takes a `reading` override, and there are pieces for both. The
+stage on the in-progress one is a word the worker really writes
+(`fixtures/stages/parity.json` is the contract) and it is the one with
+*measured* progress inside it, so it exercises the stave counter rather than
+only the static bar. The failure reason is one `_FAILURE_REASONS` actually
+produces — a fixture that invented its own wording would be checking a screen
+against a sentence the product never sends.
+
+Both read well. The progress bar measured **180 of 350pt = 51.4%** for "Reading
+stave 3 of 7", which is 0.30 + (3/7) × 0.50 to the decimal — the measured-
+progress rule doing exactly what it claims.
+
+The Brahms piece added below also now says `transcriptionAccepted: true` and
+`pageImageDiscarded: true`, because its photograph is gone *for that reason*.
+Its score screen correctly stops asking it to be confirmed.
+
+### "You can practise it with the metronome" — you cannot
+
+The failed-read screen said it, and the manual-add screen said it, and both
+were wrong. `PieceDetailScreen` gates its practice button on `hasNotation`, and
+**there is no other route to the metronome**. A musician who read that sentence
+and went looking found a screen offering to photograph the page instead.
+
+That screen is the one that is right: recording without notation produces a
+take nothing can align, and it says so plainly — *"InTempo needs the written
+notes and rests to follow your playing."* Three places described this and one of
+them was out of step with the other two and with the code.
+
+Both lines say what is actually true now: the piece keeps its title, its tempo
+and its history, and only the notation is missing.
+
+**Not taken, and it is a real option:** making the promise true instead — a
+metronome-only practice screen for a piece with no notation. It is worth having
+(a failed scan or a hand-entered piece still wants a metronome at the piece's
+tempo) and it is a feature, not a copy fix: the record button would have to be
+suppressed rather than produce an unalignable take. That is the owner's call,
+not something to invent inside a correction.
+
+**Tests:** 940, unchanged. 23-route sweep and the 320pt probe both clean.
+
+**Rollback:** revert the commit.
+
+---
+
+## 2026-09-01 — The placeholder that had never rendered, and a regression from yesterday's fix
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`.
+
+**Files:** `mobile/src/components/pieces/ScoreThumbnail.tsx`,
+`components/primitives/PageHeader.tsx`, `data/sources/fixtures.ts`.
+
+### "It creates some really large box for that piece"
+
+The owner reported this weeks ago and part of it was fixed at the time: the
+server stopped signing a URL for a page it had discarded. The rest of it was
+still there, in the fallback that fix hands over to.
+
+`StaffPlaceholder` draws five ruled lines and insets them with
+`paddingVertical: '22%'` / `paddingHorizontal: '12%'` — and **a percentage
+cannot say "of myself".** CSS and Yoga both resolve percentage padding against
+the *parent's width*. In a 350pt library row that is 77pt top and bottom and
+42pt each side, on a thumbnail asked to be 52×38. Measured: the box came out
+**84×154, holding nothing but padding**, and the row grew from 67pt to 179pt.
+A large empty rectangle where the cover should be, which is exactly the words
+the owner used.
+
+The inset is measured from the box's own layout now — 22% of its height, 12%
+of its width, which is what the percentages were reaching for. Measured after:
+52×38, `padding: 8.36px 6.24px`, row back to 91pt, five hairlines sitting where
+every other row's sheet-music crop sits.
+
+### It had never rendered anywhere
+
+**Every fixture piece carried a photograph**, so `cover.kind === 'staff'` was
+unreachable in the only build these screens can be driven in. Its docstring
+described ruled lines; nothing had ever drawn them.
+
+That is the second time this exact gap has cost something. `UNREAD_CLEF_SCORE`
+exists one file over because the same was true of a null clef — *"the fixture
+build had no piece in it, so the screen that handles the case could not be
+looked at without a live backend, which is how it came to caption the guess
+Treble clef for as long as it did."*
+
+There is a piece with no photograph in the fixtures now, and it is not an edge
+case: `POST /v1/scores/:id/accept` discards the page once a musician confirms
+the reading, so **a library that has been used for a while is mostly pieces
+that look like this.** Its composer is one `canonical` knows, so it is also the
+piece that will show a portrait the day `PORTRAITS` has one.
+
+### And a regression from the entry below
+
+That new piece's screen showed its ⋮ orphaned on its own line under a two-line
+title — caused by the `flexWrap: 'wrap'` added yesterday for the large-text
+case. **Flex decides wrapping from items' base sizes and only then shrinks**,
+so with `flexShrink: 1` a long title demanded its full content width and broke
+the line instead of taking what was left.
+
+`flex: 1` on the title fixes both: a base of zero means the title never forces
+a wrap, so the action stays beside it and the title sets its own text over as
+many lines as it needs — and the wrap still fires when the *action* genuinely
+cannot fit, which is what it was for. Verified on both piece screens at 1×
+(title and action share a line, `y: 68` for each) and across all 22 routes at
+2× (still clean).
+
+Worth recording plainly: yesterday's fix was verified at 2× and not at 1×, and
+the thing it broke was the ordinary case.
+
+**Tests:** 940, unchanged — layout facts a source test cannot hold. 23-route
+sweep and the 320pt probe both clean.
+
+**Rollback:** revert the commit.
+
+---
+
+## 2026-09-01 — What the app looks like at twice the text size
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`.
+
+**Files:** `mobile/src/components/primitives/PageHeader.tsx`,
+`screens/profile/LinkRow.tsx`, `screens/profile/ProfileScreen.tsx`,
+`screens/account/AcknowledgementsScreen.tsx`.
+
+### The audit
+
+`Text` does not set `allowFontScaling`, so it defaults to **true** and every
+word in the app grows with the iOS Larger Text setting. That is the right
+default and it is also an obligation: the layouts have to survive it, and
+nothing here had ever been looked at above 1×.
+
+Simulated by scaling every `fontSize` and `lineHeight` in `typography.ts` in a
+throwaway build, then sweeping all 22 routes for text pushed off-screen or
+clipped by an ancestor.
+
+**At 1.5× one thing failed. At 2× three did.** For an app that has never been
+tested at any size but its own, that is a better result than I expected, and
+the three are worth having.
+
+### `flexShrink` does not shrink anything on the web build
+
+Twice over, and it is the same CSS fact both times: **a flex item's `min-width`
+is `auto` — its own content — so an unbreakable token cannot be shrunk.**
+React Native's layout treats it as `0`, so `minWidth: 0` is a no-op on device
+and the fix in the one place these screens can be driven.
+
+- `LinkRow`'s value had `flexShrink: 1` *and* `numberOfLines={1}` and still ran
+  11pt off the screen with neither taking effect.
+- Profile's identity email had two lines allowed and used one, because
+  "you@example.com" has nowhere to break. It also takes `wordBreak: 'break-all'`
+  on web — the same shim shape as `ToggleRow` and `Input`, and a no-op on
+  device, where React Native already breaks a word too long for its line.
+  Breaking rather than truncating because that block exists to say *which
+  account you are in*, and "you@examp…" does not.
+
+### A title and its action that could not share a line
+
+`PageHeader`'s title row was `nowrap` with only the title able to shrink, so at
+2× Library's **"Add piece" ran 58pt off the screen** — not moved, gone. It
+wraps now: the action drops below the title when they cannot fit, which costs
+nothing at any size where they can.
+
+### A sixteen-letter word
+
+"Acknowledgements" at 2× is 588pt on a 350pt column, and a page title wraps at
+word boundaries, so no container fixes it. The screen is called **"Open
+source"** now — two words, so it can always wrap; it says what the screen
+actually holds; and it is the term the stores use. The Profile row that opens
+it says the same.
+
+**Verified** at 2× on all 22 routes: clean. And at 1× and at 320pt: both
+sweeps still clean, so none of this cost anything at ordinary sizes.
+
+**Not done:** iOS's largest accessibility sizes go beyond 2×, and the real
+setting scales text without scaling the layout constants around it — this
+scaled the ramp, which is close but not the same thing. A device is still the
+only way to see the real one.
+
+**Tests:** 940, unchanged — these are layout facts a source test cannot hold.
+
+**Rollback:** revert the commit.
+
+---
+
+## 2026-09-01 — Eight touch targets that only existed on a phone
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. From a layout audit at
+320pt — the smallest phone still in service.
+
+**Files:** `mobile/src/design/index.ts`, `components/primitives/SearchField.tsx`,
+`SectionHeader.tsx`, `components/notation/Stave.tsx`,
+`screens/auth/AuthScreen.tsx`, `screens/account/ChangePasswordScreen.tsx`,
+`screens/today/WarmupPanel.tsx`, `components/touchTargets.test.ts` (new),
+`components/notation/fit.test.ts` (new).
+
+### `hitSlop` does nothing on the web build
+
+Measured in Chromium on the password screen's **Show** control: a click 8pt
+above it — well inside its 12pt slop — did not activate it; a click on its
+visible **18pt** box did.
+
+`MIN_TOUCH_TARGET`'s own comment said *"use `hitSlop` to make up the difference
+rather than inflating the visual element"*, and eight controls followed that
+advice: the search field's clear button, every section header's action, the
+password reveal, and **all five links on the sign-in screen** — the first
+screen a consumer ever sees, each link one line of type at 18pt, under half the
+platform minimum.
+
+Two other files had already discovered this and written it down beside their
+own fix — `PlaybackSettings` (*"a hit area nothing can see is a hit area
+nothing checks"*) and `TodayScreen` (*"only on device: it has no effect under
+react-native-web"*) — while the token went on recommending it. The same shape
+as the `aria-checked` story two entries below: a fact found repeatedly, with
+the guidance still pointing the wrong way.
+
+All eight are padded to 44 now, the token says why, and
+`touchTargets.test.ts` asserts no `hitSlop` comes back. Measured after: every
+control on every mode of the sign-in screen is 44 or 52pt at both 320 and 390.
+Even where `hitSlop` *does* work, 18 + 2×12 is 42 — the password reveal would
+have been two points short.
+
+### A sixth of the warmup preview was cut off at 320pt
+
+The Today stave engraved to 335pt inside a 280pt box under `overflow: hidden`
+— clipped through a notehead.
+
+**`maxWidth` cannot fix this**, which is worth writing down because it is the
+prop that sounds like it should: it wraps onto further systems and the engraver
+breaks only at a barline, so a bar of four notes behind a clef comes to 335pt
+and stays 335pt however narrow the box is. Measured: `maxWidth: 280` gave two
+systems and a first system still 335 wide.
+
+`Stave` takes a `fitWidth` now and shrinks to it, in **one** corrective pass —
+every geometry constant is multiplied by the scale and nothing else, so the
+engraved width is linear in it and measuring once and dividing lands exactly.
+`fit.test.ts` holds that property, because it is what makes one pass enough:
+if it stops being true the fit will silently miss.
+
+Only ever down. At 390 and 430pt the preview is untouched at 335.
+
+### The probe, and one thing it got wrong
+
+A 320pt pass over 22 routes checking for clipped text and controls under 44pt.
+Its first run flagged the profile switches at 40×20 — a **false positive**:
+`ToggleRow` already hides the inner `Switch` with `aria-hidden` and carries the
+comment explaining why, and the row itself is the 44pt control. Fixing the
+probe by excluding `aria-hidden` subtrees then hid the *real* warmup clip,
+because the stave is decorative and hidden too. `aria-hidden` excuses a control
+from the touch-target floor; it never excuses a visual clip. The two checks are
+separate now.
+
+The measure editor's overflowing note picker is also correct — it is inside a
+horizontal scroller.
+
+**Tests:** 940, up 4.
+
+**Rollback:** revert the commit.
+
+---
+
+## 2026-09-01 — "Back to score" went nowhere, on every screen
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. The third find from
+pressing controls rather than screenshotting them.
+
+**Files:** `mobile/src/navigation/useGoBack.ts` (new), `goBack.test.ts` (new),
+and the twenty screens that offer a back control.
+
+### Forty-four dead controls
+
+`navigation.goBack()` does nothing on the first screen of a stack. Every back
+control in the app was exactly that — 44 call sites across 20 screens, none
+guarded — and **arriving directly at a screen is the ordinary case in the web
+build on Cloudflare Pages.**
+
+Measured in Chromium before the change:
+
+```
+/legal/privacy                  "Back"            → /legal/privacy
+/add/manual                     "Back"            → /add/manual
+/pieces/:id/bars/3              "Back to score"   → /pieces/:id/bars/3
+/help                           "Back to profile" → /help
+/warmup                         "Back to today"   → /warmup
+```
+
+That is worse than a dead button. Three of those labels **name a destination**
+— and the label was already the right answer, sitting next to a call that
+ignored it.
+
+### The fallback was already written down
+
+`useGoBack(fallback)` calls `goBack()` when there is history and navigates to
+the fallback when there is not. Nothing had to be invented for the fallbacks:
+each screen's own `backLabel` says where it goes. "Back to profile" → the
+Profile tab; "Back to score" → that piece's `PieceScore`; "Back to the piece" →
+its `PieceDetail`.
+
+A tab fallback goes through `Tabs` as a nested screen, which *replaces* rather
+than stacking — arriving at Today with a back arrow pointing at a screen you
+were never on is its own kind of wrong.
+
+`VerdictScreen` is the one that cannot name its piece up front: the two error
+branches run before the take has loaded, so the fallback is the Library there
+and the piece once there is one. The success path already navigated to the
+piece by name and is untouched.
+
+### Verified both ways round
+
+Opened directly, each control now goes where its label says: `"Back to score" →
+/pieces/:id/score`, `"Back to profile" → /profile`, `"Back to today" → /`.
+
+And walked in with real history — Library → piece → score → bar 3 — the three
+back presses return through score, piece, library exactly as before. The point
+of `canGoBack()` is that the ordinary path is untouched, and that had to be
+seen rather than assumed.
+
+`goBack.test.ts` asserts no screen contains a bare `navigation.goBack()` again,
+and that the hook is actually wired in at least fifteen of them — a list of
+offenders that is empty because the glob matched nothing would otherwise pass.
+
+**Also found by the same probe and *not* bugs:** pressing an option that is
+already selected changes nothing (the current instrument, the current metronome
+mode, the note already being edited, the view already showing), and "Choose
+images" / "Change photo" open an OS picker a headless browser has no answer
+for.
+
+**Tests:** 936, up 2.
+
+**Rollback:** revert the commit.
+
+---
+
+## 2026-09-01 — Nine more controls with a state nothing announced
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Found by taking the lesson
+of the entry below — that a screenshot sweep cannot see a control that renders
+and does nothing — and **pressing** things across the app instead of looking at
+them.
+
+**Files:** `mobile/src/components/primitives/SegmentedControl.tsx`,
+`components/profile/InstrumentChoice.tsx`, `components/score/PlaybackSettings.tsx`,
+`navigation/BottomTabBar.tsx`, `screens/scanner/ScannerScreen.tsx`,
+`screens/measureEdit/MeasureEditScreen.tsx`,
+`screens/pieceScore/PieceScoreScreen.tsx`, `screens/verdict/MeasureRow.tsx`,
+`screens/ariaState.test.ts` (was `switchState.test.ts`).
+
+### The same react-native-web fact, for the fourth time
+
+`accessibilityState` produces no ARIA attribute. `switchState.test.ts` was
+written two days ago because that fact had been discovered three separate times
+— and it only checked `role="switch"`. An audit of the score screen found the
+segmented control announcing "Notation, tab" and "Original, tab" with **no
+indication of which was showing**, and a grep then found **nine** controls in
+the same state: both segmented controls, the bottom tab bar, the clef chooser,
+the instrument choice, the measure editor's note and duration pickers, the
+"listen from bar" picker, the scanner's flash toggle, and the verdict rows.
+There was not one `aria-selected`, `aria-pressed` or `aria-checked` in the
+codebase outside the four switches.
+
+**The bottom tab bar announced four identical tabs.** That is the app's primary
+furniture, on every screen.
+
+### The attribute depends on the role, and the wrong one is as silent as none
+
+`aria-selected` on a plain button is ignored by assistive technology, so this is
+a pairing rather than a presence: `tab` → `aria-selected`, `radio`/`switch`/
+`checkbox` → `aria-checked`, `button` → `aria-pressed`. Roles were left exactly
+as they were; only the attribute each role needs was added.
+
+`ariaState.test.ts` replaces `switchState.test.ts` and checks the pairing over
+every `accessibilityState` in the tree. A role decided at render time —
+`MeasureRow` is a button only when it has a figure to reveal — is checked more
+weakly, for *some* ARIA state, and says in its message that it could not read
+the role. Verified failing by deleting `aria-selected` from `SegmentedControl`.
+
+### Verified on the running app, not only in the source
+
+Read off the DOM: the score view reports `Notation selected=false / Original
+selected=true`; the bottom tab bar marks exactly one tab `selected=true` on each
+of the four routes; the measure editor's pickers report `pressed=true` on the
+note and the duration actually chosen; Profile's switches report `checked`.
+
+**Also checked and not a bug:** "Digital score" and "Original pages" on the
+piece screen both navigate to `/score`, which looked like two names for one
+destination. They carry `?view=notation` and `?view=original`, and the screen
+opens on the right one.
+
+**Noted, not changed:** `SegmentedControl` is `role="tab"` everywhere, including
+where it is a *setting* — the instrument and the metronome mode on Profile.
+`tab` implies a tabpanel that does not exist there; `radiogroup` would be more
+truthful. It announces correctly either way, so this is a semantics question for
+its own change rather than a fault to patch in this one.
+
+**Tests:** 934, up 9.
+
+**Rollback:** revert the commit.
+
+---
+
+## 2026-09-01 — The composer suggestions never worked, on the one screen that had them
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`.
+
+**Files:** `mobile/src/components/pieces/ComposerField.tsx`,
+`screens/addPiece/ImportFile.tsx`,
+`screens/transcriptionReview/TranscriptionReviewScreen.tsx`,
+`screens/pieceDetail/PieceDetailScreen.tsx`,
+`mobile/src/screens/composerField.test.ts` (new).
+
+### Tapping "Ludwig van Beethoven" left the field reading `bee`
+
+The owner asked for this feature — *"if they choose a composer (let them have a
+dropdown + search)"* — and the component exists, is documented, and **did
+nothing**. The list appeared, the right name was in it, and tapping it closed
+the list and changed no text. Which looks exactly like a selection that worked
+and then didn't take.
+
+Diagnosed rather than guessed at, after two wrong fixes:
+
+1. `onPressIn` set a guard so `onBlur` would not close the list. No change.
+2. `onPressOut` stopped closing it, in case the order was wrong. No change.
+3. Instrumented the handlers: **only `blur` ever fired.** No press handler ran
+   at all.
+4. Raw DOM listeners on the row itself, capture phase:
+   `row:pointerdown → row:mousedown → row:REMOVED`.
+
+The press blurs the input, `focused` goes false, and the row unmounts **between
+the mousedown and the mouseup** — so there is no press for a press handler to
+run. No guard inside the press can fix it, because the press handler is the
+thing that never runs; and no timer can, because a `setTimeout` queued on the
+mousedown fires a millisecond later while a real finger lifts after a hundred.
+
+### So the list is not tied to focus any more
+
+`open` is set by **typing**, and cleared by the three things that mean the field
+is answered: a suggestion chosen, the text already naming somebody
+(`canonical`), or nothing typed at all. Focus re-opens it only when there is
+text to suggest about — on a blank field it would drop five rows the moment the
+field is touched and push the rest of the form down by them.
+
+The cost is that a half-typed name whose musician moved on leaves its row on
+screen. It is stable rather than jumping, it is still tappable, and it goes as
+soon as the name settles. Against a feature that did not work at all, that is
+the trade taken.
+
+### And now every screen has it
+
+Three of the four screens that ask for a composer used a bare `Input`, and the
+one with the good field was `ManualPieceForm` — the least-used of the routes.
+The worst omission was the **MusicXML import**, where the name arrives out of
+the file as "J.S. Bach" or "BACH" or "Johann Sebastian Bach (1685-1750)": the
+route most likely to produce a variant spelling, and the one with no way to
+settle it. Naming a scan and renaming a piece are now the same field too.
+
+That matters for exactly the reason the component's own docstring gives: four
+ways of writing Bach are four rows and four covers in a library, and
+`portraitFor` matches on the canonical name.
+
+`composerField.test.ts` reads every screen and component and asserts that
+anything asking for a composer asks through `ComposerField` — a source-text
+guard, the third of its kind here, because a fifth screen will want a composer
+one day.
+
+**Verified** in Chromium at iPhone-13 size, on the two screens reachable
+without a file: focusing a blank field shows no rows, typing `bee` shows one,
+tapping it fills the field with "Ludwig van Beethoven" and closes the list. On
+the rename form, pre-filled with a name `canonical` already knows, focus shows
+nothing — which is the settled case working. 23-route sweep clean, `.env`
+restored byte-identical.
+
+**Tests:** 925, up 6.
+
+**Rollback:** revert the commit.
+
+---
+
+## 2026-09-01 — The fermata and the ornament, which the entry below left undone
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Closes the "known,
+unfixed" paragraph of the entry below it.
+
+**Files:** `backend/app/services/classification.py`, `analysis.py`,
+`app/tests/test_classification.py`, `test_analysis.py`;
+`mobile/src/lib/verdict/measureReading.ts` (+ test), `data/types.ts`,
+`data/sources/api.ts` (+ test), `data/sources/fixtures.ts`,
+`screens/verdict/MeasureRow.tsx`, `VerdictScreen.tsx`.
+
+### One fact, not four booleans
+
+`compute_deltas` forces `band` to `on` for four kinds of note, and they are not
+one reason wearing four names. A `rit.` says the beat stops being steady. A
+**fermata** says one length is not written down at all — the mark exists
+precisely to hand it to the player. An **ornament** and the note it decorates
+are placed by `ORNAMENT_SHARE`, a number this code invented to split the
+difference between two readings an engraver may have meant.
+
+What they share is that the deviation is real and is **not an error**, and only
+the first had a name on the wire. `Delta.timed` is that fact, computed in the
+same expression that decides the band, so the two can never disagree.
+
+### A bar's average included numbers the pipeline had refused
+
+`worst_band` was always safe — an untimed note's band is `on`, so it cannot be
+the worst. `avg_delta_pct` was not, and it is the number the app draws as the
+bar's deviation bar. **One grace note in a bar of eight moved that bar's whole
+reading**, measured against a time nothing on the page states.
+
+It is now the mean over timed notes, falling back to the whole bar when nothing
+in it was timed — a field that is sometimes absent is worse than one that is
+sometimes not a verdict, and `timed_note_count` is what says which.
+
+`rolling_trend` filters on `timed` rather than `under_tempo_change`: the
+narrower name excluded the ritardando and left the fermata and the ornament in,
+which is the same mistake one word smaller.
+
+### "Not timed" is now reachable three ways
+
+`readMeasure` reports it for `timedNoteCount === 0` as well as for a tempo
+change. A bar made **entirely** of untimed notes is short and common — a held
+final chord, a bar that is one ornamented note — and it read "On tempo": the app
+agreeing that a bar was played in time when nothing in it was timed.
+
+`null` is a take analysed before the pipeline reported the count, and reads as
+"all of them". Reading a missing field as zero would have relabelled every
+measure of every take a musician has already recorded.
+
+### A tap that answered nothing
+
+Those rows were still buttons under a line reading *"Tap a measure for its
+timing."* Tapping highlighted them and did nothing. They are not buttons now,
+and the line is only drawn when some measure has a figure behind it — an
+instruction for an interaction the screen does not offer is the same dead end
+as an empty state naming an action it has no route to, which is the entry two
+above this one. The explanation stays on the row, as text: *"Measure 13:
+nothing here could be timed against the page."*
+
+### Three-foot test
+
+Unchanged from the entry below — the numbers and the words first, the coloured
+bars second, the empty tracks third. Bar 13 joins 11 and 12 in reading as
+*nothing was measured here*.
+
+**Verified** in Chromium at iPhone-13 size: rows 1–10 are buttons and reveal
+their figure (`5 → +12%`); rows 11, 12 and 13 have no button role and carry
+their full sentence as their label. 23-route sweep clean, `.env` restored
+byte-identical.
+
+**Tests:** 919 in the app, up 5; 1831 in the backend, up 2.
+
+**Rollback:** revert the commit.
+
+---
+
+## 2026-09-01 — A written rit. reported as "On the beat", with a long bar beside it
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`.
+
+**Files:** `mobile/src/lib/verdict/measureReading.ts` (new) + test,
+`mobile/src/data/types.ts`, `data/sources/api.ts` (+ test),
+`data/sources/fixtures.ts`, `screens/verdict/MeasureRow.tsx`,
+`backend/app/services/classification.py`, `app/tests/test_classification.py`.
+
+### Three statements about one bar, two contradicting the third
+
+`compute_deltas` forces `band` to `on` for every note under a written tempo
+change — the tolerance bands measure distance from a *steady* beat and the page
+has said there is none — while still reporting the **real** `avg_delta_pct`.
+Both facts are correct. The app carried neither through `toTake` and rendered
+what was left, so a bar where a musician slowed exactly as marked came out as:
+
+- a deviation bar pushed hard to one side,
+- coloured as though nothing were wrong,
+- labelled **"On the beat"**,
+- revealing **-30%** on a tap.
+
+The app took credit on the musician's behalf for a bar nobody judged, and drew
+a large error next to the word for no error. `types.ts` already carried the
+comment — *"Nothing renders this yet, and when something does: a rushing or
+dragging colour here would be colouring a bar the page said would not be
+steady"* — which describes the right fix for a field that was being dropped one
+file away.
+
+### What a row like that says now
+
+`readMeasure` owns it. **"Not timed"**, in the tertiary ink, with an empty
+track. Not "Tempo change": every other entry in that column answers *how did I
+play this bar* — "On tempo", "Slight rush", "Rushing" — and "Tempo change"
+answers a different question, about what is printed. It also wrapped to two
+lines at 13pt and made one row of twelve taller than the rest. The full
+sentence lives in the accessibility label, where there is room:
+*"Measure 11: under a written tempo change, not timed."*
+
+**"Uneven" is the one thing worth saying about such a bar**, and the pipeline
+already worked it out and threw it away at the client boundary.
+`uneven_measures` measures how much each interval grew against what the take
+usually does — an even slowing reads 9 ms where a lurch reads 44. That row is
+ochre, because it *is* a remark about playing.
+
+### The averages, and the trend
+
+`meanDeviationOf` now skips untimed bars: averaging a refused number into "how
+steadily was this played" answers the question with something nobody judged. A
+take that is entirely a `rit.` yields no number at all — the same answer the
+window filter and the failed-run filter give.
+
+**`rolling_trend` excludes them too, which is a backend change.** It already
+excluded slur-interior notes, "their timing is musically free"; a note under a
+written change qualifies for a stronger reason — `compute_deltas` refuses to
+band it at all. Without this the trend line dived at the end of every piece that
+closes with a ritardando, on the same screen whose measure list now says those
+bars were not timed. One line, one test, and the precedent was on the line above.
+
+### The fixture carries a tempo change now
+
+Deliberate, and the argument is already in that file: `UNREAD_CLEF_SCORE` exists
+because "the fixture build had no piece in it, so the screen that handles the
+case could not be looked at without a live backend — which is how it came to
+caption the guess *Treble clef* for as long as it did." Same here. Bars 11 and
+12 of the sample take are under a change, with large deviations and `band: on`,
+because that combination is exactly what used to render wrong.
+
+### Three-foot test
+
+The measure list: the bar numbers and the words first, the coloured deviation
+bars second, the two empty tracks at the end third — which read as *nothing was
+measured here*, which is what they mean. One line per row, rhythm intact.
+
+**Verified** in Chromium at iPhone-13 size: bars 1–10 unchanged, bar 11 reads
+"Not timed" with an empty track and reveals no figure on tap, bar 12 reads
+"Uneven" in ochre. Accessibility labels read back in full. 23-route sweep clean,
+`.env` restored byte-identical.
+
+**Known, unfixed:** `compute_deltas` also refuses to band notes after a fermata
+and grace notes and the notes they decorate, for reasons just as good. `Delta`
+does not carry those flags, so neither the trend nor the row can distinguish
+them yet, and they still show as "On tempo". Widening `Delta` and `PerMeasure`
+is the same shape of change as this one and wants its own.
+
+**Tests:** 914 in the app, up 8; 1829 in the backend, up 1.
+
+**Rollback:** revert the commit.
+
+---
+
+## 2026-09-01 — 100% of a corpus with no short notes in it
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`.
+
+**Files:** `mobile/src/lib/notation/engrave.ts`, `fromScore.ts`,
+`components/notation/Stave.tsx`, `mobile/src/lib/warmup.ts` (+ test),
+`mobile/src/lib/notation/durations.test.ts` (new), `fromScore.test.ts`,
+`tuplets.test.ts`, `tools/subset-bravura.py`, `tools/engraver-coverage.py`,
+`mobile/assets/fonts/Bravura.otf`, `CLAUDE.md`, `DECISIONS.md`.
+
+### The number was right and it was measuring the wrong thing
+
+`tools/engraver-coverage.py` reported **0 of 393 notes with no glyph** across
+every fixture in the repository, worst page 100%. Against the **schema** — the
+closed `Duration` union the backend is allowed to send — the app could draw
+**33 of 46**. The corpus cannot see the difference because not one of its ten
+pages holds a note shorter than a sixteenth, and the tool's own header already
+said why: every fixture in it is a page somebody chose to check something with.
+
+`DECISIONS.md` carries the call. In short: growing the corpus does not converge,
+because the failure is the page nobody thought to add.
+
+### What now draws — 42 of 46
+
+Thirty-seconds and sixty-fourths (three and four tails), their rests, dotted
+sixteenths, dotted wholes, **double dots**, and the breve with its rest. The
+tuplet forms came free: `tupletOf` strips the prefix and looks up what is left,
+which is also why `breve` and `double_whole` are both keys — the schema spells
+the plain value one way and `triplet_breve` the other, and one spelling in the
+table would have left the other silently dropped.
+
+**`Stave` drew one dot whatever the count.** So a double-dotted quarter came out
+as a dotted quarter: 1.5 beats where the page says 1.75, in the same ink as the
+notes beside it that are right — exactly the substitution `fromScore` refuses to
+make with values, happening a layer down with dots. A double dot adds three
+quarters of the base value and is how a march is written; the first real page
+this project has seen is headed *Alla marcia*.
+
+Adding to `NoteValue` forced three tables to answer — `QUARTERS`, `TAILS`, and
+`warmup.ts`'s `VALUE_DURATIONS` — which is what that union's comment promises
+and it held.
+
+### The flag that fell outside the box
+
+Measured out of Bravura: **every flag reaches the same 3.25 staff spaces back
+toward the notehead**, whatever its value, so an eighth and a sixteenth sit
+entirely inside a 3.5-space stem. The extra hooks of a thirty-second and a
+sixty-fourth stack the *other* way, past the stem tip — 0.69 and 1.50 spaces.
+The system's height is measured from `stem.to`, so a sixty-fourth's outer hooks
+were cut off. `flagEdge` puts them in the extents, the same fix and the same
+shape as the accent above a high note.
+
+**My first test of this asserted the wrong thing** — that the box grows for
+every added value. It grew for the sixty-fourth and not the thirty-second,
+because the box already carried 0.8 spaces of slack and 0.69 fits inside it.
+The rule is that no flag falls outside, not that every value costs height; the
+test now says that, per value, with the font measurement written into it
+independently of the engraver's own table.
+
+### Four values still refused, and named
+
+`one_twenty_eighth` and its three tuplet forms. Five beams at this stave size is
+a smudge rather than a rhythm, and `staveScoreFor` counts what it leaves out and
+the screen says so — a better answer to a musician than an illegible mark
+presented as a reading. `DELIBERATELY_UNDRAWN` in `durations.test.ts` is the
+list, so the day one becomes drawable the list gets shorter and the test says so.
+
+### Tests whose examples expired, again
+
+Eight failures, all of the same kind and all the good kind: `thirty_second`,
+`sixty_fourth` and `double_dotted_half` were the tests' examples of *undrawable*
+and they now draw. The invariant — never drawn at a length the page does not
+print — is untouched; the examples moved to the 128th family. One of them says
+so in its own comment: *"If a future change makes both of these drawable,
+replace them; do not weaken the assertion."* That is the fourth time that test's
+example has moved.
+
+### Verified
+
+Rendered a sampler page at 4× with every new value on it: three- and four-beam
+groups, a lone thirty-second with three flag hooks, a breve and a breve rest, a
+dotted whole, and a double-dotted half rest with both dots clear of each other
+and of the staff line. An ordinary Kreutzer page re-rendered identically —
+sixteenths beamed in twos, the dotted-eighth-plus-sixteenth figure with its
+secondary beam stub. Font subset 25.2 KB → 27.0 KB, six new glyphs confirmed
+present in the built `.otf`. The sampler build patched `fixtures.ts`, restored
+from a copy with `diff -q`; `.env` likewise. 23-route sweep clean.
+
+**Tests:** 904 pass, up 98 — most of them `it.each` over the schema's durations,
+as notes and as rests.
+
+**Rollback:** revert the commit. The font is regenerated by
+`tools/subset-bravura.py` from the upstream Bravura.
+
+---
+
+## 2026-09-01 — Four tabs that said "check your connection" and gave nothing to press
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`.
+
+**Files:** `mobile/src/screens/today/TodayScreen.tsx`,
+`library/LibraryScreen.tsx`, `insights/InsightsScreen.tsx`,
+`profile/ProfileScreen.tsx`, `insights/copy.ts` + `copy.test.ts`,
+`mobile/src/screens/loadErrors.test.ts` (new).
+
+### The most-reached broken state in the app
+
+Every tab a musician lives in rendered the same dead end when a fetch failed:
+a title, `describeLoadError(...)`, and **no action**. Pull-to-refresh is the
+unwritten answer, and it is invisible — and on the web build with a mouse it
+does not exist at all. `AccountStartupScreen` has had a "Try again" button since
+it was written, so the pattern was never in doubt; it just was never applied to
+the four screens in the tab bar. A flaky connection is the ordinary case on a
+phone, which makes this the most-reached broken state in the product rather than
+an edge one.
+
+All four now offer "Try again", reading "Trying…" and refusing further taps
+while the refetch is in flight — `EmptyState.actionDisabled` exists precisely
+because a label that changed while the button stayed pressable once started two
+readings of the same page.
+
+`loadErrors.test.ts` reads the source of every screen, finds every
+`EmptyState` whose description is a `describeLoadError(...)`, and asserts it
+carries both `actionLabel` and `onActionPress`. Same technique as
+`switchState.test.ts` and for the same reason: no React Native testing library
+here, and four screens making one mistake is what a test is for. Verified
+failing by deleting the props from `LibraryScreen`.
+
+**The startup gate covers the first load, and only that.** My first probe made
+every fixture read throw and got "Couldn't open your account" on all four tabs —
+`AccountStartupScreen` catches a cold start before any tab renders. These four
+states are reached by the *second* failure: the account opened, the network
+dropped, a tab refetched. Worth writing down, because it is why they were easy
+to miss.
+
+### An empty state that named an action it did not offer
+
+Insights told a musician with no history to "record yourself playing a piece"
+and gave them nothing to press. Today had exactly this bug and carries a comment
+about the fix; Insights kept it.
+
+`firstStep(pieceCount)` decides what to offer, because the answer is not one
+thing: an **empty library** needs a piece before a take is possible at all, so
+"Record a take" would be the same dead end one screen further on. Empty library
+→ "Add your first piece", opening the same `AddPieceSheet` that Today and
+Library open. A library with pieces → the Library tab, labelled "Record this
+piece" for one and "Choose a piece to record" for more — picking one on the
+musician's behalf would open the microphone on something they did not choose.
+
+The rule is in `copy.ts` with the other sentences this screen assembles, where
+it is tested; the screen owns the navigating.
+
+`useLibrary()` on Insights shares React Query's cache with the Library tab, so
+on a phone that has opened the app it costs nothing.
+
+### Three-foot test
+
+Insights, day one: **"No practice recorded yet"** first, **"Add your first
+piece"** second, the tab bar third. Load failure: the title, then "Try again",
+then the tab bar. One question, one answer, on both.
+
+**Noted, not changed:** a screen-level empty state sits in the top third with
+the rest of the screen blank below it, which reads as unfinished rather than
+composed, and puts its action outside the thumb zone (§3 law 7). Today's
+first-run screen already does the right thing with a footer. Fixing it properly
+means changing how `EmptyState` lays out inside `ScreenContainer`'s ScrollView —
+`flex: 1` does nothing there without `flexGrow` on the content container — and
+that wants measuring, not guessing, so it is its own change.
+
+**Verified** in Chromium at iPhone-13 size against three builds: the shipping
+fixtures build, one where the reads fail (Today, Library and Insights each show
+"Try again"; Profile's own source was untouched and the guard test covers it),
+and one with an empty account, where Insights offers "Add your first piece", the
+sheet opens, and choosing "Photograph sheet music" lands on `/scan`. The
+throwaway builds patched `fixtures.ts`; it was restored from a copy and checked
+with `diff -q`, as was `.env`. 23-route sweep clean.
+
+**Tests:** 806 pass, up 9.
+
+**Rollback:** revert the commit.
+
+---
+
+## 2026-09-01 — Leaving mid-take threw the take away and said nothing
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`.
+
+**Files:** `mobile/src/screens/record/RecordScreen.tsx`,
+`mobile/src/lib/record/leaving.ts` (new), `leaving.test.ts` (new).
+
+### The cleanup was right, and that was the problem
+
+`RecordScreen` releases the microphone on unmount — "leaving mid-take, back
+gesture, a deep link, anything, has to release the microphone. Nothing else
+will." Correct, and **silent**, because there is nothing to say about a
+microphone. What went with it was the recording: two minutes of playing, one
+reflex tap on the back chevron, gone, with no dialog and nothing to undo it.
+
+Leaving now goes through `leavingRecord`. It asks about exactly two things —
+a take being recorded, and a finished take whose upload failed and which the
+screen is at that moment offering to send again. Both are audio that exists only
+in memory. Everything else leaves without a word.
+
+**No duration threshold.** "Longer than N seconds" puts a number in front of the
+question actually being asked, which is whether anything would be lost; and by
+the time the phase is `recording` the musician has already sat through a whole
+count-in bar, so there is no accidental-tap case left for a threshold to absorb.
+
+### `beforeRemove`, not the chevron
+
+The chevron is the one exit that is *not* the risk. The swipe-back gesture,
+Android's system back and the browser's back button all remove the screen
+without touching a control the app drew, so a guard on the button would have
+covered the deliberate exit and missed every accidental one. The listener holds
+the navigation, raises the dialog, and replays the held `event.data.action` if
+the musician confirms — so back goes where back was going.
+
+### The bug this introduced, and the shape of it
+
+`beforeRemove` fires **inside** the `navigation.replace` call, before React has
+committed anything set on the lines above it. So a listener closed over `phase`
+and `pendingTake` is one render stale exactly when it is consulted — and the
+first thing that broke was the success path: a retried take is accepted, `send`
+clears the held take and replaces the screen with the verdict, and the guard,
+still seeing an unsent take, blocked it and asked whether to discard a take that
+had just been accepted. Refs are the fix, not a dependency array: `phaseRef` is
+written by `goPhase` at the same instant as the state, and the guard reads
+`unsent.current` rather than `pendingTake`.
+
+This is the second reason the rule sits in a module. It could not have been
+tested where it was, and the failure was invisible in the diff.
+
+### Two controls, one label
+
+On the count-in screen the chevron read **"Cancel count-in"** — the same words
+the record button below it announces — and it did something no other chevron in
+this app does: it cancelled the count and stayed put. A screen reader announced
+one label for two controls, and the glyph meant one thing in one phase and
+another in the next. The header now says "Back to the piece" in every phase, and
+means it. Nothing in the rule stops the count-in or releases the microphone:
+the screen's unmount cleanup does the first and `useMetronome`'s does the second,
+whichever way the musician left, and repeating them would be a second place for
+them to be wrong.
+
+`Phase` is now an alias of the module's `RecordPhase`. Two copies of that union
+would let a phase be added to the screen and not to the rule, where an unknown
+phase falls through to "just leave" — the answer that loses a take.
+
+### Three-foot test
+
+On the screenshot: **"Discard this take?"** first, the two buttons second, the
+dimmed piece title behind third. One question, two answers, nothing else. The
+button that keeps the recording says "Keep recording" rather than "Cancel" —
+half the words on this screen are already about cancelling something.
+
+**Open, deliberately not changed:** the destructive answer is the filled ink
+button and the safe one is outlined, here and in every other `ConfirmDialog` in
+the app. Fixing that means either a danger colour the palette does not have or
+inverting the emphasis of every destructive confirm — a look-and-feel decision
+for the owner, not a side effect of this change. The wording and the left/right
+positions already carry it.
+
+**Verified** in Chromium at iPhone-13 size against a fresh fixtures build, with
+a fake microphone: count-in announces `["Back to the piece", "Cancel count-in"]`
+— one each; browser back mid-take is blocked at `/record` with the dialog up;
+"Keep recording" leaves it recording; "Discard" lands on the piece; and a take
+carried through to Stop reaches `/analyses/fixture-take-1` with no dialog at
+all. 23-route sweep clean, no console errors, no horizontal overflow. Fixture
+`.env` restored byte-identical.
+
+**Lesson, again:** the first run of this probe measured a **three-hour-old
+bundle**. `pkill -f "serve -s dist"` matched the very shell running it and killed
+that instead, so my own server never bound and the stale one kept the port. The
+tell was the app showing behaviour whose string was not in the bundle on disk.
+Never `pkill -f` a pattern that appears in your own command line; kill by PID.
+
+**Tests:** 797 pass, up 7.
+
+**Rollback:** revert the commit.
+
+---
+
+## 2026-09-01 — The editor could not undo the fault the page sent it to fix
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Follows the entry below:
+having drawn ties, the obvious next question was whether a wrong one can be
+corrected. It could not.
+
+**Files:** `mobile/src/screens/measureEdit/MeasureEditScreen.tsx`,
+`mobile/src/screens/switchState.test.ts` (new).
+
+### A dead end with directions on it
+
+`validate.py` flags a **broken tie** — a curve between two different pitches,
+which is a slur written as a tie or a misread notehead — and `PieceScoreScreen`
+turns that into a caveat line that takes the musician to this editor. The
+editor could change durations, rests, pitch, and add or delete notes. It had no
+control at all for the tie itself.
+
+So one of the two readings was fixable (correct the notehead) and the other was
+not (say "that is not a tie"), and the app never distinguished them. **Tie to
+next** is now a switch beside Rest.
+
+It sits with Rest and not with the pitch controls because those two are the
+marks that change the *timeline*. A tie removes an onset: `scheduleScore` folds
+a tied pair into one sound and `alignment.py` expects one attack, so a tie the
+page never had costs the musician a note the analysis is waiting for — the same
+argument that put pitch in this screen in the first place.
+
+**Turning a note into a rest clears the tie.** `readTies` already ignores a tie
+on a rest, so nothing misreads it today; leaving the flag set stores a tie the
+page never had, and it would reappear the moment the rest became a note again.
+The control is hidden on a rest for the same reason — a switch that means
+nothing where it is shown is worse than no switch.
+
+### `aria-checked`, found for the third time
+
+react-native-web emits `aria-checked` and does **not** derive it from
+`accessibilityState`. A switch with only `accessibilityState={{ checked }}`
+announces its label on the web build and never its state: "Rest", never "Rest,
+on". `PieceScoreScreen` and `RecordScreen` each carry a comment saying so, and
+`ToggleRow` was fixed when the profile was audited — and this screen's rest
+toggle had it wrong the whole time in between.
+
+Three independent discoveries of one fact is what a test is for.
+`switchState.test.ts` reads the source of every screen and component, finds
+every `accessibilityRole="switch"`, and asserts the element carries
+`aria-checked=`. Source text because there is no React Native testing library
+here (`DECISIONS.md`, 2026-08-24) — the same approach `cameraResolution.test.ts`
+takes.
+
+**It passed twice while checking nothing**, and both failures are worth
+recording because they are the standard ways this kind of test lies:
+
+1. `import.meta.glob` was aliased to a variable. It is a **compile-time Vite
+   transform** and has to be called literally; aliased, it matched no files and
+   every assertion passed vacuously. There is now an explicit case asserting the
+   glob found switches at all.
+2. The assertion looked for the string `aria-checked`, and the comment
+   *explaining* `aria-checked` sits inside the very element it describes — so
+   deleting the prop left the word behind. Comments are stripped before
+   scanning, and the needle is `aria-checked=`, with the equals.
+
+It also enumerated all 84 `.tsx` files, reporting 80 green cases that examined
+nothing; it now runs over the four files that actually declare a switch.
+
+**Verified** by deleting the prop from `ToggleRow` and watching the guard fail
+with the file named, then restoring it (`diff -q`, identical). In the browser at
+iPhone-13 size: `Rest=false | Tie to the next note=false`, tapping the tie
+reports `true` and enables Save, and on a rest the tie control is gone.
+
+**Tests:** 790 pass, up 5.
+
+**Known, unfixed:** the fixture take still reports 12 measures for a demo score
+with 3, and the count-in screen has two controls both labelled "Cancel
+count-in".
+
+**Rollback:** revert the commit.
+
+---
+
+## 2026-09-01 — Two noteheads, one sound, and nothing joining them
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Eighth finding of the
+music-accuracy audit, and the last field on `ScoreNote` the app was not reading.
+
+**Files:** `mobile/src/lib/notation/engrave.ts`, `fromScore.ts`,
+`components/notation/Stave.tsx`,
+`mobile/src/lib/notation/ties.engrave.test.ts` (new).
+
+`tied_to_next` has been read off the page since Batch 2. `ties.ts` mirrors the
+backend's reading of it — one pitch to itself, across barlines, never a slur —
+and `scheduleScore` folds those notes into **one long note**. The page drew two
+separate noteheads with nothing joining them.
+
+Three readings of the same bar: the app plays one note, `alignment.py` expects
+one attack, and the page shows two. Two of them agree with each other and
+neither agrees with the thing the musician is looking at.
+
+### The reading is shared, not reimplemented
+
+`fromScore` calls the same `readTies` that `scheduleScore` does. That is the
+whole point: a curve is drawn exactly where a note is held, so the app cannot
+show a tie it does not play or play one it does not show. It is indexed against
+the flat note list with a **precomputed per-measure offset**, because the walk
+can collapse several measures into one multi-bar rest and a running counter
+would drift the first time it did.
+
+A continuation whose start was dropped — an unplaceable pitch — draws nothing. A
+curve back to nowhere is worse than no curve.
+
+### The half-curves are the ordinary case, not the exotic one
+
+A tie broken by a line break is drawn as a curve trailing off the end of the
+first system and another leading in on the second. Ties across barlines are the
+commonest kind there is and `packSystems` breaks on barlines, so this happens
+constantly; without it a tie at a break simply vanishes.
+
+The leading half needed room reserved for it. At the start of a system the first
+note sits at the left margin with no gap to borrow, so the curve came out
+**zero-length, on top of the notehead** — a speck. `TIE_ARRIVAL_ROOM` is spent
+between the head and the note, which also widens the gap before a tied note
+mid-system, which is what an engraver does anyway: a tie needs somewhere to be.
+Sized by looking at it, twice.
+
+### Kept apart from slurs on purpose
+
+Same shape, same renderer, different array. A slur phrases notes; a tie says two
+noteheads are one sound. Sharing the array would mean a future change to how
+slurs are placed quietly moving ties.
+
+**Verified** by seeding a tie inside bar 1 and one across the bar 2 → bar 3 line
+break, at 4x: a full curve under the two D4s, a trailing half off the end of
+system one, a leading half arriving at the whole note on system two. Fixture
+restored byte-identical, route sweep clean.
+
+**Tests:** 785 pass, up 8.
+
+With this the app draws every field the pipeline reads: clefs, key and time
+signatures, spelled accidentals, noteheads and stems, beams and flags, dots,
+rests and multi-bar rests, tuplets, chords, slurs, articulations, repeats,
+endings, and ties.
+
+**Rollback:** revert the commit.
+
+---
+
+## 2026-09-01 — First and second endings, which finish the repeat
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. The piece of work the entry
+below names as the next one.
+
+**Files:** `mobile/src/lib/notation/engrave.ts`, `fromScore.ts`,
+`components/notation/Stave.tsx`, `screens/pieceScore/PieceScoreScreen.tsx`,
+`mobile/src/lib/notation/repeats.test.ts`.
+
+The repeat signs went in without brackets, which told a musician to go back and
+said nothing about playing a different bar the second time — half an
+instruction, on a page whose playback has taken the endings since
+`measuresInPlayOrder` was written.
+
+**Closed at the right for a first ending, open for the last one.** That
+difference is the whole reading of the bracket: the repeat sends you back from a
+first ending, and you carry on out of the final one. Drawing both the same says
+nothing, and it is the assertion the test leads with.
+
+### Spanned from measures, not from items
+
+A bracket covers *bars*, and `measureSpans` already records where each one
+starts and stops on each system. That is also what makes a bracket cut by a line
+break come out right with no special case: each system covers the bars it holds,
+and only the system holding the ending's **last** bar hooks down at the right.
+
+Built after every other extent is known, because it has to clear beams, slurs,
+articulations and a tuplet bracket — anywhere else on the system and it would
+have to guess.
+
+### Two placement bugs, both visible only when drawn
+
+- **The number printed through the bracket line.** Its baseline was the hook's
+  end, and a numeral's cap reaches about 0.9 spaces above its baseline — so the
+  digit crossed the rule it hangs from. The hook is deeper now and the baseline
+  is measured against the cap rather than against the hook.
+- **A bracket opening a system started inside the key signature.** A measure
+  that opens a system has its span begin half a note-gap before the music, which
+  is harmless for a barline — none is drawn there — and prints a bracket over
+  the sharps. Clamped to the head's right edge.
+
+**Test premise moved:** four new cases failed at first because hand-built stave
+items carry no `measureNumber`, and a bracket spanned from `measureSpans` has
+nothing to span without one. Items out of `staveScoreFor` always number their
+measures; the fixtures in the test now do too, and say why.
+
+**Verified** by seeding a repeat over bars 1–2 with a first ending on bar 2 and a
+second on bar 3, at 4x: `1.` closed at both ends over bar 2 with the closing
+`:||` after it, `2.` hooked at the left and open at the right on the next
+system. Fixture restored byte-identical, route sweep clean.
+
+**Tests:** 777 pass, up 6.
+
+**Rollback:** revert the commit.
+
+---
+
+## 2026-09-01 — The app played repeats it never drew
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Seventh finding of the
+music-accuracy audit, and the same shape as the other six.
+
+**Files:** `mobile/src/lib/notation/engrave.ts`, `fromScore.ts`,
+`components/notation/Stave.tsx`, `screens/pieceScore/PieceScoreScreen.tsx`,
+`mobile/src/lib/notation/repeats.test.ts` (new).
+
+`scheduleScore` runs `measuresInPlayOrder` — a careful TypeScript port of the
+backend's `expand_repeats`, first and second endings included — so Listen has
+always played bars 1–8 twice for a piece with a repeat. **The page showed one
+straight run of eight bars with no `:||` anywhere.** The app disagreed with
+itself, audibly, and a musician following along on its own score got lost at
+bar 8. The font subset has carried the barline and repeat-dot range since it was
+written.
+
+`barlines` was a bare `number[]`; it is now `{ x, repeat }`, with `both` a real
+value because a section ending where the next begins is one barline with dots on
+either side.
+
+### Three placements, each of which loses the sign if you get it wrong
+
+- **A repeat closing on the score's last measure** has no item after it to carry
+  a flag, so `staveScoreFor` returns `closesWithRepeat` and the engraver is told.
+- **A repeat closing at a system break** is marked on the first item of the next
+  run, and a system draws no barline before its first item — so the sign
+  vanished entirely. It now lands on the closing barline of the line that
+  finishes the section, which is what a printed part does. Found by seeding a
+  repeat that happened to break that way; the first version drew nothing at all
+  and I nearly logged it as working.
+- **A repeat starting on the first measure gets no sign.** There is no barline
+  to hang one on and a printed part does not draw one there either.
+
+### The spacing took two goes and the second was the one that mattered
+
+The opening sign's lower dot printed **inside the notehead of the bar it
+opens** — the two are at the same height whenever that note sits in the third
+space, which on a treble staff is any C5. Reserving room before the item did not
+help, and the reason is worth writing down: the barline sits *midway* in the gap
+it interrupts, so widening the gap moved the barline and the note right
+together and the distance between them never changed. The barline is shifted
+left into the room instead, which spends it on the right where an opening sign
+reaches. A closing sign reaches left and already had it.
+
+**Verified** by seeding a repeat over bars 2–3 of the demo score and looking at
+it at 4x: `||:` opening system one with both dots clear of the notehead, `:||`
+closing the piece. Four circles in the DOM, two per sign. Fixture restored
+byte-identical, route sweep clean.
+
+**Known limit, deliberately not started here:** first and second **ending
+brackets** are not drawn. A piece with them now shows the repeat signs without
+the `1.`/`2.` brackets, so a musician would repeat and play the same ending
+twice. That is closer to right than drawing nothing — playback already takes the
+endings — but it is half an instruction, and the bracket is the next piece of
+work. `measuresInPlayOrder` already parses them, and `EngravedTuplet` is the
+geometry to copy.
+
+**Tests:** 771 pass, up 9.
+
+**Rollback:** revert the commit.
+
+---
+
+## 2026-09-01 — Two things a real repertoire title broke
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. The other half of the
+small-screen pass: **hostile content**. The fixtures are short, tidy titles;
+real repertoire is not. Seeded *"Sonata for Violin and Piano No. 9 in A major,
+Op. 47 'Kreutzer'"* by Ralph Vaughan Williams with a two-clause movement and
+swept at 320pt.
+
+**Files:** `mobile/src/components/primitives/PageHeader.tsx`,
+`mobile/src/screens/record/PracticeSetup.tsx`,
+`mobile/src/screens/record/RecordScreen.tsx`.
+
+Nothing overflowed — the library truncates to two lines with an ellipsis and
+the detail screens wrap and scroll, which is right. Two composition failures
+that only a long title exposes:
+
+- **The header's trailing action sat in the middle of the title.** `titleRow`
+  was `alignItems: 'center'`, which is correct for one line and wrong for every
+  longer one: at 320pt the title runs to **five lines** and the `⋮` landed
+  between *"Piano No. 9 in"* and *"A major, Op."*, reading as a mark inside the
+  paragraph rather than a control beside it. Aligned to the first line now,
+  which is what every platform header does. One line changed, every screen with
+  a header action fixed.
+
+- **The recording-tips screen had two screen titles.** The piece as the header
+  title *and* "Before your first take" immediately under it at the same weight —
+  two competing focal points (§3 law 4). With a real title that is four lines of
+  serif followed by two more, and the actual subject of the screen is below the
+  fold. The piece is the **eyebrow** now and the tips are the title, because a
+  one-time interstitial about microphone technique is not about the music. The
+  composer prop went with it: on a screen that is not about the piece, it is one
+  more thing to read, and it was passed in from `RecordScreen` for no other
+  purpose.
+
+**Verified** at 320pt before and after: the `⋮` on the first line, and the tips
+screen leading with its own subject and the first tip visible without scrolling.
+
+**Rollback:** revert the commit.
+
+---
+
+## 2026-09-01 — On a 320pt phone the measure editor could not edit or save
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Found by walking every
+route at **320x568** — an iPhone SE, the smallest screen still in real use, and
+a width nothing in this project had been tested at.
+
+**Files:** `mobile/src/screens/measureEdit/MeasureEditScreen.tsx`.
+
+Eleven of twelve routes are clean at that size. The measure editor is not, and
+it fails in the two ways that matter most for a screen whose whole job is
+repairing a misread bar:
+
+- **The note strip collapsed to zero height.** The screen was a fixed column
+  (`scrollable={false}`); at 320pt the duration chips wrap to more rows, the
+  column overflows, and flexbox takes the deficit out of the one child that can
+  shrink. Measured: **280x0 at 320pt against 350x19 at 390pt** — and 19 is
+  itself a squeezed 56. No notes on screen means no note to select, which means
+  the editor cannot edit anything at all.
+- **"Save this bar" was clipped off the bottom**, along with Add note and
+  Delete note. Even if you could make a correction, you could not keep it.
+
+The screen scrolls now and Save is pinned in the footer. A scroll view cannot
+squeeze its children, which fixes the first; a footer is always on screen, which
+fixes the second. The error line moved into the footer with the button it
+belongs to — a save that failed must not report it above the fold. The
+`flex: 1` spacer that pushed the controls down in the fixed column is gone: a
+scroll view has no slack to absorb, so it only added a stretch of empty scroll.
+
+**Measured after:** the strip is **56pt at both widths**, and at 320pt the
+screen scrolls 717 into 483 with every control reachable — all five notes, all
+ten durations, the pitch controls, Add note, Delete note and Save.
+
+**The two remaining "overflows" at 320pt are both intended** and were checked
+rather than assumed: the Today warmup preview is deliberately clipped
+("a block that scrolls sideways competes with the page it is advertising"), and
+the note strip is a horizontal ScrollView, so content past the edge is the
+point.
+
+**Rollback:** revert the commit.
+
+---
+
+## 2026-09-01 — The accent failed contrast as text, and nothing was checking
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. The other measurable half
+of accessibility, after last tick's touch targets.
+
+**Files:** `mobile/src/design/colors.ts`,
+`mobile/src/design/contrast.test.ts` (new),
+`mobile/src/components/score/PlaybackSettings.tsx`,
+`mobile/src/screens/pieceScore/PieceScoreScreen.tsx`,
+`mobile/src/screens/scanner/ScannerScreen.tsx`.
+
+Every colour token measured against every ground it is used on. The palette is
+in good shape — `textPrimary` 16.9:1, `textSecondary` 6.5:1, `textTertiary`
+4.5:1, and the verdict trio 4.5–4.6:1, which a comment in `colors.ts` already
+claimed and which now has arithmetic behind it.
+
+**One token fails: `accent`, at 3.54:1 on the page and 3.95:1 on a card.** That
+clears WCAG AA for large text and the 3:1 a non-text mark needs — a progress
+fill, an active tab, a favourite — which is nearly everywhere it is used. It
+does not clear the **4.5:1 body text needs**, and it was being used at
+`metadataSmall` in seven places: the playback settings' bar and tempo controls,
+the "fix this bar" cues, the clef control. Text a musician has to read.
+
+`accentText` is the same ochre darkened only as far as AA needed, the same
+treatment the verdict hues already had: **4.90:1** on the page, 5.47:1 on a card.
+
+### Two tokens, not one darker accent
+
+The scanner is the app's one dark screen, and there the plain `accent` measures
+**4.52:1** against the ink ground — it already passes. `accentText` on that same
+ground falls to **3.26** and fails. Neither value is right on both grounds, so
+which ground the text sits on decides. The scanner's doubt line keeps `accent`
+and carries a comment saying why, because it is the one place that looks like an
+oversight and is not.
+
+### The test is the point
+
+`contrast.test.ts` computes the ratios from the tokens themselves. The verdict
+comment was accurate and unchecked; nothing would have noticed the accent
+sitting at 3.54 on the same ground for as long as it did. Eighteen assertions,
+including both halves of the two-token rule — that `accent` is *below* body
+threshold on light and `accentText` *below* it on ink — so a future "simplify
+this to one token" fails here rather than in someone's hands.
+
+**Not a finding:** `border` at 1.16:1. WCAG 1.4.11 governs boundaries that
+*identify* a control; a hairline divider between rows is decoration and the row
+is identified by its text.
+
+**Verified** on the score screen, which carries four of the seven changed
+strings: still recognisably ochre, deeper, legible. Route sweep clean.
+
+**Tests:** 762 pass, up 18.
+
+**Rollback:** revert the commit.
+
+---
+
+## 2026-09-01 — The count-in counted down while its dots counted up
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Found by walking the whole
+record→verdict loop in the browser with a fake microphone, which nothing in this
+session had done.
+
+**Files:** `mobile/src/screens/record/RecordScreen.tsx`.
+
+**The loop works end to end.** Piece → recording tips → tempo → count-in →
+recording → "Listening back" → verdict, on an emulated iPhone with the
+microphone granted, no console errors anywhere. That is worth writing down: the
+spine of the product is intact.
+
+One defect, and it is on the beat itself. The big number during the count-in was
+`countInBeats - beat.index` — a **countdown** — while the dots under it fill
+left to right. So on the last click of the bar the screen showed a large **1**
+with the *fourth* dot lit. A musician glancing at that can read "beat one" and
+come in a whole beat early, which on an app whose entire job is measuring
+whether you came in on time is the one mistake a count-in must not invite.
+
+It counts up now. That matches the dots, and it matches the sentence already on
+the screen — *"Start on the next downbeat"* is about the beat **after** four,
+not about a countdown reaching zero. It also matches what the owner asked for:
+*"just like how an conductor does when he counts you in."* A conductor never
+counts down.
+
+**Measured, four samples through one bar at 84 BPM:**
+
+```
+before (reconstructed)   after
+  4  O...                  1  O...
+  3  .O..                   2  .O..
+  2  ..O.                   3  ..O.
+  1  ...O                   4  ...O
+```
+
+**Noticed, not changed:** the count-in screen has two controls both labelled
+"Cancel count-in" — the header chevron and the big stop button — and they do the
+same thing, so a screen reader announces it twice. Both labels are *accurate*;
+inventing a different one for the chevron would be worse than the redundancy,
+and removing the chevron takes away a standard escape from a focused screen.
+Left alone deliberately.
+
+**Rollback:** revert the commit.
+
+---
+
+## 2026-09-01 — Touch targets: an audit, and the four things it found
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. I have changed a lot of UI
+this session and had not once checked what any of it is like to *hit*.
+
+**Files:** `mobile/src/screens/profile/ToggleRow.tsx`,
+`mobile/src/components/score/PlaybackSettings.tsx`,
+`mobile/src/components/primitives/SearchField.tsx`,
+`mobile/src/screens/scanner/ScannerScreen.tsx`.
+
+A probe walks ten routes as an emulated iPhone and measures every interactive
+element for a label and for the 44pt platform minimum. Four findings, all real:
+
+- **Every switch on the profile was a 40x20 target.** The row is two hundred
+  points wide and only a thumbnail-sized rectangle in its corner did anything.
+  The whole row is the control now — it carries `role="switch"`, its label, and
+  its checked state, and the switch itself is the picture of it. Measured:
+  40x20 → **316x94**, and pressing the label toggles.
+- **Two switches were announced per setting.** `accessible={false}` does not
+  stop react-native-web rendering its own `input[type=checkbox][role=switch]`
+  inside, so a screen reader met the row (labelled, stateless) *and* the input
+  (stateful, unlabelled). `aria-hidden` on the wrapper removes the second.
+- **`accessibilityState` alone gave no state on web.** RNW emits `aria-checked`
+  and does not derive it from `accessibilityState`; measured, the row announced
+  "switch, Haptic feedback" and never said whether it was on. Both spellings are
+  set now — one for React Native, one for the browser.
+- **The two playback settings were 18pt tall.** "Listen from bar 1" and the
+  tempo — the two controls that panel exists for — were a single line of
+  `metadataSmall` with no padding, at under half the minimum. Padded to 44
+  rather than given a `hitSlop`, because padding is in the layout and can be
+  measured; a hit area nothing can see is a hit area nothing checks.
+- **The scanner's "Done" was 40pt wide.** It cleared the minimum vertically and
+  missed it horizontally, which is still missing it.
+
+**One finding that was the probe's fault, recorded so nobody "fixes" it.** The
+library's search input measures 284x42 — but the *field* around it is 350x44,
+and React Native's border-box sizing leaves the input two points shorter than
+its container. A click two points inside the field's top edge, outside the
+input's own box, focuses it. Measured rather than argued. The probe now also
+skips `aria-hidden` subtrees, so it reports the accessibility tree rather than
+the DOM.
+
+After: **every route clean** except that one, which is not a defect.
+
+**Rollback:** revert the commit.
+
+---
+
+## 2026-09-01 — The first screen a new account sees was composed as an error message
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Found by emptying the
+fixtures and looking at the cold start, which nothing in this session had done.
+
+**Files:** `mobile/src/screens/today/TodayScreen.tsx`.
+
+An earlier fix made this branch reachable — its comment records that it *"used
+to be a dead end: it told them to photograph sheet music and the only thing on
+the screen they could press was their own avatar."* The routes are there now.
+The **composition** was still wrong:
+
+- **The greeting was the largest thing on the screen.** A `heroTitle` serif
+  "Good morning" over a smaller "Nothing to practice yet". On a screen whose
+  entire job is to get one piece of music in, the greeting was the focal point
+  (§3 law 4).
+- **The one action was a bordered secondary button floating in the middle**,
+  about a third of the way down, with five hundred empty points under it — the
+  third thing you noticed, and nowhere near a thumb (§3 law 7).
+- **Nothing said what the product does.** A brand-new account had no other way
+  to find out.
+
+Now: the greeting is the eyebrow it should always have been *on this branch*,
+the proposition is the headline, one sentence says what InTempo actually does,
+and the action is in the footer.
+
+**The action is the camera where there is one worth using.** Photographing a
+page *is* the product, so a first piece is one tap rather than two through a
+chooser; the alternatives stay a quiet line below rather than a second
+full-width button, because two buttons in a footer is two things asking to be
+pressed first. The capability test is `cameraCanPhotographAPage` — the same one
+`ImportPages` uses, not a new guess — so a laptop, whose webcam cannot resolve
+staff lines, gets "Add a piece" and the chooser instead.
+
+**Verified in both.** As a desktop browser: "Add a piece" → the sheet. Emulating
+an iPhone (`devices['iPhone 13']`, which reports touch): **"Photograph sheet
+music"** with a camera icon in the thumb zone and "Import a file or add one by
+hand" underneath. Three-foot test on the phone screenshot: the serif proposition
+first, the ink action second, the sentence third.
+
+**Also looked at, and left alone:** Library's empty state is right — "No pieces
+yet" with the ink "Add piece" already in the header. Insights' says *"Record
+yourself playing a piece"* on an account with no pieces, which names an action
+with no route from that screen; the tab bar puts Today and Library one tap away,
+so it is a dead end only in the narrowest sense. Noted rather than changed.
+
+**Rollback:** revert the commit.
+
+---
+
+## 2026-09-01 — A stave that placed notes by clef and never drew one
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`.
+
+**Files:** `mobile/src/screens/warmup/WarmupScreen.tsx`,
+`mobile/src/screens/today/WarmupPanel.tsx`.
+
+The daily warmup — the stave on Today and the page behind it — drew five lines,
+noteheads and a row of note names, and **no clef**.
+
+`Stave`'s own note explains why: *"The warmup is a study-book exercise: a bare
+stave with the note names underneath, and the instrument named beside it."* That
+character is right and is not what changed. This is one argument that decision
+did not have:
+
+> The noteheads are **already placed by `warmup.clef`**. The same scale sits on
+> different lines for a violinist and a bassist, and the app knows which. A
+> stave that asserts staff positions while refusing to say which clef they are
+> in is asking a musician to read a diagram.
+
+So the clef is drawn and nothing else is: no key signature and no metre. A scale
+has no metre, and the accidentals stay inline where the note names underneath
+already spell them out — which is the study-book character the note describes,
+kept.
+
+**Verified on both clefs**, which is the whole point of the change: violin gives
+a treble clef over D major, and switching the profile to double bass gives a
+bass clef with its dots straddling the F line over G major — G A B C D E F♯ G up
+and back down. Screenshotted at 3-4x; the clef is drawn whole and unclipped in
+the Today preview too, where at 1x it had looked cut.
+
+**Checked and found correct, so it is not chased again:** the warmup page's line
+*"Change your instrument in your profile"* names a control that does exist —
+`SegmentedControl` renders as a `tablist`, not a button, which is why a first
+pass over the profile screen's buttons did not find it. The profile itself is
+comprehensive: plan and quota, email and password, instrument and metronome
+mode, haptics and reduced motion, data download and account deletion, version,
+help, privacy, terms, acknowledgements and sign-out.
+
+**Rollback:** revert the commit.
+
+---
+
+## 2026-09-01 — The verdict screen said "Back to the piece" twice and meant two things
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Back to the consumer side.
+
+**Files:** `mobile/src/screens/verdict/VerdictScreen.tsx`.
+
+This is the payoff screen — the thing the whole product exists to show — and it
+was the most cramped screen in the app.
+
+- **"Back to the piece" appeared twice**: as the label on the chevron at the top
+  *and* as a full-width secondary button under the primary. The same words
+  offering the same thing in two places (§3 law 10).
+- **They went to different places.** The chevron called `goBack()`, which after
+  a take returns to the Record screen; the button `replace`d with the piece. One
+  of them was a control promising a destination it did not deliver, which is the
+  same defect as advice naming a route that does not exist. The chevron now does
+  what it says.
+- The second button cost about **65pt** of a screen whose measure list was
+  showing **three rows of twelve** — the part a musician actually works from.
+  Four rows now, with one action in the footer.
+- **The measure list lost its card.** Twelve rows that already divide themselves
+  with a hairline apiece do not need a box drawn round them — the same call as
+  the library's list and the piece screen's destinations.
+- **So did the trend chart**, which was then the only card left and therefore
+  the only white surface on an ivory page. That gave the summary more weight
+  than the twelve rows of detail below it, which are the same data. A rule above
+  and below marks it off as a figure without making it a panel.
+
+Zero cards on the screen now.
+
+**Three-foot test on the screenshot:** first the verdict headline in large
+serif, second "Record again" as an ink block in the thumb zone, third the ochre
+trend line — the one coloured thing above the fold. The metadata line, the
+section labels and the rows all recede.
+
+**Verified** in the running build: the chevron lands on
+`/pieces/fixture-bach-bwv1001`, "Back to the piece" appears once in the button
+list, no console errors, route sweep clean.
+
+**Noticed, not fixed:** the fixture take reports twelve measures for a demo
+score that has three. That is sample data being loose rather than an app fault —
+the fixture wants a long take to exercise the chart and the list — but it does
+make the demo build internally inconsistent if anyone reads both screens.
+
+**Rollback:** revert the commit.
+
+---
+
+## 2026-09-01 — Staccato dots the page had and the app did not
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Sixth finding of the
+music-accuracy audit, and the last of the notation gaps I know about.
+
+**Files:** `tools/subset-bravura.py`, `mobile/assets/fonts/Bravura.otf`,
+`mobile/src/lib/notation/engrave.ts`, `fromScore.ts`,
+`components/notation/Stave.tsx`, `mobile/src/lib/score/schedule.ts`,
+`mobile/src/lib/notation/articulations.test.ts` (new).
+
+`ScoreNote.articulation` — staccato, tenuto, accent — has been read off the page
+since Batch 2 and used by nothing. Not drawn, not played.
+
+A staccato dot is **not decoration**: it changes what you play. A page that
+omits it teaches the passage wrong, and a musician copying what they hear then
+records a take judged against written durations they were never shown. Same for
+tenuto, in the other direction.
+
+### Drawn
+
+Six glyphs added to the Bravura subset (`E4A0-E4A5`), which is six rather than
+three because Bravura draws the above and below forms separately — an accent
+points differently and a tenuto sits at a different height, so mirroring one in
+the renderer produces a mark a reader sees as wrong. Subset 24.7 KB → 25.2 KB.
+
+The mark goes **on the side away from the stem**, measured against the outermost
+notehead so a chord's mark clears the whole stack. Widths come from the font
+(`ARTICULATION_WIDTHS`) because a staccato dot is a third of a space and an
+accent is one and a third — one constant centres two of the three wrong.
+
+**Heights come from the font too, and had to.** The "above" glyphs sit entirely
+above their origin, so an accent above a high note was drawn 0.98 spaces past
+the top of the box measured for the system, and the SVG viewport clipped its
+tip. `ARTICULATION_HEIGHTS` is read out of the glyph bounds; the system's
+extents and any slur passing over now use the mark's far edge, not its origin.
+Measured before and after on the same page: system height 176 → 191, tips
+intact.
+
+**A slur clears an articulation on its side.** Both go on the notehead side, so
+a slur measured from the noteheads alone is drawn straight through a row of
+staccato dots.
+
+### Played
+
+`ARTICULATION_LENGTH`: staccato sounds half its written value, tenuto sounds all
+of it and overrides the default 0.85 gap entirely, and an **accent sounds
+exactly like an unmarked note** — it changes weight, not length, and this player
+has no dynamics. That last one is asserted rather than left implicit so a future
+reader does not take the omission for an oversight.
+
+Articulation changes how long a note sounds and **never when the next one
+starts** — otherwise a staccato passage would run ahead of the beat and every
+bar after it be judged early. Asserted.
+
+**Verified** by temporarily marking the demo score with all three, plus a slur
+over two staccato notes and two accents on stem-down notes: dots and a tenuto
+line below the low notes, accents above the high ones, the slur sitting below
+the dots, and nothing clipped. Screenshotted at 4x, fixture restored
+byte-identical, route sweep clean.
+
+**Tests:** 744 pass, up 12.
+
+**Still unread by the app:** `grace_notes`, which is a count and not pitches —
+there is nothing to draw from a number, so this is a backend question before it
+is an app one.
+
+**Rollback:** revert the commit, and re-run `tools/subset-bravura.py` against a
+full Bravura to restore the smaller font.
+
+---
+
+## 2026-09-01 — The app kept every slur correct and drew none of them
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Fifth finding of the
+music-accuracy audit, and the last of the "backend reads it, app ignores it"
+class in notation.
+
+**Files:** `mobile/src/lib/notation/engrave.ts`, `fromScore.ts`,
+`components/notation/Stave.tsx`, `mobile/src/lib/notation/slurs.test.ts` (new).
+
+`spans.ts` has kept `measure.slurs` pointing at the right notes through every
+insert and delete since the measure editor shipped — a careful, tested module
+whose whole job is that the marks survive editing. `engrave.ts` drew none of
+them, and said so in its own docstring: *"no key signatures, no slurs, no
+dynamics, no chords, no rests"*. Three of those five are now false, and this is
+the fourth.
+
+On a string part a slur is not an ornament. It is **the bowing**. A Kreutzer
+étude without its slurs is a page a string player cannot bow, which is a
+different failure from a page with a wrong note on it and a worse one for the
+instrument this app was built for.
+
+### The indexing is the part that is easy to get wrong
+
+Slurs address `measure.notes`; the engraver draws `items`, and the two are not
+the same list — a note it cannot place makes no item, and repeats and long-rest
+blocks insert items of their own. A slur mapped naively lands on the wrong
+notes, which is worse than none: a bowing instruction for a passage that is not
+there. `itemOfNote` is recorded as the items are emitted, so the mapping is
+never reconstructed after the fact.
+
+Three rules on top of it, each tested:
+
+- **An endpoint on a rest or on a dropped note moves inward** to the nearest
+  note that was drawn. A slur over four notes with one unreadable in the middle
+  is still the bowing for the other three.
+- **A slur left covering one note is dropped.** A one-note arc is a smudge over
+  a notehead.
+- **Ids are global, not per measure.** Two slurs in neighbouring bars sharing an
+  id would draw as **one** arc across the barline — a single long bow where the
+  page asks for two.
+
+### An id per note, not a start and an end
+
+A slur is drawn as one arc per run of consecutive notes carrying the same id.
+That is not a shortcut: it means a slur cut by a system break becomes a shorter
+arc on each system with no cross-system bookkeeping, which is exactly what a
+printed page does. `ScoreSlur` carries no nesting number, so overlapping slurs
+cannot be expressed by the data and are not expressible here either.
+
+**The arc goes opposite the stems** — the notehead side — which is the reverse
+of the tuplet bracket twenty lines below it, and I wrote it the same way round
+as the bracket at first. The comment said the right thing and the expression
+said the other one, so every slur was drawn through the stems it was supposed to
+arc over. The test caught it; the comment now records the trap.
+
+It is measured against **every** notehead including chord members, or the arc
+cuts through a double stop's upper note.
+
+A single stroked quadratic Bézier of even weight, deliberately: a real
+engraver's slur tapers from the ends to the middle, which needs two curves and a
+fill. The simpler arc says exactly what a slur says without pretending to be
+calligraphy.
+
+**Verified** by temporarily slurring the demo score — one long slur over a bar
+of four and two short ones in the next — building, and looking at it at 4x:
+below the notes because the stems are up, not crossing the barline, springing
+from the outer noteheads. Fixture restored, byte-identical; route sweep clean.
+
+**Tests:** 732 pass, up 9.
+
+**Rollback:** revert the commit.
+
+---
+
+## 2026-09-01 — A four-note chord was drawn as one note and played as one pitch
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Fourth finding of the
+music-accuracy audit, and the largest.
+
+**Files:** `mobile/src/lib/notation/engrave.ts`, `fromScore.ts`,
+`components/notation/Stave.tsx`, `mobile/src/lib/score/schedule.ts`,
+`mobile/src/lib/notation/chords.test.ts` (new).
+
+`musicxml.py` has read `<chord>` members into `ScoreNote.chord_pitches` for a
+long time, carefully — a chord member shares its predecessor's onset, a rolled
+grace chord counts as one attack. **Nothing in the app ever read the field.**
+`grep chord_pitches src/` returned the type definition and nothing else.
+
+So a double stop was engraved as a single notehead and played back as a single
+pitch. On a string part that is not an edge case: the app's own demo fixture is
+Bach's G minor Sonata, whose first bar is a four-note chord. Drawing one head
+where the page has four is drawing *something else*, which is the thing
+`engrave.ts`'s docstring says it must never do.
+
+### The four geometric rules, each of which is garbage if dropped
+
+- **A head a second from its neighbour moves across the stem.** Two noteheads
+  one staff position apart print on top of each other; without the displacement
+  a second and a third look identical, which is a different chord.
+- **The stem runs from the far head**, not from the principal, or the outer
+  notehead floats with nothing joining it to the chord. Direction comes from
+  whichever end reaches further from the middle line — and that had to be
+  measured from zero rather than by comparing absolute values, because for a
+  single note the two are the same number and the first version made **every**
+  stem point up. Caught by two existing tests.
+- **Ledger lines are the union across every head.** Computed from the principal
+  alone, a chord reaching above the staff left its top note in space.
+- **Accidentals get a column each, counted among the heads that print one.**
+  Indexing by chord position pushed a lone flat on the second member two columns
+  out — far enough to land on the previous note — while the room reserved for it,
+  computed the same wrong way, covered one column. Both now come from
+  `accidentalStack`, so the glyphs and the space cannot disagree. The highest
+  note's accidental sits nearest the noteheads, which is the convention and is
+  the opposite of what the first test assumed.
+
+Chord members are spelled by `spellAccidentals` against the **same bar memory**
+as everything else: a chord is one moment, so an F sharp in it puts F sharp in
+force for the rest of the bar exactly as a single note would.
+
+### And it sounds now
+
+`scheduleScore` emits every member at the principal's onset and duration, with
+the **same `globalIndex`** — a playhead names the moment you are hearing and a
+chord is one moment. The clock is advanced once, or a bar containing a double
+stop would run long and every bar after it be judged early. All three asserted.
+
+**Verified** by temporarily giving the demo score four chords covering every
+rule — a four-note stack, a second, a chord with two ledger lines and a natural,
+and a chord with two flats — building, and reading the engraved geometry out of
+the layout rather than off the screenshot: stems attached to the far head, the
+second displaced by a notehead's width, two ledger lines under the C6, two flats
+in separate columns with the higher nearer the heads. Screenshotted at 4x.
+Fixture restored and confirmed byte-identical; the full route sweep is clean and
+the D major page is back to four sharps, which is two systems of key signature
+and nothing else.
+
+**Tests:** 723 pass, up 13.
+
+**Known limit:** the note-name row under a system still names the principal
+only. It is shown on the warmup, which authors its own notes and has no chords;
+on a score the row is off. Worth revisiting if it is ever turned on there.
+
+**Rollback:** revert the commit.
+
+---
+
+## 2026-09-01 — The app called the opening bar of most real repertoire a misreading
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Third finding of the
+music-accuracy audit.
+
+**Files:** `mobile/src/lib/notation/reading.ts`,
+`mobile/src/screens/measureEdit/MeasureEditScreen.tsx`, plus
+`reading.test.ts` and `concerns.test.ts`.
+
+`ocr/validate.py` has always forgiven a short **first** measure: an anacrusis is
+short by design, and the rule there is exactly `index == 0 and actual <
+expected` → `pickup`, which is not a fault. It even checks that the final
+measure pays the pickup back (`pickup_complement`).
+
+The app's own beat check — the subset it keeps for live editing and as a
+fallback for an older backend — did not know any of this. It flagged every
+measure whose beats missed the meter, first one included. So on a page that
+opens on an upbeat, which is nearly every hymn, most dances and a great many
+études, the app said *"Bar 1 doesn't add up to the time signature — check it
+against your copy"* about a bar that was perfectly correct, and offered a fix
+for it. The moment the app counted for itself it contradicted the server.
+
+The edit screen was worse, because that is where the musician lands after being
+told: the headline read **"1 of 4 beats"** in the warning tint over *"Tap a note,
+then choose what it should be."* — an instruction to break a correct bar.
+
+### What changed
+
+`isPickup` copies the backend's rule verbatim, including the two things that
+are easy to drop: it is the **first measure of the score** and not
+`measure_number === 1` (a part read from page two starts at bar 30), and an
+**empty** first measure is still a fault — `validate.py` checks `count == 0`
+before the pickup branch, because a bar nothing was read out of is a page whose
+opening failed, not a page that starts on an upbeat. A first bar that is *too
+long* is a misreading too; the rule is `actual < expected`, one-sided.
+
+`describeBeats` takes the flag and reports `pickup` back, so the edit screen can
+say why the bar is allowed rather than claiming it adds up — it does not add up,
+and saying so under a headline that has just called it a pickup contradicts it.
+It now reads *"An opening bar may be short — the piece starts on an upbeat."*
+
+`MeasureEditScreen` compares against `score.measures[0].measure_number` rather
+than against 1, for the page-two reason above.
+
+**Not copied:** `pickup_complement`. That is a whole-score check with a message
+of its own, and this side is deliberately a subset — so a genuinely dropped note
+in bar 1 is forgiven here and named by the server, which is the right way round.
+
+**Verified** by temporarily giving the demo score a one-beat opening bar and
+building: the score screen shows no caveat, and the edit screen reads *"1 of 4
+beats — a pickup"* with the new explanation. Fixture restored and confirmed
+byte-identical.
+
+**Test premise moved, not weakened, twice.** Two cases in `concerns.test.ts`
+used a one-measure score to stand for "a short bar", which is now a pickup by
+definition. They build two bars and put the short one second; four new cases pin
+the boundaries (opening short, opening empty, opening long, short-but-not-first).
+
+**Tests:** 710 pass, up 8.
+
+**Rollback:** revert the commit.
+
+---
+
+## 2026-09-01 — One tempo, two numbers, one tap apart
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Continuing the music-
+accuracy audit that found the accidental bug below.
+
+**Files:** `mobile/src/components/score/PlaybackSettings.tsx`,
+`mobile/src/screens/pieceScore/PieceScoreScreen.tsx`,
+`mobile/src/screens/pieceDetail/PieceDetailScreen.tsx`,
+`mobile/src/screens/record/RecordScreen.tsx`, `mobile/src/lib/tempo.test.ts`.
+
+Stored BPM is **quarter-note** BPM everywhere — it is the clock the score, the
+metronome and the analysis all run on, and `metronomePulse` already converts it
+correctly for compound metre (6/8 clicks two dotted quarters, not six eighths).
+The Record screen has always *displayed* it in the note value printed on the
+page, via `displayTempoBpm` / `tempoUnitLabel`.
+
+Three other places did not. `PlaybackSettings` — the "Listen from bar 1 · 84
+BPM" line — printed the raw quarter figure, and so did the score screen's marked
+tempo and the piece screen's facts line I wrote earlier today. So a piece in 6/8
+marked dotted-quarter = 60 read **"90 BPM"** on the score screen and **"60
+dotted-quarter-note BPM"** on the Record screen — while the tempo sheet's own
+note tells you they are the same value.
+
+Worse than the reading: the **stepper stepped in the wrong unit**. It was handed
+`MIN_BPM`/`MAX_BPM` unconverted, so on a dotted-quarter piece it stepped in
+quarters, one press moved the felt tempo by two thirds of a beat, and its
+maximum of 300 would have stored **450** on the clock everything else uses.
+
+All four now take a `beatUnit` and go through `formatTempo`; the stepper's
+bounds go through `tempoDisplayRange`. A new test walks every unit the pipeline
+can report and asserts both display bounds map back inside the stored ones —
+which is the invariant the old code broke and nothing was checking.
+
+**Verified** by temporarily making a fixture 6/8 with a dotted-quarter mark,
+building, and reading both screens: piece screen *"53 dotted-quarter-note BPM"*,
+score screen *"117 dotted-quarter-note BPM"* — different numbers because they
+are different quantities (the working tempo and the marked one), both now in the
+unit the page prints. Fixture restored and verified byte-identical; quarter-note
+pieces are unchanged ("84 BPM", "80 BPM").
+
+**Left alone:** the label reads "dotted-quarter-note BPM" rather than a ♩. glyph.
+Plain words suit a consumer app better than a music glyph in a metadata line,
+and the Record screen and Today have used this vocabulary all along — changing
+it is a separate call, not a bug fix.
+
+**Tests:** 702 pass.
+
+**Rollback:** revert the commit.
+
+---
+
+## 2026-09-01 — An F natural in D major was printed as an F sharp
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. A notation-correctness bug,
+found by auditing what the engraver does with a key signature now that it draws
+one.
+
+**Files:** `mobile/src/lib/notation/engrave.ts`,
+`mobile/src/lib/notation/spelling.test.ts` (new).
+
+The engraver printed an accidental for **every** altered pitch and none for
+anything else, on top of the key signature it had started drawing earlier this
+session. That gets both halves of the convention wrong, and only one of them is
+cosmetic.
+
+- **Cosmetic:** a piece in D major came out with two sharps in the signature
+  *and* a sharp on every F and every C. Legal, and it reads as a machine listing
+  pitches rather than as a page of music — the opposite of the MuseScore look
+  the owner asked for.
+- **Not cosmetic:** an **F natural in D major printed nothing at all.** Pitch
+  names out of OCR are absolute — MusicXML's `<alter>` already carries the key
+  signature, so a written F natural arrives as plain `F4` (`musicxml.py`,
+  `_ALTER_SUFFIX`) — and a bare F under a two-sharp signature is read by every
+  musician as F sharp. A wrong note, printed exactly like the right ones around
+  it, which is the failure `engrave.ts`'s own docstring is written against.
+
+Nothing else in the app could catch it. The **sound** was right the whole time
+(`frequencyOf` reads the absolute name), the beat check passes, and the page
+simply showed a different note from the one on the stand.
+
+### The rule
+
+`spellAccidentals` runs over the whole score in order before anything is packed
+or measured, and prints a glyph only when the note differs from what is already
+in force. In force means the key signature for that **letter, in every octave**,
+unless an earlier accidental in the same bar has overridden it **at that exact
+staff position** — an accidental binds to the octave it is written in, the
+signature binds to the letter. Those two opposite bindings are the whole
+convention and both are asserted.
+
+Over the score rather than per system because bars reset it and a system is a
+slice; `packSystems` breaks only on barlines, so no bar's memory has to cross
+one. Room reservation reads the **printed** glyph too — a suppressed sharp used
+to keep a column it never used, and a printed natural (which no pitch name ever
+carries) would have had no room at all and sat through the notehead before it.
+
+`printedAccidental` falls back to the note's own name when nothing has spelled
+it, so the warmup — which authors its own notes and prints no signature — still
+gets its sharps.
+
+**Measured on the D major fixture** (`fixture-bach-bwv1001`), counting Bravura
+accidental codepoints in the rendered SVG: **6 sharps before, 4 after**. Four is
+two systems' worth of key signature and nothing else; the two inline sharps that
+the signature already spelled are gone. Screenshotted.
+
+**Not covered, deliberately:** a courtesy accidental (the natural some editions
+add on the same letter an octave away) and a tie carrying an accidental across a
+barline without reprinting it. Both are editorial preferences rather than rules;
+the strict reading is what is implemented, and one test says so where a reader
+would otherwise assume an omission.
+
+**Tests:** 701 pass, up 14.
+
+**Rollback:** revert the commit.
+
+---
+
+## 2026-09-01 — The review screen told you that you had removed pages you never took
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. The other thing the route
+sweep turned up.
+
+**Files:** `mobile/src/data/captureSession.ts` + test,
+`mobile/src/screens/capturedPages/CapturedPagesScreen.tsx`.
+
+Opening `/scan/pages` with nothing in the session said **"No pages left — you've
+removed every page."** Nothing had been removed. That path is not a corner case
+either: `linking.ts` makes the scan steps linkable on purpose, so *"someone who
+refreshes mid-scan should land on the step they were on and find it empty, which
+is recoverable"* — this is that landing, and the first thing it does is describe
+an action the musician did not take.
+
+An empty session means two things and `current()` cannot tell them apart, both
+being `[]`. `everHeldPages` is the fact, set by `capture` and `importAll`,
+cleared by `reset`, and deliberately **not** cleared by `remove` — removing the
+last page is exactly the case that must still say "you removed them".
+
+`importAll` sets it rather than or-ing it, because that call replaces the
+session: what the scan before it held is not a fact about this one. Tested.
+
+Copy now: *"No pages yet — photograph a page of sheet music to start a scan"*,
+with the action reading **Photograph a page** rather than **Add page**, since
+there is nothing yet to add to. Verified in the running build by opening the
+route cold.
+
+**Rollback:** revert the commit.
+
+---
+
+## 2026-09-01 — The piece screen was three cards in a column
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Found by sweeping all 23
+routes in the running build and looking at them, which is a thing that had not
+been done end to end this session.
+
+**Files:** `mobile/src/screens/pieceDetail/PieceDetailScreen.tsx`.
+
+The sweep found no blank screens, no horizontal overflow and no console errors
+anywhere — the app is in good shape. What it did find is that `PieceDetail`,
+which is where you land from both Library and Today, rendered as **three
+bordered cards stacked down the page**: the score thumbnail with "Continue
+practice" inside it, a "Playback" box holding a label and a Listen pill, and a
+box around two navigation rows.
+
+Each card had a comment defending itself against §3 law 3, and each argument
+was locally reasonable. The composition was still a stack of boxes, which is
+what the law is about.
+
+### What it is now
+
+- **The page crop is a band, edge to edge**, cancelling the screen gutter with
+  `SCREEN_GUTTER` — the one thing on the screen that reaches the edges, because
+  it is a picture and everything else is set in a column. Hairlines top and
+  bottom: a page crop is nearly white on an ivory page, and one border left the
+  top edge floating, which reads as a crop that failed.
+- **One line of facts replaces two cards**: when you last played it, how long it
+  is, and the tempo it will be heard at. The middle item becomes the playhead
+  while something is sounding — `Measure 3 of 6` — so the line changes in one
+  place rather than being swapped out. Typography doing what a box was doing
+  (§3 law 8).
+- **The two destinations are ruled rows on the page.** The library separates
+  forty of these with a hairline apiece; a box around two of them groups nothing
+  the rule between them does not already say.
+- **"Continue practice" moved to the footer.** It is the one thing this screen
+  is for, and it used to sit a third of the way down, inside a card, level with
+  the score band — so the screen opened with two things competing to be looked
+  at first (§3 laws 4 and 7).
+- **Listen stays in the flow**, with the piece rather than with the decision to
+  practise. Choosing a tempo and a starting bar is deliberately *not* duplicated
+  here: `PieceScore` already has both, and it is the screen where you can see
+  the bars you would be choosing between.
+
+Zero cards on the default path. The two that remain are genuine grouping — the
+rename form (three fields and two buttons) and the "add sheet music" block on a
+piece that has none.
+
+**Three-foot test, on the screenshot, at 390 and at 1280:** first the title in
+large serif, second "Continue practice" as a solid ink block at the bottom,
+third the sheet band. The facts line, Listen and the ruled rows all recede.
+A title and an anchored action are not two focal points fighting — they are
+identity and action, in different places doing different jobs — but it is the
+closest this screen comes to law 4 and it is worth saying so rather than
+claiming it is settled.
+
+Desktop holds the 560pt reading measure, with the band reaching the measure's
+edges rather than the window's.
+
+**Verified:** both a practised piece and an unpractised one, at both widths, no
+console errors. 683 tests still pass; this screen has none of its own, which is
+the standing gap — there is no React Native testing library here.
+
+**Rollback:** revert the commit.
+
+---
+
+## 2026-09-01 — A refused camera was a dead end with directions on it
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. The other half of "make the
+scan work from start to finish".
+
+**Files:** `mobile/src/lib/scan/cameraFallback.ts` (new) + test,
+`mobile/src/screens/scanner/ScannerScreen.tsx`.
+
+With camera access permanently refused the scanner said: *"InTempo does not
+have camera access. Turn it on in your device settings, or add the piece by
+hand instead."* Two routes named and **neither reachable from the screen saying
+it** — there is no settings control here, and the one icon in the corner goes
+to image import, not to typing a piece in. Same rule as the entry above it:
+advice must name a route that exists in this app.
+
+It was also platform-wrong. "Device settings" is right on a phone with the app
+installed and meaningless in a browser, where the permission belongs to the site
+and lives behind the address bar — and on the web there is a **better** answer
+than any settings screen, because the phone's own camera app needs no
+`getUserMedia` grant at all. A browser that has refused the camera can still
+photograph the page.
+
+`cameraFallback` owns the message and the one control to offer, and the screen
+renders whatever it says. Five states, and the two that are easy to collapse are
+kept apart on purpose: *not yet* (`granted === null`, the answer is still
+coming) must not show the refusal copy, or a working camera looks broken for
+half a second; and *still to be asked* offers nothing, because a control there
+would stack a second decision on the system prompt already on screen.
+
+The test that matters is the last one: across every combination of state, a
+message that names a way forward must come with the control for it. That is the
+rule the old copy broke, and it is asserted rather than described.
+
+**The flash toggle is gone when there is no camera**, rather than dimmed. It is
+a torch on a camera that is not running — it controls nothing and explains
+nothing, and it sat in the top corner beside the real way out (§3 law 10). The
+disabled shutter stays: its position is the screen's structure and its
+accessibility label already says "Capture page unavailable".
+
+**Three-foot test** on the forced-state screenshot: first the underlined "Open
+the camera app", second the sentence above it, third the frame corners and the
+dimmed shutter. On a screen with no viewfinder the way forward *is* the subject,
+so that ordering is the right one. Nothing added, one thing removed.
+
+### Honest status
+
+`canAskAgain: false` **cannot be produced in this environment** — headless
+Chromium reports `prompt` for the camera whether or not `Browser.setPermission`
+has denied it — so the branch was screenshotted by temporarily hardcoding the
+state, building, capturing, and restoring the file (verified byte-identical
+afterwards). The rule itself is unit-tested across all fifteen state
+combinations. The two states the browser does produce here — "starting" and
+"needs your camera" — are verified in the running build.
+
+**Worth writing down:** in the middle of this I deleted the moved-aside `.env`
+before the `EXIT` trap ran, so the restore came from the separate guard copy
+rather than from the file itself. The outcome was correct only because the guard
+exists. Copy first, move second, and delete the aside copy *after* the trap has
+fired, not before.
+
+**Rollback:** revert the commit.
+
+---
+
+## 2026-09-01 — "Move in until one page fills the frame" was advice they had followed
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Owner's report, still open:
+*"Fix scan sheet music. When you use the in app camera it uploads in low
+resolution and doesnt work for some reason."*
+
+**Files:** `mobile/src/lib/scan/legibility.ts` + test,
+`mobile/src/lib/scan/systemCamera.ts` (new),
+`mobile/src/screens/scanner/ScannerScreen.tsx`.
+
+The `expo-camera` patch earlier this session stopped the app *asking* for
+640x480. It cannot stop a browser answering with it, and on the web build the
+answer is the photograph: `captureImage` draws its canvas at exactly
+`video.videoWidth/videoHeight`.
+
+### Two problems, one measurement, and only one of them was named
+
+`legibilityOf` returns `tooSmall` when the staff lines are under six pixels
+apart. That happens for two unrelated reasons:
+
+- the page was photographed from across the desk — plenty of pixels, not
+  enough page in them. **Move in.**
+- the browser handed over a small stream — the page already fills the frame and
+  there still are not enough pixels. **Nothing at the shutter helps.**
+
+The app said "move in until one page fills the frame" for both. In the second
+case that is advice the musician has already followed, given again, forever —
+the failure this project wrote down in August as *advice must be followable in
+this app*, and the loop the owner was describing.
+
+`adviceFor` now takes the height of the rectangle that will actually be
+uploaded and picks between them. The threshold is derived from two measurements
+of the same real page already in this repository — 25 px of staff spacing at
+5712 rows, 4 px at 960, which agree to within 5% — so `MIN_PAGE_ROWS` is 1829,
+and the **larger** ratio is used deliberately: it gives the most optimistic
+bound, so the app only blames the camera when a generous reading still says the
+camera is at fault. A 4K capture cropped to the viewfinder is 1598x2160 and
+clears it; a 1920x1080 one is 799x1080 and cannot, however it is framed. Both
+are asserted.
+
+### The way out is the phone's own camera app
+
+`photographWithSystemCamera` is `expo-image-picker`'s `launchCameraAsync` with
+the back camera, which on web sets `capture="environment"` on a file input —
+the system camera, at the sensor's full resolution, with no `getUserMedia` and
+so nothing for the browser to cap. On a real app build it is the native camera.
+
+It goes through the **same retake swap** as the button it replaces:
+`beginRetake` removes nothing, so a cancelled camera app leaves the scan exactly
+as it was. That rule is why `captureSession` exists in the shape it does and it
+does not get an exception here.
+
+Only one route is offered at a time. Showing both would ask the musician to
+choose between two diagnoses when only the app knows which applies.
+
+### Measured, end to end, in Chromium
+
+A real fixture page (`01_simple_printed.jpg`) fed to the browser as a 640x480
+fake camera device — a page held up to a webcam, which is exactly the failing
+case:
+
+- Before the shutter: the stream is 640x480 even when asked for 3840x2160.
+- After it: **"This camera can't see the notes clearly enough, however close you
+  get. Your phone's camera app can."** with **Open the camera app**, where it
+  used to say "move in".
+- Tapping it opens a file input carrying `capture="environment"`.
+- Handing that a full-resolution page leaves the scan at **1 page**, not two —
+  the swap, not an append — with a dense thumbnail and no warning.
+
+**Three-foot test on the screenshot:** first the page in the viewfinder, second
+the white shutter ring in the thumb zone, third the ochre advice line. Subject,
+action, advice — one focal point, secondary receding, no card added, structure
+still from the frame corners. Passes.
+
+### Honest status
+
+The route is verified in Chromium, which is not the platform it is for: what
+iOS Safari's `getUserMedia` actually caps at, and what the iOS camera app hands
+back, are **not measured here** and cannot be without a device. What is measured
+is that the branch fires on a genuinely too-small page, that the advice changes,
+and that the replacement lands as a swap.
+
+**Known limit, unfixed:** a browser older than Safari 16.4 fires no `cancel`
+event on a file input, so a cancelled camera app would leave the retake pending
+and the shutter disabled. The close button already recovers it (`handleClose`
+cancels the retake), and 16.4 is this build's floor for other reasons.
+
+**Rollback:** revert the commit. No migration, no API change.
+
+---
+
+## 2026-09-01 — Listen worked once, and four separate things could cause that
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Owner's report: *"Listen
+also only works on first listen but when I come back it doesn't work, for all
+listening buttons."*
+
+**Files:** `mobile/src/lib/audio/context.web.ts` (new) + test,
+`mobile/src/lib/audio/session.web.ts` (rewritten),
+`mobile/src/lib/scorePlayer.web.ts` + test (new),
+`mobile/src/lib/metronome/click.web.ts`, `click.web.test.ts`,
+`mobile/src/components/score/ListenButton.tsx`.
+
+"For all listening buttons" is the useful half of the report: the four screens
+share one `ListenButton`, so the fault is below it. It is not *in* it either —
+pressing Listen four times in Chromium always worked. What follows is four
+defects that each produce that one sentence, none of which the app reports as
+anything but success: the button toggles, the schedule is built, every
+oscillator is created and started, and nothing comes out.
+
+### 1. A context per playback, closed at the end
+
+`scorePlayer.web.ts` and `click.web.ts` each built an `AudioContext` when they
+started and closed it when they finished. That is tidy and it is the shape of
+the commonest "audio works once on iPhone" bug there is: iOS Safari caps how
+many contexts a page may hold and `close()` does not reliably give the slot
+back. It is also what a long piece plus a locked screen produces with no cap
+involved — `requestAnimationFrame` stops on a hidden page, so the tick that
+ends playback never runs, so `close()` never runs, and the context leaks.
+
+`lib/audio/context.web.ts` now owns one context for the life of the page,
+resumed on every play and never closed. Web Audio is designed for this; a
+context is a mixer, not a sound.
+
+The metronome had to give up `close()` as its **cancellation mechanism**, which
+is what it was really using it for — a click booked 250 ms ahead must not sound
+after the take has ended. Each run now owns a gain node and disconnects it,
+which silences everything already booked through it and leaves the mixer
+standing.
+
+**Measured, on the built bundle, four presses in one page load:** before, four
+contexts and four closes; after, **one context, zero closes**, 32 oscillators
+on every press, label resetting each time. Three consecutive takes still book
+clicks at the same rate.
+
+### 2. The end of a piece was only visible to `requestAnimationFrame`
+
+Frames are not delivered to a hidden page. Lock the phone mid-Listen and the
+frame that would notice the end never arrives, `finish()` never runs, and the
+handle says playing forever. Coming back, the button still says **Stop** for a
+piece that ended minutes ago: the next press stops silence and only the press
+after that plays.
+
+`sweepForEnd` is a timer alongside the frame loop. It **re-checks the audio
+clock rather than trusting its own deadline**, because the two come apart in
+exactly this situation — iOS suspends the context with the page, freezing
+`currentTime` while wall time runs on — so waking early means waiting again,
+never cutting a piece off mid-phrase.
+
+**Measured** by stopping frame delivery mid-piece on both bundles (a 17 s
+fixture, read 26 s later): before, `Stop listening`; after, `Listen at this
+tempo`.
+
+### 3. The button announced playing before anything played
+
+`setPlaying(true)` ran before `playSchedule` was called, so a playback that
+could not start left the label on Stop with nothing sounding. It now reads
+`started.isPlaying()` — the handle is the only thing that knows.
+
+### 4. `navigator.audioSession` was never set, and the comment said it couldn't be
+
+`session.web.ts` was a no-op whose comment read *"the browser has no audio
+session, and no silent switch to override"*. True of a laptop, false of the
+device this app's users hold: **iOS Safari applies the ring/silent switch to
+Web Audio.** So the `setAudioModeAsync` fix logged earlier for the same
+complaint was a no-op on the build the owner is actually using — the app is not
+on the App Store, so the phone is running the web build. It now sets
+`audioSession.type = 'playback'`, which is Safari's own override for this.
+
+`audioContext()` also no longer throws: iOS throws from the constructor at the
+cap, and a throw out of a press handler flips the label and plays nothing,
+which is this bug wearing a different hat.
+
+### Honest status
+
+Items 1–3 are measured in Chromium on the built bundle, before and after. Item
+4 is **not verified on hardware** — there is no iPhone here, and the ring/silent
+switch is the one thing that cannot be checked without one. What is checked is
+that it is called on every path that makes a sound and that it cannot throw.
+The second-run click behaviour is unit-tested rather than measured in-page; the
+in-page repeat evidence is for Listen, which shares the context.
+
+**Three-foot test:** not applicable — no screen composition changed. The only
+visible difference is a button that stops saying Stop when the music stops.
+
+**Tests:** 673 pass (58 files), up 26. `scorePlayer.web.ts` and
+`context.web.ts` had no tests at all; both now have them, driven against a stub
+context because "how many contexts exist" and "when does `onEnd` fire" are
+structural and need no sound.
+
+**Also worth writing down:** the first run of this verification measured the
+*old* bundle and said the fix had not worked. A `serve` process from earlier in
+the session still held port 4187 against a stale `dist-fixtures`, my own server
+failed to bind, and the probe cheerfully reported four contexts. The tell was a
+stack frame naming a chunk that did not exist in `dist`. Check what the port is
+actually serving before believing a probe that disagrees with the source.
+
+**Rollback:** revert the commit. Nothing migrated, no API change.
+
+---
+
+## 2026-09-01 — An upload nobody could delete, including its owner
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. The oldest item on the
+known-holes list, open since 2026-08-24.
+
+**Files:** `backend/app/migrations/014_pending_uploads.sql` (new),
+`backend/app/services/pending_uploads.py` (new) + test,
+`backend/app/routers/upload.py`, `scores.py`, `analyses.py`, `me.py`,
+`backend/app/main.py`, `backend/app/tests/test_sweeper.py`.
+
+CLAUDE.md said what this needed rather than what it was: *"it needs a lifecycle
+decision, not a patch."* The decision, the three alternatives and the
+trade-offs are in `DECISIONS.md`; this is what changed.
+
+`pending_uploads` is written when a key is signed and deleted when a row claims
+the object. The sweeper already on the timer deletes what is still unclaimed
+after a day. **All three buckets** — a take's audio and an avatar are minted
+the same way and abandoned the same way, and only the page had ever been talked
+about.
+
+### The two orderings, which are the whole of it
+
+- **Claim after the row exists, never before.** Clearing a key before the
+  insert would strand every object of a save that then failed — one of the
+  three cases this was written for.
+- **Sweep the object before the row.** A row deleted first leaks its object
+  permanently and silently, which is this bug reintroduced one level down. A
+  row that outlives a failed deletion is swept again next pass and costs one
+  wasted request.
+
+Both are tested by asserting the *sequence*, not the outcome — an ordering that
+happens to work is an ordering that has not been checked.
+
+### What is deliberately best-effort
+
+`record` never raises. Failing to record costs a swept object later; failing
+the **upload** because the bookkeeping failed costs the musician their page,
+which is the thing the bookkeeping exists to protect. So an unrecorded object
+is exactly as orphaned as it was before — no worse than the status quo, and
+that is the right direction for this trade.
+
+### A test that predicted its own failure
+
+`test_sweeper.py` failed on a proxy 403 rather than on anything about sweeping,
+because the loop now calls a third thing and the test stubs the others. Its own
+comment already described this happening once before, when the transcription
+sweeper joined the loop. The comment now says it has happened twice and tells
+the next person the answer is a stub rather than a bug.
+
+**backend: 1828 passed, 3 xfailed.** The migration is written and **not
+applied** — it needs running against the project like 011–013 did.
+
+---
+
+## 2026-09-01 — Tuplets, and a measuring instrument that was wrong twice
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. The last gap on the music
+side, and — found while closing it — two faults in the tool that measures it.
+
+**Files:** `mobile/src/lib/notation/engrave.ts`, `fromScore.ts` + test,
+`tuplets.test.ts` (new), `mobile/src/components/notation/Stave.tsx`,
+`mobile/assets/fonts/Bravura.otf`, `tools/subset-bravura.py`,
+`tools/engraver-coverage.py`, `mobile/src/data/sources/fixtures.ts`.
+
+### Correcting something I reported today
+
+**"Worst page 71%" was wrong**, and I quoted it in three entries above this
+one. `engraver-coverage.py` compared *notes it could draw* against *notes and
+rests together*, so every rest counted as a failure. That worst page is
+`orchestral_part_page2.musicxml`: seven items, five notes, **two whole rests** —
+which the app has drawn correctly since rests existed at all. It was never a
+71% page. The tool now reads `DRAWABLE_RESTS` as well and the figure is real.
+
+That is the second time this file has measured the wrong thing. The first was
+keeping its own copy of `DRAWABLE` and reporting 13% after the engraver learned
+sixteenths. Its own docstring warns about exactly this — *"a measuring
+instrument that keeps its own copy of what it is measuring will eventually
+measure the copy"* — and it happened again by a different route, because
+tuplets are resolved by `tupletOf` and never appear in `DRAWABLE` at all. Both
+tables and the tuplet prefixes are read from the app now.
+
+### Tuplets
+
+`fromScore` dropped every tuplet and was right to: a `triplet_eighth` is
+written as an ordinary eighth, and the notehead alone puts three eighths where
+the page has three triplet-eighths — a bar half again as long as it is, in the
+same ink as the bars that are right. The bracket is the only mark that says
+otherwise, and nothing drew brackets.
+
+Two things travel with the notehead now and both are load-bearing: the
+**count**, which is what the bracket states, and the note's **true duration in
+quarters**, because beam grouping counts in real time and a triplet eighth is a
+third of a beat rather than half of one. Without the second, a triplet breaks
+its own beam in the middle and every group after it in the bar is placed from
+the wrong position.
+
+Grouping is the part that is silently wrong if it is wrong, so it is tested:
+six triplet eighths are **two** triplets, not one bracket marked 3 spanning
+six; a group ends when the family changes or a plain note interrupts; and a
+rest inside a triplet stays in the group, because a triplet with a rest in it
+is one triplet and bracketing only the noteheads spans the wrong distance.
+
+Bravura's `tuplet0`–`tuplet9` went into the subset — small bold-italic digits,
+not the time signature's, which are sized to fill two staff spaces and read as
+a metre change.
+
+### The bracket was on the wrong side, and the screenshot said so
+
+My code chose its side with `min(ys) <= 0` — *is this group high on the staff*
+— while the comment beside it claimed "above when the stems point up". Those
+are different questions with different answers: **a group of high notes has
+down stems**, so the bracket sat above three notes whose every stem pointed
+away from it. It takes the stems' own direction now, with ties going above.
+
+### Dotted rests, which were then the only thing left
+
+`DRAWABLE_RESTS` had never carried dots, and after the tuplets landed a dotted
+quarter rest was the single remaining item in the whole corpus with no glyph.
+It was undrawable only because nothing had put the dot after a rest — the
+glyph, and the rule for lifting it off a staff line, already existed for notes.
+
+### Measured
+
+    before this session   53 of 393 notes with no glyph (13%), worst page 40%
+    before this entry     12 of 393 (3%), worst page 71%  ← the 71% was wrong
+    after                  0 of 393 (0%), worst page 100%
+
+Every note **and rest** in every fixture in the repository is now drawable. The
+tool's closing note is rewritten to say what still matters: this corpus is made
+of pages somebody chose in order to check something, the first real orchestral
+part photographed scored 0%, and nothing here could have predicted it.
+
+A triplet went into the fixture study so the bracket is visible in the sample
+build, and was verified at 6×: bracket below three down-stemmed notes, hooks
+turned up towards them, the line broken for the numeral.
+
+**mobile: 659 passed, 56 files. `tsc --noEmit` clean.**
+
+### The examples in three tests moved again
+
+`still refuses to round a rest it has no glyph for` has now had its example
+changed three times — sixteenth rests became drawable, then dotted rests did.
+The **rule** is the invariant and is untouched; the test says so explicitly
+now, and says to replace the examples rather than weaken the assertion.
+
+---
+
+## 2026-09-01 — The rest of the notation moves onto the font
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. The consistency gap the
+last entry named and left open.
+
+**Files:** `mobile/src/components/notation/Stave.tsx`,
+`mobile/src/lib/notation/engrave.ts`, `mobile/src/lib/notation/fromScore.ts`
++ test.
+
+Noteheads, rests, flags and the augmentation dot are Bravura glyphs now. The
+clefs, key signature, metre and accidentals already were, and a page drawn half
+in a music font and half in hand-rolled SVG is visible if you look for it.
+
+### What the hand-drawn versions were, in their own words
+
+The `Rest` component: *"The quarter and eighth are calligraphic figures
+rendered as strokes. They read correctly at the size this draws them and they
+are not typeset music. The alternative was to count them as undrawable and
+leave holes in the bar, which for a part written in quarter rests is most of
+the bar."* Both options were bad and it picked the better one. There is a third
+now.
+
+### Three things the font made correct rather than merely tidier
+
+- **A whole note is 1.688 staff spaces wide and a half is 1.180.** One ellipse
+  drew all three noteheads at one size, so a whole note was drawn at a half's
+  width — at a glance, the wrong one of the two. `EngravedNote` carries its
+  `value` now, because `filled` says black or hollow and not *which* hollow.
+- **A sixteenth's flag is one drawing, not the eighth's flag twice.** The font
+  has the shape with both hooks and the right spacing between them.
+- **A sixteenth rest is drawn at all.** `DRAWABLE_RESTS` deliberately stopped
+  at the eighth, and its comment said why: `Stave` drew four shapes by hand and
+  an unknown value fell through to the eighth-rest hook, so drawing a sixteenth
+  rest would have printed silence twice as long as the page prints. The glyph
+  table is typed over the whole of `NoteValue` now, so there is no fall-through
+  left to be wrong about — and a sixteenth rest is a real thing on a real page
+  that this was quietly dropping.
+
+### Two tests whose premise changed
+
+`still refuses to round a rest it has no glyph for` used a sixteenth rest as
+its example, and a sixteenth rest has a glyph now. The **rule** is unchanged
+and still tested; the examples moved to a dotted rest and a thirty-second,
+which genuinely have none. A new test asserts the sixteenth rest is drawn,
+which is the other half of the same change.
+
+### Verified
+
+Screenshotted at 1× and 6×. At six times: a properly tilted notehead, the
+augmentation dot in the space beside it, a real eighth rest, and the flat from
+the last entry — all in one drawing tradition. `engraver-coverage.py` is
+unchanged at 3% with no glyph, worst page 71%, which is expected: it counts
+notes the engraver cannot place at all, and this changed how the placeable ones
+are *drawn*.
+
+**mobile: 648 passed, 55 files. `tsc --noEmit` clean.**
+
+### What is still hand-drawn, and should be
+
+Staff lines, stems, beams, ledger lines and barlines. These are rules and
+rectangles whose length depends on the music around them, not glyphs — Bravura
+has barline glyphs but they are sized for a staff drawn at the font's own
+scale, and a beam is by definition a line between two stems this engraver
+places. The multi-bar rest keeps its drawn block for the same reason: its width
+is the bar count, not a fixed advance.
+
+---
+
+## 2026-09-01 — A B flat was drawn as a B
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. The standing instruction,
+on the music side — the accuracy bug the font made fixable.
+
+**Files:** `mobile/src/lib/notation/engrave.ts` + test,
+`mobile/src/components/notation/Stave.tsx`,
+`mobile/src/data/sources/fixtures.ts`.
+
+### The bug, which the code already described
+
+`accidentalOf` returned `'sharp'` or nothing, and its own docstring said why:
+the sharp was the only accidental that could be drawn by hand, four straight
+lines. So **a B♭ was engraved as a B**, and an F♯♯ as an F♯ — *"a different
+note, printed as though it were right, which is the failure this module's own
+docstring is written against."*
+
+The staff position was always correct, because `stepOf` reads the letter and
+ignores the accidental. Nothing on the screen said the symbol was missing. On a
+page where an editor wrote a flat, that is not a detail — it is the difference
+between two notes a semitone apart, presented identically.
+
+The reasoning was right and the limitation was the tooling. Bravura removes the
+limitation: all five accidentals are in the subset already, because the key
+signature needed two of them.
+
+### Widths read out of the font, not estimated
+
+    accidentalNatural      0.672 spaces
+    accidentalFlat         0.904
+    accidentalSharp        0.996
+    accidentalDoubleSharp  1.000
+    accidentalDoubleFlat   1.652
+
+A **double flat is nearly twice a sharp**. The single `ACCIDENTAL_ROOM_FACTOR`
+that stood in for all of them would have put one through the notehead it
+belongs to and left a natural floating in space. `accidentalX` is now the
+glyph's left edge — which is where text is drawn from — placed by the width of
+the accidental actually being drawn, and `extraRoom` asks for that width. A
+test asserts every accidental's right edge stops short of its notehead.
+
+Measured from `mobile/assets/fonts/Bravura.otf` with fontTools rather than
+quoted from memory. `noteheadBlack` measures 1.180 spaces, so half of it is
+0.59 against the stem offset of 0.62 the engraver has always used — which is
+why stems have looked right all along and why they still do.
+
+### The piece now ends
+
+A thin line and a thick one, and **the last system's staff ends there**. That
+reverses a decision from earlier today, and the premise is what changed rather
+than the taste: ruling every staff to a common margin was written when nothing
+drew a final barline, where a short staff read as a rendering failure. A double
+bar with empty staff ruled past it reads worse than both — it says the music
+stopped and the paper kept going, which is what manuscript paper does and what
+printed music never does.
+
+### Verified
+
+Screenshotted, and at 6×: the flat in bar 3 of the fixture study is a Bravura
+flat, the sharps are Bravura sharps rather than the four hand-drawn strokes,
+and the piece ends in a thin-and-thick bar with the staff stopping at it. A
+fixture note changed from B to B♭ specifically so the case is visible in the
+sample build — until today it would have rendered identically.
+
+**mobile: 642 passed, 55 files. `tsc --noEmit` clean.**
+
+### Still hand-drawn
+
+Noteheads, rests, flags and the augmentation dot. They look right and the
+engraver's geometry is built around them, so moving them onto the font means
+re-verifying every stem attachment and rest baseline against different metrics.
+The measurements above are the groundwork for it; the change itself is not
+done, and mixing font clefs with hand-drawn noteheads is a consistency gap that
+is visible if you look for it.
+
+---
+
+## 2026-09-01 — Today was a dashboard; it should be a starting point
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. The owner's list is done;
+this is the standing instruction, on the screen opened every session.
+
+**Files:** `mobile/src/screens/today/TodayScreen.tsx`,
+`mobile/src/screens/today/PracticeCard.tsx` (deleted),
+`mobile/src/components/primitives/ScreenContainer.tsx`, `index.ts`.
+
+### What was there
+
+**Seven sections, five of them cards**, and — the finding that decided the
+shape of the fix — **three separate buttons that all called `openPractice`**:
+the practice card's "Continue practice", the lesson card's "Try it in
+practice", and a "Practice focus" card's own button. One action, three
+controls, none of them in the thumb zone (§3 laws 4, 7 and 10).
+
+Three of the seven were other screens' content:
+
+- **Recent practice** is Insights' "Recent sessions", one tab away.
+- **Practice snapshot** is Insights' headline, with a row that links *to*
+  Insights — which is what the tab bar is for.
+- **Practice focus** restated the lesson in different words and ended in the
+  third copy of the button.
+
+And the 36pt serif went to **"Good morning"** — the least informative thing on
+the screen — while the piece a musician came to play sat a size down inside a
+white card. The same inversion Insights had, on the landing screen.
+
+### What it is now
+
+The piece is the title. The greeting is an eyebrow. Under it: composer,
+movement and working tempo as one quiet line, then a full-bleed crop of the
+score — sheet music is the app's visual identity, and a crop inset behind a
+margin reads as a stock photograph of sheet music rather than as the page.
+Then the pipeline's own sentence about the last take, which is the *reason* for
+the button; then the lesson, whole, on the page ground.
+
+**One action, pinned to the bottom.** `ScreenContainer` already had a footer
+slot and the Record screen already used it. On a screen whose entire purpose is
+"start practising", the thing to press should be under the thumb and always
+there, not somewhere in a scroll (§3 law 7).
+
+The lesson lost its card and kept all four of its parts. The **exercise** is
+the lesson — the thing to actually do at the stand — and in the card version it
+was the last of four blocks behind a button that duplicated the one at the
+bottom of the screen.
+
+`PracticeCard.tsx` is deleted; `useRecentTakes(3)` is now `(1)`, because one
+take is all that is left to show.
+
+### A reading measure, on every screen
+
+While checking Today at 1280px I fixed the thing I noted two iterations ago and
+did not act on: **the web build had no maximum content width**. A laptop
+browser set a piece title in 36pt serif across two thousand pixels, ran a
+deviation bar the width of a desk, and put a library row's composer a foot from
+its title.
+
+`CONTENT_MAX_WIDTH` is in `ScreenContainer`, so no screen has to remember, and
+the footer gets it too — it sits outside the scroll area, and a full-width
+action bar under a 560pt column reads as another screen's furniture. The
+footer's *background* still spans the window, because a bar that stops short of
+the edges is a floating card and §3 law 9 is explicit that this is app
+furniture.
+
+Verified at 1280 on Today, Library, Insights and the score screen.
+
+### The three-foot test
+
+*Before:* a column of white boxes with a greeting on top. Naming what I noticed
+first was not possible.
+
+*After:* first **the piece title** in 36pt serif, second the sheet crop under
+it, third the ink button pinned at the bottom. One dominant focal point, the
+primary action in the thumb zone, nothing in a card.
+
+**mobile: 642 passed, 56 files. `tsc --noEmit` clean.**
+
+### Removed content, said plainly
+
+Recent practice and the practice snapshot are gone from Today. They are not
+lost — Insights has both, in more detail, and it is a tab away. If the owner
+wants them back on Today the argument would be that a musician should not have
+to change tabs to see them, which is a real argument; the counter-argument, and
+the reason I removed them, is that a screen showing everything shows nothing
+first.
+
+---
+
+## 2026-09-01 — Composer suggestions, and the seam a portrait will drop into
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Last batch of the owner's
+list of 2026-09-01: *"if they choose a composer (let them have a dropdown +
+search), some composers are tied to a picture of them selves such as beethoven,
+so thats the cover. Make sure you have a good looking one for a sqaure aspect
+ration and one for that rectangle look."*
+
+**Files:** `mobile/src/lib/composers.ts` + test,
+`mobile/src/lib/composerPortrait.ts` + test,
+`mobile/src/components/pieces/ComposerField.tsx` (new),
+`mobile/src/components/pieces/ScoreThumbnail.tsx`,
+`mobile/src/components/primitives/Input.tsx`, `ManualPieceForm.tsx`,
+`PieceRow.tsx`, `PracticeCard.tsx`, `PieceDetailScreen.tsx`.
+
+### The portraits are not here, and the reason is not a shortcut
+
+**Wikimedia Commons is refused by this environment's network policy** — 403 on
+CONNECT — and I do not retry a policy denial. Every composer on the list is
+long dead and their portraits are public domain, but sourcing them properly
+means reading each file's licence metadata and recording provenance the way
+`fixtures/scores/SOURCES.md` does. Shipping pictures whose provenance I could
+not check into something bound for an App Store would be worse than shipping
+none.
+
+So the seam is built, complete and tested, with the table empty. Filling it is
+a data change: a file in `assets/composers/`, a row in `PORTRAITS`, and every
+cover in the app picks it up. A test asserts rows are keyed on canonical names,
+because a row keyed "Beethoven" would never be found and nothing would say so.
+
+### One image, two crops
+
+The request named two shapes. Two files per composer is the obvious answer and
+the wrong one — they drift, they double the bytes, and a portrait cropped twice
+by hand is two decisions to get right instead of one.
+
+A **focal point** does it with one file: `expo-image`'s `contentPosition` takes
+percentages, so a portrait whose face sits a third of the way down keeps that
+face centred whether the frame is a square Library thumbnail or Today's wide
+banner. That is the difference between a portrait and a picture of a forehead.
+
+### The page always wins
+
+`coverFor` is page → portrait → ruled staff, and it is a tested module rather
+than a condition in a component because the order is easy to invert by accident
+and the result would be a library showing Beethoven where it has a photograph
+of the actual part. A portrait may only ever fill a hole.
+
+### Suggestions, not a picker
+
+`ComposerField` is a text field that helps. Nothing rejects, corrects, or
+requires a selection — a musician working on a living composer, or a name
+spelled the way their edition spells it, types it and is left alone. The list
+disappears the moment what is typed already names someone known.
+
+`canonical` matches **exactly**, never by prefix: a prefix match decides "Bar"
+is Bartók while it is still being typed, and rewrites a living composer's name
+into a dead one's. Suggesting is a different function with different rules —
+surname first, because a musician thinks in surnames and so does the spine of
+the book.
+
+### Fifteen aliases that were doing nothing
+
+A test asserting no two keys collide found that fifteen of the alias entries
+were **self**-collisions: `normalise` strips diacritics, so "antonin dvorak" is
+already what "Antonín Dvořák" normalises to. They restated what the normaliser
+does and hid the fact that it does it. What is left is genuinely different — a
+run-together initial ("JS Bach", one word to the normaliser), a transliteration
+("Shostakovitch"), a variant spelling ("Haendel").
+
+The test I wrote first claimed too much — that all four spellings of Bach
+normalise to one string — and "JS Bach" legitimately does not. Rewritten to
+assert the property that matters: all four reach the same composer.
+
+### One bug introduced and caught by the compiler
+
+`Input` already used `onFocus`/`onBlur` for its own focus ring. Passing a
+caller's handlers straight through would have removed the ring from every field
+that used one. They compose now.
+
+**mobile: 642 passed, 56 files. `tsc --noEmit` clean.** Driven in the browser:
+typing "bee" offers "Ludwig van Beethoven · 1770–1827", and the field keeps its
+focus ring.
+
+---
+
+## 2026-09-01 — A clef, a key signature, and paper
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Sixth batch of the owner's
+list of 2026-09-01: *"Make it generate a sort of sheet music page look, like
+how you see on music score or flat io."*
+
+**Files:** `mobile/assets/fonts/Bravura.otf` + `Bravura-LICENSE.txt` (new),
+`tools/subset-bravura.py` (new), `mobile/src/lib/notation/keySignature.ts` +
+test, `mobile/src/lib/notation/engrave.ts`,
+`mobile/src/components/notation/Stave.tsx`,
+`mobile/src/screens/pieceScore/PieceScoreScreen.tsx`,
+`mobile/src/design/typography.ts`, `scripts/generate-licences.mjs`,
+`mobile/src/data/licences.ts`.
+
+### The thing that was actually missing
+
+`engrave.ts` drew no clef and gave the right reason: a hand-approximated
+treble clef is the first thing a musician notices and the last thing they
+forgive. That reasoning is now **answered rather than accepted** — the app
+ships Bravura, the reference SMuFL font, subset in-repo from 889 KB to
+**22 KB**. Full argument and the three alternatives in `DECISIONS.md`.
+
+The clef was the visible omission. The **key signature** was the serious one:
+`key_signature` has been read off the page since Batch 2 and shown only as
+text in the metadata line, so a piece in E major was engraved with four
+accidentals missing from every system and an inline sharp on each note that
+happened to need one. That is a list of pitches, not a line of music.
+
+### Where the accidentals go, and the two rows I got wrong
+
+`keySignature.ts` holds the sharp and flat orders per clef. They are
+conventions with no room for invention, and I copied tenor's two rows from
+bass. The test that caught it is the one asserting the rule the whole table has
+to satisfy: **nothing strays more than one step off the staff, on any clef, in
+any key**. One step off is real and printed — treble's third sharp sits in the
+space above the top line — but a wrong octave shows up immediately. Tenor's
+staff sits a third below alto's, so alto's positions transplanted there put the
+first sharp above the top line.
+
+`accidentalCount` returns **null** for "unknown", for absent, and for anything
+unreadable, rather than 0. C major and "nobody could read the header" print the
+same thing, and the caller has to be able to tell them apart.
+
+### Sized in staff spaces, never in points
+
+A SMuFL em is four staff spaces by definition, so `fontSize = 4 * lineGap`
+renders every glyph at exactly the right size for the staff at any scale, with
+no per-glyph fudge factor. `layoutSystem` reserves the head's width and
+justification spends what is left, so the music starts after the metre instead
+of under it.
+
+Verified at 6× from the running build: the G clef's spiral centres on the G
+line, and the 4/4's two digits sit on the second and fourth lines. Those are
+the two things that would be quietly wrong if the baseline convention were
+misread, and both are right.
+
+### The paper
+
+`styles.plate` is white, squared off, full-bleed, with a hairline edge and no
+shadow. §3 law 3 rules out exactly this move and law 6 calls a container an
+exception — the exception here is that what is being shown **is** a page, and
+ink on paper is what a musician's eye is trained on. Rounded corners would make
+it a card pretending to be paper; a shadow would make it float, and a page on a
+stand does not.
+
+Two bugs fixed in doing it, both found by looking:
+
+- **The systems ran off the right edge.** `onLayout` reports a view's *border
+  box*, so measuring the padded page handed the stave the paper's full width.
+  An inner unpadded view is what gets measured now.
+- **The paper swallowed the Listen button.** The controls were inside the
+  plate. A Listen button is app chrome, not part of the page.
+
+### The three-foot test
+
+*Before:* staves floating on the app's ivory ground with no clef and no key —
+from across the room, a diagram.
+
+*After:* first the title in 36pt serif, second the white page of music, third
+the Listen control below it on the app ground. The page and the title are both
+strong but they do not compete: they are stacked in reading order and different
+in kind, which is what a title above a document is.
+
+**mobile: 622 passed, 53 files. `tsc --noEmit` clean.** Warmup unaffected — it
+passes no `head`, because a study-book exercise prints note names under a bare
+stave and names its instrument beside it.
+
+### Not done
+
+- **Noteheads, rests and flags are still drawn by hand.** They look right, and
+  moving them onto the font has its own geometry to re-verify.
+- **No final thin-thick barline**, and bar 1 of the fixture is still tight —
+  sixteen sixteenths, four accidentals and now a clef and metre in 350 px.
+- A glyph used without being added to `tools/subset-bravura.py` renders as
+  **nothing at all**, silently. A music font has no tofu box. The codepoint
+  table in `Stave.tsx` says so where someone would add one.
+
+---
+
+## 2026-09-01 — Four instruments instead of a test tone
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Fifth batch of the owner's
+list of 2026-09-01: *"Add actual instruments for their chosen instrument so we
+wont use that default computer sound to play the notes."*
+
+**Files:** `mobile/src/lib/score/voice.ts` + test, `index.ts`,
+`mobile/src/lib/scorePlayer.ts`, `mobile/src/lib/scorePlayer.web.ts`,
+`mobile/src/components/score/ListenButton.tsx`.
+
+### The decision being reversed, and by whom
+
+`voice.ts` argued for the single tone it shipped: *"a synthesised
+approximation that almost sounds like a cello is worse than a clean tone that
+obviously isn't one, because the near-miss invites the comparison."* The owner
+overruled it. They are right about the symptom — four harmonics with a fixed
+spectrum is a test signal, and a musician checking a transcription against one
+listens past the sound rather than to it.
+
+These are **synthesised, not sampled**, and nothing in the app implies
+otherwise. `reference` is kept and reachable, deliberately: it is the answer if
+the strings turn out to sit in the uncanny valley the old comment warned about,
+and that is a judgement needing ears and a device.
+
+### What makes it an instrument rather than a transposed waveform
+
+A violin's spectrum is not a shape you slide up and down the keyboard. The
+string gives a near-sawtooth; the **body** then filters it through resonances
+that sit at the same frequencies whatever is being played. Play a G3 and the
+body's main resonance lands on the fourth harmonic and blooms; play a G5 and
+it lands on the fundamental. That difference between registers *is* the voice,
+and a fixed list of amplitudes cannot express it — which is why a
+fixed-spectrum synth and a naively transposed sampler sound synthetic in the
+same way.
+
+So a voice is a **string slope plus body resonances in hertz**, and
+`harmonicsFor` evaluates them against the note actually being played. Both
+renderers already looped over per-harmonic amplitudes, so each changed by one
+line.
+
+### The physics I was missing, found by the tests failing
+
+Four assertions failed on the first attempt, and each was the model being
+wrong rather than the test. The last one mattered: every voice put its loudest
+partial on the **fundamental** at the bottom of its range, which is the one
+place no real instrument does. A wooden box only pushes air efficiently above
+its air resonance; below it radiation falls away steeply however hard the
+string is driven. `radiationHz` is that roll-off, second order. It is why a
+violin's open G sounds thin in its fundamental, and why a double bass's low E
+at 41 Hz — under the 60 Hz air resonance, and under what a phone reproduces at
+all — is heard almost entirely through the harmonics above it.
+
+Tuned numerically rather than guessed. Measured, and asserted:
+
+    centroid at middle C   violin 1642 > viola 1255 > cello 942 > bass 721 Hz
+    violin loudest partial G3 -> 2nd,  E5 -> 1st
+    double bass low E      loudest partial 3rd; fundamental the weakest of three
+    cello centroid         C2 574 Hz -> C4 942 Hz, a ratio of 1.6, not 4
+
+That last one is the audible corollary: an instrument does not get four times
+brighter when you play four times higher. A transposed spectrum does exactly
+that. The `reference` voice, which has no body, is asserted to behave that old
+way — so the tests pin the difference to the resonances rather than to
+anything else that changed.
+
+### One oscillator per note, not one per harmonic
+
+The web renderer created an `OscillatorNode` **per harmonic per note**. Four
+harmonics made that invisible; a violin's twenty-eight would have made a
+hundred-note piece nearly three thousand nodes, scheduled up front, on a phone
+browser. A `PeriodicWave` carries the whole series in one oscillator, cached by
+pitch — the series depends only on the fundamental, so two notes an octave
+apart genuinely need different waves, and a piece has a couple of dozen
+distinct pitches and hundreds of notes.
+
+Measured in the browser on the fixture study: **29 oscillators, 9 periodic
+waves** for 29 notes at 9 pitches. The old path would have made 812. No console
+errors; Listen plays.
+
+`disableNormalization: true`, because the amplitudes already sum to one — which
+bounds the peak at one — and letting Web Audio renormalise would make the
+register balance differ from the native renderer, where nothing does.
+
+### Wiring
+
+Every Listen in the app played the same tone whoever was holding whatever.
+`ListenButton` now reads the device instrument preference — which always has a
+value, so no screen needs a "no instrument yet" branch — and plays it. That is
+the record screen, the warmup, the piece screen and the score screen, all of
+which share this button.
+
+**mobile: 608 passed, 51 files. `tsc --noEmit` clean.**
+
+**Unverified: how they actually sound.** The spectra are measured and the node
+counts are measured; nothing here has been listened to.
+
+---
+
+## 2026-09-01 — The scanner photographed something other than what you framed
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Fourth batch of the
+owner's list of 2026-09-01: *"Fix scan sheet music. When you use the in app
+camera it uploads in low resolution and doesnt work for some reason."*
+
+**Files:** `mobile/src/lib/scan/framing.ts` + test,
+`mobile/src/screens/scanner/ScannerScreen.tsx`,
+`mobile/src/screens/scanner/ViewfinderPage.tsx`.
+
+### Measured first, and the first two suspects were wrong
+
+- **Native capture resolution is already maximal.** `expo-camera` defaults iOS
+  to `PictureSize.photo` → `AVCaptureSession.Preset.photo`, the full still
+  resolution, and Android to `ResolutionStrategy.HIGHEST_AVAILABLE_STRATEGY`.
+  Read out of the package's own Swift and Kotlin. Nothing to fix.
+- **The web resolution patch is applied and working.** I doubted it because a
+  `grep -c` for `3840` in the bundle returned 3 and they were all an unrelated
+  video-quality enum — `grep -c` counts *lines*, and a minified bundle is one
+  line. Probed the running build in Chromium instead: `videoWidth 3840,
+  videoHeight 2160`. The patch is there.
+
+Two real defects turned up in the probe.
+
+### 1. The photograph was not what the musician framed
+
+    stream 3840x2160 · preview box 296x408 · object-fit: cover · saved 3840x2160
+
+The viewfinder is a portrait page window and fills it with `cover`, which
+**crops**. The capture did not. So a page that exactly fills the frame occupies
+about **41% of the width** of the saved file, with two and a half times more
+desk than the musician chose to include. "Fill the frame" is printed under the
+viewfinder, and until now it could be followed precisely and still hand the
+reader a small, distant page — which is what `too_small_to_read` and
+`crop_systems` then have to deal with, on a picture that is mostly not music.
+
+`visibleRegion` computes the rectangle `cover` actually showed, and
+`cropToViewfinder` applies it. `PAGE_ASPECT` moved into that module and
+`ViewfinderPage` imports it back, because the crop and the preview being the
+same shape is the entire guarantee and two copies of `0.74` is two shapes.
+
+The crop never grows the image, is centred, returns **null** when the capture
+already matches the window — so a caller skips a decode-and-re-encode of a
+large photograph rather than doing one to change nothing — and falls back to
+the uncropped page on any failure. A slightly-too-wide page is a page; losing
+the shot to image processing is losing the shot.
+
+### 2. On web every photograph was a PNG, and `quality` was discarded
+
+`expo-camera`'s browser implementation defaults `imageType` to `'png'`, and its
+`toDataURL` passes `quality` through **only** for `'jpg'`. So a 3840x2160
+capture arrived as a lossless data URI an order of magnitude larger than it
+needed to be, held in JS memory per page, and the `quality: 0.8` this screen
+asked for was silently dropped.
+
+This one already has a scar in the tree. `uploadPage.ts` reads: *"a phone
+stored PNG bytes under a JPEG content type, and the vision API — which checks —
+rejected the page with a 400."* That workaround was treating the symptom.
+
+`imageType: 'jpg'` fixes it at the source, and the capture quality goes from
+0.8 to **0.95**: this is the *first* encode, `shrink.ts` exists to trade
+quality away later and only when a page must fit under a limit, and its ladder
+starts at 0.9 — so capturing at 0.8 meant the gentlest rung re-encoded an
+already-lossy JPEG and made it larger. JPEG artefacts land hardest on exactly
+what this photographs, one-pixel staff lines on white paper.
+
+### Measured after
+
+    dimensions   3840x2160  ->  1598x2160   (= round(2160 x 0.74), the framed page)
+    format       image/png  ->  image/jpeg
+
+Driven in the real browser with a fake camera: shutter pressed, page captured,
+the legibility warning still fires, and the review thumbnail is now
+portrait-shaped — the same shape as the frame the page was composed in, where
+before it was the whole landscape sensor frame.
+
+**mobile: 596 passed, 50 files. `tsc --noEmit` clean.**
+
+### Not addressed
+
+A phone **browser** gets its pixels from `getUserMedia`, which is a video
+pipeline and is capped well below the 12-megapixel still the system camera
+app produces. A `<input type="file" accept="image/*" capture="environment">`
+route would hand the same page over at full sensor resolution on iOS and
+Android alike. That is a different capture flow, not a setting, and it is not
+done — noted because it is the remaining ceiling on the web build, and neither
+of the defects above was it.
+
+---
+
+## 2026-09-01 — Listen from a bar, at a tempo you chose
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Third batch of the owner's
+list of 2026-09-01: *"allow the person to be able to choose which measure to
+start at / listen starting at that measure"* and *"when you click the peice
+allow the user to choose tempo and where they want to listen to and what
+measure."*
+
+**Files:** `mobile/src/lib/score/schedule.ts` + `startAt.test.ts`, `index.ts`,
+`mobile/src/components/score/ListenButton.tsx`,
+`mobile/src/components/score/PlaybackSettings.tsx` (new),
+`PieceScoreScreen.tsx`, `RecordScreen.tsx`.
+
+### Trimmed by time, not by measure number
+
+`startAtMeasure` finds the earliest note belonging to the chosen bar and keeps
+everything from there. That is not an implementation detail — it is the
+feature. `measuresInPlayOrder` expands repeats, so in a piece with bars 1–2
+repeated the played order is `1 2 1 2 3 4`, and "notes in bar 2 or later" keeps
+the second pass through bar 1 and drops nothing useful. What a musician means
+by "start at bar 2" is *the first time bar 2 comes round, then carry on* —
+repeat included. The test asserts exactly that sequence.
+
+A note **tied into** the chosen bar is not re-struck. It began before you did;
+sounding it again is a note the page does not have.
+
+`startableMeasures` reads the bars off the **schedule**, so the picker can only
+offer bars that sound. A bar of rests has nothing to enter on, and offering it
+produces a Listen that appears to do nothing.
+
+A bar the piece never reaches plays from the top rather than falling silent. A
+recoverable surprise beats a button that looks broken.
+
+### The tempo the piece screen never had
+
+`PieceScoreScreen` played at `piece.markedBpm ?? 72` with **no control at
+all** — so a piece marked at 152 could be heard at 152 and at nothing else. It
+now reads `practiceTempo`, the same store the Record screen writes, seeded by
+the metronome mark or the printed marking (`bpmForMarking`, added earlier
+today). The sheet says so, because a listener who slows a hard passage down
+would otherwise be surprised to find the take slowed with it.
+
+The old `FALLBACK_LISTEN_BPM = 72` is gone and its reasoning is left in place
+as a comment: it was a study tempo, and it was defensible only while nothing on
+the screen could change the number.
+
+### One quiet line, not a panel
+
+`PlaybackSettings` renders `Listen from bar 9 · 96 BPM` under the Listen
+button, each half a tap onto a `BottomSheet`. No card: these are settings for
+the button above them, and a box would give them the weight of the music (§3
+laws 3 and 10). It hides itself when there is nothing to choose — a control
+offering one option teaches a musician to stop reading the controls.
+
+**"Listen from", not "From".** On the Record screen this line sits between
+Listen and "Recording tips", and a bare "From bar 1" there reads as where the
+*take* starts.
+
+### What the take does not do, and why
+
+**Recording still begins at bar 1.** The analysis builds its expected timeline
+from the whole score, so a take that started at bar 40 and did not say so would
+be compared against bar 1 onwards and reported as wrong from its first note.
+Making that work is a contract — a start bar on the take, and an offset in
+`alignment.py` — not a screen change, and it is not done. The comment beside
+the control says so at the point where someone would otherwise assume it.
+
+### Verified
+
+Screenshotted from the running build at both screens, and the bar sheet opened
+and read: six bars listed for the fixture study, "Bar 1 — Current" marked.
+Three-foot test unchanged on both — the Record screen still leads with the
+record button in the thumb zone, the score screen with the title and the stave,
+and the new line is metadata weight and recedes.
+
+**mobile: 589 passed, 49 files. `tsc --noEmit` clean.**
+
+---
+
+## 2026-09-01 — The large empty box on a piece whose photograph was deleted
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Second batch of the owner's
+list of 2026-09-01: *"when photos are deleted it creates some really large box
+for that piece."*
+
+**Files:** `backend/app/routers/scores.py`, `backend/app/tests/test_scores_router.py`,
+`mobile/src/components/pieces/ScoreThumbnail.tsx`,
+`mobile/src/lib/imageSource.ts` + test.
+
+### What it was
+
+**Signing a URL does not check that the object exists.** `_with_image_urls`
+signed `source_image_url` for every row it returned, including rows whose page
+had been deleted by `POST /:id/accept` — the row keeps the key on purpose, so
+the deletion can be audited. So the app was handed a perfectly well-formed
+download URL for a photograph that is gone, `thumbnail` was non-null,
+`hasPages` was true, and the piece screen drew an `Image` at `PAGE_HEIGHT` that
+could never load: a large empty box, an "Original" tab that showed nothing, and
+no explanation. The row has recorded `page_image_discarded_at` all along; it
+simply was not being believed.
+
+Every screen's absent-photograph handling was already correct and none of it
+ran, because from the app's point of view the photograph was present.
+
+### Two changes, and only the first is the fix
+
+- **The server does not sign a discarded page.** One condition in
+  `_with_image_urls`, and it skips the signing round trip as well as the null
+  — asking storage for a key whose object is gone is a request to be told
+  nothing. Two tests: one that the discarded row's `image_url` is null *and*
+  that `create_signed_urls` was never called, and one that a page still there
+  is still signed — without the second, the first would pass by never signing
+  anything again.
+- **`ScoreThumbnail` falls back to its ruled-staff placeholder on a load
+  error.** Belt to those braces: a signed URL can also expire, and the failure
+  should be the placeholder that already exists rather than a hole the size of
+  a page.
+
+The retry rule has a trap in it, which is why it is a tested module rather than
+three lines in the component: a new source clears the failure, and if "new" is
+decided by object identity then a refetch that returns the *same* photograph
+builds a new `{ uri, cacheKey }` — so a genuinely dead URL retries, fails,
+resets and flickers. `sourceIdentity` reads the storage path out of the source,
+which is the photograph's identity across token rotations. It lives in
+`lib/imageSource.ts` beside `stableImage` because the component imports
+`expo-image` and a module that does cannot be loaded under vitest at all.
+
+**mobile: 579 passed. backend: `test_scores_router.py` + `test_multi_page_api.py`
+92 passed.** The full backend suite was still running when this was written; the
+two files touched are green.
+
+---
+
+## 2026-09-01 — Sound: the session nobody configured, and a real count-in
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. First batch of the owner's
+list of 2026-09-01 — the three items about sound, plus the tempo default.
+
+**Files:** `mobile/src/lib/audio/session.ts` (+ `.web.ts`),
+`mobile/src/lib/metronome/countIn.ts` + test, `useMetronome.ts`, `click.ts`,
+`mobile/src/lib/scorePlayer.ts`, `mobile/src/lib/audio/types.ts`,
+`audioRecorder.ts` + `.web.ts`, `mobile/src/lib/tempoMarking.ts` + test,
+`mobile/src/App.tsx`, `RecordScreen.tsx`, `PracticeSetup.tsx`,
+`HelpScreen.tsx`, `ProfileScreen.tsx`, `fixtures.ts`.
+
+### "On iPhone when my phone is on silent the audio during playback doesn't play"
+
+**Nothing in the app had ever configured the audio session.** No call to
+`setAudioModeAsync` existed anywhere — so iOS used whatever category the
+session happened to be in, which respects the ring/silent switch. A musician
+with their phone on silent, which is most musicians in most practice rooms,
+pressed Listen and heard nothing. Nothing was broken in the player; the
+operating system was doing what an unconfigured session asks for.
+
+`lib/audio/session.ts` asks for `playsInSilentMode: true` and `doNotMix` — a
+metronome another app can duck is a metronome that vanishes under the beat it
+is giving you. It is applied at launch **and** before every player, because
+recording takes the session away: `AudioStream.start()` puts iOS in `.record`
+with mode `.measurement` and `stop()` deactivates it, which is right and is why
+`audioRecorder.ts` deliberately does not fight it — but what is left afterwards
+is not a playback session.
+
+**Unverified on hardware**, and it is the one thing here that can only be
+verified there. This typechecks against `expo-audio`'s documented `AudioMode`
+and has never made a sound.
+
+### "Give them a haptic and tick sound countdown, just like a conductor"
+
+The count-in used to inherit the take's metronome mode, so with the metronome
+off or on visual it counted in silence — and it could not simply be turned up,
+because `alignment.py` measures every onset **from the first one it detects**.
+A click over the speaker while the microphone is open becomes the note the
+whole take is judged against.
+
+`Recorder.discardCapturedSoFar()` resolves it: the count ticks and taps
+whatever the mode says, and on the downbeat the pre-roll — clicks, room, and
+the hardware's start-up — is dropped, so the file begins where the music does.
+Full reasoning and the three alternatives in `DECISIONS.md`.
+
+The rules are in `lib/metronome/countIn.ts` rather than in the screen, because
+there is no React Native testing library here and this is four booleans that
+all look plausible whichever way round they are. One of the tests asserts that
+the count-in and the take **differ** for every mode but the audible one — if
+they ever agree, the count-in has stopped being a count-in.
+
+Three pieces of copy promised the silence this breaks — the first-take
+orientation, Help, and the Profile metronome note. All three now say the
+count-in is loud and that those seconds are discarded.
+
+### "Default the tempo to the identified tempo on the page. If not there, 80."
+
+Already true for a *metronome mark*: `tempoFor` reads the remembered tempo,
+then `bpm_hint`, then 80. The gap was a page headed with a **word**. The
+importer fills `bpm_hint` only from a mark it has actually read, so "Allegro
+moderato" and nothing else left it null — and most of the standard repertoire
+printed before about 1830 is marked with words, so most real pages fell to 80.
+A moderately fast movement offered at a walking pace.
+
+`lib/tempoMarking.ts` gives twenty-odd terms their conventional speed. It is a
+**convention, not a reading**, so it stays on this side of the wire and the
+screen names the marking under the number: *"The page is marked Quasi presto
+and gives no metronome mark. This is what that usually means — move it to what
+you play."* The ordering in the table is load-bearing and tested: a
+shortest-first scan reads "Allegro moderato" as a plain Allegro and "Andante
+moderato" as a Moderato, one too fast and one much too fast.
+
+A fixture piece now carries a word marking and no mark, so the path is visible
+in the sample build. Screenshotted: Paganini's Caprice 24 seeds at **176** from
+"Quasi presto", where it used to open at 80.
+
+**mobile: 575 passed, 48 files. `tsc --noEmit` clean.**
+
+### Still open from the owner's list
+
+Start-at-a-measure, playback tempo and measure choice, sheet-music page layout,
+the oversized box on a piece whose photograph was deleted, composer picker with
+portraits, real instrument samples, and the in-app camera's low-resolution
+upload. None attempted yet.
+
+---
+
+## 2026-09-01 — Insights was four white boxes with no first thing to look at
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Seventh iteration of the
+consumer-grade loop.
+
+**Files:** `mobile/src/screens/insights/InsightsScreen.tsx`,
+`mobile/src/screens/insights/PieceInsightRow.tsx`,
+`mobile/src/screens/insights/copy.ts` + test,
+`mobile/src/components/skeletons/InsightsSkeleton.tsx`.
+
+### The three-foot test, before
+
+Screenshot of the running build: **a column of four white rounded cards on the
+beige ground, all the same weight.** Naming what I noticed first, second and
+third was not possible — nothing led. That is §3 law 4 failing, and laws 3 and
+6 are why: every section had been turned into a card, so the only visual
+language on the screen was the box.
+
+Worse, the 36pt serif went to the word **"Insights"** — the one word on the
+screen that says nothing, since the tab under the reader's thumb is already
+labelled that — while the sentence a musician opened the tab for, *"You tend to
+rush"*, sat a size down inside a box. Law 8 exactly, inverted: the container
+was doing the work the type scale should do.
+
+### What changed
+
+- **The finding is the title.** `PageHeader` now takes the tendency; the screen
+  name moved into the eyebrow as `Insights · last 30 days`, where a screen the
+  tab bar already names belongs.
+- **No cards.** The tendency, its sentence, its bar and the two end labels are
+  one thought and typography groups them. The lists are ruled rows — which is
+  what the Library one tab away is, and it is the same list of the same pieces;
+  boxing them here and not there made one thing look like two.
+- **The row of three big numbers is gone.** "34 sessions" was already in the
+  sentence under the title and "30 days" already in the eyebrow — two thirds of
+  that block was the screen repeating itself in a larger typeface. The third, a
+  count of pieces, is one scroll of the list below (§3 law 10).
+- **`PieceInsightRow` had no `onPress`.** A screen that names your pieces,
+  measures them and does not open them is a report, not an app — and it is the
+  one place a musician has just been told which piece needs work. It opens the
+  piece now.
+- **"Next focus" is a row, not a card with a button in it.** `TodayRow` already
+  is "a title, a reason, and a tap", which is exactly what this is. Its copy
+  went from three sentences to one, because a card was what the three sentences
+  needed.
+- **The skeleton drew a card the loaded screen no longer has.** A bordered box
+  resolving into text on the page ground is a layout jump at the moment a
+  reader is deciding where to look. It now has the shape of what arrives.
+- Copy rules moved to `screens/insights/copy.ts` and are tested. There is no
+  React Native testing library here (`DECISIONS.md`, 2026-08-24), so a plural
+  rule inside a `.tsx` is a rule nothing checks — and "1 sessions" reads fine
+  in review.
+
+### The three-foot test, after
+
+Screenshot again: first **"You play steadily"** in 36pt serif, second the ochre
+deviation bar directly under it, third the list of pieces. One dominant focal
+point, secondary information receding, and the ochre used as an accent on
+progress only (law 5).
+
+**mobile: 558 passed, `tsc --noEmit` clean.**
+
+### Observed, not fixed
+
+At 1280px the web build has **no maximum content width** — the rows and the
+deviation bars run the full 2000px of a laptop screen. This is app-wide, not
+this screen, and predates this change. `ScreenContainer` is where it would be
+fixed. Recorded here so it is not discovered twice.
+
+---
+
+## 2026-09-01 — Four engraving faults a screenshot found and no test could
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Sixth iteration of the
+consumer-grade loop, continuing the music side.
+
+**Files:** `mobile/src/lib/notation/engrave.ts` + test,
+`mobile/src/lib/notation/fromScore.ts` + test,
+`mobile/src/components/notation/Stave.tsx`,
+`mobile/src/screens/pieceScore/PieceScoreScreen.tsx`,
+`mobile/src/data/sources/fixtures.ts`.
+
+### Why: the previous entry's own honest gap
+
+It ended: *"**The glyphs have not been seen.** No fixture score contains a
+sixteenth or a dot… a flag curving the wrong way would pass every test here.
+A fixture with fine values, or a real scan, is what would settle it."*
+
+So one was written. `FINE_VALUES_SCORE` in `fixtures.ts` is six bars, each
+carrying one thing that used to be undrawable — sixteenths in fours, a
+dotted-eighth pair, a lone eighth between rests, a dotted quarter, a dotted
+half, a half rest — and it is attached to the Kreutzer étude, which is
+genuinely a page of continuous sixteenths (`fixtures/scores/SOURCES.md`). It
+is in A minor because this engraver draws no key signature, so a study in D
+major would print a sharp on every F and the picture would be about
+accidentals instead of about rhythm.
+
+Then the screen was built and looked at. **Four faults, none of which any
+assertion in the repository could have caught, because each of them is about
+where ink lands rather than what the data says.**
+
+### 1. Beams did not break at the beat
+
+The opening bar engraved as **one beam sixteen notes long** — a black slab
+across the system, every stem stretched to meet the lowest note in the bar. It
+is not a rhythm anyone can count and no engraver prints it.
+
+`engrave` now takes `beatQuarters` and breaks a run whenever a note *starts*
+on a beat. Checked on the start, not the end, so a dotted eighth keeps the
+sixteenth that finishes its beat — which is exactly how the pair is printed.
+Rests advance the clock, barlines reset it. `beamBeatQuarters` in
+`fromScore.ts` reduces a time signature to the only thing this needs from it,
+and it counts **compound metres in threes**: 6/8 is two beats of three
+eighths, and beaming its eighths in pairs is the tell of notation drawn by
+something that has only ever been shown 4/4.
+
+Measured, on the scale-run fixture: longest stem 11.75 staff gaps as one
+group, **under 6** beamed a beat at a time.
+
+### 2. A second beam spanned notes that do not carry one
+
+`EngravedBeam` carried a `count` and the component drew that many parallel
+lines across the whole run. Right only when every note in the run is the same
+value — and a **dotted eighth followed by a sixteenth** is the commonest
+rhythm in string writing and the commonest counter-example: two full beams
+across the pair says *both notes are sixteenths*, so the bar is drawn a beat
+and a half short of the page, in the same confident ink as the bars that are
+right.
+
+A beam is now one line at one level. Level 1 spans the group; each level above
+spans only the notes that carry it, in maximal runs, with a **stub** where a
+note carries a level alone — pointing back toward the note it shares a beat
+with, forward only when there is nothing behind it. The component draws lines
+and no longer computes where they go.
+
+### 3. A group's stems followed its first note, not its furthest
+
+Bar 1's closing group — C5 down to G#4 — opened on the one note above the
+middle line, so all four stems pointed down and the beam hung below the staff.
+Engraving's rule is the extreme note; ties go down.
+
+### 4. An accidental had no width
+
+Columns are evenly spaced, so sixteen sixteenths on a phone get about 1.6
+staff gaps each — and a sharp drawn 1.55 gaps left of its notehead therefore
+landed squarely on the **previous note**. Four of them did, and every test
+passed.
+
+Even columns are the rule for *duration* — this file spaces a whole note and a
+sixteenth alike on purpose. That was never an argument for refusing an
+accidental the room it physically occupies. A note carrying one now widens its
+column, and the room is spent **before** justification divides the width up,
+or the system would run past its own right margin. `accidentalX` moved onto
+`EngravedNote`: where a mark goes is geometry, and the component had been
+keeping its own copy of the notehead's half-width to place it.
+
+### The three-foot test
+
+*Before:* the first thing the eye hits from across the room is a **black
+horizontal slab** in the first system — heavier than the title above it. Second
+the title, third the toggle. Two competing focal points and the wrong one wins:
+the hierarchy was being decided by an engraving bug.
+
+*After:* first the title, second the notation block reading as four lines of
+music that get airier down the page, third the Listen button in the thumb zone.
+One dominant focal point, secondary information receding. Unchanged
+composition — the fix was inside the notation, not around it.
+
+### Tests
+
+Nine added: beat grouping (sixteens in fours, the dotted pair, a rest as time
+passing, barline reset, compound time, stem length), stem direction, and two
+on accidental room. Six rewritten — their *premise* changed, not their
+invariant: they used runs of eighths as the innocuous example, and two eighths
+are now a beat, so they say the same things about sixteenths. `groups()`
+counts beamed groups rather than beam lines, which stopped being the same
+number the moment a group could produce two.
+
+**mobile: 552 passed, 46 files. `tsc --noEmit` clean.** Rebuilt the fixtures
+web bundle and screenshotted at 1× and 6× — the sixteenth beams, the stub, the
+flag on the lone eighth, the augmentation dot beside a note on a line, and the
+half rest were each read off the picture. `mobile/.env` was moved aside under a
+`trap … EXIT` for each build and verified byte-identical afterwards.
+
+### Not done
+
+- `tools/engraver-coverage.py` is unchanged at **3% with no glyph, worst page
+  71%** — this work was about how the drawn notes *look*, not which are drawn.
+  The 12 remaining are tuplets and still need a bracket.
+- **Bar 1 is legible but tight.** Sixteen sixteenths with four accidentals in
+  350 CSS px is genuinely more than that width holds at `STAVE_SCALE`; the
+  noteheads nearly touch. Reserving accidental room bought the collision back
+  but not comfort. The real answer is scale or a wrapping rule that can break a
+  bar, and neither is a small change — noted, not attempted.
+- The staff lines still rule past the final barline on a short system. That is
+  a deliberate decision from an earlier entry (manuscript paper), left alone.
+
+---
+
+## 2026-08-31 — The stave could not draw a sixteenth
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Fifth iteration of the
+consumer-grade loop, on the music side.
+
+**Files:** `mobile/src/lib/notation/engrave.ts` + test,
+`mobile/src/lib/notation/fromScore.ts` + test,
+`mobile/src/components/notation/Stave.tsx`, `mobile/src/lib/warmup.ts`,
+`tools/engraver-coverage.py`.
+
+### Measured before deciding
+
+`tools/engraver-coverage.py`, on the corpus:
+
+    53 of 393 notes have no glyph (13%)
+    worst page: orchestral_part.json at 40% drawn
+
+    sixteenth        30   <- no glyph
+    dotted_eighth     7   <- no glyph
+    triplet_quarter   6   <- no glyph
+    triplet_eighth    6   <- no glyph
+    dotted_quarter    4   <- no glyph
+
+A sixteenth is the commonest subdivision after the eighth, and a musician
+looking at the worst page saw **two notes in five**. That is not a stave of
+their music.
+
+After:
+
+    12 of 393 notes have no glyph (3%)
+    worst page at 71% drawn
+
+### Three glyphs, and one of them was already wrong
+
+**Sixteenths** — a second beam, and two flags unbeamed.
+
+**Dots**, as a field on the note rather than new values in `NoteValue`: a dotted
+quarter is the same notehead and stem with one more mark, and enumerating the
+combinations doubles the union for nothing. The dot lifts into the space above
+when the note sits on a line, which is where an engraver puts it.
+
+**Flags on a lone note, which had never existed.** Beams were only emitted for
+runs of two or more, so a single eighth — one between rests, or the last in a
+bar — was drawn as a filled notehead on a plain stem. That is a **quarter**. It
+had been reading at twice its length, in the same ink as the notes around it
+that were right, since the engraver was written.
+
+And the beam walker keyed on `value === 'eighth'`, which was the whole of what
+could be drawn when it was written — so sixteenths were never grouped at all
+until `TAILS[value] > 0` replaced it.
+
+### The rest set stayed narrow, deliberately
+
+`Stave.tsx` draws four rest shapes and falls through to the eighth hook for
+anything else. Teaching the note set about sixteenths without splitting the two
+would have drawn every sixteenth **rest** as an eighth rest — silence at twice
+its length, which is the same substitution the note work was done to stop. There
+are two tables now, and the rest one is shorter.
+
+### Tuplets are still left out, and that is the decision
+
+A `triplet_eighth` is an ordinary eighth under a bracket marked 3, and this
+engraver draws no brackets. Drawing the notehead alone puts three eighths where
+the page has three triplet-eighths — a bar reading half again as long as it is.
+The 12 remaining undrawn notes are all tuplets, still counted, still named on
+screen.
+
+### The measuring instrument was measuring a copy
+
+`engraver-coverage.py` kept its own `DRAWABLE = {"whole", "half", "quarter",
+"eighth"}` under a comment saying it mirrored `fromScore.ts`. It stopped
+mirroring it the moment the engraver changed, and went on reporting 13% when the
+real figure was 3%. It reads the app's own table now, and refuses to run rather
+than guess if the shape changes.
+
+### Tests
+
+`mobile` 46 files / 537 passed, `tsc` clean. Seven new cases on the engraved
+geometry: a lone eighth carries one flag, a sixteenth two, a beam clears them,
+a run holding a sixteenth gets a double beam from the thinnest note in it, and
+only notes a quarter or shorter are filled.
+
+Six existing tests used sixteenths and dotted values as their examples of "what
+this cannot draw". Rewritten to use a triplet, which still is not — the rule
+they test is unchanged and only the example moved.
+
+### Not verified
+
+**The glyphs have not been seen.** No fixture score contains a sixteenth or a
+dot, so the screenshot of `/pieces/fixture-kreutzer-02/score` shows quarters and
+eighths and proves nothing about the new shapes. The geometry is unit-tested
+exactly; the *drawing* is not, and a flag curving the wrong way would pass every
+test here. A fixture with fine values, or a real scan, is what would settle it.
+
+## 2026-08-31 — Two bugs that only a link could reach, both mine
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Fourth iteration of the
+consumer-grade loop, spent checking the two previous ones rather than adding
+anything.
+
+**Files:** `mobile/src/navigation/linking.ts` + test,
+`mobile/src/screens/legal/LegalScreen.tsx`, `mobile/src/lib/legal.test.ts`.
+
+### `5 === "5"` is false
+
+`MeasureEdit` takes `measureNumber: number`. A URL parameter always arrives as
+**text**, and React Navigation does not coerce it — so `/pieces/x/bars/5` handed
+the screen `"5"`, and the screen does:
+
+    m.measure_number === params.measureNumber
+
+which is `5 === "5"`. The editor opened, matched no measure, and still titled
+itself **"Bar 5"**. A screen that looks like it worked and did not, reachable
+from a link and from nothing else.
+
+Shipped in iteration 2, where the linking test checked that the *path* contained
+`:measureNumber` — true, and not the question. `parse` and `stringify` are on
+that route now, and `pathsByScreen` understands the `{ path, parse }` form or
+the route would have vanished from the map.
+
+The new test reads the numeric parameters out of `types.ts` rather than listing
+them, so a route added next month with a number in it fails here instead of
+shipping unparsed.
+
+Verified cold in the browser: `/pieces/fixture-bach-bwv1001/bars/3` now reads
+**"Bar 3 · 4 of 4 beats · This bar adds up."**
+
+### A legal document that does not exist crashed the app
+
+`/legal/nope` reached `DOCUMENTS['nope']`, which is `undefined`, and reading
+`.title` off it threw into the error boundary: **"Something broke — InTempo hit
+an error it couldn't recover from."** A typo, a truncated share or a stale link
+was enough to take the whole app down.
+
+Shipped in iteration 3, an hour earlier. The route's type says
+`'privacy' | 'terms'`, and that is exactly what made it easy to miss:
+TypeScript checks the callers it can see, and **a URL is not one of them**. Two
+bugs in two iterations, both from trusting a type at a boundary the type does
+not cover.
+
+It renders a "Not found" screen now, naming where the two documents actually
+are, with a way back.
+
+### The rest of the cold-open pass
+
+Every parameterised route opened from a fresh page load:
+
+| URL | result |
+|---|---|
+| `/pieces/:id` | the piece, with its composer and movement |
+| `/pieces/:id/score` | the notation, clef and metre |
+| `/pieces/:id/bars/3` | the bar editor, on the right bar |
+| `/pieces/:id/record` | the record screen |
+| `/add/manual` | the hand-entry form |
+| `/scan/pages` | the review list, honestly empty |
+| `/pieces/does-not-exist` | *"Couldn't open this piece. It may have been removed from your library."* |
+
+That last one is somebody else's work and it is the right answer — a named
+state with a route out, not a spinner and not a crash.
+
+An unknown path such as `/nonsense` falls back to Today. That is React
+Navigation's default and it is acceptable; a "page not found" would be kinder
+and is not a bug.
+
+### Tests
+
+`mobile` 46 files / 530 passed, `tsc` clean.
+
+### Not verified
+
+**Offline behaviour.** The fixtures build serves seeded data and needs no
+network, so switching the browser offline proved nothing. Testing it honestly
+needs the live build and Supabase keys, which this session does not have.
+
+## 2026-08-31 — A privacy policy and terms, written from the code
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Third iteration of the
+consumer-grade loop.
+
+**Files:** `mobile/src/lib/legal.ts` (new) + test (new),
+`mobile/src/screens/legal/LegalScreen.tsx` (new),
+`mobile/src/navigation/{types,RootNavigator,linking}`,
+`mobile/src/screens/profile/ProfileScreen.tsx`.
+
+### The gap
+
+Both stores refuse a submission without a privacy policy, and this app holds
+more than most: an email address, a name, a photograph of the musician,
+photographs of the music they are working from, and audio recordings of them
+playing. It also sends pages to two companies that are not us. None of that was
+written down anywhere a musician could read it.
+
+### Written from the code, not from a template
+
+Every retention sentence names behaviour that actually exists. A page
+photograph goes when the reading is accepted — nothing else deletes it, not a
+confidence score and not a timer, because the photograph is what the reading is
+checked against. Deleting a piece deletes its photographs. The processor list is
+the four services `backend/app/` actually talks to: Supabase, Modal, Anthropic,
+and Google, which is off. The training paragraph describes
+`013_training_corrections.sql`, which is consent-gated and withdrawable.
+
+`legal.test.ts` holds it there. It fails if any of the four processors stops
+being named — a policy that omits a processor is the one error here that
+matters — if the four questions a policy exists to answer lose their headings,
+or if the terms stop saying the reading can be wrong. The app's whole output is
+an automated reading and a verdict measured against it, and the rest of this
+codebase is careful never to claim accuracy it has not measured; the terms had
+to match that or they would promise something nothing else does.
+
+The copyright paragraph is specific to this app rather than boilerplate: a
+musician photographs printed music, and most printed music is somebody's
+copyright.
+
+### The publisher's details are null, not plausible
+
+`OWNER.entity`, `OWNER.contact` and `OWNER.jurisdiction` are `null`. A policy
+naming a company nobody registered, at an address nobody reads, in a
+jurisdiction nobody chose, looks exactly like a finished one and would ship. The
+screen renders those lines only when they exist, so an unfilled field is silence
+rather than a lie, and `missingOwnerDetails()` is the checklist for whoever
+prepares the submission. Same stance the pipeline takes on a clef it has not
+read.
+
+### Three-foot test — the document screen
+
+Title first, section labels marching down the page second, body third. **No
+cards**: a policy is continuous prose and boxing each section breaks the one
+thing a reader needs, which is to go top to bottom without losing the thread
+(§3 law 3). The hierarchy is typographic, which is what a type scale is for
+(law 8). Verified on a screenshot of the running build.
+
+### One bug caught before it shipped
+
+The route was first given the path `:document`, which is a **single-segment
+wildcard** — it matches any one-segment URL, so `/help` and `/library` would
+have resolved to the legal screen with `document="help"` depending on match
+order. Namespaced to `legal/:document`, and `/help` and `/library` were then
+opened cold to confirm they still land where they should.
+
+### Tests
+
+`mobile` 46 files / 527 passed, `tsc` clean. Both documents opened cold at
+`/legal/privacy` and `/legal/terms` in the running build.
+
+### Not done
+
+The same words have to be hosted at a public URL — both stores ask for a link,
+not only an in-app screen — and the three `OWNER` fields have to be filled in
+before either is submitted.
+
+## 2026-08-31 — The web build had one URL, and Back left the app
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Second iteration of the
+consumer-grade loop, and the first that looked at the app rather than the code.
+
+**Files:** `mobile/src/navigation/linking.ts` (new) + test (new),
+`mobile/src/App.tsx`.
+
+### Found by walking the app, not by reading it
+
+A Playwright walk of the shipping web build fell over after two taps, and the
+reason was not the script. `NavigationContainer` was mounted with **no
+`linking`**, so React Navigation kept the whole stack in memory and never
+touched browser history. Measured:
+
+    tap Profile               -> http://127.0.0.1:4180/
+    open "Download my data"   -> http://127.0.0.1:4180/
+    press browser Back        -> about:blank      (left the app entirely)
+
+One omission, three consumer failures, on the build that ships to Cloudflare
+Pages:
+
+- **Back quits the app** instead of going back a screen — the one gesture every
+  web user has, and it does the most destructive thing available.
+- **A refresh loses your place**, always returning to Today.
+- **Nothing is linkable.** A musician cannot send a piece to their teacher or
+  keep a tab open on the score they are working through.
+
+### Fixed, and verified in the browser rather than asserted
+
+    tap Profile               -> /profile
+    open "Download my data"   -> /account/export
+    press browser Back        -> /profile          ✅
+
+Seven deep links opened cold, each landing on the right screen: `/library`,
+`/insights`, `/profile`, `/account/export`, `/help`, `/acknowledgements`,
+`/warmup`.
+
+The native builds get their deep links out of the same change — `app.json` has
+declared the `intempo` scheme all along and nothing was using it.
+
+**Paths are written to age, not to mirror the navigator**: `/pieces/:pieceId`
+rather than `/PieceDetail`, because the URL is the part a musician might paste
+to somebody and the screen names are ours. Nesting follows meaning, so
+`/pieces/x/score` is guessable and correct.
+
+The scan steps are linkable too, which is a deliberate call rather than an
+oversight: the captured pages live in memory, so someone who refreshes mid-scan
+lands on the step they were on and finds it empty. That is recoverable and
+legible; landing on Today wondering where the scan went is neither.
+
+### The test is the part that lasts
+
+`linking.test.ts` reads the route names out of `navigation/types.ts` and fails
+if any screen has no path. A screen without one is not a small omission — it is
+a screen the Back button walks out of the app from, and nothing else in the
+suite would notice. It also refuses two screens sharing a path, and checks that
+the parameter names in a path match what the screen reads, because a path saying
+`:pieceId` for a screen reading `params.id` opens empty **only from a link** —
+the one route nobody tests by hand.
+
+`linking.ts` deliberately imports no runtime. `expo-linking` reaches
+`react-native`, whose Flow syntax vitest cannot parse, so importing it here
+would make the file untestable and the test is the whole point. The prefixes are
+composed in `App.tsx`, which no test imports — the same split, for the same
+reason, as the lazy import in `lib/scan/shrink.ts`.
+
+### Tests
+
+`mobile` 45 files / 519 passed, `tsc` clean.
+
+### Not done
+
+Route-level: `PieceDetail`, `PieceScore`, `MeasureEdit`, `Record` and `Verdict`
+have paths but were not opened cold in this pass, because the fixture ids are
+not stable across builds. The four parameterless account routes and all four
+tabs were.
+
+## 2026-08-31 — Reconciling with 26 commits of another agent's work
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. First iteration of a
+`/loop` aimed at consumer-grade completeness. The owner's note — *"There were
+some changes made by another ai just remember that"* — turned out to be the
+whole of this iteration's work, and it had to be, because everything else would
+have compounded a divergence.
+
+`origin/main` had moved **26 commits** ahead via PRs #24–#38 (another agent,
+Codex): account deletion and data export, keyboard focus containment, in-app
+help and connection diagnostics, contextual lessons, tempo fidelity, fermata and
+grace-note timing, and a **complete multi-page score intake**. This branch was
+9 ahead and 26 behind, with 22 conflict regions across 25 files.
+
+### Who wins where, and why
+
+**Their multi-page intake supersedes mine**, and taking it wholesale was the
+call. Both sides had written `lib/scan/uploadPages.ts` — theirs is better in two
+ways that matter: it takes the uploader as a parameter, so the tests need no
+runtime, and it returns **durable object keys** rather than signed upload URLs
+that expire (their #37, "Keep score page references valid through slow scans").
+It also already carries the page cap I added, in a better place: `MAX_SCAN_PAGES`
+on the *session*, which every entry point passes through, so the camera and the
+photo picker cannot disagree about it.
+
+Taken from main unchanged: `uploadPages`, `captureSession`, `useScan`,
+`api/scores`, `ImportPages`, `CapturedPages`, `TranscriptionReview`,
+`TranscribeScreen` (which I had deleted and they had kept), and both navigation
+files.
+
+**Mine survived where main has nothing**: the expo-camera resolution patch, the
+shutter legibility check, `notation-coverage.py`, `musicxml-bench.py`, the
+corrector and its per-line crops, and the widened note vocabulary. Verified by
+grep rather than assumed — main still carries the single-accidental pitch
+grammar, so every one of those was a genuine gap on the trunk.
+
+**Both, where the two were additive**: the app's `Note` gained their `fermata`
+and `grace_notes` beside my `chord_pitches`; `me.py` kept both imports; the OCR
+prompt kept their `tempo_beat_unit` conversion rules *and* my wider tuplet names,
+because the 46-name vocabulary survived in `score_schema.py` and their narrower
+triplet line would now under-describe what the schema accepts.
+
+### Re-applied by hand
+
+The shutter legibility check had to be grafted onto their rewritten
+`ScannerScreen`, which now owns `MAX_SCAN_PAGES`, a `canCapture` gate and a
+`full` capture outcome. The hook, the retake-stays-here flag and the ochre advice
+line went back in around their structure rather than over it.
+
+### One test moved with its subject
+
+`test_the_app_stops_a_scan_at_the_same_page_count_the_server_does` read
+`MAX_PAGES` out of a file whose contents are now theirs. The check is unchanged
+in purpose — the app must refuse a scan at exactly the count the server refuses —
+and now reads `MAX_SCAN_PAGES` from `captureSession.ts`.
+
+### Tests
+
+`mobile` 44 files / 515 passed, `tsc` clean. `backend` 1818 passed, 3 xfailed.
+
+### Honest note
+
+Nothing here is new capability; it is a merge. What it buys is that the next
+iteration builds on one trunk instead of two, which is the precondition for
+everything the loop was started to do.
+
 ## 2026-08-31 — Retry-safe durable recording handoff
 
 **Branch:** `codex/durable-audio-retry`
@@ -32,6 +4476,7 @@ section for what counts as "meaningful."
 - Added mobile coverage for durable-key submission and retries after upload or
   enqueue.
 - Mobile typecheck, tests, web build, and backend tests run in pull-request CI.
+
 
 ## 2026-08-31 — Edited scans cannot reuse stale uploads
 
@@ -694,6 +5139,988 @@ this commit. No backend or database change.
 **Rollback:** revert this branch commit. The driver selection is platform-only;
 native behaviour is unchanged. The title/copy/layout changes are isolated to
 the auth shell.
+## 2026-08-30 — The corrector is on, and it is told what key the music is in
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Owner: *"ok can you turn it
+on also make sure the ai knows what key its in"*.
+
+**Files:** `backend/app/config.py`, `backend/app/prompts/ocr_prompt.txt`,
+`backend/app/services/ocr/confirm.py`, `backend/app/services/readiness.py`,
+`backend/app/tests/test_corrector.py`.
+
+### The prompt asked for the key and never said what it was for
+
+`ocr_prompt.txt` has always had a `key_signature` field and one line about what
+to do when it is illegible. Nowhere did it say that **the key decides the pitch
+names**. `pitch` is an absolute name, so a notehead on the F line in D major is
+`F#4` — and nothing downstream can catch getting that wrong, because a bar
+spelled in the wrong key **sums perfectly**. Every check this pipeline has is
+arithmetic; a wrong accidental is invisible to all of them.
+
+It is not cosmetic either: a tie is recognised only when two noteheads share a
+pitch name, so one mis-spelled accidental deletes an onset.
+
+Three rules added, in the order an engraver applies them: the key applies to
+every note of that letter in every octave; a printed accidental applies to that
+letter *in that octave* to the end of the bar; a natural cancels either. Plus
+the spellings for double accidentals, which the vocabulary learned yesterday.
+
+### And the corrector is told, per re-read
+
+`what_this_piece_is` prefixes the ask with the clef, the key and the metre.
+Three details, each of which is a rule this project already learned the hard
+way:
+
+- The **clef** comes from the bars being asked about, falling back to the
+  page's — a bass part read as treble is a seventh out on every note, the
+  mistake `ScoreJson.clef` is documented never to guess at.
+- The **metre** is `meters_in_force` **at those bars**, not the header's. A page
+  that turns 3/4 at bar 12, re-read against the 4/4 it opened in, has its
+  correct bars reported short — the false caveat `Measure.time_signature` was
+  added to stop.
+- A key of `"unknown"` — the escape hatch the prompt offers for an illegible
+  header — is **not** repeated back. Asking a model to spell the accidentals of
+  a key called unknown is worse than saying nothing, and saying nothing is what
+  an inner page with no header honestly deserves.
+
+### Turned on
+
+`OCR_CORRECTOR` now defaults to `claude-sonnet-5`. It costs nothing on a page
+that reads cleanly: the retry runs only where `validate.py` has already found
+bars that do not add up.
+
+`/v1/ready` gained `ocr_corrector`, non-blocking, and it says which question it
+answered — *configured*, not *exercised*. That distinction is why
+`transcription_dispatch` exists: every readiness check here once passed while
+every Modal spawn raised. It also carries the caveat the `ocr:*` checks carry,
+because the re-read runs **in the Modal container** under
+`TRANSCRIPTION_RUNTIME=modal`, so a missing `ANTHROPIC_API_KEY` in the API
+process is expected and harmless there and would otherwise read as a fault.
+
+A test that asserted "off by default" yesterday now asserts the opposite. Its
+reasoning was right — a metered call per page is a decision about a bill and not
+one to make on someone's behalf — and the owner made the decision.
+
+### Honest gaps
+
+- **Whether `ANTHROPIC_API_KEY` is in the Modal secret `intempo-backend` is not
+  something this session can see**, and it is what decides whether the corrector
+  actually runs. If it is absent the provider refuses, the reading stands
+  unchanged, and nothing breaks — it simply never fires. The first scan with a
+  broken bar is what proves it either way.
+- Still no run against a real corrector or real crops: no key here, and homr
+  only runs on Modal.
+- The musician is still not told which bars a corrector touched.
+
+## 2026-08-30 — Claude is shown the line, not the page
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Owner: *"Im fine with the
+api costs. just have claude read the part where it has trouble with and have it
+decide the notes and put it in the correct format to display."*
+
+**Files:** `backend/app/services/score_schema.py`,
+`backend/app/services/ocr/{musicxml,confirm,pipeline}.py`,
+`backend/app/tests/test_corrector.py`.
+
+### Yesterday's corrector had one hole, and this is it
+
+The residual risk recorded then: a corrector told *"bar 14 is short"* while
+holding a whole page has to **count to fourteen on a photograph**, and a
+miscount returns a plausible correction for the wrong bar — which passes every
+guard, because a wrong bar that happens to add up looks exactly like a right
+one. Arithmetic can catch invention that does not sum. It cannot catch this.
+
+Cropping removes the counting rather than detecting it.
+
+**`Measure.system`** — which staff system a bar was printed on, from
+`<print new-system="yes">`. **Null when the file does not say**, which is most
+files. The first version counted from 0 as bars went by, which gave every bar on
+a file with no layout the answer `0` — a confident claim that a whole part is
+printed on one line. Measured on `orchestral_part.musicxml`, which carries no
+`<print>` at all: 19 bars all reporting system 0, and a re-read would have been
+shown the wrong staff. It is decided before the loop now.
+
+**`retry_by_system`** groups the broken bars by line, and sends each line's crop
+with the bars it holds named *as the page numbers them*. That sentence is
+load-bearing: `confirm.py` already warned that a model told to look at "measure
+3" reads the third bar of the piece rather than the third bar of the line. Shown
+a crop it will renumber from 1 unless told not to, and `_splice` matches on
+those numbers.
+
+**The crop count must equal the system count, or nothing is sent.**
+`crop_systems` cuts by ink density; `Measure.system` comes from the file. They
+are two independent opinions about how many lines are on the page, and when they
+disagree there is no way to know which is right — so it falls back to the whole
+page rather than showing the model music that is not the bar.
+
+### Two flaws my own tests found
+
+**The per-line ask was asking about the whole page.** `retry_by_system` computed
+a note naming that line's bars and then called `retry_with_arithmetic`, which
+recomputes its own list from the entire score. So a crop of line 0 went out
+naming bars from line 1, and `_splice` would have accepted a reply about bars the
+model was never shown — the exact contamination the crop exists to prevent.
+`ask_and_splice` is now the shared core and takes the bars explicitly.
+
+**The "not worse" guard accepted strictly worse music.** It counted *how many*
+bars were broken, so a bar asked about at three beats of four could come back at
+**one** with the count unchanged, and be taken.
+
+Tightening it to "must come back better" broke a test that is older and right:
+*"The model is also fixing pitches, and holding it to strict improvement in beat
+sums alone would throw away those fixes whenever the count happened to stay
+level."* That matters more than it sounds — a tie is validated by two noteheads
+sharing a pitch, so a wrong pitch can delete an onset.
+
+Both are satisfied by measuring **distance from the metre** instead of counting:
+equal distance with different pitches is accepted, as it was; three beats
+becoming one is not. That rule is better than either of the two it replaces.
+
+### A fixture that passed for the wrong reason
+
+`test_one_bad_line_does_not_discard_another_line_s_correction` first broke bar
+**1**. A short first bar is a *pickup*, which is legitimate notation and not a
+problem — so line 0 had nothing to correct and the test proved nothing. Found by
+tracing the run rather than by reading it.
+
+### Honest gaps
+
+- **Still nothing has run against a real corrector**, and now also nothing has
+  run against real crops: no API key here, and homr only runs on Modal. Every
+  test is a scripted double.
+- **Whether homr emits `<print new-system="yes">` is unverified.** audiveris and
+  oemer do; homr could not be run here to check. If it does not, every bar keeps
+  `system=None` and the corrector falls back to the whole page — correct, and
+  the crop path would simply never fire in production without anyone noticing.
+  Worth checking on the first real scan with `OCR_CORRECTOR` set.
+- The musician is still not told which bars a corrector touched.
+
+## 2026-08-30 — The vocabulary has a rule now, and a bar that fails can be re-read
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Asked: *"fix the missing
+ones"*, and *"if the model cant effectively read or note or is not that
+confident we have a Visual llm such as claude to review it and correct that bar
+for the model."*
+
+**Files:** `backend/app/services/score_schema.py`,
+`backend/app/services/ocr/musicxml.py`, `backend/app/prompts/ocr_prompt.txt`,
+`backend/app/config.py`, `backend/app/services/ocr/pipeline.py`,
+`backend/app/tests/{test_musicxml,test_duration_beats,test_corrector}.py`,
+`tools/notation-coverage.py`, `mobile/src/data/types.ts`,
+`mobile/src/lib/score/schedule.ts`, `mobile/src/lib/notation/reading.ts`,
+`DECISIONS.md`.
+
+### First: the coverage matrix I shipped yesterday was partly meaningless
+
+Its fixtures wrote `<duration>8</duration>` at `<divisions>64</divisions>` for
+**every** combination — a flat eighth of a beat, whatever the `<type>` said. The
+importer believes a stated duration over a `<type>` that contradicts it (the
+documented breve rule), so every cell whose fixture happened to land on a named
+length reported `.` regardless of the note it was meant to test. A 128th came
+back named `thirty_second` — four times its length — and the matrix called that
+covered.
+
+Fixed by computing the tick count from the value itself at
+`MATRIX_DIVISIONS = 6720` (= 2⁶ × 3 × 5 × 7, so every length in the
+cross-product is a whole number of ticks), asserting integrality rather than
+rounding, **and** checking that what comes back is worth what was asked for
+rather than merely having a name. Under the honest fixtures `breve 3:2` and
+several others flipped from `.` to `X`.
+
+### The vocabulary now has a statable rule
+
+Before: a patchwork. 128ths had no name at any ratio; quintuplets and septuplets
+stopped at a sixteenth; triplets stopped at a sixteenth going down and a half
+going up. A value with no name is **dropped**, and a dropped note is a lost
+onset that `alignment.py` accumulates into every bar after it.
+
+After — and this is the point, because a rule can be checked and a patchwork
+cannot:
+
+> **Every written value from a breve to a 128th has a name — plain, and as a
+> triplet, quintuplet or septuplet.**
+
+29 names to 46. `test_every_written_value_has_a_name_plain_and_in_the_common_tuplets`
+enforces it as a parametrised sweep, and asserts the *beats*, not just that
+something came back.
+
+Still deliberately out, and printed by the coverage tool on every run: dotted
+values inside tuplets, nonuplets, and anything finer than a 128th.
+
+**Four independent statements of this vocabulary had to agree**, and the tests
+found every one I missed: the `Duration` literal, `DURATION_BEATS`, the app's
+`BEATS` and `DURATION_LABELS`, `EXACT_BEATS` in `test_duration_beats.py`, and
+the duration list in `ocr_prompt.txt`. The app's three were **generated from
+the Python** rather than typed, after two values (`septuplet_half`,
+`septuplet_eighth`) came out rounded to ten decimals and the parity test caught
+the disagreement in the last bits.
+
+### A bar that does not add up can be re-read
+
+**The mechanism existed and had never once run in production.**
+`confirm.retry_with_arithmetic` names the bars whose durations are wrong, asks
+for those and nothing else, and splices the answer over only those bars. It can
+only ask a provider that `takes_a_note` — and since the chain became homr alone
+on 2026-08-24, there has been nobody to ask. The branch logs *"cannot
+reconsider"* and stops, on every page that needs it.
+
+`OCR_CORRECTOR` names a different provider for that one job. Empty by default.
+
+**This is not the vision chain returning**, and the distinction is the whole of
+why it is safe — it is set out in `DECISIONS.md`. Those were asked *what is on
+this page*, which is unfalsifiable, so an invention and a reading were the same
+shape. This asks *bar 14 sums to 3 in 4/4, look again*, which is checkable: the
+bars sent are ones arithmetic has already proved wrong, `_splice` accepts a
+replacement for **only those bars**, and a reply leaving more bars broken than
+it found is discarded. Nothing is originated here.
+
+`test_corrector.py` is nine cases, and all but the first are about a corrector
+misbehaving — which is what this project's own history says to expect. Writing
+them found that the "never raises" guard is thorough enough to have swallowed a
+malformed test double of mine and returned the original reading, silently and
+correctly.
+
+### Honest gaps
+
+- **The residual risk is a plausible wrong answer.** A corrector told "bar 14 is
+  short" might look at bar 15, return something that sums, and be accepted. The
+  guard catches invention that does not add up, not invention that does. Closing
+  it means sending a crop of the bar, and homr's MusicXML does not reliably
+  carry where bars sit on the page.
+- **The musician is not told which bars a corrector touched.** They should be;
+  `Measure` has no field for it and adding one reaches the app, so it sits
+  behind the UI gate.
+- **Nothing here has run against a real corrector.** No API key in this
+  environment and homr only runs on Modal, so every test is against a scripted
+  double. The wiring is verified; the behaviour of an actual model on an actual
+  broken bar is not.
+
+## 2026-08-29 — Notation coverage, measured: four things were shown wrong rather than admitted
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Asked: *"there's a lot of
+edge cases in music and notations can you make sure the program accounts for all
+of them?"* — no, and no program can; Western notation is open-ended. What is
+possible is making the coverage **legible**, then fixing what that exposes.
+
+**Files:** `tools/notation-coverage.py` (new),
+`backend/app/services/score_schema.py`, `backend/app/services/ocr/musicxml.py`,
+`backend/app/tests/test_musicxml.py`, `mobile/src/lib/notation/engrave.ts`,
+`mobile/src/lib/notation/fromScore.ts` + test.
+
+### The tool first, because the answer is a measurement
+
+`tools/notation-coverage.py` runs 35 notation constructs and the whole
+note-value matrix (every `<type>` × dots × common tuplet ratio) through the real
+importer and the real beat checks, locally, in a second. The value matrix is
+worth having because the importer holds **no table** of these — it computes a
+length and looks for a name of that length, so a combination is covered exactly
+when its arithmetic lands on one, which is not predictable by reading the code.
+
+30 of 35 constructs were already clean on the first run: pickup bars, cut time,
+compound and irregular metres, mid-piece metre and key changes, repeats, first
+and second endings, D.C./Fine, D.S., fermatas, rit./a tempo, metronome marks,
+tremolo, trills, turns, mordents, arpeggios, glissandi, breath marks,
+transposition, 8va, multi-voice with `<backup>`, `<forward>`, grace notes, ties
+across barlines, chords, bar rests and multi-bar rests. That is a well-built
+importer and the table now says so out loud.
+
+### Four defects, all the same shape
+
+Each one showed something **wrong** as though it were right, or dropped a note —
+and a dropped note is not a lost symbol, it is a lost **onset**, which
+`alignment.py` accumulates into every bar after it.
+
+**1. A double accidental had no spelling, so the note was dropped.**
+`_pitch_name` said so plainly: *"Naming the natural instead would be a wrong
+note, so drop it and let the note count fall short."* Both options are damaging;
+the grammar was the thing that was wrong. `F##` and `Bbb` are ordinary in this
+repertoire — any chromatic passage in a sharp key writes them.
+
+Measured on the repo's own bundled `bass_excerpt.musicxml`, which carries a real
+`Ebb3`:
+
+| | dropped | spelled |
+|---|---|---|
+| measure 2 | `short` | `ok` |
+| confidence | 0.50 | **1.00** |
+
+Corpus mean **0.61 → 0.71**.
+
+`##`/`bb` are matched **before** `#`/`b` in both regexes: an alternation takes
+the first branch that matches, so the single-accidental branch first pulls `F#`
+out of `F##4`, leaves `#4` unconsumed, fails the anchor, and drops exactly the
+note this exists to keep.
+
+**2. A microtone was rounded to a natural.** `<alter>` allows fractions —
+0.5 is a quarter-sharp — and `int(float(...))` truncated it to 0. So a
+three-quarter-sharp was written out as a plain natural: a wrong note printed
+exactly like the right ones around it, arrived at by arithmetic rather than by
+anyone's decision, in the very function whose comment says it exists to avoid
+that. Non-integral alters now drop, like triples.
+
+**3. A pitch the engraver could not place was drawn on the middle line.**
+`engrave.ts` read `stepOf(note.pitch)` and fell back to `y = 0`. So a note
+nobody could place appeared among the correct ones, in the same ink, under
+whatever name it carried — the pitch equivalent of drawing a sixteenth as an
+eighth. `fromScore.ts`'s own docstring forbids it: *"Drawing less and admitting
+it is honest; drawing something else is not."* Such notes are now left out and
+counted, like an undrawable duration.
+
+The app's `PITCH` regex learned `##`/`bb` in the same change, and it had to:
+widening the server alone would have turned a note quietly *missing* into a note
+quietly in the *wrong place*. `accidentalOf` still returns no glyph for a
+double — borrowing the single sharp would be a different note shown as right —
+so it loses its symbol and keeps its position, exactly as a flat does today, and
+`displayName` spells it in the row under the system. That replace was also
+un-anchored, so `F##4` read back as `F♯#`, half-converted.
+
+**4. `<unpitched>` was dropped.** It is how percussion is written, and how a
+string part writes a body tap or col legno battuto — a notehead with a real
+attack on a line the player reads. Dropped for having no `<pitch>`, so on a part
+written entirely that way *every* note vanished and the page was refused for
+coming out empty. It now keeps `display-step`/`display-octave`, which is the
+staff position the engraver drew. Nothing downstream wants a frequency: the
+verdict reads pitch only as `== "rest"` and a tie compares two for equality.
+
+### Tests whose premise had gone, rewritten rather than deleted
+
+`test_an_unrepresentable_note_is_dropped_and_declared` asserted the **opposite**
+of the new behaviour and explained why in detail. Its reasoning was sound about
+the choice available at the time and the choice itself was the problem. Rewritten
+with the before/after measured, and the half that survives — past a double there
+is genuinely no spelling — kept as its own test.
+`test_chord_members_are_not_counted` expected three notes because the fourth was
+being dropped; nothing about chords changed.
+
+### Still missing, and now visible rather than unknown
+
+- **128th and shorter have no name at any ratio**, so they drop. `Duration` is a
+  closed union shared with the app, so widening it changes both sides and the
+  measure editor — not done on the strength of a construct nobody here has seen
+  in a real part.
+- **Dotted notes inside tuplets are patchy.**
+- **Microtones and triple accidentals drop by design.**
+- A page with no metre stays `unverifiable`, which is correct rather than a gap.
+
+All four drop the note, which the bar's beat sum then reports — visible, not
+silent. The tool prints them on every run.
+
+### Five more tests across the suite had the same premise
+
+All five used a double accidental as their example of an unrepresentable note,
+so all five broke — every one of them my fix working, and every one rewritten
+rather than deleted:
+
+- **`test_the_pitch_grammar_refuses_what_is_not_one`** listed `Abb2` and `A##3`
+  among things the grammar must refuse, annotated `# double flat` as though
+  being one were the reason. Moved to the accepts list; triples and `A#b3` took
+  their place, so the refusal case is still pinned by example.
+- **`test_a_grace_whose_note_this_schema_drops_rides_on`** — the rule survives
+  (a grace whose note is dropped rides on to the next), only the example needed
+  to be a note that still drops.
+- **`test_the_bundled_fixture_loses_its_ornament_at_the_end_of_the_page`** was
+  the best confirmation of the lot. `bass_excerpt.musicxml` prints a grace
+  before its *last* note, and that note is the `Ebb3`: the note was dropped, and
+  being last there was nothing further along for the ornament to ride to, so it
+  went too. One fix recovered both. Renamed to say what now happens.
+- **`test_the_renumbering_sentence_does_not_displace_the_others`** needed a note
+  that still goes missing for its two sentences to coexist.
+
+### Tests
+
+`backend` full suite **1720 passed, 3 xfailed**. `mobile` 39 files / 467 passed,
+`tsc` clean.
+
+### Not verified
+
+No homr in the loop — every measurement here is the importer and the validator
+on MusicXML, not a reading of a photograph. And the note-value matrix reports
+what can be *named*, not what a musician would recognise on the page.
+
+## 2026-08-29 — A bar of rest is not an empty bar, and the scanner says so at the shutter
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Asked for: *"can you improve
+the scanning ui and OCR system to be more accurate"*. **UI half done under a §2
+go-ahead** ("Check the shot on the phone").
+
+**Files:** `backend/app/services/ocr/musicxml.py`,
+`backend/app/tests/test_musicxml.py`, `tools/musicxml-bench.py` (new),
+`mobile/src/lib/scan/legibility.ts` (new) + test (new),
+`mobile/src/lib/scan/pageSamples.{ts,web.ts}` (new),
+`mobile/src/screens/scanner/ScannerScreen.tsx`.
+
+### Two accuracy hypotheses, both refuted before anything was built
+
+Recorded because the reasoning was sound and the conclusions were wrong, and
+the next person will have the same two ideas.
+
+**Resolution.** `prepare_for_model` shrinks every page to `MODEL_MAX_EDGE`
+(1568), a number whose own comment says it is *Anthropic's* vision-API limit —
+while the chain is homr alone, an OMR engine. Measured here: a 4032 px
+photograph whose staff lines are 25 px apart reaches the reader at 9.7 px, and
+at 20 px it reaches it at 7.8 — under the 8 px floor `too_small_to_read`
+declares unreadable. `shrink.ts` will not shrink a page below 2400 for exactly
+this reason, so the two ends of the pipeline disagree.
+
+All true, and the change would still be wrong: the comment **directly below the
+constant** records the experiment, run 2026-08-26 against real homr on real
+pages. `homr_page.jpg` reads 77 bars at 1.00 both at staff-107 px and at
+staff-**7 px**; `page-upright.jpg` reads *better* prepared (56 → 57). The
+premise — that homr's accuracy tracks staff resolution — is the part that was
+tested and refuted. Its own note anticipates this: *"evidence and not a licence
+to change the constant in either direction … the hypothesis is plausible enough
+that somebody will have it again."*
+
+**A stated metre.** Both real phone photographs in the corpus read
+`time_signature: None`, so everything rests on `infer_beats_per_measure`, and
+asking the musician looked like free accuracy. Measured: on
+`audiveris_phone_photo`, inference already picks the best available answer —
+stating the correct 4/4 gives **0.53**, identical. On `oemer_phone_photo` no
+metre helps, because its barlines were never found. Nothing to gain.
+
+### `tools/musicxml-bench.py` — the one bench that runs without Modal
+
+`homr-bench.py` and `pipeline-check.py` both need homr, which exists only in the
+transcription container. So neither can be run while working on `musicxml.py` or
+`validate.py` — which is where **every** measured accuracy win in this project
+has come from. This measures the importer and the beat checks against
+`fixtures/musicxml/`, locally, in a second.
+
+Baseline recorded, and it prints the worst page as loudly as the mean because
+the mean is what let a reader scoring 0% on real repertoire look adequate:
+
+    mean 0.61   worst 0.00   pages 5
+
+### A bar of rest was being dropped, and that is expensive three times over
+
+The bench surfaced it: *"1 note the reading could not write"*. The note was
+`<rest measure="yes"/>` with `<duration>57</duration>` and no `<type>` — the
+canonical MusicXML spelling of a bar of rest, and the shape an orchestral part
+is mostly made of. `_duration_name` returns None without a `<type>`, so it was
+dropped and the bar came through **empty**.
+
+This is the third spelling of one idea and the only one that had no handler:
+`_expand_multiple_rests` takes `<multiple-rest>`, `_whole_rests_that_mean_a_bar`
+takes the whole-rest *glyph*, and nothing took this.
+
+What dropping it costs, measured:
+
+| | before | after |
+|---|---|---|
+| play / rest / play, 4/4 | 0.67, bar 2 `empty` | **1.00** |
+| the same in 2/4, 3/4 | `empty` | `half`, `dotted_half` |
+| 12-bar part, 9 bars rest | 8 empty bars, 0.33, **refused** | 0 empty, **1.00**, accepted |
+
+The third row is the severe one. `_refuse_if_it_is_not_a_reading` turns a page
+away when empty bars outnumber music — the right rule, firing on the wrong
+pages, because a bass part *is* mostly counting rests. The founder's own
+instrument was the worst case.
+
+And `alignment.py` accumulates durations, so a musician who counts the rest
+correctly was judged a bar early for the whole of the rest of the page.
+
+**Named `whole` rather than measured from `<duration>`.** That fixture's own
+duration is 9.5 beats in a bar of 4, so the stated length is not evidence about
+anything; and `_whole_rests_that_mean_a_bar` already owns what a bar of rest is
+worth in a given metre, including inferring the metre. Reusing it beats a fourth
+thing that has to agree with the other three.
+
+Corpus mean is **unchanged** at 0.61 — these five fixtures are not rest-heavy —
+so the win is the constructed measurements above plus note recovery
+(`oemer_phone_photo` 80 → 83 notes, and the "could not write" line gone).
+
+### The scanner answers at the shutter now
+
+The server's legibility answer arrives after the upload, after the queue and
+after the worker fetches the page — by which time the music is back in its case,
+and the advice ("photograph it again from closer") costs a whole round trip.
+`lib/scan/legibility.ts` measures the shot on the phone and says so immediately.
+
+**It is a subset, deliberately** — the second in this project after
+`notation/reading.ts`, under the same rule: *it may never refuse a page the
+server would accept*. `CLIENT_FLOOR` (6 px) sits **below** the server's 8, and
+anything unmeasurable is silence. A test sweeps 8–40 px asserting no warning.
+
+Native returns null — React Native has no canvas and reading pixels would mean a
+native module, not a check. The web build is the one deployed.
+
+**Two bugs found by measuring rather than by reasoning**, both mine:
+
+- The band window was `height / 8` of a page. Autocorrelation needs three
+  periods to see one, so a 50-row window could only find a staff up to ~16 rows
+  — a *good* page at 20 px had no findable period and fell through to silence,
+  the harmless direction, which is exactly why it would never have been noticed.
+- The peak rule was "shortest lag reaching 80% of the tallest". Measured on a
+  real capture at 4 px: the staff peaked at **0.662** and the system pitch at
+  lag 28 at **0.929**, so the true period sat at 71% and was rejected by a
+  whisker — the answer came back as 28, seven times too generous, on exactly the
+  page this exists to warn about. The bar is absolute now (`STRONG_PEAK = 0.5`,
+  the middle of the measured gap between 0.662 and its multiples' ~0.28).
+  My own "not the distance between systems" test could not have caught this: at
+  five systems on 600 rows the system pitch is 100, past `MAX_PERIOD`, so it was
+  never a candidate. Replaced with one that packs them in.
+
+**Verified in the running app, not only in units.** Two Y4M camera feeds of a
+page with exact known staff spacing, fed to Chromium as the camera, driven
+through Library → Add piece → Photograph sheet music → shutter:
+
+    4 px between staff lines   -> warning shown
+    14 px between staff lines  -> silent
+
+**Three-foot test — the scanner, from the screenshot.** First the page in the
+bracketed frame, second the shutter ring, third the ochre advice line. The
+warning is the only accent on the screen so it draws the eye when present, and
+is absent otherwise; one line and an underlined action, no card and no badge
+(§3 laws 3, 4, 5, 6).
+
+A retake started from this line keeps the musician at the viewfinder rather than
+returning them to the page list — begun there it means "re-shoot page three of
+six", not "one shot and you are finished".
+
+### Tests
+
+`mobile` 39 files / 465 passed, `tsc` clean. `backend` 1705 passed, 3 xfailed.
+New: 16 legibility cases, 5 for the bar's-rest rule.
+
+### Not verified
+
+- The bar's-rest fix is measured on constructed parts and the corpus, **not**
+  on a homr reading of a real page — homr runs only on Modal.
+- The legibility check is verified on synthetic pages of exact geometry, not on
+  a photograph of real sheet music at a known distance.
+
+## 2026-08-29 — The web camera was photographing every page at 640x480
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Reported by the owner
+mid-session: *"when I take a picture it says the image is too hard to read and
+lowers the quality a lot."* Both halves are one bug with one cause.
+
+**Files:** `mobile/patches/expo-camera+57.0.3.patch` (new),
+`mobile/src/lib/cameraResolution.test.ts` (new).
+
+### Measured
+
+`useWebCameraStream` calls `getPreferredStreamDevice(preferredType)` with no
+width and no height. `getIdealConstraints` therefore falls through to
+`MinimumConstraints` — literally `{ audio: false, video: true }` — and the
+browser picks. In this repo's own Chromium, on a secure origin:
+
+    getUserMedia({ video: true })                       640 x 480
+    getUserMedia({ video: { width: {ideal: 3840}, … } }) 3840 x 2160
+
+`captureImage` draws its canvas at exactly `video.videoWidth/videoHeight`, so
+**that 640x480 is the photograph the app uploads** — whatever the phone's rear
+camera can do, and however sharp the preview looked while framing it.
+
+640x480 is not a near miss. It is precisely the case `too_small_to_read` exists
+to refuse: the server wants 8 source pixels between staff lines and a page of
+music at 480 rows has around 4. So the two symptoms are the same fact seen from
+two ends — the picture really was low quality, and the server really could not
+read it.
+
+The advice in that refusal — *"Photographing the page again from closer, or with
+a phone rather than a webcam, is what fixes it"* — was unfollowable here, which
+is the failure `CLAUDE.md` already records under "Advice must be followable in
+this app". The owner **was** on a phone. Nothing they could do at the shutter
+would have helped, because the app was discarding the camera before the shutter.
+
+`cameraCanPhotographAPage` turned desktops away for this reason and deliberately
+kept phone browsers, on the grounds that *"its rear camera is the best camera in
+this product"*. It is, and the app was asking it for a thumbnail.
+
+### The fix
+
+A `patch-package` patch — the project's existing idiom, alongside `expo-audio`
+and `expo-image-picker` — making `getIdealConstraints` ask for an **ideal**
+3840x2160. Ideal rather than exact: a camera that cannot reach 4K returns its
+best mode instead of failing to open at all. Verified by driving the patched
+function itself through a real Chromium and reading `videoWidth` off the
+resulting stream: 3840x2160.
+
+The patch also drops an inverted early return that gave `MinimumConstraints`
+when the caller *had* supplied valid constraints and built the preferred ones
+only when it had not — unreachable from this package's own call site, and a trap
+for anyone who starts passing a size.
+
+`cameraResolution.test.ts` guards it. A patch is invisible — applied by
+`postinstall`, outside `src`, imported by nothing — and an `npm update` that
+moves the version leaves it silently unapplied, with no crash and no error:
+just photographs that are quietly too small again.
+
+### Not verified, and worth saying
+
+- **Native was not measured.** `takePictureAsync({ quality: 0.8 })` sets JPEG
+  quality, not resolution, and native captures at the sensor's picture size — so
+  this defect is specific to the web build, which is the one deployed. If pages
+  photographed through a native build are also coming back small, that is a
+  second bug and `pictureSize` is where to look.
+- **`quality: 0.8` was left alone.** Raising it is a plausible improvement for
+  high-frequency detail like staff lines, and it is a tuning change with no
+  measurement behind it, so it is not being made on a guess.
+- No screenshot: this is a resolution change with no visual surface.
+
+## 2026-08-29 — Every page of the part is read, and the upload stops being a screen
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. **UI/UX work, done under an
+explicit §2 go-ahead** given on 2026-08-29 ("Can we improve the user experience
+for OCR system. Its clunky not that smoothing and some of the ui and wording
+deosnt make sense" → scope "All three", menu labels "By source").
+
+**Files:** `mobile/src/lib/scan/uploadPages.ts` (new) and its test (new),
+`mobile/src/screens/transcriptionReview/TranscriptionReviewScreen.tsx`,
+`mobile/src/screens/transcribe/` (**deleted**),
+`mobile/src/screens/capturedPages/CapturedPagesScreen.tsx`,
+`mobile/src/screens/scanner/ScannerScreen.tsx`,
+`mobile/src/screens/addPiece/ImportPages.tsx`,
+`mobile/src/components/pieces/AddPieceSheet.tsx`,
+`mobile/src/data/captureSession.ts`, `mobile/src/data/api/scores.ts`,
+`mobile/src/data/hooks/useScan.ts`, `mobile/src/navigation/{types,RootNavigator}.tsx`,
+`mobile/src/lib/transcriptionProgress.ts` + test,
+`mobile/src/screens/{pieceScore,pieceDetail}/`,
+`backend/app/workers/transcription_runner.py`,
+`backend/app/tests/{test_stage_parity,test_client_enums,test_multi_page_scan}.py`,
+`fixtures/stages/parity.json`.
+
+### The app was a generation behind its own backend
+
+`POST /v1/scores` has accepted `image_urls` — up to `MAX_PAGES = 12` — with
+`pages_of`, `_read_pages` and `join_pages` behind it for some time. The app sent
+`image_url`, singular, uploading `pages[0]` and discarding the rest.
+
+What a musician actually met: photograph six pages, drag them into order under
+the words *"pages transcribe in this order"*, and then be told in grey type,
+three separate times, that **only the first page is transcribed**. The ordering
+control was real and did nothing except decide which single page survived.
+
+Now: `uploadPages` sends every page in the musician's order, `image_urls`
+carries it, and the three caveats are deleted because they became false.
+
+- **Sequential, not parallel.** `UPLOAD_TIMEOUT_MS` is a *total* per-request
+  timeout, so N transfers sharing one uplink each get a fraction of the
+  bandwidth and the whole two minutes — a link that would have completed
+  serially times out N times at once instead.
+- **All-or-nothing**, matching `_read_pages` on the server. Five pages of a
+  seven-page part is a timeline with a hole in it, and `alignment.py`
+  accumulates durations, so every bar after the gap is judged against music that
+  is not there.
+- **Refused at the shutter**, not after the upload. `MAX_PAGES` is declared in
+  the app and `test_client_enums.py` asserts it equals the server's — a
+  thirteenth page discovered by `POST /v1/scores` costs the whole uplink first
+  and fails in a sentence written for whoever wrote the client.
+
+### The upload screen was making the musician wait to be asked a question
+
+`TranscribeScreen` filled the display with "Sending your page", a bar and a
+Cancel button, then handed on to a screen that asked for a title. Two screens,
+strictly sequential, and the second needed something from the person that the
+first was making them wait for. It is deleted; the upload runs inside the naming
+screen from the moment it opens, while the title is typed. On any real
+connection the wait now disappears rather than being decorated.
+
+Save waits on the *same* transfer if someone types faster than the connection —
+an in-flight promise, not a flag, because a flag makes Save either fail or start
+the upload again.
+
+### A multi-page read reports the page it is on
+
+`_read_one_page` carried a comment calling its own coarse reporting "a
+limitation rather than a design", naming a page counter as the honest fix and
+saying it waited on the UI gate. The gate was given, so: `Reading page 2 of 3`,
+contracted in `fixtures/stages/parity.json` and tested on both sides.
+
+The count is pages **finished**, so page 2 of 3 sits at 1/3 of the reading band.
+Placing it at 2/3 would claim a page that is still being read, and this whole
+module exists because the bar reports what has happened rather than what is
+expected. Per-stave counts stay suppressed on a multi-page scan so the two
+counters cannot fight: page 2 opening at "stave 1 of 9" after page 1 finished at
+"9 of 9" walks the bar backwards.
+
+`test_a_multi_page_scan_does_not_walk_the_bar_backwards` asserted the *old*
+words. Rewritten, not deleted — its stated reason had been satisfied, and the
+invariant underneath it (one stage per page, never a step that drops the bar)
+is exactly what still needs holding.
+
+### Wording
+
+One vocabulary: the app says **read** and **the notes**, never "transcribe" or
+"transcription". The score screen already said "This page couldn't be read" and
+"Try reading it again"; the scan flow said the other thing.
+
+The Add-piece sheet is named by **what you have in your hand**, per the owner's
+choice: *Photograph sheet music · Choose photos · Open a MusicXML file · Enter it
+by hand*. "Import score" promised **"images or a PDF"** and the screen behind it
+calls `launchImageLibraryAsync({ mediaTypes: ['images'] })` — the PDF was never
+accepted and the promise is gone.
+
+### Three-foot test — "Name this piece"
+
+**Before:** a 300px photograph first, the header second, the fields third, and
+Save below the fold. Two focal points competing (§3 law 4) and the wrong one
+winning — the task is typing a title, not looking at a picture — with the
+primary action out of the thumb zone (law 7).
+
+**After:** the **Title field** first, the page image second at 200px as the
+reference material it is, the upload line third and silent once it has finished.
+Save pinned in the footer. The upload reports as a hairline rule and one line of
+text, never a card (laws 3 and 6).
+
+### Tests
+
+`mobile`: 37 files, 445 passed; `tsc --noEmit` clean. `backend`: 1696 passed,
+3 xfailed, after the one rewritten test. New: 9 cases for `uploadPages`, 5 for
+the page counter in the app, 2 on the server, 1 cross-boundary for `MAX_PAGES`.
+
+### Honest gaps
+
+- **Not verified against a real device or a live backend.** The web build gates
+  on auth before this flow is reachable, so the screenshot pass that CLAUDE.md
+  asks for could not be driven end to end here. The composition is reasoned
+  against the §3 laws and the code is typechecked and unit-tested; it has not
+  been *seen* running. This is the same standing gap as the rest of Batches 5–7.
+- **Orphaned uploads get worse, not better.** The known hole — an upload that
+  never becomes a score row is unreachable forever — now strands up to twelve
+  objects per abandoned scan instead of one. It still needs a lifecycle
+  decision rather than a patch.
+- The scanner's own capture quality is under investigation separately, on a
+  report that photographs come back too small to read.
+
+## 2026-08-29 — Keeping what the musician fixed, and reading the egress meter at last
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Backend, schema and app
+plumbing. **No screen, component, style or copy touched** — and that is the
+main honest gap in it, see the bottom.
+
+**Files:** `backend/app/migrations/013_training_corrections.sql` (new),
+`backend/app/services/training.py` (new), `backend/app/routers/scores.py`,
+`backend/app/routers/me.py`, `backend/app/models/user.py`,
+`backend/app/services/readiness.py`, `backend/app/services/ocr/pipeline.py`,
+`backend/app/services/ocr/musicxml.py`, `backend/app/services/score_schema.py`,
+`backend/app/workers/transcription_runner.py`, `mobile/src/data/types.ts`,
+three test files (one new).
+
+### The egress question, answered from the request log rather than guessed
+
+The 2026-08-27 entry said egress attribution was "inferred from code and
+storage contents, not from Supabase's billing breakdown, which these tools
+cannot read". The billing meter still cannot be read — `get_project` returns no
+usage — but the **edge request log** can, and it is better evidence than the
+meter: it says which object, how many bytes, and whether the cache was hit.
+
+Measured on `intempo-dev`, one afternoon (28 Aug, 15:24 → 20:03):
+
+    storage GETs                       195
+    bytes                              461.6 MB
+    distinct objects                   22
+    distinct ?token= values            193
+    Cloudflare cache HIT               2 of 193
+    worst hour                         155 GETs over 22 objects
+    one object, inside one hour        9–10 GETs, 8–9 different tokens
+
+**193 tokens for 195 requests is the diagnosis, not a symptom.** A fresh
+signature per request is a fresh URL, and every URL-keyed cache — `expo-image`'s
+and the browser's alike — misses on all of them. 461.6 MB is the 53 MB bucket
+downloaded 8.7 times over, in an afternoon, by one person, against a 5 GB
+monthly cap.
+
+**All of it predates the fix.** `d6791ef` went live at **20:11:14** and the last
+of those requests was at **20:03:43**. Since the deploy there have been **zero**
+storage GETs — and also zero of anything else, because nobody has opened the app
+(no upload since 27 Aug, no analysis ever). So the fix is **untested in
+production, not proven**; what the log proves is that the mechanism it was
+written against was real and exactly as described.
+
+The user agent on all 195 was mobile Safari, i.e. the **web** build — which is
+the half that depends on the server memo rather than on `cacheKey`. The next
+session on that build is the measurement that settles it.
+
+Also found, and unrelated to caching: the bucket holds **23 objects, 3 of them
+orphaned** (1264 kB) — no `scores` row references them. That is the
+orphaned-upload hole `CLAUDE.md` already documents, confirmed in production and
+still unfixed.
+
+### Corrections are kept now, if the musician says they may
+
+Every scan this app has read has been corrected by a person and then thrown
+away twice over: the corrected bar overwrote the misread one keeping nothing
+about what it replaced, and accepting deleted the photograph. The pair (what
+the reader said, what it should have said) is the asset nobody can buy, and it
+was being destroyed at the moment it was created.
+
+Migration **013** adds `users.training_consent_at`, `scores.transcription_reader`,
+`scores.page_image_retained_at` and the `training_corrections` table. The rules
+live in `services/training.py` — out of the handlers, so they are testable
+without a database, which is the pattern `captureSession` and
+`transcriptionProgress` established.
+
+Four things worth stating because each was a decision:
+
+1. **Consent fails closed**, the opposite of `shouldOnboard`. No row, no
+   timestamp, an unreadable value, a `/v1/me` that threw — all mean no. Getting
+   onboarding wrong shows a screen twice; getting this wrong keeps somebody's
+   photographs without being told to.
+2. **One row per corrected measure holding that measure**, not a before/after
+   pair of whole `ScoreJson` documents. A page is seventy bars and a correction
+   touches one; the whole-score form stores the other sixty-eight twice to say
+   nothing about them.
+3. **Either side may be NULL and that is the interesting case** — a bar the
+   reader missed has no `before`, a bar it invented (a rehearsal mark counted as
+   a measure, which this pipeline has done) has no `after`. An empty measure
+   would claim a different mistake.
+4. **`transcription_reader` exists because a correction with nothing to
+   attribute it to is not a training example.** `parse_sheet_music` returns a
+   `ScoreJson` and no telemetry, so the *winning* provider is genuinely not
+   recoverable; the configured chain is the honest thing to record and for a
+   homr-only chain it is the same fact.
+
+Withdrawal is the part that had to actually work: `training_consent: false`
+clears the timestamp, deletes every correction row, and discards every retained
+photograph through the same `discard_pages_of` the accept path uses. Storage
+refusing leaves `page_image_retained_at` set rather than writing a row that
+claims a file is gone while it sits in the bucket.
+
+**Three graceful narrowings, all for the same window.** Render auto-deploys
+`main` while migrations here are applied by hand, so a select or a write naming
+a 013 column fails the *whole* statement until somebody runs the SQL. The score
+read narrows its column list; `_accepted` retries without
+`page_image_retained_at`; and `_update` in the worker gained a `fallback` patch
+— that last one because it swallows failures by design, which is right for a
+stage update and catastrophic on the write that stores the transcription and
+moves the row off `reading`.
+
+### Two more schema gaps closed
+
+**Per-measure clef changes.** `Measure.clef`, modelled exactly like
+`Measure.time_signature`. A cello or bass part moving into tenor for a high
+passage and back is ordinary writing and had nowhere to go. Compared against
+the clef **in force**, not the header — a part that goes tenor at bar 3 and back
+to bass at bar 5 states bass at 5, which equals the header, so a header
+comparison records the departure and silently drops the return. Verified on a
+five-bar part: header `bass`, changes at 3 (`tenor`) and 5 (`bass`).
+
+**Chord pitches.** `Note.chord_pitches`, additive and outside the timeline —
+`pitch` is still one pitch and a chord is still one attack, so the beat sum is
+untouched. The importer kept the first note of a `<chord>` and discarded the
+rest, so a double stop drew one notehead where the page has two and
+`MeasureEditScreen` had nowhere to put the fix. Confirmed on
+`fixtures/musicxml/bass_excerpt.musicxml`: `F#3` now carries `['A3']`, verdicts
+unchanged.
+
+**Green:** backend 1694 passed / 3 xfailed (30 new), app 431 passed,
+`tsc --noEmit` clean.
+
+### Honest DoD
+
+- **Nothing in the app can grant consent.** The switch and its wording are a
+  screen, and screens go through the owner (§2). The field is in `types.ts`, the
+  endpoint works, and the feature is dark until that screen exists — so no
+  correction will be recorded and no photograph retained by anyone, yet.
+- **Nothing draws `Measure.clef` or `Note.chord_pitches`.** Both are stored and
+  imported; `engrave.ts` places one notehead per note in one clef per score.
+  Also stave work, also §2.
+- **013 is not applied.** Written, not run — the live database still lacks all
+  three columns, which `/v1/ready` now reports.
+- **Item 2 (eval corpus) and item 3 (PDF input) are not started.**
+
+**Rollback:** `git revert`. 013 is additive with nullable columns and a new
+table; the code narrows around all three, so reverting the code and leaving the
+migration applied is also safe.
+
+---
+
+## 2026-08-29 — A quintuplet read correctly off the page came back as silence
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Backend, schema and app
+plumbing — no screen, component, style or layout touched. One user-visible
+string per new duration (the `DURATION_LABELS` entry the `Record<Duration, …>`
+type forces), following the existing `³` convention.
+
+**Files:** `backend/app/services/score_schema.py`,
+`backend/app/services/ocr/musicxml.py`, `backend/app/services/ocr/validate.py`,
+`backend/app/prompts/ocr_prompt.txt`, `mobile/src/data/types.ts`,
+`mobile/src/lib/score/schedule.ts`, `mobile/src/lib/notation/reading.ts`, and
+four test files.
+
+`Duration` named triplets and no other tuplet. Anything else had its notes
+dropped and its *length* kept as rests by `_unnameable_tuplet_beats` — the
+right trade when the alternative is moving every later bar, and the reason the
+failure is now completely invisible to the beat check. Measured before the
+change, on a 4/4 bar of a 5:4 quintuplet of sixteenths and three quarters,
+constructed correct and read correctly:
+
+    onsets in the transcription   3 of 8
+    beat-sum verdict              ok, 4.0 of 4.0
+    the only trace                unwritable_notes = 5
+
+`alignment.py` matches detections against that timeline, so a musician playing
+the quintuplet was measured against a bar expecting nothing there. The
+septuplet case is the same with seven.
+
+**What changed:** eight names — `quintuplet_half` … `quintuplet_sixteenth`
+(5:4) and `septuplet_half` … `septuplet_sixteenth` (7:4). Additive to a closed
+`Literal`, exactly as the triplets and the double dots were, and no stored
+score is invalidated. Measured after, same four bars:
+
+    5:4 quintuplet of 16ths + 3 quarters   8 of 8 onsets, ok, 4.0
+    7:4 septuplet of 16ths + 3 quarters   10 of 10 onsets, ok, 4.0
+    5:4 quintuplet of 8ths + 2 quarters    7 of 7 onsets, ok, 4.0
+    7:8 septuplet of 8ths (fills the bar)  7 of 7 onsets, ok, 4.0
+
+The importer needed no new code: `_duration_name` already computes
+`written × normal/actual` and looks the result up, so naming the lengths is
+what taught it the ratios. 7:8 needs no name of its own — it lands on
+`septuplet_quarter`'s 4/7 and the lookup finds it.
+
+**The bug this nearly shipped with.** `_WRITTEN_BEATS` was spelled "every name
+that does not start with `triplet_`", which was correct while triplets were the
+only tuplet and silently wrong the moment they were not: a `quintuplet_eighth`
+would have been filed as a value an engraver writes, and `untuplets_cleanly`
+would have called a correctly-read quintuplet a fault. Now `TUPLET_PREFIXES`.
+
+**Tests.** Nineteen failed on the first run and every one of them was this
+change working — they used 5:4 as their example of an unwritable ratio, so they
+had quietly become tests that a *writable* ratio is reported unwritable. Two
+replacements, chosen rather than picked: **5:6** (a quintuplet as bracketed in a
+compound metre) where the subject is a ratio the schema cannot name, and **9:8
+thirty-seconds** where a group needs no writable parts but a writable total —
+a group's total is `base × normal` and does not depend on how many notes are
+inside it, so the nonuplet is still a quarter and those bars kept their shape.
+This is the third time an example in this repository has expired by shipping
+(`sixty_fourth`, `breve`, then `quintuplet_eighth`), so
+`test_a_duration_this_schema_cannot_express_is_still_fatal` now uses a triple
+dot, whose absence is *reasoned* — `_DOT_FACTOR` stops at two — rather than
+merely current.
+
+Two new tests carry the claim the tolerance rests on. `EXACT_BEATS` states
+every duration as a `Fraction` — a second table on purpose, and the only one
+that can say whether the floats are *right* rather than merely consistent —
+and `test_no_bar_that_should_add_up_fails_the_beat_check` sums every
+combination of up to six durations whose exact total is a whole number of
+beats, the way the validator sums them. **11,293 such bars, worst
+floating-point error 0.0.** Not a theorem, which is why it is a test.
+
+**Green:** backend 1651 passed / 3 xfailed; app 431 passed in 36 files;
+`tsc --noEmit` clean. The two browser tools rebuild from `sandbox_shared`, so
+they picked up all eight names and the new `TUPLET_NOTE` with no hand edit, and
+`test_sandbox_parity` passes — which is the arrangement working as designed.
+
+**Known gaps, unfixed and deliberate:**
+
+- **`EDITABLE_DURATIONS` is unchanged.** A score can hold a quintuplet and
+  `MeasureEditScreen` will label one correctly; it is not offered as a button.
+  Eight more controls on a thumb-sized picker is a decision about that screen
+  (CLAUDE.md §2), not a consequence of the schema knowing a name. The list was
+  already a subset — `triplet_half` and `triplet_sixteenth` are not there
+  either.
+- **A double accidental still costs a note**, and it is worse than a quintuplet
+  was because the note is dropped outright rather than kept as a rest.
+  Reproduced on `fixtures/musicxml/bass_excerpt.musicxml`: the `Ebb3` in bar 2
+  vanishes, the bar reads 3.0 of 4.0 and is reported short. Not fixed here —
+  see `DECISIONS.md`, today, for what it would take and why it is not a regex
+  change.
+
+**Rollback:** `git revert`. The names are additive; a score written with one
+would fail validation on the old code, so a revert would need those rows
+re-read — none exist yet, since nothing has been scanned since this shipped.
 
 ---
 
