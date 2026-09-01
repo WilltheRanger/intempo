@@ -21,7 +21,8 @@ export interface UploadPagesOptions {
 }
 
 /**
- * Uploads a scan one page at a time and preserves the musician's chosen order.
+ * Uploads a scan one page at a time and returns durable object keys in the
+ * musician's chosen order.
  *
  * Sequential transfer matters on a phone: several page photographs in
  * parallel compete for the same uplink and make both progress and cancellation
@@ -33,10 +34,10 @@ export async function uploadPages(
   options: UploadPagesOptions,
 ): Promise<string[]> {
   const send = options.upload;
-  const urls: string[] = [];
+  const keys: string[] = [];
 
   for (const [index, page] of pages.entries()) {
-    const url = await send(page, {
+    const key = await send(page, {
       signal: options.signal,
       onProgress: (sent, total) =>
         options.onProgress?.({
@@ -46,8 +47,8 @@ export async function uploadPages(
           total,
         }),
     });
-    urls.push(url);
+    keys.push(key);
   }
 
-  return urls;
+  return keys;
 }
