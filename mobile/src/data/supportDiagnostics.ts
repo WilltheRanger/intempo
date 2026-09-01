@@ -1,5 +1,3 @@
-import { ApiError, apiFetch } from './api/client';
-
 export type ConnectionReport =
   | { kind: 'connected' }
   | { kind: 'service_unreachable'; message: string }
@@ -19,7 +17,7 @@ export type SupportRequest = (
  * safe GETs; nothing in the musician's library is changed.
  */
 export async function checkAppConnection(
-  request: SupportRequest = (path, options) => apiFetch(path, options),
+  request: SupportRequest,
 ): Promise<ConnectionReport> {
   try {
     await request('/v1/health', { authenticated: false });
@@ -36,7 +34,12 @@ export async function checkAppConnection(
   try {
     await request('/v1/me');
   } catch (cause) {
-    if (cause instanceof ApiError && cause.status === 401) {
+    if (
+      cause !== null &&
+      typeof cause === 'object' &&
+      'status' in cause &&
+      cause.status === 401
+    ) {
       return { kind: 'session_ended' };
     }
     return {
