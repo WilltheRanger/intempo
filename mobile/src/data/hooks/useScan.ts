@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 
 import { pieceKeys } from './usePieces';
-import { createScore } from '../api/scores';
+import { attachScorePages, createScore } from '../api/scores';
 import { IS_LIVE_BACKEND } from '../environment';
 import type { Piece } from '../types';
 import { toPiece } from '../sources/api';
@@ -58,6 +58,30 @@ export function useTranscribePage() {
       return toPiece(score);
     },
     onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: pieceKeys.all });
+    },
+  });
+}
+
+/** Reads uploaded pages into an existing manual piece instead of duplicating it. */
+export function useAttachScorePages(pieceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation<Piece, Error, string[]>({
+    mutationFn: async (imageUrls) => {
+      if (!IS_LIVE_BACKEND) {
+        throw new Error('Attaching sheet music needs the backend.');
+      }
+      if (!pieceId || imageUrls.length === 0) {
+        throw new Error('Choose at least one page to attach.');
+      }
+      const images =
+        imageUrls.length === 1
+          ? { image_url: imageUrls[0] }
+          : { image_urls: imageUrls };
+      return toPiece(await attachScorePages(pieceId, images));
+    },
+    onSuccess: (piece) => {
+      queryClient.setQueryData(pieceKeys.detail(piece.id), piece);
       void queryClient.invalidateQueries({ queryKey: pieceKeys.all });
     },
   });
