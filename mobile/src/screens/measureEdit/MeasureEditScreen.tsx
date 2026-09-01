@@ -99,7 +99,15 @@ export function MeasureEditScreen() {
     );
   }
 
-  const beats = describeBeats(working, piece.score.time_signature);
+  // **Which bar this is, not what it is numbered.** The score's first measure
+  // may legitimately be short — an anacrusis — and `describeBeats` cannot know
+  // that on its own. Compared by identity against the score's own first
+  // measure rather than against `measure_number === 1`, because a score read
+  // off page two of a part starts at bar 30.
+  const isFirstBar = piece.score.measures[0]?.measure_number === original.measure_number;
+  const beats = describeBeats(working, piece.score.time_signature, {
+    first: isFirstBar,
+  });
 
   function change(patch: Partial<ScoreNote>) {
     if (!working) {
@@ -188,9 +196,15 @@ export function MeasureEditScreen() {
       <Text variant="metadataSmall" color="textTertiary">
         {beats.expected === null
           ? 'No time signature was read for this piece, so there is nothing to check against.'
-          : beats.balanced
-            ? 'This bar adds up. Save it, or keep adjusting.'
-            : 'Tap a note, then choose what it should be.'}
+          : beats.pickup
+            ? // Not "this bar adds up" — it does not, and saying so under a
+              // headline that has just called it a pickup contradicts it. A
+              // musician who opened this bar because it looked short deserves
+              // to be told why it is allowed to be.
+              'An opening bar may be short — the piece starts on an upbeat. Save it, or keep adjusting.'
+            : beats.balanced
+              ? 'This bar adds up. Save it, or keep adjusting.'
+              : 'Tap a note, then choose what it should be.'}
       </Text>
 
       <View style={styles.spacer} />

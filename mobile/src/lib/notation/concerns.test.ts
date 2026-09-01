@@ -26,6 +26,26 @@ const score = (notes: { pitch: string; duration: string; tied?: boolean }[]): Sc
     ],
   }) as ScoreJson;
 
+/**
+ * A score of two bars, so a test can put a short bar somewhere other than first.
+ *
+ * The single-bar `score` above cannot express "a short bar that is not the
+ * opening", which is the whole of the pickup rule.
+ */
+const twoBars = (
+  first: { pitch: string; duration: string; tied?: boolean }[],
+  second: { pitch: string; duration: string; tied?: boolean }[],
+): ScoreJson => {
+  const one = score(first);
+  return {
+    ...one,
+    measures: [
+      one.measures[0],
+      { ...score(second).measures[0], measure_number: 2 },
+    ],
+  };
+};
+
 const FOUR_QUARTERS = [
   { pitch: 'E2', duration: 'quarter', tied: true },
   { pitch: 'G2', duration: 'quarter' },
@@ -51,14 +71,51 @@ describe('which bars the app shows as needing a look', () => {
 
   it('falls back to the local check when the server said nothing', () => {
     // An older backend sends no field at all. A short bar is still a short bar.
-    const short = score([{ pitch: 'E2', duration: 'quarter' }]);
-    expect(readingNotesFor(short).problemMeasures).toEqual([1]);
+    //
+    // **The short bar has to be bar 2.** A short *first* measure is a pickup,
+    // which the server has always forgiven and the app now does too, so the
+    // one-measure score this used to build stopped being an example of a
+    // fault. Example moved, assertion unchanged.
+    const short = twoBars(FOUR_QUARTERS, [{ pitch: 'E2', duration: 'quarter' }]);
+    expect(readingNotesFor(short).problemMeasures).toEqual([2]);
   });
 
   it('trusts an explicit empty list over the local check', () => {
     // Not the same as absent: the server looked and found nothing.
-    const short = score([{ pitch: 'E2', duration: 'quarter' }]);
+    const short = twoBars(FOUR_QUARTERS, [{ pitch: 'E2', duration: 'quarter' }]);
     expect(readingNotesFor(short, []).problemMeasures).toEqual([]);
+  });
+
+  it('forgives a short opening bar, because that is an anacrusis', () => {
+    // Nearly every hymn, most dances and most études start on an upbeat. The
+    // server has always called this `pickup`; the local fallback called it a
+    // fault, so the app contradicted the server the moment it counted for
+    // itself — and offered a fix for a bar that was already right.
+    const pickup = twoBars([{ pitch: 'E2', duration: 'quarter' }], FOUR_QUARTERS);
+    expect(readingNotesFor(pickup).problemMeasures).toEqual([]);
+  });
+
+  it('does not forgive a short bar anywhere but the opening', () => {
+    const short = twoBars(FOUR_QUARTERS, [{ pitch: 'E2', duration: 'quarter' }]);
+    expect(readingNotesFor(short).problemMeasures).toEqual([2]);
+  });
+
+  it('does not forgive an opening bar that is empty', () => {
+    // `validate.py` calls a bar with no notes `empty`, which is a fault, and
+    // checks that before the pickup branch. A first bar nothing was read out of
+    // is a page whose opening was not read, not a page that starts on an upbeat.
+    const empty = twoBars([], FOUR_QUARTERS);
+    expect(readingNotesFor(empty).problemMeasures).toEqual([1]);
+  });
+
+  it('does not forgive an opening bar that is too long', () => {
+    // The server's rule is `actual < expected`. A first bar with five beats in
+    // it is a misreading whatever comes after it.
+    const long = twoBars(
+      [...FOUR_QUARTERS, { pitch: 'E2', duration: 'quarter' }],
+      FOUR_QUARTERS,
+    );
+    expect(readingNotesFor(long).problemMeasures).toEqual([1]);
   });
 });
 

@@ -79,25 +79,60 @@ export function beatsPerMeasure(timeSignature: string | null): number | null {
  */
 export const BEAT_TOLERANCE = 1e-6;
 
+/**
+ * Whether a short measure is a pickup rather than a fault.
+ *
+ * **The rule is the backend's and is copied exactly** (`ocr/validate.py`:
+ * `index == 0 and actual < expected`). Only the *first* measure of the score
+ * can be one; a short measure anywhere else is a dropped or misread note. It
+ * must also have something in it — an empty first bar is `empty` there, which
+ * is a fault, and forgiving it here would hide a page whose opening was not
+ * read at all.
+ *
+ * **Without this the app flagged the opening bar of most real repertoire.** An
+ * anacrusis is how a very large share of music starts — nearly every hymn,
+ * most dances, most études — and the local check reported bar 1 as not adding
+ * up, on a page that is perfectly correct, and then offered a fix for a bar
+ * that needs none. The server had forgiven it all along, so the app contradicted
+ * the server the moment it fell back to counting for itself.
+ *
+ * What it does not copy is `pickup_complement` — the server also checks that
+ * the final measure pays the pickup back. That is a whole-score check with a
+ * message of its own, and this is deliberately a subset (see `readingNotesFor`).
+ * The cost is that a genuinely dropped note in bar 1 is forgiven here and named
+ * by the server, which is the right way round.
+ */
+function isPickup(
+  index: number,
+  actual: number,
+  expected: number,
+  noteCount: number,
+): boolean {
+  return index === 0 && noteCount > 0 && actual < expected - BEAT_TOLERANCE;
+}
+
 export function problemMeasures(score: ScoreJson): number[] {
   const perBar = beatsPerMeasure(score.time_signature);
   if (perBar === null) {
     return [];
   }
   const out: number[] = [];
-  for (const measure of score.measures) {
+  score.measures.forEach((measure, index) => {
     const total = beatsIn(measure.notes);
     // A duration this build has never heard of means the app is older than the
     // backend that read the page. That is a bar this version cannot count, not
     // a bar that is wrong — it used to be counted as zero beats, which made a
     // correct measure look short and offered the musician a fix for nothing.
     if (total === null) {
-      continue;
+      return;
+    }
+    if (isPickup(index, total, perBar, measure.notes.length)) {
+      return;
     }
     if (Math.abs(total - perBar) > BEAT_TOLERANCE) {
       out.push(measure.measure_number);
     }
-  }
+  });
   return out;
 }
 
@@ -345,13 +380,27 @@ export function beatsIn(notes: { duration: string }[]): number | null {
 export function describeBeats(
   notes: { duration: string }[],
   timeSignature: string | null,
-): { text: string; balanced: boolean; expected: number | null } {
+  /**
+   * Whether this is the score's first measure, which may legitimately be short.
+   *
+   * The edit screen knows which bar it is showing; this function does not, and
+   * without being told it called the opening bar of every piece with an
+   * anacrusis unbalanced and invited a correction to it.
+   */
+  { first = false }: { first?: boolean } = {},
+): {
+  text: string;
+  balanced: boolean;
+  expected: number | null;
+  /** Short, and allowed to be, because it opens the piece. */
+  pickup: boolean;
+} {
   const expected = beatsPerMeasure(timeSignature);
   const actual = beatsIn(notes);
   if (actual === null) {
     // Unreachable from a score this build's schema accepted, and handled anyway
     // rather than shown as a confident wrong number.
-    return { text: 'Beats not counted', balanced: true, expected: null };
+    return { text: 'Beats not counted', balanced: true, expected: null, pickup: false };
   }
   // `parseFloat` rather than a trailing-zero strip: "4.00" -> 4 -> "4", where
   // `.replace(/0+$/, '')` left "4." on the screen.
@@ -359,12 +408,23 @@ export function describeBeats(
   if (expected === null) {
     // No time signature was read, so there is nothing to balance against.
     // Saying "4 beats" is still useful; claiming it is right would not be.
-    return { text: `${shown} beats`, balanced: true, expected: null };
+    return { text: `${shown} beats`, balanced: true, expected: null, pickup: false };
+  }
+  if (isPickup(first ? 0 : 1, actual, expected, notes.length)) {
+    // The backend's own words for this measure, so the two never disagree in
+    // front of a musician: "allowed, a first measure may be a pickup".
+    return {
+      text: `${shown} of ${expected} beats — a pickup`,
+      balanced: true,
+      expected,
+      pickup: true,
+    };
   }
   return {
     text: `${shown} of ${expected} beats`,
     balanced: Math.abs(actual - expected) < BEAT_TOLERANCE,
     expected,
+    pickup: false,
   };
 }
 

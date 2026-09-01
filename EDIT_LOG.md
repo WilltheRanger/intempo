@@ -6,6 +6,70 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-01 — The app called the opening bar of most real repertoire a misreading
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Third finding of the
+music-accuracy audit.
+
+**Files:** `mobile/src/lib/notation/reading.ts`,
+`mobile/src/screens/measureEdit/MeasureEditScreen.tsx`, plus
+`reading.test.ts` and `concerns.test.ts`.
+
+`ocr/validate.py` has always forgiven a short **first** measure: an anacrusis is
+short by design, and the rule there is exactly `index == 0 and actual <
+expected` → `pickup`, which is not a fault. It even checks that the final
+measure pays the pickup back (`pickup_complement`).
+
+The app's own beat check — the subset it keeps for live editing and as a
+fallback for an older backend — did not know any of this. It flagged every
+measure whose beats missed the meter, first one included. So on a page that
+opens on an upbeat, which is nearly every hymn, most dances and a great many
+études, the app said *"Bar 1 doesn't add up to the time signature — check it
+against your copy"* about a bar that was perfectly correct, and offered a fix
+for it. The moment the app counted for itself it contradicted the server.
+
+The edit screen was worse, because that is where the musician lands after being
+told: the headline read **"1 of 4 beats"** in the warning tint over *"Tap a note,
+then choose what it should be."* — an instruction to break a correct bar.
+
+### What changed
+
+`isPickup` copies the backend's rule verbatim, including the two things that
+are easy to drop: it is the **first measure of the score** and not
+`measure_number === 1` (a part read from page two starts at bar 30), and an
+**empty** first measure is still a fault — `validate.py` checks `count == 0`
+before the pickup branch, because a bar nothing was read out of is a page whose
+opening failed, not a page that starts on an upbeat. A first bar that is *too
+long* is a misreading too; the rule is `actual < expected`, one-sided.
+
+`describeBeats` takes the flag and reports `pickup` back, so the edit screen can
+say why the bar is allowed rather than claiming it adds up — it does not add up,
+and saying so under a headline that has just called it a pickup contradicts it.
+It now reads *"An opening bar may be short — the piece starts on an upbeat."*
+
+`MeasureEditScreen` compares against `score.measures[0].measure_number` rather
+than against 1, for the page-two reason above.
+
+**Not copied:** `pickup_complement`. That is a whole-score check with a message
+of its own, and this side is deliberately a subset — so a genuinely dropped note
+in bar 1 is forgiven here and named by the server, which is the right way round.
+
+**Verified** by temporarily giving the demo score a one-beat opening bar and
+building: the score screen shows no caveat, and the edit screen reads *"1 of 4
+beats — a pickup"* with the new explanation. Fixture restored and confirmed
+byte-identical.
+
+**Test premise moved, not weakened, twice.** Two cases in `concerns.test.ts`
+used a one-measure score to stand for "a short bar", which is now a pickup by
+definition. They build two bars and put the short one second; four new cases pin
+the boundaries (opening short, opening empty, opening long, short-but-not-first).
+
+**Tests:** 710 pass, up 8.
+
+**Rollback:** revert the commit.
+
+---
+
 ## 2026-09-01 — One tempo, two numbers, one tap apart
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Continuing the music-
