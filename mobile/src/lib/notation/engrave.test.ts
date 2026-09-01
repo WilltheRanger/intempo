@@ -439,3 +439,64 @@ describe('accidentals', () => {
     expect(engraving.systems[0].barlines.at(-1)).toBeLessThanOrEqual(320);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Accidentals
+// ---------------------------------------------------------------------------
+
+describe('accidentals, all five of them', () => {
+  const clef = 'treble' as const;
+  const opts = { lineGap: 10, noteGap: 40, leftPad: 20, rightPad: 10 };
+  const noteOf = (pitch: string) =>
+    engrave([{ pitch, value: 'quarter' }] as never, clef, opts).systems[0].notes[0];
+
+  it('reads a flat, which was drawn as no accidental at all', () => {
+    // **The bug the font unlocked fixing.** `accidentalOf` returned `'sharp'`
+    // or nothing, so a B♭ was engraved as a B: a different note, printed as
+    // though it were right. The staff position was always correct — `stepOf`
+    // reads the letter — so nothing on the screen said otherwise.
+    expect(noteOf('Bb4').accidental).toBe('flat');
+    expect(noteOf('F#4').accidental).toBe('sharp');
+    expect(noteOf('B4').accidental).toBeNull();
+  });
+
+  it('reads a double, rather than borrowing the single', () => {
+    // An F♯♯ drawn with one sharp is a semitone wrong and looks deliberate.
+    expect(noteOf('F##4').accidental).toBe('double-sharp');
+    expect(noteOf('Bbb4').accidental).toBe('double-flat');
+  });
+
+  it('puts a note at the same height whatever its accidental', () => {
+    // The staff position comes from the letter. If an accidental ever moved a
+    // note, the accidental would be being read twice.
+    const y = noteOf('B4').y;
+    for (const pitch of ['Bb4', 'B#4', 'Bbb4', 'B##4']) {
+      expect(noteOf(pitch).y).toBeCloseTo(y);
+    }
+  });
+
+  it('gives a double flat the room a double flat needs', () => {
+    // Bravura's double flat is 1.65 staff spaces against a sharp's 1.0. One
+    // width for all five puts it through the notehead it belongs to.
+    const flat = noteOf('Bb4');
+    const doubleFlat = noteOf('Bbb4');
+
+    expect(flat.x - flat.accidentalX).toBeLessThan(
+      doubleFlat.x - doubleFlat.accidentalX,
+    );
+  });
+
+  it('clears the notehead, for every accidental', () => {
+    // `accidentalX` is the glyph's left edge and the widths are Bravura's own,
+    // so the right edge is left + width and it must stop short of the head.
+    const widths = {
+      sharp: 0.996, flat: 0.904, natural: 0.672,
+      'double-sharp': 1.0, 'double-flat': 1.652,
+    } as const;
+    for (const pitch of ['F#4', 'Bb4', 'F##4', 'Bbb4']) {
+      const note = noteOf(pitch);
+      const right = note.accidentalX + opts.lineGap * widths[note.accidental!];
+      expect(right).toBeLessThan(note.x - opts.lineGap * 0.59);
+    }
+  });
+});

@@ -133,7 +133,7 @@ const UNREAD_CLEF_SCORE: ScoreJson = { ...DEMO_SCORE, clef: null };
  * 1. sixteenths in fours — double beams, four groups
  * 2. dotted eighth + sixteenth — the stub, which is the rhythm that was drawn
  *    wrong (two full beams says both notes are sixteenths)
- * 3. a dotted quarter, and an eighth alone between rests — the flag
+ * 3. a dotted quarter, an eighth alone between rests — the flag — and a flat
  * 4. a dotted half
  * 5. a half rest
  * 6. a whole note
@@ -185,7 +185,10 @@ const FINE_VALUES_SCORE: ScoreJson = {
       notes: [
         note('C5', 'dotted_quarter'),
         rest('eighth'),
-        note('B4', 'quarter'),
+        // A flat, deliberately. Until Bravura landed, `accidentalOf` returned
+        // only sharps and this note was engraved as a plain B — a different
+        // note, printed as though it were right.
+        note('Bb4', 'quarter'),
         rest('eighth'),
         note('A4', 'eighth'),
       ],

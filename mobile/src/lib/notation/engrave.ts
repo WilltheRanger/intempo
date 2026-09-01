@@ -176,7 +176,30 @@ export function isNote(item: StaveItem): item is StaveNote {
   return 'pitch' in item;
 }
 
-export type Accidental = 'sharp' | 'natural' | null;
+export type Accidental =
+  | 'sharp'
+  | 'flat'
+  | 'natural'
+  | 'double-sharp'
+  | 'double-flat'
+  | null;
+
+/**
+ * How wide each accidental is, in staff spaces.
+ *
+ * Bravura's own advance widths, read out of the font rather than estimated: a
+ * double flat is **1.65 spaces**, nearly twice a sharp, and a natural is two
+ * thirds of one. One width standing in for all five — which is what the fixed
+ * constant this replaced amounted to — puts a double flat through the notehead
+ * it belongs to and leaves a natural floating.
+ */
+export const ACCIDENTAL_WIDTHS: Record<NonNullable<Accidental>, number> = {
+  sharp: 0.996,
+  flat: 0.904,
+  natural: 0.672,
+  'double-sharp': 1.0,
+  'double-flat': 1.652,
+};
 
 export interface EngravedNote {
   x: number;
@@ -300,7 +323,8 @@ const STUB_FACTOR = 1.1;
  * never change size relative to the staff — a SMuFL em *is* four staff spaces.
  */
 const CLEF_WIDTH = 3.2;
-const ACCIDENTAL_WIDTH = 1.0;
+/** A key-signature accidental's column. They are all sharps or all flats. */
+const KEY_ACCIDENTAL_WIDTH = 1.0;
 const TIME_WIDTH = 2.0;
 /** Between the head and the first note, so the music does not touch the metre. */
 const HEAD_GAP = 1.0;
@@ -488,7 +512,10 @@ const MAX_JUSTIFY_STRETCH = 1.5;
  * geometry, and the component had to know the notehead's own half-width to
  * place it, which is a second copy of a number this file already owns.
  */
-const ACCIDENTAL_OFFSET_FACTOR = 1.55;
+const ACCIDENTAL_GAP = 0.28;
+
+/** Half a notehead, which is what an accidental has to clear. */
+const HEAD_HALF = 0.59;
 
 /**
  * The extra column width a note carrying an accidental is given.
@@ -505,7 +532,16 @@ const ACCIDENTAL_OFFSET_FACTOR = 1.55;
  * accidental the room it physically occupies, which is what an engraver widens
  * a column for.
  */
-const ACCIDENTAL_ROOM_FACTOR = 1.6;
+/**
+ * How much room an accidental asks for, in staff spaces, gaps included.
+ * A double flat needs nearly twice what a sharp does.
+ */
+function accidentalRoom(accidental: Accidental): number {
+  if (!accidental) {
+    return 0;
+  }
+  return HEAD_HALF + ACCIDENTAL_GAP * 2 + ACCIDENTAL_WIDTHS[accidental];
+}
 
 /** How wide a system's opening is, so justification can spend what is left. */
 function headRoom(head: HeadRequest | null, lineGap: number): number {
@@ -516,7 +552,7 @@ function headRoom(head: HeadRequest | null, lineGap: number): number {
   if (head.clef) {
     width += CLEF_WIDTH;
   }
-  width += head.key.length * ACCIDENTAL_WIDTH;
+  width += head.key.length * KEY_ACCIDENTAL_WIDTH;
   if (head.time) {
     width += TIME_WIDTH;
   }
@@ -526,9 +562,7 @@ function headRoom(head: HeadRequest | null, lineGap: number): number {
 /** The room each item needs before it, beyond the ordinary column. */
 function extraRoom(items: StaveItem[], lineGap: number): number[] {
   return items.map((item) =>
-    isNote(item) && accidentalOf(item.pitch) !== null
-      ? lineGap * ACCIDENTAL_ROOM_FACTOR
-      : 0,
+    isNote(item) ? lineGap * accidentalRoom(accidentalOf(item.pitch)) : 0,
   );
 }
 
@@ -552,24 +586,33 @@ export function stepOf(pitch: string): number | null {
 
 /** The accidental to print before a note, or null. */
 /**
- * The glyph to draw before a notehead, if this engraver has one.
+ * The glyph to draw before a notehead.
  *
- * Only the single sharp. Flats have never been drawn — the note sits at its
- * diatonic position and the name row under the system carries the accidental —
- * and doubles join them rather than borrowing the sharp glyph: `F##` drawn with
- * one sharp is a different note, printed as though it were right, which is the
- * failure this module's own docstring is written against.
+ * **All five now, where there used to be one.** This returned `'sharp'` or
+ * nothing, and said why: the sharp was the only accidental that could be drawn
+ * by hand, so a B♭ was engraved as a B and an F♯♯ as an F♯ — *"a different
+ * note, printed as though it were right, which is the failure this module's own
+ * docstring is written against."* The reasoning was right; the limitation was
+ * the tooling, and Bravura removes it.
  *
- * The position is still correct in every case, because `stepOf` reads the
- * letter and ignores the accidental. So a double accidental loses its symbol
- * and nothing else, exactly as a flat does today.
+ * The staff position was always correct, because `stepOf` reads the letter and
+ * ignores the accidental. What was missing was the symbol that says which of
+ * the two notes at that position is meant — and on a page where an editor
+ * wrote a flat, that is not a detail.
  */
+const ACCIDENTAL_BY_SUFFIX: Record<string, Accidental> = {
+  '#': 'sharp',
+  b: 'flat',
+  '##': 'double-sharp',
+  bb: 'double-flat',
+};
+
 export function accidentalOf(pitch: string): Accidental {
   const match = PITCH.exec(pitch);
-  if (!match) {
+  if (!match || !match[2]) {
     return null;
   }
-  return match[2] === '#' ? 'sharp' : null;
+  return ACCIDENTAL_BY_SUFFIX[match[2]] ?? null;
 }
 
 /** `F#4` reads as `F♯` — the octave is on the staff, and the sharp is a glyph. */
@@ -684,7 +727,7 @@ function layoutSystem(
         y: -(step - middleStep) * halfGap,
         kind: accidental.kind,
       });
-      headX += lineGap * ACCIDENTAL_WIDTH;
+      headX += lineGap * KEY_ACCIDENTAL_WIDTH;
     }
     if (headRequest.time) {
       head.time = { x: headX, ...headRequest.time };
@@ -760,6 +803,7 @@ function layoutSystem(
     // eighth, and the thing this module's own docstring forbids: "Drawing less
     // and admitting it is honest; drawing something else is not."
     const step = stepOf(note.pitch) ?? 0;
+    const accidental = accidentalOf(note.pitch);
     const y = -(step - middleStep) * halfGap;
     const stemUp = y > 0;
     // Everything a quarter or shorter has a black notehead.
@@ -770,8 +814,14 @@ function layoutSystem(
       y,
       filled,
       stemUp,
-      accidental: accidentalOf(note.pitch),
-      accidentalX: x - lineGap * ACCIDENTAL_OFFSET_FACTOR,
+      accidental,
+      // **The glyph's left edge**, because that is where text is drawn from,
+      // and placed by the width of the accidental actually being drawn rather
+      // than by one constant standing in for all five.
+      accidentalX:
+        x -
+        lineGap *
+          (HEAD_HALF + ACCIDENTAL_GAP + (accidental ? ACCIDENTAL_WIDTHS[accidental] : 0)),
       name: displayName(note.pitch),
       dots: note.dots ?? 0,
       // Cleared below for any note a beam picks up.
@@ -1147,8 +1197,20 @@ export function engrave(
   // Only when there is a column to square off against. Without `maxWidth` there
   // is no margin to reach, and the Today preview — one system, clipped on
   // purpose — must keep its natural width.
+  //
+  // **The last system is the exception, and it did not used to be.** The
+  // paragraph above was written when nothing drew a final barline: a staff
+  // stopping short read as a rendering failure, so ruling it to the margin was
+  // the better of two bad options. Now the piece ends in a thin-and-thick bar,
+  // and a double bar with empty staff ruled past it reads worse than either —
+  // it says the music stopped and then the paper kept going, which is what
+  // manuscript paper does and what printed music never does. So the last
+  // system ends where its music does. The premise changed, not the taste.
   const flush = options.maxWidth
-    ? systems.map((system) => ({ ...system, width }))
+    ? systems.map((system, index) => ({
+        ...system,
+        width: index === systems.length - 1 ? system.width : width,
+      }))
     : systems;
 
   return {

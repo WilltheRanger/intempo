@@ -5,6 +5,7 @@ import { colors, fontFamily, MUSIC_EM_IN_SPACES, typography } from '../../design
 import {
   BEAM_THICKNESS_FACTOR,
   engrave,
+  type Accidental,
   type NoteValue,
   type StaveItem,
 } from '../../lib/notation/engrave';
@@ -22,8 +23,27 @@ const GLYPH = {
   fClef: '\uE062',
   sharp: '\uE262',
   flat: '\uE260',
+  natural: '\uE261',
+  doubleSharp: '\uE263',
+  doubleFlat: '\uE264',
   timeDigit: (n: number) => String(n).split('').map((d) => String.fromCharCode(0xe080 + Number(d))).join(''),
 } as const;
+
+/**
+ * Every accidental, where there used to be one.
+ *
+ * `engrave.ts` returned only `'sharp'` because a sharp was the only one that
+ * could be drawn by hand — four straight lines. So a B♭ was engraved as a B and
+ * an F♯♯ as an F♯: a different note, printed as though it were right. Bravura
+ * has all five, and they are the same drawings a printed part uses.
+ */
+const ACCIDENTAL_GLYPH: Record<NonNullable<Accidental>, string> = {
+  sharp: GLYPH.sharp,
+  flat: GLYPH.flat,
+  natural: GLYPH.natural,
+  'double-sharp': GLYPH.doubleSharp,
+  'double-flat': GLYPH.doubleFlat,
+};
 
 const CLEF_GLYPH: Record<Clef, string> = {
   treble: GLYPH.gClef,
@@ -207,8 +227,8 @@ export function Stave({
       // name, clef and tempo in real text, which is the useful alternative.
       accessible={false}
     >
-      {layout.systems.map((system, s) => (
-        <G key={`system-${s}`}>
+      {layout.systems.map((system, systemIndex) => (
+        <G key={`system-${systemIndex}`}>
           {/* Behind everything, so the notes stay the darkest thing on the
               staff. A wash rather than an outline: an outlined bar reads as
               something selected and waiting to be acted on, and this is a
@@ -246,17 +266,49 @@ export function Stave({
             />
           ))}
 
-          {system.barlines.map((x, index) => (
-            <Line
-              key={`bar-${index}`}
-              x1={x}
-              y1={system.staffLines[0]}
-              x2={x}
-              y2={system.staffLines[4]}
-              stroke={rule}
-              strokeWidth={STAFF_STROKE * 1.2 * scale}
-            />
-          ))}
+          {system.barlines.map((x, index) => {
+            // **The last barline of the last system ends the piece**, and a
+            // printed part says so with a thin line and a thick one. Drawn
+            // rather than set from the font because it is two rectangles whose
+            // width follows the staff, and Bravura's barline glyphs are sized
+            // for a staff drawn at the font's own scale.
+            const ends =
+              systemIndex === layout.systems.length - 1 &&
+              index === system.barlines.length - 1;
+            if (!ends) {
+              return (
+                <Line
+                  key={`bar-${index}`}
+                  x1={x}
+                  y1={system.staffLines[0]}
+                  x2={x}
+                  y2={system.staffLines[4]}
+                  stroke={rule}
+                  strokeWidth={STAFF_STROKE * 1.2 * scale}
+                />
+              );
+            }
+            const thick = lineGap * 0.4;
+            return (
+              <G key={`bar-${index}`}>
+                <Line
+                  x1={x - thick - lineGap * 0.4}
+                  y1={system.staffLines[0]}
+                  x2={x - thick - lineGap * 0.4}
+                  y2={system.staffLines[4]}
+                  stroke={rule}
+                  strokeWidth={STAFF_STROKE * 1.2 * scale}
+                />
+                <Rect
+                  x={x - thick}
+                  y={system.staffLines[0]}
+                  width={thick}
+                  height={system.staffLines[4] - system.staffLines[0]}
+                  fill={rule}
+                />
+              </G>
+            );
+          })}
 
           {/*
             **The page's own furniture, drawn from Bravura.**
@@ -294,7 +346,7 @@ export function Stave({
               fontSize={musicSize}
               fontFamily={fontFamily.music}
             >
-              {accidental.kind === 'sharp' ? GLYPH.sharp : GLYPH.flat}
+              {ACCIDENTAL_GLYPH[accidental.kind]}
             </SvgText>
           ))}
 
@@ -391,14 +443,16 @@ export function Stave({
                 />
               ))}
 
-              {note.accidental === 'sharp' ? (
-                <Sharp
+              {note.accidental ? (
+                <SvgText
                   x={note.accidentalX}
                   y={note.y}
-                  ink={ink}
-                  lineGap={lineGap}
-                  stroke={stroke}
-                />
+                  fill={ink}
+                  fontSize={musicSize}
+                  fontFamily={fontFamily.music}
+                >
+                  {ACCIDENTAL_GLYPH[note.accidental]}
+                </SvgText>
               ) : null}
 
               {note.stem ? (
@@ -607,36 +661,3 @@ function Rest({
   );
 }
 
-/**
- * A sharp, drawn rather than set in type.
- *
- * `♯` exists in Unicode but lands on the font stack, which on Android often
- * has no glyph for it — and a tofu box in the middle of a stave is worse than
- * no accidental at all. Four strokes: two uprights and two crossbars, the
- * crossbars slanted upwards the way they are cut in every music face.
- */
-function Sharp({
-  x,
-  y,
-  ink,
-  lineGap,
-  stroke,
-}: {
-  x: number;
-  y: number;
-  ink: string;
-  lineGap: number;
-  stroke: number;
-}) {
-  const w = lineGap * 0.34;
-  const h = lineGap * 1.1;
-  const slant = lineGap * 0.16;
-  return (
-    <G>
-      <Line x1={x - w} y1={y - h} x2={x - w} y2={y + h * 0.75} stroke={ink} strokeWidth={stroke} />
-      <Line x1={x + w} y1={y - h * 0.75} x2={x + w} y2={y + h} stroke={ink} strokeWidth={stroke} />
-      <Line x1={x - w * 2} y1={y - slant * 0.4} x2={x + w * 2} y2={y - slant * 1.6} stroke={ink} strokeWidth={stroke * 1.5} />
-      <Line x1={x - w * 2} y1={y + slant * 1.6} x2={x + w * 2} y2={y + slant * 0.4} stroke={ink} strokeWidth={stroke * 1.5} />
-    </G>
-  );
-}

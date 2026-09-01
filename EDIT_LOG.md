@@ -6,6 +6,83 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-01 — A B flat was drawn as a B
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. The standing instruction,
+on the music side — the accuracy bug the font made fixable.
+
+**Files:** `mobile/src/lib/notation/engrave.ts` + test,
+`mobile/src/components/notation/Stave.tsx`,
+`mobile/src/data/sources/fixtures.ts`.
+
+### The bug, which the code already described
+
+`accidentalOf` returned `'sharp'` or nothing, and its own docstring said why:
+the sharp was the only accidental that could be drawn by hand, four straight
+lines. So **a B♭ was engraved as a B**, and an F♯♯ as an F♯ — *"a different
+note, printed as though it were right, which is the failure this module's own
+docstring is written against."*
+
+The staff position was always correct, because `stepOf` reads the letter and
+ignores the accidental. Nothing on the screen said the symbol was missing. On a
+page where an editor wrote a flat, that is not a detail — it is the difference
+between two notes a semitone apart, presented identically.
+
+The reasoning was right and the limitation was the tooling. Bravura removes the
+limitation: all five accidentals are in the subset already, because the key
+signature needed two of them.
+
+### Widths read out of the font, not estimated
+
+    accidentalNatural      0.672 spaces
+    accidentalFlat         0.904
+    accidentalSharp        0.996
+    accidentalDoubleSharp  1.000
+    accidentalDoubleFlat   1.652
+
+A **double flat is nearly twice a sharp**. The single `ACCIDENTAL_ROOM_FACTOR`
+that stood in for all of them would have put one through the notehead it
+belongs to and left a natural floating in space. `accidentalX` is now the
+glyph's left edge — which is where text is drawn from — placed by the width of
+the accidental actually being drawn, and `extraRoom` asks for that width. A
+test asserts every accidental's right edge stops short of its notehead.
+
+Measured from `mobile/assets/fonts/Bravura.otf` with fontTools rather than
+quoted from memory. `noteheadBlack` measures 1.180 spaces, so half of it is
+0.59 against the stem offset of 0.62 the engraver has always used — which is
+why stems have looked right all along and why they still do.
+
+### The piece now ends
+
+A thin line and a thick one, and **the last system's staff ends there**. That
+reverses a decision from earlier today, and the premise is what changed rather
+than the taste: ruling every staff to a common margin was written when nothing
+drew a final barline, where a short staff read as a rendering failure. A double
+bar with empty staff ruled past it reads worse than both — it says the music
+stopped and the paper kept going, which is what manuscript paper does and what
+printed music never does.
+
+### Verified
+
+Screenshotted, and at 6×: the flat in bar 3 of the fixture study is a Bravura
+flat, the sharps are Bravura sharps rather than the four hand-drawn strokes,
+and the piece ends in a thin-and-thick bar with the staff stopping at it. A
+fixture note changed from B to B♭ specifically so the case is visible in the
+sample build — until today it would have rendered identically.
+
+**mobile: 642 passed, 55 files. `tsc --noEmit` clean.**
+
+### Still hand-drawn
+
+Noteheads, rests, flags and the augmentation dot. They look right and the
+engraver's geometry is built around them, so moving them onto the font means
+re-verifying every stem attachment and rest baseline against different metrics.
+The measurements above are the groundwork for it; the change itself is not
+done, and mixing font clefs with hand-drawn noteheads is a consistency gap that
+is visible if you look for it.
+
+---
+
 ## 2026-09-01 — Today was a dashboard; it should be a starting point
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. The owner's list is done;
