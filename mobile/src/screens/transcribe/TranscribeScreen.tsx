@@ -25,12 +25,9 @@ import type { RootNavigation } from '../../navigation/types';
  * was ever sent anywhere. It now performs the real upload and reports what it
  * is actually doing.
  *
- * **Only the first page.** `POST /v1/scores` takes a single `image_url` and
- * there is no column, table or endpoint for a multi-page score, so a second
- * page has nowhere to go. Uploading pages that would then be discarded would
- * cost the musician time and bandwidth to no end, so they are not uploaded —
- * and the screen says which page it transcribed rather than letting someone
- * discover the omission later.
+ * Every ordered page is uploaded sequentially. Sending them one at a time
+ * avoids saturating a phone's uplink, and the same order is handed to the
+ * backend's multi-page transcription worker.
  *
  * Transcription itself happens on the *next* step: OCR runs inside
  * `POST /v1/scores`, which needs a title, and only the musician has that. So
@@ -60,11 +57,13 @@ export function TranscribeScreen() {
   const pages = useCapturedPages();
   const total = pages.length;
   const [error, setError] = useState<string | null>(null);
-  //: Bytes sent, out of bytes to send. Null until the transfer reports, which
-  //: it does not on a body the platform cannot measure.
-  const [sent, setSent] = useState<{ sent: number; total: number } | null>(null);
-
-  const first = pages[0] ?? null;
+  // Bytes sent for the page currently moving, plus its position in the scan.
+  const [progress, setProgress] = useState<{
+    page: number;
+    sent: number;
+    total: number;
+  } | null>(null);
+  const pageKey = pages.map((page) => page.id).join('|');
 
   /**
    * Answered before any request goes out.
@@ -77,7 +76,7 @@ export function TranscribeScreen() {
   const unavailable = !IS_LIVE_BACKEND;
 
   useEffect(() => {
-    if (!first || unavailable) {
+    if (pages.length === 0 || unavailable) {
       return;
     }
     // Guards against the upload finishing after the screen has gone — an
@@ -94,18 +93,26 @@ export function TranscribeScreen() {
 
     void (async () => {
       try {
-        const url = await uploadPage(first, {
-          signal: abort.signal,
-          onProgress: (bytes, total) => {
-            if (live) {
-              setSent({ sent: bytes, total });
-            }
-          },
-        });
+        const urls: string[] = [];
+        for (const [index, page] of pages.entries()) {
+          const url = await uploadPage(page, {
+            signal: abort.signal,
+            onProgress: (bytes, pageTotal) => {
+              if (live) {
+                setProgress({
+                  page: index + 1,
+                  sent: bytes,
+                  total: pageTotal,
+                });
+              }
+            },
+          });
+          urls.push(url);
+        }
         if (!live) {
           return;
         }
-        captureSession.setUploadedImageUrl(url);
+        captureSession.setUploadedImageUrls(urls);
         // `replace`, so Back from the review returns to the pages rather than
         // to an upload that has nothing left to do.
         navigation.replace('TranscriptionReview');
@@ -130,7 +137,7 @@ export function TranscribeScreen() {
     };
     // Keyed on the page's identity: re-running on every render would upload in
     // a loop, and the page cannot change while this screen is mounted.
-  }, [first?.id, unavailable]);
+  }, [pageKey, unavailable]);
 
   if (total === 0) {
     return (
@@ -174,11 +181,14 @@ export function TranscribeScreen() {
   return (
     <ScreenContainer scrollable={false} contentStyle={styles.centered}>
       <View>
-        <Text variant="heroTitle">Sending your page</Text>
+        <Text variant="heroTitle">
+          {total === 1 ? 'Sending your page' : `Sending ${total} pages`}
+        </Text>
 
         <Text variant="body" color="textSecondary" style={styles.subtitle}>
-          Uploading the photograph. Reading the notation comes next, once you
-          have named the piece.
+          {total === 1
+            ? 'Uploading the photograph. Reading the notation comes next, once you have named the piece.'
+            : 'Uploading every page in order. Reading the notation comes next, once you have named the piece.'}
         </Text>
 
         {/*
@@ -197,13 +207,9 @@ export function TranscribeScreen() {
         */}
         <View style={styles.progress}>
           <UploadProgress
-            sent={sent?.sent ?? 0}
-            total={sent?.total ?? 0}
-            note={
-              total > 1
-                ? `Page 1 of ${total} — only the first is transcribed`
-                : null
-            }
+            sent={progress?.sent ?? 0}
+            total={progress?.total ?? 0}
+            note={total > 1 ? `Page ${progress?.page ?? 1} of ${total}` : null}
           />
         </View>
       </View>
