@@ -57,7 +57,7 @@ export function TranscriptionReviewScreen() {
   const [pageIndex, setPageIndex] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
-  const imageUrls = captureSession.uploadedImageUrls();
+  const imageKeys = captureSession.uploadedImageKeys();
 
   function openReading(pieceId: string) {
     // The scan is finished with; leaving it in place would let a later save
@@ -82,7 +82,7 @@ export function TranscriptionReviewScreen() {
   }
 
   async function save() {
-    if (imageUrls.length !== pages.length) {
+    if (imageKeys.length !== pages.length) {
       setError(
         'The uploaded pages are incomplete. Go back and send them again.',
       );
@@ -98,9 +98,9 @@ export function TranscriptionReviewScreen() {
     setError(null);
     try {
       const piece = attachmentPieceId
-        ? await attach.mutateAsync(imageUrls)
+        ? await attach.mutateAsync(imageKeys)
         : await transcribe.mutateAsync({
-            imageUrls,
+            imageKeys,
             title: trimmed,
             composer: composer.trim() || null,
             movement: movement.trim() || null,
