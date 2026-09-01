@@ -1,5 +1,7 @@
 export {
   scheduleScore,
+  startAtMeasure,
+  startableMeasures,
   frequencyOf,
   type Schedule,
   type ScheduledNote,

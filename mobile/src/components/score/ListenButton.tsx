@@ -13,12 +13,21 @@ import {
   spacing,
 } from '../../design';
 import { impact, ImpactFeedbackStyle } from '../../lib/haptics';
-import { scheduleScore, type PlaybackHandle } from '../../lib/score';
+import { scheduleScore, startAtMeasure, type PlaybackHandle } from '../../lib/score';
 import { playSchedule } from '../../lib/scorePlayer';
 
 export interface ListenButtonProps {
   score: ScoreJson | null;
   bpm: number;
+  /**
+   * Which bar to enter on. The first bar of the piece unless said.
+   *
+   * A whole movement is a long way to sit through to check bar 40, and
+   * repeating a passage is what practice *is*. `startAtMeasure` trims the
+   * schedule rather than the score, which is what makes a repeated bar mean
+   * the first time it comes round.
+   */
+  fromMeasure?: number;
   /** Locked during a take. */
   disabled?: boolean;
   /**
@@ -52,6 +61,7 @@ export interface ListenButtonProps {
 export function ListenButton({
   score,
   bpm,
+  fromMeasure,
   disabled = false,
   onProgress,
 }: ListenButtonProps) {
@@ -94,7 +104,9 @@ export function ListenButton({
     }
 
     impact(ImpactFeedbackStyle.Light);
-    const schedule = scheduleScore(score as ScoreJson, bpm);
+    const whole = scheduleScore(score as ScoreJson, bpm);
+    const schedule =
+      fromMeasure === undefined ? whole : startAtMeasure(whole, fromMeasure);
     if (schedule.notes.length === 0) {
       return;
     }

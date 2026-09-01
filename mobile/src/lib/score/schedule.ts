@@ -211,3 +211,67 @@ export function scheduleScore(
 
   return { notes, durationS: clock, bpm };
 }
+
+/**
+ * The same performance, entered at a chosen bar.
+ *
+ * **Trimmed by time, not by measure number**, and that is the whole design.
+ * `measuresInPlayOrder` expands repeats, so bar 5 of a piece with a repeat is
+ * played twice and "notes in bar 5 or later" is not a thing that exists — it
+ * would keep the second pass through bars 1–4 and drop nothing useful. What a
+ * musician means by "start at bar 5" is *the first time bar 5 is played, then
+ * carry on*, including the repeat back to bar 1 if that is what the page says.
+ * So this finds the earliest note that belongs to that bar and keeps
+ * everything from there.
+ *
+ * A note **tied into** the start bar is not replayed. It began before you did;
+ * re-striking it would sound a note the page does not have, which is exactly
+ * the error a musician would hear.
+ *
+ * A bar the piece never reaches — past the end, or one whose every note was a
+ * rest — returns the schedule unchanged rather than silence. Playing from the
+ * top is a recoverable surprise; a button that does nothing is not.
+ */
+export function startAtMeasure(schedule: Schedule, measureNumber: number): Schedule {
+  const first = schedule.notes.find((note) => note.measureNumber === measureNumber);
+  if (!first) {
+    return schedule;
+  }
+
+  const offset = first.startS;
+  const notes = schedule.notes
+    .filter((note) => note.startS >= offset)
+    .map((note, index) => ({
+      ...note,
+      startS: note.startS - offset,
+      // Renumbered, because `globalIndex` is what a playhead uses to say which
+      // note is sounding, and it has to index the notes actually being played.
+      globalIndex: index,
+    }));
+
+  return {
+    ...schedule,
+    notes,
+    durationS: Math.max(0, schedule.durationS - offset),
+  };
+}
+
+/**
+ * Every bar a listener could sensibly start from, in the order they are played.
+ *
+ * Read off the schedule rather than the score so it can only ever offer bars
+ * that actually sound — a bar of rests has nothing to enter on, and a picker
+ * that offers it produces a Listen that appears to do nothing. Deduplicated,
+ * because a repeat plays the same bar twice and a picker should list it once.
+ */
+export function startableMeasures(schedule: Schedule): number[] {
+  const seen = new Set<number>();
+  const out: number[] = [];
+  for (const note of schedule.notes) {
+    if (!seen.has(note.measureNumber)) {
+      seen.add(note.measureNumber);
+      out.push(note.measureNumber);
+    }
+  }
+  return out;
+}

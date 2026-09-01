@@ -11,6 +11,7 @@ import {
 import { Stave } from '../../components/notation/Stave';
 import { ScoreThumbnail } from '../../components/pieces/ScoreThumbnail';
 import { ListenButton } from '../../components/score/ListenButton';
+import { PlaybackSettings } from '../../components/score/PlaybackSettings';
 import { TranscribingPanel } from '../../components/score/TranscribingPanel';
 import {
   EmptyState,
@@ -37,7 +38,9 @@ import {
   staveScoreFor,
 } from '../../lib/notation/fromScore';
 import { shortenLongRests, skippableBars } from '../../lib/notation/longRests';
-import { scheduleScore } from '../../lib/score';
+import { scheduleScore, startAtMeasure, startableMeasures } from '../../lib/score';
+import { practiceTempo, usePracticeTempos } from '../../data/practiceTempo';
+import { bpmForMarking } from '../../lib/tempoMarking';
 import {
   describeConfidence,
   describeProblemMeasures,
@@ -99,14 +102,18 @@ const PAGE_HEIGHT = 420;
  */
 const PAGE_HEIGHT_WHILE_READING = 240;
 
-/**
- * The tempo to hear the transcription at when the page named none.
+/*
+ * There was a `FALLBACK_LISTEN_BPM = 72` here, and it is worth saying where it
+ * went. It was a study tempo — slow enough that a wrong bar is audible as a
+ * wrong bar rather than a blur — and it was the *only* tempo this screen had:
+ * a piece marked at 152 could be heard at 152 and at nothing else, because
+ * nothing on the screen could change it.
  *
- * A study tempo, not a claim about the music. Slow enough that a wrong bar is
- * audible as a wrong bar rather than a blur, which is the entire reason to
- * play a transcription back.
+ * Playback now runs at the piece's working tempo, which the musician can move
+ * (`PlaybackSettings`), so the argument for a slow default is answered by the
+ * control rather than by overriding the page. Where the page named no tempo
+ * and carries no marking, `practiceTempo` falls back to 80.
  */
-const FALLBACK_LISTEN_BPM = 72;
 
 type ScoreView = 'notation' | 'original';
 
@@ -174,9 +181,36 @@ export function PieceScoreScreen() {
    * schedule.
    */
   const [elapsedS, setElapsedS] = useState<number | null>(null);
+  /**
+   * The tempo playback runs at, remembered per piece.
+   *
+   * The same store the Record screen reads, so a passage slowed down to hear
+   * it is the tempo the take then opens at — which is what a musician working
+   * a hard bar means by slowing it down. It used to be `markedBpm` with no way
+   * to change it, so a piece marked at 152 could only ever be heard at 152.
+   */
+  usePracticeTempos();
+  const listenBpm = practiceTempo.for(
+    params.pieceId,
+    piece?.markedBpm ?? bpmForMarking(piece?.score?.tempo_marking),
+  );
+  /** Which bar Listen enters on. Reset when the piece changes underneath it. */
+  const [fromMeasure, setFromMeasure] = useState<number | null>(null);
+  const whole = useMemo(
+    () => (heard ? scheduleScore(heard, listenBpm) : null),
+    [heard, listenBpm],
+  );
+  const startable = useMemo(() => (whole ? startableMeasures(whole) : []), [whole]);
+  /** The chosen bar, or the first one that sounds — never a bar that does not. */
+  const listenFrom =
+    fromMeasure !== null && startable.includes(fromMeasure)
+      ? fromMeasure
+      : (startable[0] ?? 1);
+  // The schedule the *button* is running, so the lit bar and the speaker
+  // cannot disagree about where they are.
   const playback = useMemo(
-    () => (heard ? scheduleScore(heard, piece?.markedBpm ?? FALLBACK_LISTEN_BPM) : null),
-    [heard, piece?.markedBpm],
+    () => (whole ? startAtMeasure(whole, listenFrom) : null),
+    [whole, listenFrom],
   );
   const soundingMeasure = useMemo(() => {
     if (elapsedS === null || !playback) {
@@ -422,10 +456,18 @@ export function PieceScoreScreen() {
           <View style={styles.listen}>
             <ListenButton
               score={heard}
-              bpm={piece.markedBpm ?? FALLBACK_LISTEN_BPM}
+              bpm={listenBpm}
+              fromMeasure={listenFrom}
               onProgress={(elapsed, total) =>
                 setElapsedS(total > 0 ? elapsed : null)
               }
+            />
+            <PlaybackSettings
+              bars={startable}
+              fromMeasure={listenFrom}
+              onFromMeasureChange={setFromMeasure}
+              bpm={listenBpm}
+              onBpmChange={(next) => practiceTempo.set(params.pieceId, next)}
             />
             {/*
               Only where there is something to skip. A control that is always

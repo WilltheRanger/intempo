@@ -6,6 +6,85 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-01 — Listen from a bar, at a tempo you chose
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Third batch of the owner's
+list of 2026-09-01: *"allow the person to be able to choose which measure to
+start at / listen starting at that measure"* and *"when you click the peice
+allow the user to choose tempo and where they want to listen to and what
+measure."*
+
+**Files:** `mobile/src/lib/score/schedule.ts` + `startAt.test.ts`, `index.ts`,
+`mobile/src/components/score/ListenButton.tsx`,
+`mobile/src/components/score/PlaybackSettings.tsx` (new),
+`PieceScoreScreen.tsx`, `RecordScreen.tsx`.
+
+### Trimmed by time, not by measure number
+
+`startAtMeasure` finds the earliest note belonging to the chosen bar and keeps
+everything from there. That is not an implementation detail — it is the
+feature. `measuresInPlayOrder` expands repeats, so in a piece with bars 1–2
+repeated the played order is `1 2 1 2 3 4`, and "notes in bar 2 or later" keeps
+the second pass through bar 1 and drops nothing useful. What a musician means
+by "start at bar 2" is *the first time bar 2 comes round, then carry on* —
+repeat included. The test asserts exactly that sequence.
+
+A note **tied into** the chosen bar is not re-struck. It began before you did;
+sounding it again is a note the page does not have.
+
+`startableMeasures` reads the bars off the **schedule**, so the picker can only
+offer bars that sound. A bar of rests has nothing to enter on, and offering it
+produces a Listen that appears to do nothing.
+
+A bar the piece never reaches plays from the top rather than falling silent. A
+recoverable surprise beats a button that looks broken.
+
+### The tempo the piece screen never had
+
+`PieceScoreScreen` played at `piece.markedBpm ?? 72` with **no control at
+all** — so a piece marked at 152 could be heard at 152 and at nothing else. It
+now reads `practiceTempo`, the same store the Record screen writes, seeded by
+the metronome mark or the printed marking (`bpmForMarking`, added earlier
+today). The sheet says so, because a listener who slows a hard passage down
+would otherwise be surprised to find the take slowed with it.
+
+The old `FALLBACK_LISTEN_BPM = 72` is gone and its reasoning is left in place
+as a comment: it was a study tempo, and it was defensible only while nothing on
+the screen could change the number.
+
+### One quiet line, not a panel
+
+`PlaybackSettings` renders `Listen from bar 9 · 96 BPM` under the Listen
+button, each half a tap onto a `BottomSheet`. No card: these are settings for
+the button above them, and a box would give them the weight of the music (§3
+laws 3 and 10). It hides itself when there is nothing to choose — a control
+offering one option teaches a musician to stop reading the controls.
+
+**"Listen from", not "From".** On the Record screen this line sits between
+Listen and "Recording tips", and a bare "From bar 1" there reads as where the
+*take* starts.
+
+### What the take does not do, and why
+
+**Recording still begins at bar 1.** The analysis builds its expected timeline
+from the whole score, so a take that started at bar 40 and did not say so would
+be compared against bar 1 onwards and reported as wrong from its first note.
+Making that work is a contract — a start bar on the take, and an offset in
+`alignment.py` — not a screen change, and it is not done. The comment beside
+the control says so at the point where someone would otherwise assume it.
+
+### Verified
+
+Screenshotted from the running build at both screens, and the bar sheet opened
+and read: six bars listed for the fixture study, "Bar 1 — Current" marked.
+Three-foot test unchanged on both — the Record screen still leads with the
+record button in the thumb zone, the score screen with the title and the stave,
+and the new line is metadata weight and recedes.
+
+**mobile: 589 passed, 49 files. `tsc --noEmit` clean.**
+
+---
+
 ## 2026-09-01 — The large empty box on a piece whose photograph was deleted
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Second batch of the owner's
