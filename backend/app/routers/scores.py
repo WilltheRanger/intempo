@@ -756,10 +756,18 @@ def attach_score_pages(
             detail="this piece already has notation",
         )
 
+    pending_score = _awaiting_transcription().model_dump(mode="json")
+    previous_score = row.get("score_json") or {}
+    # Keep the manual setup visible while the worker reads. The transcription
+    # replaces these fields when it finishes, but dropping the entered tempo in
+    # the queued response makes Today jump to a generic default in the meantime.
+    for field in ("clef", "time_signature", "bpm_hint"):
+        pending_score[field] = previous_score.get(field)
+
     update = {
         "source_image_url": pages[0],
         "source_image_urls": pages,
-        "score_json": _awaiting_transcription().model_dump(mode="json"),
+        "score_json": pending_score,
         "ocr_confidence": None,
         "transcription_status": "queued",
         "transcription_stage": None,
