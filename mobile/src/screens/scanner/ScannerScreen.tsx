@@ -83,7 +83,9 @@ export function ScannerScreen() {
   // prevent. Only the caller knows which it is, so the caller says.
   useEffect(() => {
     if (!captureSession.retaking() && !route.params?.adding) {
-      captureSession.reset();
+      captureSession.reset({
+        attachToPieceId: route.params?.attachToPieceId,
+      });
     }
   }, []);
 

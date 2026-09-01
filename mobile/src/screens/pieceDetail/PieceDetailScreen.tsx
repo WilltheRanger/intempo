@@ -1,6 +1,8 @@
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import {
+  Camera,
   FileMusic,
+  Images,
   Layers,
   MoreVertical,
   PencilLine,
@@ -197,6 +199,8 @@ export function PieceDetailScreen() {
   const stillReading =
     piece.transcriptionStatus === 'queued' || piece.transcriptionStatus === 'reading';
   const readingFailed = piece.transcriptionStatus === 'failed';
+  const canPractice = hasNotation && !stillReading && !readingFailed;
+  const needsNotation = !hasNotation && !hasPages && !stillReading;
   /** Whether there is state worth grouping with the action — see the card below. */
   const hasState = hasPages || played;
 
@@ -322,20 +326,62 @@ export function PieceDetailScreen() {
               />
             ) : null}
 
-            <PrimaryButton
-              label={played ? 'Continue practice' : 'Start practice'}
-              onPress={() => navigation.navigate('Record', { pieceId: piece.id })}
-              
-            />
+            {canPractice ? (
+              <PrimaryButton
+                label={played ? 'Continue practice' : 'Start practice'}
+                onPress={() =>
+                  navigation.navigate('Record', { pieceId: piece.id })
+                }
+              />
+            ) : stillReading ? (
+              <Text variant="metadataSmall" color="textSecondary">
+                Reading the sheet music before practice can begin.
+              </Text>
+            ) : null}
           </View>
         </Card>
-      ) : (
+      ) : canPractice ? (
         <PrimaryButton
           label="Start practice"
           onPress={() => navigation.navigate('Record', { pieceId: piece.id })}
           style={styles.bareAction}
         />
-      )}
+      ) : null}
+
+      {needsNotation ? (
+        <Card style={styles.notationCard}>
+          <Text variant="sectionLabel" color="textSecondary">
+            Add sheet music before recording
+          </Text>
+          <Text
+            variant="body"
+            color="textSecondary"
+            style={styles.notationCopy}
+          >
+            InTempo needs the written notes and rests to follow your playing,
+            count long rests, and explain where the tempo changed.
+          </Text>
+          <PrimaryButton
+            label="Photograph sheet music"
+            icon={Camera}
+            onPress={() =>
+              navigation.navigate('Scanner', { attachToPieceId: piece.id })
+            }
+            style={styles.notationPrimary}
+          />
+          <SecondaryButton
+            label="Choose existing images"
+            icon={Images}
+            onPress={() =>
+              navigation.navigate('AddPiece', {
+                option: 'import',
+                attachToPieceId: piece.id,
+              })
+            }
+            style={styles.notationSecondary}
+          />
+        </Card>
+      ) : null}
 
       {/*
         Only for a piece that has notes. A hand-entered piece has none, and a
@@ -524,6 +570,18 @@ const styles = StyleSheet.create({
   // between them.
   bareAction: {
     marginTop: spacing.xl,
+  },
+  notationCard: {
+    marginTop: spacing.xl,
+  },
+  notationCopy: {
+    marginTop: spacing.md,
+  },
+  notationPrimary: {
+    marginTop: spacing.lg,
+  },
+  notationSecondary: {
+    marginTop: spacing.md,
   },
   playbackCard: {
     marginTop: spacing.md,

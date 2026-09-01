@@ -364,6 +364,28 @@ export function RecordScreen() {
     );
   }
 
+  if ((piece.score?.measures.length ?? 0) === 0) {
+    const reading =
+      piece.transcriptionStatus === 'queued' ||
+      piece.transcriptionStatus === 'reading';
+    return (
+      <ScreenContainer>
+        <EmptyState
+          title={reading ? 'Sheet music is still being read' : 'Add sheet music before recording'}
+          description={
+            reading
+              ? 'Practice recording will be ready as soon as the notation appears.'
+              : 'InTempo needs the written notes and rests to align your take and produce an accurate analysis.'
+          }
+          actionLabel="Open piece"
+          onActionPress={() =>
+            navigation.replace('PieceDetail', { pieceId: piece.id })
+          }
+        />
+      </ScreenContainer>
+    );
+  }
+
   if (showSetup) {
     return (
       <PracticeSetup

@@ -210,3 +210,27 @@ describe('importing pages', () => {
     expect(captureSession.current()).toHaveLength(MAX_SCAN_PAGES);
   });
 });
+
+describe('attaching pages to an existing piece', () => {
+  it('keeps the target through an imported scan', () => {
+    captureSession.importAll([PAGE(1), PAGE(2)], {
+      attachToPieceId: 'piece-manual',
+    });
+
+    expect(captureSession.attachmentPieceId()).toBe('piece-manual');
+  });
+
+  it('keeps the target through a camera scan', () => {
+    captureSession.reset({ attachToPieceId: 'piece-manual' });
+    captureSession.capture(PAGE(1));
+
+    expect(captureSession.attachmentPieceId()).toBe('piece-manual');
+  });
+
+  it('clears the target when an ordinary scan starts', () => {
+    captureSession.reset({ attachToPieceId: 'piece-manual' });
+    captureSession.reset();
+
+    expect(captureSession.attachmentPieceId()).toBeNull();
+  });
+});
