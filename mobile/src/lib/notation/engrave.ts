@@ -174,6 +174,17 @@ export interface StaveNote {
   dynamic?: string;
   /** Augmentation dots, 0, 1 or 2. A dotted quarter is `quarter` with `dots: 1`. */
   dots?: number;
+  /**
+   * The page holds this note beyond its written value.
+   *
+   * **The one duration a page deliberately does not state**, which is why the
+   * analysis refuses to time the note after it — `classification.Delta.timed`
+   * is false for it — and why leaving this undrawn was worse than leaving a
+   * dynamic undrawn. A musician reading a verdict saw a note the app declined
+   * to judge, above a stave that gave no reason, because the mark that *is*
+   * the reason was not on it.
+   */
+  fermata?: boolean;
   /** Starts a new bar before this note. */
   barBefore?: boolean;
   /**
@@ -347,6 +358,26 @@ export const ARTICULATION_HEIGHTS: Record<Articulation, number> = {
  */
 const ARTICULATION_CLEARANCE = 1.05;
 
+/**
+ * Bravura's `fermataAbove` (U+E4C0), in staff spaces: its advance, and how far
+ * it rises above its own baseline.
+ *
+ * Measured out of the font with `fontTools`, like the dynamics' ink boxes and
+ * the flag overshoots. It reaches essentially nothing below the baseline
+ * (0.012 spaces), so the baseline is where the mark stops.
+ */
+const FERMATA_WIDTH = 2.42;
+const FERMATA_HEIGHT = 1.32;
+
+/**
+ * The white between a fermata and whatever it sits over, in staff spaces.
+ *
+ * Wider than `ARTICULATION_CLEARANCE`, and deliberately: an articulation is
+ * part of the note and hugs it, while a fermata belongs to the bar and reads
+ * as a sign over the music rather than a mark on one notehead.
+ */
+const FERMATA_CLEARANCE = 0.9;
+
 export type Accidental =
   | 'sharp'
   | 'flat'
@@ -399,6 +430,8 @@ export interface EngravedNote {
    * another in Bravura and must not be flipped in the renderer.
    */
   articulation: { kind: Articulation; x: number; y: number; above: boolean } | null;
+  /** Where a fermata over this note goes: the glyph's left edge and baseline. */
+  fermata: { x: number; y: number } | null;
   /** Y positions of ledger lines this note needs, above or below the staff. */
   ledgers: number[];
   /**
@@ -1664,6 +1697,59 @@ function layoutSystem(
       lineGap * (HEAD_HALF + ACCIDENTAL_GAP + (glyph ? ACCIDENTAL_WIDTHS[glyph] : 0)) -
       lineGap * ACCIDENTAL_COLUMN * (columnFor.get(pitch) ?? 0);
 
+    const ledgers = Array.from(
+      new Set(
+        heads.flatMap((head) =>
+          ledgerLinesFor(head.y, staffLines[0], staffLines[4], lineGap),
+        ),
+      ),
+    ).sort((a, b) => a - b);
+
+    const mark = articulation
+      ? (() => {
+          const above = !stemUp;
+          const edge = above ? highest : lowest;
+          return {
+            kind: articulation,
+            // Centred on the note's column, from the glyph's left edge.
+            x: x - (lineGap * ARTICULATION_WIDTHS[articulation]) / 2,
+            y: edge + (above ? -1 : 1) * lineGap * ARTICULATION_CLEARANCE,
+            above,
+          };
+        })()
+      : null;
+
+    /**
+     * Where a fermata over this note sits, as the glyph's baseline.
+     *
+     * **Above the staff, always** — the below-staff form is for the lower
+     * voice of a two-voice staff and this app engraves one voice. So the
+     * mark clears the higher of the staff's top line and this note's own
+     * topmost ink, whichever that turns out to be.
+     *
+     * Per note rather than levelled across the system, which is the one place
+     * this differs from the dynamics below it: a printed part hangs a fermata
+     * off its own note, and levelling would float a mark over a low note up to
+     * meet a high one somewhere else in the bar.
+     */
+    const fermataBaseline = () => {
+      const stemsUpward = stemUp && note.value !== 'whole';
+      const top = Math.min(
+        // The staff itself, so a fermata over a note inside the staff still
+        // sits outside it.
+        staffLines[0],
+        highest - HEAD_RADIUS_FACTOR * lineGap,
+        // A beam is drawn *at* the stem tip and has thickness, so the tip
+        // alone is half a beam short of the actual ink.
+        stemsUpward
+          ? highest - stemLength - lineGap * BEAM_THICKNESS_FACTOR
+          : Infinity,
+        ...ledgers,
+        mark?.above ? articulationEdge(mark, lineGap) : Infinity,
+      );
+      return top - lineGap * FERMATA_CLEARANCE;
+    };
+
     engravedNotes.push({
       x,
       y,
@@ -1697,25 +1783,15 @@ function layoutSystem(
       // lines for its top note, and computing them from the principal alone
       // left an upper double-stop notehead floating in space with nothing
       // under it to say which pitch it was.
-      ledgers: Array.from(
-        new Set(
-          heads.flatMap((head) =>
-            ledgerLinesFor(head.y, staffLines[0], staffLines[4], lineGap),
-          ),
-        ),
-      ).sort((a, b) => a - b),
-      articulation: articulation
-        ? (() => {
-            const above = !stemUp;
-            const edge = above ? highest : lowest;
-            return {
-              kind: articulation,
-              // Centred on the note's column, from the glyph's left edge.
-              x: x - (lineGap * ARTICULATION_WIDTHS[articulation]) / 2,
-              y: edge + (above ? -1 : 1) * lineGap * ARTICULATION_CLEARANCE,
-              above,
-            };
-          })()
+      ledgers,
+      articulation: mark,
+      fermata: note.fermata
+        ? {
+            // Centred on the note's column, from the glyph's left edge —
+            // the same convention the articulation follows.
+            x: x - (lineGap * FERMATA_WIDTH) / 2,
+            y: fermataBaseline(),
+          }
         : null,
       // The principal is `y`/`accidental` above; these are the rest.
       // **Accidentals hang off the note's column, not off a displaced head.**
@@ -2031,6 +2107,11 @@ function layoutSystem(
     // without it the box clips the mark off.
     if (note.articulation) {
       extents.push(articulationEdge(note.articulation, lineGap));
+    }
+    // And a fermata sits above the accent. Its baseline is its underside, so
+    // the box has to reach a whole glyph-height further.
+    if (note.fermata) {
+      extents.push(note.fermata.y - lineGap * FERMATA_HEIGHT);
     }
     // A thirty-second's outer hooks stack past the stem tip — see
     // `FLAG_OVERSHOOT`. Measured from `stem.to` alone they are cut off.
@@ -2614,6 +2695,7 @@ function shift(system: EngravedSystem, dy: number): EngravedSystem {
       articulation: note.articulation
         ? { ...note.articulation, y: note.articulation.y + dy }
         : null,
+      fermata: note.fermata ? { ...note.fermata, y: note.fermata.y + dy } : null,
       stem: note.stem
         ? { ...note.stem, from: note.stem.from + dy, to: note.stem.to + dy }
         : null,

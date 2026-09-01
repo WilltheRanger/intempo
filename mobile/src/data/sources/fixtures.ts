@@ -268,7 +268,13 @@ const FINE_VALUES_SCORE: ScoreJson = {
     },
     {
       measure_number: 6,
-      notes: [note('A4', 'whole')],
+      // **A fermata over the final long note**, which is where most of them
+      // are printed. It is here because a fermata is now drawn and a state
+      // with no fixture is a state nobody looks at — and because this is the
+      // mark that explains the app's own output: `classification.py` refuses
+      // to time the note *after* a fermata, so a verdict shows a note it
+      // declined to judge and the stave has to say why.
+      notes: [{ ...note('A4', 'whole'), fermata: true }],
       slurs: [],
     },
   ],

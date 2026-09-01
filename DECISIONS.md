@@ -6,6 +6,52 @@ Operating Principle #5.
 
 ---
 
+## 2026-09-01 — Grafting two glyphs from an older Bravura, over the alternatives
+
+**Context.** Fermatas needed drawing (`EDIT_LOG.md`, same date). The glyphs are
+`E4C0`/`E4C1`, which the shipped subset does not contain. The shipped subset is
+Bravura **1.482**; every Bravura reachable from this environment is **1.392** —
+the npm packages, the copy vendored by Audiveris on this machine. Steinberg's
+own release and the CDNs that mirror it are refused by the egress proxy.
+
+**Decision.** Graft `fermataAbove` and `fermataBelow` from 1.392 into the 1.482
+subset with `fontTools.merge`, and add `E4C0-E4C1` to `tools/subset-bravura.py`
+so a future regeneration against a real 1.482 ends the special case without
+anyone needing to remember it.
+
+**Alternatives considered.**
+
+- *Regenerate the whole subset from 1.392.* Rejected on a measurement: **45 of
+  the 76 shipped glyphs differ** between 1.392 and 1.482 — the treble clef,
+  every accidental, every flag, three of four noteheads. Two new marks are not
+  worth silently redrawing most of the app's notation, and the redrawn version
+  is the older one.
+- *Draw the fermata as a path.* Rejected. It is the rule this project already
+  argued out for the treble clef: hand-approximated notation is the first thing
+  a musician notices. A fermata is simpler than a clef, which makes it a
+  tempting exception, and the exception is how the rule stops meaning anything.
+- *Wait for the owner to supply 1.482.* Rejected as the default but it is the
+  real fix, which is why the script and this entry both say so. Blocking a
+  correctness fix — a musician being told they dragged a note the page told
+  them to hold — on a font-file errand is the wrong trade.
+
+**Why the graft is safe here specifically, and how that was checked.** All six
+articulation glyphs (`E4A0-E4A5`) and the augmentation dot are byte-identical
+across the two versions while the core glyphs are not: the marks were left
+alone in the release that redrew the clefs. The fermatas sit in the same block
+as those marks. That is evidence, not proof — no 1.482 fermata exists here to
+compare against — and it is the strongest available. The merge was then
+verified to alter **zero** previously shipped glyphs and to reproduce both new
+ones byte-for-byte from the source.
+
+**Trade-off accepted.** The shipped binary is no longer purely the script's
+output, which is exactly the failure mode the script's own docstring warns
+about ("a checked-in binary nobody can regenerate is a binary nobody can
+update"). Mitigated by writing the divergence into the script itself rather
+than a commit message, and by making the regeneration path already correct.
+
+---
+
 ## 2026-09-01 — Measure the engraver against the schema, over against the fixtures
 
 **Context:** `tools/engraver-coverage.py` reported **100% of every page in the

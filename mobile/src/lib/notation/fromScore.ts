@@ -500,6 +500,9 @@ export function staveScoreFor(score: ScoreJson): StaveScore {
         // Read from the page since Batch 2 and drawn by nothing until now. An
         // imported MuseScore file carries these; the engraving dropped them.
         ...(note.dynamics ? { dynamic: note.dynamics } : {}),
+        // A boolean, so `?? false` would be a value where the page said
+        // nothing. Omitted instead, like every other optional above.
+        ...(note.fermata ? { fermata: true } : {}),
         ...(mark ? { tuplet: mark } : {}),
         ...(quarters !== undefined ? { quarters } : {}),
         ...(opensMeasure ? { barBefore: true } : {}),

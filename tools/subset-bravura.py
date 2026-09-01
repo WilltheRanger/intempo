@@ -20,6 +20,26 @@ Kept as a script rather than a note in a commit message because a checked-in
 binary nobody can regenerate is a binary nobody can update. Run it against a
 newer Bravura and the app gets the newer drawings.
 
+**The shipped file is not purely this script's output, and that is recorded
+rather than hidden.** `mobile/assets/fonts/Bravura.otf` is Bravura **1.482**
+plus `fermataAbove`/`fermataBelow` grafted in from **1.392**, because 1.482 is
+not reachable from the environment this was built in: the only Bravura on npm
+and the only one on this machine are both 1.392, and Steinberg's own release is
+behind a proxy that refuses it.
+
+Regenerating from a real 1.482 is the fix, and `E4C0-E4C1` is in `RANGES` below
+so that a regeneration ends the special case without anyone having to remember
+it. Running this against 1.392 would *not* be the fix: 45 of the 76 shipped
+glyphs differ between the two versions — clefs, accidentals, flags, noteheads —
+so it would quietly redraw most of the app's notation to fit two marks in.
+
+Why the graft was judged safe for these two glyphs specifically: all six
+articulation glyphs (`E4A0-E4A5`) and the augmentation dot are **byte-identical**
+between 1.392 and 1.482, while the core glyphs are not. The marks were stable
+across those versions; the fermatas sit in the same block. Measured, not
+assumed — and the merge itself was verified to leave every previously shipped
+glyph untouched.
+
 Needs `fonttools`: `pip install fonttools`.
 """
 
@@ -63,6 +83,11 @@ RANGES = [
     # the way the stem does not, and drawing the "above" glyph under a note is
     # visibly a mirrored mark.
     "E4A0-E4A5",
+    # Fermatas, above and below. **Not currently produced by this script** —
+    # see the version note in the module docstring. Listed so that a run
+    # against a real Bravura picks them up and the grafted pair stops being a
+    # special case.
+    "E4C0-E4C1",
     # tuplet0..9 — the small bold-italic digits over a tuplet bracket. Not the
     # time-signature digits: those are sized to fill two staff spaces, and a
     # tuplet numeral set that big reads as a metre change.

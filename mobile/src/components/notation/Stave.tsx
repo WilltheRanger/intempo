@@ -153,6 +153,15 @@ const REST_GLYPH: Record<NoteValue, string> = {
  * both hooks in it and the right spacing between them; drawing the eighth's
  * flag twice is an approximation of a shape the font already has.
  */
+/**
+ * `fermataAbove` — U+E4C0.
+ *
+ * The only one of the pair this draws: `fermataBelow` is for the lower voice
+ * of a two-voice staff, and `engrave.ts` places every fermata above the music.
+ * Both are in the subset so a second voice would not need a font change.
+ */
+const FERMATA_GLYPH = '\uE4C0';
+
 const FLAG_GLYPH: Record<number, { up: string; down: string }> = {
   1: { up: '\uE240', down: '\uE241' },
   2: { up: '\uE242', down: '\uE243' },
@@ -923,6 +932,30 @@ export function Stave({
               {mark.glyphs}
             </SvgText>
           ))}
+
+          {/*
+            Fermatas.
+
+            **`fermataAbove` only.** Bravura's below-staff form is a separate
+            glyph rather than a flip, and it is for the lower voice of a
+            two-voice staff — which this engraver does not have. Drawing the
+            above form under a note would be a mark pointing the wrong way,
+            the same mistake the articulation glyphs exist in pairs to avoid.
+          */}
+          {system.notes.map((note, index) =>
+            note.fermata ? (
+              <SvgText
+                key={`fermata-${index}`}
+                x={note.fermata.x}
+                y={note.fermata.y}
+                fill={ink}
+                fontSize={musicSize}
+                fontFamily={fontFamily.music}
+              >
+                {FERMATA_GLYPH}
+              </SvgText>
+            ) : null,
+          )}
 
           {system.tuplets.map((tuplet, index) => {
             const half = lineGap * TUPLET_NUMBER_HALF_WIDTH;

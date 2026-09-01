@@ -6,6 +6,101 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-01 — The mark that explains the app's own silence
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`.
+
+**Files:** `mobile/src/lib/notation/engrave.ts`, `fromScore.ts`,
+`components/notation/Stave.tsx`, `data/sources/fixtures.ts`,
+`assets/fonts/Bravura.otf`, `tools/subset-bravura.py`, `DECISIONS.md`,
+plus `lib/notation/fermata.test.ts` (new).
+
+### Why this one is not just another missing marking
+
+Dynamics were read since Batch 2 and drawn by nothing, and that cost the page
+some of its meaning. A fermata is worse, because the app *acts* on it.
+`classification.py` refuses to time the note **after** a fermata — the page has
+said that length belongs to the player, so there is no written value to measure
+against, and `Delta.timed` goes false. `PerNote.timed` carries that to the app.
+
+So a musician opened a verdict, found a note the app had declined to judge, and
+went to the score screen to see why — where the mark that *is* the reason was
+not drawn. Every mechanism for explaining the refusal existed except the one a
+musician would actually look at.
+
+The path was complete apart from the drawing: `musicxml.py` reads
+`notations/fermata`, `score_schema.ScoreNote.fermata` carries it, the app's own
+`ScoreNote` declares it, `alignment.py` marks `after_fermata`, and
+`engrave.ts` had never heard of it. Grepping the whole notation layer for
+"fermata" returned nothing at all.
+
+### Where it goes
+
+Above the music, always — Bravura's below-staff form is a separate drawing, not
+a flip, and it is for the lower voice of a two-voice staff, which this engraver
+does not have. The baseline clears the highest of: the top staff line, the
+note's own topmost notehead, its ledger lines, an articulation sitting above
+it, and — the one that needed thinking about — **the beam**, which is drawn
+*at* the stem tip and has thickness of its own, so the tip alone is half a beam
+short of the ink.
+
+Per note rather than levelled across the system, which is the one place this
+differs from the dynamics directly below it in the same file: a printed part
+hangs a fermata off its own note, and levelling would float a mark over a low
+note up to meet a high one elsewhere in the bar.
+
+### Grace notes are deliberately not drawn
+
+`ScoreNote.grace_notes` is a **count**, not notes — the schema says so, and for
+a good reason: a grace note has no duration. Drawing *n* small noteheads at
+pitches nobody read would be inventing notation, which is the rule
+`staveScoreFor` already follows when it drops a value it cannot draw. So they
+stay undrawn, and this paragraph exists so the next person does not have to
+rediscover why.
+
+### The font, which was the hard part
+
+The glyphs are `E4C0`/`E4C1` and the shipped subset did not have them. The
+subset is Bravura **1.482**; every Bravura reachable from here is **1.392**.
+The full reasoning, the three alternatives and the trade-off accepted are in
+`DECISIONS.md`. The short version: regenerating from 1.392 would have redrawn
+**45 of the 76 shipped glyphs** — measured, including the treble clef and three
+of four noteheads — to fit two marks in, so instead the two glyphs were grafted
+with `fontTools.merge`, verified to alter zero existing glyphs and to reproduce
+both new ones byte-for-byte. `E4C0-E4C1` is now in `subset-bravura.py` so a
+regeneration against a real 1.482 ends the special case by itself.
+
+### Three-foot test
+
+The score screen is unchanged in hierarchy: the serif piece title first, the
+white notation panel second, the Notation/Original toggle and Listen third. The
+fermata is a small mark inside the music and competes with nothing — which is
+the whole point of a sign that exists to be read while playing past it.
+
+### Tests
+
+979 passing, `tsc` clean, web build green, 23-route sweep clean, narrow probe
+unchanged. Eight new cases, and **three of them were checked by breaking what
+they guard**: the staff floor, the beam allowance and the box. The beam one
+failed to fail on the first attempt — written over a D4, whose stem tip never
+reaches the top staff line, so the staff floor decided the height and the beam
+allowance was never consulted. Rewritten over a G4, where it binds. A test that
+cannot fail is a test that is not testing.
+
+### Honest status
+
+Verified against the running web build and the fixture, not against a real
+photographed page carrying a real fermata. The verdict screen still says only
+"Not timed" for such a note — the stave now explains it, the verdict does not
+name it, and whether it should is a separate change.
+
+### Rollback
+
+`git revert`. The font can be rebuilt with `tools/subset-bravura.py` given a
+Bravura 1.482, which is the better state anyway.
+
+---
+
 ## 2026-09-01 — Looking at the last screen nobody had ever seen
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`.
