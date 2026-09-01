@@ -10,13 +10,13 @@ is sent — so the request stays well under the 500ms DoD.
 from __future__ import annotations
 
 from typing import Any
-from urllib.parse import urlparse
 from uuid import UUID
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.auth import current_user_id, current_user_id_provisioned
+from app.services.audio_storage import durable_audio_reference
 from app.services.tier_limits import tier_of, usage_for
 from app.db import get_service_client
 from app.models.analysis import (
@@ -36,7 +36,10 @@ class CreateAnalysisRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     score_id: UUID
-    audio_url: str = Field(min_length=1, max_length=2048)
+    #: New clients send the durable object key returned by /upload/audio.
+    #: The legacy URL remains accepted while installed builds age out.
+    audio_key: str | None = Field(default=None, min_length=1, max_length=2048)
+    audio_url: str | None = Field(default=None, min_length=1, max_length=2048)
     target_bpm: float = Field(ge=MIN_TARGET_BPM, le=MAX_TARGET_BPM)
     bpm_source: BpmSource
     metronome_mode: MetronomeMode = MetronomeMode.off
@@ -58,6 +61,15 @@ class CreateAnalysisRequest(BaseModel):
     #: Defaults false, which is every client that has never heard of it and
     #: every take recorded before it existed.
     skip_long_rests: bool = False
+
+    @model_validator(mode="after")
+    def _one_audio_reference(self) -> "CreateAnalysisRequest":
+        if (self.audio_key is None) == (self.audio_url is None):
+            raise ValueError("send exactly one of audio_key or audio_url")
+        return self
+
+    def audio_reference(self) -> str:
+        return self.audio_key or self.audio_url or ""
 
 
 class CreateAnalysisResponse(BaseModel):
@@ -93,27 +105,6 @@ def _service_client():
             detail="Supabase service-role client is not configured",
         )
     return client
-
-
-def _assert_audio_url_owned_by(audio_url: str, user_id: UUID) -> None:
-    """The audio URL must be a Supabase audio-uploads URL under this user's prefix.
-
-    We validate at enqueue time so the worker can trust the stored URL and
-    never downloads an arbitrary internet address.
-    """
-    parsed = urlparse(audio_url)
-    if parsed.scheme not in {"https", "http"}:
-        raise HTTPException(status_code=400, detail="audio_url must be http(s)")
-    prefixes = (
-        f"/storage/v1/object/sign/{AUDIO_BUCKET}/{user_id}/",
-        f"/storage/v1/object/authenticated/{AUDIO_BUCKET}/{user_id}/",
-        f"/storage/v1/object/public/{AUDIO_BUCKET}/{user_id}/",
-    )
-    if not any(parsed.path.startswith(p) for p in prefixes):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="audio_url must be a Supabase audio-uploads URL under your user prefix",
-        )
 
 
 def _assert_score_owned(client, score_id: UUID, user_id: UUID) -> None:
@@ -185,15 +176,38 @@ def create_analysis(
     background_tasks: BackgroundTasks,
     user_id: UUID = Depends(current_user_id_provisioned),
 ) -> CreateAnalysisResponse:
-    _assert_audio_url_owned_by(body.audio_url, user_id)
     client = _service_client()
+    audio_reference = durable_audio_reference(body.audio_reference(), user_id)
     _assert_score_owned(client, body.score_id, user_id)
+
+    # One uploaded object is one take. If the POST response was lost, the
+    # recording screen retries with the same key; return the existing row
+    # rather than charging quota twice or running the same audio twice.
+    existing = (
+        client.table("analyses")
+        .select("*")
+        .eq("user_id", str(user_id))
+        .eq("score_id", str(body.score_id))
+        .eq("audio_url", audio_reference)
+        .limit(1)
+        .execute()
+    ).data or []
+    if existing:
+        return CreateAnalysisResponse(
+            analysis_id=existing[0]["id"],
+            status=existing[0]["status"],
+        )
+
+    # Only a genuinely new take spends quota. A retry of a row already written
+    # above has to remain retriable even when that row used the final allowance.
     _assert_within_quota(client, user_id)
 
     insert_payload = {
         "user_id": str(user_id),
         "score_id": str(body.score_id),
-        "audio_url": body.audio_url,
+        # The column name predates durable keys. Its value is now a token-free
+        # private-storage reference; the worker signs it immediately before GET.
+        "audio_url": audio_reference,
         "target_bpm": body.target_bpm,
         "bpm_source": body.bpm_source.value,
         "metronome_mode": body.metronome_mode.value,
