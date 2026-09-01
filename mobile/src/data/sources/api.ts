@@ -1,5 +1,5 @@
 import { getAnalysis, listAnalyses } from '../api/analyses';
-import { submitTake, waitForAnalysis } from '../practice/submitTake';
+import { submitTake, TakeSubmissionError, waitForAnalysis } from '../practice/submitTake';
 import { getMe } from '../api/me';
 import { ApiError } from '../api/client';
 import { createScore, deleteScore, getScore, listScores, updateScore } from '../api/scores';
@@ -587,8 +587,18 @@ export const apiTakeSource: TakeSource = {
  */
 export const apiTakeSubmissionSource: TakeSubmissionSource = {
   async submit(input) {
-    const analysisId = await submitTake(input);
-    await waitForAnalysis(analysisId);
-    return analysisId;
+    const submitted = await submitTake(input);
+    try {
+      await waitForAnalysis(submitted.analysisId);
+      return submitted.analysisId;
+    } catch (cause) {
+      // Enqueue already succeeded. Keep its id so "Send it again" resumes the
+      // poll instead of uploading the WAV and creating another analysis row.
+      const message =
+        cause instanceof Error
+          ? cause.message
+          : 'The analysis could not be checked. Try again.';
+      throw new TakeSubmissionError(message, submitted, cause);
+    }
   },
 };
