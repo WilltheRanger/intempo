@@ -127,6 +127,7 @@ def join_pages(readings: list[ScoreJson]) -> ScoreJson:
         time_signature=readings[0].time_signature,
         key_signature=_first(page.key_signature for page in readings),
         tempo_marking=_first(page.tempo_marking for page in readings),
+        tempo_beat_unit=_first(page.tempo_beat_unit for page in readings),
         bpm_hint=_first(page.bpm_hint for page in readings),
         # **Never defaulted, the same rule as everywhere else.** The clef is
         # printed at the start of the part and often at the start of each
