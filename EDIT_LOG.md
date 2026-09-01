@@ -6,6 +6,91 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-01 — Listen could get stuck, three ways
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`, restarted from `main`
+after #9 merged.
+
+**Files:** `mobile/src/lib/scorePlayer.web.ts` + test,
+`mobile/src/lib/score/schedule.ts` + test (new),
+`mobile/src/data/practiceTempo.ts`.
+
+Reported from real use: *"it gets stuck when I enter the app and listen to
+something I scanned a day ago."* I could not reproduce the exact environment,
+so I went looking for every way the button can enter "playing" and never
+leave. There were three, and each produces that sentence.
+
+### 1. A clock that never starts
+
+`resumeAudio` fires `context.resume()` and does not await it, and a browser is
+free to refuse: a context created outside a gesture is born `suspended`, and
+Safari parks one in `interrupted` after a call, another app, or the page being
+backgrounded. `currentTime` is then frozen — and **both** end conditions fail
+open. `tick` compares elapsed time against a value that never grows;
+`sweepForEnd` re-checks the audio clock *deliberately* and re-arms. The button
+says Stop for a piece that never started, and the only way out is to press it
+twice, which is exactly the shape of the older *"Listen only works the first
+time"* report.
+
+`watchForStart` gives the clock two seconds of **wall** time to move — wall,
+because the audio clock is the thing under suspicion and cannot also be the
+judge — asking it to resume on each look, and ends honestly if it never does.
+Not a note was heard, so this is giving up rather than cutting off.
+
+**Time on a hidden page is given back, not spent.** A frozen clock behind a
+locked screen is explained rather than broken, and that case already had a
+guard I nearly broke — see below.
+
+### 2. A tempo that is not a number
+
+`Math.max(1, bpm)` looks like a clamp and is not one: `Math.max(1, NaN)` is
+`NaN`. A non-finite tempo propagated into every note's start and duration, and
+`oscillator.stop()` **throws** on a non-finite time — out of the middle of the
+scheduling loop, after earlier notes had already been `start()`ed, with no
+handle returned to stop them and `onEnd` never called. A note left sounding
+that nothing in the app could silence, plus an exception thrown out of a press
+handler.
+
+Fixed at three points, because the cost of missing it is a sound that cannot be
+stopped: `scheduleScore` substitutes `FALLBACK_BPM`, `playSchedule` refuses a
+schedule whose duration is not a finite positive number, and it skips any
+individual note whose times are not finite. `tempoFor` also clamps on the way
+out — `typeof NaN === 'number'`, so its `typeof` guard admitted one.
+
+`FALLBACK_BPM` now has one definition, in `lib/score/schedule`, re-exported by
+`data/practiceTempo`. The pure module owns it because the other one reaches for
+AsyncStorage and cannot be imported by anything that wants to stay testable —
+which the first version of the new test found the hard way.
+
+### A test that was guarding two things and only meant one
+
+`waits rather than cutting the piece off when the audio clock froze` failed
+against the watchdog. Its comment describes protecting *"a piece that has not
+played a note of its second half"* — but it froze the clock from the very first
+instant, so it also asserted that a playback which never started must wait
+forever. Same readings, opposite right answers.
+
+Split: that test now freezes the clock **after** half a second of music, which
+is what its own sentence describes, and the never-started case has its own test
+beside it. Both, plus the refusal, verified by reverting the guard and watching
+them fail.
+
+### Honest status
+
+**Not confirmed as the reported bug.** I could not reproduce it — the live site
+is unreachable from here and there is no phone. What I can say is that all
+three of these produce that exact symptom, all three were reachable, and all
+three are now closed. If it recurs, the next thing to look at is what the piece
+screen does while a scan's row is still `reading`.
+
+990 tests, `tsc` clean.
+
+### Rollback
+
+`git revert`.
+
+---
+
 ## 2026-09-01 — "Not timed" was the app's word, not the page's
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. The other half of the
