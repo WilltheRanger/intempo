@@ -6,6 +6,63 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-01 — The accent failed contrast as text, and nothing was checking
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. The other measurable half
+of accessibility, after last tick's touch targets.
+
+**Files:** `mobile/src/design/colors.ts`,
+`mobile/src/design/contrast.test.ts` (new),
+`mobile/src/components/score/PlaybackSettings.tsx`,
+`mobile/src/screens/pieceScore/PieceScoreScreen.tsx`,
+`mobile/src/screens/scanner/ScannerScreen.tsx`.
+
+Every colour token measured against every ground it is used on. The palette is
+in good shape — `textPrimary` 16.9:1, `textSecondary` 6.5:1, `textTertiary`
+4.5:1, and the verdict trio 4.5–4.6:1, which a comment in `colors.ts` already
+claimed and which now has arithmetic behind it.
+
+**One token fails: `accent`, at 3.54:1 on the page and 3.95:1 on a card.** That
+clears WCAG AA for large text and the 3:1 a non-text mark needs — a progress
+fill, an active tab, a favourite — which is nearly everywhere it is used. It
+does not clear the **4.5:1 body text needs**, and it was being used at
+`metadataSmall` in seven places: the playback settings' bar and tempo controls,
+the "fix this bar" cues, the clef control. Text a musician has to read.
+
+`accentText` is the same ochre darkened only as far as AA needed, the same
+treatment the verdict hues already had: **4.90:1** on the page, 5.47:1 on a card.
+
+### Two tokens, not one darker accent
+
+The scanner is the app's one dark screen, and there the plain `accent` measures
+**4.52:1** against the ink ground — it already passes. `accentText` on that same
+ground falls to **3.26** and fails. Neither value is right on both grounds, so
+which ground the text sits on decides. The scanner's doubt line keeps `accent`
+and carries a comment saying why, because it is the one place that looks like an
+oversight and is not.
+
+### The test is the point
+
+`contrast.test.ts` computes the ratios from the tokens themselves. The verdict
+comment was accurate and unchecked; nothing would have noticed the accent
+sitting at 3.54 on the same ground for as long as it did. Eighteen assertions,
+including both halves of the two-token rule — that `accent` is *below* body
+threshold on light and `accentText` *below* it on ink — so a future "simplify
+this to one token" fails here rather than in someone's hands.
+
+**Not a finding:** `border` at 1.16:1. WCAG 1.4.11 governs boundaries that
+*identify* a control; a hairline divider between rows is decoration and the row
+is identified by its text.
+
+**Verified** on the score screen, which carries four of the seven changed
+strings: still recognisably ochre, deeper, legible. Route sweep clean.
+
+**Tests:** 762 pass, up 18.
+
+**Rollback:** revert the commit.
+
+---
+
 ## 2026-09-01 — The count-in counted down while its dots counted up
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Found by walking the whole

@@ -94,7 +94,7 @@ export function PlaybackSettings({
               bar 1" there reads as where the *take* starts — which it is not,
               and which would be a promise about the analysis that nothing
               keeps. */}
-          <Text variant="metadataSmall" color={disabled ? 'textTertiary' : 'accent'}>
+          <Text variant="metadataSmall" color={disabled ? 'textTertiary' : 'accentText'}>
             Listen from bar {fromMeasure}
           </Text>
         </Pressable>
@@ -114,7 +114,7 @@ export function PlaybackSettings({
           accessibilityLabel={`Playback tempo ${formatTempo(bpm, beatUnit)}. Change.`}
           style={({ pressed }) => [styles.target, pressed && styles.pressed]}
         >
-          <Text variant="metadataSmall" color={disabled ? 'textTertiary' : 'accent'}>
+          <Text variant="metadataSmall" color={disabled ? 'textTertiary' : 'accentText'}>
             {formatTempo(bpm, beatUnit)}
           </Text>
         </Pressable>
@@ -139,7 +139,7 @@ export function PlaybackSettings({
             >
               <Text variant="body">Bar {bar}</Text>
               {bar === fromMeasure ? (
-                <Text variant="metadataSmall" color="accent">
+                <Text variant="metadataSmall" color="accentText">
                   Current
                 </Text>
               ) : null}

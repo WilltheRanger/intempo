@@ -440,6 +440,10 @@ export function ScannerScreen() {
         */}
         {doubt && !error ? (
           <View style={styles.doubt}>
+            {/* **`accent`, not `accentText`.** This screen's ground is ink, and
+                the plain accent measures 4.52:1 against it — the darker text
+                token would fall to 3.26 and fail. Which ground the text sits on
+                decides; see `colors.accentText`. */}
             <Text variant="metadataSmall" color="accent" style={styles.doubtText}>
               {doubt.advice.message}
             </Text>

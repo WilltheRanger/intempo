@@ -356,7 +356,7 @@ export function PieceScoreScreen() {
           accessibilityRole="button"
           style={styles.secondaryRow}
         >
-          <Text variant="metadataSmall" color="accent">
+          <Text variant="metadataSmall" color="accentText">
             Photograph it again instead
           </Text>
         </Pressable>
@@ -585,7 +585,7 @@ export function PieceScoreScreen() {
                   concerns: reading.concerns,
                 })}
               </Text>
-              <Text variant="metadataSmall" color="accent" style={styles.fixCue}>
+              <Text variant="metadataSmall" color="accentText" style={styles.fixCue}>
                 Fix bar {reading.problemMeasures[0]}
               </Text>
             </Pressable>
@@ -632,7 +632,7 @@ export function PieceScoreScreen() {
                 The clef wasn&apos;t read from this page, so the notes above are
                 placed as though in {CLEF_LABELS[UNREAD_CLEF_PLACEMENT].toLowerCase()}.
               </Text>
-              <Text variant="metadataSmall" color="accent" style={styles.fixCue}>
+              <Text variant="metadataSmall" color="accentText" style={styles.fixCue}>
                 Set the clef
               </Text>
             </Pressable>
@@ -656,7 +656,7 @@ export function PieceScoreScreen() {
               accessibilityRole="button"
               style={styles.secondaryRow}
             >
-              <Text variant="metadataSmall" color="accent">
+              <Text variant="metadataSmall" color="accentText">
                 Correct another bar
               </Text>
             </Pressable>
@@ -678,7 +678,7 @@ export function PieceScoreScreen() {
               accessibilityRole="button"
               style={styles.secondaryRow}
             >
-              <Text variant="metadataSmall" color="accent">
+              <Text variant="metadataSmall" color="accentText">
                 Change the clef
               </Text>
             </Pressable>
@@ -832,7 +832,7 @@ export function PieceScoreScreen() {
             >
               <Text
                 variant="body"
-                color={piece.score?.clef === clef ? 'accent' : 'textPrimary'}
+                color={piece.score?.clef === clef ? 'accentText' : 'textPrimary'}
               >
                 {CLEF_LABELS[clef]}
               </Text>
@@ -850,7 +850,7 @@ export function PieceScoreScreen() {
           >
             <Text
               variant="body"
-              color={piece.score?.clef ? 'textTertiary' : 'accent'}
+              color={piece.score?.clef ? 'textTertiary' : 'accentText'}
             >
               Not stated
             </Text>
