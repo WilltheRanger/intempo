@@ -6,6 +6,733 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-08-31 — Reconciling with 26 commits of another agent's work
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. First iteration of a
+`/loop` aimed at consumer-grade completeness. The owner's note — *"There were
+some changes made by another ai just remember that"* — turned out to be the
+whole of this iteration's work, and it had to be, because everything else would
+have compounded a divergence.
+
+`origin/main` had moved **26 commits** ahead via PRs #24–#38 (another agent,
+Codex): account deletion and data export, keyboard focus containment, in-app
+help and connection diagnostics, contextual lessons, tempo fidelity, fermata and
+grace-note timing, and a **complete multi-page score intake**. This branch was
+9 ahead and 26 behind, with 22 conflict regions across 25 files.
+
+### Who wins where, and why
+
+**Their multi-page intake supersedes mine**, and taking it wholesale was the
+call. Both sides had written `lib/scan/uploadPages.ts` — theirs is better in two
+ways that matter: it takes the uploader as a parameter, so the tests need no
+runtime, and it returns **durable object keys** rather than signed upload URLs
+that expire (their #37, "Keep score page references valid through slow scans").
+It also already carries the page cap I added, in a better place: `MAX_SCAN_PAGES`
+on the *session*, which every entry point passes through, so the camera and the
+photo picker cannot disagree about it.
+
+Taken from main unchanged: `uploadPages`, `captureSession`, `useScan`,
+`api/scores`, `ImportPages`, `CapturedPages`, `TranscriptionReview`,
+`TranscribeScreen` (which I had deleted and they had kept), and both navigation
+files.
+
+**Mine survived where main has nothing**: the expo-camera resolution patch, the
+shutter legibility check, `notation-coverage.py`, `musicxml-bench.py`, the
+corrector and its per-line crops, and the widened note vocabulary. Verified by
+grep rather than assumed — main still carries the single-accidental pitch
+grammar, so every one of those was a genuine gap on the trunk.
+
+**Both, where the two were additive**: the app's `Note` gained their `fermata`
+and `grace_notes` beside my `chord_pitches`; `me.py` kept both imports; the OCR
+prompt kept their `tempo_beat_unit` conversion rules *and* my wider tuplet names,
+because the 46-name vocabulary survived in `score_schema.py` and their narrower
+triplet line would now under-describe what the schema accepts.
+
+### Re-applied by hand
+
+The shutter legibility check had to be grafted onto their rewritten
+`ScannerScreen`, which now owns `MAX_SCAN_PAGES`, a `canCapture` gate and a
+`full` capture outcome. The hook, the retake-stays-here flag and the ochre advice
+line went back in around their structure rather than over it.
+
+### One test moved with its subject
+
+`test_the_app_stops_a_scan_at_the_same_page_count_the_server_does` read
+`MAX_PAGES` out of a file whose contents are now theirs. The check is unchanged
+in purpose — the app must refuse a scan at exactly the count the server refuses —
+and now reads `MAX_SCAN_PAGES` from `captureSession.ts`.
+
+### Tests
+
+`mobile` 44 files / 515 passed, `tsc` clean. `backend` 1818 passed, 3 xfailed.
+
+### Honest note
+
+Nothing here is new capability; it is a merge. What it buys is that the next
+iteration builds on one trunk instead of two, which is the precondition for
+everything the loop was started to do.
+
+## 2026-08-31 — Edited scans cannot reuse stale uploads
+
+**Branch:** `fix/invalidate-edited-scan-uploads`
+
+### Changed
+
+- Bound completed page uploads to the exact captured pixels and page order that
+  produced them.
+- A retake, reorder, addition, or removal now clears the old uploaded object
+  keys so Continue must send the edited scan before it can be saved.
+- Preserved completed uploads when no page actually changed, including a
+  cancelled retake, an out-of-range move, and removal of an unknown page.
+- Prevented the naming screen from saving an old photograph or old page order
+  merely because the edited scan happened to contain the same number of pages.
+
+### Verification
+
+- Added capture-session coverage for reorder, retake, removal, cancelled
+  retake, and no-op commands after a completed upload.
+- Mobile typecheck, tests, web build, and backend tests run in pull-request CI.
+
+## 2026-08-31 — Non-expiring score page references
+
+**Branch:** `fix/durable-score-page-references`
+
+### Changed
+
+- Stopped carrying five-minute signed upload URLs from page transfer into the
+  piece-naming and score-creation steps.
+- The app now keeps owner-prefixed storage object keys in the capture session,
+  preserving page order without giving the musician a timer to race.
+- The score API accepts those durable keys, verifies that every key belongs to
+  the signed-in account, and stores token-free private-storage references that
+  can be re-signed whenever the worker or UI needs the page.
+- Kept older installed clients compatible: legacy signed upload URLs are still
+  accepted, but are canonicalised before persistence so their expiring tokens
+  never become the score's source of truth.
+- Applied the same durable-reference path to adding notation to an existing
+  manual piece.
+
+### Verification
+
+- Added backend coverage for durable single-page creation, ordered multi-page
+  creation, notation attachment, legacy-client compatibility, foreign keys,
+  nested keys, path traversal, and arbitrary external URLs.
+- Updated mobile upload and capture-session tests to require object keys rather
+  than token-bearing URLs and to preserve their page order.
+- Mobile typecheck, tests, web build, and backend tests run in pull-request CI.
+
+## 2026-08-31 — Retry-safe onboarding photo submission
+
+**Branch:** `fix/defer-onboarding-avatar-upload`
+
+### Changed
+
+- Kept a chosen onboarding photograph local until the musician presses
+  Continue, so replacing a picture or leaving the screen no longer creates an
+  unused avatar object.
+- Made Continue perform the upload and profile save as one visible action while
+  preserving their safe ordering: the account is saved only after the upload
+  returns an object key.
+- Retained a successful object key when the profile save fails, so a retry
+  reuses the upload instead of creating duplicate files.
+- Kept the full action visibly busy during both network requests and returned
+  upload failures to the same Continue action with a retry instruction.
+
+### Verification
+
+- Added rule coverage proving a local photograph enables Continue while a form
+  with neither a selection nor an existing object key still names the photo as
+  missing.
+- Mobile typecheck, tests, and web build run in pull-request CI.
+
+## 2026-08-31 — Attach notation before recording manual pieces
+
+**Branch:** `feat/attach-notation-manual-piece`
+
+### Changed
+
+- Added a server action that reads one or more ordered page photographs into an
+  existing scoreless library entry instead of creating a duplicate piece.
+- Manual pieces now explain that sheet music is required for note, rest,
+  repeat, long-rest, and tempo alignment, with direct camera and image-library
+  actions.
+- Preserved the existing piece id, title, working tempo, and practice history
+  while its newly attached pages are queued for transcription.
+- Today routes scoreless pieces into setup, shows reading progress when a scan
+  is already running, and replaces premature recording advice with contextual
+  notation lessons.
+- Added a final recording-screen prerequisite so no direct route can begin an
+  analysis take when the piece contains no measurable notation.
+
+### Verification
+
+- Added backend coverage for multi-page attachment, page ownership, page
+  limits, duplicate-notation refusal, and in-progress-read refusal.
+- Added mobile coverage for attachment-target persistence and scoreless setup
+  lessons, plus a request-shape contract between the new client and API body.
+- Mobile typecheck, tests, web build, and backend tests run in pull-request CI.
+
+## 2026-08-31 — Complete multi-page score intake
+
+**Branch:** `fix/mobile-multi-page-scan`
+
+### Changed
+
+- Uploads every photographed or imported page sequentially and preserves the
+  musician's chosen page order through score creation and transcription.
+- Shows measured per-page transfer progress and names the page currently being
+  sent instead of silently processing only the first page.
+- Enforces the backend's 12-page ceiling in the camera, image picker, and
+  capture-session boundary before an unsupported page can be photographed or
+  uploaded.
+- Sends the backend's supported `image_urls` request for multi-page scans while
+  retaining the single-page contract for hand-entered pieces.
+- Reworded scan, review, and failure states so they accurately describe every
+  selected page.
+
+### Verification
+
+- Added mobile tests for ordered sequential uploads, per-page progress,
+  cancellation signal forwarding, early failure, URL ordering, and camera or
+  import page-limit enforcement.
+- Existing backend multi-page API tests cover ordered three-page creation,
+  ownership, acceptance, and cleanup.
+- Mobile typecheck, tests, and web build run in pull-request CI.
+
+## 2026-08-31 — Prominent add-piece action and contextual practice lessons
+
+**Branch:** `feat/today-piece-action-lessons`
+
+### Changed
+
+- Replaced the compact New piece pill beside the section heading with a full,
+  descriptive action row immediately below the current-piece card.
+- The action now explains that a musician can scan sheet music, import a score,
+  or enter a piece manually before opening the shared Add piece sheet.
+- Removed the obsolete TempoLadder component from the repository.
+- Moved practice lessons into a tested, data-driven model. Every lesson now
+  names the current piece, uses its displayed working tempo, and responds to
+  the latest rushing, dragging, on-tempo, or first-take state.
+
+### Verification
+
+- Added mobile tests for first-take, rushing, dragging, and on-tempo lesson
+  selection, including piece and printed-tempo context.
+- Mobile typecheck, tests, and web build run in pull-request CI.
+
+## 2026-08-31 — In-app help and connection diagnostics
+
+**Branch:** `feat/help-connection-diagnostics`
+
+### Changed
+
+- Added Help & connection under Profile with a read-only service check that
+  tests both the public health endpoint and the signed-in account.
+- Distinguishes a sleeping or unreachable service, an expired session, and an
+  account request failure instead of presenting every problem as “no connection.”
+- Added practical recording guidance for microphone placement, double-bass
+  attacks, headphone metronomes, count-ins, and long-rest re-entry cues.
+- Added scan guidance for lighting, page framing, multi-page order, and review
+  of measures the transcription could not verify.
+
+### Verification
+
+- Added mobile tests for connected, service-unreachable, expired-session, and
+  account-unreachable diagnostic outcomes and request order.
+- Mobile typecheck, tests, and web build run in pull-request CI.
+
+## 2026-08-31 — Operable bottom-sheet close control
+
+**Branch:** `fix/bottom-sheet-close-button`
+
+### Changed
+
+- Added a visible Close button to every bottom sheet instead of exposing the
+  full-screen backdrop as an invisible keyboard button.
+- Kept backdrop clicks as pointer-only dismissal while making the sheet header
+  the first clear, operable keyboard target.
+- Preserved Escape dismissal and the existing inert boundary around the page
+  behind the sheet.
+
+### Verification
+
+- Reproduced on the deployed Add piece sheet: focus landed on an invisible
+  Close button whose Enter activation did not dismiss the modal.
+- Mobile typecheck, tests, and web build run in pull-request CI; the deployed
+  sheet is rechecked with Enter and Escape after merge.
+
+## 2026-08-31 — Scanned ornament timing
+
+**Branch:** `codex/scan-ornament-timing`
+
+### Changed
+
+- Updated the photo-reading contract to preserve fermatas and grace-note
+  attacks in the score metadata the alignment engine already understands.
+- Fermatas keep their printed duration and mark the following arrival as
+  unmeasurable, so a written hold is not reported as dragging.
+- Grace notes remain outside the bar's duration sum but are counted on the main
+  note they decorate, so played ornaments are not mistaken for extra attacks.
+- Added the same optional metadata to the app's shared score types so edits and
+  future score views do not discard it.
+
+### Verification
+
+- Added a prompt-contract test proving the instructed ornament shape validates
+  through the production score schema.
+- Existing MusicXML, grace-note alignment, fermata classification, backend,
+  mobile typecheck, tests, and web build run in pull-request CI.
+
+## 2026-08-31 — Printed tempo-unit accuracy
+
+**Branch:** `codex/printed-tempo-unit`
+
+### Changed
+
+- Preserved the note value printed beside a metronome mark while keeping the
+  analysis engine's quarter-note clock unchanged.
+- Defined OCR tempo output unambiguously: photographed dotted-quarter, eighth,
+  and half-note marks are converted to quarter-note BPM for timing and retain
+  their original beat unit for display.
+- Made MusicXML imports retain the printed unit even when an authoritative
+  playback tempo is present, and default sound-only tempos to quarter notes.
+- Updated Today, practice setup, practice history, and verdict screens to show
+  the tempo number and unit a musician sees on the page. Tempo adjustments are
+  converted back to the internal clock before recording and analysis.
+
+### Verification
+
+- Added backend tests for beat-unit conversion, preservation, playback-tempo
+  precedence, sound-only tempos, and schema validation.
+- Added mobile tests for dotted-quarter, eighth, half, legacy-quarter display,
+  round-trip conversion, and safe control bounds.
+- Backend pytest plus mobile tests, typecheck, and web build run in pull-request
+  CI.
+
+## 2026-08-31 — Modal keyboard containment
+
+**Branch:** `fix/modal-keyboard-containment`
+
+### Changed
+
+- Made the app root inert while a bottom sheet or confirmation dialog is open
+  on web, matching the modal behavior users already get from native platforms.
+- Prevents Tab, pointer input, and assistive technology from entering the
+  hidden screen behind an overlay.
+- Counts nested overlays so closing a confirmation over a sheet cannot
+  accidentally reactivate the covered app.
+- Keeps the root inert through the bottom sheet's dismissal animation.
+
+### Verification
+
+- Reproduced against production: with Add piece open, the homepage and every
+  bottom tab remained at tabindex 0 outside the aria-modal dialog.
+- Mobile typecheck, tests, and web build run in pull-request CI; production is
+  rechecked by advancing focus through the open sheet before merge.
+## 2026-08-31 — Active-tab keyboard containment
+
+**Branch:** `fix/inactive-tab-keyboard-focus`
+
+### Changed
+
+- Wrapped tab scenes in a platform-aware focus boundary.
+- Uses the web platform's inert primitive so buttons and fields in previously
+  visited, hidden tabs cannot receive keyboard focus or pointer input.
+- Keeps inactive native scenes hidden from VoiceOver and TalkBack descendants
+  while preserving tab state and scroll position.
+
+### Verification
+
+- Reproduced the issue against the deployed signed-in app: hidden Today and
+  Library controls retained tabindex 0 while Insights was active.
+- Mobile typecheck, tests, and web build run in pull-request CI; the preview is
+  rechecked with keyboard-focus inspection before merge.
+## 2026-08-31 — Meter-aware practice pulse
+
+**Branch:** `fix/musical-meter-pulse`
+
+### Changed
+
+- Kept score playback and analysis on their existing quarter-note clock while
+  translating the practice metronome into the pulse implied by the meter.
+- Counted 6/8 in two dotted-quarter pulses, 9/8 in three, 12/8 in four, and
+  cut-time meters in half-note pulses instead of clicking quarter notes that
+  fight the musician's felt beat.
+- Made the one-bar count-in and long-rest re-entry countdown use that same
+  musical pulse. Irregular meters retain their written subdivision because the
+  score data does not yet carry beam grouping.
+
+### Verification
+
+- Added mobile unit coverage for simple, compound, cut-time, and irregular
+  meter pulse conversion, downbeat placement, and compound-meter re-entry
+  countdowns.
+- Mobile typecheck, tests, and web build run in pull-request CI.
+## 2026-08-31 — Portable account data export
+
+**Branch:** `codex/account-data-export`
+
+### Changed
+
+- Added an authenticated GET /v1/me/export snapshot containing the musician's
+  account, library score data, practice analyses, corrections, assignments,
+  owned studios, and sync history.
+- Scopes every collection to the signed-in user, de-duplicates assignments
+  where the same account occupies both roles, and strips avatar keys, storage
+  URLs, audio URLs, and studio invite codes from the portable file.
+- Reports media counts explicitly so photos and audio not embedded in the JSON
+  are not silently omitted.
+- Added Download my data under Data & privacy. Web downloads a readable JSON
+  file; native opens the system share/save sheet.
+
+### Verification
+
+- Added backend coverage for authentication, owner scoping, sensitive-token
+  removal, assignment de-duplication, and media accounting.
+- Mobile typecheck, tests, web build, and backend pytest run in pull-request CI.
+
+## 2026-08-31 — Permanent in-app account deletion
+
+**Branch:** `codex/account-deletion`
+
+### Changed
+
+- Added an authenticated DELETE /v1/me endpoint that removes the Supabase auth
+  identity and relies on the schema's cascades for the profile, scores,
+  analyses, corrections, assignments, and sync history.
+- Inventories profile, score-page, and take-audio objects before deletion, then
+  removes them after the identity is gone so a provider failure cannot leave an
+  active account with missing files.
+- Refuses deletion for a studio owner instead of silently deleting shared
+  student data, and reports an actionable conflict.
+- Added an in-app deletion screen under Data & privacy with typed confirmation,
+  a second irreversible-action dialog, accurate consequences, error recovery,
+  local session removal, and account-cache clearing.
+
+### Verification
+
+- Added backend coverage for authentication, cascading identity deletion,
+  object-key recovery and de-duplication, owned-studio protection, identity
+  failure ordering, and storage cleanup failure.
+- Mobile typecheck, tests, web build, and backend pytest run in pull-request CI.
+
+## 2026-08-31 — Recoverable signed-in account startup
+
+**Branch:** `codex/account-startup-recovery`
+
+### Changed
+
+- Held the signed-in app until the account profile is actually restored, so one
+  failed request no longer opens four tabs that each look independently broken.
+- Added a clear startup state for a waking service and an actionable failure
+  state with Try again and Back to sign in.
+- Prevented an unavailable profile from silently bypassing required onboarding.
+- Cleared account-scoped cached data when returning to sign in from recovery.
+
+### Verification
+
+- Mobile typecheck, tests, and web build run in pull-request CI.
+
+## 2026-08-31 — Repeat-aware playback and practice cues
+
+**Branch:** `codex/repeat-play-order`
+
+### Changed
+
+- Ported the backend's performed repeat order to the mobile app, including
+  nested sections, first/second endings, and safe fallbacks for invalid OCR
+  repeat references.
+- Made reference playback follow the same repeat order the analyser grades.
+- Made long-rest re-entry cues follow every performed pass, including the return
+  to the opening of a repeated section.
+
+### Verification
+
+- Added mobile coverage for plain, nested, invalid and ending-bearing repeats.
+- Added integration coverage for repeat-aware playback times and re-entry cues.
+- Mobile typecheck, tests, and web build run in pull-request CI.
+
+## 2026-08-31 — First-take recording setup
+
+**Branch:** `codex/first-take-setup`
+
+### Changed
+
+- Added a one-time, device-local guide before the first recording that explains
+  microphone placement, avoiding speaker bleed, the tempo-synced count-in, and
+  long-rest re-entry cues before the system permission prompt appears.
+- Added a Recording tips action to every ready practice screen so the guide is
+  never a one-shot instruction the musician cannot find again.
+- Persisted only that this device has seen the guide; the setting does not alter
+  score data, analysis, or another device.
+
+### Verification
+
+- Added preference coverage for the default, persisted, and malformed stored
+  setup states.
+- Mobile typecheck, tests, and web build run in pull-request CI.
+
+## 2026-08-31 — Practice count-in and long-rest re-entry cues
+
+**Branch:** `feature/practice-count-in-rest-cues`
+
+### Changed
+
+- Added a one-bar, target-tempo count-in before every recording and a cancel
+  action while the musician is preparing to enter.
+- Kept the metronome clock running across the count-in/downbeat boundary so the
+  visible take starts in phase rather than restarting a timer.
+- Added visible long-rest cues that show bars remaining, count the final bar in
+  beats, and name the measure where playing resumes.
+- Derived cues from the same written note-duration clock used by score playback
+  and backend alignment, including the shortened score when rest-skipping is on.
+- Moved the visible take timer to the metronome's monotonic clock so device time
+  corrections cannot jump the cue forward or backward.
+
+### Verification
+
+- Added unit coverage for two-bar rests, shortened one-bar cues, exact re-entry
+  boundaries, tempo scaling, empty measures, isolated rests, and trailing rests.
+- Existing backend alignment coverage verifies that different amounts of
+  leading silence produce the same per-note timing result.
+- Full mobile and backend suites run in pull-request CI.
+
+## 2026-08-31 — Contextual education replaces the tempo ladder
+
+**Branch:** `feature/contextual-education-today`
+
+### Changed
+
+- Replaced the quiet Today section-label action with a compact filled
+  **New piece** button and plus icon.
+- Removed the tempo ladder from Today.
+- Added a contextual **Today's lesson** card that teaches a different timing
+  exercise for a first baseline, rushing, dragging, or an on-tempo result.
+- Connected the lesson directly to the current piece's practice flow.
+
+### Verification
+
+- Mobile typecheck, tests, and web build are run by pull-request CI.
+- The signed-in production dashboard was reviewed at desktop width before the
+  hierarchy change.
+
+## 2026-08-30 — Today, OCR, bass recording, and Insights usability pass
+
+**Branch:** `feature/today-ocr-bass-insights`
+
+### Changed
+
+- Added a visible **New piece** action to the populated Today screen and made
+  the profile avatar large enough to balance the greeting.
+- Added camera framing guidance, corrected the captured-pages copy to state that
+  OCR currently reads page 1 only, and made the save/read/review sequence clear.
+- Exposed the active double-bass recording mode and practical microphone
+  guidance without changing detector thresholds that require real bass audio
+  for calibration.
+- Expanded Insights with session/piece/window totals, a next-practice focus,
+  and linked recent sessions while retaining the per-piece timing breakdown.
+
+### Verification
+
+- Existing bass regression coverage verifies the double-bass pipeline,
+  low-register open strings, and fast sixteenth-note onset separation.
+- Mobile typecheck, tests, and web build are run by pull-request CI.
+
+## 2026-08-30 — Today gains a tempo ladder and recent practice
+
+**Branch:** `feature/tempo-ladder-recent-practice`. Today/home UI and data.
+**UI, copy and layout changes were approved by the owner.**
+
+**Files:** `mobile/src/screens/today/TempoLadder.tsx`,
+`mobile/src/screens/today/TodayScreen.tsx`,
+`mobile/src/data/practiceTempo.ts`, `mobile/src/data/hooks/useLatestTake.ts`,
+`mobile/src/data/sources/types.ts`, `mobile/src/data/sources/api.ts`,
+`mobile/src/data/sources/fixtures.ts`, and the tempo tests.
+
+Today now shows two pieces of practice state the musician can act on. The Tempo
+ladder derives three useful BPM rungs from the remembered working tempo and the
+score's marked tempo. Choosing a rung writes through the existing per-piece
+tempo store, so the featured card and Record screen immediately agree with it.
+When a score has no readable marking, the higher rungs are explicitly labelled
+as suggestions rather than attributed to the page.
+
+Recent practice lists up to three real finished, readable takes, newest first,
+with date, target BPM and verdict. Each row opens the existing verdict screen.
+The API adapter uses the existing analyses listing and one score listing; there
+is no new endpoint or schema. New accounts see neither invented sessions nor
+an empty history panel.
+
+**Three-foot test:** the dominant current-piece card remains first. The ladder
+reads as one compact horizontal control, while recent sessions form a bounded
+list below the playing tools. On narrow screens the rungs remain equal-width
+touch targets and the history stays in the established single-column order.
+Production visual re-check is required after Cloudflare deploys.
+
+**Verification:** ladder cases are covered by unit tests. Mobile tests,
+TypeScript and the Expo web build are the implementation gates; the repository's
+backend and legacy frontend checks remain required.
+
+**Rollback:** revert this change. Existing takes and remembered working tempos
+are untouched because no storage format or backend data changed.
+
+---
+
+## 2026-08-30 — Today content becomes a set of practice decisions
+
+**Branch:** `design/home-actionable-content`. Today/home UI and copy.
+**UI, copy and layout changes were approved by the owner.**
+
+**Files:** `mobile/src/screens/today/TodayScreen.tsx`,
+`mobile/src/lib/today.ts`.
+
+The responsive shell exposed a deeper content problem: below the current-piece
+card, the screen offered unrelated trivia, a vague “Also worth a look” label,
+and a generic date window. Those blocks filled space without helping a musician
+choose or understand the next action.
+
+The trivia block is removed. A new Practice focus card explains why to record
+the next take: a new musician is invited to establish a first benchmark, while
+someone with a prior take is asked to keep the tempo fixed and make the next
+take comparable. Suggested pieces now form a Repertoire queue and retain a
+specific reason for appearing; a never-practiced piece says it is ready for a
+first session instead of reporting an absence. Aggregate analysis is presented
+as a Practice snapshot with both session count and time window.
+
+No streaks, goals, minutes or other data are invented. Every claim comes from
+the existing current-piece, take, library or insights data, and every action
+uses an existing navigation path.
+
+**Three-foot test:** the primary practice card remains dominant. The supporting
+rail now reads as a short sequence—focus, queue, snapshot—instead of unrelated
+editorial fragments. On phones the same content follows the playing blocks in
+one column. Production visual re-check is required after Cloudflare deploys.
+
+**Verification:** mobile tests, TypeScript and the Expo web build are the merge
+gates. Backend and legacy frontend checks remain required repository gates.
+
+**Rollback:** revert this change; the responsive dashboard remains intact and
+the previous trivia and suggestion copy return.
+
+---
+
+## 2026-08-30 — Today becomes a responsive practice dashboard
+
+**Branch:** `design/home-practice-dashboard`. Today/home UI. **UI, copy and layout changes were
+approved by the owner.**
+
+**File:** `mobile/src/screens/today/TodayScreen.tsx`.
+
+At 1033×958 the live home screen had no desktop composition: every block
+stretched across the viewport, the warmup's compact Start button sat almost a
+thousand pixels from its title and notation, and the fact and suggestion rows
+floated in large unused ivory areas. The underlying content was useful; the
+page had no grid to explain its hierarchy.
+
+Today now has a centred 1180-point reading measure. At 900 points and above it
+becomes a two-column practice dashboard: the current piece and warmup form the
+wide playing column; the daily fact, suggested repertoire and recent tendency
+form a 340-point supporting rail. Below the breakpoint the same groups stack in
+their existing mobile order. The warmup is placed on a bounded Card surface so
+its title, notation, tempo and Start action read as one object instead of an
+action floating at the far edge of the window.
+
+**Three-foot test:** the pre-change signed-in production screen was reviewed at
+1033×958. From three feet the current piece was the only coherent object; the
+warmup action and lower sections did not visually belong to their text. The new
+grid keeps one dominant left column and one visibly quieter right rail, with
+both column headings aligned at the same starting line. Phone behaviour is a
+single reading column with no reordered controls. Deployed visual re-check is
+required after Cloudflare builds the branch.
+
+**Verification:** no data flow, navigation target or copy meaning changed.
+Mobile tests, TypeScript and the Expo web build are the merge gates.
+
+**Rollback:** revert this commit; the previous single-column Today remains
+wire-compatible.
+
+---
+
+## 2026-08-30 — Profile photos can be changed after onboarding
+
+**Branch:** `feature/profile-photo-edit`. Profile UI. **UI work approved by the owner.**
+
+**File:** `mobile/src/screens/profile/ProfileScreen.tsx`.
+
+The Profile avatar was a dead control: tapping it revealed "Changing your
+photo isn't available yet", although onboarding already shipped the complete
+signed-upload and profile-update path. Profile now uses that same path. A
+musician chooses and crops a square image, sees the local preview immediately,
+the image is normalised to a browser-safe format by Expo, uploaded through the
+existing signed URL, and only then saved to the account. The control is disabled
+while either request is in flight, the pending state is named, and upload/save
+errors remain beside the photo so a failed change does not look successful.
+
+**Three-foot design check:** the avatar remains secondary to the Profile
+heading and account details; the new one-line cue explains the control without
+adding another button or card. Phone and desktop preview re-check is required
+after Cloudflare deploy.
+
+**Verification:** the upload and PATCH hooks are the same production paths used
+by required onboarding. Mobile tests, typecheck and Expo web build are the gate
+for this branch. No backend, schema or storage-policy change.
+
+**Known limit:** if the object upload succeeds and the profile PATCH fails, the
+new object is orphaned. That is the existing upload-retention hole recorded in
+`CLAUDE.md`; this change does not delete unreferenced objects without the
+owner's retention decision.
+
+**Rollback:** revert this commit. Existing avatars and onboarding are
+wire-compatible.
+
+---
+
+## 2026-08-30 — First-run polish and signed-in web reliability
+
+**Branch:** `fix/average-user-auth-shell-v2`. App shell and shared UI. **UI work approved by
+the owner** ("yes you can change the ui/copy.layout and sign in").
+
+**Files:** `mobile/src/App.tsx`, `mobile/src/lib/documentTitle.ts` (new),
+`mobile/src/lib/documentTitle.test.ts` (new),
+`mobile/src/screens/auth/AuthScreen.tsx`,
+`mobile/src/components/motion/FadeIn.tsx`,
+`mobile/src/components/motion/PressableScale.tsx`,
+`mobile/src/components/overlays/BottomSheet.tsx`,
+`mobile/src/components/primitives/Skeleton.tsx`,
+`mobile/src/screens/capturedPages/DraggablePageList.tsx`, and
+`mobile/src/screens/pieceScore/PieceScoreScreen.tsx`.
+
+The public web build put the literal title "undefined" in the browser tab,
+stretched the auth form across a desktop window, and did not explain that
+signup sends a confirmation email. The navigator now owns a stable InTempo
+document title, the auth content has a readable desktop measure, and signup
+sets the email-confirmation expectation before submission.
+
+A read-only signed-in production smoke at `idk-41z.pages.dev` exposed the
+shared failure behind several apparently unrelated glitches:
+`useNativeDriver: true` was used on web even though react-native-web has no
+native animation module. The live console warned on every session; Library
+rows could remain transparent while arriving, and a dismissed Add piece sheet
+remained in the accessibility tree after navigation. Every shared animation
+now uses the native driver on iOS/Android and the JavaScript driver on web.
+The score viewer also remounts its scroll shell when switching Notation /
+Original, so the new view begins at its heading instead of inheriting a deep
+scroll position from the previous view.
+
+**Three-foot test:** at 1033×958, Today, Library, Insights, Profile, an existing
+piece, Notation, Original, the Add piece sheet, and the manual-add form were
+readable with a clear primary action. The Library, sheet-dismissal, and
+Notation/Original defects above were reproduced before the fix. Preview
+re-check is required after deployment; camera, upload, microphone, destructive
+"Looks right", preference writes, and sign-out were deliberately not exercised
+against the owner's real account.
+
+**Verification:** read-only production navigation and console inspection
+completed. GitHub CI (mobile tests, typecheck, and web build) is the gate for
+this commit. No backend or database change.
+
+**Rollback:** revert this branch commit. The driver selection is platform-only;
+native behaviour is unchanged. The title/copy/layout changes are isolated to
+the auth shell.
 ## 2026-08-30 — The corrector is on, and it is told what key the music is in
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Owner: *"ok can you turn it

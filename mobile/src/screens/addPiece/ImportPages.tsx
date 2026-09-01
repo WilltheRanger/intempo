@@ -11,7 +11,10 @@ import {
   SecondaryButton,
   Text,
 } from '../../components/primitives';
-import { captureSession } from '../../data/captureSession';
+import {
+  captureSession,
+  MAX_SCAN_PAGES,
+} from '../../data/captureSession';
 import { spacing } from '../../design';
 import {
   cameraCanPhotographAPage,
@@ -39,7 +42,11 @@ import type { RootNavigation } from '../../navigation/types';
  * grants access to that file alone — asking for the whole library first would
  * request more than this screen uses.
  */
-export function ImportPagesScreen() {
+export function ImportPagesScreen({
+  attachToPieceId,
+}: {
+  attachToPieceId?: string;
+}) {
   const navigation = useNavigation<RootNavigation>();
   // Read once: nothing about the device changes while the screen is open.
   const [hasUsableCamera] = useState(() =>
@@ -55,6 +62,7 @@ export function ImportPagesScreen() {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ['images'],
         allowsMultipleSelection: true,
+        selectionLimit: MAX_SCAN_PAGES,
         // No cropping. A page of music cropped to a square is a page of music
         // with its music cut off, and the framing that matters was decided when
         // the photograph was taken.
@@ -73,7 +81,9 @@ export function ImportPagesScreen() {
 
       // A fresh session, exactly as opening the scanner does — importing is
       // starting a new piece, not adding to whatever was photographed earlier.
-      captureSession.importAll(assets.map((asset) => asset.uri));
+      captureSession.importAll(assets.map((asset) => asset.uri), {
+        attachToPieceId,
+      });
       navigation.replace('CapturedPages');
     } catch (cause) {
       setError(
@@ -89,14 +99,14 @@ export function ImportPagesScreen() {
   return (
     <ScreenContainer>
       <PageHeader
-        title="Choose photos"
+        title="Import score"
         onBack={() => navigation.goBack()}
         backLabel="Back"
       />
 
       <Text variant="body" color="textSecondary" style={styles.lede}>
-        Pick every page of the part. You can choose several at once and put
-        them in order before saving.
+        Choose photographs of the music you want transcribed. You can pick
+        several at once, and reorder them before saving.
       </Text>
 
       {error ? (
@@ -106,7 +116,7 @@ export function ImportPagesScreen() {
       ) : null}
 
       <PrimaryButton
-        label="Choose photos"
+        label="Choose images"
         icon={Images}
         onPress={() => void pick()}
         loading={busy}
@@ -125,11 +135,16 @@ export function ImportPagesScreen() {
       */}
       {hasUsableCamera ? (
         <SecondaryButton
-          label="Photograph them instead"
+          label="Use the camera instead"
           onPress={() => navigation.replace('Scanner')}
           style={styles.secondary}
         />
       ) : null}
+
+      <Text variant="metadataSmall" color="textTertiary" style={styles.caveat}>
+        Choose up to {MAX_SCAN_PAGES} pages. InTempo keeps their order and reads
+        all of them.
+      </Text>
     </ScreenContainer>
   );
 }
@@ -146,5 +161,8 @@ const styles = StyleSheet.create({
   },
   secondary: {
     marginTop: spacing.md,
+  },
+  caveat: {
+    marginTop: spacing.xl,
   },
 });

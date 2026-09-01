@@ -9,10 +9,13 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ScoreThumbnail } from '../../components/pieces/ScoreThumbnail';
 import { Text } from '../../components/primitives/Text';
 import { impact, ImpactFeedbackStyle } from '../../lib/haptics';
-import { captureSession, useCapturedPages } from '../../data/captureSession';
-import { MAX_PAGES } from '../../lib/scan/uploadPages';
 import { adviceFor, legibilityOf } from '../../lib/scan/legibility';
 import { pageSamples } from '../../lib/scan/pageSamples';
+import {
+  captureSession,
+  MAX_SCAN_PAGES,
+  useCapturedPages,
+} from '../../data/captureSession';
 import {
   BORDER_WIDTH,
   colors,
@@ -67,17 +70,17 @@ export function ScannerScreen() {
   //: The page just taken that will not read, and why. Null when the last shot
   //: was fine, could not be measured, or has been retaken.
   const [doubt, setDoubt] = useState<{ id: string; advice: string } | null>(null);
-  const camera = useRef<CameraView>(null);
   /**
    * Whether the retake in flight was started *here*, at the viewfinder.
    *
    * A retake normally begins on the review list, so finishing one returns
    * there — "one shot and you are finished". Started from the doubt line below
    * it means the opposite: the musician is mid-scan with the music in front of
-   * them, and sending them to the page list after re-shooting page three of
-   * six is the app losing their place.
+   * them, and sending them to the page list after re-shooting page three of six
+   * is the app losing their place.
    */
   const retakingHere = useRef(false);
+  const camera = useRef<CameraView>(null);
 
   // Opening the scanner starts a new session. Coming back from review to add
   // another page doesn't remount this screen, so the pages survive that.
@@ -95,7 +98,9 @@ export function ScannerScreen() {
   // prevent. Only the caller knows which it is, so the caller says.
   useEffect(() => {
     if (!captureSession.retaking() && !route.params?.adding) {
-      captureSession.reset();
+      captureSession.reset({
+        attachToPieceId: route.params?.attachToPieceId,
+      });
     }
   }, []);
 
@@ -111,21 +116,15 @@ export function ScannerScreen() {
   const lastPage = pages[pages.length - 1];
   const FlashIcon = flashOn ? Zap : ZapOff;
   const ready = permission?.granted === true;
+  const retaking = captureSession.retaking() !== null;
+  const canCapture = ready && (retaking || pages.length < MAX_SCAN_PAGES);
 
   async function handleCapture() {
     if (!ready || busy) {
       return;
     }
-    // **Refused at the shutter, not after the upload.** `POST /v1/scores`
-    // rejects a thirteenth page, and finding that out at the end means the
-    // musician has already spent the uplink on all thirteen. A retake is
-    // exempt: it replaces a page rather than adding one, so a full scan must
-    // still be correctable.
-    if (!captureSession.retaking() && pages.length >= MAX_PAGES) {
-      setError(
-        `That is ${MAX_PAGES} pages, which is as long as one scan can be. ` +
-          'Save these, then start another piece for the rest.',
-      );
+    if (!retaking && pages.length >= MAX_SCAN_PAGES) {
+      setError(`A score can have at most ${MAX_SCAN_PAGES} pages in one scan.`);
       return;
     }
     setBusy(true);
@@ -147,6 +146,10 @@ export function ScannerScreen() {
       // and you are finished; an ordinary capture leaves you here for the next
       // page.
       const outcome = captureSession.capture(photo.uri);
+      if (outcome === 'full') {
+        setError(`A score can have at most ${MAX_SCAN_PAGES} pages in one scan.`);
+        return;
+      }
       const startedHere = retakingHere.current;
       retakingHere.current = false;
       if (outcome === 'replaced' && !startedHere) {
@@ -282,9 +285,9 @@ export function ScannerScreen() {
           )}
         </ViewfinderPage>
 
-        {error ? (
-          <Text variant="metadataSmall" color="onDarkMuted" style={styles.error}>
-            {error}
+        {ready ? (
+          <Text variant="metadataSmall" color="onDarkMuted" style={styles.guide}>
+            Fill the frame · keep the page flat · avoid shadows
           </Text>
         ) : null}
 
@@ -309,6 +312,12 @@ export function ScannerScreen() {
               Take this page again
             </Text>
           </View>
+        ) : null}
+
+        {error || (!retaking && pages.length >= MAX_SCAN_PAGES) ? (
+          <Text variant="metadataSmall" color="onDarkMuted" style={styles.error}>
+            {error ?? `Maximum of ${MAX_SCAN_PAGES} pages reached. Tap Done to continue.`}
+          </Text>
         ) : null}
       </View>
 
@@ -349,14 +358,20 @@ export function ScannerScreen() {
 
         <Pressable
           onPress={() => void handleCapture()}
-          disabled={!ready || busy}
+          disabled={!canCapture || busy}
           accessibilityRole="button"
-          accessibilityLabel="Capture page"
-          accessibilityState={{ disabled: !ready || busy }}
+          accessibilityLabel={
+            !ready
+              ? 'Capture page unavailable'
+              : canCapture
+                ? 'Capture page'
+                : `Maximum of ${MAX_SCAN_PAGES} pages reached`
+          }
+          accessibilityState={{ disabled: !canCapture || busy }}
           style={({ pressed }) => [
             styles.captureRing,
             pressed && styles.capturePressed,
-            (!ready || busy) && styles.captureDisabled,
+            (!canCapture || busy) && styles.captureDisabled,
           ]}
         >
           <View style={styles.captureCore} />
@@ -424,8 +439,13 @@ const styles = StyleSheet.create({
   unavailableText: {
     textAlign: 'center',
   },
-  error: {
+  guide: {
     marginTop: spacing.lg,
+    textAlign: 'center',
+    paddingHorizontal: spacing.xl,
+  },
+  error: {
+    marginTop: spacing.md,
     textAlign: 'center',
     paddingHorizontal: spacing.xl,
   },

@@ -1,6 +1,10 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import { captureSession, subscribeToCaptureSession } from './captureSession';
+import {
+  captureSession,
+  MAX_SCAN_PAGES,
+  subscribeToCaptureSession,
+} from './captureSession';
 
 /**
  * The scan between the shutter and the upload.
@@ -167,13 +171,125 @@ describe('importing pages', () => {
     expect(seen).toEqual([3]);
   });
 
-  it('clears the upload from the scan it replaces', () => {
-    // A signed URL from the previous scan would let the save go through
-    // against a page nobody chose.
+  it('clears the uploaded keys from the scan it replaces', () => {
+    // A key from the previous scan would let the save go through against a
+    // page nobody chose.
     scanOf(1);
-    captureSession.setUploadedPageUrls(['https://example.test/signed']);
+    captureSession.setUploadedImageKeys([
+      'user/page-1.jpg',
+      'user/page-2.jpg',
+    ]);
 
     captureSession.importAll([PAGE(5)]);
-    expect(captureSession.uploadedPageUrls()).toEqual([]);
+    expect(captureSession.uploadedImageKeys()).toEqual([]);
+  });
+
+  it('preserves every uploaded object key in page order', () => {
+    const keys = [
+      'user/page-1.jpg',
+      'user/page-2.jpg',
+      'user/page-3.jpg',
+    ];
+
+    captureSession.setUploadedImageKeys(keys);
+
+    expect(captureSession.uploadedImageKeys()).toEqual(keys);
+  });
+
+  it('refuses an imported score beyond the server page limit', () => {
+    expect(() => scanOf(MAX_SCAN_PAGES + 1)).toThrow(
+      `at most ${MAX_SCAN_PAGES} pages`,
+    );
+    expect(captureSession.current()).toEqual([]);
+  });
+
+  it('does not append a camera page beyond the server page limit', () => {
+    scanOf(MAX_SCAN_PAGES);
+
+    expect(captureSession.capture(PAGE(MAX_SCAN_PAGES + 1))).toBe('full');
+    expect(captureSession.current()).toHaveLength(MAX_SCAN_PAGES);
+  });
+});
+
+describe('editing pages after they were uploaded', () => {
+  const KEYS = [
+    'user/page-1.jpg',
+    'user/page-2.jpg',
+    'user/page-3.jpg',
+  ];
+
+  function uploadedScan(): void {
+    scanOf(3);
+    captureSession.setUploadedImageKeys(KEYS);
+  }
+
+  it('invalidates the old order when pages are reordered', () => {
+    uploadedScan();
+    captureSession.move(captureSession.current()[0].id, 1);
+
+    expect(captureSession.uploadedImageKeys()).toEqual([]);
+    expect(sources()).toEqual([PAGE(2), PAGE(1), PAGE(3)]);
+  });
+
+  it('invalidates the old photograph when a page is retaken', () => {
+    uploadedScan();
+    const second = captureSession.current()[1];
+
+    captureSession.beginRetake(second.id);
+    captureSession.capture('file:///retaken.jpg');
+
+    expect(captureSession.uploadedImageKeys()).toEqual([]);
+    expect(sources()[1]).toBe('file:///retaken.jpg');
+  });
+
+  it('invalidates the uploaded set when a page is removed', () => {
+    uploadedScan();
+    captureSession.remove(captureSession.current()[1].id);
+
+    expect(captureSession.uploadedImageKeys()).toEqual([]);
+    expect(sources()).toEqual([PAGE(1), PAGE(3)]);
+  });
+
+  it('keeps the upload while a retake is only considered and cancelled', () => {
+    uploadedScan();
+    const second = captureSession.current()[1];
+
+    captureSession.beginRetake(second.id);
+    captureSession.cancelRetake();
+
+    expect(captureSession.uploadedImageKeys()).toEqual(KEYS);
+    expect(sources()).toEqual([PAGE(1), PAGE(2), PAGE(3)]);
+  });
+
+  it('keeps the upload after a no-op page command', () => {
+    uploadedScan();
+    captureSession.move(captureSession.current()[0].id, -1);
+    captureSession.remove('not-a-page');
+
+    expect(captureSession.uploadedImageKeys()).toEqual(KEYS);
+  });
+});
+
+describe('attaching pages to an existing piece', () => {
+  it('keeps the target through an imported scan', () => {
+    captureSession.importAll([PAGE(1), PAGE(2)], {
+      attachToPieceId: 'piece-manual',
+    });
+
+    expect(captureSession.attachmentPieceId()).toBe('piece-manual');
+  });
+
+  it('keeps the target through a camera scan', () => {
+    captureSession.reset({ attachToPieceId: 'piece-manual' });
+    captureSession.capture(PAGE(1));
+
+    expect(captureSession.attachmentPieceId()).toBe('piece-manual');
+  });
+
+  it('clears the target when an ordinary scan starts', () => {
+    captureSession.reset({ attachToPieceId: 'piece-manual' });
+    captureSession.reset();
+
+    expect(captureSession.attachmentPieceId()).toBeNull();
   });
 });

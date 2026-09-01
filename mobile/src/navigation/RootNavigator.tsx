@@ -1,14 +1,20 @@
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { StyleSheet, View } from 'react-native';
+import { useIsFocused } from '@react-navigation/native';
+import type { ReactNode } from 'react';
+import { Platform, StyleSheet, View } from 'react-native';
 
 import { useAuthStatus } from '../data/auth/useAuthStatus';
 import { useMe } from '../data/hooks/useMe';
 import { colors } from '../design';
 import { shouldOnboard } from '../lib/onboarding';
 import { AcknowledgementsScreen } from '../screens/account/AcknowledgementsScreen';
+import { AccountStartupScreen } from '../screens/account/AccountStartupScreen';
 import { ChangeEmailScreen } from '../screens/account/ChangeEmailScreen';
 import { ChangePasswordScreen } from '../screens/account/ChangePasswordScreen';
+import { DeleteAccountScreen } from '../screens/account/DeleteAccountScreen';
+import { ExportDataScreen } from '../screens/account/ExportDataScreen';
+import { HelpScreen } from '../screens/account/HelpScreen';
 import { AddPieceScreen } from '../screens/addPiece/AddPieceScreen';
 import { AuthScreen } from '../screens/auth/AuthScreen';
 import { SetPasswordScreen } from '../screens/auth/SetPasswordScreen';
@@ -24,6 +30,7 @@ import { RecordScreen } from '../screens/record/RecordScreen';
 import { ProfileScreen } from '../screens/profile/ProfileScreen';
 import { ScannerScreen } from '../screens/scanner/ScannerScreen';
 import { TodayScreen } from '../screens/today/TodayScreen';
+import { TranscribeScreen } from '../screens/transcribe/TranscribeScreen';
 import { TranscriptionReviewScreen } from '../screens/transcriptionReview/TranscriptionReviewScreen';
 import { VerdictScreen } from '../screens/verdict/VerdictScreen';
 import { BottomTabBar } from './BottomTabBar';
@@ -32,16 +39,81 @@ import type { RootStackParamList, TabParamList } from './types';
 const Tab = createBottomTabNavigator<TabParamList>();
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
+function TabScene({ children }: { children: ReactNode }) {
+  const focused = useIsFocused();
+
+  // React Navigation correctly hides inactive scenes from screen readers, but
+  // on web aria-hidden does not remove descendant buttons from the keyboard
+  // order. A musician tabbing through Insights could therefore land on every
+  // control in the invisible Today and Library screens first. HTML inert is
+  // the platform primitive that blocks focus, pointer input and accessibility
+  // exposure together. Native keeps its own equivalent flags.
+  if (Platform.OS === 'web') {
+    return (
+      <div
+        aria-hidden={!focused}
+        inert={focused ? undefined : true}
+        style={{ display: 'flex', flex: 1, minHeight: 0 }}
+      >
+        {children}
+      </div>
+    );
+  }
+
+  return (
+    <View
+      style={styles.tabScene}
+      accessibilityElementsHidden={!focused}
+      importantForAccessibility={focused ? 'auto' : 'no-hide-descendants'}
+      pointerEvents={focused ? 'auto' : 'none'}
+    >
+      {children}
+    </View>
+  );
+}
+
+function TodayTab() {
+  return (
+    <TabScene>
+      <TodayScreen />
+    </TabScene>
+  );
+}
+
+function LibraryTab() {
+  return (
+    <TabScene>
+      <LibraryScreen />
+    </TabScene>
+  );
+}
+
+function InsightsTab() {
+  return (
+    <TabScene>
+      <InsightsScreen />
+    </TabScene>
+  );
+}
+
+function ProfileTab() {
+  return (
+    <TabScene>
+      <ProfileScreen />
+    </TabScene>
+  );
+}
+
 function TabNavigator() {
   return (
     <Tab.Navigator
       tabBar={(props) => <BottomTabBar {...props} />}
       screenOptions={{ headerShown: false }}
     >
-      <Tab.Screen name="Today" component={TodayScreen} />
-      <Tab.Screen name="Library" component={LibraryScreen} />
-      <Tab.Screen name="Insights" component={InsightsScreen} />
-      <Tab.Screen name="Profile" component={ProfileScreen} />
+      <Tab.Screen name="Today" component={TodayTab} />
+      <Tab.Screen name="Library" component={LibraryTab} />
+      <Tab.Screen name="Insights" component={InsightsTab} />
+      <Tab.Screen name="Profile" component={ProfileTab} />
     </Tab.Navigator>
   );
 }
@@ -90,15 +162,38 @@ export function RootNavigator() {
  * one would put this screen's concern into every other caller.
  */
 function SignedInApp() {
-  const { data: me } = useMe();
+  const {
+    data: me,
+    isPending,
+    isError,
+    error,
+    isFetching,
+    refetch,
+  } = useMe();
 
-  // Held in front of the app the way sign-in and the password reset are, and
-  // for the same reason: there is nothing behind it to go back to. It is not a
-  // pushed route, so it needs no `reset` on the way out — saving flips
-  // `onboarded` and this falls away.
-  //
-  // Only a definite `false` gates. While `/v1/me` is in flight the app opens;
-  // see `shouldOnboard` for why that direction and not the other.
+  // Restore the account before mounting any tab. A failed /v1/me used to open
+  // the app anyway, so Today, Library, Insights and Profile each rendered a
+  // different error for the same unavailable account. It also bypassed
+  // onboarding because "unknown" was treated as "already done".
+  if (isPending) {
+    return <AccountStartupScreen />;
+  }
+
+  if (isError || !me) {
+    return (
+      <AccountStartupScreen
+        error={error ?? new Error('The server returned no account profile.')}
+        retrying={isFetching}
+        onRetry={() => {
+          void refetch();
+        }}
+      />
+    );
+  }
+
+  // Held in front of the app the way sign-in and password recovery are. Saving
+  // invalidates `me`; the refetched profile carries `onboarded_at`, and this
+  // gate falls away without a navigation reset.
   if (shouldOnboard(me)) {
     return <OnboardingScreen />;
   }
@@ -114,6 +209,7 @@ function SignedInApp() {
         options={{ animation: 'slide_from_bottom' }}
       />
       <Stack.Screen name="CapturedPages" component={CapturedPagesScreen} />
+      <Stack.Screen name="Transcribe" component={TranscribeScreen} />
       <Stack.Screen
         name="TranscriptionReview"
         component={TranscriptionReviewScreen}
@@ -123,6 +219,9 @@ function SignedInApp() {
       <Stack.Screen name="MeasureEdit" component={MeasureEditScreen} />
       <Stack.Screen name="ChangeEmail" component={ChangeEmailScreen} />
       <Stack.Screen name="ChangePassword" component={ChangePasswordScreen} />
+      <Stack.Screen name="DeleteAccount" component={DeleteAccountScreen} />
+      <Stack.Screen name="ExportData" component={ExportDataScreen} />
+      <Stack.Screen name="Help" component={HelpScreen} />
       <Stack.Screen
         name="Acknowledgements"
         component={AcknowledgementsScreen}
@@ -135,6 +234,9 @@ function SignedInApp() {
 }
 
 const styles = StyleSheet.create({
+  tabScene: {
+    flex: 1,
+  },
   holding: {
     flex: 1,
     backgroundColor: colors.bg,

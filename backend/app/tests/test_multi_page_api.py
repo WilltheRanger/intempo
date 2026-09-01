@@ -129,6 +129,7 @@ from fastapi.testclient import TestClient  # noqa: E402
 
 from app.main import app  # noqa: E402
 from app.tests.test_scores_router import (  # noqa: E402
+    PROJECT_HOST,
     _install_supabase,
     _row_for,
     _signed_url,
@@ -167,10 +168,18 @@ def test_posting_three_pages_writes_all_three_to_the_row(
 
     assert response.status_code == 201, response.text
     written = client.table.return_value.insert.call_args[0][0]
-    assert written["source_image_urls"] == pages
+    expected = [
+        (
+            f"{PROJECT_HOST}/storage/v1/object/authenticated/score-images/"
+            f"{user_id}/p{position}.jpg"
+        )
+        for position in range(3)
+    ]
+    assert written["source_image_urls"] == expected
+    assert all("token=" not in page for page in expected)
     # Page one into the old column as well, so a worker or reader from before
     # migration 011 still finds a photograph rather than a piece with no scan.
-    assert written["source_image_url"] == pages[0]
+    assert written["source_image_url"] == expected[0]
 
 
 def test_a_page_that_is_not_yours_is_refused_even_at_position_three(

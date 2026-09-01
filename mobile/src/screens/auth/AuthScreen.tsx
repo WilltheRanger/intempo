@@ -37,7 +37,7 @@ const COPY: Record<AuthMode, { lede: string; submit: string }> = {
     submit: 'Sign in',
   },
   signUp: {
-    lede: 'Create an account to start building a library.',
+    lede: 'Create an account to start building a library. We’ll email you a confirmation link.',
     submit: 'Create account',
   },
   reset: {
@@ -141,7 +141,7 @@ export function AuthScreen() {
 
   if (sent) {
     return (
-      <ScreenContainer contentStyle={styles.centred}>
+      <ScreenContainer contentStyle={[styles.centred, styles.authColumn]}>
         <View>
           {/*
             "Check your email" contradicts the line below it when no mail was
@@ -229,7 +229,7 @@ export function AuthScreen() {
       // up under the keyboard on shorter phones.
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      <ScreenContainer contentStyle={styles.centred}>
+      <ScreenContainer contentStyle={[styles.centred, styles.authColumn]}>
         <View>
           <Text variant="screenTitle">InTempo</Text>
           <Text variant="body" color="textSecondary" style={styles.lede}>
@@ -385,6 +385,14 @@ export function AuthScreen() {
 const styles = StyleSheet.create({
   flex: {
     flex: 1,
+  },
+  // A readable desktop measure. On phones the available width is smaller than
+  // this, so the screen keeps the normal gutter and loses no space. On web it
+  // stops labels, fields, and the primary action spanning the whole window.
+  authColumn: {
+    width: '100%',
+    maxWidth: 720,
+    alignSelf: 'center',
   },
   // The two things you can ask for from the sign-in form, on one line: a link
   // instead of a password, and a link because you have forgotten it.

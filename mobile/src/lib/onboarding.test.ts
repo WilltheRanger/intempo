@@ -63,13 +63,26 @@ describe('what onboarding still needs', () => {
     ]);
   });
 
-  it('does not accept a chosen photo that never uploaded', () => {
-    // The screen shows a preview from the local file the moment it is picked.
-    // The preview is not the requirement — the object key is, because that is
-    // the only thing the account can be pointed at.
-    expect(missingFromOnboarding({ ...EVERYTHING, avatarKey: null })).toEqual([
-      'photo',
-    ]);
+  it('accepts a local photo that is ready to upload on Continue', () => {
+    // Choosing is intentionally local. Continue performs the upload and does
+    // not save the profile until it has the resulting object key.
+    expect(
+      missingFromOnboarding({
+        ...EVERYTHING,
+        avatarKey: null,
+        photoSelected: true,
+      }),
+    ).toEqual([]);
+  });
+
+  it('still requires a photo when neither a selection nor an object key exists', () => {
+    expect(
+      missingFromOnboarding({
+        ...EVERYTHING,
+        avatarKey: null,
+        photoSelected: false,
+      }),
+    ).toEqual(['photo']);
   });
 
   it('has a human label for every requirement it can report', () => {

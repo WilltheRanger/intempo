@@ -18,6 +18,7 @@ from fastapi.testclient import TestClient
 from app import db as db_module
 from app.main import app
 from app.routers import me as me_module
+from app.tests.fake_supabase import FakeSupabase
 
 
 @pytest.fixture()
@@ -678,3 +679,286 @@ def test_setting_the_same_picture_again_does_not_delete_it(
     assert not sb.storage.from_.return_value.remove.called, (
         "the picture the row still points at was deleted"
     )
+
+
+# ---- permanent account deletion --------------------------------------------
+
+
+def _delete_account_mock(
+    user_id: Any,
+    *,
+    owns_studio: bool = False,
+    with_assets: bool = True,
+) -> MagicMock:
+    """A service client with separately addressable account tables."""
+    mock_client = MagicMock()
+    uid = str(user_id)
+
+    rows = {
+        "studios": [{"id": str(uuid4())}] if owns_studio else [],
+        "users": (
+            [{"avatar_key": f"{uid}/avatar.jpg"}] if with_assets else []
+        ),
+        "scores": (
+            [
+                {
+                    "source_image_url": (
+                        "https://project.supabase.co/storage/v1/object/sign/"
+                        f"score-images/{uid}/page-1.jpg?token=old"
+                    ),
+                    # The first page appears in both columns during migration
+                    # 011; deletion must de-duplicate it.
+                    "source_image_urls": [
+                        (
+                            "https://project.supabase.co/storage/v1/object/sign/"
+                            f"score-images/{uid}/page-1.jpg?token=new"
+                        ),
+                        (
+                            "https://project.supabase.co/storage/v1/object/"
+                            f"authenticated/score-images/{uid}/page-2.jpg"
+                        ),
+                    ],
+                }
+            ]
+            if with_assets
+            else []
+        ),
+        "analyses": (
+            [
+                {
+                    "audio_url": (
+                        "https://project.supabase.co/storage/v1/object/sign/"
+                        f"audio-uploads/{uid}/take.wav?token=audio"
+                    )
+                }
+            ]
+            if with_assets
+            else []
+        ),
+    }
+
+    tables: dict[str, MagicMock] = {}
+    for name, data in rows.items():
+        table = MagicMock()
+        query = table.select.return_value
+        query.eq.return_value = query
+        query.limit.return_value = query
+        query.execute.return_value = MagicMock(data=data)
+        tables[name] = table
+
+    mock_client.table.side_effect = lambda name: tables[name]
+    return mock_client
+
+
+def _delete_me(client: TestClient, token: str):
+    return client.delete(
+        "/v1/me",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+
+def test_account_deletion_requires_authentication(client: TestClient) -> None:
+    assert client.delete("/v1/me").status_code == 401
+
+
+def test_account_deletion_removes_identity_then_owned_storage(
+    monkeypatch: pytest.MonkeyPatch,
+    client: TestClient,
+    make_token: Callable[..., str],
+) -> None:
+    user_id = uuid4()
+    sb = _delete_account_mock(user_id)
+    events: list[str] = []
+    sb.auth.admin.delete_user.side_effect = lambda _uid: events.append("identity")
+    sb.storage.from_.return_value.remove.side_effect = (
+        lambda _keys: events.append("storage")
+    )
+    monkeypatch.setattr(me_module, "get_service_client", lambda: sb)
+
+    res = _delete_me(client, make_token(sub=user_id))
+
+    assert res.status_code == 204, res.text
+    sb.auth.admin.delete_user.assert_called_once_with(str(user_id))
+    assert events[0] == "identity"
+    assert events[1:] == ["storage", "storage", "storage"]
+
+    sb.storage.from_.assert_any_call("avatars")
+    sb.storage.from_.assert_any_call("score-images")
+    sb.storage.from_.assert_any_call("audio-uploads")
+    removed = [call.args[0] for call in sb.storage.from_.return_value.remove.call_args_list]
+    assert [f"{user_id}/avatar.jpg"] in removed
+    assert [f"{user_id}/page-1.jpg", f"{user_id}/page-2.jpg"] in removed
+    assert [f"{user_id}/take.wav"] in removed
+
+
+def test_account_deletion_refuses_to_orphan_a_owned_studio(
+    monkeypatch: pytest.MonkeyPatch,
+    client: TestClient,
+    make_token: Callable[..., str],
+) -> None:
+    user_id = uuid4()
+    sb = _delete_account_mock(user_id, owns_studio=True)
+    monkeypatch.setattr(me_module, "get_service_client", lambda: sb)
+
+    res = _delete_me(client, make_token(sub=user_id))
+
+    assert res.status_code == 409
+    assert "studio" in res.json()["detail"].lower()
+    sb.auth.admin.delete_user.assert_not_called()
+
+
+def test_identity_failure_leaves_storage_in_place_for_retry(
+    monkeypatch: pytest.MonkeyPatch,
+    client: TestClient,
+    make_token: Callable[..., str],
+) -> None:
+    user_id = uuid4()
+    sb = _delete_account_mock(user_id)
+    sb.auth.admin.delete_user.side_effect = RuntimeError("provider unavailable")
+    monkeypatch.setattr(me_module, "get_service_client", lambda: sb)
+
+    res = _delete_me(client, make_token(sub=user_id))
+
+    assert res.status_code == 502
+    sb.storage.from_.return_value.remove.assert_not_called()
+
+
+def test_storage_failure_does_not_resurrect_a_deleted_account(
+    monkeypatch: pytest.MonkeyPatch,
+    client: TestClient,
+    make_token: Callable[..., str],
+) -> None:
+    user_id = uuid4()
+    sb = _delete_account_mock(user_id)
+    sb.storage.from_.return_value.remove.side_effect = RuntimeError("storage down")
+    monkeypatch.setattr(me_module, "get_service_client", lambda: sb)
+
+    res = _delete_me(client, make_token(sub=user_id))
+
+    assert res.status_code == 204
+    sb.auth.admin.delete_user.assert_called_once_with(str(user_id))
+
+
+# ---- portable account export ------------------------------------------------
+
+
+def test_account_export_requires_authentication(client: TestClient) -> None:
+    assert client.get("/v1/me/export").status_code == 401
+
+
+def test_account_export_contains_owned_records_without_storage_tokens(
+    monkeypatch: pytest.MonkeyPatch,
+    client: TestClient,
+    make_token: Callable[..., str],
+) -> None:
+    user_id = uuid4()
+    other_id = uuid4()
+    assignment_id = uuid4()
+    sb = FakeSupabase()
+    sb.seed(
+        "users",
+        [
+            {
+                "id": str(user_id),
+                "email": "player@example.com",
+                "tier": "free",
+                "role": "student",
+                "studio_id": None,
+                "avatar_key": f"{user_id}/face.jpg",
+                "baseline_profile": {"piece": "personal"},
+            }
+        ],
+    )
+    sb.seed(
+        "scores",
+        [
+            {
+                "id": "score-mine",
+                "user_id": str(user_id),
+                "title": "Suite",
+                "score_json": {"measures": []},
+                "source_image_url": "https://storage.test/old-token",
+                "source_image_urls": ["https://storage.test/new-token-1", "x2"],
+            },
+            {
+                "id": "score-other",
+                "user_id": str(other_id),
+                "title": "Not mine",
+                "score_json": {"measures": []},
+            },
+        ],
+    )
+    sb.seed(
+        "analyses",
+        [
+            {
+                "id": "analysis-mine",
+                "user_id": str(user_id),
+                "score_id": "score-mine",
+                "audio_url": "https://storage.test/audio-token",
+                "result_json": {"verdict": "on_tempo"},
+            },
+            {
+                "id": "analysis-other",
+                "user_id": str(other_id),
+                "score_id": "score-other",
+                "audio_url": "secret",
+            },
+        ],
+    )
+    sb.seed(
+        "verdict_corrections",
+        [{"id": "correction", "user_id": str(user_id), "comment": "late"}],
+    )
+    sb.seed(
+        "assignments",
+        [
+            {
+                "id": str(assignment_id),
+                "student_user_id": str(user_id),
+                "teacher_user_id": str(user_id),
+                "teacher_instructions": "slowly",
+            }
+        ],
+    )
+    sb.seed(
+        "studios",
+        [
+            {
+                "id": "studio",
+                "owner_user_id": str(user_id),
+                "name": "My studio",
+                "invite_code": "SECRET",
+            }
+        ],
+    )
+    sb.seed(
+        "sync_events",
+        [{"id": "sync", "user_id": str(user_id), "payload": {"take": 1}}],
+    )
+    monkeypatch.setattr(me_module, "get_service_client", lambda: sb)
+
+    res = client.get(
+        "/v1/me/export",
+        headers={"Authorization": f"Bearer {make_token(sub=user_id)}"},
+    )
+
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["export_version"] == 1
+    assert body["generated_at"]
+    assert body["account"]["email"] == "player@example.com"
+    assert "avatar_key" not in body["account"]
+    assert [row["id"] for row in body["library"]] == ["score-mine"]
+    assert "source_image_url" not in body["library"][0]
+    assert "source_image_urls" not in body["library"][0]
+    assert [row["id"] for row in body["practice_analyses"]] == ["analysis-mine"]
+    assert "audio_url" not in body["practice_analyses"][0]
+    assert len(body["assignments"]) == 1, "student + teacher queries must de-duplicate"
+    assert "invite_code" not in body["owned_studios"][0]
+    assert body["stored_media"] == {
+        "profile_photo": True,
+        "score_pages": 2,
+        "practice_recordings": 1,
+        "included_in_json": False,
+    }

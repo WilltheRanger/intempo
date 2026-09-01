@@ -1,38 +1,58 @@
 import { useNavigation } from '@react-navigation/native';
+import { ChevronRight, Plus } from 'lucide-react-native';
 import { useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
 
 import { FadeIn } from '../../components/motion';
 import { AddPieceSheet } from '../../components/pieces/AddPieceSheet';
 import {
   Avatar,
+  Card,
   EmptyState,
   PageHeader,
   ScreenContainer,
+  SecondaryButton,
   SectionHeader,
   Text,
 } from '../../components/primitives';
 import { ContinueSkeleton } from '../../components/skeletons';
 import { useInsights } from '../../data/hooks/useInsights';
-import { useLatestTake } from '../../data/hooks/useLatestTake';
+import { useRecentTakes } from '../../data/hooks/useLatestTake';
 import { useMe } from '../../data/hooks/useMe';
 import { useCurrentPiece, useLibrary } from '../../data/hooks/usePieces';
 import { practiceTempo, usePracticeTempos } from '../../data/practiceTempo';
 import { usePreferences } from '../../data/preferences';
 import type { Piece } from '../../data/types';
 import { describeLoadError } from '../../data/api/describeError';
-import { spacing } from '../../design';
+import {
+  BORDER_WIDTH,
+  colors,
+  CONTROL_HEIGHT,
+  ICON_SIZE,
+  ICON_STROKE_WIDTH,
+  motion,
+  radii,
+  spacing,
+} from '../../design';
+import {
+  formatLastPracticedShort,
+  joinMetadata,
+} from '../../lib/format';
 import { getGreeting } from '../../lib/greeting';
-import { factFor } from '../../lib/facts';
-import { formatTendency } from '../../lib/tempo';
-import { motion } from '../../design';
+import {
+  notationSetupLesson,
+  practiceLessonFor,
+  type PracticeLesson,
+} from '../../lib/practiceLesson';
+import { formatTempo, formatTendency } from '../../lib/tempo';
 import { suggestionsFor } from '../../lib/today';
 import type { AddPieceOption, TabScreenNavigation } from '../../navigation/types';
 import { WarmupPanel } from './WarmupPanel';
 import { PracticeCard } from './PracticeCard';
 import { TodayRow } from './TodayRow';
 
-const AVATAR_SIZE = 36;
+const AVATAR_SIZE = 52;
+const WIDE_HOME_BREAKPOINT = 900;
 
 /**
  * Tappable box around the mark.
@@ -43,43 +63,27 @@ const AVATAR_SIZE = 36;
  * no effect under react-native-web, so the target couldn't be verified in the
  * one place this build can be driven. A real box behaves the same everywhere.
  */
-const AVATAR_TARGET = 48;
+const AVATAR_TARGET = 52;
 const AVATAR_INSET = (AVATAR_TARGET - AVATAR_SIZE) / 2;
 
 /**
- * Today: the piece to pick back up, then a few reasons to look elsewhere.
+ * Today is a practice dashboard, not a miniature library.
  *
- * **The card is a card again**, and it is the only one on the screen. A piece,
- * its tempo and the action that starts it are one object and earn the box
- * (§3 law 3); what follows are separate suggestions, so they get rules instead.
- *
- * The order is deliberate: the two things to play first — the piece you are on
- * and the warmup — then the fact, then the two blocks you read rather than act
- * on. The last two are doors to other screens, so they belong at the foot of
- * this one.
- *
- * **What is not here is the library preview.** Three rows of the Library tab
- * once sat at the bottom of this screen, which made its lower two-thirds a
- * copy of a destination one tap away. The rows below are not that: each names
- * a piece *and the reason it is being raised*. A row without a reason would be
- * a list, and a list belongs in the Library.
- *
- * **Nor is there a "Last take" section any more.** `getCurrentPiece` resolves
- * through the newest analysis, so the piece being continued and the piece last
- * recorded are the same piece by construction — the section was a second copy
- * of the card. Its one piece of information, the pipeline's verdict sentence,
- * moved onto the card where it belongs.
- *
- * Every block hides itself when its data is absent, so a new account with one
- * piece and no analyses sees a card and nothing else — which is the truth
- * about a new account rather than a screen full of empty furniture.
+ * The first column gets someone playing: resume the current piece, then warm
+ * up. The supporting column answers the next three useful questions: what
+ * should this take accomplish, what else needs attention, and what pattern is
+ * showing up across recent sessions. Every block is either an action or an
+ * explanation of real practice data; decorative trivia does not compete with
+ * the session a musician came here to start.
  */
 export function TodayScreen() {
   const navigation = useNavigation<TabScreenNavigation<'Today'>>();
+  const { width: viewportWidth } = useWindowDimensions();
+  const isWide = viewportWidth >= WIDE_HOME_BREAKPOINT;
   const currentPiece = useCurrentPiece();
   const library = useLibrary();
   const insights = useInsights();
-  const latestTake = useLatestTake();
+  const recentTakes = useRecentTakes(3);
   const me = useMe();
   const [addSheetVisible, setAddSheetVisible] = useState(false);
 
@@ -95,7 +99,7 @@ export function TodayScreen() {
       currentPiece.refetch(),
       library.refetch(),
       insights.refetch(),
-      latestTake.refetch(),
+      recentTakes.refetch(),
       me.refetch(),
     ]);
   }
@@ -106,6 +110,10 @@ export function TodayScreen() {
   // recording one. Reading the score without recording is `PieceScore`,
   // reached from the piece itself.
   function openPractice(target: Piece) {
+    if ((target.score?.measures.length ?? 0) === 0) {
+      navigation.navigate('PieceDetail', { pieceId: target.id });
+      return;
+    }
     navigation.navigate('Record', { pieceId: target.id });
   }
 
@@ -124,8 +132,8 @@ export function TodayScreen() {
     }, motion.fast);
   }
 
-  const take = latestTake.data ?? null;
-  const fact = factFor();
+  const takes = recentTakes.data ?? [];
+  const take = takes[0] ?? null;
 
   const { attention, neglected } = suggestionsFor({
     pieces: library.data ?? [],
@@ -150,7 +158,7 @@ export function TodayScreen() {
 
   if (currentPiece.isPending) {
     return (
-      <ScreenContainer>
+      <ScreenContainer contentStyle={styles.page}>
         {header}
         <ContinueSkeleton />
       </ScreenContainer>
@@ -159,7 +167,7 @@ export function TodayScreen() {
 
   if (currentPiece.isError) {
     return (
-      <ScreenContainer onRefresh={refresh}>
+      <ScreenContainer onRefresh={refresh} contentStyle={styles.page}>
         {header}
         <EmptyState
           title="Couldn't load your pieces"
@@ -177,7 +185,7 @@ export function TodayScreen() {
   // duplicated, so all three routes in are offered from the first screen.
   if (!piece) {
     return (
-      <ScreenContainer onRefresh={refresh}>
+      <ScreenContainer onRefresh={refresh} contentStyle={styles.page}>
         {header}
         <EmptyState
           title="Nothing to practice yet"
@@ -194,115 +202,296 @@ export function TodayScreen() {
     );
   }
 
+  const workingBpm = practiceTempo.for(piece.id, piece.markedBpm);
+  const hasCurrentTake = take?.pieceId === piece.id;
+  const hasNotation = (piece.score?.measures.length ?? 0) > 0;
+  const readingNotation =
+    piece.transcriptionStatus === 'queued' ||
+    piece.transcriptionStatus === 'reading';
+  const summaryDetail = summary
+    ? `Across ${summary.sessions === 1 ? '1 session' : `${summary.sessions} sessions`} in the last ${summary.windowDays} days`
+    : '';
+
   return (
-    <ScreenContainer onRefresh={refresh}>
+    <ScreenContainer onRefresh={refresh} contentStyle={styles.page}>
       {header}
 
-      <SectionHeader label="Continue practicing" />
-      <PracticeCard
-        piece={piece}
-        workingBpm={practiceTempo.for(piece.id, piece.markedBpm)}
-        // Only when it is genuinely this piece's take. Against the API it
-        // always is; a fixture or a deleted score could disagree, and a
-        // verdict about a different piece on this card would be a lie.
-        lastTakeHeadline={take && take.pieceId === piece.id ? take.headline : null}
-        onContinue={() => openPractice(piece)}
-      />
-
-      {/*
-        Straight after the piece you are working. Both are things to play, so
-        they belong together — the fact below them is the only block on the
-        screen that asks nothing of you, and it reads better once the playing
-        is done.
-      */}
-      <FadeIn index={0}>
-        <View style={styles.section}>
-          <SectionHeader label="Warmup" />
-          <WarmupPanel
-            instrument={instrument}
-            onStart={() => navigation.navigate('Warmup')}
+      <View style={[styles.dashboard, isWide && styles.dashboardWide]}>
+        <View style={styles.primaryColumn}>
+          <SectionHeader label="Continue practicing" />
+          <PracticeCard
+            piece={piece}
+            workingBpm={workingBpm}
+            // Only when it is genuinely this piece's take. Against the API it
+            // always is; a fixture or a deleted score could disagree, and a
+            // verdict about a different piece on this card would be a lie.
+            lastTakeHeadline={hasCurrentTake && take ? take.headline : null}
+            onContinue={() => openPractice(piece)}
           />
-        </View>
-      </FadeIn>
 
-      {/*
-        Label, lead, detail — the shape stays; the lead is sans now.
+          <AddPieceAction onPress={() => setAddSheetVisible(true)} />
 
-        On this screen `pieceTitle` renders five times and three of them name
-        something you can play: the warmup above and the two suggestions below.
-        A serif lead put the fact in the repertoire's voice while sitting in
-        the middle of that run — and five of the twenty-four leads in
-        `facts.ts` are outright names of things ("The Chaconne", "Il Cannone",
-        "The wolf tone"), so on those days the block was indistinguishable from
-        a suggestion row.
-
-        Nothing here is misaligned; the geometry was checked and is exact. It
-        is the *meaning* of a style that was wrong, which is why it read as off
-        without being locatable. The block is a footnote by its own docstring,
-        and sans is it saying so (§3 law 4).
-      */}
-      <FadeIn index={1}>
-        <View style={styles.section}>
-          <SectionHeader label="Did you know" />
-          <Text variant="body">{fact.lead}</Text>
-          <Text
-            variant="metadataSmall"
-            color="textSecondary"
-            style={styles.factText}
-          >
-            {fact.text}
-          </Text>
-        </View>
-      </FadeIn>
-
-      {attention || neglected ? (
-        <FadeIn index={2}>
-          <View style={styles.section}>
-            <SectionHeader label="Also worth a look" />
-            {attention ? (
-              <TodayRow
-                title={attention.title}
-                detail={attention.detail}
-                onPress={() =>
-                  navigation.navigate('PieceDetail', { pieceId: attention.pieceId })
+          <FadeIn index={0}>
+            <View style={styles.section}>
+              <SectionHeader label="Practice lesson" />
+              <LessonCard
+                lesson={
+                  !hasNotation
+                    ? notationSetupLesson(piece.title, readingNotation)
+                    : practiceLessonFor({
+                        verdict: hasCurrentTake && take ? take.verdict : null,
+                        pieceTitle: piece.title,
+                        workingBpm,
+                        beatUnit: piece.score?.tempo_beat_unit,
+                      })
                 }
-                last={!neglected}
+                onTry={() => openPractice(piece)}
               />
-            ) : null}
-            {neglected ? (
-              <TodayRow
-                title={neglected.title}
-                detail={neglected.detail}
-                onPress={() =>
-                  navigation.navigate('PieceDetail', { pieceId: neglected.pieceId })
-                }
-                last
-              />
-            ) : null}
-          </View>
-        </FadeIn>
-      ) : null}
+            </View>
+          </FadeIn>
 
-      {summary ? (
-        <FadeIn index={3}>
-          <View style={styles.section}>
-            <SectionHeader label={`Last ${summary.windowDays} days`} />
-            <TodayRow
-              title={formatTendency(summary.verdict)}
-              detail={
-                summary.sessions === 1 ? '1 session' : `${summary.sessions} sessions`
-              }
-              onPress={() => navigation.navigate('Insights')}
-              last
-            />
-          </View>
-        </FadeIn>
-      ) : null}
+          <FadeIn index={1}>
+            <View style={styles.section}>
+              <SectionHeader label="Warmup" />
+              <Card>
+                <WarmupPanel
+                  instrument={instrument}
+                  onStart={() => navigation.navigate('Warmup')}
+                />
+              </Card>
+            </View>
+          </FadeIn>
+
+          {takes.length > 0 ? (
+            <FadeIn index={2}>
+              <View style={styles.section}>
+                <SectionHeader label="Recent practice" />
+                <Card>
+                  {takes.map((recentTake, index) => (
+                    <TodayRow
+                      key={recentTake.id}
+                      title={recentTake.pieceTitle}
+                      detail={joinMetadata([
+                        formatLastPracticedShort(recentTake.recordedAt),
+                        formatTempo(recentTake.targetBpm, recentTake.tempoBeatUnit),
+                        formatTendency(recentTake.verdict),
+                      ])}
+                      onPress={() =>
+                        navigation.navigate('Verdict', {
+                          analysisId: recentTake.id,
+                        })
+                      }
+                      last={index === takes.length - 1}
+                    />
+                  ))}
+                </Card>
+              </View>
+            </FadeIn>
+          ) : null}
+        </View>
+
+        <View
+          style={[
+            styles.secondaryColumn,
+            isWide ? styles.secondaryColumnWide : styles.secondaryColumnNarrow,
+          ]}
+        >
+          <FadeIn index={3}>
+            <View>
+              <SectionHeader label="Practice focus" />
+              <Card>
+                <Text variant="pieceTitle">
+                  {readingNotation
+                    ? 'Reading your sheet music'
+                    : !hasNotation
+                      ? 'Add the music first'
+                    : hasCurrentTake
+                      ? 'Make the next take comparable'
+                      : 'Set your first benchmark'}
+                </Text>
+                <Text
+                  variant="body"
+                  color="textSecondary"
+                  style={styles.focusText}
+                >
+                  {readingNotation
+                    ? 'InTempo is turning the pages into notation. Practice recording will unlock when that reading finishes.'
+                    : !hasNotation
+                      ? `Attach the sheet music for ${piece.title} so InTempo can follow notes, rests, and re-entries before recording.`
+                    : hasCurrentTake
+                      ? `Stay at ${formatTempo(workingBpm, piece.score?.tempo_beat_unit)} and record one more honest run. Comparing two takes shows whether the change held.`
+                      : `Record one honest run of ${piece.title}. InTempo will map where your tempo holds and where it drifts.`}
+                </Text>
+                <SecondaryButton
+                  label={
+                    readingNotation
+                      ? 'View reading progress'
+                      : !hasNotation
+                        ? 'Add sheet music'
+                      : hasCurrentTake
+                        ? 'Record another take'
+                        : 'Record first take'
+                  }
+                  onPress={() => openPractice(piece)}
+                  style={styles.focusAction}
+                />
+              </Card>
+            </View>
+          </FadeIn>
+
+          {attention || neglected ? (
+            <FadeIn index={4}>
+              <View style={styles.section}>
+                <SectionHeader label="Repertoire queue" />
+                {attention ? (
+                  <TodayRow
+                    title={attention.title}
+                    detail={attention.detail}
+                    onPress={() =>
+                      navigation.navigate('PieceDetail', { pieceId: attention.pieceId })
+                    }
+                    last={!neglected}
+                  />
+                ) : null}
+                {neglected ? (
+                  <TodayRow
+                    title={neglected.title}
+                    detail={neglected.detail}
+                    onPress={() =>
+                      navigation.navigate('PieceDetail', { pieceId: neglected.pieceId })
+                    }
+                    last
+                  />
+                ) : null}
+              </View>
+            </FadeIn>
+          ) : null}
+
+          {summary ? (
+            <FadeIn index={5}>
+              <View style={styles.section}>
+                <SectionHeader label="Practice snapshot" />
+                <TodayRow
+                  title={formatTendency(summary.verdict)}
+                  detail={summaryDetail}
+                  onPress={() => navigation.navigate('Insights')}
+                  last
+                />
+              </View>
+            </FadeIn>
+          ) : null}
+        </View>
+      </View>
+
+      <AddPieceSheet
+        visible={addSheetVisible}
+        onClose={() => setAddSheetVisible(false)}
+        onSelect={handleSelectOption}
+      />
     </ScreenContainer>
   );
 }
 
+function AddPieceAction({ onPress }: { onPress: () => void }) {
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel="Add a new piece"
+      accessibilityHint="Scan sheet music, import a score, or enter a piece manually"
+      style={({ pressed }) => [
+        styles.addPieceAction,
+        pressed && styles.addPieceActionPressed,
+      ]}
+    >
+      <View style={styles.addPieceIcon}>
+        <Plus
+          size={ICON_SIZE.md}
+          strokeWidth={ICON_STROKE_WIDTH}
+          color={colors.actionText}
+        />
+      </View>
+      <View style={styles.addPieceCopy}>
+        <Text variant="button">Add a new piece</Text>
+        <Text
+          variant="metadataSmall"
+          color="textSecondary"
+          style={styles.addPieceDetail}
+        >
+          Scan sheet music, import a score, or enter it manually.
+        </Text>
+      </View>
+      <ChevronRight
+        size={ICON_SIZE.md}
+        strokeWidth={ICON_STROKE_WIDTH}
+        color={colors.textTertiary}
+      />
+    </Pressable>
+  );
+}
+
+function LessonCard({
+  lesson,
+  onTry,
+}: {
+  lesson: PracticeLesson;
+  onTry: () => void;
+}) {
+  return (
+    <Card>
+      <Text variant="sectionLabel" color="textSecondary">
+        {lesson.context}
+      </Text>
+      <Text variant="pieceTitle" style={styles.lessonTitle}>
+        {lesson.title}
+      </Text>
+      <Text variant="body" color="textSecondary" style={styles.lessonBody}>
+        {lesson.body}
+      </Text>
+      <View style={styles.lessonExercise}>
+        <Text variant="sectionLabel" color="textSecondary">
+          Try this
+        </Text>
+        <Text variant="body" style={styles.lessonExerciseText}>
+          {lesson.exercise}
+        </Text>
+      </View>
+      <SecondaryButton
+        label="Try it in practice"
+        onPress={onTry}
+        style={styles.lessonAction}
+      />
+    </Card>
+  );
+}
+
 const styles = StyleSheet.create({
+  page: {
+    width: '100%',
+    maxWidth: 1180,
+    alignSelf: 'center',
+  },
+  dashboard: {
+    width: '100%',
+  },
+  dashboardWide: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing['3xl'],
+  },
+  primaryColumn: {
+    flex: 1,
+    minWidth: 0,
+  },
+  secondaryColumn: {
+    minWidth: 0,
+  },
+  secondaryColumnWide: {
+    width: 340,
+  },
+  secondaryColumnNarrow: {
+    marginTop: spacing['2xl'],
+  },
   avatar: {
     width: AVATAR_TARGET,
     height: AVATAR_TARGET,
@@ -317,8 +506,57 @@ const styles = StyleSheet.create({
   pressed: {
     opacity: 0.6,
   },
-  factText: {
-    marginTop: 2,
+  addPieceAction: {
+    minHeight: CONTROL_HEIGHT + spacing['2xl'],
+    marginTop: spacing.md,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    backgroundColor: colors.surface,
+    borderWidth: BORDER_WIDTH,
+    borderColor: colors.borderStrong,
+    borderRadius: radii.md,
+  },
+  addPieceActionPressed: {
+    backgroundColor: colors.surfacePressed,
+  },
+  addPieceIcon: {
+    width: spacing['4xl'],
+    height: spacing['4xl'],
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.actionBg,
+    borderRadius: radii.sm,
+  },
+  addPieceCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  addPieceDetail: {
+    marginTop: spacing.xs,
+  },
+  lessonTitle: {
+    marginTop: spacing.xs,
+  },
+  lessonBody: {
+    marginTop: spacing.sm,
+  },
+  lessonExercise: {
+    marginTop: spacing.xl,
+  },
+  lessonExerciseText: {
+    marginTop: spacing.xs,
+  },
+  lessonAction: {
+    marginTop: spacing.lg,
+  },
+  focusText: {
+    marginTop: spacing.sm,
+  },
+  focusAction: {
+    marginTop: spacing.lg,
   },
   section: {
     // One step tighter than it was. At 32pt the blocks read as separate pages

@@ -27,6 +27,7 @@ from pydantic import BaseModel
 
 from app.routers.analyses import CreateAnalysisRequest
 from app.routers.scores import (
+    AttachScorePagesRequest,
     CreateScoreRequest,
     ImportScoreRequest,
     UpdateScoreRequest,
@@ -62,6 +63,7 @@ def _model_fields(model: type[BaseModel]) -> tuple[set[str], set[str]]:
 CASES = [
     # (python model, ts file, ts interfaces that together make one body)
     (CreateScoreRequest, "scores.ts", ["TranscribedScoreInput", "HandEnteredScoreInput"]),
+    (AttachScorePagesRequest, "scores.ts", ["AttachScorePagesInput"]),
     (ImportScoreRequest, "scores.ts", ["ImportScoreInput"]),
     (UpdateScoreRequest, "scores.ts", ["UpdateScoreInput"]),
     (CreateAnalysisRequest, "analyses.ts", ["CreateAnalysisInput"]),

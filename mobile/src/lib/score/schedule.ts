@@ -1,5 +1,6 @@
 import type { Duration, ScoreJson } from '../../data/types';
 import { flattenNotes, readTies } from '../notation/ties';
+import { measuresInPlayOrder } from './playOrder';
 
 /**
  * A score and a tempo, turned into notes with times and pitches.
@@ -150,10 +151,9 @@ const DEFAULT_ARTICULATION = 0.85;
  * rather than being re-struck — re-striking is precisely the error a musician
  * would hear.
  *
- * **Repeats are not followed.** `score_json` carries them and this plays
- * straight through. Listening to a passage is the use here, and a repeat that
- * doubles the length of a preview is more surprising than useful. If that
- * changes, it belongs here rather than in a player.
+ * Repeats and first/second endings follow the same performed order as backend
+ * alignment. A reference that skips a repeat teaches a different timeline from
+ * the one the take is graded against.
  */
 export function scheduleScore(
   score: ScoreJson,
@@ -171,7 +171,7 @@ export function scheduleScore(
   // could not see one, and a tie is only real when both noteheads are the same
   // pitch — otherwise it is a slur, which sounds as separate notes. See
   // `notation/ties.ts`.
-  const measures = score.measures ?? [];
+  const measures = measuresInPlayOrder(score);
   const flat = flattenNotes(measures);
   const ties = readTies(measures);
   // Which measure each flat note belongs to, so a scheduled note can still say.

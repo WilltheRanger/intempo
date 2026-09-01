@@ -636,6 +636,11 @@ class ScoreJson(_Strict):
     time_signature: str | None = Field(default=None, max_length=20)
     key_signature: str | None = Field(default=None, max_length=40)
     tempo_marking: str | None = None
+    #: The note value the printed metronome mark counts. `bpm_hint` itself is
+    #: always quarter notes per minute because alignment uses quarter-beats;
+    #: keeping this lets the interface show the musician the number written on
+    #: the page without changing that internal clock. Absent on older scores.
+    tempo_beat_unit: Duration | None = None
     bpm_hint: int | None = Field(default=None, ge=20, le=300)
     #: Which clef the staff is in, or None when nothing has read the page yet.
     #:

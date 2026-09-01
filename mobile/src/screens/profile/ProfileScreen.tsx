@@ -1,4 +1,5 @@
 import { useNavigation } from '@react-navigation/native';
+import * as ImagePicker from 'expo-image-picker';
 import { useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
@@ -19,6 +20,7 @@ import {
 } from '../../components/primitives';
 import { signOut } from '../../data/auth/session';
 import { useMe } from '../../data/hooks/useMe';
+import { useUpdateProfile, useUploadAvatar } from '../../data/hooks/useProfile';
 import type { Musician } from '../../data/types';
 import { preferences, usePreferences } from '../../data/preferences';
 import type { Instrument, MetronomeMode } from '../../data/types';
@@ -49,9 +51,43 @@ export function ProfileScreen() {
   const [confirmingSignOut, setConfirmingSignOut] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
   const [signOutError, setSignOutError] = useState<string | null>(null);
-  // Tapping the photo is the affordance; the camera or pencil badge over it
-  // waits until there's an upload behind it to justify the decoration.
-  const [photoNote, setPhotoNote] = useState(false);
+  const saveProfile = useUpdateProfile();
+  const uploadAvatar = useUploadAvatar();
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null);
+  const [photoError, setPhotoError] = useState<string | null>(null);
+  const photoBusy = saveProfile.isPending || uploadAvatar.isPending;
+
+  async function pickPhoto() {
+    if (photoBusy) {
+      return;
+    }
+    setPhotoError(null);
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.8,
+    });
+    if (result.canceled || !result.assets?.length) {
+      return;
+    }
+
+    const asset = result.assets[0];
+    setPhotoPreview(asset.uri);
+    try {
+      const avatarKey = await uploadAvatar.mutateAsync({
+        uri: asset.uri,
+        mimeType: asset.mimeType ?? 'image/jpeg',
+      });
+      await saveProfile.mutateAsync({ avatar_key: avatarKey });
+    } catch (cause) {
+      setPhotoError(
+        cause instanceof Error
+          ? cause.message
+          : 'That photo could not be saved. Try again.',
+      );
+    }
+  }
 
   async function handleSignOut() {
     setConfirmingSignOut(false);
@@ -103,12 +139,13 @@ export function ProfileScreen() {
       */}
       <View style={styles.identity}>
         <Pressable
-          onPress={() => setPhotoNote(true)}
+          onPress={() => void pickPhoto()}
+          disabled={photoBusy}
           accessibilityRole="button"
-          accessibilityLabel="Edit photo"
+          accessibilityLabel={photoBusy ? 'Changing photo' : 'Change photo'}
           style={({ pressed }) => (pressed ? styles.pressed : undefined)}
         >
-          <Avatar source={musician.avatarUrl} size={AVATAR_SIZE} />
+          <Avatar source={photoPreview ?? musician.avatarUrl} size={AVATAR_SIZE} />
         </Pressable>
 
         <Text variant="body" style={styles.identityEmail} numberOfLines={2}>
@@ -116,15 +153,17 @@ export function ProfileScreen() {
         </Text>
       </View>
 
-      {photoNote ? (
-        <Text
-          variant="metadataSmall"
-          color="textTertiary"
-          style={styles.photoNote}
-        >
-          Changing your photo isn&apos;t available yet.
-        </Text>
-      ) : null}
+      <Text
+        variant="metadataSmall"
+        color={photoError ? 'textSecondary' : 'textTertiary'}
+        style={styles.photoNote}
+      >
+        {photoError
+          ? photoError
+          : photoBusy
+            ? 'Saving your photo…'
+            : 'Choose your photo to change it.'}
+      </Text>
 
       <SectionHeader label="Account" style={styles.section} />
       <Card padded={false}>
@@ -239,6 +278,22 @@ export function ProfileScreen() {
         </View>
       </Card>
 
+      <SectionHeader label="Data & privacy" style={styles.section} />
+      <Card padded={false}>
+        <View style={styles.rows}>
+          <LinkRow
+            label="Download my data"
+            divided={false}
+            onPress={() => navigation.navigate('ExportData')}
+          />
+          <LinkRow
+            label="Delete account"
+            value="Permanent"
+            onPress={() => navigation.navigate('DeleteAccount')}
+          />
+        </View>
+      </Card>
+
       <SectionHeader label="About" style={styles.section} />
       <Card padded={false}>
         <View style={styles.rows}>
@@ -246,6 +301,10 @@ export function ProfileScreen() {
             label="Version"
             value={appConfig.expo.version}
             divided={false}
+          />
+          <LinkRow
+            label="Help & connection"
+            onPress={() => navigation.navigate('Help')}
           />
           <LinkRow
             label="Acknowledgements"

@@ -623,6 +623,7 @@ def _combine(parts: list[ScoreJson]) -> ScoreJson:
             "time_signature": first("time_signature"),
             "key_signature": first("key_signature"),
             "tempo_marking": first("tempo_marking"),
+            "tempo_beat_unit": first("tempo_beat_unit"),
             "bpm_hint": first("bpm_hint"),
             "ocr_confidence": min(part.ocr_confidence for part in parts),
         }

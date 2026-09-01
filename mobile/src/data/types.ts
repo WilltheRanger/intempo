@@ -162,6 +162,9 @@ export type Duration =
   | 'septuplet_sixty_fourth'
   | 'septuplet_one_twenty_eighth';
 
+/** The note value counted by the metronome number printed on the page. */
+export type TempoBeatUnit = Duration;
+
 export type RepeatType = 'repeat' | 'first_ending' | 'second_ending';
 
 export interface ScoreNote {
@@ -184,6 +187,10 @@ export interface ScoreNote {
    * is a change to the stave, so it goes through the owner (CLAUDE.md §2).
    */
   chord_pitches?: string[];
+  /** The printed duration is intentionally held beyond its written value. */
+  fermata?: boolean;
+  /** Audible grace-note attacks immediately before this main note. */
+  grace_notes?: number;
 }
 
 export interface ScoreSlur {
@@ -305,6 +312,9 @@ export interface ScoreJson {
   time_signature: string | null;
   key_signature: string | null;
   tempo_marking: string | null;
+  /** Absent on scores saved before printed tempo units were preserved. */
+  tempo_beat_unit?: TempoBeatUnit | null;
+  /** Quarter notes per minute, regardless of the printed beat unit. */
   bpm_hint: number | null;
   /**
    * Null until something has read the page.
@@ -719,7 +729,10 @@ export interface TakeResult {
   pieceTitle: string;
   composer: string | null;
   recordedAt: string;
+  /** Internal quarter-note rate used by the timing engine. */
   targetBpm: number;
+  /** The note value that number is shown in; absent on older scores. */
+  tempoBeatUnit?: TempoBeatUnit | null;
   /**
    * Set when the run failed instead of producing a result. When this is set
    * every field below it is empty or a placeholder — there is no analysis to

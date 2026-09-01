@@ -29,6 +29,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from app.services.ocr.validate import validate_measures
 
 from app.auth import current_user_id, current_user_id_provisioned
+from app.config import settings
 from app.db import get_service_client
 from app.routers.upload import SCORE_BUCKET
 from app.services.ocr.musicxml import MusicXMLError, score_json_from_musicxml
@@ -51,7 +52,6 @@ from app.services.training import (
 # and signing readable ones for display.
 from app.services.page_image import (
     SIGNED_DOWNLOAD_TTL_SECONDS,
-    STORAGE_PREFIXES as _STORAGE_PREFIXES,
     object_key_from as _object_key_from,
 )
 
@@ -81,7 +81,7 @@ class CreateScoreRequest(BaseModel):
     #: `image_urls` is the one to send; this is what a build from before
     #: multi-page scanning has.
     image_url: str | None = Field(default=None, min_length=1, max_length=2048)
-    #: Every page of the part, in page order.
+    #: Every page reference (durable object key or legacy URL), in page order.
     #:
     #: Order is the caller's, settled before it uploads anything
     #: (`lib/scan/drag.ts`), so there is no ordering decision here to get wrong.
@@ -122,7 +122,7 @@ class CreateScoreRequest(BaseModel):
                 )
             for url in self.image_urls:
                 if not url or len(url) > 2048:
-                    raise ValueError("every entry in image_urls must be a URL")
+                    raise ValueError("every entry in image_urls must be a page reference")
         if self.pages() == []:
             if self.clef is None:
                 raise ValueError(
@@ -137,7 +137,40 @@ class CreateScoreRequest(BaseModel):
         return self
 
     def pages(self) -> list[str]:
-        """The pages this request is for, in page order. Empty means by hand."""
+        """Page references in order. Empty means the piece was entered by hand."""
+        if self.image_urls is not None:
+            return list(self.image_urls)
+        return [self.image_url] if self.image_url else []
+
+
+class AttachScorePagesRequest(BaseModel):
+    """Photographs to read into an existing scoreless library entry."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    image_url: str | None = Field(default=None, min_length=1, max_length=2048)
+    image_urls: list[str] | None = Field(default=None)
+
+    @model_validator(mode="after")
+    def _one_page_form(self) -> "AttachScorePagesRequest":
+        if self.image_url is not None and self.image_urls is not None:
+            raise ValueError(
+                "send image_urls for a scan; image_url is the single-page form "
+                "and the two cannot both be given"
+            )
+        pages = self.pages()
+        if not pages:
+            raise ValueError("attach at least one page")
+        if len(pages) > MAX_PAGES:
+            raise ValueError(
+                f"a scan may hold at most {MAX_PAGES} pages; "
+                f"this one has {len(pages)}"
+            )
+        if any(not url or len(url) > 2048 for url in pages):
+            raise ValueError("every attached page must be a page reference")
+        return self
+
+    def pages(self) -> list[str]:
         if self.image_urls is not None:
             return list(self.image_urls)
         return [self.image_url] if self.image_url else []
@@ -257,9 +290,9 @@ class ScoreResponse(BaseModel):
     title: str
     composer: str | None = None
     movement: str | None = None
-    #: What was uploaded. Historical: the signed upload URL, long expired.
-    #: Never usable for display — see `image_url`. Null for a piece entered
-    #: by hand, which was never photographed at all.
+    #: Durable private-storage reference for new rows; historical rows may
+    #: still carry an expired signed upload URL. Never render this directly —
+    #: see `image_url`. Null for a piece entered by hand.
     source_image_url: str | None = None
     #: A freshly signed download URL for the sheet music, or null when the
     #: object key can't be recovered or storage isn't configured. This is the
@@ -308,33 +341,66 @@ class ScoreResponse(BaseModel):
     updated_at: str
 
 
-#: The shapes a Supabase storage URL takes for one object, as path prefixes
-#: before `<bucket>/<path>`. Both the ownership check and the object-key
-#: extraction below read them, so a new shape is added in exactly one place.
-def _assert_image_url_owned_by(image_url: str, user_id: UUID) -> None:
-    """The signed URL must point at the score-images bucket under the user's prefix.
+def _owned_image_key(reference: str, user_id: UUID) -> str:
+    """Return the durable object key named by an owned page reference.
 
-    Supabase signed URLs look like:
-      https://<project>.supabase.co/storage/v1/object/sign/<bucket>/<path>?token=...
-    For this user's image:
-      <bucket> = "score-images"
-      <path>   = "<user_id>/<uuid>.<ext>"
-    Anything else gets 403 — we never download arbitrary internet URLs.
+    New clients send the key returned by the upload endpoint. It does not
+    expire, so a slow multi-page upload and the time spent naming a piece cannot
+    invalidate page one before the score is created. Older installed clients
+    still send a signed upload URL; its path contains the same key and remains
+    accepted.
+
+    The service-role client can read every object, so ownership is checked here
+    before the reference is stored. A valid key has exactly one owner segment
+    and one generated filename — nested paths and URL-like strings are refused
+    instead of being normalised into a different object.
     """
-    parsed = urlparse(image_url)
-    if parsed.scheme not in {"https", "http"}:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="image_url must be http(s)",
-        )
-    if not any(
-        parsed.path.startswith(f"{prefix}{SCORE_BUCKET}/{user_id}/")
-        for prefix in _STORAGE_PREFIXES
+    parsed = urlparse(reference)
+    if parsed.scheme:
+        if parsed.scheme not in {"https", "http"}:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="page reference must be an object key or an http(s) storage URL",
+            )
+        key = _object_key_from(reference)
+    else:
+        if (
+            parsed.netloc
+            or reference.startswith(("/", "\\"))
+            or any(mark in reference for mark in ("?", "#"))
+        ):
+            key = None
+        else:
+            key = reference.removeprefix(f"{SCORE_BUCKET}/")
+
+    owner, separator, filename = (key or "").partition("/")
+    if (
+        owner != str(user_id)
+        or not separator
+        or not filename
+        or "/" in filename
+        or "\\" in filename
+        or filename in {".", ".."}
     ):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="image_url must be a Supabase score-images URL under your user prefix",
+            detail="page reference must name a score image owned by your account",
         )
+    return key
+
+
+def _durable_image_url(reference: str, user_id: UUID) -> str:
+    """Canonical private-storage URL stored on the score row.
+
+    It carries no token. Every reader extracts the key and signs a fresh
+    download URL, so this value remains useful after the five-minute upload
+    permission has expired.
+    """
+    key = _owned_image_key(reference, user_id)
+    return (
+        f"{settings.SUPABASE_URL.rstrip('/')}/storage/v1/object/authenticated/"
+        f"{SCORE_BUCKET}/{key}"
+    )
 
 
 #: Display URLs already signed, by object key, with their real expiry.
@@ -752,15 +818,14 @@ def create_score(
     Still 201 with the row, not 202 with an id: the piece genuinely exists when
     this returns, and everything except its notes is already usable.
     """
-    pages = body.pages()
-    manual = not pages
-    for url in pages:
-        # Before anything is written, and **every page, not the first**. A URL
-        # that isn't this user's object is a 403 the caller can act on, and a
-        # row that could never be transcribed should not be created to discover
-        # that in a worker. Checking only page one would let a scan carry
-        # somebody else's page 2 into a read.
-        _assert_image_url_owned_by(url, user_id)
+    references = body.pages()
+    manual = not references
+    # Canonicalise every page before anything is written. The returned values
+    # are durable private-storage URLs with no upload token; old signed URLs
+    # and new object keys converge on the same stored form.
+    pages = [
+        _durable_image_url(reference, user_id) for reference in references
+    ]
 
     score = _hand_entered(body) if manual else _awaiting_transcription()
 
@@ -803,6 +868,86 @@ def create_score(
     # uploaded without a second request. This used to return an unsigned row,
     # which meant POST was the one response whose `image_url` was always null.
     return _with_image_urls(rows)[0]
+
+
+@router.post("/{score_id}/transcription", response_model=ScoreResponse)
+def attach_score_pages(
+    score_id: UUID,
+    body: AttachScorePagesRequest,
+    user_id: UUID = Depends(current_user_id),
+) -> ScoreResponse:
+    """Read sheet music into an existing hand-entered piece.
+
+    A manual library entry is useful for a metronome, but it has no notes for
+    recording analysis to follow. This turns that same entry into a photographed
+    score instead of forcing the musician to create a duplicate and lose the
+    title, tempo and any history already attached to it.
+    """
+    pages = [
+        _durable_image_url(reference, user_id)
+        for reference in body.pages()
+    ]
+
+    client = _service_client()
+    existing = (
+        client.table("scores")
+        .select("*")
+        .eq("id", str(score_id))
+        .eq("user_id", str(user_id))
+        .limit(1)
+        .execute()
+    ).data or []
+    if not existing:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="score not found"
+        )
+
+    row = existing[0]
+    state = row.get("transcription_status") or "done"
+    if state in {"queued", "reading"}:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="this piece is already being read",
+        )
+    if pages_of(row) or (row.get("score_json") or {}).get("measures"):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="this piece already has notation",
+        )
+
+    pending_score = _awaiting_transcription().model_dump(mode="json")
+    previous_score = row.get("score_json") or {}
+    # Keep the manual setup visible while the worker reads. The transcription
+    # replaces these fields when it finishes, but dropping the entered tempo in
+    # the queued response makes Today jump to a generic default in the meantime.
+    for field in ("clef", "time_signature", "bpm_hint"):
+        pending_score[field] = previous_score.get(field)
+
+    update = {
+        "source_image_url": pages[0],
+        "source_image_urls": pages,
+        "score_json": pending_score,
+        "ocr_confidence": None,
+        "transcription_status": "queued",
+        "transcription_stage": None,
+        "transcription_error": None,
+        "transcription_accepted_at": None,
+        "page_image_discarded_at": None,
+    }
+    updated = (
+        client.table("scores")
+        .update(update)
+        .eq("id", str(score_id))
+        .eq("user_id", str(user_id))
+        .execute()
+    ).data or []
+    if not updated:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="score not found"
+        )
+
+    start_transcription(str(score_id))
+    return _with_image_urls(updated)[0]
 
 
 @router.post("/import", response_model=ScoreResponse, status_code=status.HTTP_201_CREATED)

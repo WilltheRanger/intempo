@@ -12,14 +12,17 @@ import {
   SecondaryButton,
   Text,
 } from '../../components/primitives';
-import { captureSession, useCapturedPages } from '../../data/captureSession';
-import { MAX_PAGES } from '../../lib/scan/uploadPages';
+import {
+  captureSession,
+  MAX_SCAN_PAGES,
+  useCapturedPages,
+} from '../../data/captureSession';
 import { spacing } from '../../design';
 import type { RootNavigation } from '../../navigation/types';
 import { DraggablePageList } from './DraggablePageList';
 
 /**
- * The pages just captured, in the order they will be read.
+ * Review of the pages just captured, before transcription.
  *
  * Reorder, retake, and delete all act on the shared capture session, so going
  * back to add another page keeps whatever order was set here.
@@ -54,12 +57,17 @@ export function CapturedPagesScreen() {
   // route meant the Today tab — with the pages still in the session and
   // nothing able to reach them, since the only screens that navigate here both
   // start a new one.
+  const atPageLimit = pages.length >= MAX_SCAN_PAGES;
+
   const scannerBelow =
     navigation.getState()?.routes.some((route) => route.name === 'Scanner') ?? false;
 
   // "Add page" means the viewfinder either way. `adding` is what stops a
   // freshly pushed one resetting the scan it was opened to extend.
   function addPage() {
+    if (atPageLimit) {
+      return;
+    }
     if (scannerBelow) {
       navigation.goBack();
       return;
@@ -95,14 +103,14 @@ export function CapturedPagesScreen() {
     return (
       <ScreenContainer>
         <PageHeader
-          title="Your pages"
+          title="Review pages"
           onBack={() => navigation.goBack()}
           backLabel={scannerBelow ? 'Back to the scanner' : 'Back'}
         />
         <EmptyState
           icon={Layers}
           title="No pages left"
-          description="You've removed every page. Photograph at least one to carry on."
+          description="You've removed every page. Capture at least one to continue."
           actionLabel="Add page"
           onActionPress={addPage}
         />
@@ -118,21 +126,23 @@ export function CapturedPagesScreen() {
     <ScreenContainer
       footer={
         <PrimaryButton
-          label="Continue"
-          onPress={() => navigation.navigate('TranscriptionReview')}
+          label={pages.length === 1 ? "Continue with 1 page" : `Continue with ${pages.length} pages`}
+          onPress={() => navigation.navigate('Transcribe')}
         />
       }
     >
       <PageHeader
         eyebrow={pageCountLabel(pages.length)}
-        title="Your pages"
+        title="Review pages"
         onBack={() => navigation.goBack()}
         // It said "Back to the scanner" on a route with no scanner on it.
         backLabel={scannerBelow ? 'Back to the scanner' : 'Back'}
       />
 
       <Text variant="metadataSmall" color="textTertiary" style={styles.hint}>
-        Drag to reorder. Every page is read, in this order.
+        {pages.length === 1
+          ? 'This is the page InTempo will read.'
+          : 'InTempo uploads and reads every page in this order.'}
       </Text>
 
       <DraggablePageList
@@ -143,9 +153,9 @@ export function CapturedPagesScreen() {
         onNudge={(id, direction) => captureSession.move(id, direction)}
       />
 
-      {pages.length >= MAX_PAGES ? (
+      {atPageLimit ? (
         <Text variant="metadataSmall" color="textTertiary" style={styles.addPage}>
-          {`That is ${MAX_PAGES} pages, as long as one scan can be. Save these, then start another piece for the rest.`}
+          A scan can contain up to {MAX_SCAN_PAGES} pages.
         </Text>
       ) : (
         <SecondaryButton
@@ -159,7 +169,7 @@ export function CapturedPagesScreen() {
       <ConfirmDialog
         visible={pendingDelete !== null}
         title={`Delete page ${pendingPosition}?`}
-        message="The photograph goes with it. You'd have to take it again."
+        message="The photo goes with it. You'd have to shoot the page again."
         confirmLabel="Delete"
         onConfirm={() => {
           if (pendingDelete) {

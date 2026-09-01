@@ -34,12 +34,17 @@ def _mark(unit: str, per_minute: object, *, dots: int = 0, extra: str = "") -> s
     )
 
 
+def _tempo(body: str) -> tuple[int | None, str | None]:
+    score = score_json_from_musicxml(_HEAD.format(body))
+    return score.bpm_hint, score.tempo_beat_unit
+
+
 def _hint(body: str) -> int | None:
-    return score_json_from_musicxml(_HEAD.format(body)).bpm_hint
+    return _tempo(body)[0]
 
 
 def test_a_quarter_note_mark_is_read_straight() -> None:
-    assert _hint(_mark("quarter", 132)) == 132
+    assert _tempo(_mark("quarter", 132)) == (132, "quarter")
 
 
 @pytest.mark.parametrize(
@@ -63,7 +68,15 @@ def test_the_beat_unit_is_converted(unit, dots, printed, quarters) -> None:
     page marked in eighths — and `target_bpm` builds the whole expected
     timeline, so it is not only the number on the screen that moves.
     """
-    assert _hint(_mark(unit, printed, dots=dots)) == quarters
+    score = score_json_from_musicxml(_HEAD.format(_mark(unit, printed, dots=dots)))
+    expected_unit = {
+        ("eighth", 0): "eighth",
+        ("half", 0): "half",
+        ("quarter", 1): "dotted_quarter",
+        ("eighth", 1): "dotted_eighth",
+        ("16th", 0): "sixteenth",
+    }[(unit, dots)]
+    assert (score.bpm_hint, score.tempo_beat_unit) == (quarters, expected_unit)
 
 
 def test_a_range_takes_the_lower_number() -> None:
@@ -110,7 +123,14 @@ def test_a_playback_tempo_outranks_a_printed_one() -> None:
     """`<sound tempo>` is quarter-note BPM by definition, so believing it needs
     no arithmetic — and an arithmetic answer should not overrule a stated one.
     """
-    assert _hint(_mark("eighth", 120, extra="<sound tempo='144'/>")) == 144
+    assert _tempo(_mark("eighth", 120, extra="<sound tempo='144'/>")) == (
+        144,
+        "eighth",
+    )
+
+
+def test_a_sound_only_tempo_is_quarter_note_bpm() -> None:
+    assert _tempo("<direction><sound tempo='96'/></direction>") == (96, "quarter")
 
 
 def test_an_impossible_tempo_is_refused_rather_than_clamped() -> None:
@@ -134,4 +154,4 @@ def test_a_triple_dotted_beat_unit_is_skipped_rather_than_crashing() -> None:
 
 
 def test_a_page_with_no_mark_still_has_none() -> None:
-    assert _hint("") is None
+    assert _tempo("") == (None, None)

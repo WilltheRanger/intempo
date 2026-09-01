@@ -16,7 +16,15 @@ export interface CapturedPage {
 }
 
 /** What became of an image the session was handed. */
-export type CaptureOutcome = 'added' | 'replaced';
+export type CaptureOutcome = 'added' | 'replaced' | 'full';
+
+/**
+ * Maximum pages the backend accepts for one scan.
+ *
+ * Shared by the camera and image picker so the app refuses page 13 before it
+ * photographs or uploads anything. The server enforces the same ceiling.
+ */
+export const MAX_SCAN_PAGES = 12;
 
 /**
  * The pages captured in the current scan, shared between the scanner and the
@@ -38,8 +46,10 @@ export type CaptureOutcome = 'added' | 'replaced';
  */
 let pages: CapturedPage[] = [];
 let nextId = 1;
-/** Set by the upload, consumed by the save. See `setUploadedPageUrls`. */
-let uploadedPageUrls: string[] = [];
+/** Durable object keys set by upload, consumed by save in the same page order. */
+let uploadedImageKeys: string[] = [];
+/** Existing manual piece these pages should be read into, rather than duplicated. */
+let attachmentPieceId: string | null = null;
 /**
  * The page a retake is going to replace, while one is in flight.
  *
@@ -58,6 +68,22 @@ function notify(): void {
 }
 
 function commit(next: CapturedPage[]): void {
+  const changed =
+    next.length !== pages.length ||
+    next.some(
+      (page, index) =>
+        page.id !== pages[index]?.id || page.source !== pages[index]?.source,
+    );
+
+  // Uploaded keys describe the exact pixels in the exact order that existed
+  // when the transfer ran. A retake, reorder, addition or removal makes that
+  // snapshot stale even when the number of pages is unchanged. Keeping it
+  // would let Save attach the old photograph or old page order while the
+  // review screen shows the edited one.
+  if (changed) {
+    uploadedImageKeys = [];
+  }
+
   pages = next;
   notify();
 }
@@ -88,9 +114,10 @@ export function useCapturedPages(): CapturedPage[] {
 
 export const captureSession = {
   /** Clears the session, retake included. Called when the scanner opens fresh. */
-  reset(): void {
+  reset(options: { attachToPieceId?: string } = {}): void {
     nextId = 1;
-    uploadedPageUrls = [];
+    uploadedImageKeys = [];
+    attachmentPieceId = options.attachToPieceId ?? null;
     retakingId = null;
     commit([]);
   },
@@ -116,9 +143,13 @@ export const captureSession = {
     }
 
     // The page being retaken is no longer in the session — deleted from
-    // another screen, or a session reset underneath. Append rather than drop:
-    // a photograph someone has just taken is never thrown away, and an extra
-    // page at the end is visible and removable in a way a discarded one is not.
+    // another screen, or a session reset underneath. Append rather than drop
+    // while there is room. The camera checks this before taking a photograph;
+    // the guard here keeps programmatic callers from creating a scan the API
+    // will refuse after every page has already uploaded.
+    if (pages.length >= MAX_SCAN_PAGES) {
+      return 'full';
+    }
     commit([...pages, { id: `page-${nextId++}`, source }]);
     return 'added';
   },
@@ -130,9 +161,18 @@ export const captureSession = {
    * earlier, so this resets — but in one commit rather than a reset followed by
    * a loop of appends, which published an empty list to every subscriber first.
    */
-  importAll(sources: CapturedSource[]): void {
+  importAll(
+    sources: CapturedSource[],
+    options: { attachToPieceId?: string } = {},
+  ): void {
+    if (sources.length > MAX_SCAN_PAGES) {
+      throw new Error(
+        `A score can have at most ${MAX_SCAN_PAGES} pages in one scan.`,
+      );
+    }
     nextId = 1;
-    uploadedPageUrls = [];
+    uploadedImageKeys = [];
+    attachmentPieceId = options.attachToPieceId ?? null;
     retakingId = null;
     commit(sources.map((source) => ({ id: `page-${nextId++}`, source })));
   },
@@ -193,30 +233,24 @@ export const captureSession = {
   },
 
   /**
-   * Remembers where the uploaded pages landed, for the save that follows.
+   * Remembers where every ordered page landed, for the save that follows.
    *
-   * Each value is a **signed upload URL** — the only form `POST /v1/scores`
-   * accepts. The five-minute expiry on the signature is not the save's problem:
-   * the server stores the URL as an identifier and re-signs it to fetch
-   * (`readable_url`), so nothing downstream needs the token to still be live.
-   *
-   * **In page order, which is the musician's order.** It is settled on the
-   * review list before a byte is sent (`lib/scan/drag.ts`), carried through
-   * `uploadPages` and read straight into `image_urls`, so no layer between the
-   * drag and the read re-derives it. `join_pages` trusts that order absolutely.
-   *
-   * Here rather than in route params because the naming screen can be left and
-   * returned to, and because `reset()` must be able to clear it: URLs from a
-   * previous scan are worse than none, since the save would quietly file the
-   * last piece's pages under this piece's title.
+   * These are owner-prefixed object keys, not signed upload URLs. They remain
+   * valid while the musician names the piece, and remain in the same order as
+   * `current()`; sending only the first one was how a multi-page scan silently
+   * became a one-page score.
    */
-  setUploadedPageUrls(urls: readonly string[]): void {
-    uploadedPageUrls = [...urls];
+  setUploadedImageKeys(keys: string[]): void {
+    uploadedImageKeys = [...keys];
     notify();
   },
 
-  /** Every uploaded page, in page order. Empty until the upload finishes. */
-  uploadedPageUrls(): string[] {
-    return uploadedPageUrls;
+  uploadedImageKeys(): string[] {
+    return [...uploadedImageKeys];
+  },
+
+  /** Existing library entry that receives this scan, when there is one. */
+  attachmentPieceId(): string | null {
+    return attachmentPieceId;
   },
 };

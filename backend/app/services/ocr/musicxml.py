@@ -878,36 +878,17 @@ def _choose_part(root: ET.Element, wanted: str | None) -> ET.Element:
 _LEADING_NUMBER: Final[re.Pattern[str]] = re.compile(r"\d+(?:\.\d+)?")
 
 
-def _metronome_bpm(direction: ET.Element) -> int | None:
-    """A printed metronome mark, converted to **quarter notes per minute**.
+def _metronome_tempo(direction: ET.Element) -> tuple[int, str] | None:
+    """A printed mark as quarter-note BPM plus the note value it counts.
 
-    **Because `<sound tempo=...>` is optional and often absent.** It is what
-    this module read, and it is right to prefer it — the spec defines it as
-    quarter-note BPM, so no conversion can go wrong. But it is a playback hint,
-    not the printed mark: homr writes none at all, and plenty of exporters
-    write only what the engraver drew. A piece whose page says **♩ = 132**
-    opened at the app's 80 BPM fallback, with the number sitting unread in the
-    file it was imported from.
-
-    **The conversion is the whole risk, and it is why this is not two lines.**
-    `bpm_hint` feeds `target_bpm`, and `build_timeline` measures every duration
-    in quarter-beats — so a marking of **♩. = 60** is 90 quarters a minute, not
-    60. Reading `<per-minute>` on its own would put a musician's practice tempo
-    out by a third on any compound-metre page, and half out on a page marked in
-    eighths.
-
-    Skipped rather than guessed where the mark is not a number of beats per
-    minute: a metric modulation (`♩ = ♪`) carries two beat units and no
-    per-minute at all, and there is nothing to convert.
-
-    A range — `♩ = 120-132`, which `<per-minute>` allows as free text — takes
-    the lower number. It is the tempo the engraver would have a player start
-    from, and it is a reading rather than an average nobody printed.
+    Alignment stays on a quarter-note clock. The second value preserves what
+    the musician actually sees — for example, dotted-quarter = 60 becomes
+    `(90, "dotted_quarter")` — so the app can display 60 while timing 90
+    quarter notes per minute. A range takes its lower number. Metric
+    modulations and beat values this score schema cannot name are skipped.
     """
     for metronome in direction.iterfind("direction-type/metronome"):
         units = metronome.findall("beat-unit")
-        # Two beat units is a metric modulation: one note value equals another,
-        # which states a *ratio* and never a speed.
         if len(units) != 1:
             continue
         base = _TYPE_TO_DURATION.get((_text(units[0]) or "").strip())
@@ -917,15 +898,28 @@ def _metronome_bpm(direction: ET.Element) -> int | None:
         dots = len(metronome.findall("beat-unit-dot"))
         if dots >= len(_DOT_FACTOR):
             continue
+        if dots == 0:
+            unit = base
+        elif dots == 1:
+            unit = _DOTTED.get(base)
+        else:
+            unit = _DOUBLE_DOTTED.get(base)
+        if unit is None:
+            continue
         raw = _text(metronome.find("per-minute"))
         found = _LEADING_NUMBER.search(raw or "")
         if found is None:
             continue
         quarter_bpm = int(round(float(found.group()) * beats * _DOT_FACTOR[dots]))
         if 20 <= quarter_bpm <= 300:
-            return quarter_bpm
+            return quarter_bpm, unit
     return None
 
+
+def _metronome_bpm(direction: ET.Element) -> int | None:
+    """Compatibility helper returning the internal quarter-note rate only."""
+    tempo = _metronome_tempo(direction)
+    return tempo[0] if tempo is not None else None
 
 def _staff_carrying_the_music(part_el: ET.Element) -> str | None:
     """Which staff of a multi-staff part is the line to read, or None.
@@ -1457,6 +1451,7 @@ def score_json_from_musicxml(
     key_signature: str | None = None
     tempo_marking: str | None = None
     bpm_hint: int | None = None
+    tempo_beat_unit: str | None = None
 
     #: Ticks per quarter note, which holds until another `<divisions>` is
     #: stated. Needed only to notice a note whose `<type>` and `<duration>`
@@ -1639,6 +1634,9 @@ def score_json_from_musicxml(
             words = _text(direction.find("direction-type/words"))
             if words and tempo_marking is None:
                 tempo_marking = words
+            printed_tempo = _metronome_tempo(direction)
+            if printed_tempo is not None and tempo_beat_unit is None:
+                tempo_beat_unit = printed_tempo[1]
             sound = direction.find("sound")
             if sound is not None and bpm_hint is None:
                 raw_tempo = sound.get("tempo")
@@ -1649,12 +1647,10 @@ def score_json_from_musicxml(
                         candidate = 0
                     if 20 <= candidate <= 300:
                         bpm_hint = candidate
-            # Second, not first. `<sound>` is quarter-note BPM by definition, so
-            # believing it needs no arithmetic; the printed mark needs its beat
-            # unit converted, and an arithmetic answer should not overrule a
-            # stated one. See `_metronome_bpm` for what it costs to skip it.
-            if bpm_hint is None:
-                bpm_hint = _metronome_bpm(direction)
+            # `<sound>` is quarter-note BPM by definition and outranks the
+            # converted mark. The mark's unit is still kept for display.
+            if bpm_hint is None and printed_tempo is not None:
+                bpm_hint = printed_tempo[0]
             for dynamics in direction.iterfind("direction-type/dynamics"):
                 for child in dynamics:
                     if child.tag in _DYNAMIC_TAGS:
@@ -2158,6 +2154,7 @@ def score_json_from_musicxml(
         time_signature=time_signature,
         key_signature=key_signature,
         tempo_marking=tempo_marking,
+        tempo_beat_unit=tempo_beat_unit or ("quarter" if bpm_hint is not None else None),
         bpm_hint=bpm_hint,
         clef=clef or clef_fallback,  # type: ignore[arg-type]
         measures=measures,

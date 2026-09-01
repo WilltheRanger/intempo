@@ -28,26 +28,34 @@ export function getScore(id: string): Promise<ScoreResponse> {
  * backend rejects a body that mixes them, so these are separate shapes rather
  * than one shape with optional halves.
  */
-export type CreateScoreInput = TranscribedScoreInput | HandEnteredScoreInput;
+export type CreateScoreInput =
+  | StrictTranscribedScoreInput
+  | HandEnteredScoreInput;
 
+/**
+ * Fields the mobile client can send for a photographed score.
+ *
+ * Kept as an interface because the backend's request-shape contract test reads
+ * these declarations directly. `StrictTranscribedScoreInput` below adds the
+ * exactly-one-of rule that TypeScript needs.
+ */
 export interface TranscribedScoreInput {
-  /**
-   * Every page of the part, in page order.
-   *
-   * The server takes `image_url` too — the single-page form, kept for builds
-   * already installed — and refuses both together rather than guessing which
-   * one won. This app sends `image_urls` for every scan, one page or twelve.
-   */
-  image_urls: string[];
-  image_url?: never;
+  image_url?: string;
+  image_urls?: string[];
   title: string;
   composer?: string | null;
   movement?: string | null;
 }
 
+type StrictTranscribedScoreInput = TranscribedScoreInput &
+  (
+    | { image_url: string; image_urls?: never }
+    | { image_urls: string[]; image_url?: never }
+  );
+
 export interface HandEnteredScoreInput {
-  image_urls?: never;
   image_url?: never;
+  image_urls?: never;
   title: string;
   composer?: string | null;
   movement?: string | null;
@@ -65,11 +73,28 @@ export interface HandEnteredScoreInput {
 /**
  * POST /v1/scores
  *
- * Returns as soon as the row exists. Reading the pages happens in a worker and
- * is watched through `transcription_status` — see `useScan`.
+ * With one or more images this creates a queued transcription and returns
+ * immediately; the worker reads every page in order. A hand-entered piece
+ * skips OCR and returns straight away.
  */
 export function createScore(input: CreateScoreInput): Promise<ScoreResponse> {
   return apiFetch<ScoreResponse>('/v1/scores', {
+    method: 'POST',
+    body: input,
+  });
+}
+
+export interface AttachScorePagesInput {
+  image_url?: string;
+  image_urls?: string[];
+}
+
+/** POST /v1/scores/:id/transcription — read pages into a manual piece. */
+export function attachScorePages(
+  id: string,
+  input: AttachScorePagesInput,
+): Promise<ScoreResponse> {
+  return apiFetch<ScoreResponse>(`/v1/scores/${id}/transcription`, {
     method: 'POST',
     body: input,
   });

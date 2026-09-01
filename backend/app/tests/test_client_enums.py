@@ -36,8 +36,8 @@ from app.routers.scores import MAX_PAGES
 from app.services.classification import Band, Direction
 
 MOBILE = Path(__file__).resolve().parents[3] / "mobile" / "src" / "data"
-UPLOAD_PAGES_TS = (
-    Path(__file__).resolve().parents[3] / "mobile" / "src" / "lib" / "scan" / "uploadPages.ts"
+CAPTURE_SESSION_TS = (
+    Path(__file__).resolve().parents[3] / "mobile" / "src" / "data" / "captureSession.ts"
 )
 TYPES_TS = MOBILE / "types.ts"
 ANALYSES_TS = MOBILE / "api" / "analyses.ts"
@@ -565,9 +565,14 @@ def test_the_app_stops_a_scan_at_the_same_page_count_the_server_does() -> None:
     Too *low* in the app is the cheaper direction and still wrong: pages the
     server would have accepted are refused with an explanation that is not true.
     """
-    source = UPLOAD_PAGES_TS.read_text()
-    match = re.search(r"export const MAX_PAGES = (\d+);", source)
-    assert match, "the app no longer declares MAX_PAGES in lib/scan/uploadPages.ts"
+    # **The constant moved and the check followed it.** It was `MAX_PAGES` in
+    # `lib/scan/uploadPages.ts`; the merged multi-page intake declares
+    # `MAX_SCAN_PAGES` in `captureSession.ts` and enforces it at the session,
+    # which is the better home — the session is what every entry point goes
+    # through, so the camera and the photo picker cannot disagree about it.
+    source = CAPTURE_SESSION_TS.read_text()
+    match = re.search(r"export const MAX_SCAN_PAGES = (\d+);", source)
+    assert match, "the app no longer declares MAX_SCAN_PAGES in data/captureSession.ts"
     assert int(match.group(1)) == MAX_PAGES, (
         f"the app stops a scan at {match.group(1)} pages and the server refuses "
         f"above {MAX_PAGES}"

@@ -16,7 +16,11 @@ export type AddPieceOption = 'scan' | 'import' | 'notation' | 'manual';
 export type RootStackParamList = {
   Tabs: undefined;
   /** Scan has its own screen; this covers the other two options. */
-  AddPiece: { option: Exclude<AddPieceOption, 'scan'> };
+  AddPiece: {
+    option: Exclude<AddPieceOption, 'scan'>;
+    /** Existing manual piece that imported pages should be read into. */
+    attachToPieceId?: string;
+  };
   /**
    * `adding` is set only when the scan is already in progress — "Add page"
    * from the review list.
@@ -29,18 +33,12 @@ export type RootStackParamList = {
    * the screen to guess from a session that looks the same either way — a
    * lingering scan someone abandoned looks exactly like one they are adding to.
    */
-  Scanner: { adding?: boolean } | undefined;
+  Scanner:
+    | { adding?: boolean; attachToPieceId?: string }
+    | undefined;
   /** Pages live in the shared capture session, not in params. */
   CapturedPages: undefined;
-  /**
-   * Naming the piece, and where the pages are uploaded.
-   *
-   * There used to be a `Transcribe` route between this and `CapturedPages`
-   * that did nothing but hold a progress bar while the pages went up. It made
-   * the musician wait for a transfer before it would ask them the one question
-   * only they could answer, so the upload moved into this screen and runs while
-   * they type.
-   */
+  Transcribe: undefined;
   TranscriptionReview: undefined;
   PieceDetail: { pieceId: string };
   /**
@@ -60,6 +58,9 @@ export type RootStackParamList = {
   MeasureEdit: { pieceId: string; measureNumber: number };
   ChangeEmail: undefined;
   ChangePassword: undefined;
+  DeleteAccount: undefined;
+  ExportData: undefined;
+  Help: undefined;
   Acknowledgements: undefined;
   Record: { pieceId: string };
   /** The daily warmup. Reads the instrument from preferences, so no params. */

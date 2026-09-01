@@ -2,16 +2,20 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   Animated,
   Modal,
+  Platform,
   Pressable,
   StyleSheet,
   View,
   type LayoutChangeEvent,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { X } from 'lucide-react-native';
 
 import { BORDER_WIDTH, colors, motion, radii, spacing } from '../../design';
 import { useReducedMotion } from '../../lib/useReducedMotion';
+import { IconButton } from '../primitives/IconButton';
 import { Text } from '../primitives/Text';
+import { useInertAppRoot } from './modalAccessibility';
 
 export interface BottomSheetProps {
   visible: boolean;
@@ -43,13 +47,17 @@ export function BottomSheet({
   const [mounted, setMounted] = useState(visible);
   const [sheetHeight, setSheetHeight] = useState(0);
 
+  // The web Modal is a portal next to #root. Keep that root inert for the
+  // complete enter/exit animation so keyboard focus cannot slip behind it.
+  useInertAppRoot(mounted);
+
   useEffect(() => {
     if (visible) {
       setMounted(true);
       Animated.timing(progress, {
         toValue: 1,
         duration: reduceMotion ? 0 : motion.base,
-        useNativeDriver: true,
+        useNativeDriver: Platform.OS !== 'web',
       }).start();
       return;
     }
@@ -57,7 +65,7 @@ export function BottomSheet({
     Animated.timing(progress, {
       toValue: 0,
       duration: reduceMotion ? 0 : motion.fast,
-      useNativeDriver: true,
+      useNativeDriver: Platform.OS !== 'web',
     }).start(({ finished }) => {
       if (finished) {
         setMounted(false);
@@ -86,8 +94,9 @@ export function BottomSheet({
           <Pressable
             style={StyleSheet.absoluteFill}
             onPress={onClose}
-            accessibilityRole="button"
-            accessibilityLabel="Close"
+            // Pointer dismissal only. A full-screen invisible button is a poor
+            // keyboard target and was focused before the sheet's real choices.
+            accessible={false}
           />
         </Animated.View>
 
@@ -110,11 +119,14 @@ export function BottomSheet({
         >
           <View style={styles.handle} />
 
-          {title ? (
-            <Text variant="pieceTitle" style={styles.title}>
-              {title}
-            </Text>
-          ) : null}
+          <View style={styles.header}>
+            {title ? (
+              <Text variant="pieceTitle" style={styles.title}>
+                {title}
+              </Text>
+            ) : null}
+            <IconButton icon={X} label="Close" onPress={onClose} />
+          </View>
 
           {children}
         </Animated.View>
@@ -152,8 +164,15 @@ const styles = StyleSheet.create({
     borderRadius: radii.pill,
     backgroundColor: colors.border,
   },
-  title: {
-    marginTop: spacing.lg,
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: spacing.md,
+    marginTop: spacing.md,
     marginBottom: spacing.xs,
+  },
+  title: {
+    flex: 1,
   },
 });
