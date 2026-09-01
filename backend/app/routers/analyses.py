@@ -14,10 +14,11 @@ from urllib.parse import urlparse
 from uuid import UUID
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.services import pending_uploads
 from app.auth import current_user_id, current_user_id_provisioned
+from app.services.audio_storage import InvalidAudioReference, durable_audio_reference
 from app.services.tier_limits import tier_of, usage_for
 from app.db import get_service_client
 from app.models.analysis import (
@@ -37,7 +38,10 @@ class CreateAnalysisRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     score_id: UUID
-    audio_url: str = Field(min_length=1, max_length=2048)
+    #: New clients send the durable object key returned by /upload/audio.
+    #: The legacy URL remains accepted while installed builds age out.
+    audio_key: str | None = Field(default=None, min_length=1, max_length=2048)
+    audio_url: str | None = Field(default=None, min_length=1, max_length=2048)
     target_bpm: float = Field(ge=MIN_TARGET_BPM, le=MAX_TARGET_BPM)
     bpm_source: BpmSource
     metronome_mode: MetronomeMode = MetronomeMode.off
@@ -67,6 +71,15 @@ class CreateAnalysisRequest(BaseModel):
     #: and report `alignment_failed` — "check you're on the right piece" — for
     #: a take of exactly the right piece.
     from_measure: int | None = Field(default=None, ge=1)
+
+    @model_validator(mode="after")
+    def _one_audio_reference(self) -> "CreateAnalysisRequest":
+        if (self.audio_key is None) == (self.audio_url is None):
+            raise ValueError("send exactly one of audio_key or audio_url")
+        return self
+
+    def audio_reference(self) -> str:
+        return self.audio_key or self.audio_url or ""
 
 
 class CreateAnalysisResponse(BaseModel):
@@ -120,27 +133,6 @@ def _object_keys_in(urls: list[str]) -> list[str]:
         if marker in path:
             keys.append(path.split(marker, 1)[1].lstrip("/"))
     return keys
-
-
-def _assert_audio_url_owned_by(audio_url: str, user_id: UUID) -> None:
-    """The audio URL must be a Supabase audio-uploads URL under this user's prefix.
-
-    We validate at enqueue time so the worker can trust the stored URL and
-    never downloads an arbitrary internet address.
-    """
-    parsed = urlparse(audio_url)
-    if parsed.scheme not in {"https", "http"}:
-        raise HTTPException(status_code=400, detail="audio_url must be http(s)")
-    prefixes = (
-        f"/storage/v1/object/sign/{AUDIO_BUCKET}/{user_id}/",
-        f"/storage/v1/object/authenticated/{AUDIO_BUCKET}/{user_id}/",
-        f"/storage/v1/object/public/{AUDIO_BUCKET}/{user_id}/",
-    )
-    if not any(parsed.path.startswith(p) for p in prefixes):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="audio_url must be a Supabase audio-uploads URL under your user prefix",
-        )
 
 
 def _assert_score_owned(client, score_id: UUID, user_id: UUID) -> dict[str, Any]:
@@ -244,16 +236,49 @@ def create_analysis(
     background_tasks: BackgroundTasks,
     user_id: UUID = Depends(current_user_id_provisioned),
 ) -> CreateAnalysisResponse:
-    _assert_audio_url_owned_by(body.audio_url, user_id)
     client = _service_client()
+    try:
+        audio_reference = durable_audio_reference(body.audio_reference(), user_id)
+    except InvalidAudioReference as exc:
+        # The storage helper also runs in the standalone worker image, which
+        # deliberately does not install FastAPI. Translate its plain domain
+        # error at the web boundary rather than importing the web framework
+        # into worker code.
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(exc),
+        ) from exc
     score_row = _assert_score_owned(client, body.score_id, user_id)
     _assert_measure_in_score(score_row, body.from_measure)
+
+    # One uploaded object is one take. If the POST response was lost, the
+    # recording screen retries with the same key; return the existing row
+    # rather than charging quota twice or running the same audio twice.
+    existing = (
+        client.table("analyses")
+        .select("*")
+        .eq("user_id", str(user_id))
+        .eq("score_id", str(body.score_id))
+        .eq("audio_url", audio_reference)
+        .limit(1)
+        .execute()
+    ).data or []
+    if existing:
+        return CreateAnalysisResponse(
+            analysis_id=existing[0]["id"],
+            status=existing[0]["status"],
+        )
+
+    # Only a genuinely new take spends quota. A retry of a row already written
+    # above has to remain retriable even when that row used the final allowance.
     _assert_within_quota(client, user_id)
 
     insert_payload = {
         "user_id": str(user_id),
         "score_id": str(body.score_id),
-        "audio_url": body.audio_url,
+        # The column name predates durable keys. Its value is now a token-free
+        # private-storage reference; the worker signs it immediately before GET.
+        "audio_url": audio_reference,
         "target_bpm": body.target_bpm,
         "bpm_source": body.bpm_source.value,
         "metronome_mode": body.metronome_mode.value,
@@ -299,7 +324,12 @@ def create_analysis(
     # A row points at the audio now. Same rule and same ordering as
     # `create_score`: claimed after the insert, never before, or a failed
     # submit would strand the take's audio.
-    pending_uploads.claim(AUDIO_BUCKET, _object_keys_in([body.audio_url]))
+    # **The canonical reference, not the request field.** `audio_key` and
+    # `audio_url` are two spellings of one object and only one of them is sent;
+    # `durable_audio_reference` is what the row stores, so it is what has to be
+    # claimed. Reading `body.audio_url` here would silently claim nothing for
+    # every new client, and the take's audio would be swept an hour later.
+    pending_uploads.claim(AUDIO_BUCKET, _object_keys_in([audio_reference]))
     # Where this runs is `dispatch`'s business, not this endpoint's.
     start_analysis(str(analysis_id), background_tasks)
     return CreateAnalysisResponse(analysis_id=analysis_id, status="queued")

@@ -3,6 +3,31 @@ import { requestAudioUpload, uploadToSignedUrl } from '../api/upload';
 import { preferences } from '../preferences';
 import type { AnalysisResponse, MetronomeMode } from '../types';
 
+export interface TakeSubmissionState {
+  /** Recording bytes already accepted by storage. */
+  audioKey?: string;
+  /** Analysis row already accepted by the API. */
+  analysisId?: string;
+}
+
+/**
+ * A failure that knows how far a take got.
+ *
+ * The recording screen keeps this state beside the WAV. Retrying after the
+ * upload therefore reuses the object, and retrying after enqueue only resumes
+ * polling the same analysis instead of creating a second one.
+ */
+export class TakeSubmissionError extends Error {
+  constructor(
+    message: string,
+    readonly resume: TakeSubmissionState,
+    readonly cause?: unknown,
+  ) {
+    super(message);
+    this.name = 'TakeSubmissionError';
+  }
+}
+
 export interface SubmitTakeInput {
   scoreId: string;
   targetBpm: number;
@@ -10,6 +35,11 @@ export interface SubmitTakeInput {
   /** The recording. WAV keeps the transients the onset detector reads. */
   audio: Blob;
   filename: string;
+  /**
+   * Progress from an earlier attempt. Both fields are server-issued and may be
+   * reused safely; absence means start that step.
+   */
+  resume?: TakeSubmissionState;
   /**
    * The take was played with runs of rest shortened, so the analysis has to
    * shorten the score the same way before it builds the timeline.
@@ -32,13 +62,16 @@ export interface SubmitTakeInput {
   fromMeasure?: number | null;
 }
 
+export interface SubmittedTakeState extends TakeSubmissionState {
+  analysisId: string;
+}
+
 /**
- * Uploads a take and enqueues its analysis.
+ * Uploads a take and enqueues its analysis, resuming completed steps.
  *
- * Three real calls: a presigned URL, a PUT straight to storage, then the row.
- * Audio never streams through the API — the backend checks the URL is under
- * this user's prefix and refuses anything else, so the worker can trust the
- * address it stored.
+ * The upload permission is used only for PUT. The durable object key is sent
+ * to the API and retained if enqueue fails, so a weak connection never makes
+ * "Send it again" upload the whole WAV twice.
  */
 export async function submitTake({
   scoreId,
@@ -46,37 +79,50 @@ export async function submitTake({
   metronomeMode,
   audio,
   filename,
+  resume = {},
   skipLongRests = false,
   fromMeasure = null,
-}: SubmitTakeInput): Promise<string> {
-  const upload = await requestAudioUpload(filename);
-  await uploadToSignedUrl(upload.upload_url, audio, 'audio/wav');
+}: SubmitTakeInput): Promise<SubmittedTakeState> {
+  const state: TakeSubmissionState = { ...resume };
 
-  const { analysis_id } = await createAnalysis({
-    score_id: scoreId,
-    audio_url: upload.upload_url,
-    target_bpm: targetBpm,
-    // The recording screen sets the tempo directly. `calibration_clip` is for
-    // the flow where a short clip infers it instead.
-    bpm_source: 'manual',
-    metronome_mode: metronomeMode,
-    // Read here rather than threaded down from the recording screen: it is a
-    // fact about the musician, not about this take, and every caller would
-    // otherwise have to remember to pass it.
-    //
-    // Always sent, including when nobody has changed it. The default is violin
-    // and Profile displays it as the musician's instrument, so sending it is
-    // reporting what the app already says about them rather than guessing on
-    // their behalf.
-    instrument: preferences.current().instrument,
-    skip_long_rests: skipLongRests,
-    // Omitted rather than sent as 1: a take from the top and a take that
-    // happens to start at bar 1 are the same performance, and the column is
-    // nullable so the row can say "from the beginning" rather than claim a
-    // choice nobody made.
-    ...(fromMeasure && fromMeasure > 1 ? { from_measure: fromMeasure } : {}),
-  });
-  return analysis_id;
+  try {
+    if (state.analysisId) {
+      return { ...state, analysisId: state.analysisId };
+    }
+
+    if (!state.audioKey) {
+      const upload = await requestAudioUpload(filename);
+      await uploadToSignedUrl(upload.upload_url, audio, 'audio/wav');
+      state.audioKey = upload.object_key;
+    }
+
+    const { analysis_id } = await createAnalysis({
+      score_id: scoreId,
+      audio_key: state.audioKey,
+      target_bpm: targetBpm,
+      // The recording screen sets the tempo directly. `calibration_clip` is
+      // for the flow where a short clip infers it instead.
+      bpm_source: 'manual',
+      metronome_mode: metronomeMode,
+      // Read here rather than threaded down from the recording screen: it is a
+      // fact about the musician, not about this take.
+      instrument: preferences.current().instrument,
+      skip_long_rests: skipLongRests,
+      // Omitted rather than sent as 1: a take from the top and a take that
+      // happens to start at bar 1 are the same performance, and the column
+      // is nullable so the row can say "from the beginning" rather than
+      // claim a choice nobody made.
+      ...(fromMeasure && fromMeasure > 1 ? { from_measure: fromMeasure } : {}),
+    });
+    state.analysisId = analysis_id;
+    return { ...state, analysisId: analysis_id };
+  } catch (cause) {
+    const message =
+      cause instanceof Error
+        ? cause.message
+        : 'Your recording could not be sent. Check your connection and try again.';
+    throw new TakeSubmissionError(message, state, cause);
+  }
 }
 
 /** How often to ask whether the analysis has finished. */

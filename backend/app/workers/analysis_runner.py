@@ -23,6 +23,7 @@ import httpx
 from app.db import get_service_client
 from app.models.analysis import Instrument
 from app.services import audio as audio_svc
+from app.services.audio_storage import AudioStorageError, readable_audio_url
 from app.services.analysis import analyze
 from app.services.long_rests import shorten_long_rests
 from app.services.start_at import start_from_measure
@@ -130,7 +131,9 @@ def run_analysis(analysis_id: str) -> None:
     _update(client, analysis_id, {"status": "processing", "updated_at": _now_iso()})
 
     try:
-        audio_bytes = download_audio(row["audio_url"])
+        # Rows keep a durable key-shaped reference, never the five-minute PUT
+        # permission. Sign a fresh private GET immediately before reading.
+        audio_bytes = download_audio(readable_audio_url(client, row["audio_url"]))
         score = _load_score(client, row["score_id"], row["user_id"])
         # **The take was played against a shortened score, so judge it against
         # one.** Skipping a long rest the timeline still contains takes an
@@ -165,7 +168,7 @@ def run_analysis(analysis_id: str) -> None:
             float(row["target_bpm"]),
             double_bass=row.get("instrument") == Instrument.double_bass.value,
         )
-    except AudioFetchError as exc:
+    except (AudioFetchError, AudioStorageError) as exc:
         log.warning("analysis %s: %s", analysis_id, exc)
         _finish_failed(client, analysis_id, "audio_unavailable")
         return
