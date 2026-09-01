@@ -6,6 +6,57 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-01 — One tempo, two numbers, one tap apart
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Continuing the music-
+accuracy audit that found the accidental bug below.
+
+**Files:** `mobile/src/components/score/PlaybackSettings.tsx`,
+`mobile/src/screens/pieceScore/PieceScoreScreen.tsx`,
+`mobile/src/screens/pieceDetail/PieceDetailScreen.tsx`,
+`mobile/src/screens/record/RecordScreen.tsx`, `mobile/src/lib/tempo.test.ts`.
+
+Stored BPM is **quarter-note** BPM everywhere — it is the clock the score, the
+metronome and the analysis all run on, and `metronomePulse` already converts it
+correctly for compound metre (6/8 clicks two dotted quarters, not six eighths).
+The Record screen has always *displayed* it in the note value printed on the
+page, via `displayTempoBpm` / `tempoUnitLabel`.
+
+Three other places did not. `PlaybackSettings` — the "Listen from bar 1 · 84
+BPM" line — printed the raw quarter figure, and so did the score screen's marked
+tempo and the piece screen's facts line I wrote earlier today. So a piece in 6/8
+marked dotted-quarter = 60 read **"90 BPM"** on the score screen and **"60
+dotted-quarter-note BPM"** on the Record screen — while the tempo sheet's own
+note tells you they are the same value.
+
+Worse than the reading: the **stepper stepped in the wrong unit**. It was handed
+`MIN_BPM`/`MAX_BPM` unconverted, so on a dotted-quarter piece it stepped in
+quarters, one press moved the felt tempo by two thirds of a beat, and its
+maximum of 300 would have stored **450** on the clock everything else uses.
+
+All four now take a `beatUnit` and go through `formatTempo`; the stepper's
+bounds go through `tempoDisplayRange`. A new test walks every unit the pipeline
+can report and asserts both display bounds map back inside the stored ones —
+which is the invariant the old code broke and nothing was checking.
+
+**Verified** by temporarily making a fixture 6/8 with a dotted-quarter mark,
+building, and reading both screens: piece screen *"53 dotted-quarter-note BPM"*,
+score screen *"117 dotted-quarter-note BPM"* — different numbers because they
+are different quantities (the working tempo and the marked one), both now in the
+unit the page prints. Fixture restored and verified byte-identical; quarter-note
+pieces are unchanged ("84 BPM", "80 BPM").
+
+**Left alone:** the label reads "dotted-quarter-note BPM" rather than a ♩. glyph.
+Plain words suit a consumer app better than a music glyph in a metadata line,
+and the Record screen and Today have used this vocabulary all along — changing
+it is a separate call, not a bug fix.
+
+**Tests:** 702 pass.
+
+**Rollback:** revert the commit.
+
+---
+
 ## 2026-09-01 — An F natural in D major was printed as an F sharp
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. A notation-correctness bug,

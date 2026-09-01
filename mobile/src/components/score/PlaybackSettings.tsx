@@ -2,7 +2,15 @@ import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { MAX_BPM, MIN_BPM } from '../../data/practiceTempo';
+import type { TempoBeatUnit } from '../../data/types';
 import { spacing } from '../../design';
+import {
+  displayTempoBpm,
+  formatTempo,
+  quarterBpmFromDisplay,
+  tempoDisplayRange,
+  tempoUnitLabel,
+} from '../../lib/tempo';
 import { BottomSheet } from '../overlays/BottomSheet';
 import { TempoStepper } from '../practice/TempoStepper';
 import { Text } from '../primitives/Text';
@@ -20,6 +28,21 @@ export interface PlaybackSettingsProps {
    * one value.
    */
   onBpmChange?: (bpm: number) => void;
+  /**
+   * The note value the page's tempo is counted in.
+   *
+   * **The same tempo had two numbers.** `bpm` is quarter-note BPM everywhere in
+   * this app — it is the clock the score and the analysis are on — and the
+   * Record screen has always shown it in the unit actually printed on the page
+   * (`displayTempoBpm`). This control did not, so a piece in 6/8 marked
+   * dotted-quarter = 60 read **"90 BPM"** here and **"60 dotted-quarter-note
+   * BPM"** one tap away, while the sheet below tells you they are the same
+   * value. Stepping it moved in different-sized steps on each screen.
+   *
+   * Absent or null means quarter, which is both the default and what most
+   * pages print.
+   */
+  beatUnit?: TempoBeatUnit | null;
   disabled?: boolean;
 }
 
@@ -43,6 +66,7 @@ export function PlaybackSettings({
   onFromMeasureChange,
   bpm,
   onBpmChange,
+  beatUnit,
   disabled = false,
 }: PlaybackSettingsProps) {
   const [pickingBar, setPickingBar] = useState(false);
@@ -87,11 +111,11 @@ export function PlaybackSettings({
           onPress={() => setPickingTempo(true)}
           disabled={disabled}
           accessibilityRole="button"
-          accessibilityLabel={`Playback tempo ${bpm} BPM. Change.`}
+          accessibilityLabel={`Playback tempo ${formatTempo(bpm, beatUnit)}. Change.`}
           style={({ pressed }) => (pressed ? styles.pressed : undefined)}
         >
           <Text variant="metadataSmall" color={disabled ? 'textTertiary' : 'accent'}>
-            {bpm} BPM
+            {formatTempo(bpm, beatUnit)}
           </Text>
         </Pressable>
       ) : null}
@@ -130,12 +154,19 @@ export function PlaybackSettings({
         title="Playback tempo"
       >
         <View style={styles.tempoSheet}>
+          {/*
+            Stepped in the page's own unit, and stored in quarters. The bounds
+            are converted too: `MIN_BPM`/`MAX_BPM` are quarter-note limits, so
+            offering them unconverted would let a dotted-quarter tempo be
+            stepped to 300, which is 450 on the clock everything else uses.
+          */}
           <TempoStepper
             label="Listen at"
-            bpm={bpm}
-            minBpm={MIN_BPM}
-            maxBpm={MAX_BPM}
-            onChange={(next) => onBpmChange?.(next)}
+            bpm={displayTempoBpm(bpm, beatUnit)}
+            minBpm={tempoDisplayRange(beatUnit, MIN_BPM, MAX_BPM).min}
+            maxBpm={tempoDisplayRange(beatUnit, MIN_BPM, MAX_BPM).max}
+            unitLabel={tempoUnitLabel(beatUnit)}
+            onChange={(next) => onBpmChange?.(quarterBpmFromDisplay(next, beatUnit))}
           />
           {/* The tempo is remembered for this piece, so it is also the one the
               Record screen opens at. Said here because a listener who slows a

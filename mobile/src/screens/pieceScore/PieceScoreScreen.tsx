@@ -41,6 +41,7 @@ import { shortenLongRests, skippableBars } from '../../lib/notation/longRests';
 import { scheduleScore, startAtMeasure, startableMeasures } from '../../lib/score';
 import { practiceTempo, usePracticeTempos } from '../../data/practiceTempo';
 import { bpmForMarking } from '../../lib/tempoMarking';
+import { formatTempo } from '../../lib/tempo';
 import {
   describeConfidence,
   describeProblemMeasures,
@@ -404,7 +405,9 @@ export function PieceScoreScreen() {
               ? piece.score.time_signature
               : null,
             piece.score?.tempo_marking,
-            piece.markedBpm ? `${piece.markedBpm} BPM` : null,
+            piece.markedBpm
+              ? formatTempo(piece.markedBpm, piece.score?.tempo_beat_unit)
+              : null,
           ]}
           style={styles.scoreMeta}
         />
@@ -495,6 +498,7 @@ export function PieceScoreScreen() {
               fromMeasure={listenFrom}
               onFromMeasureChange={setFromMeasure}
               bpm={listenBpm}
+              beatUnit={piece.score?.tempo_beat_unit}
               onBpmChange={(next) => practiceTempo.set(params.pieceId, next)}
             />
             {/*

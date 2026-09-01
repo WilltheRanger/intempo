@@ -733,6 +733,7 @@ export function RecordScreen() {
             fromMeasure={listenFrom}
             onFromMeasureChange={setListenFrom}
             bpm={targetBpm}
+            beatUnit={tempoBeatUnit}
             disabled={recording}
           />
 

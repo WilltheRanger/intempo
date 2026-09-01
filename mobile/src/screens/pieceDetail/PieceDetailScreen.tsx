@@ -38,6 +38,7 @@ import type { Piece } from '../../data/types';
 import { practiceTempo, usePracticeTempos } from '../../data/practiceTempo';
 import { BORDER_WIDTH, colors, spacing } from '../../design';
 import { formatLastPracticed } from '../../lib/format';
+import { formatTempo } from '../../lib/tempo';
 import { scheduleScore, type Schedule } from '../../lib/score';
 import type { RootNavigation, RootStackParamList } from '../../navigation/types';
 import { ListenButton } from '../../components/score/ListenButton';
@@ -347,7 +348,12 @@ export function PieceDetailScreen() {
             : measure === null
               ? `${measureCount} ${measureCount === 1 ? 'measure' : 'measures'}`
               : `Measure ${measure} of ${measureCount}`,
-          hasNotation ? `${bpm} BPM` : null,
+          // **In the page's own unit.** `bpm` is quarter-note BPM, which is the
+          // clock the score and the analysis run on and not always the number
+          // printed on the music: a 6/8 piece marked dotted-quarter = 60 is 90
+          // here. Saying "90 BPM" beside a Record screen that says 60 is two
+          // numbers for one tempo.
+          hasNotation ? formatTempo(bpm, piece.score?.tempo_beat_unit) : null,
         ]}
       />
 
