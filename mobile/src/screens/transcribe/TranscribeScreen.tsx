@@ -49,7 +49,7 @@ function describeScanFailure(cause: unknown): string {
   ) {
     return cause.message;
   }
-  return 'The page could not be sent. Check your connection and try again.';
+  return 'The scan could not be sent. Check your connection and try again.';
 }
 
 export function TranscribeScreen() {
@@ -169,7 +169,7 @@ export function TranscribeScreen() {
     return (
       <ScreenContainer>
         <EmptyState
-          title="The page didn't upload"
+          title={total === 1 ? "The page didn't upload" : "The pages didn't upload"}
           description={error}
           actionLabel="Back to pages"
           onActionPress={() => navigation.goBack()}
