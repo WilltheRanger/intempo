@@ -91,7 +91,10 @@ describe('what survives the trip', () => {
     // Sixteenths and dotted values are drawn now; a triplet still is not,
     // because it is an ordinary eighth under a bracket this cannot draw and
     // drawing the notehead alone makes the bar read half again as long.
-    const stave = staveScoreFor(scoreOf('triplet_eighth', 'thirty_second'));
+    // A thirty-second and a sixty-fourth: still no glyph. This used to use a
+    // triplet eighth, which is drawn now — the rule is the same, the shortest
+    // way to reach it moved.
+    const stave = staveScoreFor(scoreOf('sixty_fourth', 'thirty_second'));
 
     expect(stave.items).toHaveLength(0);
     expect(stave.undrawable).toBe(2);
@@ -111,15 +114,16 @@ describe('what survives the trip', () => {
     // The same rule as the notes, and it has to be the same rule: a rest drawn
     // at the wrong length is a bar that no longer adds up.
     //
-    // The examples changed when the rests moved onto Bravura — a sixteenth
-    // rest has a glyph now, and used to be one of these. A **dotted** rest
-    // still has none, because nothing draws a dot on a rest, and neither does
-    // a thirty-second. The rule is what is being tested; these are only the
-    // shortest way to reach it today.
+    // **The examples here are expected to keep moving, and have three times.**
+    // A sixteenth rest was one, until the rests moved onto Bravura. A dotted
+    // rest was one, until the dot followed. The *rule* is the invariant — a
+    // rest is never drawn at a length the page does not print — and these are
+    // only the shortest way to reach it today. If a future change makes both
+    // of these drawable, replace them; do not weaken the assertion.
     const score = scoreOf('quarter');
     score.measures[0].notes.push(
       { pitch: 'rest', duration: 'thirty_second' } as never,
-      { pitch: 'rest', duration: 'dotted_half' } as never,
+      { pitch: 'rest', duration: 'double_dotted_half' } as never,
     );
 
     const stave = staveScoreFor(score);
@@ -148,7 +152,7 @@ describe('what survives the trip', () => {
     // of a phrase.
     const score = scoreOf('quarter');
     score.measures.push(
-      { measure_number: 2, notes: [{ pitch: 'E2', duration: 'triplet_eighth' }], slurs: [] } as never,
+      { measure_number: 2, notes: [{ pitch: 'E2', duration: 'thirty_second' }], slurs: [] } as never,
       { measure_number: 3, notes: [{ pitch: 'G2', duration: 'quarter' }], slurs: [] } as never,
     );
 
@@ -220,7 +224,7 @@ describe('describeUndrawnScore', () => {
   it('explains a page whose every note is undrawable', () => {
     // The screenshot this was found from: a bass part in sixteenths and dotted
     // eighths, rendering as a title and a photograph and nothing else.
-    const said = describeUndrawnScore(staveScoreFor(scoreOf('triplet_eighth', 'thirty_second')));
+    const said = describeUndrawnScore(staveScoreFor(scoreOf('sixty_fourth', 'thirty_second')));
 
     expect(said).toMatch(/can't draw yet/i);
     // It has to say the reading survived, or a musician reads a blank stave as
@@ -245,12 +249,11 @@ describe('describeUndrawnScore', () => {
   });
 
   it('distinguishes undrawable rest values from undrawable note values', () => {
-    // Dotted rests, not sixteenths: a sixteenth rest has a glyph now. Nothing
-    // draws a dot on a rest, so these are still the undrawable ones.
+    // Thirty-seconds: sixteenth rests and dotted rests are both drawn now.
     const score = scoreOf();
     score.measures[0].notes.push(
-      { pitch: 'rest', duration: 'dotted_quarter' } as never,
-      { pitch: 'rest', duration: 'dotted_quarter' } as never,
+      { pitch: 'rest', duration: 'thirty_second' } as never,
+      { pitch: 'rest', duration: 'thirty_second' } as never,
     );
 
     const rests = describeUndrawnScore(staveScoreFor(score));
@@ -268,7 +271,7 @@ describe('describeOmissions', () => {
   it('names both kinds of omission, and gets the plurals right', () => {
     // A *drawable* rest is no longer an omission — that is the change. What is
     // still one is a rest whose value has no glyph, exactly as for a note.
-    const score = scoreOf('quarter', 'triplet_eighth');
+    const score = scoreOf('quarter', 'thirty_second');
     score.measures[0].notes.push({ pitch: 'rest', duration: 'thirty_second' } as never);
 
     const said = describeOmissions(staveScoreFor(score));
@@ -284,7 +287,7 @@ describe('describeOmissions', () => {
 
   it('says the engraving is incomplete rather than approximate', () => {
     // The distinction the whole module turns on, said to the musician.
-    expect(describeOmissions(staveScoreFor(scoreOf('triplet_eighth')))).toMatch(
+    expect(describeOmissions(staveScoreFor(scoreOf('thirty_second')))).toMatch(
       /incomplete rather than approximate/i,
     );
   });

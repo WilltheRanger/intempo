@@ -114,10 +114,40 @@ export const TAILS: Record<NoteValue, number> = {
   sixteenth: 2,
 };
 
+/**
+ * A note or rest's membership of a tuplet.
+ *
+ * **A triplet eighth is an eighth notehead that lasts a third of a beat**, and
+ * the only thing on the page saying so is the bracket with a 3 over it. Draw
+ * the notehead without the bracket and you have printed three eighths where
+ * the page has three triplet-eighths — a bar half again as long as it is, in
+ * the same ink as the bars that are right. That is why `fromScore` dropped
+ * every tuplet rather than drawing one, and why drawing them needs the bracket
+ * and not just the notehead.
+ */
+export interface Tuplet {
+  /** 3 for a triplet, 5 for a quintuplet, 7 for a septuplet. */
+  count: number;
+  /** True on the first item of the group, so the engraver can bracket it. */
+  starts: boolean;
+}
+
 export interface StaveNote {
   /** Scientific pitch, e.g. `D4`, `F#4`. Flats are not drawn — see `Accidental`. */
   pitch: string;
   value: NoteValue;
+  /**
+   * How long this note really lasts, in quarter notes.
+   *
+   * Normally derivable from `value` and `dots`, and omitted when it is. A
+   * **tuplet** is the case where it is not: a triplet eighth is drawn as an
+   * eighth and lasts a third of a beat, not half of one. Beam grouping counts
+   * in real time, so without this a triplet would break its own beam in the
+   * middle and every group after it in the bar would be placed from the wrong
+   * position.
+   */
+  quarters?: number;
+  tuplet?: Tuplet;
   /** Augmentation dots, 0 or 1. A dotted quarter is `quarter` with `dots: 1`. */
   dots?: number;
   /** Starts a new bar before this note. */
@@ -142,6 +172,11 @@ export interface StaveNote {
  */
 export interface StaveRest {
   rest: NoteValue;
+  /** Augmentation dots, 0 or 1. */
+  dots?: number;
+  /** As on `StaveNote` — a rest inside a tuplet is part of the group. */
+  quarters?: number;
+  tuplet?: Tuplet;
   barBefore?: boolean;
   measureNumber?: number;
 }
@@ -259,6 +294,14 @@ export interface EngravedRest {
   x: number;
   y: number;
   value: NoteValue;
+  /**
+   * Augmentation dots, 0 or 1. Same mark, same meaning, same reason as a note's.
+   *
+   * A dotted quarter rest was the **last** thing in the whole corpus with no
+   * glyph, and it was undrawable only because nothing had put the dot after a
+   * rest — the glyph and the note's placement rule already existed.
+   */
+  dots: number;
 }
 
 /** A multi-bar rest: the block, and where its number goes. */
@@ -320,6 +363,13 @@ export interface EngravedBeam {
 export const BEAM_THICKNESS_FACTOR = 0.5;
 const BEAM_PITCH = BEAM_THICKNESS_FACTOR * 1.5;
 
+/** How far a tuplet bracket clears the furthest thing under it, in staff spaces. */
+const TUPLET_CLEARANCE = 1.2;
+/** How far the bracket's end hooks drop towards the notes. */
+const TUPLET_HOOK = 0.7;
+/** Room above and below a bracket for its numeral. */
+const TUPLET_NUMBER_ROOM = 1.4;
+
 /** How far a stub reaches, capped so it never touches the next stem. */
 const STUB_FACTOR = 1.1;
 
@@ -373,6 +423,26 @@ export interface EngravedHead {
   time: { x: number; beats: number; unit: number } | null;
 }
 
+/**
+ * A tuplet bracket: the line over (or under) the group and its numeral.
+ *
+ * The bracket is what makes three eighths a triplet, so it is not decoration —
+ * it is the only mark on the page that states the ratio. Drawn on the stem
+ * side, which is where an engraver puts it, and broken in the middle for the
+ * number.
+ */
+export interface EngravedTuplet {
+  from: number;
+  to: number;
+  /** The bracket's line. The hooks drop from it towards the notes. */
+  y: number;
+  /** Down from `y` for a bracket above the notes, up for one below. */
+  hook: number;
+  /** Where the numeral's centre sits, in the gap left for it. */
+  numberX: number;
+  count: number;
+}
+
 export interface EngravedSystem {
   /** Y of each of the five staff lines, top first. Absolute in the drawing. */
   staffLines: number[];
@@ -395,6 +465,7 @@ export interface EngravedSystem {
    */
   measureSpans: MeasureSpan[];
   beams: EngravedBeam[];
+  tuplets: EngravedTuplet[];
   /** Clef, key and metre at the left edge. Empty when none was asked for. */
   head: EngravedHead;
   /** Baseline for the note names printed under this system. */
@@ -708,6 +779,7 @@ function layoutSystem(
   const multiRests: EngravedMultiRest[] = [];
   const barlines: number[] = [];
   const beams: EngravedBeam[] = [];
+  const tuplets: EngravedTuplet[] = [];
   const stemLength = lineGap * STEM_FACTOR;
   const thickness = lineGap * BEAM_THICKNESS_FACTOR;
 
@@ -799,7 +871,7 @@ function layoutSystem(
           : item.rest === 'half'
             ? 0
             : 0;
-      engravedRests.push({ x, y, value: item.rest });
+      engravedRests.push({ x, y, value: item.rest, dots: item.dots ?? 0 });
       x += noteGap + (room[index + 1] ?? 0);
       return;
     }
@@ -997,7 +1069,7 @@ function layoutSystem(
       // A multi-bar rest ends its bar, so the clock restarts at the next
       // `barBefore` regardless.
       if (isRest(item)) {
-        atBeat += QUARTERS[item.rest];
+        atBeat += item.quarters ?? QUARTERS[item.rest];
       }
       return;
     }
@@ -1010,7 +1082,7 @@ function layoutSystem(
     if (onABeat && atBeat > 0) {
       flush();
     }
-    atBeat += QUARTERS[item.value] * (item.dots ? 1.5 : 1);
+    atBeat += item.quarters ?? QUARTERS[item.value] * (item.dots ? 1.5 : 1);
     // **Anything with a tail beams, not eighths alone.** This read
     // `value === 'eighth'`, which was the whole of what the engraver could
     // draw at the time — so when sixteenths arrived they were never grouped,
@@ -1027,6 +1099,102 @@ function layoutSystem(
     }
   });
   flush();
+
+  /**
+   * Tuplet brackets, walked over the items the same way the beams were.
+   *
+   * **Positions come from what is actually on the staff**, so a group is
+   * bracketed from its first item to its last whether those are notes, rests,
+   * or a mix — a triplet with a rest in it is one triplet, and bracketing only
+   * the noteheads would say otherwise.
+   *
+   * The bracket sits on the **stem side**, which is where an engraver puts it,
+   * and clear of whatever is furthest out — a beam, a stem tip, or a notehead
+   * on a whole note. Its middle is left empty for the numeral.
+   */
+  {
+    let open: {
+      count: number;
+      from: number;
+      to: number;
+      ys: number[];
+      /** How the group's stems point. The bracket goes on that side. */
+      ups: number;
+      downs: number;
+    } | null = null;
+    let noteAt = 0;
+    let restAt = 0;
+
+    const close = () => {
+      if (!open || open.to <= open.from) {
+        open = null;
+        return;
+      }
+      // **On the stem side**, which is where an engraver puts it and what the
+      // stems themselves already decided. This read `min(ys) <= 0` — "is the
+      // group high on the staff" — which is a different question with a
+      // different answer: a group of high notes has *down* stems, so the
+      // bracket went above while every stem pointed away from it.
+      //
+      // A group whose stems disagree takes the majority; ties go above, which
+      // is the safer of the two because a bracket below competes with the note
+      // names row.
+      const above = open.ups >= open.downs;
+      const edge = above ? Math.min(...open.ys) : Math.max(...open.ys);
+      const y = edge + (above ? -1 : 1) * lineGap * TUPLET_CLEARANCE;
+      tuplets.push({
+        from: open.from,
+        to: open.to,
+        y,
+        hook: (above ? 1 : -1) * lineGap * TUPLET_HOOK,
+        numberX: (open.from + open.to) / 2,
+        count: open.count,
+      });
+      open = null;
+    };
+
+    notes.forEach((item) => {
+      if (isMultiRest(item)) {
+        close();
+        return;
+      }
+      const drawn = isNote(item) ? engravedNotes[noteAt] : engravedRests[restAt];
+      if (isNote(item)) {
+        noteAt += 1;
+      } else {
+        restAt += 1;
+      }
+      const tuplet = item.tuplet;
+      if (!tuplet) {
+        close();
+        return;
+      }
+      if (tuplet.starts) {
+        close();
+        open = { count: tuplet.count, from: drawn.x, to: drawn.x, ys: [], ups: 0, downs: 0 };
+      }
+      if (!open) {
+        // A tuplet whose opening item this build could not draw. Bracketing
+        // from the second note would print a group of the wrong length.
+        return;
+      }
+      open.to = drawn.x;
+      // Whatever reaches furthest on the stem side: a stem tip if there is
+      // one, the notehead if there is not.
+      if (isNote(item)) {
+        const engraved = engravedNotes[noteAt - 1];
+        open.ys.push(engraved.y, engraved.stem?.to ?? engraved.y);
+        if (engraved.stemUp) {
+          open.ups += 1;
+        } else {
+          open.downs += 1;
+        }
+      } else {
+        open.ys.push(drawn.y);
+      }
+    });
+    close();
+  }
 
   // The real extent, not an estimate: stems and ledger lines both reach
   // outside the staff, and a box sized from the noteheads alone clips exactly
@@ -1050,6 +1218,11 @@ function layoutSystem(
   for (const rest of engravedRests) {
     extents.push(rest.y - lineGap, rest.y + lineGap);
   }
+  // A bracket above a high note is the top of the drawing, and its numeral
+  // sits above the line again.
+  for (const tuplet of tuplets) {
+    extents.push(tuplet.y - lineGap * TUPLET_NUMBER_ROOM, tuplet.y + lineGap * TUPLET_NUMBER_ROOM);
+  }
   for (const block of multiRests) {
     extents.push(block.numberY - lineGap * MULTI_REST_NUMBER_FACTOR, block.y + block.halfHeight);
   }
@@ -1065,6 +1238,7 @@ function layoutSystem(
       multiRests,
       measureSpans,
       beams,
+      tuplets,
       head,
       nameY,
       width: right,
@@ -1102,6 +1276,7 @@ function shift(system: EngravedSystem, dy: number): EngravedSystem {
       numberY: block.numberY + dy,
     })),
     beams: system.beams.map((beam) => ({ ...beam, y: beam.y + dy })),
+    tuplets: system.tuplets.map((t) => ({ ...t, y: t.y + dy })),
     head: {
       clef: system.head.clef ? { ...system.head.clef, y: system.head.clef.y + dy } : null,
       key: system.head.key.map((a) => ({ ...a, y: a.y + dy })),

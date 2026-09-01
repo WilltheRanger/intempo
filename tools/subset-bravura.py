@@ -50,6 +50,10 @@ RANGES = [
     "E240-E243",  # flag8thUp/Down, flag16thUp/Down
     "E1E7",  # augmentationDot
     "E030-E043",  # barlines and repeat dots
+    # tuplet0..9 — the small bold-italic digits over a tuplet bracket. Not the
+    # time-signature digits: those are sized to fill two staff spaces, and a
+    # tuplet numeral set that big reads as a metre change.
+    "E880-E889",
 ]
 
 

@@ -1,5 +1,7 @@
 import type { ScoreJson, ScoreMeasure } from '../../data/types';
 import { stepOf } from './engrave';
+import { BEATS } from '../score/schedule';
+import type { Duration } from '../../data/types';
 import type { NoteValue, StaveItem } from './engrave';
 
 /**
@@ -111,7 +113,9 @@ const DRAWABLE: Partial<Record<string, { value: NoteValue; dots: number }>> = {
  * sixteenth rest is a real thing on a real page that this was quietly
  * dropping.
  *
- * Dots are still absent: nothing draws one on a rest.
+ * Dots arrived with the glyphs: an augmentation dot on a rest is the same
+ * mark in the same place as one on a note, and a dotted quarter rest was the
+ * last thing in the corpus this could not draw.
  */
 const DRAWABLE_RESTS: Partial<Record<string, { value: NoteValue; dots: number }>> = {
   whole: { value: 'whole', dots: 0 },
@@ -119,20 +123,50 @@ const DRAWABLE_RESTS: Partial<Record<string, { value: NoteValue; dots: number }>
   quarter: { value: 'quarter', dots: 0 },
   eighth: { value: 'eighth', dots: 0 },
   sixteenth: { value: 'sixteenth', dots: 0 },
+  // Dots, which this had never carried. A dotted quarter rest was the last
+  // thing in the corpus with no glyph — and only because nothing had put the
+  // dot after a rest. The mark, and the rule for lifting it off a staff line,
+  // were already there for the notes.
+  dotted_half: { value: 'half', dots: 1 },
+  dotted_quarter: { value: 'quarter', dots: 1 },
+  dotted_eighth: { value: 'eighth', dots: 1 },
 };
 
 /**
- * **Tuplets are still left out, and that is a decision rather than a gap.**
+ * Tuplets: a base value, and the number over the bracket.
  *
- * A `triplet_eighth` is written as an ordinary eighth under a bracket marked 3,
- * and this engraver draws no brackets. Drawing the notehead alone would put
- * three eighths where the page has three triplet-eighths — a bar that reads as
- * half again as long as it is, in the same ink as the notes around it that are
- * right. That is the one thing `fromScore` exists to refuse.
+ * **This used to refuse them, and the refusal was right at the time.** A
+ * `triplet_eighth` is written as an ordinary eighth under a bracket marked 3.
+ * Drawing the notehead alone puts three eighths where the page has three
+ * triplet-eighths — a bar half again as long as it is, in the same ink as the
+ * notes around it that are right, which is the one thing this module exists to
+ * refuse. So they were dropped, and the screen said how many.
  *
- * 12 of the corpus's remaining undrawn notes are tuplets. They stay counted in
- * `undrawable`, and the screen says so.
+ * `engrave.ts` draws brackets now, so the notehead is no longer alone. Two
+ * things travel with it and both are load-bearing: the **count**, which is
+ * what the bracket says, and the note's **true duration in quarters**, because
+ * beam grouping counts in real time and a triplet eighth is a third of a beat
+ * rather than half of one.
+ *
+ * Only the families the vocabulary has — three, five and seven. A tuplet
+ * written any other way is still dropped and still counted, because a bracket
+ * marked with the wrong number is worse than no bracket.
  */
+const TUPLET_FAMILIES: { prefix: string; count: number }[] = [
+  { prefix: 'triplet_', count: 3 },
+  { prefix: 'quintuplet_', count: 5 },
+  { prefix: 'septuplet_', count: 7 },
+];
+
+/** The base value a tuplet duration is *written* as, and its group size. */
+function tupletOf(duration: string): { base: string; count: number } | null {
+  for (const family of TUPLET_FAMILIES) {
+    if (duration.startsWith(family.prefix)) {
+      return { base: duration.slice(family.prefix.length), count: family.count };
+    }
+  }
+  return null;
+}
 
 /** A bar holding notes, none of which is one. */
 function isSilent(measure: ScoreMeasure): boolean {
@@ -193,12 +227,41 @@ export function staveScoreFor(score: ScoreJson): StaveScore {
     // its barline attached to the next measure's opening note.
     let opensMeasure = index > 0;
 
+    /**
+     * How far through the current tuplet group we are.
+     *
+     * A group's first item carries the bracket's start, so the run has to be
+     * counted — and reset whenever it is interrupted, which is what makes a
+     * bar of six triplet eighths two triplets rather than one bracket of six.
+     */
+    let inTuplet: { count: number; taken: number } | null = null;
+
     for (const note of measure.notes) {
+      const tuplet = tupletOf(note.duration);
+      const written = tuplet ? tuplet.base : note.duration;
       const drawn =
-        note.pitch === 'rest'
-          ? DRAWABLE_RESTS[note.duration]
-          : DRAWABLE[note.duration];
+        note.pitch === 'rest' ? DRAWABLE_RESTS[written] : DRAWABLE[written];
       const value = drawn?.value;
+
+      // A group ends when the family changes, and a full one ends by being
+      // full. Both have to close it, or six triplet eighths become one
+      // bracket marked 3 spanning all six.
+      if (!tuplet || (inTuplet && inTuplet.count !== tuplet.count)) {
+        inTuplet = null;
+      }
+      let mark: { count: number; starts: boolean } | undefined;
+      if (tuplet) {
+        if (!inTuplet || inTuplet.taken >= inTuplet.count) {
+          inTuplet = { count: tuplet.count, taken: 0 };
+          mark = { count: tuplet.count, starts: true };
+        } else {
+          mark = { count: tuplet.count, starts: false };
+        }
+        inTuplet.taken += 1;
+      }
+      // Its real length, which is not what its notehead says. Beam grouping
+      // counts in time, and a triplet eighth is a third of a beat.
+      const quarters = tuplet ? BEATS[note.duration as Duration] : undefined;
       if (note.pitch === 'rest') {
         if (!value) {
           rests += 1;
@@ -206,7 +269,10 @@ export function staveScoreFor(score: ScoreJson): StaveScore {
         }
         items.push({
           rest: value,
+          dots: drawn!.dots,
           measureNumber: measure.measure_number,
+          ...(mark ? { tuplet: mark } : {}),
+          ...(quarters !== undefined ? { quarters } : {}),
           ...(opensMeasure ? { barBefore: true } : {}),
         });
         opensMeasure = false;
@@ -233,6 +299,8 @@ export function staveScoreFor(score: ScoreJson): StaveScore {
         value,
         dots: drawn!.dots,
         measureNumber: measure.measure_number,
+        ...(mark ? { tuplet: mark } : {}),
+        ...(quarters !== undefined ? { quarters } : {}),
         ...(opensMeasure ? { barBefore: true } : {}),
       });
       noteCount += 1;

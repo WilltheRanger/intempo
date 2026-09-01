@@ -6,6 +6,99 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-01 — Tuplets, and a measuring instrument that was wrong twice
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. The last gap on the music
+side, and — found while closing it — two faults in the tool that measures it.
+
+**Files:** `mobile/src/lib/notation/engrave.ts`, `fromScore.ts` + test,
+`tuplets.test.ts` (new), `mobile/src/components/notation/Stave.tsx`,
+`mobile/assets/fonts/Bravura.otf`, `tools/subset-bravura.py`,
+`tools/engraver-coverage.py`, `mobile/src/data/sources/fixtures.ts`.
+
+### Correcting something I reported today
+
+**"Worst page 71%" was wrong**, and I quoted it in three entries above this
+one. `engraver-coverage.py` compared *notes it could draw* against *notes and
+rests together*, so every rest counted as a failure. That worst page is
+`orchestral_part_page2.musicxml`: seven items, five notes, **two whole rests** —
+which the app has drawn correctly since rests existed at all. It was never a
+71% page. The tool now reads `DRAWABLE_RESTS` as well and the figure is real.
+
+That is the second time this file has measured the wrong thing. The first was
+keeping its own copy of `DRAWABLE` and reporting 13% after the engraver learned
+sixteenths. Its own docstring warns about exactly this — *"a measuring
+instrument that keeps its own copy of what it is measuring will eventually
+measure the copy"* — and it happened again by a different route, because
+tuplets are resolved by `tupletOf` and never appear in `DRAWABLE` at all. Both
+tables and the tuplet prefixes are read from the app now.
+
+### Tuplets
+
+`fromScore` dropped every tuplet and was right to: a `triplet_eighth` is
+written as an ordinary eighth, and the notehead alone puts three eighths where
+the page has three triplet-eighths — a bar half again as long as it is, in the
+same ink as the bars that are right. The bracket is the only mark that says
+otherwise, and nothing drew brackets.
+
+Two things travel with the notehead now and both are load-bearing: the
+**count**, which is what the bracket states, and the note's **true duration in
+quarters**, because beam grouping counts in real time and a triplet eighth is a
+third of a beat rather than half of one. Without the second, a triplet breaks
+its own beam in the middle and every group after it in the bar is placed from
+the wrong position.
+
+Grouping is the part that is silently wrong if it is wrong, so it is tested:
+six triplet eighths are **two** triplets, not one bracket marked 3 spanning
+six; a group ends when the family changes or a plain note interrupts; and a
+rest inside a triplet stays in the group, because a triplet with a rest in it
+is one triplet and bracketing only the noteheads spans the wrong distance.
+
+Bravura's `tuplet0`–`tuplet9` went into the subset — small bold-italic digits,
+not the time signature's, which are sized to fill two staff spaces and read as
+a metre change.
+
+### The bracket was on the wrong side, and the screenshot said so
+
+My code chose its side with `min(ys) <= 0` — *is this group high on the staff*
+— while the comment beside it claimed "above when the stems point up". Those
+are different questions with different answers: **a group of high notes has
+down stems**, so the bracket sat above three notes whose every stem pointed
+away from it. It takes the stems' own direction now, with ties going above.
+
+### Dotted rests, which were then the only thing left
+
+`DRAWABLE_RESTS` had never carried dots, and after the tuplets landed a dotted
+quarter rest was the single remaining item in the whole corpus with no glyph.
+It was undrawable only because nothing had put the dot after a rest — the
+glyph, and the rule for lifting it off a staff line, already existed for notes.
+
+### Measured
+
+    before this session   53 of 393 notes with no glyph (13%), worst page 40%
+    before this entry     12 of 393 (3%), worst page 71%  ← the 71% was wrong
+    after                  0 of 393 (0%), worst page 100%
+
+Every note **and rest** in every fixture in the repository is now drawable. The
+tool's closing note is rewritten to say what still matters: this corpus is made
+of pages somebody chose in order to check something, the first real orchestral
+part photographed scored 0%, and nothing here could have predicted it.
+
+A triplet went into the fixture study so the bracket is visible in the sample
+build, and was verified at 6×: bracket below three down-stemmed notes, hooks
+turned up towards them, the line broken for the numeral.
+
+**mobile: 659 passed, 56 files. `tsc --noEmit` clean.**
+
+### The examples in three tests moved again
+
+`still refuses to round a rest it has no glyph for` has now had its example
+changed three times — sixteenth rests became drawable, then dotted rests did.
+The **rule** is the invariant and is untouched; the test says so explicitly
+now, and says to replace the examples rather than weaken the assertion.
+
+---
+
 ## 2026-09-01 — The rest of the notation moves onto the font
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. The consistency gap the

@@ -27,6 +27,12 @@ const GLYPH = {
   doubleSharp: '\uE263',
   doubleFlat: '\uE264',
   augmentationDot: '\uE1E7',
+  /** tuplet0..9 — small and bold-italic, not the time signature's digits. */
+  tupletDigit: (n: number) =>
+    String(n)
+      .split('')
+      .map((d) => String.fromCharCode(0xe880 + Number(d)))
+      .join(''),
   timeDigit: (n: number) => String(n).split('').map((d) => String.fromCharCode(0xe080 + Number(d))).join(''),
 } as const;
 
@@ -196,6 +202,17 @@ const RIGHT_PAD = 12;
 function onLine(y: number, lineGap: number): boolean {
   return Math.abs(Math.round(y / lineGap) * lineGap - y) < lineGap * 0.1;
 }
+
+/** Half the gap the bracket leaves for its numeral, in staff spaces. */
+const TUPLET_NUMBER_HALF_WIDTH = 0.5;
+/**
+ * The numeral's baseline, relative to the bracket line.
+ *
+ * Bravura's tuplet digits sit on their baseline like ordinary type, so
+ * centring one on the line means dropping the baseline by about half the
+ * digit's height.
+ */
+const TUPLET_NUMBER_LIFT = 0.42;
 
 const STROKE = 1.1;
 /**
@@ -462,8 +479,8 @@ export function Stave({
               The multi-bar block is large enough that full ink would make it
               the first thing seen on the page, which is the wrong subject. */}
           {system.rests.map((rest, index) => (
+            <G key={`rest-${index}`}>
             <SvgText
-              key={`rest-${index}`}
               // A rest glyph's origin is on the staff line it belongs to and
               // its own left edge, so it is centred here by half its width.
               // `engrave.ts` already decides *which* line: a whole rest hangs
@@ -478,6 +495,18 @@ export function Stave({
             >
               {REST_GLYPH[rest.value]}
             </SvgText>
+            {rest.dots > 0 ? (
+              <SvgText
+                x={rest.x + lineGap * (REST_HALF_WIDTH + 0.3)}
+                y={rest.y - (onLine(rest.y, lineGap) ? lineGap / 2 : 0)}
+                fill={ink}
+                fontSize={musicSize}
+                fontFamily={fontFamily.music}
+              >
+                {GLYPH.augmentationDot}
+              </SvgText>
+            ) : null}
+            </G>
           ))}
 
           {system.notes.map((note, index) => (
@@ -588,6 +617,69 @@ export function Stave({
               ) : null}
             </G>
           ))}
+
+          {/*
+            **Tuplet brackets.** Three eighths under a bracket marked 3 are a
+            triplet; the same three without it are three eighths, which is a
+            bar half again as long. `fromScore` dropped every tuplet until this
+            existed, and it was right to — the notehead alone states the wrong
+            rhythm in the same ink as the notes that are right.
+
+            The bracket breaks for its numeral rather than running under it: a
+            line through the digit is what an engraver never draws, and it is
+            the tell that the number is an afterthought.
+          */}
+          {system.tuplets.map((tuplet, index) => {
+            const half = lineGap * TUPLET_NUMBER_HALF_WIDTH;
+            return (
+              <G key={`tuplet-${index}`}>
+                <Line
+                  x1={tuplet.from}
+                  y1={tuplet.y + tuplet.hook}
+                  x2={tuplet.from}
+                  y2={tuplet.y}
+                  stroke={ink}
+                  strokeWidth={stroke}
+                />
+                <Line
+                  x1={tuplet.from}
+                  y1={tuplet.y}
+                  x2={tuplet.numberX - half}
+                  y2={tuplet.y}
+                  stroke={ink}
+                  strokeWidth={stroke}
+                />
+                <Line
+                  x1={tuplet.numberX + half}
+                  y1={tuplet.y}
+                  x2={tuplet.to}
+                  y2={tuplet.y}
+                  stroke={ink}
+                  strokeWidth={stroke}
+                />
+                <Line
+                  x1={tuplet.to}
+                  y1={tuplet.y}
+                  x2={tuplet.to}
+                  y2={tuplet.y + tuplet.hook}
+                  stroke={ink}
+                  strokeWidth={stroke}
+                />
+                <SvgText
+                  x={tuplet.numberX}
+                  // The numeral sits centred on the bracket's line, which is
+                  // why the line breaks for it.
+                  y={tuplet.y + lineGap * TUPLET_NUMBER_LIFT}
+                  fill={ink}
+                  fontSize={musicSize}
+                  fontFamily={fontFamily.music}
+                  textAnchor="middle"
+                >
+                  {GLYPH.tupletDigit(tuplet.count)}
+                </SvgText>
+              </G>
+            );
+          })}
 
           {system.beams.map((beam, index) => (
             // **One line per beam, and the engraver decided where it goes.**

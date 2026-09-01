@@ -13,15 +13,24 @@ The screen now says so. The question this answers is the next one: **is the
 engraver's range a real problem or a rare one**, and which values would buy the
 most if it were widened.
 
-The uncomfortable part of the answer is what it says about the corpus. Run
-against everything checked in, the engraver looks fine — 4–6% of notes have no
-glyph, no page loses more than a third. Every fixture here is a simple
-exercise-book page. The first part out of a real orchestral folder rendered as
-nothing at all, and no test in this repository could have predicted that,
-because nothing in this repository looks like one.
+The uncomfortable part of the answer is what it says about the corpus. Every
+fixture here is a page somebody chose in order to check something. The first
+part out of a real orchestral folder rendered as nothing at all, and no test in
+this repository could have predicted that, because nothing in this repository
+looks like one.
 
 So the number to watch is not the average. It is the **worst page**, and the
 corpus does not contain a bad one.
+
+**The tool has twice measured the wrong thing**, which is worth keeping in
+view given what it is for:
+
+  - It kept its own copy of `DRAWABLE` and went on reporting 13% after the
+    engraver learned sixteenths. Now it reads the app's tables.
+  - It counted **every rest as a note it could not draw**. The "worst page"
+    it reported for weeks, 71%, was five notes out of seven items where the
+    two missing were *whole rests* — which the app has drawn correctly since
+    rests existed. Rests have their own table and it now reads that too.
 """
 
 from __future__ import annotations
@@ -46,21 +55,70 @@ sys.path.insert(0, str(REPO / "backend"))
 #:
 #: Parsed rather than imported because there is no TypeScript runtime here, and
 #: it is one regex against a literal this project writes by hand anyway.
-def _drawable() -> set[str]:
+def _table(name: str) -> set[str]:
     source = (REPO / "mobile" / "src" / "lib" / "notation" / "fromScore.ts").read_text()
-    start = source.index("const DRAWABLE:")
+    start = source.index(f"const {name}:")
     body = source[start : source.index("};", start)]
     names = set(re.findall(r"^\s*([a-z_]+):\s*\{", body, re.M))
     if not names:
         raise SystemExit(
-            "could not read DRAWABLE out of fromScore.ts — the shape changed, "
+            f"could not read {name} out of fromScore.ts — the shape changed, "
             "and guessing here would report a coverage figure for an engraver "
             "that does not exist"
         )
     return names
 
 
+def _drawable() -> set[str]:
+    return _table("DRAWABLE")
+
+
+#: The tuplet prefixes `fromScore.tupletOf` strips before looking a value up.
+#:
+#: Read from the app for the same reason `DRAWABLE` is. Tuplets do not appear in
+#: `DRAWABLE` — they are a base value plus a bracket, resolved separately — so a
+#: tool that only knew `DRAWABLE` went on reporting twelve undrawable notes
+#: after they became drawable. Which is the failure this file's own docstring
+#: warns about, arriving by a second route.
+def _tuplet_prefixes() -> set[str]:
+    source = (REPO / "mobile" / "src" / "lib" / "notation" / "fromScore.ts").read_text()
+    start = source.index("const TUPLET_FAMILIES")
+    body = source[start : source.index("];", start)]
+    names = set(re.findall(r"prefix: '([a-z_]+)'", body))
+    if not names:
+        raise SystemExit(
+            "could not read TUPLET_FAMILIES out of fromScore.ts — the shape "
+            "changed, and guessing here would report a coverage figure for an "
+            "engraver that does not exist"
+        )
+    return names
+
+
 DRAWABLE = _drawable()
+
+#: Rests have their own table and always have — `Stave` draws a different shape
+#: for each, and the two sets are not the same size.
+#:
+#: **This tool did not know that**, and counted every rest as a note it could
+#: not draw. The "worst page" it reported for months, 71%, was five notes out
+#: of seven items where the missing two were *whole rests* — which the app has
+#: drawn correctly since rests were added at all. The headline that mattered
+#: was wrong in the reassuring direction's opposite: it under-reported.
+DRAWABLE_RESTS = _table("DRAWABLE_RESTS")
+TUPLET_PREFIXES = _tuplet_prefixes()
+
+
+def _drawn(pitch: str | None, duration: str | None) -> bool:
+    """Whether the app can put this item on a stave."""
+    if not duration:
+        return False
+    table = DRAWABLE_RESTS if pitch == "rest" else DRAWABLE
+    if duration in table:
+        return True
+    for prefix in TUPLET_PREFIXES:
+        if duration.startswith(prefix):
+            return duration[len(prefix):] in table
+    return False
 
 
 def _pages():
@@ -96,38 +154,47 @@ def _pages():
 
 
 def main() -> int:
-    grand: collections.Counter[str] = collections.Counter()
-    worst = (100.0, "")
+    grand: collections.Counter[tuple[str | None, str | None]] = collections.Counter()
+    # Starts empty rather than at 100: when every page is fully drawable
+    # nothing beats the initial value, and the tool printed `worst page: at
+    # 100%` — a blank where the name should be, which reads as a bug in the
+    # measurement rather than as the good news it is.
+    worst: tuple[float, str] | None = None
     rows = []
 
     for name, notes in _pages():
         if not notes:
             continue
-        grand.update(duration for _pitch, duration in notes)
-        drawn = sum(
-            1 for pitch, duration in notes if pitch != "rest" and duration in DRAWABLE
+        # Keyed on *whether it is a rest*, not on the pitch — a value can be
+        # drawable as a rest and not as a note, and keying on the pitch itself
+        # would make almost every entry unique and the tally useless.
+        grand.update(
+            ("rest" if pitch == "rest" else "note", duration) for pitch, duration in notes
         )
+        drawn = sum(1 for pitch, duration in notes if _drawn(pitch, duration))
         share = 100 * drawn / len(notes)
         rows.append((name, len(notes), drawn, share))
-        worst = min(worst, (share, name))
+        worst = (share, name) if worst is None else min(worst, (share, name))
 
     print(f"{'page':32} {'notes':>6} {'on the stave':>13}")
     for name, count, drawn, share in rows:
         print(f"{name:32} {count:6} {drawn:8} = {share:3.0f}%")
 
     print("\nevery duration in the corpus:")
-    for duration, count in grand.most_common():
-        print(f"  {duration:20} {count:5}{'' if duration in DRAWABLE else '   <- no glyph'}")
+    for (kind, duration), count in grand.most_common():
+        what = f"{'rest ' if kind == 'rest' else ''}{duration}"
+        print(f"  {what:26} {count:5}{'' if _drawn(kind, duration) else '   <- no glyph'}")
 
-    missing = sum(count for d, count in grand.items() if d not in DRAWABLE)
+    missing = sum(count for key, count in grand.items() if not _drawn(*key))
     everything = sum(grand.values())
     print(f"\n{missing} of {everything} notes have no glyph ({100 * missing / everything:.0f}%)")
-    print(f"worst page: {worst[1]} at {worst[0]:.0f}% drawn")
+    if worst:
+        print(f"worst page: {worst[1]} at {worst[0]:.0f}% drawn")
     print(
-        "\nRead the worst page, not the average. Until `orchestral_part.json` "
-        "was added the\nworst here was 67% and every fixture was an "
-        "exercise-book page, which is why a real\npart rendering as nothing "
-        "came as a surprise."
+        "\nRead the worst page, not the average — and read what this corpus is."
+        "\nEvery fixture in it is a page somebody chose to check something with."
+        "\nThe first real orchestral part photographed scored 0%, and nothing"
+        "\nhere could have predicted that, because nothing here looked like one."
     )
     return 0
 

@@ -134,7 +134,7 @@ const UNREAD_CLEF_SCORE: ScoreJson = { ...DEMO_SCORE, clef: null };
  * 2. dotted eighth + sixteenth — the stub, which is the rhythm that was drawn
  *    wrong (two full beams says both notes are sixteenths)
  * 3. a dotted quarter, an eighth alone between rests — the flag — and a flat
- * 4. a dotted half
+ * 4. a triplet, bracketed
  * 5. a half rest
  * 6. a whole note
  *
@@ -196,7 +196,16 @@ const FINE_VALUES_SCORE: ScoreJson = {
     },
     {
       measure_number: 4,
-      notes: [note('E5', 'dotted_half'), note('D5', 'quarter')],
+      // A triplet, which was dropped entirely until `engrave.ts` could draw the
+      // bracket: three eighths with no bracket over them is a bar half again as
+      // long as the page says, in the same ink as the bars that are right.
+      notes: [
+        note('E5', 'triplet_quarter'),
+        note('D5', 'triplet_quarter'),
+        note('C5', 'triplet_quarter'),
+        note('B4', 'quarter'),
+        note('A4', 'quarter'),
+      ],
       slurs: [],
     },
     {
