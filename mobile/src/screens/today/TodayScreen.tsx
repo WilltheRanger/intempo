@@ -27,6 +27,7 @@ import { describeLoadError } from '../../data/api/describeError';
 import {
   BORDER_WIDTH,
   colors,
+  CONTROL_HEIGHT,
   ICON_SIZE,
   ICON_STROKE_WIDTH,
   motion,
@@ -477,7 +478,7 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
   addPieceAction: {
-    minHeight: 76,
+    minHeight: CONTROL_HEIGHT + spacing['2xl'],
     marginTop: spacing.md,
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
