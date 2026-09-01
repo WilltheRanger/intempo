@@ -1,7 +1,7 @@
 import { useNavigation } from '@react-navigation/native';
-import { ChevronRight, Plus } from 'lucide-react-native';
+import { Camera, ChevronRight, Plus } from 'lucide-react-native';
 import { useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, View } from 'react-native';
 
 import { FadeIn } from '../../components/motion';
 import { AddPieceSheet } from '../../components/pieces/AddPieceSheet';
@@ -25,6 +25,10 @@ import { practiceTempo, usePracticeTempos } from '../../data/practiceTempo';
 import { usePreferences } from '../../data/preferences';
 import type { Piece } from '../../data/types';
 import { describeLoadError } from '../../data/api/describeError';
+import {
+  cameraCanPhotographAPage,
+  deviceHints,
+} from '../../lib/platform/pageCamera';
 import {
   BORDER_WIDTH,
   colors,
@@ -197,15 +201,65 @@ export function TodayScreen() {
   // reason to look for. The sheet is the Library's, shared rather than
   // duplicated, so all three routes in are offered from the first screen.
   if (!piece) {
+    /*
+      **The first screen a new account ever sees**, and it was composed as
+      though it were an error.
+
+      The greeting was the largest thing on it — a `heroTitle` serif "Good
+      morning" over a smaller "Nothing to practice yet" and a bordered
+      secondary button floating in the middle of five hundred empty points. On
+      a screen whose entire job is to get one piece of music in, the greeting
+      was the focal point and the one thing to do was the third thing you
+      noticed (§3 laws 4 and 7).
+
+      Now the greeting is the eyebrow it should always have been on this
+      branch, the proposition is the headline, and the action is in the thumb
+      zone. The sentence under it is the only place in the app that says what
+      the product *does*; a new account has no other way to find out.
+    */
+    const canPhotograph = cameraCanPhotographAPage(deviceHints(Platform.OS));
     return (
-      <ScreenContainer onRefresh={refresh}>
-        {header}
-        <EmptyState
-          title="Nothing to practice yet"
-          description="Add a piece of sheet music and it will show up here."
-          actionLabel="Add a piece"
-          onActionPress={() => setAddSheetVisible(true)}
+      <ScreenContainer
+        onRefresh={refresh}
+        footer={
+          <View>
+            <PrimaryButton
+              // **The camera, not a chooser**, where there is one worth using.
+              // Photographing a page is the product; a first piece is one tap
+              // rather than two, and the alternatives are still a line below.
+              label={canPhotograph ? 'Photograph sheet music' : 'Add a piece'}
+              icon={canPhotograph ? Camera : undefined}
+              onPress={() =>
+                canPhotograph
+                  ? navigation.navigate('Scanner')
+                  : setAddSheetVisible(true)
+              }
+            />
+            {canPhotograph ? (
+              <Text
+                variant="metadataSmall"
+                color="textSecondary"
+                onPress={() => setAddSheetVisible(true)}
+                accessibilityRole="button"
+                style={styles.otherRoutes}
+              >
+                Import a file or add one by hand
+              </Text>
+            ) : null}
+          </View>
+        }
+      >
+        <PageHeader
+          eyebrow={getGreeting()}
+          title="Start with a page of music"
+          action={avatar}
         />
+        <Text variant="body" color="textSecondary" style={styles.pitch}>
+          Photograph a piece you are working on. InTempo reads the notes,
+          listens while you play it, and tells you which bars you rushed and
+          which you dragged.
+        </Text>
+
         <AddPieceSheet
           visible={addSheetVisible}
           onClose={() => setAddSheetVisible(false)}
@@ -394,6 +448,15 @@ function AddPieceAction({ onPress }: { onPress: () => void }) {
 }
 
 const styles = StyleSheet.create({
+  pitch: {
+    marginTop: spacing.lg,
+  },
+  // A quiet second route under the primary, not a second button: two
+  // full-width buttons in a footer is two things asking to be pressed first.
+  otherRoutes: {
+    marginTop: spacing.lg,
+    textAlign: 'center',
+  },
   greetingRow: {
     flexDirection: 'row',
     alignItems: 'center',

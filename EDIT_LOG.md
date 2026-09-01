@@ -6,6 +6,56 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-01 — The first screen a new account sees was composed as an error message
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Found by emptying the
+fixtures and looking at the cold start, which nothing in this session had done.
+
+**Files:** `mobile/src/screens/today/TodayScreen.tsx`.
+
+An earlier fix made this branch reachable — its comment records that it *"used
+to be a dead end: it told them to photograph sheet music and the only thing on
+the screen they could press was their own avatar."* The routes are there now.
+The **composition** was still wrong:
+
+- **The greeting was the largest thing on the screen.** A `heroTitle` serif
+  "Good morning" over a smaller "Nothing to practice yet". On a screen whose
+  entire job is to get one piece of music in, the greeting was the focal point
+  (§3 law 4).
+- **The one action was a bordered secondary button floating in the middle**,
+  about a third of the way down, with five hundred empty points under it — the
+  third thing you noticed, and nowhere near a thumb (§3 law 7).
+- **Nothing said what the product does.** A brand-new account had no other way
+  to find out.
+
+Now: the greeting is the eyebrow it should always have been *on this branch*,
+the proposition is the headline, one sentence says what InTempo actually does,
+and the action is in the footer.
+
+**The action is the camera where there is one worth using.** Photographing a
+page *is* the product, so a first piece is one tap rather than two through a
+chooser; the alternatives stay a quiet line below rather than a second
+full-width button, because two buttons in a footer is two things asking to be
+pressed first. The capability test is `cameraCanPhotographAPage` — the same one
+`ImportPages` uses, not a new guess — so a laptop, whose webcam cannot resolve
+staff lines, gets "Add a piece" and the chooser instead.
+
+**Verified in both.** As a desktop browser: "Add a piece" → the sheet. Emulating
+an iPhone (`devices['iPhone 13']`, which reports touch): **"Photograph sheet
+music"** with a camera icon in the thumb zone and "Import a file or add one by
+hand" underneath. Three-foot test on the phone screenshot: the serif proposition
+first, the ink action second, the sentence third.
+
+**Also looked at, and left alone:** Library's empty state is right — "No pieces
+yet" with the ink "Add piece" already in the header. Insights' says *"Record
+yourself playing a piece"* on an account with no pieces, which names an action
+with no route from that screen; the tab bar puts Today and Library one tap away,
+so it is a dead end only in the narrowest sense. Noted rather than changed.
+
+**Rollback:** revert the commit.
+
+---
+
 ## 2026-09-01 — A stave that placed notes by clef and never drew one
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`.
