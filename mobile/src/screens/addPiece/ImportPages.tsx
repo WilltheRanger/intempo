@@ -11,7 +11,10 @@ import {
   SecondaryButton,
   Text,
 } from '../../components/primitives';
-import { captureSession } from '../../data/captureSession';
+import {
+  captureSession,
+  MAX_SCAN_PAGES,
+} from '../../data/captureSession';
 import { spacing } from '../../design';
 import {
   cameraCanPhotographAPage,
@@ -55,6 +58,7 @@ export function ImportPagesScreen() {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ['images'],
         allowsMultipleSelection: true,
+        selectionLimit: MAX_SCAN_PAGES,
         // No cropping. A page of music cropped to a square is a page of music
         // with its music cut off, and the framing that matters was decided when
         // the photograph was taken.
@@ -132,8 +136,8 @@ export function ImportPagesScreen() {
       ) : null}
 
       <Text variant="metadataSmall" color="textTertiary" style={styles.caveat}>
-        Only the first page is transcribed. A score spanning several pages
-        isn&apos;t supported yet.
+        Choose up to {MAX_SCAN_PAGES} pages. InTempo keeps their order and reads
+        all of them.
       </Text>
     </ScreenContainer>
   );
