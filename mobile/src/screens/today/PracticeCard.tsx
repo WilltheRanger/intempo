@@ -105,7 +105,11 @@ export function PracticeCard({
           state about the same take, so they should group.
         */}
         <Text variant="metadataSmall" color="textSecondary" style={styles.tempo}>
-          {formatWorkingTempo(workingBpm, piece.markedBpm)}
+          {formatWorkingTempo(
+            workingBpm,
+            piece.markedBpm,
+            piece.score?.tempo_beat_unit,
+          )}
         </Text>
 
         {lastTakeHeadline ? (

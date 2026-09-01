@@ -31,7 +31,7 @@ import {
   joinMetadata,
 } from '../../lib/format';
 import { getGreeting } from '../../lib/greeting';
-import { formatTendency } from '../../lib/tempo';
+import { formatTempo, formatTendency } from '../../lib/tempo';
 import { motion } from '../../design';
 import { suggestionsFor } from '../../lib/today';
 import type { AddPieceOption, TabScreenNavigation } from '../../navigation/types';
@@ -253,7 +253,7 @@ export function TodayScreen() {
                       title={recentTake.pieceTitle}
                       detail={joinMetadata([
                         formatLastPracticedShort(recentTake.recordedAt),
-                        `${recentTake.targetBpm} BPM`,
+                        formatTempo(recentTake.targetBpm, recentTake.tempoBeatUnit),
                         formatTendency(recentTake.verdict),
                       ])}
                       onPress={() =>
@@ -291,7 +291,7 @@ export function TodayScreen() {
                   style={styles.focusText}
                 >
                   {hasCurrentTake
-                    ? `Stay at ${workingBpm} BPM and record one more honest run. Comparing two takes shows whether the change held.`
+                    ? `Stay at ${formatTempo(workingBpm, piece.score?.tempo_beat_unit)} and record one more honest run. Comparing two takes shows whether the change held.`
                     : `Record one honest run of ${piece.title}. InTempo will map where your tempo holds and where it drifts.`}
                 </Text>
                 <SecondaryButton
