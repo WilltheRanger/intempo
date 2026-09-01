@@ -7,8 +7,8 @@ import type { Piece } from '../types';
 import { toPiece } from '../sources/api';
 
 export interface TranscribeInput {
-  /** Ordered signed upload URLs from `uploadPage`. */
-  imageUrls: string[];
+  /** Ordered owner-prefixed object keys from `uploadPage`. */
+  imageKeys: string[];
   title: string;
   composer: string | null;
   /** e.g. "I. Adagio". Null for music with no movements. */
@@ -42,13 +42,13 @@ export function useTranscribePage() {
           'Transcription needs the backend. This build is running on sample data, so there is nothing to read the photograph. Add a piece manually instead.',
         );
       }
-      if (input.imageUrls.length === 0) {
+      if (input.imageKeys.length === 0) {
         throw new Error('At least one uploaded page is required.');
       }
       const images =
-        input.imageUrls.length === 1
-          ? { image_url: input.imageUrls[0] }
-          : { image_urls: input.imageUrls };
+        input.imageKeys.length === 1
+          ? { image_url: input.imageKeys[0] }
+          : { image_urls: input.imageKeys };
       const score = await createScore({
         ...images,
         title: input.title,
@@ -67,17 +67,17 @@ export function useTranscribePage() {
 export function useAttachScorePages(pieceId: string) {
   const queryClient = useQueryClient();
   return useMutation<Piece, Error, string[]>({
-    mutationFn: async (imageUrls) => {
+    mutationFn: async (imageKeys) => {
       if (!IS_LIVE_BACKEND) {
         throw new Error('Attaching sheet music needs the backend.');
       }
-      if (!pieceId || imageUrls.length === 0) {
+      if (!pieceId || imageKeys.length === 0) {
         throw new Error('Choose at least one page to attach.');
       }
       const images =
-        imageUrls.length === 1
-          ? { image_url: imageUrls[0] }
-          : { image_urls: imageUrls };
+        imageKeys.length === 1
+          ? { image_url: imageKeys[0] }
+          : { image_urls: imageKeys };
       return toPiece(await attachScorePages(pieceId, images));
     },
     onSuccess: (piece) => {
