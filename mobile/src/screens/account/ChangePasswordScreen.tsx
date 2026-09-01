@@ -22,7 +22,7 @@ import {
   signIn,
   updatePassword,
 } from '../../data/auth/session';
-import { spacing } from '../../design';
+import { MIN_TOUCH_TARGET, spacing } from '../../design';
 import {
   describeAuthError,
   validateNewPassword,
@@ -193,8 +193,10 @@ function RevealAction({
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={revealed ? 'Hide password' : 'Show password'}
-      hitSlop={spacing.md}
-      style={({ pressed }) => (pressed ? styles.pressed : undefined)}
+      style={({ pressed }) => [
+        styles.target,
+        pressed ? styles.pressed : undefined,
+      ]}
     >
       <Text variant="sectionAction" color="textPrimary">
         {revealed ? 'Hide' : 'Show'}
@@ -204,6 +206,19 @@ function RevealAction({
 }
 
 const styles = StyleSheet.create({
+  /**
+   * Padded to a real touch target, not `hitSlop`-ed to one.
+   *
+   * **`hitSlop` does nothing on the web build.** Measured in Chromium on this
+   * very control: a click 8pt above it — inside its 12pt slop — did not
+   * activate it, while a click on the visible 18pt box did. And 18 + 2×12 is
+   * 42, which would have been two points short of `MIN_TOUCH_TARGET` even
+   * where it does work.
+   */
+  target: {
+    minHeight: MIN_TOUCH_TARGET,
+    justifyContent: 'center',
+  },
   flex: {
     flex: 1,
   },

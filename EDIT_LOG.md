@@ -6,6 +6,82 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-01 — Eight touch targets that only existed on a phone
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. From a layout audit at
+320pt — the smallest phone still in service.
+
+**Files:** `mobile/src/design/index.ts`, `components/primitives/SearchField.tsx`,
+`SectionHeader.tsx`, `components/notation/Stave.tsx`,
+`screens/auth/AuthScreen.tsx`, `screens/account/ChangePasswordScreen.tsx`,
+`screens/today/WarmupPanel.tsx`, `components/touchTargets.test.ts` (new),
+`components/notation/fit.test.ts` (new).
+
+### `hitSlop` does nothing on the web build
+
+Measured in Chromium on the password screen's **Show** control: a click 8pt
+above it — well inside its 12pt slop — did not activate it; a click on its
+visible **18pt** box did.
+
+`MIN_TOUCH_TARGET`'s own comment said *"use `hitSlop` to make up the difference
+rather than inflating the visual element"*, and eight controls followed that
+advice: the search field's clear button, every section header's action, the
+password reveal, and **all five links on the sign-in screen** — the first
+screen a consumer ever sees, each link one line of type at 18pt, under half the
+platform minimum.
+
+Two other files had already discovered this and written it down beside their
+own fix — `PlaybackSettings` (*"a hit area nothing can see is a hit area
+nothing checks"*) and `TodayScreen` (*"only on device: it has no effect under
+react-native-web"*) — while the token went on recommending it. The same shape
+as the `aria-checked` story two entries below: a fact found repeatedly, with
+the guidance still pointing the wrong way.
+
+All eight are padded to 44 now, the token says why, and
+`touchTargets.test.ts` asserts no `hitSlop` comes back. Measured after: every
+control on every mode of the sign-in screen is 44 or 52pt at both 320 and 390.
+Even where `hitSlop` *does* work, 18 + 2×12 is 42 — the password reveal would
+have been two points short.
+
+### A sixth of the warmup preview was cut off at 320pt
+
+The Today stave engraved to 335pt inside a 280pt box under `overflow: hidden`
+— clipped through a notehead.
+
+**`maxWidth` cannot fix this**, which is worth writing down because it is the
+prop that sounds like it should: it wraps onto further systems and the engraver
+breaks only at a barline, so a bar of four notes behind a clef comes to 335pt
+and stays 335pt however narrow the box is. Measured: `maxWidth: 280` gave two
+systems and a first system still 335 wide.
+
+`Stave` takes a `fitWidth` now and shrinks to it, in **one** corrective pass —
+every geometry constant is multiplied by the scale and nothing else, so the
+engraved width is linear in it and measuring once and dividing lands exactly.
+`fit.test.ts` holds that property, because it is what makes one pass enough:
+if it stops being true the fit will silently miss.
+
+Only ever down. At 390 and 430pt the preview is untouched at 335.
+
+### The probe, and one thing it got wrong
+
+A 320pt pass over 22 routes checking for clipped text and controls under 44pt.
+Its first run flagged the profile switches at 40×20 — a **false positive**:
+`ToggleRow` already hides the inner `Switch` with `aria-hidden` and carries the
+comment explaining why, and the row itself is the 44pt control. Fixing the
+probe by excluding `aria-hidden` subtrees then hid the *real* warmup clip,
+because the stave is decorative and hidden too. `aria-hidden` excuses a control
+from the touch-target floor; it never excuses a visual clip. The two checks are
+separate now.
+
+The measure editor's overflowing note picker is also correct — it is inside a
+horizontal scroller.
+
+**Tests:** 940, up 4.
+
+**Rollback:** revert the commit.
+
+---
+
 ## 2026-09-01 — "Back to score" went nowhere, on every screen
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. The third find from

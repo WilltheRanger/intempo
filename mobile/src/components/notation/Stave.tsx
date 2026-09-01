@@ -186,6 +186,20 @@ export interface StaveProps {
    * the run stays on one system, which is what the Today preview wants.
    */
   maxWidth?: number;
+  /**
+   * Shrink the engraving, if it needs it, to fit this width.
+   *
+   * **Different from `maxWidth`, and the Today preview needed this one.**
+   * `maxWidth` wraps onto further systems, and the engraver can only break at
+   * a barline — so a bar of four notes and a clef comes to 335pt and stays
+   * 335pt however small the box is. At 320pt that was drawn inside a 280pt
+   * view under `overflow: hidden`: a sixth of the music cut off, through a
+   * notehead.
+   *
+   * Only ever down. A preview that inflated to fill a wide screen would be a
+   * different decision from the one this is.
+   */
+  fitWidth?: number;
   /** Cap the notes drawn, for a preview that only suggests the shape. */
   maxNotes?: number;
   /**
@@ -306,6 +320,7 @@ export function Stave({
   clef,
   tone = 'light',
   maxWidth,
+  fitWidth,
   maxNotes,
   scale = 1,
   justify = false,
@@ -321,28 +336,43 @@ export function Stave({
   const rule = dark ? colors.onDarkMuted : colors.textSecondary;
   const label = dark ? colors.onDarkMuted : colors.textTertiary;
 
-  const lineGap = LINE_GAP * scale;
-  const layout = engrave(notes, clef, {
-    lineGap,
-    noteGap: NOTE_GAP * scale,
-    leftPad: LEFT_PAD * scale,
-    rightPad: RIGHT_PAD * scale,
-    maxWidth,
-    maxNotes,
-    justify,
-    beatQuarters,
-    closesWithRepeat,
-    endings,
-    head,
-    // Also stops the layout reserving the row's height, so hiding the names
-    // doesn't leave a band of empty space under every system.
-    nameRow: showNoteNames,
-  });
+  const engraveAt = (at: number) =>
+    engrave(notes, clef, {
+      lineGap: LINE_GAP * at,
+      noteGap: NOTE_GAP * at,
+      leftPad: LEFT_PAD * at,
+      rightPad: RIGHT_PAD * at,
+      maxWidth,
+      maxNotes,
+      justify,
+      beatQuarters,
+      closesWithRepeat,
+      endings,
+      head,
+      // Also stops the layout reserving the row's height, so hiding the names
+      // doesn't leave a band of empty space under every system.
+      nameRow: showNoteNames,
+    });
+
+  const measured = engraveAt(scale);
+  /**
+   * One corrective pass, and it lands exactly.
+   *
+   * Every geometry constant here is multiplied by the scale and nothing else,
+   * so the engraved width is linear in it: measuring once and dividing gives
+   * the scale that fits, rather than converging on it.
+   */
+  const fitted =
+    fitWidth && measured.width > fitWidth
+      ? scale * (fitWidth / measured.width)
+      : scale;
+  const lineGap = LINE_GAP * fitted;
+  const layout = fitted === scale ? measured : engraveAt(fitted);
 
   // A SMuFL em is four staff spaces, so this is the one number every glyph needs.
   const musicSize = lineGap * MUSIC_EM_IN_SPACES;
   const beamNode = lineGap * BEAM_THICKNESS_FACTOR;
-  const stroke = STROKE * scale;
+  const stroke = STROKE * fitted;
 
   return (
     <Svg
@@ -390,7 +420,7 @@ export function Stave({
               x2={system.width}
               y2={y}
               stroke={rule}
-              strokeWidth={STAFF_STROKE * scale}
+              strokeWidth={STAFF_STROKE * fitted}
             />
           ))}
 
@@ -415,7 +445,7 @@ export function Stave({
                 x2={at}
                 y2={bottom}
                 stroke={rule}
-                strokeWidth={STAFF_STROKE * 1.2 * scale}
+                strokeWidth={STAFF_STROKE * 1.2 * fitted}
               />
             );
             const heavy = (at: number) => (
@@ -763,7 +793,7 @@ export function Stave({
                   x={note.x}
                   y={system.nameY}
                   fill={label}
-                  fontSize={typography.metadataSmall.fontSize * scale}
+                  fontSize={typography.metadataSmall.fontSize * fitted}
                   fontFamily={fontFamily.sansRegular}
                   textAnchor="middle"
                 >
