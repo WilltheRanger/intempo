@@ -113,6 +113,10 @@ export interface ScoreNote {
   articulation?: Articulation | null;
   tied_to_next: boolean;
   dynamics?: Dynamics | null;
+  /** The printed duration is intentionally held beyond its written value. */
+  fermata?: boolean;
+  /** Audible grace-note attacks immediately before this main note. */
+  grace_notes?: number;
 }
 
 export interface ScoreSlur {
