@@ -102,20 +102,43 @@ function neglectedFrom(
     // than whichever the list happened to return first.
     .sort((a, b) => a.title.localeCompare(b.title));
 
-  const chosen =
-    never[0] ??
-    candidates.reduce((oldest, piece) =>
-      (daysSincePracticed(piece.lastPracticedAt, now) ?? 0) >
-      (daysSincePracticed(oldest.lastPracticedAt, now) ?? 0)
-        ? piece
-        : oldest,
-    );
+  /**
+   * **By the instant, not by the day, and that is a correctness fix rather
+   * than a tidy-up.**
+   *
+   * This was a `reduce` keeping the largest `daysSincePracticed`, which counts
+   * whole *calendar* days — so two pieces worked in the same session tie, and
+   * a strict `>` then kept whichever the list happened to return first. The
+   * branch above sorts alphabetically for exactly that reason and says so;
+   * this one had the same problem and no answer to it, so "the piece you have
+   * left longest" changed with row order. That is the Insights bug one screen
+   * over: a claim about a musician's own practice that depends on the order
+   * rows came back in.
+   *
+   * The timestamp is the better answer, not merely the deterministic one. Of
+   * two pieces played on the same day, the one played at nine has genuinely
+   * been left longer than the one played at nine in the evening — alphabetical
+   * would only have made an arbitrary choice repeatable. Title breaks a true
+   * tie, which needs two takes at the same instant.
+   */
+  const oldestFirst = [...candidates].sort((a, b) => {
+    const at = Date.parse(a.lastPracticedAt ?? '');
+    const bt = Date.parse(b.lastPracticedAt ?? '');
+    if (at !== bt) {
+      return at - bt;
+    }
+    return a.title.localeCompare(b.title);
+  });
+
+  const chosen = never[0] ?? oldestFirst[0];
 
   return {
     pieceId: chosen.id,
     title: chosen.title,
     detail:
-      formatLastPracticed(chosen.lastPracticedAt) ?? 'Ready for a first session',
+      // The same `now` the choice was made against — see `formatLastPracticed`.
+      formatLastPracticed(chosen.lastPracticedAt, now) ??
+      'Ready for a first session',
   };
 }
 
