@@ -82,3 +82,16 @@ export function keyBeforeMeasure(
   }
   return key;
 }
+
+/** Equality for the editor, where null means “no printed change”, not C major. */
+export function sameEditableSignature(
+  a: string | null,
+  b: string | null,
+): boolean {
+  if (a === null || b === null) {
+    return a === b;
+  }
+  const left = accidentalCount(a);
+  const right = accidentalCount(b);
+  return left !== null && right !== null ? left === right : a === b;
+}
