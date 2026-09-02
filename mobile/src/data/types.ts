@@ -75,9 +75,6 @@ export interface MeResponse {
    * a server without migration 013 returns false, which is correct — a
    * deployment that cannot store consent has not got any.
    *
-   * **Nothing in the app sets this yet.** The switch and its wording are a
-   * screen, and screens go through the owner (CLAUDE.md §2), so the field is
-   * here and the control is not.
    */
   training_consent: boolean;
 }
@@ -876,4 +873,9 @@ export interface Musician {
    * answered. Someone who skipped is onboarded: they were asked and declined.
    */
   onboarded: boolean;
+  /**
+   * Whether this musician explicitly allows corrected score readings and
+   * their source pages to be retained to improve the reader.
+   */
+  trainingConsent: boolean;
 }
