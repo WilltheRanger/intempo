@@ -6,6 +6,96 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-02 — The metadata line says whether the clef lasts, and a clef change is correctable
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Both of these are UI, both
+were put to the owner under the §2 gate before anything was built, and both
+were approved: *"Say when it changes"* and *"Add it to the bar editor"*.
+
+**Why they were owed.** Drawing mid-piece changes created two gaps that did not
+exist while a piece could only have one clef and one metre. The score screen's
+metadata line stated the opening values and stopped — true at bar 1 and false
+at bar 3 — and a misread clef *change* could only be corrected by re-scanning
+the whole page.
+
+### The line
+
+`lib/notation/scoreSummary.ts`, tested, holds both rules; the screen spreads
+what it returns into the existing `MetadataRow`. Measured on the running build:
+
+| Piece | Line |
+|---|---|
+| Clef-change study | `Bass clef · turns tenor · 4/4 · Moderato · 66 BPM` |
+| Key-change study | `Bass clef · 4/4 · Andante · 72 BPM` |
+| Bach BWV 1001 | `Treble clef · 4/4 · 92 BPM` |
+
+The clause appears only where something changes, which is the point — the other
+two lines are untouched.
+
+**Named rather than enumerated.** A part that turns tenor once says so; one
+moving between three clefs says only that it changes, because a metadata line
+is a worse way to learn that than the stave is, and it is not where a reader
+should be doing that work (§3 law 10). A piece that leaves the opening clef and
+comes back — bass, tenor, bass — names **tenor**: the set is what it turns
+*to*, so a return is not a third entry and "changes" would understate a part
+that only ever visits one other clef.
+
+`unknown` still yields no metre entry at all: it is the escape hatch for an
+unreadable header, not a metre, and printing the word would caption the piece
+with it.
+
+The comment above the line said *"nothing here draws a clef"*. That stopped
+being true this session, so it now says what the line is actually still for.
+
+### The control
+
+`clefEdit.ts` is `keySignatureEdit.ts`'s sibling, deliberately down to the
+shape, and carries **both** normalisations that were bugs in the key version
+this morning:
+
+- choosing the clef **already in force** records nothing;
+- editing the opening clef **clears any clef stamped on bar 1**, which would
+  otherwise outrank the header and make the correction a silent no-op.
+
+They matter more here than they did for the key, and the module says so: a key
+written where the page prints none misspells the notes its signature touches; a
+**clef** written where none is printed moves every note on the staff.
+
+`CLEF_LABELS` moved to `scoreSummary` and is now imported by both screens
+rather than being a private constant in one of them and re-typed in the other.
+
+### Three-foot test — on the screenshot of the bar editor
+
+**First** "Bar 3" in serif, **second** "4 of 4 beats" — the verdict the screen
+exists to deliver — **third** the two setting rows, then the note strip. The
+clef row is the same shape as the key row above it, so it reads as another
+setting rather than as a new kind of thing; nothing competes with the verdict.
+
+At bar 3 of the clef-change study it reads **"Clef at this bar · Tenor clef"**,
+which is the change actually stamped there — not the piece's opening bass.
+
+### Tests
+
+**mobile 1181 passed (103 files), `tsc --noEmit` clean.** Nine cases on the
+summary — including the return-to-opening case and that an unread clef is never
+guessed — and nine on `clefEdit`, mirroring the key module's, with both
+normalisations covered.
+
+### Not done
+
+- **The metre gets the same treatment in `scoreSummary` but no control.** A
+  misread metre change still needs a re-scan; only the key and the clef can be
+  corrected. Not widened on my own judgement.
+- No screenshot of the clef *sheet* open — the row and its value are what the
+  screenshot shows.
+
+### Rollback
+
+`git revert`. The line falls back to the opening values and the control
+disappears; nothing stored changes shape.
+
+---
+
 ## 2026-09-02 — A second page in another clef was joined as though it were not
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Fifth and last of the

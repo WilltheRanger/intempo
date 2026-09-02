@@ -13,7 +13,7 @@ import {
 } from '../../components/primitives';
 import { BottomSheet } from '../../components/overlays/BottomSheet';
 import { useCorrectScore, usePiece } from '../../data/hooks/usePieces';
-import type { ScoreJson, ScoreNote } from '../../data/types';
+import type { Clef, ScoreJson, ScoreNote } from '../../data/types';
 import { BORDER_WIDTH, colors, radii, spacing } from '../../design';
 import { impact, ImpactFeedbackStyle } from '../../lib/haptics';
 import {
@@ -37,6 +37,12 @@ import {
   keyBeforeMeasure,
   sameEditableSignature,
 } from './keySignatureEdit';
+import {
+  CLEF_CHOICES,
+  applyClefEdit,
+  clefBeforeMeasure,
+  describeClef,
+} from './clefEdit';
 import { timeSignaturesByMeasure } from '../../lib/notation/meter';
 
 /**
@@ -91,6 +97,8 @@ export function MeasureEditScreen() {
    * removed the opening signature or the change printed at this bar.
    */
   const [keyEdit, setKeyEdit] = useState<{ value: string | null } | null>(null);
+  const [clefEdit, setClefEdit] = useState<{ value: Clef | null } | null>(null);
+  const [pickingClef, setPickingClef] = useState(false);
   const [pickingKey, setPickingKey] = useState(false);
 
   // Seeded from the score the first time it arrives, then owned locally so a
@@ -152,6 +160,18 @@ export function MeasureEditScreen() {
     first: isFirstBar,
   });
 
+  // The clef, on exactly the same footing as the key beside it.
+  const savedClef = isFirstBar
+    ? piece.score.clef ?? null
+    : original.clef ?? null;
+  const workingClef = clefEdit === null ? savedClef : clefEdit.value;
+  const clefBefore = clefBeforeMeasure(piece.score, original.measure_number);
+  const clefDescription = workingClef
+    ? describeClef(workingClef)
+    : isFirstBar
+      ? 'Unknown — choose what the page shows'
+      : `No new clef · ${describeClef(clefBefore)} continues`;
+
   function change(patch: Partial<ScoreNote>) {
     if (!working) {
       return;
@@ -210,10 +230,14 @@ export function MeasureEditScreen() {
     // Use the same pure update path exercised by keySignatureEdit.test.ts:
     // opening signatures belong to the score header, while later signatures
     // belong only to the bar where the printed change begins.
-    const corrected =
+    const withKey =
       keyEdit === null
         ? withNotes
         : applyKeySignatureEdit(withNotes, params.measureNumber, workingKey);
+    const corrected =
+      clefEdit === null
+        ? withKey
+        : applyClefEdit(withKey, params.measureNumber, workingClef);
     try {
       await correct.mutateAsync(corrected);
       goBack();
@@ -257,7 +281,10 @@ export function MeasureEditScreen() {
             label="Save this bar"
             onPress={() => void save()}
             loading={correct.isPending}
-            disabled={correct.isPending || (notes === null && keyEdit === null)}
+            disabled={
+              correct.isPending ||
+              (notes === null && keyEdit === null && clefEdit === null)
+            }
           />
         </View>
       }
@@ -320,6 +347,36 @@ export function MeasureEditScreen() {
           {!isFirstBar && workingKey === null ? (
             <Text variant="metadataSmall" color="textTertiary">
               Choose a signature only if a new one is printed at this bar.
+            </Text>
+          ) : null}
+        </View>
+        <Text variant="metadataSmall" color="accentText">
+          Change
+        </Text>
+      </Pressable>
+
+      {/*
+        And the clef, which is bar-level music for the same reason.
+
+        A cello or bass part climbing into tenor for a high passage is ordinary
+        writing, and a reader that misses the change places every note after it
+        a sixth off — so a misread one had to be correctable without
+        re-scanning the page.
+      */}
+      <Text variant="sectionLabel" color="textSecondary" style={styles.keyLabel}>
+        {isFirstBar ? 'Opening clef' : 'Clef at this bar'}
+      </Text>
+      <Pressable
+        onPress={() => setPickingClef(true)}
+        accessibilityRole="button"
+        accessibilityLabel={`Change clef. ${clefDescription}`}
+        style={styles.keySetting}
+      >
+        <View style={styles.keyCopy}>
+          <Text variant="metadata">{clefDescription}</Text>
+          {!isFirstBar && workingClef === null ? (
+            <Text variant="metadataSmall" color="textTertiary">
+              Choose a clef only if a new one is printed at this bar.
             </Text>
           ) : null}
         </View>
@@ -580,6 +637,62 @@ export function MeasureEditScreen() {
                 onPress={() => {
                   setKeyEdit({ value: choice.value });
                   setPickingKey(false);
+                }}
+                accessibilityRole="button"
+                accessibilityState={{ selected: selectedChoice }}
+                aria-pressed={selectedChoice}
+                style={[styles.keyChoice, selectedChoice && styles.keyChoiceOn]}
+              >
+                <Text variant="metadata">{choice.label}</Text>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+      </BottomSheet>
+
+      <BottomSheet
+        visible={pickingClef}
+        onClose={() => setPickingClef(false)}
+        title={isFirstBar ? 'Opening clef' : `Clef at bar ${params.measureNumber}`}
+        expand
+      >
+        <Text variant="body" color="textSecondary" style={styles.keyHelp}>
+          {isFirstBar
+            ? 'Choose the clef printed at the beginning of the piece.'
+            : 'Choose a new clef only when one is printed at this bar. Otherwise keep the previous clef.'}
+        </Text>
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.keyChoices}
+        >
+          <Pressable
+            onPress={() => {
+              setClefEdit({ value: null });
+              setPickingClef(false);
+            }}
+            accessibilityRole="button"
+            accessibilityState={{ selected: workingClef === null }}
+            aria-pressed={workingClef === null}
+            style={[styles.keyChoice, workingClef === null && styles.keyChoiceOn]}
+          >
+            <Text variant="metadata">
+              {isFirstBar ? 'Clef not read' : 'No new clef at this bar'}
+            </Text>
+            {!isFirstBar ? (
+              <Text variant="metadataSmall" color="textTertiary">
+                {describeClef(clefBefore)} continues
+              </Text>
+            ) : null}
+          </Pressable>
+
+          {CLEF_CHOICES.map((choice) => {
+            const selectedChoice = workingClef === choice.value;
+            return (
+              <Pressable
+                key={choice.value}
+                onPress={() => {
+                  setClefEdit({ value: choice.value });
+                  setPickingClef(false);
                 }}
                 accessibilityRole="button"
                 accessibilityState={{ selected: selectedChoice }}
