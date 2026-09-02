@@ -682,6 +682,8 @@ export interface PieceInsight {
    * so the bar and the verdict can't disagree.
    */
   meanDeviationPct: number;
+  /** How far off the beat, either way — see `PracticeInsights.spreadPct`. */
+  spreadPct: number;
   band: Band;
   direction: Direction;
   verdict: Verdict;
@@ -703,6 +705,20 @@ export interface PracticeInsights {
   sessions: number;
   /** Mean deviation across every session, as a percentage of one beat. */
   meanDeviationPct: number;
+  /**
+   * Mean **distance** from the beat, ignoring which side — the same unit.
+   *
+   * The companion `meanDeviationPct` needs and never had. That one is a signed
+   * mean, so a musician who is 18% ahead in one bar and 18% behind in the next
+   * averages to zero and reads as perfectly steady. This one reads 18, which is
+   * the number that describes the playing.
+   *
+   * Never smaller than `Math.abs(meanDeviationPct)`, since the mean of the
+   * absolute values is at least the absolute value of the mean — so the gap
+   * between them is exactly the part of the wandering that a direction cannot
+   * explain.
+   */
+  spreadPct: number;
   band: Band;
   direction: Direction;
   verdict: Verdict;

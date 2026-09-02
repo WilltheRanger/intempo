@@ -2,7 +2,7 @@ import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 
 import { BORDER_WIDTH, colors, radii, type ColorToken } from '../../design';
 import type { Tolerance } from '../../data/types';
-import { fullScaleFor } from '../../lib/tempo';
+import { fullScaleFor, sharedFullScaleFor } from '../../lib/tempo';
 
 const TRACK_HEIGHT = 4;
 const CENTRE_HEIGHT = 12;
@@ -25,6 +25,20 @@ export interface DeviationBarProps {
    * owns that fallback.
    */
   tolerance: Tolerance | null;
+  /**
+   * Draw both ways out to this distance instead of one way to `deviationPct`.
+   *
+   * **For a musician whose drift has no side.** `deviationPct` is signed, so a
+   * take 18% ahead in one bar and 18% behind in the next averages to zero and
+   * this bar draws nothing — under a headline that says the tempo wanders.
+   * That is the same contradiction between a word and its picture that the
+   * headline itself was fixed for, one element lower down.
+   *
+   * A symmetric fill is not a decoration on the signed reading; it is the
+   * honest drawing of a different quantity, so the caller passes it only when
+   * that is the quantity being reported (`TendencyReading.showsSpread`).
+   */
+  spreadPct?: number;
   accessibilityLabel: string;
   style?: StyleProp<ViewStyle>;
 }
@@ -44,12 +58,19 @@ export interface DeviationBarProps {
 export function DeviationBar({
   deviationPct,
   tolerance,
+  spreadPct,
   fill = 'accent',
   accessibilityLabel,
   style,
 }: DeviationBarProps) {
-  const fullScale = fullScaleFor(tolerance, deviationPct);
-  const clamped = Math.max(-1, Math.min(1, deviationPct / fullScale));
+  const spread = spreadPct !== undefined;
+  // The shared scale when the fill runs both ways, since one bar cannot use a
+  // different scale on each side of its own centre.
+  const fullScale = spread
+    ? sharedFullScaleFor(tolerance)
+    : fullScaleFor(tolerance, deviationPct);
+  const value = spread ? spreadPct : deviationPct;
+  const clamped = Math.max(-1, Math.min(1, value / fullScale));
   // Half the track is one full deflection, so a fraction of it is that
   // fraction of 50%.
   const width = `${Math.abs(clamped) * 50}%` as const;
@@ -67,9 +88,18 @@ export function DeviationBar({
         style={[
           styles.fill,
           { width, backgroundColor: colors[fill] },
-          ahead ? styles.fillAhead : styles.fillBehind,
+          spread || ahead ? styles.fillAhead : styles.fillBehind,
         ]}
       />
+      {spread ? (
+        <View
+          style={[
+            styles.fill,
+            { width, backgroundColor: colors[fill] },
+            styles.fillBehind,
+          ]}
+        />
+      ) : null}
 
       {/* Drawn last so the reference stays visible through the fill. */}
       <View style={styles.centre} />

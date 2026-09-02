@@ -1,6 +1,6 @@
 import type { Piece, PracticeInsights } from '../data/types';
 import { daysSincePracticed, formatLastPracticed } from './format';
-import { formatVerdict } from './tempo';
+import { readPieceWord, tempoWanders } from './insights/tendency';
 
 /**
  * What to put under the practice card, and why.
@@ -58,7 +58,14 @@ function attentionFrom(
   excluded: (string | null)[],
 ): Suggestion | null {
   const entry = insights?.pieces.find(
-    (piece) => !excluded.includes(piece.pieceId) && piece.verdict !== 'on_tempo',
+    (piece) =>
+      !excluded.includes(piece.pieceId) &&
+      // **`verdict` alone is not "is anything wrong with this piece".** It is
+      // a claim about a *direction*, and a piece played a long way off the
+      // beat on both sides has no direction — its verdict is `on_tempo` and
+      // its playing is the least steady in the library. Reading only the
+      // verdict skipped exactly the piece most worth naming here.
+      (piece.verdict !== 'on_tempo' || tempoWanders(piece)),
   );
   if (!entry) {
     return null;
@@ -67,7 +74,7 @@ function attentionFrom(
   return {
     pieceId: entry.pieceId,
     title: entry.title,
-    detail: `${formatVerdict(entry.verdict)} across ${sessions}`,
+    detail: `${readPieceWord(entry)} across ${sessions}`,
   };
 }
 

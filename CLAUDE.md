@@ -441,6 +441,35 @@ there works differently as of 2026-08-24:
   the photograph exists to check, so it cannot be the thing that authorises
   throwing it away.
 
+- **A signed mean answers "which way", never "how much"** (2026-09-02). Insights
+  summarised thirty days with one, so a musician 18% ahead in one bar and 18%
+  behind in the next averaged to **zero** — and the headline's band and
+  direction were not read off that mean at all but **borrowed from one take**,
+  whichever sat nearest it. Two takes 15% either side of the beat therefore
+  read "You tend to drag" or "You tend to rush" **depending on the order the
+  server returned them in**, over a bar sitting dead centre. `spreadPct` is the
+  companion: mean **distance** from the beat, averaged over a take's
+  *measures*, because a per-take mean is where the cancelling happens. It is
+  never below `|meanDeviationPct|`, so the gap is the part no direction
+  explains.
+  `bandFor` / `directionFor` are ports of the pipeline's `classify_band` /
+  `_direction` applied to the aggregate — safe only because
+  `result_json.tolerance` travels with each take, so **no threshold is invented
+  in the app**; that also deleted a third copy of them inlined in `fixtures.ts`.
+  `tempoWanders` is two of the server's threshold tests, never a ratio between
+  the two figures (`DECISIONS.md`, 2026-09-02), and the spread is tested
+  against the **wider** inner threshold because a distance has no side.
+  Where a direction would be false the word is **"Uneven"** — the word
+  `measureReading.ts` already uses — and the bar fills **both ways**: a centred
+  bar under "Your tempo wanders" is the same word-versus-picture contradiction
+  one element lower.
+  Three things fell out of reading `verdict` as "is anything wrong here":
+  `PieceInsightRow` said "On tempo" for the least steady piece in the library,
+  `today.ts` skipped that piece for having no direction while sorting it to the
+  bottom, and "Recent sessions" ran a *single take* through `formatTendency`,
+  whose own comment says one recording cannot see a habit — rendering
+  "Today · 96 BPM · You tend to rush".
+
 - **Onboarding is one screen, all three answers are required, and the gate
   fails open.** Name, photograph and instrument — the owner's call on
   2026-08-25 (*"dont make name profile and instrument optional"*), reversing

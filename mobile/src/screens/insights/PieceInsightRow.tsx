@@ -5,7 +5,7 @@ import { MetadataRow } from '../../components/primitives/MetadataRow';
 import { Text } from '../../components/primitives/Text';
 import type { PieceInsight } from '../../data/types';
 import { BORDER_WIDTH, colors, spacing } from '../../design';
-import { formatVerdict } from '../../lib/tempo';
+import { readPieceWord, tempoWanders } from '../../lib/insights/tendency';
 import { DeviationBar } from './DeviationBar';
 
 export interface PieceInsightRowProps {
@@ -30,7 +30,11 @@ export interface PieceInsightRowProps {
  * place a musician has just been told which piece needs work.
  */
 export function PieceInsightRow({ insight, onPress, last = false }: PieceInsightRowProps) {
-  const verdict = formatVerdict(insight.verdict);
+  // "Uneven" where a direction would be false — see `readPieceWord`. Without
+  // it a piece a musician plays a long way off the beat on both sides reads
+  // "On tempo" in the row they tap to go and practise it.
+  const verdict = readPieceWord(insight);
+  const wanders = tempoWanders(insight);
 
   return (
     <PressableScale
@@ -52,6 +56,7 @@ export function PieceInsightRow({ insight, onPress, last = false }: PieceInsight
 
         <DeviationBar
           deviationPct={insight.meanDeviationPct}
+          spreadPct={wanders ? insight.spreadPct : undefined}
           tolerance={insight.tolerance}
           accessibilityLabel={`${verdict} across ${insight.title}`}
           style={styles.bar}

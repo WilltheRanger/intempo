@@ -6,6 +6,115 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-02 — Insights told a musician which way they drift, decided by list order
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Put to the owner under the
+§2 gate before anything was built; approved as *"Headline says it"* with the
+copy previewed.
+
+**Two false statements, both measured against the real mapping layer** before a
+line was changed (a throwaway `describe` over `apiInsightsSource.getInsights`,
+the same harness `api.test.ts` uses):
+
+| Practice | Screen said | Bar said |
+|---|---|---|
+| One take alternating 18% ahead / 18% behind, bar to bar | "You tend to rush" · *"you were usually ahead of the beat"* | dead centre |
+| Two takes: one 15% behind, one 15% ahead | "You tend to drag" — and **"You tend to rush"** when the two arrived in the other order | dead centre |
+
+One cause. `meanDeviationPct` is a **signed** mean, so it cancels; the headline's
+band and direction were not computed from it at all but **borrowed from one
+take** — whichever sat nearest the mean, first-wins on a tie. So the word and
+the picture beneath it came from different statistics and could contradict each
+other, and the word could flip on identical practice.
+
+The comment defending the borrow said the thresholds were the server's and
+would move. True, and no longer an obstacle: `result_json.tolerance` carries
+the six numbers each take was judged by, so `bandFor` / `directionFor` in
+`lib/tempo.ts` are ports of the pipeline's `classify_band` / `_direction`
+applied to the aggregate. **No threshold is invented in the app.** That also
+deleted a *third* copy of those thresholds, inlined in `fixtures.ts`.
+
+**Deriving from the aggregate is only half of it.** It makes both rows above
+read "You play steadily", which over a musician landing 18% off the beat on
+both sides is a worse thing to say than the original. So the window carries a
+second measurement: `spreadPct`, the mean **distance** from the beat ignoring
+side, averaged over a take's *measures* (per-take means cancel — that is the
+bug). It is never below `|meanDeviationPct|`, so the gap between them is
+exactly the wandering a direction cannot explain.
+
+`tempoWanders` is two threshold tests, **both the server's**: the bias is
+inside the on-tempo band and the distance is not. Not a ratio between the two
+figures — that would be a constant chosen here, and `TUNING_LOG.md` is a record
+of what happens to constants chosen here. The spread has no side, so it is
+tested against the **wider** of the two inner thresholds: where the two
+disagree the quiet reading wins, because this app's credibility rests on not
+inventing problems.
+
+**The bar draws both ways when the finding is the wandering.** Leaving it
+signed would have put a centred bar under the words "Your tempo wanders" — the
+same word-versus-picture contradiction, one element lower. `formatTendencyDetail`
+says magnitude belongs to the bar; for a two-sided quantity the honest drawing
+is two-sided. The approved copy also names the figure, which is the one
+percentage in this screen's copy and is there because the alternative is
+stating the size nowhere.
+
+**Three more things followed from the same misreading:**
+
+- `PieceInsightRow` said **"On tempo"** for a piece with no direction — the
+  headline's bug one level down, on the row a musician taps to go and practise.
+  Now "Uneven", the word `measureReading.ts` already uses for this idea.
+- `lib/today.ts` picked the piece worth attention with `verdict !== 'on_tempo'`,
+  which skips a wandering piece *precisely because* it has no direction — so
+  Today could never name the least steady piece in the library. And the piece
+  list was sorted by bias, which buried that piece at the bottom; sorted by
+  `spreadPct` now, which for a piece that does drift one way is the same order
+  it always was.
+- **"Recent sessions" ran each take through `formatTendency`**, whose own
+  comment says a single take cannot see a habit. A metadata row read
+  *"Today · 96 BPM · You tend to rush"*. Now `formatVerdict` — "Rushing".
+
+**Two tests changed meaning, deliberately.** `the worst band leads` asserted
+that one `severe` **note** anywhere in thirty days set the whole window's band:
+three bars averaging 1.3% off the beat produced the headline "You tend to drag".
+That is not thirty days of evidence about how someone plays, which is the only
+claim this screen makes. The note is still reported — `toTake` still takes the
+worst band of a take and the verdict screen still shows it. Renamed to
+`one severe note does not become a habit`.
+
+**Fixtures.** `fixture-paganini-24` is the piece that wanders (bias 1.4,
+distance 11.8) — a state with no fixture is a state nobody has looked at, and
+this one is now visible beside four pieces that drift one way, in one build.
+Correctly summarised, the *existing* fixture musician turns out to be a
+wandering one: bias 4.1% and distance 8.8% across 40 sessions. The screen had
+been calling that "You play steadily".
+
+**`tools/audit-a11y.mjs` could not be run the way its own docstring said.** A
+bare `import ... from 'playwright'` resolves against the script's directory, not
+the working directory, so `cd mobile && node ../tools/audit-a11y.mjs` failed
+with ERR_MODULE_NOT_FOUND against the install the same instructions describe.
+Anchored to `mobile/package.json` with `createRequire`.
+
+**Three-foot test (Insights, rebuilt):** first *"Your tempo wanders"*, second
+the sentence explaining it, third the bar straddling the centre. The section
+labels below recede. One focal point; hierarchy carried by type, not boxes.
+The two bar shapes read as a vocabulary — one-sided means a direction, a band
+across the centre means no direction.
+
+**Tests:** mobile 1206 passed (104 files); `tsc --noEmit` clean; web build
+clean; `tools/audit-a11y.mjs` PASS across all 15 routes; narrow-viewport sweep
+at 320x568 and 375x667 clean across 16 routes.
+
+**Not verified:** none of this has met a real analysis. The thresholds it reads
+are `backend/config.toml` defaults, still untuned against real recordings
+(`TUNING_LOG.md`), so where `tempoWanders` sits relative to real playing is a
+question only recordings can answer.
+
+**Side effects:** `PracticeInsights` and `PieceInsight` gained a required
+`spreadPct`; anything constructing one must supply it. **Rollback:** revert this
+commit — the wire format is unchanged, so no server or migration is involved.
+
+---
+
 ## 2026-09-02 — The first screen of a new account, looked at for the first time
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Both changes were put to

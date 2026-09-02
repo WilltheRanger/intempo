@@ -6,6 +6,7 @@ import { createScore, deleteScore, getScore, listScores, updateScore } from '../
 import { getAuthAvatarUrl } from '../auth/session';
 import { stableImage } from '../../lib/imageSource';
 import { verdictFor } from '../../lib/tempo';
+import { judgeAggregate } from '../../lib/insights/tendency';
 import { wasTimed } from '../../lib/verdict/measureReading';
 import type {
   AnalysisResponse,
@@ -18,6 +19,7 @@ import type {
   PieceInsight,
   PracticeInsights,
   ScoreResponse,
+  Tolerance,
   TakeResult,
 } from '../types';
 import { toMusician } from './musician';
@@ -261,6 +263,38 @@ function meanDeviationOf(result: AnalysisResultJson): number | null {
   return toRushPositive(mean);
 }
 
+/**
+ * How far this take sat from the beat, ignoring which side.
+ *
+ * The sibling `meanDeviationOf` cannot answer that, and reading it as though
+ * it could is what made Insights claim a direction over a musician who had
+ * none: a bar 18% ahead and a bar 18% behind average to zero, and the same
+ * two bars are 18 out here.
+ *
+ * Averaged over the take's **measures**, not taken as the take's own mean,
+ * because that is where the cancelling happens — a take whose bars alternate
+ * has a mean of zero and every one of its bars is a long way off.
+ *
+ * Same filter as its sibling, for the same reason: a `rit.` played exactly as
+ * marked reports a real, large deviation per bar, and it is not distance from
+ * a beat the page asked for.
+ */
+function spreadOf(result: AnalysisResultJson): number | null {
+  const measures = (result.per_measure ?? []).filter((m) =>
+    wasTimed({
+      underTempoChange: m.under_tempo_change === true,
+      timedNoteCount: m.timed_note_count ?? null,
+    }),
+  );
+  if (measures.length === 0) {
+    return null;
+  }
+  return (
+    measures.reduce((total, m) => total + Math.abs(m.avg_delta_pct), 0) /
+    measures.length
+  );
+}
+
 /** The worst band in the take, which is what a summary should lead with. */
 const BAND_SEVERITY: Record<Band, number> = {
   on: 0,
@@ -275,6 +309,60 @@ function worstBandOf(result: AnalysisResultJson): Band {
       BAND_SEVERITY[m.worst_band] > BAND_SEVERITY[worst] ? m.worst_band : worst,
     'on',
   );
+}
+
+/** One finished take, reduced to what a summary is built out of. */
+interface Reading {
+  at: number;
+  deviationPct: number;
+  spreadPct: number;
+  tolerance: Tolerance | null;
+}
+
+/**
+ * A set of takes, judged as a set.
+ *
+ * **The band and direction come from the aggregate**, not from whichever take
+ * sat nearest its mean. The old code borrowed them, defending it with "the
+ * thresholds are the server's and they move" — true, and answered by the fact
+ * that the thresholds travel with each take, so `judgeAggregate` applies the
+ * server's own cutoffs to the aggregate figure. Borrowing produced a headline
+ * that flipped between "You tend to rush" and "You tend to drag" when two
+ * opposite takes arrived in the other order, over identical practice.
+ *
+ * One function for the window and for each piece, because they are the same
+ * question at two scales and they have disagreed before — `api.test.ts` still
+ * carries the test named for the last time they did.
+ *
+ * The tolerance is the **newest** take's: a window can span a retune, and the
+ * numbers a musician is judged by now are the ones their chart should be
+ * scaled to. Ties fall to the widest, so the answer never depends on the order
+ * the server happened to return two same-second takes in.
+ */
+function summarise(readings: Reading[]) {
+  const meanDeviationPct =
+    readings.reduce((total, r) => total + r.deviationPct, 0) / readings.length;
+  const spreadPct =
+    readings.reduce((total, r) => total + r.spreadPct, 0) / readings.length;
+  const current = readings.reduce((newest, r) =>
+    r.at > newest.at ||
+    (r.at === newest.at && outerWidth(r.tolerance) > outerWidth(newest.tolerance))
+      ? r
+      : newest,
+  );
+  return {
+    meanDeviationPct,
+    spreadPct,
+    ...judgeAggregate(meanDeviationPct, current.tolerance),
+    tolerance: current.tolerance,
+  };
+}
+
+/** Only ever compared, never shown. `null` sorts below every real set. */
+function outerWidth(tolerance: Tolerance | null): number {
+  return tolerance === null
+    ? -1
+    : tolerance.rushing_outer_pct + tolerance.dragging_outer_pct;
 }
 
 /**
@@ -313,9 +401,9 @@ export const apiInsightsSource: InsightsSource = {
         return [
           {
             scoreId: analysis.score_id,
+            at: Date.parse(analysis.created_at),
             deviationPct,
-            band: worstBandOf(result),
-            direction: result.verdict_direction,
+            spreadPct: spreadOf(result) ?? Math.abs(deviationPct),
             tolerance: result.tolerance ?? null,
           },
         ];
@@ -335,47 +423,27 @@ export const apiInsightsSource: InsightsSource = {
     const pieces: PieceInsight[] = [...byScore.entries()]
       .map(([scoreId, group]) => {
         const score = titles.get(scoreId);
-        const mean =
-          group.reduce((total, r) => total + r.deviationPct, 0) / group.length;
-        // The band of the take nearest the mean, rather than a band computed
-        // here: the thresholds are the server's and they move.
-        const nearest = group.reduce((best, r) =>
-          Math.abs(r.deviationPct - mean) < Math.abs(best.deviationPct - mean)
-            ? r
-            : best,
-        );
+        const summary = summarise(group);
         return {
           pieceId: scoreId,
           title: score?.title ?? 'Unknown piece',
           composer: score?.composer ?? null,
           sessions: group.length,
-          meanDeviationPct: mean,
-          band: nearest.band,
-          direction: nearest.direction,
-          verdict: verdictFor(nearest.band, nearest.direction),
-          tolerance: nearest.tolerance,
+          ...summary,
         };
       })
-      .sort((a, b) => Math.abs(b.meanDeviationPct) - Math.abs(a.meanDeviationPct));
-
-    const sessions = readings.length;
-    const meanDeviationPct =
-      readings.reduce((total, r) => total + r.deviationPct, 0) / sessions;
-    const headline = readings.reduce((best, r) =>
-      Math.abs(r.deviationPct - meanDeviationPct) <
-      Math.abs(best.deviationPct - meanDeviationPct)
-        ? r
-        : best,
-    );
+      // **By distance from the beat, not by bias.** Sorting on the signed mean
+      // put a piece a musician plays 18% out on both sides at the bottom of
+      // the list, under pieces they play a consistent 3% ahead of it — and the
+      // first row of this list is what Today reads to name the piece worth a
+      // look. `spreadPct` is never smaller than the bias, so for a piece that
+      // does drift one way this is the same ordering it always was.
+      .sort((a, b) => b.spreadPct - a.spreadPct);
 
     return {
       windowDays: INSIGHTS_WINDOW_DAYS,
-      sessions,
-      meanDeviationPct,
-      band: headline.band,
-      direction: headline.direction,
-      verdict: verdictFor(headline.band, headline.direction),
-      tolerance: headline.tolerance,
+      sessions: readings.length,
+      ...summarise(readings),
       pieces,
     };
   },

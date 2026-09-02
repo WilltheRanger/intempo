@@ -67,6 +67,91 @@ export function fullScaleFor(
 }
 
 /**
+ * The default inner threshold, for takes that carry no tolerance of their own.
+ *
+ * The sibling of `FALLBACK_OUTER_PCT` and reachable for the same rows: takes
+ * analysed before the pipeline started recording the numbers it judged them
+ * by. It matches the shipped `backend/config.toml`, which is what those takes
+ * were judged by.
+ */
+const FALLBACK_INNER_PCT = 5;
+
+/**
+ * Which band one signed deviation falls in, by the thresholds it was judged by.
+ *
+ * **A port of the pipeline's `classify_band`, and only safe because the
+ * thresholds travel with the take.** `result_json.tolerance` carries the six
+ * numbers the server used, so this applies the server's cutoffs rather than
+ * inventing cutoffs here — the objection that kept the aggregate from being
+ * banded at all, and the reason Insights borrowed a band off an arbitrary take
+ * instead.
+ *
+ * Rush-positive, the convention everything downstream of `toTake` uses, so the
+ * sign selects the opposite side from the pipeline's own drag-positive code.
+ * The two sets are independent because musicians tolerate dragging better.
+ */
+export function bandFor(deviationPct: number, tolerance: Tolerance | null): Band {
+  const magnitude = Math.abs(deviationPct);
+  const [inner, mid, outer] =
+    tolerance === null
+      ? [FALLBACK_INNER_PCT, FALLBACK_OUTER_PCT / 2, FALLBACK_OUTER_PCT]
+      : deviationPct >= 0
+        ? [
+            tolerance.rushing_inner_pct,
+            tolerance.rushing_mid_pct,
+            tolerance.rushing_outer_pct,
+          ]
+        : [
+            tolerance.dragging_inner_pct,
+            tolerance.dragging_mid_pct,
+            tolerance.dragging_outer_pct,
+          ];
+  if (magnitude <= inner) {
+    return 'on';
+  }
+  if (magnitude <= mid) {
+    return 'slight';
+  }
+  return magnitude <= outer ? 'rush_drag' : 'severe';
+}
+
+/**
+ * Which side of the beat a deviation fell on, once it is outside tolerance.
+ *
+ * A port of the pipeline's `_direction`. Inside the inner band there is no
+ * side to name: a deviation the thresholds call `on` is one the app has
+ * agreed not to call rushing or dragging, and naming a side anyway is how a
+ * musician gets told which way they drift when the answer is "you didn't".
+ */
+export function directionFor(deviationPct: number, band: Band): Direction {
+  if (band === 'on') {
+    return 'on';
+  }
+  return deviationPct > 0 ? 'rush' : 'drag';
+}
+
+/**
+ * How far off the beat a spread has to be before it is worth a word.
+ *
+ * The **wider** of the two inner thresholds, deliberately. A spread has no
+ * side — it is an average distance measured in both directions — so there is
+ * no sign to pick a set with, and taking the wider one means the app never
+ * calls a take uneven over a distance it would have called on-tempo on either
+ * side. This screen's credibility rests on not inventing problems, so where
+ * the two thresholds disagree the quiet one wins.
+ */
+export function spreadIsBeyondTolerance(
+  spreadPct: number,
+  tolerance: Tolerance | null,
+): boolean {
+  const inner =
+    tolerance === null
+      ? FALLBACK_INNER_PCT
+      : Math.max(tolerance.rushing_inner_pct, tolerance.dragging_inner_pct);
+  return spreadPct > inner;
+}
+
+/**
  * One scale for a chart that draws both sides of the beat on a shared axis.
  *
  * The wider of the two, deliberately. A line crossing zero has to stay
