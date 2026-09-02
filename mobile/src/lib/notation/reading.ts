@@ -1,5 +1,6 @@
 import type { Duration, MeasureConcern, ScoreJson } from '../../data/types';
 import { BEATS } from '../score/schedule';
+import { timeSignaturesByMeasure } from './meter';
 
 /**
  * What to say about how well a page was read.
@@ -112,12 +113,28 @@ function isPickup(
 }
 
 export function problemMeasures(score: ScoreJson): number[] {
-  const perBar = beatsPerMeasure(score.time_signature);
-  if (perBar === null) {
-    return [];
-  }
+  // **The metre in force at each bar, not the one at the top of the page.**
+  // A metre printed mid-piece holds until the next one is printed, and this
+  // counted every bar against the header — so on a part that turns 3/4 at bar
+  // 20, every correct three-beat bar from 20 onward was flagged as needing a
+  // look. Measured on a three-bar score turning 3/4 at bar 2: `[2, 3]`, both
+  // of them exactly right.
+  //
+  // The last of the "header versus in force" family. The metronome, the bar
+  // editor and the engraver were each fixed for it; this one decides which
+  // bars a musician is *told* to go and check, so it sends them to correct
+  // music and leaves the sentence about it true only by coincidence.
+  const meters = timeSignaturesByMeasure(score);
   const out: number[] = [];
   score.measures.forEach((measure, index) => {
+    // Per bar, because it can change. A bar whose metre is unreadable is
+    // skipped rather than aborting the page — before, one unreadable header
+    // silenced the check for every bar, including bars that print a metre of
+    // their own further down.
+    const perBar = beatsPerMeasure(meters.get(measure.measure_number) ?? null);
+    if (perBar === null) {
+      return;
+    }
     const total = beatsIn(measure.notes);
     // A duration this build has never heard of means the app is older than the
     // backend that read the page. That is a bar this version cannot count, not

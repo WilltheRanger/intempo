@@ -6,6 +6,63 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-02 — The last of the "header versus in force" family, in the function that flags bars
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. A correctness fix in a
+module, no UI.
+
+Found by auditing the merged work on `main` against the rules CLAUDE.md names —
+grepping for a clef defaulted to `treble`, an instrument inferred from a clef,
+and a second copy of the beat check. The first two were clean (the only literal
+`clef: 'treble'` is in `lib/warmup.ts`, where violin warmups genuinely are in
+treble, and each instrument's warmups carry the right clef). The third led here.
+
+**`problemMeasures` read the metre off the header and applied it to every bar.**
+A metre printed mid-piece holds until the next one is printed — which this app
+reads, stamps, carries across a page break and draws — so on a part that turns
+3/4 at bar 20, every correct three-beat bar from 20 onward was flagged as
+needing a look. Measured on a three-bar score turning 3/4 at bar 2, before the
+fix: **`[2, 3]`** — bar 2 printing 3/4 and holding exactly three, and bar 3
+holding three under the metre still standing.
+
+This is the function that decides which bars a musician is **told to go and
+check**, so being wrong here sends them to correct music and wastes the one kind
+of attention this feature exists to direct.
+
+It now resolves the metre per bar through `timeSignaturesByMeasure`, the same
+walk the metronome and the bar editor use. Two tests, both directions: a bar
+correct under a changed metre is not flagged, and a bar wrong under the metre it
+itself declares still is — so the fix cannot be "stop checking".
+
+A second, quieter improvement falls out. The old code returned `[]` outright
+when the *header* metre was unreadable, silencing the check for the whole page
+including bars that print a metre of their own further down. Now an unreadable
+metre skips only the bars it governs.
+
+**The server was already right**, and checked: `_meters_in_force` in
+`validate.py` walks a running metre and treats `"unknown"` on a bar as
+invalidating it rather than continuing. The app now agrees on both points —
+`timeSignaturesByMeasure` carries `"unknown"` forward and `beatsPerMeasure`
+returns null for it, so those bars are skipped on both sides.
+
+**A correction to my own reasoning.** I believed the meter parity fixture was
+enforced on one side only, because `grep "meters/parity"` found only the app's
+test. It was wrong: `backend/app/tests/test_meter_parity.py` builds the path
+with `/` operators, so the literal never appears. Both sides are held to it, and
+`test_sandbox_parity.py` covers metre *changes* besides. The gap was narrower
+than I first thought — the parity fixtures cover the string parsing and the
+browser ports, and nothing held **this** function to the server's walk, because
+it is a deliberate subset of `validate.py` rather than a port of it. A subset
+may check *less*; it may not check *differently*, and this did.
+
+**Tests:** mobile 1223 passed (105 files); `tsc --noEmit` clean. Backend
+untouched.
+
+**Side effects:** pieces that change metre will now flag fewer bars, which is
+the point. **Rollback:** revert.
+
+---
+
 ## 2026-09-02 — Neither MusicXML tool could read a file with two parts
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Tooling only.
