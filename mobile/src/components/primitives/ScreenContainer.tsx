@@ -19,10 +19,15 @@ const WEB_SCROLL_STYLE = Platform.select({
     // Keep wheel, trackpad, and touch scrolling inside the app's own viewport
     // and let the browser compositor carry momentum independently of React.
     overscrollBehaviorY: 'contain',
-    scrollBehavior: 'smooth',
+    overscrollBehaviorX: 'hidden',
+    // Gesture scrolling already has the browser's native momentum. CSS smooth
+    // scrolling only stretches programmatic jumps (focus, back, scroll-to-top)
+    // and makes them feel as though the interface is catching up.
+    scrollBehavior: 'auto',
     WebkitOverflowScrolling: 'touch',
     scrollbarWidth: 'thin',
     scrollbarColor: `${colors.borderStrong} transparent`,
+    scrollbarGutter: 'stable',
     touchAction: 'pan-y pinch-zoom',
   } as unknown as ViewStyle,
   default: undefined,
@@ -128,6 +133,7 @@ export function ScreenContainer({
     <ScrollView
       style={[styles.flex, WEB_SCROLL_STYLE]}
       directionalLockEnabled
+      decelerationRate="normal"
       keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
       contentContainerStyle={[styles.content, bottomInset, contentStyle]}
       showsVerticalScrollIndicator={false}

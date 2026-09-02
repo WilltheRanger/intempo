@@ -12,6 +12,23 @@ import {
 import { EASE_OUT, PRESSED_SCALE, motion } from '../../design';
 import { useReducedMotion } from '../../lib/useReducedMotion';
 
+const WEB_PRESSABLE_STYLE = Platform.select({
+  web: {
+    // Browsers otherwise wait to decide whether a touch is a gesture and add
+    // their own blue/grey tap flash on top of the product's feedback.
+    touchAction: 'manipulation',
+    WebkitTapHighlightColor: 'transparent',
+    cursor: 'pointer',
+    userSelect: 'none',
+  } as unknown as ViewStyle,
+  default: undefined,
+});
+
+const WEB_DISABLED_PRESSABLE_STYLE = Platform.select({
+  web: { cursor: 'default' } as unknown as ViewStyle,
+  default: undefined,
+});
+
 export interface PressableScaleProps extends Omit<PressableProps, 'style' | 'children'> {
   /**
    * Children, or a function of the press state — the same contract `Pressable`
@@ -35,9 +52,9 @@ export interface PressableScaleProps extends Omit<PressableProps, 'style' | 'chi
  * shrinking a 44pt button by 3% is invisible, and the app already has a
  * consistent pressed colour for them.
  *
- * Press-in is instant and press-out eases, which is the asymmetry iOS uses:
- * the response has to feel like it happened *under* the finger, while the
- * release can settle.
+ * Press-in is very short and press-out eases, which is the asymmetry iOS uses:
+ * the response has to meet the finger without snapping between frames, while
+ * the release can settle.
  *
  * Scale is a transform, so native builds use the native driver and hold 60fps
  * regardless of what the JS thread is doing — which matters most exactly when
@@ -54,7 +71,7 @@ export function PressableScale({
   const scale = useRef(new Animated.Value(1)).current;
 
   function animateTo(value: number, duration: number) {
-    // Web gets the same instant-down / eased-release behavior from a CSS
+    // Web gets the same quick-down / eased-release behavior from a CSS
     // transition below. Keeping it off the JavaScript animation loop prevents
     // dropped frames while a tap is also navigating or starting network work.
     if (reduceMotion || Platform.OS === 'web') {
@@ -72,13 +89,17 @@ export function PressableScale({
     <Pressable
       {...rest}
       onPressIn={(event) => {
-        animateTo(activeScale, 0);
+        animateTo(activeScale, motion.pressIn);
         rest.onPressIn?.(event);
       }}
       onPressOut={(event) => {
         animateTo(1, motion.fast);
         rest.onPressOut?.(event);
       }}
+      style={[
+        WEB_PRESSABLE_STYLE,
+        rest.disabled && WEB_DISABLED_PRESSABLE_STYLE,
+      ]}
     >
       {(state) => {
         const resolvedStyle = typeof style === 'function' ? style(state) : style;
@@ -93,11 +114,17 @@ export function PressableScale({
                 reduceMotion
                   ? null
                   : ({
-                      // Down is immediate; only release settles. This makes
-                      // the response meet the finger instead of chasing it.
+                      // Contact is quick enough to meet the finger without
+                      // making a card snap smaller between two frames.
                       transform: [{ scale: state.pressed ? activeScale : 1 }],
-                      transitionProperty: 'transform',
-                      transitionDuration: state.pressed ? '0ms' : `${motion.fast}ms`,
+                      // The row/button supplies its own pressed fill. Give it
+                      // the same contact and release timing as the movement so
+                      // colour does not flash while the surface settles.
+                      transitionProperty:
+                        'transform, background-color, border-color, opacity',
+                      transitionDuration: state.pressed
+                        ? `${motion.pressIn}ms`
+                        : `${motion.fast}ms`,
                       transitionTimingFunction: 'cubic-bezier(0.22, 1, 0.36, 1)',
                       willChange: 'transform',
                     } as unknown as ViewStyle),
