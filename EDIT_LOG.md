@@ -6,6 +6,57 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-02 — The same rounded-off comparison, in the third place: the library's own row order
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. No §2 gate: no screen, no
+composition, no copy — the same rows, in an order that means something.
+
+Found by looking for a fourth instance of the defect fixed one commit earlier,
+which is the right thing to do after finding a third. `grep` for
+`daysSincePracticed` returns four uses; two are correct and two were not.
+
+`groupByRecency` sorted within each group with
+`daysSincePracticed(a) - daysSincePracticed(b)` — **whole calendar days**. Every
+piece worked in the same session compares equal, and `sort` being stable then
+leaves them in whatever order the list arrived in. So a morning's three pieces
+appeared under "This week" in server row order, under a heading whose entire
+job is to be about recency.
+
+Now compared by the instant, most recent first, with title breaking a genuine
+tie. **The heading above it still uses calendar days, and must**: `bucketFor`
+and each row's own "5 days ago" label are read off the same function, which is
+the reason this module was pulled out of the screen at all. Rounding is right
+for saying *which week*; it is wrong for saying *which came first*.
+
+### Where the family stands
+
+Four uses of `daysSincePracticed`, all now accounted for:
+
+- `library.bucketFor` — rounding, correct, and load-bearing for the labels.
+- `today.neglectedFrom`'s null test — asks only "was it ever practised".
+- `today.neglectedFrom`'s choice — fixed in the previous commit.
+- `library.groupByRecency`'s sort — this one.
+
+Nothing else in the app orders by it. The three sorts in `api.ts` already
+compare `Date.parse`.
+
+### Tests
+
+Eight cases; the file had none. The bucket boundaries with their labels, empty
+groups dropped, fixed group order, most-recent-first, the row-order case both
+ways round, the identical-instant tie, alphabetical for the never-practised,
+and an unreadable timestamp filing as "Not practiced yet" rather than as today.
+Verified against the old comparator: 2 of the 8 fail.
+
+### Verification
+
+mobile 1264 passed (110 files) · `tsc --noEmit` clean · web build clean ·
+walk PASS. `.env` restored with `diff -q`.
+
+**Rollback:** revert this commit; the change is one comparator.
+
+---
+
 ## 2026-09-02 — "The piece you have left longest" depended on the order the rows came back in
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. No §2 gate: no screen, no
