@@ -6,6 +6,55 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-02 — Neither MusicXML tool could read a file with two parts
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Tooling only.
+
+**The fixture paid for itself within the hour.** Adding
+`violin_duo.musicxml` made both tools that glob `fixtures/musicxml/` report it,
+and each was wrong in its own way — invisible until now because every fixture in
+that directory happened to hold exactly one part.
+
+`score_json_from_musicxml` refuses a multi-part file with no part chosen, and is
+right to: its docstring says a downloaded orchestral score's first part is
+usually the piccolo, and a cellist handed the piccolo line gets a verdict *wrong
+in a way that looks right*. That refusal is about **which instrument a musician
+plays**. Neither tool is asking that question, and both inherited the refusal
+anyway.
+
+**`engraver-coverage.py` — read every part.** It asks which note values the
+engraver can draw, where the instrument is irrelevant and every part is more
+material. It now reads each part of a multi-part file as its own row
+(`violin_duo.musicxml [P1]`, `[P2]` — 4 and 6 notes, matching the fixture). It
+would previously have skipped a **real orchestral score outright**, reporting it
+as a parse failure.
+
+**`musicxml-bench.py` — name the category and skip it.** The opposite call, and
+deliberately so: this bench asks how well the importer reads a *photographed*
+page and averages per-page confidence. A hand-authored duo scores 1.00 trivially,
+so reading its parts would flatter the exact number the bench exists to report —
+and this file's own comment says the mean *"is what let a reader that scored 0%
+on real repertoire look adequate"*. It now prints
+`violin_duo.musicxml — 2 parts — not a single-part page` instead of a red
+`MusicXMLError` row that read like a broken fixture.
+
+Headline numbers unchanged and checked rather than assumed: `mean 0.71 worst
+0.00 pages 5`, with `worst` still `oemer_phone_photo`, not the new file.
+
+`notation-coverage.py` does not glob that directory and is unaffected; run
+anyway, and it reports the same documented gaps (128th and shorter unnamed at
+any ratio, dotted notes inside tuplets patchy — both dropped and therefore
+visible in the bar's beat sum).
+
+**Tests:** both tools run clean; `engraver-coverage.py` still reports **42 of the
+schema's 46 durations**, the undrawn four being the 128th family named in
+`DELIBERATELY_UNDRAWN`. The backend suite was **not** re-run: the change is
+confined to `tools/*.py`, which pytest does not import.
+
+**Side effects:** none. **Rollback:** revert.
+
+---
+
 ## 2026-09-02 — Wire the two browser checks into CI, and make them runnable anywhere
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Tooling and CI, no product
