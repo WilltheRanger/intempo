@@ -68,7 +68,7 @@ function TabSelectionMotion({
       toValue: focused ? 1 : 0,
       duration: motion.fast,
       easing: EASE_OUT,
-      useNativeDriver: Platform.OS !== 'web',
+      useNativeDriver: true,
     });
     animation.start();
     return () => animation.stop();
