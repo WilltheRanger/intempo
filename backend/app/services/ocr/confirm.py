@@ -30,6 +30,7 @@ import logging
 
 from app.services.ocr.base import OCRProvider, OCRProviderError, OCRResponse
 from app.services.ocr.validate import (
+    clefs_in_force,
     describe_for_retry,
     keys_in_force,
     meters_in_force,
@@ -315,10 +316,23 @@ def what_this_piece_is(score: ScoreJson, bars: list[int]) -> str:
     to sound authoritative is how a wrong note gets written confidently.
     """
     parts: list[str] = []
-    clef = next(
-        (m.clef for m in score.measures if m.measure_number in set(bars) and m.clef),
-        score.clef,
-    )
+    wanted = set(bars)
+    # **The clef in force at those bars, not the one the page opens in.** This
+    # took a clef only when one of the bars asked about *stated* it, so a
+    # passage that moved into tenor seven bars earlier was described as the
+    # bass part it started as — while the model looked at a tenor crop. A key
+    # named wrongly misspells the accidented notes; a clef named wrongly moves
+    # every note on the staff, and `read_ties` matches noteheads by pitch, so
+    # the mismatch deletes onsets rather than merely looking wrong.
+    running_clefs = clefs_in_force(score)
+    clefs_at = {
+        running_clefs[i]
+        for i, measure in enumerate(score.measures)
+        if measure.measure_number in wanted and i < len(running_clefs)
+    }
+    # Straddling a change, say nothing rather than pick one — the same rule the
+    # key and the metre already follow.
+    clef = clefs_at.pop() if len(clefs_at) == 1 else None
     if clef:
         parts.append(f"a {clef}-clef part")
     # The key where the question is, which is not always the key at the top.
@@ -326,7 +340,7 @@ def what_this_piece_is(score: ScoreJson, bars: list[int]) -> str:
     keys_at = {
         running_keys[i]
         for i, measure in enumerate(score.measures)
-        if measure.measure_number in set(bars) and i < len(running_keys)
+        if measure.measure_number in wanted and i < len(running_keys)
     }
     key = keys_at.pop() if len(keys_at) == 1 else None
     if key and key != "unknown":
