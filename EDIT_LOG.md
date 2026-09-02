@@ -50,13 +50,17 @@ same reason as above.
 PASS (fifteen routes), both after the browser-path change. The YAML parses and
 the job's steps are the ones intended.
 
-**Not verified yet, and this is the honest gap:** the job has never run on a
-GitHub runner. `npx playwright install --with-deps chromium`, a backgrounded
-`serve` surviving between steps, and the walk's timing under CI load are all
-things I can only find out by pushing. I am pushing it to *this branch*, where
-it runs against my own PR and I can watch it — if it goes red for a reason that
-is the harness rather than the app, it comes out again rather than being left
-for someone else to trip over.
+**Verified on a runner** (`75220a4`, run 33674087826): **success in 3m08s**.
+The three things that could only be found out by pushing all hold — Playwright
+and its browser install, the walk passes under CI load, and the backgrounded
+`serve` survives between steps, which the runner's own cleanup line confirms:
+`Terminate orphan process: pid (2881) (npm exec serve dist -l 4320 -s)`. The
+audit's fifteen routes are in the log, each `clean`, ending `PASS`, so the job
+is not green by skipping.
+
+It was pushed to *this branch* rather than proposed, precisely so it ran against
+my own PR where I could watch it and take it out again if it went red for
+harness reasons. It did not.
 
 **Tests:** mobile 1221 passed; `tsc` clean; both tools PASS locally.
 
