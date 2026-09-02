@@ -61,6 +61,10 @@ const ROUTES = [
   ['Piece detail', 'pieces/fixture-bach-bwv1001'],
   ['Score', 'pieces/fixture-clef-change-study/score'],
   ['Bar editor', 'pieces/fixture-clef-change-study/bars/3'],
+  // The photographs, paged. `fixture-wohlfahrt-01` is the one multi-page part
+  // in the library, so this is where the page caption and the pager exist at
+  // all — the other pieces render a single image and no control.
+  ['Original pages', 'pieces/fixture-wohlfahrt-01/score?view=original'],
   ['Record', 'pieces/fixture-bach-bwv1001/record'],
   // The payoff of the whole app, and the route the first sweep missed.
   ['Verdict', 'analyses/fixture-take-1'],

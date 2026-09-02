@@ -11,6 +11,7 @@ import type {
   ScoreJson,
   ScoreNote,
   TakeResult,
+  ThumbnailSource,
   UntimedReason,
 } from '../types';
 import type {
@@ -36,12 +37,22 @@ interface FixturePiece
   extends Omit<
     Piece,
     | 'lastPracticedAt'
+    | 'pages'
     | 'transcriptionStatus'
     | 'transcriptionStage'
     | 'transcriptionError'
     | 'transcriptionAccepted'
     | 'pageImageDiscarded'
   > {
+  /**
+   * Extra photographed pages, after the one `thumbnail` holds.
+   *
+   * Omitted by every one-page piece, which is most of them — `toPiece` derives
+   * the single-page list from the thumbnail. Declaring it is how a fixture says
+   * "this is a part somebody photographed four pages of", which is a state the
+   * piece screen had no fixture for and therefore nobody had looked at.
+   */
+  morePages?: ThumbnailSource[];
   /** Resolved to an ISO timestamp at read time so it never goes stale. */
   practicedDaysAgo: number | null;
   /**
@@ -531,6 +542,19 @@ const FIXTURE_PIECES: FixturePiece[] = [
     movement: 'No. 1 — Allegro moderato',
     practicedDaysAgo: 26,
     thumbnail: require('../../../assets/fixtures/01_simple_printed.jpg'),
+    /**
+     * **The one multi-page part in the library**, because a scan of more than
+     * one page had no fixture and so nobody had looked at it.
+     *
+     * The piece screen's own row says "The pages this piece was read from" and
+     * drew a single image; with every fixture one page long, that read as
+     * correct. A thirty-two bar study is exactly the length that runs to three
+     * pages in a real part.
+     */
+    morePages: [
+      require('../../../assets/fixtures/02_medium_printed.jpg'),
+      require('../../../assets/fixtures/03_complex_printed.jpg'),
+    ],
     markedBpm: MARKED_BPM,
     // The long one — see `CONTINUOUS_EIGHTHS_SCORE`. This piece carries the
     // photograph the corpus reads back as continuous eighths, so it is where a
@@ -679,14 +703,29 @@ const FIXTURE_PIECES: FixturePiece[] = [
   },
 ];
 
-function toPiece({ practicedDaysAgo, reading, ...piece }: FixturePiece): Piece {
+function toPiece({
+  practicedDaysAgo,
+  reading,
+  morePages,
+  ...piece
+}: FixturePiece): Piece {
   const state = { ...TRANSCRIBED, ...reading };
+  // A piece whose photograph was discarded has no pages to show, which is the
+  // same thing the API says about it — the thumbnail is already null there.
+  const pages = piece.thumbnail
+    ? [piece.thumbnail, ...(morePages ?? [])]
+    : [];
   if (practicedDaysAgo === null) {
-    return { ...piece, ...state, lastPracticedAt: null };
+    return { ...piece, ...state, pages, lastPracticedAt: null };
   }
   const practicedAt = new Date();
   practicedAt.setDate(practicedAt.getDate() - practicedDaysAgo);
-  return { ...piece, ...state, lastPracticedAt: practicedAt.toISOString() };
+  return {
+    ...piece,
+    ...state,
+    pages,
+    lastPracticedAt: practicedAt.toISOString(),
+  };
 }
 
 /**

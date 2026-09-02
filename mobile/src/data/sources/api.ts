@@ -56,6 +56,14 @@ export function toPiece(
     // a thumbnail-shaped hole rather than an error — `ScoreThumbnail` already
     // falls back to its ruled-staff drawing.
     thumbnail: stableImage(score.image_url),
+    // Only `GET /v1/scores/:id` fills `image_urls`; the listing sends page one
+    // alone. Falling back to the thumbnail keeps a listed piece showing its
+    // photograph rather than none, and an older backend that has never heard
+    // of the field behaves exactly as it did.
+    pages: (score.image_urls?.length
+      ? score.image_urls.map(stableImage)
+      : [stableImage(score.image_url)]
+    ).filter((page): page is NonNullable<typeof page> => page !== null),
     markedBpm: score.score_json?.bpm_hint ?? null,
     score: score.score_json ?? null,
     concerns: score.concerns ?? [],

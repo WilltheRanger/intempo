@@ -373,6 +373,16 @@ export interface ScoreResponse {
    * every caller has to handle its absence.
    */
   image_url: string | null;
+  /**
+   * Every page of the scan, signed and in page order — page one first, so it
+   * is the same URL `image_url` carries.
+   *
+   * Sent only by `GET /v1/scores/:id`. The library listing leaves it as one
+   * entry, because a grid of thumbnails draws page one and forty rows of four
+   * pages is payload nothing renders. Optional so an older backend, which
+   * omits it entirely, still parses.
+   */
+  image_urls?: string[];
   image_url_expires_at: string | null;
   score_json: ScoreJson;
   /** Measures the server could not vouch for. Absent on an older backend. */
@@ -588,6 +598,20 @@ export interface Piece {
   lastPracticedAt: string | null;
   /** A signed download URL from `/v1/scores`, or a bundled fixture image. */
   thumbnail: ThumbnailSource | null;
+  /**
+   * Every photographed page of this piece, in page order.
+   *
+   * **`thumbnail` is page one, and for a long time it was the only one there
+   * was.** The piece screen's row says *"The pages this piece was read from"*
+   * and drew a single image, so a musician who photographed a four-page part
+   * could not look at the bar flagged on page three.
+   *
+   * Populated only when reading **one** piece — the library listing signs page
+   * one alone, because forty rows of four pages is a payload the grid does not
+   * draw. Empty for a piece entered by hand, and for one whose photographs
+   * were discarded on acceptance.
+   */
+  pages: ThumbnailSource[];
   /**
    * The tempo written on the score, as OCR read it. Null when the marking was
    * absent or illegible — which is common on a phone photo of a manuscript, so
