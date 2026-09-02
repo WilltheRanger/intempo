@@ -25,6 +25,11 @@ import type { Musician } from '../../data/types';
 import { preferences, usePreferences } from '../../data/preferences';
 import type { Instrument, MetronomeMode } from '../../data/types';
 import { describeLoadError } from '../../data/api/describeError';
+import {
+  ProfilePhotoSaveError,
+  saveProfilePhoto,
+  type ProfilePhotoSelection,
+} from '../../data/profile/savePhoto';
 import { spacing } from '../../design';
 import { formatRole, formatTier } from '../../lib/format';
 import type { RootNavigation } from '../../navigation/types';
@@ -54,14 +59,49 @@ export function ProfileScreen() {
   const saveProfile = useUpdateProfile();
   const uploadAvatar = useUploadAvatar();
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
+  const [pendingPhoto, setPendingPhoto] = useState<ProfilePhotoSelection | null>(null);
   const [photoError, setPhotoError] = useState<string | null>(null);
   const photoBusy = saveProfile.isPending || uploadAvatar.isPending;
+
+  /**
+   * Finishes both halves of a photo replacement without repeating the first.
+   *
+   * The storage upload and the account save are two network calls. A dropped
+   * connection between them retains the returned key, and the retry button
+   * resumes at the save instead of uploading the same private object again.
+   */
+  async function persistPhoto(selection: ProfilePhotoSelection) {
+    if (photoBusy) {
+      return;
+    }
+    setPhotoError(null);
+    setPhotoPreview(selection.uri);
+
+    try {
+      await saveProfilePhoto(selection, {
+        upload: (photo) => uploadAvatar.mutateAsync(photo),
+        save: (input) => saveProfile.mutateAsync(input),
+      });
+      setPendingPhoto(null);
+      // The profile mutation waits for the refreshed account before it
+      // resolves, so the server-backed avatar is ready before this preview leaves.
+      setPhotoPreview(null);
+    } catch (cause) {
+      const resume =
+        cause instanceof ProfilePhotoSaveError ? cause.resume : selection;
+      setPendingPhoto(resume);
+      setPhotoError(
+        cause instanceof Error
+          ? cause.message
+          : 'That photo could not be saved. Try again.',
+      );
+    }
+  }
 
   async function pickPhoto() {
     if (photoBusy) {
       return;
     }
-    setPhotoError(null);
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
       allowsEditing: true,
@@ -69,24 +109,19 @@ export function ProfileScreen() {
       quality: 0.8,
     });
     if (result.canceled || !result.assets?.length) {
+      // Keep an earlier failed selection and its visible retry action. Opening
+      // the picker and backing out must not turn a recoverable failure into a
+      // dead end.
       return;
     }
 
     const asset = result.assets[0];
-    setPhotoPreview(asset.uri);
-    try {
-      const avatarKey = await uploadAvatar.mutateAsync({
-        uri: asset.uri,
-        mimeType: asset.mimeType ?? 'image/jpeg',
-      });
-      await saveProfile.mutateAsync({ avatar_key: avatarKey });
-    } catch (cause) {
-      setPhotoError(
-        cause instanceof Error
-          ? cause.message
-          : 'That photo could not be saved. Try again.',
-      );
-    }
+    const selection: ProfilePhotoSelection = {
+      uri: asset.uri,
+      mimeType: asset.mimeType ?? 'image/jpeg',
+    };
+    setPendingPhoto(selection);
+    await persistPhoto(selection);
   }
 
   async function handleSignOut() {
@@ -168,6 +203,19 @@ export function ProfileScreen() {
             ? 'Saving your photo…'
             : 'Choose your photo to change it.'}
       </Text>
+
+      {photoError && pendingPhoto ? (
+        <SecondaryButton
+          label={
+            pendingPhoto.avatarKey
+              ? 'Try saving photo again'
+              : 'Try sending photo again'
+          }
+          onPress={() => void persistPhoto(pendingPhoto)}
+          disabled={photoBusy}
+          style={styles.photoRetry}
+        />
+      ) : null}
 
       <SectionHeader label="Account" style={styles.section} />
       <Card padded={false}>
@@ -389,6 +437,9 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
   photoNote: {
+    marginTop: spacing.md,
+  },
+  photoRetry: {
     marginTop: spacing.md,
   },
   identity: {
