@@ -6,6 +6,53 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-02 — The practice lesson said the same thing every day
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Put to the owner under the
+§2 gate; approved as *"Vary the exercise, keep the diagnosis"*, with the wording
+previewed.
+
+**One drill per verdict.** `practiceLessonFor` returned a single exercise for
+rushing, one for dragging, one for on-tempo — so a musician working on their
+rushing met the identical card, word for word, every day until they stopped.
+Advice that never changes stops being read, and this is a full card on Today,
+on the feature the app's whole proposition rests on.
+
+The **diagnosis** stays fixed, deliberately. "Make room between the clicks" is
+still true tomorrow, and rewriting a correct heading to look fresh would be the
+app pretending to know something new. Only the drill underneath moves — three
+per verdict now, and the existing one is kept as the first of each, since it was
+already good.
+
+Rotated **by the date**, through `warmup.ts`'s `dayIndex`, for the reason
+`warmupFor` gives: it has to be the same drill all day and the same on every
+device, or closing the app mid-session would reroll the work already started.
+`now` is injected so the rotation is testable.
+
+**Three tests were pinning the single drill's text and had to change**, which is
+the right kind of failure. They now pin a date and keep asserting the diagnosis,
+and four new cases cover what actually matters: the heading and reason are
+constant across a week, the drill is not, two calls on the same date agree, and
+**every drill for every verdict names the piece and the working tempo** — the
+reason the card cannot read like a generic article dropped onto the dashboard,
+and the thing a newly added drill is most likely to forget.
+
+The drills are pedagogy, so they are specific rather than filler: for rushing,
+hearing the metronome on the off-beats, and holding the last note of a bar its
+full length (rushing usually starts by leaving a note early, not by playing the
+next one fast); for dragging, preparing each note during the one before it, and
+a faster pass to stop the slower one feeling like a ceiling; for on-tempo,
+playing without the metronome and starting from a later bar, since a pulse that
+only holds from bar 1 is the opening you have practised rather than the piece.
+
+**Tests:** mobile 1227 passed (105 files); `tsc --noEmit` clean; web build
+clean; `walk-app.mjs` PASS. Today's card re-read from the running build.
+
+**Side effects:** the card's exercise line changes daily for an unchanged
+diagnosis. **Rollback:** revert.
+
+---
+
 ## 2026-09-02 — A refused microphone, and a bug I reported to myself and withdrew
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. A check added to
