@@ -73,6 +73,25 @@ const ROUTES = [
   // would be caught without a throwaway build.
   ['Change password', 'account/password'],
   ['Change email', 'account/email'],
+
+  // **The scan flow, which no sweep had ever visited.** It is the app's main
+  // way of getting music in, and the four screens between a photograph and a
+  // saved piece were the largest unaudited area left.
+  //
+  // Reached by route, these render their **empty** states — the capture session
+  // starts empty and the scanner needs a camera this container does not have.
+  // That is real coverage of real screens (`/scan/pages` with nothing in it is
+  // reachable by backing out of a scan), and it is **not** coverage of the
+  // populated flow. `walk-app.mjs` covers that one, by importing two of the
+  // repository's own fixture pages through the file picker.
+  ['Add piece', 'add/import'],
+  ['Scanner', 'scan'],
+  ['Captured pages', 'scan/pages'],
+  ['Transcribe', 'scan/sending'],
+  ['Name the piece', 'scan/name'],
+
+  ['Export data', 'account/export'],
+  ['Acknowledgements', 'acknowledgements'],
 ];
 
 const audit = () => {
