@@ -11,7 +11,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { X } from 'lucide-react-native';
 
-import { BORDER_WIDTH, colors, motion, radii, spacing } from '../../design';
+import { BORDER_WIDTH, colors, EASE_OUT, motion, radii, spacing } from '../../design';
 import { useReducedMotion } from '../../lib/useReducedMotion';
 import { IconButton } from '../primitives/IconButton';
 import { Text } from '../primitives/Text';
@@ -71,6 +71,7 @@ export function BottomSheet({
       Animated.timing(progress, {
         toValue: 1,
         duration: reduceMotion ? 0 : motion.base,
+        easing: EASE_OUT,
         useNativeDriver: Platform.OS !== 'web',
       }).start();
       return;
@@ -79,6 +80,7 @@ export function BottomSheet({
     Animated.timing(progress, {
       toValue: 0,
       duration: reduceMotion ? 0 : motion.fast,
+      easing: EASE_OUT,
       useNativeDriver: Platform.OS !== 'web',
     }).start(({ finished }) => {
       if (finished) {
