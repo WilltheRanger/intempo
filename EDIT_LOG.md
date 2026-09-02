@@ -6,6 +6,75 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-02 — A second page in another clef was joined as though it were not
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Fifth and last of the
+family, and the one that matters most for a real scan: multi-page is the normal
+case for an actual piece, and this is the join.
+
+`join_pages` already carried the **metre** and the **key** across a page break
+— stamping the first measure of a later page when that page's own header states
+something different from what is in force. It did not carry the **clef**. Line
+159 takes `_first(page.clef for page in readings)` as the score's clef and
+nothing else looked at the field again.
+
+So a part that climbs into tenor at the foot of page one — which prints a C
+clef in page two's own header and nowhere else, because that is how a printed
+part works — was joined as a piece that is bass throughout. Every note of page
+two then placed a sixth off.
+
+The metre version of this bug, measured on 2026-08-26, reported correct bars as
+long. This one is worse in kind: a wrong bar length is a caveat on a bar, and a
+wrong clef is the wrong notes on the page.
+
+Three rules, all inherited from the two walks beside it:
+
+- **Compared against what is in force**, not the first page's header. Page
+  three of a part that went to tenor on page two states bass, which equals the
+  header — a header comparison records the departure and drops the return,
+  leaving the rest of the part in tenor. Same trap, third time.
+- **A page continuing in the same clef stamps nothing.** Every page of a bass
+  part prints a bass clef in its header; stamping each would put a change to
+  the clef already in force at the top of every page — the redundant-signature
+  mistake, one level up.
+- **A measure that states its own clef wins.** The page header is only consulted
+  when the measure is silent, exactly as the key already does.
+
+Plain string equality, deliberately, where the key needs `key_fifths`:
+`_CLEF_BY_SIGN_LINE` already folds the baritone F clef onto `bass`, so two
+names that differ here really are two different clefs.
+
+### Tests
+
+**backend 1897 passed + 3 xfailed.** Three cases: a page in another clef
+stamped at the break, a page continuing in the same clef stamping nothing, and
+a page returning to the opening clef still stamped.
+
+### The family, closed
+
+Five bugs, one root cause — the value printed at the top is not the value in
+force at the bar being asked about:
+
+1. a key change drawn as an inline accidental on every F;
+2. a metre change reporting correct bars as short, in the bar editor;
+3. a clef change placing a whole tenor passage a sixth off, in the engraver;
+4. the corrector prompt naming the opening clef while showing a tenor crop;
+5. and this — a whole page joined into the wrong clef.
+
+The engraver, the editor, the prompt and the join now all ask the same
+question. I have not found a sixth.
+
+### Not done
+
+- Nothing here is verified against a real two-page scan in another clef; the
+  corpus has no such pair. The evidence is the join's own tests.
+
+### Rollback
+
+`git revert`. A pair of pages in one clef joins byte-identically either way.
+
+---
+
 ## 2026-09-02 — The corrector named the clef the page opened in
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. The fourth of the same
