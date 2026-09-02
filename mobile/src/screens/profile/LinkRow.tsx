@@ -1,6 +1,7 @@
 import { ChevronRight } from 'lucide-react-native';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
+import { PressableScale } from '../../components/motion';
 import { Text } from '../../components/primitives/Text';
 import {
   BORDER_WIDTH,
@@ -33,8 +34,9 @@ export function LinkRow({
   divided = true,
 }: LinkRowProps) {
   return (
-    <Pressable
+    <PressableScale
       onPress={onPress}
+      activeScale={0.99}
       accessibilityRole="button"
       accessibilityLabel={value ? `${label}, ${value}` : label}
       style={({ pressed }) => [
@@ -64,7 +66,7 @@ export function LinkRow({
           color={colors.textTertiary}
         />
       </View>
-    </Pressable>
+    </PressableScale>
   );
 }
 
@@ -82,7 +84,8 @@ const styles = StyleSheet.create({
     borderTopColor: colors.border,
   },
   pressed: {
-    opacity: 0.6,
+    backgroundColor: colors.surfacePressed,
+    opacity: 0.88,
   },
   label: {
     flexShrink: 0,
