@@ -1,4 +1,4 @@
-import type { ScoreJson, ScoreMeasure } from '../../data/types';
+import type { Clef, ScoreJson, ScoreMeasure } from '../../data/types';
 import { isNote, stepOf } from './engrave';
 import { readTies } from './ties';
 import { BEATS } from '../score/schedule';
@@ -378,9 +378,47 @@ export function staveScoreFor(score: ScoreJson): StaveScore {
     return { keyChange: { key } };
   };
 
+  /**
+   * The same walk for the clef, and it exists for a sharper reason.
+   *
+   * A key the engraver ignores draws the wrong accidentals; a **clef** it
+   * ignores draws every notehead after the change at the wrong height — a
+   * cello or bass part moving into tenor for a high passage came out placed
+   * against the opening bass clef, a sixth off, and captioned with a clef the
+   * page had stopped using. `Measure.clef` has carried this since the importer
+   * learned to stamp it; nothing drew it until now.
+   *
+   * Compared against the clef **in force**, never the header, for the reason
+   * `musicxml.py` gives at the same comparison: a part that moves into tenor
+   * at bar 20 and back to bass at bar 40 states bass at 40, which equals the
+   * header — so a header comparison records the departure and drops the
+   * return, leaving the rest of the part drawn in tenor.
+   */
+  let clefInForce: Clef | null = score.clef ?? null;
+  let pendingClefChange: Clef | null = null;
+  const noteClefChange = (measure: ScoreJson['measures'][number]) => {
+    const stated = measure.clef ?? null;
+    if (!stated) {
+      return;
+    }
+    if (stated !== clefInForce) {
+      pendingClefChange = stated;
+    }
+    clefInForce = stated;
+  };
+  const takeClefChange = () => {
+    if (pendingClefChange === null) {
+      return {};
+    }
+    const clefChange = pendingClefChange;
+    pendingClefChange = null;
+    return { clefChange };
+  };
+
   let index = 0;
   while (index < score.measures.length) {
     noteKeyChange(score.measures[index]);
+    noteClefChange(score.measures[index]);
     if (isSilent(score.measures[index])) {
       let end = index;
       while (end < score.measures.length && isSilent(score.measures[end])) {
@@ -393,11 +431,13 @@ export function staveScoreFor(score: ScoreJson): StaveScore {
           barBefore: index > 0,
           measureNumber: score.measures[index].measure_number,
           ...takeKeyChange(),
+          ...takeClefChange(),
         });
         // A change printed inside the block — on a bar of silence — waits for
         // the bar after it, which is the first bar it changes a note in.
         for (let inside = index + 1; inside < end; inside += 1) {
           noteKeyChange(score.measures[inside]);
+          noteClefChange(score.measures[inside]);
         }
         index = end;
         continue;
@@ -471,6 +511,7 @@ export function staveScoreFor(score: ScoreJson): StaveScore {
           dots: drawn!.dots,
           measureNumber: measure.measure_number,
           ...takeKeyChange(),
+          ...takeClefChange(),
           ...(mark ? { tuplet: mark } : {}),
           ...(quarters !== undefined ? { quarters } : {}),
           ...(opensMeasure ? { barBefore: true } : {}),
@@ -539,6 +580,7 @@ export function staveScoreFor(score: ScoreJson): StaveScore {
         dots: drawn!.dots,
         measureNumber: measure.measure_number,
         ...takeKeyChange(),
+          ...takeClefChange(),
         ...(chord.length > 0 ? { chord } : {}),
         ...(note.articulation ? { articulation: note.articulation } : {}),
         // Read from the page since Batch 2 and drawn by nothing until now. An
