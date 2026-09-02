@@ -6,6 +6,109 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-02 — A muted microphone cost a musician one of three free analyses, and the advice for it could not work
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. No §2 gate: no screen, no
+composition and no new copy — one existing message that could never fire now
+fires, and one pipeline sentence is corrected the way `_why_alignment_failed`'s
+were.
+
+### What a musician did, and what happened
+
+They opened a piece, set a tempo, played a take with the microphone muted —
+a hardware mute, a permission revoked after it was granted, a device recording
+from an input with nothing routed to it — stopped, waited through the upload
+and the pipeline, and were told: *"We couldn't hear any notes to analyze — try
+re-recording a bit louder."* And it had **spent one of their three free
+analyses for the month** to say so.
+
+Three separate faults in that sentence and that path.
+
+### 1. "Louder" is advice that cannot work — measured
+
+`onset_strength` differences a dB-scaled mel spectrogram, so scaling a waveform
+shifts every frame by a constant that the differencing removes. Measured on all
+six fixtures, requantised to 16 bit at each level, the onset count is
+**identical from 0 dBFS down to -90 dBFS**, where the samples are barely more
+than one LSB. Ten seconds of white noise at -60 dBFS gives ten onsets; ten
+seconds of digital silence gives none. Full tables in `TUNING_LOG.md`.
+
+So the only recording that reaches `no_onsets` is one that is *digitally
+silent*, and playing louder into a muted microphone produces the identical
+file. The message now names the input.
+
+### 2. The same branch blamed the musician for an empty page
+
+`onsets.size == 0 **or** expected.size == 0` — the second is a score with no
+notes read off it, nothing to do with the recording, and it got the same
+"record louder". That is the mistake `_read_page`'s failure reasons made three
+times, in a fourth place. `_why_nothing_to_compare` separates them and names
+the empty transcription **first** when both are true: no amount of re-recording
+makes a page with nothing on it analysable, so pointing at the microphone would
+cost a second take and change nothing. `diagnostics.py` has named both causes
+correctly all along — only the sentence the musician sees was wrong.
+
+### 3. The app had the file in its hands and let it go
+
+`EmptyRecordingError`'s own description says *"a muted input, or a stop before
+any audio"*. Only the second half was true: the check was
+`durationOf(chunks) === 0`, and **a muted microphone delivers samples like any
+other — they are simply all zero.** So the take had a duration, passed, and went
+to the server to be told what the phone already knew.
+
+`lib/audio/level.ts` is the other half. A running peak meter folded into each
+chunk as it arrives — running rather than a pass over the finished take,
+because a fifteen-minute take is 43 million samples and stopping a recording
+should not walk all of them.
+
+**The threshold is exactly zero, and the measurement is why.** Since a take at
+the bottom of 16-bit resolution analyses exactly as well as a loud one, any
+non-zero floor would take a verdict away from a musician who could have had
+one. It also does not claim to be the server's `no_onsets` set — constant DC
+yields no onsets while being far from zero here — it is the subset knowable on
+the phone with certainty, which is the only subset worth refusing without
+asking. The message shown is the one the record screen already had, unchanged.
+
+### Tests, including two files that had none
+
+`audioRecorder.web.ts` (265 lines) and `audioRecorder.ts` (138) sat on the
+critical path between a musician's playing and the file the whole pipeline
+reads, with **zero tests between them**. Both now have one, driven against stub
+graphs the way `click.web.test.ts` drives the metronome: the WAV header carries
+the rate the *hardware* settled on rather than the one requested, the
+microphone is released at the end, a take of all zeros is refused, a take
+holding a single bit is accepted, and a discarded take's audio cannot vouch for
+the one that replaces it.
+
+Verified the tests catch the bug rather than describe the fix: with the guard
+reverted, 4 of the 11 fail; restored, all pass.
+
+**And an end-to-end leg in `walk-app.mjs`**, because a message nobody has seen
+is a message nobody has checked. `createMediaStreamDestination()` with nothing
+connected is a real `MediaStream` carrying a real track that produces silence,
+so the leg exercises the actual worklet in the actual built app. Also verified
+by rebuilding with the old guard: **FAIL — "a silent take was accepted"**;
+rebuilt with it, PASS and the screen reads *"That take came back silent. Check
+the microphone isn't muted or covered, then try again."*
+
+### Verification
+
+backend 1901 passed / 3 xfailed · mobile 1246 passed (108 files) ·
+`tsc --noEmit` clean · web build clean · walk PASS (24 checks).
+
+`mobile/.env` was moved aside for the fixtures builds and restored with a
+`diff -q` check, as `CLAUDE.md` requires.
+
+**Not covered:** a real muted microphone on a real phone. The container has no
+audio device, so both the native path and the actual OS mute behaviour are
+argued from the API contract and tested against stubs, not observed.
+
+**Rollback:** revert this commit. The two recorder tests and
+`lib/audio/level.ts` are additive; the backend change is one function and its
+call site.
+
+---
+
 ## 2026-09-02 — The practice lesson said the same thing every day
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Put to the owner under the

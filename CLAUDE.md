@@ -547,6 +547,49 @@ there works differently as of 2026-08-24:
   used to "cancel" only made the *result* be ignored while the transfer kept the
   phone's entire uplink, so cancelling a slow upload made the app slower.
 
+### The recording path (2026-09-02) — level is not the signal you think it is
+
+- **The onset detector is amplitude-invariant, and this is measured.**
+  `onset_strength` differences a dB-scaled mel spectrogram, so scaling a
+  waveform shifts every frame by a constant the differencing removes. All six
+  fixtures, requantised to 16 bit at each level, read **identically from 0 dBFS
+  to -90 dBFS** — tables in `TUNING_LOG.md`, 2026-09-02, pinned by
+  `test_the_detector_hears_the_same_notes_however_quiet_the_take_is`. A quiet
+  take is a perfectly good take. **Never warn about one**, and never add a
+  loudness floor: any non-zero floor takes a verdict away from a musician who
+  could have had one. This is the rare threshold that is not a judgement call.
+- **The only take with nothing in it is one whose every sample is zero**, which
+  is what a muted input, a revoked permission, or a device recording from an
+  unrouted source produces. `lib/audio/level.ts` refuses exactly that, before
+  the upload and before it costs one of three free monthly analyses.
+  `EmptyRecordingError`'s description claimed to cover a muted input for
+  months and did not: the check was `durationOf(chunks) === 0`, and a muted
+  microphone delivers samples like any other. Yes, this is a client-side rule
+  about audio that the server also holds — `DECISIONS.md`, 2026-09-02, argues
+  why it is not the fourth-copy mistake, and the argument is directional: the
+  app refuses a strict subset, so it can only ever under-refuse.
+- **`no_onsets` has two causes and they are not the same person's problem.**
+  `expected.size == 0` is a page with no notes read off it — the app's failure,
+  named first when both are true, because no amount of re-recording makes it
+  analysable. `onsets.size == 0` is the silent recording. The branch used to
+  tell both to *"try re-recording a bit louder"*, which is a server fault
+  blamed on the musician **and** advice that measurably cannot work.
+  `diagnostics.py` has named both correctly all along; only the sentence a
+  musician sees was wrong.
+- **Both recorders now have tests, and had none.** 400 lines between a
+  musician's playing and the file the whole pipeline reads. They are driven
+  against stub graphs the way `click.web.test.ts` drives the metronome —
+  `expo-audio` is `vi.mock`ed down to a stream that emits `int16` buffers. A
+  rule that only the recorder enforces is a rule nothing checks, which is the
+  same doctrine the capture path below is written from.
+- **A message nobody has seen is a message nobody has checked.**
+  `walk-app.mjs`'s silent-microphone leg uses
+  `createMediaStreamDestination()` with nothing connected — a real
+  `MediaStream` carrying a real track that produces silence — so it exercises
+  the actual worklet in the actual built app. That is the pair to the refused-
+  microphone leg beside it, and both exist because the container has no audio
+  device and every unstubbed run takes the `NotFoundError` branch.
+
 ### The capture path (2026-08-24) — what an audit of it found
 
 Nine defects between the shutter and a saved score, in a path that had **zero

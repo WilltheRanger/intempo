@@ -244,7 +244,10 @@ def _finish(row):
             "verdict": ("We couldn't line your playing up with the score. "
                         "Start from the first note and play the passage through."
                         if outcome == "alignment_failed"
-                        else "We couldn't hear any notes in that recording."),
+                        else "Your recording is completely silent — no sound "
+                             "reached the microphone at all. Check which input "
+                             "your device is recording from, and that nothing "
+                             "is muting it, then record again."),
             "verdict_direction": "on", "per_note": [], "per_measure": [],
             "trend": [], "n_detected_onsets": 0, "n_expected_onsets": 32,
             "n_missed_notes": 32, "n_extra_notes": 0,
