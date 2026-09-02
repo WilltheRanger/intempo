@@ -6,6 +6,14 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-01 — Profile-photo replacement can actually be retried
+
+**Branch:** `codex/retry-profile-photo`.
+
+**Files:** `mobile/src/data/profile/savePhoto.ts`, `mobile/src/data/profile/savePhoto.test.ts`, `mobile/src/screens/profile/ProfileScreen.tsx`.
+
+Changing a profile photo is two requests: upload the image, then save its key to the account. The Profile screen discarded that progress when either request failed, left only a sentence saying to try again, and made the user reopen the picker; when upload had succeeded and save failed, every attempt could also strand another private avatar object. The replacement now retains the local selection and any accepted object key, renders an explicit retry action, and resumes at the unfinished step. Cancelling the picker preserves an earlier retry instead of silently removing it. Unit tests pin first-save, upload-failure, save-failure, and already-uploaded retry behavior.
+
 ## 2026-09-01 — Upload recovery names what the user sent
 
 **Branch:** `codex/context-aware-upload-errors`.
