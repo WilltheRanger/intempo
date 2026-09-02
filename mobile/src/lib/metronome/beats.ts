@@ -97,12 +97,17 @@ export function secondsPerBeat(bpm: number): number {
 }
 
 export interface Beat {
-  /** 0-based, counted from the first beat of the take. */
+  /** 0-based, counted from the first pulse of the count-in. */
   index: number;
   /** 0-based position in the bar, or null when there is no bar to place it in. */
   beatInBar: number | null;
   /** The "one". False for every beat when the time signature is unusable. */
   downbeat: boolean;
+  /**
+   * Felt pulses in this beat's bar when a changing-meter plan supplied it.
+   * Absent on the legacy fixed clock, whose caller already owns `perBar`.
+   */
+  pulsesPerBar?: number | null;
 }
 
 /** Which beat of which bar an index falls on. */
