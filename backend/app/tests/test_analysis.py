@@ -514,3 +514,93 @@ def test_a_bar_with_any_timed_note_names_no_reason() -> None:
 
     assert bar.timed_note_count == 1
     assert bar.untimed_reason is None
+
+
+def test_a_silent_take_is_told_the_microphone_heard_nothing(tmp_path) -> None:
+    """Not "record louder" — that is the one thing that cannot help here.
+
+    A muted input produces the same zeros however hard the musician plays, so
+    the old advice sent them to repeat the take and get the identical file. See
+    `_why_nothing_to_compare` for the measurement.
+    """
+    import numpy as np
+
+    score = _eight_quarter_note_score()
+    path = write_wav(tmp_path / "silent.wav", np.zeros(SR * 2, dtype="float32"), sr=SR)
+
+    result = analyze(path, score, target_bpm=120.0)
+
+    assert result.status == "no_onsets"
+    assert "microphone" in result.verdict
+    assert "louder" not in result.verdict
+
+
+def test_an_empty_transcription_is_not_blamed_on_the_playing(tmp_path) -> None:
+    """A page with no notes read off it says so, and names where to look.
+
+    Both conditions are true when a silent take meets an empty score, and the
+    score is named first on purpose: no amount of re-recording makes a page
+    with nothing on it analysable, so pointing at the microphone would cost a
+    second take and change nothing.
+    """
+    empty = ScoreJson(
+        clef="treble",
+        time_signature="4/4",
+        ocr_confidence=0.9,
+        measures=[Measure(measure_number=1, notes=[])],
+    )
+    times = evenly_spaced(8, bpm=120.0)
+    path = write_wav(tmp_path / "played.wav", synth_click_track(times, sr=SR), sr=SR)
+
+    played = analyze(path, empty, target_bpm=120.0)
+    import numpy as np
+
+    silent = analyze(
+        write_wav(tmp_path / "silent.wav", np.zeros(SR * 2, dtype="float32"), sr=SR),
+        empty,
+        target_bpm=120.0,
+    )
+
+    for result in (played, silent):
+        assert result.status == "no_onsets"
+        assert "transcription" in result.verdict
+        assert "microphone" not in result.verdict
+
+
+def test_the_detector_hears_the_same_notes_however_quiet_the_take_is(tmp_path) -> None:
+    """The measurement behind "louder" being useless advice.
+
+    `onset_strength` differences a dB-scaled mel spectrogram, so scaling the
+    waveform shifts every frame by a constant that the differencing removes.
+    A take at the bottom of 16-bit resolution therefore analyses exactly as
+    well as a loud one — which is why the only recording that reaches
+    `no_onsets` is a digitally silent one, and why the advice for it has to
+    name the input rather than the playing.
+
+    This is the claim `_why_nothing_to_compare`'s docstring rests on. If it
+    ever stops holding, that docstring is wrong and so is the message.
+    """
+    import numpy as np
+
+    from app.services import audio as audio_svc
+    from app.services.audio_config import load_audio_config
+
+    cfg = load_audio_config()
+    times = evenly_spaced(8, bpm=120.0)
+    loud = synth_click_track(times, sr=SR)
+    loud = loud / float(np.max(np.abs(loud)))
+
+    counts = []
+    for dbfs in (0, -40, -80, -90):
+        # Requantised to 16 bit, because that is what the app uploads: a float
+        # scaled to -90 dBFS is not the same thing as one that survived a WAV.
+        scaled = loud * (10 ** (dbfs / 20))
+        pcm = np.clip(np.round(scaled * 32767.0), -32768, 32767).astype(np.int16)
+        y = pcm.astype(np.float32) / 32768.0
+        onsets = audio_svc.detect_onsets(
+            audio_svc.pre_emphasis(y, config=cfg), SR, config=cfg
+        )
+        counts.append(int(onsets.size))
+
+    assert counts[0] == 8, "the loud take is the control"
+    assert len(set(counts)) == 1, f"level changed the reading: {counts}"

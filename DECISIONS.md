@@ -6,6 +6,63 @@ Operating Principle #5.
 
 ---
 
+## 2026-09-02 — The app refuses a digitally silent take, despite the standing rule against a client-side copy of a server check
+
+**Context.** A muted microphone delivers samples like any other — all zero. The
+take uploaded, ran the pipeline, came back `no_onsets`, and had spent one of
+three free monthly analyses to tell the musician something their phone knew
+before the upload started.
+
+Refusing it locally runs straight into a rule this project holds hard, and
+holds for good reason: *"The app does not have a fourth copy, and must not grow
+one."* The app once carried its own beat-sum check, three more checks landed on
+the server, and the app went silent on all of them.
+
+**Decision.** Refuse in the app, at **exactly zero**, and only there.
+
+**Why this is not the fourth-copy mistake.** The validator case is a *judgement
+about a reading* — a body of knowledge that grew from one check to four and will
+grow again, where a client copy falls behind and lies. This is a **precondition
+on the upload**: a file with no signal in it. It cannot fall behind, because
+there is nothing for it to fall behind of — the server did not become better at
+recognising an all-zero file while the app was not looking.
+
+The invariant that makes it safe is directional. Every take the app refuses,
+the server also refuses; the app never refuses one the server could have
+analysed. Disagreement in the *other* direction is expected and fine — constant
+DC yields no onsets on the server while being far from zero here, and that take
+still goes up and gets the server's answer. The server stays the authority; the
+app declines only the case with no argument in it.
+
+**Alternatives considered.**
+
+*Let the server keep deciding, and stop charging for failures.* The kinder
+version of the current behaviour, and it fixes the quota but not the wait or the
+upload — a musician on a rehearsal-room connection still sends a file of zeros
+and still waits for it. It is also a change to billing, which this project has
+deliberately not settled (`tier_limits.py` says so). Worth doing as well, one
+day; it is not a substitute.
+
+*Refuse quiet takes too, at some dBFS floor.* The intuitive version, and
+measurement killed it. The onset detector is amplitude-invariant — identical
+readings from 0 dBFS to -90, tables in `TUNING_LOG.md` — so a take at the
+bottom of 16-bit resolution analyses exactly as well as a loud one, and **any**
+non-zero floor takes a verdict away from a musician who could have had one.
+This is the rare threshold that is not a judgement call.
+
+*Warn during the take instead of refusing after it.* Better for the musician —
+they would learn in two seconds rather than after three minutes of playing — and
+it is a new element on a screen, so it belongs behind the §2 gate rather than in
+a bug fix. The refusal is correct on its own and does not preclude it.
+
+**Trade-off accepted.** One rule about audio now lives in two places, and the
+app's copy is deliberately the weaker of the two. If the server ever starts
+refusing a *different* set — a minimum take length, say — the app will not know,
+and that is acceptable precisely because the app's rule is a subset that can
+only under-refuse.
+
+---
+
 ## 2026-09-02 — Two threshold tests over a ratio, for calling a tempo uneven
 
 **Context.** Insights summarised a window of practice with one statistic, a

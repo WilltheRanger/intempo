@@ -367,6 +367,71 @@ console.log('\n## A refused microphone');
   await denied.close();
 }
 
+/**
+ * **A microphone that is granted, connected, and silent.**
+ *
+ * The one recording failure the app cannot see coming from an error: a muted
+ * input, a device recording from a source with nothing routed to it, or a
+ * permission granted and then revoked mid-take. `getUserMedia` resolves, the
+ * graph runs, and every sample that arrives is zero.
+ *
+ * `createMediaStreamDestination()` with nothing connected to it is exactly
+ * that — a real `MediaStream` carrying a real track that produces silence — so
+ * this exercises the recorder's actual worklet rather than a stub of it. The
+ * message it should produce has existed on this screen all along and could
+ * never fire: the check was `durationOf(chunks) === 0`, and a muted microphone
+ * delivers samples like any other. Without this leg it is a message nobody has
+ * seen.
+ */
+console.log('\n## A microphone that is on and silent');
+{
+  const quiet = await browser.newPage({ viewport: { width: 390, height: 844 } });
+  quiet.on('pageerror', (e) => errors.push(e.message));
+  await quiet.addInitScript(() => {
+    navigator.mediaDevices.getUserMedia = async () => {
+      const context = new AudioContext();
+      // Nothing is connected to this destination, so its track carries
+      // silence — the samples a muted input delivers.
+      return context.createMediaStreamDestination().stream;
+    };
+  });
+  await quiet.goto(`${BASE}/pieces/fixture-bach-bwv1001/record`, {
+    waitUntil: 'domcontentloaded',
+    timeout: 30000,
+  });
+  await quiet
+    .getByText('Set tempo & record')
+    .first()
+    .click({ timeout: 15000 })
+    .catch(() => {});
+  await quiet.getByRole('button', { name: /Start recording/i }).first().click({ timeout: 15000 });
+
+  // Long enough that the worklet has certainly posted, so "nothing arrived" is
+  // ruled out and the take really is samples that are all zero.
+  await quiet.waitForTimeout(2500);
+  const stop = quiet.getByRole('button', { name: /Stop/i }).first();
+  await stop.click({ timeout: 15000 }).catch(() => {});
+
+  const said = await (async () => {
+    const deadline = Date.now() + 20000;
+    for (;;) {
+      const lines = await quiet.evaluate(() =>
+        [...document.querySelectorAll('*')]
+          .filter((el) => el.children.length === 0 && (el.textContent ?? '').trim())
+          .map((el) => el.textContent.trim()),
+      );
+      const hit = lines.find((l) => /silent|muted/i.test(l));
+      if (hit || Date.now() > deadline) return hit ?? null;
+      await quiet.waitForTimeout(200);
+    }
+  })();
+
+  if (said === null)
+    fail('a silent take was accepted — it would have cost an upload and a free analysis');
+  else pass(`a silent take is refused before it is sent: "${said.slice(0, 70)}…"`);
+  await quiet.close();
+}
+
 console.log('\n## Page errors');
 if (errors.length === 0) pass('none across the whole walk');
 else for (const e of errors) fail(`page error: ${e.slice(0, 120)}`);

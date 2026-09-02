@@ -107,8 +107,11 @@ def test_a_score_file_is_accepted_and_still_needs_a_tempo(capsys, tmp_path) -> N
     assert "--bpm is required" in capsys.readouterr().err
 
     # With a tempo it runs, and silence is a real answer rather than a crash.
+    # Pinned on the noun rather than the sentence: the reason a silent take
+    # gets is about the *input*, never about playing louder, and that is the
+    # part of the wording worth holding — see `_why_nothing_to_compare`.
     assert main([str(audio), "--score", str(score), "--bpm", "60"]) == 1
-    assert "couldn't hear any notes" in capsys.readouterr().out
+    assert "microphone" in capsys.readouterr().out
 
 
 def test_a_take_the_pipeline_could_not_use_exits_non_zero() -> None:
