@@ -5,8 +5,9 @@ import type { MetronomeMode } from '../../data/types';
 import { impact, ImpactFeedbackStyle } from '../haptics';
 import { metronomePulse, type Beat } from './beats';
 import { countInOutputs, metronomeRuns, takeOutputs } from './countIn';
-import { startBeatClock } from './clock';
+import { startBeatClock, startPlannedBeatClock } from './clock';
 import { startClicks } from './click';
+import type { PlannedBeat } from './plan';
 
 /**
  * The metronome, for the duration of a take.
@@ -41,6 +42,11 @@ export interface MetronomeOptions {
   /** True during the count-in and, when enabled, the take. */
   running: boolean;
   /**
+   * Exact count-in and score pulses when the piece changes meter.
+   * Omitted for callers that need an indefinite fixed metronome.
+   */
+  beatPlan?: readonly PlannedBeat[];
+  /**
    * True while the count-in is running, false once the take is.
    *
    * The hook needs both because they get **different outputs from the same
@@ -56,6 +62,7 @@ export function useMetronome({
   timeSignature,
   running,
   countingIn,
+  beatPlan,
 }: MetronomeOptions): MetronomeState {
   const [beat, setBeat] = useState<Beat | null>(null);
   const { haptics } = usePreferences();
@@ -95,27 +102,34 @@ export function useMetronome({
     // restarting it at the downbeat would move the clicks off the beat the
     // screen is pulsing. It starts once and is silenced at the boundary
     // instead, by the effect below, when the take may not click.
-    const clicks = startClicks({ bpm: pulseBpm, perBar });
+    const clicks = startClicks({ bpm: pulseBpm, perBar, beats: beatPlan });
     clicksRef.current = clicks;
 
-    const clock = startBeatClock({
-      bpm: pulseBpm,
-      perBar,
-      leadInS: clicks.leadInS,
-      onBeat: (next) => {
-        setBeat(next);
-        const outputs = countingInRef.current
-          ? countInOutputs(hapticsRef.current)
-          : takeOutputs(modeRef.current, hapticsRef.current);
-        if (outputs.haptic) {
-          // Weight distinguishes the downbeat, the way the accent pitch does
-          // for the ear. It is the only cue a hand has.
-          impact(
-            next.downbeat ? ImpactFeedbackStyle.Medium : ImpactFeedbackStyle.Light,
-          );
-        }
-      },
-    });
+    const receiveBeat = (next: Beat) => {
+      setBeat(next);
+      const outputs = countingInRef.current
+        ? countInOutputs(hapticsRef.current)
+        : takeOutputs(modeRef.current, hapticsRef.current);
+      if (outputs.haptic) {
+        // Weight distinguishes the downbeat, the way the accent pitch does
+        // for the ear. It is the only cue a hand has.
+        impact(
+          next.downbeat ? ImpactFeedbackStyle.Medium : ImpactFeedbackStyle.Light,
+        );
+      }
+    };
+    const clock = beatPlan
+      ? startPlannedBeatClock({
+          beats: beatPlan,
+          leadInS: clicks.leadInS,
+          onBeat: receiveBeat,
+        })
+      : startBeatClock({
+          bpm: pulseBpm,
+          perBar,
+          leadInS: clicks.leadInS,
+          onBeat: receiveBeat,
+        });
 
     // Its own clock, on purpose: clicks are booked against the audio clock on
     // web, which is the whole reason they're trustworthy. Sharing the timer
@@ -130,7 +144,7 @@ export function useMetronome({
     // control is locked while recording), and including it would restart the
     // count on a preference write from anywhere else in the app.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active, perBar, pulseBpm]);
+  }, [active, beatPlan, perBar, pulseBpm]);
 
   // Silence the clicks the moment the count-in ends, unless this take is one
   // that may click. Separate from the effect above because stopping them must
