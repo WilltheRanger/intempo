@@ -6,6 +6,30 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-01 — Score-reading improvement is now explicit, reversible consent
+
+**What changed**
+- Added the missing “Help improve score reading” switch under Profile → Data & privacy.
+- The switch is off by default and states exactly what permission covers: corrected bars and their source sheet-music photos.
+- Turning it on records explicit account-level consent through the existing protected profile endpoint. Turning it off invokes the backend's withdrawal path, which clears consent and deletes retained corrections and photographs.
+- The control stays disabled while the server saves, retains the old value on failure, and reports a readable inline error instead of pretending the privacy setting changed.
+- Added disabled-state support to shared setting rows for server-backed preferences.
+- Mapped the server's consent field into the Profile view model and kept fixture/sample consent off.
+- Added focused tests proving granted and declined/withdrawn consent remain distinct through the account adapter.
+
+**Files**
+- `mobile/src/screens/profile/ProfileScreen.tsx`
+- `mobile/src/screens/profile/ToggleRow.tsx`
+- `mobile/src/data/api/me.ts`
+- `mobile/src/data/sources/api.ts`
+- `mobile/src/data/sources/api.musician.test.ts`
+- `mobile/src/data/sources/fixtures.ts`
+- `mobile/src/data/types.ts`
+
+**Verification**
+- Full mobile tests, typecheck, web build, frontend build, backend tests, and the change-log check run in pull-request CI before merge.
+- Production verification opens Profile without changing the user's setting, confirms the switch state and disclosure, and checks browser warnings.
+
 ## 2026-09-01 — Taps answer immediately and scrolling stays on the compositor
 
 **What changed**
