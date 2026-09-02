@@ -9,6 +9,9 @@ import {
 } from '../api/scores';
 import { IS_LIVE_BACKEND } from '../environment';
 import { pieceSource } from '../sources';
+import { practiceTempo } from '../practiceTempo';
+import { insightsKeys } from './useInsights';
+import { takeKeys } from './useLatestTake';
 import { toPiece } from '../sources/api';
 import type { NewPiece, PieceEdit } from '../sources/types';
 import type { Clef, Piece, ScoreJson } from '../types';
@@ -97,18 +100,24 @@ export function useUpdatePiece(id: string) {
 }
 
 /**
- * Removes a piece from the library.
+ * Permanently removes a piece and the history that belongs to it.
  *
- * Expect this to reject: a piece that has been recorded against cannot be
- * deleted, and the rejection carries the backend's own sentence explaining
- * why. Callers must render it rather than treating it as a retryable error.
+ * The endpoint clears the server-side score, assignments, analyses, recordings
+ * and retained pages. The client clears its one piece-scoped device value and
+ * refreshes every query derived from that history so Today and Insights cannot
+ * keep showing a take that no longer exists.
  */
 export function useDeletePiece() {
   const queryClient = useQueryClient();
   return useMutation<void, Error, string>({
     mutationFn: (id) => pieceSource.deletePiece(id),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: pieceKeys.all });
+    onSuccess: async (_, id) => {
+      practiceTempo.clear(id);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: pieceKeys.all }),
+        queryClient.invalidateQueries({ queryKey: takeKeys.all }),
+        queryClient.invalidateQueries({ queryKey: insightsKeys.all }),
+      ]);
     },
   });
 }
