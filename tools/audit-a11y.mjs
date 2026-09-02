@@ -52,6 +52,11 @@ const ROUTES = [
   ['Help', 'help'],
   ['Legal', 'legal/privacy'],
   ['Delete account', 'account/delete'],
+  // Reachable, and both carry the reveal-password control that the two
+  // *unreachable* auth screens also use — so this is where a regression in it
+  // would be caught without a throwaway build.
+  ['Change password', 'account/password'],
+  ['Change email', 'account/email'],
 ];
 
 const audit = () => {
