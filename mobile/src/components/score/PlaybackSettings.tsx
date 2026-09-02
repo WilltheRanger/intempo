@@ -116,6 +116,9 @@ export function PlaybackSettings({
       visible={pickingBar}
       onClose={() => setPickingBar(false)}
       title={entrySheetTitle(entry)}
+      // The picker is a page of music to read, so it gets the screen. Without
+      // the score there is nothing to read and the sheet stays a sheet.
+      expand={Boolean(score)}
     >
       {score ? (
         <StartBarPicker
