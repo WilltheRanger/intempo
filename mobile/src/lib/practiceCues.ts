@@ -1,7 +1,8 @@
 import type { ScoreJson, ScoreMeasure } from '../data/types';
-import { secondsPerBeat } from './metronome/beats';
+import { metronomePulse, secondsPerBeat } from './metronome/beats';
 import { measuresInPlayOrder } from './score/playOrder';
 import { BEATS } from './score/schedule';
+import { timeSignaturesByMeasure } from './notation/meter';
 
 /**
  * Two fully silent bars is long enough to need a re-entry cue.
@@ -41,6 +42,14 @@ export interface LongRestCue {
   endBeat: number;
   /** End of each silent measure, on the same clock. */
   barEndBeats: number[];
+  /**
+   * Felt pulse size for each silent bar, in quarter-note beats.
+   *
+   * Kept beside the bar boundary because a meter can change inside the rest.
+   * The final countdown must use the meter printed for the bar it is in, not
+   * the signature the piece opened with.
+   */
+  barQuarterBeatsPerPulse: number[];
   bars: number;
   /** The measure where playing resumes. */
   resumeMeasure: number;
@@ -69,6 +78,9 @@ export function longRestCues(
   }
 
   const measures = measuresInPlayOrder(score);
+  // Written order, deliberately. A repeat jumps back to the meter that was in
+  // force at the printed bar, even if a later bar changed it before the jump.
+  const meters = timeSignaturesByMeasure(score);
   const cues: LongRestCue[] = [];
   const minimum = Math.max(1, Math.floor(minimumBars));
   let clock = 0;
@@ -84,10 +96,15 @@ export function longRestCues(
 
     const startBeat = clock;
     const barEndBeats: number[] = [];
+    const barQuarterBeatsPerPulse: number[] = [];
     let end = index;
     while (end < measures.length && isSilentMeasure(measures[end])) {
-      clock += measureBeats(measures[end]);
+      const silent = measures[end];
+      clock += measureBeats(silent);
       barEndBeats.push(clock);
+      barQuarterBeatsPerPulse.push(
+        metronomePulse(meters.get(silent.measure_number))?.quarterBeats ?? 1,
+      );
       end += 1;
     }
 
@@ -97,6 +114,7 @@ export function longRestCues(
         startBeat,
         endBeat: clock,
         barEndBeats,
+        barQuarterBeatsPerPulse,
         bars: barEndBeats.length,
         resumeMeasure: next.measure_number,
       });
@@ -113,7 +131,6 @@ export function restCueAt(
   cues: LongRestCue[],
   elapsedMs: number,
   bpm: number,
-  quarterBeatsPerPulse = 1,
 ): RestCueState | null {
   const elapsedBeats = Math.max(0, elapsedMs) / 1000 / secondsPerBeat(bpm);
   const cue = cues.find(
@@ -131,9 +148,10 @@ export function restCueAt(
 
   // Subtract a hair before ceil so an exact beat boundary reads 3, not 4
   // because of floating-point residue from the timer.
+  const candidatePulse = cue.barQuarterBeatsPerPulse[barIndex];
   const pulseSize =
-    Number.isFinite(quarterBeatsPerPulse) && quarterBeatsPerPulse > 0
-      ? quarterBeatsPerPulse
+    Number.isFinite(candidatePulse) && candidatePulse > 0
+      ? candidatePulse
       : 1;
   const beatsRemainingInBar = Math.max(
     1,
