@@ -6,6 +6,14 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-01 — Accepted recordings survive a refresh
+
+**Branch:** `codex/recover-pending-analysis`.
+
+**Files:** `mobile/src/App.tsx`, `mobile/src/data/practice/pendingAnalysis.ts`, `mobile/src/data/practice/pendingAnalysis.test.ts`, `mobile/src/data/sources/api.ts`, `mobile/src/data/sources/api.test.ts`, `mobile/src/screens/record/RecordScreen.tsx`, `mobile/src/screens/today/TodayScreen.tsx`.
+
+Once the API accepted a recording, the only copy of its analysis id lived inside the Record screen's promise. Closing or refreshing during “Listening back” abandoned the route to a take that was already safely stored and processing, so the musician could neither resume it nor know whether it finished. The app now persists only the server-issued analysis and score ids immediately before polling, restores them at launch, checks the durable row once from Today, and presents a clear finishing, offline, or ready card with “Check again” and “View result” actions. It never serialises the WAV and it never submits a second analysis. A stale hand-off is discarded only when the authenticated API says it no longer exists; an older completion cannot erase a newer take. The hand-off is cleared after navigation to the verdict is dispatched. Tests cover storage hydration, corrupt records, replacement races, and the remember-before-poll ordering.
+
 ## 2026-09-01 — A practised piece can be completely deleted
 
 **Branch:** `codex/delete-piece-history`.

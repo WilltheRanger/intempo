@@ -3,9 +3,18 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // `vi.hoisted`, because `vi.mock` is lifted above every declaration in the
 // file — a plain `const` above it is still in its temporal dead zone when the
 // factory runs.
-const { listAnalyses, listScores } = vi.hoisted(() => ({
+const {
+  listAnalyses,
+  listScores,
+  submitTake,
+  waitForAnalysis,
+  rememberPendingAnalysis,
+} = vi.hoisted(() => ({
   listAnalyses: vi.fn(),
   listScores: vi.fn(),
+  submitTake: vi.fn(),
+  waitForAnalysis: vi.fn(),
+  rememberPendingAnalysis: vi.fn(),
 }));
 
 vi.mock('../api/analyses', () => ({ listAnalyses, getAnalysis: vi.fn() }));
@@ -17,11 +26,12 @@ vi.mock('../api/scores', () => ({
   deleteScore: vi.fn(),
 }));
 vi.mock('../api/me', () => ({ getMe: vi.fn() }));
-vi.mock('../practice/submitTake', () => ({ submitTake: vi.fn(), waitForAnalysis: vi.fn() }));
+vi.mock('../practice/submitTake', () => ({ submitTake, waitForAnalysis, TakeSubmissionError: class TakeSubmissionError extends Error {} }));
+vi.mock('../practice/pendingAnalysis', () => ({ rememberPendingAnalysis }));
 vi.mock('../auth/session', () => ({ getAuthAvatarUrl: vi.fn() }));
 vi.mock('../api/client', () => ({ ApiError: class ApiError extends Error {} }));
 
-import { apiInsightsSource, toPiece } from './api';
+import { apiInsightsSource, apiTakeSubmissionSource, toPiece } from './api';
 
 /**
  * The mapping layer, and the one sign in it.
@@ -328,5 +338,42 @@ describe('a bar nothing in which was timed', () => {
     const insights = await apiInsightsSource.getInsights();
 
     expect(insights!.meanDeviationPct).toBeCloseTo(-8, 9);
+  });
+});
+
+
+describe('accepted take hand-off', () => {
+  it('remembers the analysis before waiting for the worker', async () => {
+    submitTake.mockResolvedValue({
+      audioKey: 'user-1/take.wav',
+      analysisId: 'analysis-9',
+    });
+    rememberPendingAnalysis.mockResolvedValue(undefined);
+    waitForAnalysis.mockResolvedValue({ id: 'analysis-9', status: 'done' });
+    const order: string[] = [];
+    rememberPendingAnalysis.mockImplementation(async () => {
+      order.push('remember');
+    });
+    waitForAnalysis.mockImplementation(async () => {
+      order.push('wait');
+      return { id: 'analysis-9', status: 'done' };
+    });
+
+    await expect(
+      apiTakeSubmissionSource.submit({
+        scoreId: 'score-3',
+        targetBpm: 88,
+        metronomeMode: 'off',
+        audio: new Blob(['wav']),
+        filename: 'take.wav',
+      }),
+    ).resolves.toBe('analysis-9');
+
+    expect(rememberPendingAnalysis).toHaveBeenCalledWith({
+      analysisId: 'analysis-9',
+      scoreId: 'score-3',
+      createdAt: expect.any(Number),
+    });
+    expect(order).toEqual(['remember', 'wait']);
   });
 });

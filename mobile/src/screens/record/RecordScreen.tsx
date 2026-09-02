@@ -22,6 +22,7 @@ import {
   TakeSubmissionError,
   type TakeSubmissionState,
 } from '../../data/practice/submitTake';
+import { forgetPendingAnalysis } from '../../data/practice/pendingAnalysis';
 import type { MetronomeMode } from '../../data/types';
 import {
   EmptyRecordingError,
@@ -389,6 +390,9 @@ export function RecordScreen() {
       unsent.current = null;
       setPendingTake(false);
       navigation.replace('Verdict', { analysisId });
+      // The verdict now owns the hand-off. Clear after the navigation is
+      // dispatched so a refresh in the gap still recovers the accepted take.
+      void forgetPendingAnalysis(analysisId);
     } catch (error) {
       // The quota is the one failure a retry cannot clear — the count does not
       // move until next month, so offering "Send again" would be offering the

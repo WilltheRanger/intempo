@@ -1,6 +1,6 @@
 import { useNavigation } from '@react-navigation/native';
 import { ChevronRight, Plus } from 'lucide-react-native';
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
 
 import { FadeIn } from '../../components/motion';
@@ -24,6 +24,12 @@ import { practiceTempo, usePracticeTempos } from '../../data/practiceTempo';
 import { usePreferences } from '../../data/preferences';
 import type { Piece } from '../../data/types';
 import { describeLoadError } from '../../data/api/describeError';
+import { getAnalysis } from '../../data/api/analyses';
+import { ApiError } from '../../data/api/client';
+import {
+  forgetPendingAnalysis,
+  usePendingAnalysis,
+} from '../../data/practice/pendingAnalysis';
 import {
   BORDER_WIDTH,
   colors,
@@ -86,6 +92,48 @@ export function TodayScreen() {
   const recentTakes = useRecentTakes(3);
   const me = useMe();
   const [addSheetVisible, setAddSheetVisible] = useState(false);
+  const pendingAnalysis = usePendingAnalysis();
+  const [pendingCheck, setPendingCheck] = useState<
+    'checking' | 'working' | 'ready' | 'unavailable' | null
+  >(null);
+
+  /**
+   * Ask once on arrival, and again only when the musician asks.
+   *
+   * The recording screen already polled continuously while it was open. After
+   * a refresh this card is deliberately quieter: one request tells us whether
+   * the durable row is ready, while a button makes a slow or offline result
+   * recoverable without keeping a hidden tab polling forever.
+   */
+  const checkPendingAnalysis = useCallback(async () => {
+    if (!pendingAnalysis) {
+      setPendingCheck(null);
+      return;
+    }
+    setPendingCheck('checking');
+    try {
+      const analysis = await getAnalysis(pendingAnalysis.analysisId);
+      setPendingCheck(
+        analysis.status === 'done' ||
+          analysis.status === 'failed' ||
+          analysis.status === 'failed_recoverable'
+          ? 'ready'
+          : 'working',
+      );
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 404) {
+        // It belongs to an old/deleted account or was removed with its piece.
+        await forgetPendingAnalysis(pendingAnalysis.analysisId);
+        setPendingCheck(null);
+        return;
+      }
+      setPendingCheck('unavailable');
+    }
+  }, [pendingAnalysis?.analysisId]);
+
+  useEffect(() => {
+    void checkPendingAnalysis();
+  }, [checkPendingAnalysis]);
 
   // The working tempo is local and per piece, so this subscribes rather than
   // reading once — changing it on the Record screen has to show here.
@@ -105,6 +153,22 @@ export function TodayScreen() {
   }
 
   const piece = currentPiece.data ?? null;
+  const pendingPiece =
+    pendingAnalysis && library.data
+      ? library.data.find((item) => item.id === pendingAnalysis.scoreId) ?? null
+      : null;
+
+  function openPendingVerdict() {
+    if (!pendingAnalysis) {
+      return;
+    }
+    navigation.navigate('Verdict', { analysisId: pendingAnalysis.analysisId });
+    // Dispatch first. If the app closes on the exact boundary, leaving the
+    // hand-off behind is harmless and preferable to losing the result.
+    void forgetPendingAnalysis(pendingAnalysis.analysisId);
+    void recentTakes.refetch();
+    void insights.refetch();
+  }
 
   // Straight to a take: what someone means by "continue practicing" is
   // recording one. Reading the score without recording is `PieceScore`,
@@ -222,6 +286,46 @@ export function TodayScreen() {
   return (
     <ScreenContainer onRefresh={refresh} contentStyle={styles.page}>
       {header}
+
+      {pendingAnalysis && pendingCheck ? (
+        <View style={styles.pendingTake}>
+          <Card>
+            <Text variant="sectionLabel" color="textSecondary">
+              LAST RECORDING
+            </Text>
+            <Text variant="pieceTitle" style={styles.pendingTakeTitle}>
+              {pendingCheck === 'ready'
+                ? 'Your result is ready'
+                : pendingCheck === 'unavailable'
+                  ? "We couldn't check your result"
+                  : 'Finishing your last take'}
+            </Text>
+            <Text variant="body" color="textSecondary" style={styles.pendingTakeBody}>
+              {pendingCheck === 'ready'
+                ? `Open the feedback${pendingPiece ? ` for ${pendingPiece.title}` : ''}.`
+                : pendingCheck === 'unavailable'
+                  ? 'Your recording was accepted and is still safe. Check again when your connection is steadier.'
+                  : `InTempo is still listening${pendingPiece ? ` to ${pendingPiece.title}` : ''}. You can leave this screen and come back.`}
+            </Text>
+            <SecondaryButton
+              label={
+                pendingCheck === 'ready'
+                  ? 'View result'
+                  : pendingCheck === 'checking'
+                    ? 'Checking…'
+                    : 'Check again'
+              }
+              onPress={
+                pendingCheck === 'ready'
+                  ? openPendingVerdict
+                  : () => void checkPendingAnalysis()
+              }
+              disabled={pendingCheck === 'checking'}
+              style={styles.pendingTakeAction}
+            />
+          </Card>
+        </View>
+      ) : null}
 
       <View style={[styles.dashboard, isWide && styles.dashboardWide]}>
         <View style={styles.primaryColumn}>
@@ -477,6 +581,18 @@ const styles = StyleSheet.create({
     width: '100%',
     maxWidth: 1180,
     alignSelf: 'center',
+  },
+  pendingTake: {
+    marginBottom: spacing['2xl'],
+  },
+  pendingTakeTitle: {
+    marginTop: spacing.xs,
+  },
+  pendingTakeBody: {
+    marginTop: spacing.sm,
+  },
+  pendingTakeAction: {
+    marginTop: spacing.lg,
   },
   dashboard: {
     width: '100%',
