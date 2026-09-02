@@ -7,7 +7,7 @@ import {
   type LucideIcon,
 } from 'lucide-react-native';
 import { useEffect, useRef, type ReactNode } from 'react';
-import { Animated, Platform, Pressable, StyleSheet, View } from 'react-native';
+import { Animated, Platform, Pressable, StyleSheet, View, type ViewStyle } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Text } from '../components/primitives/Text';
@@ -35,6 +35,20 @@ const TAB_ICONS: Record<keyof TabParamList, LucideIcon> = {
   Profile: User,
 };
 
+function webTabSelectionStyle(focused: boolean): ViewStyle {
+  return {
+    opacity: focused ? 1 : 0.78,
+    transform: [
+      { translateY: focused ? -2 : 0 },
+      { scale: focused ? 1 : 0.96 },
+    ],
+    transitionProperty: 'opacity, transform',
+    transitionDuration: `${motion.fast}ms`,
+    transitionTimingFunction: 'cubic-bezier(0.22, 1, 0.36, 1)',
+    willChange: 'opacity, transform',
+  } as unknown as ViewStyle;
+}
+
 function TabSelectionMotion({
   focused,
   children,
@@ -46,7 +60,7 @@ function TabSelectionMotion({
   const selected = useRef(new Animated.Value(focused ? 1 : 0)).current;
 
   useEffect(() => {
-    if (reduceMotion) {
+    if (reduceMotion || Platform.OS === 'web') {
       selected.setValue(focused ? 1 : 0);
       return;
     }
@@ -68,26 +82,28 @@ function TabSelectionMotion({
     <Animated.View
       style={[
         styles.tabContent,
-        {
-          opacity: selected.interpolate({
-            inputRange: [0, 1],
-            outputRange: [0.78, 1],
-          }),
-          transform: [
-            {
-              translateY: selected.interpolate({
+        Platform.OS === 'web'
+          ? webTabSelectionStyle(focused)
+          : {
+              opacity: selected.interpolate({
                 inputRange: [0, 1],
-                outputRange: [0, -2],
+                outputRange: [0.78, 1],
               }),
+              transform: [
+                {
+                  translateY: selected.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [0, -2],
+                  }),
+                },
+                {
+                  scale: selected.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [0.96, 1],
+                  }),
+                },
+              ],
             },
-            {
-              scale: selected.interpolate({
-                inputRange: [0, 1],
-                outputRange: [0.96, 1],
-              }),
-            },
-          ],
-        },
       ]}
     >
       {children}
