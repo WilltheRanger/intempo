@@ -6,6 +6,71 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-02 — Correction: the closed unions were already held, and I added eighty lines saying they were not
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. This corrects `64ca662`
+("Hold the score's closed unions across the wire, Duration most of all"). No §2
+gate.
+
+### What I got wrong
+
+`64ca662` added six parametrised parity cases for `Duration`, `Clef`,
+`Articulation`, `Dynamics`, `RepeatType` and `TempoChangeKind`, with a commit
+message and a docstring asserting that **none of them was held**.
+
+Every one of them was already held. `test_client_enums.py` is ~690 lines and
+guards **thirteen** vocabularies:
+
+| Vocabulary | Already guarded by |
+|---|---|
+| `Duration` | `test_the_app_knows_exactly_the_durations_this_api_sends` — *and* `test_both_sides_agree_what_every_duration_is_worth`, which checks the values too |
+| `Clef`, `Articulation`, `Dynamics` | `test_the_app_declares_exactly_this_score_vocabulary`, parametrised |
+| `RepeatType` | `_union("RepeatType")` |
+| `TempoChangeKind` | `test_the_app_declares_exactly_the_tempo_changes_this_api_sends` |
+| plus | `Instrument`, `MetronomeMode`, `Band`, `Direction`, `TranscriptionStatus`, `ResultStatus`, `MeasureConcern.kind` |
+
+`Duration` — the one I called "the one nothing held" — was the **most** guarded
+thing in the file.
+
+### How
+
+I read the module docstring, which opens *"Four enums cross the wire into a
+TypeScript union"*, and the first parametrised block, and treated the docstring
+as an inventory of the file. I did not read past line 120 of 690.
+
+The docstring was itself stale — it says four and the file guards thirteen — so
+the immediate irony is that I found a stale claim and then **trusted it as a
+description of coverage**, which is precisely the failure the claim invites. The
+lesson is not "read more"; it is that a summary at the top of a file is a claim
+about the file and has to be checked against it before being relied on, exactly
+like every other claim this session has turned over.
+
+### What is left
+
+The eighty duplicated lines are removed; `git diff` against the original
+confirms the **test set is now identical**. What remains is the docstring
+correction, which is worth keeping and is now accurate: it names the count that
+was wrong, says what it cost, and is deliberately vague about the new number so
+it cannot rot the same way — the parametrised lists are the inventory.
+
+`64ca662`'s message also said "32, up from 24". The original collected **25**;
+that was a miscount as well.
+
+**What this does not change:** the six vocabularies do agree by name, which I
+did measure. Nothing was broken by the duplicate tests — they passed for the
+same reason the originals do. The cost was eighty lines of noise and a false
+claim in a commit message and a PR comment.
+
+### Verification
+
+`test_client_enums.py` 25 collected, all passing — the same 25 as before
+`64ca662`. Test-name sets diffed against `64ca662~1` and identical.
+
+**Rollback:** revert this commit to restore the duplicates, which is not
+something to want.
+
+---
+
 ## 2026-09-02 — The trend chart's axis was fixed and the sentence read aloud beside it was not
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. No §2 gate: no composition
