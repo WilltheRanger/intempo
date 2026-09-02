@@ -1,6 +1,7 @@
 import { BottomTabBarHeightContext } from '@react-navigation/bottom-tabs';
 import { useContext, useRef, useState, type ReactNode } from 'react';
 import {
+  Platform,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -12,6 +13,20 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 
 import { BORDER_WIDTH, colors, spacing } from '../../design';
 import { useTabBarHeight } from '../../navigation/tabBarMetrics';
+
+const WEB_SCROLL_STYLE = Platform.select({
+  web: {
+    // Keep wheel, trackpad, and touch scrolling inside the app's own viewport
+    // and let the browser compositor carry momentum independently of React.
+    overscrollBehaviorY: 'contain',
+    scrollBehavior: 'smooth',
+    WebkitOverflowScrolling: 'touch',
+    scrollbarWidth: 'thin',
+    scrollbarColor: `${colors.borderStrong} transparent`,
+    touchAction: 'pan-y pinch-zoom',
+  } as unknown as ViewStyle,
+  default: undefined,
+});
 
 export interface ScreenContainerProps {
   children: ReactNode;
@@ -111,7 +126,9 @@ export function ScreenContainer({
 
   const scrollArea = scrollable ? (
     <ScrollView
-      style={styles.flex}
+      style={[styles.flex, WEB_SCROLL_STYLE]}
+      directionalLockEnabled
+      keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
       contentContainerStyle={[styles.content, bottomInset, contentStyle]}
       showsVerticalScrollIndicator={false}
       keyboardShouldPersistTaps="handled"

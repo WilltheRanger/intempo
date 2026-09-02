@@ -6,6 +6,26 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-01 — Taps answer immediately and scrolling stays on the compositor
+
+**What changed**
+- Moved web press-scale feedback off React Native's JavaScript animation loop and onto a browser compositor transform. Press-down is immediate; release settles over 120 ms.
+- Moved tab-scene and selected-tab motion to CSS opacity/transform transitions on web, while native keeps its native-driver animations.
+- Tuned the shared screen scroller for contained overscroll, compositor momentum on iOS web, smooth programmatic movement, directional locking, interactive keyboard dismissal, and a quieter thin scrollbar.
+- Removed the browser's tap flash and declared buttons, tabs, and switches as direct manipulation targets, avoiding gesture-delay arbitration without interfering with scrolling or pinch zoom.
+- Kept the system and in-app Reduce Motion paths: motion and smooth scrolling become static when requested.
+
+**Files**
+- `mobile/src/components/motion/PressableScale.tsx`
+- `mobile/src/components/primitives/ScreenContainer.tsx`
+- `mobile/src/navigation/RootNavigator.tsx`
+- `mobile/src/navigation/BottomTabBar.tsx`
+- `mobile/public/index.html`
+
+**Verification**
+- Full mobile tests, typecheck, web build, frontend build, backend tests, and the change-log check run in pull-request CI before merge.
+- Production smoke-check covers touch navigation, long Library scrolling, tab changes, keyboard accessibility, Reduce Motion, layout stability, and browser warnings.
+
 ## 2026-09-01 — Navigation and actions move as one restrained system
 
 **What changed**
