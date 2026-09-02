@@ -6,6 +6,25 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-01 — The published site installs like an app
+
+**What changed**
+- Added a standards-based web app manifest so supported phone and desktop browsers can install InTempo to the home screen.
+- Standalone launches now open directly into InTempo without browser chrome and stay within the app's full route scope.
+- Added iPhone home-screen metadata, the existing production InTempo icon, matching launch/background colours, and direct Today and Library shortcuts.
+- Reused the native app's existing 1024px icon instead of introducing a second brand asset that could drift.
+- Added packaging tests for the manifest link, iPhone metadata, standalone scope, icon, and exact theme-colour agreement.
+
+**Files**
+- `mobile/public/index.html`
+- `mobile/public/manifest.webmanifest`
+- `mobile/public/app-icon.png`
+- `mobile/src/lib/webInstall.test.ts`
+
+**Verification**
+- Full mobile tests, typecheck, web build, frontend build, backend tests, and the change-log check run in pull-request CI before merge.
+- The deployed preview is checked for a valid manifest response, icon response, metadata, and normal app startup.
+
 ## 2026-09-01 — Privacy and terms are readable before account creation
 
 **What changed**
