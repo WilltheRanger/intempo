@@ -71,7 +71,7 @@ export function useUploadAvatar() {
       const { upload_url, object_key } = await requestAvatarUpload(
         `avatar.${extensionFor(mimeType)}`,
       );
-      await uploadToSignedUrl(upload_url, blob, mimeType);
+      await uploadToSignedUrl(upload_url, blob, mimeType, { subject: 'photo' });
       return object_key;
     },
   });
