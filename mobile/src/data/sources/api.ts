@@ -1,5 +1,9 @@
 import { getAnalysis, listAnalyses } from '../api/analyses';
 import { submitTake, TakeSubmissionError, waitForAnalysis } from '../practice/submitTake';
+import {
+  forgetPendingAnalysis,
+  rememberPendingAnalysis,
+} from '../practice/pendingAnalysis';
 import { getMe } from '../api/me';
 import { createScore, deleteScore, getScore, listScores, updateScore } from '../api/scores';
 import { getAuthAvatarUrl } from '../auth/session';
@@ -596,8 +600,18 @@ export const apiTakeSource: TakeSource = {
 export const apiTakeSubmissionSource: TakeSubmissionSource = {
   async submit(input) {
     const submitted = await submitTake(input);
+    // The row and audio are durable at this point. Remember the hand-off before
+    // the first poll so a refresh, tab close, or phone suspension can resume
+    // from the accepted id instead of making the musician wonder where the
+    // recording went.
+    await rememberPendingAnalysis({
+      analysisId: submitted.analysisId,
+      scoreId: input.scoreId,
+      createdAt: Date.now(),
+    });
     try {
       await waitForAnalysis(submitted.analysisId);
+      await forgetPendingAnalysis(submitted.analysisId);
       return submitted.analysisId;
     } catch (cause) {
       // Enqueue already succeeded. Keep its id so "Send it again" resumes the
