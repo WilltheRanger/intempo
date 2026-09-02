@@ -212,3 +212,28 @@ export function timedMeasureRange(
   }
   return { first: timed[0].measure, last: timed[timed.length - 1].measure };
 }
+
+
+/**
+ * What the trend chart is read out as, from the range its axis prints.
+ *
+ * **Beside `timedMeasureRange` because the two must agree**, and they had
+ * already drifted once: the visible labels were fixed to name the measures the
+ * line *reaches* — `trend` drops untimed and slur-interior notes — while the
+ * `accessibilityLabel` a few lines below went on saying `measures.length`. On
+ * the sample take that is "across 13 measures" read aloud beneath an axis
+ * reading "Measure 1 … 10", so a screen-reader user was given the number the
+ * visible fix had established was wrong.
+ *
+ * A rule inside a `.tsx` is a rule nothing checks. This one takes exactly what
+ * the axis takes, so it cannot be given different numbers without the axis
+ * changing too.
+ */
+export function describeTrendRange(first: number, last: number): string {
+  // One measure is not a range, and "from measure 4 to 4" reads as a fault in
+  // the sentence rather than as a short take.
+  if (first === last) {
+    return `Tempo drift, measure ${first}`;
+  }
+  return `Tempo drift from measure ${first} to ${last}`;
+}

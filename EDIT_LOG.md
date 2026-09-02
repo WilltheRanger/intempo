@@ -6,6 +6,57 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-02 — The trend chart's axis was fixed and the sentence read aloud beside it was not
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. No §2 gate: no composition
+and no visible copy — one accessibility label, corrected to match the label
+already on screen.
+
+Found by looking properly at the Verdict screen's **success** state, having only
+audited its two failure states earlier today. It is the screen the whole app
+exists to show and I had never read it end to end.
+
+The chart's x axis reads `Measure 1 … 10` on the sample take, and the
+`accessibilityLabel` one line below it in the same component read
+*"Tempo drift across **13** measures"*.
+
+Thirteen is `take.measures.length`. Ten is `timedMeasureRange` — the measures
+the line actually **reaches**, since `rolling_trend` drops untimed and
+slur-interior notes. The visible labels were already fixed to use the second;
+the spoken one was left on the first. So a screen-reader user was handed exactly
+the number the visible fix had established was wrong, on the same element, while
+a sighted user read the right one.
+
+### The fix, and where it lives
+
+`describeTrendRange` in `lib/verdict/measureReading.ts`, **beside
+`timedMeasureRange`**, because the two are one claim and they had already
+drifted once. It takes the same two numbers the axis is given, so it cannot be
+handed different ones without the axis changing too — the property the inline
+template string did not have. A rule inside a `.tsx` is a rule nothing checks.
+
+It also stops reading a one-measure take as a range: *"from measure 4 to 4"*
+reads as a fault in the sentence rather than as a short take.
+
+### Why no sweep caught it
+
+`audit-a11y.mjs` checks that an interactive element **has** an accessible name,
+not that the name is **true**. That is the right check for what it is, and it is
+worth writing down that it cannot find this class of defect — a label that is
+present, well-formed, and says the wrong number.
+
+### Verification
+
+mobile 1275 passed (111 files), three new cases · `tsc --noEmit` clean · web
+build clean · walk PASS · a11y PASS · read back off the running build: spoken
+*"Tempo drift from measure 1 to 10"* against an axis printing
+`Measure 1 … 10`. `.env` restored with `diff -q`.
+
+**Rollback:** revert this commit; `describeTrendRange` is additive and has one
+caller.
+
+---
+
 ## 2026-09-02 — The binding instructions told a UI session to build in the wrong palette
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. No code changed; `CLAUDE.md`

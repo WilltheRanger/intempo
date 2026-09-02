@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
 import type { MeasureVerdict } from '../../data/types';
-import { readMeasure, timedMeasureRange, wasTimed } from './measureReading';
+import {
+  describeTrendRange,
+  readMeasure,
+  timedMeasureRange,
+  wasTimed,
+} from './measureReading';
 
 /**
  * A bar under a written `rit.` is not a bar that was played well.
@@ -252,5 +257,41 @@ describe('the measures the trend line covers', () => {
       timedMeasureRange([bar(1, { underTempoChange: true }), bar(2, { timedNoteCount: 0 })]),
     ).toBeNull();
     expect(timedMeasureRange([])).toBeNull();
+  });
+});
+
+describe('describeTrendRange', () => {
+  /**
+   * The chart's axis and its spoken label are the same claim, and they had
+   * drifted: the axis was fixed to name the measures the line reaches while
+   * the `accessibilityLabel` beside it went on saying `measures.length`. On
+   * the sample take that read "across 13 measures" under an axis saying
+   * "Measure 1 … 10".
+   */
+  it('names the same two measures the axis prints', () => {
+    expect(describeTrendRange(1, 10)).toBe('Tempo drift from measure 1 to 10');
+    expect(describeTrendRange(4, 27)).toBe('Tempo drift from measure 4 to 27');
+  });
+
+  it('does not read a one-measure take as a range', () => {
+    // "from measure 4 to 4" reads as a fault in the sentence rather than as a
+    // short take.
+    expect(describeTrendRange(4, 4)).toBe('Tempo drift, measure 4');
+  });
+
+  it('takes what the axis takes, so the two cannot be given different numbers', () => {
+    // The guard against the drift coming back: this is fed from exactly the
+    // `timedMeasureRange` the labels are fed from.
+    const measures = [
+      { measure: 1, timedNoteCount: 4 },
+      { measure: 2, timedNoteCount: 4 },
+      { measure: 3, timedNoteCount: 0 },
+    ];
+    const covered = timedMeasureRange(measures);
+
+    expect(covered).toEqual({ first: 1, last: 2 });
+    expect(describeTrendRange(covered!.first, covered!.last)).toBe(
+      'Tempo drift from measure 1 to 2',
+    );
   });
 });
