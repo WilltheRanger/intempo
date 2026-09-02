@@ -100,6 +100,61 @@ function quarter(pitch: string): ScoreNote {
 /** A plausible study tempo, so the recorder seeds from the piece. */
 const MARKED_BPM = 92;
 
+/**
+ * A study long enough for the start-bar picker to have more than one page.
+ *
+ * **Every other score here is eight bars or fewer**, so the picker's pagination
+ * — the thing it was rebuilt for — had no fixture and had never been rendered.
+ * Its rules are unit-tested (`pages.ts`, `barPages.ts`), and by this project's
+ * own reckoning a state with no fixture is a state nobody has looked at.
+ *
+ * Continuous eighths, which is what Op. 45 No. 1 actually is: `SOURCES.md`
+ * documents `01_simple_printed.jpg` — the photograph already attached to this
+ * piece — as reading back thirty-two eighths and nothing else. So this is the
+ * right shape for the piece it belongs to rather than filler chosen for length.
+ *
+ * Standing in for the étude, not claiming to be it note for note, the same way
+ * `bass_excerpt.musicxml` stands in for what an OMR engine emits. The figure is
+ * a scale run and a broken chord alternating, over the first-position C major a
+ * first study stays inside.
+ */
+function eighth(pitch: string): ScoreNote {
+  return { pitch, duration: 'eighth', tied_to_next: false };
+}
+
+const FIRST_POSITION_C = [
+  'G3', 'A3', 'B3', 'C4', 'D4', 'E4', 'F4', 'G4',
+  'A4', 'B4', 'C5', 'D5', 'E5',
+];
+
+const CONTINUOUS_EIGHTHS_SCORE: ScoreJson = {
+  time_signature: '4/4',
+  key_signature: 'C major',
+  tempo_marking: 'Allegro moderato',
+  bpm_hint: MARKED_BPM,
+  clef: 'treble',
+  measures: Array.from({ length: 32 }, (_, bar) => ({
+    measure_number: bar + 1,
+    notes: Array.from({ length: 8 }, (_, at) => {
+      // Alternating bars: a step-wise run, then the same span in thirds. Two
+      // shapes rather than one, so a reader can see which bar they are on.
+      const from = bar % 5;
+      const step = bar % 2 === 0 ? at : at * 2;
+      const rising = Math.floor(bar / 2) % 2 === 0;
+      const index = rising ? from + step : from + 12 - step;
+      return eighth(
+        FIRST_POSITION_C[
+          Math.max(0, Math.min(FIRST_POSITION_C.length - 1, index))
+        ],
+      );
+    }),
+    slurs: [],
+  })),
+  repeats: [],
+  ocr_confidence: 1,
+  notes_to_human: 'Fixture score. Not OCR output.',
+};
+
 const DEMO_SCORE: ScoreJson = {
   time_signature: '4/4',
   key_signature: 'D major',
@@ -477,7 +532,10 @@ const FIXTURE_PIECES: FixturePiece[] = [
     practicedDaysAgo: 26,
     thumbnail: require('../../../assets/fixtures/01_simple_printed.jpg'),
     markedBpm: MARKED_BPM,
-    score: DEMO_SCORE,
+    // The long one — see `CONTINUOUS_EIGHTHS_SCORE`. This piece carries the
+    // photograph the corpus reads back as continuous eighths, so it is where a
+    // thirty-two-bar study belongs.
+    score: CONTINUOUS_EIGHTHS_SCORE,
   },
   // Appended below so the Today preview — which takes the first three pieces
   // that aren't the featured one — stays exactly as approved. These give the

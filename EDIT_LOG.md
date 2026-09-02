@@ -6,6 +6,56 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-02 — The start-bar picker's pagination had never been rendered
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. A fixture, no product
+change — the picker is unmodified.
+
+**Every score in `fixtures.ts` was eight bars or fewer.** The longest,
+`KEY_CHANGE_SCORE`, is eight; `DEMO_SCORE` is three. So the picker's
+pagination — the thing it was rebuilt for this session, at the owner's request
+— fitted on one page in every fixture and **had never been seen**. Its rules are
+unit-tested (`pages.ts`, `barPages.ts`), and by this project's own reckoning
+that is exactly a state nobody has looked at, which is the third time today
+that gap has been worth closing.
+
+`CONTINUOUS_EIGHTHS_SCORE`: thirty-two bars of 4/4 eighths on
+`fixture-wohlfahrt-01`. **Not filler chosen for length** — that piece already
+carries `01_simple_printed.jpg`, which `SOURCES.md` documents as Wohlfahrt
+Op. 45 No. 1 and `tools/homr-bench.py` reads back as *thirty-two eighths and
+nothing else*. A thirty-two-bar study of continuous eighths is what belongs
+behind that photograph. It stands in for the étude rather than claiming to be it
+note for note, the way `bass_excerpt.musicxml` stands in for OMR output.
+
+**Driven, and it is right.** Six pages, and the readout the owner approved
+appears for the first time: `Bars 1–6 · Page 1 of 6`. Stepping one bar at a
+time and letting each scroll settle, every boundary is exact:
+
+    Bar 6  | Bars 1–6 · Page 1 of 6        Bar 24 | Bars 19–24 · Page 4 of 6
+    Bar 7  | Bars 7–12 · Page 2 of 6       Bar 25 | Bars 25–30 · Page 5 of 6
+    Bar 12 | Bars 7–12 · Page 2 of 6       Bar 30 | Bars 25–30 · Page 5 of 6
+    Bar 13 | Bars 13–18 · Page 3 of 6      Bar 31 | Bars 31–32 · Page 6 of 6
+    Bar 18 | Bars 13–18 · Page 3 of 6      Bar 32 | Bars 31–32 · Page 6 of 6
+
+**A false alarm, recorded because I nearly reported it.** A first pass clicking
+every 200 ms read *"Bar 25 · Bars 19–24 · Page 4"*, which does not add up — bar
+25 is on page 5. It was my probe reading during the scroll animation
+(`scrollEventThrottle: 64`, and `showing` updates from `onScroll`), not a
+desync. Letting each step settle shows the boundaries exact. The lesson is the
+usual one: a measurement taken mid-animation is not a measurement.
+
+`pageReadout` returning nothing on a single-page score is **correct and was
+checked** rather than assumed — `total <= 1` yields null, because "Page 1 of 1"
+is noise.
+
+**Tests:** mobile 1223 passed (105 files); `tsc --noEmit` clean; web build clean.
+
+**Side effects:** `fixture-wohlfahrt-01` now shows thirty-two bars wherever it
+is opened — the piece screen, the score screen and the picker. Deliberate.
+**Rollback:** revert.
+
+---
+
 ## 2026-09-02 — The manual form accepted a metre the app cannot count
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. A validation fix; the
