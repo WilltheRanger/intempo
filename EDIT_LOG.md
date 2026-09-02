@@ -6,6 +6,64 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-02 — `tools/walk-app.mjs`: drive the app, don't just render it
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. A tool, no product change,
+so no §2 gate.
+
+**Everything else that checks this app is static.** `audit-a11y.mjs` renders a
+route and measures it; the suites exercise modules. Neither can see a tap land
+on the wrong screen, and neither can see **two screens state the same fact
+differently** — which is what happened earlier today and was found by driving
+the app by hand, which is not something that happens on every change.
+`DECISIONS.md` (2026-08-24) records that there is no React Native testing
+library here, and CLAUDE.md names navigation as the part still untested. The web
+build is the same tree, so a route landing wrong here lands wrong on a phone.
+
+Two kinds of check, and the second is the one worth having:
+
+- **Destinations** — eleven of them: the four tabs, a Library row into a piece,
+  browser back *and* forward (a web build has to survive the browser's own
+  controls), an Insights piece row, the Next-focus row into Record, a Today take
+  row into its verdict, and a **deep-linked** bar editor, which has no history
+  behind it and must still reach the score.
+- **Agreement** — the window headline is the same claim on Today and Insights
+  from two components, and a recent-take row on either screen must state a
+  *verdict* and never a habit. Both are today's two bugs, turned into checks.
+
+**Verified by reintroducing the bug.** Putting the direction-only reading back
+on Today's "Practice snapshot" and rebuilding produced exactly the report it was
+written for:
+
+    FAIL  window headline: Insights says "Your tempo wanders",
+                           Today says "You play steadily"
+
+Restored byte-identically (`diff -q` clean, `git status` clean) and rebuilt, and
+the walk passes on the restored tree.
+
+Worth noting what the regression stub proves on its own: reading only
+`summary.verdict` gives **"You play steadily"** for this musician, because a
+wandering account's aggregate verdict *is* `on_tempo`. That is the whole reason
+the headline could not stay a lookup.
+
+**One thing the walk surfaced and did not fix.** The bar editor's message under
+an unbalanced count is `'Tap a note, then choose what it should be.'` in both
+directions — an instruction rather than a reading, and a stale one for a
+musician who has just tapped a note and made it worse (measured: an edit took
+bar 3 from "4 of 4 beats" to "5 of 4 beats" and the sentence changed from
+confirming the bar to that instruction). The count and its warning colour do
+carry the fact. Left alone because the fix is copy on a screen and belongs
+behind the §2 gate rather than smuggled into a tooling commit.
+
+**Tests:** mobile 1221 passed (105 files); `tsc --noEmit` clean; web build
+clean; `tools/walk-app.mjs` PASS; `tools/audit-a11y.mjs` PASS.
+
+**Side effects:** none — a new tool, run by hand like the a11y audit. It needs a
+served fixtures build, so it is **not wired into CI**, same as that audit.
+**Rollback:** delete the file.
+
+---
+
 ## 2026-09-02 — I fixed Insights and left the same bug on Today
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. No new design decision —
