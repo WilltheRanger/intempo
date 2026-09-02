@@ -34,8 +34,14 @@ export const STAGGER_CAP = 6;
 /** How far content rises as it fades in. Barely a shift; enough to have direction. */
 export const RISE_DISTANCE = 8;
 
-/** Scale a large control takes while held. */
+/** Scale a large card or record control takes while held. */
 export const PRESSED_SCALE = 0.97;
+
+/**
+ * Full-width buttons travel less than cards. Enough to feel under a finger,
+ * without making their text visibly resize.
+ */
+export const CONTROL_PRESSED_SCALE = 0.985;
 
 /** Opacity applied while a control is held down, where a colour swap won't do. */
 export const pressedOpacity = 0.9;

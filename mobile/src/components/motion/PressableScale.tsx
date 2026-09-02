@@ -19,7 +19,10 @@ export interface PressableScaleProps extends Omit<PressableProps, 'style' | 'chi
    * scale without being restructured.
    */
   children: ReactNode | ((state: PressableStateCallbackType) => ReactNode);
-  style?: StyleProp<ViewStyle>;
+  /** Static styles, or the same press-state callback accepted by Pressable. */
+  style?:
+    | StyleProp<ViewStyle>
+    | ((state: PressableStateCallbackType) => StyleProp<ViewStyle>);
   /** Scale at full press. Defaults to the token; smaller controls need less. */
   activeScale?: number;
 }
@@ -75,7 +78,12 @@ export function PressableScale({
       }}
     >
       {(state) => (
-        <Animated.View style={[style, { transform: [{ scale }] }]}>
+        <Animated.View
+          style={[
+            typeof style === 'function' ? style(state) : style,
+            { transform: [{ scale }] },
+          ]}
+        >
           {typeof children === 'function' ? children(state) : children}
         </Animated.View>
       )}
