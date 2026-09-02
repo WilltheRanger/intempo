@@ -6,6 +6,25 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-01 — Privacy and terms are readable before account creation
+
+**What changed**
+- Added clear Privacy policy and Terms of use actions to the create-account form, before the submit button.
+- Either document opens without creating an account, signing in, or discarding the email and password already entered.
+- Extracted the legal document reader from signed-in navigation so first-time and returning users see the same current source text rather than duplicated copies.
+- Kept every legal action at a full touch target and added accessible labels.
+- Added tests proving both required documents are offered and resolve to the same populated documents shown from Profile.
+
+**Files**
+- `mobile/src/screens/auth/AuthScreen.tsx`
+- `mobile/src/screens/auth/signUpDocuments.ts`
+- `mobile/src/screens/auth/signUpDocuments.test.ts`
+- `mobile/src/screens/legal/LegalScreen.tsx`
+
+**Verification**
+- Full mobile tests, typecheck, web build, frontend build, backend tests, and the change-log check run in pull-request CI before merge.
+- Browser verification signs out only in an isolated session or preview, opens both documents from create-account, returns with the form intact, and does not create an account.
+
 ## 2026-09-01 — Score-reading improvement is now explicit, reversible consent
 
 **What changed**
