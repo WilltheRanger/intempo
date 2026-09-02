@@ -184,9 +184,9 @@ export function ManualPieceForm() {
         the one this now names.
       */}
       <Text variant="metadataSmall" color="textTertiary" style={styles.caveat}>
-        A piece added this way has no notes behind it, so it can hold your
-        tempo and your practice history but cannot be recorded against.
-        Photograph the music to get verdicts.
+        A piece added this way keeps its title and intended tempo, but there are
+        no notes behind it yet. Photograph the music to listen, record, and get
+        timing verdicts.
       </Text>
     </ScreenContainer>
   );
