@@ -28,6 +28,7 @@ function musician(overrides: Partial<Musician>): Musician {
     displayName: null,
     instrument: null,
     onboarded: true,
+    trainingConsent: false,
     ...overrides,
   };
 }

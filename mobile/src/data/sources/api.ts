@@ -14,13 +14,13 @@ import type {
   Band,
   Direction,
   MeasureVerdict,
-  Musician,
   Piece,
   PieceInsight,
   PracticeInsights,
   ScoreResponse,
   TakeResult,
 } from '../types';
+import { toMusician } from './musician';
 import type {
   InsightsSource,
   MusicianSource,
@@ -199,37 +199,6 @@ export const apiPieceSource: PieceSource = {
     await deleteScore(id);
   },
 };
-
-/**
- * The account, from `/v1/me` plus the auth session.
- *
- * Every field but the photo comes from the endpoint. The photo has no column
- * on `users` and no upload endpoint, so it is read from the Supabase auth
- * user's metadata — the one avatar the app can reach without a schema change,
- * and only present for accounts created through an OAuth provider.
- */
-function toMusician(
-  me: Awaited<ReturnType<typeof getMe>>,
-  avatarUrl: string | null,
-): Musician {
-  return {
-    id: me.id,
-    email: me.email,
-    tier: me.tier,
-    role: me.role,
-    studioId: me.studio_id,
-    usage: me.analyses ?? null,
-    // The account's picture wins; the provider's is the fallback for accounts
-    // that never set one. Someone who deliberately cleared theirs must not
-    // have Google's put back in its place.
-    avatarUrl: me.avatar_url ?? avatarUrl,
-    displayName: me.display_name,
-    instrument: me.instrument,
-    // A timestamp on the wire, a boolean here: the app only ever asks *whether*
-    // they were asked. Nothing renders when it happened.
-    onboarded: me.onboarded_at !== null,
-  };
-}
 
 export const apiMusicianSource: MusicianSource = {
   async getMusician() {
