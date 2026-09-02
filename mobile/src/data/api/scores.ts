@@ -89,7 +89,10 @@ export interface AttachScorePagesInput {
   image_urls?: string[];
 }
 
-/** POST /v1/scores/:id/transcription — read pages into a manual piece. */
+/**
+ * POST /v1/scores/:id/transcription — read pages into a manual piece, or
+ * replace the pages behind a failed first reading without duplicating it.
+ */
 export function attachScorePages(
   id: string,
   input: AttachScorePagesInput,

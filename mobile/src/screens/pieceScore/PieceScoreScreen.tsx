@@ -1,4 +1,5 @@
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
+import { Camera, Images } from 'lucide-react-native';
 import { useGoBack } from '../../navigation/useGoBack';
 import { useMemo, useState } from 'react';
 import {
@@ -20,6 +21,7 @@ import {
   MetadataRow,
   PageHeader,
   ScreenContainer,
+  SecondaryButton,
   SegmentedControl,
   Text,
 } from '../../components/primitives';
@@ -320,7 +322,6 @@ export function PieceScoreScreen() {
           megabytes to solve a problem the megabytes never caused.
         */}
         <EmptyState
-          fill
           title="This page couldn't be read"
           description={
             piece.transcriptionError ??
@@ -358,15 +359,34 @@ export function PieceScoreScreen() {
             {acceptError}
           </Text>
         ) : null}
-        <Pressable
-          onPress={() => navigation.navigate('Scanner')}
-          accessibilityRole="button"
-          style={styles.secondaryRow}
-        >
-          <Text variant="metadataSmall" color="accentText">
-            Photograph it again instead
-          </Text>
-        </Pressable>
+        {/*
+          Both alternatives keep this piece's id. This used to open a fresh
+          scanner with no attachment target, so a successful retake created a
+          duplicate piece and left this failed one exactly as it was. The
+          server now replaces failed, note-less pages in this row and refuses
+          to erase a score that still has usable measures.
+        */}
+        <SecondaryButton
+          label="Take new photographs instead"
+          icon={Camera}
+          onPress={() =>
+            navigation.navigate('Scanner', { attachToPieceId: piece.id })
+          }
+          disabled={reread.isPending}
+          style={styles.recoveryAction}
+        />
+        <SecondaryButton
+          label="Choose different images"
+          icon={Images}
+          onPress={() =>
+            navigation.navigate('AddPiece', {
+              option: 'import',
+              attachToPieceId: piece.id,
+            })
+          }
+          disabled={reread.isPending}
+          style={styles.recoverySecondary}
+        />
         {/*
           **It said "you can practise it with the metronome", and you cannot.**
           `PieceDetailScreen` gates its practice button on `hasNotation`, and
@@ -971,6 +991,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderBottomWidth: BORDER_WIDTH,
     borderBottomColor: colors.border,
+  },
+  recoveryAction: {
+    marginTop: spacing.lg,
+  },
+  recoverySecondary: {
+    marginTop: spacing.sm,
   },
   secondaryRow: {
     alignSelf: 'center',
