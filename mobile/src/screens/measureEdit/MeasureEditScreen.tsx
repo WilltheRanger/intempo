@@ -11,6 +11,7 @@ import {
   ScreenContainer,
   Text,
 } from '../../components/primitives';
+import { BottomSheet } from '../../components/overlays/BottomSheet';
 import { useCorrectScore, usePiece } from '../../data/hooks/usePieces';
 import type { ScoreJson, ScoreNote } from '../../data/types';
 import { BORDER_WIDTH, colors, radii, spacing } from '../../design';
@@ -29,6 +30,13 @@ import {
   type MeasureMarks,
 } from '../../lib/notation/spans';
 import type { RootStackParamList } from '../../navigation/types';
+import {
+  KEY_SIGNATURE_CHOICES,
+  applyKeySignatureEdit,
+  describeKeySignature,
+  keyBeforeMeasure,
+  sameEditableSignature,
+} from './keySignatureEdit';
 
 /**
  * Fixing a measure whose durations do not add up.
@@ -77,6 +85,12 @@ export function MeasureEditScreen() {
   const [marks, setMarks] = useState<MeasureMarks | null>(null);
   const [selected, setSelected] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  /**
+   * Null means untouched; a wrapped null means the musician deliberately
+   * removed the opening signature or the change printed at this bar.
+   */
+  const [keyEdit, setKeyEdit] = useState<{ value: string | null } | null>(null);
+  const [pickingKey, setPickingKey] = useState(false);
 
   // Seeded from the score the first time it arrives, then owned locally so a
   // background refetch cannot discard edits in progress.
@@ -111,6 +125,16 @@ export function MeasureEditScreen() {
   // measure rather than against `measure_number === 1`, because a score read
   // off page two of a part starts at bar 30.
   const isFirstBar = piece.score.measures[0]?.measure_number === original.measure_number;
+  const savedKey = isFirstBar
+    ? piece.score.key_signature ?? null
+    : original.key_signature ?? null;
+  const workingKey = keyEdit === null ? savedKey : keyEdit.value;
+  const keyBefore = keyBeforeMeasure(piece.score, original.measure_number);
+  const keyDescription = workingKey
+    ? describeKeySignature(workingKey)
+    : isFirstBar
+      ? 'Unknown — choose what the page shows'
+      : `No new signature · ${describeKeySignature(keyBefore)} continues`;
   const beats = describeBeats(working, piece.score.time_signature, {
     first: isFirstBar,
   });
@@ -153,7 +177,7 @@ export function MeasureEditScreen() {
       return;
     }
     setError(null);
-    const corrected: ScoreJson = {
+    const withNotes: ScoreJson = {
       ...piece.score,
       measures: piece.score.measures.map((m) =>
         m.measure_number === params.measureNumber
@@ -162,10 +186,21 @@ export function MeasureEditScreen() {
           // gained or lost a note came back with every slur after that point
           // pointing one note out of place — and a slur decides which notes are
           // timed at all.
-          ? { ...m, notes: working, ...(workingMarks ?? {}) }
+          ? {
+              ...m,
+              notes: working,
+              ...(workingMarks ?? {}),
+            }
           : m,
       ),
     };
+    // Use the same pure update path exercised by keySignatureEdit.test.ts:
+    // opening signatures belong to the score header, while later signatures
+    // belong only to the bar where the printed change begins.
+    const corrected =
+      keyEdit === null
+        ? withNotes
+        : applyKeySignatureEdit(withNotes, params.measureNumber, workingKey);
     try {
       await correct.mutateAsync(corrected);
       goBack();
@@ -209,7 +244,7 @@ export function MeasureEditScreen() {
             label="Save this bar"
             onPress={() => void save()}
             loading={correct.isPending}
-            disabled={correct.isPending || notes === null}
+            disabled={correct.isPending || (notes === null && keyEdit === null)}
           />
         </View>
       }
@@ -247,6 +282,38 @@ export function MeasureEditScreen() {
               : 'Tap a note, then choose what it should be.'}
       </Text>
 
+
+      {/*
+        A key signature is bar-level music, not a property of one note.
+
+        The first bar edits the page header. On every later bar, null means the
+        previous signature continues; choosing C major / A minor is different
+        because it prints cancellation naturals when something else was in
+        force. A text input would make those two cases easy to confuse and
+        invite spellings the engraver cannot read, so this opens the complete
+        set of fifteen printed signatures.
+      */}
+      <Text variant="sectionLabel" color="textSecondary" style={styles.keyLabel}>
+        {isFirstBar ? 'Opening key signature' : 'Key signature at this bar'}
+      </Text>
+      <Pressable
+        onPress={() => setPickingKey(true)}
+        accessibilityRole="button"
+        accessibilityLabel={`Change key signature. ${keyDescription}`}
+        style={styles.keySetting}
+      >
+        <View style={styles.keyCopy}>
+          <Text variant="metadata">{keyDescription}</Text>
+          {!isFirstBar && workingKey === null ? (
+            <Text variant="metadataSmall" color="textTertiary">
+              Choose a signature only if a new one is printed at this bar.
+            </Text>
+          ) : null}
+        </View>
+        <Text variant="metadataSmall" color="accentText">
+          Change
+        </Text>
+      </Pressable>
 
       {/*
         The bar, in reading order. Horizontal because that is how the music is
@@ -457,6 +524,61 @@ export function MeasureEditScreen() {
         </Pressable>
       </View>
 
+      <BottomSheet
+        visible={pickingKey}
+        onClose={() => setPickingKey(false)}
+        title={isFirstBar ? 'Opening key signature' : `Key at bar ${params.measureNumber}`}
+        expand
+      >
+        <Text variant="body" color="textSecondary" style={styles.keyHelp}>
+          {isFirstBar
+            ? 'Choose the sharps or flats printed at the beginning of the piece.'
+            : 'Choose a new signature only when one is printed at this bar. Otherwise keep the previous key.'}
+        </Text>
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.keyChoices}
+        >
+          <Pressable
+            onPress={() => {
+              setKeyEdit({ value: null });
+              setPickingKey(false);
+            }}
+            accessibilityRole="button"
+            accessibilityState={{ selected: workingKey === null }}
+            aria-pressed={workingKey === null}
+            style={[styles.keyChoice, workingKey === null && styles.keyChoiceOn]}
+          >
+            <Text variant="metadata">
+              {isFirstBar ? 'Key signature unknown' : 'No new signature at this bar'}
+            </Text>
+            {!isFirstBar ? (
+              <Text variant="metadataSmall" color="textTertiary">
+                {describeKeySignature(keyBefore)} continues
+              </Text>
+            ) : null}
+          </Pressable>
+
+          {KEY_SIGNATURE_CHOICES.map((choice) => {
+            const selectedChoice = sameEditableSignature(workingKey, choice.value);
+            return (
+              <Pressable
+                key={choice.value}
+                onPress={() => {
+                  setKeyEdit({ value: choice.value });
+                  setPickingKey(false);
+                }}
+                accessibilityRole="button"
+                accessibilityState={{ selected: selectedChoice }}
+                aria-pressed={selectedChoice}
+                style={[styles.keyChoice, selectedChoice && styles.keyChoiceOn]}
+              >
+                <Text variant="metadata">{choice.label}</Text>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+      </BottomSheet>
 
     </ScreenContainer>
   );
@@ -468,6 +590,45 @@ const styles = StyleSheet.create({
   },
   beatsOff: {
     color: colors.verdictBad,
+  },
+  keyLabel: {
+    marginTop: spacing['2xl'],
+  },
+  keySetting: {
+    minHeight: 56,
+    marginTop: spacing.sm,
+    marginBottom: spacing.xl,
+    paddingVertical: spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    borderTopWidth: BORDER_WIDTH,
+    borderBottomWidth: BORDER_WIDTH,
+    borderColor: colors.border,
+  },
+  keyCopy: {
+    flex: 1,
+    minWidth: 0,
+    gap: 2,
+  },
+  keyHelp: {
+    marginTop: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  keyChoices: {
+    paddingBottom: spacing['3xl'],
+  },
+  keyChoice: {
+    minHeight: 52,
+    justifyContent: 'center',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderBottomWidth: BORDER_WIDTH,
+    borderBottomColor: colors.border,
+  },
+  keyChoiceOn: {
+    backgroundColor: colors.surfacePressed,
+    borderBottomColor: colors.accent,
   },
   barScroll: {
     // Grouped with the controls below rather than floated under the status
