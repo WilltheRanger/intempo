@@ -70,7 +70,7 @@ function TabScene({ children }: { children: ReactNode }) {
       toValue: 1,
       duration: motion.base,
       easing: EASE_OUT,
-      useNativeDriver: Platform.OS !== 'web',
+      useNativeDriver: true,
     });
     animation.start();
     return () => animation.stop();
