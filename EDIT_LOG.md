@@ -6,6 +6,100 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-02 — A clef printed mid-piece is a change of clef
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. The third and largest of
+the "header versus in force" gaps found this session, and the one with the
+worst consequence.
+
+**`Measure.clef` was written and never read.** The schema has carried it since
+the importer learned to stamp it — `musicxml.py` compares against the *running*
+clef and its comment names the cost of ignoring the field exactly: *"notes on
+the wrong staff position, captioned with a clef the page stopped using."* The
+app's `Measure` type carries the same field with the same warning in its own
+docstring. Nothing consumed either. `staveScoreFor` never looked at it and
+`engrave` had no concept of a clef change at all, so a part that moves into
+tenor was placed **entirely against its opening clef**.
+
+For this app that is not an exotic case. The owner plays double bass; the
+fixture beside this one is a Simandl method study, and climbing into tenor for
+a high passage is ordinary writing in that book. Every note of such a passage
+was drawn a sixth off, as confidently as the notes that were right.
+
+**What was built.**
+
+- `staveScoreFor` walks a running clef and marks the item that opens a
+  changed bar, mirroring the key-change walk beside it — and compares against
+  the clef **in force**, so a return to the opening clef is recorded rather
+  than dropped. That is the same trap the metre had and the key had.
+- `layoutSystem` turns `middleStep` from a constant into a running value. It is
+  updated *before* the item carrying the change is placed, because a clef
+  printed at a bar governs that bar's first note too, not only what follows.
+- `engrave` computes the clef in force at every item, so a system beginning
+  after a change opens its head in the new clef. A change landing on a
+  system's first item is drawn by the head alone and not again after the
+  barline — the rule key changes already follow.
+- The mid-system glyph is right-aligned against the notehead it governs,
+  inside room `extraRoom` reserves, and the barline moves left to clear it.
+  Anchored to the **note** rather than the barline: a clef change is
+  commonest at a barline and is legal without one, and anchoring to something
+  that may not exist is how a sign lands somewhere else on the rare page. It
+  is drawn at `CLEF_CHANGE_SCALE` — an engraver makes a change of clef smaller
+  than the one opening a line, because it is a correction to the reader.
+- **`EngravedHead.clef` now carries which clef it is.** It held only a
+  position, and the component drew `CLEF_GLYPH[clef]` from its own prop — so
+  the moment a later system could open in a different clef, that code would
+  have drawn the *opening* clef glyph at the *new* clef's line. The old sign on
+  the new staff position is worse than either, and it would have been invisible
+  to every test that checks geometry rather than glyphs.
+
+### Verified on a screenshot of the running build
+
+New fixture `fixture-clef-change-study` — bass, into tenor at bar 3, back to
+bass at bar 5. At 390pt each bar takes its own system, and the five systems
+read: bass, bass, **C-clef**, C-clef, **bass**. Glyph census over the SVG: **3
+bass and 2 C-clefs**, no page errors.
+
+The decisive detail is C4, which appears in bar 2 and again in bar 3. In bass
+clef it is drawn above the staff on a ledger line; in tenor it sits inside the
+staff. Same pitch, different height, because the clef changed — which is the
+thing that was broken.
+
+### Tests
+
+**mobile 1163 passed (101 files), `tsc --noEmit` clean.** Eight cases in
+`clefChanges.test.ts`: placement against the new clef, the change governing its
+own note, the glyph drawn once and after the barline, a later system opening in
+the clef in force without repeating the change, no clef conjured when nothing
+read one, and three on `staveScoreFor` — including that a bar restating the
+clef in force prints nothing, and that a **return** to the opening clef is
+recorded.
+
+Placement is asserted against the **middle staff line of the same system**,
+never a raw `y`. The engraver shifts each drawing by its own ink extent, so two
+engravings put the same note at different absolute heights while agreeing
+exactly about where it sits on the staff. My first draft of that test compared
+raw `y` across two engravings and failed for that reason — the test was wrong,
+not the code.
+
+### Not done
+
+- **The mid-system glyph is covered by test, not by the screenshot.** At
+  390pt every bar of the fixture takes its own line, so the change always lands
+  at a system boundary. The geometry assertions cover the other case.
+- **No clef control.** A misread clef can be corrected on `PieceScoreScreen`
+  for the whole piece; a misread *change* still needs a re-scan.
+- The metadata line still reads "Bass clef" on a piece that turns tenor. That
+  is `ScoreJson.clef` behaving as documented — the clef the page **opens** in —
+  and rewording it is a UI decision behind the §2 gate.
+
+### Rollback
+
+`git revert`. A score with no `Measure.clef` engraves byte-identically either
+way, which is what the 1155 pre-existing tests passing unchanged demonstrates.
+
+---
+
 ## 2026-09-02 — The metronome and the bar check disagreed about the same bar
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Found by carrying on

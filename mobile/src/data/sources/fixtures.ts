@@ -313,6 +313,71 @@ const WORD_MARKED_SCORE: ScoreJson = {
  * change has to be drawn — read against the opening signature, every one of
  * those bars is a wrong note.
  */
+/**
+ * A bass study that climbs into tenor clef and comes back down.
+ *
+ * **The state nobody had looked at.** `Measure.clef` has been in the schema
+ * and stamped by the importer for a while; nothing in the app drew it, so a
+ * part written this way came out placed entirely against its opening bass
+ * clef — every note of the tenor passage a sixth off, drawn as confidently as
+ * the ones that were right. There was no fixture with a clef change, which is
+ * why it went unseen, and this repository has paid for a missing fixture five
+ * times already.
+ *
+ * The return to bass at bar 5 is not decoration either: it is the case a
+ * header comparison silently drops, because bar 5 states the clef the piece
+ * opened in.
+ *
+ * Simandl again, because tenor clef in a double-bass method book is ordinary
+ * writing rather than an edge case.
+ */
+const CLEF_CHANGE_SCORE: ScoreJson = {
+  time_signature: '4/4',
+  key_signature: 'C major',
+  tempo_marking: 'Moderato',
+  bpm_hint: 66,
+  clef: 'bass',
+  measures: [
+    {
+      measure_number: 1,
+      notes: [note('G2', 'quarter'), note('C3', 'quarter'), note('E3', 'quarter'), note('G3', 'quarter')],
+      slurs: [],
+    },
+    {
+      measure_number: 2,
+      notes: [note('C4', 'half'), note('B3', 'quarter'), note('A3', 'quarter')],
+      slurs: [],
+    },
+    {
+      // Into tenor for the high passage, which is what the clef is for.
+      measure_number: 3,
+      clef: 'tenor',
+      notes: [note('G3', 'quarter'), note('C4', 'quarter'), note('E4', 'quarter'), note('G4', 'quarter')],
+      slurs: [],
+    },
+    {
+      measure_number: 4,
+      notes: [note('A4', 'half'), note('G4', 'half')],
+      slurs: [],
+    },
+    {
+      // And back down. Bar 5 states the clef the piece opened in.
+      measure_number: 5,
+      clef: 'bass',
+      notes: [note('E3', 'quarter'), note('C3', 'quarter'), note('G2', 'quarter'), note('C3', 'quarter')],
+      slurs: [],
+    },
+    {
+      measure_number: 6,
+      notes: [note('C3', 'whole')],
+      slurs: [],
+    },
+  ],
+  repeats: [],
+  ocr_confidence: 1,
+  notes_to_human: 'Fixture score. Not OCR output.',
+};
+
 const KEY_CHANGE_SCORE: ScoreJson = {
   time_signature: '4/4',
   key_signature: 'Bb major',
@@ -426,6 +491,17 @@ const FIXTURE_PIECES: FixturePiece[] = [
     markedBpm: 72,
     // The one piece whose key changes — see `KEY_CHANGE_SCORE`.
     score: KEY_CHANGE_SCORE,
+  },
+  {
+    id: 'fixture-clef-change-study',
+    title: 'Study climbing into tenor clef',
+    composer: 'Franz Simandl',
+    movement: 'New Method for the Double Bass',
+    practicedDaysAgo: 34,
+    thumbnail: require('../../../assets/fixtures/01_simple_printed.jpg'),
+    markedBpm: 66,
+    // The one piece whose clef changes — see `CLEF_CHANGE_SCORE`.
+    score: CLEF_CHANGE_SCORE,
   },
   {
     id: 'fixture-mozart-k216',

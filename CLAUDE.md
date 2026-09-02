@@ -245,6 +245,25 @@ there works differently as of 2026-08-24:
   `what_this_piece_is` names the key **at the bars being re-read**, and names
   none when they straddle a change — a corrector prompt that states the wrong
   key gets back a bar that sums perfectly and is spelled a semitone off.
+- **A clef printed mid-piece is a change of clef** (2026-09-02).
+  `Measure.clef` is the fourth field of the `time_signature` / `key_signature`
+  shape and obeys the same rule; `ScoreJson.clef` stays the clef the page
+  **opens** in. Compared against the clef **in force**, never the header, or a
+  part returning to bass at bar 40 records the departure and drops the return.
+  `staveScoreFor` marks the item opening a changed bar; `layoutSystem`'s
+  `middleStep` is a **running** value updated *before* that item is placed,
+  because a clef printed at a bar governs that bar's first note too. A system
+  starting after a change opens its head in the new clef and does not repeat
+  it; a change mid-system is drawn small (`CLEF_CHANGE_SCALE`) and
+  right-aligned against the notehead it governs — anchored to the **note**, not
+  the barline, because a clef change is legal without one.
+  **`EngravedHead.clef` carries which clef it is**, not just a position: the
+  renderer used to draw `CLEF_GLYPH[clef]` from its own prop, which the moment
+  a later system could open in a different clef would have drawn the opening
+  sign at the new clef's line — invisible to any test checking geometry rather
+  than glyphs.
+  `fixture-clef-change-study` is the fixture; without one this was a state
+  nobody had looked at, which is how it stayed broken.
 - **A misread bar is fixable, not fatal.** `MeasureEditScreen` corrects
   durations, rests, **pitch** (stepping by letter, with a separate accidental
   control) and adds or deletes notes. Reached two ways from `PieceScore`: the

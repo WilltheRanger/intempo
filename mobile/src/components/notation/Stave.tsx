@@ -4,6 +4,7 @@ import type { Articulation, Clef } from '../../data/types';
 import { colors, fontFamily, MUSIC_EM_IN_SPACES, typography } from '../../design';
 import {
   BEAM_THICKNESS_FACTOR,
+  CLEF_CHANGE_SCALE,
   type Accidental,
   type NoteValue,
   type StaveItem,
@@ -554,7 +555,9 @@ export function Stave({
             per-glyph fudge factor. That is the whole reason notation is a font
             here rather than a set of paths.
           */}
-          {system.head.clef && clef ? (
+          {/* The system's own clef, not the caller's: a piece that changes
+              clef opens later systems in the new one. */}
+          {system.head.clef ? (
             <SvgText
               x={system.head.clef.x}
               y={system.head.clef.y}
@@ -562,9 +565,25 @@ export function Stave({
               fontSize={musicSize}
               fontFamily={fontFamily.music}
             >
-              {CLEF_GLYPH[clef]}
+              {CLEF_GLYPH[system.head.clef.clef]}
             </SvgText>
           ) : null}
+
+          {/* A clef printed mid-system, drawn smaller than the one that opens
+              a line — an engraver makes a change of clef a correction to the
+              reader, not the start of something. */}
+          {system.clefChanges.map((change, index) => (
+            <SvgText
+              key={`clef-change-${index}`}
+              x={change.x}
+              y={change.y}
+              fill={ink}
+              fontSize={musicSize * CLEF_CHANGE_SCALE}
+              fontFamily={fontFamily.music}
+            >
+              {CLEF_GLYPH[change.clef]}
+            </SvgText>
+          ))}
 
           {system.head.key.map((accidental, index) => (
             <SvgText
