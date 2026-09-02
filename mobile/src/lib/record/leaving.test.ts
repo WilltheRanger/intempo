@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { leavingRecord, type RecordPhase } from './leaving';
+import {
+  leavingRecord,
+  shouldGuardBrowserExit,
+  type RecordPhase,
+} from './leaving';
+import recordScreenSource from '../../screens/record/RecordScreen?raw';
 
 /**
  * The two mistakes this replaces, as tests.
@@ -76,5 +81,42 @@ describe('leaving the record screen', () => {
     for (const phase of phases) {
       expect(leavingRecord({ phase, unsentTake: false }).kind, phase).toBe('leave');
     }
+  });
+
+  it('guards a browser refresh while audio is live or waiting to be sent', () => {
+    expect(
+      shouldGuardBrowserExit({ phase: 'recording', unsentTake: false }),
+    ).toBe(true);
+    expect(
+      shouldGuardBrowserExit({ phase: 'analysing', unsentTake: true }),
+    ).toBe(true);
+    expect(
+      shouldGuardBrowserExit({ phase: 'ready', unsentTake: true }),
+    ).toBe(true);
+  });
+
+  it('does not interrupt a harmless browser exit', () => {
+    expect(
+      shouldGuardBrowserExit({ phase: 'ready', unsentTake: false }),
+    ).toBe(false);
+    expect(
+      shouldGuardBrowserExit({ phase: 'counting_in', unsentTake: false }),
+    ).toBe(false);
+    expect(
+      shouldGuardBrowserExit({ phase: 'analysing', unsentTake: false }),
+    ).toBe(false);
+  });
+
+  it('holds the finished bytes before the upload can yield', () => {
+    const held = recordScreenSource.indexOf('unsent.current = recording;');
+    const submitted = recordScreenSource.indexOf(
+      'await takeSubmissionSource.submit',
+    );
+
+    expect(held).toBeGreaterThan(-1);
+    expect(submitted).toBeGreaterThan(held);
+    expect(recordScreenSource).toContain(
+      "window.addEventListener('beforeunload', guardBrowserExit)",
+    );
   });
 });

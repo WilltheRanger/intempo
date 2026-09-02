@@ -1,7 +1,7 @@
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import { Mic, Square } from 'lucide-react-native';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Linking, Platform, Pressable, StyleSheet, View } from 'react-native';
 
 import {
   Card,
@@ -30,6 +30,7 @@ import {
   MicrophoneUnavailableError,
   type Recorder,
 } from '../../lib/audio/types';
+import { microphonePermissionRecovery } from '../../lib/audio/permission';
 import { startRecording } from '../../lib/audioRecorder';
 import {
   colors,
@@ -64,7 +65,11 @@ import { PlaybackSettings } from '../../components/score/PlaybackSettings';
 import { scheduleScore, startableMeasures } from '../../lib/score';
 import { startFromMeasure } from '../../lib/score/startFrom';
 import { ConfirmDialog } from '../../components/overlays/ConfirmDialog';
-import { leavingRecord, type RecordPhase } from '../../lib/record/leaving';
+import {
+  leavingRecord,
+  shouldGuardBrowserExit,
+  type RecordPhase,
+} from '../../lib/record/leaving';
 import { useGoBack } from '../../navigation/useGoBack';
 
 const METRONOME_LABELS = {
@@ -143,6 +148,7 @@ export function RecordScreen() {
   const [showSetup, setShowSetup] = useState(!practiceSetupSeen);
   const [elapsedMs, setElapsedMs] = useState(0);
   const [problem, setProblem] = useState<string | null>(null);
+  const [microphoneBlocked, setMicrophoneBlocked] = useState(false);
   const [truncated, setTruncated] = useState(false);
   // How much was actually kept. The cap is bytes, not minutes — a device at
   // 44.1 kHz fits nearly a minute more music into the same file than one at 48
@@ -248,6 +254,30 @@ export function RecordScreen() {
     [navigation, piece?.title],
   );
 
+  // A refresh, closed tab, or changed address bypasses React Navigation and
+  // used to throw away a live take or the finished WAV currently uploading.
+  // Browsers deliberately control the wording of this confirmation; our job
+  // is only to request it while audio really would be lost.
+  useEffect(() => {
+    if (Platform.OS !== 'web') {
+      return;
+    }
+    function guardBrowserExit(event: BeforeUnloadEvent) {
+      if (
+        !shouldGuardBrowserExit({
+          phase: phaseRef.current,
+          unsentTake: unsent.current !== null,
+        })
+      ) {
+        return;
+      }
+      event.preventDefault();
+      event.returnValue = '';
+    }
+    window.addEventListener('beforeunload', guardBrowserExit);
+    return () => window.removeEventListener('beforeunload', guardBrowserExit);
+  }, []);
+
   // Turning the metronome back on restores the mode it was on, rather than
   // silently demoting someone's haptic or headphone choice to the default.
   const lastOnMode = useRef<MetronomeMode>(
@@ -282,6 +312,7 @@ export function RecordScreen() {
     starting.current = true;
     impact(ImpactFeedbackStyle.Medium);
     setProblem(null);
+    setMicrophoneBlocked(false);
     setTruncated(false);
     setKeptSeconds(0);
     // A new take supersedes the held one. Without this, "Send it again" stayed
@@ -294,6 +325,7 @@ export function RecordScreen() {
     try {
       recorder.current = await startRecording();
     } catch (error) {
+      setMicrophoneBlocked(error instanceof MicrophonePermissionError);
       setProblem(messageFor(error));
       return;
     } finally {
@@ -369,6 +401,10 @@ export function RecordScreen() {
     filename: string;
     resume?: TakeSubmissionState;
   }) {
+    // Hold the bytes before the first awaited upload step. This is not yet a
+    // visible retry state, but it makes both navigation and browser-exit guards
+    // truthful during the vulnerable gap before the server accepts the take.
+    unsent.current = recording;
     goPhase('analysing');
     setProblem(null);
     try {
@@ -422,6 +458,16 @@ export function RecordScreen() {
     preferences.setMetronomeMode(
       metronomeMode === 'off' ? lastOnMode.current : 'off',
     );
+  }
+
+  async function openMicrophoneSettings() {
+    try {
+      await Linking.openSettings();
+    } catch {
+      setProblem(
+        'Open your device Settings, choose InTempo, and allow Microphone. Then return and press Start again.',
+      );
+    }
   }
 
   const recording = phase === 'recording';
@@ -700,6 +746,13 @@ export function RecordScreen() {
             >
               {problem}
             </Text>
+          ) : null}
+          {microphoneBlocked && Platform.OS !== 'web' ? (
+            <SecondaryButton
+              label="Open microphone settings"
+              onPress={() => void openMicrophoneSettings()}
+              style={styles.permissionAction}
+            />
           ) : null}
           {/*
             Offered only while a take is actually being held, so the control
@@ -984,7 +1037,7 @@ function RestCountdown({ state }: { state: RestCueState }) {
  */
 function messageFor(error: unknown): string {
   if (error instanceof MicrophonePermissionError) {
-    return 'InTempo needs the microphone to hear you play. Allow it for InTempo, then start again.';
+    return microphonePermissionRecovery(Platform.OS).message;
   }
   if (error instanceof MicrophoneUnavailableError) {
     return error.message;
@@ -1143,6 +1196,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   retry: {
+    marginBottom: spacing.md,
+  },
+  permissionAction: {
     marginBottom: spacing.md,
   },
   problem: {
