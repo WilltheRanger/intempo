@@ -6,6 +6,60 @@ Operating Principle #5.
 
 ---
 
+## 2026-09-02 — Two threshold tests over a ratio, for calling a tempo uneven
+
+**Context.** Insights summarised a window of practice with one statistic, a
+signed mean, which cancels: a musician 18% ahead in one bar and 18% behind in
+the next averages to zero. The window needed a second measurement — the mean
+*distance* from the beat, ignoring side — and a rule for when that distance,
+rather than the direction, is the finding worth leading with.
+
+**Decision.** The tempo "wanders" when the **bias falls inside the pipeline's
+on-tempo band and the distance does not**. Both cutoffs come from
+`result_json.tolerance`, the numbers the server judged those takes by. The
+distance is tested against the **wider** of the two inner thresholds.
+
+**Alternatives considered.**
+
+*A ratio between the two figures* — spread more than twice the bias, say. It
+describes the shape well and it is a number invented in the app. Every number
+this project has invented has needed retuning against real playing, and this one
+would sit in a screen that makes claims about a person's musicianship while
+being reachable by nothing in `TUNING_LOG.md`.
+
+*The standard deviation of the per-take deviations.* Statistically the
+conventional answer, and it measures the wrong thing here: it is dispersion
+around the musician's own bias, so a player consistently 15% ahead scores near
+zero — steady, in the sense that a listener with a metronome would not call
+them steady. Distance from the beat is the quantity a musician is being told
+about.
+
+*A single threshold of our own — "wandering above 8%".* The same objection as
+the ratio, plus it would not move when the tuning does.
+
+**Why.** The rule invents nothing. It is two applications of cutoffs the
+pipeline already publishes per take, so retuning the backend retunes this with
+it — which is the property that made it safe to put a new claim about a
+musician's playing on the screen at all.
+
+**Trade-offs accepted.** A spread has no side, so there is no sign to select a
+threshold set with, and the two sides are deliberately asymmetric (§4: dragging
+is tolerated better). Taking the wider inner threshold means a distance that
+one side would call out-of-tolerance and the other would not is left unnamed.
+That is a real loss of sensitivity, accepted because the failure it prevents is
+worse: telling a musician their tempo wanders over a distance the app would
+have called on-tempo had they been on the other side of the beat.
+
+**Second decision, same change: the deviation bar draws both ways when the
+finding is the wandering.** The alternative was leaving it signed, which puts a
+bar sitting dead centre directly under the words "Your tempo wanders" — the
+same contradiction between a word and its picture that this whole change exists
+to remove. A symmetric fill is not decoration on the signed reading; it is the
+honest drawing of a different quantity, so it appears only when that quantity is
+what is being reported.
+
+---
+
 ## 2026-09-02 — A field on the measure over a list of key changes
 
 **Context.** A page can change key, and the schema had one `key_signature` on

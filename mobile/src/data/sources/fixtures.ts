@@ -1,5 +1,6 @@
 import { wasTimed } from '../../lib/verdict/measureReading';
 import { verdictFor } from '../../lib/tempo';
+import { judgeAggregate } from '../../lib/insights/tendency';
 import type {
   Band,
   Direction,
@@ -785,32 +786,39 @@ export const fixtureMusicianSource: MusicianSource = {
 const INSIGHTS_WINDOW_DAYS = 30;
 
 /**
- * Practice history for four of the pieces above.
+ * Practice history for five of the pieces above.
  *
- * Each entry states what an analysis would actually return: a deviation as a
- * percentage of one beat, and the band the pipeline put it in. The display
- * verdict is derived by `verdictFor`, the same function the API adapter uses,
- * so the fixture cannot claim a verdict the real classifier wouldn't.
- *
- * Bands here follow the checked-in defaults in `backend/config.toml` — on to
- * 5%, slight to 10%, clear rush or drag to 20%. Those are server-tunable, so
- * they are stated per entry rather than recomputed here.
+ * Each entry states what an analysis would actually return: two deviations as
+ * percentages of one beat. The band, direction and display verdict are all
+ * derived by the same functions the API adapter uses, so the fixture cannot
+ * claim a verdict the real classifier wouldn't — it used to restate the band
+ * per entry and reimplement the thresholds below, which was a third copy of
+ * numbers that live in `backend/config.toml`.
  *
  * The deviations are unflattering on purpose. A fixture where everything is on
  * tempo would exercise none of the vocabulary and would design the screen for
  * the one musician who doesn't need it.
+ *
+ * **`fixture-paganini-24` is the piece that wanders**, and it is here because
+ * a state with no fixture is a state nobody has looked at. Its bias sits inside
+ * tolerance and its distance from the beat does not — the case where naming a
+ * direction is false and "On tempo" is worse, and the only case in which the
+ * bar draws both ways. Everything else in this list drifts one way, so the two
+ * readings sit side by side in one build.
  */
 const FIXTURE_SESSIONS: {
   pieceId: string;
   sessions: number;
   /** Positive is ahead of the beat, matching the verdict convention. */
   meanDeviationPct: number;
-  band: Band;
+  /** Distance from the beat either way — never below `|meanDeviationPct|`. */
+  spreadPct: number;
 }[] = [
-  { pieceId: 'fixture-wohlfahrt-28', sessions: 12, meanDeviationPct: 12.4, band: 'rush_drag' },
-  { pieceId: 'fixture-bach-bwv1001', sessions: 9, meanDeviationPct: -7.6, band: 'slight' },
-  { pieceId: 'fixture-mozart-k216', sessions: 5, meanDeviationPct: 7.2, band: 'slight' },
-  { pieceId: 'fixture-kreutzer-02', sessions: 8, meanDeviationPct: 2.8, band: 'on' },
+  { pieceId: 'fixture-wohlfahrt-28', sessions: 12, meanDeviationPct: 12.4, spreadPct: 13.1 },
+  { pieceId: 'fixture-paganini-24', sessions: 6, meanDeviationPct: 1.4, spreadPct: 11.8 },
+  { pieceId: 'fixture-bach-bwv1001', sessions: 9, meanDeviationPct: -7.6, spreadPct: 8.4 },
+  { pieceId: 'fixture-mozart-k216', sessions: 5, meanDeviationPct: 7.2, spreadPct: 8.0 },
+  { pieceId: 'fixture-kreutzer-02', sessions: 8, meanDeviationPct: 2.8, spreadPct: 3.1 },
 ];
 
 /**
@@ -831,33 +839,27 @@ const FIXTURE_TOLERANCE = {
   dragging_outer_pct: 20,
 } as const;
 
-function directionFor(deviationPct: number, band: Band): Direction {
-  if (band === 'on') {
-    return 'on';
-  }
-  return deviationPct > 0 ? 'rush' : 'drag';
-}
-
 function toPieceInsight(entry: (typeof FIXTURE_SESSIONS)[number]): PieceInsight {
   const piece = FIXTURE_PIECES.find(({ id }) => id === entry.pieceId);
-  const direction = directionFor(entry.meanDeviationPct, entry.band);
   return {
     pieceId: entry.pieceId,
     title: piece?.title ?? 'Unknown piece',
     composer: piece?.composer ?? null,
     sessions: entry.sessions,
     meanDeviationPct: entry.meanDeviationPct,
-    band: entry.band,
-    direction,
-    verdict: verdictFor(entry.band, direction),
+    spreadPct: entry.spreadPct,
+    ...judgeAggregate(entry.meanDeviationPct, FIXTURE_TOLERANCE),
     tolerance: FIXTURE_TOLERANCE,
   };
 }
 
 export const fixtureInsightsSource: InsightsSource = {
   async getInsights() {
+    // Furthest from the beat first, the same ordering the API adapter uses —
+    // and not by bias, which buried the piece that wanders at the bottom of a
+    // list whose first row is what Today reads.
     const pieces = FIXTURE_SESSIONS.map(toPieceInsight).sort(
-      (a, b) => Math.abs(b.meanDeviationPct) - Math.abs(a.meanDeviationPct),
+      (a, b) => b.spreadPct - a.spreadPct,
     );
 
     const sessions = pieces.reduce((total, piece) => total + piece.sessions, 0);
@@ -867,43 +869,21 @@ export const fixtureInsightsSource: InsightsSource = {
 
     // Session-weighted, so a piece practised twice doesn't sway the headline
     // as much as one practised a dozen times.
-    const meanDeviationPct =
-      pieces.reduce(
-        (total, piece) => total + piece.meanDeviationPct * piece.sessions,
-        0,
-      ) / sessions;
-
-    // Classified against the same thresholds this source reports, so the bar
-    // and the word beside it can't disagree. Fixture-only: live insights take
-    // the band from the take nearest the mean, because the server owns it.
-    const magnitude = Math.abs(meanDeviationPct);
-    const ahead = meanDeviationPct >= 0;
-    const inner = ahead
-      ? FIXTURE_TOLERANCE.rushing_inner_pct
-      : FIXTURE_TOLERANCE.dragging_inner_pct;
-    const mid = ahead
-      ? FIXTURE_TOLERANCE.rushing_mid_pct
-      : FIXTURE_TOLERANCE.dragging_mid_pct;
-    const outer = ahead
-      ? FIXTURE_TOLERANCE.rushing_outer_pct
-      : FIXTURE_TOLERANCE.dragging_outer_pct;
-    const band: Band =
-      magnitude <= inner
-        ? 'on'
-        : magnitude <= mid
-          ? 'slight'
-          : magnitude <= outer
-            ? 'rush_drag'
-            : 'severe';
-    const direction = directionFor(meanDeviationPct, band);
+    const weighted = (pick: (piece: PieceInsight) => number) =>
+      pieces.reduce((total, piece) => total + pick(piece) * piece.sessions, 0) /
+      sessions;
+    const meanDeviationPct = weighted((piece) => piece.meanDeviationPct);
 
     return {
       windowDays: INSIGHTS_WINDOW_DAYS,
       sessions,
       meanDeviationPct,
-      band,
-      direction,
-      verdict: verdictFor(band, direction),
+      spreadPct: weighted((piece) => piece.spreadPct),
+      // Classified by the same functions the API adapter uses, against the
+      // thresholds this source reports. This block used to reimplement them
+      // inline, which made the fixtures a place a threshold could be wrong
+      // without any test noticing.
+      ...judgeAggregate(meanDeviationPct, FIXTURE_TOLERANCE),
       tolerance: FIXTURE_TOLERANCE,
       pieces,
     };

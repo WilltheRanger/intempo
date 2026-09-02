@@ -16,8 +16,8 @@
  *    read under whatever light the room has.
  *
  * Run against a served fixtures build. Playwright is not a dependency of this
- * repository — install it alongside rather than adding it to `mobile`, which
- * ships to a phone:
+ * repository — install it into `mobile` with `--no-save`, so it is available
+ * to run without joining the list of packages that ship to a phone:
  *
  *     cd mobile && npm run build:web        # with .env moved aside
  *     npx serve dist -l 4320 -s &
@@ -26,7 +26,20 @@
  *
  * Exits non-zero when anything fails, so it can gate a change.
  */
-import { chromium } from 'playwright';
+import { createRequire } from 'node:module';
+
+/**
+ * Resolved from `mobile/`, not from here.
+ *
+ * A bare `import { chromium } from 'playwright'` resolves against **this
+ * file's** directory, not the working directory — so with playwright installed
+ * where the instructions above put it, the command in those same instructions
+ * failed with ERR_MODULE_NOT_FOUND. The tool has one documented way to run and
+ * it did not work; anchoring the lookup to `mobile/package.json` makes the
+ * lookup match the install, from any working directory.
+ */
+const require = createRequire(new URL('../mobile/package.json', import.meta.url));
+const { chromium } = require('playwright');
 
 const PORT = process.argv[2] ?? '4320';
 const BASE = `http://localhost:${PORT}`;
