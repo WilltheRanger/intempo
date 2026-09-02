@@ -34,3 +34,55 @@ export function authRedirectUrl(): string | undefined {
   }
   return Linking.createURL('/');
 }
+
+export type AuthRedirectPayload =
+  | {
+      kind: 'session';
+      accessToken: string;
+      refreshToken: string;
+      recovery: boolean;
+    }
+  | { kind: 'error'; message: string };
+
+/**
+ * Reads the implicit-grant callback Supabase sends to a native deep link.
+ *
+ * The auth client parses `window.location` on web. A phone has no browser URL
+ * for it to inspect: Expo delivers the same query and fragment through
+ * `Linking`, so the app has to extract the session itself. Query values win,
+ * matching auth-js's browser parser.
+ *
+ * Null means an ordinary app link such as `intempo://pieces/123`; auth must
+ * never swallow those merely because they use the same scheme.
+ */
+export function authRedirectPayload(url: string): AuthRedirectPayload | null {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return null;
+  }
+
+  const params = new URLSearchParams(
+    parsed.hash.startsWith('#') ? parsed.hash.slice(1) : parsed.hash,
+  );
+  parsed.searchParams.forEach((value, key) => params.set(key, value));
+
+  const providerError = params.get('error_description') ?? params.get('error');
+  if (providerError) {
+    return { kind: 'error', message: providerError };
+  }
+
+  const accessToken = params.get('access_token');
+  const refreshToken = params.get('refresh_token');
+  if (!accessToken || !refreshToken) {
+    return null;
+  }
+
+  return {
+    kind: 'session',
+    accessToken,
+    refreshToken,
+    recovery: params.get('type') === 'recovery',
+  };
+}
