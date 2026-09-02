@@ -224,6 +224,27 @@ there works differently as of 2026-08-24:
   preference; `analyses.instrument` stores it; `analysis_runner` turns it into
   `analyze(..., double_bass=...)`. Store the instrument, never a derived flag —
   how each instrument should be treated is still being tuned.
+- **A key printed mid-piece is a change of key** (2026-09-02).
+  `Measure.key_signature` is the third field of the `time_signature` / `clef`
+  shape and obeys the same rule: printed on one bar, holding until the next bar
+  prints one. `ScoreJson.key_signature` stays the key the page **opens** in.
+  Compared **by signature** (`key_fifths` / `accidentalCount`), never by name —
+  `Bb major` and `G minor` are the same two flats — and against the key **in
+  force**, never against the header, or a part that returns to its opening key
+  records the departure and drops the return. That last bug was live in the
+  *metre* and fixed alongside it.
+  The engraver draws the new signature after the barline, opens each later
+  system's head in the key then in force, and prints a **courtesy** at the end
+  of the line before a change that opens the next one — without which a change
+  to C major is announced by nothing, since its head prints no accidentals. A
+  change *to* a key with no accidentals is the one case that cancels the old
+  signature with naturals; every other change prints only its own marks.
+  `packSystems` reserves the courtesy **one bar ahead**: charging it to the
+  previous bar unconditionally makes the line break, and the break is what
+  creates the courtesy it was paying for.
+  `what_this_piece_is` names the key **at the bars being re-read**, and names
+  none when they straddle a change — a corrector prompt that states the wrong
+  key gets back a bar that sums perfectly and is spelled a semitone off.
 - **A misread bar is fixable, not fatal.** `MeasureEditScreen` corrects
   durations, rests, **pitch** (stepping by letter, with a separate accidental
   control) and adds or deletes notes. Reached two ways from `PieceScore`: the

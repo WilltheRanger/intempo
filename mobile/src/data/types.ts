@@ -278,6 +278,18 @@ export interface ScoreMeasure {
    */
   clef?: Clef | null;
   /**
+   * The key, when it **changes** at this measure. Absent everywhere else, and
+   * absent on every score written before it was recorded.
+   *
+   * The third field of this shape and the same obligation: a bar rebuilt
+   * without it loses the change, and every bar after it is engraved in a key
+   * the page stopped using — two flats on every system of a passage the page
+   * put in G, and an inline sharp on every F. The name as printed, the same
+   * grammar as `ScoreJson.key_signature`, which stays the key the page opens
+   * in.
+   */
+  key_signature?: string | null;
+  /**
    * How many notes the reading saw in this bar and could not write.
    *
    * Absent on every score written before it was recorded, and 0 on a clean

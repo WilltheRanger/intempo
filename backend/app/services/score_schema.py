@@ -551,6 +551,27 @@ class Measure(_Strict):
     #: costing the page. Wrong in the direction that loses a caption, never in
     #: the direction that invents one.
     clef: Clef | None = None
+    #: The key, when it *changes* at this measure. Null everywhere else.
+    #:
+    #: The third field of this shape, after `time_signature` and `clef`, and
+    #: the same rule: a fact printed on one bar that holds until the next one
+    #: is printed. `ScoreJson.key_signature` stays the key the page **opens**
+    #: in.
+    #:
+    #: Until this existed the importer read the first `<key>` and discarded
+    #: every later one — so a part that moves from B-flat to G at bar 7 (the
+    #: real phone photograph in `fixtures/musicxml/audiveris_phone_photo`) was
+    #: engraved with two flats on every system to the end, and every F sharp
+    #: after the change printed as an inline sharp against a signature that no
+    #: longer applied. The timeline never cared; the *page* was wrong, and it
+    #: was wrong in the way that matters most — a musician reading from it
+    #: plays the wrong notes.
+    #:
+    #: The name as printed, `G major` / `E minor`, the same grammar as the
+    #: header. Compared by signature rather than by name wherever a change is
+    #: detected: `Bb major` and `G minor` print the same two flats, and a mode
+    #: that changes with the signature unchanged is not a change on the page.
+    key_signature: str | None = Field(default=None, max_length=40)
     #: How many notes in this measure the reading saw and could not write.
     #:
     #: **Because the bar can now come out looking perfect.** A double accidental,
@@ -573,6 +594,15 @@ class Measure(_Strict):
     _keep_known_measure_clef = field_validator("clef", mode="before")(
         _one_of(_CLEFS, "clef")
     )
+
+    @field_validator("key_signature")
+    @classmethod
+    def _validate_measure_key_signature(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        if not value.strip():
+            raise ValueError("key_signature must be non-empty when provided")
+        return value
 
     @field_validator("time_signature")
     @classmethod

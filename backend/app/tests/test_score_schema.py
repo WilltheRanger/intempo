@@ -336,3 +336,15 @@ def test_measure_defaults() -> None:
     measure = Measure.model_validate({"measure_number": 1})
     assert measure.notes == []
     assert measure.slurs == []
+
+
+def test_a_measure_can_state_a_key_change_and_not_a_blank_one() -> None:
+    """`Measure.key_signature` is the third field of the `time_signature` /
+    `clef` shape: a fact printed on one bar that holds until the next."""
+    from pydantic import ValidationError
+
+    measure = Measure(measure_number=7, notes=[], key_signature="G major")
+    assert measure.key_signature == "G major"
+    assert Measure(measure_number=1, notes=[]).key_signature is None
+    with pytest.raises(ValidationError):
+        Measure(measure_number=1, notes=[], key_signature="   ")

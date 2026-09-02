@@ -22,6 +22,19 @@ export interface BottomSheetProps {
   onClose: () => void;
   /** Serif heading at the top of the sheet. */
   title?: string;
+  /**
+   * Rise to the full height of the screen instead of sizing to the content.
+   *
+   * For a sheet whose content *is* the task — the bar picker is a page of
+   * music to read, and a third of a phone is not enough of it to find bar 40
+   * in. The dim strip left above the sheet is still the way out, so the sheet
+   * does not become a screen with no exit.
+   *
+   * The children are given the room: an expanded sheet lays them out in a
+   * flexible body, so a scroll view inside it can fill what is left after the
+   * header rather than needing a height of its own.
+   */
+  expand?: boolean;
   children: ReactNode;
 }
 
@@ -39,6 +52,7 @@ export function BottomSheet({
   visible,
   onClose,
   title,
+  expand = false,
   children,
 }: BottomSheetProps) {
   const insets = useSafeAreaInsets();
@@ -104,6 +118,7 @@ export function BottomSheet({
           onLayout={handleLayout}
           style={[
             styles.sheet,
+            expand && [styles.expanded, { marginTop: insets.top + spacing.xl }],
             { paddingBottom: insets.bottom + spacing.lg },
             {
               transform: [
@@ -128,7 +143,7 @@ export function BottomSheet({
             <IconButton icon={X} label="Close" onPress={onClose} />
           </View>
 
-          {children}
+          {expand ? <View style={styles.body}>{children}</View> : children}
         </Animated.View>
       </View>
     </Modal>
@@ -156,6 +171,15 @@ const styles = StyleSheet.create({
     borderTopColor: colors.border,
     paddingTop: spacing.md,
     paddingHorizontal: spacing.xl,
+  },
+  expanded: {
+    // Fills the container, which is the screen. The margin above it is the
+    // backdrop that dismisses the sheet — a full-bleed sheet with no strip of
+    // the screen behind it reads as a screen, and this one has no back.
+    flex: 1,
+  },
+  body: {
+    flex: 1,
   },
   handle: {
     alignSelf: 'center',

@@ -4,11 +4,12 @@ import type { Articulation, Clef } from '../../data/types';
 import { colors, fontFamily, MUSIC_EM_IN_SPACES, typography } from '../../design';
 import {
   BEAM_THICKNESS_FACTOR,
-  engrave,
   type Accidental,
   type NoteValue,
   type StaveItem,
 } from '../../lib/notation/engrave';
+import { layOutStave, type StaveLayout } from '../../lib/notation/staveLayout';
+import type { StavePage } from '../../lib/notation/pages';
 
 /**
  * SMuFL codepoints. The standard's own names are the comments.
@@ -291,12 +292,28 @@ export interface StaveProps {
    * than snapping to a neighbour the musician did not choose.
    */
   pressableMeasures?: number[];
+  /**
+   * Draw one page of the engraving instead of all of it.
+   *
+   * From `paginateSystems`: the systems it names are drawn, translated so the
+   * page's top edge is the top of this drawing. Everything else — where a bar
+   * sits, which barline ends the piece — is still read from the whole
+   * engraving, so a page is a window onto the music rather than a shorter
+   * piece.
+   */
+  page?: StavePage;
+  /**
+   * The engraving, when the caller has already measured it.
+   *
+   * **Only ever `layOutStave` of the same request as the props here**, which
+   * is why it is not a way to hand this component arbitrary geometry. A screen
+   * that draws several pages of one piece would otherwise engrave the whole
+   * piece once per page — measured at ~12ms for a 74-bar part on a laptop, so
+   * a second of work on a phone to open a picker.
+   */
+  layout?: StaveLayout;
 }
 
-const LINE_GAP = 9;
-const NOTE_GAP = 30;
-const LEFT_PAD = 22;
-const RIGHT_PAD = 12;
 /**
  * Whether a notehead sits on a staff line rather than in a space.
  *
@@ -361,44 +378,40 @@ export function Stave({
   highlightMeasure = null,
   onMeasurePress,
   pressableMeasures,
+  page,
+  layout: precomputed,
 }: StaveProps) {
   const dark = tone === 'dark';
   const ink = dark ? colors.actionText : colors.textPrimary;
   const rule = dark ? colors.onDarkMuted : colors.textSecondary;
   const label = dark ? colors.onDarkMuted : colors.textTertiary;
 
-  const engraveAt = (at: number) =>
-    engrave(notes, clef, {
-      lineGap: LINE_GAP * at,
-      noteGap: NOTE_GAP * at,
-      leftPad: LEFT_PAD * at,
-      rightPad: RIGHT_PAD * at,
-      maxWidth,
-      maxNotes,
-      justify,
-      beatQuarters,
-      closesWithRepeat,
-      endings,
-      head,
-      // Also stops the layout reserving the row's height, so hiding the names
-      // doesn't leave a band of empty space under every system.
-      nameRow: showNoteNames,
-    });
+  // The fitting lives in `staveLayout` so that a caller who needs to know
+  // where the systems land — the bar picker, breaking the drawing into pages —
+  // reads the same geometry this draws rather than a second copy of it.
+  const { layout: engraving, fitted, lineGap } = precomputed ?? layOutStave({
+    notes,
+    clef,
+    maxWidth,
+    fitWidth,
+    maxNotes,
+    scale,
+    justify,
+    beatQuarters,
+    closesWithRepeat,
+    endings,
+    head,
+    nameRow: showNoteNames,
+  });
 
-  const measured = engraveAt(scale);
-  /**
-   * One corrective pass, and it lands exactly.
-   *
-   * Every geometry constant here is multiplied by the scale and nothing else,
-   * so the engraved width is linear in it: measuring once and dividing gives
-   * the scale that fits, rather than converging on it.
-   */
-  const fitted =
-    fitWidth && measured.width > fitWidth
-      ? scale * (fitWidth / measured.width)
-      : scale;
-  const lineGap = LINE_GAP * fitted;
-  const layout = fitted === scale ? measured : engraveAt(fitted);
+  // A page draws its own systems, lifted so its top edge is y=0. The indices
+  // stay absolute — the barline that ends the piece is the last one of the
+  // last system of the *piece*, not of whatever page it happens to land on.
+  const drawn = page
+    ? engraving.systems.slice(page.from, page.to)
+    : engraving.systems;
+  const firstDrawn = page ? page.from : 0;
+  const lift = page ? page.top : 0;
 
   // A SMuFL em is four staff spaces, so this is the one number every glyph needs.
   const musicSize = lineGap * MUSIC_EM_IN_SPACES;
@@ -407,8 +420,8 @@ export function Stave({
 
   return (
     <Svg
-      width={layout.width}
-      height={layout.height}
+      width={engraving.width}
+      height={page ? page.height : engraving.height}
       accessibilityRole="image"
       // Not described. With names on, a screen reader spelling out fifteen note
       // letters is noise and the exercise is named above; with them off there is
@@ -416,8 +429,10 @@ export function Stave({
       // name, clef and tempo in real text, which is the useful alternative.
       accessible={false}
     >
-      {layout.systems.map((system, systemIndex) => (
-        <G key={`system-${systemIndex}`}>
+      {drawn.map((system, drawnIndex) => {
+        const systemIndex = firstDrawn + drawnIndex;
+        return (
+        <G key={`system-${systemIndex}`} transform={`translate(0, ${-lift})`}>
           {/* Behind everything, so the notes stay the darkest thing on the
               staff. A wash rather than an outline: an outlined bar reads as
               something selected and waiting to be acted on, and this is a
@@ -466,7 +481,7 @@ export function Stave({
             // width follows the staff, and Bravura's barline glyphs are sized
             // for a staff drawn at the font's own scale.
             const ends =
-              systemIndex === layout.systems.length - 1 &&
+              systemIndex === engraving.systems.length - 1 &&
               index === system.barlines.length - 1;
 
             const thin = (at: number) => (
@@ -561,6 +576,22 @@ export function Stave({
               fontFamily={fontFamily.music}
             >
               {ACCIDENTAL_GLYPH[accidental.kind]}
+            </SvgText>
+          ))}
+
+          {/* A key change mid-line: the new signature just after the barline
+              of the bar it opens, on the same staff positions the head uses,
+              or naturals cancelling the old one when the new key has none. */}
+          {system.keyChanges.map((glyph, index) => (
+            <SvgText
+              key={`key-change-${index}`}
+              x={glyph.x}
+              y={glyph.y}
+              fill={ink}
+              fontSize={musicSize}
+              fontFamily={fontFamily.music}
+            >
+              {ACCIDENTAL_GLYPH[glyph.kind]}
             </SvgText>
           ))}
 
@@ -1072,7 +1103,8 @@ export function Stave({
                 ))
             : null}
         </G>
-      ))}
+        );
+      })}
     </Svg>
   );
 }

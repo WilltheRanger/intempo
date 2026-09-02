@@ -18,6 +18,7 @@ module is only ever handed complete readings.
 from __future__ import annotations
 
 from app.services.ocr.homr_provider import confidence_from_arithmetic
+from app.services.ocr.musicxml import key_fifths
 from app.services.ocr.score_join_errors import NoPagesToJoin
 from app.services.ocr.validate import validate_measures
 from app.services.score_schema import Repeat, ScoreJson, TempoChange
@@ -69,6 +70,11 @@ def join_pages(readings: list[ScoreJson]) -> ScoreJson:
     #: therefore stayed in force, and every correctly-read bar of page two came
     #: out `long`: confidence 1.00 → 0.67 on a reading with nothing wrong in it.
     running_metre: str | None = None
+    #: The key in force at the page break, by the same rule and for the same
+    #: reason: page 2 of a part that turned to G major at the foot of page 1
+    #: prints one sharp in its own header and nowhere else. Compared by
+    #: signature, because `Bb major` and `G minor` are the same two flats.
+    running_key: str | None = None
 
     for page_number, page in enumerate(readings, start=1):
         offset = len(measures)
@@ -85,6 +91,15 @@ def join_pages(readings: list[ScoreJson]) -> ScoreJson:
             stated = _stated_metre(page.time_signature)
             if index == 0 and page_number > 1 and stated and stated != running_metre:
                 update["time_signature"] = stated
+            stated_key = _stated_key(page.key_signature)
+            if (
+                index == 0
+                and page_number > 1
+                and stated_key
+                and measure.key_signature is None
+                and key_fifths(stated_key) != key_fifths(running_key)
+            ):
+                update["key_signature"] = stated_key
             measures.append(measure.model_copy(update=update))
 
         # What is in force at the end of this page: its header, then any
@@ -96,6 +111,11 @@ def join_pages(readings: list[ScoreJson]) -> ScoreJson:
             printed = _stated_metre(measure.time_signature)
             if printed:
                 running_metre = printed
+        if _stated_key(page.key_signature):
+            running_key = _stated_key(page.key_signature)
+        for measure in page.measures:
+            if _stated_key(measure.key_signature):
+                running_key = _stated_key(measure.key_signature)
 
         # A repeat or a tempo change names a measure, so both move with them.
         repeats.extend(
@@ -176,6 +196,13 @@ def _stated_metre(value: str | None) -> str | None:
     measure is indistinguishable from `None` left there — and `"unknown"` is
     not.
     """
+    if value is None or value.strip().lower() == "unknown":
+        return None
+    return value
+
+
+def _stated_key(value: str | None) -> str | None:
+    """The key this page actually prints, or None — `"unknown"` is neither."""
     if value is None or value.strip().lower() == "unknown":
         return None
     return value

@@ -1,4 +1,4 @@
-import type { ScoreJson } from '../../data/types';
+import type { ScoreJson, ScoreMeasure } from '../../data/types';
 
 /**
  * The piece from one bar on, for a take that did not start at the beginning.
@@ -28,7 +28,7 @@ export function startFromMeasure(score: ScoreJson, measureNumber: number): Score
 
   return {
     ...score,
-    measures,
+    measures: [entryBar(score, measures[0]), ...measures.slice(1)],
     // Only the repeats the musician could actually have taken. One that spans
     // the entry bar goes too: starting mid-passage means playing straight on,
     // not jumping back to a sign never passed.
@@ -67,4 +67,37 @@ function carriedTempoChanges(
   // Moved to the entry bar rather than left where it was printed: a change
   // outside the score cannot be found by a walk over the measures.
   return [{ ...standing, measure_number: measureNumber }, ...after];
+}
+
+/** The three facts a bar can print that hold until the next bar prints one. */
+const STANDING_FIELDS = ['time_signature', 'clef', 'key_signature'] as const;
+
+/**
+ * The entry bar, carrying whatever metre, clef and key were in force at it.
+ *
+ * The same rule as the tempo change, one level down. A metre printed at bar 5
+ * rides on bar 5 and nowhere else, so a take entering at bar 8 lost it — the
+ * trimmed score's header still said 4/4 and nothing in it said otherwise, and
+ * `longRestCues`, which counts in the metre in force, counted the wrong beats.
+ * The clef and the key are the same shape and were lost the same way.
+ *
+ * Stamped only where the entry bar prints nothing of its own.
+ */
+function entryBar(score: ScoreJson, entry: ScoreMeasure): ScoreMeasure {
+  const before = (score.measures ?? []).filter(
+    (measure) => measure.measure_number < entry.measure_number,
+  );
+  const update: Partial<ScoreMeasure> = {};
+  for (const field of STANDING_FIELDS) {
+    if (entry[field] != null) {
+      continue;
+    }
+    const standing = [...before].reverse().find((measure) => measure[field] != null);
+    if (standing) {
+      // The three fields share a value type only in the loosest sense, and a
+      // typed assignment per field is what keeps the loop from lying about it.
+      (update as Record<string, unknown>)[field] = standing[field];
+    }
+  }
+  return Object.keys(update).length > 0 ? { ...entry, ...update } : entry;
 }

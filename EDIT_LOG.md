@@ -6,6 +6,143 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-02 — A key printed mid-piece is a change of key
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. The owner asked, of the
+scanner: *"Can the scanner also check for key changes"*. It could not — it read
+the first `<key>` on a page and threw every later one away.
+
+**Files:** `backend/app/services/score_schema.py`, `ocr/musicxml.py`,
+`ocr/pages.py`, `ocr/validate.py`, `ocr/confirm.py`, `services/start_at.py`,
+`fixtures/practice/start_at.json`, `mobile/src/data/types.ts`,
+`lib/notation/{keySignature,engrave,fromScore}.ts`,
+`components/notation/Stave.tsx`, `lib/score/startFrom.ts`,
+`data/sources/fixtures.ts`, plus tests.
+
+`Measure.key_signature` is the third field of the `time_signature` / `clef`
+shape and follows the same rule: a fact printed on one bar that holds until the
+next bar prints one. `ScoreJson.key_signature` stays the key the page *opens*
+in.
+
+**Measured, on the one real photograph here.**
+`fixtures/musicxml/audiveris_phone_photo.musicxml` turns from two flats to one
+sharp at bar 7. Before this, the app drew two flats on every system to the end
+of the page and printed an inline sharp on every F after the change — a
+signature saying one thing and the notes another, which no printed part does,
+and which a musician reading from it plays wrong. The timeline never cared;
+only the page was wrong, and the page is the half a musician reads.
+
+**Four rules, each of which is the feature doing harm if dropped:**
+
+1. **Compared by signature, not by name.** `Bb major` and `G minor` are the
+   same two flats. A file that renames the mode mid-piece has changed nothing
+   on the page, and stamping a change there would print a redundant signature.
+2. **Compared against the key in force, not against the header.** This is the
+   rule the clef already followed and the metre did *not*. A part that leaves
+   B-flat at bar 5 and returns at bar 20 states `Bb` at 20 — which equals the
+   header — so a header comparison recorded the departure and silently dropped
+   the return, leaving the rest of the page in the wrong key. **The same bug
+   was live in the metre** and is fixed in the same commit: 4/4 → 2/4 → 4/4
+   recorded only the 2/4, and `meters_in_force` then held 2/4 to the end,
+   reporting every correctly-read bar after the return as long.
+3. **A change to a key with no accidentals prints naturals.** Modern engraving
+   does not cancel the old signature when the new key has one of its own — a
+   reader sees one sharp where there were two flats and understands it. But a
+   change *to* C major or A minor prints nothing under that rule, and a change
+   that prints nothing is invisible: the flats would silently stop applying and
+   every B and E after the barline reads a semitone off. That case, and only
+   that case, cancels.
+4. **A change at a line break is announced at the end of the line before it.**
+   Otherwise the only announcement is the next system's head — and for a change
+   to C major that head prints *nothing at all*. This is what a printed part
+   does, and it is why the courtesy exists rather than being decoration.
+
+**The packing defect this uncovered, which is the part worth reading.** The
+courtesy is owed by whichever line ends up in front of the change, and that is
+not known until the break is chosen. My first attempt charged its room to the
+previous bar unconditionally. That is worse than not charging it at all: it
+makes the line break, and the break is what creates the courtesy it was paying
+for. `packSystems` now takes the room per bar and reserves it **one bar ahead**
+— a bar joins a line only if the line can still afford the courtesy for
+whatever comes next. Measured, with the reservation removed: a 262pt column
+took both opening bars onto line one and the courtesy pushed that line to
+**283pt**, notes past the right margin. It is conservative in one direction
+only — when the next bar turns out to fit, the line is up to one signature
+narrower than it could have been, which is the same direction the bar costs
+already round.
+
+**The corrector was about to be confidently wrong.** `what_this_piece_is`
+builds the prompt for re-reading bars that do not add up, and it named the key
+from the header. Now that a page can change key, asking about bar 7 of that
+photograph while saying *"this is in B-flat major"* gets every F back spelled
+`F3` where the page prints `F#3` — a bar that sums perfectly, in the wrong key,
+with a tie deleted by the pitch mismatch, which every downstream guard accepts
+because it adds up. It takes the key **at those bars** now, the way it already
+took the metre, and says nothing at all when the bars straddle a change rather
+than naming one of the two.
+
+**Starting a take partway in lost these facts entirely.** A metre, clef or key
+printed at bar 5 rides on bar 5 and nowhere else, so trimming to bar 8 dropped
+it: the trimmed score's header still said 4/4 and no bar in it said otherwise.
+`start_from_measure` and `startFromMeasure` now carry the last of each printed
+before the cut onto the entry bar, unless it prints one of its own — the same
+rule the standing tempo change already followed, one level down. Five cases
+added to `fixtures/practice/start_at.json`, so both languages are held to it.
+
+### The three-foot test — on the screenshot of the running build
+
+`/pieces/fixture-key-change-study/score`, a new fixture in B-flat turning to G
+at bar 5 and to C at bar 7. **First** the serif title, **second** the notation
+block reading as six lines of music on white paper, **third** the
+Notation/Original toggle. One dominant focal point, secondary information
+receding — unchanged composition, since this changed what the notation draws
+and not the screen around it.
+
+Read off the picture rather than off the layout: line 4 ends with a courtesy
+sharp before its closing barline, line 5 opens with one sharp in its head and
+does *not* repeat it, line 6 ends with a courtesy natural, and line 7 opens
+with a bare clef. Glyph census over the SVG: **8 flats, 3 sharps, 1 natural** —
+two flats on each of the four B-flat systems, one sharp on each of the two G
+systems plus the change itself, and the single natural cancelling G at bar 7.
+No inline accidental anywhere, which is the point: every altered pitch is
+spelled by the signature it is under.
+
+### Tests
+
+**mobile 1060 passed (85 files), `tsc --noEmit` clean. backend 1880 passed + 3
+xfailed.** 16 new cases in `keyChanges.test.ts` covering what a change prints,
+spelling across one, where it is drawn, the head per system, the courtesy, and
+the packer reservation; 6 in the importer (including the audiveris fixture at
+bar 7 and the metre-return regression); 5 in the page join; 2 in the corrector;
+5 shared start-at contract cases run from both languages.
+
+One assertion in `keyChanges.test.ts` was wrong when written and is corrected
+here rather than quietly relaxed: it asserted a system fitted 200pt, when a bar
+of four quarters behind a full head is 217pt wide *before* any key change. The
+engraver breaks only at barlines and `fitWidth` is what makes an unbreakable
+bar fit; asserting 200 was asserting something the engraver never promised, and
+it would have failed with the courtesy removed too.
+
+### Not done
+
+- **`Measure.key_signature` is not editable.** `MeasureEditScreen` corrects
+  durations, rests and pitch; a key change misread by OCR can only be fixed by
+  re-scanning. It preserves the field (it spreads the measure), so an edit does
+  not destroy one.
+- **No migration.** `score_json` is a JSON column and the field is additive with
+  a default, so every score already stored reads back as a page that never
+  changes key — which is the honest answer for a row that never recorded one.
+- The metadata line under the title still names clef, metre, tempo and BPM but
+  not the key. The signature is now drawn on the stave, so this was left alone
+  rather than widened on my own judgement.
+
+### Rollback
+
+`git revert`. The field is additive and every consumer treats absent as "no
+change here", so a revert loses the drawing and breaks no stored score.
+
+---
+
 ## 2026-09-01 — A chosen bar on a database that cannot store one
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`.
