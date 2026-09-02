@@ -6,6 +6,73 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-02 — "The piece you have left longest" depended on the order the rows came back in
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. No §2 gate: no screen, no
+composition, no copy — the same two sentences, chosen correctly.
+
+`lib/today.ts` decides both claims under Today's practice card, and had **no
+tests** while doing it. Two defects, one live and one latent, and both were
+found by writing the tests.
+
+### The tie was decided by row order
+
+`neglectedFrom` picked the neglected piece with a `reduce` keeping the largest
+`daysSincePracticed` — which counts whole **calendar** days. Two pieces worked
+in the same session tie exactly, and a strict `>` then keeps whichever the list
+returned first. Measured: `[morning, evening]` gives *Zebra study*,
+`[evening, morning]` gives *Alpha study*, same library, same day.
+
+The branch immediately above it sorts alphabetically **and says why** — *"so
+the same library always suggests the same piece rather than whichever the list
+happened to return first"* — so the rule was written down, applied to one of
+the two branches, and not to the other. This is the Insights defect from
+earlier today, one screen over: a claim about a musician's own practice that
+changes with the order rows arrive in.
+
+Fixed by sorting on the **instant**, which is the better answer rather than
+merely the deterministic one: of two pieces played on the same day, the one
+played at nine in the morning genuinely has been left longer than the one
+played at nine at night, where alphabetical would only have made an arbitrary
+choice repeatable. Title breaks a true tie, which needs two takes at the same
+millisecond.
+
+### `now` was accepted and half-honoured
+
+`suggestionsFor` takes a `now` so the claim is checkable without a clock. It
+chose the piece against that instant and then labelled it with
+`formatLastPracticed`, which read `new Date()` — so with `now` a year after the
+take, the row said **"Practiced yesterday"**.
+
+Harmless in the app, where both are the current time, and stated as such: this
+is a latent trap, not a live bug. It is worth closing anyway because it makes
+every test written against that parameter quietly wrong, which is how it was
+found. `formatLastPracticed` and `formatLastPracticedShort` now take `now` and
+default it, so no caller changed.
+
+While there: `formatLastPracticed`'s docstring still said *"Nothing behind the
+API supplies this yet"*. `api.ts` has said the opposite for some time —
+`lastPracticedAt` comes from `/v1/analyses` — so the note is deleted rather
+than left to mislead.
+
+### Tests
+
+Ten cases, none of which existed: the attention row naming its session count
+and getting "1 session" singular right, skipping a piece already named
+elsewhere, inventing no problem when everything is steady, never-practised
+beating long-ago, both tiebreaks, the clock, and the two nulls. Verified they
+catch the defects — with the fixes reverted, 3 of the 10 fail.
+
+### Verification
+
+mobile 1256 passed (109 files) · `tsc --noEmit` clean · web build clean ·
+walk PASS. `.env` restored with `diff -q`.
+
+**Rollback:** revert this commit; `format.ts`'s new parameters are optional and
+defaulted, so nothing outside `today.ts` depends on them.
+
+---
+
 ## 2026-09-02 — Today told a brand-new musician there was nothing to practice, above a warmup it was hiding from them
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. §2 gate: put to the owner
