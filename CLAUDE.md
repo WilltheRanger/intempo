@@ -112,7 +112,12 @@ wrong and the fix is composition, not more styling. Record the answer in
 - Batch 5 — Web frontend foundation ⏳ (shell done: design tokens locked, primitives, routing, auth/data plumbing; build + lint green. Live magic-link auth + E2E test pending Supabase keys — see `EDIT_LOG.md`. Not tagged `batch-5-done` yet.)
 - Batch 6 — Score capture flow (web) ⏳ (capture + OCR-review editor + save built, **rebuilt to the locked design system** 2026-07-28; build + lint green. Live upload→OCR→save + iPhone camera pending Supabase keys/device — see `EDIT_LOG.md`. Not tagged `batch-6-done`.)
 - Batch 7 — Recording + analysis/verdict flow (web) ⏳ (tempo/calibration/metronome, MediaRecorder panel, polling result screen with verdict/annotated-score/trend/per-note built, **rebuilt to the locked design system** 2026-07-28; build + lint green. Live mic→analysis loop pending mic/Supabase/backend + device — see `EDIT_LOG.md`. Not tagged `batch-7-done`.)
-- Batch 8+ — mostly UI/UX → see the §2 gate and the §3 design laws. **Tokens live in `frontend/src/styles/tokens.ts`; build to them and never re-type hexes.**
+- Batch 8+ — mostly UI/UX → see the §2 gate and the §3 design laws. **Build to
+  the tokens and never re-type hexes** — `mobile/src/design/` for the shipping
+  app, `frontend/src/styles/tokens.ts` for the legacy tree. This line named
+  only the second for a long time, and the two palettes share **no colour but
+  white** (measured 2026-09-02), so following it while working in `mobile/`
+  builds a screen in the wrong palette.
 
 ### Frontend UI rebuild (2026-07-28) — where the screens actually stand
 
@@ -135,7 +140,27 @@ running build.
 | Verdict | `/analyses/:id` | ⚠️ same — needs a real analysis to redesign properly |
 | Insights | `/insights` | ⏳ stub, held until real analyses exist to design against |
 
-Conventions the redesign established — **follow these, don't re-litigate them:**
+Conventions the redesign established — **follow these, don't re-litigate them.**
+
+> **Which tree these describe.** The list below was written for `frontend/`, and
+> its *design* decisions carry to `mobile/` unchanged — ochre as an accent and
+> never a surface, structure from hairline borders, serif used selectively,
+> sheet music as the visual identity, no developer or demo UI. Its *pointers* do
+> not, and a session following them literally in the shipping app would undo
+> working code. Measured 2026-09-02:
+>
+> | Convention says | `mobile/` actually uses |
+> |---|---|
+> | Icons are Phosphor; `lucide` was removed, do not reintroduce it | `lucide-react-native` throughout — no Phosphor package at all |
+> | `AppShell` with `layout/TopNav` at `lg`+ over a 1240px container | its own navigator; `ScreenContainer` and a tab bar |
+> | Motion is Framer Motion, imported from `motion/react` | React Native animation (`PressableScale`, `Animated`); neither `motion` nor `framer-motion` is a dependency |
+> | `/showcase` sources its swatches from `styles/tokens.ts` | there is no `/showcase` route |
+> | Screens read seed data from `lib/demo.ts` | `data/sources/fixtures.ts` |
+>
+> The caveat further down — *"The screen table above describes the legacy
+> `frontend/` tree"* — is attached to the table and is about transcription. This
+> list sits between the two and reads as binding for all UI work, which is how
+> it stayed wrong.
 
 1. **Icons are Phosphor** (`@phosphor-icons/react`). `lucide-react` was removed
    from `package.json` — do not reintroduce it.
