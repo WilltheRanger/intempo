@@ -75,6 +75,18 @@ def join_pages(readings: list[ScoreJson]) -> ScoreJson:
     #: prints one sharp in its own header and nowhere else. Compared by
     #: signature, because `Bb major` and `G minor` are the same two flats.
     running_key: str | None = None
+    #: The clef in force at the page break, the third of the same walk.
+    #:
+    #: A part that climbs into tenor at the foot of page one prints a C clef in
+    #: page two's own header and nowhere else, so without this the join records
+    #: page two as continuing in bass — and every note of it is then placed a
+    #: sixth off, which is worse than the metre bug above: that one misreported
+    #: bar lengths, this one moves the notes.
+    #:
+    #: Plain equality rather than an equivalence test: `_CLEF_BY_SIGN_LINE`
+    #: already folds the baritone F clef onto `bass`, so two names that differ
+    #: here really are two different clefs.
+    running_clef: str | None = None
 
     for page_number, page in enumerate(readings, start=1):
         offset = len(measures)
@@ -100,6 +112,14 @@ def join_pages(readings: list[ScoreJson]) -> ScoreJson:
                 and key_fifths(stated_key) != key_fifths(running_key)
             ):
                 update["key_signature"] = stated_key
+            if (
+                index == 0
+                and page_number > 1
+                and page.clef
+                and measure.clef is None
+                and page.clef != running_clef
+            ):
+                update["clef"] = page.clef
             measures.append(measure.model_copy(update=update))
 
         # What is in force at the end of this page: its header, then any
@@ -116,6 +136,11 @@ def join_pages(readings: list[ScoreJson]) -> ScoreJson:
         for measure in page.measures:
             if _stated_key(measure.key_signature):
                 running_key = _stated_key(measure.key_signature)
+        if page.clef:
+            running_clef = page.clef
+        for measure in page.measures:
+            if measure.clef:
+                running_clef = measure.clef
 
         # A repeat or a tempo change names a measure, so both move with them.
         repeats.extend(

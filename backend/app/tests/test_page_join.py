@@ -418,3 +418,53 @@ def test_an_unknown_key_on_an_inner_page_is_not_a_change() -> None:
     )
 
     assert all(m.key_signature is None for m in joined.measures)
+
+
+def test_a_page_in_another_clef_is_stamped_at_the_break() -> None:
+    """**The third of the same walk, and the one that moves the notes.**
+
+    A part that climbs into tenor at the foot of page one prints a C clef in
+    page two's own header and nowhere else. Without carrying it, the join
+    records page two as continuing in bass — and `staveScoreFor` then places
+    every note of it a sixth off. The metre version of this bug misreported bar
+    lengths; this one draws the wrong pitches.
+    """
+    joined = join_pages(
+        [
+            _page([_bar(1, 4), _bar(2, 4)], clef="bass"),
+            _page([_bar(1, 4), _bar(2, 4)], clef="tenor"),
+        ]
+    )
+
+    assert joined.clef == "bass"
+    assert [m.clef for m in joined.measures] == [None, None, "tenor", None]
+
+
+def test_a_page_continuing_in_the_same_clef_stamps_nothing() -> None:
+    """Every page of a bass part prints a bass clef in its own header. Stamping
+    each one would put a clef change at the top of every page — a change to the
+    clef already in force, which is the redundant-signature mistake one level
+    up."""
+    joined = join_pages(
+        [
+            _page([_bar(1, 4)], clef="bass"),
+            _page([_bar(1, 4)], clef="bass"),
+        ]
+    )
+
+    assert [m.clef for m in joined.measures] == [None, None]
+
+
+def test_a_page_returning_to_the_opening_clef_is_still_stamped() -> None:
+    """The trap the metre and the key both had: page three states bass, which
+    equals the *header*, so a header comparison drops the return and leaves the
+    rest of the part in tenor. Compared against what is in force."""
+    joined = join_pages(
+        [
+            _page([_bar(1, 4)], clef="bass"),
+            _page([_bar(1, 4)], clef="tenor"),
+            _page([_bar(1, 4)], clef="bass"),
+        ]
+    )
+
+    assert [m.clef for m in joined.measures] == [None, "tenor", "bass"]
