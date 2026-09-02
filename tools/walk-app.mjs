@@ -306,6 +306,67 @@ else if (!chose.some((l) => /Change part/i.test(l)))
   fail('the chosen part cannot be changed');
 else pass('the chosen part is shown back, and can be changed');
 
+console.log('\n## A refused microphone');
+
+/*
+ * **The most common thing that goes wrong on a first take**, and nothing
+ * exercised it. The two failures are different and the app must not confuse
+ * them: no device is a fact about the hardware, a refusal is a permission the
+ * musician can grant. Telling someone whose browser is blocking the microphone
+ * that their device hasn't got one sends them looking for the wrong thing.
+ *
+ * Stubbed rather than driven, because a headless browser cannot produce a real
+ * refusal: Playwright has no "deny" for a permission prompt, and the prompt
+ * simply never resolves. `NotAllowedError` is exactly what Chromium rejects
+ * with when someone taps "Don't Allow" — the branch this reaches is the same
+ * one a real refusal takes.
+ *
+ * This container has no audio input at all, so the *other* branch is the one
+ * that shows up unstubbed: `getUserMedia` rejects `NotFoundError` and the app
+ * correctly says no microphone is available. That is a true statement here and
+ * would be the wrong one for a refusal, which is the whole point of the pair.
+ */
+{
+  const denied = await browser.newPage({ viewport: { width: 390, height: 844 } });
+  denied.on('pageerror', (e) => errors.push(e.message));
+  await denied.addInitScript(() => {
+    navigator.mediaDevices.getUserMedia = () =>
+      Promise.reject(new DOMException('Permission denied', 'NotAllowedError'));
+  });
+  await denied.goto(`${BASE}/pieces/fixture-bach-bwv1001/record`, {
+    waitUntil: 'domcontentloaded',
+    timeout: 30000,
+  });
+  await denied
+    .getByText('Set tempo & record')
+    .first()
+    .click({ timeout: 15000 })
+    .catch(() => {});
+  await denied.getByRole('button', { name: /Start recording/i }).first().click({ timeout: 15000 });
+
+  const said = await (async () => {
+    const deadline = Date.now() + 15000;
+    for (;;) {
+      const lines = await denied.evaluate(() =>
+        [...document.querySelectorAll('*')]
+          .filter((el) => el.children.length === 0 && (el.textContent ?? '').trim())
+          .map((el) => el.textContent.trim()),
+      );
+      const hit = lines.find((l) => /microphone/i.test(l));
+      if (hit || Date.now() > deadline) return hit ?? null;
+      await denied.waitForTimeout(150);
+    }
+  })();
+
+  if (said === null) fail('a refused microphone said nothing at all');
+  else if (/no microphone is available/i.test(said))
+    fail(`a refused microphone was reported as a missing one — "${said}"`);
+  else if (!/blocking|allow/i.test(said))
+    fail(`a refused microphone said "${said}", which names no way out`);
+  else pass(`a refused microphone names the way out: "${said.slice(0, 60)}…"`);
+  await denied.close();
+}
+
 console.log('\n## Page errors');
 if (errors.length === 0) pass('none across the whole walk');
 else for (const e of errors) fail(`page error: ${e.slice(0, 120)}`);
