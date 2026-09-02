@@ -1,7 +1,6 @@
 import { getAnalysis, listAnalyses } from '../api/analyses';
 import { submitTake, TakeSubmissionError, waitForAnalysis } from '../practice/submitTake';
 import { getMe } from '../api/me';
-import { ApiError } from '../api/client';
 import { createScore, deleteScore, getScore, listScores, updateScore } from '../api/scores';
 import { getAuthAvatarUrl } from '../auth/session';
 import { stableImage } from '../../lib/imageSource';
@@ -21,7 +20,6 @@ import type {
   ScoreResponse,
   TakeResult,
 } from '../types';
-import { PIECE_HAS_RECORDINGS } from './types';
 import type {
   InsightsSource,
   MusicianSource,
@@ -194,17 +192,10 @@ export const apiPieceSource: PieceSource = {
   },
 
   async deletePiece(id) {
-    try {
-      await deleteScore(id);
-    } catch (cause) {
-      // 409 is the "this piece has takes" rule. The backend's sentence is
-      // written for an API consumer — see `PIECE_HAS_RECORDINGS`. Everything
-      // else is a genuine failure and keeps its own message.
-      if (cause instanceof ApiError && cause.status === 409) {
-        throw new Error(PIECE_HAS_RECORDINGS);
-      }
-      throw cause;
-    }
+    // The endpoint owns the whole lifecycle: assignments, analyses, score row,
+    // recording audio and any retained page image. A failure is retryable and
+    // already phrased for the musician by the API error layer.
+    await deleteScore(id);
   },
 };
 

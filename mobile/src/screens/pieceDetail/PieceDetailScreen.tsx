@@ -146,9 +146,8 @@ export function PieceDetailScreen() {
       // to return to it for.
       goBack();
     } catch (cause) {
-      // Nearly always the "this piece has takes" rule, which is a fact about
-      // the musician's history rather than a failure — so it stays on screen
-      // instead of vanishing with the dialog.
+      // The backend makes each cleanup step safe to repeat. Keep the failure
+      // visible on the piece so the musician can retry the same action.
       setError(
         cause instanceof Error ? cause.message : "Couldn't delete that piece.",
       );
@@ -513,8 +512,8 @@ export function PieceDetailScreen() {
           label="Remove from library"
           description={
             piece.lastPracticedAt
-              ? 'Only possible before a piece has been recorded.'
-              : 'This piece has no recordings, so it can be removed.'
+              ? 'Also removes its practice history and recordings.'
+              : 'Permanently removes this piece from your library.'
           }
           onPress={() => {
             setMenuVisible(false);
@@ -526,13 +525,13 @@ export function PieceDetailScreen() {
 
       <ConfirmDialog
         visible={confirmingDelete}
-        title="Remove this piece?"
-        // Accurate whichever way this goes. The old line — "nothing you have
-        // recorded is deleted" — was true of a successful removal and
-        // bewildering in front of the refusal, which is exactly the case a
-        // piece with recordings is heading for.
-        message={`${piece.title} goes out of your library. This cannot be undone.`}
-        confirmLabel="Remove"
+        title="Delete this piece?"
+        message={
+          piece.lastPracticedAt
+            ? `${piece.title}, its practice history, and its recordings will be permanently deleted.`
+            : `${piece.title} will be permanently deleted from your library.`
+        }
+        confirmLabel="Delete piece"
         onConfirm={() => void confirmDelete()}
         onCancel={() => setConfirmingDelete(false)}
       />
