@@ -21,6 +21,10 @@ import {
   signIn,
   signUp,
 } from '../../data/auth/session';
+import {
+  clearAuthRedirectNotice,
+  useAuthRedirectNotice,
+} from '../../data/auth/redirectNotice';
 import { MIN_TOUCH_TARGET, spacing } from '../../design';
 import {
   describeAuthError,
@@ -76,16 +80,19 @@ export function AuthScreen() {
   const [resent, setResent] = useState(false);
   const [legalDocument, setLegalDocument] =
     useState<LegalDocument['id'] | null>(null);
+  const redirectNotice = useAuthRedirectNotice();
 
   const showPassword = needsPassword(mode);
   const copy = COPY[mode];
 
   function go(next: AuthMode) {
+    clearAuthRedirectNotice();
     setMode(next);
     setError(null);
   }
 
   async function submit() {
+    clearAuthRedirectNotice();
     const complaint = validate(mode, email, password);
     if (complaint) {
       setError(complaint);
@@ -375,13 +382,13 @@ export function AuthScreen() {
             </View>
           ) : null}
 
-          {error ? (
+          {(error ?? redirectNotice) ? (
             <Text
               variant="metadataSmall"
               color="textSecondary"
               style={styles.error}
             >
-              {error}
+              {error ?? redirectNotice}
             </Text>
           ) : null}
 
