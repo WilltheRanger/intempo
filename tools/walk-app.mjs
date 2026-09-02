@@ -212,6 +212,39 @@ if (afterSave.some((l) => /needs the backend|sample data/i.test(l)))
   pass('saving without a backend is refused in words, not silently');
 else fail('saving without a backend did not say so');
 
+/*
+ * **A file with more than one part must ask, and must not guess.**
+ *
+ * `violin_duo.musicxml` holds Violin I and Violin II **in the same clef**, so
+ * nothing in the notation distinguishes them — the only honest source is the
+ * name the file gives each part, and the only honest way to pick one is to ask.
+ * A solo part must not see this question at all, which the single-part leg
+ * above covers by getting straight to Title.
+ */
+await open('add/notation');
+const duoChooser = page.waitForEvent('filechooser', { timeout: 10000 });
+await page.getByRole('button', { name: /Choose a file/i }).first().click();
+(await duoChooser).setFiles(
+  new URL('../fixtures/musicxml/violin_duo.musicxml', import.meta.url).pathname,
+);
+await page.waitForTimeout(2500);
+
+const asked = await leaves();
+if (!asked.some((l) => /Which part do you play/i.test(l)))
+  fail('a two-part file did not ask which part');
+else if (!(asked.includes('Violin I') && asked.includes('Violin II')))
+  fail(`both parts were not offered: ${JSON.stringify(asked)}`);
+else pass('a two-part file asks which part, and offers both');
+
+await page.getByRole('button', { name: /Violin II/ }).first().click();
+await page.waitForTimeout(1500);
+const chose = await leaves();
+if (!chose.some((l) => l.includes('Violin II')))
+  fail('the chosen part is not shown back');
+else if (!chose.some((l) => /Change part/i.test(l)))
+  fail('the chosen part cannot be changed');
+else pass('the chosen part is shown back, and can be changed');
+
 console.log('\n## Page errors');
 if (errors.length === 0) pass('none across the whole walk');
 else for (const e of errors) fail(`page error: ${e.slice(0, 120)}`);

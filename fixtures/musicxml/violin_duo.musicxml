@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Two parts, so the part picker has something to be driven against.
+
+  Every other MusicXML fixture here holds exactly one part — `bass_excerpt` a
+  Cello, `orchestral_part` a String Bass — so `ImportFile`'s "Which part do you
+  play?" step had no fixture at all, and a state with no fixture is a state
+  nobody has looked at. That has cost this project five times, per CLAUDE.md.
+
+  **Both parts are in treble clef on purpose.** A duo whose parts sit in
+  different clefs can be told apart by the notation, which quietly lets a wrong
+  implementation look right; Violin I and Violin II cannot be told apart by
+  anything except the name the file gives them. That is the case the rule is
+  for — the instrument must come from `<part-name>`, never from the clef,
+  because `submitTake` sends it and `analyze()` acts on it.
+
+  The music is deliberate rather than arbitrary: each part fills 4/4 exactly in
+  both bars, so a picker that returned the wrong part would still produce a
+  score that adds up, and only the pitches would betray it. Violin I climbs
+  G-A-B to a held C; Violin II repeats E and then rests.
+-->
+<score-partwise version="4.0">
+  <work><work-title>Duo for two violins</work-title></work>
+  <identification>
+    <creator type="composer">Anon.</creator>
+  </identification>
+  <part-list>
+    <score-part id="P1"><part-name>Violin I</part-name></score-part>
+    <score-part id="P2"><part-name>Violin II</part-name></score-part>
+  </part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes>
+        <divisions>4</divisions>
+        <key><fifths>0</fifths><mode>major</mode></key>
+        <time><beats>4</beats><beat-type>4</beat-type></time>
+        <clef><sign>G</sign><line>2</line></clef>
+      </attributes>
+      <note><pitch><step>G</step><octave>4</octave></pitch><duration>8</duration><type>half</type></note>
+      <note><pitch><step>A</step><octave>4</octave></pitch><duration>4</duration><type>quarter</type></note>
+      <note><pitch><step>B</step><octave>4</octave></pitch><duration>4</duration><type>quarter</type></note>
+    </measure>
+    <measure number="2">
+      <note><pitch><step>C</step><octave>5</octave></pitch><duration>16</duration><type>whole</type></note>
+    </measure>
+  </part>
+  <part id="P2">
+    <measure number="1">
+      <attributes>
+        <divisions>4</divisions>
+        <key><fifths>0</fifths><mode>major</mode></key>
+        <time><beats>4</beats><beat-type>4</beat-type></time>
+        <clef><sign>G</sign><line>2</line></clef>
+      </attributes>
+      <note><pitch><step>E</step><octave>4</octave></pitch><duration>4</duration><type>quarter</type></note>
+      <note><pitch><step>E</step><octave>4</octave></pitch><duration>4</duration><type>quarter</type></note>
+      <note><pitch><step>E</step><octave>4</octave></pitch><duration>4</duration><type>quarter</type></note>
+      <note><pitch><step>E</step><octave>4</octave></pitch><duration>4</duration><type>quarter</type></note>
+    </measure>
+    <measure number="2">
+      <note><pitch><step>D</step><octave>4</octave></pitch><duration>8</duration><type>half</type></note>
+      <note><rest/><duration>8</duration><type>half</type></note>
+    </measure>
+  </part>
+</score-partwise>
