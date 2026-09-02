@@ -6,6 +6,68 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-02 — The three unapplied migrations, applied
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. No code changed. This
+records an act on the production database, which is exactly the kind of thing
+that has been happening here invisibly — `readiness.py` was written two commits
+ago *because* shipping code and applying its migration are separate acts and
+nothing noticed the gap.
+
+**What was wrong.** `supabase_migrations` on the `intempo-dev` project stopped
+at **012**. Migrations 013, 014 and 015 had been written, reviewed and merged,
+and never run. The consequences were live:
+
+- **015** — `analyses.from_measure` did not exist, so the start-bar picker,
+  which the owner asked for and which is merged to `main`, refused every take
+  with *"Recording from a chosen bar isn't available on this server yet. Start
+  the take from bar 1."* The feature was shipped and dead.
+- **014** — no `pending_uploads` table, so the sweeper swept nothing and the
+  orphaned-photograph hole documented in CLAUDE.md since 2026-08-24 was still
+  wide open: an upload whose save failed was unreachable forever, including to
+  the musician who took it.
+- **013** — no consent column and no `training_corrections`, so every
+  correction a musician made to a misread bar was still being thrown away.
+
+**Checked before, not assumed.** The owner's note was that codex had been
+working and deploying, so the schema was read first: none of the four columns
+and neither table existed, and codex had applied no DDL of its own. `main`'s
+copies of all three migrations are fully idempotent (`ADD COLUMN IF NOT
+EXISTS`, `CREATE TABLE IF NOT EXISTS`, guarded `CREATE POLICY`), so they were
+applied as written rather than hand-edited.
+
+**Additive only.** Four nullable columns, two tables, two indexes, two RLS
+policies. No `DROP`, no rewrite, no default backfill. Row counts across the
+change: users 1, scores 25, analyses 0 — unchanged.
+
+### Verification
+
+Not just the three migrations' own objects: `REQUIRED_COLUMNS` and
+`REQUIRED_TABLES` from `readiness.py` were extracted and **all 15 columns and
+both tables** checked against the live database in one query. It returns zero
+missing rows, so `/v1/ready` now reports a complete schema rather than naming
+files for somebody to run by hand.
+
+### Not done
+
+- **The `intempo` project (paused) was left alone.** The owner named
+  `intempo-dev` as the target. If `intempo` is ever unpaused as production it
+  will need the same three.
+- Nothing here was exercised through the running app — the evidence is the
+  schema itself, not a take recorded from bar 8.
+- `Cloudflare Pages: front` and `i` are still red on every PR. They are stale
+  projects pointed at the legacy `frontend/` tree and need deleting or
+  reconfiguring in the Cloudflare dashboard, which is account configuration.
+
+### Rollback
+
+`ALTER TABLE … DROP COLUMN` and `DROP TABLE` for the six objects, but there is
+no reason to: every one is nullable or empty, and the code reads all of them
+defensively (`readiness.py` documents that the 013 columns "degrade quietly on
+purpose").
+
+---
+
 ## 2026-09-02 — Help no longer calls a partly broken service connected
 
 **What changed**
