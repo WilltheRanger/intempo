@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import page from '../../public/index.html?raw';
 import manifestSource from '../../public/manifest.webmanifest?raw';
+import headers from '../../public/_headers?raw';
 
 interface WebManifest {
   name: string;
@@ -44,5 +45,34 @@ describe('installable web app packaging', () => {
       type: 'image/png',
       purpose: 'any',
     });
+  });
+});
+
+
+describe('public browser boundaries', () => {
+  it('cannot be framed by another site or retargeted with a base tag', () => {
+    expect(headers).toContain("frame-ancestors 'none'");
+    expect(headers).toContain("base-uri 'self'");
+    expect(headers).toContain('X-Frame-Options: DENY');
+  });
+
+  it('keeps the scanner and recorder available only to InTempo', () => {
+    expect(headers).toContain('camera=(self)');
+    expect(headers).toContain('microphone=(self)');
+    expect(headers).not.toContain('camera=()');
+    expect(headers).not.toContain('microphone=()');
+  });
+
+  it('turns off browser capabilities the product never requests', () => {
+    for (const capability of ['geolocation=()', 'payment=()', 'usb=()']) {
+      expect(headers).toContain(capability);
+    }
+  });
+
+  it('prevents MIME guessing and limits cross-site referrer detail', () => {
+    expect(headers).toContain('X-Content-Type-Options: nosniff');
+    expect(headers).toContain(
+      'Referrer-Policy: strict-origin-when-cross-origin',
+    );
   });
 });
