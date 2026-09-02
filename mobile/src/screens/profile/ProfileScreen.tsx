@@ -57,10 +57,12 @@ export function ProfileScreen() {
   const [signingOut, setSigningOut] = useState(false);
   const [signOutError, setSignOutError] = useState<string | null>(null);
   const saveProfile = useUpdateProfile();
+  const saveConsent = useUpdateProfile();
   const uploadAvatar = useUploadAvatar();
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const [pendingPhoto, setPendingPhoto] = useState<ProfilePhotoSelection | null>(null);
   const [photoError, setPhotoError] = useState<string | null>(null);
+  const [consentError, setConsentError] = useState<string | null>(null);
   const photoBusy = saveProfile.isPending || uploadAvatar.isPending;
 
   /**
@@ -122,6 +124,22 @@ export function ProfileScreen() {
     };
     setPendingPhoto(selection);
     await persistPhoto(selection);
+  }
+
+  async function changeTrainingConsent(trainingConsent: boolean) {
+    if (saveConsent.isPending) {
+      return;
+    }
+    setConsentError(null);
+    try {
+      await saveConsent.mutateAsync({ training_consent: trainingConsent });
+    } catch (cause) {
+      setConsentError(
+        cause instanceof Error
+          ? cause.message
+          : 'That privacy setting could not be saved. Try again.',
+      );
+    }
   }
 
   async function handleSignOut() {
@@ -334,9 +352,26 @@ export function ProfileScreen() {
       <SectionHeader label="Data & privacy" style={styles.section} />
       <Card padded={false}>
         <View style={styles.rows}>
+          <ToggleRow
+            label="Help improve score reading"
+            description="Allow corrected bars and their sheet-music photos to be kept for improving the reader. Turning this off deletes what was kept."
+            value={musician.trainingConsent}
+            onChange={(value) => void changeTrainingConsent(value)}
+            divided={false}
+            disabled={saveConsent.isPending}
+          />
+          {consentError ? (
+            <Text
+              variant="metadataSmall"
+              color="textSecondary"
+              accessibilityLiveRegion="polite"
+              style={styles.consentError}
+            >
+              {consentError}
+            </Text>
+          ) : null}
           <LinkRow
             label="Download my data"
-            divided={false}
             onPress={() => navigation.navigate('ExportData')}
           />
           <LinkRow
@@ -484,6 +519,9 @@ const styles = StyleSheet.create({
   },
   signOut: {
     marginTop: spacing['2xl'],
+  },
+  consentError: {
+    paddingBottom: spacing.md,
   },
   error: {
     marginTop: spacing.md,
