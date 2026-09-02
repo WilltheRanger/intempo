@@ -201,3 +201,49 @@ describe('judgeAggregate', () => {
     });
   });
 });
+
+describe('who is allowed to word a tendency', () => {
+  /**
+   * **`formatTendency` had one legitimate caller and grew a second.**
+   *
+   * The headline wording used to be a plain lookup from a verdict, so any
+   * screen could call it. It is a *rule* now — the direction is only the
+   * finding when the wandering is not — and a screen reaching past
+   * `readTendency` gets the old answer with none of that.
+   *
+   * Not hypothetical: Insights was fixed and **Today was not**, so for one
+   * commit a musician read "Your tempo wanders" on one tab and "You tend to
+   * rush" on the next, about the same thirty days. Found by driving the app in
+   * a browser, which is not something that happens on every change.
+   *
+   * The guard is that both functions are **module-private here** rather than
+   * exported from `lib/tempo.ts`, so a third caller does not compile. That is
+   * worth more than the source-scanning test written first: this one cannot be
+   * out of date, cannot be skipped, and reports at the call site.
+   *
+   * What is left to check is that the monopoly is real — that `readTendency`
+   * actually answers the same question, so removing the export took nothing
+   * away that a caller legitimately needed.
+   */
+  it('answers the plain-direction case that callers used to ask directly', () => {
+    for (const [meanDeviationPct, verdict, expected] of [
+      [12.4, 'rushing', 'You tend to rush'],
+      [-12.4, 'dragging', 'You tend to drag'],
+      [7, 'slight_rush', 'You drift slightly ahead'],
+      [-7, 'slight_drag', 'You drift slightly behind'],
+      [1, 'on_tempo', 'You play steadily'],
+    ] as const) {
+      expect(
+        readTendency({
+          sessions: 5,
+          meanDeviationPct,
+          // Equal to the bias: a musician who drifts one way consistently, so
+          // no wandering, so the direction is the finding.
+          spreadPct: Math.abs(meanDeviationPct),
+          verdict,
+          tolerance: TOLERANCE,
+        }).title,
+      ).toBe(expected);
+    }
+  });
+});

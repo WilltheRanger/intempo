@@ -469,6 +469,15 @@ there works differently as of 2026-08-24:
   bottom, and "Recent sessions" ran a *single take* through `formatTendency`,
   whose own comment says one recording cannot see a habit — rendering
   "Today · 96 BPM · You tend to rush".
+  **`formatTendency` and `formatTendencyDetail` are module-private to
+  `lib/insights/tendency.ts`** and must stay that way. They were exported from
+  `lib/tempo.ts` while the headline was a lookup from a verdict, which was
+  fine; once it became a rule, the export was a way to get the old answer with
+  none of it. Insights was fixed and **Today was not** — for one commit a
+  musician read "Your tempo wanders" on one tab and "You tend to rush" on the
+  next, about the same thirty days, and it was found by driving the app in a
+  browser rather than by any test. Ask through `readTendency`; a third caller
+  no longer compiles.
 
 - **Onboarding is one screen, all three answers are required, and the gate
   fails open.** Name, photograph and instrument — the owner's call on

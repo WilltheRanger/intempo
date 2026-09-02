@@ -2,8 +2,6 @@ import type { Band, Direction, Tolerance, Verdict } from '../../data/types';
 import {
   bandFor,
   directionFor,
-  formatTendency,
-  formatTendencyDetail,
   spreadIsBeyondTolerance,
   verdictFor,
 } from '../tempo';
@@ -42,6 +40,52 @@ import {
  * there is no React Native testing library here (`DECISIONS.md`, 2026-08-24),
  * so a rule written inside a `.tsx` is a rule nothing checks.
  */
+const TENDENCY_HEADLINES: Record<Verdict, string> = {
+  on_tempo: 'You play steadily',
+  slight_rush: 'You drift slightly ahead',
+  rushing: 'You tend to rush',
+  slight_drag: 'You drift slightly behind',
+  dragging: 'You tend to drag',
+};
+
+/**
+ * The headline for a whole window of practice — Insights, not one take.
+ *
+ * "You tend to..." is a claim about a habit, and a habit needs more than one
+ * recording to observe. A single take gets `formatTakeVerdict` instead.
+ *
+ * A description of what happened, not encouragement about it — the spec is
+ * explicit that words carry the verdict, and a musician can tell the
+ * difference between a diagnosis and a compliment.
+ */
+function formatTendency(verdict: Verdict): string {
+  return TENDENCY_HEADLINES[verdict] ?? TENDENCY_HEADLINES.on_tempo;
+}
+
+const TENDENCY_DETAIL: Record<Verdict, string> = {
+  on_tempo: 'you held the beat',
+  slight_rush: 'you sat a little ahead of the beat',
+  rushing: 'you were usually ahead of the beat',
+  slight_drag: 'you sat a little behind the beat',
+  dragging: 'you were usually behind the beat',
+};
+
+/**
+ * "Across 34 sessions, you were usually ahead of the beat."
+ *
+ * No timing figure: the spec keeps deviations out of production copy and
+ * leaves the magnitude to the bar. Session counts aren't a timing
+ * measurement, so they stay.
+ */
+function formatTendencyDetail(
+  verdict: Verdict,
+  sessions: number,
+): string {
+  const count = sessions === 1 ? '1 session' : `${sessions} sessions`;
+  const detail = TENDENCY_DETAIL[verdict] ?? TENDENCY_DETAIL.on_tempo;
+  return `Across ${count}, ${detail}.`;
+}
+
 export interface TendencyReading {
   /** The screen's title. The finding, which is what this screen leads with. */
   title: string;

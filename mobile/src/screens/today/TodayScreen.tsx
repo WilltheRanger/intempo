@@ -50,7 +50,8 @@ import {
   practiceLessonFor,
   type PracticeLesson,
 } from '../../lib/practiceLesson';
-import { formatTempo, formatTendency } from '../../lib/tempo';
+import { formatTempo, formatVerdict } from '../../lib/tempo';
+import { readTendency } from '../../lib/insights/tendency';
 import { suggestionsFor } from '../../lib/today';
 import type { AddPieceOption, TabScreenNavigation } from '../../navigation/types';
 import { WarmupPanel } from './WarmupPanel';
@@ -397,7 +398,11 @@ export function TodayScreen() {
                       detail={joinMetadata([
                         formatLastPracticedShort(recentTake.recordedAt),
                         formatTempo(recentTake.targetBpm, recentTake.tempoBeatUnit),
-                        formatTendency(recentTake.verdict),
+                        // One recording, so `formatVerdict` — the tendency
+                        // wording is a claim about a habit and its own comment
+                        // says a single take cannot see one. This rendered as
+                        // "Today · 96 BPM · You tend to rush".
+                        formatVerdict(recentTake.verdict),
                       ])}
                       onPress={() =>
                         navigation.navigate('Verdict', {
@@ -495,7 +500,12 @@ export function TodayScreen() {
               <View style={styles.section}>
                 <SectionHeader label="Practice snapshot" />
                 <TodayRow
-                  title={formatTendency(summary.verdict)}
+                  // **The same reading Insights shows, from the same module.**
+                  // `formatTendency(summary.verdict)` is the aggregate's
+                  // direction and nothing else, so a musician whose practice
+                  // wanders read "Your tempo wanders" on one tab and "You tend
+                  // to rush" on the next, about the same thirty days.
+                  title={readTendency(summary).title}
                   detail={summaryDetail}
                   onPress={() => navigation.navigate('Insights')}
                   last
