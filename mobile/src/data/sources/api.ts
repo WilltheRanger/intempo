@@ -1,9 +1,6 @@
 import { getAnalysis, listAnalyses } from '../api/analyses';
 import { submitTake, TakeSubmissionError, waitForAnalysis } from '../practice/submitTake';
-import {
-  forgetPendingAnalysis,
-  rememberPendingAnalysis,
-} from '../practice/pendingAnalysis';
+import { rememberPendingAnalysis } from '../practice/pendingAnalysis';
 import { getMe } from '../api/me';
 import { createScore, deleteScore, getScore, listScores, updateScore } from '../api/scores';
 import { getAuthAvatarUrl } from '../auth/session';
@@ -611,7 +608,6 @@ export const apiTakeSubmissionSource: TakeSubmissionSource = {
     });
     try {
       await waitForAnalysis(submitted.analysisId);
-      await forgetPendingAnalysis(submitted.analysisId);
       return submitted.analysisId;
     } catch (cause) {
       // Enqueue already succeeded. Keep its id so "Send it again" resumes the
