@@ -28,6 +28,9 @@ import {
   validate,
   type AuthMode,
 } from './authErrors';
+import { LegalDocumentView } from '../legal/LegalScreen';
+import { SIGN_UP_DOCUMENTS } from './signUpDocuments';
+import type { LegalDocument } from '../../lib/legal';
 
 /** What the screen is waiting on the musician's inbox for. */
 type Sent = 'confirmation' | 'reset' | 'maybeExisting' | 'magicLink';
@@ -71,6 +74,8 @@ export function AuthScreen() {
   const [error, setError] = useState<string | null>(null);
   const [sent, setSent] = useState<Sent | null>(null);
   const [resent, setResent] = useState(false);
+  const [legalDocument, setLegalDocument] =
+    useState<LegalDocument['id'] | null>(null);
 
   const showPassword = needsPassword(mode);
   const copy = COPY[mode];
@@ -138,6 +143,16 @@ export function AuthScreen() {
     } finally {
       setBusy(false);
     }
+  }
+
+  if (legalDocument) {
+    return (
+      <LegalDocumentView
+        documentId={legalDocument}
+        onBack={() => setLegalDocument(null)}
+        backLabel="Back to create account"
+      />
+    );
   }
 
   if (sent) {
@@ -332,6 +347,34 @@ export function AuthScreen() {
             </Pressable>
           ) : null}
 
+          {mode === 'signUp' ? (
+            <View style={styles.legal}>
+              <Text variant="metadataSmall" color="textSecondary">
+                Before creating an account, you can review how InTempo handles
+                your data and the terms for using it.
+              </Text>
+              <View style={styles.legalLinks}>
+                {SIGN_UP_DOCUMENTS.map((document) => (
+                  <Pressable
+                    key={document.id}
+                    onPress={() => setLegalDocument(document.id)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Read ${document.label}`}
+                    style={({ pressed }) => [
+                      styles.target,
+                      styles.legalLink,
+                      pressed && styles.switchPressed,
+                    ]}
+                  >
+                    <Text variant="sectionAction" color="textPrimary">
+                      {document.label}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+            </View>
+          ) : null}
+
           {error ? (
             <Text
               variant="metadataSmall"
@@ -424,6 +467,18 @@ const styles = StyleSheet.create({
   forgot: {
     marginTop: spacing.md,
     alignSelf: 'flex-start',
+  },
+  legal: {
+    marginTop: spacing.xl,
+  },
+  legalLinks: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.lg,
+    marginTop: spacing.xs,
+  },
+  legalLink: {
+    justifyContent: 'center',
   },
   error: {
     marginTop: spacing.lg,
