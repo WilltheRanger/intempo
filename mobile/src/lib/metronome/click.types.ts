@@ -1,3 +1,5 @@
+import type { PlannedBeat } from './plan';
+
 /**
  * The audible metronome, shared by the native and web implementations.
  *
@@ -16,6 +18,11 @@ export interface ClickTrackOptions {
   bpm: number;
   /** From `beatsPerBar`. Null means every beat is struck the same. */
   perBar: number | null;
+  /**
+   * Exact pulse times for a changing-meter score. Omitted by callers that need
+   * the legacy indefinite fixed metronome.
+   */
+  beats?: readonly PlannedBeat[];
 }
 
 export interface ClickTrack {
