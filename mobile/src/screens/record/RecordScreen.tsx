@@ -47,6 +47,7 @@ import {
   tempoUnitLabel,
 } from '../../lib/tempo';
 import { metronomePulse, monotonicNow, useMetronome } from '../../lib/metronome';
+import { buildMetronomePlan } from '../../lib/metronome/plan';
 import {
   longRestCues,
   restCueAt,
@@ -492,7 +493,11 @@ export function RecordScreen() {
   const entryTimeSignature = openingTimeSignature(takeScore);
   const pulse = metronomePulse(entryTimeSignature);
   const perBar = pulse?.pulsesPerBar ?? null;
-  const countInBeats = perBar ?? 4;
+  const metronomePlan = useMemo(
+    () => buildMetronomePlan(takeScore, targetBpm),
+    [takeScore, targetBpm],
+  );
+  const countInBeats = metronomePlan.countInPulses;
 
   const restCues = useMemo(
     () => longRestCues(takeScore, skipRests ? 1 : undefined),
@@ -508,6 +513,7 @@ export function RecordScreen() {
     mode: metronomeMode,
     bpm: targetBpm,
     timeSignature: entryTimeSignature,
+    beatPlan: metronomePlan.beats,
     running: capturing,
     countingIn,
   });

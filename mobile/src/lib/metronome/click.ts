@@ -3,7 +3,7 @@ import { File, Paths } from 'expo-file-system';
 
 import { prepareForPlayback } from '../audio/session';
 import { encodeWavBytes } from '../audio/wav';
-import { startBeatClock } from './clock';
+import { startBeatClock, startPlannedBeatClock } from './clock';
 import type { ClickTrack, ClickTrackOptions } from './click.types';
 
 /**
@@ -60,7 +60,7 @@ function writeClick(name: string, frequency: number): File {
   return target;
 }
 
-export function startClicks({ bpm, perBar }: ClickTrackOptions): ClickTrack {
+export function startClicks({ bpm, perBar, beats }: ClickTrackOptions): ClickTrack {
   let stopped = false;
   let clock: { stop: () => void } | null = null;
   let files: File[] = [];
@@ -103,23 +103,22 @@ export function startClicks({ bpm, perBar }: ClickTrackOptions): ClickTrack {
     const accent = new AudioModule.AudioPlayer({ uri: accentFile.uri }, 100, false, 0);
     players = [plain, accent] as unknown as typeof players;
 
-    clock = startBeatClock({
-      bpm,
-      perBar,
-      onBeat: (beat) => {
-        if (stopped) {
-          return;
+    const strike = (beat: { downbeat: boolean }) => {
+      if (stopped) {
+        return;
+      }
+      const player = beat.downbeat ? accent : plain;
+      // Rewind before striking: a player left at the end of its file plays
+      // nothing, and at these lengths the previous click has long finished.
+      void player.seekTo(0).then(() => {
+        if (!stopped) {
+          player.play();
         }
-        const player = beat.downbeat ? accent : plain;
-        // Rewind before striking: a player left at the end of its file plays
-        // nothing, and at these lengths the previous click has long finished.
-        void player.seekTo(0).then(() => {
-          if (!stopped) {
-            player.play();
-          }
-        });
-      },
-    });
+      });
+    };
+    clock = beats
+      ? startPlannedBeatClock({ beats, onBeat: strike })
+      : startBeatClock({ bpm, perBar, onBeat: strike });
   } catch {
     // A render or write failure must not take a take down with it. The
     // metronome is an aid; the recording is the point.
