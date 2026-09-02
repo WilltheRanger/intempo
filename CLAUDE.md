@@ -651,7 +651,20 @@ actually made here.
   deleted first leaks its object silently, which is the same bug one level
   down). `record` never raises — failing the upload because the bookkeeping
   failed costs the musician their page, which is the thing the bookkeeping
-  exists to protect. **Migration 014 is applied on `intempo-dev` and nowhere
+  exists to protect — `keys_for_user` is the one function there that does
+  raise, and its docstring says why.
+  **Account deletion is the fourth place these keys live, and it read three of
+  them.** `DELETE /v1/me` inventoried `users`, `scores` and `analyses`, never
+  `pending_uploads` — whose `user_id` migration 014 added *"so that deleting an
+  account can take its unclaimed uploads with it"*. That row cascades from
+  `auth.users`, so removing the identity removed the only index of the object:
+  no row, no owner, no sweeper entry, unreachable by every request including
+  the musician's own, produced by the one action they take to make their data
+  go away. It is read **last** in `_account_storage` so the fallback for a
+  deployment predating the migration can be narrow — any other failure would
+  already have aborted on the three queries above, and refusing to delete an
+  account over a missing table is worse than the bug being fixed.
+  **Migration 014 is applied on `intempo-dev` and nowhere
   else** (2026-09-02, verified against `supabase_migrations`). The paused
   `intempo` project stopped at 012, so if it is ever unpaused as production the
   sweeper finds no `pending_uploads` table there and the hole is still open on

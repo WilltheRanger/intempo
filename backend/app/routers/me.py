@@ -497,8 +497,14 @@ def _account_storage(client: Any, user_id: UUID) -> dict[str, list[str]]:
     """Snapshot every object key before auth deletion cascades its rows.
 
     The rows are the only durable index of uploads. Once the auth identity is
-    removed, `users`, scores and analyses cascade away, so cleanup must collect
-    their keys first even though it removes the objects afterwards.
+    removed, `users`, `scores`, `analyses` **and `pending_uploads`** all cascade
+    away, so cleanup must collect their keys first even though it removes the
+    objects afterwards.
+
+    Four sources, because there are four places a key can be — the three that
+    mean the object became something, and `pending_uploads`, which means it has
+    not become anything yet. That fourth one was missing, and it is the only one
+    whose objects nothing else could ever reach afterwards.
     """
     user_rows = (
         client.table("users")
@@ -553,13 +559,47 @@ def _account_storage(client: Any, user_id: UUID) -> dict[str, list[str]]:
         if key:
             audio.append(key)
 
-    # Stable order makes logs/tests deterministic; de-duplication avoids asking
-    # Storage to remove migration 011's first page twice.
-    return {
-        AVATAR_BUCKET: list(dict.fromkeys(avatars)),
-        SCORE_BUCKET: list(dict.fromkeys(pages)),
-        AUDIO_BUCKET: list(dict.fromkeys(audio)),
+    # The three claimed sources, in a stable order so logs and tests are
+    # deterministic.
+    collected: dict[str, list[str]] = {
+        AVATAR_BUCKET: avatars,
+        SCORE_BUCKET: pages,
+        AUDIO_BUCKET: audio,
     }
+
+    # **The fourth place an object can be, and it was missing.**
+    #
+    # `pending_uploads` is the row an object gets when it has been uploaded and
+    # has not become anything yet — a page photographed and then backed out of,
+    # a save that failed after the bytes landed. Migration 014's own comment
+    # says `user_id` is there "so that deleting an account can take its
+    # unclaimed uploads with it", and nothing read it. The row cascades from
+    # `auth.users`, so deleting the identity removed the only index of those
+    # objects and left them with no row, no owner and no sweeper entry —
+    # unreachable forever, produced by the one action a musician takes to make
+    # their data go away.
+    #
+    # Read **last**, so the compatibility fallback below can be narrow. Any
+    # failure that is not "this deployment has no `pending_uploads`" would have
+    # already failed the three queries above, which raise and abort the
+    # deletion. Migration 014 is not applied everywhere (see CLAUDE.md), and a
+    # deployment that predates it must still be able to delete an account.
+    try:
+        for bucket, keys in pending_uploads.keys_for_user(client, user_id).items():
+            collected.setdefault(bucket, []).extend(keys)
+    except Exception:  # noqa: BLE001 - see above; pre-014 deployments have no table
+        log.warning(
+            "could not inventory unclaimed uploads for account %s; "
+            "deleting the rest of its storage",
+            user_id,
+            exc_info=True,
+        )
+
+    # De-duplicated per bucket: migration 011 leaves the first page in both
+    # `source_image_url` and `source_image_urls`, and a save that succeeded
+    # after its pending row was written puts that key in two of the four
+    # sources. Storage should be asked once.
+    return {bucket: list(dict.fromkeys(keys)) for bucket, keys in collected.items()}
 
 
 def _remove_account_storage(
