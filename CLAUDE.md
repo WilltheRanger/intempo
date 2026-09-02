@@ -678,14 +678,25 @@ nothing in shipping code branches on the URL. The note is corrected rather than
 deleted because a documented technique that does not exist costs the next
 session the time to discover that, which is what it cost this one.
 
+**The sixth such state is the one every single user meets first: an account
+with nothing in it.** Every fixture build has a library, a take and thirty
+days of insights, so Today, Library and Insights are only ever seen populated.
+Looking at the empty one is five one-line edits to `fixtures.ts` — early
+returns at the top of `listPieces` (`[]`), `getCurrentPiece` (`null`),
+`getInsights` (`null`), `getLatestTake` (`null`) and `getRecentTakes` (`[]`) —
+then `.env` aside, `npm run build:web`, serve, look, `git checkout --` the
+file. `tsc` reports unreachable-code errors on that build; they are the patch,
+not the app. Doing it on 2026-09-02 found Today telling a new musician
+*"Nothing to practice yet"* above a fully built daily warmup it was hiding from
+them.
+
 A state with no fixture is a state nobody has looked at, and that has
-now cost this project **five** times: a guessed clef captioned as read, an
+now cost this project **six** times: a guessed clef captioned as read, an
 84×154 box of padding where a cover should be, two post-scan screens never
 rendered, onboarding asking a returning musician for a photograph their
-account already had, and — the first time anyone looked at it, 2026-09-01 —
-`AccountStartupScreen` holding a centred spinner between two left-aligned
-sentences, with the one button the screen exists to offer sitting at the
-vertical middle of the phone.
+account already had, `AccountStartupScreen` holding a centred spinner between
+two left-aligned sentences with the one button the screen exists to offer at
+the vertical middle of the phone (2026-09-01), and the empty Today above.
 
 **Honest DoD status:** no batch is tagged `batch-N-done`. Every remaining gate
 (live magic-link auth, upload→OCR→save, mic→analysis) is blocked on Supabase
