@@ -33,6 +33,8 @@ from app.config import settings
 from app.db import get_service_client
 from app.routers.upload import SCORE_BUCKET
 from app.services import pending_uploads
+from app.services.audio_storage import InvalidAudioReference, owned_audio_key
+from app.services.buckets import AUDIO_BUCKET
 from app.services.ocr.musicxml import MusicXMLError, score_json_from_musicxml
 from app.workers.dispatch import start_transcription
 from app.services.score_pages import pages_of, select_with_pages
@@ -1498,18 +1500,25 @@ def delete_score(
     score_id: UUID,
     user_id: UUID = Depends(current_user_id),
 ) -> Response:
+    """Permanently remove a piece, its practice history, and stored media.
+
+    The initial schema deliberately uses RESTRICT from assignments and analyses
+    to scores. That protects history from an accidental bare row delete, but it
+    also meant the consumer-facing action stopped working as soon as someone
+    had practised the piece. This endpoint performs the complete owned cleanup
+    explicitly, in dependency order, and remains compatible with that deployed
+    schema.
+
+    Database work happens before storage removal. A failed or interrupted
+    request can therefore be retried without a row pointing at bytes that were
+    already destroyed. The sequence is idempotent at every dependent step:
+    assignments, analyses, then the score.
+    """
     client = _service_client()
 
-    # Read the photograph's key *before* the row goes, because the row is the
-    # only thing that knows it.
-    #
-    # **Deleting a score used to leak its page image forever.** The single
-    # storage deletion in the backend is reached from `POST /:id/accept`, keyed
-    # off an existing row — so once the row was gone the object had no row, no
-    # accept path and no delete path, and nothing anywhere could ever reach it
-    # again. That contradicts the rule the rest of this file states plainly:
-    # the photograph is discarded when a person is done with it. Deleting the
-    # piece is a person being done with it.
+    # Inventory everything while its owner row still exists. The ownership
+    # check is the boundary for all later score-id-only deletes, including
+    # assignments that do not themselves carry the score owner's user id.
     existing = select_with_pages(
         lambda columns: (
             client.table("scores")
@@ -1521,12 +1530,54 @@ def delete_score(
         ),
         "",
     ).data or []
-    keys = _page_keys(existing[0]) if existing else []
+    if not existing:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="score not found",
+        )
 
-    # The schema declares analyses.score_id with ON DELETE RESTRICT, so a
-    # delete with dependent analyses will surface as a Postgres FK error.
-    # Convert that to 409 with a clear message rather than the SDK's 500.
+    page_keys = _page_keys(existing[0])
     try:
+        analysis_rows = (
+            client.table("analyses")
+            .select("audio_url")
+            .eq("score_id", str(score_id))
+            .eq("user_id", str(user_id))
+            .execute()
+        ).data or []
+    except Exception as exc:  # noqa: BLE001 - no destructive action happened
+        log.exception("could not inventory recordings for score %s", score_id)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Could not prepare this piece for deletion. Try again.",
+        ) from exc
+
+    audio_keys: list[str] = []
+    for row in analysis_rows:
+        reference = row.get("audio_url")
+        if not isinstance(reference, str) or not reference:
+            continue
+        try:
+            audio_keys.append(owned_audio_key(reference, user_id))
+        except InvalidAudioReference:
+            # A legacy or malformed row must not become authority to delete an
+            # arbitrary storage object. The database history can still go.
+            log.warning(
+                "analysis for score %s has an unreadable audio reference",
+                score_id,
+            )
+    audio_keys = list(dict.fromkeys(audio_keys))
+
+    try:
+        # assignments.score_id and analyses.score_id are both RESTRICT. The
+        # former may also point at one of these analyses as its submission; its
+        # FK is SET NULL, but the assignment itself is about the piece and goes.
+        client.table("assignments").delete().eq(
+            "score_id", str(score_id)
+        ).execute()
+        client.table("analyses").delete().eq(
+            "score_id", str(score_id)
+        ).eq("user_id", str(user_id)).execute()
         deleted = (
             client.table("scores")
             .delete()
@@ -1534,25 +1585,46 @@ def delete_score(
             .eq("user_id", str(user_id))
             .execute()
         )
-    except Exception as exc:  # noqa: BLE001
-        msg = str(exc).lower()
-        if "violates foreign key" in msg or "foreign key constraint" in msg:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="score has dependent analyses; delete those first (soft-delete is V2)",
-            ) from exc
-        raise
+    except Exception as exc:  # noqa: BLE001 - provider errors vary
+        log.exception("piece deletion stopped before score %s was removed", score_id)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(
+                "This piece could not be fully removed. Try again; completed "
+                "cleanup steps will not be repeated."
+            ),
+        ) from exc
 
     if not (deleted.data or []):
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="score not found")
+        # The ownership read succeeded but the final delete matched nothing:
+        # another request won the race. It owns media cleanup, so do not remove
+        # objects on the strength of this stale snapshot.
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="score not found",
+        )
 
-    # After the row, never before. A storage outage must not block someone
-    # deleting a piece — the row is what the app reads, and an object left
-    # behind by a failed removal is exactly what this is trying to stop, so it
-    # is logged rather than swallowed. `_remove_object` already refuses to
-    # raise for that reason.
-    for key in keys:
+    # The database is now the truth the app reads. Storage cleanup is best
+    # effort, matching account deletion: failure must not resurrect a library
+    # entry, and every key was recovered and ownership-checked before the rows
+    # disappeared.
+    if audio_keys:
+        try:
+            client.storage.from_(AUDIO_BUCKET).remove(audio_keys)
+        except Exception as exc:  # noqa: BLE001 - deletion already committed
+            log.error(
+                "score %s was deleted but %d recording(s) remain: %s",
+                score_id,
+                len(audio_keys),
+                exc,
+            )
+
+    for key in page_keys:
         if not _remove_object(client, key):
-            log.warning("score %s was deleted but its page image %s was not", score_id, key)
+            log.warning(
+                "score %s was deleted but its page image %s was not",
+                score_id,
+                key,
+            )
 
     return Response(status_code=status.HTTP_204_NO_CONTENT)
