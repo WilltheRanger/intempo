@@ -270,6 +270,84 @@ def test_every_column_migration_has_a_readiness_check() -> None:
     )
 
 
+def test_a_missing_post_initial_table_names_its_migration() -> None:
+    """Cleanup and consent tables are not covered by column probes.
+
+    The pending-upload registry was missing from production while readiness
+    checked every score column and reported no fact about abandoned uploads.
+    """
+
+    class _MissingTable:
+        current = ""
+
+        def table(self, name):
+            self.current = name
+            return self
+
+        def select(self, *_columns):
+            if self.current == "pending_uploads":
+                raise RuntimeError("relation pending_uploads does not exist")
+            return self
+
+        def limit(self, _count):
+            return self
+
+        def execute(self):
+            return None
+
+    checks = {
+        check.name: check
+        for check in readiness._schema_checks(_MissingTable())
+    }
+
+    missing = checks["schema:pending_uploads"]
+    assert missing.ok is False
+    assert "014" in missing.detail
+    assert checks["schema:training_corrections"].ok is True
+
+
+def test_every_post_initial_table_migration_has_a_readiness_check() -> None:
+    """A new CREATE TABLE cannot silently outgrow `/v1/ready`."""
+    import re
+    from pathlib import Path
+
+    from app.services.readiness import REQUIRED_TABLES
+
+    migrations = Path(__file__).resolve().parents[1] / "migrations"
+    checked = {number for _, number in REQUIRED_TABLES}
+    missing: list[str] = []
+    for path in sorted(migrations.glob("*.sql")):
+        number = path.name.split("_", 1)[0]
+        creates_table = re.search(
+            r"CREATE\s+TABLE(?:\s+IF\s+NOT\s+EXISTS)?\s+",
+            path.read_text(),
+            re.IGNORECASE,
+        )
+        if creates_table and number != "001" and number not in checked:
+            missing.append(path.name)
+
+    assert missing == [], (
+        f"{missing} create tables with no entry in REQUIRED_TABLES — a "
+        "deployment missing them would look ready"
+    )
+
+
+def test_manual_migrations_are_safe_to_run_again() -> None:
+    """The SQL editor is manual; uncertainty must not make retry dangerous."""
+    from pathlib import Path
+
+    migrations = Path(__file__).resolve().parents[1] / "migrations"
+    thirteen = (migrations / "013_training_corrections.sql").read_text()
+    fourteen = (migrations / "014_pending_uploads.sql").read_text()
+
+    assert thirteen.count("ADD COLUMN IF NOT EXISTS") == 3
+    assert "CREATE TABLE IF NOT EXISTS training_corrections" in thirteen
+    assert "CREATE INDEX IF NOT EXISTS" in thirteen
+    assert "IF NOT EXISTS (" in thirteen, "policies need an idempotent guard"
+    assert "CREATE TABLE IF NOT EXISTS pending_uploads" in fourteen
+    assert "CREATE INDEX IF NOT EXISTS pending_uploads_age_idx" in fourteen
+
+
 class TestTheWorkerWillFetchWhatStorageAccepted:
     """Two numbers in two systems, and nothing ever compared them.
 

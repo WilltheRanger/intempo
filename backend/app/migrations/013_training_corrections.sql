@@ -41,7 +41,7 @@
 -- the same request. It deliberately does not keep a "withdrawn_at" tombstone:
 -- a row recording that someone once consented, after they have asked to be
 -- forgotten, is the thing they asked not to exist.
-ALTER TABLE users ADD COLUMN training_consent_at timestamptz;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS training_consent_at timestamptz;
 
 COMMENT ON COLUMN users.training_consent_at IS
   'When the musician agreed their corrections may be kept to improve the reader. NULL means no — never asked, declined, and withdrawn are all NULL, because all three mean keep nothing.';
@@ -62,7 +62,7 @@ COMMENT ON COLUMN users.training_consent_at IS
 -- Text and free-form on purpose, exactly as `transcription_stage` is: the names
 -- follow the shape of `PROVIDER_REGISTRY`, and pinning them to an enum would
 -- make adding a provider a migration.
-ALTER TABLE scores ADD COLUMN transcription_reader text;
+ALTER TABLE scores ADD COLUMN IF NOT EXISTS transcription_reader text;
 
 COMMENT ON COLUMN scores.transcription_reader IS
   'The configured provider chain that read this page, e.g. "homr". The winning provider is not recoverable — parse_sheet_music returns no telemetry — so this records the chain, not the winner.';
@@ -77,14 +77,14 @@ COMMENT ON COLUMN scores.transcription_reader IS
 -- photograph is still there on purpose, which reads identically to that second
 -- case — and "kept because a person agreed" and "still here because the delete
 -- failed" want opposite things done about them.
-ALTER TABLE scores ADD COLUMN page_image_retained_at timestamptz;
+ALTER TABLE scores ADD COLUMN IF NOT EXISTS page_image_retained_at timestamptz;
 
 COMMENT ON COLUMN scores.page_image_retained_at IS
   'When the photograph was kept at accept time under training consent rather than discarded. Distinct from a NULL discarded_at, which also covers a delete that storage refused.';
 
 -- ----- the corrections themselves ------------------------------------------
 
-CREATE TABLE training_corrections (
+CREATE TABLE IF NOT EXISTS training_corrections (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
 
   -- Cascades from both parents, and both cascades are the point rather than
@@ -145,8 +145,10 @@ CREATE TABLE training_corrections (
 -- The two questions asked of this table: everything for one score (when a
 -- correction is written, and when a piece is deleted), and everything for one
 -- user (when consent is withdrawn).
-CREATE INDEX training_corrections_score_idx ON training_corrections (score_id);
-CREATE INDEX training_corrections_user_idx ON training_corrections (user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS training_corrections_score_idx
+  ON training_corrections (score_id);
+CREATE INDEX IF NOT EXISTS training_corrections_user_idx
+  ON training_corrections (user_id, created_at DESC);
 
 COMMENT ON TABLE training_corrections IS
   'What a musician fixed in a reading, kept only with their consent. One row per corrected measure. Deleted with the score, the account, or the consent.';
@@ -160,10 +162,28 @@ COMMENT ON TABLE training_corrections IS
 -- worse than having none.
 ALTER TABLE training_corrections ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "owner can read own corrections"
-  ON training_corrections FOR SELECT
-  USING (auth.uid() = user_id);
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'training_corrections'
+      AND policyname = 'owner can read own corrections'
+  ) THEN
+    CREATE POLICY "owner can read own corrections"
+      ON training_corrections FOR SELECT
+      USING (auth.uid() = user_id);
+  END IF;
 
-CREATE POLICY "owner can delete own corrections"
-  ON training_corrections FOR DELETE
-  USING (auth.uid() = user_id);
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'training_corrections'
+      AND policyname = 'owner can delete own corrections'
+  ) THEN
+    CREATE POLICY "owner can delete own corrections"
+      ON training_corrections FOR DELETE
+      USING (auth.uid() = user_id);
+  END IF;
+END
+$$;
