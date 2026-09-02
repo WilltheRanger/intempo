@@ -36,7 +36,7 @@
 -- a row here because it has not become anything yet. An object with no row is
 -- now a bug rather than a Tuesday.
 
-CREATE TABLE pending_uploads (
+CREATE TABLE IF NOT EXISTS pending_uploads (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
 
   -- Whose it is. Not for permissions — the sweeper runs as the service role —
@@ -58,7 +58,7 @@ CREATE TABLE pending_uploads (
 );
 
 -- The only question the sweeper asks: what is old and still unclaimed.
-CREATE INDEX pending_uploads_age_idx ON pending_uploads (created_at);
+CREATE INDEX IF NOT EXISTS pending_uploads_age_idx ON pending_uploads (created_at);
 
 COMMENT ON TABLE pending_uploads IS
   'Uploads that have been signed for but not yet claimed by a row. Deleted when claimed, or swept when they are old enough that nothing is coming.';
