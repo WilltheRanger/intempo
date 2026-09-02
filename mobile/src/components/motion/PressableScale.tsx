@@ -100,7 +100,7 @@ export function PressableScale({
                       transitionDuration: state.pressed ? '0ms' : `${motion.fast}ms`,
                       transitionTimingFunction: 'cubic-bezier(0.22, 1, 0.36, 1)',
                       willChange: 'transform',
-                    } as object),
+                    } as unknown as ViewStyle),
               ]}
             >
               {resolvedChildren}
