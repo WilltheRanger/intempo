@@ -5,8 +5,12 @@ import { Easing } from 'react-native';
  * action happened, never to make a screen feel impressive.
  */
 export const motion = {
+  /** The finger making contact. Short, but not a one-frame snap. */
+  pressIn: 55,
   /** Press feedback and small state changes. */
   fast: 120,
+  /** A whole screen settling after navigation. */
+  scene: 180,
   /** Progress fills, content settling in. */
   base: 240,
 } as const;

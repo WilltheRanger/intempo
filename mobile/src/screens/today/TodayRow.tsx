@@ -9,6 +9,7 @@ import {
   ICON_SIZE,
   ICON_STROKE_WIDTH,
   MIN_TOUCH_TARGET,
+  radii,
   spacing,
 } from '../../design';
 
@@ -54,28 +55,31 @@ export function TodayRow({
       accessibilityRole="button"
       accessibilityLabel={`${title}. ${detail}`}
       activeScale={0.99}
+      style={({ pressed }) => [
+        styles.row,
+        !last && styles.ruled,
+        pressed && styles.pressed,
+      ]}
     >
-      <View style={[styles.row, !last && styles.ruled]}>
-        <View style={styles.body}>
-          <Text variant="pieceTitle" numberOfLines={2}>
-            {title}
-          </Text>
-          <Text
-            variant="metadataSmall"
-            color="textSecondary"
-            numberOfLines={detailLines}
-            style={styles.detail}
-          >
-            {detail}
-          </Text>
-        </View>
-
-        <ChevronRight
-          size={ICON_SIZE.md}
-          strokeWidth={ICON_STROKE_WIDTH}
-          color={colors.textTertiary}
-        />
+      <View style={styles.body}>
+        <Text variant="pieceTitle" numberOfLines={2}>
+          {title}
+        </Text>
+        <Text
+          variant="metadataSmall"
+          color="textSecondary"
+          numberOfLines={detailLines}
+          style={styles.detail}
+        >
+          {detail}
+        </Text>
       </View>
+
+      <ChevronRight
+        size={ICON_SIZE.md}
+        strokeWidth={ICON_STROKE_WIDTH}
+        color={colors.textTertiary}
+      />
     </PressableScale>
   );
 }
@@ -89,10 +93,16 @@ const styles = StyleSheet.create({
     // a target may be, and a row you tap all day should clear it comfortably.
     minHeight: MIN_TOUCH_TARGET + spacing.lg,
     paddingVertical: spacing.lg,
+    paddingHorizontal: spacing.sm,
+    marginHorizontal: -spacing.sm,
+    borderRadius: radii.sm,
   },
   ruled: {
     borderBottomWidth: BORDER_WIDTH,
     borderBottomColor: colors.border,
+  },
+  pressed: {
+    backgroundColor: colors.surfacePressed,
   },
   body: {
     flex: 1,
