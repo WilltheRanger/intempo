@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { monotonicNow, startBeatClock, startPlannedBeatClock } from './clock';
 import type { Beat } from './beats';
+import type { PlannedBeat } from './plan';
 
 /**
  * The beat clock, which had no test.
@@ -235,7 +236,7 @@ describe('a changing-meter beat clock', () => {
   ] as const;
 
   it('fires each precomputed time and changes bar shape with the plan', () => {
-    const planned: typeof plan[number][] = [];
+    const planned: PlannedBeat[] = [];
     startPlannedBeatClock({
       beats: plan,
       onBeat: (beat) => planned.push(beat),
@@ -252,7 +253,7 @@ describe('a changing-meter beat clock', () => {
   });
 
   it('catches up every planned pulse after a stalled frame', () => {
-    const planned: typeof plan[number][] = [];
+    const planned: PlannedBeat[] = [];
     startPlannedBeatClock({
       beats: plan,
       onBeat: (beat) => planned.push(beat),
@@ -266,7 +267,7 @@ describe('a changing-meter beat clock', () => {
   });
 
   it('honours the audio lead-in and can be stopped twice', () => {
-    const planned: typeof plan[number][] = [];
+    const planned: PlannedBeat[] = [];
     const clock = startPlannedBeatClock({
       beats: plan,
       leadInS: 0.1,
