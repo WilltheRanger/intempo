@@ -90,3 +90,19 @@ export function leavingRecord({
 
   return { kind: 'leave' };
 }
+
+/**
+ * A browser refresh or closed tab bypasses React Navigation's `beforeRemove`.
+ * Ask the browser to confirm at exactly the same moments the in-app guard
+ * would: while playing, or while a finished take still has not reached the
+ * server. The browser supplies its own standard dialog text.
+ */
+export function shouldGuardBrowserExit({
+  phase,
+  unsentTake,
+}: {
+  phase: RecordPhase;
+  unsentTake: boolean;
+}): boolean {
+  return leavingRecord({ phase, unsentTake }).kind === 'confirm';
+}
