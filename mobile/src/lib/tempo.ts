@@ -255,51 +255,20 @@ export function formatVerdict(verdict: Verdict): string {
   return VERDICT_LABELS[verdict] ?? VERDICT_LABELS.on_tempo;
 }
 
-const TENDENCY_HEADLINES: Record<Verdict, string> = {
-  on_tempo: 'You play steadily',
-  slight_rush: 'You drift slightly ahead',
-  rushing: 'You tend to rush',
-  slight_drag: 'You drift slightly behind',
-  dragging: 'You tend to drag',
-};
-
-/**
- * The headline for a whole window of practice — Insights, not one take.
+/*
+ * **The tendency wording lives in `lib/insights/tendency.ts` now.**
  *
- * "You tend to..." is a claim about a habit, and a habit needs more than one
- * recording to observe. A single take gets `formatTakeVerdict` instead.
+ * It used to be exported from here as a plain lookup from a verdict, which was
+ * right while that was all it was. It is a *rule* now — the direction is only
+ * the finding when the wandering is not — and anything calling the lookup
+ * directly gets the old answer with none of that.
  *
- * A description of what happened, not encouragement about it — the spec is
- * explicit that words carry the verdict, and a musician can tell the
- * difference between a diagnosis and a compliment.
+ * Not a convention: they are module-private there, so a screen reaching past
+ * `readTendency` does not compile. Insights was fixed and Today was not, and
+ * for one commit a musician read "Your tempo wanders" on one tab and "You tend
+ * to rush" on the next, about the same thirty days.
  */
-export function formatTendency(verdict: Verdict): string {
-  return TENDENCY_HEADLINES[verdict] ?? TENDENCY_HEADLINES.on_tempo;
-}
 
-const TENDENCY_DETAIL: Record<Verdict, string> = {
-  on_tempo: 'you held the beat',
-  slight_rush: 'you sat a little ahead of the beat',
-  rushing: 'you were usually ahead of the beat',
-  slight_drag: 'you sat a little behind the beat',
-  dragging: 'you were usually behind the beat',
-};
-
-/**
- * "Across 34 sessions, you were usually ahead of the beat."
- *
- * No timing figure: the spec keeps deviations out of production copy and
- * leaves the magnitude to the bar. Session counts aren't a timing
- * measurement, so they stay.
- */
-export function formatTendencyDetail(
-  verdict: Verdict,
-  sessions: number,
-): string {
-  const count = sessions === 1 ? '1 session' : `${sessions} sessions`;
-  const detail = TENDENCY_DETAIL[verdict] ?? TENDENCY_DETAIL.on_tempo;
-  return `Across ${count}, ${detail}.`;
-}
 
 /**
  * The colour for a band, on the verdict screen only.

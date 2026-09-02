@@ -6,6 +6,58 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-02 — I fixed Insights and left the same bug on Today
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. No new design decision —
+this makes two screens say what the owner already approved for one.
+
+**Found by driving the app in a browser**, which is not something that happens
+on every change. CLAUDE.md names navigation as the one part still untested; a
+walk of the tab bar tripped over a selector matching *"Today · 96 BPM · You
+tend to rush"* — the string I had reported fixed forty minutes earlier.
+
+It was fixed. On Insights. `TodayScreen` had **both halves of the same bug**:
+
+- **A single take through the habit wording.** `formatTendency(recentTake.verdict)`
+  in "Recent practice", whose own comment says one recording cannot see a habit.
+  Identical to the Insights row, in a second file.
+- **The window headline ignoring the wandering.** "Practice snapshot" used
+  `formatTendency(summary.verdict)` — the aggregate's *direction* and nothing
+  else. So on the fixture musician, who wanders, **Today said "You tend to
+  rush" while Insights one tab away said "Your tempo wanders"**, about the same
+  thirty days. Verified in the built app before and after.
+
+**The guard is the type system, not a test.** `formatTendency` and
+`formatTendencyDetail` are no longer exported from `lib/tempo.ts`; they are
+module-private in `lib/insights/tendency.ts`, so a third caller **does not
+compile**. Confirmed by adding one: `TS2305: Module '"../../lib/tempo"' has no
+exported member 'formatTendency'`, then restored byte-identically.
+
+I wrote a source-scanning test first and threw it away, which is worth
+recording. It worked — it caught the third caller — but it flagged **its own
+explanatory comment** on the first run, needed comment-stripping regexes to fix
+that, and needed `node:fs`, which fails `tsc` here because `@types/node` is
+only present transitively. Adding a types package to an app that ships to a
+phone, to check a rule the compiler can enforce outright, is the wrong trade.
+The remaining test asserts the monopoly took nothing away: `readTendency` still
+answers the plain-direction case for all five verdicts.
+
+**Why the rule changed under the export.** `formatTendency` was a lookup from a
+verdict, and any screen could call it correctly. It became a *rule* earlier
+today — the direction is only the finding when the wandering is not — and an
+exported lookup is then a way to get the old answer with none of it. The export
+was the bug; Today was where it went off.
+
+**Tests:** mobile 1221 passed (105 files); `tsc --noEmit` clean; web build
+clean. Both screens re-read from the running build: Insights and Today now both
+say "Rushing" for the take and "Your tempo wanders" for the window.
+
+**Side effects:** `formatTendency`/`formatTendencyDetail` are no longer
+importable from `lib/tempo.ts` — a caller outside `tendency.ts` is a compile
+error, deliberately. **Rollback:** revert.
+
+---
+
 ## 2026-09-02 — A convention enforced for the two files that existed when it was written
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. No UI, so no §2 gate.
