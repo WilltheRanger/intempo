@@ -29,7 +29,14 @@ silence.
 
 1. **Branch per batch** (`feat/batch-N-...` or the session's assigned branch). Squash to main on DoD.
 2. **One fixture file per tricky endpoint** — save the raw response to `fixtures/`, test against it forever. Never call a real LLM/paid API in CI.
-3. **Don't optimize early.** Ship the slowest, ugliest version that works; iterate later.
+3. **Build the best version first.** Not a sketch you intend to replace — the
+   version you would defend in review. The shape of the data, the correctness
+   of a rule and the composition of a screen are all far cheaper to get right
+   now than after something is built on top of them, and a large part of
+   `EDIT_LOG.md` is the cost of the other choice. This is **not** licence to
+   gold-plate: "best" means the best version *of what was asked for*, not more
+   than was asked for. Speed is the one thing still worth leaving alone until
+   something is measurably slow — measure, then optimise.
 4. **No `print`/`console.log` debug shipped.** Real logger from day one (`loguru` for Python, `pino` for JS).
 5. **Smoke-test the happy path manually** after each batch, not just automated tests.
 6. **Tag the end of every batch**: when the DoD is met, `git tag batch-N-done` and push the tag. These are the known-good rollback anchors.
