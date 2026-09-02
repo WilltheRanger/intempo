@@ -64,7 +64,7 @@ export function PressableScale({
       toValue: value,
       duration,
       easing: EASE_OUT,
-      useNativeDriver: Platform.OS !== 'web',
+      useNativeDriver: true,
     }).start();
   }
 
