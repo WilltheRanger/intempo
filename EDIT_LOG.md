@@ -6,6 +6,14 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-01 — A practised piece can be completely deleted
+
+**Branch:** `codex/delete-piece-history`.
+
+**Files:** `backend/app/routers/scores.py`, `backend/app/tests/test_scores_router.py`, `mobile/src/data/sources/api.ts`, `mobile/src/data/sources/fixtures.ts`, `mobile/src/data/sources/types.ts`, `mobile/src/data/hooks/usePieces.ts`, `mobile/src/screens/pieceDetail/PieceDetailScreen.tsx`.
+
+The library offered “Remove from library” but the deployed schema RESTRICTs both assignments and analyses from being orphaned, so the action stopped with a 409 after the first practice take. The API now ownership-checks and inventories the piece, deletes assignments and analyses in dependency order, deletes the score, and only then removes owned recording audio and retained score pages. Each database step is safe to retry; storage is best-effort after the rows are gone, and malformed or foreign audio references can never authorize deleting another account's object. The app tells the musician that history and recordings will be permanently removed, clears the piece's remembered local tempo, and invalidates Today, recent-take, and Insights caches. Fixture behavior now follows the same lifecycle. Backend tests cover dependency order, both buckets, retryable cleanup failures, and foreign-reference refusal.
+
 ## 2026-09-01 — Profile-photo replacement can actually be retried
 
 **Branch:** `codex/retry-profile-photo`.
