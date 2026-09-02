@@ -6,7 +6,8 @@ import {
   User,
   type LucideIcon,
 } from 'lucide-react-native';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { useEffect, useRef, type ReactNode } from 'react';
+import { Animated, Platform, Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Text } from '../components/primitives/Text';
@@ -15,6 +16,8 @@ import {
   colors,
   ICON_SIZE,
   ICON_STROKE_WIDTH,
+  EASE_OUT,
+  motion,
   spacing,
 } from '../design';
 import {
@@ -22,6 +25,7 @@ import {
   TAB_BAR_PADDING_TOP,
   TAB_BAR_ROW_HEIGHT,
 } from './tabBarMetrics';
+import { useReducedMotion } from '../lib/useReducedMotion';
 import type { TabParamList } from './types';
 
 const TAB_ICONS: Record<keyof TabParamList, LucideIcon> = {
@@ -30,6 +34,66 @@ const TAB_ICONS: Record<keyof TabParamList, LucideIcon> = {
   Insights: ChartLine,
   Profile: User,
 };
+
+function TabSelectionMotion({
+  focused,
+  children,
+}: {
+  focused: boolean;
+  children: ReactNode;
+}) {
+  const reduceMotion = useReducedMotion();
+  const selected = useRef(new Animated.Value(focused ? 1 : 0)).current;
+
+  useEffect(() => {
+    if (reduceMotion) {
+      selected.setValue(focused ? 1 : 0);
+      return;
+    }
+    const animation = Animated.timing(selected, {
+      toValue: focused ? 1 : 0,
+      duration: motion.fast,
+      easing: EASE_OUT,
+      useNativeDriver: Platform.OS !== 'web',
+    });
+    animation.start();
+    return () => animation.stop();
+  }, [focused, reduceMotion, selected]);
+
+  if (reduceMotion) {
+    return <View style={styles.tabContent}>{children}</View>;
+  }
+
+  return (
+    <Animated.View
+      style={[
+        styles.tabContent,
+        {
+          opacity: selected.interpolate({
+            inputRange: [0, 1],
+            outputRange: [0.78, 1],
+          }),
+          transform: [
+            {
+              translateY: selected.interpolate({
+                inputRange: [0, 1],
+                outputRange: [0, -2],
+              }),
+            },
+            {
+              scale: selected.interpolate({
+                inputRange: [0, 1],
+                outputRange: [0.96, 1],
+              }),
+            },
+          ],
+        },
+      ]}
+    >
+      {children}
+    </Animated.View>
+  );
+}
 
 /**
  * The tab bar. Quiet by design — it sits on the page background behind a
@@ -86,23 +150,25 @@ export function BottomTabBar({
             accessibilityLabel={label}
             style={styles.tab}
           >
-            <Icon
-              size={ICON_SIZE.lg}
-              strokeWidth={ICON_STROKE_WIDTH}
-              // The icon keeps the gold. Non-text has a 3:1 contrast floor
-              // and the accent clears it; text has 4.5:1 and it does not.
-              color={focused ? colors.accent : colors.textSecondary}
-            />
-            <Text
-              variant="sectionLabel"
-              // Ink rather than gold: at 13px the accent is 3.54:1, under the
-              // 4.5:1 floor. The active tab is still marked twice — the gold
-              // icon above, and ink against grey here.
-              color={focused ? 'textPrimary' : 'textSecondary'}
-              style={styles.label}
-            >
-              {label}
-            </Text>
+            <TabSelectionMotion focused={focused}>
+              <Icon
+                size={ICON_SIZE.lg}
+                strokeWidth={ICON_STROKE_WIDTH}
+                // The icon keeps the gold. Non-text has a 3:1 contrast floor
+                // and the accent clears it; text has 4.5:1 and it does not.
+                color={focused ? colors.accent : colors.textSecondary}
+              />
+              <Text
+                variant="sectionLabel"
+                // Ink rather than gold: at 13px the accent is 3.54:1, under the
+                // 4.5:1 floor. The active tab is still marked twice — the gold
+                // icon above, and ink against grey here.
+                color={focused ? 'textPrimary' : 'textSecondary'}
+                style={styles.label}
+              >
+                {label}
+              </Text>
+            </TabSelectionMotion>
           </Pressable>
         );
       })}
@@ -123,6 +189,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     height: TAB_BAR_ROW_HEIGHT,
+    gap: spacing.xs,
+  },
+  tabContent: {
+    alignItems: 'center',
+    justifyContent: 'center',
     gap: spacing.xs,
   },
   label: {

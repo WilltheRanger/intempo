@@ -6,6 +6,29 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-01 — Navigation and actions move as one restrained system
+
+**What changed**
+- Main-tab changes now settle the destination into place with a short opacity-and-vertical transform, while keeping each tab mounted so scroll position and in-progress UI survive.
+- The selected tab icon and label now ease into emphasis instead of snapping between states.
+- Primary and secondary actions across the app now give subtly under the finger while retaining their existing pressed colours and haptic feedback.
+- Extended the shared press-motion wrapper to accept normal pressed-state styles, so motion is added once rather than reimplemented inconsistently screen by screen.
+- Added a separate, smaller button-scale token: buttons move less than large cards or the recording control, keeping text visually steady.
+- Every new transition uses only opacity or transforms and automatically becomes static when either the device or the in-app Reduce Motion setting requests it.
+
+**Files**
+- `mobile/src/navigation/RootNavigator.tsx`
+- `mobile/src/navigation/BottomTabBar.tsx`
+- `mobile/src/components/motion/PressableScale.tsx`
+- `mobile/src/components/primitives/PrimaryButton.tsx`
+- `mobile/src/components/primitives/SecondaryButton.tsx`
+- `mobile/src/design/motion.ts`
+- `mobile/src/design/index.ts`
+
+**Verification**
+- Full mobile tests, typecheck, web build, frontend build, backend tests, and the change-log check run in pull-request CI before merge.
+- Production smoke-check covers tab switching, button feedback, keyboard accessibility, and a clean browser console.
+
 ## 2026-09-01 — A misread key change can be corrected without rescanning
 
 **What changed**

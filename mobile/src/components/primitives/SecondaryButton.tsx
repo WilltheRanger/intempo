@@ -1,6 +1,5 @@
 import type { LucideIcon } from 'lucide-react-native';
 import {
-  Pressable,
   StyleSheet,
   View,
   type StyleProp,
@@ -10,6 +9,7 @@ import {
 import {
   BORDER_WIDTH,
   CONTROL_HEIGHT,
+  CONTROL_PRESSED_SCALE,
   colors,
   disabledOpacity,
   ICON_SIZE,
@@ -17,6 +17,7 @@ import {
   radii,
   spacing,
 } from '../../design';
+import { PressableScale } from '../motion/PressableScale';
 import { Text } from './Text';
 
 export interface SecondaryButtonProps {
@@ -36,12 +37,13 @@ export function SecondaryButton({
   style,
 }: SecondaryButtonProps) {
   return (
-    <Pressable
+    <PressableScale
       onPress={onPress}
       disabled={disabled}
       accessibilityRole="button"
       accessibilityLabel={label}
       accessibilityState={{ disabled }}
+      activeScale={CONTROL_PRESSED_SCALE}
       style={({ pressed }) => [
         styles.button,
         pressed && !disabled && styles.pressed,
@@ -59,7 +61,7 @@ export function SecondaryButton({
         ) : null}
         <Text variant="button">{label}</Text>
       </View>
-    </Pressable>
+    </PressableScale>
   );
 }
 
