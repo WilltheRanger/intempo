@@ -6,6 +6,57 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-02 — Two hand-rolled copies of a reader that has a documented single home, both wrong in the case it was written for
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. No §2 gate: backend only.
+Found immediately after the entry below, by reading the page-collecting code
+next to it rather than moving on.
+
+`score_pages.pages_of` is the one place that knows the three shapes a scan
+comes in — the 011 array, a pre-011 row with only `source_image_url`, and a
+hand-entered piece with neither. Its docstring names the fourth shape too:
+
+> *"An empty array is treated as no pages at all: `011` writes NULL rather than
+> `'{}'` for a piece with no scan, so an empty array is a row somebody built by
+> hand, and reading it as 'a scan with no pages' is the only honest reading."*
+
+`scores._page_keys` uses it, with its own comment: *"One place, so accept and
+delete cannot disagree about how much of a scan there is."* `me.py` had **two
+more copies** and used neither.
+
+Both take `isinstance(pages, list)` as "the array is the answer" and stop. With
+an empty array beside a page still in the deprecated column:
+
+- the **export** counted that piece as zero pages, and
+- **account deletion never collected the key**, so the photograph stayed in the
+  bucket — the same leak as the entry below, one column over.
+
+Both now call `pages_of`. The deletion inventory becomes the same two lines
+`scores._page_keys` already is, and the export a one-line `sum`.
+
+**How reachable is it.** Not very, and worth saying so rather than dressing it
+up: migration 011 writes NULL rather than `'{}'` and backfills
+`ARRAY[source_image_url]` for every existing scan, so no migration or endpoint
+in this repository produces `[]`. The reason to fix it is not the frequency —
+it is that a rule with a documented single home had three implementations, and
+the two that were not the home disagreed with it in precisely the case the home
+was written to handle. The net change is twelve lines shorter.
+
+### Tests
+
+One new: an empty array with a legacy page still removes that page on
+deletion. Verified it catches the defect — with the old reader restored, it is
+the only one of 43 that fails.
+
+### Verification
+
+backend 1905 passed / 3 xfailed (`test_me.py` 43 of them). No app changes.
+
+**Rollback:** revert this commit; it only replaces two readers with the shared
+one.
+
+---
+
 ## 2026-09-02 — Deleting your account left your abandoned sheet-music photographs in storage forever
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. No §2 gate: backend only.
