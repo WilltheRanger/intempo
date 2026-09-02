@@ -17,6 +17,7 @@ export {
   STAGGER_CAP,
   RISE_DISTANCE,
   PRESSED_SCALE,
+  CONTROL_PRESSED_SCALE,
   SKELETON_PULSE,
 } from './motion';
 
