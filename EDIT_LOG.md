@@ -6,6 +6,29 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-02 — Email links now finish authentication in the native app
+
+**What changed**
+- Added the missing native callback bridge for confirmation, passwordless sign-in, and password-reset links opened through InTempo's registered URL scheme.
+- Parsed Supabase's query and fragment responses with the same query-over-fragment precedence as its web client, then established the session through the configured Supabase project.
+- Kept password recovery distinct from an ordinary sign-in so a reset link opens the required Set Password screen rather than dropping into Today with the old password unchanged.
+- Handled both a cold app launch and a link tapped while InTempo is already open, deduplicating the same callback when the operating system reports it twice.
+- Left ordinary deep links untouched and never logs or routes access and refresh tokens through React Navigation.
+- Preserved an already-valid session when an old link is tapped. Signed-out users instead see a plain expired-link explanation on the existing auth screen and can request a new link or use a password.
+- Added callback parsing and wiring tests for sign-up, recovery, query precedence, provider errors, malformed input, cold launch, warm launch, session establishment, and visible recovery.
+
+**Files**
+- `mobile/src/lib/authRedirect.ts`
+- `mobile/src/lib/authRedirect.test.ts`
+- `mobile/src/data/auth/session.ts`
+- `mobile/src/data/auth/useAuthStatus.ts`
+- `mobile/src/data/auth/redirectNotice.ts`
+- `mobile/src/screens/auth/AuthScreen.tsx`
+
+**Verification**
+- Focused callback tests, typecheck, production web export, full mobile tests, frontend build, backend tests, and the change-log check run before production merge.
+- The Cloudflare preview is checked for unchanged web sign-in and normal signed-in startup; native callback behavior is pinned at the URL parser, Supabase hand-off, and auth-state wiring boundaries without using real credentials.
+
 ## 2026-09-02 — A denied microphone and an interrupted upload are recoverable
 
 **What changed**

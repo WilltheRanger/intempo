@@ -4,7 +4,10 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { Platform } from 'react-native';
 
-import { authRedirectUrl } from '../../lib/authRedirect';
+import {
+  authRedirectPayload,
+  authRedirectUrl,
+} from '../../lib/authRedirect';
 
 /**
  * Supabase client for auth only. The backend verifies the access token this
@@ -81,6 +84,38 @@ export interface AuthResult {
    * account-enumeration oracle Supabase is withholding.
    */
   possiblyAlreadyRegistered: boolean;
+}
+
+export type ConsumedAuthRedirect = 'ignored' | 'signedIn' | 'recovery';
+
+/**
+ * Establishes the session carried by an emailed link on iOS or Android.
+ *
+ * Web callbacks are consumed by auth-js's `detectSessionInUrl`. Native links
+ * arrive through Expo Linking instead, and without this bridge confirmation,
+ * passwordless sign-in, and password recovery merely opened the app while
+ * leaving it signed out.
+ */
+export async function consumeAuthRedirect(
+  url: string,
+): Promise<ConsumedAuthRedirect> {
+  const payload = authRedirectPayload(url);
+  if (!payload) {
+    return 'ignored';
+  }
+  if (payload.kind === 'error') {
+    throw new Error(payload.message);
+  }
+
+  const supabase = requireClient();
+  const { error } = await supabase.auth.setSession({
+    access_token: payload.accessToken,
+    refresh_token: payload.refreshToken,
+  });
+  if (error) {
+    throw error;
+  }
+  return payload.recovery ? 'recovery' : 'signedIn';
 }
 
 /** Signs in with an email and password. Throws with the provider's reason. */
