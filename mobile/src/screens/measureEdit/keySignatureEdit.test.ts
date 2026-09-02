@@ -5,6 +5,7 @@ import {
   KEY_SIGNATURE_CHOICES,
   describeKeySignature,
   keyBeforeMeasure,
+  sameEditableSignature,
 } from './keySignatureEdit';
 
 const score: ScoreJson = {
@@ -31,6 +32,11 @@ describe('key-signature choices', () => {
       'Bb major', 'F major', 'C major', 'G major', 'D major',
       'A major', 'E major', 'B major', 'F# major', 'C# major',
     ]);
+  });
+
+  it('keeps no printed change distinct from a change to C major', () => {
+    expect(sameEditableSignature(null, 'C major')).toBe(false);
+    expect(sameEditableSignature('Bb major', 'G minor')).toBe(true);
   });
 
   it('describes relative minor by the same printed signature', () => {
