@@ -308,6 +308,83 @@ def _analysis_row(user_id: UUID, score_id: UUID, **over: Any) -> dict:
     return row
 
 
+def test_recording_playback_is_private_and_short_lived(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    mine, theirs = uuid4(), uuid4()
+    mine_row = _analysis_row(mine, uuid4())
+    their_row = _analysis_row(theirs, uuid4())
+    fake = FakeSupabase()
+    fake.seed("analyses", [mine_row, their_row])
+    _install(monkeypatch, fake)
+    seen: list[str] = []
+
+    def _sign(_client: Any, reference: str) -> str:
+        seen.append(reference)
+        return "https://storage.test/signed/take.wav?token=short-lived"
+
+    monkeypatch.setattr(analyses_module, "readable_audio_url", _sign)
+    headers = {"Authorization": f"Bearer {make_token(sub=mine)}"}
+
+    response = client.get(
+        f"/v1/analyses/{mine_row['id']}/recording", headers=headers
+    )
+    assert response.status_code == 200
+    assert response.json() == {
+        "url": "https://storage.test/signed/take.wav?token=short-lived",
+        "expires_in": analyses_module.SIGNED_AUDIO_DOWNLOAD_TTL_SECONDS,
+    }
+    assert response.headers["cache-control"] == "private, no-store"
+    assert seen == [mine_row["audio_url"]]
+
+    # The same response covers an unknown id and another musician's id. The
+    # endpoint must not reveal that the latter recording exists.
+    hidden = client.get(
+        f"/v1/analyses/{their_row['id']}/recording", headers=headers
+    )
+    assert hidden.status_code == 404
+    assert len(seen) == 1
+
+    # A row scoped to this account but pointing at somebody else's storage is
+    # corrupt data, not permission to sign that object.
+    corrupt = _analysis_row(
+        mine,
+        uuid4(),
+        audio_url=f"{PROJECT_HOST}/storage/v1/object/authenticated/audio-uploads/{theirs}/take.wav",
+    )
+    fake.table("analyses").rows.append(corrupt)
+    refused = client.get(
+        f"/v1/analyses/{corrupt['id']}/recording", headers=headers
+    )
+    assert refused.status_code == 404
+    assert len(seen) == 1
+
+
+def test_recording_playback_requires_a_session(client: TestClient) -> None:
+    assert client.get(f"/v1/analyses/{uuid4()}/recording").status_code == 401
+
+
+def test_recording_playback_reports_a_temporary_storage_failure(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
+) -> None:
+    user_id = uuid4()
+    row = _analysis_row(user_id, uuid4())
+    fake = FakeSupabase()
+    fake.seed("analyses", [row])
+    _install(monkeypatch, fake)
+
+    def _unavailable(_client: Any, _reference: str) -> str:
+        raise analyses_module.AudioStorageError("storage is down")
+
+    monkeypatch.setattr(analyses_module, "readable_audio_url", _unavailable)
+    response = client.get(
+        f"/v1/analyses/{row['id']}/recording",
+        headers={"Authorization": f"Bearer {make_token(sub=user_id)}"},
+    )
+    assert response.status_code == 503
+    assert response.json()["detail"] == "recording is temporarily unavailable"
+
+
 def test_list_returns_only_the_callers_analyses(
     monkeypatch: pytest.MonkeyPatch, client: TestClient, make_token: Callable[..., str]
 ) -> None:

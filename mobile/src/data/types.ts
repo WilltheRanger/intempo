@@ -801,6 +801,8 @@ export interface TakeFailure {
 
 export interface TakeResult {
   id: string;
+  /** True when this take came from private storage and can be heard again. */
+  recordingAvailable?: boolean;
   pieceId: string;
   pieceTitle: string;
   composer: string | null;

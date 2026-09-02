@@ -102,6 +102,11 @@ export interface TakeSource {
   getLatestTake(): Promise<TakeResult | null>;
   /** Finished, readable takes, newest first. */
   getRecentTakes(limit?: number): Promise<TakeResult[]>;
+  /**
+   * A fresh private URL for hearing one saved recording. Null only in the
+   * fixture build, where no recording was ever uploaded.
+   */
+  getRecordingUrl(analysisId: string): Promise<string | null>;
 }
 
 /**

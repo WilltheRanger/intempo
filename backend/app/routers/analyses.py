@@ -13,12 +13,19 @@ from typing import Any
 from urllib.parse import urlparse
 from uuid import UUID
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Response, status
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.services import pending_uploads
 from app.auth import current_user_id, current_user_id_provisioned
-from app.services.audio_storage import InvalidAudioReference, durable_audio_reference
+from app.services.audio_storage import (
+    SIGNED_AUDIO_DOWNLOAD_TTL_SECONDS,
+    AudioStorageError,
+    InvalidAudioReference,
+    durable_audio_reference,
+    owned_audio_key,
+    readable_audio_url,
+)
 from app.services.tier_limits import tier_of, usage_for
 from app.db import get_service_client
 from app.models.analysis import (
@@ -106,6 +113,13 @@ class AnalysisResponse(BaseModel):
     created_at: str
     updated_at: str
     finished_at: str | None = None
+
+
+class RecordingPlaybackResponse(BaseModel):
+    """A short-lived, private read permission for one saved take."""
+
+    url: str
+    expires_in: int
 
 
 def _service_client():
@@ -392,3 +406,62 @@ def get_analysis(
     if not rows:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="analysis not found")
     return _row_to_response(rows[0])
+
+
+@router.get("/{analysis_id}/recording", response_model=RecordingPlaybackResponse)
+def get_analysis_recording(
+    analysis_id: UUID,
+    response: Response,
+    user_id: UUID = Depends(current_user_id),
+) -> RecordingPlaybackResponse:
+    """Sign the caller's own practice recording for immediate playback.
+
+    The analyses table keeps a durable, token-free storage reference. Returning
+    that value would not play, and returning a permanent public URL would turn
+    private practice into public media. This endpoint owner-scopes the row and
+    creates a fresh one-hour read permission only when the musician opens the
+    take.
+
+    The response itself must never be cached: the URL is a bearer credential,
+    even though it is short-lived.
+    """
+    client = _service_client()
+    rows = (
+        client.table("analyses")
+        .select("audio_url")
+        .eq("id", str(analysis_id))
+        .eq("user_id", str(user_id))
+        .limit(1)
+        .execute()
+    ).data or []
+    reference = rows[0].get("audio_url") if rows else None
+    if not reference:
+        # One answer for an unknown take, somebody else's take, and an old row
+        # whose audio is absent. Do not reveal which IDs belong to whom.
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="recording not found",
+        )
+
+    try:
+        # Rows are owner-scoped above, and new writes already enforce this.
+        # Check the storage prefix again at the read boundary so an imported or
+        # corrupted historical row cannot sign another account's object.
+        owned_audio_key(str(reference), user_id)
+        url = readable_audio_url(client, str(reference))
+    except InvalidAudioReference as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="recording not found",
+        ) from exc
+    except AudioStorageError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="recording is temporarily unavailable",
+        ) from exc
+
+    response.headers["Cache-Control"] = "private, no-store"
+    return RecordingPlaybackResponse(
+        url=url,
+        expires_in=SIGNED_AUDIO_DOWNLOAD_TTL_SECONDS,
+    )

@@ -924,6 +924,12 @@ export const fixtureTakeSource: TakeSource = {
     const take = buildFixtureTake();
     return limit > 0 && take ? [take] : [];
   },
+
+  // The sample result was never recorded or uploaded. Hiding playback is more
+  // honest than playing a canned clip and calling it the musician's take.
+  async getRecordingUrl() {
+    return null;
+  },
 };
 
 /** The sample take, built fresh so `recordedAt` is always recent. */
@@ -955,6 +961,7 @@ function buildFixtureTake(): TakeResult | null {
 
   return {
     id: FIXTURE_TAKE_ID,
+    recordingAvailable: false,
     pieceId: 'fixture-bach-bwv1001',
     pieceTitle: piece?.title ?? 'Unknown piece',
     composer: piece?.composer ?? null,

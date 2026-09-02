@@ -34,6 +34,21 @@ export function getAnalysis(id: string): Promise<AnalysisResponse> {
   return apiFetch<AnalysisResponse>(`/v1/analyses/${id}`);
 }
 
+export interface RecordingPlaybackResponse {
+  /** A short-lived owner-only read URL. Never persist it. */
+  url: string;
+  expires_in: number;
+}
+
+/** GET /v1/analyses/:id/recording — a fresh private playback permission. */
+export function getAnalysisRecording(
+  id: string,
+): Promise<RecordingPlaybackResponse> {
+  return apiFetch<RecordingPlaybackResponse>(
+    `/v1/analyses/${id}/recording`,
+  );
+}
+
 export interface CreateAnalysisInput {
   score_id: string;
   /** Durable owner-prefixed key returned by POST /v1/upload/audio. */
