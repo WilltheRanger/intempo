@@ -108,17 +108,32 @@ export function VerdictScreen() {
           />
         }
       >
+        {/*
+          **Centred, like the empty states on Today and Insights** (owner's
+          call, 2026-09-02, on seeing this screen rendered for the first time).
+          To a musician this is an empty state: nothing to show, one thing to
+          do. Left at the top it put a short sentence in the first quarter of
+          the screen with two thirds of the page blank beneath it.
+
+          The header keeps only the back control and the piece, because the
+          finding has moved into the centred block — a screen has one dominant
+          focal point (§3 law 4), and it should be the outcome rather than the
+          title of the piece.
+        */}
         <PageHeader
           eyebrow={take.pieceTitle}
-          title="This take didn't get analysed"
           onBack={goBack}
           backLabel="Back to the piece"
         />
-        <Text variant="body" color="textSecondary">
-          {take.failure.recoverable
-            ? 'Something went wrong on our side, not with your playing. Recording it again usually works.'
-            : "We couldn't process this recording. Your playing wasn't the problem — record it again when you have a moment."}
-        </Text>
+        <EmptyState
+          fill
+          title="This take didn't get analysed"
+          description={
+            take.failure.recoverable
+              ? 'Something went wrong on our side, not with your playing. Recording it again usually works.'
+              : "We couldn't process this recording. Your playing wasn't the problem — record it again when you have a moment."
+          }
+        />
         {take.recordingAvailable ? (
           <TakePlayback analysisId={take.id} />
         ) : null}
@@ -140,15 +155,14 @@ export function VerdictScreen() {
           />
         }
       >
+        {/* Centred for the same reason as the branch above. */}
         <PageHeader
           eyebrow={take.pieceTitle}
-          title="Nothing to measure"
           onBack={goBack}
           backLabel="Back to the piece"
         />
-        <Text variant="body" color="textSecondary">
-          {take.headline}
-        </Text>
+        {/* The pipeline's own sentence, shown verbatim. */}
+        <EmptyState fill title="Nothing to measure" description={take.headline} />
         {take.recordingAvailable ? (
           <TakePlayback analysisId={take.id} />
         ) : null}

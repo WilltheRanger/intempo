@@ -7,7 +7,17 @@ import { IconButton } from './IconButton';
 import { Text } from './Text';
 
 export interface PageHeaderProps {
-  title: string;
+  /**
+   * The serif heading. Omitted when the screen's finding is centred below.
+   *
+   * The two Verdict outcomes a musician meets after a take that could not be
+   * read put their finding in a centred `EmptyState`, so the header carries
+   * only the back control and the piece it is about. They still need the back
+   * row, and it lives here for a specific reason: the negative offset below is
+   * a **touch-target** fix, and a second copy of that row somewhere else is how
+   * the 32x44 back button comes back.
+   */
+  title?: string;
   /** Small line above the title — a date, a count. Omitted when null. */
   eyebrow?: string | null;
   /**
@@ -63,13 +73,17 @@ export function PageHeader({
         </Text>
       ) : null}
 
-      <View style={styles.titleRow}>
-        {/* flex so a long title wraps instead of shoving the action off-screen. */}
-        <Text variant="screenTitle" style={styles.title}>
-          {title}
-        </Text>
-        {action}
-      </View>
+      {title || action ? (
+        <View style={styles.titleRow}>
+          {/* flex so a long title wraps instead of shoving the action off-screen. */}
+          {title ? (
+            <Text variant="screenTitle" style={styles.title}>
+              {title}
+            </Text>
+          ) : null}
+          {action}
+        </View>
+      ) : null}
     </View>
   );
 }

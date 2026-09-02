@@ -6,6 +6,58 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-02 — The two screens a musician meets after a take that failed
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Put to the owner under the
+§2 gate with both screens rendered and sent first; approved as *"Centre them,
+like Insights"*.
+
+**There is exactly one take fixture and it succeeds**, deliberately — the
+comment beside it says fabricating a failure *"would put a 'we couldn't read
+that' screen in front of someone browsing the demo, describing a recording they
+never made"*, and that is right, because this build is also the public preview.
+So `VerdictScreen`'s other two branches had never been rendered:
+
+- `take.failure` → *"This take didn't get analysed"*
+- `take.status !== 'ok'` → *"Nothing to measure"*, with the pipeline's sentence
+
+These are the screens a musician meets **after playing**, which is the one part
+that cannot be repeated. Reached with the throwaway-build technique this file
+already documents, so no failure state ships into the demo: two ids handled in
+`getTake`, built, walked, then restored — `diff -q` clean and `git status` clean
+before anything else was done.
+
+**The copy was already good.** What was wrong was the composition: a short
+sentence in the top quarter with two thirds of the screen empty beneath it. The
+same shape the owner had already ruled on this morning for Today, and the same
+shape as the `AccountStartupScreen` defect this file records.
+
+Now `EmptyState fill`, the treatment Today and Insights use. The header keeps
+only the back control and the piece, because the finding moved into the centred
+block and a screen has one dominant focal point (§3 law 4) — it should be the
+outcome, not the title of the piece.
+
+**`PageHeader.title` became optional to allow that**, rather than rendering a
+back row inline in `VerdictScreen`. That row carries the negative offset whose
+comment records it as a **touch-target** fix — the back control measured 32x44
+against this app's 44pt floor — and a second copy of it elsewhere is exactly how
+that comes back. One place owns the back row.
+
+**Three-foot test (both screens, rebuilt):** first the finding in centred serif,
+second its sentence, third "Record again" at the thumb. The piece title recedes
+to a grey line at the top.
+
+**Tests:** mobile 1223 passed (105 files); `tsc --noEmit` clean; web build
+clean. **`PageHeader` is used by every screen**, so both browser tools were run
+against the rebuilt app rather than trusted: `walk-app.mjs` PASS (seventeen
+checks, no page errors) and `audit-a11y.mjs` PASS (fifteen routes) — which is
+what shows the optional title broke no other header.
+
+**Side effects:** `PageHeader` now accepts a header with no title. **Rollback:**
+revert.
+
+---
+
 ## 2026-09-02 — The start-bar picker's pagination had never been rendered
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. A fixture, no product
