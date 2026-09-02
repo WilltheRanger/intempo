@@ -20,7 +20,11 @@ import type { TakeResult } from '../../data/types';
 import { BORDER_WIDTH, colors, spacing } from '../../design';
 import { formatTakeVerdict, formatTempo } from '../../lib/tempo';
 import type { RootNavigation, RootStackParamList } from '../../navigation/types';
-import { readMeasure, timedMeasureRange } from '../../lib/verdict/measureReading';
+import {
+  describeTrendRange,
+  readMeasure,
+  timedMeasureRange,
+} from '../../lib/verdict/measureReading';
 import { MEASURE_COLUMNS, MeasureRow } from './MeasureRow';
 import { TrendLine } from './TrendLine';
 import { TakePlayback } from './TakePlayback';
@@ -251,7 +255,9 @@ export function VerdictScreen() {
           tolerance={take.tolerance}
           firstMeasure={firstMeasure}
           lastMeasure={lastMeasure}
-          accessibilityLabel={`Tempo drift across ${take.measures.length} measures`}
+          // The same two numbers the axis prints — see `describeTrendRange`,
+          // which lives beside `timedMeasureRange` because they had drifted.
+          accessibilityLabel={describeTrendRange(firstMeasure, lastMeasure)}
         />
       </View>
 
