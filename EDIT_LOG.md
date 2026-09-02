@@ -6,6 +6,27 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-02 — A monthly limit is shown before the musician records
+
+**What changed**
+- Read the account's existing monthly analysis allowance on the recording screen before opening the microphone or starting the count-in.
+- Disabled and clearly relabelled the record control when no analyses remain, avoiding a performance and upload the backend already knows it must refuse.
+- Explained when recording returns and made clear that score playback, tempo controls, the metronome, and rest cues remain available for ordinary practice.
+- Kept the backend's quota enforcement as the final authority for stale sessions and simultaneous use on another device.
+- Refreshed the account allowance immediately after every accepted analysis so Record Again cannot reuse the pre-take count and invite one take too many.
+- Preserved normal recording when usage is unknown or the account tier is unlimited; a failed counter cannot lock a musician out.
+- Added allowance boundary, copy, ordering, disabled-control, and post-success refresh tests.
+
+**Files**
+- `mobile/src/lib/analysisAllowance.ts`
+- `mobile/src/lib/tierLimit.ts`
+- `mobile/src/lib/tierLimit.test.ts`
+- `mobile/src/screens/record/RecordScreen.tsx`
+
+**Verification**
+- Focused allowance tests, typecheck, production web export, full mobile tests, frontend build, backend tests, and the change-log check run before production merge.
+- The Cloudflare preview is checked for normal recording setup below the limit and for the compiled pre-flight limit path without starting the microphone.
+
 ## 2026-09-02 — Musicians can hear the recording behind a practice result
 
 **What changed**
