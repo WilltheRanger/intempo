@@ -315,18 +315,6 @@ def _signed_page(bars: list[tuple[bool, bool]], *, first: bool = False) -> Score
     )
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "A repeat opening on one page and closing on another cannot be read. "
-        "The importer sees each page alone, and `Repeat` has no way to say "
-        "'a forward sign here, still open' — so page 1's sign is discarded and "
-        "page 2's closing sign falls back to the start of its own page. "
-        "Fixing it needs a field on a schema the app types against, which is "
-        "the owner's call. Multi-page is inert behind the unapplied 011, so "
-        "nothing reads this today."
-    ),
-)
 def test_a_repeat_spanning_a_page_break_is_read_from_its_forward_sign() -> None:
     """**The convention is right for a piece and wrong for a page**, the same
     shape as `pickup_complement` and the metre join before it.
@@ -338,10 +326,18 @@ def test_a_repeat_spanning_a_page_break_is_read_from_its_forward_sign() -> None:
     | forward p1 bar 5, backward p3 bar 4 | 4 bars repeated | 20 |
     | no forward at all, backward p2 bar 3 | 3 bars repeated | 13 |
 
-    Extending such a span back to bar 1 of the part would be closer in both —
-    but it is indistinguishable from a genuine forward sign printed at the top
-    of a page, which happens at section boundaries, so it trades a known error
-    for a guess. Left as an honest failure.
+    Extending such a span back to bar 1 of the part is closer in both and is
+    still a guess: it is indistinguishable from a genuine forward sign printed
+    at the top of a page, which happens at section boundaries. That is why this
+    was a strict `xfail` for a week rather than a heuristic.
+
+    **The fix is to carry the fact rather than infer it.** `ScoreJson` now
+    reports the forward signs still open where a page's music stopped, and
+    `Repeat.start_inferred` says whether a repeat's opening was printed or
+    fallen back to. `join_pages` keeps a stack of the first and rewrites only
+    the second — so the page-1 `|:` at bar 5 is paired with the page-3 `:|`,
+    and a genuine section repeat opening on a page's first bar is left exactly
+    as it was.
     """
     pages = [
         _signed_page([(index == 5, False) for index in range(1, 11)], first=True),
@@ -352,6 +348,63 @@ def test_a_repeat_spanning_a_page_break_is_read_from_its_forward_sign() -> None:
     joined = join_pages(pages)
 
     assert [(r.start_measure, r.end_measure) for r in joined.repeats] == [(5, 24)]
+
+
+def test_a_repeat_printed_at_the_top_of_a_page_keeps_its_own_opening() -> None:
+    """**The case that made the obvious fix wrong**, and the reason
+    `start_inferred` exists rather than a rule about page boundaries.
+
+    Page 2 opens with a real `|:` on its first bar and closes it on its own
+    last bar — an ordinary section boundary, and page 1 has an unrelated `|:`
+    still open. Pairing by position would hand page 2's `:|` the page-1 sign
+    and swallow the section whole; the page-1 opening is left pending instead,
+    which is what it is.
+    """
+    pages = [
+        _signed_page([(index == 5, False) for index in range(1, 11)], first=True),
+        _signed_page([(index == 1, index == 10) for index in range(1, 11)]),
+    ]
+
+    joined = join_pages(pages)
+
+    assert [(r.start_measure, r.end_measure) for r in joined.repeats] == [(11, 20)]
+    # And the page-1 sign is not invented into the joined score either: it was
+    # never closed, so there is nothing to report.
+    assert joined.unclosed_repeat_starts == []
+
+
+def test_two_openings_across_pages_close_innermost_first() -> None:
+    """Nested `|:` is legal, the importer keeps a stack, and so does the join.
+
+    Carrying one pending opening instead of a stack would lose the outer sign
+    silently — the same shape as the bug being fixed, one level down.
+    """
+    pages = [
+        _signed_page([(index in (2, 6), False) for index in range(1, 11)], first=True),
+        _signed_page([(False, index in (3, 8)) for index in range(1, 11)]),
+    ]
+
+    joined = join_pages(pages)
+
+    # Bar 6's opening is the innermost, so it closes first, at bar 13; bar 2's
+    # closes at bar 18.
+    assert [(r.start_measure, r.end_measure) for r in joined.repeats] == [
+        (6, 13),
+        (2, 18),
+    ]
+
+
+def test_a_single_page_scan_is_untouched_by_any_of_this() -> None:
+    """The common case, and `join_pages` returns it bit-identical by design.
+
+    A backward sign with no forward on a one-page scan still means "from the
+    beginning" — there is no earlier page for it to have opened on, and this
+    must not start reporting the page as unclosed or rewriting its span.
+    """
+    only = _signed_page([(False, index == 6) for index in range(1, 11)], first=True)
+
+    assert join_pages([only]) is only
+    assert [(r.start_measure, r.end_measure) for r in only.repeats] == [(1, 6)]
 
 
 # ---------------------------------------------------------------------------

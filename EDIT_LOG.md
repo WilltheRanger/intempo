@@ -6,6 +6,93 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-02 — A repeat spanning a page break, and the stale reason that kept it parked
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Put to the owner under §2
+because it changes a schema the app types against; approved as **"Add the
+schema field"**.
+
+### How it was found
+
+By reading the three `strict` xfails — a deliberate record of things known not
+to work. All three are exemplary, with measurements and reasons. One reason
+ended:
+
+> *"Multi-page is inert behind the unapplied 011, so nothing reads this today."*
+
+`011_score_pages` has been applied on `intempo-dev` since **2026-08-29**
+(verified against `supabase_migrations`), the scan flow uploads every page —
+I walked it importing two an hour earlier — and `join_pages` runs in the
+shipping worker. The defect was live and had looked parked for four days.
+
+**A reason to postpone is a claim, and it goes stale like any other.** Both
+places that repeated it are corrected.
+
+### The defect
+
+Most pieces that repeat their opening print no `|:`, so a backward sign with
+nothing to pair it with falls back to the start of what was read. Right for a
+piece; wrong for a *page*. Measured on ten-bar pages: a forward on page 1 bar 5
+closing on page 3 bar 4 read as **4** bars repeated where the truth is 20 — and
+`alignment.py` builds its timeline from that, so a musician playing the repeat
+correctly is scored against a shape nobody plays.
+
+Worse, the page-1 sign was not merely mismatched, it was **discarded**:
+`_repeats_in` left unclosed forwards in a local list and returned without them.
+
+### The fix
+
+Two facts now cross the join, because neither can be inferred afterwards:
+
+- `ScoreJson.unclosed_repeat_starts` — the forward signs still open where a
+  page's music stopped. A **stack**, because nested `|:` is legal and the
+  importer already keeps one; carrying a single value would lose the outer sign
+  silently, which is this same bug one level down.
+- `Repeat.start_inferred` — whether the opening was printed or fallen back to.
+
+`join_pages` keeps the stack across pages and rewrites **only** the inferred
+openings. It extends the stack *after* placing each page's own repeats: a sign
+still open at a page's end cannot close on that page, or the importer would
+have paired it.
+
+**`start_inferred` is what makes this safe, and it is the reason the obvious
+fix was wrong.** Dropping repeats that open on a page's first bar — the
+no-schema-change alternative — also drops genuine section repeats, which open
+there constantly. Carrying the fact costs a field and loses nothing.
+
+Both fields default to "no information", so every stored score reads back
+exactly as before. The app needs no change: `_Strict` is `extra="ignore"`, and
+after the join `unclosed_repeat_starts` is empty and `start_inferred` is
+history.
+
+### Tests
+
+The strict xfail did its job — it turned `XPASS(strict)` the moment the fix
+landed, which is a failure, so the marker could not survive the change. Removed,
+and its docstring rewritten to say what carries the fact instead of why it
+could not be carried.
+
+Three new cases, two of which are the ones that could go wrong: a genuine `|:`
+printed on page 2's first bar keeps its own opening while page 1's stays
+pending; two nested openings across pages close innermost first; and a
+single-page scan is returned bit-identical with its backward sign still reading
+from bar 1.
+
+### Verification
+
+backend **1909 passed / 2 xfailed** — one fewer xfail than before, which is
+the fix landing. mobile 1264 passed, `tsc --noEmit` clean: the app needs no
+change. No web build change.
+
+**Not covered:** a real multi-page photograph with a repeat spanning the break.
+The fixtures are hand-built MusicXML pages; no such photograph exists in the
+repository.
+
+**Rollback:** revert this commit. Both schema fields are additive with
+defaults, so a rolled-back reader still validates every score written under it.
+
+---
+
 ## 2026-09-02 — The scan flow had never been rendered with a page in it
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. No §2 gate: no app code

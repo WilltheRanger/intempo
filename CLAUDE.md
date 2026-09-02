@@ -252,6 +252,26 @@ there works differently as of 2026-08-24:
   `what_this_piece_is` names the key **at the bars being re-read**, and names
   none when they straddle a change — a corrector prompt that states the wrong
   key gets back a bar that sums perfectly and is spelled a semitone off.
+- **A repeat can open on one page and close on another** (2026-09-02). Most
+  pieces that repeat their opening print no `|:` at all, so a backward sign
+  with nothing to pair it with falls back to the start of what was read — right
+  for a piece, wrong for a *page*. Read alone, page 3 of a part reported a
+  repeat starting at page 3's first bar; measured, a `|:` on page 1 bar 5
+  closing on page 3 bar 4 read as **4** bars repeated where the truth is 20.
+  Two facts carry across the join and neither can be inferred later:
+  `ScoreJson.unclosed_repeat_starts` (the forward signs still open where a
+  page's music stopped — a **stack**, because nested `|:` is legal and losing
+  the outer one is the same bug a level down) and `Repeat.start_inferred`
+  (whether the opening was printed or fallen back to). `join_pages` rewrites
+  **only** the inferred ones. That second field is what makes it safe: a repeat
+  whose `|:` was genuinely printed on a page's first bar is an ordinary section
+  boundary and is left exactly alone, which is why dropping such repeats — the
+  other candidate fix — would have traded this bug for a worse one. Both
+  default to "no information", so every stored score reads back unchanged.
+  This was a strict `xfail` for a week whose reason said *"multi-page is inert
+  behind the unapplied 011, so nothing reads this today"* — 011 went live on
+  2026-08-29 and nobody re-read the note, so a live defect looked parked.
+  **A reason to postpone is a claim, and it goes stale like any other.**
 - **A clef printed mid-piece is a change of clef** (2026-09-02).
   `Measure.clef` is the fourth field of the `time_signature` / `key_signature`
   shape and obeys the same rule; `ScoreJson.clef` stays the clef the page
