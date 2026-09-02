@@ -798,6 +798,29 @@ def _articulation(note: ET.Element) -> str | None:
     return None
 
 
+def key_fifths(name: str | None) -> int | None:
+    """Sharps (positive) or flats (negative) a key name prints, or None.
+
+    The inverse of `_key_name`, and the thing to compare two keys by: `Bb major`
+    and `G minor` are different names for the same two flats, so a page that
+    names the mode differently mid-piece has not changed its signature.
+    Tolerant of case and of a bare tonic, because names come off photographs;
+    `None` for `unknown`, for absent, and for anything unrecognised — which is
+    an answer ("this states no signature"), not a failure.
+    """
+    if not name:
+        return None
+    wanted = name.strip().lower()
+    if not wanted or wanted == "unknown":
+        return None
+    for table, sign in ((_SHARP_KEYS, 1), (_FLAT_KEYS, -1)):
+        for count, major in enumerate(table):
+            for spelled in (major, _key_name(sign * count, "minor") or ""):
+                if spelled and wanted in (spelled.lower(), spelled.split(" ")[0].lower()):
+                    return sign * count
+    return None
+
+
 def _key_name(fifths: int, mode: str | None) -> str | None:
     if not -7 <= fifths <= 7:
         return None
@@ -1448,7 +1471,13 @@ def score_json_from_musicxml(
     #: once the part changes clef. See where `measure_clef` is set.
     running_clef: str | None = None
     time_signature: str | None = None
+    #: The metre in force as the measures are walked — the last one printed
+    #: anywhere, not the header. See where `measure_time` is set.
+    running_time: str | None = None
     key_signature: str | None = None
+    #: The signature in force, as a count of sharps or flats, so a return to
+    #: the opening key is seen as the change it is. See `measure_key`.
+    running_fifths: int | None = None
     tempo_marking: str | None = None
     bpm_hint: int | None = None
     tempo_beat_unit: str | None = None
@@ -1540,6 +1569,7 @@ def score_json_from_musicxml(
         # in cut-common somewhere else entirely.
         measure_time: str | None = None
         measure_clef: str | None = None
+        measure_key: str | None = None
         # A multi-bar rest is *this* many bars, and reading it as one is how a
         # bass part loses most of its music. Handled after the attributes loop,
         # because the metre it needs may be stated in this very measure.
@@ -1613,22 +1643,51 @@ def score_json_from_musicxml(
                 stated = f"{beats}/{beat_type}"
                 if time_signature is None:
                     time_signature = stated
-                elif stated != time_signature:
+                if stated != running_time:
                     # A metre printed mid-piece is a change of metre, and it
                     # belongs on the measure — which is where `meters_in_force`
                     # reads changes from. Overwriting the header instead
                     # reports every bar before it as having the wrong number of
                     # beats, on a file that states both correctly.
-                    measure_time = stated
+                    #
+                    # **Compared against the running metre, not the header**,
+                    # the rule the clef below already follows. This compared
+                    # against `time_signature`, so a piece in 4/4 that turns
+                    # 2/4 at bar 5 and back at bar 9 recorded the departure and
+                    # dropped the return — bar 9 states 4/4, which *equals* the
+                    # header — and `meters_in_force` then held 2/4 to the end,
+                    # calling every correctly-read bar after 9 long.
+                    if running_time is not None:
+                        measure_time = stated
+                    running_time = stated
 
             key_el = attributes.find("key")
-            if key_signature is None and key_el is not None:
+            if key_el is not None:
                 raw = _text(key_el.find("fifths"))
-                if raw is not None:
-                    try:
-                        key_signature = _key_name(int(raw), _text(key_el.find("mode")))
-                    except ValueError:
-                        key_signature = None
+                try:
+                    fifths = int(raw) if raw is not None else None
+                except ValueError:
+                    fifths = None
+                stated_key = (
+                    _key_name(fifths, _text(key_el.find("mode")))
+                    if fifths is not None
+                    else None
+                )
+                if stated_key is not None:
+                    if key_signature is None:
+                        key_signature = stated_key
+                    # **A key printed mid-piece is a change of key**, the same
+                    # shape as the metre and the clef above, and compared the
+                    # same way — against what is in force, by *signature*: a
+                    # file that restates the header in every bar changes
+                    # nothing, and one that returns to the opening key at bar
+                    # 20 changes back. `key_signature` stays the key the page
+                    # opens in. Before this, every `<key>` after the first was
+                    # read and thrown away.
+                    if fifths != running_fifths:
+                        if running_fifths is not None:
+                            measure_key = stated_key
+                        running_fifths = fifths
 
         for direction in measure_el.iterfind("direction"):
             words = _text(direction.find("direction-type/words"))
@@ -2018,6 +2077,7 @@ def score_json_from_musicxml(
                 tuplets=tuplets,
                 time_signature=measure_time,
                 clef=measure_clef,  # type: ignore[arg-type]
+                key_signature=measure_key,
                 unwritable_notes=dropped_here,
             )
         )

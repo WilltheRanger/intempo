@@ -27,7 +27,11 @@ def _score(case: dict) -> ScoreJson:
         clef="treble",
         ocr_confidence=1.0,
         measures=[
-            Measure(measure_number=n, notes=[Note(pitch="D4", duration="quarter")])
+            Measure(
+                measure_number=n,
+                notes=[Note(pitch="D4", duration="quarter")],
+                **case.get("stated", {}).get(str(n), {}),
+            )
             for n in case["bars"]
         ],
         repeats=[
@@ -50,3 +54,10 @@ def test_the_shared_contract(case: dict) -> None:
     assert [[c.measure_number, c.kind] for c in out.tempo_changes] == case[
         "out_tempo_changes"
     ]
+    if "out_entry" in case:
+        entry = out.measures[0]
+        assert {
+            "time_signature": entry.time_signature,
+            "clef": entry.clef,
+            "key_signature": entry.key_signature,
+        } == case["out_entry"]

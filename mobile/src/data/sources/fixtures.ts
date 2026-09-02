@@ -299,6 +299,75 @@ const WORD_MARKED_SCORE: ScoreJson = {
   bpm_hint: null,
 };
 
+/**
+ * A part that changes key twice, so the change is something a screen can be
+ * looked at with.
+ *
+ * Bass clef, in B-flat, turning to G major at bar 5 and to C major at bar 7 —
+ * the second change is the one that prints *naturals*, because a change to a
+ * key with no accidentals would otherwise print nothing and be invisible.
+ * Every pitch is spelled absolutely, the way OCR delivers them: the E-flats and
+ * B-flats of the opening print no accidental under the signature, the F sharps
+ * after bar 5 print none either, and the F and B naturals after bar 7 need none
+ * once the flats and the sharp are cancelled. That is the whole reason the
+ * change has to be drawn — read against the opening signature, every one of
+ * those bars is a wrong note.
+ */
+const KEY_CHANGE_SCORE: ScoreJson = {
+  time_signature: '4/4',
+  key_signature: 'Bb major',
+  tempo_marking: 'Andante',
+  bpm_hint: 72,
+  clef: 'bass',
+  measures: [
+    {
+      measure_number: 1,
+      notes: [note('Bb2', 'quarter'), note('D3', 'quarter'), note('F3', 'quarter'), note('Bb3', 'quarter')],
+      slurs: [],
+    },
+    {
+      measure_number: 2,
+      notes: [note('Eb3', 'half'), note('D3', 'quarter'), note('C3', 'quarter')],
+      slurs: [],
+    },
+    {
+      measure_number: 3,
+      notes: [note('Bb2', 'eighth'), note('C3', 'eighth'), note('D3', 'eighth'), note('Eb3', 'eighth'), note('F3', 'half')],
+      slurs: [],
+    },
+    {
+      measure_number: 4,
+      notes: [note('F3', 'half'), note('F2', 'half')],
+      slurs: [],
+    },
+    {
+      measure_number: 5,
+      key_signature: 'G major',
+      notes: [note('G2', 'quarter'), note('B2', 'quarter'), note('D3', 'quarter'), note('F#3', 'quarter')],
+      slurs: [],
+    },
+    {
+      measure_number: 6,
+      notes: [note('G3', 'half'), note('F#3', 'quarter'), note('E3', 'quarter')],
+      slurs: [],
+    },
+    {
+      measure_number: 7,
+      key_signature: 'C major',
+      notes: [note('E3', 'quarter'), note('F3', 'quarter'), note('G3', 'quarter'), note('B2', 'quarter')],
+      slurs: [],
+    },
+    {
+      measure_number: 8,
+      notes: [note('C3', 'whole')],
+      slurs: [],
+    },
+  ],
+  repeats: [],
+  ocr_confidence: 0.96,
+  notes_to_human: '',
+};
+
 const FIXTURE_PIECES: FixturePiece[] = [
   {
     id: 'fixture-bach-bwv1001',
@@ -347,6 +416,17 @@ const FIXTURE_PIECES: FixturePiece[] = [
   // Appended below so the Today preview — which takes the first three pieces
   // that aren't the featured one — stays exactly as approved. These give the
   // Library screen a repertoire worth scrolling and searching.
+  {
+    id: 'fixture-key-change-study',
+    title: 'Study in B♭, turning to G',
+    composer: 'Franz Simandl',
+    movement: 'New Method for the Double Bass',
+    practicedDaysAgo: 33,
+    thumbnail: require('../../../assets/fixtures/01_simple_printed.jpg'),
+    markedBpm: 72,
+    // The one piece whose key changes — see `KEY_CHANGE_SCORE`.
+    score: KEY_CHANGE_SCORE,
+  },
   {
     id: 'fixture-mozart-k216',
     title: 'Violin Concerto No. 3 in G major, K. 216',
