@@ -228,6 +228,9 @@ function toMusician(
     // A timestamp on the wire, a boolean here: the app only ever asks *whether*
     // they were asked. Nothing renders when it happened.
     onboarded: me.onboarded_at !== null,
+    // Consent also arrives as a boolean. The timestamp stays server-side,
+    // where it is needed as the record of when agreement was given.
+    trainingConsent: me.training_consent,
   };
 }
 
