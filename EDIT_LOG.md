@@ -6,6 +6,69 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-02 — The fourth screen, and a documented technique that did not exist
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Following up the gap left
+an hour ago: three of the four unreachable screens were walked, and
+`AccountStartupScreen` was not, because CLAUDE.md's stated way in — *"a
+`?startup=loading|error` query parameter"* on `SignedInApp` — is not in this
+tree. It is gated on `useMe()`'s `isPending` / `isError`, and nothing in
+shipping code branches on the URL.
+
+**So the note was wrong, and being wrong is the expensive part.** A documented
+technique that does not exist costs the next session exactly the time it cost
+this one to discover. CLAUDE.md now says so plainly and names a technique that
+does work: `fixtureMusicianSource.getMusician` made to throw for the error
+state, or to never settle for the loading state, in a throwaway build restored
+with `diff -q`. It also records the cheaper shape — **one** build in which each
+gate reads a query parameter, so every state comes off a single bundle rather
+than one build apiece.
+
+### Both states, looked at
+
+Rendered from a throwaway build, restored byte-identically afterwards
+(`diff -q` clean, `git diff` empty).
+
+- **Loading** — "Opening your practice space" / "Restoring your library,
+  profile, and practice history." / *"This can take a little longer after the
+  app has been idle."* That last line is the honest one: the host does sleep,
+  and the screen says so rather than looking stuck.
+- **Error** — "Couldn't open your account" / "Check your connection and try
+  again." / **Try again** / **Back to sign in**.
+
+**The defect this file records is fixed.** The 2026-09-01 note describes this
+screen "holding a centred spinner between two left-aligned sentences, with the
+one button the screen exists to offer sitting at the vertical middle of the
+phone". It no longer does: the headline and its sentence sit together, and both
+actions are anchored at the bottom in the thumb zone (§3 law 7).
+
+**Three-foot test, on the error screenshot.** First the serif headline
+"Couldn't open your account", second the black **Try again**, third "Back to
+sign in" and the explanation. One dominant focal point, the recovery action
+where a thumb is. No page errors, no undersized targets, root height 844 —
+the boot watchdog's collapse-to-zero failure is not present here either.
+
+### All four, now
+
+`AuthScreen`, `SetPasswordScreen`, `OnboardingScreen` and
+`AccountStartupScreen` have each been rendered and inspected this session. The
+running count in CLAUDE.md of what a missing fixture has cost stands at five;
+nothing here adds a sixth.
+
+### Not done
+
+- **No shipping code was added to make these reachable.** A query-parameter
+  hook in the app for the sake of inspection is a developer affordance in a
+  product, which §2 of CLAUDE.md and the `PreviewBadge` precedent both refuse.
+  The throwaway build stays the technique.
+- The two states were inspected, not redesigned.
+
+### Rollback
+
+`git revert`. Documentation only.
+
+---
+
 ## 2026-09-02 — Looking at the three screens a fixtures build cannot reach
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. CLAUDE.md names four

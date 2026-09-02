@@ -572,11 +572,21 @@ auth or account state rather than behind a route: `AuthScreen` (`signedOut`),
 `SetPasswordScreen` (`recovering`), `AccountStartupScreen` (`loading`) and
 `OnboardingScreen` (`onboarded === false`). Every sweep in this repository
 misses all four. To look at one, flip the single value that gates it in a
-**throwaway build** — `useAuthStatus`'s fixture default, or `onboarded` on the
-fixture musician — and restore it with a `diff -q` check, the same discipline
-`.env` gets. `SignedInApp` takes a third: a `?startup=loading|error` query
-parameter forced into its two branches renders both `AccountStartupScreen`
-states. A state with no fixture is a state nobody has looked at, and that has
+**throwaway build** — `useAuthStatus`'s fixture default, `onboarded` on the
+fixture musician, or `fixtureMusicianSource.getMusician` made to throw (the
+error state) or never settle (the loading state) — and restore it with a
+`diff -q` check, the same discipline `.env` gets. Cheapest is **one** build in
+which each of those reads a query parameter, so every state comes off a single
+bundle instead of one build apiece; all four were walked that way on
+2026-09-02.
+
+There is **no `?startup=` parameter in `SignedInApp`**, whatever this file said
+before: that screen is gated on `useMe()`'s `isPending` / `isError`, and
+nothing in shipping code branches on the URL. The note is corrected rather than
+deleted because a documented technique that does not exist costs the next
+session the time to discover that, which is what it cost this one.
+
+A state with no fixture is a state nobody has looked at, and that has
 now cost this project **five** times: a guessed clef captioned as read, an
 84×154 box of padding where a cover should be, two post-scan screens never
 rendered, onboarding asking a returning musician for a photograph their
