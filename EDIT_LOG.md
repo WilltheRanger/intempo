@@ -6,6 +6,41 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-02 — "Build the best version first" replaces "don't optimize early"
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. The owner's call, given
+directly: *"change your md we want the best version first"*, pointing at
+operating principle 3.
+
+It read **"Don't optimize early. Ship the slowest, ugliest version that works;
+iterate later."** It now reads *build the version you would defend in review* —
+because the data shape, the correctness of a rule and the composition of a
+screen are all far cheaper to get right before something is built on top of
+them, and a large part of this log is the bill for the other choice.
+
+Two things kept, deliberately, so the reversal does not swing too far:
+
+- **Not licence to gold-plate.** "Best" is the best version *of what was asked
+  for*, not more than was asked for. The §2 gate and "every element must
+  justify its presence" are unchanged.
+- **Speed stays exempt.** The original principle was right about *performance*
+  specifically: measure first, then optimise. That is the one clause carried
+  over rather than reversed.
+
+**Changed in both files.** `intempo-combined.md` carried the same principle as
+its item 4, and CLAUDE.md's list says outright that it restates that file's
+Part II — so changing one would have left the binding document contradicting
+the source of truth. That is the exact failure mode corrected earlier today in
+the `?startup=` note, which is why it was not repeated here.
+
+No code changed.
+
+### Rollback
+
+`git revert`. Two paragraphs of prose.
+
+---
+
 ## 2026-09-02 — The fourth screen, and a documented technique that did not exist
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Following up the gap left
