@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import contract from '../../../../fixtures/practice/start_at.json';
-import type { ScoreJson } from '../../data/types';
+import type { ScoreJson, ScoreMeasure } from '../../data/types';
 import { startFromMeasure } from './startFrom';
 
 /**
@@ -17,10 +17,19 @@ interface Case {
   bars: number[];
   repeats: [number, number][];
   tempo_changes: [number, string][];
+  stated?: Record<
+    string,
+    Partial<Pick<ScoreMeasure, 'time_signature' | 'clef' | 'key_signature'>>
+  >;
   from_measure: number;
   out_bars: number[];
   out_repeats: [number, number][];
   out_tempo_changes: [number, string][];
+  out_entry?: {
+    time_signature: string | null;
+    clef: string | null;
+    key_signature: string | null;
+  };
 }
 
 function scoreFrom(item: Case): ScoreJson {
@@ -34,6 +43,7 @@ function scoreFrom(item: Case): ScoreJson {
       measure_number,
       notes: [{ pitch: 'D4', duration: 'quarter' as const, tied_to_next: false }],
       slurs: [],
+      ...(item.stated?.[String(measure_number)] ?? {}),
     })),
     repeats: item.repeats.map(([start_measure, end_measure]) => ({
       start_measure,
@@ -63,6 +73,14 @@ describe('starting a take partway in — the shared contract', () => {
       expect(
         (out.tempo_changes ?? []).map((c) => [c.measure_number, c.kind]),
       ).toEqual(item.out_tempo_changes);
+      if (item.out_entry) {
+        const entry = out.measures[0];
+        expect({
+          time_signature: entry.time_signature ?? null,
+          clef: entry.clef ?? null,
+          key_signature: entry.key_signature ?? null,
+        }).toEqual(item.out_entry);
+      }
     },
   );
 });

@@ -3475,3 +3475,116 @@ def test_every_written_value_has_a_name_plain_and_in_the_common_tuplets(written,
         f"{written} at {ratio} is {float(beats)} beats and came back as "
         f"{notes[0].duration} ({DURATION_BEATS[notes[0].duration]})"
     )
+
+
+# ---------------------------------------------------------------------------
+# A key printed mid-piece is a change of key
+# ---------------------------------------------------------------------------
+
+
+def _key_part(measures_xml: str) -> str:
+    return f"""<score-partwise><part id="P1">{measures_xml}</part></score-partwise>"""
+
+
+def _key_bar(number: int, attributes: str = "") -> str:
+    return f"""<measure number="{number}">
+      <attributes><divisions>1</divisions>{attributes}</attributes>
+      <note><pitch><step>F</step><octave>4</octave></pitch><duration>4</duration><type>whole</type></note>
+    </measure>"""
+
+
+def test_audiveris_reads_the_key_change_at_bar_seven(audiveris_score) -> None:
+    """The real photograph turns from two flats to one sharp at bar 7.
+
+    Every `<key>` after the first was read and thrown away, so the page was
+    engraved in B-flat to the end and every F sharp after bar 7 printed as an
+    inline accidental against a signature that no longer applied.
+    """
+    assert audiveris_score.key_signature == "Bb major"
+    assert [
+        (m.measure_number, m.key_signature)
+        for m in audiveris_score.measures
+        if m.key_signature
+    ] == [(7, "G major")]
+
+
+def test_a_key_restated_in_every_bar_is_not_a_change() -> None:
+    """Some engravers repeat `<key>` on every system's first bar."""
+    score = score_json_from_musicxml(
+        _key_part(
+            _key_bar(1, "<key><fifths>2</fifths></key>")
+            + _key_bar(2, "<key><fifths>2</fifths></key>")
+            + _key_bar(3, "<key><fifths>2</fifths></key>")
+        ),
+        clef_fallback="treble",
+    )
+
+    assert score.key_signature == "D major"
+    assert all(m.key_signature is None for m in score.measures)
+
+
+def test_a_return_to_the_opening_key_is_a_change_too() -> None:
+    """Compared against the key in force, not the header — the rule the clef
+    already follows. Compared against the header, bar 3's return equals it and
+    is dropped, leaving the piece in G major to the end."""
+    score = score_json_from_musicxml(
+        _key_part(
+            _key_bar(1, "<key><fifths>-2</fifths></key>")
+            + _key_bar(2, "<key><fifths>1</fifths></key>")
+            + _key_bar(3, "<key><fifths>-2</fifths></key>")
+        ),
+        clef_fallback="treble",
+    )
+
+    assert [(m.measure_number, m.key_signature) for m in score.measures] == [
+        (1, None),
+        (2, "G major"),
+        (3, "Bb major"),
+    ]
+
+
+def test_a_mode_that_changes_over_the_same_signature_is_not_a_change() -> None:
+    """B-flat major and G minor print the same two flats. Nothing changes on
+    the page, so nothing is stamped on the bar."""
+    score = score_json_from_musicxml(
+        _key_part(
+            _key_bar(1, "<key><fifths>-2</fifths><mode>major</mode></key>")
+            + _key_bar(2, "<key><fifths>-2</fifths><mode>minor</mode></key>")
+        ),
+        clef_fallback="treble",
+    )
+
+    assert score.key_signature == "Bb major"
+    assert all(m.key_signature is None for m in score.measures)
+
+
+def test_a_return_to_the_opening_metre_is_a_change_too() -> None:
+    """The same rule for the metre, which used to compare against the header.
+
+    A piece in 4/4 that turns 2/4 at bar 2 and back at bar 3 recorded the
+    departure and dropped the return — bar 3 states 4/4, which equals the
+    header — so `meters_in_force` held 2/4 to the end and every correctly read
+    bar after it was called long.
+    """
+    time = lambda beats: f"<time><beats>{beats}</beats><beat-type>4</beat-type></time>"  # noqa: E731
+    score = score_json_from_musicxml(
+        _key_part(_key_bar(1, time(4)) + _key_bar(2, time(2)) + _key_bar(3, time(4))),
+        clef_fallback="treble",
+    )
+
+    assert score.time_signature == "4/4"
+    assert [m.time_signature for m in score.measures] == [None, "2/4", "4/4"]
+
+
+def test_key_fifths_reads_what_the_names_say() -> None:
+    from app.services.ocr.musicxml import key_fifths
+
+    assert key_fifths("Bb major") == -2
+    assert key_fifths("G minor") == -2
+    assert key_fifths("g minor") == -2
+    assert key_fifths("F# major") == 6
+    assert key_fifths("C major") == 0
+    assert key_fifths("A minor") == 0
+    assert key_fifths("unknown") is None
+    assert key_fifths(None) is None
+    assert key_fifths("H major") is None

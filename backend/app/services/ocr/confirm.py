@@ -31,6 +31,7 @@ import logging
 from app.services.ocr.base import OCRProvider, OCRProviderError, OCRResponse
 from app.services.ocr.validate import (
     describe_for_retry,
+    keys_in_force,
     meters_in_force,
     validate_measures,
 )
@@ -295,6 +296,14 @@ def what_this_piece_is(score: ScoreJson, bars: list[int]) -> str:
     seventh out on every note, which is the mistake `ScoreJson.clef` is
     documented never to guess at.
 
+    The key is taken **at those bars** for the same reason the metre is. A part
+    that turns from B-flat to G at bar 7 would otherwise be re-read in B-flat,
+    and every F in the crop would come back spelled `F4` where the page prints
+    `F#4` — a bar that adds up perfectly, in the wrong key, with a tie the
+    pitch mismatch has quietly deleted. When the bars asked about do not agree
+    on one key the sentence is dropped rather than guessed at, which is the
+    rule the metre below already follows.
+
     The metre is taken **at those bars**, not from the header: `meters_in_force`
     follows a change, and a page that turns 3/4 at bar 12 would otherwise be
     re-read against the 4/4 it started in — reporting bars that are correct as
@@ -312,13 +321,21 @@ def what_this_piece_is(score: ScoreJson, bars: list[int]) -> str:
     )
     if clef:
         parts.append(f"a {clef}-clef part")
-    if score.key_signature and score.key_signature != "unknown":
-        parts.append(f"in {score.key_signature}")
+    # The key where the question is, which is not always the key at the top.
+    running_keys = keys_in_force(score)
+    keys_at = {
+        running_keys[i]
+        for i, measure in enumerate(score.measures)
+        if measure.measure_number in set(bars) and i < len(running_keys)
+    }
+    key = keys_at.pop() if len(keys_at) == 1 else None
+    if key and key != "unknown":
+        parts.append(f"in {key}")
 
     said = ""
     if parts:
         said = "This is " + " ".join(parts) + ". "
-        if score.key_signature and score.key_signature != "unknown":
+        if key and key != "unknown":
             said += (
                 "Spell every pitch with the accidental the key gives it — a "
                 "notehead on a line the key sharpens is written sharp, whether "

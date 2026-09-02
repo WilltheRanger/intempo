@@ -143,3 +143,52 @@ export function timeSignatureDigits(
   }
   return { beats, unit };
 }
+
+/** One glyph of a key change: the new signature's marks, or a natural cancelling an old one. */
+export interface KeyChangeGlyph {
+  pitch: string;
+  kind: 'sharp' | 'flat' | 'natural';
+}
+
+/**
+ * What is printed at the barline where the key changes from one signature to
+ * the next.
+ *
+ * **Usually just the new signature.** Modern engraving (Gould, *Behind Bars*)
+ * does not cancel the old accidentals when the new key has some of its own —
+ * a reader sees one sharp where there were two flats and understands it.
+ *
+ * **Except when the new key has none.** A change to C major or A minor prints
+ * *nothing* under that rule, and a change that prints nothing is invisible:
+ * the two flats would silently stop applying and every B and E after the
+ * barline would be read a semitone off. So that case, and only that case,
+ * prints a natural on each accidental of the old signature, in the old
+ * signature's order — which is also the traditional cancellation and the one
+ * every reader recognises.
+ *
+ * Positions come from the caller's clef, the same as the head's: a change
+ * printed mid-line sits on the same lines the head would put it on.
+ */
+export function keyChangeGlyphs(
+  previous: KeyAccidental[],
+  next: KeyAccidental[],
+): KeyChangeGlyph[] {
+  if (next.length > 0) {
+    return next.map((accidental) => ({ ...accidental }));
+  }
+  return previous.map((accidental) => ({ pitch: accidental.pitch, kind: 'natural' }));
+}
+
+/**
+ * Whether two key names print the same signature.
+ *
+ * `Bb major` and `G minor` are the same two flats, so a measure that names
+ * the relative key is not a change on the page. Two names nothing can read
+ * are alike too — there is nothing to redraw between them.
+ */
+export function sameSignature(
+  a: string | null | undefined,
+  b: string | null | undefined,
+): boolean {
+  return (accidentalCount(a) ?? 0) === (accidentalCount(b) ?? 0);
+}

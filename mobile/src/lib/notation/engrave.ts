@@ -1,4 +1,10 @@
 import type { Articulation, Clef } from '../../data/types';
+import {
+  keyChangeGlyphs,
+  keySignatureFor,
+  type KeyAccidental,
+  type KeyChangeGlyph,
+} from './keySignature';
 
 /**
  * Where every mark on a few bars of notation goes.
@@ -203,6 +209,8 @@ export interface StaveNote {
    * notes, has no measure numbers to give and omits it.
    */
   measureNumber?: number;
+  /** The key changes at this bar. See `KeyChange`. */
+  keyChange?: KeyChange;
   /**
    * The other pitches sounding with this one, from `ScoreNote.chord_pitches`.
    *
@@ -274,6 +282,25 @@ export interface StaveNote {
  * it. A bass part is mostly rests; a picture of one that shows only the notes
  * is not a picture of the part.
  */
+/**
+ * The key changes at this item's bar.
+ *
+ * **Carried on the first item of the bar, as a name.** `ScoreMeasure.key_signature`
+ * holds the change where the page prints it; `staveScoreFor` moves it onto the
+ * first thing drawn in that bar, and the engraver — which is the only thing
+ * here that knows the clef — turns the name into positions. Named rather than
+ * positioned so the same item is right on every clef.
+ *
+ * Until this existed a piece that turned from B-flat to G at bar 7 was
+ * engraved with two flats on every system to the end and an inline sharp on
+ * every F after the change: a page that says one thing in the signature and
+ * another in the notes, which no printed part does.
+ */
+export interface KeyChange {
+  /** The new key as printed — `G major`, `E minor`. */
+  key: string | null;
+}
+
 export interface StaveRest {
   rest: NoteValue;
   /** Augmentation dots, 0, 1 or 2. */
@@ -285,6 +312,8 @@ export interface StaveRest {
   repeatStartsBefore?: boolean;
   repeatEndsBefore?: boolean;
   measureNumber?: number;
+  /** The key changes at this bar. See `KeyChange`. */
+  keyChange?: KeyChange;
 }
 
 /**
@@ -303,6 +332,8 @@ export interface StaveMultiRest {
   repeatStartsBefore?: boolean;
   repeatEndsBefore?: boolean;
   measureNumber?: number;
+  /** The key changes at this bar. See `KeyChange`. */
+  keyChange?: KeyChange;
 }
 
 export type StaveItem = StaveNote | StaveRest | StaveMultiRest;
@@ -737,10 +768,30 @@ export interface EngravedSystem {
   dynamics: EngravedDynamic[];
   /** Clef, key and metre at the left edge. Empty when none was asked for. */
   head: EngravedHead;
+  /**
+   * Key changes printed mid-line, just after the barline of the bar they open.
+   *
+   * A change on the first bar of a system is not here: the head already opens
+   * that system in the new key, and printing it twice would read as two
+   * changes.
+   */
+  keyChanges: EngravedKeyChange[];
   /** Baseline for the note names printed under this system. */
   nameY: number;
   /** Right edge of this system's staff lines. */
   width: number;
+  /**
+   * The top and bottom of everything this system draws, absolute in the
+   * drawing — ink, not staff lines.
+   *
+   * The engraver already measures both to stack the systems (`laid.top`,
+   * `laid.bottom`); it simply used to throw them away afterwards. A caller
+   * that wants to break the drawing into pages needs the true extent: a
+   * system's staff lines say nothing about the stem reaching two spaces above
+   * them, so a page break placed from `staffLines` cuts ink off at the fold.
+   */
+  top: number;
+  bottom: number;
 }
 
 /** One dynamic marking, already composed into the glyphs that spell it. */
@@ -753,6 +804,13 @@ export interface EngravedDynamic {
   glyphs: string;
   /** Advance width, so the renderer can centre it without measuring text. */
   width: number;
+}
+
+/** One glyph of a key change, centred on its own staff position like the head's. */
+export interface EngravedKeyChange {
+  x: number;
+  y: number;
+  kind: 'sharp' | 'flat' | 'natural';
 }
 
 export interface Engraving {
@@ -1063,8 +1121,57 @@ function dynamicReach(
     : null;
 }
 
+/**
+ * A key change with its positions decided: the signature now in force, and
+ * what is printed at the barline to announce it.
+ */
+export interface ResolvedKeyChange {
+  key: KeyAccidental[];
+  printed: KeyChangeGlyph[];
+}
+
+/**
+ * Every item's key change, positioned for this clef, or null.
+ *
+ * Walked once over the whole piece rather than per system, because what a
+ * change *prints* depends on the key it changes from — a change to C major is
+ * two naturals after B-flat and three after A — and the key it changes from
+ * may have been set on an earlier line.
+ */
+export function resolveKeyChanges(
+  items: StaveItem[],
+  head: KeyAccidental[],
+  clef: Clef,
+): (ResolvedKeyChange | null)[] {
+  let running = head;
+  return items.map((item) => {
+    if (!item.keyChange) {
+      return null;
+    }
+    const next = keySignatureFor(item.keyChange.key, clef);
+    const resolved = { key: next, printed: keyChangeGlyphs(running, next) };
+    running = next;
+    return resolved;
+  });
+}
+
+/** Clearance between the barline and the first glyph of a key change, in staff spaces. */
+const KEY_CHANGE_GAP = 0.6;
+
+/** The width a key change printed at a barline takes, in staff spaces. */
+function keyChangeWidth(change: ResolvedKeyChange | null | undefined): number {
+  if (!change || change.printed.length === 0) {
+    return 0;
+  }
+  return KEY_CHANGE_GAP + change.printed.length * KEY_ACCIDENTAL_WIDTH;
+}
+
 /** The room each item needs before it, beyond the ordinary column. */
-function extraRoom(items: StaveItem[], lineGap: number): number[] {
+function extraRoom(
+  items: StaveItem[],
+  lineGap: number,
+  keyChanges: (ResolvedKeyChange | null)[] = [],
+): number[] {
   return items.map((item, index) =>
     // The **printed** glyph, not the one in the pitch name. Reserving room from
     // the name gives a suppressed sharp a column it never uses and gives a
@@ -1079,6 +1186,8 @@ function extraRoom(items: StaveItem[], lineGap: number): number[] {
       ((isNote(item) ? noteRoom(item) : 0) +
         repeatRoom(item) +
         tieRoom(item) +
+        // A key change printed at the barline sits between it and the note.
+        keyChangeWidth(keyChanges[index]) +
         // Two marks in a row need the room between their centres that their
         // own halves take up. Nothing is reserved when either side is
         // unmarked, so an isolated `p` does not widen the music around it.
@@ -1249,13 +1358,17 @@ export function spellAccidentals(
   // The signature, by letter. A key signature applies to every octave of the
   // letter it marks, which is why this is keyed by letter and the bar's memory
   // below is keyed by staff position.
-  const byLetter = new Map<number, number>();
-  for (const accidental of key) {
-    const match = PITCH.exec(accidental.pitch);
-    if (match) {
-      byLetter.set(LETTERS[match[1]], accidental.kind === 'sharp' ? 1 : -1);
+  const lettersOf = (signature: { pitch: string; kind: 'sharp' | 'flat' }[]) => {
+    const letters = new Map<number, number>();
+    for (const accidental of signature) {
+      const match = PITCH.exec(accidental.pitch);
+      if (match) {
+        letters.set(LETTERS[match[1]], accidental.kind === 'sharp' ? 1 : -1);
+      }
     }
-  }
+    return letters;
+  };
+  let byLetter = lettersOf(key);
 
   let bar = new Map<number, number>();
   let started = false;
@@ -1264,6 +1377,11 @@ export function spellAccidentals(
     if (item.barBefore || !started) {
       bar = new Map();
       started = true;
+    }
+    if (item.keyChange) {
+      // **The signature from here on is the new one.** Letters only, so the
+      // clef does not matter: a key sharpens the same letters on every staff.
+      byLetter = lettersOf(keySignatureFor(item.keyChange.key, 'treble'));
     }
     if (!isNote(item)) {
       return item;
@@ -1430,6 +1548,26 @@ export function packSystems(
   bars: StaveItem[][],
   costs: number[],
   budget: number,
+  /**
+   * The room a courtesy key signature takes on the line **before** each bar,
+   * indexed by bar. Zero for a bar that changes no key.
+   *
+   * **Reserved with one bar of lookahead, and that is the whole subtlety.** A
+   * bar that changes key prints its new signature after its own barline when
+   * it continues a line, and as a courtesy at the end of the *previous* line
+   * when it opens one — so the room is owed by whichever line ends up in front
+   * of it, which is not known until the break is chosen. Charging it to the
+   * previous bar unconditionally is worse than not charging it at all: it
+   * makes the line break, and the break is what creates the courtesy it was
+   * paying for. So a bar is only added to a line if the line can still afford
+   * the courtesy for whatever comes next.
+   *
+   * Conservative in one direction only: when the next bar turns out to fit
+   * after all, the line is up to one signature narrower than it could have
+   * been. That is the same safe direction the bar costs already round in —
+   * early, never late.
+   */
+  courtesy: number[] = [],
 ): StaveItem[][] {
   const systems: StaveItem[][] = [];
   let current: StaveItem[] = [];
@@ -1437,7 +1575,9 @@ export function packSystems(
 
   bars.forEach((bar, index) => {
     const cost = costs[index] ?? 0;
-    if (current.length > 0 && spent + cost > budget) {
+    // What this line still owes if the next bar opens a new one.
+    const owed = courtesy[index + 1] ?? 0;
+    if (current.length > 0 && spent + cost + owed > budget) {
       systems.push(current);
       current = [];
       spent = 0;
@@ -1482,7 +1622,17 @@ function layoutSystem(
   closesWithRepeat: boolean,
   /** Endings that may cross this system, by measure number. */
   endingSpans: NonNullable<EngraveOptions['endings']>,
-): { system: EngravedSystem; top: number; bottom: number } {
+  /** Each item's key change, positioned, or null. Index 0 is never drawn here. */
+  keyChanges: (ResolvedKeyChange | null)[] = [],
+  /**
+   * The change that opens the **next** system, printed here as a courtesy
+   * before the closing barline — which is where a printed part warns the
+   * reader that the line they are about to start is in another key. Without
+   * it a change that happens to fall at a line break is announced only by the
+   * next head, and a change *to C major* is announced by nothing at all.
+   */
+  closingChange: ResolvedKeyChange | null = null,
+): { system: PlacedSystem; top: number; bottom: number } {
   const halfGap = lineGap / 2;
   const middleStep = MIDDLE_LINE_STEP[clef];
   const staffLines = [-2, -1, 0, 1, 2].map((i) => i * lineGap);
@@ -1495,6 +1645,7 @@ function layoutSystem(
   const slurs: EngravedSlur[] = [];
   const endings: EngravedEnding[] = [];
   const ties: EngravedSlur[] = [];
+  const engravedKeyChanges: EngravedKeyChange[] = [];
   const stemLength = lineGap * STEM_FACTOR;
   const thickness = lineGap * BEAM_THICKNESS_FACTOR;
 
@@ -1534,7 +1685,7 @@ function layoutSystem(
     }
   }
 
-  const room = extraRoom(notes, lineGap);
+  const room = extraRoom(notes, lineGap, keyChanges);
 
   /**
    * How far to the next column.
@@ -1589,10 +1740,30 @@ function layoutSystem(
         has it. `both` reserves twice and sits in the middle of it.
       */
       const opens = kind === 'start' || kind === 'both';
-      barlines.push({
-        x: x - noteGap / 2 - (opens ? lineGap * REPEAT_SIGN_ROOM : 0),
-        repeat: kind,
-      });
+      // A key change is printed **after** the barline — it belongs to the bar
+      // it opens — so, like an opening repeat sign, its room is spent on the
+      // right by moving the barline left.
+      const change = keyChanges[index] ?? null;
+      const changeRoom = lineGap * keyChangeWidth(change);
+      const barlineX =
+        x - noteGap / 2 - (opens ? lineGap * REPEAT_SIGN_ROOM : 0) - changeRoom;
+      barlines.push({ x: barlineX, repeat: kind });
+      if (change) {
+        let glyphX =
+          barlineX + (opens ? lineGap * REPEAT_SIGN_ROOM : 0) + lineGap * KEY_CHANGE_GAP;
+        for (const glyph of change.printed) {
+          const glyphStep = stepOf(glyph.pitch);
+          if (glyphStep === null) {
+            continue;
+          }
+          engravedKeyChanges.push({
+            x: glyphX,
+            y: -(glyphStep - middleStep) * halfGap,
+            kind: glyph.kind,
+          });
+          glyphX += lineGap * KEY_ACCIDENTAL_WIDTH;
+        }
+      }
       closeSpan(x - noteGap / 2);
       spanFrom = x - noteGap / 2;
       spanMeasure = undefined;
@@ -1808,11 +1979,29 @@ function layoutSystem(
     x += columnStep(index + 1);
   });
 
-  const right = x - noteGap / 2 + rightPad;
+  // The courtesy signature sits between the last note and the closing barline,
+  // and the barline moves right to make room for it.
+  const courtesyRoom = lineGap * keyChangeWidth(closingChange);
+  if (closingChange) {
+    let glyphX = x - noteGap / 2 + lineGap * KEY_CHANGE_GAP;
+    for (const glyph of closingChange.printed) {
+      const glyphStep = stepOf(glyph.pitch);
+      if (glyphStep === null) {
+        continue;
+      }
+      engravedKeyChanges.push({
+        x: glyphX,
+        y: -(glyphStep - middleStep) * halfGap,
+        kind: glyph.kind,
+      });
+      glyphX += lineGap * KEY_ACCIDENTAL_WIDTH;
+    }
+  }
+  const right = x - noteGap / 2 + courtesyRoom + rightPad;
   // The closing barline of this system. A repeat that ends on the score's last
   // measure has no following item to carry the flag, so the caller says.
   barlines.push({ x: right, repeat: closesWithRepeat ? 'end' : null });
-  closeSpan(x - noteGap / 2);
+  closeSpan(x - noteGap / 2 + courtesyRoom);
 
   // Beam runs of eighths, broken at barlines: a beam across a barline would
   // group notes that are in different bars.
@@ -2328,6 +2517,7 @@ function layoutSystem(
       endings,
       dynamics,
       head,
+      keyChanges: engravedKeyChanges,
       nameY,
       width: right,
     },
@@ -2678,7 +2868,16 @@ function arcOver(notes: EngravedNote[], lineGap: number): EngravedSlur {
 }
 
 /** Shift every coordinate in a system down by `dy`. */
-function shift(system: EngravedSystem, dy: number): EngravedSystem {
+/**
+ * A system before it has been stacked, which is every field but its place.
+ *
+ * `top`/`bottom` are what stacking decides, so they cannot be filled in by the
+ * routine that lays a single system out — it works in its own coordinates,
+ * where the middle staff line is zero.
+ */
+type PlacedSystem = Omit<EngravedSystem, 'top' | 'bottom'>;
+
+function shift(system: PlacedSystem, dy: number): PlacedSystem {
   return {
     staffLines: system.staffLines.map((y) => y + dy),
     barlines: system.barlines,
@@ -2730,6 +2929,7 @@ function shift(system: EngravedSystem, dy: number): EngravedSystem {
       key: system.head.key.map((a) => ({ ...a, y: a.y + dy })),
       time: system.head.time,
     },
+    keyChanges: system.keyChanges.map((glyph) => ({ ...glyph, y: glyph.y + dy })),
   };
 }
 
@@ -2758,6 +2958,9 @@ export function engrave(
   // on the key signature and on what came earlier in the same bar, so it is a
   // property of the score in order — not of a system, which is a slice of it.
   const capped = spellAccidentals(truncated, options.head?.key ?? []);
+  // Positioned for this clef, once, because what a change prints depends on
+  // the key before it — which may have been set on an earlier system.
+  const keyChanges = resolveKeyChanges(capped, options.head?.key ?? [], clef);
 
   /**
    * Where the lines break.
@@ -2779,7 +2982,7 @@ export function engrave(
   const bars = splitBars(capped);
   const runs = options.maxWidth
     ? (() => {
-        const room = extraRoom(capped, lineGap);
+        const room = extraRoom(capped, lineGap, keyChanges);
         let cursor = 0;
         const costs = bars.map((bar) => {
           const cost = bar.reduce(
@@ -2788,6 +2991,14 @@ export function engrave(
           );
           cursor += bar.length;
           return cost;
+        });
+        // What each bar would cost the line in front of it, as a courtesy
+        // signature, if it turned out to open a line. See `packSystems`.
+        cursor = 0;
+        const courtesy = bars.map((bar) => {
+          const room = lineGap * keyChangeWidth(keyChanges[cursor]);
+          cursor += bar.length;
+          return room;
         });
         // The head is on every system, so it is off the budget for all of
         // them; the metre only on the first, and costing it everywhere breaks
@@ -2806,7 +3017,7 @@ export function engrave(
           noteGap,
           (options.maxWidth ?? 0) - leftPad - rightPad - head,
         );
-        return packSystems(bars, costs, budget);
+        return packSystems(bars, costs, budget, courtesy);
       })()
     : [capped];
 
@@ -2816,25 +3027,44 @@ export function engrave(
   const systems: EngravedSystem[] = [];
   let cursor = padding;
   let width = 0;
+  /** Where this run starts in `capped`; the runs partition it in order. */
+  let runStart = 0;
 
   for (const run of runs) {
     if (run.length === 0) {
       continue;
     }
+    /**
+     * The key this system opens in: the last change at or before its first
+     * item, else the head's. **At or before** — a change on the first bar of
+     * a line is shown by the head, in the new key, and is not printed again
+     * after the barline, which is why the run's own first entry is dropped.
+     */
+    const runChanges = keyChanges.slice(runStart, runStart + run.length);
+    const lastChange = keyChanges
+      .slice(0, runStart + 1)
+      .reduce<ResolvedKeyChange | null>((latest, change) => change ?? latest, null);
+    const keyAtStart = lastChange ? lastChange.key : (options.head?.key ?? []);
+    runChanges[0] = null;
+    runStart += run.length;
+    // The change that opens the next line, printed at the end of this one.
+    const closingChange = keyChanges[runStart] ?? null;
     // A system's width is leftPad + (n - ½) gaps + rightPad, because the final
     // barline sits half a gap past the last note. Solve that for the gap that
     // makes it exactly `maxWidth`.
     // The accidentals' room is spent before the columns are, or justification
     // would hand out width that is already taken and the system would run past
     // its own right margin.
-    const reserved = extraRoom(run, lineGap).reduce((a, b) => a + b, 0);
+    const reserved =
+      extraRoom(run, lineGap, runChanges).reduce((a, b) => a + b, 0) +
+      lineGap * keyChangeWidth(closingChange);
     // The clef and key signature take their room out of the same width, and
     // they take it from **every** system — the metre only from the first, which
     // is why this is computed per run rather than once.
     const headRequest: HeadRequest | null = options.head
       ? {
           clef: options.head.clef,
-          key: options.head.key,
+          key: keyAtStart,
           time: systems.length === 0 ? options.head.time : null,
         }
       : null;
@@ -2884,8 +3114,15 @@ export function engrave(
       headRequest,
       closesWithRepeat,
       options.endings ?? [],
+      runChanges,
+      closingChange,
     );
-    systems.push(shift(laid.system, cursor - laid.top));
+    const dy = cursor - laid.top;
+    systems.push({
+      ...shift(laid.system, dy),
+      top: laid.top + dy,
+      bottom: laid.bottom + dy,
+    });
     cursor += laid.bottom - laid.top + gap;
     width = Math.max(width, laid.system.width);
   }
