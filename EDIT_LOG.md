@@ -6,6 +6,18 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-01 — Key changes stay accurate and long scores are navigable
+
+**Branch:** `codex/merge-musical-accuracy`.
+
+**Files:** `backend/app/services/score_schema.py`, `backend/app/services/ocr/{confirm,musicxml,pages,validate}.py`, `backend/app/services/start_at.py`, `mobile/src/data/types.ts`, `mobile/src/components/notation/Stave.tsx`, `mobile/src/components/score/{PlaybackSettings,StartBarPicker}.tsx`, `mobile/src/components/overlays/BottomSheet.tsx`, `mobile/src/lib/notation/{barPages,engrave,fromScore,keySignature,pages,staveLayout}.ts`, `mobile/src/lib/score/startFrom.ts`, shared fixtures and tests.
+
+The open musical-accuracy draft was based on an older app and could no longer merge after the recording, profile, upload, and deletion fixes. Its music files were three-way checked against their original base: every engine, notation, picker, and test file was still unchanged on current main, so those reviewed blobs were ported intact; only the sample library was merged by hand to preserve newer consumer fixtures.
+
+A key printed mid-piece is now stored on the measure where it appears and remains in force until the next change. MusicXML import, multi-page joins, OCR correction context, validation, digital engraving, line-break courtesy signatures, and partial-start practice all follow that same rule. Relative major/minor names are compared by their printed signature rather than text. Changes to a signature with no accidentals cancel the old marks with naturals. Starting at a later bar carries the metre, clef, and key already in force onto the entry bar, so count-ins, long-rest re-entry cues, playback, and analysis do not silently fall back to the first bar's setup.
+
+The start-bar picker now lays a long part into whole pages instead of cutting systems inside a short nested scroll. A swipe advances one page, the readout names the bars visible on it, choosing or stepping to a bar follows that bar's page, and a full-height bottom sheet keeps the precise stepper within reach. A real double-bass fixture changes from B-flat to G and then C so flats, sharps, and cancellation naturals are visible in the running app. Backend and mobile regression cases cover import, page joining, correction context, standing state at a partial start, key-change glyphs and courtesy spacing, pagination geometry, and bar-range readouts.
+
 ## 2026-09-01 — Accepted recordings survive a refresh
 
 **Branch:** `codex/recover-pending-analysis`.
