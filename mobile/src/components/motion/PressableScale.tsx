@@ -117,7 +117,11 @@ export function PressableScale({
                       // Contact is quick enough to meet the finger without
                       // making a card snap smaller between two frames.
                       transform: [{ scale: state.pressed ? activeScale : 1 }],
-                      transitionProperty: 'transform',
+                      // The row/button supplies its own pressed fill. Give it
+                      // the same contact and release timing as the movement so
+                      // colour does not flash while the surface settles.
+                      transitionProperty:
+                        'transform, background-color, border-color, opacity',
                       transitionDuration: state.pressed
                         ? `${motion.pressIn}ms`
                         : `${motion.fast}ms`,

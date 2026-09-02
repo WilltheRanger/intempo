@@ -40,6 +40,9 @@ describe('interaction motion', () => {
     expect(pressableScaleSource).toContain("touchAction: 'manipulation'");
     expect(pressableScaleSource).toContain("WebkitTapHighlightColor: 'transparent'");
     expect(pressableScaleSource).toContain('motion.pressIn');
+    expect(pressableScaleSource).toContain(
+      "'transform, background-color, border-color, opacity'",
+    );
   });
 
   it('shares the system motion listener across animated rows', () => {
