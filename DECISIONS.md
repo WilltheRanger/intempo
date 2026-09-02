@@ -6,6 +6,56 @@ Operating Principle #5.
 
 ---
 
+## 2026-09-02 — A field on the measure over a list of key changes
+
+**Context.** A page can change key, and the schema had one `key_signature` on
+the score. Two shapes were available for recording a change: a
+`key_changes: list[KeyChange]` alongside `tempo_changes` and `repeats`, or a
+nullable `key_signature` on `Measure` alongside `time_signature` and `clef`.
+
+**Decision.** The field on `Measure`.
+
+**Why.** The two existing shapes are not arbitrary — they divide on whether the
+thing has *extent*. A `rit.` has no printed end: what stops it is the next
+marking or the music, so `tempo_change_spans` derives its extent and a list is
+the only honest home for it. A repeat names a span outright. A key signature
+has neither: it is printed at a bar and holds until another is printed, which
+is exactly what `time_signature` and `clef` already are and exactly how
+`meters_in_force` already reads them. Recording it as a list would mean a third
+walk to answer "what key is bar 40 in", when two such walks already exist and
+agree.
+
+The measure field also survives everything that rebuilds a measure by spreading
+it — `MeasureEditScreen`, `join_pages`, `_expand_multiple_rests`, `renumber` —
+because they all carry unknown fields. A parallel list has to be shifted by
+hand at every one of those points, and `pages.py` and `pipeline.py` already
+carry that cost for `repeats` and `tempo_changes`: both offset every
+`measure_number` by hand, and getting it wrong attaches a marking to the wrong
+bar silently.
+
+**Alternatives considered.**
+
+- *`key_changes: list[KeyChange]`.* Rejected on the above. It also makes the
+  common case — a piece that never changes key — carry an empty list through
+  every join and trim, where the measure field simply is not there.
+- *Re-deriving the key from the accidentals actually printed.* Rejected. It is
+  not recoverable: a page in G with no F in it prints no sharp, and a bar of
+  chromatic writing in C prints many. The signature is a fact on the page and
+  the reader's job is to read it, not to infer it.
+- *Storing fifths (an integer) rather than the key name.* Tempting, because
+  every comparison here is by signature and `key_fifths` exists to do it. But
+  `ScoreJson.key_signature` is a name — read off the page as printed, `"unknown"`
+  allowed — and a measure that spoke a different language from the header would
+  need converting at every boundary. The name is stored; comparison converts.
+
+**Trade-off accepted.** "Bb major" and "G minor" are one signature under two
+names, so every comparison has to go through `key_fifths` / `accidentalCount`
+rather than string equality. That is a real footgun — a future `!=` on the
+names would report a change the page does not print — and it is why the
+comparison is done in one named helper on each side rather than inline.
+
+---
+
 ## 2026-09-01 — Grafting two glyphs from an older Bravura, over the alternatives
 
 **Context.** Fermatas needed drawing (`EDIT_LOG.md`, same date). The glyphs are

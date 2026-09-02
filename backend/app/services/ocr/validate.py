@@ -564,6 +564,29 @@ def meters_in_force(score: ScoreJson) -> list[float | None]:
     return out
 
 
+def keys_in_force(score: ScoreJson) -> list[str | None]:
+    """The key signature each measure is written in, key changes included.
+
+    The sibling of `meters_in_force`, and the same walk: a key holds until
+    another one is printed. `ScoreJson.key_signature` is only the key the page
+    *opens* in, so reading it for a bar after a change names the wrong one.
+
+    **This produces no finding, so the sandbox ports owe it nothing.** Every
+    rule in this module that decides whether a bar is wrong is mirrored in
+    `tools/validator-sandbox.template.html` and held there by
+    `test_sandbox_parity.py`. This one only tells the corrector which key to
+    name in a prompt — a page's beats add up or do not add up regardless of
+    what key it is in.
+    """
+    running = score.key_signature
+    out: list[str | None] = []
+    for measure in score.measures:
+        if measure.key_signature is not None:
+            running = measure.key_signature
+        out.append(running)
+    return out
+
+
 def validate_measures(score: ScoreJson) -> list[MeasureFinding]:
     """One finding per measure, in order."""
     sums = [

@@ -16,7 +16,7 @@ moves every bar after it.
 
 from __future__ import annotations
 
-from app.services.score_schema import ScoreJson
+from app.services.score_schema import Measure, ScoreJson
 
 
 def start_from_measure(score: ScoreJson, measure_number: int) -> ScoreJson:
@@ -35,11 +35,43 @@ def start_from_measure(score: ScoreJson, measure_number: int) -> ScoreJson:
 
     return score.model_copy(
         update={
-            "measures": kept,
+            "measures": [_entry_bar(score, kept[0]), *kept[1:]],
             "repeats": _repeats_from(score, measure_number),
             "tempo_changes": _tempo_changes_from(score, measure_number),
         }
     )
+
+
+#: The three facts a bar can print that hold until the next bar prints one.
+_STANDING_FIELDS = ("time_signature", "clef", "key_signature")
+
+
+def _entry_bar(score: ScoreJson, entry: Measure) -> Measure:
+    """The entry bar, carrying whatever metre, clef and key were in force at it.
+
+    The same rule as the tempo change below, one level down. A metre printed at
+    bar 5 rides on bar 5 and nowhere else, so a take entering at bar 8 lost it:
+    the trimmed score's header still said 4/4 and no bar in it said otherwise,
+    and everything that walks measures for the metre in force — the beat check,
+    the count-in, the long-rest cues the app counts from the first bar played —
+    ran in the wrong metre. The clef and the key are the same shape and were
+    lost the same way.
+
+    Stamped onto the entry bar only where it prints nothing of its own; a bar
+    that states a change states it.
+    """
+    before = [m for m in score.measures if m.measure_number < entry.measure_number]
+    update = {}
+    for field in _STANDING_FIELDS:
+        if getattr(entry, field) is not None:
+            continue
+        standing = next(
+            (getattr(m, field) for m in reversed(before) if getattr(m, field) is not None),
+            None,
+        )
+        if standing is not None:
+            update[field] = standing
+    return entry.model_copy(update=update) if update else entry
 
 
 def _repeats_from(score: ScoreJson, measure_number: int) -> list:

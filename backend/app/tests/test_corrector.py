@@ -437,3 +437,39 @@ def test_the_corrector_is_on_by_default() -> None:
     from app.config import settings
 
     assert settings.OCR_CORRECTOR == "claude-sonnet-5"
+
+
+def test_the_key_is_the_one_in_force_at_those_bars() -> None:
+    """**Not the header's**, exactly as the metre is not.
+
+    A part that turns from B-flat to G at bar 2 and is re-read in B-flat gets
+    every F in the crop back spelled `F3` where the page prints `F#3` — a bar
+    that adds up perfectly, in the wrong key, with a tie the pitch mismatch has
+    silently deleted. The real photograph in `audiveris_phone_photo` does this
+    at its bar 7.
+    """
+    from app.services.ocr.confirm import what_this_piece_is
+
+    score = _keyed("Bb major")
+    score.measures[1].key_signature = "G major"
+
+    assert "in G major" in what_this_piece_is(score, [2])
+    assert "in G major" in what_this_piece_is(score, [3])
+    assert "in Bb major" in what_this_piece_is(score, [1])
+
+
+def test_bars_that_straddle_a_key_change_name_no_key_at_all() -> None:
+    """Naming one of the two would be wrong for the other half of the crop, and
+    the model is being told to spell every pitch against it. The metre already
+    drops its sentence the same way when the bars disagree."""
+    from app.services.ocr.confirm import what_this_piece_is
+
+    score = _keyed("Bb major")
+    score.measures[1].key_signature = "G major"
+
+    said = what_this_piece_is(score, [1, 2])
+
+    assert "Bb major" not in said
+    assert "G major" not in said
+    # The clef is still worth saying — it did not change.
+    assert "bass-clef" in said

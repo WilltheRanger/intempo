@@ -4,6 +4,7 @@ import { readTies } from './ties';
 import { BEATS } from '../score/schedule';
 import type { Duration } from '../../data/types';
 import type { NoteValue, StaveItem } from './engrave';
+import { accidentalCount, sameSignature } from './keySignature';
 
 /**
  * A parsed score, turned into something the engraver can draw.
@@ -343,8 +344,43 @@ export function staveScoreFor(score: ScoreJson): StaveScore {
     }
   }
 
+  /**
+   * The key in force as the measures are walked, and a change waiting for the
+   * first item that can carry it.
+   *
+   * **By name, compared by signature.** `ScoreMeasure.key_signature` is the
+   * change where the page prints it; the engraver wants it on the first item
+   * drawn in that bar. A measure whose whole content was dropped, or a run of
+   * silent bars collapsed into one block, has no item of its own — so the
+   * change waits and rides on the next thing drawn, which is where a reader
+   * would first need it. A name that changes the mode over the same signature
+   * (`G minor` after `Bb major`) prints nothing on the page and prints nothing
+   * here; a name nothing can read is not a change either.
+   */
+  let keyInForce: string | null = score.key_signature ?? null;
+  let pendingKeyChange: string | null = null;
+  const noteKeyChange = (measure: ScoreJson['measures'][number]) => {
+    const stated = measure.key_signature ?? null;
+    if (!stated || accidentalCount(stated) === null) {
+      return;
+    }
+    if (!sameSignature(stated, keyInForce)) {
+      pendingKeyChange = stated;
+    }
+    keyInForce = stated;
+  };
+  const takeKeyChange = () => {
+    if (pendingKeyChange === null) {
+      return {};
+    }
+    const key = pendingKeyChange;
+    pendingKeyChange = null;
+    return { keyChange: { key } };
+  };
+
   let index = 0;
   while (index < score.measures.length) {
+    noteKeyChange(score.measures[index]);
     if (isSilent(score.measures[index])) {
       let end = index;
       while (end < score.measures.length && isSilent(score.measures[end])) {
@@ -356,7 +392,13 @@ export function staveScoreFor(score: ScoreJson): StaveScore {
           bars,
           barBefore: index > 0,
           measureNumber: score.measures[index].measure_number,
+          ...takeKeyChange(),
         });
+        // A change printed inside the block — on a bar of silence — waits for
+        // the bar after it, which is the first bar it changes a note in.
+        for (let inside = index + 1; inside < end; inside += 1) {
+          noteKeyChange(score.measures[inside]);
+        }
         index = end;
         continue;
       }
@@ -428,6 +470,7 @@ export function staveScoreFor(score: ScoreJson): StaveScore {
           rest: value,
           dots: drawn!.dots,
           measureNumber: measure.measure_number,
+          ...takeKeyChange(),
           ...(mark ? { tuplet: mark } : {}),
           ...(quarters !== undefined ? { quarters } : {}),
           ...(opensMeasure ? { barBefore: true } : {}),
@@ -495,6 +538,7 @@ export function staveScoreFor(score: ScoreJson): StaveScore {
         value,
         dots: drawn!.dots,
         measureNumber: measure.measure_number,
+        ...takeKeyChange(),
         ...(chord.length > 0 ? { chord } : {}),
         ...(note.articulation ? { articulation: note.articulation } : {}),
         // Read from the page since Batch 2 and drawn by nothing until now. An

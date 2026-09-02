@@ -352,3 +352,69 @@ def test_a_repeat_spanning_a_page_break_is_read_from_its_forward_sign() -> None:
     joined = join_pages(pages)
 
     assert [(r.start_measure, r.end_measure) for r in joined.repeats] == [(5, 24)]
+
+
+# ---------------------------------------------------------------------------
+# The key in force across a page break
+# ---------------------------------------------------------------------------
+
+
+def test_a_second_page_in_a_new_key_stamps_the_change_on_its_first_bar() -> None:
+    """Page 2 of a part that turned to G major at the foot of page 1 prints one
+    sharp in its own header and nowhere else. Joined naively under page 1's
+    key, the whole of page 2 is engraved in the wrong signature."""
+    joined = join_pages(
+        [
+            _page([_bar(1, 4), _bar(2, 4)], key_signature="Bb major"),
+            _page([_bar(1, 4), _bar(2, 4)], key_signature="G major"),
+        ]
+    )
+
+    assert joined.key_signature == "Bb major"
+    assert [m.key_signature for m in joined.measures] == [None, None, "G major", None]
+
+
+def test_a_second_page_restating_the_key_stamps_nothing() -> None:
+    joined = join_pages(
+        [
+            _page([_bar(1, 4)], key_signature="D major"),
+            _page([_bar(1, 4)], key_signature="D major"),
+        ]
+    )
+
+    assert all(m.key_signature is None for m in joined.measures)
+
+
+def test_the_same_signature_under_another_name_is_not_a_change() -> None:
+    """B-flat major and G minor are the same two flats."""
+    joined = join_pages(
+        [
+            _page([_bar(1, 4)], key_signature="Bb major"),
+            _page([_bar(1, 4)], key_signature="G minor"),
+        ]
+    )
+
+    assert all(m.key_signature is None for m in joined.measures)
+
+
+def test_a_key_that_changed_mid_page_is_what_the_next_page_is_compared_to() -> None:
+    """Page 1 opens in B-flat and turns to G at its bar 2; page 2's header says
+    G. That is the key already in force, not a second change."""
+    page_one = _page(
+        [_bar(1, 4), Measure(measure_number=2, notes=_bar(2, 4).notes, key_signature="G major")],
+        key_signature="Bb major",
+    )
+    joined = join_pages([page_one, _page([_bar(1, 4)], key_signature="G major")])
+
+    assert [m.key_signature for m in joined.measures] == [None, "G major", None]
+
+
+def test_an_unknown_key_on_an_inner_page_is_not_a_change() -> None:
+    joined = join_pages(
+        [
+            _page([_bar(1, 4)], key_signature="D major"),
+            _page([_bar(1, 4)], key_signature="unknown"),
+        ]
+    )
+
+    assert all(m.key_signature is None for m in joined.measures)
