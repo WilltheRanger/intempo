@@ -258,7 +258,19 @@ export function TodayScreen() {
     return (
       <ScreenContainer onRefresh={refresh} contentStyle={styles.page}>
         {header}
+        {/*
+          **The first screen of a new account, so it gets the whole screen.**
+          Without `fill` this sat in the top third with two thirds of the page
+          empty under it and the only action up by the status bar — which is
+          what `EmptyState`'s own docstring says `fill` is for (§3 law 7), and
+          which Insights already passes. And the action is `primary` here
+          because it is the *only* thing this screen offers; outlined is the
+          weight the populated Today gives its secondary controls, next to a
+          solid "Continue practice".
+        */}
         <EmptyState
+          fill
+          actionTone="primary"
           title="Nothing to practice yet"
           description="Add a piece of sheet music and it will show up here."
           actionLabel="Add a piece"

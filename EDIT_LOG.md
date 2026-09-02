@@ -6,6 +6,82 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-02 — The first screen of a new account, looked at for the first time
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Both changes were put to
+the owner under the §2 gate before anything was built and both were approved:
+*"Centre it, like Insights"* and *"Solid, on Today only"*.
+
+**Nobody had seen the empty app.** Every fixture build opens with eleven pieces
+and thirty-four sessions, so the state a person actually meets on the day they
+sign up — no pieces, no takes, no insights — had never been rendered. Same
+blind spot as the four gated screens, one level up: not a screen behind a gate,
+but a *whole app* behind having data.
+
+Reached the same way — a throwaway build in which the fixture sources return
+nothing behind a query parameter, restored with a `diff -q` check.
+
+**The copy is good and was already there.** Today: *"Nothing to practice yet /
+Add a piece of sheet music and it will show up here."* Library: *"No pieces
+yet"*. Insights: *"No practice recorded yet / Add a piece and record yourself
+playing it. InTempo will show you where the tempo held and where it drifted."*
+Each says what is missing and what to do about it. No errors, no undersized
+targets on any of the three.
+
+**Two things were wrong on Today, and only on Today.**
+
+1. **It sat in the top third with two thirds of the screen empty beneath it**,
+   and the only action up by the status bar. `EmptyState` already has a `fill`
+   prop for exactly this, and its own docstring describes the defect —
+   *"rather than in the top quarter with two thirds of the page empty beneath
+   them, and the action lands near the thumb instead of near the status bar
+   (§3 law 7)"*. Insights passes it. Today did not.
+2. **Its only action was an outlined button.** The populated Today gives
+   "Continue practice" solid ink and keeps the outline for secondary controls —
+   so the one thing a brand-new account can do was offered in the weight this
+   app uses for *"also, if you like"*. `EmptyState` gained `actionTone`,
+   defaulting to secondary, because the outline is right where the state is one
+   part of a screen: Library's "No matches" under a search field, a failed load
+   beside other content. Today is the case where it is the whole screen.
+
+Measured after, on the running build: the action's top moved to **379 of an
+844pt viewport** — optically centred — and it is drawn in ink.
+
+**A note on how I measured it**, because the first reading was wrong: I checked
+`backgroundColor` on the `[role="button"]` element and got `rgba(0,0,0,0)`, and
+nearly reported the change as not having landed. The fill is on the inner
+animated view — the same `PressableScale` structure that cost the back button
+12pt of touch target earlier today. The screenshot is what settled it.
+
+### Three-foot test — on the screenshot
+
+**First** the solid "Add a piece" in the middle of the screen, **second** the
+greeting, **third** the two lines explaining why the screen is empty. That is
+the right order for this screen: it exists to get one thing started, and it is
+now the thing you see. Before, the greeting dominated and the action was a
+faint outline near the top.
+
+### Tests
+
+**mobile 1185 passed (103 files), `tsc --noEmit` clean.** No new cases:
+`actionTone` selects between two existing buttons and `fill` was already
+covered by its own prop; the evidence here is the rendered screen.
+
+### Not done
+
+- **Library and Insights are unchanged.** Insights already centres, and both
+  keep the outlined action — they are places you land, not where you start,
+  which is what the owner chose.
+- The empty states were inspected, not rewritten. The copy is the copy that
+  was already there.
+
+### Rollback
+
+`git revert`. One prop on one call site, and one optional prop on a primitive
+that defaults to the old behaviour.
+
+---
+
 ## 2026-09-02 — The trend chart's axis named a measure the line never reaches
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Found by auditing the
