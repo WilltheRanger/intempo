@@ -127,6 +127,19 @@ REQUIRED_COLUMNS: tuple[tuple[str, str, str], ...] = (
     ("scores", "page_image_retained_at", "013"),
 )
 
+#: Tables added after the initial schema that production behavior depends on.
+#:
+#: A column probe cannot discover a table the code reaches only during cleanup
+#: or after consent. Migration 014 was absent in production while every
+#: readiness check said nothing about it: uploads could be abandoned forever,
+#: precisely the failure that table exists to prevent. Keep table migrations
+#: here for the same reason columns live above — deployment and schema are two
+#: separate manual acts today.
+REQUIRED_TABLES: tuple[tuple[str, str], ...] = (
+    ("training_corrections", "013"),
+    ("pending_uploads", "014"),
+)
+
 
 @dataclass
 class Readiness:
@@ -717,6 +730,20 @@ def _schema_checks(client) -> list[Check]:
                 f"editor. Until then anything writing {table} fails. ({type(exc).__name__})"
             )
         checks.append(Check(name=f"schema:{table}.{column}", ok=ok, detail=detail))
+
+    for table, migration in REQUIRED_TABLES:
+        try:
+            client.table(table).select("id").limit(1).execute()
+            ok, detail = True, ""
+        except Exception as exc:  # noqa: BLE001 — any failure is "not usable"
+            ok = False
+            detail = (
+                f"`{table}` is missing — apply "
+                f"`backend/app/migrations/{migration}_*.sql` in the Supabase SQL "
+                "editor. Until then the feature backed by that table cannot run. "
+                f"({type(exc).__name__})"
+            )
+        checks.append(Check(name=f"schema:{table}", ok=ok, detail=detail))
     return checks
 
 
