@@ -30,6 +30,7 @@
  * Exits non-zero on any failure, so it can gate a change.
  */
 import { existsSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 
 // Resolved from `mobile/`, where playwright is installed with `--no-save` — a
@@ -63,14 +64,24 @@ function browserPath() {
     : {};
 }
 
+/**
+ * A real page of engraved music from this repository, by name.
+ *
+ * Relative to this file rather than to the working directory: the CI job runs
+ * from `mobile/`, and a path built from `process.cwd()` would resolve there.
+ */
+const PAGE_FIXTURE = (name) =>
+  fileURLToPath(new URL(`../fixtures/scores/${name}`, import.meta.url));
+
 const browser = await chromium.launch(browserPath());
 const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
 const errors = [];
 page.on('pageerror', (e) => errors.push(e.message));
 
 const path = () => page.evaluate(() => location.pathname);
-const leaves = () =>
-  page.evaluate(() =>
+/** Every leaf of visible text, on `where` — the main page unless one is given. */
+const leaves = (where = page) =>
+  where.evaluate(() =>
     [...document.querySelectorAll('*')]
       .filter(
         (el) =>
@@ -89,7 +100,7 @@ const leaves = () =>
  * — and a check that goes red at random is one people learn to ignore, which is
  * worse than not having it.
  */
-const waitFor = async (what, predicate, timeout = 15000) => {
+const waitFor = async (what, predicate, timeout = 15000, on = page) => {
   const deadline = Date.now() + timeout;
   for (;;) {
     if (await predicate()) return true;
@@ -97,7 +108,9 @@ const waitFor = async (what, predicate, timeout = 15000) => {
       fail(`timed out waiting for ${what}`);
       return false;
     }
-    await page.waitForTimeout(120);
+    // Ticks on the page being watched, so a second tab is not paced by the
+    // first one's event loop.
+    await on.waitForTimeout(120);
   }
 };
 
@@ -305,6 +318,100 @@ if (!chose.some((l) => l.includes('Violin II')))
 else if (!chose.some((l) => /Change part/i.test(l)))
   fail('the chosen part cannot be changed');
 else pass('the chosen part is shown back, and can be changed');
+
+console.log('\n## Photographing a piece');
+
+/**
+ * **The scan flow, populated — the largest area no sweep had ever rendered.**
+ *
+ * Four screens sit between a photograph and a saved piece, and every check in
+ * this repository had only ever seen their *empty* states, because reaching
+ * them by URL leaves `captureSession` empty and the scanner needs a camera the
+ * container does not have.
+ *
+ * Import is the way in. On web `expo-image-picker` opens a real
+ * `<input type="file">`, so Playwright's file chooser reaches it, and pages
+ * picked there go into the same session the scanner fills — the component's own
+ * docstring says so, and this is what makes that claim checkable. The images
+ * are the repository's own fixture pages, so the thumbnails are real engraved
+ * music rather than a coloured rectangle.
+ */
+{
+  const scan = await browser.newPage({ viewport: { width: 390, height: 844 } });
+  scan.on('pageerror', (e) => errors.push(e.message));
+  await scan.goto(`${BASE}/add/import`, { waitUntil: 'domcontentloaded', timeout: 30000 });
+  await scan.waitForTimeout(1500);
+
+  const chooser = scan.waitForEvent('filechooser', { timeout: 15000 }).catch(() => null);
+  await scan.getByText('Choose images').first().click({ timeout: 15000 });
+  const picker = await chooser;
+
+  if (!picker) {
+    fail('the image picker never opened a file input');
+  } else {
+    await picker.setFiles([
+      PAGE_FIXTURE('01_simple_printed.jpg'),
+      PAGE_FIXTURE('02_medium_printed.jpg'),
+    ]);
+    await waitFor(
+      'the imported pages to reach the review list',
+      async () => (await scan.evaluate(() => location.pathname)) === '/scan/pages',
+      20000,
+      scan,
+    );
+
+    const onReview = await leaves(scan);
+    // Page order is the one thing this screen exists to let someone fix, and
+    // the upload sends the list in the order shown — see `lib/scan/drag.ts`.
+    const numbered = onReview.filter((l) => /^Page \d+$/.test(l));
+    const inOrder = numbered.join(',') === 'Page 1,Page 2';
+    if (!inOrder) fail(`the review list read ${JSON.stringify(numbered)}`);
+    else if (!onReview.some((l) => /^2 pages$/.test(l)))
+      fail('the review screen does not say how many pages it has');
+    else pass('two imported pages arrive in order, and the count agrees');
+
+    /*
+     * **Guarded, and that is not defensiveness for its own sake.** Proving this
+     * leg catches a regression meant breaking the session on purpose, and the
+     * unguarded `click` below then threw a Playwright timeout that killed the
+     * whole run — so a real regression here would have produced a stack trace
+     * instead of this file's own report, and silently skipped both microphone
+     * legs after it. A check that hides the checks behind it is worse than the
+     * bug it found.
+     */
+    const continued = inOrder
+      ? await scan
+          .getByText(/Continue with 2 pages/)
+          .first()
+          .click({ timeout: 15000 })
+          .then(() => true, () => false)
+      : false;
+
+    if (!continued) {
+      fail('the review screen offered no way to send the pages on');
+    } else {
+      await waitFor(
+        'the upload screen',
+        async () => (await scan.evaluate(() => location.pathname)) === '/scan/sending',
+        20000,
+        scan,
+      );
+      await scan.waitForTimeout(2500);
+
+      // No backend in this build, so the honest outcome is a refusal that names
+      // something a musician can actually do instead.
+      const sending = await leaves(scan);
+      const said = sending.find((l) => /needs the backend|could not|sample data/i.test(l));
+      if (!said) fail('sending pages without a backend said nothing');
+      else if (!sending.some((l) => /manual/i.test(l)))
+        fail(`the refusal names no route that exists: "${said.slice(0, 60)}"`);
+      else if (!sending.some((l) => /Back to pages/i.test(l)))
+        fail('the refusal offers no way back to the pages just photographed');
+      else pass(`sending without a backend is refused, with a way on: "${said.slice(0, 58)}…"`);
+    }
+  }
+  await scan.close();
+}
 
 console.log('\n## A refused microphone');
 

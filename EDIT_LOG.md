@@ -6,6 +6,74 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-02 — The scan flow had never been rendered with a page in it
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. No §2 gate: no app code
+changed. Two check tools did.
+
+### What was uncovered
+
+I checked a rule this project states and had never verified — *"A screen
+someone can reach needs a way out they can see"*, from `PageHeader`'s docstring.
+All twenty-two routes in `linking.ts` pass: every destination has the tab bar,
+every pushed screen a visible back or close. **No finding**, and the check
+discriminates — asking Today for a back control and Help for a tab bar makes
+both fail, so the pass is not vacuity.
+
+Enumerating the routes to do it turned up the thing worth having. `audit-a11y`
+visited **fifteen** of the twenty-two. The seven it had never seen include the
+**entire scan flow** — the app's main way of getting music in — plus Add piece,
+Export data and Acknowledgements. All seven audit clean, so no defect; the
+coverage is the deliverable.
+
+### The scan flow, populated
+
+Adding those routes exposed the honest limit immediately: reached by URL, the
+four scan screens render their **empty** states, because `captureSession`
+starts empty and the scanner needs a camera this container does not have. That
+is real coverage of real screens and it is not coverage of the flow a musician
+walks.
+
+`ImportPagesScreen`'s docstring says pages picked there "go into the same
+`captureSession` the scanner fills, so everything downstream — the page list,
+the upload, naming, OCR — is the flow that already exists". On web
+`expo-image-picker` opens a genuine `<input type="file">`, so Playwright's file
+chooser reaches it. That makes the claim checkable, and `walk-app.mjs` now
+checks it with **two of the repository's own fixture pages** — so the review
+list shows real engraved music rather than a coloured rectangle.
+
+Two assertions: the pages arrive **in order** with a count that agrees (page
+order is what that screen exists to let someone fix, and the upload sends the
+list in the order shown), and sending them without a backend is refused in
+words that name a route which exists and offer a way back to the pages.
+
+### Proving the leg bites, and the defect that came out of proving it
+
+Reversing `captureSession.pagesInScan` broke the flow, and the leg failed — but
+by throwing a Playwright click timeout that **killed the whole run**. A real
+regression here would have produced a stack trace instead of this file's own
+report, and silently skipped both microphone legs after it. A check that hides
+the checks behind it is worse than the bug it found.
+
+The continue click is guarded now, and re-verified against the same broken
+build: three clean `FAIL` lines, and the two microphone legs still run and
+still pass. `captureSession.ts` restored and confirmed byte-identical by
+`git diff` before rebuilding.
+
+### Verification
+
+walk PASS (26 checks, up from 24) · a11y PASS across 22 routes, up from 15 ·
+`tsc --noEmit` clean · web build clean. `.env` restored with `diff -q`.
+
+**Not covered:** the naming screen (`/scan/name`) populated. Reaching it needs
+an upload to succeed, which needs a backend. Its empty state is audited and its
+populated state is not.
+
+**Rollback:** revert this commit; both files are check harnesses and nothing
+ships from them.
+
+---
+
 ## 2026-09-02 — Two hand-rolled copies of a reader that has a documented single home, both wrong in the case it was written for
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. No §2 gate: backend only.
