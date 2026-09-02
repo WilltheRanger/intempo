@@ -6,6 +6,70 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-02 — The closed union whose drift costs "the rest of the page" was the one nothing held
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. No §2 gate: one test file.
+
+### How it was found
+
+By checking a number CLAUDE.md states: *"the engraver draws **42 of the
+schema's 46 durations**"*. It does — 46 in `Duration`, four in
+`DELIBERATELY_UNDRAWN`, and `durations.test.ts` green across 98 cases.
+
+But that test derives its list from the **app's** `BEATS`, not from the schema,
+while calling itself *"every duration the schema can send"*. `BEATS` is a
+`Record<Duration, number>`, so TypeScript keeps the app self-consistent — with
+the app's *own* `Duration`. Nothing tied that to the server's.
+
+`test_client_enums.py` is the file for exactly this. Its docstring opens *"Four
+enums cross the wire into a TypeScript union"* and it guards four: `Instrument`,
+`MetronomeMode`, `Band`, `Direction`. The score's own vocabularies —
+`Duration`, `Clef`, `Articulation`, `Dynamics`, `RepeatType` and the inline
+`TempoChangeKind` — cross the same wire inside `score_json`, and **none of them
+was held**.
+
+Measured before changing anything: all six agree exactly by name today.
+Agreeing is not being kept in agreement, and the drift is silent in the
+direction that matters — the server gains a value, the app compiles, and the
+schema's own comment says what that costs:
+
+> *"A note with no name here is **dropped**, and a dropped note is a lost onset
+> that `alignment.py` accumulates into every bar after it — so the cost of a gap
+> is not the note, it is the rest of the page."*
+
+### The change
+
+Six more parametrised cases in the file that already exists for this, plus its
+vacuity guard extended — the same one that file already has, and for the same
+reason: a regex quietly matching nothing would compare two empty sets and pass,
+which with `Duration` is 46 values going unheld while the run reports success.
+
+**That guard earned its place immediately.** The first version read
+`TempoChangeKind` from the first `kind:` in `types.ts` — which is
+`MeasureConcern.kind` — and compared the tempo vocabulary against
+`beats | density | tie | tuplet | unwritable`. The interface is named in the
+lookup now.
+
+Verified the check bites by adding a duration to the server union alone:
+`Duration: only the server knows ['drift_probe_only']`. `score_schema.py`
+restored and confirmed by `git diff`.
+
+### What is deliberately still unguarded
+
+`MeasureConcern.kind`. The app's own comment says *"Nothing switches on `kind`;
+`detail` is the sentence, and the server writes it"* — so a new concern kind
+renders correctly on an app that has never heard of it. Guarding it would hold
+a dependency the app deliberately does not have.
+
+### Verification
+
+backend **1919 passed / 2 xfailed** (`test_client_enums.py` 32 of them, up
+from 24). No app or web changes.
+
+**Rollback:** revert this commit; it adds tests and a docstring correction.
+
+---
+
 ## 2026-09-02 — "The pages this piece was read from" showed one page
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. §2 gate: put to the owner

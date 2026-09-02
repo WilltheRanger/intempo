@@ -1,10 +1,16 @@
 """The closed vocabularies the app types against.
 
-Four enums cross the wire into a TypeScript union: what a musician plays, how
-the metronome marks the beat, and the two words the verdict is said in. The app
-declares each of them again, because a TypeScript union cannot be imported from
-Python — and CLAUDE.md is explicit that these are closed unions the app types
-against, so **adding a value is a breaking change**.
+Several enums cross the wire into a TypeScript union, and the app declares each
+of them again because a TypeScript union cannot be imported from Python.
+CLAUDE.md is explicit that these are closed unions the app types against, so
+**adding a value is a breaking change**.
+
+This file said "four" for a long time and guarded four: what a musician plays,
+how the metronome marks the beat, and the two words the verdict is said in. The
+score's own vocabularies — every duration a note can have, the clefs, the
+articulations, the dynamics, the repeat kinds and the tempo-change kinds — cross
+the same wire in `score_json` and none of them was held. They happened to agree
+when that was noticed, which is not the same as being kept in agreement.
 
 What each drift costs, which is not the same in every case:
 
@@ -18,6 +24,17 @@ What each drift costs, which is not the same in every case:
 - **`Band` and `Direction`** are what the verdict screen switches on. A value
   the app has never heard of is a branch nothing matches — a bar with no
   colour and no word, on the screen the whole app exists to show.
+- **`Duration`** is the expensive one, and the schema says so itself: *"A note
+  with no name here is **dropped**, and a dropped note is a lost onset that
+  `alignment.py` accumulates into every bar after it — so the cost of a gap is
+  not the note, it is the rest of the page."* The app's `BEATS` is a
+  `Record<Duration, number>`, so TypeScript holds the app self-consistent — and
+  a value the *server* gained would simply be absent from that record, which
+  compiles fine and drops the note.
+- **`Clef`** captions the stave and places every notehead. **`RepeatType`**,
+  **`Articulation`** and **`Dynamics`** are read straight off `score_json` by
+  the engraver. **`TempoChangeKind`** decides which notes `alignment.py`
+  excuses from a steady tempo.
 
 The check is by *name*, against the app's own `types.ts`, because that file is
 what every screen is compiled against.
@@ -27,6 +44,7 @@ from __future__ import annotations
 
 import re
 from enum import Enum
+from typing import get_args
 from pathlib import Path
 
 import pytest
@@ -34,6 +52,14 @@ import pytest
 from app.models.analysis import BpmSource, Instrument, MetronomeMode
 from app.routers.scores import MAX_PAGES
 from app.services.classification import Band, Direction
+from app.services.score_schema import (
+    Articulation,
+    Clef,
+    Duration,
+    Dynamics,
+    RepeatType,
+    TempoChangeKind,
+)
 
 MOBILE = Path(__file__).resolve().parents[3] / "mobile" / "src" / "data"
 CAPTURE_SESSION_TS = (
@@ -68,6 +94,86 @@ def test_the_app_declares_exactly_this_vocabulary(enum: type[Enum], name: str) -
         f"{name}: only the server knows {sorted(server - app)}; "
         f"only the app knows {sorted(app - server)}"
     )
+
+
+#: The score vocabularies, and where the app spells each one.
+#:
+#: `TempoChangeKind` has no named type on the client: it is written inline on
+#: `ScoreTempoChange.kind`, which is just as closed and just as breakable, so it
+#: is read from the field rather than left unguarded for want of a name. The
+#: **interface** is named too, because `types.ts` holds more than one `kind:` —
+#: the first attempt at this read `MeasureConcern.kind` and compared durations
+#: against `beats | density | tie | tuplet | unwritable`.
+SCORE_VOCABULARIES = [
+    ("Duration", Duration, None),
+    ("Clef", Clef, None),
+    ("Articulation", Articulation, None),
+    ("Dynamics", Dynamics, None),
+    ("RepeatType", RepeatType, None),
+    ("TempoChangeKind", TempoChangeKind, ("ScoreTempoChange", "kind")),
+]
+
+
+def _literal_union(name: str, field: tuple[str, str] | None) -> set[str]:
+    """The members of a named `export type`, or of an inline field union."""
+    source = TYPES_TS.read_text()
+    if field is None:
+        match = re.search(rf"export type {name}\s*=(.*?);", source, re.DOTALL)
+        assert match, f"the app no longer declares a {name} type"
+        return set(re.findall(r"'([^']+)'", match.group(1)))
+
+    interface, member = field
+    block = re.search(rf"interface {interface} \{{(.*?)\n\}}", source, re.DOTALL)
+    assert block, f"the app no longer declares an {interface} interface"
+    match = re.search(rf"\n  {member}:\s*([^;]+);", block.group(1))
+    assert match, f"the app no longer declares a `{member}` union on {interface}"
+    return set(re.findall(r"'([^']+)'", match.group(1)))
+
+
+@pytest.mark.parametrize(
+    "name, literal, field",
+    [(name, literal, field) for name, literal, field in SCORE_VOCABULARIES],
+    ids=[name for name, _, _ in SCORE_VOCABULARIES],
+)
+def test_the_app_reads_exactly_the_score_vocabulary_this_api_writes(
+    name: str, literal: object, field: str | None
+) -> None:
+    """Every closed union inside `score_json`, held by name.
+
+    These agreed when the check was written — 46 durations on both sides, and
+    the rest exact. Agreeing is not the same as being kept in agreement, and
+    the failure is silent in the direction that matters: the server gains a
+    value, the app compiles, and notes go missing from the middle of a page.
+    """
+    server = set(get_args(literal))
+    app = _literal_union(name, field)
+
+    assert app == server, (
+        f"{name}: only the server knows {sorted(server - app)}; "
+        f"only the app knows {sorted(app - server)}"
+    )
+
+
+def test_the_score_vocabulary_reader_would_notice_a_union_that_moved() -> None:
+    """The same proof the enum reader gets, for the same reason.
+
+    A regex quietly matching nothing would compare two empty sets and pass —
+    with `Duration` that is 46 values going unheld while the file reports
+    success.
+    """
+    with pytest.raises(AssertionError, match="no longer declares"):
+        _literal_union("NoSuchScoreType", None)
+    with pytest.raises(AssertionError, match="no longer declares"):
+        _literal_union("TempoChangeKind", ("ScoreTempoChange", "no_such_field"))
+    with pytest.raises(AssertionError, match="no longer declares"):
+        _literal_union("TempoChangeKind", ("NoSuchInterface", "kind"))
+
+    assert len(_literal_union("Duration", None)) == 46
+    assert _literal_union("TempoChangeKind", ("ScoreTempoChange", "kind")) == {
+        "ritardando",
+        "accelerando",
+        "a_tempo",
+    }
 
 
 def test_the_reader_would_notice_a_type_that_stopped_existing() -> None:
