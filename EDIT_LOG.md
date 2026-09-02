@@ -6,6 +6,56 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-02 — A refused microphone, and a bug I reported to myself and withdrew
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. A check added to
+`walk-app.mjs`; the app is unchanged.
+
+**I thought I had found the worst defect of the day, and I had not.** Denying
+the microphone in a headless browser and tapping Start produced *"No microphone
+is available on this device."* — which for a refusal is the wrong sentence, and
+a consequential one: it sends a musician looking for a hardware fault instead of
+telling them to grant permission.
+
+It is the right sentence here. This container **has no audio input at all**, so
+`getUserMedia` rejects with `NotFoundError`, which `audioRecorder.web.ts`
+correctly maps to `MicrophoneUnavailableError`. Measured directly rather than
+argued:
+
+    no device      → NotFoundError
+    fake device    → TIMED OUT (prompt never answered)
+
+The second line is the other half of the lesson: Playwright has no way to
+*deny* a permission prompt — it simply never resolves — so the refusal branch
+cannot be reached by driving the browser, which is why it had never been seen.
+
+Reached by stubbing `getUserMedia` to reject with a real
+`DOMException('…', 'NotAllowedError')`, which is exactly what Chromium does when
+someone taps "Don't Allow". The app then says: *"Your browser is blocking the
+microphone. Open the site controls beside the address, allow Microphone, then
+press Start again."* Correct, and it names a way out.
+
+**So: no defect, and the check exists anyway.** Both branches are right and
+nothing was holding them apart. The new leg asserts a refusal is not reported as
+a missing device — the confusion that is easy to introduce, since one `catch`
+serves both and the distinguishing line is a single `error.name` test.
+
+**Verified by reintroducing it**: deleting that `NotAllowedError` branch makes
+the walk report `a refused microphone was reported as a missing one — "No
+microphone is available on this device."`. Restored byte-identically and rebuilt.
+
+**Second time today my measurement was the thing at fault** — the first was
+reading the start-bar picker mid-scroll. Both times the app was right and the
+probe was wrong. Worth writing down: a browser harness differs from a phone in
+ways that look like product defects, and the difference is usually the harness.
+
+**Tests:** `walk-app.mjs` PASS (eighteen checks); `tsc --noEmit` clean; web
+build clean. The app tree is untouched.
+
+**Side effects:** the walk gains ~10s. **Rollback:** revert.
+
+---
+
 ## 2026-09-02 — The two screens a musician meets after a take that failed
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Put to the owner under the
