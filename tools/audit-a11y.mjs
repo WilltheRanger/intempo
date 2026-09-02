@@ -26,6 +26,7 @@
  *
  * Exits non-zero when anything fails, so it can gate a change.
  */
+import { existsSync } from 'node:fs';
 import { createRequire } from 'node:module';
 
 /**
@@ -196,7 +197,23 @@ const audit = () => {
   return { unnamed, small, lowContrast };
 };
 
-const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium' });
+/**
+ * The Chromium to drive.
+ *
+ * This environment pre-installs one at a fixed path and sets
+ * `PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD`, so Playwright's own resolution finds
+ * nothing; anywhere else — a laptop, a CI runner — Playwright has downloaded
+ * its own and knows where it is. Hardcoding the first path made both these
+ * tools runnable in exactly one place, which is not a property a check should
+ * have.
+ */
+function browserPath() {
+  return existsSync('/opt/pw-browsers/chromium')
+    ? { executablePath: '/opt/pw-browsers/chromium' }
+    : {};
+}
+
+const browser = await chromium.launch(browserPath());
 let failures = 0;
 
 for (const [name, path] of ROUTES) {

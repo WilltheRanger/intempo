@@ -29,6 +29,7 @@
  *
  * Exits non-zero on any failure, so it can gate a change.
  */
+import { existsSync } from 'node:fs';
 import { createRequire } from 'node:module';
 
 // Resolved from `mobile/`, where playwright is installed with `--no-save` — a
@@ -46,7 +47,23 @@ const fail = (what) => {
 };
 const pass = (what) => console.log(`  ok    ${what}`);
 
-const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium' });
+/**
+ * The Chromium to drive.
+ *
+ * This environment pre-installs one at a fixed path and sets
+ * `PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD`, so Playwright's own resolution finds
+ * nothing; anywhere else — a laptop, a CI runner — Playwright has downloaded
+ * its own and knows where it is. Hardcoding the first path made both these
+ * tools runnable in exactly one place, which is not a property a check should
+ * have.
+ */
+function browserPath() {
+  return existsSync('/opt/pw-browsers/chromium')
+    ? { executablePath: '/opt/pw-browsers/chromium' }
+    : {};
+}
+
+const browser = await chromium.launch(browserPath());
 const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
 const errors = [];
 page.on('pageerror', (e) => errors.push(e.message));
@@ -64,25 +81,69 @@ const leaves = () =>
       .map((el) => el.textContent.trim()),
   );
 
-const open = async (route) => {
-  await page.goto(`${BASE}/${route}`, { waitUntil: 'networkidle', timeout: 30000 });
-  await page.waitForTimeout(1500);
+/**
+ * Wait for a condition rather than for a duration.
+ *
+ * **Every wait here used to be a fixed sleep**, which is fine on an idle laptop
+ * and is how a browser check becomes flaky the moment it runs somewhere loaded
+ * — and a check that goes red at random is one people learn to ignore, which is
+ * worse than not having it.
+ */
+const waitFor = async (what, predicate, timeout = 15000) => {
+  const deadline = Date.now() + timeout;
+  for (;;) {
+    if (await predicate()) return true;
+    if (Date.now() > deadline) {
+      fail(`timed out waiting for ${what}`);
+      return false;
+    }
+    await page.waitForTimeout(120);
+  }
 };
+
+/** The app has mounted when React has put something under `#root`. */
+const mounted = () =>
+  page.evaluate(() => (document.getElementById('root')?.childElementCount ?? 0) > 0);
+
+const open = async (route) => {
+  await page.goto(`${BASE}/${route}`, { waitUntil: 'domcontentloaded', timeout: 30000 });
+  await waitFor(`${route || '/'} to mount`, mounted);
+  // Fixture sources resolve on a microtask, so one settled frame after mount is
+  // enough — this is the only remaining fixed wait, and it is not a race with
+  // the network.
+  await page.waitForTimeout(400);
+};
+
+/** Wait until some rendered line satisfies `matches`. */
+const waitForText = (what, matches, timeout) =>
+  waitFor(what, async () => (await leaves()).some(matches), timeout);
 
 /** A pushed screen has no tab bar, which is correct rather than a fault. */
 const onTabs = async () =>
   (await page.getByRole('tab', { name: 'Today' }).count()) > 0;
 
+/** Where each tab must land. Waiting for the destination, not for a change. */
+const TAB_ROUTES = {
+  Today: '/',
+  Library: '/library',
+  Insights: '/insights',
+  Profile: '/profile',
+};
+
 const tab = async (name) => {
+  // Returning to the tab layer already lands on `/`, so a tap on **Today**
+  // then changes nothing — waiting for the path to differ timed out on a tab
+  // that had worked perfectly. Wait for where it should be instead.
   if (!(await onTabs())) await open('');
   await page.getByRole('tab', { name }).click({ timeout: 10000 });
-  await page.waitForTimeout(900);
+  await waitFor(`the ${name} tab to open`, async () => (await path()) === TAB_ROUTES[name]);
 };
 
 /** Tap the first control whose accessible name matches, and say where it went. */
 const tapTo = async (label, name, expected) => {
+  const from = await path();
   await page.getByRole('button', { name }).first().click({ timeout: 10000 });
-  await page.waitForTimeout(1000);
+  await waitFor(`${label} to navigate`, async () => (await path()) !== from);
   const landed = await path();
   if (expected.test(landed)) pass(`${label} → ${landed}`);
   else fail(`${label} → ${landed}, expected ${expected}`);
@@ -107,11 +168,11 @@ await tapTo('Library row', /Sonata No\. 1/, /^\/pieces\/[^/]+$/);
 
 // The web build must survive the browser's own history controls.
 await page.goBack();
-await page.waitForTimeout(900);
+await waitFor('browser back', async () => (await path()) === '/library');
 if ((await path()) === '/library') pass('browser back → /library');
 else fail(`browser back → ${await path()}`);
 await page.goForward();
-await page.waitForTimeout(900);
+await waitFor('browser forward', async () => (await path()).startsWith('/pieces/'));
 if ((await path()).startsWith('/pieces/')) pass('browser forward → piece');
 else fail(`browser forward → ${await path()}`);
 
@@ -121,14 +182,14 @@ await tab('Insights');
 await tapTo('Insights next focus', /60 Studies/, /\/record$/);
 await tab('Today');
 await page.getByRole('button', { name: /Sonata No\. 1/ }).last().click({ timeout: 10000 });
-await page.waitForTimeout(1000);
+await waitFor('the take row to open a verdict', async () => (await path()).startsWith('/analyses/'));
 if ((await path()).startsWith('/analyses/')) pass(`Today take row → ${await path()}`);
 else fail(`Today take row → ${await path()}, expected an analysis`);
 
 // A deep link has no history behind it; back must still reach the parent.
 await open('pieces/fixture-clef-change-study/bars/3');
 await page.getByRole('button', { name: /back/i }).first().click({ timeout: 10000 });
-await page.waitForTimeout(1000);
+await waitFor('back out of the bar editor', async () => (await path()).endsWith('/score'));
 if ((await path()).endsWith('/score')) pass('deep-linked bar editor → back to the score');
 else fail(`deep-linked bar editor → back went to ${await path()}`);
 
@@ -194,7 +255,7 @@ await page.getByRole('button', { name: /Choose a file/i }).first().click();
 (await chooser).setFiles(
   new URL('../fixtures/musicxml/bass_excerpt.musicxml', import.meta.url).pathname,
 );
-await page.waitForTimeout(2500);
+await waitForText('the file to be read', (l) => l.includes('bass_excerpt.musicxml'));
 
 const afterPick = await leaves();
 const named = afterPick.find((l) => l.includes('bass_excerpt.musicxml'));
@@ -206,7 +267,7 @@ else pass(`file read, part named from the file: "${named}"`);
 // Saving needs a server. A fixtures build must say so rather than appear to
 // succeed — a piece that looks saved and is not is worse than a refusal.
 await page.getByRole('button', { name: /Add to library/i }).first().click();
-await page.waitForTimeout(2500);
+await waitForText('the save to be answered', (l) => /needs the backend|sample data/i.test(l));
 const afterSave = await leaves();
 if (afterSave.some((l) => /needs the backend|sample data/i.test(l)))
   pass('saving without a backend is refused in words, not silently');
@@ -227,7 +288,7 @@ await page.getByRole('button', { name: /Choose a file/i }).first().click();
 (await duoChooser).setFiles(
   new URL('../fixtures/musicxml/violin_duo.musicxml', import.meta.url).pathname,
 );
-await page.waitForTimeout(2500);
+await waitForText('the part question', (l) => /Which part do you play/i.test(l));
 
 const asked = await leaves();
 if (!asked.some((l) => /Which part do you play/i.test(l)))

@@ -6,6 +6,65 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-02 — Wire the two browser checks into CI, and make them runnable anywhere
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Tooling and CI, no product
+change.
+
+**A check that runs only when someone remembers is a check that rots**, and
+`audit-a11y.mjs` says so about itself in its own docstring: an earlier version
+*"was run once against the legacy `frontend/` tree on 2026-08-20 and did not
+survive the rebuild into `mobile/`"*. Leaving the replacement unwired repeats a
+failure this repository has already had once.
+
+Three things had to be true first, and two of them were defects.
+
+**1. Both tools only worked in this container.** Each hardcoded
+`executablePath: '/opt/pw-browsers/chromium'` — a path that exists here because
+the environment pre-installs a browser and sets
+`PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD`, and nowhere else. `browserPath()` now uses
+it when it exists and otherwise lets Playwright find the browser it downloaded,
+so the same command works on a laptop and on a runner.
+
+**2. Every wait in the walk was a fixed sleep.** Fine on an idle laptop, and
+the way a browser check becomes flaky the moment it runs somewhere loaded — and
+a check that goes red at random is one people learn to ignore, which is worse
+than not having it. All but three are now conditions: the app has mounted when
+`#root` has children, a tap has landed when the path reaches its destination, a
+file has been read when its name appears.
+
+That conversion **immediately reported a failure that was mine, not the app's**,
+which is the point of doing it before wiring anything up. `tab('Today')` first
+returns to the tab layer, which already lands on `/`, so tapping Today changed
+nothing and a "wait for the path to differ" timed out on a tab that had always
+worked. It now waits for the *destination* (`TAB_ROUTES`), not for a change.
+
+**3. The job must not mask anything.** `app-walk` is separate from
+`mobile-check` on purpose: these drive a real browser, so if one ever does go
+flaky it must not hide a genuine test or type error in the job beside it. CI has
+no `.env`, so its `build:web` is already a fixtures build — exactly what both
+tools need. `serve` is started and then **polled** rather than slept on, for the
+same reason as above.
+
+**Verified locally**: `walk-app.mjs` PASS (seventeen checks), `audit-a11y.mjs`
+PASS (fifteen routes), both after the browser-path change. The YAML parses and
+the job's steps are the ones intended.
+
+**Not verified yet, and this is the honest gap:** the job has never run on a
+GitHub runner. `npx playwright install --with-deps chromium`, a backgrounded
+`serve` surviving between steps, and the walk's timing under CI load are all
+things I can only find out by pushing. I am pushing it to *this branch*, where
+it runs against my own PR and I can watch it — if it goes red for a reason that
+is the harness rather than the app, it comes out again rather than being left
+for someone else to trip over.
+
+**Tests:** mobile 1221 passed; `tsc` clean; both tools PASS locally.
+
+**Side effects:** every PR gains a job that installs Playwright and a browser
+(~1-2 minutes, run in parallel). **Rollback:** delete the `app-walk` job.
+
+---
+
 ## 2026-09-02 — The part picker had no fixture, so nobody had ever seen it
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. A fixture and a check, no
