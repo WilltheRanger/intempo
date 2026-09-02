@@ -6,6 +6,83 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-02 — Today told a brand-new musician there was nothing to practice, above a warmup it was hiding from them
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. §2 gate: put to the owner
+with three compositions and previews; approved as **"Add-piece leads, warmup
+below"**.
+
+### How it was found
+
+By asking which screen state has no fixture — the question that has now paid
+six times. **Every fixture build has a library, a take and thirty days of
+insights**, so Today, Library and Insights had only ever been seen populated.
+Five one-line early returns in `fixtures.ts`, `.env` aside, build, look. The
+recipe is now written down in `CLAUDE.md` beside the four auth-gated screens,
+because the finding is not the interesting part — the *question* is.
+
+Library, Insights and Profile came back fine. Today did not.
+
+### What it said
+
+> **Nothing to practice yet**
+> Add a piece of sheet music and it will show up here.
+
+Which is **false**, and the app knew it. `WarmupPanel` depends on nothing but
+the instrument — which onboarding *requires* every account to choose — and
+`/warmup` is a finished screen: real engraved notation, a tempo control that
+remembers, playback. It was simply below the `if (!piece)` early return, so a
+new account could not reach it until they had added a piece. A musician's first
+session was an empty screen and a single button, with a complete exercise for
+their instrument sitting one branch away.
+
+### What it says now
+
+The empty state keeps the only **primary** action on the screen — adding a
+piece is what the app is for, and the warmup produces no verdict — and the
+title moved to the thing that is actually empty: *"Nothing in your library
+yet"*. The warmup follows, under the same small `SectionHeader` the populated
+Today gives it, from the same component rather than a variant of it.
+
+### Three-foot test, run twice, and the second run changed the design
+
+**First attempt — greeting, then the *warmup*, then "Add a piece".** Backwards.
+The warmup was in a `Card`, and a bordered block wrapping engraved notation
+outweighs unenclosed text and a button every time. It was also the only card on
+the screen, which is the habit §3 law 3 names by itself. Moved to the page
+background — where `WarmupPanel`'s own docstring says it was designed to live —
+it recedes; on the populated Today it is one of a column of cards and recedes
+by position instead, which is work position cannot do here.
+
+**Second: greeting · "Add a piece" · the warmup.** That is the brief.
+
+Two spacing decisions came out of the same look. `EmptyState`'s own 32pt bottom
+padding stacked with the 24pt section gap put 56pt between the button and the
+warmup label — more than double any other gap on Today, and why the screen
+first read as having stopped early; the section's margin is zero here for that
+reason. And the pair is centred in what the header leaves, which is the job
+`fill` used to do for the empty state alone: stacked from the top, both actions
+sat above the thumb zone with 190pt of nothing under them (§3 law 7). `fill`
+cannot survive a second block, so the centring moved up a level.
+
+### What is not covered
+
+Verified **visually**, on a throwaway empty-account build — there is no fixture
+for an empty account in the shipping bundle and adding an env-var variant would
+put a developer code path in the product. The walk still exercises only the
+populated app.
+
+### Verification
+
+mobile 1246 passed (108 files) · `tsc --noEmit` clean · web build clean ·
+walk PASS (24 checks) · populated Today re-shot and unchanged.
+`mobile/.env` moved aside for each fixtures build and restored with `diff -q`.
+
+**Rollback:** revert this commit; the change is one branch of `TodayScreen` and
+two styles.
+
+---
+
 ## 2026-09-02 — A muted microphone cost a musician one of three free analyses, and the advice for it could not work
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. No §2 gate: no screen, no
