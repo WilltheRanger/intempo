@@ -22,6 +22,7 @@ section for what counts as "meaningful."
 - `mobile/src/screens/profile/ToggleRow.tsx`
 - `mobile/src/data/api/me.ts`
 - `mobile/src/data/sources/api.ts`
+- `mobile/src/data/sources/musician.ts`
 - `mobile/src/data/sources/api.musician.test.ts`
 - `mobile/src/data/sources/fixtures.ts`
 - `mobile/src/data/types.ts`
