@@ -92,7 +92,9 @@ export async function submitTake({
 
     if (!state.audioKey) {
       const upload = await requestAudioUpload(filename);
-      await uploadToSignedUrl(upload.upload_url, audio, 'audio/wav');
+      await uploadToSignedUrl(upload.upload_url, audio, 'audio/wav', {
+        subject: 'recording',
+      });
       state.audioKey = upload.object_key;
     }
 
