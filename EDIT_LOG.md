@@ -6,6 +6,29 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-02 — Taps and long lists stay responsive under motion
+
+**What changed**
+- Moved every web list entrance from per-frame JavaScript animation to opacity and transform transitions composited by the browser, preventing a long Library from competing with touch scrolling.
+- Preserved the restrained rise, capped stagger, native-driver path, and both system and in-app Reduce Motion behavior.
+- Added immediate scale and fill feedback to high-frequency icon controls, tabs, profile links, and bottom-sheet choices.
+- Added a light tab-change haptic through the existing preference-aware feedback path; re-tapping the active tab stays quiet.
+- Gave bottom sheets the shared fast-start, soft-settle easing instead of the timing function default.
+- Added contract tests that keep web motion compositor-safe and protect feedback on frequently tapped controls.
+
+**Files**
+- `mobile/src/components/motion/FadeIn.tsx`
+- `mobile/src/components/motion/motion.contract.test.ts`
+- `mobile/src/components/primitives/IconButton.tsx`
+- `mobile/src/navigation/BottomTabBar.tsx`
+- `mobile/src/screens/profile/LinkRow.tsx`
+- `mobile/src/components/overlays/SheetOptionRow.tsx`
+- `mobile/src/components/overlays/BottomSheet.tsx`
+
+**Verification**
+- Full mobile tests, typecheck, web build, frontend build, backend tests, and the change-log check run in pull-request CI before merge.
+- Cloudflare preview is checked for touch navigation, a long Library scroll, sheet motion, reduced-motion behavior, and normal startup before production merge.
+
 ## 2026-09-02 — The public app has explicit browser security boundaries
 
 **What changed**

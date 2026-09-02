@@ -25,6 +25,7 @@ import {
   TAB_BAR_PADDING_TOP,
   TAB_BAR_ROW_HEIGHT,
 } from './tabBarMetrics';
+import { impact, ImpactFeedbackStyle } from '../lib/haptics';
 import { useReducedMotion } from '../lib/useReducedMotion';
 import type { TabParamList } from './types';
 
@@ -124,6 +125,7 @@ export function BottomTabBar({
   navigation,
 }: BottomTabBarProps) {
   const insets = useSafeAreaInsets();
+  const reduceMotion = useReducedMotion();
 
   return (
     <View
@@ -150,6 +152,9 @@ export function BottomTabBar({
             canPreventDefault: true,
           });
           if (!focused && !event.defaultPrevented) {
+            // A tab change is a small but definite mode switch. Confirm it at
+            // the same instant as the visible press, before the scene settles.
+            impact(ImpactFeedbackStyle.Light);
             navigation.navigate(route.name);
           }
         }
@@ -164,7 +169,10 @@ export function BottomTabBar({
             // primary furniture and it announced four identical tabs.
             aria-selected={focused}
             accessibilityLabel={label}
-            style={styles.tab}
+            style={({ pressed }) => [
+              styles.tab,
+              pressed && (reduceMotion ? styles.tabPressedStill : styles.tabPressed),
+            ]}
           >
             <TabSelectionMotion focused={focused}>
               <Icon
@@ -206,6 +214,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     height: TAB_BAR_ROW_HEIGHT,
     gap: spacing.xs,
+  },
+  tabPressed: {
+    opacity: 0.68,
+    transform: [{ scale: 0.94 }],
+  },
+  tabPressedStill: {
+    opacity: 0.68,
   },
   tabContent: {
     alignItems: 'center',
