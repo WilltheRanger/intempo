@@ -79,6 +79,7 @@ describe('submitTake', () => {
       'https://storage.example/put?t=1',
       TAKE.audio,
       'audio/wav',
+      { subject: 'recording' },
     );
     expect(createAnalysis.mock.calls[0][0].audio_key).toBe('user-1/take.wav');
     expect(createAnalysis.mock.calls[0][0]).not.toHaveProperty('audio_url');
