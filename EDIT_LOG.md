@@ -6,6 +6,26 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-02 — The public app has explicit browser security boundaries
+
+**What changed**
+- Added site-wide Cloudflare headers preventing clickjacking, document-base replacement, plugin objects, and MIME-type guessing.
+- Limited camera and microphone permission to InTempo's own origin so the scanner and recorder continue to work while embedded or unrelated contexts cannot ask through the site.
+- Disabled browser capabilities the product never requests: location, payments, and USB.
+- Limited cross-site referrer detail and explicitly disabled the obsolete browser XSS filter rather than relying on inconsistent legacy behavior.
+- Kept script policy intentionally unchanged because Expo's boot watchdog is inline; a later strict script policy must be generated with its exact build hash rather than breaking startup.
+- Updated stale connection documentation to reflect that the production Cloudflare project uses real accounts while unconfigured previews remain on sample data.
+- Added packaging tests pinning every boundary and the required first-party camera/microphone allowances.
+
+**Files**
+- `mobile/public/_headers`
+- `mobile/src/lib/webInstall.test.ts`
+- `mobile/src/data/environment.ts`
+
+**Verification**
+- Full mobile tests, typecheck, web build, frontend build, backend tests, and the change-log check run in pull-request CI before merge.
+- Deployed response headers are read from the real preview and checked before production merge; the recording setup is opened without requesting permission or saving a take.
+
 ## 2026-09-02 — The metronome follows meter changes through the take
 
 **What changed**
