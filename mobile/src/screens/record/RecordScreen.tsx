@@ -53,6 +53,7 @@ import {
   type RestCueState,
 } from '../../lib/practiceCues';
 import { shortenLongRests, skippableBars } from '../../lib/notation/longRests';
+import { openingTimeSignature } from '../../lib/notation/meter';
 import { describeTierLimit } from '../../lib/tierLimit';
 import type { RootNavigation, RootStackParamList } from '../../navigation/types';
 import { BeatIndicator } from './BeatIndicator';
@@ -426,13 +427,6 @@ export function RecordScreen() {
   const countingIn = phase === 'counting_in';
   const capturing = countingIn || recording;
 
-  // One written bar in the pulse a musician actually feels. Score timing and
-  // analysis remain quarter-note based; the pulse only changes where the count
-  // and clicks land. When OCR cannot read the meter, four quarters remain the
-  // least surprising fallback.
-  const pulse = metronomePulse(piece?.score?.time_signature);
-  const perBar = pulse?.pulsesPerBar ?? null;
-  const countInBeats = perBar ?? 4;
   /**
    * Practise the notes without sitting through the rests.
    *
@@ -490,6 +484,16 @@ export function RecordScreen() {
     [heard, startFrom],
   );
 
+  // One written bar in the pulse a musician actually feels, in the meter
+  // where this take actually begins. A take starting after a 4/4 → 6/8 change
+  // gets two dotted-quarter pulses, not four quarter-note clicks from the
+  // score header. `startFromMeasure` carries the standing meter onto its
+  // entry bar, and the first bar's own printed change wins.
+  const entryTimeSignature = openingTimeSignature(takeScore);
+  const pulse = metronomePulse(entryTimeSignature);
+  const perBar = pulse?.pulsesPerBar ?? null;
+  const countInBeats = perBar ?? 4;
+
   const restCues = useMemo(
     () => longRestCues(takeScore, skipRests ? 1 : undefined),
     [takeScore, skipRests],
@@ -503,7 +507,7 @@ export function RecordScreen() {
   const metronome = useMetronome({
     mode: metronomeMode,
     bpm: targetBpm,
-    timeSignature: piece?.score?.time_signature,
+    timeSignature: entryTimeSignature,
     running: capturing,
     countingIn,
   });
@@ -531,7 +535,7 @@ export function RecordScreen() {
   }, [countInBeats, countingIn, metronome.beat?.index]);
 
   const activeRest = recording
-    ? restCueAt(restCues, elapsedMs, targetBpm, pulse?.quarterBeats ?? 1)
+    ? restCueAt(restCues, elapsedMs, targetBpm)
     : null;
 
   if (isPending) {
