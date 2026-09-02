@@ -28,6 +28,12 @@ export interface UpdateMeInput {
   /** The object key from `uploadAvatar`, never a URL. Null removes the picture. */
   avatar_key?: string | null;
   /**
+   * Explicit permission to retain corrected readings and their source pages
+   * for improving the reader. False withdraws permission and asks the server
+   * to delete data that was retained under it.
+   */
+  training_consent?: boolean;
+  /**
    * Marks onboarding as shown. Only ever `true` — the server refuses to move
    * it back, because a client that could would put the screen in front of
    * someone who had already dealt with it.
