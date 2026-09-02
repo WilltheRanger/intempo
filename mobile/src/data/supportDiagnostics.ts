@@ -1,6 +1,7 @@
 export type ConnectionReport =
   | { kind: 'connected' }
   | { kind: 'service_unreachable'; message: string }
+  | { kind: 'service_unready'; message: string }
   | { kind: 'session_ended' }
   | { kind: 'account_unreachable'; message: string };
 
@@ -12,9 +13,11 @@ export type SupportRequest = (
 /**
  * Check both halves of a usable app connection.
  *
- * Health alone only proves that the host woke up. A second authenticated read
- * proves that the saved session can reach the account behind it. Both calls are
- * safe GETs; nothing in the musician's library is changed.
+ * Health alone only proves that the host woke up. Readiness proves the deployed
+ * service, schema, storage, and worker configuration can perform the product's
+ * work. A final authenticated read proves that the saved session can reach the
+ * account behind it. All three calls are safe GETs; nothing in the musician's
+ * library is changed.
  */
 export async function checkAppConnection(
   request: SupportRequest,
@@ -28,6 +31,15 @@ export async function checkAppConnection(
         cause instanceof Error
           ? cause.message
           : 'The practice service could not be reached.',
+    };
+  }
+
+  try {
+    await request('/v1/ready', { authenticated: false });
+  } catch (cause) {
+    return {
+      kind: 'service_unready',
+      message: describeReadinessFailure(cause),
     };
   }
 
@@ -52,4 +64,32 @@ export async function checkAppConnection(
   }
 
   return { kind: 'connected' };
+}
+
+/**
+ * Keep deployment internals out of the consumer UI while preserving the one
+ * fact that helps: the service answered, but it cannot safely do all of its
+ * work. `/v1/ready` deliberately includes migration names for operators; a
+ * musician should not be asked to understand or repair those.
+ */
+function describeReadinessFailure(cause: unknown): string {
+  const detail =
+    cause !== null && typeof cause === 'object' && 'detail' in cause
+      ? cause.detail
+      : null;
+  const blocking =
+    detail !== null &&
+    typeof detail === 'object' &&
+    'blocking' in detail &&
+    Array.isArray(detail.blocking)
+      ? detail.blocking.length
+      : null;
+
+  if (blocking && blocking > 1) {
+    return `${blocking} required parts of the practice service are not ready.`;
+  }
+  if (blocking === 1) {
+    return 'One required part of the practice service is not ready.';
+  }
+  return 'The practice service answered, but it is not ready to handle every action.';
 }

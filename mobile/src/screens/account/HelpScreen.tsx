@@ -62,6 +62,12 @@ function copyFor(report: ConnectionReport | null, checking: boolean): Copy {
       detail: `${report.message} If the app has been idle, wait a moment and check again.`,
     };
   }
+  if (report.kind === 'service_unready') {
+    return {
+      title: 'InTempo needs a service update',
+      detail: `${report.message} This is an InTempo setup problem, not your connection or account. Recording, score reading, or saving may not work until it is fixed.`,
+    };
+  }
   return {
     title: 'The service is awake, but your account did not open',
     detail: `${report.message} Check again before signing out; a temporary connection can clear on its own.`,
