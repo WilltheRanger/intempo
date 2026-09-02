@@ -208,7 +208,7 @@ export const apiPieceSource: PieceSource = {
  * user's metadata — the one avatar the app can reach without a schema change,
  * and only present for accounts created through an OAuth provider.
  */
-function toMusician(
+export function toMusician(
   me: Awaited<ReturnType<typeof getMe>>,
   avatarUrl: string | null,
 ): Musician {
