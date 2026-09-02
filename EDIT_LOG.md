@@ -6,6 +6,33 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-02 — Touch, scrolling, and navigation settle more naturally
+
+**What changed**
+- Removed the browser's delayed touch interpretation and default tap flash from shared buttons while retaining the app's own visible feedback.
+- Replaced one-frame press snapping with a very short contact transition and kept the softer release, producing a tactile response without making actions feel late.
+- Added a clear pressed surface to frequently used Library, Today, and Insights rows so taps are visible even when the row's scale is intentionally restrained.
+- Reduced tab-scene travel and fade distance, and softened the tab bar's pressed movement so navigation confirms the tap without lurching.
+- Kept browser scrolling on native momentum and made focus and scroll-to-top jumps immediate instead of applying a second CSS smooth-scroll delay.
+- Replaced one accessibility motion query and listener per animated row with one shared app-level subscription, removing avoidable work from long scrolling screens.
+- Preserved both the device Reduce Motion setting and InTempo's own Reduce Motion preference.
+
+**Files**
+- `mobile/src/design/motion.ts`
+- `mobile/src/components/motion/PressableScale.tsx`
+- `mobile/src/components/motion/motion.contract.test.ts`
+- `mobile/src/components/primitives/ScreenContainer.tsx`
+- `mobile/src/lib/useReducedMotion.ts`
+- `mobile/src/navigation/RootNavigator.tsx`
+- `mobile/src/navigation/BottomTabBar.tsx`
+- `mobile/src/screens/library/PieceRow.tsx`
+- `mobile/src/screens/today/TodayRow.tsx`
+
+**Verification**
+- Motion contract coverage and TypeScript checking pass locally.
+- Full mobile tests, production web export, frontend build, backend tests, and the change-log check run in pull-request CI before merge.
+- The Cloudflare preview is checked for Library row taps, tab changes, touch scrolling, and preserved Reduce Motion behavior before production merge.
+
 ## 2026-09-02 — An unreadable scan can be replaced without duplicating the piece
 
 **What changed**

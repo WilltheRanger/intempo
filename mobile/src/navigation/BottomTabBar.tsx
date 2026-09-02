@@ -216,11 +216,11 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
   },
   tabPressed: {
-    opacity: 0.68,
-    transform: [{ scale: 0.94 }],
+    opacity: 0.82,
+    transform: [{ scale: 0.975 }],
   },
   tabPressedStill: {
-    opacity: 0.68,
+    opacity: 0.82,
   },
   tabContent: {
     alignItems: 'center',

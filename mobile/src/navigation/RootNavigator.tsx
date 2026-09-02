@@ -43,10 +43,10 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 
 function webTabSceneStyle(focused: boolean): ViewStyle {
   return {
-    opacity: focused ? 1 : 0.88,
-    transform: [{ translateY: focused ? 0 : 6 }],
+    opacity: focused ? 1 : 0.96,
+    transform: [{ translateY: focused ? 0 : 3 }],
     transitionProperty: 'opacity, transform',
-    transitionDuration: `${motion.base}ms`,
+    transitionDuration: `${motion.scene}ms`,
     transitionTimingFunction: 'cubic-bezier(0.22, 1, 0.36, 1)',
     willChange: 'opacity, transform',
   } as unknown as ViewStyle;
@@ -68,7 +68,7 @@ function TabScene({ children }: { children: ReactNode }) {
     arrival.setValue(0);
     const animation = Animated.timing(arrival, {
       toValue: 1,
-      duration: motion.base,
+      duration: motion.scene,
       easing: EASE_OUT,
       useNativeDriver: true,
     });
@@ -87,13 +87,13 @@ function TabScene({ children }: { children: ReactNode }) {
             : {
                 opacity: arrival.interpolate({
                   inputRange: [0, 1],
-                  outputRange: [0.88, 1],
+                  outputRange: [0.96, 1],
                 }),
                 transform: [
                   {
                     translateY: arrival.interpolate({
                       inputRange: [0, 1],
-                      outputRange: [6, 0],
+                      outputRange: [3, 0],
                     }),
                   },
                 ],
