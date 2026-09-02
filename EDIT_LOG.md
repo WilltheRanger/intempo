@@ -6,6 +6,75 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-02 — Looking at the three screens a fixtures build cannot reach
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. CLAUDE.md names four
+screens that sit behind auth or account state rather than behind a route, and
+says plainly that a state with no fixture is a state nobody has looked at —
+*"and that has now cost this project five times"*. So I looked at three of them.
+(`AccountStartupScreen`'s documented `?startup=` hook is not in this tree; the
+other three were reached by the technique the file prescribes.)
+
+**How**, because the discipline matters more than the result: one throwaway
+build in which `useAuthStatus`'s fixture default and the fixture musician's
+`onboarded` each read a query parameter, so all three states come off a single
+bundle instead of three. Restored afterwards and **checked with `diff -q`
+against copies taken before the edit** — both files byte-identical, `git diff`
+empty, and `.env` guarded the same way through every build.
+
+### What they look like
+
+All three render, with **no page errors**.
+
+- **`AuthScreen`** — "InTempo", the sign-in form, "Email me a link", "Forgot
+  your password?", "Create an account".
+- **`SetPasswordScreen`** — "Set a new password", and the sentence that earns
+  its place: *"You followed a reset link, so this replaces the old password.
+  You will stay signed in on this device."*
+- **`OnboardingScreen`** — "Who's playing?", the three required answers, and
+  **"Still needed: a photo."** The gate explains itself rather than just
+  disabling the button, which is the behaviour `missingFromOnboarding` was
+  written for.
+
+### The one finding
+
+**"Show password" measured 35x44** on both auth screens. `RevealPasswordAction`
+already carries a measured comment about `hitSlop` doing nothing on the web
+build and pads to a real target instead — but it set **`minHeight` only**. The
+height was at the floor and the width was left at whatever the word happens to
+measure.
+
+It only appears on those two screens and on the two account screens, and
+nothing had ever looked at it there. `minWidth` and horizontal centring now
+match the height. The box grows leftward into the gap beside the label, so the
+word moves 4.5pt — not enough to see — and the target reaches 44.
+
+**The audit now covers `/account/password` and `/account/email`**, which use the
+same control and *are* reachable. That is the point: the regression that would
+have been invisible until someone did another throwaway build is now caught by
+a command anyone can run.
+
+### Verified
+
+`node tools/audit-a11y.mjs` over **fourteen** routes: **PASS**, zero findings.
+**mobile 1181 passed (103 files), `tsc --noEmit` clean.**
+
+### Not done
+
+- **`AccountStartupScreen` was not inspected.** CLAUDE.md describes a
+  `?startup=loading|error` parameter on `SignedInApp`; there is no such
+  parameter in this tree, so either it was lost in a rebuild or the note is
+  stale. I did not add one — that is a change to shipping code for the sake of
+  looking at it, and the honest thing is to say the screen remains unlooked at.
+- The three screens were inspected, not redesigned. Nothing about their
+  composition changed.
+
+### Rollback
+
+`git revert`. Two style properties and two audit routes.
+
+---
+
 ## 2026-09-02 — The back button was 32 points wide, on every screen
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. An `audit-a11y.mjs` was
