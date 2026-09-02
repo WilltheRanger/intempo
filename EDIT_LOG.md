@@ -33,6 +33,24 @@ section for what counts as "meaningful."
 - Full mobile tests, production web export, frontend build, backend tests, and the change-log check run in pull-request CI before merge.
 - The Cloudflare preview is checked for Library row taps, tab changes, touch scrolling, and preserved Reduce Motion behavior before production merge.
 
+## 2026-09-02 — Production readiness now catches every manual schema step
+
+**What changed**
+- Extended the readiness endpoint beyond required columns so it also verifies the consent-correction and pending-upload tables introduced after the initial schema.
+- Made the manually applied consent and pending-upload migrations safe to run again after a partial or uncertain SQL-editor attempt.
+- Reported the exact numbered migration for each missing table, turning a generic unavailable API into a specific production repair.
+- Added coverage that prevents future table-creating migrations from silently outgrowing the readiness contract.
+
+**Files**
+- `backend/app/migrations/013_training_corrections.sql`
+- `backend/app/migrations/014_pending_uploads.sql`
+- `backend/app/services/readiness.py`
+- `backend/app/tests/test_readiness.py`
+
+**Verification**
+- Focused migration/readiness coverage passes locally; the full Linux backend suite runs in pull-request CI.
+- Production readiness is checked again after deployment to enumerate every unapplied migration before the SQL repair.
+
 ## 2026-09-02 — An unreadable scan can be replaced without duplicating the piece
 
 **What changed**
