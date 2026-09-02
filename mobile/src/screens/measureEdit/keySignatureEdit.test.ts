@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { ScoreJson } from '../../data/types';
 import {
   KEY_SIGNATURE_CHOICES,
+  applyKeySignatureEdit,
   describeKeySignature,
   keyBeforeMeasure,
   sameEditableSignature,
@@ -59,5 +60,29 @@ describe('the key in force before a bar', () => {
     expect(keyBeforeMeasure(score, 5)).toBe('Bb major');
     expect(keyBeforeMeasure(score, 8)).toBe('G major');
     expect(keyBeforeMeasure(score, 12)).toBe('C major');
+  });
+});
+
+
+describe('saving a key correction', () => {
+  it('edits the score header from the opening bar', () => {
+    const corrected = applyKeySignatureEdit(score, 1, 'D major');
+
+    expect(corrected.key_signature).toBe('D major');
+    expect(corrected.measures[0]).not.toHaveProperty('key_signature');
+  });
+
+  it('adds or replaces a change on a later bar', () => {
+    const corrected = applyKeySignatureEdit(score, 5, 'Eb major');
+
+    expect(corrected.key_signature).toBe('Bb major');
+    expect(corrected.measures[1].key_signature).toBe('Eb major');
+  });
+
+  it('removes a false change without changing any other bar', () => {
+    const corrected = applyKeySignatureEdit(score, 5, null);
+
+    expect(corrected.measures[1].key_signature).toBeNull();
+    expect(corrected.measures[2].key_signature).toBe('C major');
   });
 });
