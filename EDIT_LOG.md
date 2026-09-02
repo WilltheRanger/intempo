@@ -6,6 +6,81 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-02 — Two ways the key-signature control wrote a key the page does not print
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Found by sweeping every
+route of the running app and then reading the module behind the one screen that
+edits notation. No pixels change: both fixes are in
+`screens/measureEdit/keySignatureEdit.ts`, which is already a pure, tested
+module — the control itself is untouched.
+
+**First, the credit.** The sweep covered 21 routes at 390×844 and every one
+rendered with **no page errors, no console errors and no horizontal overflow**.
+The key control gets the hard part right: it compares signatures by
+`accidentalCount` rather than by name, so `Bb major` and `G minor` are one row;
+it separates "no printed change" from "a change to C major"; and it routes the
+opening bar to the score header and later bars to the measure. That is the
+schema rule stated correctly.
+
+**What it got wrong is what happens after the tap.**
+
+1. **Choosing the signature already in force recorded a change to it.** The
+   sheet lists all fifteen signatures and asks which one is *printed at this
+   bar*. The natural way to read a list of keys is "which key is this bar in",
+   and on a bar that prints nothing those are different questions. Answering
+   the second one stored `key_signature` on a bar the page does not change at —
+   and the engraver believes the score. It draws the new signature after the
+   barline *and*, because of the courtesy rule added earlier today, prints a
+   warning at the end of the previous line about a change to the key the reader
+   is already in. A musician correcting one misread bar could put a false key
+   change on the page by naming the key correctly.
+
+2. **Correcting the opening key was a silent no-op when bar 1 carried its own
+   signature.** A measure-level key outranks the header — that is what makes a
+   change a change — so setting the header and leaving one there changed
+   nothing. Measured before the fix: header set to `Bb major`, bar 1 still
+   `G major`, key in force from bar 1 still **G major**. The screen closed, the
+   correction was accepted, and the score opened in the old key. Reachable
+   rather than theoretical: `start_from_measure` stamps the entry bar with the
+   key in force, so a score whose first measure carries one is a shape this app
+   produces.
+
+**Both fixes are the same rule the backend already follows** — compare against
+the key **in force**, never against the header. A chosen signature equal to the
+one in force normalises to `null`, and a header edit clears any signature
+stamped on the opening bar.
+
+`measures[0].key_signature` is now explicitly `null` rather than absent, which
+is why one existing assertion moved from `not.toHaveProperty` to `toBeNull`.
+The two are identical to every consumer — the schema field is optional and
+every reader tests truthiness — and the sibling case for a cleared change
+already asserted the explicit-null shape.
+
+### Tests
+
+**mobile 1150 passed (99 files), `tsc --noEmit` clean.** Four cases added to
+`keySignatureEdit.test.ts`: the redundant choice by major name, the same by its
+relative minor (the marks are what count), a real change still recorded, and
+the opening-bar clear including that the corrected key is the one in force from
+bar 1 onward and that later changes are untouched.
+
+### Not done
+
+- The control's wording is unchanged. Its help line already says "Choose a
+  signature only if a new one is printed at this bar", and rewording it is a
+  UI change behind the §2 gate. The normalisation means the wrong reading is
+  now harmless rather than merely discouraged.
+- Nothing here was exercised against a live scan; the evidence is the module's
+  tests and the route sweep.
+
+### Rollback
+
+`git revert`. The normalisation only ever writes `null` where a redundant
+signature would have gone, so reverting restores the old behaviour without
+touching stored scores.
+
+---
+
 ## 2026-09-02 — The three unapplied migrations, applied
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. No code changed. This
