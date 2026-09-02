@@ -63,7 +63,11 @@ export function useTranscribePage() {
   });
 }
 
-/** Reads uploaded pages into an existing manual piece instead of duplicating it. */
+/**
+ * Reads uploaded pages into an existing scoreless piece instead of duplicating
+ * it. This also repairs an initial transcription that failed before producing
+ * any notes; the backend protects usable notation from replacement.
+ */
 export function useAttachScorePages(pieceId: string) {
   const queryClient = useQueryClient();
   return useMutation<Piece, Error, string[]>({

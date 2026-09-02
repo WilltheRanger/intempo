@@ -803,12 +803,12 @@ def _hand_entered(body: CreateScoreRequest) -> ScoreJson:
 
     `measures` is empty and stays empty: this endpoint takes a title and a
     tempo, not a transcription, and there is no note entry anywhere in the app.
-    A piece like this is a real library entry — it can be opened, favourited
-    and practised against with the metronome — but the analysis pipeline has
-    nothing to align a recording to, so it cannot produce a verdict. That
-    limitation is the honest consequence of never having read the page, and
-    `ocr_confidence = 0` records it: no notes were read, so nothing is claimed
-    about any.
+    A piece like this is a real library entry — it can be opened and named —
+    but the app has no score-only metronome route and the analysis pipeline has
+    nothing to align a recording to, so it cannot yet be practised or produce a
+    verdict. That limitation is the honest consequence of never having read the
+    page, and `ocr_confidence = 0` records it: no notes were read, so nothing is
+    claimed about any.
     """
     return ScoreJson(
         clef=body.clef,
@@ -908,12 +908,18 @@ def attach_score_pages(
     body: AttachScorePagesRequest,
     user_id: UUID = Depends(current_user_id),
 ) -> ScoreResponse:
-    """Read sheet music into an existing hand-entered piece.
+    """Read sheet music into an existing scoreless or failed piece.
 
-    A manual library entry is useful for a metronome, but it has no notes for
-    recording analysis to follow. This turns that same entry into a photographed
-    score instead of forcing the musician to create a duplicate and lose the
-    title, tempo and any history already attached to it.
+    A manual library entry keeps a title and intended tempo, but it has no notes
+    for recording analysis or score playback to follow. This turns that same
+    entry into a photographed score instead of forcing the musician to create a
+    duplicate and lose the details already attached to it.
+
+    A failed first reading is the other scoreless state. New photographs replace
+    its unreadable pages in the same row, so the recovery action does not create a
+    second copy of the piece. A failed *re-reading* of a score that still has
+    measures is not replaceable here: those usable notes may already have
+    practice history behind them and must not be erased by a photograph retry.
     """
     pages = [
         _durable_image_url(reference, user_id)
@@ -941,11 +947,18 @@ def attach_score_pages(
             status_code=status.HTTP_409_CONFLICT,
             detail="this piece is already being read",
         )
-    if pages_of(row) or (row.get("score_json") or {}).get("measures"):
+    measures = (row.get("score_json") or {}).get("measures") or []
+    replacing_failed_pages = state == "failed" and not measures
+    if measures or (pages_of(row) and not replacing_failed_pages):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="this piece already has notation",
         )
+
+    # Kept until the row points at the replacements. If the write loses a race,
+    # the original photographs remain available for the winning retry and the
+    # newly uploaded pages remain pending for the ordinary sweeper.
+    replaced_keys = _page_keys(row) if replacing_failed_pages else []
 
     pending_score = _awaiting_transcription().model_dump(mode="json")
     previous_score = row.get("score_json") or {}
@@ -966,20 +979,48 @@ def attach_score_pages(
         "transcription_accepted_at": None,
         "page_image_discarded_at": None,
     }
-    updated = (
+    update_query = (
         client.table("scores")
         .update(update)
         .eq("id", str(score_id))
         .eq("user_id", str(user_id))
-        .execute()
-    ).data or []
+    )
+    if replacing_failed_pages:
+        # Compare both facts that authorised replacement. "Try reading again"
+        # can race this request from another tab; once it changes the state, a
+        # late photograph must not overwrite the reading it started. Comparing
+        # the old first page also lets only one of two photograph retries win.
+        update_query = update_query.eq("transcription_status", "failed").eq(
+            "source_image_url", row.get("source_image_url")
+        )
+    updated = update_query.execute().data or []
     if not updated:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="score not found"
+            status_code=(
+                status.HTTP_409_CONFLICT
+                if replacing_failed_pages
+                else status.HTTP_404_NOT_FOUND
+            ),
+            detail=(
+                "this piece changed while the replacement pages were uploading; "
+                "open it and check the current reading"
+                if replacing_failed_pages
+                else "score not found"
+            ),
         )
 
     # The row points at them now, same as `create_score`.
-    pending_uploads.claim(SCORE_BUCKET, _object_keys_in(pages))
+    new_keys = _object_keys_in(pages)
+    pending_uploads.claim(SCORE_BUCKET, new_keys)
+
+    # The old photographs are now unreachable. Remove them immediately; if
+    # storage is temporarily unavailable, put each one into the same durable
+    # pending registry used for an abandoned upload so the sweeper can retry.
+    # Never remove a key reused by an older client as its replacement.
+    for key in sorted(set(replaced_keys) - set(new_keys)):
+        if not _remove_object(client, key):
+            pending_uploads.record(user_id, SCORE_BUCKET, key)
+
     start_transcription(str(score_id))
     return _with_image_urls(updated)[0]
 

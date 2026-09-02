@@ -159,3 +159,182 @@ def test_attachment_refuses_a_second_read_while_one_is_running(
     assert "already being read" in response.text
     client.table.return_value.update.assert_not_called()
     assert enqueued == []
+
+
+def test_new_photographs_replace_a_failed_first_read_without_a_duplicate(
+    api: TestClient, monkeypatch, make_token
+) -> None:
+    user_id, score_id = uuid4(), uuid4()
+    old_page = _signed_url(user_id).replace("abc.jpg", "old.jpg")
+    new_page = _signed_url(user_id).replace("abc.jpg", "new.jpg")
+    row = _row_for(
+        score_id,
+        user_id,
+        source_image_url=old_page,
+        source_image_urls=[old_page],
+        score_json={**GOOD_PAYLOAD, "measures": []},
+        ocr_confidence=None,
+        transcription_status="failed",
+        transcription_error="The photograph was too blurred to read.",
+    )
+    client = _install_supabase(monkeypatch, returning_row=row)
+    enqueued = _stub_worker(monkeypatch)
+
+    expected_url = (
+        f"{PROJECT_HOST}/storage/v1/object/authenticated/score-images/"
+        f"{user_id}/new.jpg"
+    )
+    replaced = {
+        **row,
+        "source_image_url": expected_url,
+        "source_image_urls": [expected_url],
+        "score_json": {**row["score_json"], "measures": []},
+        "transcription_status": "queued",
+        "transcription_error": None,
+    }
+    # Replacement is compare-and-set on both the failed state and the page it
+    # is replacing. Configure that deeper query separately from the ordinary
+    # hand-entered attachment chain in `_install_supabase`.
+    (
+        client.table.return_value.update.return_value.eq.return_value.eq.return_value
+        .eq.return_value.eq.return_value.execute.return_value
+    ) = type("Result", (), {"data": [replaced]})()
+
+    claimed: list[tuple[str, list[str]]] = []
+    monkeypatch.setattr(
+        "app.routers.scores.pending_uploads.claim",
+        lambda bucket, keys: claimed.append((bucket, keys)),
+    )
+
+    response = api.post(
+        f"/v1/scores/{score_id}/transcription",
+        json={"image_url": new_page},
+        headers=_auth(make_token, user_id),
+    )
+
+    assert response.status_code == 200, response.text
+    written = client.table.return_value.update.call_args.args[0]
+    assert written["source_image_url"] == expected_url
+    assert written["transcription_status"] == "queued"
+    assert written["transcription_error"] is None
+    assert claimed == [("score-images", [f"{user_id}/new.jpg"])]
+    client.storage.from_.return_value.remove.assert_called_once_with(
+        [f"{user_id}/old.jpg"]
+    )
+    assert enqueued == [str(score_id)]
+    client.table.return_value.insert.assert_not_called()
+
+
+def test_failed_replacement_keeps_old_page_until_compare_and_set_wins(
+    api: TestClient, monkeypatch, make_token
+) -> None:
+    user_id, score_id = uuid4(), uuid4()
+    old_page = _signed_url(user_id).replace("abc.jpg", "old.jpg")
+    row = _row_for(
+        score_id,
+        user_id,
+        source_image_url=old_page,
+        source_image_urls=[old_page],
+        score_json={**GOOD_PAYLOAD, "measures": []},
+        transcription_status="failed",
+    )
+    client = _install_supabase(monkeypatch, returning_row=row)
+    enqueued = _stub_worker(monkeypatch)
+    (
+        client.table.return_value.update.return_value.eq.return_value.eq.return_value
+        .eq.return_value.eq.return_value.execute.return_value
+    ) = type("Result", (), {"data": []})()
+
+    claimed: list[list[str]] = []
+    monkeypatch.setattr(
+        "app.routers.scores.pending_uploads.claim",
+        lambda _bucket, keys: claimed.append(keys),
+    )
+
+    response = api.post(
+        f"/v1/scores/{score_id}/transcription",
+        json={"image_url": _signed_url(user_id).replace("abc.jpg", "new.jpg")},
+        headers=_auth(make_token, user_id),
+    )
+
+    assert response.status_code == 409, response.text
+    assert "changed while" in response.text
+    client.storage.from_.return_value.remove.assert_not_called()
+    assert claimed == []
+    assert enqueued == []
+
+
+def test_new_photographs_never_erase_notes_from_a_failed_reread(
+    api: TestClient, monkeypatch, make_token
+) -> None:
+    user_id, score_id = uuid4(), uuid4()
+    row = _row_for(
+        score_id,
+        user_id,
+        transcription_status="failed",
+        transcription_error="A later re-read failed.",
+    )
+    client = _install_supabase(monkeypatch, returning_row=row)
+    enqueued = _stub_worker(monkeypatch)
+
+    response = api.post(
+        f"/v1/scores/{score_id}/transcription",
+        json={"image_url": _signed_url(user_id).replace("abc.jpg", "new.jpg")},
+        headers=_auth(make_token, user_id),
+    )
+
+    assert response.status_code == 409, response.text
+    assert "already has notation" in response.text
+    client.table.return_value.update.assert_not_called()
+    assert enqueued == []
+
+
+def test_old_failed_page_is_swept_if_immediate_removal_is_unavailable(
+    api: TestClient, monkeypatch, make_token
+) -> None:
+    user_id, score_id = uuid4(), uuid4()
+    old_page = _signed_url(user_id).replace("abc.jpg", "old.jpg")
+    row = _row_for(
+        score_id,
+        user_id,
+        source_image_url=old_page,
+        source_image_urls=[old_page],
+        score_json={**GOOD_PAYLOAD, "measures": []},
+        transcription_status="failed",
+    )
+    client = _install_supabase(monkeypatch, returning_row=row)
+    _stub_worker(monkeypatch)
+    new_page = _signed_url(user_id).replace("abc.jpg", "new.jpg")
+    new_url = (
+        f"{PROJECT_HOST}/storage/v1/object/authenticated/score-images/"
+        f"{user_id}/new.jpg"
+    )
+    replaced = {
+        **row,
+        "source_image_url": new_url,
+        "source_image_urls": [new_url],
+        "transcription_status": "queued",
+    }
+    (
+        client.table.return_value.update.return_value.eq.return_value.eq.return_value
+        .eq.return_value.eq.return_value.execute.return_value
+    ) = type("Result", (), {"data": [replaced]})()
+    client.storage.from_.return_value.remove.side_effect = RuntimeError("storage down")
+
+    deferred: list[tuple[object, str, str]] = []
+    monkeypatch.setattr(
+        "app.routers.scores.pending_uploads.claim", lambda *_args: None
+    )
+    monkeypatch.setattr(
+        "app.routers.scores.pending_uploads.record",
+        lambda owner, bucket, key: deferred.append((owner, bucket, key)),
+    )
+
+    response = api.post(
+        f"/v1/scores/{score_id}/transcription",
+        json={"image_url": new_page},
+        headers=_auth(make_token, user_id),
+    )
+
+    assert response.status_code == 200, response.text
+    assert deferred == [(user_id, "score-images", f"{user_id}/old.jpg")]
