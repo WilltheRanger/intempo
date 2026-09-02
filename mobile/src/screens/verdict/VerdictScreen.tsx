@@ -20,7 +20,7 @@ import type { TakeResult } from '../../data/types';
 import { BORDER_WIDTH, colors, spacing } from '../../design';
 import { formatTakeVerdict, formatTempo } from '../../lib/tempo';
 import type { RootNavigation, RootStackParamList } from '../../navigation/types';
-import { readMeasure } from '../../lib/verdict/measureReading';
+import { readMeasure, timedMeasureRange } from '../../lib/verdict/measureReading';
 import { MEASURE_COLUMNS, MeasureRow } from './MeasureRow';
 import { TrendLine } from './TrendLine';
 import { TakePlayback } from './TakePlayback';
@@ -157,10 +157,16 @@ export function VerdictScreen() {
   }
 
   // The chart's x axis, so the ends of the line name measures that can be
-  // found in the list below it.
-  const firstMeasure = take.measures[0]?.measure ?? 1;
+  // found in the list below it — and specifically the measures the line
+  // *reaches*. `trend` drops untimed and slur-interior notes, so labelling
+  // this from the whole take captioned the ends with bars the line stops
+  // short of. See `timedMeasureRange`.
+  const covered = timedMeasureRange(take.measures);
+  const firstMeasure = covered?.first ?? take.measures[0]?.measure ?? 1;
   const lastMeasure =
-    take.measures[take.measures.length - 1]?.measure ?? take.measures.length;
+    covered?.last ??
+    take.measures[take.measures.length - 1]?.measure ??
+    take.measures.length;
 
   return (
     /*
