@@ -6,6 +6,69 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-02 — The trend chart's axis named a measure the line never reaches
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Found by auditing the
+verdict screen — the route my own earlier sweep of this app missed, and the
+payoff of the whole product. It is now in `tools/audit-a11y.mjs` so the next
+sweep cannot miss it either.
+
+**The screen is good.** Serif verdict, the sentence naming the bars, the shape
+of the take, then the measure-by-measure detail, with "Record again" in the
+thumb zone. The narrative and the data agree exactly: *"You rushed across
+measures 5 to 8, then pulled it back"* over a list marking 5–8 **Rushing** and
+4, 9, 10 **Slight rush**. Accessibility-clean, and every row carries a spoken
+label that says *why* a bar went unjudged rather than just that it did.
+
+**The x axis was labelled from the wrong collection.** `trend` comes from
+`rolling_trend`, which drops every note that is slur-interior or untimed — so a
+take closing with a `rit.`, a fermata or an ornament produces a line that stops
+before the last bar. The labels were taken from `take.measures`, the whole
+take.
+
+Measured in the browser on the sample take: **a polyline of 10 points under an
+axis reading "Measure 1 … 13"**, because bar 11 is under a written tempo
+change, 12 is an uneven one and 13 is a fermata. The line's right-hand end is
+measure 10 and was captioned 13, so the peak read about three bars later than
+it happened — on the same screen whose sentence says "measures 5 to 8". The
+code's own comment states the intent it missed: *"so the ends of the line name
+measures that can be found in the list below it"*.
+
+After: **"Measure 1 … 10"** against the same 10 points. The measure list still
+shows all thirteen rows, which is correct — the list reports every bar, the
+chart covers only what was timed.
+
+**A correction to my own first reading**, since it changed the fix: I took
+`trend` for one point per measure. It is one point per **note** —
+`rolling_trend` walks `deltas`, which are per-note. That makes the labelling
+error the same in direction but different in kind, and it is why
+`timedMeasureRange` returns a *range* rather than a count: whatever the density
+of points, the first and last of them fall inside the first and last timed bar.
+
+### Noted, not fixed
+
+**The fixture's trend disagrees with the wire in granularity.** Its comment
+says it matches the pipeline — *"which is what the pipeline now sends too"* —
+and the *exclusion* does match, but `fixtures.ts` sends one value per timed
+**measure** while `rolling_trend` sends one per timed **note**. The demo chart
+therefore has ten points where a real take of the same music would have forty.
+Nothing a musician sees is wrong, and correcting it means inventing per-note
+deviations for a fixture, which is more invention than the discrepancy costs.
+Recorded here rather than quietly left.
+
+### Tests
+
+**mobile 1185 passed (103 files), `tsc --noEmit` clean.** Four cases on
+`timedMeasureRange`: a take ending untimed, one opening untimed, one fully
+timed, and one with nothing timed — which is also the case where there is no
+line to label.
+
+### Rollback
+
+`git revert`. One derived value on one screen.
+
+---
+
 ## 2026-09-02 — "Build the best version first" replaces "don't optimize early"
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. The owner's call, given

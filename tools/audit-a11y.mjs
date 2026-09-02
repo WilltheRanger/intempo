@@ -48,6 +48,8 @@ const ROUTES = [
   ['Score', 'pieces/fixture-clef-change-study/score'],
   ['Bar editor', 'pieces/fixture-clef-change-study/bars/3'],
   ['Record', 'pieces/fixture-bach-bwv1001/record'],
+  // The payoff of the whole app, and the route the first sweep missed.
+  ['Verdict', 'analyses/fixture-take-1'],
   ['Warmup', 'warmup'],
   ['Help', 'help'],
   ['Legal', 'legal/privacy'],

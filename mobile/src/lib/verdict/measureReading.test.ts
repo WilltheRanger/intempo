@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { MeasureVerdict } from '../../data/types';
-import { readMeasure, wasTimed } from './measureReading';
+import { readMeasure, timedMeasureRange, wasTimed } from './measureReading';
 
 /**
  * A bar under a written `rit.` is not a bar that was played well.
@@ -203,5 +203,54 @@ describe('a bar the page said not to judge', () => {
     );
 
     expect(reading.label).toBe('Uneven');
+  });
+});
+
+describe('the measures the trend line covers', () => {
+  /**
+   * Shaped like the sample take: ten timed bars, then a written tempo change,
+   * an uneven one and a fermata. `rolling_trend` drops all three, so the line
+   * stops at bar 10 while the take runs to 13.
+   */
+  const bar = (measure: number, extra: Partial<MeasureVerdict> = {}) =>
+    ({
+      measure,
+      verdict: 'on',
+      band: 'on',
+      deviationPct: 0,
+      timedNoteCount: 4,
+      ...extra,
+    }) as MeasureVerdict;
+
+  it('names the last timed bar, not the last bar of the take', () => {
+    const measures = [
+      ...Array.from({ length: 10 }, (_u, i) => bar(i + 1)),
+      bar(11, { underTempoChange: true }),
+      bar(12, { underTempoChange: true, uneven: true }),
+      bar(13, { timedNoteCount: 0, untimedReason: 'fermata' }),
+    ];
+
+    expect(timedMeasureRange(measures)).toEqual({ first: 1, last: 10 });
+  });
+
+  it('names the first timed bar when a take opens untimed', () => {
+    const measures = [
+      bar(1, { timedNoteCount: 0, untimedReason: 'ornament' }),
+      bar(2),
+      bar(3),
+    ];
+
+    expect(timedMeasureRange(measures)).toEqual({ first: 2, last: 3 });
+  });
+
+  it('spans the whole take when every bar was timed', () => {
+    expect(timedMeasureRange([bar(1), bar(2), bar(3)])).toEqual({ first: 1, last: 3 });
+  });
+
+  it('says nothing when nothing was timed, which is when there is no line', () => {
+    expect(
+      timedMeasureRange([bar(1, { underTempoChange: true }), bar(2, { timedNoteCount: 0 })]),
+    ).toBeNull();
+    expect(timedMeasureRange([])).toBeNull();
   });
 });
