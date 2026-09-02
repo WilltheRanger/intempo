@@ -657,23 +657,151 @@ def test_delete_unknown_returns_404(
     assert res.status_code == 404
 
 
-def test_delete_with_dependent_analyses_returns_409(
+def test_delete_cleanup_failure_is_retryable(
     monkeypatch: pytest.MonkeyPatch,
     client: TestClient,
     make_token: Callable[..., str],
 ) -> None:
     user_id = uuid4()
-    fk_violation = RuntimeError(
-        "update or delete on table scores violates foreign key constraint analyses_score_id_fkey"
+    score_id = uuid4()
+    failure = RuntimeError("connection dropped during dependent cleanup")
+    _install_supabase(
+        monkeypatch,
+        returning_row=_row_for(score_id, user_id),
+        raise_on_delete=failure,
     )
-    _install_supabase(monkeypatch, raise_on_delete=fk_violation)
     res = client.delete(
-        f"/v1/scores/{uuid4()}",
+        f"/v1/scores/{score_id}",
         headers={"Authorization": f"Bearer {make_token(sub=user_id)}"},
     )
-    assert res.status_code == 409
-    assert "analyses" in res.json()["detail"]
+    assert res.status_code == 503
+    assert "try again" in res.json()["detail"].lower()
 
+
+
+def test_delete_with_history_removes_dependents_then_owned_media(
+    monkeypatch: pytest.MonkeyPatch,
+    client: TestClient,
+    make_token: Callable[..., str],
+) -> None:
+    """A practised piece is one deletion, including every row and byte."""
+    user_id, score_id = uuid4(), uuid4()
+    page_key = f"{user_id}/page.jpg"
+    audio_key = f"{user_id}/take.wav"
+    row = _row_for(
+        score_id,
+        user_id,
+        source_image_url=(
+            f"{PROJECT_HOST}/storage/v1/object/authenticated/"
+            f"{scores_module.SCORE_BUCKET}/{page_key}"
+        ),
+    )
+    analysis_row = {
+        "audio_url": (
+            f"{PROJECT_HOST}/storage/v1/object/authenticated/"
+            f"{scores_module.AUDIO_BUCKET}/{audio_key}"
+        )
+    }
+
+    sb = MagicMock()
+    score_table = MagicMock(name="scores")
+    analysis_table = MagicMock(name="analyses")
+    assignment_table = MagicMock(name="assignments")
+    tables = {
+        "scores": score_table,
+        "analyses": analysis_table,
+        "assignments": assignment_table,
+    }
+    sb.table.side_effect = lambda name: tables[name]
+
+    score_table.select.return_value.eq.return_value.eq.return_value.limit.return_value.execute.return_value = MagicMock(
+        data=[row]
+    )
+    analysis_table.select.return_value.eq.return_value.eq.return_value.execute.return_value = MagicMock(
+        data=[analysis_row]
+    )
+
+    order: list[str] = []
+    assignment_table.delete.return_value.eq.return_value.execute.side_effect = (
+        lambda: (order.append("assignments"), MagicMock(data=[]))[1]
+    )
+    analysis_table.delete.return_value.eq.return_value.eq.return_value.execute.side_effect = (
+        lambda: (order.append("analyses"), MagicMock(data=[analysis_row]))[1]
+    )
+    score_table.delete.return_value.eq.return_value.eq.return_value.execute.side_effect = (
+        lambda: (order.append("score"), MagicMock(data=[row]))[1]
+    )
+
+    page_bucket = MagicMock(name="score-images")
+    audio_bucket = MagicMock(name="audio")
+    buckets = {
+        scores_module.SCORE_BUCKET: page_bucket,
+        scores_module.AUDIO_BUCKET: audio_bucket,
+    }
+    sb.storage.from_.side_effect = lambda name: buckets[name]
+    monkeypatch.setattr(scores_module, "get_service_client", lambda: sb)
+
+    res = client.delete(
+        f"/v1/scores/{score_id}",
+        headers={"Authorization": f"Bearer {make_token(sub=user_id)}"},
+    )
+
+    assert res.status_code == 204, res.text
+    assert order == ["assignments", "analyses", "score"]
+    assignment_table.delete.return_value.eq.assert_called_once_with(
+        "score_id", str(score_id)
+    )
+    analysis_table.delete.return_value.eq.return_value.eq.assert_called_once_with(
+        "user_id", str(user_id)
+    )
+    audio_bucket.remove.assert_called_once_with([audio_key])
+    page_bucket.remove.assert_called_once_with([page_key])
+
+
+def test_delete_never_uses_a_foreign_audio_reference_as_storage_authority(
+    monkeypatch: pytest.MonkeyPatch,
+    client: TestClient,
+    make_token: Callable[..., str],
+) -> None:
+    user_id, score_id = uuid4(), uuid4()
+    other_user = uuid4()
+    row = _row_for(score_id, user_id, source_image_url=None)
+
+    sb = MagicMock()
+    score_table = MagicMock(name="scores")
+    analysis_table = MagicMock(name="analyses")
+    assignment_table = MagicMock(name="assignments")
+    sb.table.side_effect = lambda name: {
+        "scores": score_table,
+        "analyses": analysis_table,
+        "assignments": assignment_table,
+    }[name]
+    score_table.select.return_value.eq.return_value.eq.return_value.limit.return_value.execute.return_value = MagicMock(
+        data=[row]
+    )
+    analysis_table.select.return_value.eq.return_value.eq.return_value.execute.return_value = MagicMock(
+        data=[{"audio_url": f"{scores_module.AUDIO_BUCKET}/{other_user}/take.wav"}]
+    )
+    assignment_table.delete.return_value.eq.return_value.execute.return_value = MagicMock(
+        data=[]
+    )
+    analysis_table.delete.return_value.eq.return_value.eq.return_value.execute.return_value = MagicMock(
+        data=[]
+    )
+    score_table.delete.return_value.eq.return_value.eq.return_value.execute.return_value = MagicMock(
+        data=[row]
+    )
+    audio_bucket = MagicMock()
+    sb.storage.from_.return_value = audio_bucket
+    monkeypatch.setattr(scores_module, "get_service_client", lambda: sb)
+
+    res = client.delete(
+        f"/v1/scores/{score_id}",
+        headers={"Authorization": f"Bearer {make_token(sub=user_id)}"},
+    )
+
+    assert res.status_code == 204, res.text
+    audio_bucket.remove.assert_not_called()
 
 
 # ---- Signed download URLs -------------------------------------------------
