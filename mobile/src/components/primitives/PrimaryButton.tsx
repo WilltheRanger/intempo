@@ -1,7 +1,6 @@
 import type { LucideIcon } from 'lucide-react-native';
 import {
   ActivityIndicator,
-  Pressable,
   StyleSheet,
   View,
   type StyleProp,
@@ -10,6 +9,7 @@ import {
 
 import {
   CONTROL_HEIGHT,
+  CONTROL_PRESSED_SCALE,
   colors,
   disabledOpacity,
   ICON_SIZE,
@@ -19,6 +19,7 @@ import {
   spacing,
 } from '../../design';
 import { impact, ImpactFeedbackStyle } from '../../lib/haptics';
+import { PressableScale } from '../motion/PressableScale';
 import { Text } from './Text';
 
 export interface PrimaryButtonProps {
@@ -48,8 +49,10 @@ export interface PrimaryButtonProps {
 /**
  * The main action. Charcoal fill, warm-white label, full width.
  *
- * There is no scale animation on press — the fill darkens instead, which reads
- * as confirmation without the button appearing to move.
+ * It darkens and gives very slightly under the finger. The movement is kept
+ * smaller than a card's so the label remains visually steady, while the
+ * shared motion wrapper turns it off when the device or musician requests
+ * reduced motion.
  */
 export function PrimaryButton({
   label,
@@ -74,12 +77,13 @@ export function PrimaryButton({
   }
 
   return (
-    <Pressable
+    <PressableScale
       onPress={handlePress}
       disabled={inactive}
       accessibilityRole="button"
       accessibilityLabel={label}
       accessibilityState={{ disabled: inactive, busy: loading }}
+      activeScale={CONTROL_PRESSED_SCALE}
       style={({ pressed }) => [
         styles.button,
         light && styles.buttonLight,
@@ -105,7 +109,7 @@ export function PrimaryButton({
           </Text>
         </View>
       )}
-    </Pressable>
+    </PressableScale>
   );
 }
 
