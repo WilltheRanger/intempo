@@ -2,7 +2,7 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useIsFocused } from '@react-navigation/native';
 import { useEffect, useRef, type ReactNode } from 'react';
-import { Animated, Platform, StyleSheet, View } from 'react-native';
+import { Animated, Platform, StyleSheet, View, type ViewStyle } from 'react-native';
 
 import { useAuthStatus } from '../data/auth/useAuthStatus';
 import { useMe } from '../data/hooks/useMe';
@@ -41,13 +41,24 @@ import type { RootStackParamList, TabParamList } from './types';
 const Tab = createBottomTabNavigator<TabParamList>();
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
+function webTabSceneStyle(focused: boolean): ViewStyle {
+  return {
+    opacity: focused ? 1 : 0.88,
+    transform: [{ translateY: focused ? 0 : 6 }],
+    transitionProperty: 'opacity, transform',
+    transitionDuration: `${motion.base}ms`,
+    transitionTimingFunction: 'cubic-bezier(0.22, 1, 0.36, 1)',
+    willChange: 'opacity, transform',
+  } as unknown as ViewStyle;
+}
+
 function TabScene({ children }: { children: ReactNode }) {
   const focused = useIsFocused();
   const reduceMotion = useReducedMotion();
   const arrival = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
-    if (!focused || reduceMotion) {
+    if (Platform.OS === 'web' || !focused || reduceMotion) {
       arrival.setValue(1);
       return;
     }
@@ -71,20 +82,22 @@ function TabScene({ children }: { children: ReactNode }) {
         styles.tabScene,
         reduceMotion
           ? null
-          : {
-              opacity: arrival.interpolate({
-                inputRange: [0, 1],
-                outputRange: [0.88, 1],
-              }),
-              transform: [
-                {
-                  translateY: arrival.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [6, 0],
-                  }),
-                },
-              ],
-            },
+          : Platform.OS === 'web'
+            ? webTabSceneStyle(focused)
+            : {
+                opacity: arrival.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [0.88, 1],
+                }),
+                transform: [
+                  {
+                    translateY: arrival.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [6, 0],
+                    }),
+                  },
+                ],
+              },
       ]}
     >
       {children}
