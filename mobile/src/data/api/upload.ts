@@ -80,7 +80,12 @@ export class UploadError extends Error {
   }
 }
 
+export type UploadSubject = 'page' | 'recording' | 'photo';
+
 export interface UploadOptions {
+  /** The thing being sent, so recovery copy names what the musician chose. */
+  subject?: UploadSubject;
+
   /**
    * Bytes sent so far and bytes in total, as the upload proceeds.
    *
@@ -126,8 +131,11 @@ export function uploadToSignedUrl(
   uploadUrl: string,
   file: Blob,
   contentType: string,
-  { onProgress, signal }: UploadOptions = {},
+  { onProgress, signal, subject = 'page' }: UploadOptions = {},
 ): Promise<void> {
+  const thing = subject === 'page' ? 'page' : `your ${subject}`;
+  const retry = subject === 'page' ? 'Take the photograph again.' : 'Try sending it again.';
+
   return new Promise((resolve, reject) => {
     // Already cancelled before anything opened — the screen was left while the
     // bytes were still being read off the device. Nothing to abort, and
@@ -171,7 +179,7 @@ export function uploadToSignedUrl(
       if (request.status === 400 || request.status === 403) {
         settle(() => reject(
           new UploadError(
-            'The upload link expired before the page finished sending. Take the photograph again.',
+            `The upload link expired before ${thing} finished sending. ${retry}`,
           ),
         ));
         return;
@@ -195,17 +203,18 @@ export function uploadToSignedUrl(
       // says what happened and offers the one route that genuinely produces a
       // smaller file, and nothing else.
       if (request.status === 413) {
-        settle(() => reject(
-          new UploadError(
-            'Storage refused the page for being too large. Photographing it ' +
-              "with this app's camera makes a smaller file than the original " +
-              'from your camera roll.',
-          ),
-        ));
+        const message = subject === 'page'
+          ? 'Storage refused the page for being too large. Photographing it ' +
+            "with this app's camera makes a smaller file than the original " +
+            'from your camera roll.'
+          : subject === 'recording'
+            ? 'Storage refused your recording for being too large. Record a shorter take.'
+            : 'Storage refused your photo for being too large. Choose a smaller photo.';
+        settle(() => reject(new UploadError(message)));
         return;
       }
       settle(() =>
-        reject(new UploadError(`Storage refused the page (${request.status}). Try again.`)),
+        reject(new UploadError(`Storage refused ${thing} (${request.status}). Try again.`)),
       );
     };
 
@@ -213,7 +222,7 @@ export function uploadToSignedUrl(
       settle(() =>
         reject(
           new UploadError(
-            'Sending the page took too long. A stronger connection — or moving closer to the router — usually fixes it.',
+            `Sending ${thing} took too long. A stronger connection — or moving closer to the router — usually fixes it.`,
           ),
         ),
       );
@@ -222,7 +231,7 @@ export function uploadToSignedUrl(
       settle(() =>
         reject(
           new UploadError(
-            'The page could not be sent. Check your connection and try again.',
+            `${thing[0].toUpperCase()}${thing.slice(1)} could not be sent. Check your connection and try again.`,
           ),
         ),
       );
