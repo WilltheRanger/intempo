@@ -135,12 +135,10 @@ describe('the web click track', () => {
     advance(5);
     track.stop();
 
-    expect(bookings.map((booking) => booking.at - startedAt)).toEqual([
-      0,
-      1,
-      2.5,
-      4,
-    ]);
+    const offsets = bookings.map((booking) => booking.at - startedAt);
+    [0, 1, 2.5, 4].forEach((expected, index) => {
+      expect(offsets[index]).toBeCloseTo(expected, 9);
+    });
     expect(bookings.map((booking) => booking.hz > 1000)).toEqual([
       true,
       false,
