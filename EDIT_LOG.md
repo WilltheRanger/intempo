@@ -6,6 +6,76 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-02 — The back button was 32 points wide, on every screen
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. An `audit-a11y.mjs` was
+run once against the legacy `frontend/` tree on 2026-08-20 and did not survive
+the rebuild into `mobile/`. It is back, pointed at the app that actually ships,
+so this is one command again rather than an argument: `tools/audit-a11y.mjs`
+walks twelve routes checking accessible names, 44pt targets and 4.5:1 contrast,
+and exits non-zero.
+
+### What it found, and what turned out to be my own bug first
+
+The first run reported **15 findings**, three of them three unnamed 40x20
+checkboxes on Profile. Those were wrong. `ToggleRow` already does this
+properly — the whole row carries `role="switch"`, its label and its state, and
+the picture of the switch sits inside `aria-hidden` + `pointerEvents="none"` so
+a screen reader hears one control rather than two. My audit read the DOM without
+honouring either. It does now, and the false reports went with it. Worth writing
+down: the app was right and the new tool was wrong, which is the more likely way
+round for a tool on its first run.
+
+### The real finding
+
+**The back control measured 32x44** on seven screens and 40x44 on Warmup,
+against this app's own documented 44pt floor — on the most-used control it has,
+pressed by someone with an instrument under their chin.
+
+The cause is not a missing style. `IconButton` sets `width: MIN_TOUCH_TARGET`
+and means it. **`PressableScale` puts the caller's `style` on its inner
+animated view**, while the outer `Pressable` — the element that actually
+receives the press — sizes itself around that child. So the negative
+`marginLeft: -spacing.md` that `PageHeader` used to pull the glyph into the
+gutter came straight off the *outer* box: 44 − 12 = 32. Warmup lost 4 the same
+way, to a `marginRight` cancelling its row's gap.
+
+**This is not a web artefact.** `hitSlop` not working on web is already
+documented in three primitives here; this is different and worse, because the
+press target is genuinely smaller on every platform.
+
+The fix moves the offset from the button to the row, and closes Warmup's gap
+with `gap: 0` instead of a negative margin. Measured after: **44x44 on both,
+with the glyph centre at x=30 — exactly where it was before.** The target grew;
+nothing moved.
+
+### Verified
+
+`node tools/audit-a11y.mjs` over twelve routes: **PASS**, zero findings.
+Contrast was clean throughout on the first run too, and every interactive
+element on every screen already carries an accessible name — which is the
+finding that would have been the most work to fix, and it was already done.
+
+**mobile 1181 passed (103 files), `tsc --noEmit` clean.**
+
+### Not done
+
+- **Playwright is not a repo dependency**, so the tool documents installing it
+  alongside rather than adding a browser driver to a package that ships to a
+  phone. That means the audit is not in CI; it is a command someone runs.
+- The audit covers twelve routes, not every screen. The four that sit behind
+  auth or account state are unreachable in a fixtures build for the reason
+  CLAUDE.md already gives.
+- `PressableScale`'s style placement is the underlying hazard and is left
+  alone: changing where it puts `style` would touch every control in the app,
+  and the two callers passing a margin through it are both fixed here.
+
+### Rollback
+
+`git revert`. Two style objects and a deleted one; the tool is additive.
+
+---
+
 ## 2026-09-02 — The metadata line says whether the clef lasts, and a clef change is correctable
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Both of these are UI, both

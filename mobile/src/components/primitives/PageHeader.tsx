@@ -40,14 +40,20 @@ export function PageHeader({
     <View style={styles.container}>
       {onBack ? (
         <View style={styles.backRow}>
-          <IconButton
-            icon={ChevronLeft}
-            label={backLabel}
-            onPress={onBack}
-            // Pulled out to the gutter so the glyph lines up with the title
-            // below it rather than sitting indented by its own padding.
-            style={styles.back}
-          />
+          {/*
+            **The offset is on the row, not on the button**, and that is a
+            touch-target fix rather than a tidy-up.
+
+            `PressableScale` puts the caller's `style` on its inner animated
+            view and leaves the outer `Pressable` — the element that actually
+            receives the press — to size itself around it. A negative
+            `marginLeft` there therefore came *off the outer box*: measured in
+            Chromium, the back control was **32x44** against this app's own
+            44pt floor, on the most-used control it has. Offsetting the row
+            instead leaves the glyph in exactly the same place and gives the
+            button all 44 points back.
+          */}
+          <IconButton icon={ChevronLeft} label={backLabel} onPress={onBack} />
         </View>
       ) : null}
 
@@ -79,8 +85,9 @@ const styles = StyleSheet.create({
   backRow: {
     flexDirection: 'row',
     marginBottom: spacing.sm,
-  },
-  back: {
+    // Out to the gutter, so the glyph lines up with the title below it rather
+    // than sitting indented by its own padding. On the row because putting it
+    // on the button costs the button 12pt of touch target — see above.
     marginLeft: -spacing.md,
   },
   eyebrow: {
