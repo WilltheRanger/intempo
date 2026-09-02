@@ -26,6 +26,7 @@ from app.models.user import (
     UserRole,
     UserTier,
 )
+from app.services.score_pages import pages_of
 from app.services.tier_limits import usage_for
 from app.services.training import may_keep_corrections
 from app.routers.upload import AUDIO_BUCKET, SCORE_BUCKET
@@ -210,13 +211,14 @@ def export_me(
     ]
     analysis_export = [_without(row, "audio_url") for row in analyses]
 
-    page_count = 0
-    for row in scores:
-        pages = row.get("source_image_urls")
-        if isinstance(pages, list):
-            page_count += len([page for page in pages if page])
-        elif row.get("source_image_url"):
-            page_count += 1
+    # `pages_of` rather than reading the two columns here. It is the one place
+    # that knows the three shapes a scan comes in, including the one this used
+    # to get wrong: an **empty** array with a page still in the legacy column
+    # counted as zero pages, because `isinstance([], list)` is true and the
+    # `elif` never ran. Migration 011 writes NULL rather than `'{}'`, so that
+    # row is hand-built rather than common — which is exactly why a hand-rolled
+    # copy of the rule is the wrong thing to keep.
+    page_count = sum(len(pages_of(row)) for row in scores)
 
     return {
         "export_version": 1,
@@ -543,13 +545,15 @@ def _account_storage(client: Any, user_id: UUID) -> dict[str, list[str]]:
         for row in user_rows
         if isinstance(row.get("avatar_key"), str) and row["avatar_key"]
     ]
+    # Also `pages_of`, and here the empty-array case cost more than a count: a
+    # page still in the legacy column was never collected, so deleting the
+    # account left it in the bucket. `scores._page_keys` is the same two lines
+    # over the same function, with a comment saying one place — this was the
+    # third copy, and the only one that disagreed.
     pages: list[str] = []
     for row in score_rows:
-        urls = row.get("source_image_urls")
-        if not isinstance(urls, list):
-            urls = [row.get("source_image_url")]
-        for url in urls:
-            key = _storage_key(url if isinstance(url, str) else None, SCORE_BUCKET)
+        for url in pages_of(row):
+            key = _storage_key(url, SCORE_BUCKET)
             if key:
                 pages.append(key)
 

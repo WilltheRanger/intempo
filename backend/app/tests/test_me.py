@@ -909,6 +909,42 @@ def test_an_account_can_still_be_deleted_where_migration_014_never_ran(
     assert f"{user_id}/page-2.jpg" in removed
 
 
+def test_an_empty_page_array_does_not_hide_the_legacy_page(
+    monkeypatch: pytest.MonkeyPatch,
+    client: TestClient,
+    make_token: Callable[..., str],
+) -> None:
+    """The shape `pages_of` exists to get right, and two copies got wrong.
+
+    `source_image_urls` empty with a page still in the deprecated
+    `source_image_url`. Both hand-rolled readers in this module took
+    `isinstance([], list)` as "the array is the answer" and stopped — the
+    export counted zero pages, and deletion left the photograph in the bucket.
+    Migration 011 writes NULL rather than `'{}'`, so such a row is hand-built
+    rather than common, which is the argument for using the shared reader
+    rather than for keeping a copy that is nearly right.
+    """
+    user_id = uuid4()
+    sb = _delete_account_mock(user_id)
+    legacy = (
+        "https://project.supabase.co/storage/v1/object/sign/"
+        f"score-images/{user_id}/legacy.jpg?token=old"
+    )
+    sb.table("scores").select.return_value.execute.return_value = MagicMock(
+        data=[{"source_image_url": legacy, "source_image_urls": []}]
+    )
+    monkeypatch.setattr(me_module, "get_service_client", lambda: sb)
+
+    assert _delete_me(client, make_token(sub=user_id)).status_code == 204
+
+    removed = [
+        key
+        for call in sb.storage.from_.return_value.remove.call_args_list
+        for key in call.args[0]
+    ]
+    assert f"{user_id}/legacy.jpg" in removed
+
+
 def test_account_deletion_refuses_to_orphan_a_owned_studio(
     monkeypatch: pytest.MonkeyPatch,
     client: TestClient,
