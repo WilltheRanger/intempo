@@ -737,6 +737,20 @@ def _delete_account_mock(
         ),
     }
 
+    # An upload that was signed for and never became anything — the fourth
+    # place an object can live. Migration 014's `user_id` exists so account
+    # deletion can take these with it; for a long time nothing read them.
+    rows["pending_uploads"] = (
+        [
+            {"bucket": "score-images", "object_key": f"{uid}/abandoned.jpg"},
+            # Also in `scores` above: deletion must not ask twice.
+            {"bucket": "score-images", "object_key": f"{uid}/page-1.jpg"},
+            {"bucket": "audio-uploads", "object_key": f"{uid}/unsent.wav"},
+        ]
+        if with_assets
+        else []
+    )
+
     tables: dict[str, MagicMock] = {}
     for name, data in rows.items():
         table = MagicMock()
@@ -746,7 +760,13 @@ def _delete_account_mock(
         query.execute.return_value = MagicMock(data=data)
         tables[name] = table
 
-    mock_client.table.side_effect = lambda name: tables[name]
+    def _table(name: str) -> MagicMock:
+        if name not in tables:
+            # What a deployment that predates the migration does.
+            raise RuntimeError(f'relation "{name}" does not exist')
+        return tables[name]
+
+    mock_client.table.side_effect = _table
     return mock_client
 
 
@@ -787,8 +807,106 @@ def test_account_deletion_removes_identity_then_owned_storage(
     sb.storage.from_.assert_any_call("audio-uploads")
     removed = [call.args[0] for call in sb.storage.from_.return_value.remove.call_args_list]
     assert [f"{user_id}/avatar.jpg"] in removed
-    assert [f"{user_id}/page-1.jpg", f"{user_id}/page-2.jpg"] in removed
-    assert [f"{user_id}/take.wav"] in removed
+    # The unclaimed page joins the claimed ones, and `page-1.jpg` — which is in
+    # both `scores` and `pending_uploads` — is still asked for once.
+    assert [
+        f"{user_id}/page-1.jpg",
+        f"{user_id}/page-2.jpg",
+        f"{user_id}/abandoned.jpg",
+    ] in removed
+    assert [f"{user_id}/take.wav", f"{user_id}/unsent.wav"] in removed
+
+
+def test_deleting_an_account_takes_its_abandoned_uploads_with_it(
+    monkeypatch: pytest.MonkeyPatch,
+    client: TestClient,
+    make_token: Callable[..., str],
+) -> None:
+    """The fourth place an object can be, and the one with no way back.
+
+    A page photographed and then backed out of leaves an object and a
+    `pending_uploads` row. That row cascades from `auth.users`, so deleting the
+    identity removes the only index of the object — no `scores` row, no owner,
+    no sweeper entry. It is then unreachable by every screen and every request
+    forever, produced by the one action a musician takes to make their data go
+    away. Migration 014 put `user_id` on that table for exactly this, and
+    nothing read it.
+    """
+    user_id = uuid4()
+    sb = _delete_account_mock(user_id)
+    monkeypatch.setattr(me_module, "get_service_client", lambda: sb)
+
+    assert _delete_me(client, make_token(sub=user_id)).status_code == 204
+
+    removed = [
+        key
+        for call in sb.storage.from_.return_value.remove.call_args_list
+        for key in call.args[0]
+    ]
+    assert f"{user_id}/abandoned.jpg" in removed
+    assert f"{user_id}/unsent.wav" in removed
+
+
+def test_the_inventory_reads_pending_uploads_before_the_identity_goes(
+    monkeypatch: pytest.MonkeyPatch,
+    client: TestClient,
+    make_token: Callable[..., str],
+) -> None:
+    """Ordering, which is the whole of the fix.
+
+    `user_id` cascades, so a snapshot taken after `delete_user` finds nothing
+    and reports success over stranded objects.
+    """
+    user_id = uuid4()
+    sb = _delete_account_mock(user_id)
+    order: list[str] = []
+    inner = sb.table("pending_uploads").select.return_value
+    inner.execute.side_effect = lambda: (
+        order.append("inventory"),
+        MagicMock(data=[{"bucket": "score-images", "object_key": f"{user_id}/x.jpg"}]),
+    )[1]
+    sb.auth.admin.delete_user.side_effect = lambda _uid: order.append("identity")
+    monkeypatch.setattr(me_module, "get_service_client", lambda: sb)
+
+    assert _delete_me(client, make_token(sub=user_id)).status_code == 204
+    assert order == ["inventory", "identity"]
+
+
+def test_an_account_can_still_be_deleted_where_migration_014_never_ran(
+    monkeypatch: pytest.MonkeyPatch,
+    client: TestClient,
+    make_token: Callable[..., str],
+) -> None:
+    """A missing table must not make deletion impossible.
+
+    Migration 014 is applied on `intempo-dev` and not everywhere (CLAUDE.md),
+    and a failed inventory aborts the deletion with a 503 — correctly, for a
+    database that is down. "This deployment has no `pending_uploads`" is not
+    that, and refusing to delete an account over it would be a worse bug than
+    the one being fixed. Everything the deployment *does* know about is still
+    removed.
+    """
+    user_id = uuid4()
+    sb = _delete_account_mock(user_id)
+    tables = {
+        name: sb.table(name) for name in ("users", "scores", "analyses", "studios")
+    }
+    sb.table.side_effect = lambda name: (
+        tables[name]
+        if name in tables
+        else (_ for _ in ()).throw(RuntimeError('relation "pending_uploads" does not exist'))
+    )
+    monkeypatch.setattr(me_module, "get_service_client", lambda: sb)
+
+    assert _delete_me(client, make_token(sub=user_id)).status_code == 204
+    sb.auth.admin.delete_user.assert_called_once_with(str(user_id))
+    removed = [
+        key
+        for call in sb.storage.from_.return_value.remove.call_args_list
+        for key in call.args[0]
+    ]
+    assert f"{user_id}/avatar.jpg" in removed
+    assert f"{user_id}/page-2.jpg" in removed
 
 
 def test_account_deletion_refuses_to_orphan_a_owned_studio(

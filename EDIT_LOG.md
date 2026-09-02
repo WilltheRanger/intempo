@@ -6,6 +6,89 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-02 — Deleting your account left your abandoned sheet-music photographs in storage forever
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. No §2 gate: backend only.
+
+### The defect
+
+`DELETE /v1/me` inventories storage before removing the identity — the right
+ordering, and the same one `delete_score` was fixed to use. It inventories
+three places: `users.avatar_key`, `scores.source_image_url(s)`, and
+`analyses.audio_url`.
+
+There are **four**. `pending_uploads` is the row an object gets when it has
+been uploaded and has not become anything yet: a page photographed and then
+backed out of, a save that failed after the bytes landed, a transcribe retried
+against a fresh key. Migration 014 put `user_id` on that table and its own
+comment says why —
+
+> *"Whose it is. Not for permissions — the sweeper runs as the service role —
+> but so that deleting an account can take its unclaimed uploads with it, which
+> is exactly the case that has been leaking."*
+
+— and nothing ever read it.
+
+**The consequence is the worst version of the hole that table exists to
+close.** `user_id` REFERENCES `auth.users (id) ON DELETE CASCADE`, so
+`delete_user` takes the row. The object then has no `scores` row, no `analyses`
+row, no `users` row, **and no `pending_uploads` row** — so the sweeper, whose
+only question is an indexed query on that table, can never see it either. It is
+unreachable by every screen and every request, including the musician's own,
+forever. Produced by the one action a person takes to make their data go away.
+
+### The fix
+
+`pending_uploads.keys_for_user(client, user_id)` groups unclaimed keys by
+whatever bucket each row names, and `_account_storage` merges them into what it
+already collected. De-duplication was already there and now earns its keep: a
+key that is in *both* `scores` and `pending_uploads` — a save that succeeded
+after the sweeper row was written — is asked for once.
+
+Three deliberate details:
+
+- **Read last.** So the compatibility fallback can be narrow. Any failure that
+  is not "this deployment has no `pending_uploads`" would already have aborted
+  on the three queries above, which raise into a 503 and leave the account
+  intact. Migration 014 is applied on `intempo-dev` and nowhere else, and
+  refusing to delete an account over a missing table would be a worse bug than
+  this one.
+- **It takes the caller's client** rather than reaching for its own, unlike
+  everything else in that module. The inventory and the deletion that follows
+  have to be the same view of the same database.
+- **It raises**, and the module docstring said *"Nothing here may raise"*. That
+  rule is right for `record`, `claim` and `sweep_unclaimed`, where the cost of
+  raising is a musician losing the page they just photographed. Here the trade
+  inverts: swallowing an error strands objects permanently during an operation
+  that cannot be retried. The docstring now says so rather than contradicting
+  the file it heads.
+
+### Tests
+
+Three new, plus the existing removal assertions extended. That an abandoned
+page and an unsent take are removed; that the inventory happens **before**
+`delete_user`, since a snapshot taken after the cascade finds nothing and
+reports success over stranded objects; and that an account can still be deleted
+where migration 014 never ran, with everything the deployment does know about
+still removed.
+
+Verified they catch the defect rather than describe the fix: with the
+`pending_uploads` read removed, 3 of the 42 fail.
+
+### Verification
+
+backend 1904 passed / 3 xfailed (`test_me.py` 42 of them). No app changes, so
+the mobile suite and the walk are untouched by this.
+
+**Not covered:** this is asserted against a mocked Supabase client, like every
+other test of this endpoint. Nobody has watched a real object disappear from a
+real bucket — that needs the live project.
+
+**Rollback:** revert this commit. `keys_for_user` is additive and its only
+caller is the block in `_account_storage`.
+
+---
+
 ## 2026-09-02 — The same rounded-off comparison, in the third place: the library's own row order
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. No §2 gate: no screen, no
