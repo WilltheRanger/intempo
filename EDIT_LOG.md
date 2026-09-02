@@ -6,6 +6,35 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-02 — Musicians can hear the recording behind a practice result
+
+**What changed**
+- Added owner-only playback for saved takes from the result screen, including takes the timing pipeline could not analyse.
+- Added play, pause, replay, elapsed time, duration, buffering, and accessible progress feedback without keeping audio alive after leaving the screen.
+- Kept practice recordings private: the app requests a fresh one-hour storage read permission only while the result is open, never exposes the durable upload reference, and drops the temporary URL from memory when the screen closes.
+- Made unknown take IDs and other musicians' take IDs indistinguishable, preventing the playback route from revealing private recording existence.
+- Added honest recovery when storage or device playback is unavailable while preserving the already-saved timing result.
+- Kept the sample build honest by hiding playback for its fabricated result rather than presenting a canned clip as the musician's own performance.
+- Added backend privacy, cache, expiry, authentication, and storage-failure tests plus mobile endpoint and time-display tests.
+
+**Files**
+- `backend/app/routers/analyses.py`
+- `backend/app/tests/test_analyses_api.py`
+- `mobile/src/data/api/analyses.ts`
+- `mobile/src/data/api/analyses.test.ts`
+- `mobile/src/data/sources/types.ts`
+- `mobile/src/data/sources/api.ts`
+- `mobile/src/data/sources/fixtures.ts`
+- `mobile/src/data/types.ts`
+- `mobile/src/screens/verdict/TakePlayback.tsx`
+- `mobile/src/screens/verdict/TakePlayback.test.ts`
+- `mobile/src/screens/verdict/playbackTime.ts`
+- `mobile/src/screens/verdict/VerdictScreen.tsx`
+
+**Verification**
+- Focused mobile and backend tests, TypeScript typecheck, and production web export pass locally.
+- Full Linux mobile, frontend, and backend suites plus preview playback checks run before production merge.
+
 ## 2026-09-02 — Email links now finish authentication in the native app
 
 **What changed**

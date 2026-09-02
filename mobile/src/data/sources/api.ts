@@ -1,4 +1,4 @@
-import { getAnalysis, listAnalyses } from '../api/analyses';
+import { getAnalysis, getAnalysisRecording, listAnalyses } from '../api/analyses';
 import { submitTake, TakeSubmissionError, waitForAnalysis } from '../practice/submitTake';
 import { rememberPendingAnalysis } from '../practice/pendingAnalysis';
 import { getMe } from '../api/me';
@@ -412,6 +412,7 @@ function toTake(
 
   return {
     id: analysis.id,
+    recordingAvailable: true,
     pieceId: analysis.score_id,
     pieceTitle: score?.title ?? 'Unknown piece',
     composer: score?.composer ?? null,
@@ -447,6 +448,7 @@ function toFailedTake(
 ): TakeResult {
   return {
     id: analysis.id,
+    recordingAvailable: true,
     pieceId: analysis.score_id,
     pieceTitle: score?.title ?? 'Unknown piece',
     composer: score?.composer ?? null,
@@ -553,6 +555,11 @@ export const apiTakeSource: TakeSource = {
     return recent.map(({ analysis, result }) =>
       toTake(analysis, result, scoresById.get(analysis.score_id) ?? null),
     );
+  },
+
+  async getRecordingUrl(analysisId) {
+    const playback = await getAnalysisRecording(analysisId);
+    return playback.url;
   },
 };
 
