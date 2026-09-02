@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { MeResponse } from '../types';
-import { toMusician } from './api';
+import { toMusician } from './musician';
 
 function account(training_consent: boolean): MeResponse {
   return {
