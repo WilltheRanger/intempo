@@ -95,3 +95,28 @@ export function sameEditableSignature(
   const right = accidentalCount(b);
   return left !== null && right !== null ? left === right : a === b;
 }
+
+/**
+ * Apply one deliberate correction at the right schema level.
+ *
+ * The first measure edits the score header. Every later measure edits only the
+ * signature printed at that bar; null removes a false change and lets the
+ * preceding signature continue.
+ */
+export function applyKeySignatureEdit(
+  score: ScoreJson,
+  measureNumber: number,
+  value: string | null,
+): ScoreJson {
+  if (score.measures[0]?.measure_number === measureNumber) {
+    return { ...score, key_signature: value };
+  }
+  return {
+    ...score,
+    measures: score.measures.map((measure) =>
+      measure.measure_number === measureNumber
+        ? { ...measure, key_signature: value }
+        : measure,
+    ),
+  };
+}
