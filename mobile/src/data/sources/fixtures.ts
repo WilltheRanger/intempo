@@ -678,6 +678,8 @@ const FIXTURE_MUSICIAN: Musician = {
   displayName: 'Alex',
   instrument: 'violin',
   onboarded: true,
+  // Consent always starts off. The fixture must not silently retain pages.
+  trainingConsent: false,
   // Two of three used, so the quota is visible in the sample data rather than
   // only appearing at the moment someone is refused.
   usage: {
