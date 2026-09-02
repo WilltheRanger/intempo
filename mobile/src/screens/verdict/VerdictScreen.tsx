@@ -23,6 +23,7 @@ import type { RootNavigation, RootStackParamList } from '../../navigation/types'
 import { readMeasure } from '../../lib/verdict/measureReading';
 import { MEASURE_COLUMNS, MeasureRow } from './MeasureRow';
 import { TrendLine } from './TrendLine';
+import { TakePlayback } from './TakePlayback';
 
 /**
  * What one take came back as.
@@ -118,6 +119,9 @@ export function VerdictScreen() {
             ? 'Something went wrong on our side, not with your playing. Recording it again usually works.'
             : "We couldn't process this recording. Your playing wasn't the problem — record it again when you have a moment."}
         </Text>
+        {take.recordingAvailable ? (
+          <TakePlayback analysisId={take.id} />
+        ) : null}
       </ScreenContainer>
     );
   }
@@ -145,6 +149,9 @@ export function VerdictScreen() {
         <Text variant="body" color="textSecondary">
           {take.headline}
         </Text>
+        {take.recordingAvailable ? (
+          <TakePlayback analysisId={take.id} />
+        ) : null}
       </ScreenContainer>
     );
   }
@@ -196,6 +203,10 @@ export function VerdictScreen() {
         ]}
         style={styles.meta}
       />
+
+      {take.recordingAvailable ? (
+        <TakePlayback analysisId={take.id} />
+      ) : null}
 
       {take.lowConfidence ? (
         <Text
