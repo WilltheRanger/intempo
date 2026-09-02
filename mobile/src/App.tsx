@@ -20,6 +20,7 @@ import { prepareForPlayback } from './lib/audio/session';
 import { formatDocumentTitle } from './lib/documentTitle';
 import { hydratePracticeTempos } from './data/practiceTempo';
 import { hydratePreferences } from './data/preferences';
+import { hydratePendingAnalysis } from './data/practice/pendingAnalysis';
 import { colors, fontsToLoad } from './design';
 import { RootNavigator } from './navigation/RootNavigator';
 
@@ -153,6 +154,9 @@ export default function App() {
   useEffect(() => {
     void hydratePreferences();
     void hydratePracticeTempos();
+    // Restore a take the server accepted before the browser or app was closed.
+    // Today turns this tiny hand-off into a visible, resumable result.
+    void hydratePendingAnalysis();
     // Ask iOS to let this app be heard on a phone that is on silent, once, at
     // launch. Every player asserts it again before it makes a sound — the
     // recorder takes the session away and does not give it back in a state
