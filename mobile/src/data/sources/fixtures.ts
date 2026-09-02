@@ -568,7 +568,6 @@ export const fixturePieceSource: PieceSource = {
       }
     }
     throw new Error('That piece is no longer in your library.');
-  }
   },
 };
 
