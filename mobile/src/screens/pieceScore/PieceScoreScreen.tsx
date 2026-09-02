@@ -41,6 +41,7 @@ import {
   staveScoreFor,
 } from '../../lib/notation/fromScore';
 import { shortenLongRests, skippableBars } from '../../lib/notation/longRests';
+import { CLEF_LABELS, clefSummary, meterSummary } from '../../lib/notation/scoreSummary';
 import { scheduleScore, startAtMeasure, startableMeasures } from '../../lib/score';
 import { practiceTempo, usePracticeTempos } from '../../data/practiceTempo';
 import { bpmForMarking } from '../../lib/tempoMarking';
@@ -66,13 +67,6 @@ const STAVE_SCALE = 1.25;
  * Spelled out rather than drawn: `engrave.ts` deliberately draws no clef, and a
  * hand-approximated treble clef would be the first thing a musician noticed.
  */
-const CLEF_LABELS: Record<Clef, string> = {
-  treble: 'Treble clef',
-  bass: 'Bass clef',
-  alto: 'Alto clef',
-  tenor: 'Tenor clef',
-};
-
 /** The four, in the order a string player meets them. */
 const CLEF_ORDER: Clef[] = ['treble', 'bass', 'alto', 'tenor'];
 
@@ -426,18 +420,21 @@ export function PieceScoreScreen() {
       />
 
       {/*
-        What a printed part states in its top-left corner, and what the stave
-        cannot: nothing here draws a clef, so without this line the same
-        notehead is a different pitch to a violist than to a violinist.
+        What a printed part states in its top-left corner.
+
+        The stave draws the clef now, and draws it again wherever the page
+        changes it — so this line is no longer the only thing standing between
+        a reader and the wrong pitch. It still earns its place: it names the
+        metre and the marked tempo, and it says **whether the clef or the metre
+        lasts**, which the stave can only show by being scrolled through.
+        `scoreSummary` holds those rules, where they are tested.
       */}
       {showing === 'notation' && hasNotation ? (
         <MetadataRow
           variant="metadataSmall"
           items={[
-            piece.score?.clef ? CLEF_LABELS[piece.score.clef] : 'Clef not read',
-            piece.score?.time_signature && piece.score.time_signature !== 'unknown'
-              ? piece.score.time_signature
-              : null,
+            ...clefSummary(piece.score),
+            ...meterSummary(piece.score),
             piece.score?.tempo_marking,
             piece.markedBpm
               ? formatTempo(piece.markedBpm, piece.score?.tempo_beat_unit)
