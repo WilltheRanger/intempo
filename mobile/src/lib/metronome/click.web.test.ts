@@ -121,6 +121,34 @@ describe('the web click track', () => {
     });
   });
 
+  it('books a changing-meter plan at its exact irregular times', async () => {
+    const startClicks = await loadStartClicks();
+    const beats = [
+      { atS: 0, index: 0, beatInBar: 0, downbeat: true, pulsesPerBar: 4 },
+      { atS: 1, index: 1, beatInBar: 1, downbeat: false, pulsesPerBar: 4 },
+      { atS: 2.5, index: 2, beatInBar: 0, downbeat: true, pulsesPerBar: 2 },
+      { atS: 4, index: 3, beatInBar: 1, downbeat: false, pulsesPerBar: 2 },
+    ];
+    const track = startClicks({ bpm: 60, perBar: 4, beats });
+    const startedAt = audioNow + track.leadInS;
+
+    advance(5);
+    track.stop();
+
+    expect(bookings.map((booking) => booking.at - startedAt)).toEqual([
+      0,
+      1,
+      2.5,
+      4,
+    ]);
+    expect(bookings.map((booking) => booking.hz > 1000)).toEqual([
+      true,
+      false,
+      true,
+      false,
+    ]);
+  });
+
   it('books nothing late even when the waking timer is starved', async () => {
     // A backgrounded tab throttles `setInterval` to about once a second while
     // the audio clock keeps running. The clicks that fell in the gap must
