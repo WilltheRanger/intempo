@@ -6,6 +6,76 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-02 — The last free analysis of the month was spent without knowing it
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Put to the owner under the
+§2 gate with the copy previewed; approved as *"Only on the last one"*.
+
+A free account gets **three** analyses a calendar month
+(`tier_limits.FREE_MONTHLY_ANALYSES`), and the Record screen said nothing about
+the count until it reached zero:
+
+| Take | What the musician was told |
+|---|---|
+| 1st, 2nd | nothing |
+| **3rd — the last one** | **nothing** |
+| 4th | blocked before playing, with a reset date and what still works |
+
+So a third of the month's allowance was spent with no indication which take was
+the last one — the take you would have chosen differently had you known. The
+number existed the whole time: `UsageResponse.remaining` was read by exactly one
+caller, `analysisLimitReached`, and only ever compared against zero. It was also
+on screen — as an account row on **Profile** reading "2 of 3 this month", which
+is not where anybody is standing when the decision is made.
+
+**One sentence, on the last one only.** `describeLastFreeAnalysis` in
+`lib/analysisAllowance.ts`, beside its sibling, returning null unless
+`remaining === 1`. Announcing "2 of 3 left" before a take nobody is worried
+about turns a practice screen into a meter, and the number changes nothing
+until it is the number that does (§3 law 10). Silent for an account with no
+quota, which has no end of an allowance to be near.
+
+Advisory, never blocking — the take is allowed and the button stays live. It
+shares the footer slot with the two existing sentences and **yields to both**:
+a refused quota and a failed take are about the take in hand, and this is about
+the next one.
+
+**It is deliberately not hidden once recording starts**, though by then it has
+nothing left to decide. The record button sits directly under this line in a
+flex column, so dropping two lines of text would move the button at the exact
+instant a thumb is on it, and the count-in would move it a second time. The
+sentence stays true for the whole take, and the take ending leaves this screen.
+
+`analysisAllowance.ts` **had no test file at all** — including for the plural
+assembly in `describeReachedAnalysisLimit`, which is the kind of thing that
+ships "1 free analyses". Fourteen cases now, covering both sentences, the
+unlimited tier, an unparseable `resets_at`, and that the two never speak at
+once.
+
+The date renders in the reader's own locale rather than forced to UTC, and that
+is right rather than incidental: `resets_at` is the first instant of next month,
+so the local calendar date of that instant is when the allowance actually
+returns for the person reading it.
+
+**Three-foot test (Record, ready state):** first the piece title, second the
+tempo number being set, third the record button. The notice is small secondary
+text directly above the button, at the point of decision, and does not compete
+with any of the three. Verified on a screenshot of the running build — the
+fixture musician already sits at `remaining: 1`, so this state needed no
+throwaway build.
+
+**Tests:** mobile 1220 passed (105 files); `tsc --noEmit` clean; web build
+clean; `tools/audit-a11y.mjs` PASS across all 15 routes.
+
+**Not verified:** no live account has reached the limit here — the fixture
+supplies `remaining`, and the server's own refusal path is unchanged and
+untouched by this.
+
+**Side effects:** none. No type changed, no wire format, no server. **Rollback:**
+revert this commit.
+
+---
+
 ## 2026-09-02 — Insights told a musician which way they drift, decided by list order
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Put to the owner under the
