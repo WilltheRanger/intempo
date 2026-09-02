@@ -6,6 +6,61 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-02 — The one constant `legibility.ts` copies from the server, and the circular test that guarded it
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. No §2 gate: one test.
+
+Found while re-checking the previous entry's mistake properly. `lib/scan/
+legibility.ts` is exemplary about the thing that matters — it states the subset
+rule outright:
+
+> it may never refuse a page the server would accept.
+
+So `CLIENT_FLOOR` (6) sits strictly below `SERVER_FLOOR` (8), and
+`legibility.test.ts` asserts that ordering. **Against the app's own copy of the
+server's number**, which is circular: both sides move together and the assertion
+holds whatever the server actually does. `_MIN_STAFF_SPACE_PX = 8` lives in
+`page_image.py` and nothing tied the two.
+
+**The exposure is directional.** A server floor that *rises* leaves the app
+merely more conservative, which is harmless. A server floor that *falls* below
+6 turns the hint into the app talking a musician out of a photograph that would
+have read perfectly well — the exact regression the file's own docstring says
+would be worse than the delay it exists to save. `MIN_PAGE_ROWS` is derived from
+the same copy, so a drift also silently moves the camera-resolution advice.
+
+One test in `test_client_enums.py`, beside the numeric parities that already
+live there (`MAX_SCAN_PAGES`, the upload size, the page-shrink target). It pins
+both halves: the copy equals the server's number, **and** `CLIENT_FLOOR` is
+below the server's real floor rather than below the copy.
+
+### Verified in both directions, because only one of them is dangerous
+
+- Server floor lowered to 5: *"the app believes the server refuses below 8 px
+  between staff lines; it refuses below 5"*.
+- Server floor at the client floor (6): the second assertion fires — *"the app
+  starts warning at 6 px, at or above the server's 6"*.
+
+Both restored and confirmed by `git diff`.
+
+### On how this was found
+
+By re-checking the previous entry's error with the discipline it lacked:
+grepping the **whole** test tree for every relevant name — `_MIN_STAFF_SPACE_PX`,
+`SERVER_FLOOR`, `CLIENT_FLOOR`, `scan/legibility` — rather than a subset, and
+then opening the two files that matched to confirm they only mention
+"legibility" in prose. That is the check I should have run before adding eighty
+duplicated lines an hour ago.
+
+### Verification
+
+backend **1913 passed / 2 xfailed**; `test_client_enums.py` 26 of them. No app
+or web changes.
+
+**Rollback:** revert this commit; it adds one test.
+
+---
+
 ## 2026-09-02 — Correction: the closed unions were already held, and I added eighty lines saying they were not
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. This corrects `64ca662`
