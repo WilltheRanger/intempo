@@ -105,6 +105,64 @@ jobs:
       - name: Web build
         run: npm run build:web
 
+  # **Two checks that had found real defects and ran only when someone
+  # remembered to run them.** `tools/audit-a11y.mjs` says so about itself: an
+  # earlier version "was run once against the legacy `frontend/` tree on
+  # 2026-08-20 and did not survive the rebuild into `mobile/`". Leaving the
+  # replacement unwired repeats a failure this repository has already had.
+  #
+  # A separate job from `mobile-check` on purpose: these drive a real browser,
+  # so if one ever does go flaky it must not mask a genuine test or type error
+  # in the job beside it.
+  #
+  # CI has no `.env`, so `build:web` here is already a fixtures build — which is
+  # exactly what both tools need.
+  app-walk:
+    name: App walk + accessibility
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: mobile/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      # `--no-save`, matching how both tools document being run locally: this
+      # is a check harness, not something the app depends on.
+      - name: Install Playwright
+        run: |
+          npm i -D playwright --no-save
+          npx playwright install --with-deps chromium
+
+      - name: Web build
+        run: npm run build:web
+
+      - name: Serve it
+        run: |
+          npx serve dist -l 4320 -s &
+          # Poll rather than sleep — the point is to start when it is ready.
+          for i in $(seq 30); do
+            if curl -sf -o /dev/null http://localhost:4320/; then exit 0; fi
+            sleep 1
+          done
+          echo "the built app never came up on :4320" >&2
+          exit 1
+
+      - name: Walk the app
+        run: node ../tools/walk-app.mjs 4320
+
+      - name: Accessibility audit
+        run: node ../tools/audit-a11y.mjs 4320
+
   frontend-build:
     name: Frontend build (vite)
     runs-on: ubuntu-latest
