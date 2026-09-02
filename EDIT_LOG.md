@@ -6,6 +6,27 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-02 — A denied microphone and an interrupted upload are recoverable
+
+**What changed**
+- Added platform-correct microphone permission guidance: browsers point to the site's address-bar controls, while iOS and Android get a direct route to InTempo's device settings.
+- Kept the normal Start control available after changing permission so returning to the app requires no reset or repeated setup.
+- Began holding a finished WAV before its first upload request rather than only after an error, closing the gap where navigation could discard it while the request was still in flight.
+- Added a browser exit guard for live recordings and finished takes that have not reached the server, so refresh, closing the tab, or changing the address requires confirmation instead of silently losing the performance.
+- Kept harmless exits quiet: the ready screen, count-in, and a completed hand-off do not raise a warning.
+- Added pure tests for platform permission recovery and every guarded and unguarded recording phase.
+
+**Files**
+- `mobile/src/lib/audio/permission.ts`
+- `mobile/src/lib/audio/permission.test.ts`
+- `mobile/src/lib/record/leaving.ts`
+- `mobile/src/lib/record/leaving.test.ts`
+- `mobile/src/screens/record/RecordScreen.tsx`
+
+**Verification**
+- Targeted permission and recording-exit tests, full mobile tests, typecheck, web build, frontend build, backend tests, and the change-log check run before production merge.
+- Preview verification opens recording setup without starting the microphone, confirms normal navigation remains quiet, and checks the compiled web build contains the guarded upload path.
+
 ## 2026-09-02 — Taps and long lists stay responsive under motion
 
 **What changed**
