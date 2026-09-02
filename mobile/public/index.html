@@ -50,7 +50,40 @@
       /* These styles disable body scrolling if you are using <ScrollView> */
       body {
         overflow: hidden;
+        overscroll-behavior: none;
+        -webkit-tap-highlight-color: transparent;
       }
+
+      /*
+       * Web touch should respond on the first frame. The manipulation value
+       * tells the browser these controls do not need the old double-tap delay
+       * or gesture arbitration, while leaving zoom and scrolling alone.
+       */
+      [role='button'],
+      [role='tab'],
+      [role='switch'],
+      button {
+        touch-action: manipulation;
+        -webkit-user-select: none;
+        user-select: none;
+      }
+
+      @media (hover: hover) and (pointer: fine) {
+        [role='button']:not([aria-disabled='true']),
+        [role='tab']:not([aria-disabled='true']),
+        [role='switch']:not([aria-disabled='true']),
+        button:not(:disabled) {
+          cursor: pointer;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        * {
+          scroll-behavior: auto !important;
+          transition-duration: 0.01ms !important;
+        }
+      }
+
       /* These styles make the root element full-height */
       #root {
         display: flex;
