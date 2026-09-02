@@ -6,6 +6,63 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-02 — The binding instructions told a UI session to build in the wrong palette
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. No code changed; `CLAUDE.md`
+did. No §2 gate — this corrects which tree a rule describes, and changes no rule.
+
+Found by asking the question that has paid all day, of the file that is read
+first. §4 ends: *"Tokens live in `frontend/src/styles/tokens.ts`; build to them
+and never re-type hexes."* The shipping app is `mobile/`, which has its own
+`src/design/` and **does not reference `frontend/` at all** — the only mention
+in `mobile/src` is a historical comment in `api/client.ts`.
+
+The two palettes share **no colour but `#FFFFFF`**: mobile's `#F7F2E9` ground
+and `#8F681C` ochre against frontend's `#FAF8F3` and `#A8762E`. So the
+instruction was not merely out of date, it was a recipe for building a screen in
+the wrong colours.
+
+### The larger half
+
+The list headed *"Conventions the redesign established — follow these, don't
+re-litigate them"* names no tree, and four more of its pointers are false for
+the shipping app:
+
+| Convention says | `mobile/` actually uses |
+|---|---|
+| Icons are Phosphor; `lucide` was removed, do not reintroduce it | `lucide-react-native` throughout — no Phosphor package at all |
+| `AppShell` with `layout/TopNav` at `lg`+ over a 1240px container | its own navigator, `ScreenContainer` and a tab bar |
+| Motion is Framer Motion from `motion/react` | React Native animation; neither `motion` nor `framer-motion` is a dependency |
+| `/showcase` reads its swatches from `styles/tokens.ts` | there is no `/showcase` route |
+| Seed data comes from `lib/demo.ts` | `data/sources/fixtures.ts` |
+
+A session obeying the first of those in `mobile/` would rip out every icon in
+the app.
+
+**The design decisions carry across and are untouched** — ochre as an accent and
+never a surface, structure from hairline borders, serif used selectively, sheet
+music as the visual identity, no developer or demo UI. Only the pointers differ,
+and the note says exactly that rather than deleting anyone's rules.
+
+### Why it survived
+
+There *is* a caveat: *"The screen table above describes the legacy `frontend/`
+tree. The shipping app is `mobile/`…"*. It is attached to the **table**, several
+paragraphs down, and is about transcription. The conventions list sits between
+the two and reads as binding for all UI work. The correction goes at the head of
+the list, where someone about to follow it is looking.
+
+### Verification
+
+Every claim in the table measured against `package.json` and the source, not
+recalled: the dependency lists, the absent `/showcase`, and the two palettes
+compared hex by hex. No code changed, so no suite could have caught any of it —
+which is the point.
+
+**Rollback:** revert this commit; it is documentation.
+
+---
+
 ## 2026-09-02 — The closed union whose drift costs "the rest of the page" was the one nothing held
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. No §2 gate: one test file.
