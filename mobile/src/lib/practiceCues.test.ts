@@ -40,6 +40,7 @@ describe('longRestCues', () => {
         startBeat: 4,
         endBeat: 12,
         barEndBeats: [8, 12],
+        barQuarterBeatsPerPulse: [1, 1],
         bars: 2,
         resumeMeasure: 4,
       },
@@ -83,6 +84,7 @@ describe('longRestCues', () => {
         startBeat: 4,
         endBeat: 12,
         barEndBeats: [8, 12],
+        barQuarterBeatsPerPulse: [1, 1],
         bars: 2,
         resumeMeasure: 1,
       },
@@ -90,6 +92,7 @@ describe('longRestCues', () => {
         startBeat: 16,
         endBeat: 24,
         barEndBeats: [20, 24],
+        barQuarterBeatsPerPulse: [1, 1],
         bars: 2,
         resumeMeasure: 4,
       },
@@ -124,19 +127,40 @@ describe('restCueAt', () => {
   });
 
   it('counts a 6/8 final bar in dotted-quarter pulses', () => {
-    const compound = longRestCues(
-      scoreOf([['note'], ['rest'], ['rest'], ['note']], ['dotted_half']),
+    const compoundScore = scoreOf(
+      [['note'], ['rest'], ['rest'], ['note']],
+      ['dotted_half'],
     );
+    compoundScore.time_signature = '6/8';
+    const compound = longRestCues(compoundScore);
 
-    expect(restCueAt(compound, 3_000, 60, 1.5)).toMatchObject({
+    expect(restCueAt(compound, 3_000, 60)).toMatchObject({
       barsRemaining: 2,
       beatsRemainingInBar: 2,
     });
-    expect(restCueAt(compound, 7_500, 60, 1.5)).toMatchObject({
+    expect(restCueAt(compound, 7_500, 60)).toMatchObject({
       barsRemaining: 1,
       beatsRemainingInBar: 1,
     });
   });
+  it('uses a meter change inside the rest for the final-bar countdown', () => {
+    const changed = scoreOf(
+      [['note'], ['rest'], ['rest'], ['note']],
+      ['dotted_half'],
+    );
+    // The first rest is still 4/4; the final rest changes to 6/8. At 7.5
+    // quarter beats, half of that final 6/8 bar remains: one dotted-quarter
+    // pulse, not two quarter-note clicks.
+    changed.measures[2].time_signature = '6/8';
+    const cues = longRestCues(changed);
+
+    expect(cues[0].barQuarterBeatsPerPulse).toEqual([1, 1.5]);
+    expect(restCueAt(cues, 7_500, 60)).toMatchObject({
+      barsRemaining: 1,
+      beatsRemainingInBar: 1,
+    });
+  });
+
   it('is absent before the rest and on the re-entry downbeat', () => {
     expect(restCueAt(cues, 3_999, 60)).toBeNull();
     expect(restCueAt(cues, 12_000, 60)).toBeNull();
