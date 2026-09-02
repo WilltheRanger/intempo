@@ -6,6 +6,25 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-02 — Help no longer calls a partly broken service connected
+
+**What changed**
+- Extended Help's read-only connection check from “host is awake” to the backend's full readiness contract before it tests the signed-in account.
+- Distinguished an InTempo deployment/setup failure from a musician's internet connection and expired session.
+- Stopped before the account request when the service cannot safely perform product work, avoiding a misleading “Everything is connected” result.
+- Translated operator-only migration details into a short consumer explanation without exposing database internals.
+- Added coverage for the three-request healthy path, an unready deployment, protected deployment details, an expired session, and an account-only failure.
+
+**Files**
+- `mobile/src/data/supportDiagnostics.ts`
+- `mobile/src/data/supportDiagnostics.test.ts`
+- `mobile/src/screens/account/HelpScreen.tsx`
+
+**Verification**
+- Focused support-diagnostic tests and TypeScript checking run locally.
+- Full mobile tests, production web export, frontend build, backend tests, and the change-log check run in pull-request CI before merge.
+- The production-configured preview is checked against the currently unready live backend to confirm Help identifies a service setup problem rather than claiming the account is connected.
+
 ## 2026-09-02 — Touch, scrolling, and navigation settle more naturally
 
 **What changed**
