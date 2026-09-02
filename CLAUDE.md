@@ -599,9 +599,13 @@ actually made here.
   deleted first leaks its object silently, which is the same bug one level
   down). `record` never raises — failing the upload because the bookkeeping
   failed costs the musician their page, which is the thing the bookkeeping
-  exists to protect. **Migration 014 is written and not yet applied**, so on a
-  deployment that has not run it the sweeper finds nothing and the hole is
-  still open.
+  exists to protect. **Migration 014 is applied on `intempo-dev` and nowhere
+  else** (2026-09-02, verified against `supabase_migrations`). The paused
+  `intempo` project stopped at 012, so if it is ever unpaused as production the
+  sweeper finds no `pending_uploads` table there and the hole is still open on
+  it. A migration that exists in the repository is not a migration that has
+  run: **013, 014 and 015 all sat unapplied for weeks**, and 015 was the reason
+  the start-bar picker — merged to `main` — refused every take.
 
 **Four screens a fixtures build can never reach**, because they sit behind
 auth or account state rather than behind a route: `AuthScreen` (`signedOut`),
