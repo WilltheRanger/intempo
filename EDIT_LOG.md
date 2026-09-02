@@ -6,6 +6,26 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-02 — Count-ins and rest entries use the meter actually in force
+
+**What changed**
+- Fixed recording setup after a meter change: a take beginning in 6/8 now receives a two-pulse dotted-quarter count-in rather than inheriting 4/4 from the top of the piece.
+- Long-rest cues now carry the felt pulse for every silent bar, so a time-signature change inside the rest changes the final entry countdown at the correct bar.
+- Meter lookup is derived from printed score order, preserving the right standing meter when repeats jump back to an earlier passage.
+- Kept the timing clock on written note durations, matching playback and backend alignment; only the musician-facing pulse grouping changes.
+- Added focused coverage for carried meters, entry-bar changes, compound-meter countdowns, repeats, and a meter change inside a long rest.
+
+**Files**
+- `mobile/src/lib/notation/meter.ts`
+- `mobile/src/lib/notation/meter.test.ts`
+- `mobile/src/lib/practiceCues.ts`
+- `mobile/src/lib/practiceCues.test.ts`
+- `mobile/src/screens/record/RecordScreen.tsx`
+
+**Verification**
+- Full mobile tests, typecheck, web build, frontend build, backend tests, and the change-log check run in pull-request CI before merge.
+- The recording screen is checked with a score that begins in 4/4, changes to 6/8, and places the re-entry after two silent bars.
+
 ## 2026-09-01 — The published site installs like an app
 
 **What changed**
