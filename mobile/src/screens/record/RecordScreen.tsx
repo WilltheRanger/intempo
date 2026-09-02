@@ -1,4 +1,5 @@
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
+import { useQueryClient } from '@tanstack/react-query';
 import { Mic, Square } from 'lucide-react-native';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Linking, Platform, Pressable, StyleSheet, View } from 'react-native';
@@ -13,6 +14,7 @@ import {
   Text,
 } from '../../components/primitives';
 import { usePiece } from '../../data/hooks/usePieces';
+import { meKeys, useMe } from '../../data/hooks/useMe';
 import { practiceTempo, usePracticeTempos } from '../../data/practiceTempo';
 import { bpmForMarking } from '../../lib/tempoMarking';
 import { preferences, usePreferences } from '../../data/preferences';
@@ -34,6 +36,7 @@ import { microphonePermissionRecovery } from '../../lib/audio/permission';
 import { startRecording } from '../../lib/audioRecorder';
 import {
   colors,
+  disabledOpacity,
   ICON_SIZE,
   ICON_STROKE_WIDTH,
   radii,
@@ -56,6 +59,7 @@ import {
 } from '../../lib/practiceCues';
 import { shortenLongRests, skippableBars } from '../../lib/notation/longRests';
 import { openingTimeSignature } from '../../lib/notation/meter';
+import { describeReachedAnalysisLimit } from '../../lib/analysisAllowance';
 import { describeTierLimit } from '../../lib/tierLimit';
 import type { RootNavigation, RootStackParamList } from '../../navigation/types';
 import { BeatIndicator } from './BeatIndicator';
@@ -109,9 +113,15 @@ type Phase = RecordPhase;
  */
 export function RecordScreen() {
   const navigation = useNavigation<RootNavigation>();
+  const queryClient = useQueryClient();
   const { params } = useRoute<RouteProp<RootStackParamList, 'Record'>>();
   const goBack = useGoBack({ route: 'PieceDetail', params: { pieceId: params.pieceId } });
   const { data: piece, isPending } = usePiece(params.pieceId);
+  // This is the same cached account read held by the signed-in gate, not a
+  // second request. It lets the screen refuse an impossible take before the
+  // musician plays it rather than after the WAV has already been uploaded.
+  const { data: musician } = useMe();
+  const limitMessage = describeReachedAnalysisLimit(musician?.usage);
   const { instrument, metronomeMode, practiceSetupSeen } = usePreferences();
 
   // Read through the store so the piece's own marking seeds it and yesterday's
@@ -148,6 +158,7 @@ export function RecordScreen() {
   const [showSetup, setShowSetup] = useState(!practiceSetupSeen);
   const [elapsedMs, setElapsedMs] = useState(0);
   const [problem, setProblem] = useState<string | null>(null);
+  const visibleProblem = limitMessage ?? problem;
   const [microphoneBlocked, setMicrophoneBlocked] = useState(false);
   const [truncated, setTruncated] = useState(false);
   // How much was actually kept. The cap is bytes, not minutes — a device at
@@ -309,6 +320,12 @@ export function RecordScreen() {
     if (starting.current || recorder.current) {
       return;
     }
+    if (limitMessage) {
+      // The disabled control prevents ordinary taps; this guard protects a
+      // stale queued press and future callers from opening the microphone.
+      setProblem(limitMessage);
+      return;
+    }
     starting.current = true;
     impact(ImpactFeedbackStyle.Medium);
     setProblem(null);
@@ -427,6 +444,11 @@ export function RecordScreen() {
       });
       unsent.current = null;
       setPendingTake(false);
+      // `/v1/me` carries the remaining monthly allowance. Mark it stale as
+      // soon as this analysis finishes so Record again cannot reuse the count
+      // from before the take and invite a fourth performance the server will
+      // refuse.
+      void queryClient.invalidateQueries({ queryKey: meKeys.all });
       navigation.replace('Verdict', { analysisId });
       // The verdict now owns the hand-off. Clear after the navigation is
       // dispatched so a refresh in the gap still recovers the accepted take.
@@ -738,13 +760,13 @@ export function RecordScreen() {
       contentStyle={styles.screen}
       footer={
         <View style={styles.footer}>
-          {problem ? (
+          {visibleProblem ? (
             <Text
               variant="metadataSmall"
               color="textSecondary"
               style={styles.problem}
             >
-              {problem}
+              {visibleProblem}
             </Text>
           ) : null}
           {microphoneBlocked && Platform.OS !== 'web' ? (
@@ -775,6 +797,7 @@ export function RecordScreen() {
           <RecordButton
             active={recording}
             countingIn={false}
+            disabled={!recording && Boolean(limitMessage)}
             onPress={() => void (recording ? stop() : start())}
           />
         </View>
@@ -1075,23 +1098,29 @@ function formatElapsed(ms: number): string {
 function RecordButton({
   active,
   countingIn,
+  disabled = false,
   onPress,
 }: {
   active: boolean;
   countingIn: boolean;
+  disabled?: boolean;
   onPress: () => void;
 }) {
-  const label = countingIn
-    ? 'Cancel count-in'
-    : active
-      ? 'Stop recording'
-      : 'Start recording';
+  const label = disabled
+    ? 'Monthly analysis limit reached'
+    : countingIn
+      ? 'Cancel count-in'
+      : active
+        ? 'Stop recording'
+        : 'Start recording';
   return (
     <PressableScale
       onPress={onPress}
+      disabled={disabled}
       accessibilityRole="button"
       accessibilityLabel={label}
-      style={styles.control}
+      accessibilityState={{ disabled }}
+      style={[styles.control, disabled && styles.controlDisabled]}
       // More give than the default: this is the one control a musician reaches
       // for without looking, and it has to answer the finger.
       activeScale={0.94}
@@ -1216,6 +1245,9 @@ const styles = StyleSheet.create({
     // where a thumb actually rests — that is around a sixth of the screen up,
     // not against the edge.
     marginBottom: spacing['4xl'],
+  },
+  controlDisabled: {
+    opacity: disabledOpacity,
   },
   record: {
     width: RECORD_SIZE,
