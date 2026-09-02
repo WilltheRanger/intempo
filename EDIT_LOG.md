@@ -6,6 +6,59 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-02 — A convention enforced for the two files that existed when it was written
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. No UI, so no §2 gate.
+
+**`test_manual_migrations_are_safe_to_run_again` named 013 and 014 by hand**
+and checked them statement by statement. Nothing covered **015**, or anything
+after it — so the rule that a migration must survive being run twice was
+enforced for the two files that happened to exist the day it was written. That
+is the shape of a convention, not a check.
+
+It matters because applying a migration is a **manual act against a production
+database** through the Supabase SQL editor, and the guards exist precisely so
+that an operator who cannot remember whether one already ran is free to run it
+again. A rule that silently stops applying is worse than no rule: the next
+migration inherits the reassurance without the property.
+
+Now every migration from **013 forward** is checked for `ADD COLUMN`,
+`CREATE TABLE`, `CREATE INDEX` and `CREATE POLICY` guards, plus
+`ADD CONSTRAINT`, which is called out separately because **Postgres has no
+`IF NOT EXISTS` form for it** — the only safe spelling is to drop it first,
+which 015 does, and a reader copying the surrounding style would not learn that
+from the other statements.
+
+**001 and 005–011 are exempt on purpose**, recorded rather than fixed: they have
+run everywhere they need to, and rewriting applied history to satisfy a test is
+a worse trade. Re-running one is an error rather than damage — `ADD COLUMN` on
+an existing column simply fails — so the cost is a confusing message to an
+operator, not a broken database. Measured across the tree: 001 and 005–011 carry
+no guards; 013, 014 and 015 are fully guarded; 012 has none of these statements.
+
+A second test asserts the cut-off has not gone **vacuous**. A constant that
+skips every file is a passing test guarding nothing, which is the way this kind
+of check fails; 013, 014 and 015 were verified by hand and stay in scope
+whatever else changes.
+
+**Verified by breaking it**: an unguarded `ADD COLUMN` appended to 015 fails the
+new check, and the fixture was restored byte-identically (`diff -q` clean).
+
+**CLAUDE.md corrected.** It said *"Migration 014 is written and not yet
+applied"*, which stopped being true this session. Checked against
+`supabase_migrations` rather than memory: **013, 014 and 015 are applied on
+`intempo-dev` and nowhere else**; the paused `intempo` project stopped at 012,
+so the orphaned-photograph hole is still open on it if it is ever unpaused as
+production. The note now says which deployment, because "applied" without one
+is the claim that cost this project weeks — 015 was merged to `main` and the
+start-bar picker it powers refused every take.
+
+**Tests:** backend 1898 passed + 3 xfailed.
+
+**Side effects:** none — a test and two comment blocks. **Rollback:** revert.
+
+---
+
 ## 2026-09-02 — The last free analysis of the month was spent without knowing it
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Put to the owner under the
