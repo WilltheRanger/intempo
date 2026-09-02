@@ -6,6 +6,52 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-02 — The manual form accepted a metre the app cannot count
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. A validation fix; the
+message a musician sees is unchanged.
+
+Found by driving `/add/manual` with bad values rather than reading it. Typing a
+title and **`0/4`** saved the piece.
+
+`ManualPieceForm` kept its own rule, `/^\d{1,2}\/\d{1,2}$/`, which matches
+`0/4`, `4/0` and `0/0`. The app's actual authority, `beatsPerMeasure`, returns
+**null** for all three — it requires the result be finite and positive — and the
+meter parity fixture names them (`"0/4": null`, `"4/0": null`, `"0/0": null`).
+So the one route into the library that needs no camera could store a metre that
+every other part of the app treats as unreadable: the metronome, the bar check
+and the editor would all behave as though nothing had been read, while the piece
+screen displayed `0/4` as though it were a metre.
+
+The form asks `beatsPerMeasure` now — accepted **exactly when the app can count
+a bar of it**, one rule instead of two. That also picks up the spaces the
+backend tolerates (`" 4 / 4 "`, which `ocr/validate.beats_per_measure` reads as
+four beats), so the form now accepts what the server would have sent for the
+same page; the old regex rejected it.
+
+The same shape as everything else found today: not a bug in new code, but two
+rules about one thing that had drifted apart.
+
+**Verified by driving it**, before and after. Before: `banana` rejected, **`0/4`
+saved**, `6/8 @ 72` saved. After: `banana` and `0/4` both rejected with the same
+sentence, `6/8 @ 72` still saved. Tempo bounds were already right — `5000` and
+`1` both give *"Tempo is a whole number between 20 and 300."*
+
+**No new test.** The rule is now a one-line delegation to `beatsPerMeasure`,
+whose zero cases the parity fixture already covers on both sides; a module
+wrapping it to assert `null !== null` would be ceremony rather than cover.
+
+**Also checked and clean:** the empty-form message is *"A title, at least — it
+is how you will find this again."*, and the screen says plainly up front that a
+piece added this way has no notes behind it.
+
+**Tests:** mobile 1223 passed (105 files); `tsc --noEmit` clean; web build clean.
+
+**Side effects:** a metre that was accepted and meaningless is now refused.
+**Rollback:** revert.
+
+---
+
 ## 2026-09-02 — The last of the "header versus in force" family, in the function that flags bars
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. A correctness fix in a

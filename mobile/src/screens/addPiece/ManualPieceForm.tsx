@@ -14,6 +14,7 @@ import { useCreatePiece } from '../../data/hooks/usePieces';
 import { usePreferences } from '../../data/preferences';
 import { spacing } from '../../design';
 import { clefFor } from '../../lib/instrument';
+import { beatsPerMeasure } from '../../lib/notation/reading';
 import type { RootNavigation } from '../../navigation/types';
 import { ComposerField } from '../../components/pieces/ComposerField';
 
@@ -21,8 +22,24 @@ import { ComposerField } from '../../components/pieces/ComposerField';
 const MIN_BPM = 20;
 const MAX_BPM = 300;
 
-/** `4/4`, `6/8`, `12/8`. Anything else is a typo, not a metre. */
-const TIME_SIGNATURE = /^\d{1,2}\/\d{1,2}$/;
+/**
+ * Accepted exactly when the app can count a bar of it.
+ *
+ * **This was its own regex, `/^\d{1,2}\/\d{1,2}$/`, and it was looser than
+ * the counter.** It matched `0/4`, `4/0` and `0/0`, so a musician could type a
+ * metre the rest of the app treats as unreadable and have the piece saved with
+ * it — `beatsPerMeasure` returns null for all three, and the meter parity
+ * fixture names them (`"0/4": null`, `"4/0": null`, `"0/0": null`). The
+ * metronome, the bar check and the editor would then all behave as though no
+ * metre had been read, while the piece screen displayed `0/4` as if it were one.
+ *
+ * Asking the counter instead of keeping a second rule also accepts the spaces
+ * the backend tolerates (`" 4 / 4 "`), so the form now agrees with what the
+ * server would have sent for the same page.
+ */
+function looksLikeAMetre(value: string): boolean {
+  return beatsPerMeasure(value) !== null;
+}
 
 /**
  * A piece the musician types in rather than photographs.
@@ -76,7 +93,7 @@ export function ManualPieceForm() {
     }
 
     const trimmedSignature = timeSignature.trim();
-    if (trimmedSignature && !TIME_SIGNATURE.test(trimmedSignature)) {
+    if (trimmedSignature && !looksLikeAMetre(trimmedSignature)) {
       setError('Time signature looks like 4/4 or 6/8.');
       return;
     }
