@@ -6,6 +6,23 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-01 — A misread key change can be corrected without rescanning
+
+**What changed**
+- Added a guided key-signature correction to the existing bar editor. It offers every standard printed signature with familiar major / relative-minor names instead of requiring technical text.
+- Correcting the first bar now updates the score's opening signature. Correcting a later bar adds, replaces, or removes only the printed change at that bar, so the previous key continues when no new signature is shown.
+- Kept “no printed change” distinct from C major / A minor: choosing C after a sharp or flat key correctly represents cancellation naturals rather than silently removing the change.
+- Routed saving through one pure, tested updater so the editor and its automated coverage cannot drift apart.
+
+**Files**
+- `mobile/src/screens/measureEdit/MeasureEditScreen.tsx`
+- `mobile/src/screens/measureEdit/keySignatureEdit.ts`
+- `mobile/src/screens/measureEdit/keySignatureEdit.test.ts`
+
+**Verification**
+- Added tests for all 15 standard signatures, readable relative-minor labels, opening versus later-bar storage, removal of a false change, continuation of the key in force, and the important distinction between no change and C major / A minor.
+- Full mobile, frontend, backend, and change-log checks run in pull-request CI before merge.
+
 ## 2026-09-01 — Key changes stay accurate and long scores are navigable
 
 **Branch:** `codex/merge-musical-accuracy`.
