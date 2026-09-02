@@ -1,7 +1,7 @@
 import { Platform, Pressable, StyleSheet, Switch, View } from 'react-native';
 
 import { Text } from '../../components/primitives/Text';
-import { BORDER_WIDTH, colors, spacing } from '../../design';
+import { BORDER_WIDTH, colors, disabledOpacity, spacing } from '../../design';
 
 /**
  * react-native-web reads `activeThumbColor` for the "on" thumb and leaves
@@ -23,6 +23,8 @@ export interface ToggleRowProps {
   onChange: (value: boolean) => void;
   /** Hairline above the row. Omit on the first row in a group. */
   divided?: boolean;
+  /** Holds the value steady while a server-backed setting is being saved. */
+  disabled?: boolean;
 }
 
 /**
@@ -38,6 +40,7 @@ export function ToggleRow({
   value,
   onChange,
   divided = true,
+  disabled = false,
 }: ToggleRowProps) {
   return (
     /*
@@ -55,6 +58,7 @@ export function ToggleRow({
     */
     <Pressable
       onPress={() => onChange(!value)}
+      disabled={disabled}
       accessibilityRole="switch"
       accessibilityLabel={label}
       accessibilityHint={description}
@@ -63,12 +67,14 @@ export function ToggleRow({
       // does *not* derive one from the other — measured: with only the first,
       // the row announced "switch, Haptic feedback" and never said whether it
       // was on.
-      accessibilityState={{ checked: value }}
+      accessibilityState={{ checked: value, disabled }}
       aria-checked={value}
+      aria-disabled={disabled}
       style={({ pressed }) => [
         styles.row,
         divided && styles.divided,
-        pressed && styles.pressed,
+        pressed && !disabled && styles.pressed,
+        disabled && styles.disabled,
       ]}
     >
       <View style={styles.text}>
@@ -94,6 +100,7 @@ export function ToggleRow({
       <View pointerEvents="none" aria-hidden>
         <Switch
           value={value}
+          disabled={disabled}
           accessible={false}
           trackColor={{ false: colors.borderStrong, true: colors.accent }}
           thumbColor={colors.surface}
@@ -112,6 +119,9 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: spacing.lg,
     paddingVertical: spacing.lg,
+  },
+  disabled: {
+    opacity: disabledOpacity,
   },
   pressed: {
     backgroundColor: colors.surfacePressed,
