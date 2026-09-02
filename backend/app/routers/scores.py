@@ -311,6 +311,24 @@ class ScoreResponse(BaseModel):
     #: today. When a screen needs to show page three, this becomes a list —
     #: the count is what tells it there is a page three at all.
     page_count: int = 0
+    #: Every page of the scan, signed and in page order.
+    #:
+    #: **`page_count` used to be the whole answer, and nothing read it.** It was
+    #: added so a client could know a page three existed; the note beside it
+    #: said the list would follow "when a screen needs to show page three". The
+    #: piece screen's own row says *"The pages this piece was read from"* and
+    #: showed exactly one, silently — so a musician who photographed a four-page
+    #: part could not look at the bar flagged on page three.
+    #:
+    #: The cost objection that kept it a count no longer describes this code:
+    #: `_sign_downloads` batches, so signing every page of a piece is the same
+    #: single storage call as signing its first. Populated only when reading one
+    #: piece, not on the library listing — see `_with_image_urls`.
+    #:
+    #: `image_url` stays, and stays first here: it is what every listing and
+    #: thumbnail draws, and a client that never learns about this field keeps
+    #: working unchanged.
+    image_urls: list[str] = Field(default_factory=list)
     score_json: dict[str, Any]
     shared_with_studio: UUID | None = None
     ocr_confidence: float | None = None
@@ -503,8 +521,16 @@ def _object_keys_in(urls: list[str]) -> list[str]:
     return [key for key in keys if key]
 
 
-def _with_image_urls(rows: list[dict[str, Any]]) -> list[ScoreResponse]:
+def _with_image_urls(
+    rows: list[dict[str, Any]], *, all_pages: bool = False
+) -> list[ScoreResponse]:
     """Rows to responses, signing every recoverable image in one call.
+
+    `all_pages` is off for the library listing and on for reading one piece.
+    The *call* costs the same either way — the signer batches — but forty rows
+    of four pages is forty extra URLs in a payload nothing on that screen
+    draws, and the listing draws page one. Reading a single piece is where a
+    musician looks at the photographs, and where they need all of them.
 
     **A discarded photograph is not signed.** Signing does not check that the
     object exists, so a row whose page was deleted by `POST /:id/accept` went on
@@ -518,20 +544,41 @@ def _with_image_urls(rows: list[dict[str, Any]]) -> list[ScoreResponse]:
     key, which is what `_object_key_from` needs if the deletion has to be
     audited — the response is the only place the absence has to show.
     """
-    keys = {}
+    keys: dict[Any, list[str]] = {}
     for row in rows:
         if row.get("page_image_discarded_at"):
             continue
-        key = _object_key_from(row.get("source_image_url") or "")
-        if key:
-            keys[row["id"]] = key
+        # **Every page, or just the first.** `pages_of` is the one function that
+        # knows the three shapes a scan comes in; page one is simply its first
+        # element, so both callers read the same list.
+        page_urls = pages_of(row) if all_pages else pages_of(row)[:1]
+        found = _object_keys_in(page_urls)
+        if found:
+            keys[row["id"]] = found
 
-    signed = _sign_downloads(sorted(set(keys.values())))
+    # Still one storage call for the whole request, however many pages it
+    # covers: `_sign_downloads` takes a list and `create_signed_urls` is
+    # batched. That is what makes signing every page of a single piece cost the
+    # same as signing its first — and it is why `page_count`'s note about "one
+    # storage call per page" no longer describes this code.
+    signed = _sign_downloads(sorted({key for found in keys.values() for key in found}))
 
     out = []
     for row in rows:
-        url, expires_at = signed.get(keys.get(row["id"], ""), (None, None))
-        out.append(_row_to_response(row, image_url=url, expires_at=expires_at if url else None))
+        found = keys.get(row["id"], [])
+        urls = [signed[key][0] for key in found if key in signed]
+        # One expiry for all of them: the same batch, the same TTL. Reported as
+        # the earliest, because a reused URL may carry less life than a fresh
+        # one and the response must not promise more than the shortest keeps.
+        expiries = [signed[key][1] for key in found if key in signed]
+        out.append(
+            _row_to_response(
+                row,
+                image_url=urls[0] if urls else None,
+                expires_at=min(expiries) if expiries else None,
+                image_urls=urls,
+            )
+        )
     return out
 
 
@@ -751,6 +798,7 @@ def _row_to_response(
     *,
     image_url: str | None = None,
     expires_at: datetime | None = None,
+    image_urls: list[str] | None = None,
 ) -> ScoreResponse:
     return ScoreResponse(
         id=row["id"],
@@ -760,6 +808,7 @@ def _row_to_response(
         movement=row.get("movement"),
         source_image_url=row["source_image_url"],
         image_url=image_url,
+        image_urls=image_urls or ([image_url] if image_url else []),
         image_url_expires_at=expires_at,
         page_count=len(pages_of(row)),
         score_json=row["score_json"],
@@ -1124,7 +1173,8 @@ def get_score(
     rows = response.data or []
     if not rows:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="score not found")
-    return _with_image_urls(rows)[0]
+    # Every page: this is the screen where a musician looks at what was read.
+    return _with_image_urls(rows, all_pages=True)[0]
 
 
 @router.patch("/{score_id}", response_model=ScoreResponse)

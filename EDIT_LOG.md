@@ -6,6 +6,98 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-02 — "The pages this piece was read from" showed one page
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. §2 gate: put to the owner
+with three compositions; approved as **"Show every page"**.
+
+### The defect
+
+The piece screen's row says *"Original pages — The pages this piece was read
+from"* and rendered exactly one image: page 1. No count, no paging, nothing to
+say the others existed. A musician who photographed a four-page part and wanted
+to check the bar flagged on page three could not — and page three is usually
+the one they came for.
+
+Two things were already in place for this and neither was used:
+
+- **`ScoreResponse.page_count`**, added so a client could know a page three
+  exists, reaching **no client at all**. Third instance today of a field added
+  for a purpose nobody implemented, after `pending_uploads.user_id` and the
+  `page_count` note itself.
+- Its note said the list would follow *"when a screen needs to show page
+  three"*, and gave the cost as *"one storage call per page"*. **That stopped
+  being true**: `_sign_downloads` batches through `create_signed_urls` and
+  memoises, and it is called **once per request** with every row's key — so
+  signing every page of a piece is the same single call as signing its first.
+
+### The change
+
+`image_urls` on `ScoreResponse`, signed and in page order, populated by
+`GET /v1/scores/:id` and **not** by the library listing: the call costs the same
+either way, but forty rows of four pages is payload a grid of thumbnails never
+draws. `image_url` stays and stays first, so every listing, every thumbnail and
+any client that never learns about the field are unchanged.
+
+On the app, `Piece.pages`, a paging `ScrollView` and a line of type. No chrome:
+the photograph is the music and stays the thing you look at, and the count is
+what tells you there is more (§3 laws 3 and 8). A one-page scan renders exactly
+what it did before — `describePagePosition` is silent at one page, because
+"Page 1 of 1" is a label that never changes.
+
+### Two things I got wrong on the way
+
+**A hook after an early return.** I declared the pager's `useState` beside the
+code that uses it, below the `isPending`/`isError` branches, which changes the
+hook count between renders. React tore the screen down with error #310 and the
+boundary caught it — the only reason it read "Something broke" rather than
+going blank. Moved up with the other hooks.
+
+**Sizing the box to each photograph.** `ScoreThumbnail` is `contentFit="cover"`,
+right for a library tile and wrong for a page you are meant to read — it drew a
+band of a few notes across the middle, which quietly defeated `PAGE_HEIGHT`'s
+own comment, *"tall enough that a page of sheet music is legible rather than
+indicated"*. So it takes a `fit` prop now, `contain` here.
+
+Then I measured each image's aspect so no box would ever letterbox, and on the
+web build the scroll view and its pages disagreed about the result — measured, a
+122px page inside a 398px scroller, because react-native-web does not size a
+horizontal `ScrollView` from its content the way the native one does. **Three
+attempts in, I stopped**: that was optimising for a fixture. `assets/fixtures`
+holds 1200x124 crops of one system and no photograph of a page looks like that.
+A fixed page-shaped box fills for a portrait page and letterboxes the crops,
+which is an honest picture of what they are. The aspect machinery came back out,
+including the `onAspect` prop, rather than being left in unused.
+
+### Fixtures and coverage
+
+`fixture-wohlfahrt-01` is the one multi-page part in the library now — a state
+that had no fixture, which is why nobody had looked at it. `toPiece` derives
+`pages` from the thumbnail, so the other eleven fixtures did not have to
+declare anything.
+
+`pageIndex.ts` holds the two rules (which page an offset is on, and what to
+call it) because a rule inside a `.tsx` is a rule nothing checks — eight of the
+nine capture-path findings were exactly that. Eight cases, including the
+rounding that would otherwise caption page 2 as page 1, and both overscroll
+ends.
+
+### Verification
+
+backend **1912 passed / 2 xfailed**, `test_multi_page_api.py` 18 of them with three new cases
+— every page signed in order in **one** call, the listing still signing one,
+and a discarded photograph signing nothing · mobile 1272 passed (111 files) ·
+`tsc --noEmit` clean · web build clean · walk PASS · a11y PASS across 23 routes,
+with the new view among them. `.env` restored with `diff -q`.
+
+**Not covered:** a real portrait photograph of a page. Every image in this
+repository is a wide crop, so the box has only ever been seen letterboxing.
+
+**Rollback:** revert this commit. `image_urls` is additive and defaults empty;
+an app without it falls back to the thumbnail.
+
+---
+
 ## 2026-09-02 — A repeat spanning a page break, and the stale reason that kept it parked
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Put to the owner under §2

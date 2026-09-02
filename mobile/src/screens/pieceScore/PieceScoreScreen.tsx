@@ -10,6 +10,7 @@ import {
   type LayoutChangeEvent,
 } from 'react-native';
 
+import { describePagePosition, pageAtOffset } from '../../lib/score/pageIndex';
 import { Stave } from '../../components/notation/Stave';
 import { ScoreThumbnail } from '../../components/pieces/ScoreThumbnail';
 import { ListenButton } from '../../components/score/ListenButton';
@@ -94,6 +95,17 @@ const UNREAD_CLEF_PLACEMENT: Clef = 'treble';
 const PAGE_HEIGHT = 420;
 
 /**
+ * A page's height as a share of its width, for the Original view.
+ *
+ * Derived from the width the viewport actually measured rather than fixed,
+ * because this screen is a phone column at 390 and a 1240px container at the
+ * desktop breakpoint. Portrait A4 is 1.414; a hair under, because a photograph
+ * of a page is nearly always cropped tighter than the paper.
+ */
+const PAGE_ASPECT = 1.35;
+
+
+/**
  * The same page while it is still being read.
  *
  * Shorter, because the screen is about the reading at that moment and a
@@ -167,6 +179,21 @@ export function PieceScoreScreen() {
    * separate, because there it changes what is analysed.
    */
   const [skipRests, setSkipRests] = useState(false);
+  /**
+   * Which photographed page is on screen, and how wide one is.
+   *
+   * **Above every early return, with the rest of the hooks.** Declared beside
+   * the code that uses them — after the `isPending` and `isError` branches —
+   * they changed the hook count between renders and React tore the screen down
+   * with error #310. The error boundary caught it, which is the only reason it
+   * showed as "Something broke" rather than a blank page.
+   *
+   * The width is measured rather than assumed: this screen is a phone column at
+   * 390 and a 1240px container at the desktop breakpoint, and a page has to be
+   * exactly one viewport for `pagingEnabled` to land on boundaries.
+   */
+  const [pageWidth, setPageWidth] = useState(0);
+  const [pageIndex, setPageIndex] = useState(0);
   const skippable = useMemo(() => skippableBars(piece?.score), [piece?.score]);
   const heard = useMemo(() => {
     if (!piece?.score) {
@@ -268,6 +295,25 @@ export function PieceScoreScreen() {
 
   const hasNotation = (stave?.items.length ?? 0) > 0;
   const hasPages = piece.thumbnail !== null;
+  /**
+   * One page-shaped box for every page of this scan.
+   *
+   * **Fixed rather than measured from each image, and that is a retreat worth
+   * recording.** Sizing the box to the photograph's own aspect means nothing is
+   * ever letterboxed — and on the web build the scroll view and its pages then
+   * disagreed about the result: measured, a 122px page inside a 398px scroller,
+   * because react-native-web does not size a horizontal `ScrollView` from its
+   * content the way the native one does.
+   *
+   * Chasing that further was optimising for a fixture. `assets/fixtures` holds
+   * 1200x124 crops of a single system, and no photograph of a page looks like
+   * that: a portrait page fills this box, and the crops letterbox, which is an
+   * honest picture of what they are. One number, and nothing left to disagree.
+   */
+  const pageBox =
+    pageWidth > 0
+      ? { width: pageWidth, height: Math.round(pageWidth * PAGE_ASPECT) }
+      : null;
 
   // Still being read. Distinguished from "has no notes" by the status and only
   // by the status: an empty transcription looks identical either way, and one
@@ -744,7 +790,64 @@ export function PieceScoreScreen() {
       ) : null}
 
       {showing === 'original' && hasPages ? (
-        <ScoreThumbnail source={piece.thumbnail} style={styles.page} />
+        <>
+          {/*
+            **Every page, not just the first.** The row that leads here says
+            "The pages this piece was read from" and drew one image, so a
+            musician who photographed a four-page part could not look at the
+            bar flagged on page three — the one they most likely came to check.
+
+            A paging scroll view and a line of type, with no chrome of its own:
+            the photograph is the music and stays the thing you look at, and
+            the count is what tells you there is more (§3 laws 3 and 8). A
+            one-page scan renders exactly what it did before — the label is
+            silent and the row below it does not appear.
+          */}
+          <ScrollView
+            horizontal
+            pagingEnabled
+            showsHorizontalScrollIndicator={false}
+            // **Explicit, because a horizontal ScrollView does not shrink to
+            // its content on the web build** — it kept `PAGE_HEIGHT` and left
+            // a third of the screen empty under a strip of one system.
+            style={[styles.pages, pageBox]}
+            onLayout={(event) => setPageWidth(event.nativeEvent.layout.width)}
+            onScroll={(event) =>
+              setPageIndex(
+                pageAtOffset(
+                  event.nativeEvent.contentOffset.x,
+                  pageWidth,
+                  piece.pages.length,
+                ),
+              )
+            }
+            // Often enough to keep the caption honest mid-swipe, rarely enough
+            // not to re-render on every frame of one.
+            scrollEventThrottle={64}
+          >
+            {piece.pages.map((page, index) => (
+              <ScoreThumbnail
+                key={index}
+                source={page}
+                // The whole page, not a crop of it: this view exists so a
+                // musician can read the bar that was flagged, and `cover` drew
+                // a band of a few notes across the middle of it.
+                fit="contain"
+                style={[styles.page, pageBox]}
+              />
+            ))}
+          </ScrollView>
+
+          {describePagePosition(pageIndex, piece.pages.length) ? (
+            <Text
+              variant="metadataSmall"
+              color="textTertiary"
+              style={styles.pagePosition}
+            >
+              {describePagePosition(pageIndex, piece.pages.length)}
+            </Text>
+          ) : null}
+        </>
       ) : null}
 
       {/*
@@ -1004,10 +1107,20 @@ const styles = StyleSheet.create({
   fixCue: {
     marginTop: spacing.xs,
   },
+  pages: {
+    marginTop: spacing.xl,
+  },
   page: {
+    // Width comes from the measured viewport once layout has run, so a page is
+    // exactly one screen and `pagingEnabled` lands on boundaries. `100%` inside
+    // a horizontal ScrollView is the content's width, not the viewport's, which
+    // collapses every page onto the first.
     width: '100%',
     height: PAGE_HEIGHT,
-    marginTop: spacing.xl,
+  },
+  pagePosition: {
+    marginTop: spacing.sm,
+    textAlign: 'center',
   },
   pageWhileReading: {
     width: '100%',
