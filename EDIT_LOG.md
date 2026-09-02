@@ -6,6 +6,57 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-02 — The part picker had no fixture, so nobody had ever seen it
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. A fixture and a check, no
+product change.
+
+**Every MusicXML fixture in this repository holds exactly one part** —
+`bass_excerpt` a Cello, `orchestral_part` a String Bass. So `ImportFile`'s
+"Which part do you play?" step had nothing to be driven against, and by this
+project's own rule a state with no fixture is a state nobody has looked at.
+That has cost five times already. `partsIn` is unit-tested with a two-part
+string; the **screen** was not.
+
+`fixtures/musicxml/violin_duo.musicxml`: Violin I and Violin II, **both in
+treble clef on purpose**. A duo whose parts sit in different clefs can be told
+apart by the notation, which quietly lets a wrong implementation look right;
+these two cannot be told apart by anything except the name the file gives them.
+That is the case the rule exists for — CLAUDE.md's *"never infer the instrument
+from the clef"* — and it is not cosmetic: `submitTake` sends the instrument and
+`analysis_runner` turns it into `analyze(..., double_bass=...)`.
+
+Validated before use rather than assumed: parsed with ElementTree, both parts
+declared, and **all four bars sum to exactly 16/16 divisions**. A picker that
+returned the wrong part would still yield a score that adds up, so the beat
+check cannot catch that mistake — only the pitches differ (Violin I climbs
+G-A-B to a held C; Violin II repeats E and then rests).
+
+**Driven, and it works.** The picker asks, offers both, records the choice as
+`violin_duo.musicxml · Violin II`, and offers **Change part** afterwards. The
+single-part leg still gets straight to Title, which is the other half of the
+rule: a solo part must not be asked a question it has no answer to.
+
+**Three-foot test (part picker, first time it has been looked at):** first "Open
+a notation file", second "Which part do you play?", third the two names as ruled
+rows. Hierarchy holds and nothing competes.
+
+**One observation, not changed.** With only two parts the list ends about
+two-thirds up the screen and the rest is empty, so the choice the screen exists
+to offer sits nearer the middle than the thumb (§3 law 7). It is the same shape
+as the `AccountStartupScreen` defect this file records — but unlike that one the
+element is a list whose length depends on the file, and a quartet or an
+orchestral score fills it. Raised with the owner rather than changed, since it
+is composition and §2 owns that.
+
+**Tests:** `tools/walk-app.mjs` PASS (seventeen checks); mobile 1221 passed;
+`tsc` clean.
+
+**Side effects:** the walk now also depends on
+`fixtures/musicxml/violin_duo.musicxml`. **Rollback:** revert.
+
+---
+
 ## 2026-09-02 — The walk now reads a real MusicXML file
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Tooling, no product change.
