@@ -32,6 +32,7 @@ import {
 import type { RootStackParamList } from '../../navigation/types';
 import {
   KEY_SIGNATURE_CHOICES,
+  applyKeySignatureEdit,
   describeKeySignature,
   keyBeforeMeasure,
   sameEditableSignature,
@@ -176,13 +177,8 @@ export function MeasureEditScreen() {
       return;
     }
     setError(null);
-    const corrected: ScoreJson = {
+    const withNotes: ScoreJson = {
       ...piece.score,
-      // The first bar's signature is the page header. Putting it on the
-      // measure would draw a change immediately after that header.
-      ...(isFirstBar && keyEdit !== null
-        ? { key_signature: workingKey }
-        : {}),
       measures: piece.score.measures.map((m) =>
         m.measure_number === params.measureNumber
           // The marks go back with the notes. Spreading the measure and
@@ -194,13 +190,17 @@ export function MeasureEditScreen() {
               ...m,
               notes: working,
               ...(workingMarks ?? {}),
-              ...(!isFirstBar && keyEdit !== null
-                ? { key_signature: workingKey }
-                : {}),
             }
           : m,
       ),
     };
+    // Use the same pure update path exercised by keySignatureEdit.test.ts:
+    // opening signatures belong to the score header, while later signatures
+    // belong only to the bar where the printed change begins.
+    const corrected =
+      keyEdit === null
+        ? withNotes
+        : applyKeySignatureEdit(withNotes, params.measureNumber, workingKey);
     try {
       await correct.mutateAsync(corrected);
       goBack();
