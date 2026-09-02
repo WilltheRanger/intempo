@@ -26,6 +26,7 @@ section for what counts as "meaningful."
 - `mobile/src/data/sources/api.musician.test.ts`
 - `mobile/src/data/sources/fixtures.ts`
 - `mobile/src/data/types.ts`
+- `mobile/src/lib/onboarding.test.ts`
 
 **Verification**
 - Full mobile tests, typecheck, web build, frontend build, backend tests, and the change-log check run in pull-request CI before merge.
