@@ -1,13 +1,14 @@
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useIsFocused } from '@react-navigation/native';
-import type { ReactNode } from 'react';
-import { Platform, StyleSheet, View } from 'react-native';
+import { useEffect, useRef, type ReactNode } from 'react';
+import { Animated, Platform, StyleSheet, View } from 'react-native';
 
 import { useAuthStatus } from '../data/auth/useAuthStatus';
 import { useMe } from '../data/hooks/useMe';
-import { colors } from '../design';
+import { EASE_OUT, colors, motion } from '../design';
 import { shouldOnboard } from '../lib/onboarding';
+import { useReducedMotion } from '../lib/useReducedMotion';
 import { AcknowledgementsScreen } from '../screens/account/AcknowledgementsScreen';
 import { AccountStartupScreen } from '../screens/account/AccountStartupScreen';
 import { ChangeEmailScreen } from '../screens/account/ChangeEmailScreen';
@@ -42,6 +43,53 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 
 function TabScene({ children }: { children: ReactNode }) {
   const focused = useIsFocused();
+  const reduceMotion = useReducedMotion();
+  const arrival = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    if (!focused || reduceMotion) {
+      arrival.setValue(1);
+      return;
+    }
+    // Tabs stay mounted so lists and scroll positions survive navigation. Each
+    // time one becomes visible, briefly settle the existing scene into place
+    // instead of remounting it just to replay an entrance animation.
+    arrival.setValue(0);
+    const animation = Animated.timing(arrival, {
+      toValue: 1,
+      duration: motion.base,
+      easing: EASE_OUT,
+      useNativeDriver: Platform.OS !== 'web',
+    });
+    animation.start();
+    return () => animation.stop();
+  }, [arrival, focused, reduceMotion]);
+
+  const content = (
+    <Animated.View
+      style={[
+        styles.tabScene,
+        reduceMotion
+          ? null
+          : {
+              opacity: arrival.interpolate({
+                inputRange: [0, 1],
+                outputRange: [0.88, 1],
+              }),
+              transform: [
+                {
+                  translateY: arrival.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [6, 0],
+                  }),
+                },
+              ],
+            },
+      ]}
+    >
+      {children}
+    </Animated.View>
+  );
 
   // React Navigation correctly hides inactive scenes from screen readers, but
   // on web aria-hidden does not remove descendant buttons from the keyboard
@@ -56,7 +104,7 @@ function TabScene({ children }: { children: ReactNode }) {
         inert={focused ? undefined : true}
         style={{ display: 'flex', flex: 1, minHeight: 0 }}
       >
-        {children}
+        {content}
       </div>
     );
   }
@@ -68,7 +116,7 @@ function TabScene({ children }: { children: ReactNode }) {
       importantForAccessibility={focused ? 'auto' : 'no-hide-descendants'}
       pointerEvents={focused ? 'auto' : 'none'}
     >
-      {children}
+      {content}
     </View>
   );
 }
