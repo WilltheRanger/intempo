@@ -1,4 +1,5 @@
 import { beatAt, secondsPerBeat, type Beat } from './beats';
+import type { PlannedBeat } from './plan';
 
 /**
  * A beat clock that doesn't drift.
@@ -112,5 +113,60 @@ export function startBeatClock({
         timer = null;
       }
     },
+  };
+}
+
+
+export interface PlannedBeatClockOptions {
+  beats: readonly PlannedBeat[];
+  onBeat: (beat: PlannedBeat) => void;
+  /** Same audio-scheduling slack used by the fixed clock. */
+  leadInS?: number;
+  /** Injected monotonic milliseconds for deterministic tests. */
+  now?: () => number;
+}
+
+/**
+ * Plays a finite changing-meter plan without accumulating timer drift.
+ *
+ * Every due time is already measured from the plan's start. A stalled frame
+ * emits every pulse it missed in order, just like the fixed clock, so a meter
+ * change cannot move merely because the JavaScript thread was busy.
+ */
+export function startPlannedBeatClock({
+  beats,
+  onBeat,
+  leadInS = 0,
+  now = monotonicNow,
+}: PlannedBeatClockOptions): BeatClock {
+  const startedAt = now() + Math.max(0, leadInS) * 1000;
+  let next = 0;
+  let timer: ReturnType<typeof setInterval> | null = null;
+
+  function stopTimer() {
+    if (timer) {
+      clearInterval(timer);
+      timer = null;
+    }
+  }
+
+  function fireDue() {
+    const elapsedS = (now() - startedAt) / 1000;
+    while (next < beats.length && beats[next].atS <= elapsedS) {
+      onBeat(beats[next]);
+      next += 1;
+    }
+    if (next >= beats.length) {
+      stopTimer();
+    }
+  }
+
+  fireDue();
+  if (next < beats.length) {
+    timer = setInterval(fireDue, MAX_POLL_MS);
+  }
+
+  return {
+    stop: stopTimer,
   };
 }

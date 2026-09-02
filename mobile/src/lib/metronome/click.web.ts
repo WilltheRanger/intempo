@@ -42,7 +42,7 @@ const ACCENT_HZ = 1600;
 const CLICK_S = 0.03;
 const CLICK_GAIN = 0.25;
 
-export function startClicks({ bpm, perBar }: ClickTrackOptions): ClickTrack {
+export function startClicks({ bpm, perBar, beats }: ClickTrackOptions): ClickTrack {
   const maybeContext = audioContext();
   if (!maybeContext) {
     // Nothing will sound, so nothing has to be waited for.
@@ -95,6 +95,16 @@ export function startClicks({ bpm, perBar }: ClickTrackOptions): ClickTrack {
       return;
     }
     const until = context.currentTime + LOOKAHEAD_S;
+    if (beats) {
+      while (
+        next < beats.length &&
+        startedAt + beats[next].atS < until
+      ) {
+        schedule(startedAt + beats[next].atS, beats[next].downbeat);
+        next += 1;
+      }
+      return;
+    }
     while (startedAt + next * period < until) {
       schedule(startedAt + next * period, perBar !== null && next % perBar === 0);
       next += 1;

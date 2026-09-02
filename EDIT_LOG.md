@@ -6,6 +6,35 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-02 — The metronome follows meter changes through the take
+
+**What changed**
+- Replaced the recording metronome's single repeating pulse with a score-derived plan covering the count-in and every played measure.
+- A printed meter change now updates pulse spacing, bar accents, haptic downbeats, audible clicks, and the number of marks in the visual metronome at the same score instant.
+- Plans are timed from the same quarter-note duration walk used by playback and analysis, so changing grouping cannot move the expected notes.
+- Repeat jumps restore the meter in force at the earlier printed bar rather than carrying a later change backwards.
+- Web clicks remain booked against the audio clock; native and visual/haptic outputs use a monotonic planned clock that catches up every missed pulse after a stalled frame without accumulating drift.
+- Unreadable meters degrade to steady unaccented quarter-note pulses instead of inventing a bar grouping.
+- Added focused tests for 4/4 → 6/8 → 3/4 timing, entry-meter count-ins, repeats, unknown meters, stalled frames, audio lead-in, and irregular web-audio booking.
+
+**Files**
+- `mobile/src/lib/metronome/plan.ts`
+- `mobile/src/lib/metronome/plan.test.ts`
+- `mobile/src/lib/metronome/beats.ts`
+- `mobile/src/lib/metronome/clock.ts`
+- `mobile/src/lib/metronome/clock.test.ts`
+- `mobile/src/lib/metronome/click.types.ts`
+- `mobile/src/lib/metronome/click.ts`
+- `mobile/src/lib/metronome/click.web.ts`
+- `mobile/src/lib/metronome/click.web.test.ts`
+- `mobile/src/lib/metronome/useMetronome.ts`
+- `mobile/src/screens/record/BeatIndicator.tsx`
+- `mobile/src/screens/record/RecordScreen.tsx`
+
+**Verification**
+- Full mobile tests, typecheck, web build, frontend build, backend tests, and the change-log check run in pull-request CI before merge.
+- Meter-plan tests assert exact pulse times and downbeat groupings across changes; deployed smoke-check confirms normal recording-screen setup without starting or saving a take.
+
 ## 2026-09-02 — Count-ins and rest entries use the meter actually in force
 
 **What changed**

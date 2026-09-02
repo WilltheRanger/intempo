@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { monotonicNow, startBeatClock } from './clock';
+import { monotonicNow, startBeatClock, startPlannedBeatClock } from './clock';
 import type { Beat } from './beats';
+import type { PlannedBeat } from './plan';
 
 /**
  * The beat clock, which had no test.
@@ -222,5 +223,64 @@ describe('a beat clock', () => {
     startBeatClock({ bpm: 60, perBar: 4, leadInS: -5, onBeat: (b) => beats.push(b), now });
 
     expect(beats.map((b) => b.index)).toEqual([0]);
+  });
+});
+
+
+describe('a changing-meter beat clock', () => {
+  const plan = [
+    { atS: 0, index: 0, beatInBar: 0, downbeat: true, pulsesPerBar: 4 },
+    { atS: 1, index: 1, beatInBar: 1, downbeat: false, pulsesPerBar: 4 },
+    { atS: 2.5, index: 2, beatInBar: 0, downbeat: true, pulsesPerBar: 2 },
+    { atS: 4, index: 3, beatInBar: 1, downbeat: false, pulsesPerBar: 2 },
+  ] as const;
+
+  it('fires each precomputed time and changes bar shape with the plan', () => {
+    const planned: PlannedBeat[] = [];
+    startPlannedBeatClock({
+      beats: plan,
+      onBeat: (beat) => planned.push(beat),
+      now,
+    });
+
+    expect(planned.map((beat) => beat.index)).toEqual([0]);
+    advance(2500);
+    expect(planned.map((beat) => [beat.index, beat.pulsesPerBar])).toEqual([
+      [0, 4],
+      [1, 4],
+      [2, 2],
+    ]);
+  });
+
+  it('catches up every planned pulse after a stalled frame', () => {
+    const planned: PlannedBeat[] = [];
+    startPlannedBeatClock({
+      beats: plan,
+      onBeat: (beat) => planned.push(beat),
+      now,
+    });
+
+    clockMs += 4000;
+    vi.advanceTimersByTime(20);
+
+    expect(planned.map((beat) => beat.index)).toEqual([0, 1, 2, 3]);
+  });
+
+  it('honours the audio lead-in and can be stopped twice', () => {
+    const planned: PlannedBeat[] = [];
+    const clock = startPlannedBeatClock({
+      beats: plan,
+      leadInS: 0.1,
+      onBeat: (beat) => planned.push(beat),
+      now,
+    });
+
+    expect(planned).toEqual([]);
+    advance(100);
+    expect(planned.map((beat) => beat.index)).toEqual([0]);
+    clock.stop();
+    clock.stop();
+    advance(5000);
+    expect(planned.map((beat) => beat.index)).toEqual([0]);
   });
 });
