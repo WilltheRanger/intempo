@@ -3,9 +3,10 @@
  *
  * **Presence is the switch.** There is no flag to flip and no build mode to
  * remember: a build that was given a Supabase project *and* an API host runs
- * live, and a build that wasn't runs on fixtures. Both are legitimate — the
- * deployed Cloudflare site is the second one, because nothing is hosting the
- * FastAPI backend yet.
+ * live, and a build that wasn't runs on fixtures. Both are legitimate: the
+ * production Cloudflare project receives all three values and serves real
+ * accounts, while an unconfigured local or branch preview remains a safe
+ * sample build instead of pointing at a developer machine.
  *
  * This replaced a hardcoded `USE_FIXTURES = true` in `sources/index.ts`. That
  * constant was a loaded gun: flipping it to `false` and pushing would have

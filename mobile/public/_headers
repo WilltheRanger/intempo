@@ -1,3 +1,22 @@
+# Browser boundaries for every public route and hashed asset.
+#
+# Camera and microphone stay available to InTempo itself — they are the score
+# scanner and recorder — but embedded or unrelated browser features cannot ask
+# through this origin. The app is never meant to run inside another site's
+# frame, and no page needs plugins or a different document base.
+#
+# This deliberately does not add a script-src policy. Expo's checked-in boot
+# watchdog is inline, the export injects hashed bundles, and tightening script
+# sources without build-generated hashes would turn a security improvement
+# into a production outage.
+/*
+  Content-Security-Policy: base-uri 'self'; object-src 'none'; frame-ancestors 'none'
+  Permissions-Policy: camera=(self), microphone=(self), geolocation=(), payment=(), usb=()
+  Referrer-Policy: strict-origin-when-cross-origin
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  X-XSS-Protection: 0
+
 # Cloudflare Pages headers. Copied into the export by Expo, same as _redirects.
 #
 # Everything Expo emits under these two paths carries a content hash in its
