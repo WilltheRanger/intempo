@@ -587,6 +587,27 @@ def keys_in_force(score: ScoreJson) -> list[str | None]:
     return out
 
 
+def clefs_in_force(score: ScoreJson) -> list[str | None]:
+    """The clef each measure is written in, clef changes included.
+
+    The third of the same walk, after `meters_in_force` and `keys_in_force`.
+    `ScoreJson.clef` is only the clef the page *opens* in, so reading it for a
+    bar after a change names the wrong one — and a clef names the wrong one
+    harder than a key does: a key misplaces the accidented notes, a clef
+    misplaces every note on the staff.
+
+    Produces no finding, so the sandbox ports owe it nothing — the same note
+    `keys_in_force` carries, and for the same reason.
+    """
+    running = score.clef
+    out: list[str | None] = []
+    for measure in score.measures:
+        if measure.clef is not None:
+            running = measure.clef
+        out.append(running)
+    return out
+
+
 def validate_measures(score: ScoreJson) -> list[MeasureFinding]:
     """One finding per measure, in order."""
     sums = [

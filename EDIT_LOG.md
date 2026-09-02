@@ -6,6 +6,68 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-02 — The corrector named the clef the page opened in
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. The fourth of the same
+family, and the last one I can find: `what_this_piece_is` was fixed this
+morning to name the *key* in force at the bars being re-read, and the **clef**
+two lines above it was still doing the thing the key had just stopped doing.
+
+It read:
+
+```python
+clef = next(
+    (m.clef for m in score.measures if m.measure_number in set(bars) and m.clef),
+    score.clef,
+)
+```
+
+A clef only when one of the bars asked about **states** one — and a measure
+states a clef only where it *changes*. So a passage that moved into tenor seven
+bars earlier stated nothing at bar 14, fell through to `score.clef`, and was
+described to the model as *"a bass-clef part"* while the model looked at a
+tenor crop.
+
+**This is the worst member of the family.** A wrong key misspells the notes the
+signature touches. A wrong clef moves **every note on the staff** — tenor
+against bass is a sixth — and `read_ties` matches noteheads by pitch name, so a
+reply spelled against the wrong clef does not merely look wrong: the ties stop
+matching and onsets disappear from the timeline. The function's own docstring
+already said as much — *"a bass part read as treble is a seventh out on every
+note"* — while the line under it read the header.
+
+`clefs_in_force` joins `meters_in_force` and `keys_in_force` in `validate.py`,
+the third instance of the same six-line walk, and the sentence is dropped
+entirely when the bars straddle a change rather than naming one of the two.
+
+**Where this family came from.** Four bugs, one root cause: the value printed
+at the top of the page is not the value in force at the bar being asked about.
+It cost, in order — a key change drawn as an inline accidental on every F; a
+metre change that reported correct bars as short; a bar editor that invited a
+musician to add a beat the page does not print; a clef change that placed a
+whole tenor passage a sixth off; and this, which would have fed all of that
+back into the reader as training-quality "corrections".
+
+### Tests
+
+**backend 1894 passed + 3 xfailed.** Two cases: the clef in force named at a
+bar that states nothing, and no clef named at all when the bars straddle a
+change (while the key, which did not change, is still named).
+
+### Not done
+
+- `describe_for_retry` and the sandbox ports are untouched: `clefs_in_force`
+  produces no finding, so the browser tools owe it no port. Same note
+  `keys_in_force` carries.
+- Nothing here is verified against a live re-read; the evidence is the prompt
+  text the function returns.
+
+### Rollback
+
+`git revert`. It changes one sentence of a prompt and stores nothing.
+
+---
+
 ## 2026-09-02 — A clef printed mid-piece is a change of clef
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. The third and largest of
