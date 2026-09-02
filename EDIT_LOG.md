@@ -6,6 +6,68 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-02 — The metronome and the bar check disagreed about the same bar
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Found by carrying on
+through the notation modules after the key-signature fix: the key control had
+just been corrected for reading the *header* instead of what is in force, so
+the obvious next question was who else does that.
+
+`MeasureEditScreen` handed `piece.score.time_signature` — the metre printed at
+the **top of the page** — to `describeBeats`. `lib/metronome/plan.ts` and
+`lib/practiceCues.ts` have both walked `timeSignaturesByMeasure` for a while,
+so the click already followed a metre change correctly. The bar check did not,
+and the two are looking at the same bar.
+
+**Measured on a part that turns 3/4 at bar 3**, bar 4 holding three correct
+quarter notes:
+
+| | says |
+|---|---|
+| Editor, before | **"3 of 4 beats"**, `balanced = false` |
+| Metre actually in force | 3/4 |
+| Editor, after | **"3 of 3 beats"**, `balanced = true` |
+
+So a musician opening a bar that is *right* was told it was short, on a screen
+whose entire purpose is to invite a correction — and the correction it invites
+is adding a beat the page does not print. That is the worst shape a wrong
+caveat can have here: `alignment.py` accumulates durations, so a note added in
+bar 4 moves every onset after it, and nothing about bar 4 looks wrong
+afterwards. The bar sums, so the beat check can never find it again.
+
+**The fix is to call the helper that already exists** —
+`timeSignaturesByMeasure`, the same walk the metronome uses — rather than a new
+rule. A bar that prints its own signature is in that metre, which the helper
+already gets right, so the bar carrying the change is judged by the change.
+
+### Tests
+
+**mobile 1155 passed (100 files), `tsc --noEmit` clean.** Five cases in a new
+`screens/barEditMeter.test.ts`, in two halves on purpose: the arithmetic (a bar
+after the change balanced, a bar before it still judged by the opening metre,
+the bar printing the change judged by what it prints, and the old
+header-comparison kept as the thing being guarded against) plus a source
+assertion that the screen no longer passes `piece.score.time_signature` to
+`describeBeats`. The source half is the only thing that can see a rule living
+in a `.tsx` — there is no React Native testing library here (`DECISIONS.md`,
+2026-08-24) — and the arithmetic half is what makes the source assertion mean
+something.
+
+### Not done
+
+- **No metre control.** A misread time signature still needs a re-scan; only
+  the key can be corrected in the app. Not widened here — that is a UI addition
+  behind the §2 gate.
+- The metadata line on `PieceScoreScreen` still names the opening metre and
+  does not mention that the piece changes. Correct as a description of the
+  page's header, and changing it is a UI decision.
+
+### Rollback
+
+`git revert`. It reads a different metre for one caveat; nothing is stored.
+
+---
+
 ## 2026-09-02 — Two ways the key-signature control wrote a key the page does not print
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Found by sweeping every

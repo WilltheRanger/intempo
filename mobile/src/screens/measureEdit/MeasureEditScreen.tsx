@@ -37,6 +37,7 @@ import {
   keyBeforeMeasure,
   sameEditableSignature,
 } from './keySignatureEdit';
+import { timeSignaturesByMeasure } from '../../lib/notation/meter';
 
 /**
  * Fixing a measure whose durations do not add up.
@@ -135,7 +136,19 @@ export function MeasureEditScreen() {
     : isFirstBar
       ? 'Unknown — choose what the page shows'
       : `No new signature · ${describeKeySignature(keyBefore)} continues`;
-  const beats = describeBeats(working, piece.score.time_signature, {
+  /*
+    **The metre in force at this bar, not the page's opening metre.** A part
+    that turns 3/4 at bar 3 has correct three-beat bars after it, and judging
+    them against the header's 4/4 told the musician a right bar was short and
+    invited them to add a beat the page does not print. `timeSignaturesByMeasure`
+    is the same walk the metronome and the practice cues already use, so the
+    click and the bar check now agree about what a bar should hold — they did
+    not before.
+  */
+  const meterHere =
+    timeSignaturesByMeasure(piece.score).get(original.measure_number) ??
+    piece.score.time_signature;
+  const beats = describeBeats(working, meterHere, {
     first: isFirstBar,
   });
 
