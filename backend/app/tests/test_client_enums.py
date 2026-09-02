@@ -601,3 +601,46 @@ def test_the_app_stops_a_scan_at_the_same_page_count_the_server_does() -> None:
         f"the app stops a scan at {match.group(1)} pages and the server refuses "
         f"above {MAX_PAGES}"
     )
+
+
+LEGIBILITY_TS = MOBILE.parent / "lib" / "scan" / "legibility.ts"
+
+
+def test_the_app_warns_below_the_floor_the_server_actually_refuses_at() -> None:
+    """`legibility.ts` restates the server's floor, and nothing held the copy.
+
+    That file is careful about the thing that matters — it is a deliberate
+    subset, and its rule is *"it may never refuse a page the server would
+    accept"*, so `CLIENT_FLOOR` sits strictly **below** `SERVER_FLOOR`. Its own
+    test asserts that ordering, but against the app's copy of the server's
+    number, which is circular: both sides move together and the assertion holds
+    whatever the server actually does.
+
+    The exposure is directional. A server floor that *rises* leaves the app
+    merely more conservative, which is harmless. A server floor that *falls*
+    below `CLIENT_FLOOR` turns the hint into the app talking a musician out of
+    a photograph that would have read perfectly well — the exact regression the
+    file's docstring says would be worse than the delay it exists to save.
+
+    `MIN_PAGE_ROWS` is derived from the same copy, so a drift also silently
+    moves the camera-resolution advice.
+    """
+    from app.services.page_image import _MIN_STAFF_SPACE_PX
+
+    source = LEGIBILITY_TS.read_text()
+    match = re.search(r"export const SERVER_FLOOR = (\d+);", source)
+    assert match, "the app no longer restates SERVER_FLOOR in lib/scan/legibility.ts"
+    assert int(match.group(1)) == _MIN_STAFF_SPACE_PX, (
+        f"the app believes the server refuses below {match.group(1)} px between "
+        f"staff lines; it refuses below {_MIN_STAFF_SPACE_PX}"
+    )
+
+    # And the subset rule itself, read from the app rather than assumed — the
+    # ordering its own test checks, now anchored to the server's real number.
+    client = re.search(r"export const CLIENT_FLOOR = (\d+);", source)
+    assert client, "the app no longer declares CLIENT_FLOOR"
+    assert int(client.group(1)) < _MIN_STAFF_SPACE_PX, (
+        f"the app starts warning at {client.group(1)} px, at or above the "
+        f"server's {_MIN_STAFF_SPACE_PX} — so it can refuse a page the server "
+        f"would have read"
+    )
