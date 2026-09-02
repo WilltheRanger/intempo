@@ -1,5 +1,5 @@
 import type { LucideIcon } from 'lucide-react-native';
-import { Pressable, StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
+import { StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
 
 import {
   colors,
@@ -9,6 +9,7 @@ import {
   MIN_TOUCH_TARGET,
   radii,
 } from '../../design';
+import { PressableScale } from '../motion/PressableScale';
 
 export interface IconButtonProps {
   icon: LucideIcon;
@@ -24,6 +25,10 @@ export interface IconButtonProps {
  *
  * For navigation and transport, where a label would crowd the row. Anything
  * that carries weight on its own should be a Primary or Secondary button.
+ *
+ * It gives slightly under the finger as well as changing fill. These controls
+ * are used for back, close, and playback actions, so visual acknowledgement
+ * belongs on press-in rather than after navigation has already started.
  */
 export function IconButton({
   icon: Icon,
@@ -33,12 +38,13 @@ export function IconButton({
   style,
 }: IconButtonProps) {
   return (
-    <Pressable
+    <PressableScale
       onPress={onPress}
       disabled={disabled}
       accessibilityRole="button"
       accessibilityLabel={label}
       accessibilityState={{ disabled }}
+      activeScale={0.92}
       style={({ pressed }) => [
         styles.button,
         pressed && !disabled && styles.pressed,
@@ -51,7 +57,7 @@ export function IconButton({
         strokeWidth={ICON_STROKE_WIDTH}
         color={disabled ? colors.textTertiary : colors.textPrimary}
       />
-    </Pressable>
+    </PressableScale>
   );
 }
 
