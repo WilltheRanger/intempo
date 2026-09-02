@@ -6,6 +6,49 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-02 — The walk now reads a real MusicXML file
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Tooling, no product change.
+
+**The import path is the one worth driving with a real file.** Everywhere else
+the durations are *read* off a photograph and may be wrong; a MusicXML file
+**states** them, which is why CLAUDE.md calls it the one route whose timeline
+cannot be wrong. Nothing was exercising it end to end — `lib/musicxml/file.ts`
+has unit tests, and no check went near the screen.
+
+Driven through Playwright's file chooser with
+`fixtures/musicxml/bass_excerpt.musicxml`, and it works:
+
+    /add/notation → "bass_excerpt.musicxml · Cello" → Title / Composer
+                  → "Importing a file needs the backend. This build runs on
+                     sample data."
+
+Two things now checked, and the first is the reason to bother:
+
+- **The part is named from the file, never inferred from the clef.** That
+  fixture declares `<part-name>Cello</part-name>` and is written in **F clef**,
+  so an app guessing from the clef would say double bass — CLAUDE.md's own
+  warning, and it matters beyond a label: `submitTake` sends the instrument and
+  `analysis_runner` turns it into `analyze(..., double_bass=...)`. Verified
+  against the file rather than trusted: the fixture's declared name and its
+  `<sign>F</sign>` were both read before believing the screen.
+- **Saving without a backend is refused in words.** A fixtures build cannot
+  save, and a piece that *looks* saved and is not is worse than a refusal.
+
+**Not covered, and worth saying:** neither MusicXML fixture is multi-part —
+`bass_excerpt` is one Cello part, `orchestral_part` one String Bass — so the
+part-picker, the thing CLAUDE.md says must never be guessed, has no fixture to
+be driven against. Inventing a multi-part file to test it is a bigger change
+than this commit, and doing it badly would be worse than the gap.
+
+**Tests:** `tools/walk-app.mjs` PASS (fifteen checks); mobile 1221 passed; `tsc`
+clean.
+
+**Side effects:** the walk now depends on `fixtures/musicxml/bass_excerpt.musicxml`
+being present. **Rollback:** revert.
+
+---
+
 ## 2026-09-02 — `tools/walk-app.mjs`: drive the app, don't just render it
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. A tool, no product change,

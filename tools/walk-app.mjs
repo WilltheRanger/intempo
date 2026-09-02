@@ -175,6 +175,43 @@ for (const [screen, lines] of [['Insights', insightsText], ['Today', todayText]]
   }
 }
 
+console.log('\n## Reading a real notation file');
+
+/*
+ * **The one path whose timeline cannot be wrong**, because a MusicXML file
+ * *states* its durations rather than having them read off a photograph — so it
+ * is the one worth driving with a real file rather than a fixture.
+ *
+ * What this catches that nothing else here can: the part is named from the
+ * file's own `<part-name>`, never inferred from the clef. `bass_excerpt.musicxml`
+ * declares **Cello** and is written in **F clef**, so an app that guessed from
+ * the clef would say double bass and be wrong about the instrument a musician
+ * plays — which `submitTake` sends and `analyze()` acts on.
+ */
+await open('add/notation');
+const chooser = page.waitForEvent('filechooser', { timeout: 10000 });
+await page.getByRole('button', { name: /Choose a file/i }).first().click();
+(await chooser).setFiles(
+  new URL('../fixtures/musicxml/bass_excerpt.musicxml', import.meta.url).pathname,
+);
+await page.waitForTimeout(2500);
+
+const afterPick = await leaves();
+const named = afterPick.find((l) => l.includes('bass_excerpt.musicxml'));
+if (!named) fail('the chosen file was not acknowledged');
+else if (!named.includes('Cello'))
+  fail(`part named "${named}" — the file declares Cello; is it read from the clef?`);
+else pass(`file read, part named from the file: "${named}"`);
+
+// Saving needs a server. A fixtures build must say so rather than appear to
+// succeed — a piece that looks saved and is not is worse than a refusal.
+await page.getByRole('button', { name: /Add to library/i }).first().click();
+await page.waitForTimeout(2500);
+const afterSave = await leaves();
+if (afterSave.some((l) => /needs the backend|sample data/i.test(l)))
+  pass('saving without a backend is refused in words, not silently');
+else fail('saving without a backend did not say so');
+
 console.log('\n## Page errors');
 if (errors.length === 0) pass('none across the whole walk');
 else for (const e of errors) fail(`page error: ${e.slice(0, 120)}`);
