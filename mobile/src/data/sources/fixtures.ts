@@ -12,7 +12,6 @@ import type {
   TakeResult,
   UntimedReason,
 } from '../types';
-import { PIECE_HAS_RECORDINGS } from './types';
 import type {
   InsightsSource,
   MusicianSource,
@@ -554,21 +553,22 @@ export const fixturePieceSource: PieceSource = {
   },
 
   async deletePiece(id) {
-    // The same refusal the backend gives, for the same reason. Letting the
-    // sample data delete a piece the real one would keep would make the demo
-    // wrong about a rule that protects practice history — and it is the only
-    // way to exercise that path without a live database.
-    if (FIXTURE_SESSIONS.some((session) => session.pieceId === id)) {
-      throw new Error(PIECE_HAS_RECORDINGS);
-    }
     for (const list of [CREATED_PIECES, FIXTURE_PIECES]) {
       const index = list.findIndex((piece) => piece.id === id);
       if (index >= 0) {
         list.splice(index, 1);
+        // Match the live endpoint: deleting a piece also deletes the practice
+        // history whose meaning depends on that piece.
+        for (let session = FIXTURE_SESSIONS.length - 1; session >= 0; session -= 1) {
+          if (FIXTURE_SESSIONS[session].pieceId === id) {
+            FIXTURE_SESSIONS.splice(session, 1);
+          }
+        }
         return;
       }
     }
     throw new Error('That piece is no longer in your library.');
+  }
   },
 };
 
@@ -840,13 +840,17 @@ export const fixtureTakeSource: TakeSource = {
   },
 
   async getRecentTakes(limit = 3) {
-    return limit > 0 ? [buildFixtureTake()] : [];
+    const take = buildFixtureTake();
+    return limit > 0 && take ? [take] : [];
   },
 };
 
 /** The sample take, built fresh so `recordedAt` is always recent. */
-function buildFixtureTake(): TakeResult {
+function buildFixtureTake(): TakeResult | null {
   const piece = FIXTURE_PIECES.find(({ id }) => id === 'fixture-bach-bwv1001');
+  if (!piece) {
+    return null;
+  }
   const measures: MeasureVerdict[] = FIXTURE_MEASURES.map((m) => {
     const direction: Direction =
       m.band === 'on' ? 'on' : m.dragPct < 0 ? 'rush' : 'drag';
