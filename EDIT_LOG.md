@@ -6,6 +6,31 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-02 — An unreadable scan can be replaced without duplicating the piece
+
+**What changed**
+- Fixed “Photograph it again” after a failed transcription so the new pages repair the existing library entry instead of starting a second piece with the same title.
+- Added a second recovery route for choosing better images already on the device; both routes preserve the failed piece's id, title, and place in the library.
+- Allowed the backend to replace photographs only when the first reading failed before producing any notes; a failed later re-read can never erase usable notation or its practice history.
+- Compare-and-set the replacement against both the failed state and old first page so a simultaneous “read again” or second retake cannot overwrite work that already started.
+- Retired the replaced private page objects after the row safely points at the new pages, and registered any temporary storage-cleanup failure for the existing sweeper to retry.
+- Kept both replacement actions in the visible recovery flow and disabled them while an ordinary re-read request is in flight.
+- Corrected the manual-entry explanation so it no longer promises practice history or metronome use before any notes have been added.
+- Added backend ownership, replacement, race, preservation, and storage-cleanup coverage plus mobile routing and recovery-choice checks.
+
+**Files**
+- `backend/app/routers/scores.py`
+- `backend/app/tests/test_attach_score_pages.py`
+- `mobile/src/data/api/scores.ts`
+- `mobile/src/data/hooks/useScan.ts`
+- `mobile/src/screens/pieceScore/PieceScoreScreen.tsx`
+- `mobile/src/screens/addPiece/ManualPieceForm.tsx`
+- `mobile/src/screens/failedTranscriptionRecovery.test.ts`
+
+**Verification**
+- Focused backend and mobile recovery tests, typecheck, production web export, full mobile tests, frontend build, backend tests, and the change-log check run before production merge.
+- The Cloudflare preview is checked on the existing failed-reading fixture to confirm both replacement routes remain attached to that piece without uploading or saving a page.
+
 ## 2026-09-02 — A monthly limit is shown before the musician records
 
 **What changed**
