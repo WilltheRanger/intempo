@@ -6,6 +6,14 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-01 — Upload recovery names what the user sent
+
+**Branch:** `codex/context-aware-upload-errors`.
+
+**Files:** `mobile/src/data/api/upload.ts`, `mobile/src/data/api/upload.test.ts`, `mobile/src/data/hooks/useProfile.ts`, `mobile/src/data/practice/submitTake.ts`, `mobile/src/data/practice/submitTake.test.ts`.
+
+The shared upload layer described every failure as a score-page failure. A dropped recording said “The page could not be sent,” an expired avatar upload told the user to take a photograph again, and an oversized WAV offered advice about the camera roll. The transfer now receives a narrow subject—page, recording, or photo—and every expired-link, size, timeout, connection, and storage-refusal message names the thing the musician actually chose. Score scans remain the default and keep their existing page-specific advice. Recording and avatar callers pass their subject explicitly, and the test suite pins the recovery text for all three status families.
+
 ## 2026-09-01 — A chosen bar on a database that cannot store one
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`.
