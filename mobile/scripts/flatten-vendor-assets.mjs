@@ -25,7 +25,7 @@
 
 import { existsSync } from 'node:fs';
 import { readdir, readFile, rename, writeFile } from 'node:fs/promises';
-import { join, dirname } from 'node:path';
+import { join, dirname, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const MOBILE = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -57,6 +57,8 @@ async function main() {
     // about this export, and skipping it on a re-run would mean the guard
     // passed once and then quietly stopped guarding.
     await checkPageBackground();
+    await checkNoPrivilegedKeys(await walk(DIST));
+    await writeScriptCsp();
     return;
   }
 
@@ -92,6 +94,8 @@ async function main() {
   }
 
   await checkPageBackground();
+  await checkNoPrivilegedKeys(await walk(DIST));
+  await writeScriptCsp();
 }
 
 /**
@@ -125,6 +129,180 @@ async function checkPageBackground() {
     process.exit(1);
   }
   console.log(`flatten-vendor-assets: page background matches colors.bg (${token}).`);
+}
+
+/**
+ * No privileged credential may be in the published bundle.
+ *
+ * **The anon key is *supposed* to be here.** It is
+ * `EXPO_PUBLIC_SUPABASE_ANON_KEY`, Expo inlines every `EXPO_PUBLIC_*` value at
+ * build time, and the key is designed to be public — row-level security is
+ * what makes it safe (`backend/app/tests/test_rls_invariants.py`).
+ *
+ * The **service-role** key is the same shape and bypasses RLS entirely. One
+ * mistyped variable name, one copy-paste into the wrong `.env`, and it is
+ * inlined into 3.3 MB of JavaScript served from a public URL — readable by
+ * anyone who runs `strings` on it, and granting full read and write to every
+ * musician's rows and files. Nothing would fail. The build would say
+ * `Success: Assets published!`, exactly as it did the day fifteen fonts went
+ * missing.
+ *
+ * A name-based check would miss it, because the mistake is usually a *value* in
+ * the right-looking variable. So this reads the JWTs themselves: a Supabase key
+ * carries its privilege in its own payload as `"role"`, and only `anon` is
+ * allowed to travel. That distinguishes the safe key from the catastrophic one
+ * exactly, with no false positives to teach anyone to ignore it.
+ */
+async function checkNoPrivilegedKeys(files) {
+  // `header.payload.signature`, base64url. Deliberately loose on length: a
+  // short forged-looking token is still worth decoding.
+  const JWT = /\beyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/g;
+  const ALLOWED_ROLES = new Set(['anon']);
+  const found = [];
+
+  for (const file of files) {
+    if (!/\.(js|html|json|map|txt|css)$/.test(file)) continue;
+    const text = await readFile(file, 'utf8').catch(() => '');
+    for (const token of text.match(JWT) ?? []) {
+      let claims;
+      try {
+        claims = JSON.parse(Buffer.from(token.split('.')[1], 'base64url').toString());
+      } catch {
+        // Not a JWT after all — a hash, or an asset name that happens to match.
+        continue;
+      }
+      const role = claims.role ?? claims.aud ?? '(none)';
+      if (!ALLOWED_ROLES.has(role)) {
+        found.push(`${relative(DIST, file)}: a token whose role is "${role}"`);
+      }
+    }
+  }
+
+  if (found.length > 0) {
+    console.error(
+      'flatten-vendor-assets: a privileged credential is in the published ' +
+        'bundle:\n  ' +
+        found.join('\n  ') +
+        '\n\nOnly the anon key may ship. Anything else grants its privileges to ' +
+        'everyone who\nloads the site. Check which value is in ' +
+        '`EXPO_PUBLIC_SUPABASE_ANON_KEY`, rotate the\nleaked key in the Supabase ' +
+        'dashboard, and rebuild.',
+    );
+    process.exit(1);
+  }
+  console.log('flatten-vendor-assets: no privileged credential in the bundle.');
+}
+
+/**
+ * Generate a strict `script-src` from the scripts this build actually has.
+ *
+ * `public/_headers` ships a CSP with `base-uri`, `object-src` and
+ * `frame-ancestors` and **no `script-src`**, and says why: *"tightening script
+ * sources without build-generated hashes would turn a security improvement
+ * into a production outage."* That was correct — `public/index.html` carries a
+ * checked-in inline boot watchdog, and Expo injects a content-hashed bundle
+ * tag — and it left the app's largest remaining hole open. With no
+ * `script-src`, an injected `<script src="https://…">` runs, and the access
+ * token in browser storage leaves with it.
+ *
+ * These are the hashes, generated. Measured on the export: **one** external
+ * script (same-origin, Expo's bundle) and **one** inline block (the watchdog),
+ * with no `eval`, no `new Function` and no external script, style or font
+ * origin anywhere. So `'self'` plus one hash is the whole allowance — no
+ * `'unsafe-inline'`, which would have permitted the injected inline script
+ * this is meant to stop.
+ *
+ * The hash is over the element's exact text, so it is generated here rather
+ * than written down: one edited comment inside the watchdog changes it, and a
+ * stale hash is a blank screen.
+ */
+async function writeScriptCsp() {
+  const { createHash } = await import('node:crypto');
+  const html = await readFile(join(DIST, 'index.html'), 'utf8');
+
+  // Comment-aware, and **that is the whole difficulty**. A naive scan for
+  // `<script` finds the *mentions* of it inside the watchdog's own comment
+  // block first — this file has four occurrences and two real tags — and takes
+  // a "body" of 10 KB that begins mid-HTML. That produced a plausible-looking
+  // hash which the browser then refused: measured, `Refused to execute inline
+  // script`, with the app still mounting because the bundle is external. The
+  // symptom would have been the crash watchdog silently dead, not a blank
+  // screen, which is worse.
+  const hashes = [];
+  let external = 0;
+  for (let at = 0; at < html.length; ) {
+    const comment = html.indexOf('<!--', at);
+    const open = html.indexOf('<script', at);
+    if (open === -1) break;
+    if (comment !== -1 && comment < open) {
+      const end = html.indexOf('-->', comment);
+      at = end === -1 ? html.length : end + 3;
+      continue;
+    }
+    const gt = html.indexOf('>', open);
+    const close = html.indexOf('</script>', gt);
+    if (gt === -1 || close === -1) break;
+    const tag = html.slice(open, gt);
+    const body = html.slice(gt + 1, close);
+    if (/\ssrc\s*=/.test(tag)) {
+      external += 1;
+      if (/src\s*=\s*["']?https?:/i.test(tag)) {
+        console.error(
+          `flatten-vendor-assets: the export loads a script from another ` +
+            `origin:\n  ${tag}>\n\nAdd its origin to the policy deliberately, or ` +
+            `bundle it. A cross-origin script can read\nthe access token in ` +
+            `browser storage.`,
+        );
+        process.exit(1);
+      }
+    } else if (body.trim()) {
+      // **The guard that makes a generated hash safe to ship.** A
+      // mis-extraction yields HTML/JS soup, which does not compile — so the
+      // build fails here instead of publishing a hash the browser will reject.
+      // Compiled, never run: `vm.Script` parses without executing.
+      try {
+        const { Script } = await import('node:vm');
+        new Script(body);
+      } catch (error) {
+        console.error(
+          'flatten-vendor-assets: what was extracted as an inline script is ' +
+            `not valid JavaScript:\n  ${error.message}\n\nThe hash would be over ` +
+            'the wrong bytes and the browser would refuse the script. Fix the ' +
+            'scan\nin `writeScriptCsp`, not the policy.',
+        );
+        process.exit(1);
+      }
+      hashes.push(`'sha256-${createHash('sha256').update(body, 'utf8').digest('base64')}'`);
+    }
+    at = close + '</script>'.length;
+  }
+
+  if (hashes.length === 0) {
+    console.error(
+      'flatten-vendor-assets: no inline script found in the export. The boot ' +
+        'watchdog is inline\nin public/index.html, so finding none means this ' +
+        'scan is broken — and shipping a\n`script-src` that omits a hash the ' +
+        'page needs is a blank screen.',
+    );
+    process.exit(1);
+  }
+
+  const headers = join(DIST, '_headers');
+  const before = await readFile(headers, 'utf8');
+  const directive = `script-src 'self' ${hashes.join(' ')}`;
+  if (!/Content-Security-Policy:/.test(before)) {
+    console.error(`flatten-vendor-assets: no CSP line in ${headers} to extend.`);
+    process.exit(1);
+  }
+  const after = before.replace(
+    /(Content-Security-Policy:)([^\n]*)/,
+    (_m, label, rest) => `${label}${rest.trimEnd()}; ${directive}`,
+  );
+  await writeFile(headers, after);
+  console.log(
+    `flatten-vendor-assets: script-src pinned to 'self' + ${hashes.length} ` +
+      `inline hash(es), ${external} same-origin bundle(s).`,
+  );
 }
 
 await main();
