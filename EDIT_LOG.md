@@ -6,6 +6,90 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-03 — The audio path the App Store build runs, which had no tests at all
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Two new test files, no
+shipped code changed. No §2 gate.
+
+`scorePlayer.web.ts` has a 326-line suite. `scorePlayer.ts` — the file **iOS
+and Android actually run** — had none, and says so itself:
+
+> **Unverified.** There is no simulator or device in the environment this was
+> written in … it has never made a sound.
+
+`lib/audio/wav.ts` had none either, and four modules encode through it: both
+recorders, the metronome click, and the native player. Nothing in this
+repository had ever decoded a WAV it produced.
+
+Nothing here can make a sound either. What it can do is check the parts that
+are arithmetic and ordering rather than hardware — which is where the bugs that
+produce *silence* live. The player's samples are decoded back out of the WAV
+that gets written, so the assertions are about the file a phone is handed.
+
+### What the WAV tests pin
+
+Two of them exist because the module makes a claim a reader cannot check by
+eye, and both were unverified:
+
+- **Little-endian explicitly.** The comment says a typed array over the buffer
+  would take the platform's endianness and "a big-endian device would write a
+  file that decodes as noise". `0x0102` is asymmetric, so it is the one value
+  that can tell the two writes apart.
+- **`floatToPcm16` scales the negative range by `0x8000` and the positive by
+  `0x7fff`**, because two's complement has one more step below zero.
+
+Plus: header sizes a decoder can trust, byte rate agreeing with the stated
+sample rate (a disagreement plays the take at the wrong speed, which this app
+would then measure and call rushing), chunks concatenated in capture order,
+clipping rather than wrapping, and an empty file being valid rather than
+refused — a cancelled take has no samples and `lib/audio/level.ts` is where
+that decision belongs, not here.
+
+### What the player tests pin
+
+The ordering one is the **silent-switch bug named in the module's own
+comment**: a take leaves iOS in the recording session, and an unconfigured
+session obeys the ring/silent switch, "which is how Listen came to play nothing
+at all on a phone on silent". Asserting `prepareForPlayback` is *called* would
+pass with the await moved after the write, so the assertion is on call order.
+
+Also: an empty schedule ends without touching the filesystem (a piece whose
+notes could not be read is a real state, and the button would otherwise stay on
+Stop forever); the note sounds where the schedule says and there is **silence
+before it**, because a reference that sounds early teaches a musician to play
+early and then gets them told they rushed; stop-before-render writes nothing;
+and a failed session or a failed write ends rather than throwing.
+
+### Verified by mutation, and one assertion was vacuous
+
+| mutation | result |
+|---|---|
+| samples written big-endian | 3 failed |
+| `floatToPcm16` symmetric | 2 failed |
+| `prepareForPlayback` moved after the write | 2 failed |
+| every note mixed at offset 0 | 1 failed |
+| rendered file left in the cache | 1 failed |
+| **`clearInterval` deleted** | **10 passed** |
+
+That last row is the point of doing this. I had written *"the timer is cleared,
+so `onEnd` cannot fire twice"* — and it is not: `stopped` guards the callback,
+so removing `clearInterval` changed nothing any assertion could see. The
+comment was plausible and the test was decoration.
+
+What clearing it actually prevents is a **10 Hz interval per Listen, running
+for the life of the process on a device** — invisible except as battery. The
+assertion is now `vi.getTimerCount()`, and the mutation fails it.
+
+### Tests
+
+mobile **1298 passed across 113 files** (was 1275/111); `tsc --noEmit` clean.
+Both files restored with `diff -q` after every mutation.
+
+**Side effects:** none — no shipped code was touched. **Rollback:** delete the
+two test files.
+
+---
+
 ## 2026-09-03 — The other direction: a URL the app builds that nothing serves
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. One test, no shipped code.
