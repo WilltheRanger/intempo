@@ -6,6 +6,82 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-03 — The policies guarding sheet music and recordings are called "hi" and "um"
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Security. Migration 016
+written **and applied**. CI still cannot allocate a runner.
+
+`avatars` is created properly in 009 — `public = false`, four owner-scoped
+policies. **`score-images` and `audio-uploads` exist in no migration at all.**
+They predate that discipline: made by hand in the dashboard, with nothing in
+this repository saying how they are configured. A musician's photographed sheet
+music and every recording of them playing sit in two buckets whose settings
+could not be reviewed, only guessed at.
+
+So I measured them instead of guessing, against `intempo-dev`:
+
+| bucket | public | file_size_limit |
+|---|---|---|
+| `audio-uploads` | **false** | 52428800 |
+| `avatars` | **false** | null |
+| `score-images` | **false** | 10485760 |
+
+and on `storage.objects`, exactly two policies for them:
+
+| policy | command | predicate |
+|---|---|---|
+| `"hi 1gq8viz_0"` | INSERT on `audio-uploads` | `foldername[1] = auth.uid()` |
+| `"um 1y9e2oj_0"` | INSERT on `score-images` | `foldername[1] = auth.uid()` |
+
+**The posture is sound and nobody could have known it from here.** Those names
+are placeholders somebody typed into a dashboard field. Recreate this project
+from its migrations and neither policy exists, while 009's four avatar policies
+do — an asymmetry that would read as "the buckets are fine".
+
+### INSERT only, and that is right
+
+There is no SELECT, UPDATE or DELETE policy for either bucket, so the anon key
+cannot read a page or a recording **even for its own owner**. Every read is
+signed by the API with the service role, which owner-scopes the row first, and
+every delete goes through `discard_pages_of`. RLS with no policy denies, so it
+fails closed. 016 says so in a comment, because the tempting future change —
+adding a SELECT policy to make something convenient — would let the bundle's
+anon key fetch objects directly and stop the API's ownership check being the
+only way in.
+
+### What 016 does, and deliberately does not
+
+Upserts both buckets to the values above, and creates **named** versions of the
+two policies when an equivalent is absent. Applied to `intempo-dev`, that adds
+two policies with predicates identical to `"hi"` and `"um"` — harmless, since
+Postgres ORs permissive policies of the same command and both say exactly the
+same thing.
+
+**It does not drop the dashboard-named pair.** Dropping a live policy changes
+who can write, and wants a person watching the upload path afterwards rather
+than a migration doing it unattended. They are redundant now and can go by hand.
+
+### Verified
+
+Applied to `intempo-dev`, then **applied a second time** — the rule
+`test_manual_migrations_are_safe_to_run_again` asserts statically, checked
+against the live database rather than trusted. Both succeeded; the policy list
+after is the four above, two named and two not.
+
+**Backend: 1943 passed, 2 xfailed.**
+
+### One asymmetry left, and it is the owner's
+
+`avatars` has **no `file_size_limit`** while the other two have 50 MB and
+10 MB. A signed upload URL goes straight to storage, so the bucket's own limit
+is the only thing standing between a client that does not ask nicely and an
+unbounded profile picture. No bucket sets `allowed_mime_types` either — the
+API's extension allowlist is filename-based and never inspects the bytes.
+Neither is exploitable for anything worse than storage cost, and picking the
+number is a product decision.
+
+---
+
 ## 2026-09-03 — A strict script-src, generated — and the wrong hash caught before it shipped
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Security. CI still cannot
