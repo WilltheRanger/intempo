@@ -256,8 +256,8 @@ there works differently as of 2026-08-24:
   preference; `analyses.instrument` stores it; `analysis_runner` turns it into
   `analyze(..., double_bass=...)`. Store the instrument, never a derived flag —
   how each instrument should be treated is still being tuned.
-- **The verdict-correction loop is server-only, and no client has ever
-  reached it** (measured 2026-09-03). `POST /v1/analyses/:id/corrections` is
+- **Two finished endpoints have no client, and a test now stops a third**
+  (measured 2026-09-03). `POST /v1/analyses/:id/corrections` is
   built, tested (`test_corrections.py`), owner-scoped, listed by the account
   export and taken by account deletion. **Nothing posts to it.** Not `mobile/`,
   not `frontend/`; the verdict screen has no "this wasn't right" affordance at
@@ -273,6 +273,16 @@ there works differently as of 2026-08-24:
   `TUNING_LOG.md` records as pending has no mechanism behind it. Building the
   affordance is a §2 gate; leaving the gap unwritten is how it survived this
   long.
+  **`POST /v1/calibration` is the second** (spec §4, infer a target BPM from a
+  short clip). `bpm_source` carries `calibration_clip` for it, and
+  `submitTake.ts` described that flow *in the present tense* while sending
+  `manual` every time.
+  `test_client_reachability.py` is the standing check: it walks the FastAPI
+  route table, greps `mobile/src` for each URL, and fails on any `/v1` route no
+  client builds. Its `NOT_WIRED` list is held **in both directions** — an entry
+  for a route the app has since started calling fails, and so does an entry for
+  a route that no longer exists — because an exclusion list whose reasons rot is
+  precisely what the timeline parity fixture was, one bullet up.
 - **A key printed mid-piece is a change of key** (2026-09-02).
   `Measure.key_signature` is the third field of the `time_signature` / `clef`
   shape and obeys the same rule: printed on one bar, holding until the next bar
