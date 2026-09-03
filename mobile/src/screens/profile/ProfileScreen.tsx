@@ -451,7 +451,12 @@ const AVATAR_SIZE = 76;
  *
  * "Bass" rather than "Double bass" in the control: four segments across a
  * phone leave no room for the longer word, and no one reading a string app
- * mistakes it for a bass guitar. The full name is used everywhere it fits.
+ * mistakes it for a bass guitar. The full name is used everywhere it fits —
+ * `INSTRUMENT_LABELS`, which Today and the Warmup screen render, and the
+ * roomier grid in `components/profile/InstrumentChoice`.
+ *
+ * This is the only shortening in the app, and
+ * `lib/instrumentLabels.test.ts` is what keeps it the only one.
  */
 const INSTRUMENT_OPTIONS = [
   { value: 'violin' as const, label: 'Violin' },
