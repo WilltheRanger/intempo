@@ -6,6 +6,89 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-03 — The reconciler that stated the losing rule, and a standing check for the class
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. CI still cannot allocate a
+runner.
+
+**A correction first.** The commit below this one says "tsc and lint clean".
+The lint half is false: `mobile/` has **no linter at all** — no `eslint`
+dependency, no config, no `lint` script — and `npm run -s lint` printed its
+error to a stream I was not reading while I chained past its exit code. `tsc`
+was clean, the tests and both bundles are as reported. The linter gap is a real
+finding in its own right and is the next thing I am looking at; six files in
+`mobile/src` carry `eslint-disable` directives for a linter that does not run,
+four of them suppressing `react-hooks/exhaustive-deps`.
+
+### `instrumentInUse` is deleted
+
+Earlier today I found it dead — the only export of 499 that nothing anywhere
+referenced — and deliberately **left it**, on the grounds that it was "the
+reconciler both halves need, and deleting it would remove the evidence". Then I
+shipped `preferences.adoptAccountInstrument`, which *is* the reconciler, and the
+grounds went away.
+
+What is left is worse than dead code. The two functions state **opposite
+rules** about the same question:
+
+| | rule |
+|---|---|
+| `instrumentInUse` (dead) | the account always wins |
+| `adoptAccountInstrument` (running) | the account seeds a device that has never stored one, and never overrides one |
+
+The second is the safe one, and its own docstring says why: Profile writes the
+device and not the account, so adopting on every load reverts a musician's
+choice from a value the server was never told about. A dead function stating
+the losing rule is not evidence, it is a trap — the next session wiring it up
+reintroduces exactly that bug. The evidence lives in `CLAUDE.md` and in this
+log, which is where it belongs.
+
+### `tools/check-dead-exports.py`
+
+Built, documented, never wired up is this project's most-repeated defect, and
+it is invisible by construction: it compiles, it is tested, it reads as
+finished work, and the only symptom is a feature quietly not existing. Three
+of them are on the record — `describeFixtureReason`, the corrections endpoint,
+and `instrumentInUse`. `test_client_reachability.py` was the check that came
+out of the second, and it holds **the server side only**.
+
+This is the app's half. A named export that appears nowhere else in the corpus
+at all — not a screen, not a test, not a tool. Measured: **511 exports, zero
+dead** after the deletion.
+
+Three decisions in it worth keeping:
+
+- **No allowlist.** An exclusion list is the thing that rots — this repository
+  already has `excluded_on_purpose` listing repeats long after playback started
+  expanding them — and the remedy for an export nothing uses is to stop
+  exporting it, not to write its name down.
+- **Tools and build scripts are searched for references, never for
+  definitions.** A bench importing from `src` is a real use, and missing one is
+  the single kind of false alarm this check must not produce.
+- **A floor of 300 exports.** A broken glob otherwise reports a tidy tree. Set
+  to fail loudly: pointed at `mobile/srcc` it exits 2 with the reason, rather
+  than 0 with a lie.
+
+What it cannot see, stated in the docstring: a name common enough to appear in
+unrelated prose is matched by that prose and passes. Its failures are false
+*negatives*, which is the direction a check has to fail in if people are going
+to keep running it.
+
+Wired into the CI job that already runs `check-log-entry.py` and
+`check-brand-assets.py` — Python and a checkout, nothing else.
+
+### Verified
+
+Ran clean (511, exit 0). A new `export function neverCalledAnywhere` in
+`lib/tempo.ts` → exit 1 naming it. The same export **with only a test importing
+it** → exit 0, which is the case that must not fail. `SOURCES` pointed at
+`mobile/srcc` → exit 2 with the vacuity message. Each restored; `git status`
+checked.
+
+`tsc` clean, **1425 mobile tests across 127 files**.
+
+---
+
 ## 2026-09-03 — The retry policy that stands between a musician and a take they never recorded
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. A move and a test; no

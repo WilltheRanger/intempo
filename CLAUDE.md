@@ -311,6 +311,17 @@ there works differently as of 2026-08-24:
   pre-selected, because agreement is the control group and a form that collects
   only disagreement measures the wrong thing. Rules in `lib/verdict/
   correction.ts`, not in the `.tsx`.
+- **An export nothing references is the client-side twin of that, and there is
+  one check for each direction.** `test_client_reachability.py` holds the
+  server; `tools/check-dead-exports.py` holds the app, failing on a named export
+  that appears **nowhere else in the corpus at all** — not a screen, not a test,
+  not a tool. 511 exports, zero dead, and it runs in CI beside the EDIT_LOG and
+  brand-asset checks. It has **no allowlist**, deliberately: an exclusion list is
+  the thing that rots (see `excluded_on_purpose` further down), and the remedy
+  for an export nothing uses is to stop exporting it. A name common enough to
+  appear in unrelated prose is matched by that prose and passes, so its failures
+  are false *negatives* — the direction a check has to fail in if people are
+  going to keep running it.
 - **One finished endpoint has no client, and a test stops a second**
   (measured 2026-09-03). `POST /v1/analyses/:id/corrections` is
   built, tested (`test_corrections.py`), owner-scoped, listed by the account
@@ -712,8 +723,16 @@ there works differently as of 2026-08-24:
   **`users.instrument` is nullable and never defaulted**, the same rule as
   `ScoreJson.clef`. This used to add "— `instrumentInUse()` falls back to the
   device preference, so no screen needs a 'no instrument' branch", and that
-  function is **called by nothing** (measured 2026-09-03: the only dead export
-  of 499 in `mobile/src`). No screen needs the branch because no screen reads
+  function was **called by nothing** (measured 2026-09-03: the only dead export
+  of 499 in `mobile/src`). It is **deleted** now, because
+  `adoptAccountInstrument` below is the reconciler that actually runs and the
+  two stated opposite rules — `instrumentInUse` said the account always wins,
+  the shipped one says the account seeds a device that has never stored an
+  instrument and never overrides one. A dead function stating the losing rule is
+  a trap: wiring it up reverts a musician's own choice from a value the server
+  was never told. `tools/check-dead-exports.py` is the standing check that found
+  it and now keeps the tree at zero. No screen needs the branch because no screen
+  reads
   the account's instrument at all; everything that acts on one — the warmup,
   `submitTake`, the Profile control — reads `preferences`, the device cache.
   The reconciler was written, documented and never wired up, so **the sentence
