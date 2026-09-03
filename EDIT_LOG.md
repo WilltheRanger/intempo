@@ -6,6 +6,74 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-03 — The instrument you chose does not follow you to a second device
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. A found bug, a corrected
+claim in `CLAUDE.md`, and a fix deliberately **not** made. CI still cannot
+allocate a runner.
+
+### How it was found
+
+The navigation-reachability check has a code twin worth running: exports
+nothing imports. **One of 499** — `instrumentInUse` in `useProfile.ts`, which
+`CLAUDE.md` names as the mechanism that makes a null account instrument safe:
+
+> `instrumentInUse()` falls back to the device preference, which always has a
+> value, so no screen needs a "no instrument" branch.
+
+No screen needs that branch, but not for the stated reason. **No screen reads
+the account's instrument at all.**
+
+### What the two stores actually do
+
+| | writes account | writes device |
+|---|---|---|
+| `OnboardingScreen` → `useUpdateProfile` | yes | yes — mirrored on success |
+| Profile's instrument control | **no** | yes |
+| a fresh install | — | defaults to `violin` |
+
+Everything that *acts* on an instrument reads `preferences`: `warmupFor`,
+`INSTRUMENT_LABELS`, the Profile control, and `submitTake`, which is what the
+server turns into `analyze(double_bass=...)`. The account value is written once
+at onboarding and read by nothing but onboarding's own prefill.
+
+So: **a cellist who reinstalls, or signs in on a second device, is a violinist**
+until they open Profile — warmups, labels, and the onset thresholds the
+analysis uses. That last one is the harm `CLAUDE.md` says storing the
+instrument exists to prevent.
+
+I had this wrong twice on the way and both corrections matter. First I
+concluded onboarding never seeds the device — `useUpdateProfile` does mirror
+it, so the *first* device is fine. Then I assumed the Profile control saved to
+the account — it calls `preferences.setInstrument` alone.
+
+### Why it is not fixed here
+
+The two halves are **coupled**: seed the cache from the account without first
+making Profile write the account, and a musician's local change is reverted by
+a stale server value on next launch. Fixing Profile first is safe on its own —
+but the shape of that fix is a product decision, not a refactor:
+
+* Follow `changeTrainingConsent` exactly (await the mutation, show the error)
+  and the control **stops working offline**, and stops working in a fixtures
+  build. Consistent with every other write in the app, and a regression for
+  someone on a train.
+* Write locally *and* fire the account update, and offline keeps working — but
+  the two can now diverge silently, which is precisely what the seed step then
+  has to arbitrate.
+
+Which side wins a conflict, and whether a preference may be edited offline, are
+the owner's. Recorded in `CLAUDE.md` with the table above so the next session
+does not have to re-derive it — and the false sentence, which is what would
+have stopped them looking, is gone.
+
+### Verified
+
+No code changed. `instrumentInUse` left in place: it is the reconciler both
+halves need, and deleting it would remove the evidence.
+
+---
+
 ## 2026-09-03 — A stave that never draws wider than its box, now checked
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. One test over the last
