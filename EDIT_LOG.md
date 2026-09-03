@@ -6,6 +6,74 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-03 — The build would say "Success" while publishing the service-role key
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Security. CI still cannot
+allocate a runner.
+
+Three things audited this iteration; two were clean and needed no code, and
+the third is the one worth a check.
+
+### Clean, and worth writing down rather than re-deriving
+
+**No secret has ever been committed.** `.gitignore` covers `.env`, `.env.*`,
+`*.pem` and `*.key`; the only tracked env files are two `.env.example`s; and
+no `.env` appears in any of the last 400 commits. No JWT-shaped string
+anywhere in the tracked tree.
+
+**All 23 `npm audit` findings are build toolchain**, not shipped code: 5 high
+in `metro`, `metro-config`, `metro-transform-worker`, `@expo/metro` and
+`image-size`; 18 moderate across `@expo/cli`, `@expo/config` and friends. Every
+one of those runs on the machine that builds the bundle, not in the app. Worth
+patching on its own schedule; not a user-facing risk, and "5 high" would read
+like one.
+
+### The one that needed building
+
+**The anon key is *supposed* to be in the bundle.** Expo inlines every
+`EXPO_PUBLIC_*` value at build time, and the key is designed to be public —
+RLS is what makes it safe.
+
+The **service-role** key is the same shape and bypasses RLS entirely. One
+mistyped variable name, one paste into the wrong `.env`, and it is inlined
+into 3.3 MB of JavaScript on a public URL: full read and write to every
+musician's rows and files, readable by anyone who runs `strings`. **Nothing
+would fail.** The build would print `Success: Assets published!` — exactly as
+it did the day fifteen fonts went missing, which is the failure this script was
+written for in the first place.
+
+A name-based check misses it, because the mistake is a *value* in the
+right-looking variable. So `checkNoPrivilegedKeys` **decodes the JWTs it
+finds**: a Supabase key carries its privilege in its own payload as `"role"`,
+and only `anon` may travel. That separates the safe key from the catastrophic
+one exactly — no false positive to teach anyone to ignore it.
+
+It lives in `flatten-vendor-assets.mjs` because that script already inspects
+the export and already runs on every `build:web`, including in CI. Wired into
+**both** of `main()`'s exits, since the early return is the one a re-run takes.
+
+### Verified, and a test of mine that was wrong before the code was
+
+| Planted in the bundle | Result |
+|---|---|
+| an **anon** key | passes — the false alarm that matters, since it belongs there |
+| a **service_role** key | exit **1**, naming the file and telling you to rotate it |
+| a musician's own access token (`aud: authenticated`) | exit 1 — a user token in a static bundle is its own leak |
+
+My first run of the middle case reported **exit 0**, and I nearly wrote it up
+as a check with no teeth. The token I minted for that test had a four-character
+signature segment; the regex requires ten. The check was right to ignore a
+malformed credential and my test was the broken half — the same shape as the
+route-scan false positive this morning, and the reason to re-derive a
+surprising result before publishing it.
+
+`no-console` is off for `scripts/**` already; `Buffer` needed adding to that
+block's globals, which lint caught.
+
+**1437 mobile tests, `tsc` and lint clean, web build green.**
+
+---
+
 ## 2026-09-03 — The anon key is public by design; RLS is the only reason that is safe
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Security. CI still cannot

@@ -25,7 +25,7 @@
 
 import { existsSync } from 'node:fs';
 import { readdir, readFile, rename, writeFile } from 'node:fs/promises';
-import { join, dirname } from 'node:path';
+import { join, dirname, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const MOBILE = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -57,6 +57,7 @@ async function main() {
     // about this export, and skipping it on a re-run would mean the guard
     // passed once and then quietly stopped guarding.
     await checkPageBackground();
+    await checkNoPrivilegedKeys(await walk(DIST));
     return;
   }
 
@@ -92,6 +93,7 @@ async function main() {
   }
 
   await checkPageBackground();
+  await checkNoPrivilegedKeys(await walk(DIST));
 }
 
 /**
@@ -125,6 +127,68 @@ async function checkPageBackground() {
     process.exit(1);
   }
   console.log(`flatten-vendor-assets: page background matches colors.bg (${token}).`);
+}
+
+/**
+ * No privileged credential may be in the published bundle.
+ *
+ * **The anon key is *supposed* to be here.** It is
+ * `EXPO_PUBLIC_SUPABASE_ANON_KEY`, Expo inlines every `EXPO_PUBLIC_*` value at
+ * build time, and the key is designed to be public — row-level security is
+ * what makes it safe (`backend/app/tests/test_rls_invariants.py`).
+ *
+ * The **service-role** key is the same shape and bypasses RLS entirely. One
+ * mistyped variable name, one copy-paste into the wrong `.env`, and it is
+ * inlined into 3.3 MB of JavaScript served from a public URL — readable by
+ * anyone who runs `strings` on it, and granting full read and write to every
+ * musician's rows and files. Nothing would fail. The build would say
+ * `Success: Assets published!`, exactly as it did the day fifteen fonts went
+ * missing.
+ *
+ * A name-based check would miss it, because the mistake is usually a *value* in
+ * the right-looking variable. So this reads the JWTs themselves: a Supabase key
+ * carries its privilege in its own payload as `"role"`, and only `anon` is
+ * allowed to travel. That distinguishes the safe key from the catastrophic one
+ * exactly, with no false positives to teach anyone to ignore it.
+ */
+async function checkNoPrivilegedKeys(files) {
+  // `header.payload.signature`, base64url. Deliberately loose on length: a
+  // short forged-looking token is still worth decoding.
+  const JWT = /\beyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/g;
+  const ALLOWED_ROLES = new Set(['anon']);
+  const found = [];
+
+  for (const file of files) {
+    if (!/\.(js|html|json|map|txt|css)$/.test(file)) continue;
+    const text = await readFile(file, 'utf8').catch(() => '');
+    for (const token of text.match(JWT) ?? []) {
+      let claims;
+      try {
+        claims = JSON.parse(Buffer.from(token.split('.')[1], 'base64url').toString());
+      } catch {
+        // Not a JWT after all — a hash, or an asset name that happens to match.
+        continue;
+      }
+      const role = claims.role ?? claims.aud ?? '(none)';
+      if (!ALLOWED_ROLES.has(role)) {
+        found.push(`${relative(DIST, file)}: a token whose role is "${role}"`);
+      }
+    }
+  }
+
+  if (found.length > 0) {
+    console.error(
+      'flatten-vendor-assets: a privileged credential is in the published ' +
+        'bundle:\n  ' +
+        found.join('\n  ') +
+        '\n\nOnly the anon key may ship. Anything else grants its privileges to ' +
+        'everyone who\nloads the site. Check which value is in ' +
+        '`EXPO_PUBLIC_SUPABASE_ANON_KEY`, rotate the\nleaked key in the Supabase ' +
+        'dashboard, and rebuild.',
+    );
+    process.exit(1);
+  }
+  console.log('flatten-vendor-assets: no privileged credential in the bundle.');
 }
 
 await main();
