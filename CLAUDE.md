@@ -339,6 +339,22 @@ there works differently as of 2026-08-24:
   `tools/scan-bench.template.html`. `test_sandbox_parity.py` is the only thing
   holding them together — when you add a check, port it and add a case, or the
   browser tools will quietly call a bad page clean.
+- **The timeline has two walks and one contract, and an exclusion needs a
+  reason that is still true.** `alignment.build_timeline` builds what the
+  analysis expects to hear; `lib/score/schedule.ts` builds what the app plays.
+  `fixtures/timeline/parity.json` holds both the onset times **and**
+  `expected_measures`, the performed order — because two bars of equal length
+  swapped give the same times, and the performed order is what
+  `measuresInPlayOrder` (a hand port of `expand_repeats`) can get wrong.
+  Its `excluded_on_purpose` field is the dangerous part: it listed repeats,
+  saying playback plays straight through, which stopped being true the day
+  `scheduleScore` started expanding them — and a test *asserted* the exclusion,
+  so the one piece of arithmetic most likely to drift could not be covered
+  without first disbelieving the file. **Slurs are the only real difference**
+  (the server emits no onset under a bow stroke; playback sounds it). Before
+  adding to that list, measure both walks on the same score; before trusting a
+  line already on it, measure again.
+
 - **The app does not have a fourth copy, and must not grow one.** It reads
   `ScoreResponse.concerns`, which the server computes. It had its own beat-sum
   check, which was fine while beat sums were the only test — then three checks
