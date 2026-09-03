@@ -6,6 +6,100 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-03 — A bar with no readable metre, told it disagreed with the metre
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. One live defect in what a
+musician reads, found by checking a claim in a docstring. CI still cannot
+allocate a runner.
+
+### The claim
+
+`mobile/src/data/types.ts` on `MeasureConcern`:
+
+> Nothing switches on `kind`; `detail` is the sentence, and the server writes
+> it.
+
+`lib/notation/reading.ts:227` does:
+
+```ts
+const others = concerns.filter((c) => c.kind !== 'beats');
+```
+
+That is not a bug — it is the design, and `test_a_new_concern_kind_would_still_
+reach_the_musician` spells it out: the app names exactly one kind, `'beats'`,
+the only wording allowed to promise arithmetic, and prints `detail` verbatim
+for everything else. That is what lets a new server-side check reach the screen
+with no client change.
+
+### The defect it exposed
+
+`_concerns_for` mapped four flags and ended in `else: kind = "beats"`.
+`out_of_line` was added to `validate.py` later and fell through the ladder.
+
+Its own field comment says it is set **only where no metre could be read**. So
+a bar flagged for being far out of step with the rest of its page arrived at
+the app as `"beats"`, and `describeProblemMeasures` printed:
+
+> Bar 7 doesn't add up to the time signature — check it against your copy.
+
+on a page whose time signature the server had just reported it could not read.
+The true sentence — *"7 beats, far out of step with the rest of the page — the
+metre could not be read, so this is measured against the other bars"* — was
+sitting in `detail` the whole time and was discarded.
+
+An unmapped fault is not an unreported one. It is a **misreported** one, and
+`"beats"` is the single worst place to land, because it is the only kind the
+app is licensed to reword.
+
+### The fix, and the shape that stops it recurring
+
+`out_of_line` gets `kind: "adrift"` on both sides of the wire. The ladder is
+extracted to `_concern_kind(finding)` so it can be exercised one fault at a
+time, and `test_every_fault_a_measure_can_carry_has_its_own_concern_kind` reads
+`MeasureFinding.__dataclass_fields__`: a new flag with no branch fails there
+rather than quietly joining `"beats"`. Same shape as
+`test_the_cases_exercise_every_flag_there_is`, and for the same reason — the
+last count written by hand went stale.
+
+Three mutations killed: the branch removed (the bug as it shipped), `adrift`
+given a name another fault already uses, and a new flag added to
+`MeasureFinding` with no branch.
+
+### A test of mine that was passing because it never ran
+
+`test_a_bar_out_of_step_on_a_page_with_no_metre_is_not_called_arithmetic` — the
+end-to-end half — reported PASS while I ran the mutation under `-k concern`,
+which **does not match its name**. It had never executed. When it did, it
+failed, and its fixture had been wrong twice over:
+
+| fixture | what it actually tested |
+|---|---|
+| bar of 40 quarters among bars of 4 | `too_dense` — a different fault, correctly named `"density"` |
+| bar of 4 whole notes among quarters | the metre *is* inferable, so the bar is plainly `long` and `"beats"` is right |
+
+`out_of_line` is reachable only where the page disagrees with itself enough
+that no metre wins the vote. The fixture is now bars of 1, 2, 3, 4, 5, 6 and 24
+quarters, and the assertion is that **no concern on that page is `"beats"`** —
+the one wording that would be false there. Both new tests fail under the
+mutation now; I checked with the filter that selects them.
+
+### Prose corrected while I was in there
+
+- `types.ts` named three checks where there are five, and called a local copy
+  "a fifth" where `CLAUDE.md` counts it as the fourth (`validate.py` plus its
+  two browser ports).
+- `reading.ts` said "all four checks" and "three of the four" in two docstrings.
+  Replaced with the rule rather than a number — the last count written down
+  here was wrong within a fortnight — and `validate.py` named as the inventory.
+
+### Verified
+
+Mobile **1392 tests / 123 files** green, `tsc` clean. Backend **1927 passed, 2
+xfailed** (1925 before — the two new tests), `ruff` clean. No screen changed;
+the sentence a musician reads on an unmetred page did.
+
+---
+
 ## 2026-09-03 — The App Store icon is a blue chevron somebody else drew
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. A look at the native build

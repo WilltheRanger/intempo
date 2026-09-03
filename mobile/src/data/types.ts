@@ -249,10 +249,12 @@ export interface ScoreTuplet {
  * A measure the reading cannot vouch for, as the server found it.
  *
  * Sent rather than recomputed. The app has its own beat-sum check, which was
- * enough while beat sums were the only test; the server now also checks broken
- * ties, tuplet ratios and note density, and **every one of those can fire on a
- * measure whose beats add up exactly**. Recomputing them here would be a fifth
- * copy of a validator that has already drifted three times.
+ * enough while beat sums were the only test; the server also checks broken
+ * ties, tuplet ratios, note density, notes this schema cannot write, and bars
+ * wildly out of step with a page whose metre could not be read — and **every
+ * one of those can fire on a measure whose beats add up exactly**. Recomputing
+ * them here would be a fourth copy of a validator that has already drifted
+ * three times (`ocr/validate.py` and its two browser ports).
  */
 export interface MeasureConcern {
   measure_number: number;
@@ -260,10 +262,18 @@ export interface MeasureConcern {
    * `unwritable` is the odd one out: it is not a doubt about the reading. The
    * page was read correctly and this app has no name for what was on it — a
    * double accidental, a triple dot, a quintuplet — so the notes are dropped
-   * rather than mis-named. Nothing switches on `kind`; `detail` is the
-   * sentence, and the server writes it.
+   * rather than mis-named.
+   *
+   * `adrift` is a bar far out of step with the rest of a page whose **metre
+   * could not be read**, so it is measured against the other bars instead.
+   *
+   * The app names exactly one of these: `'beats'`, the only wording allowed to
+   * promise arithmetic. Every other kind has its `detail` shown verbatim,
+   * which is what lets a new server-side check reach the screen with no client
+   * change — `test_a_new_concern_kind_would_still_reach_the_musician` pins
+   * that, so do not add a second branch here.
    */
-  kind: 'beats' | 'tie' | 'tuplet' | 'density' | 'unwritable';
+  kind: 'beats' | 'tie' | 'tuplet' | 'density' | 'unwritable' | 'adrift';
   /** A sentence fit to show a musician. */
   detail: string;
 }

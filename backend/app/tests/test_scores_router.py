@@ -1574,6 +1574,128 @@ def test_a_bar_that_lost_notes_and_runs_short_is_named_for_the_notes() -> None:
     assert "could not write" in concern.detail and "short" in concern.detail
 
 
+def test_every_fault_a_measure_can_carry_has_its_own_concern_kind() -> None:
+    """**A fault with no branch becomes `"beats"`, and `"beats"` is a promise.**
+
+    The app prints `detail` verbatim for every kind except `"beats"`, which it
+    is allowed to reword as "doesn't add up to the time signature". So a fault
+    that falls past the ladder in `_concern_kind` does not go unreported — it
+    gets reported as arithmetic.
+
+    That happened. `out_of_line` is set **only where no metre could be read**,
+    and it was sent as `"beats"`: a bar flagged for being out of step with the
+    rest of the page, described to the musician as disagreeing with a time
+    signature the server had just said it could not read.
+
+    The field list is read off the dataclass rather than typed out, so a *new*
+    flag fails here instead of silently joining `"beats"` — the same shape as
+    `test_the_cases_exercise_every_flag_there_is` in `test_sandbox_parity.py`,
+    and for the same reason: the last count written down by hand went stale.
+    """
+    from app.routers.scores import _concern_kind
+    from app.services.ocr.validate import MeasureFinding
+    from app.services.score_schema import BrokenTie, TupletFault
+
+    #: What each fault field looks like when it is the only thing wrong.
+    faults: dict[str, object] = {
+        "broken_ties": (BrokenTie(1, 0, "C4", "E4"),),
+        "tuplet_faults": (TupletFault(1, 0, 5, 4, "count", "holds 3 notes"),),
+        "too_dense": True,
+        "unwritable_notes": 1,
+        "out_of_line": True,
+    }
+    #: Fields that describe the measure rather than accuse it.
+    not_a_fault = {
+        "measure_number",
+        "verdict",
+        "expected_beats",
+        "actual_beats",
+        "note_count",
+        "meter_inferred",
+    }
+
+    fields = set(MeasureFinding.__dataclass_fields__)
+    unclassified = fields - set(faults) - not_a_fault
+    assert not unclassified, (
+        f"MeasureFinding grew {sorted(unclassified)}. If it is a fault, give it "
+        "a branch in `_concern_kind` and an entry above; if it is not, name it "
+        "in `not_a_fault`."
+    )
+
+    kinds: dict[str, str] = {}
+    for flag, value in faults.items():
+        finding = MeasureFinding(
+            measure_number=1,
+            verdict="ok",
+            expected_beats=4.0,
+            actual_beats=4.0,
+            note_count=4,
+            **{flag: value},  # type: ignore[arg-type]
+        )
+        # Every one of these fires on a bar whose beats add up exactly, which
+        # is the whole reason they are separate fields from `verdict`.
+        assert finding.is_problem, flag
+        kinds[flag] = _concern_kind(finding)
+
+    beats = sorted(flag for flag, kind in kinds.items() if kind == "beats")
+    assert not beats, (
+        f"{beats} reach the app as \"beats\", which it may reword as "
+        "\"doesn't add up to the time signature\" — a true sentence under a "
+        "false heading"
+    )
+    assert len(set(kinds.values())) == len(kinds), (
+        f"two faults share a name: {kinds}"
+    )
+
+
+def test_a_bar_out_of_step_on_a_page_with_no_metre_is_not_called_arithmetic() -> None:
+    """The defect above, end to end through `_concerns_for`.
+
+    No `time_signature` anywhere, so no metre can be read and `short`/`long`
+    cannot be said; one bar far longer than its neighbours. The sentence the
+    musician gets must be the server's own — which says the metre could not be
+    read — and never the arithmetic wording.
+    """
+    from app.routers.scores import _concerns_for
+
+    # **Every bar a different length, so nothing wins the metre vote.** Two
+    # earlier fixtures here tested the wrong branch and one of them passed
+    # anyway, because the `-k` filter I ran the mutation under did not select
+    # this test by name:
+    #
+    #  - forty quarter notes in the odd bar tripped `too_dense` first, which is
+    #    a different fault and is correctly called `"density"`;
+    #  - four whole notes among quarters let `infer_beats_per_measure` succeed,
+    #    which makes the bar plainly `long` — and `"beats"` is then the right
+    #    word, not the bug.
+    #
+    # `out_of_line` is reachable only where no metre could be read at all, so
+    # the page has to disagree with itself.
+    def bar(number: int, notes: int) -> dict[str, object]:
+        return {
+            "measure_number": number,
+            "slurs": [],
+            "notes": [{"pitch": "E2", "duration": "quarter"} for _ in range(notes)],
+        }
+
+    no_metre = {
+        "time_signature": None,
+        "key_signature": None,
+        "clef": "bass",
+        "ocr_confidence": 0.9,
+        "measures": [bar(n, n) for n in range(1, 7)] + [bar(7, 24)],
+    }
+
+    concerns = {c.measure_number: c for c in _concerns_for(no_metre)}
+    assert 7 in concerns, "a bar six times the median length was not flagged at all"
+    assert concerns[7].kind == "adrift"
+    assert "metre could not be read" in concerns[7].detail
+    # Not one of the wordings that would be false here. `"beats"` is the one
+    # the app may reword as "doesn't add up to the time signature", on a page
+    # whose time signature the server has just said it could not read.
+    assert {c.kind for c in concerns.values()} == {"adrift"}
+
+
 def test_an_unreadable_score_column_has_no_concerns_rather_than_raising() -> None:
     """A listing of the whole library must not fail because one row predates a
     schema change."""

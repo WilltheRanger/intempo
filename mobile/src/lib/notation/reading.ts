@@ -156,11 +156,16 @@ export function problemMeasures(score: ScoreJson): number[] {
 /**
  * What to tell the musician about how this page was read.
  *
- * `concerns` come from the server, which is the only place all four checks
- * live: beat sums, broken ties, tuplet ratios and note density. The last three
- * can each fire on a measure whose beats add up **exactly** — a slur written as
- * a tie sums to 4.0 — so the local beat-sum check silently showed nothing for
- * whole categories of fault, and offered no way to reach the editor for them.
+ * `concerns` come from the server, which is the only place every check lives:
+ * beat sums, broken ties, tuplet ratios, note density, notes the schema cannot
+ * write, and bars adrift on a page with no readable metre. **Every one but the
+ * beat sum can fire on a measure whose beats add up exactly** — a slur written
+ * as a tie sums to 4.0 — so the local beat-sum check silently showed nothing
+ * for whole categories of fault, and offered no way to reach the editor for
+ * them.
+ *
+ * Deliberately not a count: the last one written down here said "four" and was
+ * wrong within a fortnight. `validate.py` is the inventory.
  *
  * The local check remains as the fallback, for a backend that predates the
  * field and for a score being edited before it has been saved. It is a subset
@@ -202,10 +207,15 @@ export function describeProblemMeasures(
    * Why each bar was flagged, when the server said.
    *
    * The sentence below claims the bars "don't add up to the time signature".
-   * That was true while beat sums were the only check. Three of the four now
-   * fire on measures whose beats add up **exactly** — a slur written as a tie
+   * That was true while beat sums were the only check. Every other check now
+   * fires on measures whose beats add up **exactly** — a slur written as a tie
    * sums to 4.0 — so for those it states a falsehood about the musician's
    * score, and the server has already written the true reason in their terms.
+   *
+   * `adrift` is the sharpest case and the one that was getting it wrong: it is
+   * set only where **no metre could be read**, so "doesn't add up to the time
+   * signature" names a time signature the server has just said it could not
+   * find. It reached here as `'beats'` until the server gave it its own kind.
    */
   /**
    * Whether the musician still has the page to compare against.

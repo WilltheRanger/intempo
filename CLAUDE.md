@@ -413,6 +413,25 @@ there works differently as of 2026-08-24:
   `pitch` only as `== "rest"`, but a **tie** is now validated by whether two
   noteheads share a pitch, so a wrong pitch can delete an onset. Correcting it
   is repairing the timeline, not decoration.
+- **`MeasureConcern.kind` names the branch that wrote the sentence** — and one
+  branch had no name (2026-09-03). `_concerns_for`'s ladder ended in an `else`
+  returning `"beats"`, so `out_of_line`, added later, fell through it. The app
+  prints `detail` verbatim for every kind **except** `"beats"`, which is the
+  one wording allowed to promise arithmetic — it becomes *"doesn't add up to
+  the time signature"*. And `out_of_line` is set **only where no metre could be
+  read**, so a bar flagged for being out of step with its page was described to
+  a musician as disagreeing with a time signature the server had just said it
+  could not find. The true sentence was sitting in `detail` the whole time.
+  It has a kind now (`adrift`), and `_concern_kind` is extracted so the mapping
+  can be exercised one fault at a time:
+  `test_every_fault_a_measure_can_carry_has_its_own_concern_kind` reads
+  `MeasureFinding`'s fields, so a *new* flag with no branch fails instead of
+  quietly becoming arithmetic. Do **not** replace the `else` with a default
+  again; an unmapped fault is not an unreported one, it is a misreported one.
+  `test_a_new_concern_kind_would_still_reach_the_musician` holds the other
+  half — the app names `'beats'` and nothing else, which is what lets a new
+  server-side check reach the screen with no client change.
+
 - **Six things flag a measure, and only one of them is arithmetic.** Beat sums
   (`verdict`), plus five separate fields on `MeasureFinding`: `broken_ties`,
   `tuplet_faults`, `too_dense`, `unwritable_notes` and `out_of_line`. The five
