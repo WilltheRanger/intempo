@@ -1,4 +1,3 @@
-import { useNavigation } from '@react-navigation/native';
 import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { useGoBack } from '../../navigation/useGoBack';
@@ -15,10 +14,8 @@ import {
   saveAccountExport,
 } from '../../data/accountExport';
 import { spacing } from '../../design';
-import type { RootNavigation } from '../../navigation/types';
 
 export function ExportDataScreen() {
-  const navigation = useNavigation<RootNavigation>();
   const goBack = useGoBack({ tab: 'Profile' });
   const [preparing, setPreparing] = useState(false);
   const [done, setDone] = useState(false);

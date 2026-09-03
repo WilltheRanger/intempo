@@ -157,7 +157,7 @@ export async function startRecording(): Promise<Recorder> {
   );
   try {
     await context.audioWorklet.addModule(moduleUrl);
-  } catch (error) {
+  } catch {
     stopTracks();
     void context.close();
     throw new MicrophoneUnavailableError(

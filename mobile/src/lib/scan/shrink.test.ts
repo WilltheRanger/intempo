@@ -21,7 +21,7 @@ function manipulator(sizeFor: (quality: number, maxEdge: number | null) => numbe
   return {
     fn: fn as any,
     calls,
-    measure: async (uri: string) => {
+    measure: async (_uri: string) => {
       const call = calls[calls.length - 1];
       return sizeFor(call.quality, call.maxEdge);
     },

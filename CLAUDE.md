@@ -38,6 +38,16 @@ silence.
    than was asked for. Speed is the one thing still worth leaving alone until
    something is measurably slow — measure, then optimise.
 4. **No `print`/`console.log` debug shipped.** Real logger from day one (`loguru` for Python, `pino` for JS).
+   Enforced in `mobile/` since 2026-09-03 (`no-console`, error). Two lines are
+   exempt with a written reason: `App.tsx`'s boot line naming whether the build
+   is on fixtures, and `ErrorBoundary.componentDidCatch` — the only record a
+   crash leaves. **The app had no linter at all until then**, while six files
+   carried `eslint-disable` directives for one; `react-hooks/rules-of-hooks` is
+   the rule it was worth installing for, since a hook below an early return is
+   React error #310, which this project has shipped and which compiles,
+   typechecks and passes its tests. Rules and the three scoped exceptions are in
+   `DECISIONS.md`, 2026-09-03. `frontend/` has its own config and CI lints
+   neither it nor, before now, the product.
 5. **Smoke-test the happy path manually** after each batch, not just automated tests.
 6. **Tag the end of every batch**: when the DoD is met, `git tag batch-N-done` and push the tag. These are the known-good rollback anchors.
 7. **Externalize magic numbers to config** (see `backend/config.toml`) so tuning never requires a code edit.

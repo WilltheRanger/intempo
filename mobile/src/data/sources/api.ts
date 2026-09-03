@@ -13,7 +13,6 @@ import type {
   AnalysisResultJson,
   AnalysisStatus,
   Band,
-  Direction,
   MeasureVerdict,
   Piece,
   PieceInsight,

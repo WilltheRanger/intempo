@@ -106,14 +106,20 @@ export function TodayScreen() {
    * the durable row is ready, while a button makes a slow or offline result
    * recoverable without keeping a hidden tab polling forever.
    */
+  // The id, not the record: it is the only field this uses, and it is what the
+  // callback's identity should turn on. Naming the whole record would rebuild
+  // the callback — and re-run the effect below it — every time the stored row
+  // is re-read into a new object.
+  const pendingAnalysisId = pendingAnalysis?.analysisId ?? null;
+
   const checkPendingAnalysis = useCallback(async () => {
-    if (!pendingAnalysis) {
+    if (!pendingAnalysisId) {
       setPendingCheck(null);
       return;
     }
     setPendingCheck('checking');
     try {
-      const analysis = await getAnalysis(pendingAnalysis.analysisId);
+      const analysis = await getAnalysis(pendingAnalysisId);
       setPendingCheck(
         analysis.status === 'done' ||
           analysis.status === 'failed' ||
@@ -124,13 +130,13 @@ export function TodayScreen() {
     } catch (error) {
       if (error instanceof ApiError && error.status === 404) {
         // It belongs to an old/deleted account or was removed with its piece.
-        await forgetPendingAnalysis(pendingAnalysis.analysisId);
+        await forgetPendingAnalysis(pendingAnalysisId);
         setPendingCheck(null);
         return;
       }
       setPendingCheck('unavailable');
     }
-  }, [pendingAnalysis?.analysisId]);
+  }, [pendingAnalysisId]);
 
   useEffect(() => {
     void checkPendingAnalysis();

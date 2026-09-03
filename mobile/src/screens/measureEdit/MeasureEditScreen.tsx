@@ -1,4 +1,4 @@
-import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
+import { useRoute, type RouteProp } from '@react-navigation/native';
 import { useGoBack } from '../../navigation/useGoBack';
 import { useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
@@ -70,7 +70,6 @@ import { timeSignaturesByMeasure } from '../../lib/notation/meter';
  * of moving it.
  */
 export function MeasureEditScreen() {
-  const navigation = useNavigation();
   const { params } = useRoute<RouteProp<RootStackParamList, 'MeasureEdit'>>();
   const goBack = useGoBack({
     route: 'PieceScore',

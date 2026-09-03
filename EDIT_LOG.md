@@ -6,6 +6,95 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-03 — The shipping app had no linter, and was carrying disable comments for it
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. CI still cannot allocate a
+runner.
+
+Found by the correction in the entry below: I claimed "lint clean" on a tree
+with no `eslint` dependency, no config, no script and nothing in CI. Six files
+in `mobile/src` carried `eslint-disable` directives — four of them suppressing
+`react-hooks/exhaustive-deps` — which is a comment claiming a judgement nobody
+had made. `frontend/`, the legacy tree that is **not** the product, is the one
+that had the config, and CI does not run it there either.
+
+Rules and the three scoped exceptions are argued in `DECISIONS.md`. What the
+first pass actually found, after the config stopped reporting things that are
+not defects:
+
+### 17 pieces of dead code
+
+Eight screens carried `const navigation = useNavigation()` assigned and never
+used — leftovers from when `useGoBack` replaced it — plus the imports behind
+them, three unused component/token imports, an unused `catch (error)` binding,
+and `accidentalRoom` in `engrave.ts`: a private function nothing calls.
+
+That last one is the interesting one. `tools/check-dead-exports.py`, added an
+hour earlier, cannot see it — it is not exported. The two checks are
+complementary and neither subsumes the other: mine finds a **public** surface
+with no caller, the linter finds a **private** one.
+
+### Five hook dependency arrays
+
+None was a live bug, and all five were one refactor from being one. Four are
+fixed by making the dependency the value the code actually uses rather than the
+object it hangs off:
+
+- `RecordScreen` depended on `metronome.beat?.index` while reading
+  `metronome.beat`; `beatIndex` is hoisted out and the effect reads that.
+- `TodayScreen`'s `checkPendingAnalysis` depended on
+  `pendingAnalysis?.analysisId` while closing over `pendingAnalysis`; it takes
+  `pendingAnalysisId`, so re-reading the stored row into a new object no longer
+  rebuilds the callback and re-runs the effect below it.
+- `ScannerScreen`'s permission effect now derives `cameraGranted` and
+  `canAskForCamera` as booleans. Depending on `permission` itself would
+  re-evaluate on a fresh object saying the same thing — and on any platform
+  that answers a denial with `canAskAgain` still true, that is a permission
+  dialog in a loop. `requestPermission` is named too: it is
+  `useCallback`-stable (expo-modules-core keys it on a module-level method), so
+  it costs nothing and stops the array going stale if that changes.
+
+Two are genuine mount-only effects and now carry a **live** suppression with
+its reason: `ScannerScreen`'s session reset (re-running on a params change
+would reset a scan mid-flight — the exact failure its own paragraph is about)
+and `TranscribeScreen`'s upload (`pages` is a new array every render, so naming
+it turns one upload into an unbounded number).
+
+### Three suppressions that were suppressing nothing
+
+`bootWatchdog.test.ts` silenced `no-new-func`, which is not enabled.
+`useMetronome.ts` silenced `exhaustive-deps` for `mode` — and the effect reads
+`modeRef.current`, so the linter agrees nothing is missing. The reasoning was
+right and the mechanism had changed underneath it; the comment now names the
+ref, which is the thing doing the work.
+
+### `no-console`
+
+One in shipped code besides `App.tsx`'s deliberate boot line:
+`ErrorBoundary.componentDidCatch`. Kept, with a disable and a reason. `CLAUDE.md`
+§1 is about *debug* output; a render that threw has already put a fallback in
+front of the musician, and the stack is the only trace of why.
+
+### Zero `rules-of-hooks` violations
+
+The rule the install is for. A hook below an early return is React error #310,
+this project has shipped one, and it compiles, typechecks, passes its tests and
+shows a white screen. The tree being clean on it is a fact nobody could state
+before today.
+
+### Verified
+
+`npm run lint` exit 0, `tsc` clean, **1425 tests across 127 files**. Licences
+regenerated (four MIT entries added; `licences.test.ts` holds both directions
+against `package.json`). Web and iOS bundles export. Walk **PASS, 29 checks**;
+a11y audit **PASS**. `.env` set aside for the fixtures build and restored with
+`diff -q` identical. `npm i` pruned the `--no-save` Playwright install again —
+reinstalled before the walk.
+
+Wired into CI as a step in the mobile job, after typecheck.
+
+---
+
 ## 2026-09-03 — The reconciler that stated the losing rule, and a standing check for the class
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. CI still cannot allocate a

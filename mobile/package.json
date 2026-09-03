@@ -36,11 +36,15 @@
     "react-native-url-polyfill": "^4.0.0"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@expo/metro-runtime": "^57.0.10",
     "@types/react": "~19.2.2",
+    "eslint": "^10.9.1",
+    "eslint-plugin-react-hooks": "^7.1.1",
     "react-dom": "^19.2.3",
     "react-native-web": "^0.21.2",
     "typescript": "~6.0.3",
+    "typescript-eslint": "^8.69.0",
     "vitest": "^4.1.11"
   },
   "scripts": {
@@ -49,6 +53,7 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
     "build:web": "expo export --platform web --clear && node scripts/flatten-vendor-assets.mjs",
     "postinstall": "patch-package",
     "test": "vitest run"
