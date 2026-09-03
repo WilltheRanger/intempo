@@ -192,6 +192,83 @@ def test_the_not_wired_list_names_routes_that_exist(route: tuple[str, str]) -> N
     assert route in _routes(), f"{route[0]} {route[1]} is on NOT_WIRED but is not served"
 
 
+def _urls_the_app_builds() -> dict[str, set[str]]:
+    """Every `/v1` URL the app writes, and the files each appears in.
+
+    Taken from the start of a string, which is where a URL is written here —
+    the same anchor `_calls` uses from the other side.
+    """
+    found: dict[str, set[str]] = {}
+    for path in sorted(APP_SRC.rglob("*.ts*")):
+        if ".test." in path.name:
+            continue
+        source = strip_comments(path.read_text(errors="ignore"))
+        for match in re.finditer(r"""["'`](/v1/[^"'`\s]*)""", source):
+            found.setdefault(match.group(1), set()).add(path.name)
+    return found
+
+
+def _is_served(url: str, served: set[str]) -> bool:
+    """Whether a URL the app builds resolves to a route template.
+
+    The query string is dropped — `/v1/scores?${query}` is a call to
+    `/v1/scores`. The match is anchored at both ends, so a URL with a stray
+    segment does not pass by prefix.
+    """
+    bare = url.split("?")[0]
+    for template in served:
+        pattern = (
+            "^"
+            + "".join(
+                re.escape(part) if index == 0 else r"\$\{[^}]+\}" + re.escape(part)
+                for index, part in enumerate(re.split(r"\{[^}]+\}", template))
+            )
+            + "$"
+        )
+        if re.match(pattern, bare):
+            return True
+    return False
+
+
+def test_every_url_the_app_builds_is_a_route_this_api_serves() -> None:
+    """The other direction, and the one a musician feels.
+
+    A route with no client is a feature nobody can reach. A *client* with no
+    route is a 404 in someone's hands — a screen that spins and then says
+    something went wrong, for a URL that was mistyped or renamed on one side
+    only. Nothing else here would catch it: there is no integration test
+    against a running server, and both suites pass with the app pointed at an
+    endpoint that does not exist.
+
+    **Paths only, not methods.** The method lives in the fetch options rather
+    than beside the URL, so this says the path is served, not that it accepts
+    the verb used. That is the half that catches a typo, which is the failure
+    this is for.
+    """
+    served = {path for _, path in _routes()}
+    unserved = {
+        url: sorted(files)
+        for url, files in _urls_the_app_builds().items()
+        if not _is_served(url, served)
+    }
+
+    assert not unserved, (
+        "the app builds URLs this API does not serve: "
+        + ", ".join(f"{url} ({', '.join(files)})" for url, files in sorted(unserved.items()))
+    )
+
+
+def test_the_app_url_check_can_tell_the_difference() -> None:
+    """Vacuity guard for the direction above."""
+    served = {path for _, path in _routes()}
+
+    assert _is_served("/v1/scores/${id}/accept", served)
+    assert _is_served("/v1/scores?${query}", served), "a query string broke the match"
+    assert not _is_served("/v1/scores/${id}/accept/extra", served), "matched by prefix"
+    assert not _is_served("/v1/nope", served)
+    assert _urls_the_app_builds(), "found no URLs at all — the scan is broken"
+
+
 def test_the_check_can_tell_the_difference() -> None:
     """The guard against a vacuous pass.
 
