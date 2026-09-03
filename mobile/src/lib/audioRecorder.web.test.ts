@@ -192,3 +192,52 @@ describe('startRecording (web)', () => {
     await expect(recorder.stop()).rejects.toBeInstanceOf(EmptyRecordingError);
   });
 });
+
+describe('when the microphone will not start', () => {
+  /** Replace `getUserMedia` with one that rejects, counting the attempts. */
+  function rejectWith(...errors: unknown[]) {
+    const asked: MediaStreamConstraints[] = [];
+    vi.stubGlobal('navigator', {
+      mediaDevices: {
+        getUserMedia: async (constraints: MediaStreamConstraints) => {
+          asked.push(constraints);
+          const error = errors[asked.length - 1];
+          if (error) {
+            throw error;
+          }
+          return { getTracks: () => [{ stop: () => { tracksStopped += 1; } }] };
+        },
+      },
+    });
+    return asked;
+  }
+
+  it('asks again without our audio preferences when they were what was refused', async () => {
+    // Raw mono with every processor off is what the *analysis* wants, not what
+    // the recording needs. A device that cannot give it should still record: a
+    // take with echo cancellation on beats no take at all.
+    const asked = rejectWith(new DOMException('nope', 'OverconstrainedError'));
+
+    await startRecording();
+
+    expect(asked).toHaveLength(2);
+    expect(asked[0].audio).toMatchObject({ echoCancellation: false });
+    expect(asked[1].audio).toBe(true);
+  });
+
+  it('does not ask twice for a refusal, which asking again cannot fix', async () => {
+    const asked = rejectWith(new DOMException('nope', 'NotAllowedError'));
+
+    await expect(startRecording()).rejects.toThrow(/permission/i);
+    expect(asked).toHaveLength(1);
+  });
+
+  it('stops calling a phone with a microphone "no microphone"', async () => {
+    // The bug this was reported as: on a real iPhone, every failure that was
+    // not a refusal produced "No microphone is available on this device."
+    const asked = rejectWith(new DOMException('busy', 'NotReadableError'));
+
+    await expect(startRecording()).rejects.toThrow(/busy/);
+    expect(asked).toHaveLength(1);
+  });
+});

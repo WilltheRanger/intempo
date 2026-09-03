@@ -1,13 +1,16 @@
 import {
   EmptyRecordingError,
   maxTakeSamples,
-  MicrophonePermissionError,
   MicrophoneUnavailableError,
   takeFilename,
   type Recorder,
   type Recording,
 } from './audio/types';
 import { capturedNothing, createPeakMeter } from './audio/level';
+import {
+  microphoneFailure,
+  shouldRetryUnconstrained,
+} from './audio/microphoneFailure';
 import { durationOf, encodeWav } from './audio/wav';
 
 /**
@@ -116,23 +119,36 @@ export async function startRecording(): Promise<Recorder> {
     throw new MicrophoneUnavailableError('This browser has no Web Audio.');
   }
 
+  // Raw and unprocessed, because the analysis measures attacks as played and
+  // every one of these processors moves them. A **preference**, not a
+  // requirement — see the retry below.
+  const PREFERRED: MediaStreamConstraints = {
+    audio: {
+      channelCount: CHANNELS,
+      echoCancellation: false,
+      autoGainControl: false,
+      noiseSuppression: false,
+    },
+  };
+
   let media: MediaStream;
   try {
-    media = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        channelCount: CHANNELS,
-        echoCancellation: false,
-        autoGainControl: false,
-        noiseSuppression: false,
-      },
-    });
+    media = await navigator.mediaDevices.getUserMedia(PREFERRED);
   } catch (error) {
-    // NotAllowedError covers both a refusal and a policy block; either way the
-    // musician's next step is the same.
-    if (error instanceof DOMException && error.name === 'NotAllowedError') {
-      throw new MicrophonePermissionError();
+    if (shouldRetryUnconstrained(error)) {
+      // A device that cannot give us raw audio should still get to record: a
+      // take with echo cancellation on beats no take at all.
+      try {
+        media = await navigator.mediaDevices.getUserMedia({ audio: true });
+      } catch (retryError) {
+        throw microphoneFailure(retryError);
+      }
+    } else {
+      // Every failure that was not a refusal used to become "No microphone is
+      // available on this device.", on phones that plainly have one.
+      // `microphoneFailure` names what actually happened.
+      throw microphoneFailure(error);
     }
-    throw new MicrophoneUnavailableError();
   }
 
   const context = new AudioContextCtor();
