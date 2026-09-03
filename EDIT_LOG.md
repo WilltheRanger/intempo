@@ -6,6 +6,48 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-03 — A screen can get a URL without ever being audited
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. One assertion in
+`tools/audit-a11y.mjs`; no product code changed. CI still cannot allocate a
+runner.
+
+`linking.test.ts` makes a new screen get a URL, and the reason is written down:
+the browser's Back button walks out of the app from a screen that has none.
+Nothing made a new screen get **audited**. `ROUTES` in `audit-a11y.mjs` is a
+hand-written list of twenty-three, and a hand-written list of screens is the
+thing that goes stale — so a screen added next month would ship with a URL, a
+link somebody can send, and no check of its touch targets, its contrast, its
+accessible names or its behaviour at 2x text.
+
+Today the two lists agree: all 22 declared routes are visited (`Score` twice,
+once as `?view=original`). That was true and held by nothing, which is the same
+sentence as the last four entries.
+
+The audit now reads the paths out of `navigation/linking.ts` and refuses to
+report PASS while one is unvisited. Read as text, not imported: this file is
+`.mjs` running against a built bundle and cannot import TypeScript — the same
+technique `describeError.test.ts` uses to read the four sentences out of
+`client.ts` rather than retyping them.
+
+Compared as **patterns**, because a declared path carries `:pieceId` while the
+audit visits a real fixture id. A query string is dropped: `?view=original` is
+a second state of a route already covered, not a route of its own — and
+treating it as one would demand an entry for every query a screen accepts.
+
+### Verified
+
+| Mutation | Result |
+|---|---|
+| a `TeacherReport: 'teachers/:teacherId/report'` added to `linking.ts` | named, exit **1** |
+| `['Warmup', 'warmup']` removed from `ROUTES` | `/warmup` named |
+| both restored | PASS |
+
+The second is the one that matters more: it proves the check is comparing the
+two lists rather than just counting them.
+
+---
+
 ## 2026-09-03 — "Three things still need a person" was six, and the count was in prose
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. One tool, two corrected
