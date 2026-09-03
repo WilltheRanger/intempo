@@ -6,6 +6,67 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-03 — The switch between real data and sample data had no tests
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. One test file, one
+corrected docstring. **CI still cannot allocate a runner** — verified locally
+only; see the PR comments.
+
+`data/environment.ts` decides whether the app reads real accounts or seeded
+fixtures. It replaced a hardcoded `USE_FIXTURES = true`, which its own
+docstring calls *"a loaded gun"*: flipping it and pushing would have shipped
+the live site pointed at `http://127.0.0.1:8000`. Getting it wrong is silent in
+the worst direction — a production build serving seeded pieces looks like a
+working app.
+
+Seventy lines, no tests.
+
+### The rule with the worst failure mode, now enforced
+
+> Every reference below spells out `process.env.EXPO_PUBLIC_…` in full. Expo
+> substitutes these textually at build time, so a destructured or computed
+> lookup would read an empty object in the bundle and put a correctly-
+> configured build on fixtures.
+
+Nothing checked that. `const { EXPO_PUBLIC_API_BASE_URL } = process.env` is an
+ordinary-looking refactor that ships a production build on sample data with
+every screen looking fine.
+
+It has to be a **source** check, and the reason is worth stating: under vitest
+`process.env` is a live object, so a destructured read works perfectly and no
+behavioural test can see the fault. The bug exists only in a real Expo bundle.
+
+### A docstring describing a mechanism the code does not use
+
+> **API base URL** — checked for *explicit presence*, not truthiness … only the
+> raw `process.env` read can tell them apart.
+
+The code is `process.env.EXPO_PUBLIC_API_BASE_URL ?? ''` followed by a
+truthiness test, which collapses "unset" and "set to empty" into one answer.
+Not a defect — **truthiness is the safer of the two.** Under an
+explicit-presence rule, `EXPO_PUBLIC_API_BASE_URL=""` counts as a backend
+having been named and sends a production build at the localhost fallback,
+which is precisely the failure the same paragraph warns about. The prose now
+says what the code does, and a test pins the empty-string case.
+
+### Verified by mutation
+
+| mutation | result |
+|---|---|
+| API host dropped from the switch | 3 failed |
+| **`process.env` destructured** | **1 failed** |
+| singular/plural collapsed in the reason | 1 failed |
+
+### Tests
+
+mobile **1362 passed across 119 files** (was 1355/118); `tsc` clean.
+`environment.ts` restored `diff -q` identical after every mutation.
+
+**Side effects:** none — the only source change is prose. **Rollback:** revert
+the commit.
+
+---
+
 ## 2026-09-03 — A coverage tool whose summary contradicted its own table
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. One tool's closing note.

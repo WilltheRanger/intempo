@@ -20,10 +20,19 @@
  *
  *  - **URL + anon key** — without them `getSupabaseClient()` returns null,
  *    so there is no session and therefore no bearer token to send.
- *  - **API base URL** — checked for *explicit presence*, not truthiness,
- *    because `api/client.ts` falls back to localhost. An unset var means
- *    "no backend was named", which is not the same as "the backend is at the
- *    default", and only the raw `process.env` read can tell them apart.
+ *  - **API base URL** — because `api/client.ts` falls back to
+ *    `http://127.0.0.1:8000`. An unset var means "no backend was named",
+ *    which is not the same as "the backend is at the default", and a build
+ *    that confused the two would point the live site at a host that exists
+ *    only on a developer's laptop.
+ *
+ * This said the API host was "checked for *explicit presence*, not
+ * truthiness". It is not, and truthiness is the **safer** of the two: under
+ * an explicit-presence rule, `EXPO_PUBLIC_API_BASE_URL=""` counts as a
+ * backend having been named and sends a production build at the localhost
+ * fallback — exactly the failure the paragraph above describes. The empty
+ * string and the unset var mean the same thing here on purpose, and
+ * `environment.test.ts` pins it.
  *
  * Every reference below spells out `process.env.EXPO_PUBLIC_…` in full.
  * Expo substitutes these textually at build time, so a destructured or
