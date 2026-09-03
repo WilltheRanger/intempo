@@ -132,7 +132,10 @@ export function TranscribeScreen() {
       abort.abort();
     };
     // Keyed on the page's identity: re-running on every render would upload in
-    // a loop, and the page cannot change while this screen is mounted.
+    // a loop, and the page cannot change while this screen is mounted. `pages`
+    // is a new array on every render and `navigation` is only used to leave, so
+    // naming either would turn one upload into an unbounded number of them.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pageKey, unavailable]);
 
   if (total === 0) {

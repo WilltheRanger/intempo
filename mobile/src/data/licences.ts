@@ -13,6 +13,7 @@ export interface Licence {
 }
 
 export const LICENCES: Licence[] = [
+  { name: '@eslint/js', version: '10.0.1', licence: 'MIT' },
   { name: '@expo-google-fonts/inter', version: '0.4.2', licence: 'MIT AND OFL-1.1' },
   { name: '@expo-google-fonts/newsreader', version: '0.4.1', licence: 'MIT AND OFL-1.1' },
   { name: '@expo/metro-runtime', version: '57.0.10', licence: 'MIT' },
@@ -24,6 +25,8 @@ export const LICENCES: Licence[] = [
   { name: '@tanstack/react-query', version: '5.101.4', licence: 'MIT' },
   { name: '@types/react', version: '19.2.18', licence: 'MIT' },
   { name: 'Bravura (music font)', version: 'subset', licence: 'OFL-1.1' },
+  { name: 'eslint', version: '10.9.1', licence: 'MIT' },
+  { name: 'eslint-plugin-react-hooks', version: '7.1.1', licence: 'MIT' },
   { name: 'expo', version: '57.0.13', licence: 'MIT' },
   { name: 'expo-asset', version: '57.0.12', licence: 'MIT' },
   { name: 'expo-audio', version: '57.0.3', licence: 'MIT' },
@@ -50,5 +53,6 @@ export const LICENCES: Licence[] = [
   { name: 'react-native-url-polyfill', version: '4.0.0', licence: 'MIT' },
   { name: 'react-native-web', version: '0.21.2', licence: 'MIT' },
   { name: 'typescript', version: '6.0.3', licence: 'Apache-2.0' },
+  { name: 'typescript-eslint', version: '8.69.0', licence: 'MIT' },
   { name: 'vitest', version: '4.1.11', licence: 'MIT' },
 ];

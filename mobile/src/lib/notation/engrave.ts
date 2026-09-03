@@ -1147,13 +1147,6 @@ function noteRoom(note: StaveNote): number {
   return columns + (hasSecond(note) ? HEAD_WIDTH : 0);
 }
 
-function accidentalRoom(accidental: Accidental): number {
-  if (!accidental) {
-    return 0;
-  }
-  return HEAD_HALF + ACCIDENTAL_GAP * 2 + ACCIDENTAL_WIDTHS[accidental];
-}
-
 /** How wide a system's opening is, so justification can spend what is left. */
 function headRoom(head: HeadRequest | null, lineGap: number): number {
   if (!head) {

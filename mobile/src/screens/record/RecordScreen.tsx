@@ -601,12 +601,14 @@ export function RecordScreen() {
     countingIn,
   });
 
+  // Hoisted out of the effect so the dependency below is the value the effect
+  // actually uses. Depending on `metronome.beat` itself would re-run this on
+  // every beat object the clock emits, including the ones before the count is
+  // up — same outcome today, and one refactor away from not being.
+  const beatIndex = metronome.beat?.index ?? null;
+
   useEffect(() => {
-    if (
-      !countingIn ||
-      metronome.beat === null ||
-      metronome.beat.index < countInBeats
-    ) {
+    if (!countingIn || beatIndex === null || beatIndex < countInBeats) {
       return;
     }
     // Beat N is the downbeat after N count-in beats. Keeping the metronome
@@ -621,7 +623,7 @@ export function RecordScreen() {
     recorder.current?.discardCapturedSoFar();
     setElapsedMs(0);
     goPhase('recording');
-  }, [countInBeats, countingIn, metronome.beat?.index]);
+  }, [countInBeats, countingIn, beatIndex]);
 
   const activeRest = recording
     ? restCueAt(restCues, elapsedMs, targetBpm)

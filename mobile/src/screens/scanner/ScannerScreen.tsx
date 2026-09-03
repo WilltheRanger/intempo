@@ -107,16 +107,34 @@ export function ScannerScreen() {
         attachToPieceId: route.params?.attachToPieceId,
       });
     }
+    // Mount only, and the params are read at mount on purpose: this is the
+    // answer to "how was the viewfinder opened", which cannot change while it
+    // is open. Re-running on a params change would reset a scan mid-flight —
+    // the exact failure the paragraph above is about.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Asked once, on arrival, rather than behind a button: the screen is a
   // viewfinder and it cannot show one without this. `canAskAgain` false means
   // the system dialog will never appear again, so asking would do nothing.
+  //
+  // The two facts are pulled out as booleans rather than depending on
+  // `permission`, which is a fresh object every time the hook re-reads the
+  // status: `!granted && canAskAgain` would then be re-evaluated on an object
+  // that says the same thing, and on any platform that answers a denial with
+  // `canAskAgain` still true, that is a permission dialog in a loop. Both are
+  // false while `permission` is null, which is the "still loading, ask
+  // nothing" case the old `permission &&` guard covered.
+  const cameraGranted = permission?.granted === true;
+  const canAskForCamera = permission?.canAskAgain === true;
   useEffect(() => {
-    if (permission && !permission.granted && permission.canAskAgain) {
+    if (!cameraGranted && canAskForCamera) {
       void requestPermission();
     }
-  }, [permission?.granted, permission?.canAskAgain]);
+    // `requestPermission` is `useCallback`-stable — expo-modules-core keys it
+    // on a module-level method — so naming it costs nothing and stops this
+    // going stale if that ever changes.
+  }, [cameraGranted, canAskForCamera, requestPermission]);
 
   const lastPage = pages[pages.length - 1];
   const FlashIcon = flashOn ? Zap : ZapOff;

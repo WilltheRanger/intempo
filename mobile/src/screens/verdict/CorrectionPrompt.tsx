@@ -2,7 +2,7 @@ import { Pressable, StyleSheet, View } from 'react-native';
 
 import { Text } from '../../components/primitives/Text';
 import type { UserVerdict } from '../../data/types';
-import { colors, spacing } from '../../design';
+import { spacing } from '../../design';
 import {
   CORRECTION_CHOICES,
   correctionWord,

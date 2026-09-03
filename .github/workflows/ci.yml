@@ -91,7 +91,7 @@ jobs:
   # Pages build leaves the last good version serving, so the site looks fine
   # and the change is simply not there.
   mobile-check:
-    name: Mobile (vitest, tsc, web build)
+    name: Mobile (vitest, tsc, lint, web build)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -114,6 +114,15 @@ jobs:
 
       - name: Typecheck
         run: npm run typecheck
+
+      # The app had no linter at all until 2026-09-03, while carrying
+      # `eslint-disable` directives for one — two of which were suppressing
+      # rules that no longer fired. The rule worth the install is
+      # `react-hooks/rules-of-hooks`: a hook below an early return is React
+      # error #310, which this project has shipped, and which compiles,
+      # typechecks and passes its tests.
+      - name: Lint
+        run: npm run lint
 
       # The last two steps on purpose: a type error should be reported as a
       # type error, not as a bundler failure thirty seconds later.

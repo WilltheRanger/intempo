@@ -1,4 +1,3 @@
-import { useNavigation } from '@react-navigation/native';
 import { useGoBack } from '../../navigation/useGoBack';
 import { ChevronLeft } from 'lucide-react-native';
 import { useState } from 'react';
@@ -20,7 +19,6 @@ import {
 import { usePreferences } from '../../data/preferences';
 import { BORDER_WIDTH, colors, spacing } from '../../design';
 import { INSTRUMENT_LABELS, warmupFor, warmupScore } from '../../lib/warmup';
-import type { RootNavigation } from '../../navigation/types';
 import { ListenButton } from '../../components/score/ListenButton';
 
 /**
@@ -40,7 +38,6 @@ import { ListenButton } from '../../components/score/ListenButton';
  * feature, not a placeholder for a Record button.
  */
 export function WarmupScreen() {
-  const navigation = useNavigation<RootNavigation>();
   const goBack = useGoBack({ tab: 'Today' });
   const { instrument } = usePreferences();
 

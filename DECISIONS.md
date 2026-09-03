@@ -6,6 +6,52 @@ Operating Principle #5.
 
 ---
 
+## 2026-09-03 — A narrow ESLint over the recommended preset, and `error` over `warn`
+
+**Context.** The shipping app had no linter. Not a lax one — no dependency, no
+config, no script, nothing in CI. `frontend/`, the legacy tree that is not the
+product, was the one with the config. Six files in `mobile/src` carried
+`eslint-disable` directives for a linter that was not running, and two of those
+directives were suppressing rules that no longer fired at all.
+
+**Decision.** ESLint with `js.configs.recommended` +
+`tseslint.configs.recommended` and exactly four rules named on top of them:
+`react-hooks/rules-of-hooks` (error), `react-hooks/exhaustive-deps` (error),
+`no-console` (error), and `no-unused-vars` with a `^_` escape.
+
+**Alternative: `reactHooks.configs.flat.recommended`,** the way `frontend/`
+does it. Rejected because the preset brings rules for the React Compiler that
+this tree has not been through, and a first lint pass whose output is mostly
+questions nobody has answered is a lint pass people turn off. The narrow set
+produced 65 findings, of which the 25 that survived config tuning were all
+real: 17 pieces of dead code, five hook dependency arrays and three inert
+suppressions.
+
+**Alternative: `exhaustive-deps` as `warn`,** which is how most projects
+introduce it. Rejected: a warning in a tree that has never been linted is a
+warning nobody sees, and the four pre-existing suppressions are already written
+as `eslint-disable-next-line` with a reason beside each — which is the honest
+form of the same exception, and one a reviewer can argue with. `warn` would
+have converted five findings into five lines of output that a green CI run
+prints and nobody reads.
+
+**Why it is worth the four devDependencies.** `rules-of-hooks` is the one that
+pays for the install: a hook below an early return is React error #310, this
+project has shipped exactly that, and it compiles, typechecks, passes its tests
+and shows a white screen. The tree is clean on it today, which is a fact nobody
+could previously state.
+
+**Accepted trade-off.** Three rule families are switched off where they are
+wrong rather than argued with: `no-require-imports` for `.ts`/`.tsx` (React
+Native resolves bundled assets through `require()` and there is no import form
+that does it), `no-console` for `scripts/**` (a bench that cannot say what it
+measured is not a bench), and `no-explicit-any` / `no-this-alias` in tests
+(stubs are built deliberately wrong to drive code down paths a well-typed
+caller cannot reach). Each is scoped to a file glob rather than disabled
+globally, so the rule still applies everywhere the reasoning does not.
+
+---
+
 ## 2026-09-02 — The app refuses a digitally silent take, despite the standing rule against a client-side copy of a server check
 
 **Context.** A muted microphone delivers samples like any other — all zero. The

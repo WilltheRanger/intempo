@@ -1,4 +1,3 @@
-import { useNavigation } from '@react-navigation/native';
 import { StyleSheet, View } from 'react-native';
 import { useGoBack } from '../../navigation/useGoBack';
 
@@ -23,7 +22,6 @@ import { BORDER_WIDTH, colors, spacing } from '../../design';
  * and a list nobody can read attributes nothing to anyone.
  */
 export function AcknowledgementsScreen() {
-  const navigation = useNavigation();
   const goBack = useGoBack({ tab: 'Profile' });
 
   return (
