@@ -6,6 +6,75 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-03 — I expected the algorithm allowlist to be the defence; it is not
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Auth. CI still cannot
+allocate a runner.
+
+`test_auth.py` covers eleven refusal paths — wrong key, expired, wrong
+audience, missing and non-UUID `sub`, non-bearer scheme, JWKS failure. It did
+**not** cover the two oldest attacks on a JWT verifier, both of which are a
+total bypass:
+
+- **`alg: none`** — a valid-looking payload with no signature, asking the
+  header to be trusted.
+- **Algorithm confusion** — the verifying key is *published in the JWKS*, so an
+  asymmetric verifier that also accepts `HS256` can be handed a token signed
+  with that public key as the shared secret.
+
+Both are refused. Both now have a test. **And the reason they are refused is
+not the one I wrote down first.**
+
+### The measurement that corrected me
+
+I wrote the two tests, then mutated `_ALLOWED_ALGORITHMS` to `["ES256",
+"RS256", "HS256"]` expecting them to fail. **They passed.** So did `"none"`.
+
+What refuses these is **PyJWT's own key-type check**:
+`HMACAlgorithm.prepare_key` rejects anything PEM- or SSH-shaped as an HMAC
+secret — hardening the library added for exactly this attack. Measured both
+ways a key can reach `decode`:
+
+| key handed to `jwt.decode` | result with `HS256` in the allowlist |
+|---|---|
+| the key **object** PyJWK returns | refused, `TypeError` |
+| raw **PEM bytes** a refactor might pass | refused, `InvalidKeyError` |
+
+So algorithm confusion is structurally impossible here, allowlist or not. My
+comment block said the allowlist was the thing stopping it, which was **false
+and would have been published** — the same overclaim as the "lint clean" this
+morning, caught this time by mutating before writing the summary rather than
+after.
+
+### What each artefact is actually for
+
+- The two behavioural tests are **evidence, not a gate**. They prove the
+  forged tokens are refused end to end and they catch
+  `options={"verify_signature": False}`. The docstring says they do not catch
+  a widened allowlist.
+- `test_the_algorithm_allowlist_admits_no_symmetric_algorithm` is the gate,
+  and its stated reason is a **library change** rather than this attack: it is
+  the part of PyJWT's protection that lives in this repository, and what still
+  refuses the attack if PyJWT drops its check or this file moves to another
+  library that never had one.
+
+### Verified
+
+| Mutation | Result |
+|---|---|
+| `"HS256"` added to the allowlist | 1 failed — the new gate, and only it |
+| `"none"` added | 1 failed — same |
+| the allowlist emptied | 4 failed |
+| `verify_signature: False` | 5 failed, three of them the token tests |
+
+The HS256 token is signed by hand with `hmac`, because PyJWT refuses to
+*encode* it — a good defence, and not the one under test. An attacker is not
+using PyJWT.
+
+**Backend: 1941 passed, 2 xfailed.**
+
+---
+
 ## 2026-09-03 — The only thing between one musician and another's rows was an audit
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Security. CI still cannot
