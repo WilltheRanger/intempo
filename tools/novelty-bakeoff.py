@@ -21,8 +21,17 @@ library whose DTW would also be slower than the Cython one already in librosa.
 import sys
 from pathlib import Path
 
-import numpy as np
-import librosa
+# **Before `numpy` and `librosa`, not after.** The re-exec has to happen while
+# the only imports done are ones the system interpreter certainly has —
+# otherwise this dies on the very import the re-exec exists to satisfy, which
+# is exactly what it did on the first attempt at this fix.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from backend_python import use_backend_python  # noqa: E402
+
+use_backend_python()
+
+import numpy as np  # noqa: E402
+import librosa  # noqa: E402
 
 # Run from anywhere; the backend package is the thing being measured.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))

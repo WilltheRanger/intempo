@@ -31,6 +31,14 @@ from collections import Counter
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+# Started with the wrong interpreter, this dies on `import pydantic` before it
+# reads a fixture. `backend_python` re-execs under `backend/.venv` so the
+# command in the docstring above is one that works — see its own header.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from backend_python import use_backend_python  # noqa: E402
+
+use_backend_python()
+
 sys.path.insert(0, str(ROOT / "backend"))
 
 from app.services.ocr.homr_provider import confidence_from_arithmetic  # noqa: E402

@@ -6,6 +6,70 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-03 — Eight of the twelve benches could not be started the way they document themselves
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. `tools/` only; no product
+code changed. CI still cannot allocate a runner.
+
+Found by fact-checking a claim rather than looking for a bug. `CLAUDE.md` says
+the engraver *"draws 42 of the schema's 46 durations"*, so I ran
+`tools/engraver-coverage.py` to check. **It crashed** —
+`ModuleNotFoundError: No module named 'pydantic'` — on the exact command its
+own docstring prints.
+
+Measured across the directory: **eight of twelve** die the same way.
+`engraver-coverage` documents `python tools/engraver-coverage.py`;
+`homr-bench`, `pipeline-check`, `notation-coverage` and `musicxml-bench` print
+a bare `tools/x.py …` and carry a `#!/usr/bin/env python3` shebang, so the
+documented invocation is the system interpreter. All of them import `app.*`,
+which lives in `backend/.venv`. `novelty-bakeoff` and the two sandbox builders
+document `cd backend && uv run python ../tools/x.py`, which does work — they
+were simply unusable any other way.
+
+`CLAUDE.md` puts `tools/` in `CODE_TREES` and says why: *"The benches decide
+what gets measured and therefore what gets believed."* **A bench nobody can
+start is a bench nobody runs**, and the measurement it would have produced is
+replaced by whatever people already believed. That is the same failure as the
+`audit-a11y.mjs` header, which records its own version of this: *"The tool has
+one documented way to run and it did not work."*
+
+### `tools/backend_python.py`
+
+The fix that file describes for itself — anchor the lookup to the install, *"from
+any working directory"* — applied here as a re-exec under `backend/.venv/bin/python`.
+Making the documented command true beats editing five docstrings to say
+something longer.
+
+Silent on every path where it cannot help: already inside the venv (which is
+what `uv run` gives), already re-executed once, or no venv on disk. That last
+case deliberately lets the tool fail on its own import — *"no module named
+pydantic"* tells you to install the backend, and a message from here about a
+missing `.venv` would not.
+
+**The re-exec must sit above the heavy imports**, and that is a mistake I made
+and measured: `novelty-bakeoff.py` imports `numpy` and `librosa` at the top, so
+inserting the call in the same place as the others left it dying on the very
+import the re-exec exists to satisfy. It is now the first thing after
+`pathlib`.
+
+### Verified
+
+Every tool run under the plain documented invocation, before and after:
+
+| | before | after |
+|---|---|---|
+| tools that start | 4 of 12 | **12 of 12** |
+
+`engraver-coverage.py` under plain `python3` now prints the real tables, which
+also settles the claim that sent me here: **42 of the schema's 46 durations
+draw**, the four gaps being the 128th family named in `DELIBERATELY_UNDRAWN`,
+and 403 of 403 notes in the corpus. Accurate as written.
+
+Neither sandbox builder rewrote its output when run, so nothing else moved.
+**Backend: 1936 passed, 2 xfailed.**
+
+---
+
 ## 2026-09-03 — The backend half of the dead-code check, and the three it found
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. CI still cannot allocate a
