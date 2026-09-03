@@ -256,6 +256,23 @@ there works differently as of 2026-08-24:
   preference; `analyses.instrument` stores it; `analysis_runner` turns it into
   `analyze(..., double_bass=...)`. Store the instrument, never a derived flag —
   how each instrument should be treated is still being tuned.
+- **The verdict-correction loop is server-only, and no client has ever
+  reached it** (measured 2026-09-03). `POST /v1/analyses/:id/corrections` is
+  built, tested (`test_corrections.py`), owner-scoped, listed by the account
+  export and taken by account deletion. **Nothing posts to it.** Not `mobile/`,
+  not `frontend/`; the verdict screen has no "this wasn't right" affordance at
+  all, so `verdict_corrections` is empty for every account by construction.
+  This is not the same thing as the *reading* corrections, which do work:
+  `MeasureEditScreen` → `scores.py` → `services/training.py`, consent-gated by
+  migration 013, and that is what the Profile toggle and the privacy copy are
+  about. The two are easy to conflate because both are called "corrections".
+  It matters because of what the router's own docstring claims: the loop is
+  *"the only route out of the position Batch 3 is currently stuck in"* —
+  thresholds still on the spec's starting values because tuning needs real ears
+  on real recordings. An empty table cannot tune anything, so the state
+  `TUNING_LOG.md` records as pending has no mechanism behind it. Building the
+  affordance is a §2 gate; leaving the gap unwritten is how it survived this
+  long.
 - **A key printed mid-piece is a change of key** (2026-09-02).
   `Measure.key_signature` is the third field of the `time_signature` / `clef`
   shape and obeys the same rule: printed on one bar, holding until the next bar
