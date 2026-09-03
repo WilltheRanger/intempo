@@ -6,6 +6,71 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-03 — A screen with no way in, and a check that measured nothing
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. One new guard over the
+part CLAUDE.md names as untested, plus two claims checked and found sound. CI
+still cannot allocate a runner.
+
+### Every screen has something that opens it — now checked
+
+`linking.ts` gives each screen a URL and `linking.test.ts` holds it to the
+route list. **A URL is how a screen is returned to, not how it is found**: on a
+phone there is no address bar, so a screen added to `RootNavigator` with
+nothing navigating to it is dead code, reachable only by typing a path into the
+web build. `tsc` is perfectly happy with it, and `walk-app.mjs` only drives the
+taps that already exist.
+
+Measured: **19 routes, all reachable.** Nothing to fix — but nothing was
+watching either, and `src/navigationReachability.test.ts` is the static half of
+the navigation gap (`DECISIONS.md`, 2026-08-24: no React Native testing library
+here). It asks only whether anything leads to each screen; where a tap *lands*
+stays the walk's job.
+
+Two mutations killed: a route declared with nothing opening it, and the
+vacuous version below.
+
+### The first version passed while measuring nothing
+
+It read `name:\s*'(\w+)'` across the whole tree — which matches
+`<Stack.Screen name="Foo">`, so **every route was "reached" by its own
+declaration**. Zero unreachable screens, guaranteed, whatever the app did.
+
+`DECLARERS` excludes the three files that name every route by construction
+(`RootNavigator`, `linking.ts`, `types.ts`), and `the corpus excludes the
+navigator` is the assertion that stops it coming back — verified by putting
+`RootNavigator` back and watching it fail.
+
+A second, quieter trap on the way: `import.meta.glob('../**/*.{ts,tsx}')` from
+inside `src/navigation/` **omits that directory's own files**. So the exclusion
+filter was excluding files that were never in the corpus, and `types.ts` could
+not be read at all. Moved to the tree root with `'./**'`, the pattern
+`importPlacement.test.ts` already proves works.
+
+### Checked and found sound — no change
+
+- **Both strict `xfail`s still have true reasons.** CLAUDE.md records one whose
+  reason went stale for a week and hid a live defect, so they are worth
+  re-reading rather than trusting. `test_a_page_that_yields_a_single_note_is_
+  refused` documents two candidate fixes, both measured and both unusable
+  (`crop_systems` counts margin bands and would refuse a page of one bar per
+  system; homr reports no staff count at all), and admits its own fixture is a
+  single-system strip that cannot express the real case. The page-legibility
+  one carries a full measurement series and an explicit note that a later fix
+  must delete it. Neither is stale.
+- **No DOM access escapes a platform guard.** Twelve files mention
+  `document`/`window`/`navigator`; ten are comments or a local named
+  `document`. The two real ones — `modalAccessibility`'s `inert` handling and
+  `RecordScreen`'s `beforeunload` — both sit behind `Platform.OS !== 'web'`
+  early returns, which is consistent with `beforeunload` being absent from the
+  iOS Hermes bundle when it was grepped on 2026-09-03.
+
+### Verified
+
+Mobile **1396 tests / 124 files** green (1392 before), `tsc` clean.
+
+---
+
 ## 2026-09-03 — A bar with no readable metre, told it disagreed with the metre
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. One live defect in what a
