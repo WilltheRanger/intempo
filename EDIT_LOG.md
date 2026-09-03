@@ -6,6 +6,69 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-03 — "Three things still need a person" was six, and the count was in prose
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. One tool, two corrected
+documents; no product code changed. CI still cannot allocate a runner.
+
+`mobile/README.md` and `CLAUDE.md` both said three things stand between this
+repository and an App Store submission, and both named the same three: `eas
+init`, an Apple account, a store listing. There are **six**, and the three they
+omitted are precisely the ones with no account behind them — nobody was ever
+going to be reminded by a login page:
+
+| Omitted | Why it blocks |
+|---|---|
+| Brand assets | All six are still the Expo starter's blue chevron. `check-brand-assets.py` has said so since this morning and nothing connected it to the submission. |
+| `OWNER` in `lib/legal.ts` | `entity`, `contact` and `jurisdiction` are all null, deliberately. So the shipped privacy policy is **published by nobody and names no address** — `LegalScreen` prints each line only when its field is set, so the gap renders as silence. |
+| A policy at a public URL | App Store Connect asks for a **URL**, not a screen. The text exists, as data rather than markup *specifically so it can be published without retyping*, and nothing has published it. |
+
+Neither sentence was wrong when it was written. A count in prose is a claim,
+and it goes stale the first time the world moves — which is the same failure
+this repository has now found in `MeasureConcern` ("four" that named three),
+in the timeline parity fixture, and in the multi-page repeat `xfail` whose
+reason for postponing had quietly become false.
+
+### `tools/check-store-readiness.py`
+
+So the answer is not a better list, it is not having a list. The tool reads
+`app.json`, `src/lib/legal.ts` and the brand-asset hashes **live**, so an item
+stops being reported the moment it is done and nobody edits this tool. The
+brand count is *delegated* to `check-brand-assets.py` rather than
+reimplemented — two copies of a hash list is how one of them goes wrong.
+
+The two that cannot be measured from a checkout — an Apple account, a store
+listing — are stated as unmeasurable and say why, rather than being silently
+absent.
+
+**A report, not a gate**, and deliberately not wired into CI, for the reason
+`check-brand-assets.py` gives about itself: these are the owner's, they cannot
+be done in a session, and a check that is red from now until launch is one
+people learn to skip. It exits 1 while anything measurable is outstanding so it
+can still be used as a release gate by whoever runs the submission, and **2**
+when it cannot read a source — because "0 blockers" out of a broken parse is
+the one answer it must never give.
+
+`expo.extra.privacyPolicyUrl` is where the address goes once the policy is
+live. Nothing reads it yet; naming the place is what lets the check stop
+firing.
+
+### Verified
+
+Five mutations, each restored and `git status` checked:
+
+| Mutation | Result |
+|---|---|
+| `extra.eas.projectId` and `extra.privacyPolicyUrl` set | both tick; 2 of 4 outstanding |
+| all three `OWNER` fields filled | that item ticks; 3 of 4 outstanding |
+| one asset leaves `check-brand-assets.py`'s shipped list | the delegated count goes 6 → 5 |
+| `OWNER` missing a field | exit **2**, naming the field it expected |
+| `app.json` unparseable | exit **2**, naming the parse error |
+
+Reported today: **4 of 4 measurable items outstanding**, exit 1.
+
+---
+
 ## 2026-09-03 — The shipping app had no linter, and was carrying disable comments for it
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. CI still cannot allocate a

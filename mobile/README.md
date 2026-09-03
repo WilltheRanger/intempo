@@ -129,13 +129,26 @@ and the native player have still never made a sound.
 
 **Not verified, and it cannot be here:** no build has ever been produced. There
 is no macOS, no Xcode, no Apple account and no EAS credentials in this
-container. Three things still need a person:
+container.
 
-1. `eas init` — writes `extra.eas.projectId`, a real id from Expo's servers
-   that cannot be invented. Everything else is in place for it.
-2. An Apple Developer account and signing credentials (`eas credentials`).
-3. An App Store Connect listing: name, screenshots, description, privacy
-   answers, age rating.
+**What still needs a person is a command, not a paragraph:**
+
+```bash
+python3 tools/check-store-readiness.py
+```
+
+This sentence used to be a numbered list of three, and it was wrong — it named
+the EAS and Apple items and omitted the brand assets, the publisher's own
+details in the privacy policy, and a hosted policy URL, all of which block a
+submission just as hard. A count in prose is a claim that goes stale the first
+time the world moves. The command reads `app.json`, `src/lib/legal.ts` and the
+brand-asset hashes live, so it cannot say anything that is not true today, and
+an item stops being listed the moment it is done with nobody editing anything.
+
+Two of them can only be stated, never measured from a checkout, and the command
+says so: an Apple Developer account with signing credentials
+(`eas credentials`), and an App Store Connect listing — name, screenshots,
+description, privacy answers, age rating.
 
 There is no `development` profile, deliberately: one requires the
 `expo-dev-client` package, which is not a dependency, so the profile would be
