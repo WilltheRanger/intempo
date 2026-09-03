@@ -710,9 +710,30 @@ there works differently as of 2026-08-24:
   never sent back through — `onboarded` is the only thing that decides this,
   never a missing instrument.
   **`users.instrument` is nullable and never defaulted**, the same rule as
-  `ScoreJson.clef` and for the same reason — `instrumentInUse()` falls back to
-  the device preference, which always has a value, so no screen needs a "no
-  instrument" branch.
+  `ScoreJson.clef`. This used to add "— `instrumentInUse()` falls back to the
+  device preference, so no screen needs a 'no instrument' branch", and that
+  function is **called by nothing** (measured 2026-09-03: the only dead export
+  of 499 in `mobile/src`). No screen needs the branch because no screen reads
+  the account's instrument at all; everything that acts on one — the warmup,
+  `submitTake`, the Profile control — reads `preferences`, the device cache.
+  The reconciler was written, documented and never wired up, so **the sentence
+  named a mechanism that is not running.** What the two stores actually do:
+
+  | | writes account | writes device |
+  |---|---|---|
+  | `OnboardingScreen` → `useUpdateProfile` | yes | yes (mirrored on success) |
+  | Profile's instrument control | **no** | yes |
+  | a fresh install | — | defaults to `violin` |
+
+  So the account value is written once at onboarding and read by nothing but
+  onboarding's own prefill; changing your instrument in Profile never reaches
+  the server; and on a second device the cache starts at `violin` with nothing
+  to refill it from. A cellist who reinstalls is analysed as a violinist until
+  they visit Profile. Fixing it is two coupled changes — Profile must write the
+  account, and the account must seed the cache — and the coupling matters: seed
+  first and a local change is reverted by a stale account. It also contains a
+  product decision (what happens offline, and which side wins a conflict), so
+  it is **not** a quiet refactor.
   Both rules the screen can get wrong live in `lib/onboarding.ts` where they are
   tested, not in the `.tsx`.
 
