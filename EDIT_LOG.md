@@ -6,6 +6,70 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-03 — "In both directions" was three of four
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. One test, one corrected
+claim. No shipped code. **CI still cannot allocate a runner.**
+
+`CLAUDE.md` on the transcription-progress contract:
+
+> Adding a pipeline stage means editing the fixture **and** both sides —
+> `test_stage_parity.py` and `transcriptionProgress.test.ts` fail otherwise,
+> **in both directions**.
+
+Measured rather than believed, by adding a stage in each of the three places:
+
+| a stage added to | Python | TypeScript |
+|---|---|---|
+| `fixtures/stages/parity.json` | 2 failed | 2 failed |
+| `STAGE_PROGRESS` (the app) | — | 1 failed |
+| **`_HUMAN_STAGES` (the worker)** | **10 passed** | — |
+
+Three of four. The worker can grow a stage the contract has never heard of and
+nothing says a word.
+
+### Why that one was blind
+
+`test_the_worker_says_exactly_the_static_words_the_fixture_lists` builds its
+expected set from **four hand-written calls** to `_human_stage`:
+
+```python
+said = {
+    STAGE_FETCHING,
+    _human_stage(STAGE_SPLITTING),
+    _human_stage(f"{STAGE_READING}:claude-sonnet-5"),
+    _human_stage(STAGE_CONFIRMING),
+}
+```
+
+A key added to `_HUMAN_STAGES` changes nothing in that set, so the assertion
+still holds. The same shape as every other find this session — a hand-kept list
+sitting beside a live one.
+
+### What it would have cost
+
+Not a crash. `lib/transcriptionProgress.ts` **holds** the bar on a stage it does
+not recognise, deliberately, because falling back once threw a read at 70% down
+to 5%. So a new pipeline stage with no fixture entry makes the bar stop moving
+for exactly as long as that stage takes — the measured-progress promise
+weakening quietly rather than breaking, on the screen that exists to stop a
+musician watching a still bar.
+
+`test_every_stage_the_worker_can_name_is_in_the_contract` reads `_HUMAN_STAGES`
+itself. Verified by re-running the mutation that used to pass: it now fails,
+naming the stage and both places to add it.
+
+### Tests
+
+backend **1925 passed, 2 xfailed** (was 1924). Every mutated file restored
+`diff -q` identical — and one of them was left modified for a minute by a `cd`
+in a compound command, which is why the restores are checked rather than
+assumed.
+
+**Side effects:** none. **Rollback:** revert the commit.
+
+---
+
 ## 2026-09-03 — The validator's three copies agreed on *whether*, never on *why*
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. One test strengthened, one

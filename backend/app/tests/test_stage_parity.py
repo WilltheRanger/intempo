@@ -30,6 +30,7 @@ from pathlib import Path
 
 from app.services.ocr.pipeline import STAGE_CONFIRMING, STAGE_READING, STAGE_SPLITTING
 from app.workers.transcription_runner import (
+    _HUMAN_STAGES,
     _reading_page,
     STAGE_FETCHING,
     STAGE_READING_HUMAN,
@@ -85,6 +86,38 @@ def test_the_worker_says_exactly_the_static_words_the_fixture_lists() -> None:
     assert said == set(_contract()["static"]), (
         f"the worker says {sorted(said)}; the contract lists "
         f"{sorted(_contract()['static'])}"
+    )
+
+
+def test_every_stage_the_worker_can_name_is_in_the_contract() -> None:
+    """The direction the file above did not have.
+
+    `test_the_worker_says_exactly_the_static_words_the_fixture_lists` builds
+    its expected set from **four hand-written calls** to `_human_stage`. So a
+    stage added to `_HUMAN_STAGES` changes nothing that test looks at, and
+    **passes** — measured: adding one left all ten green, while the same stage
+    added to the *fixture* failed two here and two in
+    `transcriptionProgress.test.ts`. `CLAUDE.md` said the contract fails "in
+    both directions"; it failed in three of four.
+
+    The cost is not a crash. `lib/transcriptionProgress.ts` **holds** the bar
+    on a stage it does not recognise — deliberately, because falling back once
+    threw a read at 70% down to 5%. So a new pipeline stage with no fixture
+    entry makes the bar stop moving for exactly as long as that stage takes,
+    which is the promise of measured progress quietly weakening rather than
+    breaking. Nothing would report it.
+
+    Reads `_HUMAN_STAGES` itself, so a stage cannot be added without either an
+    entry in the contract or a deliberate edit here.
+    """
+    contract = set(_contract()["static"])
+    said = set(_HUMAN_STAGES.values())
+
+    missing = sorted(said - contract)
+    assert not missing, (
+        f"the worker can say {missing}, which the contract does not list — add "
+        f"them to fixtures/stages/parity.json and to STAGE_PROGRESS in "
+        f"lib/transcriptionProgress.ts, or the bar stops moving for that stage"
     )
 
 
