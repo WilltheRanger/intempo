@@ -6,6 +6,58 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-03 — A stave that never draws wider than its box, now checked
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. One test over the last
+untested module in `lib/notation/`. CI still cannot allocate a runner.
+
+`layOutStave` fits an engraving to a width in **one corrective pass**, and its
+comment says why that is allowed to work:
+
+> Every geometry constant here is multiplied by the scale and nothing else, so
+> the engraved width is linear in it: measuring once and dividing gives the
+> scale that fits, rather than converging on it.
+
+**That is a claim about `engrave`, not about `layOutStave`** — and it is the
+kind that stops being true quietly. One unscaled constant added down there
+makes width *affine* rather than linear, `fitWidth / width` overshoots, and the
+single pass lands past the edge. Nothing here would notice: the engraving is
+still correct music, drawn a few points too wide, and the only symptom is a
+stave clipped by its container at a width nobody screenshots.
+
+Measured before writing anything: across 4/8/16/32 notes into 120/200/320/500pt,
+**every case needing a shrink lands on `fitWidth` to within a hundredth of a
+point.** The claim is true. `staveLayout.test.ts` is what keeps it true.
+
+Three mutations, and the layering did what it was built for:
+
+| mutation | caught by |
+|---|---|
+| a 7pt **unscaled** pad on the engraved width | *three* assertions — the symptom (drew wider than the box), the mechanism (did not land in one pass), and the cause (width no longer linear in scale) |
+| shrink by a safe 10% margin instead of landing | "lands on the width in one pass rather than merely under it" |
+| fitting allowed to scale **up** | "only ever shrinks" |
+
+The margin case is the one a weaker test would miss: shrinking by 10% satisfies
+"never wider than the box" perfectly and wastes a tenth of the screen on every
+score.
+
+A vacuity guard sits above them — at least half the cases must actually shrink,
+or "never exceeds" would hold for a function that did no fitting at all.
+
+### Also checked, and correct as it stands
+
+`sync_events` is written by **nothing**: created in migration 001, given RLS
+policies in 002, read by the account export, and never inserted. That is not
+the "endpoint with no client" shape — it is the audit trail for Batch 10's
+offline sync, which is not built, and `EDIT_LOG` records the same deliberate
+choice for `assignments` in Batch 1. Left alone.
+
+### Verified
+
+Mobile **1408 tests / 127 files** green (1402 before), `tsc` clean.
+
+---
+
 ## 2026-09-03 — What the spill check cannot see: text that collides without leaving
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Measurement only, no code
