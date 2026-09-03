@@ -1,6 +1,6 @@
 {
-  "why": "One score, one tempo, and the note times both implementations must produce. See backend/app/tests/test_timeline_parity.py and mobile/src/lib/score/schedule.parity.test.ts \u2014 each side checks itself against this file, so a walk that drifts fails in its own suite rather than as a musician being told they rushed a bar they played on time.",
-  "excluded_on_purpose": "No repeats and no slurs. The two walks differ on both, deliberately and with a reason written on each side: the server writes repeats out because the musician plays them twice, while playback plays straight through because a preview that doubles in length is more surprising than useful; and the server suppresses onsets under a bow stroke because there is no attack to hear, while playback sounds those notes because you want to hear them. Those differences are decisions. Everything in this file is arithmetic, and arithmetic has to match.",
+  "why": "One score, one tempo, and the note times both implementations must produce. See backend/app/tests/test_timeline_parity.py and mobile/src/lib/score/schedule.parity.test.ts \u2014 each side checks itself against this file, so a walk that drifts fails in its own suite rather than as a musician being told they rushed a bar they played on time. expected_measures is the performed order the times belong to; it is held because onsets alone can only catch an ordering fault when the bars differ in shape.",
+  "excluded_on_purpose": "Slurs, and slurs only. The server emits no onset for a note under a bow stroke, because there is no attack to detect; playback sounds it, because a reference you cannot hear is not one. That difference is a decision, and each side has it written down. Everything else in this file is arithmetic, and arithmetic has to match. Repeats were on this list too, with the reason that playback plays straight through. It does not, and has not since scheduleScore started running measuresInPlayOrder \u2014 a hand port of the server's expand_repeats, recursive, with first and second endings, and the one piece of arithmetic here most likely to drift. The stale line was load-bearing: a test asserted the fixture had no repeat, so the coverage could not be added without first disbelieving the file. Measured on the section below, both walks return 5, 6, 5, 7, 8 and the same twelve times.",
   "bpm": 96,
   "expected_onsets_s": [
     0.0,
@@ -14,7 +14,45 @@
     6.875,
     7.5,
     8.125,
-    8.75
+    8.75,
+    10.0,
+    11.25,
+    12.5,
+    13.125,
+    13.75,
+    14.375,
+    15.0,
+    16.25,
+    17.5,
+    20.0,
+    20.625,
+    21.25
+  ],
+  "expected_measures": [
+    1,
+    1,
+    1,
+    1,
+    2,
+    2,
+    2,
+    2,
+    3,
+    4,
+    4,
+    4,
+    5,
+    5,
+    6,
+    6,
+    6,
+    6,
+    5,
+    5,
+    7,
+    8,
+    8,
+    8
   ],
   "score": {
     "clef": "bass",
@@ -103,8 +141,85 @@
             "duration": "half"
           }
         ]
+      },
+      {
+        "measure_number": 5,
+        "notes": [
+          {
+            "pitch": "D3",
+            "duration": "half"
+          },
+          {
+            "pitch": "E3",
+            "duration": "half"
+          }
+        ]
+      },
+      {
+        "measure_number": 6,
+        "notes": [
+          {
+            "pitch": "F3",
+            "duration": "quarter"
+          },
+          {
+            "pitch": "G3",
+            "duration": "quarter"
+          },
+          {
+            "pitch": "A3",
+            "duration": "quarter"
+          },
+          {
+            "pitch": "B3",
+            "duration": "quarter"
+          }
+        ]
+      },
+      {
+        "measure_number": 7,
+        "notes": [
+          {
+            "pitch": "C4",
+            "duration": "whole"
+          }
+        ]
+      },
+      {
+        "measure_number": 8,
+        "notes": [
+          {
+            "pitch": "D4",
+            "duration": "quarter"
+          },
+          {
+            "pitch": "E4",
+            "duration": "quarter"
+          },
+          {
+            "pitch": "F4",
+            "duration": "half"
+          }
+        ]
       }
     ],
-    "ocr_confidence": 0.95
+    "ocr_confidence": 0.95,
+    "repeats": [
+      {
+        "start_measure": 5,
+        "end_measure": 6,
+        "type": "repeat"
+      },
+      {
+        "start_measure": 6,
+        "end_measure": 6,
+        "type": "first_ending"
+      },
+      {
+        "start_measure": 7,
+        "end_measure": 7,
+        "type": "second_ending"
+      }
+    ]
   }
 }

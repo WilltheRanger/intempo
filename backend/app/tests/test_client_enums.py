@@ -216,7 +216,7 @@ def test_the_app_knows_exactly_the_durations_this_api_sends() -> None:
 
 
 def test_both_sides_agree_what_every_duration_is_worth() -> None:
-    """**The parity fixture covers five of twenty-one.**
+    """**The parity fixture covers a handful of the durations; this covers all.**
 
     `fixtures/timeline/parity.json` is the one file both trees are held to, and
     its own docstring says why: *"If they drift, nothing looks broken from
@@ -224,16 +224,39 @@ def test_both_sides_agree_what_every_duration_is_worth() -> None:
     and a musician who played exactly along with what the app sounded is told
     they rushed."*
 
-    It exercises `quarter`, `eighth`, `half`, `dotted_quarter` and
-    `triplet_quarter`. **Sixteen durations it never touches** — every
-    double-dotted value, every triplet but one, and everything shorter than an
-    eighth — so for those the two tables could hold different numbers and the
-    fixture would pass.
+    It is a short piece of music, so most of the table never appears in it —
+    every double-dotted value, most of the triplets, everything shorter than an
+    eighth. For those the two tables could hold different numbers and the
+    fixture would pass. Comparing the tables covers the lot at once, which the
+    fixture cannot do without becoming a piece nobody would play.
 
-    Comparing the tables covers all twenty-one at once, which the fixture
-    cannot do without becoming a piece nobody would play.
+    The size of that gap is **measured below rather than written here**. It
+    used to be written here — "five of twenty-one", "sixteen it never touches"
+    — and adding one note to the fixture made both numbers wrong with nothing
+    to notice. A count in prose is a count that goes stale.
     """
+    import json
+    from pathlib import Path
+
     from app.services.score_schema import DURATION_BEATS
+
+    fixture = json.loads(
+        (
+            Path(__file__).resolve().parents[3]
+            / "fixtures"
+            / "timeline"
+            / "parity.json"
+        ).read_text()
+    )
+    covered = {
+        note["duration"]
+        for measure in fixture["score"]["measures"]
+        for note in measure["notes"]
+    }
+    assert covered < set(DURATION_BEATS), (
+        "the parity fixture now exercises every duration, so this test is "
+        "redundant — delete it rather than leaving two things saying the same"
+    )
 
     app = _app_beats()
 

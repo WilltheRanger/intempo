@@ -6,6 +6,96 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-03 — The repeat the timeline parity fixture kept out, for a reason that was not true
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. No §2 gate: a fixture and
+three test files.
+
+`fixtures/timeline/parity.json` is the one file both trees are held to. Its own
+`excluded_on_purpose` field listed two things it leaves out, with a reason for
+each:
+
+> **Repeats.** The server writes them out, because the musician plays them
+> twice. Playback plays straight through, because a preview that doubles in
+> length is more surprising than useful.
+
+**Playback does not play straight through, and has not since `scheduleScore`
+started calling `measuresInPlayOrder`.** `schedule.ts:217` runs it; the app's
+own `repeats.test.ts` opens by saying Listen "has always played bars 1–8 twice."
+The slur half of the note is true and stayed — verified, not assumed, below.
+
+### Why a stale sentence in a comment field mattered
+
+Because it was load-bearing in three places at once.
+
+1. `test_the_fixture_has_no_repeats_or_slurs` **asserted** the fixture had no
+   repeat. The coverage could not be added without first disbelieving the file.
+2. `measuresInPlayOrder` is a hand port of `alignment.expand_repeats` —
+   recursive, widest-span-first, with `bracketed`'s "an ending belongs only to a
+   section starting strictly before it" rule, which is where a measured
+   twelve-bars-read-as-six bug came from. It is the single most likely thing
+   here to drift, and it was the one thing the contract did not hold.
+3. The app held the performed order anyway, with numbers typed into its own
+   suite, under a test called `follows the same repeat order the backend
+   grades`. It consulted no backend. Rewrite `expand_repeats` and it passes
+   unchanged.
+
+### Measured before changing anything
+
+Same score to both walks — a `|: bars 1–2 :|` and a slur over notes 1–3 of bar 1,
+at 120 BPM:
+
+| | onsets | measure order |
+|---|---|---|
+| `build_timeline` | 9 | `1 1 2 2 · 1 1 2 2 · 3` |
+| `scheduleScore` | 13 | `1 1 1 1 2 2 · 1 1 1 1 2 2 · 3` |
+
+Strip the two slur interiors from each of the app's passes and its onsets are
+`0, 1.5, 2, 3, 4, 5.5, 6, 7, 8` — the server's nine exactly. So repeats agree
+and slurs are the whole of the remaining difference, which is what the file
+should have said.
+
+### The change
+
+Four bars appended to the fixture: `|: 5 6 :|` with bar 6 as the first ending
+and bar 7 as the second, then bar 8. Both walks return **5, 6, 5, 7, 8**. The
+existing twelve onsets are unchanged — the section is at the end, so the diff is
+additive and the old numbers are still the old numbers.
+
+**Those four bars hold 2, 4, 1 and 3 notes on purpose.** A repeated section of
+equal-length bars gives the *same onset times in the wrong order*, so a fixture
+that only holds `expected_onsets_s` would not catch a swap. Belt and braces:
+`expected_measures` is now in the fixture too and asserted on both sides, so the
+coverage survives a later edit that evens those bars out.
+
+`test_the_fixture_exercises_what_it_claims_to` counted `len(notes) - rests -
+real_ties`, which counts the page. With a repeat the page and the performance
+are different numbers; it now compares against the performed count and asserts
+the performance is the longer of the two — which is the assertion that fails if
+the repeat stops being played. The app's tie test needed the same correction.
+
+### One more count that was written down instead of measured
+
+`test_client_enums.py` opened with *"The parity fixture covers five of
+twenty-one"* and *"Sixteen durations it never touches"*. Adding one `whole` note
+made both wrong, with nothing to notice — the same failure as the repeat line,
+one file over. It derives the covered set from the fixture now and asserts the
+gap is real, so the test says when it has become redundant instead of lying
+about why it exists.
+
+### Tests
+
+- `backend`: 1915 passed, 2 xfailed (full suite).
+- `mobile`: 1275 passed across 111 files; `tsc --noEmit` clean.
+- Both parity suites pass against the regenerated fixture, and the server was
+  re-run against the written file rather than against my arithmetic.
+
+**Side effects:** none at runtime — no shipped code changed, only the shared
+fixture and the tests reading it. **Rollback:** revert the commit; the fixture's
+first twelve onsets are untouched, so nothing downstream depends on the new tail.
+
+---
+
 ## 2026-09-02 — The one constant `legibility.ts` copies from the server, and the circular test that guarded it
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. No §2 gate: one test.
