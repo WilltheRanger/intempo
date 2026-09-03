@@ -6,6 +6,54 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-03 — The other direction: a URL the app builds that nothing serves
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. One test, no shipped code.
+No §2 gate.
+
+The check added in the entry below runs one way: a route with no client is a
+feature nobody can reach. The reverse is worse and was unguarded. **A client
+with no route is a 404 in a musician's hands** — a screen that spins and then
+says something went wrong — and nothing in this repository would catch it.
+There is no integration test against a running server, so both suites pass
+with the app pointed at an endpoint that does not exist. A renamed route or a
+one-character typo ships green.
+
+Measured first: **18 `/v1` URLs across the app, all 18 served.** Nothing is
+broken today. The test exists because nothing was stopping it from being.
+
+Anchored at both ends so a stray segment cannot pass by prefix, and the query
+string is dropped — `/v1/scores?${query}` is a call to `/v1/scores`.
+
+**Paths only, and the docstring says so.** The method lives in the fetch
+options rather than beside the URL, so this asserts the path is served, not
+that it accepts the verb. That is the half that catches a typo, which is the
+failure it is for.
+
+### Verified by breaking it
+
+`'/v1/upload/avatar'` → `'/v1/upload/avatars'` in `upload.ts` — a plausible
+typo, one character:
+
+```
+AssertionError: the app builds URLs this API does not serve:
+/v1/upload/avatars (upload.ts)
+```
+
+Naming the file, because "some URL somewhere is wrong" is not a message anyone
+can act on. Restored with `diff -q`. A vacuity guard covers the new direction
+too: a real URL must match, a query string must not break the match, a URL
+with an extra segment must not match by prefix, and finding *no* URLs at all
+fails rather than passing silently.
+
+### Tests
+
+`test_client_reachability.py` 9 passed (was 7). Nothing else touched.
+
+**Side effects:** none. **Rollback:** revert the commit.
+
+---
+
 ## 2026-09-03 — A second finished endpoint with no client, and the check that stops a third
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. One new backend test, one

@@ -277,9 +277,13 @@ there works differently as of 2026-08-24:
   short clip). `bpm_source` carries `calibration_clip` for it, and
   `submitTake.ts` described that flow *in the present tense* while sending
   `manual` every time.
-  `test_client_reachability.py` is the standing check: it walks the FastAPI
-  route table, greps `mobile/src` for each URL, and fails on any `/v1` route no
-  client builds. Its `NOT_WIRED` list is held **in both directions** — an entry
+  `test_client_reachability.py` is the standing check, and it runs **both
+  ways**: every served `/v1` route must have a client, and every `/v1` URL the
+  app builds must be a route this API serves. The second is the one a musician
+  feels — a client with no route is a 404 in their hands, from a path mistyped
+  or renamed on one side only, and nothing else here would catch it because
+  there is no integration test against a running server. Paths only, since the
+  method sits in the fetch options rather than beside the URL. Its `NOT_WIRED` list is held **in both directions** — an entry
   for a route the app has since started calling fails, and so does an entry for
   a route that no longer exists — because an exclusion list whose reasons rot is
   precisely what the timeline parity fixture was, one bullet up.
