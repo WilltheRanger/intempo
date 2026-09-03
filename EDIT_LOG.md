@@ -6,6 +6,78 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-03 — The retry policy that stands between a musician and a take they never recorded
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. A move and a test; no
+behaviour changed. CI still cannot allocate a runner.
+
+Same shape as the entry below it, one tree over. `App.tsx` held the whole
+React Query policy as a `const` — `retryQuery`, `STALE_TIME_MS`,
+`refetchOnWindowFocus: false`, and `mutations: { retry: false }` — each with a
+paragraph of reasoning above it and **nothing holding any of it**.
+
+`CLAUDE.md` is explicit that a rule inside a `.tsx` is a rule nothing checks,
+and says so about the capture path, where eight of nine findings were exactly
+that. This is the same thing in the data layer. It is now
+`mobile/src/data/queryClient.ts`, and `App.tsx` calls `createQueryClient()`.
+
+### Why these two in particular
+
+`mutations: { retry: false }` is the expensive one. React Query's default is
+one retry for **mutations as well as queries**, and its own comment says what
+that costs: a POST that timed out may have been received and run with only its
+answer lost, so asking again submits a second take, or creates a second piece,
+and the musician finds a duplicate they never made. A one-word regression there
+is invisible in review and produces data a musician has to go and delete.
+
+`retryQuery` is the one they would feel first. `send` gives a repeatable
+request two 45s attempts before it reports anything, so React Query's default
+retry made a dead connection **three minutes of skeleton** before an error
+appeared. Nobody waits three minutes.
+
+Neither is reachable by anything else in this repository. The walk cannot stage
+a POST that times out after the server ran it, and a screenshot of a skeleton
+looks identical at one second and at three minutes.
+
+### How it checks
+
+The query side is **driven**, not read: `fetchQuery` with a `queryFn` that
+throws, counting attempts — one for an `ApiError`, two for a `TypeError` — so
+the assertion lands on what the retryer does with the policy rather than on the
+value sitting in a config object.
+
+The mutation side is asserted as configuration. There is no React testing
+library here (`DECISIONS.md`, 2026-08-24) and a mutation needs an observer;
+`false` also has nothing between it and the library, so the two are equivalent
+in a way `retry: retryQuery` is not.
+
+`createQueryClient` is a factory rather than a singleton so each test gets its
+own cache — and there is a test for that too, because a singleton would make
+these tests start affecting one another in a way that reads as flakiness rather
+than as the cause.
+
+### Mutations run
+
+Six, each restored, `git status` checked clean after:
+
+| Mutation | Result |
+|---|---|
+| `mutations.retry: false` → `1` | 1 failed |
+| `retryQuery` drops the `ApiError` branch | 3 failed |
+| `STALE_TIME_MS` → `0` (React Query's default) | 1 failed |
+| `refetchOnWindowFocus` → `true` | 1 failed |
+| `failureCount < 1` → `< 3` | 2 failed |
+| `createQueryClient` returns a singleton | 1 failed |
+
+### Verified
+
+`tsc` clean, lint clean, **1425 mobile tests across 127 files** (was 1417).
+Web bundle and iOS Hermes bundle both export. Walk **PASS, 29 checks**; a11y
+audit **PASS**. `.env` set aside for the fixtures build and restored with
+`diff -q` identical.
+
+---
+
 ## 2026-09-03 — The three timeouts that stop a Supabase incident taking the API down were held by nothing
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Tests only; no product

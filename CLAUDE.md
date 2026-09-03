@@ -793,6 +793,18 @@ there works differently as of 2026-08-24:
 - **`send` already retried, so React Query must not.** Two 45s attempts inside
   `send` plus `retry: 1` outside it was three minutes on a skeleton before an
   error appeared. An `ApiError` is never retried — it was answered.
+  **A write is never repeated at all**, and that is the more expensive half: a
+  POST that timed out may have been received and run with only its answer lost,
+  so asking again submits a second take or creates a second piece the musician
+  never made. React Query's default is one retry for mutations too.
+  Both policies lived as a `const` in `App.tsx` with nothing holding them until
+  2026-09-03; they are `data/queryClient.ts` now, because a rule inside a
+  `.tsx` is a rule nothing checks — the same doctrine the capture path is
+  written from. Neither is reachable by a walk or a screenshot: a duplicate take
+  needs a timed-out POST the server actually ran, which nothing here can stage.
+  The query side is driven through `fetchQuery` and counted; the mutation side is
+  asserted as configuration, because there is no React testing library here and
+  `false` has nothing between it and the library.
 - **Cancel cancels.** `uploadToSignedUrl` takes an `AbortSignal`; the flag that
   used to "cancel" only made the *result* be ignored while the transfer kept the
   phone's entire uplink, so cancelling a slow upload made the app slower.
