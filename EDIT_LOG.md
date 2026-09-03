@@ -6,6 +6,71 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-03 — The validator's three copies agreed on *whether*, never on *why*
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. One test strengthened, one
+stale count corrected. No shipped code. **CI still cannot allocate a runner.**
+
+`CLAUDE.md` says `test_sandbox_parity.py` is *"the only thing holding [the
+validator's three copies] together — when you add a check, port it and add a
+case, or the browser tools will quietly call a bad page clean."* Checking that
+claim rather than trusting it found two things, and neither was a live defect.
+
+### The comparison collapsed the thing the code keeps separate
+
+`MeasureFinding` carries the beat sum in `verdict` and **five** independent
+flags beside it, each deliberately not folded into the verdict —
+`validate.py`'s own words: *"a measure whose beats add up perfectly can still
+carry a tie between two different pitches, and that tie is what deletes an
+onset from the timeline. Collapsing them would let a clean beat sum hide it."*
+
+The parity test compared `verdict`, the beat figures, and `is_problem`.
+**`is_problem` is true for any of the six**, so a port that flagged the right
+bar for the *wrong reason* — a density warning where the page has a broken tie
+— matched on every field the test looked at, and the sandbox would show a
+musician's page marked for a fault it does not have.
+
+Measured before changing anything: **all three copies agree on every flag, on
+all 44 cases.** Nothing was broken. Nothing was holding it either.
+
+Both parity tests now compare the flags themselves. Verified by making the
+sandbox's port never report a broken tie: `flags differ for 4/4 / [4] m1`.
+
+### The case set is good, and now says so
+
+Before asserting on flags I checked whether the cases fire them — an assertion
+over flags nobody exercises is vacuous, which is the failure
+`test_timeline_parity.py` guards with its ties and triplets. All five fire
+(2, 3, 3, 2, 3 times across 44 cases). That is now asserted, so trimming the
+cases cannot quietly empty the new comparison.
+
+The same test reads the dataclass and fails when a flag exists that the file
+does not compare. Verified by adding a `smudged` field: `validate.py flags
+['smudged'] that this file does not compare`.
+
+### The count in CLAUDE.md was two behind
+
+> **Four things flag a measure, and only one of them is arithmetic.**
+
+Six: `verdict` plus `broken_ties`, `tuplet_faults`, `too_dense`,
+`unwritable_notes` and `out_of_line`. The last two arrived after that sentence
+was written and nobody came back to it.
+
+**The number is not written down anywhere now.** The guard above reads the
+dataclass, so the sentence cannot go stale the same way a third time — which
+matters, because this is the fourth typed count this session that had drifted
+from a live measurement sitting next to it.
+
+### Tests
+
+backend **1924 passed, 2 xfailed** (was 1923); `test_sandbox_parity.py` 7
+passed. `validate.py` and the sandbox template each restored `diff -q`
+identical after their mutation.
+
+**Side effects:** none. **Rollback:** revert the commit.
+
+---
+
 ## 2026-09-03 — An editorial rule applied by hand once, and a test of mine that was wrong
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. One test file. No shipped

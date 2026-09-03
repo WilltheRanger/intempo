@@ -402,18 +402,29 @@ there works differently as of 2026-08-24:
   `pitch` only as `== "rest"`, but a **tie** is now validated by whether two
   noteheads share a pitch, so a wrong pitch can delete an onset. Correcting it
   is repairing the timeline, not decoration.
-- **Four things flag a measure, and only one of them is arithmetic.** Beat sums
-  (`verdict`), broken ties, tuplet ratios that contradict their bracket, and
-  note density far above the page's median. The last three all exist because a
-  measure can sum to **exactly** the right number of beats and still be wrong —
-  a slur written as a tie, a 5:4 bracket approximated as triplets, a tremolo
-  read as sixteen sixteenths. Keep them separate from `verdict`; collapsing
-  them lets a clean beat sum hide them.
+- **Six things flag a measure, and only one of them is arithmetic.** Beat sums
+  (`verdict`), plus five separate fields on `MeasureFinding`: `broken_ties`,
+  `tuplet_faults`, `too_dense`, `unwritable_notes` and `out_of_line`. The five
+  all exist because a measure can sum to **exactly** the right number of beats
+  and still be wrong — a slur written as a tie, a 5:4 bracket approximated as
+  triplets, a tremolo read as sixteen sixteenths. Keep them separate from
+  `verdict`; collapsing them lets a clean beat sum hide them.
+  **This line said "four" and named three** (2026-09-03): `unwritable_notes`
+  and `out_of_line` arrived later and nobody came back. The count is not
+  written down anywhere now — `test_the_cases_exercise_every_flag_there_is`
+  reads the dataclass and fails when a sixth appears with no case, which is the
+  only version of this sentence that cannot go stale again.
 - **The validator has one home and two ports**, and they must agree:
   `ocr/validate.py`, plus `tools/validator-sandbox.template.html` and
   `tools/scan-bench.template.html`. `test_sandbox_parity.py` is the only thing
   holding them together — when you add a check, port it and add a case, or the
   browser tools will quietly call a bad page clean.
+  It compares **which flag fired**, not just that one did (2026-09-03). It used
+  to compare `verdict` and `is_problem`, and `is_problem` is true for any of the
+  six — so a port that flagged the right bar for the *wrong reason* matched on
+  every field the test looked at, and the sandbox would mark a page for a fault
+  it does not have. Measured when the assertion went in: all three copies agreed
+  on every flag, on all 44 cases. Nothing was broken; nothing was holding it.
 - **The timeline has two walks and one contract, and an exclusion needs a
   reason that is still true.** `alignment.build_timeline` builds what the
   analysis expects to hear; `lib/score/schedule.ts` builds what the app plays.
