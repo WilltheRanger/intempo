@@ -1014,7 +1014,28 @@ export function RecordScreen() {
         {activeRest ? (
           <RestCountdown state={activeRest} />
         ) : (
-          <Text variant="screenTitle" style={styles.timer}>
+          <Text
+            variant="screenTitle"
+            /*
+             * **Ink while it is counting, quiet while it reads 00:00.**
+             *
+             * Before a take the screen had two things set in its largest type
+             * — the tempo and a timer showing zero — plus the record button, so
+             * the eye had three places to land and design law 4 asks for one.
+             * The timer is the one carrying no information yet.
+             *
+             * Dimmed rather than removed, and that is the whole point. `body`
+             * distributes with `space-evenly` and this node reserves the height
+             * the running timer needs; taking it out redistributes the screen
+             * and everything above it moves **at the instant the count-in
+             * starts** — when a musician has an instrument up and is watching
+             * for the downbeat. Measured: removing it leaves a visible void
+             * between the settings and the button, which is a worse trade than
+             * the numeral it removes.
+             */
+            color={elapsedMs > 0 || recording || countingIn ? 'textPrimary' : 'textTertiary'}
+            style={styles.timer}
+          >
             {formatElapsed(elapsedMs)}
           </Text>
         )}

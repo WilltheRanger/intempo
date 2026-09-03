@@ -6,6 +6,59 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-03 — A survey of eight screens, and the one change it justified
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. UI, under a direct
+instruction to improve the design. CI still cannot allocate a runner.
+
+Screenshotted eight screens at 393x852 rather than reasoning from source, and
+ran the three-foot test on each. Most of the app is in good shape; the survey
+mattered because it stopped me building two changes I had already proposed.
+
+### Three-foot test
+
+| Screen | First, second, third | Verdict |
+|---|---|---|
+| **Verdict** | "You rushed in the middle" → the trend line → the per-measure list | **The strongest screen in the app.** One focal point, no cards, hierarchy from type, hairlines for structure, ochre as an accent. Change nothing. |
+| **Library** | "Library" → the rows → the search field | Good. No cards; sheet crops carry the identity. |
+| **Today** | "Good evening" → the piece card → everything else | The largest element on the screen carries **no information**, and three white rounded cards stack down it against design law 3. **Frozen** (`mobile/README.md`), so recorded, not touched. |
+| **Record** | 92 → the record button → 00:00 | Three places for the eye to land where law 4 asks for one. |
+
+### The change
+
+The idle timer is dimmed to `textTertiary` before a take and ink once it is
+counting. Three large elements become one path: title, button, tempo.
+
+**Not removed, and that is the finding.** I proposed removing it, built it, and
+screenshotted the result: a visible void between the settings and the button.
+`styles.body` distributes with `space-evenly` and that node **reserves the
+height the running timer needs** — the same reason `BeatIndicator` replaces the
+metronome row rather than appearing beside it, whose comment says *"the same
+height, so nothing above shifts when the take begins."* Removing it moves
+everything above **at the instant the count-in starts**, when a musician has an
+instrument up and is watching for the downbeat. A worse trade than the numeral
+it removes.
+
+### Two proposals the survey killed
+
+- **"Recording tips looks like plain text, not a control."** It shares
+  `styles.metronome` with two other controls on the same screen — a 44pt row of
+  `metadataSmall`. It is consistent with its siblings; it is *Listen* that is
+  different, and deliberately, being a playback action rather than a toggle.
+- **"A library row with no photograph should draw its own music."** Convention
+  7 says use `sheet/SheetCrop` and never a placeholder — but **there is no
+  `SheetCrop` in `mobile/`**; that convention was written for `frontend/`, as
+  `CLAUDE.md` warns. The row is 52x38, where engraved notes would be a smudge.
+  Ruled staff lines are the right answer at that size.
+
+### Verified
+
+a11y **PASS** (the dimmed timer is 36px, so the 3:1 large-text threshold
+applies and it clears), walk **PASS (29 checks)**, 1437 mobile tests, `tsc` and
+lint clean, `.env` restored `diff -q` identical.
+
+---
+
 ## 2026-09-03 — The policies guarding sheet music and recordings are called "hi" and "um"
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Security. Migration 016
