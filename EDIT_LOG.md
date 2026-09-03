@@ -6,6 +6,75 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-03 — Sign-in had no tests, and one of the two I wrote for the worst bug could not have caught it
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. One test file, no shipped
+code changed. No §2 gate.
+
+`data/auth/session.ts` is 371 lines on the first screen every musician meets,
+and it had nothing. Most of it is one Supabase call with the error rethrown —
+but the parts that are not are each a documented bug, and each is a distinction
+a refactor flattens without anyone noticing:
+
+- **An address that already has an account** comes back from Supabase looking
+  exactly like a fresh sign-up. With confirmations on it does not error; it
+  obfuscates the user so a stranger cannot enumerate addresses, and the only
+  tell is an **empty** `identities` array. Read naively, the app promises a
+  link that is never sent and the musician waits forever. `undefined` there
+  means the field was not sent, which is not the same signal — and reading it
+  as one tells *every* new musician their address is taken.
+- **`forgetDeletedSession` must sign out with local scope.** A deleted identity
+  may refuse to revoke its own session, and the tokens then stay on the device.
+- **`getSessionEmail` reads the session, not `/v1/me`.** `ChangePasswordScreen`
+  re-authenticates before changing a password; with the profile row's address
+  that is `you@example.com` on a fixture build, and with real credentials it
+  would re-auth as somebody the session holder has never heard of.
+- **With Supabase unconfigured** the read paths answer quietly and the write
+  paths refuse in words, so a build with no keys boots instead of showing an
+  error screen — and someone typing a password is told, not left on a spinner.
+
+### The test that could not have caught the bug it was named after
+
+`detectSessionInUrl` was hardcoded `false`, with the note *"no URL to parse
+from in a native app"* — true of native, wrong about the platform this build is
+served on. Supabase returns from a reset or a confirmation with the tokens in
+the URL fragment; unread, no session was established, `PASSWORD_RECOVERY` never
+fired, and **every emailed link in the app was a dead end**.
+
+My first version asserted the flag was `false` on iOS. That is true of the fix
+*and* true of the bug — the hardcoded `false` passes it. It asserts both halves
+now, and the mutation fails.
+
+### Verified by mutation
+
+| mutation | result |
+|---|---|
+| missing `identities` read as empty | 1 failed |
+| `forgetDeletedSession` loses local scope | 1 failed |
+| `getSessionEmail` reads `getUser` | 1 failed |
+| `detectSessionInUrl` hardcoded `false` | 1 failed |
+| `updateEmail` loses its redirect | 1 failed |
+| **`awaitingConfirmation` drops its user check** | **25 passed** |
+
+The last one I expected to slip, and it did: every sign-up case I had written
+carried a user. What `Boolean(data.user)` guards is a response carrying
+*neither* user nor session, which without it reads as "account made, go and
+confirm it" — sending someone to their inbox for a message that was never
+generated. Same dead end as the already-registered case, from the other
+direction. There is a case for it now and the mutation fails.
+
+That is two suites running where an assertion of mine was decoration, and both
+times only the mutation showed it.
+
+### Tests
+
+mobile **1324 passed across 114 files** (was 1298/113); `tsc --noEmit` clean.
+`session.ts` restored `diff -q` identical after every mutation.
+
+**Side effects:** none. **Rollback:** delete the test file.
+
+---
+
 ## 2026-09-03 — The audio path the App Store build runs, which had no tests at all
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Two new test files, no
