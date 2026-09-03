@@ -26,7 +26,7 @@ from fastapi import (
 )
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from app.services.ocr.validate import validate_measures
+from app.services.ocr.validate import MeasureFinding, validate_measures
 
 from app.auth import current_user_id, current_user_id_provisioned
 from app.config import settings
@@ -282,7 +282,12 @@ class MeasureConcern(BaseModel):
 
     measure_number: int
     #: Which test failed, for a client that wants to group or filter.
-    kind: Literal["beats", "tie", "tuplet", "density", "unwritable"]
+    #:
+    #: One name per branch of `MeasureFinding.describe()`, because that is what
+    #: the app relies on: it prints `detail` verbatim for every kind except
+    #: `"beats"`, which is the one wording allowed to promise arithmetic. A
+    #: fault mapped to the wrong name is a true sentence under a false heading.
+    kind: Literal["beats", "tie", "tuplet", "density", "unwritable", "adrift"]
     #: A sentence fit to show a musician, not an exception string.
     detail: str
 
@@ -612,24 +617,51 @@ def _concerns_for(score_json: Any) -> list[MeasureConcern]:
         # reading: the page was read and this schema had no name for what was
         # on it. A bar can carry it *and* run short, and the missing notes are
         # usually why — `describe()` says both.
-        if finding.unwritable_notes:
-            kind = "unwritable"
-        elif finding.broken_ties:
-            kind = "tie"
-        elif finding.tuplet_faults:
-            kind = "tuplet"
-        elif finding.too_dense:
-            kind = "density"
-        else:
-            kind = "beats"
         out.append(
             MeasureConcern(
                 measure_number=finding.measure_number,
-                kind=kind,
+                kind=_concern_kind(finding),
                 detail=finding.describe(),
             )
         )
     return out
+
+
+def _concern_kind(finding: MeasureFinding) -> str:
+    """Which of `describe()`'s branches wrote this finding's sentence.
+
+    **`kind` names the branch, and that is the whole invariant.** The app
+    prints `detail` verbatim for every kind except `"beats"`, which is the one
+    wording allowed to promise arithmetic — it becomes "doesn't add up to the
+    time signature". So a fault mapped to `"beats"` is a true sentence under a
+    false heading.
+
+    `out_of_line` used to fall past this ladder into the `else`. It is set
+    **only where no metre could be read**, so a bar flagged for being out of
+    step with the rest of the page was reported to the musician as
+    disagreeing with a time signature the server had just said it could not
+    read. Its own sentence — the right one — was in `detail` all along.
+
+    Extracted from `_concerns_for` so the mapping can be exercised one fault at
+    a time: `test_every_fault_a_measure_can_carry_has_its_own_concern_kind`
+    reads `MeasureFinding`'s fields, so a *new* flag added without a branch
+    here fails instead of quietly becoming `"beats"`.
+
+    The order is `describe()`'s order. `unwritable` leads for the reason stated
+    there: it is often the cause of whatever else is wrong with the bar, and
+    `describe()` prefixes it rather than choosing between the two sentences.
+    """
+    if finding.unwritable_notes:
+        return "unwritable"
+    if finding.broken_ties:
+        return "tie"
+    if finding.tuplet_faults:
+        return "tuplet"
+    if finding.too_dense:
+        return "density"
+    if finding.out_of_line:
+        return "adrift"
+    return "beats"
 
 
 def _page_keys(row: dict[str, Any]) -> list[str]:
