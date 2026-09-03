@@ -919,6 +919,21 @@ account already had, `AccountStartupScreen` holding a centred spinner between
 two left-aligned sentences with the one button the screen exists to offer at
 the vertical middle of the phone (2026-09-01), and the empty Today above.
 
+**The tab bar is fine at 2x text and breaks at 3x** (measured 2026-09-03).
+Gaps between the four labels, at 375pt: 48–53pt at 1x, 25–33pt at 1.5x, **2–13pt
+at 2x**, and **−27 to −43pt at 3x — they overlap**. Vertically it survives: the
+bar stays 75pt at every scale while the label grows from 17pt to 51pt, and the
+label's bottom edge goes −17 → −13 → −8 → **0** against the bar's, so at 3x it
+is exactly flush and one step from clipping.
+
+`TAB_BAR_ROW_HEIGHT` is computed from **unscaled** tokens, which is why the bar
+does not grow — but the slack around the icon absorbs it as far as 3x, so this
+is a limit rather than a bug at any size below that. iOS's own tab bars drop to
+icons only at accessibility sizes, and this is a **custom** `BottomTabBar`
+(`tabBar={(props) => <BottomTabBar {...props} />}`), so React Navigation's
+handling is not in play — the app owns it. Hiding the labels above a font scale
+is the conventional answer and is §2.
+
 **A long piece title runs off the screen at large text, and the one-line fix is
 a design trade** (measured 2026-09-03). `PageHeader`'s title is `flex: 1`, and
 on the web build a flex item cannot shrink below `min-width: auto` — its

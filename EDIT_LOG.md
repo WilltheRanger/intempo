@@ -6,6 +6,51 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-03 — What the spill check cannot see: text that collides without leaving
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Measurement only, no code
+changed. CI still cannot allocate a runner.
+
+The corrected 2x screenshot showed the four tab labels sitting flush against
+one another. The spill check reports nothing, and correctly — they are *inside*
+the screen. Overlap is a different failure from overflow, and nothing here
+looks for it.
+
+Gaps between the four labels at 375pt:
+
+| scale | gaps | |
+|---|---|---|
+| 1x | 48, 53, 51 | comfortable |
+| 1.5x | 33, 25, 29 | fine |
+| 2x | 13, 2, 7 | tight but legible |
+| 3x | **−27, −43, −35** | **overlapping** |
+
+Vertically it holds. `TAB_BAR_ROW_HEIGHT` is computed from **unscaled** tokens,
+so the bar stays 75pt at every scale — but the slack around the icon absorbs
+the growth: the label's bottom edge sits −17 → −13 → −8 → **0** against the
+bar's as the text doubles and trebles. At 3x it is exactly flush, one step from
+clipping.
+
+So: **fine at 2x, broken at 3x**, which is AX5 and genuinely reachable. The
+conventional answer is what iOS does with its own tab bars — drop to icons only
+at accessibility sizes — and that is a §2 decision, alongside the long-title
+one two entries up. Both are the same question: what this app does at
+accessibility text sizes. Recorded rather than guessed at.
+
+**No check added**, deliberately. The audit runs at 2x, where this passes, so a
+collision check would sit there never firing; and one that ran at 3x would fail
+CI over a decision nobody has made yet. The measurement is the deliverable.
+
+Also confirmed while here: the tab bar is a **custom** `BottomTabBar`, so React
+Navigation's own large-text handling is not in play — whatever is done here is
+this app's to do.
+
+### Verified
+
+Tree clean apart from these notes. a11y sweep PASS at 375pt, walk PASS.
+
+---
+
 ## 2026-09-03 — The large-text check was inventing bugs the app does not have
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. A fidelity fix to the check
