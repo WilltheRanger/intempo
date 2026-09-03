@@ -919,6 +919,28 @@ account already had, `AccountStartupScreen` holding a centred spinner between
 two left-aligned sentences with the one button the screen exists to offer at
 the vertical middle of the phone (2026-09-01), and the empty Today above.
 
+**A long piece title runs off the screen at large text, and the one-line fix is
+a design trade** (measured 2026-09-03). `PageHeader`'s title is `flex: 1`, and
+on the web build a flex item cannot shrink below `min-width: auto` — its
+*min-content* width, which `overflow-wrap: break-word` does **not** reduce. So
+with a real unabbreviated title ("Sonata No. 1 in G minor for unaccompanied
+violin, BWV 1001 — Adagio, Fuga, Siciliana, Presto") the title's right edge
+against a 375pt screen goes 295 · 373 · 494 · 734 at 1x · 1.5x · 2x · 3x.
+
+`minWidth: 0` removes the overflow at every scale and keeps the trailing action
+in the corner instead of dropping it below-left. **It was tried and reverted**,
+because it also authorises mid-word breaking everywhere: `screenTitle` is 36px,
+so at 2x "Library" has a min-content width of 229pt against a ~175pt box and
+renders as **"Lib / rar / y"** — on a far more common screen than a
+ninety-character title.
+
+The real constraint is not layout. At 2x the single word "unaccompanied"
+measures **481pt**, wider than the whole 335pt content column, so *no* flex
+rule can fit it: the only answers are breaking the word, shrinking the type, or
+truncating. All three are §2. Do not apply `minWidth: 0` to `PageHeader.title`
+without that decision — the `SearchField` fix that looks identical is **not**
+the same case, because an `<input>` scrolls its text rather than wrapping it.
+
 **Every brand asset is still the Expo starter's** (measured 2026-09-03, by
 looking at them): `icon.png`, `favicon.png`, the three Android layers and
 `public/app-icon.png` are a blue chevron on pale blue with the template's
