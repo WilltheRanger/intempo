@@ -21,6 +21,11 @@ export function AddPieceScreen() {
     case 'notation':
       return <ImportFileScreen />;
     default:
-      return <ImportPagesScreen attachToPieceId={params.attachToPieceId} />;
+      return (
+        <ImportPagesScreen
+          attachToPieceId={params.attachToPieceId}
+          adding={params.adding}
+        />
+      );
   }
 }
