@@ -6,6 +6,66 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-03 — The only thing between one musician and another's rows was an audit
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Security. CI still cannot
+allocate a runner.
+
+**The service-role key bypasses RLS**, so for the 54 queries in this API that
+use it, nothing in the database stops one account reading or changing
+another's rows — the owner filter in the handler is the only thing that does.
+
+Audited all 54 by hand. **They are all scoped**, and the two things worth
+recording are *how*:
+
+| | |
+|---|---|
+| 39 of 54 | filter explicitly on `user_id` |
+| the inserts | stamp `str(user_id)` from the `current_user_id` dependency — and **no request model in the API has a `user_id` field at all**, so there is no path for a client to attribute a row to another account |
+| the workers | key on a row id that came from an owner-scoped enqueue |
+| the helpers | are handed a row the caller already scoped — `discard_pages_of` is the pattern |
+| `readiness.py` | a schema probe, no rows returned |
+
+So: no hole. **And nothing held it**, which is the same sentence as every other
+entry this week. A handler added next month reading
+
+    client.table("scores").update(patch).eq("id", body.score_id).execute()
+
+is a cross-account write that passes every test here and looks exactly like
+the code around it — because most of that code is correct for a reason the
+query itself does not show.
+
+### The check, and what it deliberately is not
+
+`test_owner_scoping.py`: every function in `app/routers/` with a route
+decorator, whose body queries a user-owned table, must mention `user_id` in
+that body. **17 such handlers, 0 without it.**
+
+Coarse, and the docstring says so rather than leaving it to be discovered. It
+is *awareness*, not correctness — a handler that mentions `user_id` and filters
+on the wrong column passes. And **16 of the 41 chains live in module-level
+helpers**, which are handed a row somebody else scoped; a helper cannot tell
+whose row it was given, so nothing static can check it. Those two are named in
+the file as the places to look first when reviewing an endpoint by hand.
+
+I chose the per-handler rule over a per-chain one after measuring both. Per
+chain flagged `create_analysis` and `create_corrections` — both correct, both
+building their payload in a variable above the chain. A check whose first two
+findings are false is a check people switch off.
+
+### Verified
+
+| Mutation | Result |
+|---|---|
+| a new handler reading `scores` by id alone | fails, naming it |
+| the same handler with `.eq("user_id", …)` added | **passes** — the false alarm that would get this deleted |
+| a typo in one `USER_TABLES` name | fails on the count |
+| `ROUTERS` pointed at a missing directory | fails on the count |
+
+**Backend: 1938 passed, 2 xfailed.**
+
+---
+
 ## 2026-09-03 — A phone with a microphone, told it has none
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`, restarted from `main`
