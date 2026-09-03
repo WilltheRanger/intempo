@@ -6,6 +6,85 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-03 — A strict script-src, generated — and the wrong hash caught before it shipped
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Security. CI still cannot
+allocate a runner.
+
+`public/_headers` shipped a CSP with `base-uri`, `object-src` and
+`frame-ancestors` and **no `script-src`**, saying why: *"tightening script
+sources without build-generated hashes would turn a security improvement into
+a production outage."*
+
+Right about the risk, wrong about the conclusion. **The hashes can be
+generated**, and that was the app's largest remaining hole: with no
+`script-src`, an injected `<script src="https://…">` runs, and the access
+token in browser storage leaves with it.
+
+Measured on the export first, because the policy has to fit what is actually
+there: **one** external script (same-origin, Expo's bundle), **one** inline
+block (the boot watchdog), no `eval`, no `new Function`, and no external
+script, style or font origin anywhere — the fonts are vendored. So the whole
+allowance is `'self'` plus one hash, with **no `'unsafe-inline'`**, which would
+have permitted the injected inline script the directive exists to stop.
+
+### The part that nearly went out wrong
+
+The first generator produced a plausible hash that the browser **refused**.
+`Refused to execute inline script`. And the app still *mounted*, because the
+bundle is external and allowed — so the symptom was not a blank screen, it was
+the crash watchdog silently dead. Worse, and much harder to notice.
+
+The bug: a naive scan for `<script` finds the **mentions of it inside the
+watchdog's own comment block** first. Four occurrences in the file, two real
+tags. The "body" it took was 10 KB beginning mid-HTML.
+
+Two things came out of that:
+
+1. The scan skips HTML comments.
+2. **The extracted body must compile as JavaScript** — `new vm.Script(body)`,
+   which parses without running. A mis-extraction yields HTML/JS soup, which
+   does not compile, so the build fails rather than publishing a hash the
+   browser will reject. This is what makes a generated hash safe to ship at
+   all.
+
+### Verified in a browser, because nothing else is authoritative
+
+A local server that serves `dist` **with the real `_headers` CSP applied**,
+loaded in Chromium, watching the console:
+
+| | violations | `#root` children |
+|---|---|---|
+| the wrong hash | **1** — refused | 1 (mounted, watchdog dead) |
+| the generated hash | **0** | 1 |
+
+The authoritative value came from the browser itself — `crypto.subtle.digest`
+over `el.textContent` in the loaded page — rather than from any parser of
+mine.
+
+### Mutations
+
+| Mutation | Result |
+|---|---|
+| comment-skipping removed (the exact bug above) | build **exit 1**: *"Unexpected identifier 'the'"* |
+| the inline block never found | build exit 1, naming the blank screen it would cause |
+| a cross-origin `<script src="https://…">` in the export | exit 1 (branch present; not reachable from this export) |
+
+Walk **PASS (29 checks)**, a11y **PASS**, `tsc` and lint clean, `.env` restored
+`diff -q` identical.
+
+### Also audited, clean, no code needed
+
+**The signed-upload path cannot be pointed at another account.** The client
+never names an object key: `_build_object_key(user_id, ext)` makes
+`<user_id>/<uuid4>.<ext>` server-side, and the request's `filename` contributes
+only its extension — allowlisted per bucket, and matched against
+`^[a-z0-9]{1,8}$` first, so a slash never reaches the allowlist.
+`test_the_key_is_prefixed_with_the_caller_so_ownership_is_checkable` already
+holds it.
+
+---
+
 ## 2026-09-03 — The build would say "Success" while publishing the service-role key
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Security. CI still cannot
