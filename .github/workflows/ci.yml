@@ -50,6 +50,13 @@ jobs:
       - name: Brand assets are ours
         run: python3 tools/check-brand-assets.py
 
+      # Also here for the same reason: Python and a checkout, nothing else.
+      # This is `test_client_reachability.py`'s counterpart for the app —
+      # code that is built, documented and never wired up is this project's
+      # most-repeated defect, and it compiles and tests clean every time.
+      - name: Every export has a caller
+        run: python3 tools/check-dead-exports.py
+
   backend-test:
     name: Backend tests (pytest)
     runs-on: ubuntu-latest
