@@ -725,15 +725,26 @@ there works differently as of 2026-08-24:
   | Profile's instrument control | **no** | yes |
   | a fresh install | — | defaults to `violin` |
 
-  So the account value is written once at onboarding and read by nothing but
-  onboarding's own prefill; changing your instrument in Profile never reaches
-  the server; and on a second device the cache starts at `violin` with nothing
-  to refill it from. A cellist who reinstalls is analysed as a violinist until
-  they visit Profile. Fixing it is two coupled changes — Profile must write the
-  account, and the account must seed the cache — and the coupling matters: seed
-  first and a local change is reverted by a stale account. It also contains a
-  product decision (what happens offline, and which side wins a conflict), so
-  it is **not** a quiet refactor.
+  **The seeding half is fixed** (2026-09-03).
+  `preferences.adoptAccountInstrument` fills the cache from the account **only
+  on a device that has never stored one**, which is what makes it safe: a
+  device with an instrument has one because somebody chose it *there*, and
+  since Profile does not write back to the account, adopting on every load
+  would revert that choice from a value the server was never told. An empty
+  cache cannot conflict with anything. `RootNavigator`'s `SignedInApp` calls it
+  where the account arrives — above the early returns, because a hook below one
+  is React error #310, which `EDIT_LOG` records this project shipping once.
+  `DEFAULTS.instrument` is `violin`, so "stored violin" and "nobody said" are
+  indistinguishable from `current` alone; `instrumentIsStored` is the flag that
+  tells them apart, and it is cleared on the fresh-install early return rather
+  than relying on its initialiser.
+
+  **The other half is not fixed and is a product decision**: Profile's control
+  still writes only the device, so the account keeps the onboarding answer for
+  ever. Making it write the account means choosing what happens offline —
+  follow `changeTrainingConsent` and the control stops working without a
+  network (and in fixtures builds); write locally *and* fire the update and the
+  two can diverge silently. Not a quiet refactor; ask first.
   Both rules the screen can get wrong live in `lib/onboarding.ts` where they are
   tested, not in the `.tsx`.
 
