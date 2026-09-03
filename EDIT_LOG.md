@@ -6,6 +6,79 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-03 — An editorial rule applied by hand once, and a test of mine that was wrong
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. One test file. No shipped
+code changed. **CI still cannot allocate a runner.**
+
+`lib/facts.ts` is the daily fact on Today — "the one thing on the screen that
+is not about you". Its docstring states a rule and records that it was broken
+at scale before anyone applied it:
+
+> A lead must add something the sentence does not already say. **Nine of these
+> echoed their own sentence — five were its opening words verbatim** — so the
+> block stated the same thing twice, six points apart, and read as a stutter.
+
+Fixed by hand, kept by nothing. A rule enforced once lasts until the next
+entry, and entries are what this file exists to accumulate.
+
+### My first version of the check was the wrong shape
+
+I looked for any **three consecutive lead words** appearing in the sentence.
+It flagged three entries, and one of them — `It used to be a choice`, over
+*"Vibrato was an ornament before it was a default…"* — has its lead nowhere in
+its text at all. The match was `to be a`, which is ordinary English.
+
+**A heuristic wrong one time in three is not a rule.** Had I shipped it, the
+next person would either have rewritten good copy to satisfy it or weakened it
+until it caught nothing.
+
+The verbatim reading — does the lead appear, whole, inside its own sentence? —
+is both precise and **stricter**: it caught `Il Cannone`, which three
+consecutive words can never see because that lead has only two.
+
+### Three entries do break the module's own rule
+
+| lead | where it repeats |
+|---|---|
+| `All in the bow arm` | "…the difficulty is deliberately **all in the bow arm**." |
+| `Il Cannone` | "Paganini played one, which he called \"**Il Cannone**\"." |
+| `Patented in 1815` | "The metronome was **patented in 1815**." |
+
+**Listed, not rewritten.** The rule is the module's own, but the wording is
+displayed copy, and choosing it is the one thing §2 reserves for the owner.
+`KNOWN_ECHOES` names all three, so the guard binds every *new* entry while
+these stay visible — and the test fails if an entry is left on the list after
+its lead is reworded, so it cannot rot into an excuse.
+
+### The rest
+
+Same fact all day and a different one tomorrow; leads short enough to be a
+label and unpunctuated; each text a finished sentence; and no hedges, because
+the module says *"anything that needed a 'probably' was left out rather than
+hedged"* — a hedge is the tell that an entry should not be there. **Factual
+accuracy is out of reach and is the more expensive half**: this cannot check
+whether a fact is true, only that it does not announce its own doubt.
+
+Verified by adding a fact whose lead repeats its sentence: two assertions fail
+and name it. `facts.ts` restored `diff -q` identical.
+
+### Also measured this tick
+
+`expo export --platform android` completes — 5.6 MB Hermes, same as iOS. Both
+native targets bundle, so the identifiers and `eas.json` added earlier are
+sound for both. **Not added to CI**: the App Store is the target that was
+asked about, and doubling the bundling step for an untargeted platform is not
+worth the minutes.
+
+### Tests
+
+mobile **1369 passed across 120 files** (was 1362/119); `tsc` clean.
+
+**Side effects:** none. **Rollback:** delete the test file.
+
+---
+
 ## 2026-09-03 — The switch between real data and sample data had no tests
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. One test file, one
