@@ -29,8 +29,25 @@ silence.
 
 1. **Branch per batch** (`feat/batch-N-...` or the session's assigned branch). Squash to main on DoD.
 2. **One fixture file per tricky endpoint** — save the raw response to `fixtures/`, test against it forever. Never call a real LLM/paid API in CI.
-3. **Don't optimize early.** Ship the slowest, ugliest version that works; iterate later.
+3. **Build the best version first.** Not a sketch you intend to replace — the
+   version you would defend in review. The shape of the data, the correctness
+   of a rule and the composition of a screen are all far cheaper to get right
+   now than after something is built on top of them, and a large part of
+   `EDIT_LOG.md` is the cost of the other choice. This is **not** licence to
+   gold-plate: "best" means the best version *of what was asked for*, not more
+   than was asked for. Speed is the one thing still worth leaving alone until
+   something is measurably slow — measure, then optimise.
 4. **No `print`/`console.log` debug shipped.** Real logger from day one (`loguru` for Python, `pino` for JS).
+   Enforced in `mobile/` since 2026-09-03 (`no-console`, error). Two lines are
+   exempt with a written reason: `App.tsx`'s boot line naming whether the build
+   is on fixtures, and `ErrorBoundary.componentDidCatch` — the only record a
+   crash leaves. **The app had no linter at all until then**, while six files
+   carried `eslint-disable` directives for one; `react-hooks/rules-of-hooks` is
+   the rule it was worth installing for, since a hook below an early return is
+   React error #310, which this project has shipped and which compiles,
+   typechecks and passes its tests. Rules and the three scoped exceptions are in
+   `DECISIONS.md`, 2026-09-03. `frontend/` has its own config and CI lints
+   neither it nor, before now, the product.
 5. **Smoke-test the happy path manually** after each batch, not just automated tests.
 6. **Tag the end of every batch**: when the DoD is met, `git tag batch-N-done` and push the tag. These are the known-good rollback anchors.
 7. **Externalize magic numbers to config** (see `backend/config.toml`) so tuning never requires a code edit.
@@ -105,7 +122,12 @@ wrong and the fix is composition, not more styling. Record the answer in
 - Batch 5 — Web frontend foundation ⏳ (shell done: design tokens locked, primitives, routing, auth/data plumbing; build + lint green. Live magic-link auth + E2E test pending Supabase keys — see `EDIT_LOG.md`. Not tagged `batch-5-done` yet.)
 - Batch 6 — Score capture flow (web) ⏳ (capture + OCR-review editor + save built, **rebuilt to the locked design system** 2026-07-28; build + lint green. Live upload→OCR→save + iPhone camera pending Supabase keys/device — see `EDIT_LOG.md`. Not tagged `batch-6-done`.)
 - Batch 7 — Recording + analysis/verdict flow (web) ⏳ (tempo/calibration/metronome, MediaRecorder panel, polling result screen with verdict/annotated-score/trend/per-note built, **rebuilt to the locked design system** 2026-07-28; build + lint green. Live mic→analysis loop pending mic/Supabase/backend + device — see `EDIT_LOG.md`. Not tagged `batch-7-done`.)
-- Batch 8+ — mostly UI/UX → see the §2 gate and the §3 design laws. **Tokens live in `frontend/src/styles/tokens.ts`; build to them and never re-type hexes.**
+- Batch 8+ — mostly UI/UX → see the §2 gate and the §3 design laws. **Build to
+  the tokens and never re-type hexes** — `mobile/src/design/` for the shipping
+  app, `frontend/src/styles/tokens.ts` for the legacy tree. This line named
+  only the second for a long time, and the two palettes share **no colour but
+  white** (measured 2026-09-02), so following it while working in `mobile/`
+  builds a screen in the wrong palette.
 
 ### Frontend UI rebuild (2026-07-28) — where the screens actually stand
 
@@ -128,7 +150,27 @@ running build.
 | Verdict | `/analyses/:id` | ⚠️ same — needs a real analysis to redesign properly |
 | Insights | `/insights` | ⏳ stub, held until real analyses exist to design against |
 
-Conventions the redesign established — **follow these, don't re-litigate them:**
+Conventions the redesign established — **follow these, don't re-litigate them.**
+
+> **Which tree these describe.** The list below was written for `frontend/`, and
+> its *design* decisions carry to `mobile/` unchanged — ochre as an accent and
+> never a surface, structure from hairline borders, serif used selectively,
+> sheet music as the visual identity, no developer or demo UI. Its *pointers* do
+> not, and a session following them literally in the shipping app would undo
+> working code. Measured 2026-09-02:
+>
+> | Convention says | `mobile/` actually uses |
+> |---|---|
+> | Icons are Phosphor; `lucide` was removed, do not reintroduce it | `lucide-react-native` throughout — no Phosphor package at all |
+> | `AppShell` with `layout/TopNav` at `lg`+ over a 1240px container | its own navigator; `ScreenContainer` and a tab bar |
+> | Motion is Framer Motion, imported from `motion/react` | React Native animation (`PressableScale`, `Animated`); neither `motion` nor `framer-motion` is a dependency |
+> | `/showcase` sources its swatches from `styles/tokens.ts` | there is no `/showcase` route |
+> | Screens read seed data from `lib/demo.ts` | `data/sources/fixtures.ts` |
+>
+> The caveat further down — *"The screen table above describes the legacy
+> `frontend/` tree"* — is attached to the table and is about transcription. This
+> list sits between the two and reads as binding for all UI work, which is how
+> it stayed wrong.
 
 1. **Icons are Phosphor** (`@phosphor-icons/react`). `lucide-react` was removed
    from `package.json` — do not reintroduce it.
@@ -197,7 +239,18 @@ there works differently as of 2026-08-24:
   `_HUMAN_STAGES` / `_human_stage` the worker's. Adding a pipeline stage means
   editing the fixture **and** both sides —
   `backend/app/tests/test_stage_parity.py` and
-  `transcriptionProgress.test.ts` fail otherwise, in both directions.
+  `transcriptionProgress.test.ts` fail otherwise.
+  **"In both directions" was three of four** (measured 2026-09-03). A stage
+  added to the fixture failed two tests on each side; a stage added to
+  `STAGE_PROGRESS` failed the app's. A stage added to `_HUMAN_STAGES` passed
+  all ten, because `test_the_worker_says_exactly_the_static_words_the_fixture_
+  lists` builds its expected set from four hand-written `_human_stage` calls
+  rather than from the worker's own table. The cost was not a crash: the app
+  **holds** the bar on a stage it does not recognise, so a new stage with no
+  fixture entry stopped the bar for exactly as long as that stage took — the
+  measured-progress promise weakening quietly rather than breaking.
+  `test_every_stage_the_worker_can_name_is_in_the_contract` reads
+  `_HUMAN_STAGES` and closes it.
   Three rules that each exist because they were once broken: a stage this build
   does not recognise **holds** the bar (falling back threw a read at 70% down to
   5%); positions increase in the order the worker reaches them; and the reading
@@ -224,6 +277,97 @@ there works differently as of 2026-08-24:
   preference; `analyses.instrument` stores it; `analysis_runner` turns it into
   `analyze(..., double_bass=...)`. Store the instrument, never a derived flag —
   how each instrument should be treated is still being tuned.
+- **`app.json` is the one place a token has to be re-typed, so it is checked**
+  (2026-09-03). It is JSON and cannot import `design/colors.ts`, and its two
+  colours had already drifted: `expo.backgroundColor` and the Android adaptive
+  icon read `#FBFAF7` against a `colors.bg` of `#F7F2E9` — close enough that
+  nobody would see it side by side, far enough to be a flash of the wrong paper
+  on launch. Nothing checked it, while `scripts/flatten-vendor-assets.mjs`
+  checked the *web* build's background against the same token and printed the
+  result: the one surface with a check was the one that is not the shipping app.
+  `design/appConfig.test.ts` holds both now. These are colours the operating
+  system paints — the root view on launch and behind an over-scroll bounce, and
+  the plate a launcher draws the icon on — so they appear before any component
+  mounts and no screenshot of a screen can catch them.
+  `expo.backgroundColor` also needs **`expo-system-ui` installed** to reach iOS
+  at all; without it `expo prebuild` warns and drops it, so the wrong colour was
+  not being applied either. Measured after: `RCTRootViewBackgroundColor` =
+  `0xFFF7F2E9`.
+- **CI builds the iOS bundle, not just the web one** (2026-09-03). Every other
+  check in this repository — the walk, the a11y audit, every screenshot in
+  `EDIT_LOG.md` — runs through the **web** bundle, and the two module graphs are
+  not the same: `.web.ts` resolves to a native sibling, `Platform.OS` folds the
+  other way, and a `document.` outside a guard is invisible until a phone runs
+  it. `expo export --platform ios` resolves the native graph and Hermes
+  compiles it. Measured on the bytecode: `intempo-listen-` (the native player's
+  WAV name) present, `AudioContext` and `createMediaStreamDestination` absent,
+  `beforeunload` stripped with its guarded branch. It proves the bundle
+  **builds**, never that it **behaves** — nothing here has made a sound.
+- **The app can be built for a device** (2026-09-03). `ios.bundleIdentifier`
+  and `android.package` are `com.intempo.app`, and `eas.json` holds the
+  profiles; without them `expo prebuild` and EAS cannot run, so there was no
+  route onto a phone at all. The identifier is changeable until the first
+  submission and permanent after it. **No build has been produced** — no macOS,
+  no Apple account, no EAS credentials here.
+  **What still needs a person is `tools/check-store-readiness.py`, not a
+  sentence.** This line and `mobile/README.md` both said "three things" and
+  named the EAS and Apple ones, omitting the brand assets, the publisher's
+  details in `lib/legal.ts` (`entity`, `contact`, `jurisdiction`, all null) and
+  a policy at a public URL — which App Store Connect asks for as a URL, not a
+  screen. Six, not three. The tool reads `app.json`, `legal.ts` and the
+  brand-asset hashes live, so an item stops being listed when it is done and
+  nothing here has to be edited; the two that need an account are stated rather
+  than measured, and say so. There is deliberately no `development`
+  profile: it requires `expo-dev-client`, which is not a dependency, so it would
+  be config that fails on first use.
+
+- **The verdict feedback loop has a client** (2026-09-03). A revealed measure
+  on `VerdictScreen` asks *"What actually happened?"* and posts to
+  `/v1/analyses/:id/corrections`, which had never been called. `canCorrect` is
+  the row's own `revealsFigure` — one predicate, so the question cannot appear
+  on a bar the pipeline refused to judge — and the app's own reading is
+  pre-selected, because agreement is the control group and a form that collects
+  only disagreement measures the wrong thing. Rules in `lib/verdict/
+  correction.ts`, not in the `.tsx`.
+- **An export nothing references is the client-side twin of that, and there is
+  one check for each direction.** `test_client_reachability.py` holds the
+  server; `tools/check-dead-exports.py` holds the app, failing on a named export
+  that appears **nowhere else in the corpus at all** — not a screen, not a test,
+  not a tool. 511 exports, zero dead, and it runs in CI beside the EDIT_LOG and
+  brand-asset checks. It has **no allowlist**, deliberately: an exclusion list is
+  the thing that rots (see `excluded_on_purpose` further down), and the remedy
+  for an export nothing uses is to stop exporting it. A name common enough to
+  appear in unrelated prose is matched by that prose and passes, so its failures
+  are false *negatives* — the direction a check has to fail in if people are
+  going to keep running it.
+- **Which endpoints have no client is `NOT_WIRED`'s answer, not this file's.**
+  Today it holds one: `POST /v1/calibration` (spec §4, infer a target BPM from
+  a short clip). `bpm_source` carries `calibration_clip` for it, and
+  `submitTake.ts` described that flow *in the present tense* while sending
+  `manual` every time. Do not restate the list here — this bullet named
+  `POST /v1/analyses/:id/corrections` as unwired for one day after the verdict
+  screen started posting to it, contradicting the entry six bullets down that
+  says the loop has a client. **A count of unwired endpoints in prose is a
+  claim, and it goes stale in a day.**
+  What is worth keeping is *why* an empty one matters. The corrections router's
+  own docstring calls the loop *"the only route out of the position Batch 3 is
+  currently stuck in"* — thresholds still on the spec's starting values because
+  tuning needs real ears on real recordings, and an empty table cannot tune
+  anything. Verdict corrections are also easy to confuse with the *reading*
+  corrections, which are a different table and a different flow:
+  `MeasureEditScreen` → `scores.py` → `services/training.py`, consent-gated by
+  migration 013, and that is what the Profile toggle and the privacy copy are
+  about. Both are called "corrections".
+  `test_client_reachability.py` is the standing check, and it runs **both
+  ways**: every served `/v1` route must have a client, and every `/v1` URL the
+  app builds must be a route this API serves. The second is the one a musician
+  feels — a client with no route is a 404 in their hands, from a path mistyped
+  or renamed on one side only, and nothing else here would catch it because
+  there is no integration test against a running server. Paths only, since the
+  method sits in the fetch options rather than beside the URL. Its `NOT_WIRED` list is held **in both directions** — an entry
+  for a route the app has since started calling fails, and so does an entry for
+  a route that no longer exists — because an exclusion list whose reasons rot is
+  precisely what the timeline parity fixture was, one bullet up.
 - **A key printed mid-piece is a change of key** (2026-09-02).
   `Measure.key_signature` is the third field of the `time_signature` / `clef`
   shape and obeys the same rule: printed on one bar, holding until the next bar
@@ -245,6 +389,45 @@ there works differently as of 2026-08-24:
   `what_this_piece_is` names the key **at the bars being re-read**, and names
   none when they straddle a change — a corrector prompt that states the wrong
   key gets back a bar that sums perfectly and is spelled a semitone off.
+- **A repeat can open on one page and close on another** (2026-09-02). Most
+  pieces that repeat their opening print no `|:` at all, so a backward sign
+  with nothing to pair it with falls back to the start of what was read — right
+  for a piece, wrong for a *page*. Read alone, page 3 of a part reported a
+  repeat starting at page 3's first bar; measured, a `|:` on page 1 bar 5
+  closing on page 3 bar 4 read as **4** bars repeated where the truth is 20.
+  Two facts carry across the join and neither can be inferred later:
+  `ScoreJson.unclosed_repeat_starts` (the forward signs still open where a
+  page's music stopped — a **stack**, because nested `|:` is legal and losing
+  the outer one is the same bug a level down) and `Repeat.start_inferred`
+  (whether the opening was printed or fallen back to). `join_pages` rewrites
+  **only** the inferred ones. That second field is what makes it safe: a repeat
+  whose `|:` was genuinely printed on a page's first bar is an ordinary section
+  boundary and is left exactly alone, which is why dropping such repeats — the
+  other candidate fix — would have traded this bug for a worse one. Both
+  default to "no information", so every stored score reads back unchanged.
+  This was a strict `xfail` for a week whose reason said *"multi-page is inert
+  behind the unapplied 011, so nothing reads this today"* — 011 went live on
+  2026-08-29 and nobody re-read the note, so a live defect looked parked.
+  **A reason to postpone is a claim, and it goes stale like any other.**
+- **A clef printed mid-piece is a change of clef** (2026-09-02).
+  `Measure.clef` is the fourth field of the `time_signature` / `key_signature`
+  shape and obeys the same rule; `ScoreJson.clef` stays the clef the page
+  **opens** in. Compared against the clef **in force**, never the header, or a
+  part returning to bass at bar 40 records the departure and drops the return.
+  `staveScoreFor` marks the item opening a changed bar; `layoutSystem`'s
+  `middleStep` is a **running** value updated *before* that item is placed,
+  because a clef printed at a bar governs that bar's first note too. A system
+  starting after a change opens its head in the new clef and does not repeat
+  it; a change mid-system is drawn small (`CLEF_CHANGE_SCALE`) and
+  right-aligned against the notehead it governs — anchored to the **note**, not
+  the barline, because a clef change is legal without one.
+  **`EngravedHead.clef` carries which clef it is**, not just a position: the
+  renderer used to draw `CLEF_GLYPH[clef]` from its own prop, which the moment
+  a later system could open in a different clef would have drawn the opening
+  sign at the new clef's line — invisible to any test checking geometry rather
+  than glyphs.
+  `fixture-clef-change-study` is the fixture; without one this was a state
+  nobody had looked at, which is how it stayed broken.
 - **A misread bar is fixable, not fatal.** `MeasureEditScreen` corrects
   durations, rests, **pitch** (stepping by letter, with a separate accidental
   control) and adds or deletes notes. Reached two ways from `PieceScore`: the
@@ -256,18 +439,64 @@ there works differently as of 2026-08-24:
   `pitch` only as `== "rest"`, but a **tie** is now validated by whether two
   noteheads share a pitch, so a wrong pitch can delete an onset. Correcting it
   is repairing the timeline, not decoration.
-- **Four things flag a measure, and only one of them is arithmetic.** Beat sums
-  (`verdict`), broken ties, tuplet ratios that contradict their bracket, and
-  note density far above the page's median. The last three all exist because a
-  measure can sum to **exactly** the right number of beats and still be wrong —
-  a slur written as a tie, a 5:4 bracket approximated as triplets, a tremolo
-  read as sixteen sixteenths. Keep them separate from `verdict`; collapsing
-  them lets a clean beat sum hide them.
+- **`MeasureConcern.kind` names the branch that wrote the sentence** — and one
+  branch had no name (2026-09-03). `_concerns_for`'s ladder ended in an `else`
+  returning `"beats"`, so `out_of_line`, added later, fell through it. The app
+  prints `detail` verbatim for every kind **except** `"beats"`, which is the
+  one wording allowed to promise arithmetic — it becomes *"doesn't add up to
+  the time signature"*. And `out_of_line` is set **only where no metre could be
+  read**, so a bar flagged for being out of step with its page was described to
+  a musician as disagreeing with a time signature the server had just said it
+  could not find. The true sentence was sitting in `detail` the whole time.
+  It has a kind now (`adrift`), and `_concern_kind` is extracted so the mapping
+  can be exercised one fault at a time:
+  `test_every_fault_a_measure_can_carry_has_its_own_concern_kind` reads
+  `MeasureFinding`'s fields, so a *new* flag with no branch fails instead of
+  quietly becoming arithmetic. Do **not** replace the `else` with a default
+  again; an unmapped fault is not an unreported one, it is a misreported one.
+  `test_a_new_concern_kind_would_still_reach_the_musician` holds the other
+  half — the app names `'beats'` and nothing else, which is what lets a new
+  server-side check reach the screen with no client change.
+
+- **Six things flag a measure, and only one of them is arithmetic.** Beat sums
+  (`verdict`), plus five separate fields on `MeasureFinding`: `broken_ties`,
+  `tuplet_faults`, `too_dense`, `unwritable_notes` and `out_of_line`. The five
+  all exist because a measure can sum to **exactly** the right number of beats
+  and still be wrong — a slur written as a tie, a 5:4 bracket approximated as
+  triplets, a tremolo read as sixteen sixteenths. Keep them separate from
+  `verdict`; collapsing them lets a clean beat sum hide them.
+  **This line said "four" and named three** (2026-09-03): `unwritable_notes`
+  and `out_of_line` arrived later and nobody came back. The count is not
+  written down anywhere now — `test_the_cases_exercise_every_flag_there_is`
+  reads the dataclass and fails when a sixth appears with no case, which is the
+  only version of this sentence that cannot go stale again.
 - **The validator has one home and two ports**, and they must agree:
   `ocr/validate.py`, plus `tools/validator-sandbox.template.html` and
   `tools/scan-bench.template.html`. `test_sandbox_parity.py` is the only thing
   holding them together — when you add a check, port it and add a case, or the
   browser tools will quietly call a bad page clean.
+  It compares **which flag fired**, not just that one did (2026-09-03). It used
+  to compare `verdict` and `is_problem`, and `is_problem` is true for any of the
+  six — so a port that flagged the right bar for the *wrong reason* matched on
+  every field the test looked at, and the sandbox would mark a page for a fault
+  it does not have. Measured when the assertion went in: all three copies agreed
+  on every flag, on all 44 cases. Nothing was broken; nothing was holding it.
+- **The timeline has two walks and one contract, and an exclusion needs a
+  reason that is still true.** `alignment.build_timeline` builds what the
+  analysis expects to hear; `lib/score/schedule.ts` builds what the app plays.
+  `fixtures/timeline/parity.json` holds both the onset times **and**
+  `expected_measures`, the performed order — because two bars of equal length
+  swapped give the same times, and the performed order is what
+  `measuresInPlayOrder` (a hand port of `expand_repeats`) can get wrong.
+  Its `excluded_on_purpose` field is the dangerous part: it listed repeats,
+  saying playback plays straight through, which stopped being true the day
+  `scheduleScore` started expanding them — and a test *asserted* the exclusion,
+  so the one piece of arithmetic most likely to drift could not be covered
+  without first disbelieving the file. **Slurs are the only real difference**
+  (the server emits no onset under a bow stroke; playback sounds it). Before
+  adding to that list, measure both walks on the same score; before trusting a
+  line already on it, measure again.
+
 - **The app does not have a fourth copy, and must not grow one.** It reads
   `ScoreResponse.concerns`, which the server computes. It had its own beat-sum
   check, which was fine while beat sums were the only test — then three checks
@@ -352,9 +581,14 @@ there works differently as of 2026-08-24:
   lives only in the Modal container, so the API host can read nothing, and
   `_read_page` refuses **before downloading the page** rather than paying for
   megabytes to reach a worse error. "homr is not installed in this container"
-  matches no `_FAILURE_REASONS` needle and lands on *"a flatter, better-lit
-  shot of the page usually fixes it"* — a server fault blamed on the musician,
-  for the third time.
+  *used* to match no `_FAILURE_REASONS` needle and land on *"a flatter,
+  better-lit shot of the page usually fixes it"* — a server fault blamed on the
+  musician, for the third time. It has a needle now (`"not installed"`), with
+  four more beside it for the other ways the server can be at fault, and
+  `_why_it_failed` flattens underscores **and hyphens** so `GEMINI_API_KEY`,
+  `x-api-key` and "api key" are one fact rather than three. Verified live:
+  that string returns *"That is a fault on our side, not with your
+  photograph"*. Read this as the reason the needles exist, not as an open bug.
 - **The boot watchdog must never fire over a mounted app.** It reported *"The
   app crashed while starting. / unknown error"* for a **dropped image request**
   — `expo-image` and react-native-web both mount real `<img>` elements, a
@@ -415,6 +649,75 @@ there works differently as of 2026-08-24:
   the photograph exists to check, so it cannot be the thing that authorises
   throwing it away.
 
+- **Taking your data out means a file, and only when it left the app**
+  (2026-09-03). `saveAccountExport` shared the JSON as a `message` on native —
+  which on iOS is a *string*, so the sheet offered Messages and Mail, never
+  "Save to Files", and RN's `title` being Android-only meant the filename it
+  computed was thrown away. It writes a file with `expo-file-system` and shares
+  `url` **alone**: a sheet handed `url` and `message` together offers some
+  destinations the text, which is the same defect in half the sheet. Android
+  still shares text because RN ignores `url` there — the comment names the line
+  to change when Android ships. And `Share.share` **resolves for a dismissal**,
+  so the function answers whether the export left the app; the screen said
+  "Your export is ready" to everyone who opened the sheet and changed their
+  mind. One export sits in the cache at a time — it is the musician's data in
+  the clear — and the *current* one is deliberately not deleted when the sheet
+  closes, because the destination copies it during the activity.
+  `fetchAccountExport` also carries the sample-data guard its five neighbours
+  carry: without it, it was the one call in the app that reached `apiFetch`
+  with no token and told a musician **"Your session has ended. Sign in
+  again."** on a build where every other screen has them signed in.
+
+- **A generated file with no check drifts, and this one is a legal notice**
+  (2026-09-03). `src/data/licences.ts` says at the top that it is generated and
+  must be regenerated after a dependency change, and `expo-system-ui` was
+  missing from it — the most recently added dependency, absent from the page a
+  user reads in the shipped app, with nothing failing. `licences.test.ts` holds
+  both directions against `package.json`, which is also what keeps the two
+  vendored lists (generator and test) in step without anyone remembering.
+  The generator now **throws** on a package it cannot read: it used to `catch`
+  and drop it, so running it against a partial install silently *deleted*
+  attributions and printed a success line — the same outcome as never running
+  it, with a commit behind it.
+
+- **A signed mean answers "which way", never "how much"** (2026-09-02). Insights
+  summarised thirty days with one, so a musician 18% ahead in one bar and 18%
+  behind in the next averaged to **zero** — and the headline's band and
+  direction were not read off that mean at all but **borrowed from one take**,
+  whichever sat nearest it. Two takes 15% either side of the beat therefore
+  read "You tend to drag" or "You tend to rush" **depending on the order the
+  server returned them in**, over a bar sitting dead centre. `spreadPct` is the
+  companion: mean **distance** from the beat, averaged over a take's
+  *measures*, because a per-take mean is where the cancelling happens. It is
+  never below `|meanDeviationPct|`, so the gap is the part no direction
+  explains.
+  `bandFor` / `directionFor` are ports of the pipeline's `classify_band` /
+  `_direction` applied to the aggregate — safe only because
+  `result_json.tolerance` travels with each take, so **no threshold is invented
+  in the app**; that also deleted a third copy of them inlined in `fixtures.ts`.
+  `tempoWanders` is two of the server's threshold tests, never a ratio between
+  the two figures (`DECISIONS.md`, 2026-09-02), and the spread is tested
+  against the **wider** inner threshold because a distance has no side.
+  Where a direction would be false the word is **"Uneven"** — the word
+  `measureReading.ts` already uses — and the bar fills **both ways**: a centred
+  bar under "Your tempo wanders" is the same word-versus-picture contradiction
+  one element lower.
+  Three things fell out of reading `verdict` as "is anything wrong here":
+  `PieceInsightRow` said "On tempo" for the least steady piece in the library,
+  `today.ts` skipped that piece for having no direction while sorting it to the
+  bottom, and "Recent sessions" ran a *single take* through `formatTendency`,
+  whose own comment says one recording cannot see a habit — rendering
+  "Today · 96 BPM · You tend to rush".
+  **`formatTendency` and `formatTendencyDetail` are module-private to
+  `lib/insights/tendency.ts`** and must stay that way. They were exported from
+  `lib/tempo.ts` while the headline was a lookup from a verdict, which was
+  fine; once it became a rule, the export was a way to get the old answer with
+  none of it. Insights was fixed and **Today was not** — for one commit a
+  musician read "Your tempo wanders" on one tab and "You tend to rush" on the
+  next, about the same thirty days, and it was found by driving the app in a
+  browser rather than by any test. Ask through `readTendency`; a third caller
+  no longer compiles.
+
 - **Onboarding is one screen, all three answers are required, and the gate
   fails open.** Name, photograph and instrument — the owner's call on
   2026-08-25 (*"dont make name profile and instrument optional"*), reversing
@@ -438,9 +741,49 @@ there works differently as of 2026-08-24:
   never sent back through — `onboarded` is the only thing that decides this,
   never a missing instrument.
   **`users.instrument` is nullable and never defaulted**, the same rule as
-  `ScoreJson.clef` and for the same reason — `instrumentInUse()` falls back to
-  the device preference, which always has a value, so no screen needs a "no
-  instrument" branch.
+  `ScoreJson.clef`. This used to add "— `instrumentInUse()` falls back to the
+  device preference, so no screen needs a 'no instrument' branch", and that
+  function was **called by nothing** (measured 2026-09-03: the only dead export
+  of 499 in `mobile/src`). It is **deleted** now, because
+  `adoptAccountInstrument` below is the reconciler that actually runs and the
+  two stated opposite rules — `instrumentInUse` said the account always wins,
+  the shipped one says the account seeds a device that has never stored an
+  instrument and never overrides one. A dead function stating the losing rule is
+  a trap: wiring it up reverts a musician's own choice from a value the server
+  was never told. `tools/check-dead-exports.py` is the standing check that found
+  it and now keeps the tree at zero. No screen needs the branch because no screen
+  reads
+  the account's instrument at all; everything that acts on one — the warmup,
+  `submitTake`, the Profile control — reads `preferences`, the device cache.
+  The reconciler was written, documented and never wired up, so **the sentence
+  named a mechanism that is not running.** What the two stores actually do:
+
+  | | writes account | writes device |
+  |---|---|---|
+  | `OnboardingScreen` → `useUpdateProfile` | yes | yes (mirrored on success) |
+  | Profile's instrument control | **no** | yes |
+  | a fresh install | — | defaults to `violin` |
+
+  **The seeding half is fixed** (2026-09-03).
+  `preferences.adoptAccountInstrument` fills the cache from the account **only
+  on a device that has never stored one**, which is what makes it safe: a
+  device with an instrument has one because somebody chose it *there*, and
+  since Profile does not write back to the account, adopting on every load
+  would revert that choice from a value the server was never told. An empty
+  cache cannot conflict with anything. `RootNavigator`'s `SignedInApp` calls it
+  where the account arrives — above the early returns, because a hook below one
+  is React error #310, which `EDIT_LOG` records this project shipping once.
+  `DEFAULTS.instrument` is `violin`, so "stored violin" and "nobody said" are
+  indistinguishable from `current` alone; `instrumentIsStored` is the flag that
+  tells them apart, and it is cleared on the fresh-install early return rather
+  than relying on its initialiser.
+
+  **The other half is not fixed and is a product decision**: Profile's control
+  still writes only the device, so the account keeps the onboarding answer for
+  ever. Making it write the account means choosing what happens offline —
+  follow `changeTrainingConsent` and the control stops working without a
+  network (and in fixtures builds); write locally *and* fire the update and the
+  two can diverge silently. Not a quiet refactor; ask first.
   Both rules the screen can get wrong live in `lib/onboarding.ts` where they are
   tested, not in the `.tsx`.
 
@@ -462,6 +805,16 @@ there works differently as of 2026-08-24:
   JWKS fetch to 30s; both are set in `db.py` and `auth.py` now. Starlette's pool
   holds forty threads and is shared with background work, so an untimed call does
   not degrade the API, it removes it.
+  **This sentence was true and held by nothing** until 2026-09-03: the three
+  constants had one definition and one use each, and no test. Dropping
+  `_options()` from a factory — or adding a fourth factory without it — restored
+  the 120s default and passed the whole suite.
+  `test_blocking_timeouts.py` checks it by **calling** the factories with
+  `create_client` and `PyJWKClient` monkeypatched, so the assertion lands on the
+  options object that reaches the library rather than on a line of source, and it
+  **enumerates** the `get_*_client` factories out of the module — the mutation
+  worth guarding is the factory added next month by someone who has never read
+  this file.
 - **Reading a page dispatches to its own daemon threads, not to
   `BackgroundTasks` and not to a `ThreadPoolExecutor`.** Two reasons for taking
   it off BackgroundTasks and both matter: the Modal spawn is a gRPC round trip
@@ -479,9 +832,64 @@ there works differently as of 2026-08-24:
 - **`send` already retried, so React Query must not.** Two 45s attempts inside
   `send` plus `retry: 1` outside it was three minutes on a skeleton before an
   error appeared. An `ApiError` is never retried — it was answered.
+  **A write is never repeated at all**, and that is the more expensive half: a
+  POST that timed out may have been received and run with only its answer lost,
+  so asking again submits a second take or creates a second piece the musician
+  never made. React Query's default is one retry for mutations too.
+  Both policies lived as a `const` in `App.tsx` with nothing holding them until
+  2026-09-03; they are `data/queryClient.ts` now, because a rule inside a
+  `.tsx` is a rule nothing checks — the same doctrine the capture path is
+  written from. Neither is reachable by a walk or a screenshot: a duplicate take
+  needs a timed-out POST the server actually ran, which nothing here can stage.
+  The query side is driven through `fetchQuery` and counted; the mutation side is
+  asserted as configuration, because there is no React testing library here and
+  `false` has nothing between it and the library.
 - **Cancel cancels.** `uploadToSignedUrl` takes an `AbortSignal`; the flag that
   used to "cancel" only made the *result* be ignored while the transfer kept the
   phone's entire uplink, so cancelling a slow upload made the app slower.
+
+### The recording path (2026-09-02) — level is not the signal you think it is
+
+- **The onset detector is amplitude-invariant, and this is measured.**
+  `onset_strength` differences a dB-scaled mel spectrogram, so scaling a
+  waveform shifts every frame by a constant the differencing removes. All six
+  fixtures, requantised to 16 bit at each level, read **identically from 0 dBFS
+  to -90 dBFS** — tables in `TUNING_LOG.md`, 2026-09-02, pinned by
+  `test_the_detector_hears_the_same_notes_however_quiet_the_take_is`. A quiet
+  take is a perfectly good take. **Never warn about one**, and never add a
+  loudness floor: any non-zero floor takes a verdict away from a musician who
+  could have had one. This is the rare threshold that is not a judgement call.
+- **The only take with nothing in it is one whose every sample is zero**, which
+  is what a muted input, a revoked permission, or a device recording from an
+  unrouted source produces. `lib/audio/level.ts` refuses exactly that, before
+  the upload and before it costs one of three free monthly analyses.
+  `EmptyRecordingError`'s description claimed to cover a muted input for
+  months and did not: the check was `durationOf(chunks) === 0`, and a muted
+  microphone delivers samples like any other. Yes, this is a client-side rule
+  about audio that the server also holds — `DECISIONS.md`, 2026-09-02, argues
+  why it is not the fourth-copy mistake, and the argument is directional: the
+  app refuses a strict subset, so it can only ever under-refuse.
+- **`no_onsets` has two causes and they are not the same person's problem.**
+  `expected.size == 0` is a page with no notes read off it — the app's failure,
+  named first when both are true, because no amount of re-recording makes it
+  analysable. `onsets.size == 0` is the silent recording. The branch used to
+  tell both to *"try re-recording a bit louder"*, which is a server fault
+  blamed on the musician **and** advice that measurably cannot work.
+  `diagnostics.py` has named both correctly all along; only the sentence a
+  musician sees was wrong.
+- **Both recorders now have tests, and had none.** 400 lines between a
+  musician's playing and the file the whole pipeline reads. They are driven
+  against stub graphs the way `click.web.test.ts` drives the metronome —
+  `expo-audio` is `vi.mock`ed down to a stream that emits `int16` buffers. A
+  rule that only the recorder enforces is a rule nothing checks, which is the
+  same doctrine the capture path below is written from.
+- **A message nobody has seen is a message nobody has checked.**
+  `walk-app.mjs`'s silent-microphone leg uses
+  `createMediaStreamDestination()` with nothing connected — a real
+  `MediaStream` carrying a real track that produces silence — so it exercises
+  the actual worklet in the actual built app. That is the pair to the refused-
+  microphone leg beside it, and both exist because the container has no audio
+  device and every unstubbed run takes the `NotFoundError` branch.
 
 ### The capture path (2026-08-24) — what an audit of it found
 
@@ -544,29 +952,133 @@ actually made here.
   deleted first leaks its object silently, which is the same bug one level
   down). `record` never raises — failing the upload because the bookkeeping
   failed costs the musician their page, which is the thing the bookkeeping
-  exists to protect. **Migration 014 is written and not yet applied**, so on a
-  deployment that has not run it the sweeper finds nothing and the hole is
-  still open.
+  exists to protect — `keys_for_user` is the one function there that does
+  raise, and its docstring says why.
+  **Account deletion is the fourth place these keys live, and it read three of
+  them.** `DELETE /v1/me` inventoried `users`, `scores` and `analyses`, never
+  `pending_uploads` — whose `user_id` migration 014 added *"so that deleting an
+  account can take its unclaimed uploads with it"*. That row cascades from
+  `auth.users`, so removing the identity removed the only index of the object:
+  no row, no owner, no sweeper entry, unreachable by every request including
+  the musician's own, produced by the one action they take to make their data
+  go away. It is read **last** in `_account_storage` so the fallback for a
+  deployment predating the migration can be narrow — any other failure would
+  already have aborted on the three queries above, and refusing to delete an
+  account over a missing table is worse than the bug being fixed.
+  **Migration 014 is applied on `intempo-dev` and nowhere
+  else** (2026-09-02, verified against `supabase_migrations`). The paused
+  `intempo` project stopped at 012, so if it is ever unpaused as production the
+  sweeper finds no `pending_uploads` table there and the hole is still open on
+  it. A migration that exists in the repository is not a migration that has
+  run: **013, 014 and 015 all sat unapplied for weeks**, and 015 was the reason
+  the start-bar picker — merged to `main` — refused every take.
 
 **Four screens a fixtures build can never reach**, because they sit behind
 auth or account state rather than behind a route: `AuthScreen` (`signedOut`),
 `SetPasswordScreen` (`recovering`), `AccountStartupScreen` (`loading`) and
 `OnboardingScreen` (`onboarded === false`). Every sweep in this repository
 misses all four. To look at one, flip the single value that gates it in a
-**throwaway build** — `useAuthStatus`'s fixture default, or `onboarded` on the
-fixture musician — and restore it with a `diff -q` check, the same discipline
-`.env` gets. `SignedInApp` takes a third: a `?startup=loading|error` query
-parameter forced into its two branches renders both `AccountStartupScreen`
-states. A state with no fixture is a state nobody has looked at, and that has
-now cost this project **five** times: a guessed clef captioned as read, an
+**throwaway build** — `useAuthStatus`'s fixture default, `onboarded` on the
+fixture musician, or `fixtureMusicianSource.getMusician` made to throw (the
+error state) or never settle (the loading state) — and restore it with a
+`diff -q` check, the same discipline `.env` gets. Cheapest is **one** build in
+which each of those reads a query parameter, so every state comes off a single
+bundle instead of one build apiece; all four were walked that way on
+2026-09-02.
+
+There is **no `?startup=` parameter in `SignedInApp`**, whatever this file said
+before: that screen is gated on `useMe()`'s `isPending` / `isError`, and
+nothing in shipping code branches on the URL. The note is corrected rather than
+deleted because a documented technique that does not exist costs the next
+session the time to discover that, which is what it cost this one.
+
+**The sixth such state is the one every single user meets first: an account
+with nothing in it.** Every fixture build has a library, a take and thirty
+days of insights, so Today, Library and Insights are only ever seen populated.
+Looking at the empty one is five one-line edits to `fixtures.ts` — early
+returns at the top of `listPieces` (`[]`), `getCurrentPiece` (`null`),
+`getInsights` (`null`), `getLatestTake` (`null`) and `getRecentTakes` (`[]`) —
+then `.env` aside, `npm run build:web`, serve, look, `git checkout --` the
+file. `tsc` reports unreachable-code errors on that build; they are the patch,
+not the app. Doing it on 2026-09-02 found Today telling a new musician
+*"Nothing to practice yet"* above a fully built daily warmup it was hiding from
+them.
+
+A state with no fixture is a state nobody has looked at, and that has
+now cost this project **six** times: a guessed clef captioned as read, an
 84×154 box of padding where a cover should be, two post-scan screens never
 rendered, onboarding asking a returning musician for a photograph their
-account already had, and — the first time anyone looked at it, 2026-09-01 —
-`AccountStartupScreen` holding a centred spinner between two left-aligned
-sentences, with the one button the screen exists to offer sitting at the
-vertical middle of the phone.
+account already had, `AccountStartupScreen` holding a centred spinner between
+two left-aligned sentences with the one button the screen exists to offer at
+the vertical middle of the phone (2026-09-01), and the empty Today above.
 
-**Honest DoD status:** no batch is tagged `batch-N-done`. Every remaining gate
-(live magic-link auth, upload→OCR→save, mic→analysis) is blocked on Supabase
-keys and a real device — none of it can be closed in-session, and the screens
-are verified *visually*, not end-to-end.
+**The tab bar is fine at 2x text and breaks at 3x** (measured 2026-09-03).
+Gaps between the four labels, at 375pt: 48–53pt at 1x, 25–33pt at 1.5x, **2–13pt
+at 2x**, and **−27 to −43pt at 3x — they overlap**. Vertically it survives: the
+bar stays 75pt at every scale while the label grows from 17pt to 51pt, and the
+label's bottom edge goes −17 → −13 → −8 → **0** against the bar's, so at 3x it
+is exactly flush and one step from clipping.
+
+`TAB_BAR_ROW_HEIGHT` is computed from **unscaled** tokens, which is why the bar
+does not grow — but the slack around the icon absorbs it as far as 3x, so this
+is a limit rather than a bug at any size below that. iOS's own tab bars drop to
+icons only at accessibility sizes, and this is a **custom** `BottomTabBar`
+(`tabBar={(props) => <BottomTabBar {...props} />}`), so React Navigation's
+handling is not in play — the app owns it. Hiding the labels above a font scale
+is the conventional answer and is §2.
+
+**A long piece title runs off the screen at large text, and the one-line fix is
+a design trade** (measured 2026-09-03). `PageHeader`'s title is `flex: 1`, and
+on the web build a flex item cannot shrink below `min-width: auto` — its
+*min-content* width, which `overflow-wrap: break-word` does **not** reduce. So
+with a real unabbreviated title ("Sonata No. 1 in G minor for unaccompanied
+violin, BWV 1001 — Adagio, Fuga, Siciliana, Presto") the title's right edge
+against a 375pt screen goes 295 · 373 · 494 · 734 at 1x · 1.5x · 2x · 3x.
+
+`minWidth: 0` removes the overflow at every scale and keeps the trailing action
+in the corner instead of dropping it below-left. **It was tried and reverted**,
+because it also authorises mid-word breaking everywhere: `screenTitle` is 36px,
+so at 2x "Library" has a min-content width of 229pt against a ~175pt box and
+renders as **"Lib / rar / y"** — on a far more common screen than a
+ninety-character title.
+
+The real constraint is not layout. At 2x the single word "unaccompanied"
+measures **481pt**, wider than the whole 335pt content column, so *no* flex
+rule can fit it: the only answers are breaking the word, shrinking the type, or
+truncating. All three are §2. Do not apply `minWidth: 0` to `PageHeader.title`
+without that decision — the `SearchField` fix that looks identical is **not**
+the same case, because an `<input>` scrolls its text rather than wrapping it.
+
+**Every brand asset is still the Expo starter's** (measured 2026-09-03, by
+looking at them): `icon.png`, `favicon.png`, the three Android layers and
+`public/app-icon.png` are a blue chevron on pale blue with the template's
+construction guides — dashed sight lines, two circles and a centre crosshair —
+on a product whose identity is warm paper and engraved notation. `icon.png` is
+1024×1024, RGB, no alpha, so App Store Connect would take it. **A wrong icon is
+not a build failure; it is a build that succeeds and is wrong.**
+`tools/check-brand-assets.py` lists them by hash and runs in CI. It does not
+fail while they are listed — drawing them is the owner's under §2 — but it does
+fail if a *new* asset ships as the starter's, or if a listed one is drawn and
+its line becomes a false claim. **This blocks the App Store submission**, and
+nothing else in the repository said so.
+
+`assets/splash-icon.png` was the same placeholder, referenced nowhere, and is
+deleted. There is **no splash configuration**: `expo prebuild` emits the bare
+template's `SplashScreen.storyboard`, whose background is
+`systemBackgroundColor` — white — so an iOS cold start flashes white before the
+app paints `#F7F2E9`. Wiring `expo-splash-screen` with a `backgroundColor` and
+no `image` does **not** fix it: measured on 2026-09-03, its plugin only rewrites
+the storyboard's background inside `applyImageToSplashScreenXML`, so with no
+image it leaves the white background, two constraints pointing at the imageView
+it just deleted, and an orphan `SplashScreenLogo` resource. That was tried and
+reverted — a launch storyboard that may not compile is worse than a flash.
+The splash wants the real mark on it, so it is one job with the icon.
+
+**Honest DoD status:** `git tag` is the answer, and this line said "no batch is
+tagged `batch-N-done`" while **batches 0, 1 and 2 were tagged and pushed** —
+which the ✅ marks in §4 agree with, one screen up. What is true is narrower and
+worth stating exactly: **3 and 4 are marked ✅ and are not tagged**, so by this
+file's own Definition of Done they are not done; 5 onward are ⏳. Every
+remaining gate (live magic-link auth, upload→OCR→save, mic→analysis) is blocked
+on Supabase keys and a real device — none of it can be closed in-session, and
+the screens are verified *visually*, not end-to-end.

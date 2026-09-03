@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
 import type { MeasureVerdict } from '../../data/types';
-import { readMeasure, wasTimed } from './measureReading';
+import {
+  describeTrendRange,
+  readMeasure,
+  timedMeasureRange,
+  wasTimed,
+} from './measureReading';
 
 /**
  * A bar under a written `rit.` is not a bar that was played well.
@@ -203,5 +208,90 @@ describe('a bar the page said not to judge', () => {
     );
 
     expect(reading.label).toBe('Uneven');
+  });
+});
+
+describe('the measures the trend line covers', () => {
+  /**
+   * Shaped like the sample take: ten timed bars, then a written tempo change,
+   * an uneven one and a fermata. `rolling_trend` drops all three, so the line
+   * stops at bar 10 while the take runs to 13.
+   */
+  const bar = (measure: number, extra: Partial<MeasureVerdict> = {}) =>
+    ({
+      measure,
+      verdict: 'on',
+      band: 'on',
+      deviationPct: 0,
+      timedNoteCount: 4,
+      ...extra,
+    }) as MeasureVerdict;
+
+  it('names the last timed bar, not the last bar of the take', () => {
+    const measures = [
+      ...Array.from({ length: 10 }, (_u, i) => bar(i + 1)),
+      bar(11, { underTempoChange: true }),
+      bar(12, { underTempoChange: true, uneven: true }),
+      bar(13, { timedNoteCount: 0, untimedReason: 'fermata' }),
+    ];
+
+    expect(timedMeasureRange(measures)).toEqual({ first: 1, last: 10 });
+  });
+
+  it('names the first timed bar when a take opens untimed', () => {
+    const measures = [
+      bar(1, { timedNoteCount: 0, untimedReason: 'ornament' }),
+      bar(2),
+      bar(3),
+    ];
+
+    expect(timedMeasureRange(measures)).toEqual({ first: 2, last: 3 });
+  });
+
+  it('spans the whole take when every bar was timed', () => {
+    expect(timedMeasureRange([bar(1), bar(2), bar(3)])).toEqual({ first: 1, last: 3 });
+  });
+
+  it('says nothing when nothing was timed, which is when there is no line', () => {
+    expect(
+      timedMeasureRange([bar(1, { underTempoChange: true }), bar(2, { timedNoteCount: 0 })]),
+    ).toBeNull();
+    expect(timedMeasureRange([])).toBeNull();
+  });
+});
+
+describe('describeTrendRange', () => {
+  /**
+   * The chart's axis and its spoken label are the same claim, and they had
+   * drifted: the axis was fixed to name the measures the line reaches while
+   * the `accessibilityLabel` beside it went on saying `measures.length`. On
+   * the sample take that read "across 13 measures" under an axis saying
+   * "Measure 1 … 10".
+   */
+  it('names the same two measures the axis prints', () => {
+    expect(describeTrendRange(1, 10)).toBe('Tempo drift from measure 1 to 10');
+    expect(describeTrendRange(4, 27)).toBe('Tempo drift from measure 4 to 27');
+  });
+
+  it('does not read a one-measure take as a range', () => {
+    // "from measure 4 to 4" reads as a fault in the sentence rather than as a
+    // short take.
+    expect(describeTrendRange(4, 4)).toBe('Tempo drift, measure 4');
+  });
+
+  it('takes what the axis takes, so the two cannot be given different numbers', () => {
+    // The guard against the drift coming back: this is fed from exactly the
+    // `timedMeasureRange` the labels are fed from.
+    const measures = [
+      { measure: 1, timedNoteCount: 4 },
+      { measure: 2, timedNoteCount: 4 },
+      { measure: 3, timedNoteCount: 0 },
+    ];
+    const covered = timedMeasureRange(measures);
+
+    expect(covered).toEqual({ first: 1, last: 2 });
+    expect(describeTrendRange(covered!.first, covered!.last)).toBe(
+      'Tempo drift from measure 1 to 2',
+    );
   });
 });

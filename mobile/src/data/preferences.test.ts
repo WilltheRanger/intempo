@@ -186,3 +186,116 @@ describe('setting one preference', () => {
     });
   });
 });
+
+/**
+ * Taking the account's instrument onto a device that has none.
+ *
+ * **The account is the source of truth and this cache was never filled from
+ * it.** Onboarding writes both, so the first device is right; a reinstall or a
+ * second device starts at `DEFAULTS.instrument` — violin — with nothing to
+ * correct it, and *everything that acts on an instrument reads this cache*:
+ * the warmup, the labels, and `submitTake`, which the server turns into
+ * `analyze(double_bass=...)`. A cellist on a new phone got violin warmups and
+ * violin onset thresholds.
+ *
+ * The safety of it is the "only when nothing is stored" clause. A device with
+ * a stored instrument has one because somebody chose it *here*, and the
+ * Profile control does not write that back to the account — so adopting on
+ * every load would revert their choice from a value the server was never told
+ * about.
+ */
+describe('adopting the account instrument', () => {
+  it('fills a device that has never stored one', async () => {
+    await hydratePreferences();
+    expect(preferences.current().instrument).toBe('violin');
+
+    expect(preferences.adoptAccountInstrument('cello')).toBe(true);
+    expect(preferences.current().instrument).toBe('cello');
+  });
+
+  it('fills one whose storage is genuinely empty, which is the real case', async () => {
+    // The shared `beforeEach` writes `'{}'` so that hydration runs its whole
+    // body. A **fresh install** returns null and takes the early return — the
+    // one path a reinstalled cellist actually follows, and the one where the
+    // stored-flag could have been left over from a previous hydrate.
+    store.clear();
+    await hydratePreferences();
+
+    expect(preferences.adoptAccountInstrument('double_bass')).toBe(true);
+    expect(preferences.current().instrument).toBe('double_bass');
+  });
+
+  it('forgets a previous device\u2019s stored instrument when storage is cleared', async () => {
+    store.set(KEY, JSON.stringify({ instrument: 'viola' }));
+    await hydratePreferences();
+    expect(preferences.adoptAccountInstrument('cello')).toBe(false);
+
+    // Signing out and back in, or reinstalling: nothing stored any more, so
+    // the account may fill it again. Without clearing the flag on the early
+    // return this stayed true and the account was ignored forever.
+    store.clear();
+    await hydratePreferences();
+
+    expect(preferences.adoptAccountInstrument('cello')).toBe(true);
+    expect(preferences.current().instrument).toBe('cello');
+  });
+
+  it('leaves a stored choice alone', async () => {
+    store.set(KEY, JSON.stringify({ instrument: 'viola' }));
+    await hydratePreferences();
+
+    // The case that makes overwriting unsafe: this device says viola because
+    // somebody chose viola on it, and the account has not been told.
+    expect(preferences.adoptAccountInstrument('cello')).toBe(false);
+    expect(preferences.current().instrument).toBe('viola');
+  });
+
+  it('leaves a stored choice alone even when it matches the default', async () => {
+    // The one a `current().instrument === DEFAULTS.instrument` test would get
+    // wrong: a violinist who really did choose violin here.
+    store.set(KEY, JSON.stringify({ instrument: 'violin' }));
+    await hydratePreferences();
+
+    expect(preferences.adoptAccountInstrument('double_bass')).toBe(false);
+    expect(preferences.current().instrument).toBe('violin');
+  });
+
+  it('does nothing for an account that was never asked', async () => {
+    await hydratePreferences();
+
+    // Accounts onboarded before the instrument was required keep their gaps
+    // and are never sent back through — `users.instrument` stays null.
+    expect(preferences.adoptAccountInstrument(null)).toBe(false);
+    expect(preferences.adoptAccountInstrument(undefined)).toBe(false);
+    expect(preferences.current().instrument).toBe('violin');
+  });
+
+  it('refuses a value the app has no name for', async () => {
+    await hydratePreferences();
+
+    // A server that grows a fifth instrument reaches this before it reaches
+    // any screen. Storing it would put an unrenderable key in the cache.
+    expect(
+      preferences.adoptAccountInstrument('theremin' as unknown as Instrument),
+    ).toBe(false);
+    expect(preferences.current().instrument).toBe('violin');
+  });
+
+  it('adopts once and then stops', async () => {
+    await hydratePreferences();
+
+    expect(preferences.adoptAccountInstrument('cello')).toBe(true);
+    // Idempotent: the caller re-runs it whenever the account value changes,
+    // and after the first time the device has a choice of its own.
+    expect(preferences.adoptAccountInstrument('viola')).toBe(false);
+    expect(preferences.current().instrument).toBe('cello');
+  });
+
+  it('stops adopting once someone sets one by hand', async () => {
+    await hydratePreferences();
+    preferences.setInstrument('double_bass');
+
+    expect(preferences.adoptAccountInstrument('cello')).toBe(false);
+    expect(preferences.current().instrument).toBe('double_bass');
+  });
+});

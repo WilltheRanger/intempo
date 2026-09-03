@@ -6,6 +6,163 @@ Operating Principle #5.
 
 ---
 
+## 2026-09-03 — A narrow ESLint over the recommended preset, and `error` over `warn`
+
+**Context.** The shipping app had no linter. Not a lax one — no dependency, no
+config, no script, nothing in CI. `frontend/`, the legacy tree that is not the
+product, was the one with the config. Six files in `mobile/src` carried
+`eslint-disable` directives for a linter that was not running, and two of those
+directives were suppressing rules that no longer fired at all.
+
+**Decision.** ESLint with `js.configs.recommended` +
+`tseslint.configs.recommended` and exactly four rules named on top of them:
+`react-hooks/rules-of-hooks` (error), `react-hooks/exhaustive-deps` (error),
+`no-console` (error), and `no-unused-vars` with a `^_` escape.
+
+**Alternative: `reactHooks.configs.flat.recommended`,** the way `frontend/`
+does it. Rejected because the preset brings rules for the React Compiler that
+this tree has not been through, and a first lint pass whose output is mostly
+questions nobody has answered is a lint pass people turn off. The narrow set
+produced 65 findings, of which the 25 that survived config tuning were all
+real: 17 pieces of dead code, five hook dependency arrays and three inert
+suppressions.
+
+**Alternative: `exhaustive-deps` as `warn`,** which is how most projects
+introduce it. Rejected: a warning in a tree that has never been linted is a
+warning nobody sees, and the four pre-existing suppressions are already written
+as `eslint-disable-next-line` with a reason beside each — which is the honest
+form of the same exception, and one a reviewer can argue with. `warn` would
+have converted five findings into five lines of output that a green CI run
+prints and nobody reads.
+
+**Why it is worth the four devDependencies.** `rules-of-hooks` is the one that
+pays for the install: a hook below an early return is React error #310, this
+project has shipped exactly that, and it compiles, typechecks, passes its tests
+and shows a white screen. The tree is clean on it today, which is a fact nobody
+could previously state.
+
+**Accepted trade-off.** Three rule families are switched off where they are
+wrong rather than argued with: `no-require-imports` for `.ts`/`.tsx` (React
+Native resolves bundled assets through `require()` and there is no import form
+that does it), `no-console` for `scripts/**` (a bench that cannot say what it
+measured is not a bench), and `no-explicit-any` / `no-this-alias` in tests
+(stubs are built deliberately wrong to drive code down paths a well-typed
+caller cannot reach). Each is scoped to a file glob rather than disabled
+globally, so the rule still applies everywhere the reasoning does not.
+
+---
+
+## 2026-09-02 — The app refuses a digitally silent take, despite the standing rule against a client-side copy of a server check
+
+**Context.** A muted microphone delivers samples like any other — all zero. The
+take uploaded, ran the pipeline, came back `no_onsets`, and had spent one of
+three free monthly analyses to tell the musician something their phone knew
+before the upload started.
+
+Refusing it locally runs straight into a rule this project holds hard, and
+holds for good reason: *"The app does not have a fourth copy, and must not grow
+one."* The app once carried its own beat-sum check, three more checks landed on
+the server, and the app went silent on all of them.
+
+**Decision.** Refuse in the app, at **exactly zero**, and only there.
+
+**Why this is not the fourth-copy mistake.** The validator case is a *judgement
+about a reading* — a body of knowledge that grew from one check to four and will
+grow again, where a client copy falls behind and lies. This is a **precondition
+on the upload**: a file with no signal in it. It cannot fall behind, because
+there is nothing for it to fall behind of — the server did not become better at
+recognising an all-zero file while the app was not looking.
+
+The invariant that makes it safe is directional. Every take the app refuses,
+the server also refuses; the app never refuses one the server could have
+analysed. Disagreement in the *other* direction is expected and fine — constant
+DC yields no onsets on the server while being far from zero here, and that take
+still goes up and gets the server's answer. The server stays the authority; the
+app declines only the case with no argument in it.
+
+**Alternatives considered.**
+
+*Let the server keep deciding, and stop charging for failures.* The kinder
+version of the current behaviour, and it fixes the quota but not the wait or the
+upload — a musician on a rehearsal-room connection still sends a file of zeros
+and still waits for it. It is also a change to billing, which this project has
+deliberately not settled (`tier_limits.py` says so). Worth doing as well, one
+day; it is not a substitute.
+
+*Refuse quiet takes too, at some dBFS floor.* The intuitive version, and
+measurement killed it. The onset detector is amplitude-invariant — identical
+readings from 0 dBFS to -90, tables in `TUNING_LOG.md` — so a take at the
+bottom of 16-bit resolution analyses exactly as well as a loud one, and **any**
+non-zero floor takes a verdict away from a musician who could have had one.
+This is the rare threshold that is not a judgement call.
+
+*Warn during the take instead of refusing after it.* Better for the musician —
+they would learn in two seconds rather than after three minutes of playing — and
+it is a new element on a screen, so it belongs behind the §2 gate rather than in
+a bug fix. The refusal is correct on its own and does not preclude it.
+
+**Trade-off accepted.** One rule about audio now lives in two places, and the
+app's copy is deliberately the weaker of the two. If the server ever starts
+refusing a *different* set — a minimum take length, say — the app will not know,
+and that is acceptable precisely because the app's rule is a subset that can
+only under-refuse.
+
+---
+
+## 2026-09-02 — Two threshold tests over a ratio, for calling a tempo uneven
+
+**Context.** Insights summarised a window of practice with one statistic, a
+signed mean, which cancels: a musician 18% ahead in one bar and 18% behind in
+the next averages to zero. The window needed a second measurement — the mean
+*distance* from the beat, ignoring side — and a rule for when that distance,
+rather than the direction, is the finding worth leading with.
+
+**Decision.** The tempo "wanders" when the **bias falls inside the pipeline's
+on-tempo band and the distance does not**. Both cutoffs come from
+`result_json.tolerance`, the numbers the server judged those takes by. The
+distance is tested against the **wider** of the two inner thresholds.
+
+**Alternatives considered.**
+
+*A ratio between the two figures* — spread more than twice the bias, say. It
+describes the shape well and it is a number invented in the app. Every number
+this project has invented has needed retuning against real playing, and this one
+would sit in a screen that makes claims about a person's musicianship while
+being reachable by nothing in `TUNING_LOG.md`.
+
+*The standard deviation of the per-take deviations.* Statistically the
+conventional answer, and it measures the wrong thing here: it is dispersion
+around the musician's own bias, so a player consistently 15% ahead scores near
+zero — steady, in the sense that a listener with a metronome would not call
+them steady. Distance from the beat is the quantity a musician is being told
+about.
+
+*A single threshold of our own — "wandering above 8%".* The same objection as
+the ratio, plus it would not move when the tuning does.
+
+**Why.** The rule invents nothing. It is two applications of cutoffs the
+pipeline already publishes per take, so retuning the backend retunes this with
+it — which is the property that made it safe to put a new claim about a
+musician's playing on the screen at all.
+
+**Trade-offs accepted.** A spread has no side, so there is no sign to select a
+threshold set with, and the two sides are deliberately asymmetric (§4: dragging
+is tolerated better). Taking the wider inner threshold means a distance that
+one side would call out-of-tolerance and the other would not is left unnamed.
+That is a real loss of sensitivity, accepted because the failure it prevents is
+worse: telling a musician their tempo wanders over a distance the app would
+have called on-tempo had they been on the other side of the beat.
+
+**Second decision, same change: the deviation bar draws both ways when the
+finding is the wandering.** The alternative was leaving it signed, which puts a
+bar sitting dead centre directly under the words "Your tempo wanders" — the
+same contradiction between a word and its picture that this whole change exists
+to remove. A symmetric fill is not decoration on the signed reading; it is the
+honest drawing of a different quantity, so it appears only when that quantity is
+what is being reported.
+
+---
+
 ## 2026-09-02 — A field on the measure over a list of key changes
 
 **Context.** A page can change key, and the schema had one `key_signature` on

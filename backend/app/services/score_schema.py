@@ -645,6 +645,25 @@ class Repeat(_Strict):
     start_measure: int = Field(ge=1)
     end_measure: int = Field(ge=1)
     type: RepeatType
+    #: True when no forward sign was printed and the opening was inferred.
+    #:
+    #: **The page-break repeat, which used to be read from the wrong bar.**
+    #: Most pieces that repeat their opening print no `|:` at all, so a
+    #: backward sign with nothing to pair it with falls back to the start of
+    #: what was read — right for a piece, wrong for a *page*. Read alone, page
+    #: 3 of a part reports a repeat starting at page 3's first bar; the truth
+    #: may be a `|:` printed on page 1.
+    #:
+    #: `join_pages` needs to tell those two apart, and only the importer knows
+    #: which it was. False here means a forward sign was actually printed, and
+    #: that repeat is correct as it stands even when it opens on a page's first
+    #: bar — which is a real section boundary in a lot of music, and the reason
+    #: dropping such repeats wholesale was the wrong fix.
+    #:
+    #: Defaults False, so every score written before this reads back as "the
+    #: opening was printed" — the assumption that leaves them exactly as they
+    #: were.
+    start_inferred: bool = False
 
 
 #: What a stated time signature has to look like: `N/N`.
@@ -694,6 +713,22 @@ class ScoreJson(_Strict):
     #: trying the next provider instead of losing the page.
     _keep_known_clef = field_validator("clef", mode="before")(_one_of(_CLEFS, "clef"))
     repeats: list[Repeat] = Field(default_factory=list)
+    #: Forward repeat signs still open where this page's music stopped.
+    #:
+    #: **A page is not a piece, and this is the half of that which used to be
+    #: thrown away.** A `|:` printed on page 1 and closed on page 3 is invisible
+    #: to an importer reading page 1 alone: the sign opens, nothing closes it,
+    #: and the reader discarded it. `join_pages` can pair it with the closing
+    #: sign on a later page, but only if the earlier page says it is there.
+    #:
+    #: A list rather than one value, because the importer already keeps a stack
+    #: — nested `|:` is legal — and carrying only the innermost would lose the
+    #: rest silently, which is the failure being fixed one level down.
+    #:
+    #: Measure numbers, like every other span here. Cleared by `join_pages` on
+    #: its output: a sign still open at the end of the *last* page is genuinely
+    #: unclosed and there is nothing left to pair it with.
+    unclosed_repeat_starts: list[int] = Field(default_factory=list)
     #: Empty for most music and for every score written before the field
     #: existed, which is why it defaults rather than being required.
     tempo_changes: list[TempoChange] = Field(default_factory=list)

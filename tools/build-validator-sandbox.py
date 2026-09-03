@@ -21,7 +21,13 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+# Started with the wrong interpreter, this dies on `import pydantic` before it
+# reads a fixture. `backend_python` re-execs under `backend/.venv`, so the
+# command in the docstring above works and so does a plain `tools/x.py`.
+from backend_python import use_backend_python  # noqa: E402
 from sandbox_shared import render  # noqa: E402
+
+use_backend_python()
 
 ROOT = Path(__file__).resolve().parent.parent
 TEMPLATE = ROOT / "tools" / "validator-sandbox.template.html"

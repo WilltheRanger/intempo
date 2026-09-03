@@ -12,17 +12,25 @@ screen after the upload finished, a save that failed after the bytes landed,
 and a transcribe retried against a fresh key. None is an error, and all three
 left a photograph of somebody's sheet music in storage forever.
 
-**Nothing here may raise.** Recording a pending upload is bookkeeping; failing
-to record one costs a swept object later. Failing the *upload* because the
-bookkeeping failed costs the musician their page, which is the thing the
-bookkeeping exists to protect. Every function contains its own failure and says
-so in the log.
+**Nothing here may raise, with one deliberate exception.** Recording a pending
+upload is bookkeeping; failing to record one costs a swept object later.
+Failing the *upload* because the bookkeeping failed costs the musician their
+page, which is the thing the bookkeeping exists to protect. `record`, `claim`
+and `sweep_unclaimed` therefore each contain their own failure and say so in
+the log.
+
+`keys_for_user` is the exception and inverts the trade: it is the inventory
+account deletion takes before removing an identity, and swallowing an error
+there strands objects with no row, no owner and no sweeper entry — permanently,
+during the one operation that cannot be retried. It raises, and its caller
+decides. See its docstring.
 """
 
 from __future__ import annotations
 
 import logging
 from datetime import datetime, timedelta, timezone
+from typing import Any
 from uuid import UUID
 
 from app.db import get_service_client
@@ -132,3 +140,42 @@ def sweep_unclaimed(*, now: datetime | None = None) -> int:
     if swept:
         log.info("swept %d unclaimed upload(s)", swept)
     return swept
+
+
+def keys_for_user(client: Any, user_id: UUID) -> dict[str, list[str]]:
+    """Every object this account has uploaded that nothing has claimed yet.
+
+    For account deletion, and **this is the one function here that raises**.
+
+    The rest of this module is bookkeeping whose failure costs a swept object
+    later; failing an upload over it would cost a musician their page. This is
+    the opposite trade. Its caller inventories storage *before* removing the
+    identity precisely so a failed inventory can abort the deletion — and
+    `user_id` cascades from `auth.users`, so once the identity goes these rows
+    go with it. Returning an empty dict on an error would strand the objects
+    with no row, no user and no sweeper entry: unreachable forever, created by
+    the one action a musician takes to make their data go away.
+
+    Grouped by whatever bucket each row names rather than by a fixed list, so a
+    fourth bucket needs no change here.
+
+    Takes the caller's `client` rather than reaching for its own, which is the
+    other difference from everything above. The inventory and the deletion that
+    follows it have to be the same view of the same database — an account
+    inventoried through one client and deleted through another can strand
+    exactly what this is here to catch.
+    """
+    rows = (
+        client.table(TABLE)
+        .select("bucket,object_key")
+        .eq("user_id", str(user_id))
+        .execute()
+    ).data or []
+
+    grouped: dict[str, list[str]] = {}
+    for row in rows:
+        bucket = row.get("bucket")
+        key = row.get("object_key")
+        if isinstance(bucket, str) and isinstance(key, str) and bucket and key:
+            grouped.setdefault(bucket, []).append(key)
+    return grouped

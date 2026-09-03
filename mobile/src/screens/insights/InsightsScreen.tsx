@@ -22,7 +22,8 @@ import {
   formatLastPracticedShort,
   joinMetadata,
 } from '../../lib/format';
-import { formatTendency, formatTendencyDetail } from '../../lib/tempo';
+import { readTendency } from '../../lib/insights/tendency';
+import { formatVerdict } from '../../lib/tempo';
 import type { AddPieceOption, TabScreenNavigation } from '../../navigation/types';
 import { TodayRow } from '../today/TodayRow';
 import { DeviationBar } from './DeviationBar';
@@ -143,23 +144,27 @@ export function InsightsScreen() {
 
   const focus = insights.pieces[0] ?? null;
   const takes = recentTakes.data ?? [];
-  const tendency = formatTendency(insights.verdict);
+  // Which of the two findings this window is — the direction, or the wandering
+  // that a direction cannot describe. The rule and the words are in
+  // `lib/insights/tendency.ts`, where they can be tested.
+  const tendency = readTendency(insights);
 
   return (
     <ScreenContainer onRefresh={refresh}>
       <PageHeader
         eyebrow={`Insights · ${windowLabel(insights.windowDays)}`}
-        title={tendency}
+        title={tendency.title}
       />
 
       <Text variant="body" color="textSecondary">
-        {formatTendencyDetail(insights.verdict, insights.sessions)}
+        {tendency.detail}
       </Text>
 
       <DeviationBar
         deviationPct={insights.meanDeviationPct}
+        spreadPct={tendency.showsSpread ? insights.spreadPct : undefined}
         tolerance={insights.tolerance}
-        accessibilityLabel={`${tendency} across your recent practice`}
+        accessibilityLabel={tendency.spoken}
         style={styles.bar}
       />
 
@@ -200,7 +205,13 @@ export function InsightsScreen() {
                 detail={joinMetadata([
                   formatLastPracticedShort(take.recordedAt),
                   `${take.targetBpm} BPM`,
-                  formatTendency(take.verdict),
+                  // `formatVerdict`, not `formatTendency`: this row is one
+                  // recording. The tendency wording is a claim about a habit —
+                  // its own comment says a single take cannot see one — and it
+                  // rendered here as "2 days ago · 76 BPM · You tend to rush",
+                  // a sentence about a musician's playing wedged into a list of
+                  // facts about one file.
+                  formatVerdict(take.verdict),
                 ])}
                 onPress={() =>
                   navigation.navigate('Verdict', { analysisId: take.id })

@@ -7,7 +7,17 @@ import { IconButton } from './IconButton';
 import { Text } from './Text';
 
 export interface PageHeaderProps {
-  title: string;
+  /**
+   * The serif heading. Omitted when the screen's finding is centred below.
+   *
+   * The two Verdict outcomes a musician meets after a take that could not be
+   * read put their finding in a centred `EmptyState`, so the header carries
+   * only the back control and the piece it is about. They still need the back
+   * row, and it lives here for a specific reason: the negative offset below is
+   * a **touch-target** fix, and a second copy of that row somewhere else is how
+   * the 32x44 back button comes back.
+   */
+  title?: string;
   /** Small line above the title — a date, a count. Omitted when null. */
   eyebrow?: string | null;
   /**
@@ -40,14 +50,20 @@ export function PageHeader({
     <View style={styles.container}>
       {onBack ? (
         <View style={styles.backRow}>
-          <IconButton
-            icon={ChevronLeft}
-            label={backLabel}
-            onPress={onBack}
-            // Pulled out to the gutter so the glyph lines up with the title
-            // below it rather than sitting indented by its own padding.
-            style={styles.back}
-          />
+          {/*
+            **The offset is on the row, not on the button**, and that is a
+            touch-target fix rather than a tidy-up.
+
+            `PressableScale` puts the caller's `style` on its inner animated
+            view and leaves the outer `Pressable` — the element that actually
+            receives the press — to size itself around it. A negative
+            `marginLeft` there therefore came *off the outer box*: measured in
+            Chromium, the back control was **32x44** against this app's own
+            44pt floor, on the most-used control it has. Offsetting the row
+            instead leaves the glyph in exactly the same place and gives the
+            button all 44 points back.
+          */}
+          <IconButton icon={ChevronLeft} label={backLabel} onPress={onBack} />
         </View>
       ) : null}
 
@@ -57,13 +73,17 @@ export function PageHeader({
         </Text>
       ) : null}
 
-      <View style={styles.titleRow}>
-        {/* flex so a long title wraps instead of shoving the action off-screen. */}
-        <Text variant="screenTitle" style={styles.title}>
-          {title}
-        </Text>
-        {action}
-      </View>
+      {title || action ? (
+        <View style={styles.titleRow}>
+          {/* flex so a long title wraps instead of shoving the action off-screen. */}
+          {title ? (
+            <Text variant="screenTitle" style={styles.title}>
+              {title}
+            </Text>
+          ) : null}
+          {action}
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -79,8 +99,9 @@ const styles = StyleSheet.create({
   backRow: {
     flexDirection: 'row',
     marginBottom: spacing.sm,
-  },
-  back: {
+    // Out to the gutter, so the glyph lines up with the title below it rather
+    // than sitting indented by its own padding. On the row because putting it
+    // on the button costs the button 12pt of touch target — see above.
     marginLeft: -spacing.md,
   },
   eyebrow: {

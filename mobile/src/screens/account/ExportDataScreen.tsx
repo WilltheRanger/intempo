@@ -1,4 +1,3 @@
-import { useNavigation } from '@react-navigation/native';
 import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { useGoBack } from '../../navigation/useGoBack';
@@ -15,10 +14,8 @@ import {
   saveAccountExport,
 } from '../../data/accountExport';
 import { spacing } from '../../design';
-import type { RootNavigation } from '../../navigation/types';
 
 export function ExportDataScreen() {
-  const navigation = useNavigation<RootNavigation>();
   const goBack = useGoBack({ tab: 'Profile' });
   const [preparing, setPreparing] = useState(false);
   const [done, setDone] = useState(false);
@@ -30,8 +27,11 @@ export function ExportDataScreen() {
     setError(null);
     try {
       const data = await fetchAccountExport();
-      await saveAccountExport(data);
-      setDone(true);
+      // Only when it actually left the app. `saveAccountExport` answers false
+      // for a share sheet the musician dismissed, which used to resolve like a
+      // success and put "Your export is ready" under a download that never
+      // happened.
+      setDone(await saveAccountExport(data));
     } catch (cause) {
       setError(
         cause instanceof Error

@@ -212,6 +212,20 @@ export interface StaveNote {
   /** The key changes at this bar. See `KeyChange`. */
   keyChange?: KeyChange;
   /**
+   * The clef printed at this item, when the page changes clef here.
+   *
+   * Absent everywhere else, and **never the clef the piece opens in** — that
+   * is the `clef` argument, and duplicating it here would draw a redundant
+   * clef at the first note. The same shape as `keyChange`, for the same
+   * reason: a clef is printed once and holds until another is printed.
+   *
+   * A cello or bass part moving into tenor for a high passage is ordinary
+   * writing. Without this the whole run is placed against the opening clef, so
+   * every notehead after the change sits a third or a sixth off — drawn
+   * confidently, at a pitch the page does not print.
+   */
+  clefChange?: Clef;
+  /**
    * The other pitches sounding with this one, from `ScoreNote.chord_pitches`.
    *
    * A double stop, or a chord. They share the principal's onset and value —
@@ -314,6 +328,20 @@ export interface StaveRest {
   measureNumber?: number;
   /** The key changes at this bar. See `KeyChange`. */
   keyChange?: KeyChange;
+  /**
+   * The clef printed at this item, when the page changes clef here.
+   *
+   * Absent everywhere else, and **never the clef the piece opens in** — that
+   * is the `clef` argument, and duplicating it here would draw a redundant
+   * clef at the first note. The same shape as `keyChange`, for the same
+   * reason: a clef is printed once and holds until another is printed.
+   *
+   * A cello or bass part moving into tenor for a high passage is ordinary
+   * writing. Without this the whole run is placed against the opening clef, so
+   * every notehead after the change sits a third or a sixth off — drawn
+   * confidently, at a pitch the page does not print.
+   */
+  clefChange?: Clef;
 }
 
 /**
@@ -334,6 +362,20 @@ export interface StaveMultiRest {
   measureNumber?: number;
   /** The key changes at this bar. See `KeyChange`. */
   keyChange?: KeyChange;
+  /**
+   * The clef printed at this item, when the page changes clef here.
+   *
+   * Absent everywhere else, and **never the clef the piece opens in** — that
+   * is the `clef` argument, and duplicating it here would draw a redundant
+   * clef at the first note. The same shape as `keyChange`, for the same
+   * reason: a clef is printed once and holds until another is printed.
+   *
+   * A cello or bass part moving into tenor for a high passage is ordinary
+   * writing. Without this the whole run is placed against the opening clef, so
+   * every notehead after the change sits a third or a sixth off — drawn
+   * confidently, at a pitch the page does not print.
+   */
+  clefChange?: Clef;
 }
 
 export type StaveItem = StaveNote | StaveRest | StaveMultiRest;
@@ -616,6 +658,17 @@ const STUB_FACTOR = 1.1;
  * never change size relative to the staff — a SMuFL em *is* four staff spaces.
  */
 const CLEF_WIDTH = 3.2;
+/**
+ * A clef printed mid-piece, in staff spaces, and the gap before it.
+ *
+ * Narrower than the head's `CLEF_WIDTH` because an engraver draws a change of
+ * clef smaller than the one that opens a system — it is a correction to the
+ * reader, not the start of a new line — and `CLEF_CHANGE_SCALE` is that size.
+ */
+const CLEF_CHANGE_WIDTH = 2.6;
+const CLEF_CHANGE_GAP = 0.4;
+/** How much of full size a mid-piece clef is drawn at. */
+export const CLEF_CHANGE_SCALE = 0.78;
 /** A key-signature accidental's column. They are all sharps or all flats. */
 const KEY_ACCIDENTAL_WIDTH = 1.0;
 const TIME_WIDTH = 2.0;
@@ -647,7 +700,15 @@ export interface EngravedHead {
    * a G clef curls around the G line, an F clef's dots straddle the F line.
    * Null when nothing knew the clef.
    */
-  clef: { x: number; y: number } | null;
+  /**
+   * The clef this system opens with, and which one it is.
+   *
+   * **The glyph travels with the position.** Once a piece can change clef, the
+   * system's own clef is not the piece's, and a renderer reaching for the
+   * caller's `clef` prop draws the opening clef at the new clef's line — the
+   * old sign on the new staff position, which is worse than either.
+   */
+  clef: { x: number; y: number; clef: Clef } | null;
   /** Key accidentals in printing order, each centred on its own `y`. */
   key: { x: number; y: number; kind: 'sharp' | 'flat' }[];
   /**
@@ -776,6 +837,14 @@ export interface EngravedSystem {
    * changes.
    */
   keyChanges: EngravedKeyChange[];
+  /**
+   * Clefs printed mid-system, at the bar each takes effect.
+   *
+   * A change on the first item of a system is not here: the head already opens
+   * that system in the new clef, and drawing it twice reads as two changes —
+   * the same rule `keyChanges` follows.
+   */
+  clefChanges: EngravedClefChange[];
   /** Baseline for the note names printed under this system. */
   nameY: number;
   /** Right edge of this system's staff lines. */
@@ -804,6 +873,18 @@ export interface EngravedDynamic {
   glyphs: string;
   /** Advance width, so the renderer can centre it without measuring text. */
   width: number;
+}
+
+/**
+ * A clef printed part-way through, at the bar it takes effect.
+ *
+ * `y` is the staff line the clef names, exactly as the head's is — a clef is
+ * the same drawing wherever it appears, only smaller here.
+ */
+export interface EngravedClefChange {
+  x: number;
+  y: number;
+  clef: Clef;
 }
 
 /** One glyph of a key change, centred on its own staff position like the head's. */
@@ -1066,13 +1147,6 @@ function noteRoom(note: StaveNote): number {
   return columns + (hasSecond(note) ? HEAD_WIDTH : 0);
 }
 
-function accidentalRoom(accidental: Accidental): number {
-  if (!accidental) {
-    return 0;
-  }
-  return HEAD_HALF + ACCIDENTAL_GAP * 2 + ACCIDENTAL_WIDTHS[accidental];
-}
-
 /** How wide a system's opening is, so justification can spend what is left. */
 function headRoom(head: HeadRequest | null, lineGap: number): number {
   if (!head) {
@@ -1187,6 +1261,8 @@ function extraRoom(
         repeatRoom(item) +
         tieRoom(item) +
         // A key change printed at the barline sits between it and the note.
+        // A clef printed here needs its own room, the same as a key does.
+        (item.clefChange ? CLEF_CHANGE_GAP + CLEF_CHANGE_WIDTH : 0) +
         keyChangeWidth(keyChanges[index]) +
         // Two marks in a row need the room between their centres that their
         // own halves take up. Nothing is reserved when either side is
@@ -1634,7 +1710,15 @@ function layoutSystem(
   closingChange: ResolvedKeyChange | null = null,
 ): { system: PlacedSystem; top: number; bottom: number } {
   const halfGap = lineGap / 2;
-  const middleStep = MIDDLE_LINE_STEP[clef];
+  /**
+   * Which line the middle of the staff names, for the clef **in force**.
+   *
+   * Reassigned as the run is walked: a clef printed mid-line moves every
+   * notehead after it. The head's key signature is placed against the value
+   * this starts at, which is right — the head opens the system in the clef the
+   * system starts in, and any change is drawn later, at the item carrying it.
+   */
+  let middleStep = MIDDLE_LINE_STEP[clef];
   const staffLines = [-2, -1, 0, 1, 2].map((i) => i * lineGap);
   const engravedNotes: EngravedNote[] = [];
   const engravedRests: EngravedRest[] = [];
@@ -1646,6 +1730,7 @@ function layoutSystem(
   const endings: EngravedEnding[] = [];
   const ties: EngravedSlur[] = [];
   const engravedKeyChanges: EngravedKeyChange[] = [];
+  const engravedClefChanges: EngravedClefChange[] = [];
   const stemLength = lineGap * STEM_FACTOR;
   const thickness = lineGap * BEAM_THICKNESS_FACTOR;
 
@@ -1658,6 +1743,7 @@ function layoutSystem(
     if (headRequest.clef) {
       head.clef = {
         x: headX,
+        clef: headRequest.clef,
         // Each clef names one line, and sits on it: G curls around the G line,
         // F's dots straddle the F line, C is centred on the middle line.
         y: -CLEF_LINE[headRequest.clef] * lineGap,
@@ -1722,6 +1808,27 @@ function layoutSystem(
   }
 
   notes.forEach((item, index) => {
+    // Before anything is placed for this item: a clef printed here governs
+    // this notehead too, not merely the ones after it.
+    if (item.clefChange) {
+      middleStep = MIDDLE_LINE_STEP[item.clefChange];
+      /*
+        **Right-aligned against the notehead it governs**, inside the room
+        `extraRoom` reserved before this item. Anchored to the note rather than
+        to the barline because a clef change does not need one — it is
+        commonest at a barline and legal without it, and anchoring to something
+        that may not exist is how the sign ends up somewhere else on the rare
+        page. The first item of a system is excluded: the head already opens
+        the line in this clef, and drawing it again reads as two changes.
+      */
+      if (index > 0) {
+        engravedClefChanges.push({
+          x: x - lineGap * CLEF_CHANGE_WIDTH,
+          y: -CLEF_LINE[item.clefChange] * lineGap,
+          clef: item.clefChange,
+        });
+      }
+    }
     if (item.barBefore && index > 0) {
       // The line sits midway in the gap it interrupts, so it belongs to
       // neither of the notes on either side.
@@ -1745,8 +1852,17 @@ function layoutSystem(
       // right by moving the barline left.
       const change = keyChanges[index] ?? null;
       const changeRoom = lineGap * keyChangeWidth(change);
+      // The clef sits between the barline and the note, so the barline clears
+      // it too — without this the line is drawn through the new clef.
+      const clefRoom = item.clefChange
+        ? lineGap * (CLEF_CHANGE_GAP + CLEF_CHANGE_WIDTH)
+        : 0;
       const barlineX =
-        x - noteGap / 2 - (opens ? lineGap * REPEAT_SIGN_ROOM : 0) - changeRoom;
+        x -
+        noteGap / 2 -
+        (opens ? lineGap * REPEAT_SIGN_ROOM : 0) -
+        changeRoom -
+        clefRoom;
       barlines.push({ x: barlineX, repeat: kind });
       if (change) {
         let glyphX =
@@ -2518,6 +2634,7 @@ function layoutSystem(
       dynamics,
       head,
       keyChanges: engravedKeyChanges,
+      clefChanges: engravedClefChanges,
       nameY,
       width: right,
     },
@@ -2930,6 +3047,7 @@ function shift(system: PlacedSystem, dy: number): PlacedSystem {
       time: system.head.time,
     },
     keyChanges: system.keyChanges.map((glyph) => ({ ...glyph, y: glyph.y + dy })),
+    clefChanges: system.clefChanges.map((glyph) => ({ ...glyph, y: glyph.y + dy })),
   };
 }
 
@@ -2958,6 +3076,26 @@ export function engrave(
   // on the key signature and on what came earlier in the same bar, so it is a
   // property of the score in order — not of a system, which is a slice of it.
   const capped = spellAccidentals(truncated, options.head?.key ?? []);
+  /**
+   * The clef in force at each item of `capped`, so a system that starts after
+   * a change opens its head in the clef the reader is actually in.
+   *
+   * The same shape as the key's `keyAtStart` below and for the same reason: a
+   * clef is printed once and holds, so the value a *later* system opens with
+   * is not the one the piece opens with. Without this the second system of a
+   * tenor passage draws a bass clef over notes placed for tenor.
+   */
+  const clefAt: Clef[] = [];
+  {
+    let running = clef;
+    for (const item of capped) {
+      if (item.clefChange) {
+        running = item.clefChange;
+      }
+      clefAt.push(running);
+    }
+  }
+
   // Positioned for this clef, once, because what a change prints depends on
   // the key before it — which may have been set on an earlier system.
   const keyChanges = resolveKeyChanges(capped, options.head?.key ?? [], clef);
@@ -3061,9 +3199,13 @@ export function engrave(
     // The clef and key signature take their room out of the same width, and
     // they take it from **every** system — the metre only from the first, which
     // is why this is computed per run rather than once.
+    // The clef this run is written in: the one in force at its first item.
+    const clefHere = clefAt[runStart - run.length] ?? clef;
     const headRequest: HeadRequest | null = options.head
       ? {
-          clef: options.head.clef,
+          // Only when the caller asked for a clef at all — `head.clef` null
+          // means nothing has read one, which stays true after a change.
+          clef: options.head.clef ? clefHere : null,
           key: keyAtStart,
           time: systems.length === 0 ? options.head.time : null,
         }
@@ -3104,7 +3246,7 @@ export function engrave(
 
     const laid = layoutSystem(
       run,
-      clef,
+      clefHere,
       lineGap,
       stretched,
       leftPad,

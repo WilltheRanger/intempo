@@ -64,12 +64,34 @@ export function groupByRecency(pieces: Piece[], now: Date = new Date()): PieceGr
     if (!group || group.length === 0) {
       return [];
     }
-    const sorted = [...group].sort((a, b) =>
-      key === 'never'
-        ? a.title.localeCompare(b.title)
-        : (daysSincePracticed(a.lastPracticedAt, now) ?? 0) -
-          (daysSincePracticed(b.lastPracticedAt, now) ?? 0),
-    );
+    const sorted = [...group].sort((a, b) => {
+      if (key === 'never') {
+        return a.title.localeCompare(b.title);
+      }
+      /**
+       * **By the instant, though the *heading* above it is still by the day.**
+       *
+       * `daysSincePracticed` counts whole calendar days, which is exactly
+       * right for `bucketFor` — the heading and each row's own label have to
+       * agree about which week something falls in, and that is what this
+       * module was pulled out of the screen to guarantee. It is wrong for
+       * ordering: every piece worked on the same day compares equal, so a
+       * morning's three pieces came back in whatever order the server listed
+       * them, under a heading claiming to be about recency.
+       *
+       * The third place this project has ordered by a rounded-off value and
+       * inherited row order underneath it — see `today.neglectedFrom` and the
+       * Insights headline. Title breaks a genuine tie so the list is stable
+       * even for two takes at the same millisecond.
+       */
+      const at = Date.parse(a.lastPracticedAt ?? '');
+      const bt = Date.parse(b.lastPracticedAt ?? '');
+      if (at !== bt) {
+        // Most recently practiced first.
+        return bt - at;
+      }
+      return a.title.localeCompare(b.title);
+    });
     return [{ key, label: GROUP_LABELS[key], pieces: sorted }];
   });
 }

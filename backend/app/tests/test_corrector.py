@@ -473,3 +473,38 @@ def test_bars_that_straddle_a_key_change_name_no_key_at_all() -> None:
     assert "G major" not in said
     # The clef is still worth saying — it did not change.
     assert "bass-clef" in said
+
+
+def test_the_clef_is_the_one_in_force_at_those_bars() -> None:
+    """**Worse than naming the wrong key, and it was the same mistake.**
+
+    This took a clef only when one of the bars asked about *stated* one, so a
+    passage that moved into tenor several bars earlier was described as the
+    bass part it started as — while the model was looking at a tenor crop. A
+    wrong key misspells the accidented notes; a wrong clef moves every note on
+    the staff, and `read_ties` matches noteheads by pitch, so the mismatch
+    deletes onsets rather than merely looking wrong.
+    """
+    from app.services.ocr.confirm import what_this_piece_is
+
+    score = _keyed("C major")
+    score.measures[1].clef = "tenor"
+
+    # Bar 3 states nothing; the clef in force there is still tenor.
+    assert "tenor-clef" in what_this_piece_is(score, [3])
+    assert "bass-clef" in what_this_piece_is(score, [1])
+
+
+def test_bars_that_straddle_a_clef_change_name_no_clef() -> None:
+    """Naming either one is wrong for the other half of the crop, and every
+    pitch in the reply is spelled against it. Same rule as the key and metre."""
+    from app.services.ocr.confirm import what_this_piece_is
+
+    score = _keyed("C major")
+    score.measures[1].clef = "tenor"
+
+    said = what_this_piece_is(score, [1, 2])
+
+    assert "clef part" not in said
+    # The key did not change, so it is still worth saying.
+    assert "C major" in said

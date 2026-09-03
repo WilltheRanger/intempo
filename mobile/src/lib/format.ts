@@ -38,11 +38,20 @@ export function daysSincePracticed(
  * "Practiced yesterday", "Practiced 3 weeks ago".
  *
  * Returns null when there is no timestamp, so callers omit the line entirely
- * rather than rendering a placeholder. Nothing behind the API supplies this
- * yet — see `data/sources/api.ts`.
+ * rather than rendering a placeholder.
+ *
+ * `now` is here so a caller that has already decided *which* piece against a
+ * given instant can describe it against the same one. `today.suggestionsFor`
+ * takes a `now` and did not pass it, so with an injected clock it chose the
+ * piece against that instant and then labelled it off the wall clock — a
+ * fortnight-old take reading "Practiced yesterday". Harmless in the app, where
+ * both are the current time, and a trap for anything that ever isn't.
  */
-export function formatLastPracticed(isoTimestamp: string | null): string | null {
-  const days = daysSincePracticed(isoTimestamp);
+export function formatLastPracticed(
+  isoTimestamp: string | null,
+  now: Date = new Date(),
+): string | null {
+  const days = daysSincePracticed(isoTimestamp, now);
   if (days === null) {
     return null;
   }
@@ -74,8 +83,9 @@ export function formatLastPracticed(isoTimestamp: string | null): string | null 
  */
 export function formatLastPracticedShort(
   isoTimestamp: string | null,
+  now: Date = new Date(),
 ): string | null {
-  const days = daysSincePracticed(isoTimestamp);
+  const days = daysSincePracticed(isoTimestamp, now);
   if (days === null) {
     return null;
   }

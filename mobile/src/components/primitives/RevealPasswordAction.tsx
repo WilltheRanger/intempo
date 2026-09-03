@@ -51,6 +51,14 @@ const styles = StyleSheet.create({
    */
   target: {
     minHeight: MIN_TOUCH_TARGET,
+    // **Both dimensions, and only one of them was set.** The height was padded
+    // to the floor and the width was left at whatever the word measures —
+    // 35pt for "Show", on a control that only appears on the two screens a
+    // fixtures build cannot reach, so nothing had looked at it. The box grows
+    // leftward into the gap beside the label; the word does not move enough to
+    // see (4.5pt) and the target reaches 44.
+    minWidth: MIN_TOUCH_TARGET,
+    alignItems: 'center',
     justifyContent: 'center',
   },
   pressed: {

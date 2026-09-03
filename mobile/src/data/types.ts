@@ -102,6 +102,31 @@ export type Articulation = 'staccato' | 'tenuto' | 'accent';
  */
 export type UntimedReason = 'tempo_change' | 'fermata' | 'ornament';
 
+/**
+ * What a musician can say actually happened in a bar the app judged.
+ *
+ * Mirrors `routers/corrections.UserVerdict`, held by
+ * `test_client_enums.py` — a closed set crossing the wire inside a request
+ * body, which is the same thing `Duration` and `Clef` are and gets the same
+ * treatment.
+ *
+ * Three words and not four bands: someone disagreeing with a bar is not
+ * adjudicating between "slight rush" and "rushing". `unsure` is a real answer
+ * rather than a refusal to answer — the spec expects many corrections from
+ * people disagreeing with the concept, and someone who cannot remember is
+ * more useful in the data than someone who guessed.
+ */
+export type UserVerdict = 'on_tempo' | 'rushing' | 'dragging' | 'unsure';
+
+/** One bar's worth of "this is what actually happened", as the API takes it. */
+export interface CorrectionInput {
+  measure_number: number;
+  /** What the app said, so the pair is stored together. */
+  app_verdict: string;
+  user_verdict: UserVerdict;
+  comment?: string | null;
+}
+
 export type Dynamics =
   | 'ppp' | 'pp' | 'p' | 'mp' | 'mf' | 'f' | 'ff' | 'fff'
   | 'fp' | 'sfz' | 'sf' | 'fz';
@@ -224,10 +249,12 @@ export interface ScoreTuplet {
  * A measure the reading cannot vouch for, as the server found it.
  *
  * Sent rather than recomputed. The app has its own beat-sum check, which was
- * enough while beat sums were the only test; the server now also checks broken
- * ties, tuplet ratios and note density, and **every one of those can fire on a
- * measure whose beats add up exactly**. Recomputing them here would be a fifth
- * copy of a validator that has already drifted three times.
+ * enough while beat sums were the only test; the server also checks broken
+ * ties, tuplet ratios, note density, notes this schema cannot write, and bars
+ * wildly out of step with a page whose metre could not be read — and **every
+ * one of those can fire on a measure whose beats add up exactly**. Recomputing
+ * them here would be a fourth copy of a validator that has already drifted
+ * three times (`ocr/validate.py` and its two browser ports).
  */
 export interface MeasureConcern {
   measure_number: number;
@@ -235,10 +262,18 @@ export interface MeasureConcern {
    * `unwritable` is the odd one out: it is not a doubt about the reading. The
    * page was read correctly and this app has no name for what was on it — a
    * double accidental, a triple dot, a quintuplet — so the notes are dropped
-   * rather than mis-named. Nothing switches on `kind`; `detail` is the
-   * sentence, and the server writes it.
+   * rather than mis-named.
+   *
+   * `adrift` is a bar far out of step with the rest of a page whose **metre
+   * could not be read**, so it is measured against the other bars instead.
+   *
+   * The app names exactly one of these: `'beats'`, the only wording allowed to
+   * promise arithmetic. Every other kind has its `detail` shown verbatim,
+   * which is what lets a new server-side check reach the screen with no client
+   * change — `test_a_new_concern_kind_would_still_reach_the_musician` pins
+   * that, so do not add a second branch here.
    */
-  kind: 'beats' | 'tie' | 'tuplet' | 'density' | 'unwritable';
+  kind: 'beats' | 'tie' | 'tuplet' | 'density' | 'unwritable' | 'adrift';
   /** A sentence fit to show a musician. */
   detail: string;
 }
@@ -373,6 +408,16 @@ export interface ScoreResponse {
    * every caller has to handle its absence.
    */
   image_url: string | null;
+  /**
+   * Every page of the scan, signed and in page order — page one first, so it
+   * is the same URL `image_url` carries.
+   *
+   * Sent only by `GET /v1/scores/:id`. The library listing leaves it as one
+   * entry, because a grid of thumbnails draws page one and forty rows of four
+   * pages is payload nothing renders. Optional so an older backend, which
+   * omits it entirely, still parses.
+   */
+  image_urls?: string[];
   image_url_expires_at: string | null;
   score_json: ScoreJson;
   /** Measures the server could not vouch for. Absent on an older backend. */
@@ -589,6 +634,20 @@ export interface Piece {
   /** A signed download URL from `/v1/scores`, or a bundled fixture image. */
   thumbnail: ThumbnailSource | null;
   /**
+   * Every photographed page of this piece, in page order.
+   *
+   * **`thumbnail` is page one, and for a long time it was the only one there
+   * was.** The piece screen's row says *"The pages this piece was read from"*
+   * and drew a single image, so a musician who photographed a four-page part
+   * could not look at the bar flagged on page three.
+   *
+   * Populated only when reading **one** piece — the library listing signs page
+   * one alone, because forty rows of four pages is a payload the grid does not
+   * draw. Empty for a piece entered by hand, and for one whose photographs
+   * were discarded on acceptance.
+   */
+  pages: ThumbnailSource[];
+  /**
    * The tempo written on the score, as OCR read it. Null when the marking was
    * absent or illegible — which is common on a phone photo of a manuscript, so
    * every caller has to have an answer for its absence.
@@ -682,6 +741,8 @@ export interface PieceInsight {
    * so the bar and the verdict can't disagree.
    */
   meanDeviationPct: number;
+  /** How far off the beat, either way — see `PracticeInsights.spreadPct`. */
+  spreadPct: number;
   band: Band;
   direction: Direction;
   verdict: Verdict;
@@ -703,6 +764,20 @@ export interface PracticeInsights {
   sessions: number;
   /** Mean deviation across every session, as a percentage of one beat. */
   meanDeviationPct: number;
+  /**
+   * Mean **distance** from the beat, ignoring which side — the same unit.
+   *
+   * The companion `meanDeviationPct` needs and never had. That one is a signed
+   * mean, so a musician who is 18% ahead in one bar and 18% behind in the next
+   * averages to zero and reads as perfectly steady. This one reads 18, which is
+   * the number that describes the playing.
+   *
+   * Never smaller than `Math.abs(meanDeviationPct)`, since the mean of the
+   * absolute values is at least the absolute value of the mean — so the gap
+   * between them is exactly the part of the wandering that a direction cannot
+   * explain.
+   */
+  spreadPct: number;
   band: Band;
   direction: Direction;
   verdict: Verdict;

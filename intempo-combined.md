@@ -1910,7 +1910,11 @@ Before any batch:
 1. **Fixed test set.** Curate 10 sheet-music photos (handwritten + printed; simple + complex) and 10 audio recordings (clean studio + noisy phone takes; treble + bass). These are your regression suite. Same files every time.
 2. **Branch per batch.** `feat/batch-N-description`. Squash to main on DoD.
 3. **One fixture file per endpoint.** When you hit a tricky API response, save the raw response to `fixtures/`. Use it in tests forever.
-4. **Don't optimize early.** Ship the slowest, ugliest version that works. Iterate in a later batch.
+4. **Build the best version first.** Not a sketch you intend to replace — the
+   version you would defend in review. Getting the data shape, the rule and the
+   composition right is cheaper now than after something is built on top of
+   them. Not licence to gold-plate: "best" means the best version *of what was
+   asked for*. Speed alone stays exempt — measure first, then optimise.
 5. **Keep a `DECISIONS.md`.** Every "I picked X over Y because Z" goes in this file. Save your future self the archaeology.
 6. **Don't ship `console.log` / `print` debug.** Use a real logger from day one (`pino` for JS, `loguru` for Python).
 7. **Smoke-test the happy path manually after each batch.** Automated tests catch regressions; manual tests catch UX wrong-feels.

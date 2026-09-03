@@ -69,7 +69,10 @@ describe('saving a key correction', () => {
     const corrected = applyKeySignatureEdit(score, 1, 'D major');
 
     expect(corrected.key_signature).toBe('D major');
-    expect(corrected.measures[0]).not.toHaveProperty('key_signature');
+    // Explicitly null rather than absent: the opening bar carries no printed
+    // change, and saying so is what stops a stale one outranking the header.
+    // The sibling case below asserts the same shape for a cleared change.
+    expect(corrected.measures[0].key_signature).toBeNull();
   });
 
   it('adds or replaces a change on a later bar', () => {
@@ -84,5 +87,56 @@ describe('saving a key correction', () => {
 
     expect(corrected.measures[1].key_signature).toBeNull();
     expect(corrected.measures[2].key_signature).toBe('C major');
+  });
+
+  it('records no change when the chosen signature is the one already in force', () => {
+    /*
+      The sheet lists all fifteen signatures and asks which is *printed at this
+      bar*; the natural way to read a list of keys is "which key is this bar
+      in". On a bar that prints nothing those are different questions, and
+      storing the answer to the second one puts a key change on a bar the page
+      does not change at — which the engraver then draws after the barline and
+      announces with a courtesy signature on the line before, warning a reader
+      about a change to the key they are already in.
+    */
+    expect(keyBeforeMeasure(score, 9)).toBe('G major');
+
+    const corrected = applyKeySignatureEdit(score, 9, 'G major');
+
+    expect(corrected.measures[2].key_signature).toBeNull();
+    // The relative minor prints the same marks, so it is the same non-change.
+    expect(applyKeySignatureEdit(score, 9, 'E minor').measures[2].key_signature).toBeNull();
+  });
+
+  it('still records a real change to a different signature', () => {
+    expect(applyKeySignatureEdit(score, 9, 'D major').measures[2].key_signature).toBe(
+      'D major',
+    );
+  });
+
+  it('clears a signature stamped on the opening bar, so the header edit is not a no-op', () => {
+    /*
+      A measure-level key outranks the header — that is what makes a change a
+      change — so setting the header while leaving one on the first bar changed
+      nothing at all: the musician corrected the opening key, the screen closed,
+      and the score still opened in the old one. `start_from_measure` stamps the
+      entry bar with the key in force, so this shape is one the app produces.
+    */
+    const stamped: ScoreJson = {
+      ...score,
+      measures: [
+        { ...score.measures[0], key_signature: 'G major' },
+        ...score.measures.slice(1),
+      ],
+    };
+
+    const corrected = applyKeySignatureEdit(stamped, 1, 'D major');
+
+    expect(corrected.key_signature).toBe('D major');
+    expect(corrected.measures[0].key_signature).toBeNull();
+    // And the correction is the key actually in force from bar 1 onward.
+    expect(keyBeforeMeasure(corrected, 2)).toBe('D major');
+    // Later changes are untouched.
+    expect(corrected.measures[1].key_signature).toBe('G major');
   });
 });

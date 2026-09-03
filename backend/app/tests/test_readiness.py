@@ -332,20 +332,89 @@ def test_every_post_initial_table_migration_has_a_readiness_check() -> None:
     )
 
 
-def test_manual_migrations_are_safe_to_run_again() -> None:
-    """The SQL editor is manual; uncertainty must not make retry dangerous."""
+#: The first migration written under the rule that a migration may be run twice.
+#:
+#: 001 and 005-011 predate it and are left alone deliberately: they have run
+#: everywhere they need to, and rewriting applied history to satisfy a test is a
+#: worse trade than recording where the rule starts. Re-running one of those is
+#: an error rather than damage — `ADD COLUMN` on an existing column simply
+#: fails — so the cost of the exemption is a confusing message to an operator,
+#: not a broken database.
+FIRST_IDEMPOTENT_MIGRATION = 13
+
+
+def test_migrations_written_under_the_rule_are_safe_to_run_again() -> None:
+    """The SQL editor is manual; uncertainty must not make retry dangerous.
+
+    **Generalised from a test that named 013 and 014 by hand.** Those two were
+    checked statement by statement and nothing covered 015, or anything after
+    it — so the rule was enforced for the two files that happened to exist when
+    it was written, which is the shape of a convention rather than a check.
+    Applying migrations is a manual act against a production database, and the
+    operator's guess about whether one already ran is exactly what the guards
+    exist to make free.
+
+    `ADD CONSTRAINT` is called out separately because Postgres has no
+    `IF NOT EXISTS` form for it. The only safe spelling is to drop it first,
+    which 015 does, and a reader copying the surrounding style would not know
+    that from the other statements.
+    """
+    import re
     from pathlib import Path
 
     migrations = Path(__file__).resolve().parents[1] / "migrations"
-    thirteen = (migrations / "013_training_corrections.sql").read_text()
-    fourteen = (migrations / "014_pending_uploads.sql").read_text()
 
-    assert thirteen.count("ADD COLUMN IF NOT EXISTS") == 3
-    assert "CREATE TABLE IF NOT EXISTS training_corrections" in thirteen
-    assert "CREATE INDEX IF NOT EXISTS" in thirteen
-    assert "IF NOT EXISTS (" in thirteen, "policies need an idempotent guard"
-    assert "CREATE TABLE IF NOT EXISTS pending_uploads" in fourteen
-    assert "CREATE INDEX IF NOT EXISTS pending_uploads_age_idx" in fourteen
+    #: Statement, and the spelling that makes re-running it a no-op.
+    GUARDED = (
+        (r"ADD\s+COLUMN\b", r"ADD\s+COLUMN\s+IF\s+NOT\s+EXISTS\b"),
+        (r"CREATE\s+TABLE\b", r"CREATE\s+TABLE\s+IF\s+NOT\s+EXISTS\b"),
+        (r"CREATE\s+INDEX\b", r"CREATE\s+INDEX\s+IF\s+NOT\s+EXISTS\b"),
+        (r"CREATE\s+POLICY\b", r"IF\s+NOT\s+EXISTS\s*\("),
+    )
+
+    unguarded: list[str] = []
+    for path in sorted(migrations.glob("*.sql")):
+        number = path.name.split("_", 1)[0]
+        if not number.isdigit() or int(number) < FIRST_IDEMPOTENT_MIGRATION:
+            continue
+        sql = path.read_text()
+        for statement, guard in GUARDED:
+            bare = len(re.findall(statement, sql, re.IGNORECASE))
+            safe = len(re.findall(guard, sql, re.IGNORECASE))
+            if bare > safe:
+                unguarded.append(f"{path.name}: {bare - safe}x {statement}")
+        # No `IF NOT EXISTS` exists for this one, so the guard is a prior drop.
+        adds = len(re.findall(r"ADD\s+CONSTRAINT\b", sql, re.IGNORECASE))
+        drops = len(re.findall(r"DROP\s+CONSTRAINT\s+IF\s+EXISTS\b", sql, re.IGNORECASE))
+        if adds > drops:
+            unguarded.append(
+                f"{path.name}: {adds - drops}x ADD CONSTRAINT with no DROP ... IF EXISTS before it"
+            )
+
+    assert unguarded == [], (
+        f"{unguarded} cannot be run twice. Migrations are applied by hand in "
+        "the Supabase SQL editor, where an operator unsure whether one already "
+        "ran must be free to run it again."
+    )
+
+
+def test_the_idempotency_rule_still_covers_the_migrations_it_was_written_for() -> None:
+    """The generalised check must not have gone vacuous.
+
+    A rule that skips every file is a passing test that guards nothing, which
+    is how a cut-off constant fails. 013, 014 and 015 were verified by hand and
+    are the floor: whatever else changes, those three stay in scope.
+    """
+    from pathlib import Path
+
+    migrations = Path(__file__).resolve().parents[1] / "migrations"
+    covered = sorted(
+        path.name.split("_", 1)[0]
+        for path in migrations.glob("*.sql")
+        if path.name.split("_", 1)[0].isdigit()
+        and int(path.name.split("_", 1)[0]) >= FIRST_IDEMPOTENT_MIGRATION
+    )
+    assert {"013", "014", "015"} <= set(covered), covered
 
 
 class TestTheWorkerWillFetchWhatStorageAccepted:

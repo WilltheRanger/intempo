@@ -14,21 +14,28 @@ So the fixture is the contract. This file checks the server against it;
 `mobile/src/lib/score/schedule.parity.test.ts` checks the app against the same
 file. A walk that drifts fails in its own suite.
 
-**What the fixture deliberately leaves out**, because these are decisions
-rather than arithmetic and each side has its reason written down:
+**What the fixture deliberately leaves out**: slurs, and only slurs. The server
+emits no onset for a note under a bow stroke, because there is no attack to
+detect; playback sounds it, because a reference you cannot hear is not one.
+That is a decision, and each side has it written down.
 
-- **Repeats.** The server writes them out, because the musician plays them
-  twice. Playback plays straight through, because a preview that doubles in
-  length is more surprising than useful.
-- **Slurs.** The server emits no onset for a note under a bow stroke, because
-  there is no attack to detect. Playback sounds it, because you want to hear
-  the note.
+**Repeats used to be on that list, and the reason given was false.** It said
+playback plays straight through. It does not, and has not since `scheduleScore`
+started running `measuresInPlayOrder` — a hand port of `expand_repeats`,
+recursive, with first and second endings, and the one piece of arithmetic here
+most likely to drift. The stale line was load-bearing: a test in this file
+asserted the fixture had no repeat, so the coverage could not be added without
+first disbelieving the file. Meanwhile the app held the performed order with
+numbers typed into its own suite, under a test named for a backend it never
+consulted.
 
 **What it deliberately includes**: a rest that advances the clock and sounds
 nothing; a *real* tie across a barline, which folds into one onset; a **fake**
 tie between two different pitches, which is a slur written badly and must still
-sound twice; triplets, whose thirds are not exactly representable; and a dotted
-value.
+sound twice; triplets, whose thirds are not exactly representable; a dotted
+value; and a repeated section with first and second endings, whose bars hold
+two, four, one and three notes so that the performed order shows in the times
+and not only in `expected_measures`.
 """
 
 from __future__ import annotations
@@ -63,6 +70,20 @@ def test_the_server_still_produces_the_times_in_the_fixture() -> None:
     )
 
 
+def test_the_server_plays_the_bars_in_the_order_the_fixture_records() -> None:
+    """The times alone cannot say this, and that is why the order is held too.
+
+    Two bars of equal length swapped produce the same list of onsets. The
+    fixture's repeated section is shaped so they are not equal — but shaping a
+    fixture is a thing a later edit can undo without noticing, and the order is
+    the whole reason a repeat is in here.
+    """
+    fixture = _fixture()
+    timeline = build_timeline(ScoreJson.model_validate(fixture["score"]), fixture["bpm"])
+
+    assert [n.measure_number for n in timeline.notes] == fixture["expected_measures"]
+
+
 def test_the_fixture_exercises_what_it_claims_to() -> None:
     """A fixture that quietly stopped containing a tie would still pass the test
     above, and would be testing nothing but a straight run of quarter notes."""
@@ -89,15 +110,43 @@ def test_the_fixture_exercises_what_it_claims_to() -> None:
     )
     assert any("triplet" in n.duration for n in notes), "no triplet — thirds untested"
 
-    assert len(fixture["expected_onsets_s"]) == len(notes) - len(rests) - len(real_ties)
+    # Written once, sounded twice. This used to read `len(notes) - rests -
+    # real_ties`, which counted the page rather than the performance; with a
+    # repeat in the fixture the two numbers are no longer the same, and the
+    # second assertion is the one that says so.
+    sounded = len(build_timeline(score, fixture["bpm"]).notes)
+
+    assert len(fixture["expected_onsets_s"]) == sounded
+    assert sounded > len(notes) - len(rests) - len(real_ties), (
+        "the fixture sounds no more notes than it writes — the repeated "
+        "section is not being played twice"
+    )
 
 
-def test_the_fixture_has_no_repeats_or_slurs() -> None:
-    """The two walks differ on both, on purpose. A fixture that grew one would
-    make this file fail for a reason that is not a defect, and the fix would be
-    to weaken it."""
+def test_the_fixture_still_holds_a_repeat_with_both_endings() -> None:
+    """The coverage this file spent a release without, guarded the way the ties
+    above are: a fixture that lost its repeat would still pass every test that
+    only compares numbers, because the numbers would be regenerated with it.
+
+    Endings specifically. A plain `|: :|` exercises the span; the endings
+    exercise `bracketed`, whose rule — an ending belongs only to a section
+    starting strictly before it — is the one a measured bug came from.
+    """
+    score = ScoreJson.model_validate(_fixture()["score"])
+    kinds = {r.type for r in score.repeats}
+
+    assert "repeat" in kinds, "the fixture lost its repeated section"
+    assert {"first_ending", "second_ending"} <= kinds, (
+        "the fixture has a repeat but no endings — `bracketed` is untested "
+        "across the wire"
+    )
+
+
+def test_the_fixture_has_no_slurs() -> None:
+    """The one difference that is still a decision. A fixture that grew a slur
+    would make this file fail for a reason that is not a defect, and the fix
+    would be to weaken it."""
     score = ScoreJson.model_validate(_fixture()["score"])
 
-    assert not score.repeats, "the fixture grew a repeat"
     for measure in score.measures:
         assert not measure.slurs, f"measure {measure.measure_number} has a slur"

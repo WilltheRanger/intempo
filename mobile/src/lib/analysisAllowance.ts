@@ -31,6 +31,33 @@ export function analysisLimitReached(
 }
 
 /**
+ * The warning shown before the **last** free analysis is spent.
+ *
+ * `describeReachedAnalysisLimit` below only speaks once the allowance is gone,
+ * which is one take too late to be useful: a free account gets three analyses
+ * a **calendar month**, so the third is a third of the month and a musician
+ * spent it without knowing it was the last. The count did exist — as a row on
+ * the Profile screen reading "2 of 3 this month" — which is not where anyone
+ * is standing when the decision is made.
+ *
+ * Only on the last one. Announcing "2 of 3 left" before a take nobody is
+ * worried about turns a practice screen into a meter, and the number changes
+ * nothing until it is the number that does (§3 law 10). Silent for a Pro
+ * account, which has no quota to be near the end of.
+ *
+ * Advisory, never blocking: the take is allowed and the button is live. This
+ * says which take it is, not that it cannot happen.
+ */
+export function describeLastFreeAnalysis(
+  usage: UsageResponse | null | undefined,
+): string | null {
+  if (!usage || usage.limit === null || usage.remaining !== 1) {
+    return null;
+  }
+  return `This is your last free analysis this month. The next one is available ${whenAnalysisAllowanceResets(usage.resets_at)}.`;
+}
+
+/**
  * The pre-flight explanation shown before a musician picks up the instrument.
  *
  * A limit discovered after recording wastes the performance and uploads audio

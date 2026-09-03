@@ -1,4 +1,3 @@
-import { useNavigation } from '@react-navigation/native';
 import { useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
@@ -15,14 +14,12 @@ import {
 } from '../../components/primitives';
 import { deleteAccount } from '../../data/account';
 import { spacing } from '../../design';
-import type { RootNavigation } from '../../navigation/types';
 
 /**
  * Permanent account deletion, kept out of Profile so the consequence has room
  * to be read before the destructive control is reached.
  */
 export function DeleteAccountScreen() {
-  const navigation = useNavigation<RootNavigation>();
   const goBack = useGoBack({ tab: 'Profile' });
   const queryClient = useQueryClient();
   const [confirmation, setConfirmation] = useState('');

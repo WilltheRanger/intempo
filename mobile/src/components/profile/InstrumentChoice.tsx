@@ -50,7 +50,13 @@ export interface InstrumentChoiceProps {
  *
  * Highest to lowest, which is the order a musician expects to see them in and
  * is not alphabetical by accident. "Double bass" in full: a bassist does not
- * call it "Bass", and this is the one control where the space exists to say so.
+ * call it "Bass", and this grid has the room to say so.
+ *
+ * **It is not the only instrument control.** `ProfileScreen` has a second one,
+ * four segments across a phone, which says "Bass" for exactly that reason —
+ * one rule (full name where it fits) in two places that cannot see each other.
+ * `lib/instrumentLabels.test.ts` holds them to the same four values in the
+ * same order and allows that one divergence and no other.
  */
 const INSTRUMENTS: { value: Instrument; label: string }[] = [
   { value: 'violin', label: 'Violin' },

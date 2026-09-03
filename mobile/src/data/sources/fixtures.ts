@@ -1,5 +1,6 @@
 import { wasTimed } from '../../lib/verdict/measureReading';
 import { verdictFor } from '../../lib/tempo';
+import { judgeAggregate } from '../../lib/insights/tendency';
 import type {
   Band,
   Direction,
@@ -10,6 +11,7 @@ import type {
   ScoreJson,
   ScoreNote,
   TakeResult,
+  ThumbnailSource,
   UntimedReason,
 } from '../types';
 import type {
@@ -35,12 +37,22 @@ interface FixturePiece
   extends Omit<
     Piece,
     | 'lastPracticedAt'
+    | 'pages'
     | 'transcriptionStatus'
     | 'transcriptionStage'
     | 'transcriptionError'
     | 'transcriptionAccepted'
     | 'pageImageDiscarded'
   > {
+  /**
+   * Extra photographed pages, after the one `thumbnail` holds.
+   *
+   * Omitted by every one-page piece, which is most of them — `toPiece` derives
+   * the single-page list from the thumbnail. Declaring it is how a fixture says
+   * "this is a part somebody photographed four pages of", which is a state the
+   * piece screen had no fixture for and therefore nobody had looked at.
+   */
+  morePages?: ThumbnailSource[];
   /** Resolved to an ISO timestamp at read time so it never goes stale. */
   practicedDaysAgo: number | null;
   /**
@@ -98,6 +110,61 @@ function quarter(pitch: string): ScoreNote {
 
 /** A plausible study tempo, so the recorder seeds from the piece. */
 const MARKED_BPM = 92;
+
+/**
+ * A study long enough for the start-bar picker to have more than one page.
+ *
+ * **Every other score here is eight bars or fewer**, so the picker's pagination
+ * — the thing it was rebuilt for — had no fixture and had never been rendered.
+ * Its rules are unit-tested (`pages.ts`, `barPages.ts`), and by this project's
+ * own reckoning a state with no fixture is a state nobody has looked at.
+ *
+ * Continuous eighths, which is what Op. 45 No. 1 actually is: `SOURCES.md`
+ * documents `01_simple_printed.jpg` — the photograph already attached to this
+ * piece — as reading back thirty-two eighths and nothing else. So this is the
+ * right shape for the piece it belongs to rather than filler chosen for length.
+ *
+ * Standing in for the étude, not claiming to be it note for note, the same way
+ * `bass_excerpt.musicxml` stands in for what an OMR engine emits. The figure is
+ * a scale run and a broken chord alternating, over the first-position C major a
+ * first study stays inside.
+ */
+function eighth(pitch: string): ScoreNote {
+  return { pitch, duration: 'eighth', tied_to_next: false };
+}
+
+const FIRST_POSITION_C = [
+  'G3', 'A3', 'B3', 'C4', 'D4', 'E4', 'F4', 'G4',
+  'A4', 'B4', 'C5', 'D5', 'E5',
+];
+
+const CONTINUOUS_EIGHTHS_SCORE: ScoreJson = {
+  time_signature: '4/4',
+  key_signature: 'C major',
+  tempo_marking: 'Allegro moderato',
+  bpm_hint: MARKED_BPM,
+  clef: 'treble',
+  measures: Array.from({ length: 32 }, (_, bar) => ({
+    measure_number: bar + 1,
+    notes: Array.from({ length: 8 }, (_, at) => {
+      // Alternating bars: a step-wise run, then the same span in thirds. Two
+      // shapes rather than one, so a reader can see which bar they are on.
+      const from = bar % 5;
+      const step = bar % 2 === 0 ? at : at * 2;
+      const rising = Math.floor(bar / 2) % 2 === 0;
+      const index = rising ? from + step : from + 12 - step;
+      return eighth(
+        FIRST_POSITION_C[
+          Math.max(0, Math.min(FIRST_POSITION_C.length - 1, index))
+        ],
+      );
+    }),
+    slurs: [],
+  })),
+  repeats: [],
+  ocr_confidence: 1,
+  notes_to_human: 'Fixture score. Not OCR output.',
+};
 
 const DEMO_SCORE: ScoreJson = {
   time_signature: '4/4',
@@ -313,6 +380,71 @@ const WORD_MARKED_SCORE: ScoreJson = {
  * change has to be drawn — read against the opening signature, every one of
  * those bars is a wrong note.
  */
+/**
+ * A bass study that climbs into tenor clef and comes back down.
+ *
+ * **The state nobody had looked at.** `Measure.clef` has been in the schema
+ * and stamped by the importer for a while; nothing in the app drew it, so a
+ * part written this way came out placed entirely against its opening bass
+ * clef — every note of the tenor passage a sixth off, drawn as confidently as
+ * the ones that were right. There was no fixture with a clef change, which is
+ * why it went unseen, and this repository has paid for a missing fixture five
+ * times already.
+ *
+ * The return to bass at bar 5 is not decoration either: it is the case a
+ * header comparison silently drops, because bar 5 states the clef the piece
+ * opened in.
+ *
+ * Simandl again, because tenor clef in a double-bass method book is ordinary
+ * writing rather than an edge case.
+ */
+const CLEF_CHANGE_SCORE: ScoreJson = {
+  time_signature: '4/4',
+  key_signature: 'C major',
+  tempo_marking: 'Moderato',
+  bpm_hint: 66,
+  clef: 'bass',
+  measures: [
+    {
+      measure_number: 1,
+      notes: [note('G2', 'quarter'), note('C3', 'quarter'), note('E3', 'quarter'), note('G3', 'quarter')],
+      slurs: [],
+    },
+    {
+      measure_number: 2,
+      notes: [note('C4', 'half'), note('B3', 'quarter'), note('A3', 'quarter')],
+      slurs: [],
+    },
+    {
+      // Into tenor for the high passage, which is what the clef is for.
+      measure_number: 3,
+      clef: 'tenor',
+      notes: [note('G3', 'quarter'), note('C4', 'quarter'), note('E4', 'quarter'), note('G4', 'quarter')],
+      slurs: [],
+    },
+    {
+      measure_number: 4,
+      notes: [note('A4', 'half'), note('G4', 'half')],
+      slurs: [],
+    },
+    {
+      // And back down. Bar 5 states the clef the piece opened in.
+      measure_number: 5,
+      clef: 'bass',
+      notes: [note('E3', 'quarter'), note('C3', 'quarter'), note('G2', 'quarter'), note('C3', 'quarter')],
+      slurs: [],
+    },
+    {
+      measure_number: 6,
+      notes: [note('C3', 'whole')],
+      slurs: [],
+    },
+  ],
+  repeats: [],
+  ocr_confidence: 1,
+  notes_to_human: 'Fixture score. Not OCR output.',
+};
+
 const KEY_CHANGE_SCORE: ScoreJson = {
   time_signature: '4/4',
   key_signature: 'Bb major',
@@ -410,8 +542,24 @@ const FIXTURE_PIECES: FixturePiece[] = [
     movement: 'No. 1 — Allegro moderato',
     practicedDaysAgo: 26,
     thumbnail: require('../../../assets/fixtures/01_simple_printed.jpg'),
+    /**
+     * **The one multi-page part in the library**, because a scan of more than
+     * one page had no fixture and so nobody had looked at it.
+     *
+     * The piece screen's own row says "The pages this piece was read from" and
+     * drew a single image; with every fixture one page long, that read as
+     * correct. A thirty-two bar study is exactly the length that runs to three
+     * pages in a real part.
+     */
+    morePages: [
+      require('../../../assets/fixtures/02_medium_printed.jpg'),
+      require('../../../assets/fixtures/03_complex_printed.jpg'),
+    ],
     markedBpm: MARKED_BPM,
-    score: DEMO_SCORE,
+    // The long one — see `CONTINUOUS_EIGHTHS_SCORE`. This piece carries the
+    // photograph the corpus reads back as continuous eighths, so it is where a
+    // thirty-two-bar study belongs.
+    score: CONTINUOUS_EIGHTHS_SCORE,
   },
   // Appended below so the Today preview — which takes the first three pieces
   // that aren't the featured one — stays exactly as approved. These give the
@@ -426,6 +574,17 @@ const FIXTURE_PIECES: FixturePiece[] = [
     markedBpm: 72,
     // The one piece whose key changes — see `KEY_CHANGE_SCORE`.
     score: KEY_CHANGE_SCORE,
+  },
+  {
+    id: 'fixture-clef-change-study',
+    title: 'Study climbing into tenor clef',
+    composer: 'Franz Simandl',
+    movement: 'New Method for the Double Bass',
+    practicedDaysAgo: 34,
+    thumbnail: require('../../../assets/fixtures/01_simple_printed.jpg'),
+    markedBpm: 66,
+    // The one piece whose clef changes — see `CLEF_CHANGE_SCORE`.
+    score: CLEF_CHANGE_SCORE,
   },
   {
     id: 'fixture-mozart-k216',
@@ -544,14 +703,29 @@ const FIXTURE_PIECES: FixturePiece[] = [
   },
 ];
 
-function toPiece({ practicedDaysAgo, reading, ...piece }: FixturePiece): Piece {
+function toPiece({
+  practicedDaysAgo,
+  reading,
+  morePages,
+  ...piece
+}: FixturePiece): Piece {
   const state = { ...TRANSCRIBED, ...reading };
+  // A piece whose photograph was discarded has no pages to show, which is the
+  // same thing the API says about it — the thumbnail is already null there.
+  const pages = piece.thumbnail
+    ? [piece.thumbnail, ...(morePages ?? [])]
+    : [];
   if (practicedDaysAgo === null) {
-    return { ...piece, ...state, lastPracticedAt: null };
+    return { ...piece, ...state, pages, lastPracticedAt: null };
   }
   const practicedAt = new Date();
   practicedAt.setDate(practicedAt.getDate() - practicedDaysAgo);
-  return { ...piece, ...state, lastPracticedAt: practicedAt.toISOString() };
+  return {
+    ...piece,
+    ...state,
+    pages,
+    lastPracticedAt: practicedAt.toISOString(),
+  };
 }
 
 /**
@@ -709,32 +883,39 @@ export const fixtureMusicianSource: MusicianSource = {
 const INSIGHTS_WINDOW_DAYS = 30;
 
 /**
- * Practice history for four of the pieces above.
+ * Practice history for five of the pieces above.
  *
- * Each entry states what an analysis would actually return: a deviation as a
- * percentage of one beat, and the band the pipeline put it in. The display
- * verdict is derived by `verdictFor`, the same function the API adapter uses,
- * so the fixture cannot claim a verdict the real classifier wouldn't.
- *
- * Bands here follow the checked-in defaults in `backend/config.toml` — on to
- * 5%, slight to 10%, clear rush or drag to 20%. Those are server-tunable, so
- * they are stated per entry rather than recomputed here.
+ * Each entry states what an analysis would actually return: two deviations as
+ * percentages of one beat. The band, direction and display verdict are all
+ * derived by the same functions the API adapter uses, so the fixture cannot
+ * claim a verdict the real classifier wouldn't — it used to restate the band
+ * per entry and reimplement the thresholds below, which was a third copy of
+ * numbers that live in `backend/config.toml`.
  *
  * The deviations are unflattering on purpose. A fixture where everything is on
  * tempo would exercise none of the vocabulary and would design the screen for
  * the one musician who doesn't need it.
+ *
+ * **`fixture-paganini-24` is the piece that wanders**, and it is here because
+ * a state with no fixture is a state nobody has looked at. Its bias sits inside
+ * tolerance and its distance from the beat does not — the case where naming a
+ * direction is false and "On tempo" is worse, and the only case in which the
+ * bar draws both ways. Everything else in this list drifts one way, so the two
+ * readings sit side by side in one build.
  */
 const FIXTURE_SESSIONS: {
   pieceId: string;
   sessions: number;
   /** Positive is ahead of the beat, matching the verdict convention. */
   meanDeviationPct: number;
-  band: Band;
+  /** Distance from the beat either way — never below `|meanDeviationPct|`. */
+  spreadPct: number;
 }[] = [
-  { pieceId: 'fixture-wohlfahrt-28', sessions: 12, meanDeviationPct: 12.4, band: 'rush_drag' },
-  { pieceId: 'fixture-bach-bwv1001', sessions: 9, meanDeviationPct: -7.6, band: 'slight' },
-  { pieceId: 'fixture-mozart-k216', sessions: 5, meanDeviationPct: 7.2, band: 'slight' },
-  { pieceId: 'fixture-kreutzer-02', sessions: 8, meanDeviationPct: 2.8, band: 'on' },
+  { pieceId: 'fixture-wohlfahrt-28', sessions: 12, meanDeviationPct: 12.4, spreadPct: 13.1 },
+  { pieceId: 'fixture-paganini-24', sessions: 6, meanDeviationPct: 1.4, spreadPct: 11.8 },
+  { pieceId: 'fixture-bach-bwv1001', sessions: 9, meanDeviationPct: -7.6, spreadPct: 8.4 },
+  { pieceId: 'fixture-mozart-k216', sessions: 5, meanDeviationPct: 7.2, spreadPct: 8.0 },
+  { pieceId: 'fixture-kreutzer-02', sessions: 8, meanDeviationPct: 2.8, spreadPct: 3.1 },
 ];
 
 /**
@@ -755,33 +936,27 @@ const FIXTURE_TOLERANCE = {
   dragging_outer_pct: 20,
 } as const;
 
-function directionFor(deviationPct: number, band: Band): Direction {
-  if (band === 'on') {
-    return 'on';
-  }
-  return deviationPct > 0 ? 'rush' : 'drag';
-}
-
 function toPieceInsight(entry: (typeof FIXTURE_SESSIONS)[number]): PieceInsight {
   const piece = FIXTURE_PIECES.find(({ id }) => id === entry.pieceId);
-  const direction = directionFor(entry.meanDeviationPct, entry.band);
   return {
     pieceId: entry.pieceId,
     title: piece?.title ?? 'Unknown piece',
     composer: piece?.composer ?? null,
     sessions: entry.sessions,
     meanDeviationPct: entry.meanDeviationPct,
-    band: entry.band,
-    direction,
-    verdict: verdictFor(entry.band, direction),
+    spreadPct: entry.spreadPct,
+    ...judgeAggregate(entry.meanDeviationPct, FIXTURE_TOLERANCE),
     tolerance: FIXTURE_TOLERANCE,
   };
 }
 
 export const fixtureInsightsSource: InsightsSource = {
   async getInsights() {
+    // Furthest from the beat first, the same ordering the API adapter uses —
+    // and not by bias, which buried the piece that wanders at the bottom of a
+    // list whose first row is what Today reads.
     const pieces = FIXTURE_SESSIONS.map(toPieceInsight).sort(
-      (a, b) => Math.abs(b.meanDeviationPct) - Math.abs(a.meanDeviationPct),
+      (a, b) => b.spreadPct - a.spreadPct,
     );
 
     const sessions = pieces.reduce((total, piece) => total + piece.sessions, 0);
@@ -791,43 +966,21 @@ export const fixtureInsightsSource: InsightsSource = {
 
     // Session-weighted, so a piece practised twice doesn't sway the headline
     // as much as one practised a dozen times.
-    const meanDeviationPct =
-      pieces.reduce(
-        (total, piece) => total + piece.meanDeviationPct * piece.sessions,
-        0,
-      ) / sessions;
-
-    // Classified against the same thresholds this source reports, so the bar
-    // and the word beside it can't disagree. Fixture-only: live insights take
-    // the band from the take nearest the mean, because the server owns it.
-    const magnitude = Math.abs(meanDeviationPct);
-    const ahead = meanDeviationPct >= 0;
-    const inner = ahead
-      ? FIXTURE_TOLERANCE.rushing_inner_pct
-      : FIXTURE_TOLERANCE.dragging_inner_pct;
-    const mid = ahead
-      ? FIXTURE_TOLERANCE.rushing_mid_pct
-      : FIXTURE_TOLERANCE.dragging_mid_pct;
-    const outer = ahead
-      ? FIXTURE_TOLERANCE.rushing_outer_pct
-      : FIXTURE_TOLERANCE.dragging_outer_pct;
-    const band: Band =
-      magnitude <= inner
-        ? 'on'
-        : magnitude <= mid
-          ? 'slight'
-          : magnitude <= outer
-            ? 'rush_drag'
-            : 'severe';
-    const direction = directionFor(meanDeviationPct, band);
+    const weighted = (pick: (piece: PieceInsight) => number) =>
+      pieces.reduce((total, piece) => total + pick(piece) * piece.sessions, 0) /
+      sessions;
+    const meanDeviationPct = weighted((piece) => piece.meanDeviationPct);
 
     return {
       windowDays: INSIGHTS_WINDOW_DAYS,
       sessions,
       meanDeviationPct,
-      band,
-      direction,
-      verdict: verdictFor(band, direction),
+      spreadPct: weighted((piece) => piece.spreadPct),
+      // Classified by the same functions the API adapter uses, against the
+      // thresholds this source reports. This block used to reimplement them
+      // inline, which made the fixtures a place a threshold could be wrong
+      // without any test noticing.
+      ...judgeAggregate(meanDeviationPct, FIXTURE_TOLERANCE),
       tolerance: FIXTURE_TOLERANCE,
       pieces,
     };
