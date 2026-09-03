@@ -323,6 +323,71 @@ def _run(runner_js: str, template: Path, cases: list) -> list:
     return json.loads(result.stdout)
 
 
+#: The non-arithmetic flags, which are the whole reason `verdict` is not the
+#: only thing compared below.
+#:
+#: `validate.py` keeps each separate from the beat sum deliberately — "a
+#: measure whose beats add up perfectly can still carry a tie between two
+#: different pitches, and that tie is what deletes an onset from the timeline.
+#: Collapsing them would let a clean beat sum hide it." Comparing only
+#: `is_problem` collapses them again at the one place the three copies meet: a
+#: port that flagged the right bar for the wrong reason agreed on every field
+#: the tests looked at, and the sandbox would show a musician's page marked for
+#: a fault it does not have.
+FLAGS = ("broken_ties", "tuplet_faults", "too_dense", "unwritable_notes", "out_of_line")
+
+
+def _flags(finding) -> dict:
+    """Which flags fired, as booleans — the counts and tuples differ in shape
+    between the two languages, and it is the firing that has to agree."""
+    return {name: bool(getattr(finding, name)) for name in FLAGS}
+
+
+def _js_flags(finding: dict) -> dict:
+    return {name: bool(finding.get(name)) for name in FLAGS}
+
+
+def test_the_cases_exercise_every_flag_there_is() -> None:
+    """Otherwise the comparisons below are vacuous for whatever is missing.
+
+    The same guard `test_timeline_parity.py` carries over its ties and
+    triplets, and for the same reason: a case set that quietly stopped
+    containing a broken tie would still pass every assertion in this file while
+    checking nothing about ties.
+
+    It also catches a **new** flag arriving in `validate.py` with no case —
+    `unwritable_notes` and `out_of_line` both did, after `CLAUDE.md` had
+    already settled on the sentence "four things flag a measure".
+    """
+    fired = {name: 0 for name in FLAGS}
+    for case in CASES:
+        for finding in validate_measures(ScoreJson.model_validate(case)):
+            for name, on in _flags(finding).items():
+                fired[name] += 1 if on else 0
+
+    unexercised = sorted(name for name, count in fired.items() if count == 0)
+    assert not unexercised, f"no case fires {unexercised}"
+
+    # And the dataclass has not grown a sixth nobody added a case for.
+    declared = {
+        name
+        for name in validate_measures(
+            ScoreJson.model_validate(CASES[0])
+        )[0].__dataclass_fields__
+        if name not in {
+            "measure_number",
+            "verdict",
+            "expected_beats",
+            "actual_beats",
+            "note_count",
+            "meter_inferred",
+        }
+    }
+    assert declared == set(FLAGS), (
+        f"validate.py flags {sorted(declared - set(FLAGS))} that this file does not compare"
+    )
+
+
 @pytest.mark.skipif(shutil.which("node") is None, reason="node not installed")
 def test_the_sandbox_agrees_with_the_validator() -> None:
     js_all = _run(RUNNER, SANDBOX, CASES)
@@ -337,6 +402,12 @@ def test_the_sandbox_agrees_with_the_validator() -> None:
             assert abs(p.actual_beats - j["actual_beats"]) < 1e-9, f"actual differs for {label}"
             assert p.meter_inferred == j["meter_inferred"], f"inference differs for {label}"
             assert p.is_problem == j["is_problem"], f"is_problem differs for {label}"
+            # **Which flag, not just whether one fired.** `is_problem` is true
+            # for any of them, so without this a port that swapped a broken tie
+            # for a density warning agreed on every field above.
+            assert _flags(p) == _js_flags(j), (
+                f"flags differ for {label} m{p.measure_number}"
+            )
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node not installed")
@@ -364,8 +435,14 @@ def test_the_scan_bench_agrees_about_repeats_and_numbering() -> None:
         # The bench has its own `validateMeasures`, and only repeats and gaps
         # were ever compared — so it had already drifted out of step with the
         # backend on ties, brackets and density without anything noticing.
-        py_flags = [(f.measure_number, f.verdict, f.is_problem) for f in validate_measures(score)]
-        js_flags = [(f["measure_number"], f["verdict"], f["is_problem"]) for f in js["findings"]]
+        py_flags = [
+            (f.measure_number, f.verdict, f.is_problem, _flags(f))
+            for f in validate_measures(score)
+        ]
+        js_flags = [
+            (f["measure_number"], f["verdict"], f["is_problem"], _js_flags(f))
+            for f in js["findings"]
+        ]
         assert py_flags == js_flags, f"bench findings differ for {label}"
 
 
