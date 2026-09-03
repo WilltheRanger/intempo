@@ -413,6 +413,70 @@ console.log('\n## Photographing a piece');
   await scan.close();
 }
 
+console.log('\n## Telling the app it got a bar wrong');
+
+/*
+ * **`POST /v1/analyses/:id/corrections` had no client for the life of this
+ * project** — built, tested, owner-scoped, and never called, while its router
+ * docstring called it the only route out of Batch 3's untuned thresholds. This
+ * leg is here so it cannot go quiet again: a control nobody has driven is a
+ * control nobody has checked, which is the doctrine the microphone legs below
+ * were written from.
+ *
+ * Three things, all of which were once separately wrong somewhere in this app:
+ * the question appears only on a bar that was actually judged; it does not
+ * appear on one the pipeline refused to judge; and sending it without a
+ * backend is refused in words rather than silently swallowed.
+ */
+{
+  await open('analyses/fixture-take-1');
+
+  // Measure 5 is one the app called rushing. Measure 11 is "Not timed".
+  const judged = page.getByRole('button', { name: /Measure 5/ }).first();
+  await judged.click({ timeout: 15000 });
+
+  const asked = await page
+    .getByText('What actually happened?')
+    .first()
+    .isVisible()
+    .catch(() => false);
+  if (asked) pass('a judged bar asks what actually happened');
+  else fail('a judged bar does not offer the question');
+
+  const offered = await leaves();
+  const words = ['On tempo', 'Rushing', 'Dragging', 'Not sure'].filter((w) =>
+    offered.includes(w),
+  );
+  if (words.length === 4) pass(`all four answers offered: ${words.join(' · ')}`);
+  else fail(`only ${words.length} of four answers offered`);
+
+  // A bar under a written change was never judged, so there is nothing to
+  // agree or disagree with — asking would be asking a musician to adjudicate a
+  // measurement that was never made.
+  const untimed = page.getByRole('button', { name: /Measure 11/ }).first();
+  const untimedIsAButton = await untimed.count().then((n) => n > 0).catch(() => false);
+  if (!untimedIsAButton) {
+    pass('an untimed bar is not a button, so it cannot be asked about');
+  } else {
+    await untimed.click({ timeout: 5000 }).catch(() => {});
+    const stillOne = (await leaves()).filter((l) => l === 'What actually happened?');
+    if (stillOne.length <= 1) pass('an untimed bar does not ask the question');
+    else fail('an untimed bar offered the correction question');
+  }
+
+  // The fixture build has no account to attach a correction to, so this must
+  // say so rather than acknowledging something it did not record.
+  await page.getByRole('button', { name: /^Dragging$/ }).first().click({ timeout: 10000 });
+  await waitForText(
+    'the correction to be answered',
+    (l) => /needs the backend|sample data/i.test(l),
+    10000,
+  );
+  const said = (await leaves()).find((l) => /needs the backend|sample data/i.test(l));
+  if (said) pass(`sending without a backend is refused in words: "${said.slice(0, 52)}…"`);
+  else fail('a correction with no backend was neither sent nor refused in words');
+}
+
 console.log('\n## A refused microphone');
 
 /*

@@ -42,25 +42,25 @@ from app.main import app
 REPO = Path(__file__).resolve().parents[3]
 APP_SRC = REPO / "mobile" / "src"
 
-#: Routes with no client, and why. Delete an entry when you wire one up — the
+#: Paths with no client, and why. Delete an entry when you wire one up — the
 #: test below will tell you to.
+#:
+#: **Keyed by path, not by (method, path)**, because that is the granularity
+#: the check actually has: the method lives in the fetch options rather than
+#: beside the URL, so a path the app builds reads as reached whichever verb it
+#: uses. Keying by method would let an entry claim a precision the matcher
+#: cannot deliver — `GET /v1/analyses/{id}/corrections` sat here for exactly
+#: one commit after the POST beside it was wired, and read as "actually wired"
+#: because its path is the same string.
 #:
 #: A reason here is a claim about the product, not an excuse. "Not built yet"
 #: is a real reason; "probably fine" is not. Anything on this list is a
 #: feature a musician cannot use.
-NOT_WIRED: dict[tuple[str, str], str] = {
-    (
-        "POST",
-        "/v1/analyses/{analysis_id}/corrections",
-    ): "No affordance on VerdictScreen to disagree with a bar's verdict. §2 gate.",
-    (
-        "GET",
-        "/v1/analyses/{analysis_id}/corrections",
-    ): "Reads what the POST above writes, which is nothing.",
-    (
-        "POST",
-        "/v1/calibration",
-    ): "No clip-to-tempo flow; the record screen sets the tempo directly. §2 gate.",
+NOT_WIRED: dict[str, str] = {
+    "/v1/calibration": (
+        "No clip-to-tempo flow; the record screen sets the tempo directly. "
+        "§2 gate."
+    ),
 }
 
 
@@ -159,7 +159,7 @@ def test_every_route_is_reachable_from_the_app_or_listed_as_not() -> None:
     """A new endpoint with no client fails here, on the commit that adds it."""
     source = _client_source()
     unreachable = [
-        route for route in _routes() if not _calls(route[1], source) and route not in NOT_WIRED
+        route for route in _routes() if not _calls(route[1], source) and route[1] not in NOT_WIRED
     ]
 
     assert not unreachable, (
@@ -177,19 +177,21 @@ def test_nothing_on_the_not_wired_list_is_actually_wired() -> None:
     is unbuilt — and the next person to read the list believes it.
     """
     source = _client_source()
-    now_wired = [route for route in NOT_WIRED if _calls(route[1], source)]
+    now_wired = [path for path in NOT_WIRED if _calls(path, source)]
 
     assert not now_wired, (
         "these are on NOT_WIRED but the app calls them now: "
-        + ", ".join(f"{method} {path}" for method, path in now_wired)
+        + ", ".join(sorted(now_wired))
         + " — delete the entries"
     )
 
 
-@pytest.mark.parametrize("route", sorted(NOT_WIRED))
-def test_the_not_wired_list_names_routes_that_exist(route: tuple[str, str]) -> None:
+@pytest.mark.parametrize("path", sorted(NOT_WIRED))
+def test_the_not_wired_list_names_routes_that_exist(path: str) -> None:
     """A renamed or deleted route must not leave a ghost behind."""
-    assert route in _routes(), f"{route[0]} {route[1]} is on NOT_WIRED but is not served"
+    assert path in {served for _, served in _routes()}, (
+        f"{path} is on NOT_WIRED but is not served"
+    )
 
 
 def _urls_the_app_builds() -> dict[str, set[str]]:

@@ -282,7 +282,15 @@ there works differently as of 2026-08-24:
   profile: it requires `expo-dev-client`, which is not a dependency, so it would
   be config that fails on first use.
 
-- **Two finished endpoints have no client, and a test now stops a third**
+- **The verdict feedback loop has a client** (2026-09-03). A revealed measure
+  on `VerdictScreen` asks *"What actually happened?"* and posts to
+  `/v1/analyses/:id/corrections`, which had never been called. `canCorrect` is
+  the row's own `revealsFigure` — one predicate, so the question cannot appear
+  on a bar the pipeline refused to judge — and the app's own reading is
+  pre-selected, because agreement is the control group and a form that collects
+  only disagreement measures the wrong thing. Rules in `lib/verdict/
+  correction.ts`, not in the `.tsx`.
+- **One finished endpoint has no client, and a test stops a second**
   (measured 2026-09-03). `POST /v1/analyses/:id/corrections` is
   built, tested (`test_corrections.py`), owner-scoped, listed by the account
   export and taken by account deletion. **Nothing posts to it.** Not `mobile/`,

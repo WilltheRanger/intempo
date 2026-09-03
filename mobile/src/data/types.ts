@@ -102,6 +102,31 @@ export type Articulation = 'staccato' | 'tenuto' | 'accent';
  */
 export type UntimedReason = 'tempo_change' | 'fermata' | 'ornament';
 
+/**
+ * What a musician can say actually happened in a bar the app judged.
+ *
+ * Mirrors `routers/corrections.UserVerdict`, held by
+ * `test_client_enums.py` — a closed set crossing the wire inside a request
+ * body, which is the same thing `Duration` and `Clef` are and gets the same
+ * treatment.
+ *
+ * Three words and not four bands: someone disagreeing with a bar is not
+ * adjudicating between "slight rush" and "rushing". `unsure` is a real answer
+ * rather than a refusal to answer — the spec expects many corrections from
+ * people disagreeing with the concept, and someone who cannot remember is
+ * more useful in the data than someone who guessed.
+ */
+export type UserVerdict = 'on_tempo' | 'rushing' | 'dragging' | 'unsure';
+
+/** One bar's worth of "this is what actually happened", as the API takes it. */
+export interface CorrectionInput {
+  measure_number: number;
+  /** What the app said, so the pair is stored together. */
+  app_verdict: string;
+  user_verdict: UserVerdict;
+  comment?: string | null;
+}
+
 export type Dynamics =
   | 'ppp' | 'pp' | 'p' | 'mp' | 'mf' | 'f' | 'ff' | 'fff'
   | 'fp' | 'sfz' | 'sf' | 'fz';
