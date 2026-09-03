@@ -6,6 +6,79 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-03 — An import on the stylesheet's closing line, and two critiques I withdrew
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. One-line fix, one guard,
+and two things I looked at properly and left alone.
+
+### The find
+
+`LibraryScreen.tsx` ended with:
+
+```
+});import { describeLoadError } from '../../data/api/describeError';
+```
+
+An import appended to the closing line of the stylesheet by a bad automated
+edit in `10881b8` ("honest load errors, and no blank-screen hang"). **It
+worked** — imports are hoisted, so the module resolved, the screen rendered,
+`tsc` was clean and every suite passed. It survived three commits and was
+found by reading the output of a grep for something else.
+
+**There is no ESLint in this tree**, which is why nothing said anything. CI
+runs pytest, vitest, `tsc`, the web build, the walk and the a11y audit; none of
+them has an opinion about where a statement sits on a line.
+
+`importPlacement.test.ts` is the narrow guard for the thing that actually
+happened rather than a substitute for a linter: an import must be the first
+thing on its line. Swept the whole tree — this was the only one.
+
+**It reported itself on the first run.** The docstring quotes the offending
+line verbatim, and my comment claimed the check "skips the word inside a string
+or comment by requiring `from '…'` after it, which a prose mention will not
+have" — which is false, because prose about an import quotes the whole
+statement. Comment lines are skipped explicitly now, and the comment says what
+it does.
+
+It uses Vite's `import.meta.glob(..., '?raw')`, the reader `ariaState.test.ts`
+already uses. `node:fs` typechecks only with `@types/node`, which this tree does
+not carry, and a guard that needs a new dependency to compile is a worse guard
+than the thing it guards.
+
+### Two critiques I withdrew after looking properly
+
+Both were mine, from the previous entry's screenshots, and both were weaker
+than I stated them.
+
+**"Every section on Today is a card, and the greeting outranks the piece."**
+The practice card is the one block that genuinely needs grouping — image, text
+and primary action are one object — and its identity stack has a written
+rationale (26pt serif → 16pt composer → 14pt movement, "each rung smaller *and*
+lighter"). The empty state in the same file already documents a de-carding
+decision. "Good morning" at title size is the weakest point and it is still a
+defensible convention; changing it would be substituting my taste for the
+owner's on a screen §2 says is theirs. Not touched.
+
+**"The Record screen's permission paragraph is sliced by an opaque footer."**
+Sampled the screenshot: every row at the bottom is `#F7F2E9`, the page colour.
+The footer is not opaque and the text is meeting a scroll fold, which is what a
+scroll fold looks like. Not a defect.
+
+Recording both because a critique that turns out to be wrong costs the next
+session the time to re-derive it, and because I had already put both in front
+of the user as observations.
+
+### Tests
+
+mobile **1339 passed across 117 files**; `tsc` clean. The guard was verified by
+putting the offending line back — it names the file and line — and
+`LibraryScreen.tsx` restored `diff -q` identical.
+
+**Side effects:** none; the import resolves exactly as before. **Rollback:**
+revert the commit.
+
+---
+
 ## 2026-09-03 — "What actually happened?" — the feedback loop finally has a client
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. §2 gate **asked and
