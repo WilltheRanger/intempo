@@ -6,6 +6,86 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-03 — The three timeouts that stop a Supabase incident taking the API down were held by nothing
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Tests only; no product
+code changed. CI still cannot allocate a runner.
+
+`CLAUDE.md` states it as settled: *"Every blocking call gets a timeout, because
+a thread is now the thing it parks."* The timeouts are real —
+`_DB_TIMEOUT_SECONDS = 10` and `_STORAGE_TIMEOUT_SECONDS = 15` in
+`backend/app/db.py`, `_JWKS_TIMEOUT_SECONDS = 5` in `backend/app/auth.py`.
+**Nothing referenced any of them.** Grepped the whole tree for each constant:
+one definition, one use, no test. A refactor that dropped `_options()` from a
+factory, or added a fourth factory without it, restored the library's
+120-second default and passed all 1927 tests.
+
+What that costs is written in `db.py`'s own docstring, so I did not have to
+guess at it: *"a Supabase incident does not degrade this API, it removes it:
+forty parked threads and the server stops answering anything, health check
+included."* The app blocks every screen on that health check while it wakes the
+host. The JWKS fetch is the same hazard better placed to do harm — it runs
+inside the auth dependency, in front of **every** authenticated request rather
+than one handler.
+
+This is the same shape as the four other findings this session: a sentence in
+`CLAUDE.md` describing behaviour that is true today and guarded by nobody.
+`test_no_blocking_handlers.py` holds the first half of that change — handlers
+on the threadpool rather than the event loop. `test_blocking_timeouts.py` holds
+the second.
+
+### How it checks
+
+By **calling** the factories, not by reading the source. `create_client` and
+`PyJWKClient` are monkeypatched to record what they were constructed with, so
+the assertion is on the options object that reaches the library — which is the
+thing that matters and the thing a source-grep cannot see through `_options()`.
+
+The Supabase side **enumerates** the factories out of the module (`get_*` and
+`*_client`) rather than listing them, so a factory added next month is covered
+without anyone remembering this file exists. That is the mutation that worried
+me most, because it is the one nobody would think to look for.
+
+Three supporting tests, each guarding an assumption the main one rests on:
+`test_there_are_factories_to_check` (the file passing because it found nothing
+to check is the classic vacuous pass); `test_the_timeouts_are_named_constants_
+rather_than_literals`, because both modules carry paragraphs on *why* these
+numbers are what they are and an inlined literal leaves that reasoning pointing
+at nothing; and `test_a_factory_with_no_settings_builds_nothing`, which pins
+the other half of the parametrised test's setup — those tests supply
+real-looking settings so the factory runs, and if a factory ever returned a
+client without them, the suite would be exercising a path production never
+takes.
+
+`_clear_all_caches()` clears every factory's `lru_cache`, not just the one
+named in the parameter. `get_client` delegates to `get_anon_client`, so
+clearing one leaves a cached client behind and the factory never reaches
+`create_client` at all — which reads as "no options" or "built nothing"
+depending on the test, and in both cases for the wrong reason. My first version
+had that bug and passed only because of the order pytest happened to run the
+parameters in.
+
+### Mutations run
+
+Five, each restored afterwards and `git diff --stat` checked empty:
+
+| Mutation | Result |
+|---|---|
+| `get_anon_client` drops `_options()` | 2 failed (`get_anon_client`, `get_client`) |
+| `_options()` drops `postgrest_client_timeout` | 3 failed |
+| `PyJWKClient` drops `timeout=` | 1 failed (the JWKS test) |
+| a new `get_reporting_client` with no options | 1 failed, on the new factory nobody told the test about |
+| `_DB_TIMEOUT_SECONDS` "tidied" to 120 | 3 failed |
+
+The fourth is the one the enumeration exists for, and the fifth is why the
+bound is `0 < value <= 60` rather than "is a number": the failure mode being
+guarded against is a timeout quietly becoming the default, and a default is a
+number.
+
+**Backend: 1934 passed, 2 xfailed** (was 1927 + 2).
+
+---
+
 ## 2026-09-03 — The instrument now follows you to a second device
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. The half of the entry
