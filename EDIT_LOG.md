@@ -6,6 +6,99 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-03 — The App Store icon is a blue chevron somebody else drew
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. A look at the native build
+config, which nothing in this repository had ever opened. CI still cannot
+allocate a runner.
+
+### Every brand asset is the Expo starter's
+
+Found by **looking at the files** — `icon.png`, `favicon.png`,
+`android-icon-foreground.png`, `splash-icon.png` and `public/app-icon.png` are
+all the template's blue chevron on pale blue, and `icon.png` still carries the
+template's construction guides: dashed sight lines, two circles and a centre
+crosshair. That is the App Store icon, the Android launcher icon, the browser
+tab icon and the icon a phone puts on its home screen when someone installs the
+web app, on a product whose identity is warm paper and engraved notation.
+
+Nothing said so, and nothing would have. `icon.png` is 1024×1024, RGB, **no
+alpha** — precisely what App Store Connect requires — so it uploads, passes the
+automated checks and ships. A wrong icon is not a build failure; it is a build
+that succeeds and is wrong.
+
+`tools/check-brand-assets.py` lists all six by SHA-256 and runs in CI beside the
+EDIT_LOG gate. It is **not** a hard gate and the docstring says why: drawing an
+icon is the owner's under §2, cannot happen in a session, and failing every
+commit until it exists teaches people to skip the check. It works the way
+`KNOWN_ECHOES` in `facts.test.ts` works — it fails on the two things that are
+actually mistakes: a *new* asset shipped as the starter's, and a listed one that
+has been drawn, whose line is now a false claim about the repository. Both
+verified by mutation.
+
+Recorded in CLAUDE.md's honest-DoD section as blocking the submission, which is
+the thing that was missing: the icon was not hidden, it was simply never looked
+at.
+
+### And there is no splash screen, which is the same job
+
+`assets/splash-icon.png` was the same placeholder, referenced from nothing —
+deleted. There is no splash configuration at all, so `expo prebuild` emits the
+bare template's `SplashScreen.storyboard`, whose background is
+`systemBackgroundColor`: **an iOS cold start flashes white before the app paints
+`#F7F2E9`.** The web side is pinned three ways (`index.html`, the manifest, and
+`flatten-vendor-assets` asserting it against `colors.bg`); iOS was pinned
+nowhere.
+
+Adding `expo-splash-screen` with `backgroundColor: '#F7F2E9'` and no image was
+tried, prebuilt, and **reverted**. Measured on the generated project: the plugin
+rewrites the storyboard background only inside `applyImageToSplashScreenXML`,
+so with no image `removeImageFromSplashScreen` runs instead and leaves
+
+- the white `systemBackgroundColor` untouched,
+- two constraints pointing at the imageView it had just deleted, and
+- an orphan `<image name="SplashScreenLogo">` resource — its removal is guarded
+  by `if (existingImageIndex && existingImageIndex > -1)`, and the entry is at
+  index 0.
+
+A launch storyboard that may not compile is worse than a flash, and I cannot
+build an iOS target here to find out. The `SplashScreenBackground.colorset` it
+generates *is* correct (0.9686 / 0.9490 / 0.9137 sRGB = `#F7F2E9`), which is
+what made the diagnosis unambiguous. The splash wants the real mark on it, so
+it is one job with the icon — the owner's.
+
+### Checked and **not** a defect
+
+- **No `PrivacyInfo.xcprivacy`, and none is needed.** Apple's rule puts the
+  declaration on whoever calls the API, and every SDK here that touches one
+  ships its own: `async-storage`, `expo-file-system`, `expo-constants`,
+  `expo-system-ui` and five inside `react-native`. This app contains no native
+  code of its own. `ios.privacyManifests` exists in the Expo schema and adding
+  a speculative declaration to Apple would be worse than none.
+- **Info.plist is right.** All three usage strings arrive from the plugin
+  config, `ITSAppUsesNonExemptEncryption` is `false`, `CFBundleURLTypes` carries
+  both `intempo` and `com.intempo.app`, and `UIUserInterfaceStyle` is `Light`.
+- **The empty account was walked again** (the five-line `fixtures.ts` recipe in
+  CLAUDE.md). Today, Library and Insights each have a real empty state with an
+  action; the 2026-09-02 fix that stopped Today hiding the warmup is in place.
+  No defect. Today's centred pair has a written rationale beside it and was
+  left alone.
+
+### One thing to know if you run prebuild
+
+`npx expo prebuild` **rewrites `package.json`**, changing the `ios` and
+`android` scripts from `expo start --ios` to `expo run:ios`. Restored both
+times. `ios/` and `android/` are gitignored; the rewrite is not.
+
+### Verified
+
+Mobile **1392 tests / 123 files** green, `tsc` clean, `npm run build:web`
+clean after the dependency was reverted with `npm ci` (which prunes the
+`--no-save` Playwright install — reinstalled). `check-brand-assets.py` OK, and
+non-zero under both mutations.
+
+---
+
 ## 2026-09-03 — The one failure this app has most often, reported as bad wifi
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Two contracts, one of them

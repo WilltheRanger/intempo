@@ -900,6 +900,31 @@ account already had, `AccountStartupScreen` holding a centred spinner between
 two left-aligned sentences with the one button the screen exists to offer at
 the vertical middle of the phone (2026-09-01), and the empty Today above.
 
+**Every brand asset is still the Expo starter's** (measured 2026-09-03, by
+looking at them): `icon.png`, `favicon.png`, the three Android layers and
+`public/app-icon.png` are a blue chevron on pale blue with the template's
+construction guides — dashed sight lines, two circles and a centre crosshair —
+on a product whose identity is warm paper and engraved notation. `icon.png` is
+1024×1024, RGB, no alpha, so App Store Connect would take it. **A wrong icon is
+not a build failure; it is a build that succeeds and is wrong.**
+`tools/check-brand-assets.py` lists them by hash and runs in CI. It does not
+fail while they are listed — drawing them is the owner's under §2 — but it does
+fail if a *new* asset ships as the starter's, or if a listed one is drawn and
+its line becomes a false claim. **This blocks the App Store submission**, and
+nothing else in the repository said so.
+
+`assets/splash-icon.png` was the same placeholder, referenced nowhere, and is
+deleted. There is **no splash configuration**: `expo prebuild` emits the bare
+template's `SplashScreen.storyboard`, whose background is
+`systemBackgroundColor` — white — so an iOS cold start flashes white before the
+app paints `#F7F2E9`. Wiring `expo-splash-screen` with a `backgroundColor` and
+no `image` does **not** fix it: measured on 2026-09-03, its plugin only rewrites
+the storyboard's background inside `applyImageToSplashScreenXML`, so with no
+image it leaves the white background, two constraints pointing at the imageView
+it just deleted, and an orphan `SplashScreenLogo` resource. That was tried and
+reverted — a launch storyboard that may not compile is worse than a flash.
+The splash wants the real mark on it, so it is one job with the icon.
+
 **Honest DoD status:** no batch is tagged `batch-N-done`. Every remaining gate
 (live magic-link auth, upload→OCR→save, mic→analysis) is blocked on Supabase
 keys and a real device — none of it can be closed in-session, and the screens

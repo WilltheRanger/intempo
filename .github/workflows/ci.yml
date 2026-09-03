@@ -42,6 +42,14 @@ jobs:
           fi
           python3 tools/check-log-entry.py "$base..HEAD"
 
+      # Cheap, and in this job because it needs nothing but Python and the
+      # checkout. It does not fail while the placeholders are listed — see the
+      # tool's own docstring for why that is deliberate — so what it actually
+      # guards is a *new* asset shipped as the starter's, and a listed one
+      # that has been drawn and whose line is now a false claim.
+      - name: Brand assets are ours
+        run: python3 tools/check-brand-assets.py
+
   backend-test:
     name: Backend tests (pytest)
     runs-on: ubuntu-latest
