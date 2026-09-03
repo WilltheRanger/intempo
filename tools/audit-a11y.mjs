@@ -234,11 +234,22 @@ const audit = () => {
  * rendered tree and multiplies each computed `font-size`, then measures what
  * now hangs off the right edge.
  *
- * What that catches is layout that cannot absorb longer or taller text —
- * fixed widths, flex items that will not shrink, rows that only fit at one
- * size. What it cannot catch is anything iOS does that a browser does not:
- * `allowFontScaling={false}` is invisible here, and so is a native line-height
- * rule. It is a floor, not a simulation.
+ * **`line-height` is scaled by the same factor, because that is what iOS
+ * does.** `RCTTextAttributes.mm` reads
+ * `_lineHeight * self.effectiveFontSizeMultiplier`, so a fixed
+ * `lineHeight: 42` in the design tokens becomes 84 at 2x on a real phone and
+ * the ratio holds. Scaling only `font-size` piles glyphs on top of one another
+ * and produces screenshots that look like bugs the app does not have — which
+ * is what the first version of this did.
+ *
+ * What it catches is layout that cannot absorb longer or taller text — fixed
+ * widths, flex items that will not shrink, rows that only fit at one size.
+ *
+ * What it still cannot see is anything iOS does that a browser does not:
+ * different font metrics, and text that opts out of scaling. The second is
+ * **measured rather than assumed** — `allowFontScaling` and
+ * `maxFontSizeMultiplier` appear nowhere in `src/`, so every `Text` in this app
+ * scales. It is a floor, not a simulation.
  *
  * 2x rather than the 3.1x an iPhone can actually reach: the largest
  * accessibility sizes reflow text this app has not been designed against, and
@@ -285,8 +296,15 @@ const spill = (scale) => {
 
   for (const el of document.querySelectorAll('*')) {
     if (el.closest('svg')) continue;
-    const px = parseFloat(getComputedStyle(el).fontSize);
-    if (px) el.style.fontSize = `${px * scale}px`;
+    const style = getComputedStyle(el);
+    const px = parseFloat(style.fontSize);
+    if (!px) continue;
+    el.style.fontSize = `${px * scale}px`;
+    // Together, the way iOS scales them: a `line-height` left behind turns
+    // every block of text into overlapping glyphs and reports heights the app
+    // would never have.
+    const line = parseFloat(style.lineHeight);
+    if (line) el.style.lineHeight = `${line * scale}px`;
   }
 
   const width = document.documentElement.clientWidth;
