@@ -6,6 +6,68 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-03 — The anon key is public by design; RLS is the only reason that is safe
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Security. CI still cannot
+allocate a runner.
+
+`EXPO_PUBLIC_SUPABASE_ANON_KEY` is inlined into 3.3 MB of published
+JavaScript. That is what it is for. What makes it safe is row-level security —
+every policy in this schema is `auth.uid() = <owner column>`, so the key
+reaches the signed-in musician's own rows and nothing else.
+
+**A migration that creates a table and forgets `ENABLE ROW LEVEL SECURITY`
+hands that key the whole table** — every row, to anyone who runs `strings` on
+the bundle. One missing line, in a file applied by hand against a live
+database, checked by nothing.
+
+Audited all fifteen migrations:
+
+| | |
+|---|---|
+| tables created | 9 |
+| with RLS enabled | **9** |
+| policies broader than their owner column | **0** — no `USING (true)` anywhere |
+
+Clean. `test_rls_invariants.py` holds both halves now.
+
+### Two decisions in it
+
+**It checks the `ENABLE`, never that a policy exists.** `pending_uploads` has
+RLS on and *no policy at all*, which is the safe direction — RLS with no
+policy denies everything to anon, and only the service role touches that
+table. Requiring a policy would push somebody to write a permissive one to
+satisfy a test, which is the opposite of the point.
+
+**`USING (true)` gets its own test**, because it is worse than no policy: RLS
+is enabled, so the table passes every audit that greps for `ENABLE` —
+including the first test in this file.
+
+### Verified
+
+| Mutation | Result |
+|---|---|
+| a migration 016 creating a table with no RLS | fails, naming the table |
+| the same migration **with** RLS added | **passes** — the false alarm that matters |
+| …plus a `USING (true)` policy on it | the second test fails |
+| `MIGRATIONS` pointed at a missing directory | fails on the count |
+
+Also cleared this iteration with no code needed: nothing in `mobile/`
+references `SERVICE_ROLE`, and the app inlines exactly three `EXPO_PUBLIC_*`
+values — URL, anon key, API base. No secret-shaped variable reaches the bundle.
+
+**Backend: 1943 passed, 2 xfailed.**
+
+### Raised, not taken
+
+**There is no rate limiting on any endpoint.** Tier limits cap analyses per
+calendar month; nothing caps requests per minute, so sign-in attempts, scan
+uploads and analysis submissions are unbounded per account. Where to enforce
+it — Cloudflare in front of the API, or middleware in FastAPI — is an
+infrastructure decision, not a refactor.
+
+---
+
 ## 2026-09-03 — I expected the algorithm allowlist to be the defence; it is not
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Auth. CI still cannot
