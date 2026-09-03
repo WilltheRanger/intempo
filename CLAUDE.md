@@ -272,6 +272,16 @@ there works differently as of 2026-08-24:
   at all; without it `expo prebuild` warns and drops it, so the wrong colour was
   not being applied either. Measured after: `RCTRootViewBackgroundColor` =
   `0xFFF7F2E9`.
+- **CI builds the iOS bundle, not just the web one** (2026-09-03). Every other
+  check in this repository — the walk, the a11y audit, every screenshot in
+  `EDIT_LOG.md` — runs through the **web** bundle, and the two module graphs are
+  not the same: `.web.ts` resolves to a native sibling, `Platform.OS` folds the
+  other way, and a `document.` outside a guard is invisible until a phone runs
+  it. `expo export --platform ios` resolves the native graph and Hermes
+  compiles it. Measured on the bytecode: `intempo-listen-` (the native player's
+  WAV name) present, `AudioContext` and `createMediaStreamDestination` absent,
+  `beforeunload` stripped with its guarded branch. It proves the bundle
+  **builds**, never that it **behaves** — nothing here has made a sound.
 - **The app can be built for a device** (2026-09-03). `ios.bundleIdentifier`
   and `android.package` are `com.intempo.app`, and `eas.json` holds the
   profiles; without them `expo prebuild` and EAS cannot run, so there was no

@@ -6,6 +6,62 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-03 — CI builds the App Store target, which it never had
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. One CI step. Asked
+directly by the user: *"Also just to confirm this will work when for App Store
+app"*.
+
+The honest answer was that nothing knew. **Every check in this repository runs
+through the web bundle** — `walk-app.mjs`, `audit-a11y.mjs`, every screenshot in
+this log, `npm run build:web`. The two module graphs are not the same one:
+
+- `.web.ts` files resolve to their native siblings;
+- `Platform.OS` branches fold the other way;
+- a `document.` or `window.` outside a guard is invisible until a phone runs it.
+
+So the answer to "does it work on iOS" was an argument, not a measurement.
+
+### What I checked by hand first
+
+- **Every `.web` file has a native sibling** — five do; the sixth,
+  `lib/audio/context.web.ts`, is imported *only* by other `.web` files and only
+  with the explicit suffix, so it never resolves on native. Correct, not a gap.
+- **Every browser API in shared code is `Platform.OS`-guarded**:
+  `modalAccessibility`'s `document.getElementById`, `accountExport`'s download
+  link, `RecordScreen`'s `beforeunload` listener. (`document` in `AuthScreen`
+  and `LegalScreen` is a local variable holding a legal document, not the DOM.)
+- **`expo export --platform ios` completes**: 5.6 MB of Hermes bytecode.
+
+### The bytecode says which variants it took
+
+| string | in the iOS bundle |
+|---|---|
+| `intempo-listen-` — the **native** player's WAV filename | present |
+| `AudioContext` — Web Audio | absent |
+| `createMediaStreamDestination` — the web recorder | absent |
+| `beforeunload` | absent |
+
+The last one is the nicest: Metro constant-folds `Platform.OS` for the target,
+so the guarded web branch is not merely unreachable on a device, it is **gone**.
+
+### The step
+
+A one-off check by me is the wrong shape for a question that will be asked
+again on every commit, so `expo export --platform ios` is a CI step now, after
+the web build and the typecheck (a type error should be reported as a type
+error, not as a bundler failure thirty seconds later).
+
+**It proves the bundle builds, not that it behaves**, and both `CLAUDE.md` and
+`mobile/README.md` now say so in those words. The native recorder and the
+native player have still never made a sound, and no build has ever been
+produced — there is no macOS, no Xcode, no Apple account and no EAS credentials
+here.
+
+**Side effects:** CI gains a bundling step. **Rollback:** remove it.
+
+---
+
 ## 2026-09-03 — The caveat under the stave named the wrong notes, and the wrong reason
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Copy and counting in
