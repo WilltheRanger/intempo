@@ -48,6 +48,7 @@ from pathlib import Path
 import pytest
 
 from app.models.analysis import BpmSource, Instrument, MetronomeMode
+from app.routers.corrections import UserVerdict
 from app.routers.scores import MAX_PAGES
 from app.services.classification import Band, Direction
 from app.services.score_schema import (
@@ -105,6 +106,33 @@ def test_the_reader_would_notice_a_type_that_stopped_existing() -> None:
         _union("NoSuchTypeExists")
 
     assert len(_union("Instrument")) == 4
+
+
+def test_the_app_offers_exactly_the_verdicts_this_api_accepts() -> None:
+    """What a musician can say happened in a bar, on both sides of the wire.
+
+    A `Literal` rather than an `Enum` on the server, so it cannot join the
+    parametrised list above — but it crosses the wire in a request body the
+    same way `BpmSource` does, and it is closed for the same reason: a value
+    this API does not accept is a 422 on a correction, and a correction that
+    422s is a musician told their feedback failed for saying the ordinary
+    thing.
+
+    `unsure` is the one worth naming. It is deliberately offered — the spec
+    warns that many corrections will come from people disagreeing with the
+    concept rather than catching a misfire, and someone who genuinely cannot
+    remember is more useful in the data than someone who guessed — so an app
+    that quietly dropped it would narrow the dataset without narrowing the
+    schema.
+    """
+    server = set(get_args(UserVerdict))
+    app = _union("UserVerdict")
+
+    assert app == server, (
+        f"UserVerdict: only the server accepts {sorted(server - app)}; "
+        f"only the app offers {sorted(app - server)}"
+    )
+    assert "unsure" in server
 
 
 def test_the_app_sends_a_bpm_source_this_api_accepts() -> None:

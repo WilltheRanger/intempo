@@ -6,6 +6,104 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-03 — "What actually happened?" — the feedback loop finally has a client
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. §2 gate **asked and
+granted** (the user selected "Verdict feedback affordance" among four).
+
+`POST /v1/analyses/:id/corrections` has been built, tested and owner-scoped
+since Batch 8 and **no client had ever called it**, so `verdict_corrections`
+was empty for every account by construction — while its router docstring calls
+it *"the only route out of the position Batch 3 is currently stuck in"* and
+`TUNING_LOG.md` has recorded those thresholds as awaiting real ears the whole
+time. It has one now.
+
+### The composition
+
+Inside the reveal, never on every row. A row is already tapped to see its
+figure; this is what else is behind that tap. Thirteen copies of a question
+nobody asked would turn the list into a form, and the list is the part of this
+screen a musician works from (§3 law 10).
+
+Words, not chips — rounded pills are exceptions here rather than the styling
+language (law 6), and four under every opened row would be four containers
+doing a type scale's job. The app's own reading is ochre and pre-selected, so a
+musician **changes an answer rather than supplying one**: agreement is data,
+and a form that only collects disagreement measures how often people disagree
+rather than how often the app is right.
+
+**Three-foot test**, on the screenshot of the running build: first the red
+cluster on rows 5–8, which is the take's actual problem; second the opened row
+with its `+12%` and its question; third the rhythm of the list. The correction
+recedes, which is right — it is not what the screen is for.
+
+### Only where the app made a claim
+
+`canCorrect` is the row's own `revealsFigure`, deliberately, not a second
+predicate free to drift from it. A bar under a written `rit.`, a held fermata
+or an ornament was never judged — asking about one would be asking a musician
+to adjudicate a measurement that was never made, and the answer would enter the
+tuning data as a disagreement about a threshold that was not applied.
+
+`appVerdictFor` collapses `slight`/`rush_drag`/`severe` onto one word: someone
+disagreeing with a bar is not adjudicating between "slight rush" and "severe".
+Nothing is lost — the take's `result_json` carries the thresholds and the
+figure, and the correction names the analysis.
+
+### Three things I got wrong on the way
+
+**A test that could not fail.** `canCorrect(m) === readMeasure(m).revealsFigure`
+is `canCorrect`'s own body. Deleted; the concrete cases hold the behaviour, and
+mutating `canCorrect` to `return true` now fails two of them.
+
+**A style that painted the page colour onto the page.** `rowRevealed` set
+`backgroundColor: colors.bg` under a comment about "the page colour, borrowed
+onto the card" — and the measure list has no card, it sits directly on the
+screen, which is already `colors.bg`. Sampled on the running build: a revealed
+row and an ordinary one are both `#F7F2E9`. **Pre-existing, not mine**, and now
+removed rather than replaced with a colour that would show: the reveal already
+firms the number to ink, swaps the word for the figure and opens the prompt, so
+a band would be a fourth signal for one state.
+
+**`describeLoadError` swallowing a message written for the case.** The hook
+throws *"Sending feedback needs the backend. This build is running on sample
+data."* and I ran it through `describeLoadError`, whose fallback is *"Check
+your connection and try again"* — wrong and unactionable, and the exact
+substitution that file's own docstring says it exists to stop, reappearing one
+caller over. Now `error instanceof Error ? error.message : …`, matching
+`ProfileScreen`'s convention for the same shape of write. **Found by the walk,
+not by a test.**
+
+### Contracts closed
+
+- `UserVerdict` joins `test_client_enums.py`. A `Literal` rather than an
+  `Enum`, so it gets its own test beside `BpmSource` — and it is closed for the
+  same reason: a value this API does not accept is a 422 on a correction, which
+  is a musician told their feedback failed for saying the ordinary thing.
+- `POST .../corrections` comes off `NOT_WIRED`. **The list is now keyed by path
+  rather than by (method, path)**, because that is the granularity the matcher
+  has: the method lives in the fetch options, not beside the URL. The GET sat
+  there for one commit after the POST was wired and immediately failed as
+  "actually wired", since its path is the same string. Keying by method let an
+  entry claim a precision the check cannot deliver.
+- `walk-app.mjs` gains a leg: the question appears on a judged bar, all four
+  answers are offered, an untimed bar is not even a button, and sending with no
+  backend is refused in words. A control nobody has driven is a control nobody
+  has checked.
+
+### Tests
+
+mobile **1337 passed across 116 files**; backend **1923 passed, 2 xfailed**;
+`tsc` clean; `walk-app.mjs` PASS (**30 checks**, was 26); `audit-a11y.mjs` PASS
+(23 routes). `ariaState.test.ts` caught the new component missing its
+`aria-pressed` mirror before I did.
+
+**Side effects:** none outside the verdict screen. **Rollback:** revert the
+commit; the endpoint returns to having no client and the `NOT_WIRED` entry
+comes back.
+
+---
+
 ## 2026-09-03 — The app can be built for a phone, and doing it found the wrong paper
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. §2 gate **asked and

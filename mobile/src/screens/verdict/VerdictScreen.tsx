@@ -16,7 +16,7 @@ import {
 import { FadeIn } from '../../components/motion';
 import { VerdictSkeleton } from '../../components/skeletons';
 import { takeSource } from '../../data/sources';
-import type { TakeResult } from '../../data/types';
+import type { MeasureVerdict, TakeResult, UserVerdict } from '../../data/types';
 import { BORDER_WIDTH, colors, spacing } from '../../design';
 import { formatTakeVerdict, formatTempo } from '../../lib/tempo';
 import type { RootNavigation, RootStackParamList } from '../../navigation/types';
@@ -25,6 +25,13 @@ import {
   readMeasure,
   timedMeasureRange,
 } from '../../lib/verdict/measureReading';
+import {
+  appVerdictFor,
+  canCorrect,
+  correctionAcknowledgement,
+} from '../../lib/verdict/correction';
+import { useSubmitCorrection } from '../../data/hooks/useCorrections';
+import { CorrectionPrompt, type CorrectionState } from './CorrectionPrompt';
 import { MEASURE_COLUMNS, MeasureRow } from './MeasureRow';
 import { TrendLine } from './TrendLine';
 import { TakePlayback } from './TakePlayback';
@@ -47,6 +54,74 @@ export function VerdictScreen() {
   const navigation = useNavigation<RootNavigation>();
   const { params } = useRoute<RouteProp<RootStackParamList, 'Verdict'>>();
   const [revealed, setRevealed] = useState<number | null>(null);
+
+  /*
+    Where each measure's correction has got to, keyed by measure number.
+
+    **Kept here rather than in the row** so it survives collapsing and
+    reopening a row — someone who taps away and comes back should see that
+    they already answered, not be asked again. Not persisted beyond the
+    screen: the server appends rather than replaces, so a second answer is a
+    second opinion and both are data, but re-asking within one sitting reads
+    as the app having forgotten.
+  */
+  const [corrections, setCorrections] = useState<Record<number, CorrectionState>>(
+    {},
+  );
+  const submitCorrection = useSubmitCorrection();
+
+  function correct(measure: MeasureVerdict, choice: UserVerdict) {
+    setCorrections((current) => ({
+      ...current,
+      [measure.measure]: { kind: 'sending', choice },
+    }));
+    submitCorrection.mutate(
+      {
+        analysisId: params.analysisId,
+        corrections: [
+          {
+            measure_number: measure.measure,
+            // Sent as the app's own word for it, so the pair is stored
+            // together — the dataset exists to compare the two, and storing
+            // only the correction loses what it was correcting.
+            app_verdict: appVerdictFor(measure),
+            user_verdict: choice,
+          },
+        ],
+      },
+      {
+        onSuccess: () =>
+          setCorrections((current) => ({
+            ...current,
+            [measure.measure]: {
+              kind: 'sent',
+              message: correctionAcknowledgement(choice),
+            },
+          })),
+        onError: (error: unknown) =>
+          setCorrections((current) => ({
+            ...current,
+            [measure.measure]: {
+              kind: 'failed',
+              /*
+                The error's own words, matching `ProfileScreen`'s convention
+                for the same shape of write. **Not `describeLoadError`**: that
+                exists for a screen that could not *load*, and its fallback is
+                "Check your connection and try again" — which replaced the
+                hook's own "Sending feedback needs the backend. This build is
+                running on sample data." with a guess that is both wrong and
+                unactionable. That is the exact substitution `describeError.ts`
+                was written to stop, and it reappeared one caller over.
+              */
+              message:
+                error instanceof Error
+                  ? error.message
+                  : 'That feedback could not be sent. Try again.',
+            },
+          })),
+      },
+    );
+  }
 
   const {
     data: take,
@@ -291,6 +366,22 @@ export function VerdictScreen() {
                 )
               }
               divided={index > 0}
+              revealedExtra={
+                /*
+                  Only where the app made a claim about the playing. A bar
+                  under a `rit.`, a held fermata or an ornament was never
+                  judged, so there is nothing to agree or disagree with —
+                  `canCorrect` is the row's own `revealsFigure`, deliberately,
+                  rather than a second predicate free to drift from it.
+                */
+                canCorrect(measure) ? (
+                  <CorrectionPrompt
+                    appVerdict={appVerdictFor(measure)}
+                    state={corrections[measure.measure] ?? { kind: 'idle' }}
+                    onChoose={(choice) => correct(measure, choice)}
+                  />
+                ) : null
+              }
             />
           </FadeIn>
         ))}
