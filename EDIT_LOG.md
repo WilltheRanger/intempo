@@ -6,6 +6,120 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-03 — "Download your data" downloaded nothing
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Four defects behind one
+button, and a fifth on the screen next to it. **CI still cannot allocate a
+runner** — every job on every commit since `5c04e1e` fails in three seconds with
+no steps, which is an account-level Actions problem and not something a commit
+can fix. Everything below was run locally.
+
+### The licence page had drifted, because nothing checks a generated file
+
+`src/data/licences.ts` says at the top that it is generated and must be
+regenerated after a dependency change. **`expo-system-ui` was not on it.** It is
+a dependency of this app — it is what sets the splash background — and the
+licence page a user reads in the App Store build did not name it.
+
+Nothing failed. The screen rendered, the list looked complete, and the one entry
+missing was the most recently added. That is how *every* hand-run generator
+fails, and the fix is not "remember next time":
+
+- Regenerated. One entry added; nothing else moved.
+- `src/data/licences.test.ts` holds both directions — every declared dependency
+  is listed, and everything listed is either declared or on the vendored list.
+  The two vendored lists (generator and test) are now held together by those
+  same two rules rather than by anyone remembering.
+- The generator **throws** on a package it cannot read. It used to `catch` and
+  return nothing, so running it against a partial install silently *deleted*
+  attributions and printed a success line. Verified by moving `fflate` out of
+  `node_modules`: it now refuses and leaves the file untouched.
+
+Mutations killed: the real drift (`expo-system-ui` removed again), a stale entry
+for a package no longer declared, and Bravura — the one entry with an actual
+OFL attribution requirement — dropped.
+
+### iOS shared the export as a chat message
+
+`saveAccountExport` called `Share.share({ title, message: json })` on native.
+On iOS that is a **string**: the sheet offers Messages, Mail, Notes and Copy,
+there is no "Save to Files" for a string, and `title` is Android-only — so the
+filename the function carefully computed was discarded. A whole account, as a
+chat message, under a screen headed "Download your data".
+
+Now: the JSON is written to a file with `expo-file-system` (already a
+dependency, already loaded on web through `ImportFile`) and the **file** is
+shared, which is what puts Save to Files in the sheet and gives the export its
+name. `url` alone and never alongside `message` — a sheet handed both offers
+some destinations the text instead, which is the same defect in half the sheet.
+
+Android still shares the text: RN's `Share` ignores `url` there and attaching a
+file needs a dependency this app does not carry. iOS is the shipping target;
+the comment names the line to change when Android ships.
+
+One export sits in the cache at a time — it is the musician's data in the
+clear — so each export deletes the one before it. Deleting the *current* file
+when the sheet closes would be tidier and is deliberately not done: the
+destination copies during the activity, and getting that wrong loses the export
+rather than a few kilobytes of cache.
+
+### Dismissing the share sheet reported success
+
+`Share.share` resolves for a dismissal. `ExportDataScreen` set `done` on
+resolution, so opening the sheet and changing your mind put **"Your export is
+ready"** under a download that never happened. `saveAccountExport` now answers
+whether the export left the app. Android cannot report a dismissal at all, so
+there it stays optimistic — the bug narrowed from every platform to one that
+does not ship.
+
+### And the screen told a signed-in musician their session had ended
+
+Found by driving it, not by a test. `fetchAccountExport` was the one place in
+the app that called `apiFetch` without the sample-data guard every comparable
+action has (`useSubmitCorrection`, `useUpdateProfile`, five in `usePieces`). On
+a fixtures build it reached the no-token branch and said **"Your session has
+ended. Sign in again."** — on a build where every other screen has you signed
+in, with a library, a profile and thirty days of insights.
+
+Guarded now, in the same words as its five neighbours. The alternative — a JSON
+file of fixtures labelled "your data" — is worse than either.
+
+### A leg for it in the walk
+
+`tools/walk-app.mjs` grew **Downloading your own data**. The claim worth driving
+is the negative: with nothing to fetch, the app says so and does **not** say the
+export is ready. It failed before the guard and passes after, which is the
+mutation evidence for the fix.
+
+### Three-foot test — Export data (`/account/export`)
+
+Composition unchanged; one line of logic changed and the screen was
+re-screenshotted to be sure. First: **"Download your data"**, serif, the only
+large type. Second: the black **Prepare download** button, low on the screen and
+in the thumb zone. Third: the white "Included" card. The refusal sits under the
+button in small secondary type and does not compete. One focal point, secondary
+information receding — no change needed.
+
+### Verified
+
+- Mobile **1385 tests / 122 files** green (1383 before); `tsc --noEmit` clean.
+- `npm run build:web` clean; `expo export --platform ios` builds a 5.6 MB Hermes
+  bundle, and `strings` on it finds `intempo-data-`, the new refusal, and
+  `expo-file-system` — the native branch is really in the iOS bundle.
+- Walk: PASS, including the new leg. A11y sweep: PASS, 23 routes.
+- Seven mutations killed on the export module (message-sharing restored,
+  dismissal reported as saved, previous export left behind, the download's
+  filename dropped, the old filename slice, the guard removed, the guard always
+  on) and three on the licence page.
+- `.env` moved aside for the fixtures build and restored `diff -q` identical.
+
+### Still owner-blocked
+
+GitHub Actions runners, `eas init`, Apple signing, and the App Store Connect
+listing. Nothing here can close those.
+
+---
+
 ## 2026-09-03 — "In both directions" was three of four
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. One test, one corrected

@@ -34,8 +34,16 @@ const entries = names.flatMap((name) => {
     manifest = JSON.parse(
       readFileSync(join(root, 'node_modules', name, 'package.json'), 'utf8'),
     );
-  } catch {
-    return [];
+  } catch (error) {
+    // Loudly, because this file is a legal notice. Swallowing the read dropped
+    // the package from the page silently, so running the generator against a
+    // partial install *deleted* attributions and reported success — the same
+    // failure as never running it, with a commit behind it.
+    throw new Error(
+      `${name} is declared in package.json but not installed, so its licence ` +
+        `cannot be read. Run \`npm ci\` and try again.`,
+      { cause: error },
+    );
   }
   const licence =
     typeof manifest.license === 'string'

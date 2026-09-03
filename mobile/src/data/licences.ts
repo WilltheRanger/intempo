@@ -37,6 +37,7 @@ export const LICENCES: Licence[] = [
   { name: 'expo-image-picker', version: '57.0.11', licence: 'MIT' },
   { name: 'expo-linking', version: '57.0.6', licence: 'MIT' },
   { name: 'expo-status-bar', version: '57.0.1', licence: 'MIT' },
+  { name: 'expo-system-ui', version: '57.0.3', licence: 'MIT' },
   { name: 'fflate', version: '0.8.3', licence: 'MIT' },
   { name: 'lucide-react-native', version: '1.31.0', licence: 'ISC' },
   { name: 'patch-package', version: '8.0.1', licence: 'MIT' },

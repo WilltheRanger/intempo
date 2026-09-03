@@ -599,6 +599,37 @@ there works differently as of 2026-08-24:
   the photograph exists to check, so it cannot be the thing that authorises
   throwing it away.
 
+- **Taking your data out means a file, and only when it left the app**
+  (2026-09-03). `saveAccountExport` shared the JSON as a `message` on native —
+  which on iOS is a *string*, so the sheet offered Messages and Mail, never
+  "Save to Files", and RN's `title` being Android-only meant the filename it
+  computed was thrown away. It writes a file with `expo-file-system` and shares
+  `url` **alone**: a sheet handed `url` and `message` together offers some
+  destinations the text, which is the same defect in half the sheet. Android
+  still shares text because RN ignores `url` there — the comment names the line
+  to change when Android ships. And `Share.share` **resolves for a dismissal**,
+  so the function answers whether the export left the app; the screen said
+  "Your export is ready" to everyone who opened the sheet and changed their
+  mind. One export sits in the cache at a time — it is the musician's data in
+  the clear — and the *current* one is deliberately not deleted when the sheet
+  closes, because the destination copies it during the activity.
+  `fetchAccountExport` also carries the sample-data guard its five neighbours
+  carry: without it, it was the one call in the app that reached `apiFetch`
+  with no token and told a musician **"Your session has ended. Sign in
+  again."** on a build where every other screen has them signed in.
+
+- **A generated file with no check drifts, and this one is a legal notice**
+  (2026-09-03). `src/data/licences.ts` says at the top that it is generated and
+  must be regenerated after a dependency change, and `expo-system-ui` was
+  missing from it — the most recently added dependency, absent from the page a
+  user reads in the shipped app, with nothing failing. `licences.test.ts` holds
+  both directions against `package.json`, which is also what keeps the two
+  vendored lists (generator and test) in step without anyone remembering.
+  The generator now **throws** on a package it cannot read: it used to `catch`
+  and drop it, so running it against a partial install silently *deleted*
+  attributions and printed a success line — the same outcome as never running
+  it, with a commit behind it.
+
 - **A signed mean answers "which way", never "how much"** (2026-09-02). Insights
   summarised thirty days with one, so a musician 18% ahead in one bar and 18%
   behind in the next averaged to **zero** — and the headline's band and
