@@ -229,7 +229,18 @@ there works differently as of 2026-08-24:
   `_HUMAN_STAGES` / `_human_stage` the worker's. Adding a pipeline stage means
   editing the fixture **and** both sides —
   `backend/app/tests/test_stage_parity.py` and
-  `transcriptionProgress.test.ts` fail otherwise, in both directions.
+  `transcriptionProgress.test.ts` fail otherwise.
+  **"In both directions" was three of four** (measured 2026-09-03). A stage
+  added to the fixture failed two tests on each side; a stage added to
+  `STAGE_PROGRESS` failed the app's. A stage added to `_HUMAN_STAGES` passed
+  all ten, because `test_the_worker_says_exactly_the_static_words_the_fixture_
+  lists` builds its expected set from four hand-written `_human_stage` calls
+  rather than from the worker's own table. The cost was not a crash: the app
+  **holds** the bar on a stage it does not recognise, so a new stage with no
+  fixture entry stopped the bar for exactly as long as that stage took — the
+  measured-progress promise weakening quietly rather than breaking.
+  `test_every_stage_the_worker_can_name_is_in_the_contract` reads
+  `_HUMAN_STAGES` and closes it.
   Three rules that each exist because they were once broken: a stage this build
   does not recognise **holds** the bar (falling back threw a read at 70% down to
   5%); positions increase in the order the worker reaches them; and the reading
