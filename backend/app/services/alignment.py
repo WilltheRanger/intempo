@@ -654,25 +654,6 @@ def pulse_anchors(
     return anchors
 
 
-def _fit_line(
-    mapping: list[tuple[int, int]], detected: np.ndarray, expected: np.ndarray
-) -> tuple[float, float] | None:
-    """`(rate, offset)` mapping expected seconds onto detected seconds.
-
-    One home for the fit, because two callers need exactly the same line: the
-    rate refinement, which uses it to correct the scale, and the quality score,
-    which uses it to decide what a steady tempo cannot explain.
-    """
-    if not mapping:
-        return None
-    det = np.array([detected[d] for d, _ in mapping], dtype=float)
-    exp = np.array([expected[e] for _, e in mapping], dtype=float)
-    if det.size >= 2 and float(np.ptp(exp)) > 0:
-        rate, offset = np.polyfit(exp, det, 1)
-        return float(rate), float(offset)
-    return 1.0, float(np.median(det - exp))
-
-
 def _residuals(
     mapping: list[tuple[int, int]],
     detected: np.ndarray,
@@ -727,16 +708,6 @@ def _residuals(
     else:
         rate, offset = 1.0, float(np.median(settled - exp))
     return np.abs(settled - (rate * exp + offset))
-
-
-def _residual_cost(
-    mapping: list[tuple[int, int]], detected: np.ndarray, expected: np.ndarray
-) -> float:
-    """Mean residual, so two mappings of different lengths compare fairly."""
-    residuals = _residuals(mapping, detected, expected)
-    if residuals.size == 0:
-        return float("inf")
-    return float(residuals.mean())
 
 
 def _quality_from_cost(total_cost: float, path_len: int, sec_per_beat: float) -> float:

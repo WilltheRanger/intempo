@@ -6,6 +6,87 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-03 — The backend half of the dead-code check, and the three it found
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. CI still cannot allocate a
+runner.
+
+`tools/check-dead-exports.py` holds the app; `test_client_reachability.py`
+holds the server's *routes*. Nothing held the server's **functions**. Scanned:
+293 module-level functions, **three referenced nowhere at all**.
+
+### `_fit_line` — a docstring that was false twice
+
+> One home for the fit, because two callers need exactly the same line: the
+> rate refinement, which uses it to correct the scale, and the quality score,
+> which uses it to decide what a steady tempo cannot explain.
+
+It has **no** callers. And `_residuals`, which is where one of those two would
+live, does its own `np.polyfit` — on `settled` (detected minus pulse anchors)
+against expected, not on detected against expected. So the extraction that was
+documented as the single home is not only uncalled, the surviving inline fit
+computes something different. Deleted: keeping it keeps a false claim in the
+module that decides whether a musician rushed.
+
+`_residual_cost` beside it — a mean of `_residuals` with no caller — deleted
+with it.
+
+### `repeat_balance` — kept, and measured
+
+A real check on repeat brackets in `ocr/validate.py`, and nothing runs it. Two
+functions above it, `pickup_complement` is in the same state and has been
+**documented and tested** as deliberately unwired since the day it was found.
+`repeat_balance` had nothing, so it read as an oversight.
+
+Measured, it is two-thirds sound and one-third the same page-versus-piece
+mistake `pickup_complement` makes:
+
+| Rule | On a page |
+|---|---|
+| a repeat that runs backwards | sound |
+| a repeat naming a bar not in the score | sound |
+| "endings come in pairs" | **unsound** — a page break between a first and second ending is ordinary |
+
+The first two matter more than they look. `expand_repeats` selects a span only
+when its end appears after its start, so a malformed repeat is **silently
+ignored** — and a musician who plays the repeat printed on their page is then
+measured against a timeline that does not have it, with every bar after judged
+against the wrong second. That is the multi-bar-rest failure again, one
+mechanism over.
+
+So wiring it as it stands would flag ordinary pages, and wiring the first two
+alone writes a sentence a musician reads — **a §2 decision, raised rather than
+taken.** `test_ocr_validate.py` now holds all four cases.
+
+### The check
+
+`test_dead_functions.py`, in the same shape as the app's:
+
+- Module-level functions only; a method is reached through its class.
+- **Framework-called functions are exempt by decorator** — `@router.get`,
+  `@app.exception_handler`, `@stub.function`, `@pytest.fixture` — matched on
+  the attribute so the object each hangs off does not have to be listed. A
+  route handler flagged as dead is the one false alarm this must not produce,
+  and it is mutation-tested.
+- `tools/` is searched for references, never for definitions.
+- A floor of 150 functions, so a broken glob fails instead of reporting a tidy
+  package.
+- **No allowlist.** A function that must stay unwired escapes by having a test
+  that names it and says why — which is a claim someone can check, unlike a
+  line in a list.
+
+### Verified
+
+| Mutation | Result |
+|---|---|
+| a `_unreferenced_helper` added to `alignment.py` | fails, naming it |
+| a `@router.get` handler added to `scores.py` | **passes** — the false alarm that matters |
+| `APP` pointed at a directory that does not exist | fails on the count, not on emptiness |
+
+**Backend: 1936 passed, 2 xfailed** (was 1934 + 2).
+
+---
+
 ## 2026-09-03 — Three false sentences in the file that is read at the start of every session
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. `CLAUDE.md` only; no code
