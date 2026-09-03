@@ -6,6 +6,56 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-03 — The feedback loop the backend calls "the moat" has no client
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Documentation only — the
+fix is a §2 gate and has not been taken.
+
+`POST /v1/analyses/:id/corrections` and its `GET` are built, owner-scoped
+(404 not 403, the API's convention), append-only with the reasoning written out,
+covered by `test_corrections.py`, inventoried by the account export and taken by
+account deletion. **Nothing calls either one.** Not `mobile/`, not `frontend/`.
+Grepped both trees for the path and the table name; the only hits are
+`accountExport.ts` listing a category and the privacy copy. `VerdictScreen` has
+no "this wasn't right" affordance of any kind, so `verdict_corrections` is empty
+for every account by construction.
+
+**Why it is worth writing down rather than shrugging at.** The router's own
+docstring says what it is for:
+
+> They are also the only route out of the position Batch 3 is currently stuck
+> in. Its thresholds are the spec's starting values, untuned, because tuning
+> needs a human ear on real recordings.
+
+`CLAUDE.md` §4 has recorded Batch 3 as "threshold tuning against real recordings
+still pending" for the life of this project, and `TUNING_LOG.md` says the same.
+The mechanism named as the way out of that state has never been reachable. An
+empty table tunes nothing.
+
+**Not the same corrections as the ones that work.** Two features share the word
+and it took a second pass to separate them:
+
+| | writes | reached from | consent |
+|---|---|---|---|
+| *Reading* corrections | `services/training.py` via `scores.py` | `MeasureEditScreen` ✅ | migration 013, fails closed |
+| *Verdict* corrections | `verdict_corrections` via `routers/corrections.py` | nothing ❌ | n/a |
+
+The Profile toggle and the privacy copy are about the first. They are correct
+and I changed nothing there — conflating the two would have made this entry a
+privacy claim, which it is not.
+
+**Nothing changed in code, deliberately.** `Correction.app_verdict` is free text
+(`min_length=1, max_length=64`) where the server has a closed `Band`
+vocabulary and already knows what it said, which looks loose — but with no
+client, any tightening I picked would be a guess at a shape nobody has designed
+yet, and it is cheaper to leave than to constrain wrongly. Recorded in
+`CLAUDE.md` beside the analysis bullets instead.
+
+**Tests:** none run; no code touched. **Side effects:** none. **Rollback:**
+revert the two documentation hunks.
+
+---
+
 ## 2026-09-03 — The repeat the timeline parity fixture kept out, for a reason that was not true
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. No §2 gate: a fixture and
