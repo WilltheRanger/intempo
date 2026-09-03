@@ -6,6 +6,61 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-03 — What a musician is told when they cannot get in
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. One test file, no shipped
+code changed. No §2 gate.
+
+`screens/auth/authErrors.ts` is ninety-two lines of pure copy on the first
+screen of the app and had no tests. Every sentence in it is read by someone who
+is already stuck, and four of its decisions are ones a reasonable-looking edit
+would undo.
+
+**The asymmetry is the interesting one.** `validate` applies the
+six-character minimum on **sign-up and not on sign-in**:
+
+```ts
+if (mode === 'signUp' && password.length < MIN_PASSWORD_LENGTH) {
+```
+
+An account made before this minimum existed — or under a different one — still
+has to be able to get in. Applying the rule to sign-in locks that person out of
+their own library with a message about a password that is, in fact, their
+password. There was no comment saying so; there is a test now.
+
+The other three: link modes (reset, magic link) ask for no password at all,
+because someone requesting a reset came here precisely because they do not have
+one; `validateNewPassword` checks **length before match**, since two short
+passwords that agree are still too short and "those don't match" would be
+false; and `describeAuthError` **passes an unmapped message through** rather
+than flattening it to "Something went wrong", which the module's own docstring
+says would hide the one detail that lets someone fix it themselves.
+
+Also pinned: the provider matching is case-insensitive. Supabase has changed
+the capitalisation of these strings before, and a case-sensitive match would
+silently stop rewriting and fall back to the raw message — the failure that
+looks like nothing.
+
+### Verified by mutation
+
+| mutation | result |
+|---|---|
+| length rule applied to sign-in too | 1 failed |
+| link modes ask for a password | 1 failed |
+| case-sensitive provider matching | 3 failed |
+| unmapped messages flattened to "Something went wrong" | 2 failed |
+| new password: match checked before length | 1 failed |
+
+`authErrors.ts` restored `diff -q` identical after each.
+
+### Tests
+
+mobile **1352 passed across 118 files** (was 1339/117); `tsc` clean.
+
+**Side effects:** none. **Rollback:** delete the test file.
+
+---
+
 ## 2026-09-03 — An import on the stylesheet's closing line, and two critiques I withdrew
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. One-line fix, one guard,
