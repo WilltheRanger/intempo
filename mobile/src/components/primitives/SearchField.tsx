@@ -133,6 +133,22 @@ const styles = StyleSheet.create({
   },
   input: {
     flex: 1,
+    /*
+     * **`flex: 1` alone does not let a DOM input shrink.**
+     *
+     * react-native-web renders `TextInput` as an `<input>`, and a flex item in
+     * CSS defaults to `min-width: auto` — which for a replaced element is its
+     * *intrinsic* width. So the field grows with the text size and cannot be
+     * squeezed back. Measured in Chromium at a 390px viewport: it fits at 1x
+     * (right edge 343), and at 1.5x it is already 32px off the screen, at 2x
+     * 164px, at 3x 407px. Yoga has no `min-width: auto` rule, so native was
+     * never affected and nothing on a phone would ever have shown it.
+     *
+     * With this line the field measures 274px and ends at 343 at **every**
+     * scale; the text scrolls inside it, which is what an input is for. The
+     * same one-line fix is already on seven flex rows elsewhere in the app.
+     */
+    minWidth: 0,
     // **Full height, so the target is the field and not the text.** The
     // container is `MIN_TOUCH_TARGET` tall; the input inside it measured 24pt,
     // so half the row looked tappable and was not.
