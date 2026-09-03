@@ -6,6 +6,76 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-03 — Three lists of four instruments, and a comment that claimed to be the only one
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. One guard, one corrected
+claim, and four areas checked and found sound. No shipped behaviour changed.
+CI still cannot allocate a runner.
+
+### The claim
+
+`components/profile/InstrumentChoice.tsx`:
+
+> "Double bass" in full: a bassist does not call it "Bass", and **this is the
+> one control where the space exists** to say so.
+
+`screens/profile/ProfileScreen.tsx` has a second instrument control, and it
+says **"Bass"** — with its own reasoning beside it:
+
+> "Bass" rather than "Double bass" in the control: four segments across a phone
+> leave no room for the longer word … The full name is used everywhere it fits.
+
+Both are right, and together they are one coherent rule — full name where it
+fits, short form in the four-across control. What was wrong was the word
+"one", and what was missing was anything holding the rest of it: **three**
+hand-typed lists of the same four values (`INSTRUMENT_LABELS` in `warmup.ts`,
+rendered on Today and the Warmup screen, plus the two controls), none of which
+can see the others.
+
+`lib/instrumentLabels.test.ts` holds all three to the same four values in score
+order, with `DELIBERATELY_SHORTER` naming the single divergence — and failing
+in **both** directions, so a control reworded back to the full name leaves a
+stale entry that fails rather than rots. The same shape as `KNOWN_ECHOES` and
+`NOT_WIRED`, for the same reason.
+
+Four mutations killed, each by the assertion meant to catch it: a relabelled
+viola, a dropped cello, the short form reworded to the full name, and the order
+scrambled out of score order.
+
+`walk-app.mjs` cannot see this class of defect — a label that is merely
+inconsistent renders fine and lands on the right screen.
+
+### Checked and found sound — no change
+
+- **The instrument reaches the analysis.** CLAUDE.md says a double bass needs a
+  lower onset threshold because the note swells in rather than snapping in.
+  Traced the whole way: `submitTake` sends `preferences.current().instrument`
+  → `POST /v1/analyses` accepts `Instrument | None` → `analyses.instrument`
+  → `analysis_runner` passes `double_bass=row.get("instrument") ==
+  Instrument.double_bass.value`. The value is `double_bass` on **both** sides
+  (the label is "Bass"; the value never is), so the flag fires for the musician
+  it exists for.
+- **The free-tier refusal names nothing a musician cannot do.** The backend's
+  own comment says the structured 403 is there so the client can *"show how
+  many are left and offer the upgrade"* — and Batch 8 is not built, so there is
+  no upgrade to offer. `describeReachedAnalysisLimit` says when recording
+  returns and what still works (score playback, metronome, rest cues) and
+  never mentions upgrading. That is the "advice must be followable in this app"
+  rule holding where it would have been easy to break.
+- **`tierLimitOf` keys on `code`, not on the 403.** An ownership check raises
+  403 too, and telling someone they are out of analyses when they have opened
+  somebody else's score would be worse than saying nothing.
+- **No Stripe anywhere in `mobile/`** — no dead upgrade affordance, which is
+  the correct state for an unbuilt batch rather than an omission.
+
+### Verified
+
+Mobile **1402 tests / 126 files** green (1396 before), `tsc` clean, web build
+clean, walk PASS, a11y sweep PASS. `.env` moved aside for the fixtures build
+and restored `diff -q` identical.
+
+---
+
 ## 2026-09-03 — A screen with no way in, and a check that measured nothing
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. One new guard over the
