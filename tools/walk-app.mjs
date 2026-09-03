@@ -477,6 +477,40 @@ console.log('\n## Telling the app it got a bar wrong');
   else fail('a correction with no backend was neither sent nor refused in words');
 }
 
+console.log('\n## Downloading your own data');
+
+/*
+ * **The screen that used to say the export was ready when it was not.**
+ *
+ * `saveAccountExport` resolved for a dismissed share sheet, and on iOS it
+ * shared the JSON as a chat message rather than a file — so "Download your
+ * data" sat above something that could not be downloaded and reported success
+ * either way. That is fixed and unit-tested; what no unit test can see is the
+ * screen, and the one claim worth driving is the negative: with nothing to
+ * fetch, the app must say so and must **not** say the export is ready.
+ */
+{
+  await open('account/export');
+
+  await page.getByRole('button', { name: /Prepare download/ }).first().click({ timeout: 15000 });
+  await waitForText(
+    'the export to be answered',
+    (l) => /needs the backend|sample data/i.test(l),
+    15000,
+  );
+
+  const lines = await leaves();
+  const said = lines.find((l) => /needs the backend|sample data/i.test(l));
+  if (said) pass(`an export with no backend is refused in words: "${said.slice(0, 52)}…"`);
+  else fail('an export with no backend was neither prepared nor refused in words');
+
+  if (!lines.some((l) => /Your export is ready/i.test(l))) {
+    pass('and does not claim the export is ready');
+  } else {
+    fail('the screen claimed the export was ready when nothing was downloaded');
+  }
+}
+
 console.log('\n## A refused microphone');
 
 /*

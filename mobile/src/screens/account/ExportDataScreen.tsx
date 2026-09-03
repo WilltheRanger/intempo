@@ -30,8 +30,11 @@ export function ExportDataScreen() {
     setError(null);
     try {
       const data = await fetchAccountExport();
-      await saveAccountExport(data);
-      setDone(true);
+      // Only when it actually left the app. `saveAccountExport` answers false
+      // for a share sheet the musician dismissed, which used to resolve like a
+      // success and put "Your export is ready" under a download that never
+      // happened.
+      setDone(await saveAccountExport(data));
     } catch (cause) {
       setError(
         cause instanceof Error
