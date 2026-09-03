@@ -6,6 +6,69 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-03 — A coverage tool whose summary contradicted its own table
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. One tool's closing note.
+No shipped code. **CI cannot run** — see the note at the end.
+
+`tools/notation-coverage.py` exists to make gaps legible: *"A gap you can see is
+a decision; a gap you cannot is a bug waiting for a musician to find."* It
+printed, under its own matrix:
+
+> Known and unfixed: **128th and shorter have no name at any ratio**, and
+> dotted notes inside tuplets are patchy. **Both drop the note.**
+
+The matrix directly above it prints `.` — *named* — for a plain 128th at five
+of its six ratios. Measured against the schema: `one_twenty_eighth` and its
+`triplet_`, `quintuplet_` and `septuplet_` forms are four of the 46 durations.
+What genuinely has no name is **256th and shorter**, and **dotted 128ths**.
+
+### The half that matters more
+
+"Both drop the note" conflates two stages with different consequences, and this
+project has a word for each:
+
+- **Dropped** (no name) is the importer losing it. The onset is gone,
+  `alignment.py` accumulates the gap, and every bar after it is judged against
+  music that is not there. That is the expensive one — the schema's own comment
+  says *"the cost of a gap is not the note, it is the rest of the page."*
+- **Undrawn** (no glyph) is the engraver. The importer kept it, the timeline
+  expects it, playback sounds it, the verdict is unaffected — only the picture
+  omits it, **and the stave says how many it left out**.
+
+A 128th is the second, not the first. Someone reading that note would go and
+widen `Duration` — a closed union shared with the app and the editor — for a
+value that has been named since the vocabulary was widened, and would still not
+have drawn it.
+
+### Computed, not retyped
+
+The list of never-named values is now read off the matrix with the same
+`names_a_value` the table uses, so it cannot drift from the thing it summarises.
+It prints `256th` today. This is the third stale count this session that turned
+out to be prose beside a live measurement — the parity fixture's repeat
+exclusion and `test_client_enums.py`'s "five of twenty-one" were the others.
+
+The schema itself was never wrong: `test_every_written_value_has_a_name_plain_
+and_in_the_common_tuplets` enforces breve-to-128th at every common ratio, which
+is why only the prose drifted. The other repository hits for this wording are
+`EDIT_LOG.md` entries and that test's own docstring, all in the past tense
+describing what an audit *found*. Correct as history; left alone.
+
+### Verification, and its limits
+
+`tools/notation-coverage.py` runs clean, both tables. No shipped code changed.
+
+**CI has been unable to allocate a runner since run #657** — every job failing
+in four seconds with no runner and no steps, including `Frontend build (vite)`
+on a tree untouched since `bc28f40`. Evidence is in a PR comment. So this
+commit is verified only by me running the tool, which is weaker than the six
+green runs before it.
+
+**Side effects:** none. **Rollback:** revert the commit.
+
+---
+
 ## 2026-09-03 — CI builds the App Store target, which it never had
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. One CI step. Asked
