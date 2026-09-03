@@ -31,7 +31,7 @@
  *
  * Exits non-zero when anything fails, so it can gate a change.
  */
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 
 /**
@@ -343,8 +343,66 @@ function browserPath() {
     : {};
 }
 
+/**
+ * Every route the app has a URL for, read out of `navigation/linking.ts`.
+ *
+ * **`ROUTES` above is hand-written, and a hand-written list of screens is the
+ * thing that goes stale.** `linking.test.ts` already makes a new screen get a
+ * URL — the browser's Back button walks out of the app from one that has none.
+ * Nothing made a new screen get *audited*, so it would ship with a URL, a link,
+ * and no check of its touch targets, its contrast or its accessible names.
+ *
+ * Read as text rather than imported: this file is `.mjs` running against a
+ * built bundle and cannot import TypeScript, and the same technique is how
+ * `describeError.test.ts` reads the sentences out of `client.ts`.
+ */
+function declaredPaths() {
+  const source = readFileSync(
+    new URL('../mobile/src/navigation/linking.ts', import.meta.url),
+    'utf8',
+  );
+  const config = source.slice(source.indexOf('screens: {'));
+  // One pattern covers both forms: `Today: ''` and `Library: 'library'`, and
+  // the `path: 'pieces/:pieceId/bars/:measureNumber'` of the `{ path, parse }`
+  // form used where a parameter is not a string. `parse` and `stringify` are
+  // functions rather than string literals, so they do not match.
+  const declared = [...config.matchAll(/^\s*\w+:\s*'([^']*)',$/gm)].map((m) => m[1]);
+  return [...new Set(declared)];
+}
+
+/**
+ * The declared paths no route in `ROUTES` visits.
+ *
+ * Compared as patterns, because a declared path carries `:pieceId` while the
+ * audit visits a real fixture id. A query string is ignored — `?view=original`
+ * is a second state of a route already covered, not a route of its own.
+ */
+function unvisitedRoutes() {
+  const visited = ROUTES.map(([, path]) => path.split('?')[0]);
+  return declaredPaths().filter((declared) => {
+    const pattern = new RegExp(
+      `^${declared.replace(/:[A-Za-z]+/g, '[^/]+').replace(/\//g, '\\/')}$`,
+    );
+    return !visited.some((path) => pattern.test(path));
+  });
+}
+
 const browser = await chromium.launch(browserPath());
 let failures = 0;
+
+const unvisited = unvisitedRoutes();
+if (unvisited.length > 0) {
+  console.log('\n## Routes with a URL and no audit');
+  for (const path of unvisited) {
+    console.log(`  /${path}`);
+  }
+  console.log(
+    '  Add each to ROUTES with a fixture that reaches it. A screen nobody has\n' +
+      '  audited is a screen nobody has looked at, which is how this app shipped\n' +
+      '  a 32x44 back control on seven screens.',
+  );
+  failures += unvisited.length;
+}
 
 for (const [name, path] of ROUTES) {
   /*
