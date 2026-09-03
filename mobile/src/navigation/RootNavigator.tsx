@@ -6,6 +6,7 @@ import { Animated, Platform, StyleSheet, View, type ViewStyle } from 'react-nati
 
 import { useAuthStatus } from '../data/auth/useAuthStatus';
 import { useMe } from '../data/hooks/useMe';
+import { preferences } from '../data/preferences';
 import { EASE_OUT, colors, motion } from '../design';
 import { shouldOnboard } from '../lib/onboarding';
 import { useReducedMotion } from '../lib/useReducedMotion';
@@ -232,6 +233,22 @@ function SignedInApp() {
     isFetching,
     refetch,
   } = useMe();
+
+  /*
+   * Fill the device's instrument from the account, on a device that has none.
+   *
+   * **Above the early returns, and that is not style.** `EDIT_LOG` records a
+   * `useState` placed below one taking the screen down with React error #310;
+   * a hook after a conditional return is the same fault.
+   *
+   * The rule itself is in `preferences.adoptAccountInstrument`, where it can
+   * be tested — this is only the place that knows when the account has
+   * arrived. Idempotent, so re-running it on every change of the value is
+   * free, and it does nothing at all once the device has an instrument.
+   */
+  useEffect(() => {
+    preferences.adoptAccountInstrument(me?.instrument);
+  }, [me?.instrument]);
 
   // Restore the account before mounting any tab. A failed /v1/me used to open
   // the app anyway, so Today, Library, Insights and Profile each rendered a

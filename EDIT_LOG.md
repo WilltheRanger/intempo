@@ -6,6 +6,68 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-03 — The instrument now follows you to a second device
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. The half of the entry
+below that turned out **not** to need a decision. CI still cannot allocate a
+runner.
+
+I filed that bug as two coupled changes needing an owner's call, and on
+re-reading it only one of them does. The coupling I described — seed the cache
+and a local change gets reverted by a stale account — only exists if the
+seeding overwrites something. **Seed only a device that has never stored an
+instrument and there is nothing to revert**, because a device with one has it
+because somebody chose it there.
+
+`preferences.adoptAccountInstrument(fromAccount)` does exactly that: adopts
+when nothing is stored, otherwise nothing. Idempotent, so the caller re-runs it
+on every change of the account value. `SignedInApp` calls it where the account
+arrives — **above the early returns**, because a hook below one is React error
+#310, which this project shipped once and `EDIT_LOG` records.
+
+A cellist reinstalling, or signing in on a second phone, now gets cello
+warmups and — the part that matters — cello onset thresholds, instead of being
+analysed as a violinist.
+
+### The flag, and why it exists
+
+`DEFAULTS.instrument` is `violin`, so *"the stored value is violin"* and
+*"nobody has ever said"* are indistinguishable from `current` alone — and
+telling them apart is the whole job. `instrumentIsStored` is set by hydration
+when storage held a valid instrument, and by `setInstrument` when someone
+chooses one.
+
+Writing the tests found a fragility in my own first version: I set the flag
+*after* `hydratePreferences`'s early return, so on a genuinely empty store —
+the actual fresh-install path — its value came from whatever it happened to be,
+which was right only because the initialiser is `false`. Cleared before the
+guard now, and `forgets a previous device's stored instrument when storage is
+cleared` is the test that fails without it. The shared `beforeEach` writes
+`'{}'` so hydration runs its whole body, which is why the empty-store path
+needed a case of its own.
+
+### Mutations
+
+| mutation | caught by |
+|---|---|
+| adopt regardless of a stored choice | **five** assertions |
+| flag not cleared on the fresh-install early return | the case added after spotting it |
+| `setInstrument` no longer marks a deliberate choice | "stops adopting once someone sets one by hand" |
+| an unknown instrument accepted | "refuses a value the app has no name for" |
+
+### Still not fixed, and still a decision
+
+Profile's control writes only the device, so the account keeps the onboarding
+answer for ever. Making it write the account means choosing what happens
+offline — the two options are in the entry below and in `CLAUDE.md`. Unchanged.
+
+### Verified
+
+Mobile **1417 tests / 127 files** green (1408 before), `tsc` clean, web build
+clean, walk PASS, a11y sweep PASS at 375pt. `.env` restored `diff -q` identical.
+
+---
+
 ## 2026-09-03 — The instrument you chose does not follow you to a second device
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. A found bug, a corrected
