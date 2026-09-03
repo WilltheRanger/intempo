@@ -6,6 +6,92 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-03 — A phone with a microphone, told it has none
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`, restarted from `main`
+after #65 merged. **Reported from a real iPhone**, which is the first time
+this app has been driven on one.
+
+The Record screen said **"No microphone is available on this device."** on a
+phone that plainly has one. Two separate faults in that one sentence, and the
+second is why the first survived.
+
+### It was false
+
+`audioRecorder.web.ts` mapped `NotAllowedError` to a permission problem and
+**every other `getUserMedia` rejection to "no microphone"** — six causes, one
+sentence, five of them wrong. That is the app blaming the musician's hardware
+for something it does not know the cause of: the same mistake
+`_FAILURE_REASONS` was written to stop the transcription pipeline making, and
+worse here, because there is nothing anyone can do about a device they have
+been told is missing.
+
+`lib/audio/microphoneFailure.ts` names them instead:
+
+| Browser says | What the musician reads |
+|---|---|
+| `NotFoundError`, `DevicesNotFoundError` | no microphone — **the one case where that was ever true** |
+| `NotReadableError`, `TrackStartError`, `AbortError` | it is busy; close the call, the voice memo, the other tab |
+| `SecurityError` | this page is not allowed to use it |
+| `NotAllowedError`, `PermissionDeniedError` | the permission flow, unchanged |
+| anything else | *"The microphone could not be started (SomeName)."* |
+
+### It was undiagnosable, which is the part that cost a day
+
+One message for six causes means a screenshot of it narrows nothing — and a
+screenshot is exactly what arrived. The unrecognised branch now **names the
+error**. Ugly, deliberately: it is the only way the next report is worth more
+than the first, and the only way that table grows.
+
+### The likely cause, and what is honest about it
+
+The screenshot has no browser chrome, and `public/manifest.webmanifest`
+declares `"display": "standalone"` — so this is the site saved to the home
+screen. iOS treats a home-screen web app as its own context and `getUserMedia`
+there has a long history of failing where the same page in Safari works.
+
+**I cannot reproduce iOS Safari in this container, so that stays a hypothesis.**
+What follows from it either way is a real next move rather than a guess:
+`isHomeScreenApp()` appends *"opening intempo in the browser instead usually
+lets the microphone through"* — and appends it to every cause **except** "no
+microphone", because if the device truly has none, Safari will not find one
+either and sending someone to try is a wasted trip.
+
+### The constraints were a preference presented as a requirement
+
+`getUserMedia` was asked for raw mono with echo cancellation, auto gain and
+noise suppression all off. That is what the *analysis* wants — every one of
+those processors moves an attack — but it is not what *recording* needs. An
+`OverconstrainedError` now retries once with `{ audio: true }`: a take with
+echo cancellation on beats no take at all.
+
+### Not fixed, and stated rather than guessed
+
+`audioRecorder.ts`, the **native** recorder, rethrows whatever `expo-audio`
+raises from `stream.start()`, which `messageFor` renders as *"That take
+couldn't be sent … check your connection"* — wrong in a different way. It
+needs a real device to know what that module actually throws, and no iOS build
+has ever been produced. Left alone rather than mapped on speculation.
+
+### Verified
+
+Five mutations, each restored:
+
+| Mutation | Result |
+|---|---|
+| unrecognised errors collapse back to the old sentence | 2 failed |
+| `NotReadableError` treated as missing hardware | 2 failed |
+| home-screen advice appended to "no microphone" too | 1 failed |
+| the unconstrained retry removed | 1 failed |
+| the retry fires for a refusal as well | 3 failed |
+
+**1437 mobile tests across 128 files** (was 1425/127), `tsc` and lint clean —
+lint caught my own dead import on the way, an hour after being installed. Web
+build, walk **PASS (29 checks)**, a11y **PASS**. `.env` restored `diff -q`
+identical.
+
+---
+
 ## 2026-09-03 — Eight of the twelve benches could not be started the way they document themselves
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. `tools/` only; no product
