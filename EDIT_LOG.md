@@ -6,6 +6,76 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-03 — The one failure this app has most often, reported as bad wifi
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Two contracts, one of them
+a sentence a musician reads several times a week. CI still cannot allocate a
+runner.
+
+### `describeLoadError` did the thing `describeError.ts` was written to stop
+
+Its own docstring:
+
+> Five screens carried the same hardcoded line — *"Check your connection and
+> try again"* — for every failure there is. […] the screens threw its message
+> away and substituted their own.
+
+`client.ts` mints `ApiError(0, …)` in **four** places, each with a sentence
+written for a person:
+
+| minted for | says |
+|---|---|
+| `SESSION_UNREADABLE` | Could not read your session in time. Check your connection and try again. |
+| `RESPONSE_STALLED` | The server started answering and then stopped. Try again. |
+| the host is asleep | The server took too long to answer. **It may be waking up — try again in a moment.** |
+| nothing answered | Could not reach the server. Check your connection and try again. |
+
+All four fell past `describeLoadError`'s status ladder and came out as *"Check
+your connection and try again."* Two of those are wrong and one is the common
+case: **this app's host sleeps every fifteen minutes**, so the waking-up
+sentence is the failure a musician meets most often, and Today, Library,
+Insights, Profile and the startup screen all told them to go and look at their
+wifi instead. `RESPONSE_STALLED`'s own comment says "could not reach the
+server" would send someone to check a connection that demonstrably works — and
+then five screens said exactly that.
+
+Status 0 now passes its message through. That is safe for one reason and the
+reason is now tested: `Response.status` is never 0 for a response whose body we
+read, so **status 0 is minted only here** — a future `new ApiError(0, path,
+message)` carrying FastAPI's `detail` would put a validation error naming a
+field on a musician's screen, and `describeError.test.ts` reads `client.ts` and
+refuses any status-0 message that is not a literal or a module constant.
+
+The four sentences are read **out of `client.ts`'s source** rather than
+retyped, because a copy here would keep passing after the real sentence
+changed — which is this file's own subject.
+
+Mutations killed: the pass-through removed (the old behaviour), a
+server-written message minted as status 0, and the waking-host sentence
+reworded away.
+
+### The export shape had no check either
+
+`/v1/me/export` returns eleven keys and `AccountExport` in the app names
+eleven; nothing compared them. A field renamed on the server becomes
+`undefined` in the app with nothing failing on either side, and the export is
+the one response whose *completeness* is the product.
+
+`test_me.py` now compares the **live response body** against the interface
+parsed out of `accountExport.ts`, both directions, plus `stored_media`'s
+members. `verdict_corrections` and `sync_events` were in the payload and
+asserted nowhere. Four mutations killed: a server-side rename, an app-side
+field with nothing behind it, a `stored_media` member dropped, and one renamed
+in the app only.
+
+### Verified
+
+Mobile **1392 tests / 123 files** green; `tsc` clean; web build, walk and a11y
+sweep pass. Backend **1925 passed, 2 xfailed**. `.env` moved aside for the
+fixtures build and restored `diff -q` identical.
+
+---
+
 ## 2026-09-03 — "Download your data" downloaded nothing
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Four defects behind one

@@ -8,6 +8,8 @@ in-memory mock instead of touching Supabase.
 
 from __future__ import annotations
 
+import re
+from pathlib import Path
 from typing import Any, Callable
 from unittest.mock import MagicMock
 from uuid import uuid4
@@ -996,6 +998,42 @@ def test_storage_failure_does_not_resurrect_a_deleted_account(
 # ---- portable account export ------------------------------------------------
 
 
+#: The app's typed claim about what `/v1/me/export` returns.
+_ACCOUNT_EXPORT_TS = (
+    Path(__file__).resolve().parents[3]
+    / "mobile"
+    / "src"
+    / "data"
+    / "accountExport.ts"
+)
+
+
+def _app_export_fields(interface: str) -> set[str]:
+    """Field names on one interface in `accountExport.ts`.
+
+    The same technique as `test_client_enums.py`: a TypeScript interface cannot
+    be imported from Python, and the app is compiled against this one — so
+    every screen believes it, and nothing on either side notices when the
+    server stops sending a field it names.
+    """
+    source = _ACCOUNT_EXPORT_TS.read_text()
+    body = re.search(
+        rf"export interface {interface} \{{(.*?)\n\}}", source, re.DOTALL
+    )
+    assert body, f"no `export interface {interface}` in accountExport.ts"
+    # Field lines only: `name: type;`, at one level of indent, skipping the
+    # nested object's members and every comment line.
+    return set(re.findall(r"^  (\w+)[?]?:", body.group(1), re.MULTILINE))
+
+
+def _stored_media_fields() -> set[str]:
+    """The nested `stored_media` object's members."""
+    source = _ACCOUNT_EXPORT_TS.read_text()
+    body = re.search(r"stored_media: \{(.*?)\n  \};", source, re.DOTALL)
+    assert body, "no `stored_media` object in AccountExport"
+    return set(re.findall(r"^    (\w+)[?]?:", body.group(1), re.MULTILINE))
+
+
 def test_account_export_requires_authentication(client: TestClient) -> None:
     assert client.get("/v1/me/export").status_code == 401
 
@@ -1116,3 +1154,17 @@ def test_account_export_contains_owned_records_without_storage_tokens(
         "practice_recordings": 1,
         "included_in_json": False,
     }
+
+    # Both directions, against the interface every screen is compiled against.
+    # A field renamed here becomes `undefined` in the app with nothing failing
+    # anywhere; a field the app names and the server never sends is a promise
+    # on a screen. `verdict_corrections` and `sync_events` are in this set and
+    # were asserted nowhere above — the export is the one response whose
+    # *completeness* is the product.
+    app_fields = _app_export_fields("AccountExport")
+    assert app_fields, "the interface reader found nothing"
+    assert set(body) == app_fields
+
+    media_fields = _stored_media_fields()
+    assert media_fields, "the stored_media reader found nothing"
+    assert set(body["stored_media"]) == media_fields
