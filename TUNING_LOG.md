@@ -6,6 +6,71 @@ value, regression results across all six fixture clips, and rationale.
 
 ---
 
+## 2026-09-02 — Measured: the onset detector is amplitude-invariant. One new threshold, and it is zero.
+
+**Nothing in `config.toml` changed.** No clip moved, because nothing the
+pipeline does was altered — this entry records a *measurement* that decided a
+new threshold in the app, and corrected a sentence the pipeline was telling
+musicians.
+
+### The measurement
+
+Every fixture, scaled to a series of peak levels and **requantised to 16 bit at
+each one** — a float scaled to -90 dBFS is not the same object as one that
+survived a WAV file, and the app uploads WAV. Onset counts from
+`detect_onsets` under the shipped config:
+
+    fixture                              0dB  -20  -40  -50  -55  -60  -65  -70  -80  -90
+    01_detache_clean.synthetic            32   32   32   32   32   32   32   32   32   32
+    02_detache_rushing.synthetic          32   32   32   32   32   32   32   32   32   32
+    03_detache_dragging.synthetic         32   32   32   32   32   32   32   32   32   32
+    04_slurred.synthetic                   8    8    8    8    8    8    8    8    8    8
+    05_open_e_long.synthetic               1    1    1    2    1    1    1    1    1    1
+    06_pizzicato.synthetic                16   16   16   16   16   16   16   16   16   16
+
+At -90 dBFS the samples are barely more than one LSB and the reading is
+unchanged. The single cell that moves — `05_open_e_long` reading 2 at -50 dBFS
+— is a one-note clip whose reading was never stable enough to build on.
+
+Then the shapes that are not music, ten seconds each:
+
+    digital silence          0 onsets
+    silence + 1 LSB dither  11 onsets
+    white noise -60 dBFS    10 onsets
+    white noise -20 dBFS    10 onsets
+    DC offset only           0 onsets
+
+**Level is not what separates a take with notes in it from one without.**
+`onset_strength` differences a dB-scaled mel spectrogram, so scaling a waveform
+shifts every frame by the same constant and the differencing removes it. The
+detector is amplitude-invariant by construction, and the measurement is the
+construction showing through.
+
+### What it changed
+
+1. **The `no_onsets` message said "try re-recording a bit louder."** That is
+   advice that cannot work: the only recording that reaches `no_onsets` is a
+   digitally silent one, and playing louder into a muted microphone produces
+   the identical file. It now names the input. The same branch also fires when
+   the *score* has no notes, where it was blaming a musician for a page the app
+   failed to read — that case is now named first and separately.
+2. **A new threshold in the app, `capturedNothing`, and it is exactly zero.**
+   `mobile/src/lib/audio/level.ts` refuses a take whose every sample is zero,
+   before the upload and before it costs one of three free monthly analyses.
+   The measurement is what sets the value: since a take at the bottom of 16-bit
+   resolution analyses exactly as well as a loud one, **any** non-zero floor
+   would take a verdict away from a musician who could have had one. This is
+   the rare threshold that is not a judgement call.
+
+### What this does not claim
+
+The fixtures are synthetic and normalised to 0.9 peak by `make_synthetic.py`,
+so they say nothing about the level a real phone records a real violin at. They
+do not need to: the finding is that level does not matter, which is a property
+of the detector rather than of the corpus.
+
+---
+
 ## 2026-09-02 — Two new thresholds in `[tolerance.pulse]`. Nothing existing moved.
 
 **No existing value in `config.toml` changed, and all six clips are

@@ -1,4 +1,3 @@
-import { useNavigation } from '@react-navigation/native';
 import { useCallback, useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { useGoBack } from '../../navigation/useGoBack';
@@ -82,7 +81,6 @@ function copyFor(report: ConnectionReport | null, checking: boolean): Copy {
  * that materially change recording and transcription quality.
  */
 export function HelpScreen() {
-  const navigation = useNavigation();
   const goBack = useGoBack({ tab: 'Profile' });
   const [report, setReport] = useState<ConnectionReport | null>(null);
   const [checking, setChecking] = useState(false);

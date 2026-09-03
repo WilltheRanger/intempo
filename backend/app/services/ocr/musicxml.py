@@ -1262,7 +1262,9 @@ def _ending_numbers(el: ET.Element) -> set[int]:
     return out
 
 
-def _repeats_in(part_el: ET.Element) -> list[tuple[int, int, str]]:
+def _repeats_in(
+    part_el: ET.Element,
+) -> tuple[list[tuple[int, int, str, bool]], list[int]]:
     """Repeat signs and endings, as `(first index, last index, type)`.
 
     **Nothing produced these, and everything downstream was waiting for them.**
@@ -1295,8 +1297,14 @@ def _repeats_in(part_el: ET.Element) -> list[tuple[int, int, str]]:
       forward on page 1 bar 5 closing on page 3 bar 4 reads **4** bars repeated
       where the truth is 20. Fixing it needs a way to say "a forward sign here,
       still open", which `Repeat` has not got, so it is pinned as a strict
-      `xfail` in `test_page_join.py` rather than guessed at. Nothing reads it
-      today: multi-page is inert behind the unapplied `011`.
+      `xfail` in `test_page_join.py` rather than guessed at. **This is live.**
+      `011` has been applied on the active project since 2026-08-29
+      (verified against `supabase_migrations`), the app's scan flow
+      uploads every page, and `join_pages` runs in the shipping worker —
+      so a musician photographing a multi-page part whose repeat spans a
+      page break gets the wrong bars. This note used to say *"nothing
+      reads it today: multi-page is inert behind the unapplied `011`"*,
+      which stopped being true four days before anybody checked.
     - **An ending marked `1,2`** serves both passes, so it is part of the body
       and not an ending at all — no `Repeat` is emitted for it.
     - **A `<repeat times="3">` is still played twice.** `RepeatType` has no way
@@ -1327,9 +1335,9 @@ def _repeats_in(part_el: ET.Element) -> list[tuple[int, int, str]]:
                     for number in numbers:
                         start = open_endings.pop(number, index)
                         if numbers == {1}:
-                            found.append((start, index, "first_ending"))
+                            found.append((start, index, "first_ending", False))
                         elif numbers == {2}:
-                            found.append((start, index, "second_ending"))
+                            found.append((start, index, "second_ending", False))
 
             repeat = barline.find("repeat")
             if repeat is None:
@@ -1338,9 +1346,14 @@ def _repeats_in(part_el: ET.Element) -> list[tuple[int, int, str]]:
             if direction == "forward":
                 forwards.append(index)
             elif direction == "backward":
-                start = forwards.pop() if forwards else after_last
+                # **Whether a `|:` was printed is the fact `join_pages` needs**,
+                # and only this loop knows it. Falling back to `after_last` is
+                # right for a piece read whole and wrong for page 3 of one — see
+                # `Repeat.start_inferred`.
+                printed = bool(forwards)
+                start = forwards.pop() if printed else after_last
                 if start <= index:
-                    found.append((start, index, "repeat"))
+                    found.append((start, index, "repeat", not printed))
                 after_last = index + 1
 
     # An ending opened and never closed runs to the end of what was read — a
@@ -1348,10 +1361,15 @@ def _repeats_in(part_el: ET.Element) -> list[tuple[int, int, str]]:
     last = index
     for number, start in open_endings.items():
         if number == 1:
-            found.append((start, last, "first_ending"))
+            found.append((start, last, "first_ending", False))
         elif number == 2:
-            found.append((start, last, "second_ending"))
-    return found
+            found.append((start, last, "second_ending", False))
+    # **The forward signs still open, which used to be dropped on the floor.**
+    # A `|:` on page 1 closed on page 3 is invisible to a reader given page 1
+    # alone, and discarding it is what made the closing sign fall back to the
+    # start of its own page. `join_pages` pairs them; this is the only place
+    # that can say they exist.
+    return found, forwards
 
 
 def _navigation_in(part_el: ET.Element) -> list[tuple[int, int, str]]:
@@ -2121,14 +2139,30 @@ def score_json_from_musicxml(
         return measures[stop].measure_number if 0 <= stop < len(measures) else None
 
     repeats: list[Repeat] = []
-    for start_index, end_index, kind in _repeats_in(chosen) + _navigation_in(chosen):
+    barline_spans, unclosed_forwards = _repeats_in(chosen)
+    # Navigation spans are never inferred openings: a D.C. names bar 1 of the
+    # piece because that is what "da capo" means, not because a sign was
+    # missing. Pairing one with a `|:` from an earlier page would be nonsense.
+    spans = barline_spans + [(s, e, k, False) for s, e, k in _navigation_in(chosen)]
+    for start_index, end_index, kind, start_inferred in spans:
         first = _first_bar(start_index)
         last_bar = _last_bar(end_index)
         if first is None or last_bar is None or last_bar < first:
             continue
         repeats.append(
-            Repeat(start_measure=first, end_measure=last_bar, type=kind)  # type: ignore[arg-type]
+            Repeat(  # type: ignore[arg-type]
+                start_measure=first,
+                end_measure=last_bar,
+                type=kind,
+                start_inferred=start_inferred,
+            )
         )
+
+    # In measure numbers, like every span above, and dropping any index that
+    # names no bar — the same guard the spans get.
+    unclosed_repeat_starts = [
+        bar for bar in (_first_bar(i) for i in unclosed_forwards) if bar is not None
+    ]
 
     # **A number that repeats identifies no bar at all.**
     #
@@ -2219,6 +2253,7 @@ def score_json_from_musicxml(
         clef=clef or clef_fallback,  # type: ignore[arg-type]
         measures=measures,
         repeats=repeats,
+        unclosed_repeat_starts=unclosed_repeat_starts,
         ocr_confidence=confidence,
         notes_to_human=notes_to_human,
     )

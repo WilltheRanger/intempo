@@ -42,6 +42,14 @@ import sys
 from fractions import Fraction
 from pathlib import Path
 
+# Started with the wrong interpreter, this dies on `import pydantic` before it
+# reads a fixture. `backend_python` re-execs under `backend/.venv` so the
+# command in the docstring above is one that works — see its own header.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from backend_python import use_backend_python  # noqa: E402
+
+use_backend_python()
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 
 from app.services.ocr.musicxml import score_json_from_musicxml  # noqa: E402
@@ -303,15 +311,37 @@ def values() -> None:
     print("\n\nNOTE VALUES — '.' named, 'X' dropped\n")
     header = "".join(f"{('plain' if r is None else f'{r[0]}:{r[1]}'):>8}" for r in RATIOS)
     print(f"{'written':<12}{header}")
+    #: Undotted values with no name at any ratio — read off the matrix rather
+    #: than written into the note below it. The note used to say "128th and
+    #: shorter have no name at any ratio" while this very table printed `.`
+    #: for a plain 128th at five of the six ratios: the schema names
+    #: `one_twenty_eighth` and its triplet, quintuplet and septuplet forms.
+    #: A summary under a table it contradicts is worse than no summary.
+    never_named = [
+        kind
+        for kind in TYPES
+        if not any(names_a_value(kind, 0, r) for r in RATIOS)
+    ]
     for kind in TYPES:
         for dots in (0, 1, 2):
             label = kind + "." * dots
             row = "".join(f"{('.' if names_a_value(kind, dots, r) else 'X'):>8}" for r in RATIOS)
             print(f"{label:<12}{row}")
+    unnamed = ", ".join(never_named) if never_named else "nothing in this table"
     print(
-        "\nKnown and unfixed: 128th and shorter have no name at any ratio, and\n"
-        "dotted notes inside tuplets are patchy. Both drop the note — which the\n"
-        "bar's beat sum then reports, so they are visible rather than silent.\n"
+        f"\nKnown and unfixed: {unnamed} — no name at any ratio; dotted 128ths\n"
+        "have none either, and dotted notes inside tuplets are patchy. Those\n"
+        "drop the note, which the bar's beat sum then reports, so they are\n"
+        "visible rather than silent.\n"
+        "\n"
+        "**Named is not the same as drawn, and the difference decides which\n"
+        "stage is at fault.** A 128th *is* named here, so the importer keeps\n"
+        "it, `alignment.py` expects its onset and playback sounds it — the\n"
+        "verdict is unaffected. What it has no glyph for is the engraving, and\n"
+        "the stave says how many it left out (`tools/engraver-coverage.py`,\n"
+        "`DELIBERATELY_UNDRAWN`). A dropped note is a lost onset the analysis\n"
+        "accumulates; an undrawn one is a picture that admits its gap.\n"
+        "\n"
         "`Duration` is a closed union shared with the app, so widening it is a\n"
         "change to both sides and to the editor; it has not been made on the\n"
         "strength of a construct nobody here has seen in a real part."

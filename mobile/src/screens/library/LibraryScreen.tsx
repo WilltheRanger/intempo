@@ -13,6 +13,7 @@ import {
   SearchField,
   SectionHeader,
 } from '../../components/primitives';
+import { describeLoadError } from '../../data/api/describeError';
 import { useLibrary } from '../../data/hooks/usePieces';
 import type { Piece } from '../../data/types';
 import { motion, spacing } from '../../design';
@@ -264,5 +265,4 @@ const styles = StyleSheet.create({
     // below it rather than float between two blocks.
     marginBottom: spacing['2xl'],
   },
-});import { describeLoadError } from '../../data/api/describeError';
-
+});

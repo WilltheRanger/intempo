@@ -1,4 +1,4 @@
-import type { ScoreJson, ScoreMeasure } from '../../data/types';
+import type { Clef, ScoreJson, ScoreMeasure } from '../../data/types';
 import { isNote, stepOf } from './engrave';
 import { readTies } from './ties';
 import { BEATS } from '../score/schedule';
@@ -30,14 +30,31 @@ export interface StaveScore {
   /** How many of `items` are noteheads — what "there is a stave" means. */
   noteCount: number;
   /**
-   * Rests whose *value* the engraver cannot draw: dotted, sixteenth, shorter.
+   * Rests whose *value* the engraver has no glyph for.
    *
    * Was every rest, because none were drawn at all. Now it is the same
    * exception the notes have, for the same reason and counted the same way.
+   *
+   * These comments said "dotted, sixteenth, shorter" long after both had
+   * glyphs. The engraver draws whole through sixty-fourth, the breve, single
+   * and double dots, and the triplet/quintuplet/septuplet forms of all of
+   * them; what it refuses is the 128th family (`DELIBERATELY_UNDRAWN`).
+   * Measure with `tools/engraver-coverage.py` rather than trusting a sentence.
    */
   rests: number;
-  /** Notes whose value the engraver cannot draw: dots, sixteenths, shorter. */
+  /** Notes whose *value* the engraver has no glyph for — the 128th family. */
   undrawable: number;
+  /**
+   * Notes whose *pitch* could not be placed on a stave.
+   *
+   * **A separate count because it is a separate sentence.** Both used to add
+   * into `undrawable`, so a note dropped for a spelling this engraver has
+   * never heard of — a triple accidental, a quarter-tone — was reported to a
+   * musician as a note *too short to draw*. The right reason matters here for
+   * the ordinary reason it always does: the two have different answers, and
+   * only one of them is about the length of the note.
+   */
+  unplaceable: number;
   /** The beat this score's beams break at, in quarter notes. */
   beatQuarters: number;
   /**
@@ -260,6 +277,7 @@ export function staveScoreFor(score: ScoreJson): StaveScore {
   let noteCount = 0;
   let rests = 0;
   let undrawable = 0;
+  let unplaceable = 0;
   /** Global, so two slurs in neighbouring bars never merge into one arc. */
   let slurId = 0;
 
@@ -378,9 +396,47 @@ export function staveScoreFor(score: ScoreJson): StaveScore {
     return { keyChange: { key } };
   };
 
+  /**
+   * The same walk for the clef, and it exists for a sharper reason.
+   *
+   * A key the engraver ignores draws the wrong accidentals; a **clef** it
+   * ignores draws every notehead after the change at the wrong height — a
+   * cello or bass part moving into tenor for a high passage came out placed
+   * against the opening bass clef, a sixth off, and captioned with a clef the
+   * page had stopped using. `Measure.clef` has carried this since the importer
+   * learned to stamp it; nothing drew it until now.
+   *
+   * Compared against the clef **in force**, never the header, for the reason
+   * `musicxml.py` gives at the same comparison: a part that moves into tenor
+   * at bar 20 and back to bass at bar 40 states bass at 40, which equals the
+   * header — so a header comparison records the departure and drops the
+   * return, leaving the rest of the part drawn in tenor.
+   */
+  let clefInForce: Clef | null = score.clef ?? null;
+  let pendingClefChange: Clef | null = null;
+  const noteClefChange = (measure: ScoreJson['measures'][number]) => {
+    const stated = measure.clef ?? null;
+    if (!stated) {
+      return;
+    }
+    if (stated !== clefInForce) {
+      pendingClefChange = stated;
+    }
+    clefInForce = stated;
+  };
+  const takeClefChange = () => {
+    if (pendingClefChange === null) {
+      return {};
+    }
+    const clefChange = pendingClefChange;
+    pendingClefChange = null;
+    return { clefChange };
+  };
+
   let index = 0;
   while (index < score.measures.length) {
     noteKeyChange(score.measures[index]);
+    noteClefChange(score.measures[index]);
     if (isSilent(score.measures[index])) {
       let end = index;
       while (end < score.measures.length && isSilent(score.measures[end])) {
@@ -393,11 +449,13 @@ export function staveScoreFor(score: ScoreJson): StaveScore {
           barBefore: index > 0,
           measureNumber: score.measures[index].measure_number,
           ...takeKeyChange(),
+          ...takeClefChange(),
         });
         // A change printed inside the block — on a bar of silence — waits for
         // the bar after it, which is the first bar it changes a note in.
         for (let inside = index + 1; inside < end; inside += 1) {
           noteKeyChange(score.measures[inside]);
+          noteClefChange(score.measures[inside]);
         }
         index = end;
         continue;
@@ -471,6 +529,7 @@ export function staveScoreFor(score: ScoreJson): StaveScore {
           dots: drawn!.dots,
           measureNumber: measure.measure_number,
           ...takeKeyChange(),
+          ...takeClefChange(),
           ...(mark ? { tuplet: mark } : {}),
           ...(quarters !== undefined ? { quarters } : {}),
           ...(opensMeasure ? { barBefore: true } : {}),
@@ -498,8 +557,12 @@ export function staveScoreFor(score: ScoreJson): StaveScore {
       // `stepOf` now agree, doubles included. It is the guard for the next
       // spelling neither of them has heard of — a triple accidental, a
       // quarter-tone — which is precisely how the last one arrived.
-      if (!value || stepOf(note.pitch) === null) {
+      if (!value) {
         undrawable += 1;
+        continue;
+      }
+      if (stepOf(note.pitch) === null) {
+        unplaceable += 1;
         continue;
       }
       // **The other notes of a chord**, which the app has been dropping since
@@ -516,7 +579,7 @@ export function staveScoreFor(score: ScoreJson): StaveScore {
         if (stepOf(pitch) !== null) {
           return true;
         }
-        undrawable += 1;
+        unplaceable += 1;
         return false;
       });
 
@@ -539,6 +602,7 @@ export function staveScoreFor(score: ScoreJson): StaveScore {
         dots: drawn!.dots,
         measureNumber: measure.measure_number,
         ...takeKeyChange(),
+          ...takeClefChange(),
         ...(chord.length > 0 ? { chord } : {}),
         ...(note.articulation ? { articulation: note.articulation } : {}),
         // Read from the page since Batch 2 and drawn by nothing until now. An
@@ -616,6 +680,7 @@ export function staveScoreFor(score: ScoreJson): StaveScore {
     noteCount,
     rests,
     undrawable,
+    unplaceable,
     beatQuarters: beamBeatQuarters(score.time_signature),
     closesWithRepeat,
     endings,
@@ -649,6 +714,7 @@ export function describeUndrawnScore({
   items,
   rests,
   undrawable,
+  unplaceable,
 }: StaveScore): string | null {
   // **`items`, not the notes.** A page that is nothing but a twenty-bar rest
   // has something to show now, and telling its owner there is no stave while
@@ -656,18 +722,47 @@ export function describeUndrawnScore({
   if (items.length > 0) {
     return null;
   }
-  if (rests + undrawable === 0) {
+  // **`unplaceable` counts here too.** Without it, a page whose every note
+  // carried a spelling this engraver cannot place read as "Nothing was read
+  // from this page" and asked for a better photograph — blaming the camera for
+  // a reading that in fact succeeded.
+  if (rests + undrawable + unplaceable === 0) {
     return "Nothing was read from this page. The photograph is below — try reading it again, or photograph the page closer and straighter.";
   }
-  const values = undrawable > 0 ? 'note values' : 'rest values';
+  // Three causes, three words. The note/rest distinction was already here and
+  // is kept: a page that is nothing but undrawable rests is not a page of
+  // undrawable notes, and saying so is the difference between a musician
+  // looking at their rhythm and looking at their silences.
+  const values =
+    undrawable > 0 ? 'note values' : rests > 0 ? 'rest values' : 'pitches';
   return `This page is written in ${values} the app can't draw yet, so there is no stave to show. The reading is stored and recording will use it — the photograph is below.`;
 }
 
-export function describeOmissions({ rests, undrawable }: StaveScore): string | null {
-  const short = 'shorter than an eighth or dotted';
+export function describeOmissions({
+  rests,
+  undrawable,
+  unplaceable,
+}: StaveScore): string | null {
+  /*
+    **"shorter than an eighth or dotted" was two engravers ago.** Sixteenths,
+    thirty-seconds, sixty-fourths, the breve and both dots all have glyphs —
+    `tools/engraver-coverage.py` prints them drawing at 100% across the whole
+    corpus. What is refused is the 128th family, so this is the only sentence
+    that is true, and a musician reading the old one about a page of
+    sixteenths would have gone looking for notes that were on the stave in
+    front of them.
+  */
+  const short = 'shorter than a sixty-fourth';
   const parts: string[] = [];
   if (undrawable > 0) {
     parts.push(`${undrawable} ${undrawable === 1 ? 'note' : 'notes'} ${short}`);
+  }
+  // A different cause needs a different clause. Reporting an unreadable
+  // spelling as a note too short to draw sends someone to look at the rhythm.
+  if (unplaceable > 0) {
+    parts.push(
+      `${unplaceable} ${unplaceable === 1 ? 'note' : 'notes'} whose pitch couldn't be placed`,
+    );
   }
   // **Only the rests whose value cannot be drawn.** This used to name every
   // rest on the page, because none of them were drawn — so a bass part

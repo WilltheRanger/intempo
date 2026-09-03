@@ -26,6 +26,12 @@ export interface ScoreThumbnailProps {
   radius?: number;
   /** Layout only — width, height, aspect ratio. */
   style?: StyleProp<ViewStyle>;
+  /**
+   * How the image fills its box. `cover` — the default, and what every library
+   * surface wants — crops to a consistent shape; `contain` fits the whole page
+   * in. See the note on the prop where it is applied.
+   */
+  fit?: 'cover' | 'contain';
 }
 
 /**
@@ -51,6 +57,7 @@ export function ScoreThumbnail({
   composer,
   radius = radii.sm,
   style,
+  fit = 'cover',
 }: ScoreThumbnailProps) {
   const [failed, setFailed] = useState(false);
 
@@ -87,7 +94,18 @@ export function ScoreThumbnail({
         // don't set here — this prop carries layout.
         style as StyleProp<ImageStyle>,
       ]}
-      contentFit="cover"
+      /**
+       * **`cover` is right for a tile and wrong for a page you are reading.**
+       *
+       * Every caller but one is library cover art, where a consistent crop
+       * across a grid is the whole point. The exception is the piece screen's
+       * "Original pages" view, whose job is to let a musician check the bar
+       * that was flagged — and a page cropped to a horizontal band of a few
+       * notes cannot do that. `PAGE_HEIGHT` there is commented "tall enough
+       * that a page of sheet music is legible rather than indicated", which
+       * cropping quietly defeated.
+       */
+      contentFit={fit}
       // **Pinned, and a portrait pins somewhere else.** A page crop is pinned
       // to the centre so every row crops from the same place whatever the
       // source's aspect ratio; a portrait is pinned to its subject's face, so

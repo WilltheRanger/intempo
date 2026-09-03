@@ -5,7 +5,6 @@ import { updateMe, type UpdateMeInput } from '../api/me';
 import { requestAvatarUpload, uploadToSignedUrl } from '../api/upload';
 import { IS_LIVE_BACKEND } from '../environment';
 import { preferences } from '../preferences';
-import type { Instrument } from '../types';
 
 /**
  * Writing the profile a musician owns.
@@ -94,23 +93,4 @@ export function extensionFor(mimeType: string): string {
     'image/webp': 'webp',
   };
   return known[mimeType.toLowerCase()] ?? 'jpg';
-}
-
-/**
- * Which instrument the app should act on, given the account and the device.
- *
- * The account wins when it has one, because it is the answer a person gave and
- * it follows them to another device. The device preference is the fallback,
- * and it always has a value — so this never returns null and no caller needs a
- * "no instrument" branch.
- *
- * **Null on the account is not a value to render.** It means nobody has been
- * asked, and what to do about that is the onboarding screen's business, not
- * the warmup's.
- */
-export function instrumentInUse(
-  fromAccount: Instrument | null,
-  fromDevice: Instrument,
-): Instrument {
-  return fromAccount ?? fromDevice;
 }

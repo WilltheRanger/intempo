@@ -26,10 +26,19 @@ photographs are the pages that resemble what the app receives.
 from __future__ import annotations
 
 import sys
+import xml.etree.ElementTree as ET
 from collections import Counter
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+# Started with the wrong interpreter, this dies on `import pydantic` before it
+# reads a fixture. `backend_python` re-execs under `backend/.venv` so the
+# command in the docstring above is one that works — see its own header.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from backend_python import use_backend_python  # noqa: E402
+
+use_backend_python()
+
 sys.path.insert(0, str(ROOT / "backend"))
 
 from app.services.ocr.homr_provider import confidence_from_arithmetic  # noqa: E402
@@ -42,8 +51,28 @@ from app.services.ocr.validate import (  # noqa: E402
 
 
 def measure(path: Path) -> dict:
+    xml = path.read_text()
+
+    # **A multi-part file is a different kind of thing, not a failed page.**
+    # This bench asks how well the importer reads a photographed part, and
+    # scores each page's confidence into a mean. A publisher's multi-part file
+    # is not that: the importer refuses it without a chosen part — correctly,
+    # since handing a cellist the piccolo line is worse than a refusal — and it
+    # appeared here as a red `MusicXMLError` row, which reads as a broken
+    # fixture rather than a category this bench is not about.
+    #
+    # Reading its parts anyway would be worse than the confusing line: a
+    # hand-authored duo scores 1.00 trivially, and averaging that into a bench
+    # about photographs would flatter the number this exists to report.
     try:
-        score = score_json_from_musicxml(path.read_text())
+        parts = len(list(ET.fromstring(xml).iterfind("part-list/score-part")))
+    except ET.ParseError as exc:
+        return {"page": path.name, "failed": f"not parseable as XML: {exc}"[:70]}
+    if parts > 1:
+        return {"page": path.name, "skipped": f"{parts} parts — not a single-part page"}
+
+    try:
+        score = score_json_from_musicxml(xml)
     except Exception as exc:  # noqa: BLE001 — a bench reports, it does not raise
         return {"page": path.name, "failed": f"{type(exc).__name__}: {exc}"[:70]}
 
@@ -77,6 +106,9 @@ def main(argv: list[str]) -> int:
         if "failed" in row:
             print(f"{row['page']:<34} {row['failed']}")
             continue
+        if "skipped" in row:
+            print(f"{row['page']:<34} — {row['skipped']}")
+            continue
         scored.append(row["confidence"])
         counts = ", ".join(f"{v} {k}" for k, v in sorted(row["verdicts"].items()))
         print(
@@ -93,7 +125,7 @@ def main(argv: list[str]) -> int:
         )
 
     for row in rows:
-        if "failed" not in row and row["retry"]:
+        if "failed" not in row and "skipped" not in row and row["retry"]:
             print(f"\n{row['page']}: {row['retry']}")
     return 0
 

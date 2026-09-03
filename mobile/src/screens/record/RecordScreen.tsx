@@ -59,7 +59,10 @@ import {
 } from '../../lib/practiceCues';
 import { shortenLongRests, skippableBars } from '../../lib/notation/longRests';
 import { openingTimeSignature } from '../../lib/notation/meter';
-import { describeReachedAnalysisLimit } from '../../lib/analysisAllowance';
+import {
+  describeLastFreeAnalysis,
+  describeReachedAnalysisLimit,
+} from '../../lib/analysisAllowance';
 import { describeTierLimit } from '../../lib/tierLimit';
 import type { RootNavigation, RootStackParamList } from '../../navigation/types';
 import { BeatIndicator } from './BeatIndicator';
@@ -158,6 +161,7 @@ export function RecordScreen() {
   const [showSetup, setShowSetup] = useState(!practiceSetupSeen);
   const [elapsedMs, setElapsedMs] = useState(0);
   const [problem, setProblem] = useState<string | null>(null);
+  const lastFreeMessage = describeLastFreeAnalysis(musician?.usage);
   const visibleProblem = limitMessage ?? problem;
   const [microphoneBlocked, setMicrophoneBlocked] = useState(false);
   const [truncated, setTruncated] = useState(false);
@@ -493,6 +497,17 @@ export function RecordScreen() {
   }
 
   const recording = phase === 'recording';
+  // **One slot, two senders, and the allowance notice yields.** A refused quota
+  // and a failed take are both about the take in hand; this is about the next
+  // one, so it never takes the slot from either.
+  //
+  // It is *not* hidden once recording starts, though it has nothing left to
+  // decide by then. The record button sits directly under this line in a flex
+  // column, so dropping two lines of text moves the button at the exact moment
+  // a thumb is on it — and the count-in would move it a second time. The
+  // sentence stays true for the whole take, and the take ending leaves this
+  // screen anyway.
+  const footerNote = visibleProblem ?? lastFreeMessage;
   const countingIn = phase === 'counting_in';
   const capturing = countingIn || recording;
 
@@ -586,12 +601,14 @@ export function RecordScreen() {
     countingIn,
   });
 
+  // Hoisted out of the effect so the dependency below is the value the effect
+  // actually uses. Depending on `metronome.beat` itself would re-run this on
+  // every beat object the clock emits, including the ones before the count is
+  // up — same outcome today, and one refactor away from not being.
+  const beatIndex = metronome.beat?.index ?? null;
+
   useEffect(() => {
-    if (
-      !countingIn ||
-      metronome.beat === null ||
-      metronome.beat.index < countInBeats
-    ) {
+    if (!countingIn || beatIndex === null || beatIndex < countInBeats) {
       return;
     }
     // Beat N is the downbeat after N count-in beats. Keeping the metronome
@@ -606,7 +623,7 @@ export function RecordScreen() {
     recorder.current?.discardCapturedSoFar();
     setElapsedMs(0);
     goPhase('recording');
-  }, [countInBeats, countingIn, metronome.beat?.index]);
+  }, [countInBeats, countingIn, beatIndex]);
 
   const activeRest = recording
     ? restCueAt(restCues, elapsedMs, targetBpm)
@@ -760,13 +777,13 @@ export function RecordScreen() {
       contentStyle={styles.screen}
       footer={
         <View style={styles.footer}>
-          {visibleProblem ? (
+          {footerNote ? (
             <Text
               variant="metadataSmall"
               color="textSecondary"
               style={styles.problem}
             >
-              {visibleProblem}
+              {footerNote}
             </Text>
           ) : null}
           {microphoneBlocked && Platform.OS !== 'web' ? (

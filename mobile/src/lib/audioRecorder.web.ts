@@ -7,6 +7,7 @@ import {
   type Recorder,
   type Recording,
 } from './audio/types';
+import { capturedNothing, createPeakMeter } from './audio/level';
 import { durationOf, encodeWav } from './audio/wav';
 
 /**
@@ -136,6 +137,7 @@ export async function startRecording(): Promise<Recorder> {
 
   const context = new AudioContextCtor();
   const chunks: Int16Array[] = [];
+  const level = createPeakMeter();
   let truncated = false;
   let samples = 0;
   let finished = false;
@@ -155,7 +157,7 @@ export async function startRecording(): Promise<Recorder> {
   );
   try {
     await context.audioWorklet.addModule(moduleUrl);
-  } catch (error) {
+  } catch {
     stopTracks();
     void context.close();
     throw new MicrophoneUnavailableError(
@@ -191,6 +193,7 @@ export async function startRecording(): Promise<Recorder> {
       return;
     }
     const chunk = new Int16Array(event.data as ArrayBuffer);
+    level.observe(chunk);
     chunks.push(chunk);
     samples += chunk.length;
   };
@@ -240,7 +243,14 @@ export async function startRecording(): Promise<Recorder> {
       await teardown();
 
       const seconds = durationOf(chunks, sampleRate, CHANNELS);
-      if (seconds === 0) {
+      if (seconds === 0 || capturedNothing(level.peak())) {
+        // **Two ways a take can hold nothing, and only one of them used to be
+        // caught.** No samples at all means the graph never pulled. Samples
+        // that are every one of them zero is a *muted* input — which is what
+        // this error's own description has always claimed to cover, and did
+        // not: `durationOf` counts them, so the take sailed through, uploaded,
+        // waited, and came back `no_onsets` having spent one of three free
+        // analyses for the month.
         throw new EmptyRecordingError();
       }
 
@@ -254,12 +264,14 @@ export async function startRecording(): Promise<Recorder> {
     },
     discardCapturedSoFar() {
       chunks.length = 0;
+      level.reset();
       samples = 0;
       truncated = false;
     },
     cancel() {
       void teardown();
       chunks.length = 0;
+      level.reset();
     },
   };
 }

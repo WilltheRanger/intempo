@@ -1,10 +1,8 @@
 import { useGoBack } from '../../navigation/useGoBack';
-import { useNavigation } from '@react-navigation/native';
 import { useState } from 'react';
 import {
   KeyboardAvoidingView,
   Platform,
-  Pressable,
   StyleSheet,
   View,
 } from 'react-native';
@@ -38,7 +36,6 @@ import {
  * their own account, which is not a trade worth one fewer field.
  */
 export function ChangePasswordScreen() {
-  const navigation = useNavigation();
   const goBack = useGoBack({ tab: 'Profile' });
 
   const [currentPassword, setCurrentPassword] = useState('');

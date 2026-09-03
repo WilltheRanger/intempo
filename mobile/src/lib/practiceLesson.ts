@@ -1,5 +1,6 @@
 import type { TempoBeatUnit, Verdict } from '../data/types';
 import { formatTempo } from './tempo';
+import { dayIndex } from './warmup';
 
 export interface PracticeLesson {
   context: string;
@@ -13,6 +14,27 @@ interface PracticeLessonInput {
   pieceTitle: string;
   workingBpm: number;
   beatUnit?: TempoBeatUnit | null;
+  /** Which day's drill to show. Injected so the rotation can be tested. */
+  now?: Date;
+}
+
+/**
+ * One of the day's drills for a diagnosis that has not changed.
+ *
+ * **The heading and the reason stay put; only the drill moves.** They are still
+ * true for as long as the musician is still rushing, and rewriting a correct
+ * diagnosis to look fresh would be the app pretending to know something new.
+ * What went stale was the *exercise*: one per verdict meant someone working on
+ * their rushing met the identical card, word for word, every day until they
+ * stopped — and advice that never changes stops being read, on the card this
+ * app's whole proposition rests on.
+ *
+ * By the date, not at random, for the reason `warmupFor` rotates that way: it
+ * has to be the same drill all day and the same on every device, or closing the
+ * app would reroll the work you had already started.
+ */
+function drillOfTheDay(drills: string[], now: Date): string {
+  return drills[dayIndex(now) % drills.length];
 }
 
 /**
@@ -28,6 +50,7 @@ export function practiceLessonFor({
   pieceTitle,
   workingBpm,
   beatUnit,
+  now = new Date(),
 }: PracticeLessonInput): PracticeLesson {
   const tempo = formatTempo(workingBpm, beatUnit);
   const latestTake = `Based on your latest take of ${pieceTitle}`;
@@ -38,8 +61,14 @@ export function practiceLessonFor({
       title: 'Make room between the clicks',
       body:
         'Rushing often starts in the space between beats. Subdivide before you play so the next note has somewhere exact to land.',
-      exercise:
-        `Keep ${pieceTitle} at ${tempo}. Count “one-and-two-and” through one phrase, then play it again without counting aloud.`,
+      exercise: drillOfTheDay(
+        [
+          `Keep ${pieceTitle} at ${tempo}. Count “one-and-two-and” through one phrase, then play it again without counting aloud.`,
+          `Set the metronome to ${tempo} and listen for it on the off-beats instead of the downbeats. Play one phrase of ${pieceTitle} placing each note *after* the click you hear.`,
+          `Play the hardest bar of ${pieceTitle} at ${tempo}, holding the last note of the bar its full length before moving on. Rushing usually starts by leaving a note early, not by playing the next one fast.`,
+        ],
+        now,
+      ),
     };
   }
 
@@ -49,8 +78,14 @@ export function practiceLessonFor({
       title: 'Carry the pulse through hard notes',
       body:
         'Dragging often begins when the hands wait for the beat before preparing. Let the subdivision keep moving while you set up the next note.',
-      exercise:
-        `Keep ${pieceTitle} at ${tempo}. Tap steady eighth notes through the hardest phrase, then play while carrying that motion internally.`,
+      exercise: drillOfTheDay(
+        [
+          `Keep ${pieceTitle} at ${tempo}. Tap steady eighth notes through the hardest phrase, then play while carrying that motion internally.`,
+          `At ${tempo}, play one phrase of ${pieceTitle} and prepare each note during the note before it — fingers down, bow placed — so nothing waits for the beat to arrive.`,
+          `Play the phrase of ${pieceTitle} that drags at ${tempo}, then again one notch faster, then back. The faster pass is not the goal; it is what stops the slower one feeling like the ceiling.`,
+        ],
+        now,
+      ),
     };
   }
 
@@ -60,8 +95,14 @@ export function practiceLessonFor({
       title: 'Repeat the result before adding speed',
       body:
         'One steady take is a good sign. A second comparable take shows whether the pulse is dependable rather than accidental.',
-      exercise:
-        `Record ${pieceTitle} once more at ${tempo} before changing the tempo. Aim to reproduce the same pulse.`,
+      exercise: drillOfTheDay(
+        [
+          `Record ${pieceTitle} once more at ${tempo} before changing the tempo. Aim to reproduce the same pulse.`,
+          `Record ${pieceTitle} at ${tempo} with the metronome off. Holding the pulse without it is the test of whether it is yours yet.`,
+          `Record ${pieceTitle} at ${tempo} starting from a later bar rather than the beginning. A pulse that only holds from bar 1 is the opening you have practised, not the piece.`,
+        ],
+        now,
+      ),
     };
   }
 

@@ -1,5 +1,6 @@
 import type { Duration, MeasureConcern, ScoreJson } from '../../data/types';
 import { BEATS } from '../score/schedule';
+import { timeSignaturesByMeasure } from './meter';
 
 /**
  * What to say about how well a page was read.
@@ -112,12 +113,28 @@ function isPickup(
 }
 
 export function problemMeasures(score: ScoreJson): number[] {
-  const perBar = beatsPerMeasure(score.time_signature);
-  if (perBar === null) {
-    return [];
-  }
+  // **The metre in force at each bar, not the one at the top of the page.**
+  // A metre printed mid-piece holds until the next one is printed, and this
+  // counted every bar against the header — so on a part that turns 3/4 at bar
+  // 20, every correct three-beat bar from 20 onward was flagged as needing a
+  // look. Measured on a three-bar score turning 3/4 at bar 2: `[2, 3]`, both
+  // of them exactly right.
+  //
+  // The last of the "header versus in force" family. The metronome, the bar
+  // editor and the engraver were each fixed for it; this one decides which
+  // bars a musician is *told* to go and check, so it sends them to correct
+  // music and leaves the sentence about it true only by coincidence.
+  const meters = timeSignaturesByMeasure(score);
   const out: number[] = [];
   score.measures.forEach((measure, index) => {
+    // Per bar, because it can change. A bar whose metre is unreadable is
+    // skipped rather than aborting the page — before, one unreadable header
+    // silenced the check for every bar, including bars that print a metre of
+    // their own further down.
+    const perBar = beatsPerMeasure(meters.get(measure.measure_number) ?? null);
+    if (perBar === null) {
+      return;
+    }
     const total = beatsIn(measure.notes);
     // A duration this build has never heard of means the app is older than the
     // backend that read the page. That is a bar this version cannot count, not
@@ -139,11 +156,16 @@ export function problemMeasures(score: ScoreJson): number[] {
 /**
  * What to tell the musician about how this page was read.
  *
- * `concerns` come from the server, which is the only place all four checks
- * live: beat sums, broken ties, tuplet ratios and note density. The last three
- * can each fire on a measure whose beats add up **exactly** — a slur written as
- * a tie sums to 4.0 — so the local beat-sum check silently showed nothing for
- * whole categories of fault, and offered no way to reach the editor for them.
+ * `concerns` come from the server, which is the only place every check lives:
+ * beat sums, broken ties, tuplet ratios, note density, notes the schema cannot
+ * write, and bars adrift on a page with no readable metre. **Every one but the
+ * beat sum can fire on a measure whose beats add up exactly** — a slur written
+ * as a tie sums to 4.0 — so the local beat-sum check silently showed nothing
+ * for whole categories of fault, and offered no way to reach the editor for
+ * them.
+ *
+ * Deliberately not a count: the last one written down here said "four" and was
+ * wrong within a fortnight. `validate.py` is the inventory.
  *
  * The local check remains as the fallback, for a backend that predates the
  * field and for a score being edited before it has been saved. It is a subset
@@ -185,10 +207,15 @@ export function describeProblemMeasures(
    * Why each bar was flagged, when the server said.
    *
    * The sentence below claims the bars "don't add up to the time signature".
-   * That was true while beat sums were the only check. Three of the four now
-   * fire on measures whose beats add up **exactly** — a slur written as a tie
+   * That was true while beat sums were the only check. Every other check now
+   * fires on measures whose beats add up **exactly** — a slur written as a tie
    * sums to 4.0 — so for those it states a falsehood about the musician's
    * score, and the server has already written the true reason in their terms.
+   *
+   * `adrift` is the sharpest case and the one that was getting it wrong: it is
+   * set only where **no metre could be read**, so "doesn't add up to the time
+   * signature" names a time signature the server has just said it could not
+   * find. It reached here as `'beats'` until the server gave it its own kind.
    */
   /**
    * Whether the musician still has the page to compare against.

@@ -252,6 +252,25 @@ describe('describeUndrawnScore', () => {
     expect(describeUndrawnScore(staveScoreFor(scoreOf('rest', 'rest')))).toBeNull();
   });
 
+  it('does not blame the camera for a page it read but cannot place', () => {
+    // Every note carries a spelling this engraver has never heard of, so
+    // nothing is drawn — but the page *was* read. Counting only rests and
+    // undrawable values sent this down the "Nothing was read from this page"
+    // branch, which asks for a closer, straighter photograph: a reading
+    // failure reported as the musician's photography, which is the mistake
+    // this project has made in three other places.
+    const unreadable = scoreOf();
+    unreadable.measures[0].notes = [
+      { pitch: 'F###4', duration: 'quarter' },
+      { pitch: 'B###2', duration: 'quarter' },
+    ] as never;
+    const said = describeUndrawnScore(staveScoreFor(unreadable));
+
+    expect(said).not.toMatch(/Nothing was read/i);
+    expect(said).not.toMatch(/photograph the page/i);
+    expect(said).toMatch(/pitches/i);
+  });
+
   it('distinguishes undrawable rest values from undrawable note values', () => {
     // Thirty-seconds: sixteenth rests and dotted rests are both drawn now.
     const score = scoreOf();
@@ -270,6 +289,30 @@ describe('describeUndrawnScore', () => {
 describe('describeOmissions', () => {
   it('says nothing when nothing was left out', () => {
     expect(describeOmissions(staveScoreFor(scoreOf('quarter')))).toBeNull();
+  });
+
+  it('names the values it actually refuses, not the ones it used to', () => {
+    // **The sentence said "shorter than an eighth or dotted"** long after
+    // sixteenths, thirty-seconds, sixty-fourths, the breve and both dots all
+    // had glyphs — `tools/engraver-coverage.py` prints them drawing at 100%
+    // across the corpus. A musician with a page of sixteenths was told they
+    // were missing while looking straight at them.
+    const said = describeOmissions(staveScoreFor(scoreOf('one_twenty_eighth')));
+
+    expect(said).toContain('shorter than a sixty-fourth');
+    expect(said).not.toMatch(/eighth/i);
+  });
+
+  it('gives a pitch it could not place its own reason', () => {
+    // Not "too short". The two causes have different answers and only one of
+    // them is about the length of the note.
+    const score = scoreOf('quarter');
+    score.measures[0].notes.push({ pitch: 'F###4', duration: 'quarter' } as never);
+
+    const said = describeOmissions(staveScoreFor(score));
+
+    expect(said).toContain("pitch couldn't be placed");
+    expect(said).not.toMatch(/shorter than/i);
   });
 
   it('names both kinds of omission, and gets the plurals right', () => {
@@ -327,7 +370,13 @@ describe('a pitch the engraver cannot place', () => {
     const out = staveScoreFor(scoreWith(['C4', 'F###4', 'D4']));
 
     expect(out.noteCount).toBe(2);
-    expect(out.undrawable).toBe(1);
+    // **`unplaceable`, not `undrawable`.** Both used to add into one count, so
+    // the caveat told a musician this note was *too short to draw* — a reason
+    // about its length, for a problem with its spelling. They are separate
+    // numbers and separate sentences now, and this asserts the split rather
+    // than just the total.
+    expect(out.unplaceable).toBe(1);
+    expect(out.undrawable).toBe(0);
     expect(out.items.every((item) => !('pitch' in item) || item.pitch !== 'F###4')).toBe(
       true,
     );

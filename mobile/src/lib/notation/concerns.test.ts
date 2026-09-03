@@ -3,6 +3,9 @@ import { describe, expect, it } from 'vitest';
 import { describeProblemMeasures, readingNotesFor } from './reading';
 import type { MeasureConcern, ScoreJson } from '../../data/types';
 
+/** One quarter note, for the metre-change scores below. */
+const q = (pitch: string) => ({ pitch, duration: 'quarter', tied_to_next: false });
+
 const score = (notes: { pitch: string; duration: string; tied?: boolean }[]): ScoreJson =>
   ({
     time_signature: '4/4',
@@ -116,6 +119,61 @@ describe('which bars the app shows as needing a look', () => {
       FOUR_QUARTERS,
     );
     expect(readingNotesFor(long).problemMeasures).toEqual([1]);
+  });
+
+  it('counts a bar against the metre in force, not the one on the header', () => {
+    // **The last of the "header versus in force" family.** A metre printed
+    // mid-piece holds until the next one is printed; this counted every bar
+    // against the top of the page, so on a part turning 3/4 at bar 20 every
+    // correct three-beat bar from 20 onward was flagged. Measured before the
+    // fix on exactly this score: `[2, 3]` — bar 2 printing 3/4 and holding
+    // three, and bar 3 holding three under the metre still standing.
+    //
+    // This is the function that decides which bars a musician is *told* to go
+    // and check, so being wrong here sends them to correct music.
+    const turns = {
+      time_signature: '4/4',
+      key_signature: 'C major',
+      tempo_marking: null,
+      bpm_hint: null,
+      clef: 'treble',
+      measures: [
+        { measure_number: 1, notes: ['C4', 'D4', 'E4', 'F4'].map(q), slurs: [] },
+        {
+          measure_number: 2,
+          time_signature: '3/4',
+          notes: ['G4', 'A4', 'B4'].map(q),
+          slurs: [],
+        },
+        { measure_number: 3, notes: ['C5', 'B4', 'A4'].map(q), slurs: [] },
+      ],
+    } as unknown as ScoreJson;
+
+    expect(readingNotesFor(turns).problemMeasures).toEqual([]);
+  });
+
+  it('still flags a bar that is wrong under the metre that replaced the header', () => {
+    // The other direction, so the fix cannot be "stop checking". Bar 2 prints
+    // 3/4 and holds four beats, which is a beat too many for the metre it
+    // itself declares.
+    const wrong = {
+      time_signature: '4/4',
+      key_signature: 'C major',
+      tempo_marking: null,
+      bpm_hint: null,
+      clef: 'treble',
+      measures: [
+        { measure_number: 1, notes: ['C4', 'D4', 'E4', 'F4'].map(q), slurs: [] },
+        {
+          measure_number: 2,
+          time_signature: '3/4',
+          notes: ['G4', 'A4', 'B4', 'C5'].map(q),
+          slurs: [],
+        },
+      ],
+    } as unknown as ScoreJson;
+
+    expect(readingNotesFor(wrong).problemMeasures).toEqual([2]);
   });
 });
 

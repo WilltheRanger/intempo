@@ -43,6 +43,8 @@ def join_pages(readings: list[ScoreJson]) -> ScoreJson:
 
     measures = []
     repeats: list[Repeat] = []
+    #: Forward repeat signs seen on earlier pages and not yet closed.
+    open_starts: list[int] = []
     tempo_changes: list[TempoChange] = []
     notes: list[str] = []
 
@@ -75,6 +77,18 @@ def join_pages(readings: list[ScoreJson]) -> ScoreJson:
     #: prints one sharp in its own header and nowhere else. Compared by
     #: signature, because `Bb major` and `G minor` are the same two flats.
     running_key: str | None = None
+    #: The clef in force at the page break, the third of the same walk.
+    #:
+    #: A part that climbs into tenor at the foot of page one prints a C clef in
+    #: page two's own header and nowhere else, so without this the join records
+    #: page two as continuing in bass — and every note of it is then placed a
+    #: sixth off, which is worse than the metre bug above: that one misreported
+    #: bar lengths, this one moves the notes.
+    #:
+    #: Plain equality rather than an equivalence test: `_CLEF_BY_SIGN_LINE`
+    #: already folds the baritone F clef onto `bass`, so two names that differ
+    #: here really are two different clefs.
+    running_clef: str | None = None
 
     for page_number, page in enumerate(readings, start=1):
         offset = len(measures)
@@ -100,6 +114,14 @@ def join_pages(readings: list[ScoreJson]) -> ScoreJson:
                 and key_fifths(stated_key) != key_fifths(running_key)
             ):
                 update["key_signature"] = stated_key
+            if (
+                index == 0
+                and page_number > 1
+                and page.clef
+                and measure.clef is None
+                and page.clef != running_clef
+            ):
+                update["clef"] = page.clef
             measures.append(measure.model_copy(update=update))
 
         # What is in force at the end of this page: its header, then any
@@ -116,17 +138,46 @@ def join_pages(readings: list[ScoreJson]) -> ScoreJson:
         for measure in page.measures:
             if _stated_key(measure.key_signature):
                 running_key = _stated_key(measure.key_signature)
+        if page.clef:
+            running_clef = page.clef
+        for measure in page.measures:
+            if measure.clef:
+                running_clef = measure.clef
 
         # A repeat or a tempo change names a measure, so both move with them.
-        repeats.extend(
-            repeat.model_copy(
-                update={
-                    "start_measure": repeat.start_measure + offset,
-                    "end_measure": repeat.end_measure + offset,
-                }
+        for repeat in page.repeats:
+            start = repeat.start_measure + offset
+            end = repeat.end_measure + offset
+            # **The repeat that opens on one page and closes on another.**
+            #
+            # A backward sign with no `|:` on its own page falls back to the
+            # start of what the importer was given, which is that page's first
+            # bar. Read alone that is the only honest answer; read as part of a
+            # part, the opening may be a sign printed pages earlier, and this
+            # is where the two meet.
+            #
+            # Measured before the fix, on ten-bar pages: a forward on page 1
+            # bar 5 closing on page 3 bar 4 read as **4** bars repeated where
+            # the truth is 20.
+            #
+            # `start_inferred` is what makes this safe. A repeat whose opening
+            # was actually *printed* is left alone even when it sits on a
+            # page's first bar — that is an ordinary section boundary, and
+            # rewriting it would trade this bug for a worse one.
+            if repeat.type == "repeat" and repeat.start_inferred and open_starts:
+                start = open_starts.pop()
+            repeats.append(
+                repeat.model_copy(
+                    update={"start_measure": start, "end_measure": end}
+                )
             )
-            for repeat in page.repeats
-        )
+        # **After this page's own repeats, not before.** A `|:` opened on this
+        # page and still open at its end cannot close on the same page — if it
+        # could, the importer would have paired it — so offering it to this
+        # page's own backward signs would pair a sign with one that comes after
+        # it. A stack, because nested `|:` is legal and the importer keeps one.
+        open_starts.extend(start + offset for start in page.unclosed_repeat_starts)
+
         tempo_changes.extend(
             change.model_copy(
                 update={"measure_number": change.measure_number + offset}

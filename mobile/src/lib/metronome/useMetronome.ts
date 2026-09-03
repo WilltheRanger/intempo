@@ -140,10 +140,10 @@ export function useMetronome({
       clicks.stop();
       clicksRef.current = null;
     };
-    // `mode` is deliberately absent: changing it mid-take is impossible (the
-    // control is locked while recording), and including it would restart the
-    // count on a preference write from anywhere else in the app.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // `mode` is deliberately absent, and `modeRef` is how — the effect reads
+    // `modeRef.current`, so the linter is right that nothing is missing.
+    // Depending on `mode` itself would restart the count on a preference write
+    // from anywhere else in the app, mid-take.
   }, [active, beatPlan, perBar, pulseBpm]);
 
   // Silence the clicks the moment the count-in ends, unless this take is one

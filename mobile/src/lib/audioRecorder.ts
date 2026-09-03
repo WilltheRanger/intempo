@@ -8,6 +8,7 @@ import {
   type Recorder,
   type Recording,
 } from './audio/types';
+import { capturedNothing, createPeakMeter } from './audio/level';
 import { durationOf, encodeWav } from './audio/wav';
 
 /**
@@ -61,6 +62,7 @@ export async function startRecording(): Promise<Recorder> {
   });
 
   const chunks: Int16Array[] = [];
+  const level = createPeakMeter();
   let truncated = false;
   let maxSamples = maxTakeSamples(REQUESTED_SAMPLE_RATE, CHANNELS);
   let samples = 0;
@@ -75,6 +77,7 @@ export async function startRecording(): Promise<Recorder> {
       // Copy: the native side is free to reuse its buffer for the next quantum,
       // and a view over it would rewrite audio we have already banked.
       const chunk = new Int16Array(buffer.data.slice(0));
+      level.observe(chunk);
       chunks.push(chunk);
       samples += chunk.length;
     },
@@ -113,7 +116,14 @@ export async function startRecording(): Promise<Recorder> {
       teardown();
 
       const seconds = durationOf(chunks, sampleRate, channels);
-      if (seconds === 0) {
+      if (seconds === 0 || capturedNothing(level.peak())) {
+        // **Two ways a take can hold nothing, and only one of them used to be
+        // caught.** No samples at all means the graph never pulled. Samples
+        // that are every one of them zero is a *muted* input — which is what
+        // this error's own description has always claimed to cover, and did
+        // not: `durationOf` counts them, so the take sailed through, uploaded,
+        // waited, and came back `no_onsets` having spent one of three free
+        // analyses for the month.
         throw new EmptyRecordingError();
       }
 
@@ -127,12 +137,14 @@ export async function startRecording(): Promise<Recorder> {
     },
     discardCapturedSoFar() {
       chunks.length = 0;
+      level.reset();
       samples = 0;
       truncated = false;
     },
     cancel() {
       teardown();
       chunks.length = 0;
+      level.reset();
     },
   };
 }

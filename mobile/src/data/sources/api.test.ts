@@ -32,6 +32,7 @@ vi.mock('../auth/session', () => ({ getAuthAvatarUrl: vi.fn() }));
 vi.mock('../api/client', () => ({ ApiError: class ApiError extends Error {} }));
 
 import { apiInsightsSource, apiTakeSubmissionSource, toPiece } from './api';
+import { readTendency } from '../../lib/insights/tendency';
 
 /**
  * The mapping layer, and the one sign in it.
@@ -115,6 +116,150 @@ describe('the sign convention', () => {
   });
 });
 
+describe('the headline comes from the practice, not from one take', () => {
+  /** A take whose bars alternate by `pct`, drag-positive as the pipeline emits. */
+  function alternating(id: string, pct: number, bars = 4) {
+    return analysis({
+      id,
+      result_json: {
+        status: 'ok',
+        verdict: 'x',
+        verdict_direction: 'rush',
+        per_measure: Array.from({ length: bars }, (_, i) => ({
+          measure_number: i + 1,
+          avg_delta_pct: i % 2 === 0 ? -pct : pct,
+          worst_band: 'severe',
+        })),
+        tolerance: null,
+      },
+    });
+  }
+
+  function steady(id: string, pct: number, direction: string) {
+    return analysis({
+      id,
+      result_json: {
+        status: 'ok',
+        verdict: 'x',
+        verdict_direction: direction,
+        per_measure: [{ measure_number: 1, avg_delta_pct: pct, worst_band: 'rush_drag' }],
+        tolerance: null,
+      },
+    });
+  }
+
+  it('does not claim a direction over a take that had none', async () => {
+    // **Measured before this was fixed:** the title read "You tend to rush"
+    // and the sentence "you were usually ahead of the beat", above a deviation
+    // bar sitting dead centre — because the band and direction were borrowed
+    // from the take nearest the mean and the mean itself is zero.
+    listAnalyses.mockResolvedValue([alternating('a1', 18)]);
+
+    const insights = await apiInsightsSource.getInsights();
+
+    expect(insights!.meanDeviationPct).toBeCloseTo(0, 9);
+    expect(insights!.spreadPct).toBeCloseTo(18, 9);
+    expect(insights!.direction).toBe('on');
+    expect(readTendency(insights!).title).toBe('Your tempo wanders');
+  });
+
+  it('says the same thing whichever order two opposite takes arrive in', async () => {
+    // One take 15% behind and one 15% ahead. This used to read "You tend to
+    // drag" or "You tend to rush" depending purely on which the server
+    // returned first — the same practice, opposite claims.
+    const forwards = [steady('a1', 15, 'drag'), steady('a2', -15, 'rush')];
+
+    listAnalyses.mockResolvedValue(forwards);
+    const first = await apiInsightsSource.getInsights();
+    listAnalyses.mockResolvedValue([...forwards].reverse());
+    const second = await apiInsightsSource.getInsights();
+
+    expect(first!.verdict).toBe(second!.verdict);
+    expect(first!.direction).toBe('on');
+    expect(readTendency(first!).title).toBe('Your tempo wanders');
+  });
+
+  it('still names the direction when the takes agree about one', async () => {
+    listAnalyses.mockResolvedValue([steady('a1', 12, 'drag'), steady('a2', 14, 'drag')]);
+
+    const insights = await apiInsightsSource.getInsights();
+
+    expect(insights!.meanDeviationPct).toBeCloseTo(-13, 9);
+    expect(insights!.verdict).toBe('dragging');
+    expect(readTendency(insights!).title).toBe('You tend to drag');
+  });
+
+  it('orders pieces by distance from the beat, not by bias', async () => {
+    // The wandering piece is the one worth practising and its bias is near
+    // zero, so sorting on the bias buried it under pieces that drift less.
+    listScores.mockResolvedValue([
+      { id: 's1', title: 'Steady drifter', composer: null },
+      { id: 's2', title: 'Wanderer', composer: null },
+    ]);
+    listAnalyses.mockResolvedValue([
+      steady('a1', 8, 'drag'),
+      { ...alternating('a2', 18), score_id: 's2' },
+    ]);
+
+    const insights = await apiInsightsSource.getInsights();
+
+    expect(insights!.pieces.map((piece) => piece.title)).toEqual([
+      'Wanderer',
+      'Steady drifter',
+    ]);
+  });
+
+  it('scales the window by the newest take\'s thresholds', async () => {
+    // A window can span a retune. Reported for the same reason the band is:
+    // the chart a musician reads should be scaled to the numbers they are
+    // judged by now, and it must not depend on arrival order.
+    const older = {
+      ...steady('a1', 6, 'drag'),
+      created_at: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
+      result_json: {
+        status: 'ok',
+        verdict: 'x',
+        verdict_direction: 'drag',
+        per_measure: [{ measure_number: 1, avg_delta_pct: 6, worst_band: 'slight' }],
+        tolerance: {
+          rushing_inner_pct: 9,
+          rushing_mid_pct: 18,
+          rushing_outer_pct: 36,
+          dragging_inner_pct: 9,
+          dragging_mid_pct: 18,
+          dragging_outer_pct: 36,
+        },
+      },
+    };
+    const newer = {
+      ...steady('a2', 6, 'drag'),
+      result_json: {
+        status: 'ok',
+        verdict: 'x',
+        verdict_direction: 'drag',
+        per_measure: [{ measure_number: 1, avg_delta_pct: 6, worst_band: 'slight' }],
+        tolerance: {
+          rushing_inner_pct: 3,
+          rushing_mid_pct: 6,
+          rushing_outer_pct: 12,
+          dragging_inner_pct: 3,
+          dragging_mid_pct: 6,
+          dragging_outer_pct: 12,
+        },
+      },
+    };
+
+    for (const order of [[older, newer], [newer, older]]) {
+      listAnalyses.mockResolvedValue(order);
+      const insights = await apiInsightsSource.getInsights();
+      expect(insights!.tolerance!.rushing_outer_pct).toBe(12);
+      // -6% against a 3% inner is a clear drag; against the older 9% it was
+      // on tempo, which is the whole point of reporting the current one.
+      expect(insights!.verdict).toBe('slight_drag');
+    }
+  });
+});
+
 describe('which takes count', () => {
   it('ignores anything older than the window', async () => {
     const old = new Date(Date.now() - 40 * 24 * 60 * 60 * 1000).toISOString();
@@ -183,8 +328,17 @@ describe('which takes count', () => {
   });
 });
 
-describe('the worst band leads', () => {
-  it('takes the worst measure in a take, not the first or the last', async () => {
+describe('one severe note does not become a habit', () => {
+  it('bands the window by the window, not by the worst note in it', async () => {
+    // `worst_band` is the worst band of any **note** in a measure, so a bar
+    // averaging 2% of a beat can carry `severe` because one note inside it was
+    // a long way out. This window used to take that band whole: three bars
+    // averaging 1.3% off the beat produced the headline "You tend to drag".
+    //
+    // A note that far out is worth seeing, and it still is — `toTake` reports
+    // the worst band of a take and the verdict screen shows it. What it is not
+    // is thirty days of evidence about how a musician plays, which is the only
+    // claim this screen makes.
     listAnalyses.mockResolvedValue([
       analysis({
         result_json: {
@@ -203,7 +357,9 @@ describe('the worst band leads', () => {
 
     const insights = await apiInsightsSource.getInsights();
 
-    expect(insights!.band).toBe('severe');
+    expect(insights!.meanDeviationPct).toBeCloseTo(-1.333, 2);
+    expect(insights!.band).toBe('on');
+    expect(readTendency(insights!).title).toBe('You play steadily');
   });
 });
 

@@ -19,6 +19,25 @@ import { ApiError } from './client';
  */
 export function describeLoadError(error: unknown): string {
   if (error instanceof ApiError) {
+    /*
+     * Status 0 is minted **here**, never by a server — `Response.status` is
+     * never 0 for a response whose body we read — and every one of the four
+     * places that mints it writes a sentence for a musician: the session that
+     * could not be read in time, the body that stopped mid-flight, the host
+     * that is waking up, and the connection that never opened.
+     *
+     * They were all collapsed into "Check your connection and try again." That
+     * is the exact substitution this module was written to stop, and it was
+     * worst on the one that matters most: this app's host sleeps, so **"It may
+     * be waking up — try again in a moment"** is the most common failure a
+     * musician meets, and every screen sent them to look at their wifi
+     * instead. `RESPONSE_STALLED` says in its own comment that "could not
+     * reach the server" would send someone to check a connection that
+     * demonstrably works — and then a screen said exactly that.
+     */
+    if (error.status === 0) {
+      return error.message;
+    }
     if (error.status === 401) {
       return 'Your session has ended. Sign in again.';
     }

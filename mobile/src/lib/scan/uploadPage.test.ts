@@ -2,8 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // `expo-image-manipulator` reaches `react-native`, whose Flow syntax vitest
 // cannot parse — and `shrinkToFit` now imports it lazily when a page is too
-// large. `compressTo` is what each test says the re-encode achieves.
-const { compressTo } = vi.hoisted(() => ({ compressTo: { size: 0 } }));
+// large.
 vi.mock('expo-image-manipulator', () => ({
   manipulateAsync: vi.fn(async (uri: string) => ({
     uri: `${uri}#smaller`,

@@ -50,7 +50,8 @@ import {
   practiceLessonFor,
   type PracticeLesson,
 } from '../../lib/practiceLesson';
-import { formatTempo, formatTendency } from '../../lib/tempo';
+import { formatTempo, formatVerdict } from '../../lib/tempo';
+import { readTendency } from '../../lib/insights/tendency';
 import { suggestionsFor } from '../../lib/today';
 import type { AddPieceOption, TabScreenNavigation } from '../../navigation/types';
 import { WarmupPanel } from './WarmupPanel';
@@ -105,14 +106,20 @@ export function TodayScreen() {
    * the durable row is ready, while a button makes a slow or offline result
    * recoverable without keeping a hidden tab polling forever.
    */
+  // The id, not the record: it is the only field this uses, and it is what the
+  // callback's identity should turn on. Naming the whole record would rebuild
+  // the callback — and re-run the effect below it — every time the stored row
+  // is re-read into a new object.
+  const pendingAnalysisId = pendingAnalysis?.analysisId ?? null;
+
   const checkPendingAnalysis = useCallback(async () => {
-    if (!pendingAnalysis) {
+    if (!pendingAnalysisId) {
       setPendingCheck(null);
       return;
     }
     setPendingCheck('checking');
     try {
-      const analysis = await getAnalysis(pendingAnalysis.analysisId);
+      const analysis = await getAnalysis(pendingAnalysisId);
       setPendingCheck(
         analysis.status === 'done' ||
           analysis.status === 'failed' ||
@@ -123,13 +130,13 @@ export function TodayScreen() {
     } catch (error) {
       if (error instanceof ApiError && error.status === 404) {
         // It belongs to an old/deleted account or was removed with its piece.
-        await forgetPendingAnalysis(pendingAnalysis.analysisId);
+        await forgetPendingAnalysis(pendingAnalysisId);
         setPendingCheck(null);
         return;
       }
       setPendingCheck('unavailable');
     }
-  }, [pendingAnalysis?.analysisId]);
+  }, [pendingAnalysisId]);
 
   useEffect(() => {
     void checkPendingAnalysis();
@@ -258,12 +265,71 @@ export function TodayScreen() {
     return (
       <ScreenContainer onRefresh={refresh} contentStyle={styles.page}>
         {header}
+        {/*
+          **Adding a piece leads, and it is still the only *primary* action on
+          the screen** — it is what the app is for, and the warmup below cannot
+          show a verdict. `actionTone="primary"` is the solid ink button the
+          populated Today reserves for "Continue practice"; its outlined
+          sibling is what that screen gives secondary controls.
+
+          **No `fill` any more, and that is the trade this composition makes.**
+          `fill` centres the block in the whole screen, which was right while
+          this was the only thing on it and put the button near the thumb
+          (§3 law 7). It cannot survive a second block below, so the button
+          moves up and the warmup's own control takes the thumb zone instead.
+
+          The title used to read "Nothing to practice yet", which the screen
+          then contradicted one block later: the warmup below **is** something
+          to practice, generated from the instrument onboarding required them
+          to choose. It says library now, which is the thing that is actually
+          empty.
+        */}
+        {/*
+          **The pair is centred in what the header leaves**, which is the job
+          `fill` used to do for the empty state alone. Stacked from the top,
+          the two blocks ended by the middle of the phone and left the whole
+          thumb zone empty above the tab bar — the screen read as truncated
+          rather than composed, and both its actions sat out of reach (§3 law
+          7). Centring splits that space instead of dumping it at the bottom,
+          and puts Start where a thumb is.
+        */}
+        <View style={styles.emptyBody}>
         <EmptyState
-          title="Nothing to practice yet"
-          description="Add a piece of sheet music and it will show up here."
+          actionTone="primary"
+          title="Nothing in your library yet"
+          description="Add a piece of sheet music and your practice will show up here."
           actionLabel="Add a piece"
           onActionPress={() => setAddSheetVisible(true)}
         />
+
+        {/*
+          **The same warmup block the populated screen renders**, deliberately
+          not a variant of it: it depends on nothing but the instrument, so a
+          new account can play something in its first minute instead of being
+          told there is nothing. It was only ever absent here because it sits
+          below this early return.
+        */}
+        <View style={[styles.section, styles.emptyWarmup]}>
+          <SectionHeader label="Warmup" />
+          {/*
+            **On the page background, not in a card — and that is hierarchy,
+            not tidiness.** Carded, it was the heaviest thing on the screen: a
+            bordered block wrapping real engraved notation beats unenclosed
+            text and a button every time, so the three-foot test read greeting,
+            warmup, add-a-piece — the opposite of what this screen is for. It
+            is also the only card that would be on the screen, which is exactly
+            the habit §3 law 3 names. On the populated Today it is one of a
+            column of cards and recedes by position instead; here position
+            cannot do that work, so the panel goes back to the background
+            `WarmupPanel`'s own docstring says it was designed for.
+          */}
+          <WarmupPanel
+            instrument={instrument}
+            onStart={() => navigation.navigate('Warmup')}
+          />
+        </View>
+        </View>
+
         <AddPieceSheet
           visible={addSheetVisible}
           onClose={() => setAddSheetVisible(false)}
@@ -385,7 +451,11 @@ export function TodayScreen() {
                       detail={joinMetadata([
                         formatLastPracticedShort(recentTake.recordedAt),
                         formatTempo(recentTake.targetBpm, recentTake.tempoBeatUnit),
-                        formatTendency(recentTake.verdict),
+                        // One recording, so `formatVerdict` — the tendency
+                        // wording is a claim about a habit and its own comment
+                        // says a single take cannot see one. This rendered as
+                        // "Today · 96 BPM · You tend to rush".
+                        formatVerdict(recentTake.verdict),
                       ])}
                       onPress={() =>
                         navigation.navigate('Verdict', {
@@ -483,7 +553,12 @@ export function TodayScreen() {
               <View style={styles.section}>
                 <SectionHeader label="Practice snapshot" />
                 <TodayRow
-                  title={formatTendency(summary.verdict)}
+                  // **The same reading Insights shows, from the same module.**
+                  // `formatTendency(summary.verdict)` is the aggregate's
+                  // direction and nothing else, so a musician whose practice
+                  // wanders read "Your tempo wanders" on one tab and "You tend
+                  // to rush" on the next, about the same thirty days.
+                  title={readTendency(summary).title}
                   detail={summaryDetail}
                   onPress={() => navigation.navigate('Insights')}
                   last
@@ -680,6 +755,23 @@ const styles = StyleSheet.create({
   },
   focusAction: {
     marginTop: spacing.lg,
+  },
+  emptyBody: {
+    // Needs `flexGrow` on `ScreenContainer`'s content container to have any
+    // effect — see the note there. Content taller than the viewport still
+    // scrolls; this only decides where shorter content sits.
+    flex: 1,
+    justifyContent: 'center',
+  },
+  emptyWarmup: {
+    // **Zero, and it is not a missing value.** `EmptyState` already ends in
+    // 32pt of its own padding, so the ordinary 24pt section gap stacked on top
+    // of it put 56pt between the button and this label — more than double any
+    // other gap on Today, which is what left the empty screen looking like it
+    // had stopped early. The 32pt that remains is still a step looser than a
+    // normal section break, which is right: these are two different kinds of
+    // block, not two sections of one flow.
+    marginTop: 0,
   },
   section: {
     // One step tighter than it was. At 32pt the blocks read as separate pages

@@ -302,6 +302,53 @@ def _take_is_much_longer_than_the_page(
     return page > 0 and take > page * TAKE_TOO_LONG_RATIO
 
 
+def _why_nothing_to_compare(expected: np.ndarray) -> str:
+    """Nothing was heard, or nothing was written. Which, and what to do.
+
+    This branch used to say *"try re-recording a bit louder"* for both, and that
+    is wrong twice over.
+
+    **Loudness has nothing to do with it.** `onset_strength` differences a
+    dB-scaled mel spectrogram, so scaling a waveform shifts every frame by the
+    same constant and the differencing removes it — the detector is
+    amplitude-invariant by construction. Measured on all six audio fixtures,
+    requantised to 16-bit at each level: the onset count is **identical from
+    0 dBFS down to -90 dBFS**, where the samples are barely more than one LSB
+    (`01_detache_clean` finds its 32 notes at every level, `06_pizzicato` its
+    16). Ten seconds of white noise at -60 dBFS produces ten onsets; ten seconds
+    of digital silence produces none. Level is not what separates them.
+
+    So the only recording that reaches here is one that is *digitally silent* —
+    every sample zero. A muted input, a device recording from a source with
+    nothing routed to it, a permission granted and then revoked. Playing louder
+    into a muted microphone produces exactly the same file, so the advice sent
+    the musician to repeat the one thing that could not help.
+
+    **And the score may be the empty one.** `expected.size == 0` means the page
+    has no notes on it — nothing to do with the recording at all, and told to
+    the musician as though their playing were at fault, which is the same
+    mistake `_read_page`'s failure reasons made three times. It is named first
+    when both are true: a take against a page with no notes cannot be analysed
+    however well it is recorded, so sending them back to the microphone would
+    cost them a second take and change nothing.
+
+    Only `expected` is needed to tell them apart: the caller enters this branch
+    when either is empty, so a non-empty score here means the recording was the
+    silent one.
+    """
+    if expected.size == 0:
+        return (
+            "There are no notes on this piece for us to compare against — the "
+            "transcription came back empty. Open the piece and check the "
+            "reading before recording again."
+        )
+    return (
+        "Your recording is completely silent — no sound reached the microphone "
+        "at all. Check which input your device is recording from, and that "
+        "nothing is muting it, then record again."
+    )
+
+
 def analyze(
     audio: str | Path | tuple[np.ndarray, int],
     score: ScoreJson,
@@ -354,7 +401,7 @@ def analyze(
             status="no_onsets",
             quality=0.0,
             tolerance=Tolerance.of(cfg),
-            verdict="We couldn't hear any notes to analyze — try re-recording a bit louder.",
+            verdict=_why_nothing_to_compare(expected),
             n_detected_onsets=int(onsets.size),
             n_expected_onsets=int(expected.size),
         )

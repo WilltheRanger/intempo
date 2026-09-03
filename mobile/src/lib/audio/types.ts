@@ -108,7 +108,16 @@ export class MicrophoneUnavailableError extends Error {
   }
 }
 
-/** A take that captured nothing — a muted input, or a stop before any audio. */
+/**
+ * A take that captured nothing — a muted input, or a stop before any audio.
+ *
+ * **Both halves of that sentence are now true.** For a long time only the
+ * second was: the check was `durationOf(chunks) === 0`, and a muted microphone
+ * delivers samples like any other — they are simply all zero — so the take had
+ * a duration, passed, uploaded, and came back `no_onsets` after the wait,
+ * having spent one of three free analyses for the month. `capturedNothing` in
+ * `./level` is the other half.
+ */
 export class EmptyRecordingError extends Error {
   constructor() {
     super('The recording captured no audio.');

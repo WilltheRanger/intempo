@@ -1,10 +1,20 @@
 """The closed vocabularies the app types against.
 
-Four enums cross the wire into a TypeScript union: what a musician plays, how
-the metronome marks the beat, and the two words the verdict is said in. The app
-declares each of them again, because a TypeScript union cannot be imported from
-Python — and CLAUDE.md is explicit that these are closed unions the app types
-against, so **adding a value is a breaking change**.
+Every closed vocabulary that crosses the wire into a TypeScript union, held by
+name. The app declares each of them again because a TypeScript union cannot be
+imported from Python, and CLAUDE.md is explicit that these are closed unions the
+app types against, so **adding a value is a breaking change**.
+
+This docstring opened "Four enums cross the wire" and named four, while the file
+below it grew to guard **thirteen** — the four here plus `Duration` and what it
+is worth, `TranscriptionStatus`, `ResultStatus`, `RepeatType`, `Clef`,
+`Articulation`, `Dynamics`, and the two inline unions on `ScoreTempoChange` and
+`MeasureConcern`. On 2026-09-02 I read that opening as an inventory of the file,
+concluded the score vocabularies were unguarded, and added eighty lines
+duplicating tests that already existed. **A count in a docstring is a claim like
+any other**, and this one had been wrong long enough to mislead somebody into
+work. Corrected, and left deliberately vague about the number so it cannot rot
+the same way: the parametrised lists below are the inventory.
 
 What each drift costs, which is not the same in every case:
 
@@ -18,6 +28,11 @@ What each drift costs, which is not the same in every case:
 - **`Band` and `Direction`** are what the verdict screen switches on. A value
   the app has never heard of is a branch nothing matches — a bar with no
   colour and no word, on the screen the whole app exists to show.
+- **`Duration`** is the expensive one, and the schema says so itself: *"A note
+  with no name here is **dropped**, and a dropped note is a lost onset that
+  `alignment.py` accumulates into every bar after it — so the cost of a gap is
+  not the note, it is the rest of the page."* Held twice below: the names, and
+  what each one is worth.
 
 The check is by *name*, against the app's own `types.ts`, because that file is
 what every screen is compiled against.
@@ -27,13 +42,23 @@ from __future__ import annotations
 
 import re
 from enum import Enum
+from typing import get_args
 from pathlib import Path
 
 import pytest
 
 from app.models.analysis import BpmSource, Instrument, MetronomeMode
+from app.routers.corrections import UserVerdict
 from app.routers.scores import MAX_PAGES
 from app.services.classification import Band, Direction
+from app.services.score_schema import (
+    Articulation,
+    Clef,
+    Duration,
+    Dynamics,
+    RepeatType,
+    TempoChangeKind,
+)
 
 MOBILE = Path(__file__).resolve().parents[3] / "mobile" / "src" / "data"
 CAPTURE_SESSION_TS = (
@@ -81,6 +106,33 @@ def test_the_reader_would_notice_a_type_that_stopped_existing() -> None:
         _union("NoSuchTypeExists")
 
     assert len(_union("Instrument")) == 4
+
+
+def test_the_app_offers_exactly_the_verdicts_this_api_accepts() -> None:
+    """What a musician can say happened in a bar, on both sides of the wire.
+
+    A `Literal` rather than an `Enum` on the server, so it cannot join the
+    parametrised list above — but it crosses the wire in a request body the
+    same way `BpmSource` does, and it is closed for the same reason: a value
+    this API does not accept is a 422 on a correction, and a correction that
+    422s is a musician told their feedback failed for saying the ordinary
+    thing.
+
+    `unsure` is the one worth naming. It is deliberately offered — the spec
+    warns that many corrections will come from people disagreeing with the
+    concept rather than catching a misfire, and someone who genuinely cannot
+    remember is more useful in the data than someone who guessed — so an app
+    that quietly dropped it would narrow the dataset without narrowing the
+    schema.
+    """
+    server = set(get_args(UserVerdict))
+    app = _union("UserVerdict")
+
+    assert app == server, (
+        f"UserVerdict: only the server accepts {sorted(server - app)}; "
+        f"only the app offers {sorted(app - server)}"
+    )
+    assert "unsure" in server
 
 
 def test_the_app_sends_a_bpm_source_this_api_accepts() -> None:
@@ -192,7 +244,7 @@ def test_the_app_knows_exactly_the_durations_this_api_sends() -> None:
 
 
 def test_both_sides_agree_what_every_duration_is_worth() -> None:
-    """**The parity fixture covers five of twenty-one.**
+    """**The parity fixture covers a handful of the durations; this covers all.**
 
     `fixtures/timeline/parity.json` is the one file both trees are held to, and
     its own docstring says why: *"If they drift, nothing looks broken from
@@ -200,16 +252,39 @@ def test_both_sides_agree_what_every_duration_is_worth() -> None:
     and a musician who played exactly along with what the app sounded is told
     they rushed."*
 
-    It exercises `quarter`, `eighth`, `half`, `dotted_quarter` and
-    `triplet_quarter`. **Sixteen durations it never touches** — every
-    double-dotted value, every triplet but one, and everything shorter than an
-    eighth — so for those the two tables could hold different numbers and the
-    fixture would pass.
+    It is a short piece of music, so most of the table never appears in it —
+    every double-dotted value, most of the triplets, everything shorter than an
+    eighth. For those the two tables could hold different numbers and the
+    fixture would pass. Comparing the tables covers the lot at once, which the
+    fixture cannot do without becoming a piece nobody would play.
 
-    Comparing the tables covers all twenty-one at once, which the fixture
-    cannot do without becoming a piece nobody would play.
+    The size of that gap is **measured below rather than written here**. It
+    used to be written here — "five of twenty-one", "sixteen it never touches"
+    — and adding one note to the fixture made both numbers wrong with nothing
+    to notice. A count in prose is a count that goes stale.
     """
+    import json
+    from pathlib import Path
+
     from app.services.score_schema import DURATION_BEATS
+
+    fixture = json.loads(
+        (
+            Path(__file__).resolve().parents[3]
+            / "fixtures"
+            / "timeline"
+            / "parity.json"
+        ).read_text()
+    )
+    covered = {
+        note["duration"]
+        for measure in fixture["score"]["measures"]
+        for note in measure["notes"]
+    }
+    assert covered < set(DURATION_BEATS), (
+        "the parity fixture now exercises every duration, so this test is "
+        "redundant — delete it rather than leaving two things saying the same"
+    )
 
     app = _app_beats()
 
@@ -576,4 +651,47 @@ def test_the_app_stops_a_scan_at_the_same_page_count_the_server_does() -> None:
     assert int(match.group(1)) == MAX_PAGES, (
         f"the app stops a scan at {match.group(1)} pages and the server refuses "
         f"above {MAX_PAGES}"
+    )
+
+
+LEGIBILITY_TS = MOBILE.parent / "lib" / "scan" / "legibility.ts"
+
+
+def test_the_app_warns_below_the_floor_the_server_actually_refuses_at() -> None:
+    """`legibility.ts` restates the server's floor, and nothing held the copy.
+
+    That file is careful about the thing that matters — it is a deliberate
+    subset, and its rule is *"it may never refuse a page the server would
+    accept"*, so `CLIENT_FLOOR` sits strictly **below** `SERVER_FLOOR`. Its own
+    test asserts that ordering, but against the app's copy of the server's
+    number, which is circular: both sides move together and the assertion holds
+    whatever the server actually does.
+
+    The exposure is directional. A server floor that *rises* leaves the app
+    merely more conservative, which is harmless. A server floor that *falls*
+    below `CLIENT_FLOOR` turns the hint into the app talking a musician out of
+    a photograph that would have read perfectly well — the exact regression the
+    file's docstring says would be worse than the delay it exists to save.
+
+    `MIN_PAGE_ROWS` is derived from the same copy, so a drift also silently
+    moves the camera-resolution advice.
+    """
+    from app.services.page_image import _MIN_STAFF_SPACE_PX
+
+    source = LEGIBILITY_TS.read_text()
+    match = re.search(r"export const SERVER_FLOOR = (\d+);", source)
+    assert match, "the app no longer restates SERVER_FLOOR in lib/scan/legibility.ts"
+    assert int(match.group(1)) == _MIN_STAFF_SPACE_PX, (
+        f"the app believes the server refuses below {match.group(1)} px between "
+        f"staff lines; it refuses below {_MIN_STAFF_SPACE_PX}"
+    )
+
+    # And the subset rule itself, read from the app rather than assumed — the
+    # ordering its own test checks, now anchored to the server's real number.
+    client = re.search(r"export const CLIENT_FLOOR = (\d+);", source)
+    assert client, "the app no longer declares CLIENT_FLOOR"
+    assert int(client.group(1)) < _MIN_STAFF_SPACE_PX, (
+        f"the app starts warning at {client.group(1)} px, at or above the "
+        f"server's {_MIN_STAFF_SPACE_PX} — so it can refuse a page the server "
+        f"would have read"
     )

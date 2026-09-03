@@ -46,6 +46,14 @@ import sys
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
+# Started with the wrong interpreter, this dies on `import pydantic` before it
+# reads a fixture. `backend_python` re-execs under `backend/.venv` so the
+# command in the docstring above is one that works — see its own header.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from backend_python import use_backend_python  # noqa: E402
+
+use_backend_python()
+
 sys.path.insert(0, str(REPO / "backend"))
 
 #: What the app can actually draw, **read from the app** rather than copied.
@@ -148,13 +156,37 @@ def _pages():
 
     from app.services.ocr.musicxml import score_json_from_musicxml
 
+    import xml.etree.ElementTree as ET
+
+    from app.services.ocr.musicxml import _part_names
+
     for path in sorted((REPO / "fixtures" / "musicxml").glob("*.musicxml")):
+        xml = path.read_text()
+        # **Every part, not one.** The importer refuses a multi-part file with no
+        # part chosen, and is right to: a cellist handed the piccolo line would
+        # get a verdict that is wrong in a way that looks right. That refusal is
+        # about *which instrument a musician plays*, and this tool is not asking
+        # that — it is asking which note values the engraver can draw, where the
+        # instrument is irrelevant and every part is more material.
+        #
+        # Until a two-part fixture existed the corpus was silently all
+        # single-part, so this read one part per file and would have skipped any
+        # real orchestral score outright, reporting it as a parse failure.
         try:
-            score = score_json_from_musicxml(path.read_text())
-        except Exception as exc:  # noqa: BLE001 — a fixture that no longer parses is news
-            print(f"  {path.name}: could not parse ({type(exc).__name__}: {exc})")
+            parts = list(_part_names(ET.fromstring(xml)))
+        except ET.ParseError as exc:
+            print(f"  {path.name}: not parseable as XML ({exc})")
             continue
-        yield path.name, [(n.pitch, n.duration) for m in score.measures for n in m.notes]
+        wanted: list[str | None] = list(parts) if len(parts) > 1 else [None]
+
+        for choice in wanted:
+            try:
+                score = score_json_from_musicxml(xml, part=choice)
+            except Exception as exc:  # noqa: BLE001 — a fixture that no longer parses is news
+                print(f"  {path.name}: could not parse ({type(exc).__name__}: {exc})")
+                continue
+            label = path.name if choice is None else f"{path.name} [{choice}]"
+            yield label, [(n.pitch, n.duration) for m in score.measures for n in m.notes]
 
 
 def _schema_coverage() -> None:

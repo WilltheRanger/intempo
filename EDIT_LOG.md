@@ -6,6 +6,5541 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-03 — Eight of the twelve benches could not be started the way they document themselves
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. `tools/` only; no product
+code changed. CI still cannot allocate a runner.
+
+Found by fact-checking a claim rather than looking for a bug. `CLAUDE.md` says
+the engraver *"draws 42 of the schema's 46 durations"*, so I ran
+`tools/engraver-coverage.py` to check. **It crashed** —
+`ModuleNotFoundError: No module named 'pydantic'` — on the exact command its
+own docstring prints.
+
+Measured across the directory: **eight of twelve** die the same way.
+`engraver-coverage` documents `python tools/engraver-coverage.py`;
+`homr-bench`, `pipeline-check`, `notation-coverage` and `musicxml-bench` print
+a bare `tools/x.py …` and carry a `#!/usr/bin/env python3` shebang, so the
+documented invocation is the system interpreter. All of them import `app.*`,
+which lives in `backend/.venv`. `novelty-bakeoff` and the two sandbox builders
+document `cd backend && uv run python ../tools/x.py`, which does work — they
+were simply unusable any other way.
+
+`CLAUDE.md` puts `tools/` in `CODE_TREES` and says why: *"The benches decide
+what gets measured and therefore what gets believed."* **A bench nobody can
+start is a bench nobody runs**, and the measurement it would have produced is
+replaced by whatever people already believed. That is the same failure as the
+`audit-a11y.mjs` header, which records its own version of this: *"The tool has
+one documented way to run and it did not work."*
+
+### `tools/backend_python.py`
+
+The fix that file describes for itself — anchor the lookup to the install, *"from
+any working directory"* — applied here as a re-exec under `backend/.venv/bin/python`.
+Making the documented command true beats editing five docstrings to say
+something longer.
+
+Silent on every path where it cannot help: already inside the venv (which is
+what `uv run` gives), already re-executed once, or no venv on disk. That last
+case deliberately lets the tool fail on its own import — *"no module named
+pydantic"* tells you to install the backend, and a message from here about a
+missing `.venv` would not.
+
+**The re-exec must sit above the heavy imports**, and that is a mistake I made
+and measured: `novelty-bakeoff.py` imports `numpy` and `librosa` at the top, so
+inserting the call in the same place as the others left it dying on the very
+import the re-exec exists to satisfy. It is now the first thing after
+`pathlib`.
+
+### Verified
+
+Every tool run under the plain documented invocation, before and after:
+
+| | before | after |
+|---|---|---|
+| tools that start | 4 of 12 | **12 of 12** |
+
+`engraver-coverage.py` under plain `python3` now prints the real tables, which
+also settles the claim that sent me here: **42 of the schema's 46 durations
+draw**, the four gaps being the 128th family named in `DELIBERATELY_UNDRAWN`,
+and 403 of 403 notes in the corpus. Accurate as written.
+
+Neither sandbox builder rewrote its output when run, so nothing else moved.
+**Backend: 1936 passed, 2 xfailed.**
+
+---
+
+## 2026-09-03 — The backend half of the dead-code check, and the three it found
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. CI still cannot allocate a
+runner.
+
+`tools/check-dead-exports.py` holds the app; `test_client_reachability.py`
+holds the server's *routes*. Nothing held the server's **functions**. Scanned:
+293 module-level functions, **three referenced nowhere at all**.
+
+### `_fit_line` — a docstring that was false twice
+
+> One home for the fit, because two callers need exactly the same line: the
+> rate refinement, which uses it to correct the scale, and the quality score,
+> which uses it to decide what a steady tempo cannot explain.
+
+It has **no** callers. And `_residuals`, which is where one of those two would
+live, does its own `np.polyfit` — on `settled` (detected minus pulse anchors)
+against expected, not on detected against expected. So the extraction that was
+documented as the single home is not only uncalled, the surviving inline fit
+computes something different. Deleted: keeping it keeps a false claim in the
+module that decides whether a musician rushed.
+
+`_residual_cost` beside it — a mean of `_residuals` with no caller — deleted
+with it.
+
+### `repeat_balance` — kept, and measured
+
+A real check on repeat brackets in `ocr/validate.py`, and nothing runs it. Two
+functions above it, `pickup_complement` is in the same state and has been
+**documented and tested** as deliberately unwired since the day it was found.
+`repeat_balance` had nothing, so it read as an oversight.
+
+Measured, it is two-thirds sound and one-third the same page-versus-piece
+mistake `pickup_complement` makes:
+
+| Rule | On a page |
+|---|---|
+| a repeat that runs backwards | sound |
+| a repeat naming a bar not in the score | sound |
+| "endings come in pairs" | **unsound** — a page break between a first and second ending is ordinary |
+
+The first two matter more than they look. `expand_repeats` selects a span only
+when its end appears after its start, so a malformed repeat is **silently
+ignored** — and a musician who plays the repeat printed on their page is then
+measured against a timeline that does not have it, with every bar after judged
+against the wrong second. That is the multi-bar-rest failure again, one
+mechanism over.
+
+So wiring it as it stands would flag ordinary pages, and wiring the first two
+alone writes a sentence a musician reads — **a §2 decision, raised rather than
+taken.** `test_ocr_validate.py` now holds all four cases.
+
+### The check
+
+`test_dead_functions.py`, in the same shape as the app's:
+
+- Module-level functions only; a method is reached through its class.
+- **Framework-called functions are exempt by decorator** — `@router.get`,
+  `@app.exception_handler`, `@stub.function`, `@pytest.fixture` — matched on
+  the attribute so the object each hangs off does not have to be listed. A
+  route handler flagged as dead is the one false alarm this must not produce,
+  and it is mutation-tested.
+- `tools/` is searched for references, never for definitions.
+- A floor of 150 functions, so a broken glob fails instead of reporting a tidy
+  package.
+- **No allowlist.** A function that must stay unwired escapes by having a test
+  that names it and says why — which is a claim someone can check, unlike a
+  line in a list.
+
+### Verified
+
+| Mutation | Result |
+|---|---|
+| a `_unreferenced_helper` added to `alignment.py` | fails, naming it |
+| a `@router.get` handler added to `scores.py` | **passes** — the false alarm that matters |
+| `APP` pointed at a directory that does not exist | fails on the count, not on emptiness |
+
+**Backend: 1936 passed, 2 xfailed** (was 1934 + 2).
+
+---
+
+## 2026-09-03 — Three false sentences in the file that is read at the start of every session
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. `CLAUDE.md` only; no code
+changed. CI still cannot allocate a runner.
+
+`CLAUDE.md` says it is binding and it is read first, so a false line in it is
+more expensive than a false line anywhere else: it is believed before anything
+is measured. Three of them, each verified against the thing it describes.
+
+### 1. An endpoint it called unwired has a client
+
+> `POST /v1/analyses/:id/corrections` … **Nothing posts to it.**
+
+Wired earlier today, by me, and `test_client_reachability.py` enforces it — its
+`NOT_WIRED` holds exactly one entry, `/v1/calibration`. The file therefore
+**contradicted itself**: six bullets down it says "The verdict feedback loop has
+a client (2026-09-03)", and a session reading top to bottom meets the false
+version first.
+
+The fix is not a corrected list, it is **no list**. That bullet now points at
+`NOT_WIRED` as the answer and keeps only the part prose is good for — why an
+empty corrections table matters, and that the *reading* corrections are a
+different table people keep conflating with it. A count of unwired endpoints in
+prose is a claim, and this one went stale in a day.
+
+### 2. A fixed bug described as live
+
+> "homr is not installed in this container" matches no `_FAILURE_REASONS`
+> needle and lands on *"a flatter, better-lit shot of the page usually fixes
+> it"* — a server fault blamed on the musician, for the third time.
+
+There is a `"not installed"` needle now, with four more beside it, and
+`_why_it_failed` flattens hyphens as well as underscores so `x-api-key` and
+"api key" are one fact. Verified by calling it:
+
+| Detail | Reason returned |
+|---|---|
+| `homr is not installed in this container` | *"…a fault on our side, not with your photograph"* |
+| `AuthenticationError: invalid x-api-key` | *"The transcription service is not configured…"* |
+| `no usable provider configured` | *"…your page is fine, and re-photographing it will not help."* |
+| something unrecognised | the photograph sentence, which is correct for an unknown fault |
+
+Rewritten to past tense. It is worth keeping as the reason the needles exist —
+it is just not an open bug, and reading it as one would send someone to fix
+something already fixed.
+
+### 3. "no batch is tagged `batch-N-done`"
+
+Under a heading that says **Honest DoD status**. `git ls-remote --tags origin`:
+`batch-0-done`, `batch-1-done`, `batch-2-done`, `spec-v1` — all four pushed.
+And §4 one screen above marks batches 0, 1 and 2 ✅, so the file disagreed with
+itself here too.
+
+The true statement is narrower and more useful: **3 and 4 are marked ✅ and are
+not tagged**, so by this file's own Definition of Done they are not done, and 5
+onward are ⏳.
+
+### What the three have in common
+
+Every one is prose restating a fact that something else already holds — a test,
+a needle table, `git tag`. That is the same failure as `MeasureConcern`'s
+"four" that named three, the timeline parity fixture's `excluded_on_purpose`,
+the multi-page repeat `xfail` whose reason had stopped being true, and the
+"three things still need a person" corrected two entries down. **The durable
+fix in each case is to delete the restatement and name the authority**, which
+is what these three edits do rather than simply correcting the numbers.
+
+---
+
+## 2026-09-03 — A screen can get a URL without ever being audited
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. One assertion in
+`tools/audit-a11y.mjs`; no product code changed. CI still cannot allocate a
+runner.
+
+`linking.test.ts` makes a new screen get a URL, and the reason is written down:
+the browser's Back button walks out of the app from a screen that has none.
+Nothing made a new screen get **audited**. `ROUTES` in `audit-a11y.mjs` is a
+hand-written list of twenty-three, and a hand-written list of screens is the
+thing that goes stale — so a screen added next month would ship with a URL, a
+link somebody can send, and no check of its touch targets, its contrast, its
+accessible names or its behaviour at 2x text.
+
+Today the two lists agree: all 22 declared routes are visited (`Score` twice,
+once as `?view=original`). That was true and held by nothing, which is the same
+sentence as the last four entries.
+
+The audit now reads the paths out of `navigation/linking.ts` and refuses to
+report PASS while one is unvisited. Read as text, not imported: this file is
+`.mjs` running against a built bundle and cannot import TypeScript — the same
+technique `describeError.test.ts` uses to read the four sentences out of
+`client.ts` rather than retyping them.
+
+Compared as **patterns**, because a declared path carries `:pieceId` while the
+audit visits a real fixture id. A query string is dropped: `?view=original` is
+a second state of a route already covered, not a route of its own — and
+treating it as one would demand an entry for every query a screen accepts.
+
+### Verified
+
+| Mutation | Result |
+|---|---|
+| a `TeacherReport: 'teachers/:teacherId/report'` added to `linking.ts` | named, exit **1** |
+| `['Warmup', 'warmup']` removed from `ROUTES` | `/warmup` named |
+| both restored | PASS |
+
+The second is the one that matters more: it proves the check is comparing the
+two lists rather than just counting them.
+
+---
+
+## 2026-09-03 — "Three things still need a person" was six, and the count was in prose
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. One tool, two corrected
+documents; no product code changed. CI still cannot allocate a runner.
+
+`mobile/README.md` and `CLAUDE.md` both said three things stand between this
+repository and an App Store submission, and both named the same three: `eas
+init`, an Apple account, a store listing. There are **six**, and the three they
+omitted are precisely the ones with no account behind them — nobody was ever
+going to be reminded by a login page:
+
+| Omitted | Why it blocks |
+|---|---|
+| Brand assets | All six are still the Expo starter's blue chevron. `check-brand-assets.py` has said so since this morning and nothing connected it to the submission. |
+| `OWNER` in `lib/legal.ts` | `entity`, `contact` and `jurisdiction` are all null, deliberately. So the shipped privacy policy is **published by nobody and names no address** — `LegalScreen` prints each line only when its field is set, so the gap renders as silence. |
+| A policy at a public URL | App Store Connect asks for a **URL**, not a screen. The text exists, as data rather than markup *specifically so it can be published without retyping*, and nothing has published it. |
+
+Neither sentence was wrong when it was written. A count in prose is a claim,
+and it goes stale the first time the world moves — which is the same failure
+this repository has now found in `MeasureConcern` ("four" that named three),
+in the timeline parity fixture, and in the multi-page repeat `xfail` whose
+reason for postponing had quietly become false.
+
+### `tools/check-store-readiness.py`
+
+So the answer is not a better list, it is not having a list. The tool reads
+`app.json`, `src/lib/legal.ts` and the brand-asset hashes **live**, so an item
+stops being reported the moment it is done and nobody edits this tool. The
+brand count is *delegated* to `check-brand-assets.py` rather than
+reimplemented — two copies of a hash list is how one of them goes wrong.
+
+The two that cannot be measured from a checkout — an Apple account, a store
+listing — are stated as unmeasurable and say why, rather than being silently
+absent.
+
+**A report, not a gate**, and deliberately not wired into CI, for the reason
+`check-brand-assets.py` gives about itself: these are the owner's, they cannot
+be done in a session, and a check that is red from now until launch is one
+people learn to skip. It exits 1 while anything measurable is outstanding so it
+can still be used as a release gate by whoever runs the submission, and **2**
+when it cannot read a source — because "0 blockers" out of a broken parse is
+the one answer it must never give.
+
+`expo.extra.privacyPolicyUrl` is where the address goes once the policy is
+live. Nothing reads it yet; naming the place is what lets the check stop
+firing.
+
+### Verified
+
+Five mutations, each restored and `git status` checked:
+
+| Mutation | Result |
+|---|---|
+| `extra.eas.projectId` and `extra.privacyPolicyUrl` set | both tick; 2 of 4 outstanding |
+| all three `OWNER` fields filled | that item ticks; 3 of 4 outstanding |
+| one asset leaves `check-brand-assets.py`'s shipped list | the delegated count goes 6 → 5 |
+| `OWNER` missing a field | exit **2**, naming the field it expected |
+| `app.json` unparseable | exit **2**, naming the parse error |
+
+Reported today: **4 of 4 measurable items outstanding**, exit 1.
+
+---
+
+## 2026-09-03 — The shipping app had no linter, and was carrying disable comments for it
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. CI still cannot allocate a
+runner.
+
+Found by the correction in the entry below: I claimed "lint clean" on a tree
+with no `eslint` dependency, no config, no script and nothing in CI. Six files
+in `mobile/src` carried `eslint-disable` directives — four of them suppressing
+`react-hooks/exhaustive-deps` — which is a comment claiming a judgement nobody
+had made. `frontend/`, the legacy tree that is **not** the product, is the one
+that had the config, and CI does not run it there either.
+
+Rules and the three scoped exceptions are argued in `DECISIONS.md`. What the
+first pass actually found, after the config stopped reporting things that are
+not defects:
+
+### 17 pieces of dead code
+
+Eight screens carried `const navigation = useNavigation()` assigned and never
+used — leftovers from when `useGoBack` replaced it — plus the imports behind
+them, three unused component/token imports, an unused `catch (error)` binding,
+and `accidentalRoom` in `engrave.ts`: a private function nothing calls.
+
+That last one is the interesting one. `tools/check-dead-exports.py`, added an
+hour earlier, cannot see it — it is not exported. The two checks are
+complementary and neither subsumes the other: mine finds a **public** surface
+with no caller, the linter finds a **private** one.
+
+### Five hook dependency arrays
+
+None was a live bug, and all five were one refactor from being one. Four are
+fixed by making the dependency the value the code actually uses rather than the
+object it hangs off:
+
+- `RecordScreen` depended on `metronome.beat?.index` while reading
+  `metronome.beat`; `beatIndex` is hoisted out and the effect reads that.
+- `TodayScreen`'s `checkPendingAnalysis` depended on
+  `pendingAnalysis?.analysisId` while closing over `pendingAnalysis`; it takes
+  `pendingAnalysisId`, so re-reading the stored row into a new object no longer
+  rebuilds the callback and re-runs the effect below it.
+- `ScannerScreen`'s permission effect now derives `cameraGranted` and
+  `canAskForCamera` as booleans. Depending on `permission` itself would
+  re-evaluate on a fresh object saying the same thing — and on any platform
+  that answers a denial with `canAskAgain` still true, that is a permission
+  dialog in a loop. `requestPermission` is named too: it is
+  `useCallback`-stable (expo-modules-core keys it on a module-level method), so
+  it costs nothing and stops the array going stale if that changes.
+
+Two are genuine mount-only effects and now carry a **live** suppression with
+its reason: `ScannerScreen`'s session reset (re-running on a params change
+would reset a scan mid-flight — the exact failure its own paragraph is about)
+and `TranscribeScreen`'s upload (`pages` is a new array every render, so naming
+it turns one upload into an unbounded number).
+
+### Three suppressions that were suppressing nothing
+
+`bootWatchdog.test.ts` silenced `no-new-func`, which is not enabled.
+`useMetronome.ts` silenced `exhaustive-deps` for `mode` — and the effect reads
+`modeRef.current`, so the linter agrees nothing is missing. The reasoning was
+right and the mechanism had changed underneath it; the comment now names the
+ref, which is the thing doing the work.
+
+### `no-console`
+
+One in shipped code besides `App.tsx`'s deliberate boot line:
+`ErrorBoundary.componentDidCatch`. Kept, with a disable and a reason. `CLAUDE.md`
+§1 is about *debug* output; a render that threw has already put a fallback in
+front of the musician, and the stack is the only trace of why.
+
+### Zero `rules-of-hooks` violations
+
+The rule the install is for. A hook below an early return is React error #310,
+this project has shipped one, and it compiles, typechecks, passes its tests and
+shows a white screen. The tree being clean on it is a fact nobody could state
+before today.
+
+### Verified
+
+`npm run lint` exit 0, `tsc` clean, **1425 tests across 127 files**. Licences
+regenerated (four MIT entries added; `licences.test.ts` holds both directions
+against `package.json`). Web and iOS bundles export. Walk **PASS, 29 checks**;
+a11y audit **PASS**. `.env` set aside for the fixtures build and restored with
+`diff -q` identical. `npm i` pruned the `--no-save` Playwright install again —
+reinstalled before the walk.
+
+Wired into CI as a step in the mobile job, after typecheck.
+
+---
+
+## 2026-09-03 — The reconciler that stated the losing rule, and a standing check for the class
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. CI still cannot allocate a
+runner.
+
+**A correction first.** The commit below this one says "tsc and lint clean".
+The lint half is false: `mobile/` has **no linter at all** — no `eslint`
+dependency, no config, no `lint` script — and `npm run -s lint` printed its
+error to a stream I was not reading while I chained past its exit code. `tsc`
+was clean, the tests and both bundles are as reported. The linter gap is a real
+finding in its own right and is the next thing I am looking at; six files in
+`mobile/src` carry `eslint-disable` directives for a linter that does not run,
+four of them suppressing `react-hooks/exhaustive-deps`.
+
+### `instrumentInUse` is deleted
+
+Earlier today I found it dead — the only export of 499 that nothing anywhere
+referenced — and deliberately **left it**, on the grounds that it was "the
+reconciler both halves need, and deleting it would remove the evidence". Then I
+shipped `preferences.adoptAccountInstrument`, which *is* the reconciler, and the
+grounds went away.
+
+What is left is worse than dead code. The two functions state **opposite
+rules** about the same question:
+
+| | rule |
+|---|---|
+| `instrumentInUse` (dead) | the account always wins |
+| `adoptAccountInstrument` (running) | the account seeds a device that has never stored one, and never overrides one |
+
+The second is the safe one, and its own docstring says why: Profile writes the
+device and not the account, so adopting on every load reverts a musician's
+choice from a value the server was never told about. A dead function stating
+the losing rule is not evidence, it is a trap — the next session wiring it up
+reintroduces exactly that bug. The evidence lives in `CLAUDE.md` and in this
+log, which is where it belongs.
+
+### `tools/check-dead-exports.py`
+
+Built, documented, never wired up is this project's most-repeated defect, and
+it is invisible by construction: it compiles, it is tested, it reads as
+finished work, and the only symptom is a feature quietly not existing. Three
+of them are on the record — `describeFixtureReason`, the corrections endpoint,
+and `instrumentInUse`. `test_client_reachability.py` was the check that came
+out of the second, and it holds **the server side only**.
+
+This is the app's half. A named export that appears nowhere else in the corpus
+at all — not a screen, not a test, not a tool. Measured: **511 exports, zero
+dead** after the deletion.
+
+Three decisions in it worth keeping:
+
+- **No allowlist.** An exclusion list is the thing that rots — this repository
+  already has `excluded_on_purpose` listing repeats long after playback started
+  expanding them — and the remedy for an export nothing uses is to stop
+  exporting it, not to write its name down.
+- **Tools and build scripts are searched for references, never for
+  definitions.** A bench importing from `src` is a real use, and missing one is
+  the single kind of false alarm this check must not produce.
+- **A floor of 300 exports.** A broken glob otherwise reports a tidy tree. Set
+  to fail loudly: pointed at `mobile/srcc` it exits 2 with the reason, rather
+  than 0 with a lie.
+
+What it cannot see, stated in the docstring: a name common enough to appear in
+unrelated prose is matched by that prose and passes. Its failures are false
+*negatives*, which is the direction a check has to fail in if people are going
+to keep running it.
+
+Wired into the CI job that already runs `check-log-entry.py` and
+`check-brand-assets.py` — Python and a checkout, nothing else.
+
+### Verified
+
+Ran clean (511, exit 0). A new `export function neverCalledAnywhere` in
+`lib/tempo.ts` → exit 1 naming it. The same export **with only a test importing
+it** → exit 0, which is the case that must not fail. `SOURCES` pointed at
+`mobile/srcc` → exit 2 with the vacuity message. Each restored; `git status`
+checked.
+
+`tsc` clean, **1425 mobile tests across 127 files**.
+
+---
+
+## 2026-09-03 — The retry policy that stands between a musician and a take they never recorded
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. A move and a test; no
+behaviour changed. CI still cannot allocate a runner.
+
+Same shape as the entry below it, one tree over. `App.tsx` held the whole
+React Query policy as a `const` — `retryQuery`, `STALE_TIME_MS`,
+`refetchOnWindowFocus: false`, and `mutations: { retry: false }` — each with a
+paragraph of reasoning above it and **nothing holding any of it**.
+
+`CLAUDE.md` is explicit that a rule inside a `.tsx` is a rule nothing checks,
+and says so about the capture path, where eight of nine findings were exactly
+that. This is the same thing in the data layer. It is now
+`mobile/src/data/queryClient.ts`, and `App.tsx` calls `createQueryClient()`.
+
+### Why these two in particular
+
+`mutations: { retry: false }` is the expensive one. React Query's default is
+one retry for **mutations as well as queries**, and its own comment says what
+that costs: a POST that timed out may have been received and run with only its
+answer lost, so asking again submits a second take, or creates a second piece,
+and the musician finds a duplicate they never made. A one-word regression there
+is invisible in review and produces data a musician has to go and delete.
+
+`retryQuery` is the one they would feel first. `send` gives a repeatable
+request two 45s attempts before it reports anything, so React Query's default
+retry made a dead connection **three minutes of skeleton** before an error
+appeared. Nobody waits three minutes.
+
+Neither is reachable by anything else in this repository. The walk cannot stage
+a POST that times out after the server ran it, and a screenshot of a skeleton
+looks identical at one second and at three minutes.
+
+### How it checks
+
+The query side is **driven**, not read: `fetchQuery` with a `queryFn` that
+throws, counting attempts — one for an `ApiError`, two for a `TypeError` — so
+the assertion lands on what the retryer does with the policy rather than on the
+value sitting in a config object.
+
+The mutation side is asserted as configuration. There is no React testing
+library here (`DECISIONS.md`, 2026-08-24) and a mutation needs an observer;
+`false` also has nothing between it and the library, so the two are equivalent
+in a way `retry: retryQuery` is not.
+
+`createQueryClient` is a factory rather than a singleton so each test gets its
+own cache — and there is a test for that too, because a singleton would make
+these tests start affecting one another in a way that reads as flakiness rather
+than as the cause.
+
+### Mutations run
+
+Six, each restored, `git status` checked clean after:
+
+| Mutation | Result |
+|---|---|
+| `mutations.retry: false` → `1` | 1 failed |
+| `retryQuery` drops the `ApiError` branch | 3 failed |
+| `STALE_TIME_MS` → `0` (React Query's default) | 1 failed |
+| `refetchOnWindowFocus` → `true` | 1 failed |
+| `failureCount < 1` → `< 3` | 2 failed |
+| `createQueryClient` returns a singleton | 1 failed |
+
+### Verified
+
+`tsc` clean, lint clean, **1425 mobile tests across 127 files** (was 1417).
+Web bundle and iOS Hermes bundle both export. Walk **PASS, 29 checks**; a11y
+audit **PASS**. `.env` set aside for the fixtures build and restored with
+`diff -q` identical.
+
+---
+
+## 2026-09-03 — The three timeouts that stop a Supabase incident taking the API down were held by nothing
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Tests only; no product
+code changed. CI still cannot allocate a runner.
+
+`CLAUDE.md` states it as settled: *"Every blocking call gets a timeout, because
+a thread is now the thing it parks."* The timeouts are real —
+`_DB_TIMEOUT_SECONDS = 10` and `_STORAGE_TIMEOUT_SECONDS = 15` in
+`backend/app/db.py`, `_JWKS_TIMEOUT_SECONDS = 5` in `backend/app/auth.py`.
+**Nothing referenced any of them.** Grepped the whole tree for each constant:
+one definition, one use, no test. A refactor that dropped `_options()` from a
+factory, or added a fourth factory without it, restored the library's
+120-second default and passed all 1927 tests.
+
+What that costs is written in `db.py`'s own docstring, so I did not have to
+guess at it: *"a Supabase incident does not degrade this API, it removes it:
+forty parked threads and the server stops answering anything, health check
+included."* The app blocks every screen on that health check while it wakes the
+host. The JWKS fetch is the same hazard better placed to do harm — it runs
+inside the auth dependency, in front of **every** authenticated request rather
+than one handler.
+
+This is the same shape as the four other findings this session: a sentence in
+`CLAUDE.md` describing behaviour that is true today and guarded by nobody.
+`test_no_blocking_handlers.py` holds the first half of that change — handlers
+on the threadpool rather than the event loop. `test_blocking_timeouts.py` holds
+the second.
+
+### How it checks
+
+By **calling** the factories, not by reading the source. `create_client` and
+`PyJWKClient` are monkeypatched to record what they were constructed with, so
+the assertion is on the options object that reaches the library — which is the
+thing that matters and the thing a source-grep cannot see through `_options()`.
+
+The Supabase side **enumerates** the factories out of the module (`get_*` and
+`*_client`) rather than listing them, so a factory added next month is covered
+without anyone remembering this file exists. That is the mutation that worried
+me most, because it is the one nobody would think to look for.
+
+Three supporting tests, each guarding an assumption the main one rests on:
+`test_there_are_factories_to_check` (the file passing because it found nothing
+to check is the classic vacuous pass); `test_the_timeouts_are_named_constants_
+rather_than_literals`, because both modules carry paragraphs on *why* these
+numbers are what they are and an inlined literal leaves that reasoning pointing
+at nothing; and `test_a_factory_with_no_settings_builds_nothing`, which pins
+the other half of the parametrised test's setup — those tests supply
+real-looking settings so the factory runs, and if a factory ever returned a
+client without them, the suite would be exercising a path production never
+takes.
+
+`_clear_all_caches()` clears every factory's `lru_cache`, not just the one
+named in the parameter. `get_client` delegates to `get_anon_client`, so
+clearing one leaves a cached client behind and the factory never reaches
+`create_client` at all — which reads as "no options" or "built nothing"
+depending on the test, and in both cases for the wrong reason. My first version
+had that bug and passed only because of the order pytest happened to run the
+parameters in.
+
+### Mutations run
+
+Five, each restored afterwards and `git diff --stat` checked empty:
+
+| Mutation | Result |
+|---|---|
+| `get_anon_client` drops `_options()` | 2 failed (`get_anon_client`, `get_client`) |
+| `_options()` drops `postgrest_client_timeout` | 3 failed |
+| `PyJWKClient` drops `timeout=` | 1 failed (the JWKS test) |
+| a new `get_reporting_client` with no options | 1 failed, on the new factory nobody told the test about |
+| `_DB_TIMEOUT_SECONDS` "tidied" to 120 | 3 failed |
+
+The fourth is the one the enumeration exists for, and the fifth is why the
+bound is `0 < value <= 60` rather than "is a number": the failure mode being
+guarded against is a timeout quietly becoming the default, and a default is a
+number.
+
+**Backend: 1934 passed, 2 xfailed** (was 1927 + 2).
+
+---
+
+## 2026-09-03 — The instrument now follows you to a second device
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. The half of the entry
+below that turned out **not** to need a decision. CI still cannot allocate a
+runner.
+
+I filed that bug as two coupled changes needing an owner's call, and on
+re-reading it only one of them does. The coupling I described — seed the cache
+and a local change gets reverted by a stale account — only exists if the
+seeding overwrites something. **Seed only a device that has never stored an
+instrument and there is nothing to revert**, because a device with one has it
+because somebody chose it there.
+
+`preferences.adoptAccountInstrument(fromAccount)` does exactly that: adopts
+when nothing is stored, otherwise nothing. Idempotent, so the caller re-runs it
+on every change of the account value. `SignedInApp` calls it where the account
+arrives — **above the early returns**, because a hook below one is React error
+#310, which this project shipped once and `EDIT_LOG` records.
+
+A cellist reinstalling, or signing in on a second phone, now gets cello
+warmups and — the part that matters — cello onset thresholds, instead of being
+analysed as a violinist.
+
+### The flag, and why it exists
+
+`DEFAULTS.instrument` is `violin`, so *"the stored value is violin"* and
+*"nobody has ever said"* are indistinguishable from `current` alone — and
+telling them apart is the whole job. `instrumentIsStored` is set by hydration
+when storage held a valid instrument, and by `setInstrument` when someone
+chooses one.
+
+Writing the tests found a fragility in my own first version: I set the flag
+*after* `hydratePreferences`'s early return, so on a genuinely empty store —
+the actual fresh-install path — its value came from whatever it happened to be,
+which was right only because the initialiser is `false`. Cleared before the
+guard now, and `forgets a previous device's stored instrument when storage is
+cleared` is the test that fails without it. The shared `beforeEach` writes
+`'{}'` so hydration runs its whole body, which is why the empty-store path
+needed a case of its own.
+
+### Mutations
+
+| mutation | caught by |
+|---|---|
+| adopt regardless of a stored choice | **five** assertions |
+| flag not cleared on the fresh-install early return | the case added after spotting it |
+| `setInstrument` no longer marks a deliberate choice | "stops adopting once someone sets one by hand" |
+| an unknown instrument accepted | "refuses a value the app has no name for" |
+
+### Still not fixed, and still a decision
+
+Profile's control writes only the device, so the account keeps the onboarding
+answer for ever. Making it write the account means choosing what happens
+offline — the two options are in the entry below and in `CLAUDE.md`. Unchanged.
+
+### Verified
+
+Mobile **1417 tests / 127 files** green (1408 before), `tsc` clean, web build
+clean, walk PASS, a11y sweep PASS at 375pt. `.env` restored `diff -q` identical.
+
+---
+
+## 2026-09-03 — The instrument you chose does not follow you to a second device
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. A found bug, a corrected
+claim in `CLAUDE.md`, and a fix deliberately **not** made. CI still cannot
+allocate a runner.
+
+### How it was found
+
+The navigation-reachability check has a code twin worth running: exports
+nothing imports. **One of 499** — `instrumentInUse` in `useProfile.ts`, which
+`CLAUDE.md` names as the mechanism that makes a null account instrument safe:
+
+> `instrumentInUse()` falls back to the device preference, which always has a
+> value, so no screen needs a "no instrument" branch.
+
+No screen needs that branch, but not for the stated reason. **No screen reads
+the account's instrument at all.**
+
+### What the two stores actually do
+
+| | writes account | writes device |
+|---|---|---|
+| `OnboardingScreen` → `useUpdateProfile` | yes | yes — mirrored on success |
+| Profile's instrument control | **no** | yes |
+| a fresh install | — | defaults to `violin` |
+
+Everything that *acts* on an instrument reads `preferences`: `warmupFor`,
+`INSTRUMENT_LABELS`, the Profile control, and `submitTake`, which is what the
+server turns into `analyze(double_bass=...)`. The account value is written once
+at onboarding and read by nothing but onboarding's own prefill.
+
+So: **a cellist who reinstalls, or signs in on a second device, is a violinist**
+until they open Profile — warmups, labels, and the onset thresholds the
+analysis uses. That last one is the harm `CLAUDE.md` says storing the
+instrument exists to prevent.
+
+I had this wrong twice on the way and both corrections matter. First I
+concluded onboarding never seeds the device — `useUpdateProfile` does mirror
+it, so the *first* device is fine. Then I assumed the Profile control saved to
+the account — it calls `preferences.setInstrument` alone.
+
+### Why it is not fixed here
+
+The two halves are **coupled**: seed the cache from the account without first
+making Profile write the account, and a musician's local change is reverted by
+a stale server value on next launch. Fixing Profile first is safe on its own —
+but the shape of that fix is a product decision, not a refactor:
+
+* Follow `changeTrainingConsent` exactly (await the mutation, show the error)
+  and the control **stops working offline**, and stops working in a fixtures
+  build. Consistent with every other write in the app, and a regression for
+  someone on a train.
+* Write locally *and* fire the account update, and offline keeps working — but
+  the two can now diverge silently, which is precisely what the seed step then
+  has to arbitrate.
+
+Which side wins a conflict, and whether a preference may be edited offline, are
+the owner's. Recorded in `CLAUDE.md` with the table above so the next session
+does not have to re-derive it — and the false sentence, which is what would
+have stopped them looking, is gone.
+
+### Verified
+
+No code changed. `instrumentInUse` left in place: it is the reconciler both
+halves need, and deleting it would remove the evidence.
+
+---
+
+## 2026-09-03 — A stave that never draws wider than its box, now checked
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. One test over the last
+untested module in `lib/notation/`. CI still cannot allocate a runner.
+
+`layOutStave` fits an engraving to a width in **one corrective pass**, and its
+comment says why that is allowed to work:
+
+> Every geometry constant here is multiplied by the scale and nothing else, so
+> the engraved width is linear in it: measuring once and dividing gives the
+> scale that fits, rather than converging on it.
+
+**That is a claim about `engrave`, not about `layOutStave`** — and it is the
+kind that stops being true quietly. One unscaled constant added down there
+makes width *affine* rather than linear, `fitWidth / width` overshoots, and the
+single pass lands past the edge. Nothing here would notice: the engraving is
+still correct music, drawn a few points too wide, and the only symptom is a
+stave clipped by its container at a width nobody screenshots.
+
+Measured before writing anything: across 4/8/16/32 notes into 120/200/320/500pt,
+**every case needing a shrink lands on `fitWidth` to within a hundredth of a
+point.** The claim is true. `staveLayout.test.ts` is what keeps it true.
+
+Three mutations, and the layering did what it was built for:
+
+| mutation | caught by |
+|---|---|
+| a 7pt **unscaled** pad on the engraved width | *three* assertions — the symptom (drew wider than the box), the mechanism (did not land in one pass), and the cause (width no longer linear in scale) |
+| shrink by a safe 10% margin instead of landing | "lands on the width in one pass rather than merely under it" |
+| fitting allowed to scale **up** | "only ever shrinks" |
+
+The margin case is the one a weaker test would miss: shrinking by 10% satisfies
+"never wider than the box" perfectly and wastes a tenth of the screen on every
+score.
+
+A vacuity guard sits above them — at least half the cases must actually shrink,
+or "never exceeds" would hold for a function that did no fitting at all.
+
+### Also checked, and correct as it stands
+
+`sync_events` is written by **nothing**: created in migration 001, given RLS
+policies in 002, read by the account export, and never inserted. That is not
+the "endpoint with no client" shape — it is the audit trail for Batch 10's
+offline sync, which is not built, and `EDIT_LOG` records the same deliberate
+choice for `assignments` in Batch 1. Left alone.
+
+### Verified
+
+Mobile **1408 tests / 127 files** green (1402 before), `tsc` clean.
+
+---
+
+## 2026-09-03 — What the spill check cannot see: text that collides without leaving
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Measurement only, no code
+changed. CI still cannot allocate a runner.
+
+The corrected 2x screenshot showed the four tab labels sitting flush against
+one another. The spill check reports nothing, and correctly — they are *inside*
+the screen. Overlap is a different failure from overflow, and nothing here
+looks for it.
+
+Gaps between the four labels at 375pt:
+
+| scale | gaps | |
+|---|---|---|
+| 1x | 48, 53, 51 | comfortable |
+| 1.5x | 33, 25, 29 | fine |
+| 2x | 13, 2, 7 | tight but legible |
+| 3x | **−27, −43, −35** | **overlapping** |
+
+Vertically it holds. `TAB_BAR_ROW_HEIGHT` is computed from **unscaled** tokens,
+so the bar stays 75pt at every scale — but the slack around the icon absorbs
+the growth: the label's bottom edge sits −17 → −13 → −8 → **0** against the
+bar's as the text doubles and trebles. At 3x it is exactly flush, one step from
+clipping.
+
+So: **fine at 2x, broken at 3x**, which is AX5 and genuinely reachable. The
+conventional answer is what iOS does with its own tab bars — drop to icons only
+at accessibility sizes — and that is a §2 decision, alongside the long-title
+one two entries up. Both are the same question: what this app does at
+accessibility text sizes. Recorded rather than guessed at.
+
+**No check added**, deliberately. The audit runs at 2x, where this passes, so a
+collision check would sit there never firing; and one that ran at 3x would fail
+CI over a decision nobody has made yet. The measurement is the deliverable.
+
+Also confirmed while here: the tab bar is a **custom** `BottomTabBar`, so React
+Navigation's own large-text handling is not in play — whatever is done here is
+this app's to do.
+
+### Verified
+
+Tree clean apart from these notes. a11y sweep PASS at 375pt, walk PASS.
+
+---
+
+## 2026-09-03 — The large-text check was inventing bugs the app does not have
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. A fidelity fix to the check
+added earlier today, and one blind spot closed by measurement. CI still cannot
+allocate a runner.
+
+### It scaled `font-size` and left `line-height` alone
+
+Which piles glyphs on top of one another. The entry above records me reading a
+screenshot taken through it and having to say *"the overlapping rows and tab
+labels are my simulation, not the app"* — a caveat that should have been a fix.
+
+Checked against React Native's own iOS source rather than assumed.
+`RCTTextAttributes.mm:141`:
+
+```objc
+CGFloat lineHeight = _lineHeight * self.effectiveFontSizeMultiplier;
+```
+
+So iOS scales `lineHeight` by exactly the same multiplier as `fontSize`, and a
+fixed `lineHeight: 42` in the design tokens becomes 84 at 2x with the ratio
+intact. The check now does the same. Horizontal spill is unaffected —
+line-height does not change width — so all **23 routes still clean**, and the
+screenshots are now worth looking at.
+
+Re-shot Library at 2x through the corrected simulation: "Library" on one line
+with "Add piece" wrapped below it (the `flexWrap` fallback doing exactly what
+its comment says), the search field inside the screen (this morning's
+`minWidth: 0`), rows legible and ellipsised. **The app handles 2x text.** The
+bugs in the previous screenshot were all mine.
+
+### One blind spot closed, one narrowed
+
+The tool listed two things it could not see. `allowFontScaling={false}` is now
+**measured rather than guessed**: neither it nor `maxFontSizeMultiplier`
+appears anywhere in `src/`, so every `Text` in this app scales and the check is
+not over-reporting on text that would stay put. What remains is font metrics,
+which a browser genuinely cannot reproduce — so the tool still calls itself a
+floor rather than a simulation, but for one reason instead of three.
+
+### Verified
+
+a11y sweep PASS at 375pt across 23 routes, walk PASS. No app code changed.
+
+---
+
+## 2026-09-03 — A fix that worked, and was the wrong thing to ship
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. **No code changed.** A
+measured finding and a rejected fix, recorded so the next session does not
+repeat the experiment. CI still cannot allocate a runner.
+
+### The finding
+
+Every sweep so far has run against fixture titles. Giving one fixture a real
+unabbreviated title — *"Sonata No. 1 in G minor for unaccompanied violin, BWV
+1001 — Adagio, Fuga, Siciliana, Presto"* — the a11y audit reported **Piece
+detail: 119pt off the right edge at 2x text**.
+
+`PageHeader.title` is `flex: 1`, and on the web build a flex item cannot shrink
+below `min-width: auto` — its **min-content** width, which `overflow-wrap:
+break-word` does not reduce. Title right edge against a 375pt screen:
+
+| | as shipped | with `minWidth: 0` |
+|---|---|---|
+| 1x | 295 | 295 |
+| 1.5x | 373 | 295 |
+| 2x | 494 | 295 |
+| 3x | 734 | 295 |
+
+The fix also kept the trailing action in place: unshrunk, `flexWrap` was
+dropping the options button below the title and over to the left (right edge
+355 → 64) from 1.5x on — so the wrap had been papering over this rather than
+firing for the case it was written for.
+
+### Why it was reverted anyway
+
+Screenshotted at 2x rather than trusted: Library's header rendered **"Lib /
+rar / y"**. `minWidth: 0` does not just fix long titles, it authorises mid-word
+breaking on *every* title whose box is narrower than its longest word.
+`screenTitle` is 36px, so at 2x "Library" has a min-content width of 229pt
+against a ~175pt box — and a one-word title broken across three lines is worse,
+on a far more common screen, than a ninety-character title running off the
+edge.
+
+Measuring min-content settled what the constraint actually is: at 2x the single
+word **"unaccompanied" is 481pt**, wider than the entire 335pt content column.
+So no flex rule fits it. The only answers are breaking the word, shrinking the
+type, or truncating — and all three are look and feel, which §2 reserves.
+Reverted; recorded in CLAUDE.md; the decision is the owner's.
+
+**The `SearchField` fix from earlier is not the same case** and stands: an
+`<input>` scrolls its text rather than wrapping it, so `minWidth: 0` there has
+no such side effect.
+
+### On the screenshot
+
+The overlapping rows and tab labels in it are **my simulation, not the app**:
+the check multiplies `font-size` and leaves `line-height` alone, while real
+Dynamic Type scales both. The tool already says it is a floor rather than a
+simulation; this is what that sentence looks like in practice.
+
+### Also
+
+The worker restarted mid-experiment earlier, and both times the tree was
+restored and verified before anything else — `git checkout` on `fixtures.ts`,
+`diff -q` on `.env`. Two runs were lost to path slips (`tools/` resolved from
+`mobile/`, and a killed static server reported as an audit failure); absolute
+paths from here.
+
+### Verified
+
+Tree clean, nothing committed but these notes. a11y sweep PASS at 375pt, walk
+PASS, `.env` restored `diff -q` identical.
+
+---
+
+## 2026-09-03 — The sweep ran at a width no phone is smallest at
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. One line, measured across
+three widths. Nothing found to fix. CI still cannot allocate a runner.
+
+`audit-a11y.mjs` rendered every route at **390pt** — an iPhone 14/15. The
+narrowest iPhone this app can be installed on is **375pt**, and every check
+that depends on width was therefore being run with 15pt of slack it does not
+get on a real phone. The large-text check added an hour ago depends on width
+entirely.
+
+Measured across 19 routes at 2x text before changing anything:
+
+| width | what it is | result |
+|---|---|---|
+| 375 | iPhone SE 3rd gen / 13 mini — the narrowest supported | **clean** |
+| 360 | a common Android width | **clean** |
+| 320 | iPhone 5 / SE 1st gen | 4 routes spill, 2–34pt |
+
+The 320 spills are **not** worth chasing and the tool says so: they are single
+words wider than the screen — "connection" in a doubled page title — which no
+layout can absorb. Fixing them needs a decision about shrinking or breaking a
+word, which is the owner's under §2, and current iOS does not run on a 320pt
+phone at all. Holding the app to a width no supported device has would buy
+nothing and fail forever.
+
+So: viewport 375×812. All **23 routes clean**, including the large-text check,
+which is now stricter for free.
+
+### The restart, and what it nearly cost
+
+The worker restarted mid-measurement, with `fixtures.ts` carrying a
+deliberately lengthened piece title and `.env` moved aside. Both restored —
+`git checkout` on the fixture, `diff -q` identical on `.env` — before anything
+else. The long-title experiment itself never completed and is **not** recorded
+as a result: the audit run that appeared to fail afterwards was the static
+server having been killed with the worker, not a finding.
+
+### Verified
+
+Mobile **1402 tests / 126 files** green, `tsc` clean, web build clean, walk
+PASS, a11y sweep PASS at 375pt.
+
+---
+
+## 2026-09-03 — The search field walked off the screen at large text
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. One real defect on a
+shipping surface, found by adding the check that was missing. CI still cannot
+allocate a runner.
+
+### What was missing
+
+`audit-a11y.mjs` measured three floors — accessible names, 44pt targets, 4.5:1
+contrast. **Nothing checked large text**, and `PageHeader`'s own comment
+records a title that ran *218pt off a 390pt screen at 2x* — found by hand,
+fixed by hand, and unwatched ever since. Dynamic Type is the accessibility
+setting people actually turn on, and a musician reading a phone on a stand is
+exactly who turns it on.
+
+### What it found
+
+`SearchField`'s input has `flex: 1`, which on native is enough. On the web
+build it is not: react-native-web renders `TextInput` as a DOM `<input>`, and a
+flex item defaults to `min-width: auto` — for a replaced element, its
+*intrinsic* width. The field grows with the text and cannot be squeezed back.
+
+Measured in Chromium at a 390px viewport, right edge against a 390px screen:
+
+| text scale | right edge | off-screen |
+|---|---|---|
+| 1x | 343 | — |
+| 1.3x | 372 | — |
+| **1.5x** | **422** | **32pt** |
+| 2x | 554 | 164pt |
+| 3x | 797 | 407pt |
+
+`minWidth: 0` pins it at 343 at **every** scale; the text scrolls inside the
+field, which is what an input is for. The same one line is already on seven
+flex rows elsewhere in this app — `SearchField` is the one that was missed.
+
+**Web-only.** Yoga has no `min-width: auto` rule, so no phone would ever have
+shown it. The web build is a shipping surface all the same —
+`webInstall.test.ts` pins the manifest for exactly that reason.
+
+### Two false positives, and the rule that came out of them
+
+The first run reported six findings. Four were in the bar editor and two were
+photographed pages on "Original pages", all sitting past the right edge inside
+a **horizontal `ScrollView`** — which is what a sideways scroller is for.
+Confirmed in source (`MeasureEditScreen:394`, `PieceScoreScreen:807`) rather
+than assumed.
+
+So the check skips anything under an ancestor that scrolls sideways — and the
+test is `overflow-x: auto|scroll` **and** `scrollWidth > clientWidth`, not the
+style alone. An `overflow-x: auto` container that does not actually overflow is
+not a scroller, and suppressing under it would hide a real spill in whatever it
+happens to wrap.
+
+Vertical overflow is deliberately not measured: screens scroll, and growing
+downward is what they are supposed to do. Sideways is the failure, because
+there is no horizontal scroll and whatever is out there cannot be read at all.
+
+**What this can and cannot see** is written into the tool. It multiplies
+computed `font-size` in the browser, which catches layout that cannot absorb
+larger text — fixed widths, flex items that will not shrink. It cannot see
+anything iOS does that a browser does not: `allowFontScaling={false}` is
+invisible to it, and so is a native line-height rule. A floor, not a
+simulation. 2x rather than the 3.1x an iPhone can reach, because the largest
+accessibility sizes reflow text this app has not been designed against, and a
+check that fails on every screen is one nobody runs.
+
+### Verified
+
+Mutation: with `minWidth: 0` removed and the app rebuilt, the audit reports
+`Library — AT 2x TEXT: input 164pt off the right edge` and exits non-zero.
+Restored, all **23 routes clean**.
+
+Mobile **1402 tests / 126 files** green, `tsc` clean, web build clean, walk
+PASS. `.env` moved aside for the fixtures build and restored `diff -q`
+identical.
+
+---
+
+## 2026-09-03 — Three lists of four instruments, and a comment that claimed to be the only one
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. One guard, one corrected
+claim, and four areas checked and found sound. No shipped behaviour changed.
+CI still cannot allocate a runner.
+
+### The claim
+
+`components/profile/InstrumentChoice.tsx`:
+
+> "Double bass" in full: a bassist does not call it "Bass", and **this is the
+> one control where the space exists** to say so.
+
+`screens/profile/ProfileScreen.tsx` has a second instrument control, and it
+says **"Bass"** — with its own reasoning beside it:
+
+> "Bass" rather than "Double bass" in the control: four segments across a phone
+> leave no room for the longer word … The full name is used everywhere it fits.
+
+Both are right, and together they are one coherent rule — full name where it
+fits, short form in the four-across control. What was wrong was the word
+"one", and what was missing was anything holding the rest of it: **three**
+hand-typed lists of the same four values (`INSTRUMENT_LABELS` in `warmup.ts`,
+rendered on Today and the Warmup screen, plus the two controls), none of which
+can see the others.
+
+`lib/instrumentLabels.test.ts` holds all three to the same four values in score
+order, with `DELIBERATELY_SHORTER` naming the single divergence — and failing
+in **both** directions, so a control reworded back to the full name leaves a
+stale entry that fails rather than rots. The same shape as `KNOWN_ECHOES` and
+`NOT_WIRED`, for the same reason.
+
+Four mutations killed, each by the assertion meant to catch it: a relabelled
+viola, a dropped cello, the short form reworded to the full name, and the order
+scrambled out of score order.
+
+`walk-app.mjs` cannot see this class of defect — a label that is merely
+inconsistent renders fine and lands on the right screen.
+
+### Checked and found sound — no change
+
+- **The instrument reaches the analysis.** CLAUDE.md says a double bass needs a
+  lower onset threshold because the note swells in rather than snapping in.
+  Traced the whole way: `submitTake` sends `preferences.current().instrument`
+  → `POST /v1/analyses` accepts `Instrument | None` → `analyses.instrument`
+  → `analysis_runner` passes `double_bass=row.get("instrument") ==
+  Instrument.double_bass.value`. The value is `double_bass` on **both** sides
+  (the label is "Bass"; the value never is), so the flag fires for the musician
+  it exists for.
+- **The free-tier refusal names nothing a musician cannot do.** The backend's
+  own comment says the structured 403 is there so the client can *"show how
+  many are left and offer the upgrade"* — and Batch 8 is not built, so there is
+  no upgrade to offer. `describeReachedAnalysisLimit` says when recording
+  returns and what still works (score playback, metronome, rest cues) and
+  never mentions upgrading. That is the "advice must be followable in this app"
+  rule holding where it would have been easy to break.
+- **`tierLimitOf` keys on `code`, not on the 403.** An ownership check raises
+  403 too, and telling someone they are out of analyses when they have opened
+  somebody else's score would be worse than saying nothing.
+- **No Stripe anywhere in `mobile/`** — no dead upgrade affordance, which is
+  the correct state for an unbuilt batch rather than an omission.
+
+### Verified
+
+Mobile **1402 tests / 126 files** green (1396 before), `tsc` clean, web build
+clean, walk PASS, a11y sweep PASS. `.env` moved aside for the fixtures build
+and restored `diff -q` identical.
+
+---
+
+## 2026-09-03 — A screen with no way in, and a check that measured nothing
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. One new guard over the
+part CLAUDE.md names as untested, plus two claims checked and found sound. CI
+still cannot allocate a runner.
+
+### Every screen has something that opens it — now checked
+
+`linking.ts` gives each screen a URL and `linking.test.ts` holds it to the
+route list. **A URL is how a screen is returned to, not how it is found**: on a
+phone there is no address bar, so a screen added to `RootNavigator` with
+nothing navigating to it is dead code, reachable only by typing a path into the
+web build. `tsc` is perfectly happy with it, and `walk-app.mjs` only drives the
+taps that already exist.
+
+Measured: **19 routes, all reachable.** Nothing to fix — but nothing was
+watching either, and `src/navigationReachability.test.ts` is the static half of
+the navigation gap (`DECISIONS.md`, 2026-08-24: no React Native testing library
+here). It asks only whether anything leads to each screen; where a tap *lands*
+stays the walk's job.
+
+Two mutations killed: a route declared with nothing opening it, and the
+vacuous version below.
+
+### The first version passed while measuring nothing
+
+It read `name:\s*'(\w+)'` across the whole tree — which matches
+`<Stack.Screen name="Foo">`, so **every route was "reached" by its own
+declaration**. Zero unreachable screens, guaranteed, whatever the app did.
+
+`DECLARERS` excludes the three files that name every route by construction
+(`RootNavigator`, `linking.ts`, `types.ts`), and `the corpus excludes the
+navigator` is the assertion that stops it coming back — verified by putting
+`RootNavigator` back and watching it fail.
+
+A second, quieter trap on the way: `import.meta.glob('../**/*.{ts,tsx}')` from
+inside `src/navigation/` **omits that directory's own files**. So the exclusion
+filter was excluding files that were never in the corpus, and `types.ts` could
+not be read at all. Moved to the tree root with `'./**'`, the pattern
+`importPlacement.test.ts` already proves works.
+
+### Checked and found sound — no change
+
+- **Both strict `xfail`s still have true reasons.** CLAUDE.md records one whose
+  reason went stale for a week and hid a live defect, so they are worth
+  re-reading rather than trusting. `test_a_page_that_yields_a_single_note_is_
+  refused` documents two candidate fixes, both measured and both unusable
+  (`crop_systems` counts margin bands and would refuse a page of one bar per
+  system; homr reports no staff count at all), and admits its own fixture is a
+  single-system strip that cannot express the real case. The page-legibility
+  one carries a full measurement series and an explicit note that a later fix
+  must delete it. Neither is stale.
+- **No DOM access escapes a platform guard.** Twelve files mention
+  `document`/`window`/`navigator`; ten are comments or a local named
+  `document`. The two real ones — `modalAccessibility`'s `inert` handling and
+  `RecordScreen`'s `beforeunload` — both sit behind `Platform.OS !== 'web'`
+  early returns, which is consistent with `beforeunload` being absent from the
+  iOS Hermes bundle when it was grepped on 2026-09-03.
+
+### Verified
+
+Mobile **1396 tests / 124 files** green (1392 before), `tsc` clean.
+
+---
+
+## 2026-09-03 — A bar with no readable metre, told it disagreed with the metre
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. One live defect in what a
+musician reads, found by checking a claim in a docstring. CI still cannot
+allocate a runner.
+
+### The claim
+
+`mobile/src/data/types.ts` on `MeasureConcern`:
+
+> Nothing switches on `kind`; `detail` is the sentence, and the server writes
+> it.
+
+`lib/notation/reading.ts:227` does:
+
+```ts
+const others = concerns.filter((c) => c.kind !== 'beats');
+```
+
+That is not a bug — it is the design, and `test_a_new_concern_kind_would_still_
+reach_the_musician` spells it out: the app names exactly one kind, `'beats'`,
+the only wording allowed to promise arithmetic, and prints `detail` verbatim
+for everything else. That is what lets a new server-side check reach the screen
+with no client change.
+
+### The defect it exposed
+
+`_concerns_for` mapped four flags and ended in `else: kind = "beats"`.
+`out_of_line` was added to `validate.py` later and fell through the ladder.
+
+Its own field comment says it is set **only where no metre could be read**. So
+a bar flagged for being far out of step with the rest of its page arrived at
+the app as `"beats"`, and `describeProblemMeasures` printed:
+
+> Bar 7 doesn't add up to the time signature — check it against your copy.
+
+on a page whose time signature the server had just reported it could not read.
+The true sentence — *"7 beats, far out of step with the rest of the page — the
+metre could not be read, so this is measured against the other bars"* — was
+sitting in `detail` the whole time and was discarded.
+
+An unmapped fault is not an unreported one. It is a **misreported** one, and
+`"beats"` is the single worst place to land, because it is the only kind the
+app is licensed to reword.
+
+### The fix, and the shape that stops it recurring
+
+`out_of_line` gets `kind: "adrift"` on both sides of the wire. The ladder is
+extracted to `_concern_kind(finding)` so it can be exercised one fault at a
+time, and `test_every_fault_a_measure_can_carry_has_its_own_concern_kind` reads
+`MeasureFinding.__dataclass_fields__`: a new flag with no branch fails there
+rather than quietly joining `"beats"`. Same shape as
+`test_the_cases_exercise_every_flag_there_is`, and for the same reason — the
+last count written by hand went stale.
+
+Three mutations killed: the branch removed (the bug as it shipped), `adrift`
+given a name another fault already uses, and a new flag added to
+`MeasureFinding` with no branch.
+
+### A test of mine that was passing because it never ran
+
+`test_a_bar_out_of_step_on_a_page_with_no_metre_is_not_called_arithmetic` — the
+end-to-end half — reported PASS while I ran the mutation under `-k concern`,
+which **does not match its name**. It had never executed. When it did, it
+failed, and its fixture had been wrong twice over:
+
+| fixture | what it actually tested |
+|---|---|
+| bar of 40 quarters among bars of 4 | `too_dense` — a different fault, correctly named `"density"` |
+| bar of 4 whole notes among quarters | the metre *is* inferable, so the bar is plainly `long` and `"beats"` is right |
+
+`out_of_line` is reachable only where the page disagrees with itself enough
+that no metre wins the vote. The fixture is now bars of 1, 2, 3, 4, 5, 6 and 24
+quarters, and the assertion is that **no concern on that page is `"beats"`** —
+the one wording that would be false there. Both new tests fail under the
+mutation now; I checked with the filter that selects them.
+
+### Prose corrected while I was in there
+
+- `types.ts` named three checks where there are five, and called a local copy
+  "a fifth" where `CLAUDE.md` counts it as the fourth (`validate.py` plus its
+  two browser ports).
+- `reading.ts` said "all four checks" and "three of the four" in two docstrings.
+  Replaced with the rule rather than a number — the last count written down
+  here was wrong within a fortnight — and `validate.py` named as the inventory.
+
+### Verified
+
+Mobile **1392 tests / 123 files** green, `tsc` clean. Backend **1927 passed, 2
+xfailed** (1925 before — the two new tests), `ruff` clean. No screen changed;
+the sentence a musician reads on an unmetred page did.
+
+---
+
+## 2026-09-03 — The App Store icon is a blue chevron somebody else drew
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. A look at the native build
+config, which nothing in this repository had ever opened. CI still cannot
+allocate a runner.
+
+### Every brand asset is the Expo starter's
+
+Found by **looking at the files** — `icon.png`, `favicon.png`,
+`android-icon-foreground.png`, `splash-icon.png` and `public/app-icon.png` are
+all the template's blue chevron on pale blue, and `icon.png` still carries the
+template's construction guides: dashed sight lines, two circles and a centre
+crosshair. That is the App Store icon, the Android launcher icon, the browser
+tab icon and the icon a phone puts on its home screen when someone installs the
+web app, on a product whose identity is warm paper and engraved notation.
+
+Nothing said so, and nothing would have. `icon.png` is 1024×1024, RGB, **no
+alpha** — precisely what App Store Connect requires — so it uploads, passes the
+automated checks and ships. A wrong icon is not a build failure; it is a build
+that succeeds and is wrong.
+
+`tools/check-brand-assets.py` lists all six by SHA-256 and runs in CI beside the
+EDIT_LOG gate. It is **not** a hard gate and the docstring says why: drawing an
+icon is the owner's under §2, cannot happen in a session, and failing every
+commit until it exists teaches people to skip the check. It works the way
+`KNOWN_ECHOES` in `facts.test.ts` works — it fails on the two things that are
+actually mistakes: a *new* asset shipped as the starter's, and a listed one that
+has been drawn, whose line is now a false claim about the repository. Both
+verified by mutation.
+
+Recorded in CLAUDE.md's honest-DoD section as blocking the submission, which is
+the thing that was missing: the icon was not hidden, it was simply never looked
+at.
+
+### And there is no splash screen, which is the same job
+
+`assets/splash-icon.png` was the same placeholder, referenced from nothing —
+deleted. There is no splash configuration at all, so `expo prebuild` emits the
+bare template's `SplashScreen.storyboard`, whose background is
+`systemBackgroundColor`: **an iOS cold start flashes white before the app paints
+`#F7F2E9`.** The web side is pinned three ways (`index.html`, the manifest, and
+`flatten-vendor-assets` asserting it against `colors.bg`); iOS was pinned
+nowhere.
+
+Adding `expo-splash-screen` with `backgroundColor: '#F7F2E9'` and no image was
+tried, prebuilt, and **reverted**. Measured on the generated project: the plugin
+rewrites the storyboard background only inside `applyImageToSplashScreenXML`,
+so with no image `removeImageFromSplashScreen` runs instead and leaves
+
+- the white `systemBackgroundColor` untouched,
+- two constraints pointing at the imageView it had just deleted, and
+- an orphan `<image name="SplashScreenLogo">` resource — its removal is guarded
+  by `if (existingImageIndex && existingImageIndex > -1)`, and the entry is at
+  index 0.
+
+A launch storyboard that may not compile is worse than a flash, and I cannot
+build an iOS target here to find out. The `SplashScreenBackground.colorset` it
+generates *is* correct (0.9686 / 0.9490 / 0.9137 sRGB = `#F7F2E9`), which is
+what made the diagnosis unambiguous. The splash wants the real mark on it, so
+it is one job with the icon — the owner's.
+
+### Checked and **not** a defect
+
+- **No `PrivacyInfo.xcprivacy`, and none is needed.** Apple's rule puts the
+  declaration on whoever calls the API, and every SDK here that touches one
+  ships its own: `async-storage`, `expo-file-system`, `expo-constants`,
+  `expo-system-ui` and five inside `react-native`. This app contains no native
+  code of its own. `ios.privacyManifests` exists in the Expo schema and adding
+  a speculative declaration to Apple would be worse than none.
+- **Info.plist is right.** All three usage strings arrive from the plugin
+  config, `ITSAppUsesNonExemptEncryption` is `false`, `CFBundleURLTypes` carries
+  both `intempo` and `com.intempo.app`, and `UIUserInterfaceStyle` is `Light`.
+- **The empty account was walked again** (the five-line `fixtures.ts` recipe in
+  CLAUDE.md). Today, Library and Insights each have a real empty state with an
+  action; the 2026-09-02 fix that stopped Today hiding the warmup is in place.
+  No defect. Today's centred pair has a written rationale beside it and was
+  left alone.
+
+### One thing to know if you run prebuild
+
+`npx expo prebuild` **rewrites `package.json`**, changing the `ios` and
+`android` scripts from `expo start --ios` to `expo run:ios`. Restored both
+times. `ios/` and `android/` are gitignored; the rewrite is not.
+
+### Verified
+
+Mobile **1392 tests / 123 files** green, `tsc` clean, `npm run build:web`
+clean after the dependency was reverted with `npm ci` (which prunes the
+`--no-save` Playwright install — reinstalled). `check-brand-assets.py` OK, and
+non-zero under both mutations.
+
+---
+
+## 2026-09-03 — The one failure this app has most often, reported as bad wifi
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Two contracts, one of them
+a sentence a musician reads several times a week. CI still cannot allocate a
+runner.
+
+### `describeLoadError` did the thing `describeError.ts` was written to stop
+
+Its own docstring:
+
+> Five screens carried the same hardcoded line — *"Check your connection and
+> try again"* — for every failure there is. […] the screens threw its message
+> away and substituted their own.
+
+`client.ts` mints `ApiError(0, …)` in **four** places, each with a sentence
+written for a person:
+
+| minted for | says |
+|---|---|
+| `SESSION_UNREADABLE` | Could not read your session in time. Check your connection and try again. |
+| `RESPONSE_STALLED` | The server started answering and then stopped. Try again. |
+| the host is asleep | The server took too long to answer. **It may be waking up — try again in a moment.** |
+| nothing answered | Could not reach the server. Check your connection and try again. |
+
+All four fell past `describeLoadError`'s status ladder and came out as *"Check
+your connection and try again."* Two of those are wrong and one is the common
+case: **this app's host sleeps every fifteen minutes**, so the waking-up
+sentence is the failure a musician meets most often, and Today, Library,
+Insights, Profile and the startup screen all told them to go and look at their
+wifi instead. `RESPONSE_STALLED`'s own comment says "could not reach the
+server" would send someone to check a connection that demonstrably works — and
+then five screens said exactly that.
+
+Status 0 now passes its message through. That is safe for one reason and the
+reason is now tested: `Response.status` is never 0 for a response whose body we
+read, so **status 0 is minted only here** — a future `new ApiError(0, path,
+message)` carrying FastAPI's `detail` would put a validation error naming a
+field on a musician's screen, and `describeError.test.ts` reads `client.ts` and
+refuses any status-0 message that is not a literal or a module constant.
+
+The four sentences are read **out of `client.ts`'s source** rather than
+retyped, because a copy here would keep passing after the real sentence
+changed — which is this file's own subject.
+
+Mutations killed: the pass-through removed (the old behaviour), a
+server-written message minted as status 0, and the waking-host sentence
+reworded away.
+
+### The export shape had no check either
+
+`/v1/me/export` returns eleven keys and `AccountExport` in the app names
+eleven; nothing compared them. A field renamed on the server becomes
+`undefined` in the app with nothing failing on either side, and the export is
+the one response whose *completeness* is the product.
+
+`test_me.py` now compares the **live response body** against the interface
+parsed out of `accountExport.ts`, both directions, plus `stored_media`'s
+members. `verdict_corrections` and `sync_events` were in the payload and
+asserted nowhere. Four mutations killed: a server-side rename, an app-side
+field with nothing behind it, a `stored_media` member dropped, and one renamed
+in the app only.
+
+### Verified
+
+Mobile **1392 tests / 123 files** green; `tsc` clean; web build, walk and a11y
+sweep pass. Backend **1925 passed, 2 xfailed**. `.env` moved aside for the
+fixtures build and restored `diff -q` identical.
+
+---
+
+## 2026-09-03 — "Download your data" downloaded nothing
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Four defects behind one
+button, and a fifth on the screen next to it. **CI still cannot allocate a
+runner** — every job on every commit since `5c04e1e` fails in three seconds with
+no steps, which is an account-level Actions problem and not something a commit
+can fix. Everything below was run locally.
+
+### The licence page had drifted, because nothing checks a generated file
+
+`src/data/licences.ts` says at the top that it is generated and must be
+regenerated after a dependency change. **`expo-system-ui` was not on it.** It is
+a dependency of this app — it is what sets the splash background — and the
+licence page a user reads in the App Store build did not name it.
+
+Nothing failed. The screen rendered, the list looked complete, and the one entry
+missing was the most recently added. That is how *every* hand-run generator
+fails, and the fix is not "remember next time":
+
+- Regenerated. One entry added; nothing else moved.
+- `src/data/licences.test.ts` holds both directions — every declared dependency
+  is listed, and everything listed is either declared or on the vendored list.
+  The two vendored lists (generator and test) are now held together by those
+  same two rules rather than by anyone remembering.
+- The generator **throws** on a package it cannot read. It used to `catch` and
+  return nothing, so running it against a partial install silently *deleted*
+  attributions and printed a success line. Verified by moving `fflate` out of
+  `node_modules`: it now refuses and leaves the file untouched.
+
+Mutations killed: the real drift (`expo-system-ui` removed again), a stale entry
+for a package no longer declared, and Bravura — the one entry with an actual
+OFL attribution requirement — dropped.
+
+### iOS shared the export as a chat message
+
+`saveAccountExport` called `Share.share({ title, message: json })` on native.
+On iOS that is a **string**: the sheet offers Messages, Mail, Notes and Copy,
+there is no "Save to Files" for a string, and `title` is Android-only — so the
+filename the function carefully computed was discarded. A whole account, as a
+chat message, under a screen headed "Download your data".
+
+Now: the JSON is written to a file with `expo-file-system` (already a
+dependency, already loaded on web through `ImportFile`) and the **file** is
+shared, which is what puts Save to Files in the sheet and gives the export its
+name. `url` alone and never alongside `message` — a sheet handed both offers
+some destinations the text instead, which is the same defect in half the sheet.
+
+Android still shares the text: RN's `Share` ignores `url` there and attaching a
+file needs a dependency this app does not carry. iOS is the shipping target;
+the comment names the line to change when Android ships.
+
+One export sits in the cache at a time — it is the musician's data in the
+clear — so each export deletes the one before it. Deleting the *current* file
+when the sheet closes would be tidier and is deliberately not done: the
+destination copies during the activity, and getting that wrong loses the export
+rather than a few kilobytes of cache.
+
+### Dismissing the share sheet reported success
+
+`Share.share` resolves for a dismissal. `ExportDataScreen` set `done` on
+resolution, so opening the sheet and changing your mind put **"Your export is
+ready"** under a download that never happened. `saveAccountExport` now answers
+whether the export left the app. Android cannot report a dismissal at all, so
+there it stays optimistic — the bug narrowed from every platform to one that
+does not ship.
+
+### And the screen told a signed-in musician their session had ended
+
+Found by driving it, not by a test. `fetchAccountExport` was the one place in
+the app that called `apiFetch` without the sample-data guard every comparable
+action has (`useSubmitCorrection`, `useUpdateProfile`, five in `usePieces`). On
+a fixtures build it reached the no-token branch and said **"Your session has
+ended. Sign in again."** — on a build where every other screen has you signed
+in, with a library, a profile and thirty days of insights.
+
+Guarded now, in the same words as its five neighbours. The alternative — a JSON
+file of fixtures labelled "your data" — is worse than either.
+
+### A leg for it in the walk
+
+`tools/walk-app.mjs` grew **Downloading your own data**. The claim worth driving
+is the negative: with nothing to fetch, the app says so and does **not** say the
+export is ready. It failed before the guard and passes after, which is the
+mutation evidence for the fix.
+
+### Three-foot test — Export data (`/account/export`)
+
+Composition unchanged; one line of logic changed and the screen was
+re-screenshotted to be sure. First: **"Download your data"**, serif, the only
+large type. Second: the black **Prepare download** button, low on the screen and
+in the thumb zone. Third: the white "Included" card. The refusal sits under the
+button in small secondary type and does not compete. One focal point, secondary
+information receding — no change needed.
+
+### Verified
+
+- Mobile **1385 tests / 122 files** green (1383 before); `tsc --noEmit` clean.
+- `npm run build:web` clean; `expo export --platform ios` builds a 5.6 MB Hermes
+  bundle, and `strings` on it finds `intempo-data-`, the new refusal, and
+  `expo-file-system` — the native branch is really in the iOS bundle.
+- Walk: PASS, including the new leg. A11y sweep: PASS, 23 routes.
+- Seven mutations killed on the export module (message-sharing restored,
+  dismissal reported as saved, previous export left behind, the download's
+  filename dropped, the old filename slice, the guard removed, the guard always
+  on) and three on the licence page.
+- `.env` moved aside for the fixtures build and restored `diff -q` identical.
+
+### Still owner-blocked
+
+GitHub Actions runners, `eas init`, Apple signing, and the App Store Connect
+listing. Nothing here can close those.
+
+---
+
+## 2026-09-03 — "In both directions" was three of four
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. One test, one corrected
+claim. No shipped code. **CI still cannot allocate a runner.**
+
+`CLAUDE.md` on the transcription-progress contract:
+
+> Adding a pipeline stage means editing the fixture **and** both sides —
+> `test_stage_parity.py` and `transcriptionProgress.test.ts` fail otherwise,
+> **in both directions**.
+
+Measured rather than believed, by adding a stage in each of the three places:
+
+| a stage added to | Python | TypeScript |
+|---|---|---|
+| `fixtures/stages/parity.json` | 2 failed | 2 failed |
+| `STAGE_PROGRESS` (the app) | — | 1 failed |
+| **`_HUMAN_STAGES` (the worker)** | **10 passed** | — |
+
+Three of four. The worker can grow a stage the contract has never heard of and
+nothing says a word.
+
+### Why that one was blind
+
+`test_the_worker_says_exactly_the_static_words_the_fixture_lists` builds its
+expected set from **four hand-written calls** to `_human_stage`:
+
+```python
+said = {
+    STAGE_FETCHING,
+    _human_stage(STAGE_SPLITTING),
+    _human_stage(f"{STAGE_READING}:claude-sonnet-5"),
+    _human_stage(STAGE_CONFIRMING),
+}
+```
+
+A key added to `_HUMAN_STAGES` changes nothing in that set, so the assertion
+still holds. The same shape as every other find this session — a hand-kept list
+sitting beside a live one.
+
+### What it would have cost
+
+Not a crash. `lib/transcriptionProgress.ts` **holds** the bar on a stage it does
+not recognise, deliberately, because falling back once threw a read at 70% down
+to 5%. So a new pipeline stage with no fixture entry makes the bar stop moving
+for exactly as long as that stage takes — the measured-progress promise
+weakening quietly rather than breaking, on the screen that exists to stop a
+musician watching a still bar.
+
+`test_every_stage_the_worker_can_name_is_in_the_contract` reads `_HUMAN_STAGES`
+itself. Verified by re-running the mutation that used to pass: it now fails,
+naming the stage and both places to add it.
+
+### Tests
+
+backend **1925 passed, 2 xfailed** (was 1924). Every mutated file restored
+`diff -q` identical — and one of them was left modified for a minute by a `cd`
+in a compound command, which is why the restores are checked rather than
+assumed.
+
+**Side effects:** none. **Rollback:** revert the commit.
+
+---
+
+## 2026-09-03 — The validator's three copies agreed on *whether*, never on *why*
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. One test strengthened, one
+stale count corrected. No shipped code. **CI still cannot allocate a runner.**
+
+`CLAUDE.md` says `test_sandbox_parity.py` is *"the only thing holding [the
+validator's three copies] together — when you add a check, port it and add a
+case, or the browser tools will quietly call a bad page clean."* Checking that
+claim rather than trusting it found two things, and neither was a live defect.
+
+### The comparison collapsed the thing the code keeps separate
+
+`MeasureFinding` carries the beat sum in `verdict` and **five** independent
+flags beside it, each deliberately not folded into the verdict —
+`validate.py`'s own words: *"a measure whose beats add up perfectly can still
+carry a tie between two different pitches, and that tie is what deletes an
+onset from the timeline. Collapsing them would let a clean beat sum hide it."*
+
+The parity test compared `verdict`, the beat figures, and `is_problem`.
+**`is_problem` is true for any of the six**, so a port that flagged the right
+bar for the *wrong reason* — a density warning where the page has a broken tie
+— matched on every field the test looked at, and the sandbox would show a
+musician's page marked for a fault it does not have.
+
+Measured before changing anything: **all three copies agree on every flag, on
+all 44 cases.** Nothing was broken. Nothing was holding it either.
+
+Both parity tests now compare the flags themselves. Verified by making the
+sandbox's port never report a broken tie: `flags differ for 4/4 / [4] m1`.
+
+### The case set is good, and now says so
+
+Before asserting on flags I checked whether the cases fire them — an assertion
+over flags nobody exercises is vacuous, which is the failure
+`test_timeline_parity.py` guards with its ties and triplets. All five fire
+(2, 3, 3, 2, 3 times across 44 cases). That is now asserted, so trimming the
+cases cannot quietly empty the new comparison.
+
+The same test reads the dataclass and fails when a flag exists that the file
+does not compare. Verified by adding a `smudged` field: `validate.py flags
+['smudged'] that this file does not compare`.
+
+### The count in CLAUDE.md was two behind
+
+> **Four things flag a measure, and only one of them is arithmetic.**
+
+Six: `verdict` plus `broken_ties`, `tuplet_faults`, `too_dense`,
+`unwritable_notes` and `out_of_line`. The last two arrived after that sentence
+was written and nobody came back to it.
+
+**The number is not written down anywhere now.** The guard above reads the
+dataclass, so the sentence cannot go stale the same way a third time — which
+matters, because this is the fourth typed count this session that had drifted
+from a live measurement sitting next to it.
+
+### Tests
+
+backend **1924 passed, 2 xfailed** (was 1923); `test_sandbox_parity.py` 7
+passed. `validate.py` and the sandbox template each restored `diff -q`
+identical after their mutation.
+
+**Side effects:** none. **Rollback:** revert the commit.
+
+---
+
+## 2026-09-03 — An editorial rule applied by hand once, and a test of mine that was wrong
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. One test file. No shipped
+code changed. **CI still cannot allocate a runner.**
+
+`lib/facts.ts` is the daily fact on Today — "the one thing on the screen that
+is not about you". Its docstring states a rule and records that it was broken
+at scale before anyone applied it:
+
+> A lead must add something the sentence does not already say. **Nine of these
+> echoed their own sentence — five were its opening words verbatim** — so the
+> block stated the same thing twice, six points apart, and read as a stutter.
+
+Fixed by hand, kept by nothing. A rule enforced once lasts until the next
+entry, and entries are what this file exists to accumulate.
+
+### My first version of the check was the wrong shape
+
+I looked for any **three consecutive lead words** appearing in the sentence.
+It flagged three entries, and one of them — `It used to be a choice`, over
+*"Vibrato was an ornament before it was a default…"* — has its lead nowhere in
+its text at all. The match was `to be a`, which is ordinary English.
+
+**A heuristic wrong one time in three is not a rule.** Had I shipped it, the
+next person would either have rewritten good copy to satisfy it or weakened it
+until it caught nothing.
+
+The verbatim reading — does the lead appear, whole, inside its own sentence? —
+is both precise and **stricter**: it caught `Il Cannone`, which three
+consecutive words can never see because that lead has only two.
+
+### Three entries do break the module's own rule
+
+| lead | where it repeats |
+|---|---|
+| `All in the bow arm` | "…the difficulty is deliberately **all in the bow arm**." |
+| `Il Cannone` | "Paganini played one, which he called \"**Il Cannone**\"." |
+| `Patented in 1815` | "The metronome was **patented in 1815**." |
+
+**Listed, not rewritten.** The rule is the module's own, but the wording is
+displayed copy, and choosing it is the one thing §2 reserves for the owner.
+`KNOWN_ECHOES` names all three, so the guard binds every *new* entry while
+these stay visible — and the test fails if an entry is left on the list after
+its lead is reworded, so it cannot rot into an excuse.
+
+### The rest
+
+Same fact all day and a different one tomorrow; leads short enough to be a
+label and unpunctuated; each text a finished sentence; and no hedges, because
+the module says *"anything that needed a 'probably' was left out rather than
+hedged"* — a hedge is the tell that an entry should not be there. **Factual
+accuracy is out of reach and is the more expensive half**: this cannot check
+whether a fact is true, only that it does not announce its own doubt.
+
+Verified by adding a fact whose lead repeats its sentence: two assertions fail
+and name it. `facts.ts` restored `diff -q` identical.
+
+### Also measured this tick
+
+`expo export --platform android` completes — 5.6 MB Hermes, same as iOS. Both
+native targets bundle, so the identifiers and `eas.json` added earlier are
+sound for both. **Not added to CI**: the App Store is the target that was
+asked about, and doubling the bundling step for an untargeted platform is not
+worth the minutes.
+
+### Tests
+
+mobile **1369 passed across 120 files** (was 1362/119); `tsc` clean.
+
+**Side effects:** none. **Rollback:** delete the test file.
+
+---
+
+## 2026-09-03 — The switch between real data and sample data had no tests
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. One test file, one
+corrected docstring. **CI still cannot allocate a runner** — verified locally
+only; see the PR comments.
+
+`data/environment.ts` decides whether the app reads real accounts or seeded
+fixtures. It replaced a hardcoded `USE_FIXTURES = true`, which its own
+docstring calls *"a loaded gun"*: flipping it and pushing would have shipped
+the live site pointed at `http://127.0.0.1:8000`. Getting it wrong is silent in
+the worst direction — a production build serving seeded pieces looks like a
+working app.
+
+Seventy lines, no tests.
+
+### The rule with the worst failure mode, now enforced
+
+> Every reference below spells out `process.env.EXPO_PUBLIC_…` in full. Expo
+> substitutes these textually at build time, so a destructured or computed
+> lookup would read an empty object in the bundle and put a correctly-
+> configured build on fixtures.
+
+Nothing checked that. `const { EXPO_PUBLIC_API_BASE_URL } = process.env` is an
+ordinary-looking refactor that ships a production build on sample data with
+every screen looking fine.
+
+It has to be a **source** check, and the reason is worth stating: under vitest
+`process.env` is a live object, so a destructured read works perfectly and no
+behavioural test can see the fault. The bug exists only in a real Expo bundle.
+
+### A docstring describing a mechanism the code does not use
+
+> **API base URL** — checked for *explicit presence*, not truthiness … only the
+> raw `process.env` read can tell them apart.
+
+The code is `process.env.EXPO_PUBLIC_API_BASE_URL ?? ''` followed by a
+truthiness test, which collapses "unset" and "set to empty" into one answer.
+Not a defect — **truthiness is the safer of the two.** Under an
+explicit-presence rule, `EXPO_PUBLIC_API_BASE_URL=""` counts as a backend
+having been named and sends a production build at the localhost fallback,
+which is precisely the failure the same paragraph warns about. The prose now
+says what the code does, and a test pins the empty-string case.
+
+### Verified by mutation
+
+| mutation | result |
+|---|---|
+| API host dropped from the switch | 3 failed |
+| **`process.env` destructured** | **1 failed** |
+| singular/plural collapsed in the reason | 1 failed |
+
+### Tests
+
+mobile **1362 passed across 119 files** (was 1355/118); `tsc` clean.
+`environment.ts` restored `diff -q` identical after every mutation.
+
+**Side effects:** none — the only source change is prose. **Rollback:** revert
+the commit.
+
+---
+
+## 2026-09-03 — A coverage tool whose summary contradicted its own table
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. One tool's closing note.
+No shipped code. **CI cannot run** — see the note at the end.
+
+`tools/notation-coverage.py` exists to make gaps legible: *"A gap you can see is
+a decision; a gap you cannot is a bug waiting for a musician to find."* It
+printed, under its own matrix:
+
+> Known and unfixed: **128th and shorter have no name at any ratio**, and
+> dotted notes inside tuplets are patchy. **Both drop the note.**
+
+The matrix directly above it prints `.` — *named* — for a plain 128th at five
+of its six ratios. Measured against the schema: `one_twenty_eighth` and its
+`triplet_`, `quintuplet_` and `septuplet_` forms are four of the 46 durations.
+What genuinely has no name is **256th and shorter**, and **dotted 128ths**.
+
+### The half that matters more
+
+"Both drop the note" conflates two stages with different consequences, and this
+project has a word for each:
+
+- **Dropped** (no name) is the importer losing it. The onset is gone,
+  `alignment.py` accumulates the gap, and every bar after it is judged against
+  music that is not there. That is the expensive one — the schema's own comment
+  says *"the cost of a gap is not the note, it is the rest of the page."*
+- **Undrawn** (no glyph) is the engraver. The importer kept it, the timeline
+  expects it, playback sounds it, the verdict is unaffected — only the picture
+  omits it, **and the stave says how many it left out**.
+
+A 128th is the second, not the first. Someone reading that note would go and
+widen `Duration` — a closed union shared with the app and the editor — for a
+value that has been named since the vocabulary was widened, and would still not
+have drawn it.
+
+### Computed, not retyped
+
+The list of never-named values is now read off the matrix with the same
+`names_a_value` the table uses, so it cannot drift from the thing it summarises.
+It prints `256th` today. This is the third stale count this session that turned
+out to be prose beside a live measurement — the parity fixture's repeat
+exclusion and `test_client_enums.py`'s "five of twenty-one" were the others.
+
+The schema itself was never wrong: `test_every_written_value_has_a_name_plain_
+and_in_the_common_tuplets` enforces breve-to-128th at every common ratio, which
+is why only the prose drifted. The other repository hits for this wording are
+`EDIT_LOG.md` entries and that test's own docstring, all in the past tense
+describing what an audit *found*. Correct as history; left alone.
+
+### Verification, and its limits
+
+`tools/notation-coverage.py` runs clean, both tables. No shipped code changed.
+
+**CI has been unable to allocate a runner since run #657** — every job failing
+in four seconds with no runner and no steps, including `Frontend build (vite)`
+on a tree untouched since `bc28f40`. Evidence is in a PR comment. So this
+commit is verified only by me running the tool, which is weaker than the six
+green runs before it.
+
+**Side effects:** none. **Rollback:** revert the commit.
+
+---
+
+## 2026-09-03 — CI builds the App Store target, which it never had
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. One CI step. Asked
+directly by the user: *"Also just to confirm this will work when for App Store
+app"*.
+
+The honest answer was that nothing knew. **Every check in this repository runs
+through the web bundle** — `walk-app.mjs`, `audit-a11y.mjs`, every screenshot in
+this log, `npm run build:web`. The two module graphs are not the same one:
+
+- `.web.ts` files resolve to their native siblings;
+- `Platform.OS` branches fold the other way;
+- a `document.` or `window.` outside a guard is invisible until a phone runs it.
+
+So the answer to "does it work on iOS" was an argument, not a measurement.
+
+### What I checked by hand first
+
+- **Every `.web` file has a native sibling** — five do; the sixth,
+  `lib/audio/context.web.ts`, is imported *only* by other `.web` files and only
+  with the explicit suffix, so it never resolves on native. Correct, not a gap.
+- **Every browser API in shared code is `Platform.OS`-guarded**:
+  `modalAccessibility`'s `document.getElementById`, `accountExport`'s download
+  link, `RecordScreen`'s `beforeunload` listener. (`document` in `AuthScreen`
+  and `LegalScreen` is a local variable holding a legal document, not the DOM.)
+- **`expo export --platform ios` completes**: 5.6 MB of Hermes bytecode.
+
+### The bytecode says which variants it took
+
+| string | in the iOS bundle |
+|---|---|
+| `intempo-listen-` — the **native** player's WAV filename | present |
+| `AudioContext` — Web Audio | absent |
+| `createMediaStreamDestination` — the web recorder | absent |
+| `beforeunload` | absent |
+
+The last one is the nicest: Metro constant-folds `Platform.OS` for the target,
+so the guarded web branch is not merely unreachable on a device, it is **gone**.
+
+### The step
+
+A one-off check by me is the wrong shape for a question that will be asked
+again on every commit, so `expo export --platform ios` is a CI step now, after
+the web build and the typecheck (a type error should be reported as a type
+error, not as a bundler failure thirty seconds later).
+
+**It proves the bundle builds, not that it behaves**, and both `CLAUDE.md` and
+`mobile/README.md` now say so in those words. The native recorder and the
+native player have still never made a sound, and no build has ever been
+produced — there is no macOS, no Xcode, no Apple account and no EAS credentials
+here.
+
+**Side effects:** CI gains a bundling step. **Rollback:** remove it.
+
+---
+
+## 2026-09-03 — The caveat under the stave named the wrong notes, and the wrong reason
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Copy and counting in
+`notation/fromScore.ts`. No §2 gate on the sentences themselves — they are
+corrections of statements that were false, not a redesign.
+
+Started by checking a claim rather than writing code: `tools/engraver-coverage.py`
+reports **42 of the schema's 46 durations draw**, the four refused being the
+128th family, exactly as `CLAUDE.md` says. The claim holds. What does not is the
+sentence a musician reads when something is left out.
+
+### "shorter than an eighth or dotted"
+
+`describeOmissions` renders:
+
+> Not drawn: 3 notes **shorter than an eighth or dotted**.
+
+The engraver draws whole through sixty-fourth, the breve, single *and* double
+dots, rests at all of those, and the triplet/quintuplet/septuplet forms. The
+coverage tool prints `dotted_eighth`, `dotted_quarter` and `sixteenth` drawing
+at **100%** across the corpus. So a musician with a page of sixteenths was told
+they were missing while looking straight at them on the stave. Two engraver
+generations out of date; the two `StaveScore` field comments said the same
+thing.
+
+The counting was never wrong — it is driven by whether a glyph exists — so
+this was purely a sentence that had stopped being true. It now names what is
+actually refused: **shorter than a sixty-fourth**.
+
+### Two causes reported as one
+
+`undrawable` was incremented both for a duration with no glyph **and** for a
+pitch that could not be placed — a triple accidental, a quarter-tone. So a note
+dropped for its *spelling* was reported to a musician as a note *too short to
+draw*: the wrong reason, sending them to look at their rhythm for a problem
+with a notehead. Split into `undrawable` and `unplaceable`, with a clause each.
+
+### And a good reading blamed on the camera
+
+`describeUndrawnScore` summed `rests + undrawable` to decide whether anything
+had been read. A page whose every note carried an unplaceable spelling
+therefore summed to zero and took the branch that says *"Nothing was read from
+this page… photograph the page closer and straighter."* The page **was** read;
+this engraver just cannot place those pitches. A reading failure reported as
+the musician's photography, which is the same mistake this project has now made
+in four places. `unplaceable` counts in that sum, and the branch says
+"pitches".
+
+The note/rest distinction already there is kept — a page of undrawable rests is
+not a page of undrawable notes, and saying so is the difference between someone
+looking at their rhythm and looking at their silences.
+
+### Verified by mutation
+
+| mutation | result |
+|---|---|
+| the stale wording restored | 1 failed |
+| pitch cause folded back into `undrawable` | 2 failed |
+| **`unplaceable` dropped from the empty-page sum** | **29 passed** |
+
+The third slipped, and it is the one that blames the camera: **nothing covered
+a page whose every note is unplaceable.** There is a case for it now, and the
+mutation fails on `Nothing was read`.
+
+Two existing tests failed on the split and were right to — one asserted
+`undrawable` for a pitch problem, and it moves to `unplaceable` while newly
+asserting `undrawable` stays 0, which is the point of separating them.
+
+### Tests
+
+mobile **1355 passed across 118 files**; `tsc` clean. `fromScore.ts` restored
+`diff -q` identical after every mutation.
+
+**Side effects:** `StaveScore` gains a field; nothing outside this module and
+its two describe functions reads the counts. **Rollback:** revert the commit.
+
+---
+
+## 2026-09-03 — What a musician is told when they cannot get in
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. One test file, no shipped
+code changed. No §2 gate.
+
+`screens/auth/authErrors.ts` is ninety-two lines of pure copy on the first
+screen of the app and had no tests. Every sentence in it is read by someone who
+is already stuck, and four of its decisions are ones a reasonable-looking edit
+would undo.
+
+**The asymmetry is the interesting one.** `validate` applies the
+six-character minimum on **sign-up and not on sign-in**:
+
+```ts
+if (mode === 'signUp' && password.length < MIN_PASSWORD_LENGTH) {
+```
+
+An account made before this minimum existed — or under a different one — still
+has to be able to get in. Applying the rule to sign-in locks that person out of
+their own library with a message about a password that is, in fact, their
+password. There was no comment saying so; there is a test now.
+
+The other three: link modes (reset, magic link) ask for no password at all,
+because someone requesting a reset came here precisely because they do not have
+one; `validateNewPassword` checks **length before match**, since two short
+passwords that agree are still too short and "those don't match" would be
+false; and `describeAuthError` **passes an unmapped message through** rather
+than flattening it to "Something went wrong", which the module's own docstring
+says would hide the one detail that lets someone fix it themselves.
+
+Also pinned: the provider matching is case-insensitive. Supabase has changed
+the capitalisation of these strings before, and a case-sensitive match would
+silently stop rewriting and fall back to the raw message — the failure that
+looks like nothing.
+
+### Verified by mutation
+
+| mutation | result |
+|---|---|
+| length rule applied to sign-in too | 1 failed |
+| link modes ask for a password | 1 failed |
+| case-sensitive provider matching | 3 failed |
+| unmapped messages flattened to "Something went wrong" | 2 failed |
+| new password: match checked before length | 1 failed |
+
+`authErrors.ts` restored `diff -q` identical after each.
+
+### Tests
+
+mobile **1352 passed across 118 files** (was 1339/117); `tsc` clean.
+
+**Side effects:** none. **Rollback:** delete the test file.
+
+---
+
+## 2026-09-03 — An import on the stylesheet's closing line, and two critiques I withdrew
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. One-line fix, one guard,
+and two things I looked at properly and left alone.
+
+### The find
+
+`LibraryScreen.tsx` ended with:
+
+```
+});import { describeLoadError } from '../../data/api/describeError';
+```
+
+An import appended to the closing line of the stylesheet by a bad automated
+edit in `10881b8` ("honest load errors, and no blank-screen hang"). **It
+worked** — imports are hoisted, so the module resolved, the screen rendered,
+`tsc` was clean and every suite passed. It survived three commits and was
+found by reading the output of a grep for something else.
+
+**There is no ESLint in this tree**, which is why nothing said anything. CI
+runs pytest, vitest, `tsc`, the web build, the walk and the a11y audit; none of
+them has an opinion about where a statement sits on a line.
+
+`importPlacement.test.ts` is the narrow guard for the thing that actually
+happened rather than a substitute for a linter: an import must be the first
+thing on its line. Swept the whole tree — this was the only one.
+
+**It reported itself on the first run.** The docstring quotes the offending
+line verbatim, and my comment claimed the check "skips the word inside a string
+or comment by requiring `from '…'` after it, which a prose mention will not
+have" — which is false, because prose about an import quotes the whole
+statement. Comment lines are skipped explicitly now, and the comment says what
+it does.
+
+It uses Vite's `import.meta.glob(..., '?raw')`, the reader `ariaState.test.ts`
+already uses. `node:fs` typechecks only with `@types/node`, which this tree does
+not carry, and a guard that needs a new dependency to compile is a worse guard
+than the thing it guards.
+
+### Two critiques I withdrew after looking properly
+
+Both were mine, from the previous entry's screenshots, and both were weaker
+than I stated them.
+
+**"Every section on Today is a card, and the greeting outranks the piece."**
+The practice card is the one block that genuinely needs grouping — image, text
+and primary action are one object — and its identity stack has a written
+rationale (26pt serif → 16pt composer → 14pt movement, "each rung smaller *and*
+lighter"). The empty state in the same file already documents a de-carding
+decision. "Good morning" at title size is the weakest point and it is still a
+defensible convention; changing it would be substituting my taste for the
+owner's on a screen §2 says is theirs. Not touched.
+
+**"The Record screen's permission paragraph is sliced by an opaque footer."**
+Sampled the screenshot: every row at the bottom is `#F7F2E9`, the page colour.
+The footer is not opaque and the text is meeting a scroll fold, which is what a
+scroll fold looks like. Not a defect.
+
+Recording both because a critique that turns out to be wrong costs the next
+session the time to re-derive it, and because I had already put both in front
+of the user as observations.
+
+### Tests
+
+mobile **1339 passed across 117 files**; `tsc` clean. The guard was verified by
+putting the offending line back — it names the file and line — and
+`LibraryScreen.tsx` restored `diff -q` identical.
+
+**Side effects:** none; the import resolves exactly as before. **Rollback:**
+revert the commit.
+
+---
+
+## 2026-09-03 — "What actually happened?" — the feedback loop finally has a client
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. §2 gate **asked and
+granted** (the user selected "Verdict feedback affordance" among four).
+
+`POST /v1/analyses/:id/corrections` has been built, tested and owner-scoped
+since Batch 8 and **no client had ever called it**, so `verdict_corrections`
+was empty for every account by construction — while its router docstring calls
+it *"the only route out of the position Batch 3 is currently stuck in"* and
+`TUNING_LOG.md` has recorded those thresholds as awaiting real ears the whole
+time. It has one now.
+
+### The composition
+
+Inside the reveal, never on every row. A row is already tapped to see its
+figure; this is what else is behind that tap. Thirteen copies of a question
+nobody asked would turn the list into a form, and the list is the part of this
+screen a musician works from (§3 law 10).
+
+Words, not chips — rounded pills are exceptions here rather than the styling
+language (law 6), and four under every opened row would be four containers
+doing a type scale's job. The app's own reading is ochre and pre-selected, so a
+musician **changes an answer rather than supplying one**: agreement is data,
+and a form that only collects disagreement measures how often people disagree
+rather than how often the app is right.
+
+**Three-foot test**, on the screenshot of the running build: first the red
+cluster on rows 5–8, which is the take's actual problem; second the opened row
+with its `+12%` and its question; third the rhythm of the list. The correction
+recedes, which is right — it is not what the screen is for.
+
+### Only where the app made a claim
+
+`canCorrect` is the row's own `revealsFigure`, deliberately, not a second
+predicate free to drift from it. A bar under a written `rit.`, a held fermata
+or an ornament was never judged — asking about one would be asking a musician
+to adjudicate a measurement that was never made, and the answer would enter the
+tuning data as a disagreement about a threshold that was not applied.
+
+`appVerdictFor` collapses `slight`/`rush_drag`/`severe` onto one word: someone
+disagreeing with a bar is not adjudicating between "slight rush" and "severe".
+Nothing is lost — the take's `result_json` carries the thresholds and the
+figure, and the correction names the analysis.
+
+### Three things I got wrong on the way
+
+**A test that could not fail.** `canCorrect(m) === readMeasure(m).revealsFigure`
+is `canCorrect`'s own body. Deleted; the concrete cases hold the behaviour, and
+mutating `canCorrect` to `return true` now fails two of them.
+
+**A style that painted the page colour onto the page.** `rowRevealed` set
+`backgroundColor: colors.bg` under a comment about "the page colour, borrowed
+onto the card" — and the measure list has no card, it sits directly on the
+screen, which is already `colors.bg`. Sampled on the running build: a revealed
+row and an ordinary one are both `#F7F2E9`. **Pre-existing, not mine**, and now
+removed rather than replaced with a colour that would show: the reveal already
+firms the number to ink, swaps the word for the figure and opens the prompt, so
+a band would be a fourth signal for one state.
+
+**`describeLoadError` swallowing a message written for the case.** The hook
+throws *"Sending feedback needs the backend. This build is running on sample
+data."* and I ran it through `describeLoadError`, whose fallback is *"Check
+your connection and try again"* — wrong and unactionable, and the exact
+substitution that file's own docstring says it exists to stop, reappearing one
+caller over. Now `error instanceof Error ? error.message : …`, matching
+`ProfileScreen`'s convention for the same shape of write. **Found by the walk,
+not by a test.**
+
+### Contracts closed
+
+- `UserVerdict` joins `test_client_enums.py`. A `Literal` rather than an
+  `Enum`, so it gets its own test beside `BpmSource` — and it is closed for the
+  same reason: a value this API does not accept is a 422 on a correction, which
+  is a musician told their feedback failed for saying the ordinary thing.
+- `POST .../corrections` comes off `NOT_WIRED`. **The list is now keyed by path
+  rather than by (method, path)**, because that is the granularity the matcher
+  has: the method lives in the fetch options, not beside the URL. The GET sat
+  there for one commit after the POST was wired and immediately failed as
+  "actually wired", since its path is the same string. Keying by method let an
+  entry claim a precision the check cannot deliver.
+- `walk-app.mjs` gains a leg: the question appears on a judged bar, all four
+  answers are offered, an untimed bar is not even a button, and sending with no
+  backend is refused in words. A control nobody has driven is a control nobody
+  has checked.
+
+### Tests
+
+mobile **1337 passed across 116 files**; backend **1923 passed, 2 xfailed**;
+`tsc` clean; `walk-app.mjs` PASS (**30 checks**, was 26); `audit-a11y.mjs` PASS
+(23 routes). `ariaState.test.ts` caught the new component missing its
+`aria-pressed` mirror before I did.
+
+**Side effects:** none outside the verdict screen. **Rollback:** revert the
+commit; the endpoint returns to having no client and the `NOT_WIRED` entry
+comes back.
+
+---
+
+## 2026-09-03 — The app can be built for a phone, and doing it found the wrong paper
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. §2 gate **asked and
+granted** — the user selected "App Store build config" (with the other three
+options) when asked what to spend the next stretch on.
+
+### What was missing
+
+No `ios.bundleIdentifier`, no `android.package`, no `eas.json`. `expo prebuild`
+and EAS both refuse without them, so there was no route onto a device or into
+TestFlight at all — for an app whose whole point is iOS.
+
+`com.intempo.app` for both, and `eas.json` with `simulator`, `preview` and
+`production`. **No `development` profile, deliberately**: one needs
+`expo-dev-client`, which is not a dependency, so it would be config that fails
+the first time anyone used it.
+
+### Two defects found by doing it
+
+`expo prebuild` warned:
+
+> ios.backgroundColor: Install expo-system-ui to enable this feature
+
+Following that up found the more interesting one. **`app.json` declared the
+app's background as `#FBFAF7`. `colors.bg` is `#F7F2E9`.** A re-typed hex —
+the thing CLAUDE.md §4 forbids — that had drifted to a *different colour*,
+close enough that nobody would catch it side by side.
+
+Nothing checked it, and the reason it survived is worth writing down:
+`scripts/flatten-vendor-assets.mjs` verifies the **web** build's page
+background against `colors.bg` and prints the result on every build. The one
+surface with a check was the one that is not the shipping app.
+
+It also would not have been applied on iOS regardless, because
+`expo-system-ui` was absent — so the wrong colour was being dropped rather than
+painted. Both are colours the *operating system* draws: the root view on launch
+and behind an over-scroll bounce, and the plate an Android launcher sits the
+icon on. They appear before any component mounts, which is why no screenshot of
+any screen would ever have caught either one.
+
+`design/appConfig.test.ts` pins both against the token. `app.json` cannot
+import a `.ts` file, so this is the one place a token genuinely has to be
+copied — which makes it the one place that needs a test rather than a
+convention.
+
+### Verified
+
+`expo prebuild --platform ios --no-install` completes, and the generated
+`Info.plist` carries:
+
+| key | value |
+|---|---|
+| `CFBundleIdentifier` | `$(PRODUCT_BUNDLE_IDENTIFIER)` → `com.intempo.app` |
+| `NSMicrophoneUsageDescription` | the config plugin's sentence |
+| `NSCameraUsageDescription` | the config plugin's sentence |
+| `NSPhotoLibraryUsageDescription` | the config plugin's sentence |
+| `ITSAppUsesNonExemptEncryption` | `false` |
+| `RCTRootViewBackgroundColor` | `0xFFF7F2E9` — the token, after the fix |
+
+The `expo-system-ui` warning is gone after installing it. The generated `ios/`
+was deleted; it is gitignored and this project stays managed.
+
+**`npx expo install` is blocked by the proxy** (`HTTP Proxy Network Error:
+Forbidden` against Expo's compatibility API), so the version came from
+`node_modules/expo/bundledNativeModules.json` — the SDK's own map — rather
+than a guess: `expo-system-ui@~57.0.2`.
+
+**Prebuild rewrites `package.json`'s `ios`/`android` scripts to `expo run:`.**
+That is right for a bare workflow and wrong here, since the native directories
+are gitignored and the project stays managed. Reverted both times; the only
+committed `package.json` change is the new dependency.
+
+### Also corrected: a README describing a different app
+
+`mobile/README.md`'s "Not built yet" said Library, Insights and Profile were
+placeholders and that `Input`, `SearchField` and `BottomSheet` had no callers.
+All are built and all three have callers. Only `Modal` is still unbuilt.
+
+**Honest status:** no build has been produced and none can be here — no macOS,
+no Xcode, no Apple account, no EAS credentials. Three things still need a
+person, and the README lists them: `eas init` for the project id (a real id
+from Expo's servers, not something to invent), signing credentials, and an App
+Store Connect listing.
+
+### Tests
+
+mobile **1326 passed across 115 files** (was 1324/114); `tsc --noEmit` clean;
+`npm run build:web` clean and still reporting the background matches
+`colors.bg`.
+
+**Side effects:** one new dependency (`expo-system-ui`) and its lockfile
+entries. **Rollback:** revert the commit; nothing else reads `eas.json` and the
+identifiers are additive.
+
+---
+
+## 2026-09-03 — Sign-in had no tests, and one of the two I wrote for the worst bug could not have caught it
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. One test file, no shipped
+code changed. No §2 gate.
+
+`data/auth/session.ts` is 371 lines on the first screen every musician meets,
+and it had nothing. Most of it is one Supabase call with the error rethrown —
+but the parts that are not are each a documented bug, and each is a distinction
+a refactor flattens without anyone noticing:
+
+- **An address that already has an account** comes back from Supabase looking
+  exactly like a fresh sign-up. With confirmations on it does not error; it
+  obfuscates the user so a stranger cannot enumerate addresses, and the only
+  tell is an **empty** `identities` array. Read naively, the app promises a
+  link that is never sent and the musician waits forever. `undefined` there
+  means the field was not sent, which is not the same signal — and reading it
+  as one tells *every* new musician their address is taken.
+- **`forgetDeletedSession` must sign out with local scope.** A deleted identity
+  may refuse to revoke its own session, and the tokens then stay on the device.
+- **`getSessionEmail` reads the session, not `/v1/me`.** `ChangePasswordScreen`
+  re-authenticates before changing a password; with the profile row's address
+  that is `you@example.com` on a fixture build, and with real credentials it
+  would re-auth as somebody the session holder has never heard of.
+- **With Supabase unconfigured** the read paths answer quietly and the write
+  paths refuse in words, so a build with no keys boots instead of showing an
+  error screen — and someone typing a password is told, not left on a spinner.
+
+### The test that could not have caught the bug it was named after
+
+`detectSessionInUrl` was hardcoded `false`, with the note *"no URL to parse
+from in a native app"* — true of native, wrong about the platform this build is
+served on. Supabase returns from a reset or a confirmation with the tokens in
+the URL fragment; unread, no session was established, `PASSWORD_RECOVERY` never
+fired, and **every emailed link in the app was a dead end**.
+
+My first version asserted the flag was `false` on iOS. That is true of the fix
+*and* true of the bug — the hardcoded `false` passes it. It asserts both halves
+now, and the mutation fails.
+
+### Verified by mutation
+
+| mutation | result |
+|---|---|
+| missing `identities` read as empty | 1 failed |
+| `forgetDeletedSession` loses local scope | 1 failed |
+| `getSessionEmail` reads `getUser` | 1 failed |
+| `detectSessionInUrl` hardcoded `false` | 1 failed |
+| `updateEmail` loses its redirect | 1 failed |
+| **`awaitingConfirmation` drops its user check** | **25 passed** |
+
+The last one I expected to slip, and it did: every sign-up case I had written
+carried a user. What `Boolean(data.user)` guards is a response carrying
+*neither* user nor session, which without it reads as "account made, go and
+confirm it" — sending someone to their inbox for a message that was never
+generated. Same dead end as the already-registered case, from the other
+direction. There is a case for it now and the mutation fails.
+
+That is two suites running where an assertion of mine was decoration, and both
+times only the mutation showed it.
+
+### Tests
+
+mobile **1324 passed across 114 files** (was 1298/113); `tsc --noEmit` clean.
+`session.ts` restored `diff -q` identical after every mutation.
+
+**Side effects:** none. **Rollback:** delete the test file.
+
+---
+
+## 2026-09-03 — The audio path the App Store build runs, which had no tests at all
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Two new test files, no
+shipped code changed. No §2 gate.
+
+`scorePlayer.web.ts` has a 326-line suite. `scorePlayer.ts` — the file **iOS
+and Android actually run** — had none, and says so itself:
+
+> **Unverified.** There is no simulator or device in the environment this was
+> written in … it has never made a sound.
+
+`lib/audio/wav.ts` had none either, and four modules encode through it: both
+recorders, the metronome click, and the native player. Nothing in this
+repository had ever decoded a WAV it produced.
+
+Nothing here can make a sound either. What it can do is check the parts that
+are arithmetic and ordering rather than hardware — which is where the bugs that
+produce *silence* live. The player's samples are decoded back out of the WAV
+that gets written, so the assertions are about the file a phone is handed.
+
+### What the WAV tests pin
+
+Two of them exist because the module makes a claim a reader cannot check by
+eye, and both were unverified:
+
+- **Little-endian explicitly.** The comment says a typed array over the buffer
+  would take the platform's endianness and "a big-endian device would write a
+  file that decodes as noise". `0x0102` is asymmetric, so it is the one value
+  that can tell the two writes apart.
+- **`floatToPcm16` scales the negative range by `0x8000` and the positive by
+  `0x7fff`**, because two's complement has one more step below zero.
+
+Plus: header sizes a decoder can trust, byte rate agreeing with the stated
+sample rate (a disagreement plays the take at the wrong speed, which this app
+would then measure and call rushing), chunks concatenated in capture order,
+clipping rather than wrapping, and an empty file being valid rather than
+refused — a cancelled take has no samples and `lib/audio/level.ts` is where
+that decision belongs, not here.
+
+### What the player tests pin
+
+The ordering one is the **silent-switch bug named in the module's own
+comment**: a take leaves iOS in the recording session, and an unconfigured
+session obeys the ring/silent switch, "which is how Listen came to play nothing
+at all on a phone on silent". Asserting `prepareForPlayback` is *called* would
+pass with the await moved after the write, so the assertion is on call order.
+
+Also: an empty schedule ends without touching the filesystem (a piece whose
+notes could not be read is a real state, and the button would otherwise stay on
+Stop forever); the note sounds where the schedule says and there is **silence
+before it**, because a reference that sounds early teaches a musician to play
+early and then gets them told they rushed; stop-before-render writes nothing;
+and a failed session or a failed write ends rather than throwing.
+
+### Verified by mutation, and one assertion was vacuous
+
+| mutation | result |
+|---|---|
+| samples written big-endian | 3 failed |
+| `floatToPcm16` symmetric | 2 failed |
+| `prepareForPlayback` moved after the write | 2 failed |
+| every note mixed at offset 0 | 1 failed |
+| rendered file left in the cache | 1 failed |
+| **`clearInterval` deleted** | **10 passed** |
+
+That last row is the point of doing this. I had written *"the timer is cleared,
+so `onEnd` cannot fire twice"* — and it is not: `stopped` guards the callback,
+so removing `clearInterval` changed nothing any assertion could see. The
+comment was plausible and the test was decoration.
+
+What clearing it actually prevents is a **10 Hz interval per Listen, running
+for the life of the process on a device** — invisible except as battery. The
+assertion is now `vi.getTimerCount()`, and the mutation fails it.
+
+### Tests
+
+mobile **1298 passed across 113 files** (was 1275/111); `tsc --noEmit` clean.
+Both files restored with `diff -q` after every mutation.
+
+**Side effects:** none — no shipped code was touched. **Rollback:** delete the
+two test files.
+
+---
+
+## 2026-09-03 — The other direction: a URL the app builds that nothing serves
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. One test, no shipped code.
+No §2 gate.
+
+The check added in the entry below runs one way: a route with no client is a
+feature nobody can reach. The reverse is worse and was unguarded. **A client
+with no route is a 404 in a musician's hands** — a screen that spins and then
+says something went wrong — and nothing in this repository would catch it.
+There is no integration test against a running server, so both suites pass
+with the app pointed at an endpoint that does not exist. A renamed route or a
+one-character typo ships green.
+
+Measured first: **18 `/v1` URLs across the app, all 18 served.** Nothing is
+broken today. The test exists because nothing was stopping it from being.
+
+Anchored at both ends so a stray segment cannot pass by prefix, and the query
+string is dropped — `/v1/scores?${query}` is a call to `/v1/scores`.
+
+**Paths only, and the docstring says so.** The method lives in the fetch
+options rather than beside the URL, so this asserts the path is served, not
+that it accepts the verb. That is the half that catches a typo, which is the
+failure it is for.
+
+### Verified by breaking it
+
+`'/v1/upload/avatar'` → `'/v1/upload/avatars'` in `upload.ts` — a plausible
+typo, one character:
+
+```
+AssertionError: the app builds URLs this API does not serve:
+/v1/upload/avatars (upload.ts)
+```
+
+Naming the file, because "some URL somewhere is wrong" is not a message anyone
+can act on. Restored with `diff -q`. A vacuity guard covers the new direction
+too: a real URL must match, a query string must not break the match, a URL
+with an extra segment must not match by prefix, and finding *no* URLs at all
+fails rather than passing silently.
+
+### Tests
+
+`test_client_reachability.py` 9 passed (was 7). Nothing else touched.
+
+**Side effects:** none. **Rollback:** revert the commit.
+
+---
+
+## 2026-09-03 — A second finished endpoint with no client, and the check that stops a third
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. One new backend test, one
+corrected comment. No §2 gate: nothing user-facing changed.
+
+The entry below found `POST /v1/analyses/:id/corrections` unreachable by
+reading a router nobody had opened lately. That is not a method that scales, so
+I enumerated the whole route table instead — walk `app.routes`, grep
+`mobile/src` for each URL. **25 `/v1` routes, 22 reachable, 3 not**, and the
+third is a feature I had not been looking for:
+
+`POST /v1/calibration` — spec §4, infer a target BPM from a short clip.
+`bpm_source` on `analyses` carries `calibration_clip` for exactly this, and
+`submitTake.ts` said:
+
+> The recording screen sets the tempo directly. `calibration_clip` is for the
+> flow where a short clip infers it instead.
+
+Present tense, for a flow that does not exist. The same shape as the timeline
+fixture's repeat exclusion two entries down: a sentence that reads as a
+description of the system and is actually a description of an intention.
+
+### The check
+
+`backend/app/tests/test_client_reachability.py`. It belongs on the server side
+for the same reason `test_client_enums.py` does — the gap is only visible from
+across the wire, and from the server alone a finished endpoint and a used one
+are indistinguishable: tests pass, the router reads as complete.
+
+**The `NOT_WIRED` list is the dangerous part and it is held in both
+directions.** An exclusion list with a reason attached is exactly what
+`fixtures/timeline/parity.json` had, where a reason that had stopped being true
+kept real coverage out for a release *and a test asserted the exclusion*. So:
+
+- a route with no client and no entry fails;
+- an entry for a route the app now calls fails ("delete the entries");
+- an entry for a route that no longer exists fails.
+
+You cannot leave a wired route on the list and you cannot leave a ghost on it.
+
+### Verified by breaking it three ways
+
+| mutation | result |
+|---|---|
+| drop the `/v1/calibration` entry | `these routes are served and no client calls them: POST /v1/calibration` |
+| add `POST /v1/scores` (which *is* called) | `these are on NOT_WIRED but the app calls them now: POST /v1/scores` |
+| add `POST /v1/ghost` | `POST /v1/ghost is on NOT_WIRED but is not served` |
+
+Restored with `diff -q` after each. A fourth test guards against the check
+being vacuous: a real route must read as reached and an invented one must not,
+because a `_calls` that matched everything would pass the first test with every
+route unreachable.
+
+**Deliberately conservative matching.** It looks for the literal URL anchored
+on the quote that opens the string, with `{param}` standing for one `${...}`
+interpolation. A client that assembled a URL from fragments would read as
+unreached — which asks for a second look rather than passing quietly, and that
+is the right direction to be wrong in.
+
+### The check caught itself, on this commit
+
+The first version searched raw source, so the comment I wrote *documenting*
+`/v1/calibration` as unreachable made it read as reached — and the full suite
+failed with `these are on NOT_WIRED but the app calls them now: POST
+/v1/calibration`. The check reported the note as the fix, which is the same
+class of error it exists to find.
+
+`strip_comments` is the answer, and it is a scanner rather than a regex on
+purpose: `https://` lives inside strings all over this tree, and any rule that
+deletes from `//` to end of line without knowing it is inside a string
+truncates the string — quietly, and in the direction that hides a real call.
+There is a test for both comment forms and for a `https://` URL surviving one.
+
+### Tests
+
+`test_client_reachability.py` 6 passed; `tsc --noEmit` clean after the comment
+change. Full suites unchanged from the entry below — no shipped code was
+touched, only a comment and a new test.
+
+**Side effects:** none. **Rollback:** delete the test file and revert the
+comment.
+
+---
+
+## 2026-09-03 — The feedback loop the backend calls "the moat" has no client
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Documentation only — the
+fix is a §2 gate and has not been taken.
+
+`POST /v1/analyses/:id/corrections` and its `GET` are built, owner-scoped
+(404 not 403, the API's convention), append-only with the reasoning written out,
+covered by `test_corrections.py`, inventoried by the account export and taken by
+account deletion. **Nothing calls either one.** Not `mobile/`, not `frontend/`.
+Grepped both trees for the path and the table name; the only hits are
+`accountExport.ts` listing a category and the privacy copy. `VerdictScreen` has
+no "this wasn't right" affordance of any kind, so `verdict_corrections` is empty
+for every account by construction.
+
+**Why it is worth writing down rather than shrugging at.** The router's own
+docstring says what it is for:
+
+> They are also the only route out of the position Batch 3 is currently stuck
+> in. Its thresholds are the spec's starting values, untuned, because tuning
+> needs a human ear on real recordings.
+
+`CLAUDE.md` §4 has recorded Batch 3 as "threshold tuning against real recordings
+still pending" for the life of this project, and `TUNING_LOG.md` says the same.
+The mechanism named as the way out of that state has never been reachable. An
+empty table tunes nothing.
+
+**Not the same corrections as the ones that work.** Two features share the word
+and it took a second pass to separate them:
+
+| | writes | reached from | consent |
+|---|---|---|---|
+| *Reading* corrections | `services/training.py` via `scores.py` | `MeasureEditScreen` ✅ | migration 013, fails closed |
+| *Verdict* corrections | `verdict_corrections` via `routers/corrections.py` | nothing ❌ | n/a |
+
+The Profile toggle and the privacy copy are about the first. They are correct
+and I changed nothing there — conflating the two would have made this entry a
+privacy claim, which it is not.
+
+**Nothing changed in code, deliberately.** `Correction.app_verdict` is free text
+(`min_length=1, max_length=64`) where the server has a closed `Band`
+vocabulary and already knows what it said, which looks loose — but with no
+client, any tightening I picked would be a guess at a shape nobody has designed
+yet, and it is cheaper to leave than to constrain wrongly. Recorded in
+`CLAUDE.md` beside the analysis bullets instead.
+
+**Tests:** none run; no code touched. **Side effects:** none. **Rollback:**
+revert the two documentation hunks.
+
+---
+
+## 2026-09-03 — The repeat the timeline parity fixture kept out, for a reason that was not true
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. No §2 gate: a fixture and
+three test files.
+
+`fixtures/timeline/parity.json` is the one file both trees are held to. Its own
+`excluded_on_purpose` field listed two things it leaves out, with a reason for
+each:
+
+> **Repeats.** The server writes them out, because the musician plays them
+> twice. Playback plays straight through, because a preview that doubles in
+> length is more surprising than useful.
+
+**Playback does not play straight through, and has not since `scheduleScore`
+started calling `measuresInPlayOrder`.** `schedule.ts:217` runs it; the app's
+own `repeats.test.ts` opens by saying Listen "has always played bars 1–8 twice."
+The slur half of the note is true and stayed — verified, not assumed, below.
+
+### Why a stale sentence in a comment field mattered
+
+Because it was load-bearing in three places at once.
+
+1. `test_the_fixture_has_no_repeats_or_slurs` **asserted** the fixture had no
+   repeat. The coverage could not be added without first disbelieving the file.
+2. `measuresInPlayOrder` is a hand port of `alignment.expand_repeats` —
+   recursive, widest-span-first, with `bracketed`'s "an ending belongs only to a
+   section starting strictly before it" rule, which is where a measured
+   twelve-bars-read-as-six bug came from. It is the single most likely thing
+   here to drift, and it was the one thing the contract did not hold.
+3. The app held the performed order anyway, with numbers typed into its own
+   suite, under a test called `follows the same repeat order the backend
+   grades`. It consulted no backend. Rewrite `expand_repeats` and it passes
+   unchanged.
+
+### Measured before changing anything
+
+Same score to both walks — a `|: bars 1–2 :|` and a slur over notes 1–3 of bar 1,
+at 120 BPM:
+
+| | onsets | measure order |
+|---|---|---|
+| `build_timeline` | 9 | `1 1 2 2 · 1 1 2 2 · 3` |
+| `scheduleScore` | 13 | `1 1 1 1 2 2 · 1 1 1 1 2 2 · 3` |
+
+Strip the two slur interiors from each of the app's passes and its onsets are
+`0, 1.5, 2, 3, 4, 5.5, 6, 7, 8` — the server's nine exactly. So repeats agree
+and slurs are the whole of the remaining difference, which is what the file
+should have said.
+
+### The change
+
+Four bars appended to the fixture: `|: 5 6 :|` with bar 6 as the first ending
+and bar 7 as the second, then bar 8. Both walks return **5, 6, 5, 7, 8**. The
+existing twelve onsets are unchanged — the section is at the end, so the diff is
+additive and the old numbers are still the old numbers.
+
+**Those four bars hold 2, 4, 1 and 3 notes on purpose.** A repeated section of
+equal-length bars gives the *same onset times in the wrong order*, so a fixture
+that only holds `expected_onsets_s` would not catch a swap. Belt and braces:
+`expected_measures` is now in the fixture too and asserted on both sides, so the
+coverage survives a later edit that evens those bars out.
+
+`test_the_fixture_exercises_what_it_claims_to` counted `len(notes) - rests -
+real_ties`, which counts the page. With a repeat the page and the performance
+are different numbers; it now compares against the performed count and asserts
+the performance is the longer of the two — which is the assertion that fails if
+the repeat stops being played. The app's tie test needed the same correction.
+
+### One more count that was written down instead of measured
+
+`test_client_enums.py` opened with *"The parity fixture covers five of
+twenty-one"* and *"Sixteen durations it never touches"*. Adding one `whole` note
+made both wrong, with nothing to notice — the same failure as the repeat line,
+one file over. It derives the covered set from the fixture now and asserts the
+gap is real, so the test says when it has become redundant instead of lying
+about why it exists.
+
+### Tests
+
+- `backend`: 1915 passed, 2 xfailed (full suite).
+- `mobile`: 1275 passed across 111 files; `tsc --noEmit` clean.
+- Both parity suites pass against the regenerated fixture, and the server was
+  re-run against the written file rather than against my arithmetic.
+
+**Side effects:** none at runtime — no shipped code changed, only the shared
+fixture and the tests reading it. **Rollback:** revert the commit; the fixture's
+first twelve onsets are untouched, so nothing downstream depends on the new tail.
+
+---
+
+## 2026-09-02 — The one constant `legibility.ts` copies from the server, and the circular test that guarded it
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. No §2 gate: one test.
+
+Found while re-checking the previous entry's mistake properly. `lib/scan/
+legibility.ts` is exemplary about the thing that matters — it states the subset
+rule outright:
+
+> it may never refuse a page the server would accept.
+
+So `CLIENT_FLOOR` (6) sits strictly below `SERVER_FLOOR` (8), and
+`legibility.test.ts` asserts that ordering. **Against the app's own copy of the
+server's number**, which is circular: both sides move together and the assertion
+holds whatever the server actually does. `_MIN_STAFF_SPACE_PX = 8` lives in
+`page_image.py` and nothing tied the two.
+
+**The exposure is directional.** A server floor that *rises* leaves the app
+merely more conservative, which is harmless. A server floor that *falls* below
+6 turns the hint into the app talking a musician out of a photograph that would
+have read perfectly well — the exact regression the file's own docstring says
+would be worse than the delay it exists to save. `MIN_PAGE_ROWS` is derived from
+the same copy, so a drift also silently moves the camera-resolution advice.
+
+One test in `test_client_enums.py`, beside the numeric parities that already
+live there (`MAX_SCAN_PAGES`, the upload size, the page-shrink target). It pins
+both halves: the copy equals the server's number, **and** `CLIENT_FLOOR` is
+below the server's real floor rather than below the copy.
+
+### Verified in both directions, because only one of them is dangerous
+
+- Server floor lowered to 5: *"the app believes the server refuses below 8 px
+  between staff lines; it refuses below 5"*.
+- Server floor at the client floor (6): the second assertion fires — *"the app
+  starts warning at 6 px, at or above the server's 6"*.
+
+Both restored and confirmed by `git diff`.
+
+### On how this was found
+
+By re-checking the previous entry's error with the discipline it lacked:
+grepping the **whole** test tree for every relevant name — `_MIN_STAFF_SPACE_PX`,
+`SERVER_FLOOR`, `CLIENT_FLOOR`, `scan/legibility` — rather than a subset, and
+then opening the two files that matched to confirm they only mention
+"legibility" in prose. That is the check I should have run before adding eighty
+duplicated lines an hour ago.
+
+### Verification
+
+backend **1913 passed / 2 xfailed**; `test_client_enums.py` 26 of them. No app
+or web changes.
+
+**Rollback:** revert this commit; it adds one test.
+
+---
+
+## 2026-09-02 — Correction: the closed unions were already held, and I added eighty lines saying they were not
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. This corrects `64ca662`
+("Hold the score's closed unions across the wire, Duration most of all"). No §2
+gate.
+
+### What I got wrong
+
+`64ca662` added six parametrised parity cases for `Duration`, `Clef`,
+`Articulation`, `Dynamics`, `RepeatType` and `TempoChangeKind`, with a commit
+message and a docstring asserting that **none of them was held**.
+
+Every one of them was already held. `test_client_enums.py` is ~690 lines and
+guards **thirteen** vocabularies:
+
+| Vocabulary | Already guarded by |
+|---|---|
+| `Duration` | `test_the_app_knows_exactly_the_durations_this_api_sends` — *and* `test_both_sides_agree_what_every_duration_is_worth`, which checks the values too |
+| `Clef`, `Articulation`, `Dynamics` | `test_the_app_declares_exactly_this_score_vocabulary`, parametrised |
+| `RepeatType` | `_union("RepeatType")` |
+| `TempoChangeKind` | `test_the_app_declares_exactly_the_tempo_changes_this_api_sends` |
+| plus | `Instrument`, `MetronomeMode`, `Band`, `Direction`, `TranscriptionStatus`, `ResultStatus`, `MeasureConcern.kind` |
+
+`Duration` — the one I called "the one nothing held" — was the **most** guarded
+thing in the file.
+
+### How
+
+I read the module docstring, which opens *"Four enums cross the wire into a
+TypeScript union"*, and the first parametrised block, and treated the docstring
+as an inventory of the file. I did not read past line 120 of 690.
+
+The docstring was itself stale — it says four and the file guards thirteen — so
+the immediate irony is that I found a stale claim and then **trusted it as a
+description of coverage**, which is precisely the failure the claim invites. The
+lesson is not "read more"; it is that a summary at the top of a file is a claim
+about the file and has to be checked against it before being relied on, exactly
+like every other claim this session has turned over.
+
+### What is left
+
+The eighty duplicated lines are removed; `git diff` against the original
+confirms the **test set is now identical**. What remains is the docstring
+correction, which is worth keeping and is now accurate: it names the count that
+was wrong, says what it cost, and is deliberately vague about the new number so
+it cannot rot the same way — the parametrised lists are the inventory.
+
+`64ca662`'s message also said "32, up from 24". The original collected **25**;
+that was a miscount as well.
+
+**What this does not change:** the six vocabularies do agree by name, which I
+did measure. Nothing was broken by the duplicate tests — they passed for the
+same reason the originals do. The cost was eighty lines of noise and a false
+claim in a commit message and a PR comment.
+
+### Verification
+
+`test_client_enums.py` 25 collected, all passing — the same 25 as before
+`64ca662`. Test-name sets diffed against `64ca662~1` and identical.
+
+**Rollback:** revert this commit to restore the duplicates, which is not
+something to want.
+
+---
+
+## 2026-09-02 — The trend chart's axis was fixed and the sentence read aloud beside it was not
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. No §2 gate: no composition
+and no visible copy — one accessibility label, corrected to match the label
+already on screen.
+
+Found by looking properly at the Verdict screen's **success** state, having only
+audited its two failure states earlier today. It is the screen the whole app
+exists to show and I had never read it end to end.
+
+The chart's x axis reads `Measure 1 … 10` on the sample take, and the
+`accessibilityLabel` one line below it in the same component read
+*"Tempo drift across **13** measures"*.
+
+Thirteen is `take.measures.length`. Ten is `timedMeasureRange` — the measures
+the line actually **reaches**, since `rolling_trend` drops untimed and
+slur-interior notes. The visible labels were already fixed to use the second;
+the spoken one was left on the first. So a screen-reader user was handed exactly
+the number the visible fix had established was wrong, on the same element, while
+a sighted user read the right one.
+
+### The fix, and where it lives
+
+`describeTrendRange` in `lib/verdict/measureReading.ts`, **beside
+`timedMeasureRange`**, because the two are one claim and they had already
+drifted once. It takes the same two numbers the axis is given, so it cannot be
+handed different ones without the axis changing too — the property the inline
+template string did not have. A rule inside a `.tsx` is a rule nothing checks.
+
+It also stops reading a one-measure take as a range: *"from measure 4 to 4"*
+reads as a fault in the sentence rather than as a short take.
+
+### Why no sweep caught it
+
+`audit-a11y.mjs` checks that an interactive element **has** an accessible name,
+not that the name is **true**. That is the right check for what it is, and it is
+worth writing down that it cannot find this class of defect — a label that is
+present, well-formed, and says the wrong number.
+
+### Verification
+
+mobile 1275 passed (111 files), three new cases · `tsc --noEmit` clean · web
+build clean · walk PASS · a11y PASS · read back off the running build: spoken
+*"Tempo drift from measure 1 to 10"* against an axis printing
+`Measure 1 … 10`. `.env` restored with `diff -q`.
+
+**Rollback:** revert this commit; `describeTrendRange` is additive and has one
+caller.
+
+---
+
+## 2026-09-02 — The binding instructions told a UI session to build in the wrong palette
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. No code changed; `CLAUDE.md`
+did. No §2 gate — this corrects which tree a rule describes, and changes no rule.
+
+Found by asking the question that has paid all day, of the file that is read
+first. §4 ends: *"Tokens live in `frontend/src/styles/tokens.ts`; build to them
+and never re-type hexes."* The shipping app is `mobile/`, which has its own
+`src/design/` and **does not reference `frontend/` at all** — the only mention
+in `mobile/src` is a historical comment in `api/client.ts`.
+
+The two palettes share **no colour but `#FFFFFF`**: mobile's `#F7F2E9` ground
+and `#8F681C` ochre against frontend's `#FAF8F3` and `#A8762E`. So the
+instruction was not merely out of date, it was a recipe for building a screen in
+the wrong colours.
+
+### The larger half
+
+The list headed *"Conventions the redesign established — follow these, don't
+re-litigate them"* names no tree, and four more of its pointers are false for
+the shipping app:
+
+| Convention says | `mobile/` actually uses |
+|---|---|
+| Icons are Phosphor; `lucide` was removed, do not reintroduce it | `lucide-react-native` throughout — no Phosphor package at all |
+| `AppShell` with `layout/TopNav` at `lg`+ over a 1240px container | its own navigator, `ScreenContainer` and a tab bar |
+| Motion is Framer Motion from `motion/react` | React Native animation; neither `motion` nor `framer-motion` is a dependency |
+| `/showcase` reads its swatches from `styles/tokens.ts` | there is no `/showcase` route |
+| Seed data comes from `lib/demo.ts` | `data/sources/fixtures.ts` |
+
+A session obeying the first of those in `mobile/` would rip out every icon in
+the app.
+
+**The design decisions carry across and are untouched** — ochre as an accent and
+never a surface, structure from hairline borders, serif used selectively, sheet
+music as the visual identity, no developer or demo UI. Only the pointers differ,
+and the note says exactly that rather than deleting anyone's rules.
+
+### Why it survived
+
+There *is* a caveat: *"The screen table above describes the legacy `frontend/`
+tree. The shipping app is `mobile/`…"*. It is attached to the **table**, several
+paragraphs down, and is about transcription. The conventions list sits between
+the two and reads as binding for all UI work. The correction goes at the head of
+the list, where someone about to follow it is looking.
+
+### Verification
+
+Every claim in the table measured against `package.json` and the source, not
+recalled: the dependency lists, the absent `/showcase`, and the two palettes
+compared hex by hex. No code changed, so no suite could have caught any of it —
+which is the point.
+
+**Rollback:** revert this commit; it is documentation.
+
+---
+
+## 2026-09-02 — The closed union whose drift costs "the rest of the page" was the one nothing held
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. No §2 gate: one test file.
+
+### How it was found
+
+By checking a number CLAUDE.md states: *"the engraver draws **42 of the
+schema's 46 durations**"*. It does — 46 in `Duration`, four in
+`DELIBERATELY_UNDRAWN`, and `durations.test.ts` green across 98 cases.
+
+But that test derives its list from the **app's** `BEATS`, not from the schema,
+while calling itself *"every duration the schema can send"*. `BEATS` is a
+`Record<Duration, number>`, so TypeScript keeps the app self-consistent — with
+the app's *own* `Duration`. Nothing tied that to the server's.
+
+`test_client_enums.py` is the file for exactly this. Its docstring opens *"Four
+enums cross the wire into a TypeScript union"* and it guards four: `Instrument`,
+`MetronomeMode`, `Band`, `Direction`. The score's own vocabularies —
+`Duration`, `Clef`, `Articulation`, `Dynamics`, `RepeatType` and the inline
+`TempoChangeKind` — cross the same wire inside `score_json`, and **none of them
+was held**.
+
+Measured before changing anything: all six agree exactly by name today.
+Agreeing is not being kept in agreement, and the drift is silent in the
+direction that matters — the server gains a value, the app compiles, and the
+schema's own comment says what that costs:
+
+> *"A note with no name here is **dropped**, and a dropped note is a lost onset
+> that `alignment.py` accumulates into every bar after it — so the cost of a gap
+> is not the note, it is the rest of the page."*
+
+### The change
+
+Six more parametrised cases in the file that already exists for this, plus its
+vacuity guard extended — the same one that file already has, and for the same
+reason: a regex quietly matching nothing would compare two empty sets and pass,
+which with `Duration` is 46 values going unheld while the run reports success.
+
+**That guard earned its place immediately.** The first version read
+`TempoChangeKind` from the first `kind:` in `types.ts` — which is
+`MeasureConcern.kind` — and compared the tempo vocabulary against
+`beats | density | tie | tuplet | unwritable`. The interface is named in the
+lookup now.
+
+Verified the check bites by adding a duration to the server union alone:
+`Duration: only the server knows ['drift_probe_only']`. `score_schema.py`
+restored and confirmed by `git diff`.
+
+### What is deliberately still unguarded
+
+`MeasureConcern.kind`. The app's own comment says *"Nothing switches on `kind`;
+`detail` is the sentence, and the server writes it"* — so a new concern kind
+renders correctly on an app that has never heard of it. Guarding it would hold
+a dependency the app deliberately does not have.
+
+### Verification
+
+backend **1919 passed / 2 xfailed** (`test_client_enums.py` 32 of them, up
+from 24). No app or web changes.
+
+**Rollback:** revert this commit; it adds tests and a docstring correction.
+
+---
+
+## 2026-09-02 — "The pages this piece was read from" showed one page
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. §2 gate: put to the owner
+with three compositions; approved as **"Show every page"**.
+
+### The defect
+
+The piece screen's row says *"Original pages — The pages this piece was read
+from"* and rendered exactly one image: page 1. No count, no paging, nothing to
+say the others existed. A musician who photographed a four-page part and wanted
+to check the bar flagged on page three could not — and page three is usually
+the one they came for.
+
+Two things were already in place for this and neither was used:
+
+- **`ScoreResponse.page_count`**, added so a client could know a page three
+  exists, reaching **no client at all**. Third instance today of a field added
+  for a purpose nobody implemented, after `pending_uploads.user_id` and the
+  `page_count` note itself.
+- Its note said the list would follow *"when a screen needs to show page
+  three"*, and gave the cost as *"one storage call per page"*. **That stopped
+  being true**: `_sign_downloads` batches through `create_signed_urls` and
+  memoises, and it is called **once per request** with every row's key — so
+  signing every page of a piece is the same single call as signing its first.
+
+### The change
+
+`image_urls` on `ScoreResponse`, signed and in page order, populated by
+`GET /v1/scores/:id` and **not** by the library listing: the call costs the same
+either way, but forty rows of four pages is payload a grid of thumbnails never
+draws. `image_url` stays and stays first, so every listing, every thumbnail and
+any client that never learns about the field are unchanged.
+
+On the app, `Piece.pages`, a paging `ScrollView` and a line of type. No chrome:
+the photograph is the music and stays the thing you look at, and the count is
+what tells you there is more (§3 laws 3 and 8). A one-page scan renders exactly
+what it did before — `describePagePosition` is silent at one page, because
+"Page 1 of 1" is a label that never changes.
+
+### Two things I got wrong on the way
+
+**A hook after an early return.** I declared the pager's `useState` beside the
+code that uses it, below the `isPending`/`isError` branches, which changes the
+hook count between renders. React tore the screen down with error #310 and the
+boundary caught it — the only reason it read "Something broke" rather than
+going blank. Moved up with the other hooks.
+
+**Sizing the box to each photograph.** `ScoreThumbnail` is `contentFit="cover"`,
+right for a library tile and wrong for a page you are meant to read — it drew a
+band of a few notes across the middle, which quietly defeated `PAGE_HEIGHT`'s
+own comment, *"tall enough that a page of sheet music is legible rather than
+indicated"*. So it takes a `fit` prop now, `contain` here.
+
+Then I measured each image's aspect so no box would ever letterbox, and on the
+web build the scroll view and its pages disagreed about the result — measured, a
+122px page inside a 398px scroller, because react-native-web does not size a
+horizontal `ScrollView` from its content the way the native one does. **Three
+attempts in, I stopped**: that was optimising for a fixture. `assets/fixtures`
+holds 1200x124 crops of one system and no photograph of a page looks like that.
+A fixed page-shaped box fills for a portrait page and letterboxes the crops,
+which is an honest picture of what they are. The aspect machinery came back out,
+including the `onAspect` prop, rather than being left in unused.
+
+### Fixtures and coverage
+
+`fixture-wohlfahrt-01` is the one multi-page part in the library now — a state
+that had no fixture, which is why nobody had looked at it. `toPiece` derives
+`pages` from the thumbnail, so the other eleven fixtures did not have to
+declare anything.
+
+`pageIndex.ts` holds the two rules (which page an offset is on, and what to
+call it) because a rule inside a `.tsx` is a rule nothing checks — eight of the
+nine capture-path findings were exactly that. Eight cases, including the
+rounding that would otherwise caption page 2 as page 1, and both overscroll
+ends.
+
+### Verification
+
+backend **1912 passed / 2 xfailed**, `test_multi_page_api.py` 18 of them with three new cases
+— every page signed in order in **one** call, the listing still signing one,
+and a discarded photograph signing nothing · mobile 1272 passed (111 files) ·
+`tsc --noEmit` clean · web build clean · walk PASS · a11y PASS across 23 routes,
+with the new view among them. `.env` restored with `diff -q`.
+
+**Not covered:** a real portrait photograph of a page. Every image in this
+repository is a wide crop, so the box has only ever been seen letterboxing.
+
+**Rollback:** revert this commit. `image_urls` is additive and defaults empty;
+an app without it falls back to the thumbnail.
+
+---
+
+## 2026-09-02 — A repeat spanning a page break, and the stale reason that kept it parked
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Put to the owner under §2
+because it changes a schema the app types against; approved as **"Add the
+schema field"**.
+
+### How it was found
+
+By reading the three `strict` xfails — a deliberate record of things known not
+to work. All three are exemplary, with measurements and reasons. One reason
+ended:
+
+> *"Multi-page is inert behind the unapplied 011, so nothing reads this today."*
+
+`011_score_pages` has been applied on `intempo-dev` since **2026-08-29**
+(verified against `supabase_migrations`), the scan flow uploads every page —
+I walked it importing two an hour earlier — and `join_pages` runs in the
+shipping worker. The defect was live and had looked parked for four days.
+
+**A reason to postpone is a claim, and it goes stale like any other.** Both
+places that repeated it are corrected.
+
+### The defect
+
+Most pieces that repeat their opening print no `|:`, so a backward sign with
+nothing to pair it with falls back to the start of what was read. Right for a
+piece; wrong for a *page*. Measured on ten-bar pages: a forward on page 1 bar 5
+closing on page 3 bar 4 read as **4** bars repeated where the truth is 20 — and
+`alignment.py` builds its timeline from that, so a musician playing the repeat
+correctly is scored against a shape nobody plays.
+
+Worse, the page-1 sign was not merely mismatched, it was **discarded**:
+`_repeats_in` left unclosed forwards in a local list and returned without them.
+
+### The fix
+
+Two facts now cross the join, because neither can be inferred afterwards:
+
+- `ScoreJson.unclosed_repeat_starts` — the forward signs still open where a
+  page's music stopped. A **stack**, because nested `|:` is legal and the
+  importer already keeps one; carrying a single value would lose the outer sign
+  silently, which is this same bug one level down.
+- `Repeat.start_inferred` — whether the opening was printed or fallen back to.
+
+`join_pages` keeps the stack across pages and rewrites **only** the inferred
+openings. It extends the stack *after* placing each page's own repeats: a sign
+still open at a page's end cannot close on that page, or the importer would
+have paired it.
+
+**`start_inferred` is what makes this safe, and it is the reason the obvious
+fix was wrong.** Dropping repeats that open on a page's first bar — the
+no-schema-change alternative — also drops genuine section repeats, which open
+there constantly. Carrying the fact costs a field and loses nothing.
+
+Both fields default to "no information", so every stored score reads back
+exactly as before. The app needs no change: `_Strict` is `extra="ignore"`, and
+after the join `unclosed_repeat_starts` is empty and `start_inferred` is
+history.
+
+### Tests
+
+The strict xfail did its job — it turned `XPASS(strict)` the moment the fix
+landed, which is a failure, so the marker could not survive the change. Removed,
+and its docstring rewritten to say what carries the fact instead of why it
+could not be carried.
+
+Three new cases, two of which are the ones that could go wrong: a genuine `|:`
+printed on page 2's first bar keeps its own opening while page 1's stays
+pending; two nested openings across pages close innermost first; and a
+single-page scan is returned bit-identical with its backward sign still reading
+from bar 1.
+
+### Verification
+
+backend **1909 passed / 2 xfailed** — one fewer xfail than before, which is
+the fix landing. mobile 1264 passed, `tsc --noEmit` clean: the app needs no
+change. No web build change.
+
+**Not covered:** a real multi-page photograph with a repeat spanning the break.
+The fixtures are hand-built MusicXML pages; no such photograph exists in the
+repository.
+
+**Rollback:** revert this commit. Both schema fields are additive with
+defaults, so a rolled-back reader still validates every score written under it.
+
+---
+
+## 2026-09-02 — The scan flow had never been rendered with a page in it
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. No §2 gate: no app code
+changed. Two check tools did.
+
+### What was uncovered
+
+I checked a rule this project states and had never verified — *"A screen
+someone can reach needs a way out they can see"*, from `PageHeader`'s docstring.
+All twenty-two routes in `linking.ts` pass: every destination has the tab bar,
+every pushed screen a visible back or close. **No finding**, and the check
+discriminates — asking Today for a back control and Help for a tab bar makes
+both fail, so the pass is not vacuity.
+
+Enumerating the routes to do it turned up the thing worth having. `audit-a11y`
+visited **fifteen** of the twenty-two. The seven it had never seen include the
+**entire scan flow** — the app's main way of getting music in — plus Add piece,
+Export data and Acknowledgements. All seven audit clean, so no defect; the
+coverage is the deliverable.
+
+### The scan flow, populated
+
+Adding those routes exposed the honest limit immediately: reached by URL, the
+four scan screens render their **empty** states, because `captureSession`
+starts empty and the scanner needs a camera this container does not have. That
+is real coverage of real screens and it is not coverage of the flow a musician
+walks.
+
+`ImportPagesScreen`'s docstring says pages picked there "go into the same
+`captureSession` the scanner fills, so everything downstream — the page list,
+the upload, naming, OCR — is the flow that already exists". On web
+`expo-image-picker` opens a genuine `<input type="file">`, so Playwright's file
+chooser reaches it. That makes the claim checkable, and `walk-app.mjs` now
+checks it with **two of the repository's own fixture pages** — so the review
+list shows real engraved music rather than a coloured rectangle.
+
+Two assertions: the pages arrive **in order** with a count that agrees (page
+order is what that screen exists to let someone fix, and the upload sends the
+list in the order shown), and sending them without a backend is refused in
+words that name a route which exists and offer a way back to the pages.
+
+### Proving the leg bites, and the defect that came out of proving it
+
+Reversing `captureSession.pagesInScan` broke the flow, and the leg failed — but
+by throwing a Playwright click timeout that **killed the whole run**. A real
+regression here would have produced a stack trace instead of this file's own
+report, and silently skipped both microphone legs after it. A check that hides
+the checks behind it is worse than the bug it found.
+
+The continue click is guarded now, and re-verified against the same broken
+build: three clean `FAIL` lines, and the two microphone legs still run and
+still pass. `captureSession.ts` restored and confirmed byte-identical by
+`git diff` before rebuilding.
+
+### Verification
+
+walk PASS (26 checks, up from 24) · a11y PASS across 22 routes, up from 15 ·
+`tsc --noEmit` clean · web build clean. `.env` restored with `diff -q`.
+
+**Not covered:** the naming screen (`/scan/name`) populated. Reaching it needs
+an upload to succeed, which needs a backend. Its empty state is audited and its
+populated state is not.
+
+**Rollback:** revert this commit; both files are check harnesses and nothing
+ships from them.
+
+---
+
+## 2026-09-02 — Two hand-rolled copies of a reader that has a documented single home, both wrong in the case it was written for
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. No §2 gate: backend only.
+Found immediately after the entry below, by reading the page-collecting code
+next to it rather than moving on.
+
+`score_pages.pages_of` is the one place that knows the three shapes a scan
+comes in — the 011 array, a pre-011 row with only `source_image_url`, and a
+hand-entered piece with neither. Its docstring names the fourth shape too:
+
+> *"An empty array is treated as no pages at all: `011` writes NULL rather than
+> `'{}'` for a piece with no scan, so an empty array is a row somebody built by
+> hand, and reading it as 'a scan with no pages' is the only honest reading."*
+
+`scores._page_keys` uses it, with its own comment: *"One place, so accept and
+delete cannot disagree about how much of a scan there is."* `me.py` had **two
+more copies** and used neither.
+
+Both take `isinstance(pages, list)` as "the array is the answer" and stop. With
+an empty array beside a page still in the deprecated column:
+
+- the **export** counted that piece as zero pages, and
+- **account deletion never collected the key**, so the photograph stayed in the
+  bucket — the same leak as the entry below, one column over.
+
+Both now call `pages_of`. The deletion inventory becomes the same two lines
+`scores._page_keys` already is, and the export a one-line `sum`.
+
+**How reachable is it.** Not very, and worth saying so rather than dressing it
+up: migration 011 writes NULL rather than `'{}'` and backfills
+`ARRAY[source_image_url]` for every existing scan, so no migration or endpoint
+in this repository produces `[]`. The reason to fix it is not the frequency —
+it is that a rule with a documented single home had three implementations, and
+the two that were not the home disagreed with it in precisely the case the home
+was written to handle. The net change is twelve lines shorter.
+
+### Tests
+
+One new: an empty array with a legacy page still removes that page on
+deletion. Verified it catches the defect — with the old reader restored, it is
+the only one of 43 that fails.
+
+### Verification
+
+backend 1905 passed / 3 xfailed (`test_me.py` 43 of them). No app changes.
+
+**Rollback:** revert this commit; it only replaces two readers with the shared
+one.
+
+---
+
+## 2026-09-02 — Deleting your account left your abandoned sheet-music photographs in storage forever
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. No §2 gate: backend only.
+
+### The defect
+
+`DELETE /v1/me` inventories storage before removing the identity — the right
+ordering, and the same one `delete_score` was fixed to use. It inventories
+three places: `users.avatar_key`, `scores.source_image_url(s)`, and
+`analyses.audio_url`.
+
+There are **four**. `pending_uploads` is the row an object gets when it has
+been uploaded and has not become anything yet: a page photographed and then
+backed out of, a save that failed after the bytes landed, a transcribe retried
+against a fresh key. Migration 014 put `user_id` on that table and its own
+comment says why —
+
+> *"Whose it is. Not for permissions — the sweeper runs as the service role —
+> but so that deleting an account can take its unclaimed uploads with it, which
+> is exactly the case that has been leaking."*
+
+— and nothing ever read it.
+
+**The consequence is the worst version of the hole that table exists to
+close.** `user_id` REFERENCES `auth.users (id) ON DELETE CASCADE`, so
+`delete_user` takes the row. The object then has no `scores` row, no `analyses`
+row, no `users` row, **and no `pending_uploads` row** — so the sweeper, whose
+only question is an indexed query on that table, can never see it either. It is
+unreachable by every screen and every request, including the musician's own,
+forever. Produced by the one action a person takes to make their data go away.
+
+### The fix
+
+`pending_uploads.keys_for_user(client, user_id)` groups unclaimed keys by
+whatever bucket each row names, and `_account_storage` merges them into what it
+already collected. De-duplication was already there and now earns its keep: a
+key that is in *both* `scores` and `pending_uploads` — a save that succeeded
+after the sweeper row was written — is asked for once.
+
+Three deliberate details:
+
+- **Read last.** So the compatibility fallback can be narrow. Any failure that
+  is not "this deployment has no `pending_uploads`" would already have aborted
+  on the three queries above, which raise into a 503 and leave the account
+  intact. Migration 014 is applied on `intempo-dev` and nowhere else, and
+  refusing to delete an account over a missing table would be a worse bug than
+  this one.
+- **It takes the caller's client** rather than reaching for its own, unlike
+  everything else in that module. The inventory and the deletion that follows
+  have to be the same view of the same database.
+- **It raises**, and the module docstring said *"Nothing here may raise"*. That
+  rule is right for `record`, `claim` and `sweep_unclaimed`, where the cost of
+  raising is a musician losing the page they just photographed. Here the trade
+  inverts: swallowing an error strands objects permanently during an operation
+  that cannot be retried. The docstring now says so rather than contradicting
+  the file it heads.
+
+### Tests
+
+Three new, plus the existing removal assertions extended. That an abandoned
+page and an unsent take are removed; that the inventory happens **before**
+`delete_user`, since a snapshot taken after the cascade finds nothing and
+reports success over stranded objects; and that an account can still be deleted
+where migration 014 never ran, with everything the deployment does know about
+still removed.
+
+Verified they catch the defect rather than describe the fix: with the
+`pending_uploads` read removed, 3 of the 42 fail.
+
+### Verification
+
+backend 1904 passed / 3 xfailed (`test_me.py` 42 of them). No app changes, so
+the mobile suite and the walk are untouched by this.
+
+**Not covered:** this is asserted against a mocked Supabase client, like every
+other test of this endpoint. Nobody has watched a real object disappear from a
+real bucket — that needs the live project.
+
+**Rollback:** revert this commit. `keys_for_user` is additive and its only
+caller is the block in `_account_storage`.
+
+---
+
+## 2026-09-02 — The same rounded-off comparison, in the third place: the library's own row order
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. No §2 gate: no screen, no
+composition, no copy — the same rows, in an order that means something.
+
+Found by looking for a fourth instance of the defect fixed one commit earlier,
+which is the right thing to do after finding a third. `grep` for
+`daysSincePracticed` returns four uses; two are correct and two were not.
+
+`groupByRecency` sorted within each group with
+`daysSincePracticed(a) - daysSincePracticed(b)` — **whole calendar days**. Every
+piece worked in the same session compares equal, and `sort` being stable then
+leaves them in whatever order the list arrived in. So a morning's three pieces
+appeared under "This week" in server row order, under a heading whose entire
+job is to be about recency.
+
+Now compared by the instant, most recent first, with title breaking a genuine
+tie. **The heading above it still uses calendar days, and must**: `bucketFor`
+and each row's own "5 days ago" label are read off the same function, which is
+the reason this module was pulled out of the screen at all. Rounding is right
+for saying *which week*; it is wrong for saying *which came first*.
+
+### Where the family stands
+
+Four uses of `daysSincePracticed`, all now accounted for:
+
+- `library.bucketFor` — rounding, correct, and load-bearing for the labels.
+- `today.neglectedFrom`'s null test — asks only "was it ever practised".
+- `today.neglectedFrom`'s choice — fixed in the previous commit.
+- `library.groupByRecency`'s sort — this one.
+
+Nothing else in the app orders by it. The three sorts in `api.ts` already
+compare `Date.parse`.
+
+### Tests
+
+Eight cases; the file had none. The bucket boundaries with their labels, empty
+groups dropped, fixed group order, most-recent-first, the row-order case both
+ways round, the identical-instant tie, alphabetical for the never-practised,
+and an unreadable timestamp filing as "Not practiced yet" rather than as today.
+Verified against the old comparator: 2 of the 8 fail.
+
+### Verification
+
+mobile 1264 passed (110 files) · `tsc --noEmit` clean · web build clean ·
+walk PASS. `.env` restored with `diff -q`.
+
+**Rollback:** revert this commit; the change is one comparator.
+
+---
+
+## 2026-09-02 — "The piece you have left longest" depended on the order the rows came back in
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. No §2 gate: no screen, no
+composition, no copy — the same two sentences, chosen correctly.
+
+`lib/today.ts` decides both claims under Today's practice card, and had **no
+tests** while doing it. Two defects, one live and one latent, and both were
+found by writing the tests.
+
+### The tie was decided by row order
+
+`neglectedFrom` picked the neglected piece with a `reduce` keeping the largest
+`daysSincePracticed` — which counts whole **calendar** days. Two pieces worked
+in the same session tie exactly, and a strict `>` then keeps whichever the list
+returned first. Measured: `[morning, evening]` gives *Zebra study*,
+`[evening, morning]` gives *Alpha study*, same library, same day.
+
+The branch immediately above it sorts alphabetically **and says why** — *"so
+the same library always suggests the same piece rather than whichever the list
+happened to return first"* — so the rule was written down, applied to one of
+the two branches, and not to the other. This is the Insights defect from
+earlier today, one screen over: a claim about a musician's own practice that
+changes with the order rows arrive in.
+
+Fixed by sorting on the **instant**, which is the better answer rather than
+merely the deterministic one: of two pieces played on the same day, the one
+played at nine in the morning genuinely has been left longer than the one
+played at nine at night, where alphabetical would only have made an arbitrary
+choice repeatable. Title breaks a true tie, which needs two takes at the same
+millisecond.
+
+### `now` was accepted and half-honoured
+
+`suggestionsFor` takes a `now` so the claim is checkable without a clock. It
+chose the piece against that instant and then labelled it with
+`formatLastPracticed`, which read `new Date()` — so with `now` a year after the
+take, the row said **"Practiced yesterday"**.
+
+Harmless in the app, where both are the current time, and stated as such: this
+is a latent trap, not a live bug. It is worth closing anyway because it makes
+every test written against that parameter quietly wrong, which is how it was
+found. `formatLastPracticed` and `formatLastPracticedShort` now take `now` and
+default it, so no caller changed.
+
+While there: `formatLastPracticed`'s docstring still said *"Nothing behind the
+API supplies this yet"*. `api.ts` has said the opposite for some time —
+`lastPracticedAt` comes from `/v1/analyses` — so the note is deleted rather
+than left to mislead.
+
+### Tests
+
+Ten cases, none of which existed: the attention row naming its session count
+and getting "1 session" singular right, skipping a piece already named
+elsewhere, inventing no problem when everything is steady, never-practised
+beating long-ago, both tiebreaks, the clock, and the two nulls. Verified they
+catch the defects — with the fixes reverted, 3 of the 10 fail.
+
+### Verification
+
+mobile 1256 passed (109 files) · `tsc --noEmit` clean · web build clean ·
+walk PASS. `.env` restored with `diff -q`.
+
+**Rollback:** revert this commit; `format.ts`'s new parameters are optional and
+defaulted, so nothing outside `today.ts` depends on them.
+
+---
+
+## 2026-09-02 — Today told a brand-new musician there was nothing to practice, above a warmup it was hiding from them
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. §2 gate: put to the owner
+with three compositions and previews; approved as **"Add-piece leads, warmup
+below"**.
+
+### How it was found
+
+By asking which screen state has no fixture — the question that has now paid
+six times. **Every fixture build has a library, a take and thirty days of
+insights**, so Today, Library and Insights had only ever been seen populated.
+Five one-line early returns in `fixtures.ts`, `.env` aside, build, look. The
+recipe is now written down in `CLAUDE.md` beside the four auth-gated screens,
+because the finding is not the interesting part — the *question* is.
+
+Library, Insights and Profile came back fine. Today did not.
+
+### What it said
+
+> **Nothing to practice yet**
+> Add a piece of sheet music and it will show up here.
+
+Which is **false**, and the app knew it. `WarmupPanel` depends on nothing but
+the instrument — which onboarding *requires* every account to choose — and
+`/warmup` is a finished screen: real engraved notation, a tempo control that
+remembers, playback. It was simply below the `if (!piece)` early return, so a
+new account could not reach it until they had added a piece. A musician's first
+session was an empty screen and a single button, with a complete exercise for
+their instrument sitting one branch away.
+
+### What it says now
+
+The empty state keeps the only **primary** action on the screen — adding a
+piece is what the app is for, and the warmup produces no verdict — and the
+title moved to the thing that is actually empty: *"Nothing in your library
+yet"*. The warmup follows, under the same small `SectionHeader` the populated
+Today gives it, from the same component rather than a variant of it.
+
+### Three-foot test, run twice, and the second run changed the design
+
+**First attempt — greeting, then the *warmup*, then "Add a piece".** Backwards.
+The warmup was in a `Card`, and a bordered block wrapping engraved notation
+outweighs unenclosed text and a button every time. It was also the only card on
+the screen, which is the habit §3 law 3 names by itself. Moved to the page
+background — where `WarmupPanel`'s own docstring says it was designed to live —
+it recedes; on the populated Today it is one of a column of cards and recedes
+by position instead, which is work position cannot do here.
+
+**Second: greeting · "Add a piece" · the warmup.** That is the brief.
+
+Two spacing decisions came out of the same look. `EmptyState`'s own 32pt bottom
+padding stacked with the 24pt section gap put 56pt between the button and the
+warmup label — more than double any other gap on Today, and why the screen
+first read as having stopped early; the section's margin is zero here for that
+reason. And the pair is centred in what the header leaves, which is the job
+`fill` used to do for the empty state alone: stacked from the top, both actions
+sat above the thumb zone with 190pt of nothing under them (§3 law 7). `fill`
+cannot survive a second block, so the centring moved up a level.
+
+### What is not covered
+
+Verified **visually**, on a throwaway empty-account build — there is no fixture
+for an empty account in the shipping bundle and adding an env-var variant would
+put a developer code path in the product. The walk still exercises only the
+populated app.
+
+### Verification
+
+mobile 1246 passed (108 files) · `tsc --noEmit` clean · web build clean ·
+walk PASS (24 checks) · populated Today re-shot and unchanged.
+`mobile/.env` moved aside for each fixtures build and restored with `diff -q`.
+
+**Rollback:** revert this commit; the change is one branch of `TodayScreen` and
+two styles.
+
+---
+
+## 2026-09-02 — A muted microphone cost a musician one of three free analyses, and the advice for it could not work
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. No §2 gate: no screen, no
+composition and no new copy — one existing message that could never fire now
+fires, and one pipeline sentence is corrected the way `_why_alignment_failed`'s
+were.
+
+### What a musician did, and what happened
+
+They opened a piece, set a tempo, played a take with the microphone muted —
+a hardware mute, a permission revoked after it was granted, a device recording
+from an input with nothing routed to it — stopped, waited through the upload
+and the pipeline, and were told: *"We couldn't hear any notes to analyze — try
+re-recording a bit louder."* And it had **spent one of their three free
+analyses for the month** to say so.
+
+Three separate faults in that sentence and that path.
+
+### 1. "Louder" is advice that cannot work — measured
+
+`onset_strength` differences a dB-scaled mel spectrogram, so scaling a waveform
+shifts every frame by a constant that the differencing removes. Measured on all
+six fixtures, requantised to 16 bit at each level, the onset count is
+**identical from 0 dBFS down to -90 dBFS**, where the samples are barely more
+than one LSB. Ten seconds of white noise at -60 dBFS gives ten onsets; ten
+seconds of digital silence gives none. Full tables in `TUNING_LOG.md`.
+
+So the only recording that reaches `no_onsets` is one that is *digitally
+silent*, and playing louder into a muted microphone produces the identical
+file. The message now names the input.
+
+### 2. The same branch blamed the musician for an empty page
+
+`onsets.size == 0 **or** expected.size == 0` — the second is a score with no
+notes read off it, nothing to do with the recording, and it got the same
+"record louder". That is the mistake `_read_page`'s failure reasons made three
+times, in a fourth place. `_why_nothing_to_compare` separates them and names
+the empty transcription **first** when both are true: no amount of re-recording
+makes a page with nothing on it analysable, so pointing at the microphone would
+cost a second take and change nothing. `diagnostics.py` has named both causes
+correctly all along — only the sentence the musician sees was wrong.
+
+### 3. The app had the file in its hands and let it go
+
+`EmptyRecordingError`'s own description says *"a muted input, or a stop before
+any audio"*. Only the second half was true: the check was
+`durationOf(chunks) === 0`, and **a muted microphone delivers samples like any
+other — they are simply all zero.** So the take had a duration, passed, and went
+to the server to be told what the phone already knew.
+
+`lib/audio/level.ts` is the other half. A running peak meter folded into each
+chunk as it arrives — running rather than a pass over the finished take,
+because a fifteen-minute take is 43 million samples and stopping a recording
+should not walk all of them.
+
+**The threshold is exactly zero, and the measurement is why.** Since a take at
+the bottom of 16-bit resolution analyses exactly as well as a loud one, any
+non-zero floor would take a verdict away from a musician who could have had
+one. It also does not claim to be the server's `no_onsets` set — constant DC
+yields no onsets while being far from zero here — it is the subset knowable on
+the phone with certainty, which is the only subset worth refusing without
+asking. The message shown is the one the record screen already had, unchanged.
+
+### Tests, including two files that had none
+
+`audioRecorder.web.ts` (265 lines) and `audioRecorder.ts` (138) sat on the
+critical path between a musician's playing and the file the whole pipeline
+reads, with **zero tests between them**. Both now have one, driven against stub
+graphs the way `click.web.test.ts` drives the metronome: the WAV header carries
+the rate the *hardware* settled on rather than the one requested, the
+microphone is released at the end, a take of all zeros is refused, a take
+holding a single bit is accepted, and a discarded take's audio cannot vouch for
+the one that replaces it.
+
+Verified the tests catch the bug rather than describe the fix: with the guard
+reverted, 4 of the 11 fail; restored, all pass.
+
+**And an end-to-end leg in `walk-app.mjs`**, because a message nobody has seen
+is a message nobody has checked. `createMediaStreamDestination()` with nothing
+connected is a real `MediaStream` carrying a real track that produces silence,
+so the leg exercises the actual worklet in the actual built app. Also verified
+by rebuilding with the old guard: **FAIL — "a silent take was accepted"**;
+rebuilt with it, PASS and the screen reads *"That take came back silent. Check
+the microphone isn't muted or covered, then try again."*
+
+### Verification
+
+backend 1901 passed / 3 xfailed · mobile 1246 passed (108 files) ·
+`tsc --noEmit` clean · web build clean · walk PASS (24 checks).
+
+`mobile/.env` was moved aside for the fixtures builds and restored with a
+`diff -q` check, as `CLAUDE.md` requires.
+
+**Not covered:** a real muted microphone on a real phone. The container has no
+audio device, so both the native path and the actual OS mute behaviour are
+argued from the API contract and tested against stubs, not observed.
+
+**Rollback:** revert this commit. The two recorder tests and
+`lib/audio/level.ts` are additive; the backend change is one function and its
+call site.
+
+---
+
+## 2026-09-02 — The practice lesson said the same thing every day
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Put to the owner under the
+§2 gate; approved as *"Vary the exercise, keep the diagnosis"*, with the wording
+previewed.
+
+**One drill per verdict.** `practiceLessonFor` returned a single exercise for
+rushing, one for dragging, one for on-tempo — so a musician working on their
+rushing met the identical card, word for word, every day until they stopped.
+Advice that never changes stops being read, and this is a full card on Today,
+on the feature the app's whole proposition rests on.
+
+The **diagnosis** stays fixed, deliberately. "Make room between the clicks" is
+still true tomorrow, and rewriting a correct heading to look fresh would be the
+app pretending to know something new. Only the drill underneath moves — three
+per verdict now, and the existing one is kept as the first of each, since it was
+already good.
+
+Rotated **by the date**, through `warmup.ts`'s `dayIndex`, for the reason
+`warmupFor` gives: it has to be the same drill all day and the same on every
+device, or closing the app mid-session would reroll the work already started.
+`now` is injected so the rotation is testable.
+
+**Three tests were pinning the single drill's text and had to change**, which is
+the right kind of failure. They now pin a date and keep asserting the diagnosis,
+and four new cases cover what actually matters: the heading and reason are
+constant across a week, the drill is not, two calls on the same date agree, and
+**every drill for every verdict names the piece and the working tempo** — the
+reason the card cannot read like a generic article dropped onto the dashboard,
+and the thing a newly added drill is most likely to forget.
+
+The drills are pedagogy, so they are specific rather than filler: for rushing,
+hearing the metronome on the off-beats, and holding the last note of a bar its
+full length (rushing usually starts by leaving a note early, not by playing the
+next one fast); for dragging, preparing each note during the one before it, and
+a faster pass to stop the slower one feeling like a ceiling; for on-tempo,
+playing without the metronome and starting from a later bar, since a pulse that
+only holds from bar 1 is the opening you have practised rather than the piece.
+
+**Tests:** mobile 1227 passed (105 files); `tsc --noEmit` clean; web build
+clean; `walk-app.mjs` PASS. Today's card re-read from the running build.
+
+**Side effects:** the card's exercise line changes daily for an unchanged
+diagnosis. **Rollback:** revert.
+
+---
+
+## 2026-09-02 — A refused microphone, and a bug I reported to myself and withdrew
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. A check added to
+`walk-app.mjs`; the app is unchanged.
+
+**I thought I had found the worst defect of the day, and I had not.** Denying
+the microphone in a headless browser and tapping Start produced *"No microphone
+is available on this device."* — which for a refusal is the wrong sentence, and
+a consequential one: it sends a musician looking for a hardware fault instead of
+telling them to grant permission.
+
+It is the right sentence here. This container **has no audio input at all**, so
+`getUserMedia` rejects with `NotFoundError`, which `audioRecorder.web.ts`
+correctly maps to `MicrophoneUnavailableError`. Measured directly rather than
+argued:
+
+    no device      → NotFoundError
+    fake device    → TIMED OUT (prompt never answered)
+
+The second line is the other half of the lesson: Playwright has no way to
+*deny* a permission prompt — it simply never resolves — so the refusal branch
+cannot be reached by driving the browser, which is why it had never been seen.
+
+Reached by stubbing `getUserMedia` to reject with a real
+`DOMException('…', 'NotAllowedError')`, which is exactly what Chromium does when
+someone taps "Don't Allow". The app then says: *"Your browser is blocking the
+microphone. Open the site controls beside the address, allow Microphone, then
+press Start again."* Correct, and it names a way out.
+
+**So: no defect, and the check exists anyway.** Both branches are right and
+nothing was holding them apart. The new leg asserts a refusal is not reported as
+a missing device — the confusion that is easy to introduce, since one `catch`
+serves both and the distinguishing line is a single `error.name` test.
+
+**Verified by reintroducing it**: deleting that `NotAllowedError` branch makes
+the walk report `a refused microphone was reported as a missing one — "No
+microphone is available on this device."`. Restored byte-identically and rebuilt.
+
+**Second time today my measurement was the thing at fault** — the first was
+reading the start-bar picker mid-scroll. Both times the app was right and the
+probe was wrong. Worth writing down: a browser harness differs from a phone in
+ways that look like product defects, and the difference is usually the harness.
+
+**Tests:** `walk-app.mjs` PASS (eighteen checks); `tsc --noEmit` clean; web
+build clean. The app tree is untouched.
+
+**Side effects:** the walk gains ~10s. **Rollback:** revert.
+
+---
+
+## 2026-09-02 — The two screens a musician meets after a take that failed
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Put to the owner under the
+§2 gate with both screens rendered and sent first; approved as *"Centre them,
+like Insights"*.
+
+**There is exactly one take fixture and it succeeds**, deliberately — the
+comment beside it says fabricating a failure *"would put a 'we couldn't read
+that' screen in front of someone browsing the demo, describing a recording they
+never made"*, and that is right, because this build is also the public preview.
+So `VerdictScreen`'s other two branches had never been rendered:
+
+- `take.failure` → *"This take didn't get analysed"*
+- `take.status !== 'ok'` → *"Nothing to measure"*, with the pipeline's sentence
+
+These are the screens a musician meets **after playing**, which is the one part
+that cannot be repeated. Reached with the throwaway-build technique this file
+already documents, so no failure state ships into the demo: two ids handled in
+`getTake`, built, walked, then restored — `diff -q` clean and `git status` clean
+before anything else was done.
+
+**The copy was already good.** What was wrong was the composition: a short
+sentence in the top quarter with two thirds of the screen empty beneath it. The
+same shape the owner had already ruled on this morning for Today, and the same
+shape as the `AccountStartupScreen` defect this file records.
+
+Now `EmptyState fill`, the treatment Today and Insights use. The header keeps
+only the back control and the piece, because the finding moved into the centred
+block and a screen has one dominant focal point (§3 law 4) — it should be the
+outcome, not the title of the piece.
+
+**`PageHeader.title` became optional to allow that**, rather than rendering a
+back row inline in `VerdictScreen`. That row carries the negative offset whose
+comment records it as a **touch-target** fix — the back control measured 32x44
+against this app's 44pt floor — and a second copy of it elsewhere is exactly how
+that comes back. One place owns the back row.
+
+**Three-foot test (both screens, rebuilt):** first the finding in centred serif,
+second its sentence, third "Record again" at the thumb. The piece title recedes
+to a grey line at the top.
+
+**Tests:** mobile 1223 passed (105 files); `tsc --noEmit` clean; web build
+clean. **`PageHeader` is used by every screen**, so both browser tools were run
+against the rebuilt app rather than trusted: `walk-app.mjs` PASS (seventeen
+checks, no page errors) and `audit-a11y.mjs` PASS (fifteen routes) — which is
+what shows the optional title broke no other header.
+
+**Side effects:** `PageHeader` now accepts a header with no title. **Rollback:**
+revert.
+
+---
+
+## 2026-09-02 — The start-bar picker's pagination had never been rendered
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. A fixture, no product
+change — the picker is unmodified.
+
+**Every score in `fixtures.ts` was eight bars or fewer.** The longest,
+`KEY_CHANGE_SCORE`, is eight; `DEMO_SCORE` is three. So the picker's
+pagination — the thing it was rebuilt for this session, at the owner's request
+— fitted on one page in every fixture and **had never been seen**. Its rules are
+unit-tested (`pages.ts`, `barPages.ts`), and by this project's own reckoning
+that is exactly a state nobody has looked at, which is the third time today
+that gap has been worth closing.
+
+`CONTINUOUS_EIGHTHS_SCORE`: thirty-two bars of 4/4 eighths on
+`fixture-wohlfahrt-01`. **Not filler chosen for length** — that piece already
+carries `01_simple_printed.jpg`, which `SOURCES.md` documents as Wohlfahrt
+Op. 45 No. 1 and `tools/homr-bench.py` reads back as *thirty-two eighths and
+nothing else*. A thirty-two-bar study of continuous eighths is what belongs
+behind that photograph. It stands in for the étude rather than claiming to be it
+note for note, the way `bass_excerpt.musicxml` stands in for OMR output.
+
+**Driven, and it is right.** Six pages, and the readout the owner approved
+appears for the first time: `Bars 1–6 · Page 1 of 6`. Stepping one bar at a
+time and letting each scroll settle, every boundary is exact:
+
+    Bar 6  | Bars 1–6 · Page 1 of 6        Bar 24 | Bars 19–24 · Page 4 of 6
+    Bar 7  | Bars 7–12 · Page 2 of 6       Bar 25 | Bars 25–30 · Page 5 of 6
+    Bar 12 | Bars 7–12 · Page 2 of 6       Bar 30 | Bars 25–30 · Page 5 of 6
+    Bar 13 | Bars 13–18 · Page 3 of 6      Bar 31 | Bars 31–32 · Page 6 of 6
+    Bar 18 | Bars 13–18 · Page 3 of 6      Bar 32 | Bars 31–32 · Page 6 of 6
+
+**A false alarm, recorded because I nearly reported it.** A first pass clicking
+every 200 ms read *"Bar 25 · Bars 19–24 · Page 4"*, which does not add up — bar
+25 is on page 5. It was my probe reading during the scroll animation
+(`scrollEventThrottle: 64`, and `showing` updates from `onScroll`), not a
+desync. Letting each step settle shows the boundaries exact. The lesson is the
+usual one: a measurement taken mid-animation is not a measurement.
+
+`pageReadout` returning nothing on a single-page score is **correct and was
+checked** rather than assumed — `total <= 1` yields null, because "Page 1 of 1"
+is noise.
+
+**Tests:** mobile 1223 passed (105 files); `tsc --noEmit` clean; web build clean.
+
+**Side effects:** `fixture-wohlfahrt-01` now shows thirty-two bars wherever it
+is opened — the piece screen, the score screen and the picker. Deliberate.
+**Rollback:** revert.
+
+---
+
+## 2026-09-02 — The manual form accepted a metre the app cannot count
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. A validation fix; the
+message a musician sees is unchanged.
+
+Found by driving `/add/manual` with bad values rather than reading it. Typing a
+title and **`0/4`** saved the piece.
+
+`ManualPieceForm` kept its own rule, `/^\d{1,2}\/\d{1,2}$/`, which matches
+`0/4`, `4/0` and `0/0`. The app's actual authority, `beatsPerMeasure`, returns
+**null** for all three — it requires the result be finite and positive — and the
+meter parity fixture names them (`"0/4": null`, `"4/0": null`, `"0/0": null`).
+So the one route into the library that needs no camera could store a metre that
+every other part of the app treats as unreadable: the metronome, the bar check
+and the editor would all behave as though nothing had been read, while the piece
+screen displayed `0/4` as though it were a metre.
+
+The form asks `beatsPerMeasure` now — accepted **exactly when the app can count
+a bar of it**, one rule instead of two. That also picks up the spaces the
+backend tolerates (`" 4 / 4 "`, which `ocr/validate.beats_per_measure` reads as
+four beats), so the form now accepts what the server would have sent for the
+same page; the old regex rejected it.
+
+The same shape as everything else found today: not a bug in new code, but two
+rules about one thing that had drifted apart.
+
+**Verified by driving it**, before and after. Before: `banana` rejected, **`0/4`
+saved**, `6/8 @ 72` saved. After: `banana` and `0/4` both rejected with the same
+sentence, `6/8 @ 72` still saved. Tempo bounds were already right — `5000` and
+`1` both give *"Tempo is a whole number between 20 and 300."*
+
+**No new test.** The rule is now a one-line delegation to `beatsPerMeasure`,
+whose zero cases the parity fixture already covers on both sides; a module
+wrapping it to assert `null !== null` would be ceremony rather than cover.
+
+**Also checked and clean:** the empty-form message is *"A title, at least — it
+is how you will find this again."*, and the screen says plainly up front that a
+piece added this way has no notes behind it.
+
+**Tests:** mobile 1223 passed (105 files); `tsc --noEmit` clean; web build clean.
+
+**Side effects:** a metre that was accepted and meaningless is now refused.
+**Rollback:** revert.
+
+---
+
+## 2026-09-02 — The last of the "header versus in force" family, in the function that flags bars
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. A correctness fix in a
+module, no UI.
+
+Found by auditing the merged work on `main` against the rules CLAUDE.md names —
+grepping for a clef defaulted to `treble`, an instrument inferred from a clef,
+and a second copy of the beat check. The first two were clean (the only literal
+`clef: 'treble'` is in `lib/warmup.ts`, where violin warmups genuinely are in
+treble, and each instrument's warmups carry the right clef). The third led here.
+
+**`problemMeasures` read the metre off the header and applied it to every bar.**
+A metre printed mid-piece holds until the next one is printed — which this app
+reads, stamps, carries across a page break and draws — so on a part that turns
+3/4 at bar 20, every correct three-beat bar from 20 onward was flagged as
+needing a look. Measured on a three-bar score turning 3/4 at bar 2, before the
+fix: **`[2, 3]`** — bar 2 printing 3/4 and holding exactly three, and bar 3
+holding three under the metre still standing.
+
+This is the function that decides which bars a musician is **told to go and
+check**, so being wrong here sends them to correct music and wastes the one kind
+of attention this feature exists to direct.
+
+It now resolves the metre per bar through `timeSignaturesByMeasure`, the same
+walk the metronome and the bar editor use. Two tests, both directions: a bar
+correct under a changed metre is not flagged, and a bar wrong under the metre it
+itself declares still is — so the fix cannot be "stop checking".
+
+A second, quieter improvement falls out. The old code returned `[]` outright
+when the *header* metre was unreadable, silencing the check for the whole page
+including bars that print a metre of their own further down. Now an unreadable
+metre skips only the bars it governs.
+
+**The server was already right**, and checked: `_meters_in_force` in
+`validate.py` walks a running metre and treats `"unknown"` on a bar as
+invalidating it rather than continuing. The app now agrees on both points —
+`timeSignaturesByMeasure` carries `"unknown"` forward and `beatsPerMeasure`
+returns null for it, so those bars are skipped on both sides.
+
+**A correction to my own reasoning.** I believed the meter parity fixture was
+enforced on one side only, because `grep "meters/parity"` found only the app's
+test. It was wrong: `backend/app/tests/test_meter_parity.py` builds the path
+with `/` operators, so the literal never appears. Both sides are held to it, and
+`test_sandbox_parity.py` covers metre *changes* besides. The gap was narrower
+than I first thought — the parity fixtures cover the string parsing and the
+browser ports, and nothing held **this** function to the server's walk, because
+it is a deliberate subset of `validate.py` rather than a port of it. A subset
+may check *less*; it may not check *differently*, and this did.
+
+**Tests:** mobile 1223 passed (105 files); `tsc --noEmit` clean. Backend
+untouched.
+
+**Side effects:** pieces that change metre will now flag fewer bars, which is
+the point. **Rollback:** revert.
+
+---
+
+## 2026-09-02 — Neither MusicXML tool could read a file with two parts
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Tooling only.
+
+**The fixture paid for itself within the hour.** Adding
+`violin_duo.musicxml` made both tools that glob `fixtures/musicxml/` report it,
+and each was wrong in its own way — invisible until now because every fixture in
+that directory happened to hold exactly one part.
+
+`score_json_from_musicxml` refuses a multi-part file with no part chosen, and is
+right to: its docstring says a downloaded orchestral score's first part is
+usually the piccolo, and a cellist handed the piccolo line gets a verdict *wrong
+in a way that looks right*. That refusal is about **which instrument a musician
+plays**. Neither tool is asking that question, and both inherited the refusal
+anyway.
+
+**`engraver-coverage.py` — read every part.** It asks which note values the
+engraver can draw, where the instrument is irrelevant and every part is more
+material. It now reads each part of a multi-part file as its own row
+(`violin_duo.musicxml [P1]`, `[P2]` — 4 and 6 notes, matching the fixture). It
+would previously have skipped a **real orchestral score outright**, reporting it
+as a parse failure.
+
+**`musicxml-bench.py` — name the category and skip it.** The opposite call, and
+deliberately so: this bench asks how well the importer reads a *photographed*
+page and averages per-page confidence. A hand-authored duo scores 1.00 trivially,
+so reading its parts would flatter the exact number the bench exists to report —
+and this file's own comment says the mean *"is what let a reader that scored 0%
+on real repertoire look adequate"*. It now prints
+`violin_duo.musicxml — 2 parts — not a single-part page` instead of a red
+`MusicXMLError` row that read like a broken fixture.
+
+Headline numbers unchanged and checked rather than assumed: `mean 0.71 worst
+0.00 pages 5`, with `worst` still `oemer_phone_photo`, not the new file.
+
+`notation-coverage.py` does not glob that directory and is unaffected; run
+anyway, and it reports the same documented gaps (128th and shorter unnamed at
+any ratio, dotted notes inside tuplets patchy — both dropped and therefore
+visible in the bar's beat sum).
+
+**Tests:** both tools run clean; `engraver-coverage.py` still reports **42 of the
+schema's 46 durations**, the undrawn four being the 128th family named in
+`DELIBERATELY_UNDRAWN`. The backend suite was **not** re-run: the change is
+confined to `tools/*.py`, which pytest does not import.
+
+**Side effects:** none. **Rollback:** revert.
+
+---
+
+## 2026-09-02 — Wire the two browser checks into CI, and make them runnable anywhere
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Tooling and CI, no product
+change.
+
+**A check that runs only when someone remembers is a check that rots**, and
+`audit-a11y.mjs` says so about itself in its own docstring: an earlier version
+*"was run once against the legacy `frontend/` tree on 2026-08-20 and did not
+survive the rebuild into `mobile/`"*. Leaving the replacement unwired repeats a
+failure this repository has already had once.
+
+Three things had to be true first, and two of them were defects.
+
+**1. Both tools only worked in this container.** Each hardcoded
+`executablePath: '/opt/pw-browsers/chromium'` — a path that exists here because
+the environment pre-installs a browser and sets
+`PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD`, and nowhere else. `browserPath()` now uses
+it when it exists and otherwise lets Playwright find the browser it downloaded,
+so the same command works on a laptop and on a runner.
+
+**2. Every wait in the walk was a fixed sleep.** Fine on an idle laptop, and
+the way a browser check becomes flaky the moment it runs somewhere loaded — and
+a check that goes red at random is one people learn to ignore, which is worse
+than not having it. All but three are now conditions: the app has mounted when
+`#root` has children, a tap has landed when the path reaches its destination, a
+file has been read when its name appears.
+
+That conversion **immediately reported a failure that was mine, not the app's**,
+which is the point of doing it before wiring anything up. `tab('Today')` first
+returns to the tab layer, which already lands on `/`, so tapping Today changed
+nothing and a "wait for the path to differ" timed out on a tab that had always
+worked. It now waits for the *destination* (`TAB_ROUTES`), not for a change.
+
+**3. The job must not mask anything.** `app-walk` is separate from
+`mobile-check` on purpose: these drive a real browser, so if one ever does go
+flaky it must not hide a genuine test or type error in the job beside it. CI has
+no `.env`, so its `build:web` is already a fixtures build — exactly what both
+tools need. `serve` is started and then **polled** rather than slept on, for the
+same reason as above.
+
+**Verified locally**: `walk-app.mjs` PASS (seventeen checks), `audit-a11y.mjs`
+PASS (fifteen routes), both after the browser-path change. The YAML parses and
+the job's steps are the ones intended.
+
+**Verified on a runner** (`75220a4`, run 33674087826): **success in 3m08s**.
+The three things that could only be found out by pushing all hold — Playwright
+and its browser install, the walk passes under CI load, and the backgrounded
+`serve` survives between steps, which the runner's own cleanup line confirms:
+`Terminate orphan process: pid (2881) (npm exec serve dist -l 4320 -s)`. The
+audit's fifteen routes are in the log, each `clean`, ending `PASS`, so the job
+is not green by skipping.
+
+It was pushed to *this branch* rather than proposed, precisely so it ran against
+my own PR where I could watch it and take it out again if it went red for
+harness reasons. It did not.
+
+**Tests:** mobile 1221 passed; `tsc` clean; both tools PASS locally.
+
+**Side effects:** every PR gains a job that installs Playwright and a browser
+(~1-2 minutes, run in parallel). **Rollback:** delete the `app-walk` job.
+
+---
+
+## 2026-09-02 — The part picker had no fixture, so nobody had ever seen it
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. A fixture and a check, no
+product change.
+
+**Every MusicXML fixture in this repository holds exactly one part** —
+`bass_excerpt` a Cello, `orchestral_part` a String Bass. So `ImportFile`'s
+"Which part do you play?" step had nothing to be driven against, and by this
+project's own rule a state with no fixture is a state nobody has looked at.
+That has cost five times already. `partsIn` is unit-tested with a two-part
+string; the **screen** was not.
+
+`fixtures/musicxml/violin_duo.musicxml`: Violin I and Violin II, **both in
+treble clef on purpose**. A duo whose parts sit in different clefs can be told
+apart by the notation, which quietly lets a wrong implementation look right;
+these two cannot be told apart by anything except the name the file gives them.
+That is the case the rule exists for — CLAUDE.md's *"never infer the instrument
+from the clef"* — and it is not cosmetic: `submitTake` sends the instrument and
+`analysis_runner` turns it into `analyze(..., double_bass=...)`.
+
+Validated before use rather than assumed: parsed with ElementTree, both parts
+declared, and **all four bars sum to exactly 16/16 divisions**. A picker that
+returned the wrong part would still yield a score that adds up, so the beat
+check cannot catch that mistake — only the pitches differ (Violin I climbs
+G-A-B to a held C; Violin II repeats E and then rests).
+
+**Driven, and it works.** The picker asks, offers both, records the choice as
+`violin_duo.musicxml · Violin II`, and offers **Change part** afterwards. The
+single-part leg still gets straight to Title, which is the other half of the
+rule: a solo part must not be asked a question it has no answer to.
+
+**Three-foot test (part picker, first time it has been looked at):** first "Open
+a notation file", second "Which part do you play?", third the two names as ruled
+rows. Hierarchy holds and nothing competes.
+
+**One observation, not changed.** With only two parts the list ends about
+two-thirds up the screen and the rest is empty, so the choice the screen exists
+to offer sits nearer the middle than the thumb (§3 law 7). It is the same shape
+as the `AccountStartupScreen` defect this file records — but unlike that one the
+element is a list whose length depends on the file, and a quartet or an
+orchestral score fills it. Raised with the owner rather than changed, since it
+is composition and §2 owns that.
+
+**Tests:** `tools/walk-app.mjs` PASS (seventeen checks); mobile 1221 passed;
+`tsc` clean.
+
+**Side effects:** the walk now also depends on
+`fixtures/musicxml/violin_duo.musicxml`. **Rollback:** revert.
+
+---
+
+## 2026-09-02 — The walk now reads a real MusicXML file
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Tooling, no product change.
+
+**The import path is the one worth driving with a real file.** Everywhere else
+the durations are *read* off a photograph and may be wrong; a MusicXML file
+**states** them, which is why CLAUDE.md calls it the one route whose timeline
+cannot be wrong. Nothing was exercising it end to end — `lib/musicxml/file.ts`
+has unit tests, and no check went near the screen.
+
+Driven through Playwright's file chooser with
+`fixtures/musicxml/bass_excerpt.musicxml`, and it works:
+
+    /add/notation → "bass_excerpt.musicxml · Cello" → Title / Composer
+                  → "Importing a file needs the backend. This build runs on
+                     sample data."
+
+Two things now checked, and the first is the reason to bother:
+
+- **The part is named from the file, never inferred from the clef.** That
+  fixture declares `<part-name>Cello</part-name>` and is written in **F clef**,
+  so an app guessing from the clef would say double bass — CLAUDE.md's own
+  warning, and it matters beyond a label: `submitTake` sends the instrument and
+  `analysis_runner` turns it into `analyze(..., double_bass=...)`. Verified
+  against the file rather than trusted: the fixture's declared name and its
+  `<sign>F</sign>` were both read before believing the screen.
+- **Saving without a backend is refused in words.** A fixtures build cannot
+  save, and a piece that *looks* saved and is not is worse than a refusal.
+
+**Not covered, and worth saying:** neither MusicXML fixture is multi-part —
+`bass_excerpt` is one Cello part, `orchestral_part` one String Bass — so the
+part-picker, the thing CLAUDE.md says must never be guessed, has no fixture to
+be driven against. Inventing a multi-part file to test it is a bigger change
+than this commit, and doing it badly would be worse than the gap.
+
+**Tests:** `tools/walk-app.mjs` PASS (fifteen checks); mobile 1221 passed; `tsc`
+clean.
+
+**Side effects:** the walk now depends on `fixtures/musicxml/bass_excerpt.musicxml`
+being present. **Rollback:** revert.
+
+---
+
+## 2026-09-02 — `tools/walk-app.mjs`: drive the app, don't just render it
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. A tool, no product change,
+so no §2 gate.
+
+**Everything else that checks this app is static.** `audit-a11y.mjs` renders a
+route and measures it; the suites exercise modules. Neither can see a tap land
+on the wrong screen, and neither can see **two screens state the same fact
+differently** — which is what happened earlier today and was found by driving
+the app by hand, which is not something that happens on every change.
+`DECISIONS.md` (2026-08-24) records that there is no React Native testing
+library here, and CLAUDE.md names navigation as the part still untested. The web
+build is the same tree, so a route landing wrong here lands wrong on a phone.
+
+Two kinds of check, and the second is the one worth having:
+
+- **Destinations** — eleven of them: the four tabs, a Library row into a piece,
+  browser back *and* forward (a web build has to survive the browser's own
+  controls), an Insights piece row, the Next-focus row into Record, a Today take
+  row into its verdict, and a **deep-linked** bar editor, which has no history
+  behind it and must still reach the score.
+- **Agreement** — the window headline is the same claim on Today and Insights
+  from two components, and a recent-take row on either screen must state a
+  *verdict* and never a habit. Both are today's two bugs, turned into checks.
+
+**Verified by reintroducing the bug.** Putting the direction-only reading back
+on Today's "Practice snapshot" and rebuilding produced exactly the report it was
+written for:
+
+    FAIL  window headline: Insights says "Your tempo wanders",
+                           Today says "You play steadily"
+
+Restored byte-identically (`diff -q` clean, `git status` clean) and rebuilt, and
+the walk passes on the restored tree.
+
+Worth noting what the regression stub proves on its own: reading only
+`summary.verdict` gives **"You play steadily"** for this musician, because a
+wandering account's aggregate verdict *is* `on_tempo`. That is the whole reason
+the headline could not stay a lookup.
+
+**One thing the walk surfaced and did not fix.** The bar editor's message under
+an unbalanced count is `'Tap a note, then choose what it should be.'` in both
+directions — an instruction rather than a reading, and a stale one for a
+musician who has just tapped a note and made it worse (measured: an edit took
+bar 3 from "4 of 4 beats" to "5 of 4 beats" and the sentence changed from
+confirming the bar to that instruction). The count and its warning colour do
+carry the fact. Left alone because the fix is copy on a screen and belongs
+behind the §2 gate rather than smuggled into a tooling commit.
+
+**Tests:** mobile 1221 passed (105 files); `tsc --noEmit` clean; web build
+clean; `tools/walk-app.mjs` PASS; `tools/audit-a11y.mjs` PASS.
+
+**Side effects:** none — a new tool, run by hand like the a11y audit. It needs a
+served fixtures build, so it is **not wired into CI**, same as that audit.
+**Rollback:** delete the file.
+
+---
+
+## 2026-09-02 — I fixed Insights and left the same bug on Today
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. No new design decision —
+this makes two screens say what the owner already approved for one.
+
+**Found by driving the app in a browser**, which is not something that happens
+on every change. CLAUDE.md names navigation as the one part still untested; a
+walk of the tab bar tripped over a selector matching *"Today · 96 BPM · You
+tend to rush"* — the string I had reported fixed forty minutes earlier.
+
+It was fixed. On Insights. `TodayScreen` had **both halves of the same bug**:
+
+- **A single take through the habit wording.** `formatTendency(recentTake.verdict)`
+  in "Recent practice", whose own comment says one recording cannot see a habit.
+  Identical to the Insights row, in a second file.
+- **The window headline ignoring the wandering.** "Practice snapshot" used
+  `formatTendency(summary.verdict)` — the aggregate's *direction* and nothing
+  else. So on the fixture musician, who wanders, **Today said "You tend to
+  rush" while Insights one tab away said "Your tempo wanders"**, about the same
+  thirty days. Verified in the built app before and after.
+
+**The guard is the type system, not a test.** `formatTendency` and
+`formatTendencyDetail` are no longer exported from `lib/tempo.ts`; they are
+module-private in `lib/insights/tendency.ts`, so a third caller **does not
+compile**. Confirmed by adding one: `TS2305: Module '"../../lib/tempo"' has no
+exported member 'formatTendency'`, then restored byte-identically.
+
+I wrote a source-scanning test first and threw it away, which is worth
+recording. It worked — it caught the third caller — but it flagged **its own
+explanatory comment** on the first run, needed comment-stripping regexes to fix
+that, and needed `node:fs`, which fails `tsc` here because `@types/node` is
+only present transitively. Adding a types package to an app that ships to a
+phone, to check a rule the compiler can enforce outright, is the wrong trade.
+The remaining test asserts the monopoly took nothing away: `readTendency` still
+answers the plain-direction case for all five verdicts.
+
+**Why the rule changed under the export.** `formatTendency` was a lookup from a
+verdict, and any screen could call it correctly. It became a *rule* earlier
+today — the direction is only the finding when the wandering is not — and an
+exported lookup is then a way to get the old answer with none of it. The export
+was the bug; Today was where it went off.
+
+**Tests:** mobile 1221 passed (105 files); `tsc --noEmit` clean; web build
+clean. Both screens re-read from the running build: Insights and Today now both
+say "Rushing" for the take and "Your tempo wanders" for the window.
+
+**Side effects:** `formatTendency`/`formatTendencyDetail` are no longer
+importable from `lib/tempo.ts` — a caller outside `tendency.ts` is a compile
+error, deliberately. **Rollback:** revert.
+
+---
+
+## 2026-09-02 — A convention enforced for the two files that existed when it was written
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. No UI, so no §2 gate.
+
+**`test_manual_migrations_are_safe_to_run_again` named 013 and 014 by hand**
+and checked them statement by statement. Nothing covered **015**, or anything
+after it — so the rule that a migration must survive being run twice was
+enforced for the two files that happened to exist the day it was written. That
+is the shape of a convention, not a check.
+
+It matters because applying a migration is a **manual act against a production
+database** through the Supabase SQL editor, and the guards exist precisely so
+that an operator who cannot remember whether one already ran is free to run it
+again. A rule that silently stops applying is worse than no rule: the next
+migration inherits the reassurance without the property.
+
+Now every migration from **013 forward** is checked for `ADD COLUMN`,
+`CREATE TABLE`, `CREATE INDEX` and `CREATE POLICY` guards, plus
+`ADD CONSTRAINT`, which is called out separately because **Postgres has no
+`IF NOT EXISTS` form for it** — the only safe spelling is to drop it first,
+which 015 does, and a reader copying the surrounding style would not learn that
+from the other statements.
+
+**001 and 005–011 are exempt on purpose**, recorded rather than fixed: they have
+run everywhere they need to, and rewriting applied history to satisfy a test is
+a worse trade. Re-running one is an error rather than damage — `ADD COLUMN` on
+an existing column simply fails — so the cost is a confusing message to an
+operator, not a broken database. Measured across the tree: 001 and 005–011 carry
+no guards; 013, 014 and 015 are fully guarded; 012 has none of these statements.
+
+A second test asserts the cut-off has not gone **vacuous**. A constant that
+skips every file is a passing test guarding nothing, which is the way this kind
+of check fails; 013, 014 and 015 were verified by hand and stay in scope
+whatever else changes.
+
+**Verified by breaking it**: an unguarded `ADD COLUMN` appended to 015 fails the
+new check, and the fixture was restored byte-identically (`diff -q` clean).
+
+**CLAUDE.md corrected.** It said *"Migration 014 is written and not yet
+applied"*, which stopped being true this session. Checked against
+`supabase_migrations` rather than memory: **013, 014 and 015 are applied on
+`intempo-dev` and nowhere else**; the paused `intempo` project stopped at 012,
+so the orphaned-photograph hole is still open on it if it is ever unpaused as
+production. The note now says which deployment, because "applied" without one
+is the claim that cost this project weeks — 015 was merged to `main` and the
+start-bar picker it powers refused every take.
+
+**Tests:** backend 1898 passed + 3 xfailed.
+
+**Side effects:** none — a test and two comment blocks. **Rollback:** revert.
+
+---
+
+## 2026-09-02 — The last free analysis of the month was spent without knowing it
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Put to the owner under the
+§2 gate with the copy previewed; approved as *"Only on the last one"*.
+
+A free account gets **three** analyses a calendar month
+(`tier_limits.FREE_MONTHLY_ANALYSES`), and the Record screen said nothing about
+the count until it reached zero:
+
+| Take | What the musician was told |
+|---|---|
+| 1st, 2nd | nothing |
+| **3rd — the last one** | **nothing** |
+| 4th | blocked before playing, with a reset date and what still works |
+
+So a third of the month's allowance was spent with no indication which take was
+the last one — the take you would have chosen differently had you known. The
+number existed the whole time: `UsageResponse.remaining` was read by exactly one
+caller, `analysisLimitReached`, and only ever compared against zero. It was also
+on screen — as an account row on **Profile** reading "2 of 3 this month", which
+is not where anybody is standing when the decision is made.
+
+**One sentence, on the last one only.** `describeLastFreeAnalysis` in
+`lib/analysisAllowance.ts`, beside its sibling, returning null unless
+`remaining === 1`. Announcing "2 of 3 left" before a take nobody is worried
+about turns a practice screen into a meter, and the number changes nothing
+until it is the number that does (§3 law 10). Silent for an account with no
+quota, which has no end of an allowance to be near.
+
+Advisory, never blocking — the take is allowed and the button stays live. It
+shares the footer slot with the two existing sentences and **yields to both**:
+a refused quota and a failed take are about the take in hand, and this is about
+the next one.
+
+**It is deliberately not hidden once recording starts**, though by then it has
+nothing left to decide. The record button sits directly under this line in a
+flex column, so dropping two lines of text would move the button at the exact
+instant a thumb is on it, and the count-in would move it a second time. The
+sentence stays true for the whole take, and the take ending leaves this screen.
+
+`analysisAllowance.ts` **had no test file at all** — including for the plural
+assembly in `describeReachedAnalysisLimit`, which is the kind of thing that
+ships "1 free analyses". Fourteen cases now, covering both sentences, the
+unlimited tier, an unparseable `resets_at`, and that the two never speak at
+once.
+
+The date renders in the reader's own locale rather than forced to UTC, and that
+is right rather than incidental: `resets_at` is the first instant of next month,
+so the local calendar date of that instant is when the allowance actually
+returns for the person reading it.
+
+**Three-foot test (Record, ready state):** first the piece title, second the
+tempo number being set, third the record button. The notice is small secondary
+text directly above the button, at the point of decision, and does not compete
+with any of the three. Verified on a screenshot of the running build — the
+fixture musician already sits at `remaining: 1`, so this state needed no
+throwaway build.
+
+**Tests:** mobile 1220 passed (105 files); `tsc --noEmit` clean; web build
+clean; `tools/audit-a11y.mjs` PASS across all 15 routes.
+
+**Not verified:** no live account has reached the limit here — the fixture
+supplies `remaining`, and the server's own refusal path is unchanged and
+untouched by this.
+
+**Side effects:** none. No type changed, no wire format, no server. **Rollback:**
+revert this commit.
+
+---
+
+## 2026-09-02 — Insights told a musician which way they drift, decided by list order
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Put to the owner under the
+§2 gate before anything was built; approved as *"Headline says it"* with the
+copy previewed.
+
+**Two false statements, both measured against the real mapping layer** before a
+line was changed (a throwaway `describe` over `apiInsightsSource.getInsights`,
+the same harness `api.test.ts` uses):
+
+| Practice | Screen said | Bar said |
+|---|---|---|
+| One take alternating 18% ahead / 18% behind, bar to bar | "You tend to rush" · *"you were usually ahead of the beat"* | dead centre |
+| Two takes: one 15% behind, one 15% ahead | "You tend to drag" — and **"You tend to rush"** when the two arrived in the other order | dead centre |
+
+One cause. `meanDeviationPct` is a **signed** mean, so it cancels; the headline's
+band and direction were not computed from it at all but **borrowed from one
+take** — whichever sat nearest the mean, first-wins on a tie. So the word and
+the picture beneath it came from different statistics and could contradict each
+other, and the word could flip on identical practice.
+
+The comment defending the borrow said the thresholds were the server's and
+would move. True, and no longer an obstacle: `result_json.tolerance` carries
+the six numbers each take was judged by, so `bandFor` / `directionFor` in
+`lib/tempo.ts` are ports of the pipeline's `classify_band` / `_direction`
+applied to the aggregate. **No threshold is invented in the app.** That also
+deleted a *third* copy of those thresholds, inlined in `fixtures.ts`.
+
+**Deriving from the aggregate is only half of it.** It makes both rows above
+read "You play steadily", which over a musician landing 18% off the beat on
+both sides is a worse thing to say than the original. So the window carries a
+second measurement: `spreadPct`, the mean **distance** from the beat ignoring
+side, averaged over a take's *measures* (per-take means cancel — that is the
+bug). It is never below `|meanDeviationPct|`, so the gap between them is
+exactly the wandering a direction cannot explain.
+
+`tempoWanders` is two threshold tests, **both the server's**: the bias is
+inside the on-tempo band and the distance is not. Not a ratio between the two
+figures — that would be a constant chosen here, and `TUNING_LOG.md` is a record
+of what happens to constants chosen here. The spread has no side, so it is
+tested against the **wider** of the two inner thresholds: where the two
+disagree the quiet reading wins, because this app's credibility rests on not
+inventing problems.
+
+**The bar draws both ways when the finding is the wandering.** Leaving it
+signed would have put a centred bar under the words "Your tempo wanders" — the
+same word-versus-picture contradiction, one element lower. `formatTendencyDetail`
+says magnitude belongs to the bar; for a two-sided quantity the honest drawing
+is two-sided. The approved copy also names the figure, which is the one
+percentage in this screen's copy and is there because the alternative is
+stating the size nowhere.
+
+**Three more things followed from the same misreading:**
+
+- `PieceInsightRow` said **"On tempo"** for a piece with no direction — the
+  headline's bug one level down, on the row a musician taps to go and practise.
+  Now "Uneven", the word `measureReading.ts` already uses for this idea.
+- `lib/today.ts` picked the piece worth attention with `verdict !== 'on_tempo'`,
+  which skips a wandering piece *precisely because* it has no direction — so
+  Today could never name the least steady piece in the library. And the piece
+  list was sorted by bias, which buried that piece at the bottom; sorted by
+  `spreadPct` now, which for a piece that does drift one way is the same order
+  it always was.
+- **"Recent sessions" ran each take through `formatTendency`**, whose own
+  comment says a single take cannot see a habit. A metadata row read
+  *"Today · 96 BPM · You tend to rush"*. Now `formatVerdict` — "Rushing".
+
+**Two tests changed meaning, deliberately.** `the worst band leads` asserted
+that one `severe` **note** anywhere in thirty days set the whole window's band:
+three bars averaging 1.3% off the beat produced the headline "You tend to drag".
+That is not thirty days of evidence about how someone plays, which is the only
+claim this screen makes. The note is still reported — `toTake` still takes the
+worst band of a take and the verdict screen still shows it. Renamed to
+`one severe note does not become a habit`.
+
+**Fixtures.** `fixture-paganini-24` is the piece that wanders (bias 1.4,
+distance 11.8) — a state with no fixture is a state nobody has looked at, and
+this one is now visible beside four pieces that drift one way, in one build.
+Correctly summarised, the *existing* fixture musician turns out to be a
+wandering one: bias 4.1% and distance 8.8% across 40 sessions. The screen had
+been calling that "You play steadily".
+
+**`tools/audit-a11y.mjs` could not be run the way its own docstring said.** A
+bare `import ... from 'playwright'` resolves against the script's directory, not
+the working directory, so `cd mobile && node ../tools/audit-a11y.mjs` failed
+with ERR_MODULE_NOT_FOUND against the install the same instructions describe.
+Anchored to `mobile/package.json` with `createRequire`.
+
+**Three-foot test (Insights, rebuilt):** first *"Your tempo wanders"*, second
+the sentence explaining it, third the bar straddling the centre. The section
+labels below recede. One focal point; hierarchy carried by type, not boxes.
+The two bar shapes read as a vocabulary — one-sided means a direction, a band
+across the centre means no direction.
+
+**Tests:** mobile 1206 passed (104 files); `tsc --noEmit` clean; web build
+clean; `tools/audit-a11y.mjs` PASS across all 15 routes; narrow-viewport sweep
+at 320x568 and 375x667 clean across 16 routes.
+
+**Not verified:** none of this has met a real analysis. The thresholds it reads
+are `backend/config.toml` defaults, still untuned against real recordings
+(`TUNING_LOG.md`), so where `tempoWanders` sits relative to real playing is a
+question only recordings can answer.
+
+**Side effects:** `PracticeInsights` and `PieceInsight` gained a required
+`spreadPct`; anything constructing one must supply it. **Rollback:** revert this
+commit — the wire format is unchanged, so no server or migration is involved.
+
+---
+
+## 2026-09-02 — The first screen of a new account, looked at for the first time
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Both changes were put to
+the owner under the §2 gate before anything was built and both were approved:
+*"Centre it, like Insights"* and *"Solid, on Today only"*.
+
+**Nobody had seen the empty app.** Every fixture build opens with eleven pieces
+and thirty-four sessions, so the state a person actually meets on the day they
+sign up — no pieces, no takes, no insights — had never been rendered. Same
+blind spot as the four gated screens, one level up: not a screen behind a gate,
+but a *whole app* behind having data.
+
+Reached the same way — a throwaway build in which the fixture sources return
+nothing behind a query parameter, restored with a `diff -q` check.
+
+**The copy is good and was already there.** Today: *"Nothing to practice yet /
+Add a piece of sheet music and it will show up here."* Library: *"No pieces
+yet"*. Insights: *"No practice recorded yet / Add a piece and record yourself
+playing it. InTempo will show you where the tempo held and where it drifted."*
+Each says what is missing and what to do about it. No errors, no undersized
+targets on any of the three.
+
+**Two things were wrong on Today, and only on Today.**
+
+1. **It sat in the top third with two thirds of the screen empty beneath it**,
+   and the only action up by the status bar. `EmptyState` already has a `fill`
+   prop for exactly this, and its own docstring describes the defect —
+   *"rather than in the top quarter with two thirds of the page empty beneath
+   them, and the action lands near the thumb instead of near the status bar
+   (§3 law 7)"*. Insights passes it. Today did not.
+2. **Its only action was an outlined button.** The populated Today gives
+   "Continue practice" solid ink and keeps the outline for secondary controls —
+   so the one thing a brand-new account can do was offered in the weight this
+   app uses for *"also, if you like"*. `EmptyState` gained `actionTone`,
+   defaulting to secondary, because the outline is right where the state is one
+   part of a screen: Library's "No matches" under a search field, a failed load
+   beside other content. Today is the case where it is the whole screen.
+
+Measured after, on the running build: the action's top moved to **379 of an
+844pt viewport** — optically centred — and it is drawn in ink.
+
+**A note on how I measured it**, because the first reading was wrong: I checked
+`backgroundColor` on the `[role="button"]` element and got `rgba(0,0,0,0)`, and
+nearly reported the change as not having landed. The fill is on the inner
+animated view — the same `PressableScale` structure that cost the back button
+12pt of touch target earlier today. The screenshot is what settled it.
+
+### Three-foot test — on the screenshot
+
+**First** the solid "Add a piece" in the middle of the screen, **second** the
+greeting, **third** the two lines explaining why the screen is empty. That is
+the right order for this screen: it exists to get one thing started, and it is
+now the thing you see. Before, the greeting dominated and the action was a
+faint outline near the top.
+
+### Tests
+
+**mobile 1185 passed (103 files), `tsc --noEmit` clean.** No new cases:
+`actionTone` selects between two existing buttons and `fill` was already
+covered by its own prop; the evidence here is the rendered screen.
+
+### Not done
+
+- **Library and Insights are unchanged.** Insights already centres, and both
+  keep the outlined action — they are places you land, not where you start,
+  which is what the owner chose.
+- The empty states were inspected, not rewritten. The copy is the copy that
+  was already there.
+
+### Rollback
+
+`git revert`. One prop on one call site, and one optional prop on a primitive
+that defaults to the old behaviour.
+
+---
+
+## 2026-09-02 — The trend chart's axis named a measure the line never reaches
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Found by auditing the
+verdict screen — the route my own earlier sweep of this app missed, and the
+payoff of the whole product. It is now in `tools/audit-a11y.mjs` so the next
+sweep cannot miss it either.
+
+**The screen is good.** Serif verdict, the sentence naming the bars, the shape
+of the take, then the measure-by-measure detail, with "Record again" in the
+thumb zone. The narrative and the data agree exactly: *"You rushed across
+measures 5 to 8, then pulled it back"* over a list marking 5–8 **Rushing** and
+4, 9, 10 **Slight rush**. Accessibility-clean, and every row carries a spoken
+label that says *why* a bar went unjudged rather than just that it did.
+
+**The x axis was labelled from the wrong collection.** `trend` comes from
+`rolling_trend`, which drops every note that is slur-interior or untimed — so a
+take closing with a `rit.`, a fermata or an ornament produces a line that stops
+before the last bar. The labels were taken from `take.measures`, the whole
+take.
+
+Measured in the browser on the sample take: **a polyline of 10 points under an
+axis reading "Measure 1 … 13"**, because bar 11 is under a written tempo
+change, 12 is an uneven one and 13 is a fermata. The line's right-hand end is
+measure 10 and was captioned 13, so the peak read about three bars later than
+it happened — on the same screen whose sentence says "measures 5 to 8". The
+code's own comment states the intent it missed: *"so the ends of the line name
+measures that can be found in the list below it"*.
+
+After: **"Measure 1 … 10"** against the same 10 points. The measure list still
+shows all thirteen rows, which is correct — the list reports every bar, the
+chart covers only what was timed.
+
+**A correction to my own first reading**, since it changed the fix: I took
+`trend` for one point per measure. It is one point per **note** —
+`rolling_trend` walks `deltas`, which are per-note. That makes the labelling
+error the same in direction but different in kind, and it is why
+`timedMeasureRange` returns a *range* rather than a count: whatever the density
+of points, the first and last of them fall inside the first and last timed bar.
+
+### Noted, not fixed
+
+**The fixture's trend disagrees with the wire in granularity.** Its comment
+says it matches the pipeline — *"which is what the pipeline now sends too"* —
+and the *exclusion* does match, but `fixtures.ts` sends one value per timed
+**measure** while `rolling_trend` sends one per timed **note**. The demo chart
+therefore has ten points where a real take of the same music would have forty.
+Nothing a musician sees is wrong, and correcting it means inventing per-note
+deviations for a fixture, which is more invention than the discrepancy costs.
+Recorded here rather than quietly left.
+
+### Tests
+
+**mobile 1185 passed (103 files), `tsc --noEmit` clean.** Four cases on
+`timedMeasureRange`: a take ending untimed, one opening untimed, one fully
+timed, and one with nothing timed — which is also the case where there is no
+line to label.
+
+### Rollback
+
+`git revert`. One derived value on one screen.
+
+---
+
+## 2026-09-02 — "Build the best version first" replaces "don't optimize early"
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. The owner's call, given
+directly: *"change your md we want the best version first"*, pointing at
+operating principle 3.
+
+It read **"Don't optimize early. Ship the slowest, ugliest version that works;
+iterate later."** It now reads *build the version you would defend in review* —
+because the data shape, the correctness of a rule and the composition of a
+screen are all far cheaper to get right before something is built on top of
+them, and a large part of this log is the bill for the other choice.
+
+Two things kept, deliberately, so the reversal does not swing too far:
+
+- **Not licence to gold-plate.** "Best" is the best version *of what was asked
+  for*, not more than was asked for. The §2 gate and "every element must
+  justify its presence" are unchanged.
+- **Speed stays exempt.** The original principle was right about *performance*
+  specifically: measure first, then optimise. That is the one clause carried
+  over rather than reversed.
+
+**Changed in both files.** `intempo-combined.md` carried the same principle as
+its item 4, and CLAUDE.md's list says outright that it restates that file's
+Part II — so changing one would have left the binding document contradicting
+the source of truth. That is the exact failure mode corrected earlier today in
+the `?startup=` note, which is why it was not repeated here.
+
+No code changed.
+
+### Rollback
+
+`git revert`. Two paragraphs of prose.
+
+---
+
+## 2026-09-02 — The fourth screen, and a documented technique that did not exist
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Following up the gap left
+an hour ago: three of the four unreachable screens were walked, and
+`AccountStartupScreen` was not, because CLAUDE.md's stated way in — *"a
+`?startup=loading|error` query parameter"* on `SignedInApp` — is not in this
+tree. It is gated on `useMe()`'s `isPending` / `isError`, and nothing in
+shipping code branches on the URL.
+
+**So the note was wrong, and being wrong is the expensive part.** A documented
+technique that does not exist costs the next session exactly the time it cost
+this one to discover. CLAUDE.md now says so plainly and names a technique that
+does work: `fixtureMusicianSource.getMusician` made to throw for the error
+state, or to never settle for the loading state, in a throwaway build restored
+with `diff -q`. It also records the cheaper shape — **one** build in which each
+gate reads a query parameter, so every state comes off a single bundle rather
+than one build apiece.
+
+### Both states, looked at
+
+Rendered from a throwaway build, restored byte-identically afterwards
+(`diff -q` clean, `git diff` empty).
+
+- **Loading** — "Opening your practice space" / "Restoring your library,
+  profile, and practice history." / *"This can take a little longer after the
+  app has been idle."* That last line is the honest one: the host does sleep,
+  and the screen says so rather than looking stuck.
+- **Error** — "Couldn't open your account" / "Check your connection and try
+  again." / **Try again** / **Back to sign in**.
+
+**The defect this file records is fixed.** The 2026-09-01 note describes this
+screen "holding a centred spinner between two left-aligned sentences, with the
+one button the screen exists to offer sitting at the vertical middle of the
+phone". It no longer does: the headline and its sentence sit together, and both
+actions are anchored at the bottom in the thumb zone (§3 law 7).
+
+**Three-foot test, on the error screenshot.** First the serif headline
+"Couldn't open your account", second the black **Try again**, third "Back to
+sign in" and the explanation. One dominant focal point, the recovery action
+where a thumb is. No page errors, no undersized targets, root height 844 —
+the boot watchdog's collapse-to-zero failure is not present here either.
+
+### All four, now
+
+`AuthScreen`, `SetPasswordScreen`, `OnboardingScreen` and
+`AccountStartupScreen` have each been rendered and inspected this session. The
+running count in CLAUDE.md of what a missing fixture has cost stands at five;
+nothing here adds a sixth.
+
+### Not done
+
+- **No shipping code was added to make these reachable.** A query-parameter
+  hook in the app for the sake of inspection is a developer affordance in a
+  product, which §2 of CLAUDE.md and the `PreviewBadge` precedent both refuse.
+  The throwaway build stays the technique.
+- The two states were inspected, not redesigned.
+
+### Rollback
+
+`git revert`. Documentation only.
+
+---
+
+## 2026-09-02 — Looking at the three screens a fixtures build cannot reach
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. CLAUDE.md names four
+screens that sit behind auth or account state rather than behind a route, and
+says plainly that a state with no fixture is a state nobody has looked at —
+*"and that has now cost this project five times"*. So I looked at three of them.
+(`AccountStartupScreen`'s documented `?startup=` hook is not in this tree; the
+other three were reached by the technique the file prescribes.)
+
+**How**, because the discipline matters more than the result: one throwaway
+build in which `useAuthStatus`'s fixture default and the fixture musician's
+`onboarded` each read a query parameter, so all three states come off a single
+bundle instead of three. Restored afterwards and **checked with `diff -q`
+against copies taken before the edit** — both files byte-identical, `git diff`
+empty, and `.env` guarded the same way through every build.
+
+### What they look like
+
+All three render, with **no page errors**.
+
+- **`AuthScreen`** — "InTempo", the sign-in form, "Email me a link", "Forgot
+  your password?", "Create an account".
+- **`SetPasswordScreen`** — "Set a new password", and the sentence that earns
+  its place: *"You followed a reset link, so this replaces the old password.
+  You will stay signed in on this device."*
+- **`OnboardingScreen`** — "Who's playing?", the three required answers, and
+  **"Still needed: a photo."** The gate explains itself rather than just
+  disabling the button, which is the behaviour `missingFromOnboarding` was
+  written for.
+
+### The one finding
+
+**"Show password" measured 35x44** on both auth screens. `RevealPasswordAction`
+already carries a measured comment about `hitSlop` doing nothing on the web
+build and pads to a real target instead — but it set **`minHeight` only**. The
+height was at the floor and the width was left at whatever the word happens to
+measure.
+
+It only appears on those two screens and on the two account screens, and
+nothing had ever looked at it there. `minWidth` and horizontal centring now
+match the height. The box grows leftward into the gap beside the label, so the
+word moves 4.5pt — not enough to see — and the target reaches 44.
+
+**The audit now covers `/account/password` and `/account/email`**, which use the
+same control and *are* reachable. That is the point: the regression that would
+have been invisible until someone did another throwaway build is now caught by
+a command anyone can run.
+
+### Verified
+
+`node tools/audit-a11y.mjs` over **fourteen** routes: **PASS**, zero findings.
+**mobile 1181 passed (103 files), `tsc --noEmit` clean.**
+
+### Not done
+
+- **`AccountStartupScreen` was not inspected.** CLAUDE.md describes a
+  `?startup=loading|error` parameter on `SignedInApp`; there is no such
+  parameter in this tree, so either it was lost in a rebuild or the note is
+  stale. I did not add one — that is a change to shipping code for the sake of
+  looking at it, and the honest thing is to say the screen remains unlooked at.
+- The three screens were inspected, not redesigned. Nothing about their
+  composition changed.
+
+### Rollback
+
+`git revert`. Two style properties and two audit routes.
+
+---
+
+## 2026-09-02 — The back button was 32 points wide, on every screen
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. An `audit-a11y.mjs` was
+run once against the legacy `frontend/` tree on 2026-08-20 and did not survive
+the rebuild into `mobile/`. It is back, pointed at the app that actually ships,
+so this is one command again rather than an argument: `tools/audit-a11y.mjs`
+walks twelve routes checking accessible names, 44pt targets and 4.5:1 contrast,
+and exits non-zero.
+
+### What it found, and what turned out to be my own bug first
+
+The first run reported **15 findings**, three of them three unnamed 40x20
+checkboxes on Profile. Those were wrong. `ToggleRow` already does this
+properly — the whole row carries `role="switch"`, its label and its state, and
+the picture of the switch sits inside `aria-hidden` + `pointerEvents="none"` so
+a screen reader hears one control rather than two. My audit read the DOM without
+honouring either. It does now, and the false reports went with it. Worth writing
+down: the app was right and the new tool was wrong, which is the more likely way
+round for a tool on its first run.
+
+### The real finding
+
+**The back control measured 32x44** on seven screens and 40x44 on Warmup,
+against this app's own documented 44pt floor — on the most-used control it has,
+pressed by someone with an instrument under their chin.
+
+The cause is not a missing style. `IconButton` sets `width: MIN_TOUCH_TARGET`
+and means it. **`PressableScale` puts the caller's `style` on its inner
+animated view**, while the outer `Pressable` — the element that actually
+receives the press — sizes itself around that child. So the negative
+`marginLeft: -spacing.md` that `PageHeader` used to pull the glyph into the
+gutter came straight off the *outer* box: 44 − 12 = 32. Warmup lost 4 the same
+way, to a `marginRight` cancelling its row's gap.
+
+**This is not a web artefact.** `hitSlop` not working on web is already
+documented in three primitives here; this is different and worse, because the
+press target is genuinely smaller on every platform.
+
+The fix moves the offset from the button to the row, and closes Warmup's gap
+with `gap: 0` instead of a negative margin. Measured after: **44x44 on both,
+with the glyph centre at x=30 — exactly where it was before.** The target grew;
+nothing moved.
+
+### Verified
+
+`node tools/audit-a11y.mjs` over twelve routes: **PASS**, zero findings.
+Contrast was clean throughout on the first run too, and every interactive
+element on every screen already carries an accessible name — which is the
+finding that would have been the most work to fix, and it was already done.
+
+**mobile 1181 passed (103 files), `tsc --noEmit` clean.**
+
+### Not done
+
+- **Playwright is not a repo dependency**, so the tool documents installing it
+  alongside rather than adding a browser driver to a package that ships to a
+  phone. That means the audit is not in CI; it is a command someone runs.
+- The audit covers twelve routes, not every screen. The four that sit behind
+  auth or account state are unreachable in a fixtures build for the reason
+  CLAUDE.md already gives.
+- `PressableScale`'s style placement is the underlying hazard and is left
+  alone: changing where it puts `style` would touch every control in the app,
+  and the two callers passing a margin through it are both fixed here.
+
+### Rollback
+
+`git revert`. Two style objects and a deleted one; the tool is additive.
+
+---
+
+## 2026-09-02 — The metadata line says whether the clef lasts, and a clef change is correctable
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Both of these are UI, both
+were put to the owner under the §2 gate before anything was built, and both
+were approved: *"Say when it changes"* and *"Add it to the bar editor"*.
+
+**Why they were owed.** Drawing mid-piece changes created two gaps that did not
+exist while a piece could only have one clef and one metre. The score screen's
+metadata line stated the opening values and stopped — true at bar 1 and false
+at bar 3 — and a misread clef *change* could only be corrected by re-scanning
+the whole page.
+
+### The line
+
+`lib/notation/scoreSummary.ts`, tested, holds both rules; the screen spreads
+what it returns into the existing `MetadataRow`. Measured on the running build:
+
+| Piece | Line |
+|---|---|
+| Clef-change study | `Bass clef · turns tenor · 4/4 · Moderato · 66 BPM` |
+| Key-change study | `Bass clef · 4/4 · Andante · 72 BPM` |
+| Bach BWV 1001 | `Treble clef · 4/4 · 92 BPM` |
+
+The clause appears only where something changes, which is the point — the other
+two lines are untouched.
+
+**Named rather than enumerated.** A part that turns tenor once says so; one
+moving between three clefs says only that it changes, because a metadata line
+is a worse way to learn that than the stave is, and it is not where a reader
+should be doing that work (§3 law 10). A piece that leaves the opening clef and
+comes back — bass, tenor, bass — names **tenor**: the set is what it turns
+*to*, so a return is not a third entry and "changes" would understate a part
+that only ever visits one other clef.
+
+`unknown` still yields no metre entry at all: it is the escape hatch for an
+unreadable header, not a metre, and printing the word would caption the piece
+with it.
+
+The comment above the line said *"nothing here draws a clef"*. That stopped
+being true this session, so it now says what the line is actually still for.
+
+### The control
+
+`clefEdit.ts` is `keySignatureEdit.ts`'s sibling, deliberately down to the
+shape, and carries **both** normalisations that were bugs in the key version
+this morning:
+
+- choosing the clef **already in force** records nothing;
+- editing the opening clef **clears any clef stamped on bar 1**, which would
+  otherwise outrank the header and make the correction a silent no-op.
+
+They matter more here than they did for the key, and the module says so: a key
+written where the page prints none misspells the notes its signature touches; a
+**clef** written where none is printed moves every note on the staff.
+
+`CLEF_LABELS` moved to `scoreSummary` and is now imported by both screens
+rather than being a private constant in one of them and re-typed in the other.
+
+### Three-foot test — on the screenshot of the bar editor
+
+**First** "Bar 3" in serif, **second** "4 of 4 beats" — the verdict the screen
+exists to deliver — **third** the two setting rows, then the note strip. The
+clef row is the same shape as the key row above it, so it reads as another
+setting rather than as a new kind of thing; nothing competes with the verdict.
+
+At bar 3 of the clef-change study it reads **"Clef at this bar · Tenor clef"**,
+which is the change actually stamped there — not the piece's opening bass.
+
+### Tests
+
+**mobile 1181 passed (103 files), `tsc --noEmit` clean.** Nine cases on the
+summary — including the return-to-opening case and that an unread clef is never
+guessed — and nine on `clefEdit`, mirroring the key module's, with both
+normalisations covered.
+
+### Not done
+
+- **The metre gets the same treatment in `scoreSummary` but no control.** A
+  misread metre change still needs a re-scan; only the key and the clef can be
+  corrected. Not widened on my own judgement.
+- No screenshot of the clef *sheet* open — the row and its value are what the
+  screenshot shows.
+
+### Rollback
+
+`git revert`. The line falls back to the opening values and the control
+disappears; nothing stored changes shape.
+
+---
+
+## 2026-09-02 — A second page in another clef was joined as though it were not
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Fifth and last of the
+family, and the one that matters most for a real scan: multi-page is the normal
+case for an actual piece, and this is the join.
+
+`join_pages` already carried the **metre** and the **key** across a page break
+— stamping the first measure of a later page when that page's own header states
+something different from what is in force. It did not carry the **clef**. Line
+159 takes `_first(page.clef for page in readings)` as the score's clef and
+nothing else looked at the field again.
+
+So a part that climbs into tenor at the foot of page one — which prints a C
+clef in page two's own header and nowhere else, because that is how a printed
+part works — was joined as a piece that is bass throughout. Every note of page
+two then placed a sixth off.
+
+The metre version of this bug, measured on 2026-08-26, reported correct bars as
+long. This one is worse in kind: a wrong bar length is a caveat on a bar, and a
+wrong clef is the wrong notes on the page.
+
+Three rules, all inherited from the two walks beside it:
+
+- **Compared against what is in force**, not the first page's header. Page
+  three of a part that went to tenor on page two states bass, which equals the
+  header — a header comparison records the departure and drops the return,
+  leaving the rest of the part in tenor. Same trap, third time.
+- **A page continuing in the same clef stamps nothing.** Every page of a bass
+  part prints a bass clef in its header; stamping each would put a change to
+  the clef already in force at the top of every page — the redundant-signature
+  mistake, one level up.
+- **A measure that states its own clef wins.** The page header is only consulted
+  when the measure is silent, exactly as the key already does.
+
+Plain string equality, deliberately, where the key needs `key_fifths`:
+`_CLEF_BY_SIGN_LINE` already folds the baritone F clef onto `bass`, so two
+names that differ here really are two different clefs.
+
+### Tests
+
+**backend 1897 passed + 3 xfailed.** Three cases: a page in another clef
+stamped at the break, a page continuing in the same clef stamping nothing, and
+a page returning to the opening clef still stamped.
+
+### The family, closed
+
+Five bugs, one root cause — the value printed at the top is not the value in
+force at the bar being asked about:
+
+1. a key change drawn as an inline accidental on every F;
+2. a metre change reporting correct bars as short, in the bar editor;
+3. a clef change placing a whole tenor passage a sixth off, in the engraver;
+4. the corrector prompt naming the opening clef while showing a tenor crop;
+5. and this — a whole page joined into the wrong clef.
+
+The engraver, the editor, the prompt and the join now all ask the same
+question. I have not found a sixth.
+
+### Not done
+
+- Nothing here is verified against a real two-page scan in another clef; the
+  corpus has no such pair. The evidence is the join's own tests.
+
+### Rollback
+
+`git revert`. A pair of pages in one clef joins byte-identically either way.
+
+---
+
+## 2026-09-02 — The corrector named the clef the page opened in
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. The fourth of the same
+family, and the last one I can find: `what_this_piece_is` was fixed this
+morning to name the *key* in force at the bars being re-read, and the **clef**
+two lines above it was still doing the thing the key had just stopped doing.
+
+It read:
+
+```python
+clef = next(
+    (m.clef for m in score.measures if m.measure_number in set(bars) and m.clef),
+    score.clef,
+)
+```
+
+A clef only when one of the bars asked about **states** one — and a measure
+states a clef only where it *changes*. So a passage that moved into tenor seven
+bars earlier stated nothing at bar 14, fell through to `score.clef`, and was
+described to the model as *"a bass-clef part"* while the model looked at a
+tenor crop.
+
+**This is the worst member of the family.** A wrong key misspells the notes the
+signature touches. A wrong clef moves **every note on the staff** — tenor
+against bass is a sixth — and `read_ties` matches noteheads by pitch name, so a
+reply spelled against the wrong clef does not merely look wrong: the ties stop
+matching and onsets disappear from the timeline. The function's own docstring
+already said as much — *"a bass part read as treble is a seventh out on every
+note"* — while the line under it read the header.
+
+`clefs_in_force` joins `meters_in_force` and `keys_in_force` in `validate.py`,
+the third instance of the same six-line walk, and the sentence is dropped
+entirely when the bars straddle a change rather than naming one of the two.
+
+**Where this family came from.** Four bugs, one root cause: the value printed
+at the top of the page is not the value in force at the bar being asked about.
+It cost, in order — a key change drawn as an inline accidental on every F; a
+metre change that reported correct bars as short; a bar editor that invited a
+musician to add a beat the page does not print; a clef change that placed a
+whole tenor passage a sixth off; and this, which would have fed all of that
+back into the reader as training-quality "corrections".
+
+### Tests
+
+**backend 1894 passed + 3 xfailed.** Two cases: the clef in force named at a
+bar that states nothing, and no clef named at all when the bars straddle a
+change (while the key, which did not change, is still named).
+
+### Not done
+
+- `describe_for_retry` and the sandbox ports are untouched: `clefs_in_force`
+  produces no finding, so the browser tools owe it no port. Same note
+  `keys_in_force` carries.
+- Nothing here is verified against a live re-read; the evidence is the prompt
+  text the function returns.
+
+### Rollback
+
+`git revert`. It changes one sentence of a prompt and stores nothing.
+
+---
+
+## 2026-09-02 — A clef printed mid-piece is a change of clef
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. The third and largest of
+the "header versus in force" gaps found this session, and the one with the
+worst consequence.
+
+**`Measure.clef` was written and never read.** The schema has carried it since
+the importer learned to stamp it — `musicxml.py` compares against the *running*
+clef and its comment names the cost of ignoring the field exactly: *"notes on
+the wrong staff position, captioned with a clef the page stopped using."* The
+app's `Measure` type carries the same field with the same warning in its own
+docstring. Nothing consumed either. `staveScoreFor` never looked at it and
+`engrave` had no concept of a clef change at all, so a part that moves into
+tenor was placed **entirely against its opening clef**.
+
+For this app that is not an exotic case. The owner plays double bass; the
+fixture beside this one is a Simandl method study, and climbing into tenor for
+a high passage is ordinary writing in that book. Every note of such a passage
+was drawn a sixth off, as confidently as the notes that were right.
+
+**What was built.**
+
+- `staveScoreFor` walks a running clef and marks the item that opens a
+  changed bar, mirroring the key-change walk beside it — and compares against
+  the clef **in force**, so a return to the opening clef is recorded rather
+  than dropped. That is the same trap the metre had and the key had.
+- `layoutSystem` turns `middleStep` from a constant into a running value. It is
+  updated *before* the item carrying the change is placed, because a clef
+  printed at a bar governs that bar's first note too, not only what follows.
+- `engrave` computes the clef in force at every item, so a system beginning
+  after a change opens its head in the new clef. A change landing on a
+  system's first item is drawn by the head alone and not again after the
+  barline — the rule key changes already follow.
+- The mid-system glyph is right-aligned against the notehead it governs,
+  inside room `extraRoom` reserves, and the barline moves left to clear it.
+  Anchored to the **note** rather than the barline: a clef change is
+  commonest at a barline and is legal without one, and anchoring to something
+  that may not exist is how a sign lands somewhere else on the rare page. It
+  is drawn at `CLEF_CHANGE_SCALE` — an engraver makes a change of clef smaller
+  than the one opening a line, because it is a correction to the reader.
+- **`EngravedHead.clef` now carries which clef it is.** It held only a
+  position, and the component drew `CLEF_GLYPH[clef]` from its own prop — so
+  the moment a later system could open in a different clef, that code would
+  have drawn the *opening* clef glyph at the *new* clef's line. The old sign on
+  the new staff position is worse than either, and it would have been invisible
+  to every test that checks geometry rather than glyphs.
+
+### Verified on a screenshot of the running build
+
+New fixture `fixture-clef-change-study` — bass, into tenor at bar 3, back to
+bass at bar 5. At 390pt each bar takes its own system, and the five systems
+read: bass, bass, **C-clef**, C-clef, **bass**. Glyph census over the SVG: **3
+bass and 2 C-clefs**, no page errors.
+
+The decisive detail is C4, which appears in bar 2 and again in bar 3. In bass
+clef it is drawn above the staff on a ledger line; in tenor it sits inside the
+staff. Same pitch, different height, because the clef changed — which is the
+thing that was broken.
+
+### Tests
+
+**mobile 1163 passed (101 files), `tsc --noEmit` clean.** Eight cases in
+`clefChanges.test.ts`: placement against the new clef, the change governing its
+own note, the glyph drawn once and after the barline, a later system opening in
+the clef in force without repeating the change, no clef conjured when nothing
+read one, and three on `staveScoreFor` — including that a bar restating the
+clef in force prints nothing, and that a **return** to the opening clef is
+recorded.
+
+Placement is asserted against the **middle staff line of the same system**,
+never a raw `y`. The engraver shifts each drawing by its own ink extent, so two
+engravings put the same note at different absolute heights while agreeing
+exactly about where it sits on the staff. My first draft of that test compared
+raw `y` across two engravings and failed for that reason — the test was wrong,
+not the code.
+
+### Not done
+
+- **The mid-system glyph is covered by test, not by the screenshot.** At
+  390pt every bar of the fixture takes its own line, so the change always lands
+  at a system boundary. The geometry assertions cover the other case.
+- **No clef control.** A misread clef can be corrected on `PieceScoreScreen`
+  for the whole piece; a misread *change* still needs a re-scan.
+- The metadata line still reads "Bass clef" on a piece that turns tenor. That
+  is `ScoreJson.clef` behaving as documented — the clef the page **opens** in —
+  and rewording it is a UI decision behind the §2 gate.
+
+### Rollback
+
+`git revert`. A score with no `Measure.clef` engraves byte-identically either
+way, which is what the 1155 pre-existing tests passing unchanged demonstrates.
+
+---
+
+## 2026-09-02 — The metronome and the bar check disagreed about the same bar
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Found by carrying on
+through the notation modules after the key-signature fix: the key control had
+just been corrected for reading the *header* instead of what is in force, so
+the obvious next question was who else does that.
+
+`MeasureEditScreen` handed `piece.score.time_signature` — the metre printed at
+the **top of the page** — to `describeBeats`. `lib/metronome/plan.ts` and
+`lib/practiceCues.ts` have both walked `timeSignaturesByMeasure` for a while,
+so the click already followed a metre change correctly. The bar check did not,
+and the two are looking at the same bar.
+
+**Measured on a part that turns 3/4 at bar 3**, bar 4 holding three correct
+quarter notes:
+
+| | says |
+|---|---|
+| Editor, before | **"3 of 4 beats"**, `balanced = false` |
+| Metre actually in force | 3/4 |
+| Editor, after | **"3 of 3 beats"**, `balanced = true` |
+
+So a musician opening a bar that is *right* was told it was short, on a screen
+whose entire purpose is to invite a correction — and the correction it invites
+is adding a beat the page does not print. That is the worst shape a wrong
+caveat can have here: `alignment.py` accumulates durations, so a note added in
+bar 4 moves every onset after it, and nothing about bar 4 looks wrong
+afterwards. The bar sums, so the beat check can never find it again.
+
+**The fix is to call the helper that already exists** —
+`timeSignaturesByMeasure`, the same walk the metronome uses — rather than a new
+rule. A bar that prints its own signature is in that metre, which the helper
+already gets right, so the bar carrying the change is judged by the change.
+
+### Tests
+
+**mobile 1155 passed (100 files), `tsc --noEmit` clean.** Five cases in a new
+`screens/barEditMeter.test.ts`, in two halves on purpose: the arithmetic (a bar
+after the change balanced, a bar before it still judged by the opening metre,
+the bar printing the change judged by what it prints, and the old
+header-comparison kept as the thing being guarded against) plus a source
+assertion that the screen no longer passes `piece.score.time_signature` to
+`describeBeats`. The source half is the only thing that can see a rule living
+in a `.tsx` — there is no React Native testing library here (`DECISIONS.md`,
+2026-08-24) — and the arithmetic half is what makes the source assertion mean
+something.
+
+### Not done
+
+- **No metre control.** A misread time signature still needs a re-scan; only
+  the key can be corrected in the app. Not widened here — that is a UI addition
+  behind the §2 gate.
+- The metadata line on `PieceScoreScreen` still names the opening metre and
+  does not mention that the piece changes. Correct as a description of the
+  page's header, and changing it is a UI decision.
+
+### Rollback
+
+`git revert`. It reads a different metre for one caveat; nothing is stored.
+
+---
+
+## 2026-09-02 — Two ways the key-signature control wrote a key the page does not print
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Found by sweeping every
+route of the running app and then reading the module behind the one screen that
+edits notation. No pixels change: both fixes are in
+`screens/measureEdit/keySignatureEdit.ts`, which is already a pure, tested
+module — the control itself is untouched.
+
+**First, the credit.** The sweep covered 21 routes at 390×844 and every one
+rendered with **no page errors, no console errors and no horizontal overflow**.
+The key control gets the hard part right: it compares signatures by
+`accidentalCount` rather than by name, so `Bb major` and `G minor` are one row;
+it separates "no printed change" from "a change to C major"; and it routes the
+opening bar to the score header and later bars to the measure. That is the
+schema rule stated correctly.
+
+**What it got wrong is what happens after the tap.**
+
+1. **Choosing the signature already in force recorded a change to it.** The
+   sheet lists all fifteen signatures and asks which one is *printed at this
+   bar*. The natural way to read a list of keys is "which key is this bar in",
+   and on a bar that prints nothing those are different questions. Answering
+   the second one stored `key_signature` on a bar the page does not change at —
+   and the engraver believes the score. It draws the new signature after the
+   barline *and*, because of the courtesy rule added earlier today, prints a
+   warning at the end of the previous line about a change to the key the reader
+   is already in. A musician correcting one misread bar could put a false key
+   change on the page by naming the key correctly.
+
+2. **Correcting the opening key was a silent no-op when bar 1 carried its own
+   signature.** A measure-level key outranks the header — that is what makes a
+   change a change — so setting the header and leaving one there changed
+   nothing. Measured before the fix: header set to `Bb major`, bar 1 still
+   `G major`, key in force from bar 1 still **G major**. The screen closed, the
+   correction was accepted, and the score opened in the old key. Reachable
+   rather than theoretical: `start_from_measure` stamps the entry bar with the
+   key in force, so a score whose first measure carries one is a shape this app
+   produces.
+
+**Both fixes are the same rule the backend already follows** — compare against
+the key **in force**, never against the header. A chosen signature equal to the
+one in force normalises to `null`, and a header edit clears any signature
+stamped on the opening bar.
+
+`measures[0].key_signature` is now explicitly `null` rather than absent, which
+is why one existing assertion moved from `not.toHaveProperty` to `toBeNull`.
+The two are identical to every consumer — the schema field is optional and
+every reader tests truthiness — and the sibling case for a cleared change
+already asserted the explicit-null shape.
+
+### Tests
+
+**mobile 1150 passed (99 files), `tsc --noEmit` clean.** Four cases added to
+`keySignatureEdit.test.ts`: the redundant choice by major name, the same by its
+relative minor (the marks are what count), a real change still recorded, and
+the opening-bar clear including that the corrected key is the one in force from
+bar 1 onward and that later changes are untouched.
+
+### Not done
+
+- The control's wording is unchanged. Its help line already says "Choose a
+  signature only if a new one is printed at this bar", and rewording it is a
+  UI change behind the §2 gate. The normalisation means the wrong reading is
+  now harmless rather than merely discouraged.
+- Nothing here was exercised against a live scan; the evidence is the module's
+  tests and the route sweep.
+
+### Rollback
+
+`git revert`. The normalisation only ever writes `null` where a redundant
+signature would have gone, so reverting restores the old behaviour without
+touching stored scores.
+
+---
+
+## 2026-09-02 — The three unapplied migrations, applied
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. No code changed. This
+records an act on the production database, which is exactly the kind of thing
+that has been happening here invisibly — `readiness.py` was written two commits
+ago *because* shipping code and applying its migration are separate acts and
+nothing noticed the gap.
+
+**What was wrong.** `supabase_migrations` on the `intempo-dev` project stopped
+at **012**. Migrations 013, 014 and 015 had been written, reviewed and merged,
+and never run. The consequences were live:
+
+- **015** — `analyses.from_measure` did not exist, so the start-bar picker,
+  which the owner asked for and which is merged to `main`, refused every take
+  with *"Recording from a chosen bar isn't available on this server yet. Start
+  the take from bar 1."* The feature was shipped and dead.
+- **014** — no `pending_uploads` table, so the sweeper swept nothing and the
+  orphaned-photograph hole documented in CLAUDE.md since 2026-08-24 was still
+  wide open: an upload whose save failed was unreachable forever, including to
+  the musician who took it.
+- **013** — no consent column and no `training_corrections`, so every
+  correction a musician made to a misread bar was still being thrown away.
+
+**Checked before, not assumed.** The owner's note was that codex had been
+working and deploying, so the schema was read first: none of the four columns
+and neither table existed, and codex had applied no DDL of its own. `main`'s
+copies of all three migrations are fully idempotent (`ADD COLUMN IF NOT
+EXISTS`, `CREATE TABLE IF NOT EXISTS`, guarded `CREATE POLICY`), so they were
+applied as written rather than hand-edited.
+
+**Additive only.** Four nullable columns, two tables, two indexes, two RLS
+policies. No `DROP`, no rewrite, no default backfill. Row counts across the
+change: users 1, scores 25, analyses 0 — unchanged.
+
+### Verification
+
+Not just the three migrations' own objects: `REQUIRED_COLUMNS` and
+`REQUIRED_TABLES` from `readiness.py` were extracted and **all 15 columns and
+both tables** checked against the live database in one query. It returns zero
+missing rows, so `/v1/ready` now reports a complete schema rather than naming
+files for somebody to run by hand.
+
+### Not done
+
+- **The `intempo` project (paused) was left alone.** The owner named
+  `intempo-dev` as the target. If `intempo` is ever unpaused as production it
+  will need the same three.
+- Nothing here was exercised through the running app — the evidence is the
+  schema itself, not a take recorded from bar 8.
+- `Cloudflare Pages: front` and `i` are still red on every PR. They are stale
+  projects pointed at the legacy `frontend/` tree and need deleting or
+  reconfiguring in the Cloudflare dashboard, which is account configuration.
+
+### Rollback
+
+`ALTER TABLE … DROP COLUMN` and `DROP TABLE` for the six objects, but there is
+no reason to: every one is nullable or empty, and the code reads all of them
+defensively (`readiness.py` documents that the 013 columns "degrade quietly on
+purpose").
+
+---
+
 ## 2026-09-02 — Help no longer calls a partly broken service connected
 
 **What changed**

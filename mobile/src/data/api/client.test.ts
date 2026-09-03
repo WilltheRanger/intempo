@@ -145,7 +145,7 @@ describe('a request that never settles', () => {
     // the network when the token is near expiry. Unbounded, it hangs before
     // the request is sent: nothing on the wire, nothing to time out.
     session.token = () => new Promise(() => {});
-    const fetching = vi.fn((url: string) =>
+    const fetching = vi.fn((_url: string) =>
       Promise.resolve(new Response(JSON.stringify({ status: 'ok' }), { status: 200 })),
     );
     vi.stubGlobal('fetch', fetching);

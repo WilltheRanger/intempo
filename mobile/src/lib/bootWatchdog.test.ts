@@ -82,7 +82,6 @@ function bootWatchdog() {
     querySelector: () => ({ src: 'https://example.test/_expo/static/js/web/index-abc.js' }),
   };
 
-  // eslint-disable-next-line no-new-func
   new Function(
     'window',
     'document',

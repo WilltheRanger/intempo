@@ -97,12 +97,68 @@ artwork is the repo's own public-domain set from `fixtures/scores/` — each
 thumbnail is genuinely the piece it claims to be. See
 `fixtures/scores/SOURCES.md` for provenance.
 
+## Building for a device or the App Store
+
+`app.json` carries `ios.bundleIdentifier` and `android.package`
+(`com.intempo.app`) and `eas.json` carries the build profiles. Without those,
+`expo prebuild` and EAS cannot run at all, so there was no route onto a phone.
+
+**The bundle identifier is freely changeable right up until the first
+submission and permanent after it.** Change it in `app.json` if
+`com.intempo.app` is not the identity you want; nothing else in the repository
+depends on the value.
+
+Verified here: `expo prebuild --platform ios` completes, and the generated
+`Info.plist` carries the bundle identifier, all three permission strings from
+the config plugins, `ITSAppUsesNonExemptEncryption: false` (this app's only
+cryptography is the platform's TLS, which is exempt — the declaration saves an
+export-compliance question on every upload), and `RCTRootViewBackgroundColor`
+at the app's own paper colour.
+
+**The iOS bundle builds, and CI builds it on every commit.** `expo export
+--platform ios` resolves the *native* module graph — a different graph from the
+web one this repository's screenshots and walk all run through — and Hermes
+compiles it. Measured on the resulting bytecode: `intempo-listen-`, the WAV
+filename the **native** score player writes, is present; `AudioContext` and
+`createMediaStreamDestination` from the Web Audio player are absent; and
+`beforeunload` is gone entirely, because Metro folds `Platform.OS` and strips
+the guarded web branch.
+
+That proves the bundle **builds**, not that it **behaves**. The native recorder
+and the native player have still never made a sound.
+
+**Not verified, and it cannot be here:** no build has ever been produced. There
+is no macOS, no Xcode, no Apple account and no EAS credentials in this
+container.
+
+**What still needs a person is a command, not a paragraph:**
+
+```bash
+python3 tools/check-store-readiness.py
+```
+
+This sentence used to be a numbered list of three, and it was wrong — it named
+the EAS and Apple items and omitted the brand assets, the publisher's own
+details in the privacy policy, and a hosted policy URL, all of which block a
+submission just as hard. A count in prose is a claim that goes stale the first
+time the world moves. The command reads `app.json`, `src/lib/legal.ts` and the
+brand-asset hashes live, so it cannot say anything that is not true today, and
+an item stops being listed the moment it is done with nobody editing anything.
+
+Two of them can only be stated, never measured from a checkout, and the command
+says so: an Apple Developer account with signing credentials
+(`eas credentials`), and an App Store Connect listing — name, screenshots,
+description, privacy answers, age rating.
+
+There is no `development` profile, deliberately: one requires the
+`expo-dev-client` package, which is not a dependency, so the profile would be
+config that fails on first use. Add both together or neither.
+
 ## Not built yet
 
-Library, Insights, Profile, and Practice are placeholders. They wait for the
-Today screen's visual system to be signed off so they inherit settled
-components rather than a second set that has to be reconciled later.
-
-`Input`, `SearchField`, `Modal`, and `BottomSheet` are specified in the brief
-but not built — nothing uses them yet, and a component with no caller tends to
-be wrong in ways you only discover on its second use.
+`Modal` is specified in the brief and not built. `Input` and `SearchField`
+were on this list until they had callers — `Input` across the auth and
+transcription screens, `SearchField` in the library — and `BottomSheet` is
+used by the add-piece sheet. Library, Insights and Profile were on it too, and
+are built. This section had said otherwise for long enough that it was
+describing a different app.

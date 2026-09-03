@@ -1,4 +1,3 @@
-import { useNavigation } from '@react-navigation/native';
 import { useState } from 'react';
 import { KeyboardAvoidingView, Platform, StyleSheet, View } from 'react-native';
 import { useGoBack } from '../../navigation/useGoBack';
@@ -25,7 +24,6 @@ import { describeAuthError, isEmail } from '../auth/authErrors';
  * happened and where to look.
  */
 export function ChangeEmailScreen() {
-  const navigation = useNavigation();
   const goBack = useGoBack({ tab: 'Profile' });
   const { data: musician } = useMe();
 

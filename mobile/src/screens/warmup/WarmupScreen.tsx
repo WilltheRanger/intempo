@@ -1,4 +1,3 @@
-import { useNavigation } from '@react-navigation/native';
 import { useGoBack } from '../../navigation/useGoBack';
 import { ChevronLeft } from 'lucide-react-native';
 import { useState } from 'react';
@@ -20,7 +19,6 @@ import {
 import { usePreferences } from '../../data/preferences';
 import { BORDER_WIDTH, colors, spacing } from '../../design';
 import { INSTRUMENT_LABELS, warmupFor, warmupScore } from '../../lib/warmup';
-import type { RootNavigation } from '../../navigation/types';
 import { ListenButton } from '../../components/score/ListenButton';
 
 /**
@@ -40,7 +38,6 @@ import { ListenButton } from '../../components/score/ListenButton';
  * feature, not a placeholder for a Record button.
  */
 export function WarmupScreen() {
-  const navigation = useNavigation<RootNavigation>();
   const goBack = useGoBack({ tab: 'Today' });
   const { instrument } = usePreferences();
 
@@ -88,12 +85,10 @@ export function WarmupScreen() {
         which warmup it is changes daily.
       */}
       <View style={styles.nav}>
-        <IconButton
-          icon={ChevronLeft}
-          label="Back to today"
-          onPress={goBack}
-          style={styles.back}
-        />
+        {/* No negative margin on the button: `PressableScale` styles its inner
+            view, so one comes off the outer press target. The row closes the
+            gap instead — see `nav`. Measured before: 40x44. */}
+        <IconButton icon={ChevronLeft} label="Back to today" onPress={goBack} />
         <Text variant="button">Warmup</Text>
       </View>
 
@@ -173,14 +168,16 @@ const styles = StyleSheet.create({
   nav: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.xs,
+    // **No gap, rather than a gap the button cancels with a negative margin.**
+    // The glyph's own padding is already the space between it and the word;
+    // the margin that used to close this cost the button 4 of its 44 points,
+    // because `PressableScale` puts a caller's style on its inner view and the
+    // outer press target shrinks around it.
+    gap: 0,
     // Pulled out to the gutter so the glyph lines up with the text below it
     // rather than sitting indented by its own padding.
     marginLeft: -spacing.md,
     paddingTop: spacing.sm,
-  },
-  back: {
-    marginRight: -spacing.xs,
   },
   name: {
     marginTop: spacing.lg,

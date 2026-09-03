@@ -177,3 +177,63 @@ export function wasTimed(measure: {
 }): boolean {
   return measure.underTempoChange !== true && measure.timedNoteCount !== 0;
 }
+
+/**
+ * The first and last measure the trend line actually covers.
+ *
+ * **The chart's x axis named a measure the line never reaches.** `trend` comes
+ * from `rolling_trend`, which drops every note that is slur-interior or not
+ * timed — so a take closing with a `rit.`, a fermata or an ornament produces a
+ * line that stops before the last bar. The axis was labelled from
+ * `take.measures`, the whole take, so the ends of the line were captioned with
+ * measures that are not on it.
+ *
+ * Measured on the sample take: **ten points under an axis reading "Measure 1 …
+ * 13"**, because 11 is under a written tempo change, 12 is an uneven one and 13
+ * is a fermata. The peak of the line therefore read about three bars later than
+ * it happened — on the same screen whose sentence says "measures 5 to 8".
+ *
+ * The line is drawn per **note**, not per measure, so this is a range rather
+ * than a count: whatever the density of points, the first and last of them fall
+ * inside the first and last timed bar.
+ *
+ * `null` when nothing was timed, which is also when there is no line to label.
+ */
+export function timedMeasureRange(
+  measures: {
+    measure: number;
+    underTempoChange?: boolean;
+    timedNoteCount?: number | null;
+  }[],
+): { first: number; last: number } | null {
+  const timed = measures.filter(wasTimed);
+  if (timed.length === 0) {
+    return null;
+  }
+  return { first: timed[0].measure, last: timed[timed.length - 1].measure };
+}
+
+
+/**
+ * What the trend chart is read out as, from the range its axis prints.
+ *
+ * **Beside `timedMeasureRange` because the two must agree**, and they had
+ * already drifted once: the visible labels were fixed to name the measures the
+ * line *reaches* — `trend` drops untimed and slur-interior notes — while the
+ * `accessibilityLabel` a few lines below went on saying `measures.length`. On
+ * the sample take that is "across 13 measures" read aloud beneath an axis
+ * reading "Measure 1 … 10", so a screen-reader user was given the number the
+ * visible fix had established was wrong.
+ *
+ * A rule inside a `.tsx` is a rule nothing checks. This one takes exactly what
+ * the axis takes, so it cannot be given different numbers without the axis
+ * changing too.
+ */
+export function describeTrendRange(first: number, last: number): string {
+  // One measure is not a range, and "from measure 4 to 4" reads as a fault in
+  // the sentence rather than as a short take.
+  if (first === last) {
+    return `Tempo drift, measure ${first}`;
+  }
+  return `Tempo drift from measure ${first} to ${last}`;
+}
