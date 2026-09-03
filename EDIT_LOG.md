@@ -6,6 +6,52 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-03 — The large-text check was inventing bugs the app does not have
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. A fidelity fix to the check
+added earlier today, and one blind spot closed by measurement. CI still cannot
+allocate a runner.
+
+### It scaled `font-size` and left `line-height` alone
+
+Which piles glyphs on top of one another. The entry above records me reading a
+screenshot taken through it and having to say *"the overlapping rows and tab
+labels are my simulation, not the app"* — a caveat that should have been a fix.
+
+Checked against React Native's own iOS source rather than assumed.
+`RCTTextAttributes.mm:141`:
+
+```objc
+CGFloat lineHeight = _lineHeight * self.effectiveFontSizeMultiplier;
+```
+
+So iOS scales `lineHeight` by exactly the same multiplier as `fontSize`, and a
+fixed `lineHeight: 42` in the design tokens becomes 84 at 2x with the ratio
+intact. The check now does the same. Horizontal spill is unaffected —
+line-height does not change width — so all **23 routes still clean**, and the
+screenshots are now worth looking at.
+
+Re-shot Library at 2x through the corrected simulation: "Library" on one line
+with "Add piece" wrapped below it (the `flexWrap` fallback doing exactly what
+its comment says), the search field inside the screen (this morning's
+`minWidth: 0`), rows legible and ellipsised. **The app handles 2x text.** The
+bugs in the previous screenshot were all mine.
+
+### One blind spot closed, one narrowed
+
+The tool listed two things it could not see. `allowFontScaling={false}` is now
+**measured rather than guessed**: neither it nor `maxFontSizeMultiplier`
+appears anywhere in `src/`, so every `Text` in this app scales and the check is
+not over-reporting on text that would stay put. What remains is font metrics,
+which a browser genuinely cannot reproduce — so the tool still calls itself a
+floor rather than a simulation, but for one reason instead of three.
+
+### Verified
+
+a11y sweep PASS at 375pt across 23 routes, walk PASS. No app code changed.
+
+---
+
 ## 2026-09-03 — A fix that worked, and was the wrong thing to ship
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. **No code changed.** A
