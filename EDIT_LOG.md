@@ -6,6 +6,84 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-03 — The caveat under the stave named the wrong notes, and the wrong reason
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Copy and counting in
+`notation/fromScore.ts`. No §2 gate on the sentences themselves — they are
+corrections of statements that were false, not a redesign.
+
+Started by checking a claim rather than writing code: `tools/engraver-coverage.py`
+reports **42 of the schema's 46 durations draw**, the four refused being the
+128th family, exactly as `CLAUDE.md` says. The claim holds. What does not is the
+sentence a musician reads when something is left out.
+
+### "shorter than an eighth or dotted"
+
+`describeOmissions` renders:
+
+> Not drawn: 3 notes **shorter than an eighth or dotted**.
+
+The engraver draws whole through sixty-fourth, the breve, single *and* double
+dots, rests at all of those, and the triplet/quintuplet/septuplet forms. The
+coverage tool prints `dotted_eighth`, `dotted_quarter` and `sixteenth` drawing
+at **100%** across the corpus. So a musician with a page of sixteenths was told
+they were missing while looking straight at them on the stave. Two engraver
+generations out of date; the two `StaveScore` field comments said the same
+thing.
+
+The counting was never wrong — it is driven by whether a glyph exists — so
+this was purely a sentence that had stopped being true. It now names what is
+actually refused: **shorter than a sixty-fourth**.
+
+### Two causes reported as one
+
+`undrawable` was incremented both for a duration with no glyph **and** for a
+pitch that could not be placed — a triple accidental, a quarter-tone. So a note
+dropped for its *spelling* was reported to a musician as a note *too short to
+draw*: the wrong reason, sending them to look at their rhythm for a problem
+with a notehead. Split into `undrawable` and `unplaceable`, with a clause each.
+
+### And a good reading blamed on the camera
+
+`describeUndrawnScore` summed `rests + undrawable` to decide whether anything
+had been read. A page whose every note carried an unplaceable spelling
+therefore summed to zero and took the branch that says *"Nothing was read from
+this page… photograph the page closer and straighter."* The page **was** read;
+this engraver just cannot place those pitches. A reading failure reported as
+the musician's photography, which is the same mistake this project has now made
+in four places. `unplaceable` counts in that sum, and the branch says
+"pitches".
+
+The note/rest distinction already there is kept — a page of undrawable rests is
+not a page of undrawable notes, and saying so is the difference between someone
+looking at their rhythm and looking at their silences.
+
+### Verified by mutation
+
+| mutation | result |
+|---|---|
+| the stale wording restored | 1 failed |
+| pitch cause folded back into `undrawable` | 2 failed |
+| **`unplaceable` dropped from the empty-page sum** | **29 passed** |
+
+The third slipped, and it is the one that blames the camera: **nothing covered
+a page whose every note is unplaceable.** There is a case for it now, and the
+mutation fails on `Nothing was read`.
+
+Two existing tests failed on the split and were right to — one asserted
+`undrawable` for a pitch problem, and it moves to `unplaceable` while newly
+asserting `undrawable` stays 0, which is the point of separating them.
+
+### Tests
+
+mobile **1355 passed across 118 files**; `tsc` clean. `fromScore.ts` restored
+`diff -q` identical after every mutation.
+
+**Side effects:** `StaveScore` gains a field; nothing outside this module and
+its two describe functions reads the counts. **Rollback:** revert the commit.
+
+---
+
 ## 2026-09-03 — What a musician is told when they cannot get in
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. One test file, no shipped
