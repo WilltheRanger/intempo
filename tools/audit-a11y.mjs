@@ -329,7 +329,20 @@ const browser = await chromium.launch(browserPath());
 let failures = 0;
 
 for (const [name, path] of ROUTES) {
-  const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+  /*
+   * **375pt, the narrowest iPhone this app can be installed on** — not the 390
+   * of an iPhone 14/15. Every check here that depends on width gets stricter
+   * for nothing, and the large-text check depends on it entirely.
+   *
+   * Measured across 19 routes at 2x text: clean at 375 and at 360 (a common
+   * Android width), and four spills at **320** — iPhone 5 / SE 1st generation,
+   * which current iOS does not run. Those four are single words wider than the
+   * screen ("connection" in a doubled page title), which cannot be fixed by
+   * layout: it needs a decision about shrinking or breaking the word, and that
+   * is the owner's under §2. Holding the app to a width no supported phone has
+   * would buy nothing and fail forever.
+   */
+  const page = await browser.newPage({ viewport: { width: 375, height: 812 } });
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
   try {

@@ -6,6 +6,51 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-03 — The sweep ran at a width no phone is smallest at
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. One line, measured across
+three widths. Nothing found to fix. CI still cannot allocate a runner.
+
+`audit-a11y.mjs` rendered every route at **390pt** — an iPhone 14/15. The
+narrowest iPhone this app can be installed on is **375pt**, and every check
+that depends on width was therefore being run with 15pt of slack it does not
+get on a real phone. The large-text check added an hour ago depends on width
+entirely.
+
+Measured across 19 routes at 2x text before changing anything:
+
+| width | what it is | result |
+|---|---|---|
+| 375 | iPhone SE 3rd gen / 13 mini — the narrowest supported | **clean** |
+| 360 | a common Android width | **clean** |
+| 320 | iPhone 5 / SE 1st gen | 4 routes spill, 2–34pt |
+
+The 320 spills are **not** worth chasing and the tool says so: they are single
+words wider than the screen — "connection" in a doubled page title — which no
+layout can absorb. Fixing them needs a decision about shrinking or breaking a
+word, which is the owner's under §2, and current iOS does not run on a 320pt
+phone at all. Holding the app to a width no supported device has would buy
+nothing and fail forever.
+
+So: viewport 375×812. All **23 routes clean**, including the large-text check,
+which is now stricter for free.
+
+### The restart, and what it nearly cost
+
+The worker restarted mid-measurement, with `fixtures.ts` carrying a
+deliberately lengthened piece title and `.env` moved aside. Both restored —
+`git checkout` on the fixture, `diff -q` identical on `.env` — before anything
+else. The long-title experiment itself never completed and is **not** recorded
+as a result: the audit run that appeared to fail afterwards was the static
+server having been killed with the worker, not a finding.
+
+### Verified
+
+Mobile **1402 tests / 126 files** green, `tsc` clean, web build clean, walk
+PASS, a11y sweep PASS at 375pt.
+
+---
+
 ## 2026-09-03 — The search field walked off the screen at large text
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. One real defect on a
