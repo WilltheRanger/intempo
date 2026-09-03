@@ -6,7 +6,7 @@
  * pointed at the app that actually ships, so it is one command again rather
  * than an argument.
  *
- * Three checks, chosen for this product rather than off a generic list:
+ * Four checks, chosen for this product rather than off a generic list:
  *
  *  - **Accessible names.** A control without one is unusable with VoiceOver.
  *  - **44pt targets.** The iOS floor, and more pointed here than in most apps:
@@ -14,6 +14,11 @@
  *    other hand.
  *  - **4.5:1 contrast.** Also more pointed than usual, since sheet music gets
  *    read under whatever light the room has.
+ *  - **Large text.** Dynamic Type is the accessibility setting people actually
+ *    turn on, and a musician reading a phone on a stand is exactly who turns
+ *    it on. `PageHeader` records a title that ran 218pt off a 390pt screen at
+ *    2x — found by hand, fixed by hand, and nothing has watched for it since.
+ *    See `TEXT_SCALE` below for what this can and cannot see.
  *
  * Run against a served fixtures build. Playwright is not a dependency of this
  * repository — install it into `mobile` with `--no-save`, so it is available
@@ -221,6 +226,90 @@ const audit = () => {
 };
 
 /**
+ * How much bigger to make every word before looking for spill.
+ *
+ * **A proxy for Dynamic Type, and an honest one about its limits.** iOS scales
+ * text through the OS; a browser cannot be asked to do that to a
+ * react-native-web build, whose sizes are emitted as px. So this walks the
+ * rendered tree and multiplies each computed `font-size`, then measures what
+ * now hangs off the right edge.
+ *
+ * What that catches is layout that cannot absorb longer or taller text —
+ * fixed widths, flex items that will not shrink, rows that only fit at one
+ * size. What it cannot catch is anything iOS does that a browser does not:
+ * `allowFontScaling={false}` is invisible here, and so is a native line-height
+ * rule. It is a floor, not a simulation.
+ *
+ * 2x rather than the 3.1x an iPhone can actually reach: the largest
+ * accessibility sizes reflow text this app has not been designed against, and
+ * a check that fails on every screen is one nobody runs. 2x is the setting a
+ * great many people use every day.
+ */
+const TEXT_SCALE = 2;
+
+/**
+ * Anything hanging off the side once the text is doubled.
+ *
+ * Vertical overflow is deliberately not measured: screens scroll, and growing
+ * downward is what they are supposed to do. Sideways is the failure — there is
+ * no horizontal scroll, so whatever is out there simply cannot be read.
+ *
+ * Two things are skipped, and both would otherwise be reported as faults for
+ * doing their job:
+ *
+ *  - **`<svg>`.** Engraved staves are drawn at a fixed size and scroll in
+ *    their own container; their glyph elements carry font sizes that this
+ *    would scale into nonsense.
+ *  - **Anything inside a horizontal scroller.** The page pager on "Original
+ *    pages" holds every photographed page side by side, so pages two and three
+ *    are 330pt and 680pt off the right edge *by construction*. Content that
+ *    extends past the screen inside something built to scroll sideways is the
+ *    correct shape for wide content, not a spill.
+ */
+const spill = (scale) => {
+  const scrollsSideways = (el) => {
+    for (let node = el.parentElement; node; node = node.parentElement) {
+      const overflow = getComputedStyle(node).overflowX;
+      // Both conditions: `overflow-x: auto` on something that does not
+      // actually overflow is not a sideways scroller, and suppressing under it
+      // would hide a real spill in whatever it happens to wrap.
+      if (
+        (overflow === 'auto' || overflow === 'scroll') &&
+        node.scrollWidth > node.clientWidth + 1
+      ) {
+        return true;
+      }
+    }
+    return false;
+  };
+
+  for (const el of document.querySelectorAll('*')) {
+    if (el.closest('svg')) continue;
+    const px = parseFloat(getComputedStyle(el).fontSize);
+    if (px) el.style.fontSize = `${px * scale}px`;
+  }
+
+  const width = document.documentElement.clientWidth;
+  const found = [];
+  for (const el of document.querySelectorAll('*')) {
+    if (el.closest('svg') || scrollsSideways(el)) continue;
+    const r = el.getBoundingClientRect();
+    if (r.width === 0 || r.height === 0) continue;
+    // Only the innermost offender: a container is off-screen because its
+    // child is, and naming both says the same thing twice.
+    if ([...el.children].some((child) => child.getBoundingClientRect().right > width + 1)) {
+      continue;
+    }
+    const over = Math.round(r.right - width);
+    if (over > 1) {
+      const text = (el.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 40);
+      found.push(`${el.tagName.toLowerCase()} ${over}pt off the right edge${text ? ` — "${text}"` : ''}`);
+    }
+  }
+  return found;
+};
+
+/**
  * The Chromium to drive.
  *
  * This environment pre-installs one at a fixed path and sets
@@ -253,8 +342,15 @@ for (const [name, path] of ROUTES) {
     continue;
   }
   const found = await page.evaluate(audit);
+  // Last, and on the same page: it rewrites every font size in the document,
+  // so nothing measured after it would be measuring the shipped app.
+  const spilled = await page.evaluate(spill, TEXT_SCALE);
   const total =
-    found.unnamed.length + found.small.length + found.lowContrast.length + errors.length;
+    found.unnamed.length +
+    found.small.length +
+    found.lowContrast.length +
+    spilled.length +
+    errors.length;
   failures += total;
 
   console.log(`\n## ${name} (/${path}) — ${total === 0 ? 'clean' : total + ' finding(s)'}`);
@@ -262,6 +358,7 @@ for (const [name, path] of ROUTES) {
   for (const u of found.unnamed) console.log(`  UNNAMED CONTROL: ${u}`);
   for (const s of new Set(found.small)) console.log(`  TARGET < ${MIN_TARGET}pt: ${s}`);
   for (const c of new Set(found.lowContrast)) console.log(`  CONTRAST: ${c}`);
+  for (const o of new Set(spilled)) console.log(`  AT ${TEXT_SCALE}x TEXT: ${o}`);
   await page.close();
 }
 

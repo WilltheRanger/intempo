@@ -6,6 +6,85 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-03 — The search field walked off the screen at large text
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. One real defect on a
+shipping surface, found by adding the check that was missing. CI still cannot
+allocate a runner.
+
+### What was missing
+
+`audit-a11y.mjs` measured three floors — accessible names, 44pt targets, 4.5:1
+contrast. **Nothing checked large text**, and `PageHeader`'s own comment
+records a title that ran *218pt off a 390pt screen at 2x* — found by hand,
+fixed by hand, and unwatched ever since. Dynamic Type is the accessibility
+setting people actually turn on, and a musician reading a phone on a stand is
+exactly who turns it on.
+
+### What it found
+
+`SearchField`'s input has `flex: 1`, which on native is enough. On the web
+build it is not: react-native-web renders `TextInput` as a DOM `<input>`, and a
+flex item defaults to `min-width: auto` — for a replaced element, its
+*intrinsic* width. The field grows with the text and cannot be squeezed back.
+
+Measured in Chromium at a 390px viewport, right edge against a 390px screen:
+
+| text scale | right edge | off-screen |
+|---|---|---|
+| 1x | 343 | — |
+| 1.3x | 372 | — |
+| **1.5x** | **422** | **32pt** |
+| 2x | 554 | 164pt |
+| 3x | 797 | 407pt |
+
+`minWidth: 0` pins it at 343 at **every** scale; the text scrolls inside the
+field, which is what an input is for. The same one line is already on seven
+flex rows elsewhere in this app — `SearchField` is the one that was missed.
+
+**Web-only.** Yoga has no `min-width: auto` rule, so no phone would ever have
+shown it. The web build is a shipping surface all the same —
+`webInstall.test.ts` pins the manifest for exactly that reason.
+
+### Two false positives, and the rule that came out of them
+
+The first run reported six findings. Four were in the bar editor and two were
+photographed pages on "Original pages", all sitting past the right edge inside
+a **horizontal `ScrollView`** — which is what a sideways scroller is for.
+Confirmed in source (`MeasureEditScreen:394`, `PieceScoreScreen:807`) rather
+than assumed.
+
+So the check skips anything under an ancestor that scrolls sideways — and the
+test is `overflow-x: auto|scroll` **and** `scrollWidth > clientWidth`, not the
+style alone. An `overflow-x: auto` container that does not actually overflow is
+not a scroller, and suppressing under it would hide a real spill in whatever it
+happens to wrap.
+
+Vertical overflow is deliberately not measured: screens scroll, and growing
+downward is what they are supposed to do. Sideways is the failure, because
+there is no horizontal scroll and whatever is out there cannot be read at all.
+
+**What this can and cannot see** is written into the tool. It multiplies
+computed `font-size` in the browser, which catches layout that cannot absorb
+larger text — fixed widths, flex items that will not shrink. It cannot see
+anything iOS does that a browser does not: `allowFontScaling={false}` is
+invisible to it, and so is a native line-height rule. A floor, not a
+simulation. 2x rather than the 3.1x an iPhone can reach, because the largest
+accessibility sizes reflow text this app has not been designed against, and a
+check that fails on every screen is one nobody runs.
+
+### Verified
+
+Mutation: with `minWidth: 0` removed and the app rebuilt, the audit reports
+`Library — AT 2x TEXT: input 164pt off the right edge` and exits non-zero.
+Restored, all **23 routes clean**.
+
+Mobile **1402 tests / 126 files** green, `tsc` clean, web build clean, walk
+PASS. `.env` moved aside for the fixtures build and restored `diff -q`
+identical.
+
+---
+
 ## 2026-09-03 — Three lists of four instruments, and a comment that claimed to be the only one
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. One guard, one corrected
