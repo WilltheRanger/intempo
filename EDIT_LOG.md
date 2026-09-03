@@ -6,6 +6,102 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-03 — The app can be built for a phone, and doing it found the wrong paper
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. §2 gate **asked and
+granted** — the user selected "App Store build config" (with the other three
+options) when asked what to spend the next stretch on.
+
+### What was missing
+
+No `ios.bundleIdentifier`, no `android.package`, no `eas.json`. `expo prebuild`
+and EAS both refuse without them, so there was no route onto a device or into
+TestFlight at all — for an app whose whole point is iOS.
+
+`com.intempo.app` for both, and `eas.json` with `simulator`, `preview` and
+`production`. **No `development` profile, deliberately**: one needs
+`expo-dev-client`, which is not a dependency, so it would be config that fails
+the first time anyone used it.
+
+### Two defects found by doing it
+
+`expo prebuild` warned:
+
+> ios.backgroundColor: Install expo-system-ui to enable this feature
+
+Following that up found the more interesting one. **`app.json` declared the
+app's background as `#FBFAF7`. `colors.bg` is `#F7F2E9`.** A re-typed hex —
+the thing CLAUDE.md §4 forbids — that had drifted to a *different colour*,
+close enough that nobody would catch it side by side.
+
+Nothing checked it, and the reason it survived is worth writing down:
+`scripts/flatten-vendor-assets.mjs` verifies the **web** build's page
+background against `colors.bg` and prints the result on every build. The one
+surface with a check was the one that is not the shipping app.
+
+It also would not have been applied on iOS regardless, because
+`expo-system-ui` was absent — so the wrong colour was being dropped rather than
+painted. Both are colours the *operating system* draws: the root view on launch
+and behind an over-scroll bounce, and the plate an Android launcher sits the
+icon on. They appear before any component mounts, which is why no screenshot of
+any screen would ever have caught either one.
+
+`design/appConfig.test.ts` pins both against the token. `app.json` cannot
+import a `.ts` file, so this is the one place a token genuinely has to be
+copied — which makes it the one place that needs a test rather than a
+convention.
+
+### Verified
+
+`expo prebuild --platform ios --no-install` completes, and the generated
+`Info.plist` carries:
+
+| key | value |
+|---|---|
+| `CFBundleIdentifier` | `$(PRODUCT_BUNDLE_IDENTIFIER)` → `com.intempo.app` |
+| `NSMicrophoneUsageDescription` | the config plugin's sentence |
+| `NSCameraUsageDescription` | the config plugin's sentence |
+| `NSPhotoLibraryUsageDescription` | the config plugin's sentence |
+| `ITSAppUsesNonExemptEncryption` | `false` |
+| `RCTRootViewBackgroundColor` | `0xFFF7F2E9` — the token, after the fix |
+
+The `expo-system-ui` warning is gone after installing it. The generated `ios/`
+was deleted; it is gitignored and this project stays managed.
+
+**`npx expo install` is blocked by the proxy** (`HTTP Proxy Network Error:
+Forbidden` against Expo's compatibility API), so the version came from
+`node_modules/expo/bundledNativeModules.json` — the SDK's own map — rather
+than a guess: `expo-system-ui@~57.0.2`.
+
+**Prebuild rewrites `package.json`'s `ios`/`android` scripts to `expo run:`.**
+That is right for a bare workflow and wrong here, since the native directories
+are gitignored and the project stays managed. Reverted both times; the only
+committed `package.json` change is the new dependency.
+
+### Also corrected: a README describing a different app
+
+`mobile/README.md`'s "Not built yet" said Library, Insights and Profile were
+placeholders and that `Input`, `SearchField` and `BottomSheet` had no callers.
+All are built and all three have callers. Only `Modal` is still unbuilt.
+
+**Honest status:** no build has been produced and none can be here — no macOS,
+no Xcode, no Apple account, no EAS credentials. Three things still need a
+person, and the README lists them: `eas init` for the project id (a real id
+from Expo's servers, not something to invent), signing credentials, and an App
+Store Connect listing.
+
+### Tests
+
+mobile **1326 passed across 115 files** (was 1324/114); `tsc --noEmit` clean;
+`npm run build:web` clean and still reporting the background matches
+`colors.bg`.
+
+**Side effects:** one new dependency (`expo-system-ui`) and its lockfile
+entries. **Rollback:** revert the commit; nothing else reads `eas.json` and the
+identifiers are additive.
+
+---
+
 ## 2026-09-03 — Sign-in had no tests, and one of the two I wrote for the worst bug could not have caught it
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. One test file, no shipped

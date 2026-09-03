@@ -256,6 +256,32 @@ there works differently as of 2026-08-24:
   preference; `analyses.instrument` stores it; `analysis_runner` turns it into
   `analyze(..., double_bass=...)`. Store the instrument, never a derived flag —
   how each instrument should be treated is still being tuned.
+- **`app.json` is the one place a token has to be re-typed, so it is checked**
+  (2026-09-03). It is JSON and cannot import `design/colors.ts`, and its two
+  colours had already drifted: `expo.backgroundColor` and the Android adaptive
+  icon read `#FBFAF7` against a `colors.bg` of `#F7F2E9` — close enough that
+  nobody would see it side by side, far enough to be a flash of the wrong paper
+  on launch. Nothing checked it, while `scripts/flatten-vendor-assets.mjs`
+  checked the *web* build's background against the same token and printed the
+  result: the one surface with a check was the one that is not the shipping app.
+  `design/appConfig.test.ts` holds both now. These are colours the operating
+  system paints — the root view on launch and behind an over-scroll bounce, and
+  the plate a launcher draws the icon on — so they appear before any component
+  mounts and no screenshot of a screen can catch them.
+  `expo.backgroundColor` also needs **`expo-system-ui` installed** to reach iOS
+  at all; without it `expo prebuild` warns and drops it, so the wrong colour was
+  not being applied either. Measured after: `RCTRootViewBackgroundColor` =
+  `0xFFF7F2E9`.
+- **The app can be built for a device** (2026-09-03). `ios.bundleIdentifier`
+  and `android.package` are `com.intempo.app`, and `eas.json` holds the
+  profiles; without them `expo prebuild` and EAS cannot run, so there was no
+  route onto a phone at all. The identifier is changeable until the first
+  submission and permanent after it. **No build has been produced** — no macOS,
+  no Apple account, no EAS credentials here — and `mobile/README.md` lists the
+  three things that still need a person. There is deliberately no `development`
+  profile: it requires `expo-dev-client`, which is not a dependency, so it would
+  be config that fails on first use.
+
 - **Two finished endpoints have no client, and a test now stops a third**
   (measured 2026-09-03). `POST /v1/analyses/:id/corrections` is
   built, tested (`test_corrections.py`), owner-scoped, listed by the account
