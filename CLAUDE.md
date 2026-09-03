@@ -308,8 +308,16 @@ there works differently as of 2026-08-24:
   profiles; without them `expo prebuild` and EAS cannot run, so there was no
   route onto a phone at all. The identifier is changeable until the first
   submission and permanent after it. **No build has been produced** — no macOS,
-  no Apple account, no EAS credentials here — and `mobile/README.md` lists the
-  three things that still need a person. There is deliberately no `development`
+  no Apple account, no EAS credentials here.
+  **What still needs a person is `tools/check-store-readiness.py`, not a
+  sentence.** This line and `mobile/README.md` both said "three things" and
+  named the EAS and Apple ones, omitting the brand assets, the publisher's
+  details in `lib/legal.ts` (`entity`, `contact`, `jurisdiction`, all null) and
+  a policy at a public URL — which App Store Connect asks for as a URL, not a
+  screen. Six, not three. The tool reads `app.json`, `legal.ts` and the
+  brand-asset hashes live, so an item stops being listed when it is done and
+  nothing here has to be edited; the two that need an account are stated rather
+  than measured, and say so. There is deliberately no `development`
   profile: it requires `expo-dev-client`, which is not a dependency, so it would
   be config that fails on first use.
 
