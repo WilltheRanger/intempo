@@ -6,6 +6,75 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-03 — Three false sentences in the file that is read at the start of every session
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. `CLAUDE.md` only; no code
+changed. CI still cannot allocate a runner.
+
+`CLAUDE.md` says it is binding and it is read first, so a false line in it is
+more expensive than a false line anywhere else: it is believed before anything
+is measured. Three of them, each verified against the thing it describes.
+
+### 1. An endpoint it called unwired has a client
+
+> `POST /v1/analyses/:id/corrections` … **Nothing posts to it.**
+
+Wired earlier today, by me, and `test_client_reachability.py` enforces it — its
+`NOT_WIRED` holds exactly one entry, `/v1/calibration`. The file therefore
+**contradicted itself**: six bullets down it says "The verdict feedback loop has
+a client (2026-09-03)", and a session reading top to bottom meets the false
+version first.
+
+The fix is not a corrected list, it is **no list**. That bullet now points at
+`NOT_WIRED` as the answer and keeps only the part prose is good for — why an
+empty corrections table matters, and that the *reading* corrections are a
+different table people keep conflating with it. A count of unwired endpoints in
+prose is a claim, and this one went stale in a day.
+
+### 2. A fixed bug described as live
+
+> "homr is not installed in this container" matches no `_FAILURE_REASONS`
+> needle and lands on *"a flatter, better-lit shot of the page usually fixes
+> it"* — a server fault blamed on the musician, for the third time.
+
+There is a `"not installed"` needle now, with four more beside it, and
+`_why_it_failed` flattens hyphens as well as underscores so `x-api-key` and
+"api key" are one fact. Verified by calling it:
+
+| Detail | Reason returned |
+|---|---|
+| `homr is not installed in this container` | *"…a fault on our side, not with your photograph"* |
+| `AuthenticationError: invalid x-api-key` | *"The transcription service is not configured…"* |
+| `no usable provider configured` | *"…your page is fine, and re-photographing it will not help."* |
+| something unrecognised | the photograph sentence, which is correct for an unknown fault |
+
+Rewritten to past tense. It is worth keeping as the reason the needles exist —
+it is just not an open bug, and reading it as one would send someone to fix
+something already fixed.
+
+### 3. "no batch is tagged `batch-N-done`"
+
+Under a heading that says **Honest DoD status**. `git ls-remote --tags origin`:
+`batch-0-done`, `batch-1-done`, `batch-2-done`, `spec-v1` — all four pushed.
+And §4 one screen above marks batches 0, 1 and 2 ✅, so the file disagreed with
+itself here too.
+
+The true statement is narrower and more useful: **3 and 4 are marked ✅ and are
+not tagged**, so by this file's own Definition of Done they are not done, and 5
+onward are ⏳.
+
+### What the three have in common
+
+Every one is prose restating a fact that something else already holds — a test,
+a needle table, `git tag`. That is the same failure as `MeasureConcern`'s
+"four" that named three, the timeline parity fixture's `excluded_on_purpose`,
+the multi-page repeat `xfail` whose reason had stopped being true, and the
+"three things still need a person" corrected two entries down. **The durable
+fix in each case is to delete the restatement and name the authority**, which
+is what these three edits do rather than simply correcting the numbers.
+
+---
+
 ## 2026-09-03 — A screen can get a URL without ever being audited
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. One assertion in

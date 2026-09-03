@@ -340,27 +340,24 @@ there works differently as of 2026-08-24:
   appear in unrelated prose is matched by that prose and passes, so its failures
   are false *negatives* — the direction a check has to fail in if people are
   going to keep running it.
-- **One finished endpoint has no client, and a test stops a second**
-  (measured 2026-09-03). `POST /v1/analyses/:id/corrections` is
-  built, tested (`test_corrections.py`), owner-scoped, listed by the account
-  export and taken by account deletion. **Nothing posts to it.** Not `mobile/`,
-  not `frontend/`; the verdict screen has no "this wasn't right" affordance at
-  all, so `verdict_corrections` is empty for every account by construction.
-  This is not the same thing as the *reading* corrections, which do work:
+- **Which endpoints have no client is `NOT_WIRED`'s answer, not this file's.**
+  Today it holds one: `POST /v1/calibration` (spec §4, infer a target BPM from
+  a short clip). `bpm_source` carries `calibration_clip` for it, and
+  `submitTake.ts` described that flow *in the present tense* while sending
+  `manual` every time. Do not restate the list here — this bullet named
+  `POST /v1/analyses/:id/corrections` as unwired for one day after the verdict
+  screen started posting to it, contradicting the entry six bullets down that
+  says the loop has a client. **A count of unwired endpoints in prose is a
+  claim, and it goes stale in a day.**
+  What is worth keeping is *why* an empty one matters. The corrections router's
+  own docstring calls the loop *"the only route out of the position Batch 3 is
+  currently stuck in"* — thresholds still on the spec's starting values because
+  tuning needs real ears on real recordings, and an empty table cannot tune
+  anything. Verdict corrections are also easy to confuse with the *reading*
+  corrections, which are a different table and a different flow:
   `MeasureEditScreen` → `scores.py` → `services/training.py`, consent-gated by
   migration 013, and that is what the Profile toggle and the privacy copy are
-  about. The two are easy to conflate because both are called "corrections".
-  It matters because of what the router's own docstring claims: the loop is
-  *"the only route out of the position Batch 3 is currently stuck in"* —
-  thresholds still on the spec's starting values because tuning needs real ears
-  on real recordings. An empty table cannot tune anything, so the state
-  `TUNING_LOG.md` records as pending has no mechanism behind it. Building the
-  affordance is a §2 gate; leaving the gap unwritten is how it survived this
-  long.
-  **`POST /v1/calibration` is the second** (spec §4, infer a target BPM from a
-  short clip). `bpm_source` carries `calibration_clip` for it, and
-  `submitTake.ts` described that flow *in the present tense* while sending
-  `manual` every time.
+  about. Both are called "corrections".
   `test_client_reachability.py` is the standing check, and it runs **both
   ways**: every served `/v1` route must have a client, and every `/v1` URL the
   app builds must be a route this API serves. The second is the one a musician
@@ -584,9 +581,14 @@ there works differently as of 2026-08-24:
   lives only in the Modal container, so the API host can read nothing, and
   `_read_page` refuses **before downloading the page** rather than paying for
   megabytes to reach a worse error. "homr is not installed in this container"
-  matches no `_FAILURE_REASONS` needle and lands on *"a flatter, better-lit
-  shot of the page usually fixes it"* — a server fault blamed on the musician,
-  for the third time.
+  *used* to match no `_FAILURE_REASONS` needle and land on *"a flatter,
+  better-lit shot of the page usually fixes it"* — a server fault blamed on the
+  musician, for the third time. It has a needle now (`"not installed"`), with
+  four more beside it for the other ways the server can be at fault, and
+  `_why_it_failed` flattens underscores **and hyphens** so `GEMINI_API_KEY`,
+  `x-api-key` and "api key" are one fact rather than three. Verified live:
+  that string returns *"That is a fault on our side, not with your
+  photograph"*. Read this as the reason the needles exist, not as an open bug.
 - **The boot watchdog must never fire over a mounted app.** It reported *"The
   app crashed while starting. / unknown error"* for a **dropped image request**
   — `expo-image` and react-native-web both mount real `<img>` elements, a
@@ -1072,7 +1074,11 @@ it just deleted, and an orphan `SplashScreenLogo` resource. That was tried and
 reverted — a launch storyboard that may not compile is worse than a flash.
 The splash wants the real mark on it, so it is one job with the icon.
 
-**Honest DoD status:** no batch is tagged `batch-N-done`. Every remaining gate
-(live magic-link auth, upload→OCR→save, mic→analysis) is blocked on Supabase
-keys and a real device — none of it can be closed in-session, and the screens
-are verified *visually*, not end-to-end.
+**Honest DoD status:** `git tag` is the answer, and this line said "no batch is
+tagged `batch-N-done`" while **batches 0, 1 and 2 were tagged and pushed** —
+which the ✅ marks in §4 agree with, one screen up. What is true is narrower and
+worth stating exactly: **3 and 4 are marked ✅ and are not tagged**, so by this
+file's own Definition of Done they are not done; 5 onward are ⏳. Every
+remaining gate (live magic-link auth, upload→OCR→save, mic→analysis) is blocked
+on Supabase keys and a real device — none of it can be closed in-session, and
+the screens are verified *visually*, not end-to-end.
