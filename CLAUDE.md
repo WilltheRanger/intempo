@@ -766,6 +766,16 @@ there works differently as of 2026-08-24:
   JWKS fetch to 30s; both are set in `db.py` and `auth.py` now. Starlette's pool
   holds forty threads and is shared with background work, so an untimed call does
   not degrade the API, it removes it.
+  **This sentence was true and held by nothing** until 2026-09-03: the three
+  constants had one definition and one use each, and no test. Dropping
+  `_options()` from a factory — or adding a fourth factory without it — restored
+  the 120s default and passed the whole suite.
+  `test_blocking_timeouts.py` checks it by **calling** the factories with
+  `create_client` and `PyJWKClient` monkeypatched, so the assertion lands on the
+  options object that reaches the library rather than on a line of source, and it
+  **enumerates** the `get_*_client` factories out of the module — the mutation
+  worth guarding is the factory added next month by someone who has never read
+  this file.
 - **Reading a page dispatches to its own daemon threads, not to
   `BackgroundTasks` and not to a `ThreadPoolExecutor`.** Two reasons for taking
   it off BackgroundTasks and both matter: the Modal spawn is a gRPC round trip
