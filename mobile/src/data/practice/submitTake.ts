@@ -102,8 +102,13 @@ export async function submitTake({
       score_id: scoreId,
       audio_key: state.audioKey,
       target_bpm: targetBpm,
-      // The recording screen sets the tempo directly. `calibration_clip` is
-      // for the flow where a short clip infers it instead.
+      // Always `manual`: the recording screen is the only place a tempo is
+      // set, and it is typed. `calibration_clip` is the other value the column
+      // accepts, for `POST /v1/calibration` — an endpoint that is built and
+      // tested and that **no client calls**, so nothing has ever written that
+      // value. This comment used to describe that flow in the present tense.
+      // See `backend/app/tests/test_client_reachability.py`, which now fails
+      // if a third such endpoint appears.
       bpm_source: 'manual',
       metronome_mode: metronomeMode,
       // Read here rather than threaded down from the recording screen: it is a

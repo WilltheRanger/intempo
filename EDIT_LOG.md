@@ -6,6 +6,90 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-03 — A second finished endpoint with no client, and the check that stops a third
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. One new backend test, one
+corrected comment. No §2 gate: nothing user-facing changed.
+
+The entry below found `POST /v1/analyses/:id/corrections` unreachable by
+reading a router nobody had opened lately. That is not a method that scales, so
+I enumerated the whole route table instead — walk `app.routes`, grep
+`mobile/src` for each URL. **25 `/v1` routes, 22 reachable, 3 not**, and the
+third is a feature I had not been looking for:
+
+`POST /v1/calibration` — spec §4, infer a target BPM from a short clip.
+`bpm_source` on `analyses` carries `calibration_clip` for exactly this, and
+`submitTake.ts` said:
+
+> The recording screen sets the tempo directly. `calibration_clip` is for the
+> flow where a short clip infers it instead.
+
+Present tense, for a flow that does not exist. The same shape as the timeline
+fixture's repeat exclusion two entries down: a sentence that reads as a
+description of the system and is actually a description of an intention.
+
+### The check
+
+`backend/app/tests/test_client_reachability.py`. It belongs on the server side
+for the same reason `test_client_enums.py` does — the gap is only visible from
+across the wire, and from the server alone a finished endpoint and a used one
+are indistinguishable: tests pass, the router reads as complete.
+
+**The `NOT_WIRED` list is the dangerous part and it is held in both
+directions.** An exclusion list with a reason attached is exactly what
+`fixtures/timeline/parity.json` had, where a reason that had stopped being true
+kept real coverage out for a release *and a test asserted the exclusion*. So:
+
+- a route with no client and no entry fails;
+- an entry for a route the app now calls fails ("delete the entries");
+- an entry for a route that no longer exists fails.
+
+You cannot leave a wired route on the list and you cannot leave a ghost on it.
+
+### Verified by breaking it three ways
+
+| mutation | result |
+|---|---|
+| drop the `/v1/calibration` entry | `these routes are served and no client calls them: POST /v1/calibration` |
+| add `POST /v1/scores` (which *is* called) | `these are on NOT_WIRED but the app calls them now: POST /v1/scores` |
+| add `POST /v1/ghost` | `POST /v1/ghost is on NOT_WIRED but is not served` |
+
+Restored with `diff -q` after each. A fourth test guards against the check
+being vacuous: a real route must read as reached and an invented one must not,
+because a `_calls` that matched everything would pass the first test with every
+route unreachable.
+
+**Deliberately conservative matching.** It looks for the literal URL anchored
+on the quote that opens the string, with `{param}` standing for one `${...}`
+interpolation. A client that assembled a URL from fragments would read as
+unreached — which asks for a second look rather than passing quietly, and that
+is the right direction to be wrong in.
+
+### The check caught itself, on this commit
+
+The first version searched raw source, so the comment I wrote *documenting*
+`/v1/calibration` as unreachable made it read as reached — and the full suite
+failed with `these are on NOT_WIRED but the app calls them now: POST
+/v1/calibration`. The check reported the note as the fix, which is the same
+class of error it exists to find.
+
+`strip_comments` is the answer, and it is a scanner rather than a regex on
+purpose: `https://` lives inside strings all over this tree, and any rule that
+deletes from `//` to end of line without knowing it is inside a string
+truncates the string — quietly, and in the direction that hides a real call.
+There is a test for both comment forms and for a `https://` URL surviving one.
+
+### Tests
+
+`test_client_reachability.py` 6 passed; `tsc --noEmit` clean after the comment
+change. Full suites unchanged from the entry below — no shipped code was
+touched, only a comment and a new test.
+
+**Side effects:** none. **Rollback:** delete the test file and revert the
+comment.
+
+---
+
 ## 2026-09-03 — The feedback loop the backend calls "the moat" has no client
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Documentation only — the
