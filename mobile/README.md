@@ -115,6 +115,18 @@ cryptography is the platform's TLS, which is exempt — the declaration saves an
 export-compliance question on every upload), and `RCTRootViewBackgroundColor`
 at the app's own paper colour.
 
+**The iOS bundle builds, and CI builds it on every commit.** `expo export
+--platform ios` resolves the *native* module graph — a different graph from the
+web one this repository's screenshots and walk all run through — and Hermes
+compiles it. Measured on the resulting bytecode: `intempo-listen-`, the WAV
+filename the **native** score player writes, is present; `AudioContext` and
+`createMediaStreamDestination` from the Web Audio player are absent; and
+`beforeunload` is gone entirely, because Metro folds `Platform.OS` and strips
+the guarded web branch.
+
+That proves the bundle **builds**, not that it **behaves**. The native recorder
+and the native player have still never made a sound.
+
 **Not verified, and it cannot be here:** no build has ever been produced. There
 is no macOS, no Xcode, no Apple account and no EAS credentials in this
 container. Three things still need a person:

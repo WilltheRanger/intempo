@@ -100,10 +100,25 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
-      # The last step on purpose: a type error should be reported as a type
-      # error, not as a bundler failure thirty seconds later.
+      # The last two steps on purpose: a type error should be reported as a
+      # type error, not as a bundler failure thirty seconds later.
       - name: Web build
         run: npm run build:web
+
+      # **The App Store target, which nothing here used to build.** Every check
+      # above and every screenshot in `EDIT_LOG.md` runs through the *web*
+      # bundle, and the two module graphs are not the same one: `.web.ts` files
+      # resolve to native siblings, `Platform.OS` branches fold the other way,
+      # and a web-only import in shared code is invisible until a phone runs
+      # it. Metro resolves the native graph and Hermes compiles it, so a
+      # missing native counterpart or a `document.` outside a guard fails here
+      # rather than on a device nobody in CI has.
+      #
+      # Not a substitute for running the app: it proves the bundle builds, not
+      # that it behaves. The native recorder and player still have never made
+      # a sound — see `mobile/README.md`.
+      - name: iOS bundle
+        run: npx expo export --platform ios --output-dir /tmp/ios-bundle
 
   # **Two checks that had found real defects and ran only when someone
   # remembered to run them.** `tools/audit-a11y.mjs` says so about itself: an
