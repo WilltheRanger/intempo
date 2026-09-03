@@ -197,6 +197,44 @@ export const captureSession = {
   },
 
   /**
+   * Adds library pages to the scan already in progress.
+   *
+   * **The counterpart to `importAll`, and the distinction is the caller's to
+   * make, never this module's.** `importAll` resets because importing normally
+   * *starts* a piece; that reset is what stops an abandoned scan silently
+   * absorbing the first page of the next one. But it also meant a photograph
+   * already on the phone could only ever join a scan in the single action that
+   * began it — go back to add page two from the library and page one was
+   * thrown away, so in practice "Add page" was the camera and nothing else.
+   *
+   * Which of the two a screen wants is decided the same way `Scanner` decides
+   * whether to reset: the caller says. An abandoned scan and one being added
+   * to are the same array from in here.
+   *
+   * **A pending retake is deliberately left armed.** Appending is not an
+   * answer to "which page am I replacing" — clearing it would silently cancel
+   * a retake the musician asked for, which is the shape of the bug `capture`
+   * exists to prevent.
+   *
+   * Returns how many were taken. The picker's own limit cannot know how many
+   * pages the scan already holds, so a selection can be partly refused, and
+   * the screen has to be able to say so rather than drop the tail in silence.
+   */
+  appendAll(sources: CapturedSource[]): number {
+    const room = MAX_SCAN_PAGES - pages.length;
+    const taken = room > 0 ? sources.slice(0, room) : [];
+    if (taken.length === 0) {
+      return 0;
+    }
+    everHeldPages = true;
+    commit([
+      ...pages,
+      ...taken.map((source) => ({ id: `page-${nextId++}`, source })),
+    ]);
+    return taken.length;
+  },
+
+  /**
    * Marks which page the next capture replaces.
    *
    * Nothing is removed here. Whatever happens next — a photograph, a closed

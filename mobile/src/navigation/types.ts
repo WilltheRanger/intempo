@@ -20,6 +20,16 @@ export type RootStackParamList = {
     option: Exclude<AddPieceOption, 'scan'>;
     /** Existing manual piece that imported pages should be read into. */
     attachToPieceId?: string;
+    /**
+     * Add the chosen images to the scan in progress instead of replacing it.
+     *
+     * Set only by "Add page" on the review list. The caller decides, for the
+     * same reason `Scanner` takes `adding`: from inside `captureSession` an
+     * abandoned scan and one being added to are the same array, so asking the
+     * session would append a new piece's first page to a scan nobody came
+     * back to.
+     */
+    adding?: boolean;
   };
   /**
    * `adding` is set only when the scan is already in progress — "Add page"
