@@ -6,6 +6,420 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-03 — The policies guarding sheet music and recordings are called "hi" and "um"
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Security. Migration 016
+written **and applied**. CI still cannot allocate a runner.
+
+`avatars` is created properly in 009 — `public = false`, four owner-scoped
+policies. **`score-images` and `audio-uploads` exist in no migration at all.**
+They predate that discipline: made by hand in the dashboard, with nothing in
+this repository saying how they are configured. A musician's photographed sheet
+music and every recording of them playing sit in two buckets whose settings
+could not be reviewed, only guessed at.
+
+So I measured them instead of guessing, against `intempo-dev`:
+
+| bucket | public | file_size_limit |
+|---|---|---|
+| `audio-uploads` | **false** | 52428800 |
+| `avatars` | **false** | null |
+| `score-images` | **false** | 10485760 |
+
+and on `storage.objects`, exactly two policies for them:
+
+| policy | command | predicate |
+|---|---|---|
+| `"hi 1gq8viz_0"` | INSERT on `audio-uploads` | `foldername[1] = auth.uid()` |
+| `"um 1y9e2oj_0"` | INSERT on `score-images` | `foldername[1] = auth.uid()` |
+
+**The posture is sound and nobody could have known it from here.** Those names
+are placeholders somebody typed into a dashboard field. Recreate this project
+from its migrations and neither policy exists, while 009's four avatar policies
+do — an asymmetry that would read as "the buckets are fine".
+
+### INSERT only, and that is right
+
+There is no SELECT, UPDATE or DELETE policy for either bucket, so the anon key
+cannot read a page or a recording **even for its own owner**. Every read is
+signed by the API with the service role, which owner-scopes the row first, and
+every delete goes through `discard_pages_of`. RLS with no policy denies, so it
+fails closed. 016 says so in a comment, because the tempting future change —
+adding a SELECT policy to make something convenient — would let the bundle's
+anon key fetch objects directly and stop the API's ownership check being the
+only way in.
+
+### What 016 does, and deliberately does not
+
+Upserts both buckets to the values above, and creates **named** versions of the
+two policies when an equivalent is absent. Applied to `intempo-dev`, that adds
+two policies with predicates identical to `"hi"` and `"um"` — harmless, since
+Postgres ORs permissive policies of the same command and both say exactly the
+same thing.
+
+**It does not drop the dashboard-named pair.** Dropping a live policy changes
+who can write, and wants a person watching the upload path afterwards rather
+than a migration doing it unattended. They are redundant now and can go by hand.
+
+### Verified
+
+Applied to `intempo-dev`, then **applied a second time** — the rule
+`test_manual_migrations_are_safe_to_run_again` asserts statically, checked
+against the live database rather than trusted. Both succeeded; the policy list
+after is the four above, two named and two not.
+
+**Backend: 1943 passed, 2 xfailed.**
+
+### One asymmetry left, and it is the owner's
+
+`avatars` has **no `file_size_limit`** while the other two have 50 MB and
+10 MB. A signed upload URL goes straight to storage, so the bucket's own limit
+is the only thing standing between a client that does not ask nicely and an
+unbounded profile picture. No bucket sets `allowed_mime_types` either — the
+API's extension allowlist is filename-based and never inspects the bytes.
+Neither is exploitable for anything worse than storage cost, and picking the
+number is a product decision.
+
+---
+
+## 2026-09-03 — A strict script-src, generated — and the wrong hash caught before it shipped
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Security. CI still cannot
+allocate a runner.
+
+`public/_headers` shipped a CSP with `base-uri`, `object-src` and
+`frame-ancestors` and **no `script-src`**, saying why: *"tightening script
+sources without build-generated hashes would turn a security improvement into
+a production outage."*
+
+Right about the risk, wrong about the conclusion. **The hashes can be
+generated**, and that was the app's largest remaining hole: with no
+`script-src`, an injected `<script src="https://…">` runs, and the access
+token in browser storage leaves with it.
+
+Measured on the export first, because the policy has to fit what is actually
+there: **one** external script (same-origin, Expo's bundle), **one** inline
+block (the boot watchdog), no `eval`, no `new Function`, and no external
+script, style or font origin anywhere — the fonts are vendored. So the whole
+allowance is `'self'` plus one hash, with **no `'unsafe-inline'`**, which would
+have permitted the injected inline script the directive exists to stop.
+
+### The part that nearly went out wrong
+
+The first generator produced a plausible hash that the browser **refused**.
+`Refused to execute inline script`. And the app still *mounted*, because the
+bundle is external and allowed — so the symptom was not a blank screen, it was
+the crash watchdog silently dead. Worse, and much harder to notice.
+
+The bug: a naive scan for `<script` finds the **mentions of it inside the
+watchdog's own comment block** first. Four occurrences in the file, two real
+tags. The "body" it took was 10 KB beginning mid-HTML.
+
+Two things came out of that:
+
+1. The scan skips HTML comments.
+2. **The extracted body must compile as JavaScript** — `new vm.Script(body)`,
+   which parses without running. A mis-extraction yields HTML/JS soup, which
+   does not compile, so the build fails rather than publishing a hash the
+   browser will reject. This is what makes a generated hash safe to ship at
+   all.
+
+### Verified in a browser, because nothing else is authoritative
+
+A local server that serves `dist` **with the real `_headers` CSP applied**,
+loaded in Chromium, watching the console:
+
+| | violations | `#root` children |
+|---|---|---|
+| the wrong hash | **1** — refused | 1 (mounted, watchdog dead) |
+| the generated hash | **0** | 1 |
+
+The authoritative value came from the browser itself — `crypto.subtle.digest`
+over `el.textContent` in the loaded page — rather than from any parser of
+mine.
+
+### Mutations
+
+| Mutation | Result |
+|---|---|
+| comment-skipping removed (the exact bug above) | build **exit 1**: *"Unexpected identifier 'the'"* |
+| the inline block never found | build exit 1, naming the blank screen it would cause |
+| a cross-origin `<script src="https://…">` in the export | exit 1 (branch present; not reachable from this export) |
+
+Walk **PASS (29 checks)**, a11y **PASS**, `tsc` and lint clean, `.env` restored
+`diff -q` identical.
+
+### Also audited, clean, no code needed
+
+**The signed-upload path cannot be pointed at another account.** The client
+never names an object key: `_build_object_key(user_id, ext)` makes
+`<user_id>/<uuid4>.<ext>` server-side, and the request's `filename` contributes
+only its extension — allowlisted per bucket, and matched against
+`^[a-z0-9]{1,8}$` first, so a slash never reaches the allowlist.
+`test_the_key_is_prefixed_with_the_caller_so_ownership_is_checkable` already
+holds it.
+
+---
+
+## 2026-09-03 — The build would say "Success" while publishing the service-role key
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Security. CI still cannot
+allocate a runner.
+
+Three things audited this iteration; two were clean and needed no code, and
+the third is the one worth a check.
+
+### Clean, and worth writing down rather than re-deriving
+
+**No secret has ever been committed.** `.gitignore` covers `.env`, `.env.*`,
+`*.pem` and `*.key`; the only tracked env files are two `.env.example`s; and
+no `.env` appears in any of the last 400 commits. No JWT-shaped string
+anywhere in the tracked tree.
+
+**All 23 `npm audit` findings are build toolchain**, not shipped code: 5 high
+in `metro`, `metro-config`, `metro-transform-worker`, `@expo/metro` and
+`image-size`; 18 moderate across `@expo/cli`, `@expo/config` and friends. Every
+one of those runs on the machine that builds the bundle, not in the app. Worth
+patching on its own schedule; not a user-facing risk, and "5 high" would read
+like one.
+
+### The one that needed building
+
+**The anon key is *supposed* to be in the bundle.** Expo inlines every
+`EXPO_PUBLIC_*` value at build time, and the key is designed to be public —
+RLS is what makes it safe.
+
+The **service-role** key is the same shape and bypasses RLS entirely. One
+mistyped variable name, one paste into the wrong `.env`, and it is inlined
+into 3.3 MB of JavaScript on a public URL: full read and write to every
+musician's rows and files, readable by anyone who runs `strings`. **Nothing
+would fail.** The build would print `Success: Assets published!` — exactly as
+it did the day fifteen fonts went missing, which is the failure this script was
+written for in the first place.
+
+A name-based check misses it, because the mistake is a *value* in the
+right-looking variable. So `checkNoPrivilegedKeys` **decodes the JWTs it
+finds**: a Supabase key carries its privilege in its own payload as `"role"`,
+and only `anon` may travel. That separates the safe key from the catastrophic
+one exactly — no false positive to teach anyone to ignore it.
+
+It lives in `flatten-vendor-assets.mjs` because that script already inspects
+the export and already runs on every `build:web`, including in CI. Wired into
+**both** of `main()`'s exits, since the early return is the one a re-run takes.
+
+### Verified, and a test of mine that was wrong before the code was
+
+| Planted in the bundle | Result |
+|---|---|
+| an **anon** key | passes — the false alarm that matters, since it belongs there |
+| a **service_role** key | exit **1**, naming the file and telling you to rotate it |
+| a musician's own access token (`aud: authenticated`) | exit 1 — a user token in a static bundle is its own leak |
+
+My first run of the middle case reported **exit 0**, and I nearly wrote it up
+as a check with no teeth. The token I minted for that test had a four-character
+signature segment; the regex requires ten. The check was right to ignore a
+malformed credential and my test was the broken half — the same shape as the
+route-scan false positive this morning, and the reason to re-derive a
+surprising result before publishing it.
+
+`no-console` is off for `scripts/**` already; `Buffer` needed adding to that
+block's globals, which lint caught.
+
+**1437 mobile tests, `tsc` and lint clean, web build green.**
+
+---
+
+## 2026-09-03 — The anon key is public by design; RLS is the only reason that is safe
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Security. CI still cannot
+allocate a runner.
+
+`EXPO_PUBLIC_SUPABASE_ANON_KEY` is inlined into 3.3 MB of published
+JavaScript. That is what it is for. What makes it safe is row-level security —
+every policy in this schema is `auth.uid() = <owner column>`, so the key
+reaches the signed-in musician's own rows and nothing else.
+
+**A migration that creates a table and forgets `ENABLE ROW LEVEL SECURITY`
+hands that key the whole table** — every row, to anyone who runs `strings` on
+the bundle. One missing line, in a file applied by hand against a live
+database, checked by nothing.
+
+Audited all fifteen migrations:
+
+| | |
+|---|---|
+| tables created | 9 |
+| with RLS enabled | **9** |
+| policies broader than their owner column | **0** — no `USING (true)` anywhere |
+
+Clean. `test_rls_invariants.py` holds both halves now.
+
+### Two decisions in it
+
+**It checks the `ENABLE`, never that a policy exists.** `pending_uploads` has
+RLS on and *no policy at all*, which is the safe direction — RLS with no
+policy denies everything to anon, and only the service role touches that
+table. Requiring a policy would push somebody to write a permissive one to
+satisfy a test, which is the opposite of the point.
+
+**`USING (true)` gets its own test**, because it is worse than no policy: RLS
+is enabled, so the table passes every audit that greps for `ENABLE` —
+including the first test in this file.
+
+### Verified
+
+| Mutation | Result |
+|---|---|
+| a migration 016 creating a table with no RLS | fails, naming the table |
+| the same migration **with** RLS added | **passes** — the false alarm that matters |
+| …plus a `USING (true)` policy on it | the second test fails |
+| `MIGRATIONS` pointed at a missing directory | fails on the count |
+
+Also cleared this iteration with no code needed: nothing in `mobile/`
+references `SERVICE_ROLE`, and the app inlines exactly three `EXPO_PUBLIC_*`
+values — URL, anon key, API base. No secret-shaped variable reaches the bundle.
+
+**Backend: 1943 passed, 2 xfailed.**
+
+### Raised, not taken
+
+**There is no rate limiting on any endpoint.** Tier limits cap analyses per
+calendar month; nothing caps requests per minute, so sign-in attempts, scan
+uploads and analysis submissions are unbounded per account. Where to enforce
+it — Cloudflare in front of the API, or middleware in FastAPI — is an
+infrastructure decision, not a refactor.
+
+---
+
+## 2026-09-03 — I expected the algorithm allowlist to be the defence; it is not
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Auth. CI still cannot
+allocate a runner.
+
+`test_auth.py` covers eleven refusal paths — wrong key, expired, wrong
+audience, missing and non-UUID `sub`, non-bearer scheme, JWKS failure. It did
+**not** cover the two oldest attacks on a JWT verifier, both of which are a
+total bypass:
+
+- **`alg: none`** — a valid-looking payload with no signature, asking the
+  header to be trusted.
+- **Algorithm confusion** — the verifying key is *published in the JWKS*, so an
+  asymmetric verifier that also accepts `HS256` can be handed a token signed
+  with that public key as the shared secret.
+
+Both are refused. Both now have a test. **And the reason they are refused is
+not the one I wrote down first.**
+
+### The measurement that corrected me
+
+I wrote the two tests, then mutated `_ALLOWED_ALGORITHMS` to `["ES256",
+"RS256", "HS256"]` expecting them to fail. **They passed.** So did `"none"`.
+
+What refuses these is **PyJWT's own key-type check**:
+`HMACAlgorithm.prepare_key` rejects anything PEM- or SSH-shaped as an HMAC
+secret — hardening the library added for exactly this attack. Measured both
+ways a key can reach `decode`:
+
+| key handed to `jwt.decode` | result with `HS256` in the allowlist |
+|---|---|
+| the key **object** PyJWK returns | refused, `TypeError` |
+| raw **PEM bytes** a refactor might pass | refused, `InvalidKeyError` |
+
+So algorithm confusion is structurally impossible here, allowlist or not. My
+comment block said the allowlist was the thing stopping it, which was **false
+and would have been published** — the same overclaim as the "lint clean" this
+morning, caught this time by mutating before writing the summary rather than
+after.
+
+### What each artefact is actually for
+
+- The two behavioural tests are **evidence, not a gate**. They prove the
+  forged tokens are refused end to end and they catch
+  `options={"verify_signature": False}`. The docstring says they do not catch
+  a widened allowlist.
+- `test_the_algorithm_allowlist_admits_no_symmetric_algorithm` is the gate,
+  and its stated reason is a **library change** rather than this attack: it is
+  the part of PyJWT's protection that lives in this repository, and what still
+  refuses the attack if PyJWT drops its check or this file moves to another
+  library that never had one.
+
+### Verified
+
+| Mutation | Result |
+|---|---|
+| `"HS256"` added to the allowlist | 1 failed — the new gate, and only it |
+| `"none"` added | 1 failed — same |
+| the allowlist emptied | 4 failed |
+| `verify_signature: False` | 5 failed, three of them the token tests |
+
+The HS256 token is signed by hand with `hmac`, because PyJWT refuses to
+*encode* it — a good defence, and not the one under test. An attacker is not
+using PyJWT.
+
+**Backend: 1941 passed, 2 xfailed.**
+
+---
+
+## 2026-09-03 — The only thing between one musician and another's rows was an audit
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Security. CI still cannot
+allocate a runner.
+
+**The service-role key bypasses RLS**, so for the 54 queries in this API that
+use it, nothing in the database stops one account reading or changing
+another's rows — the owner filter in the handler is the only thing that does.
+
+Audited all 54 by hand. **They are all scoped**, and the two things worth
+recording are *how*:
+
+| | |
+|---|---|
+| 39 of 54 | filter explicitly on `user_id` |
+| the inserts | stamp `str(user_id)` from the `current_user_id` dependency — and **no request model in the API has a `user_id` field at all**, so there is no path for a client to attribute a row to another account |
+| the workers | key on a row id that came from an owner-scoped enqueue |
+| the helpers | are handed a row the caller already scoped — `discard_pages_of` is the pattern |
+| `readiness.py` | a schema probe, no rows returned |
+
+So: no hole. **And nothing held it**, which is the same sentence as every other
+entry this week. A handler added next month reading
+
+    client.table("scores").update(patch).eq("id", body.score_id).execute()
+
+is a cross-account write that passes every test here and looks exactly like
+the code around it — because most of that code is correct for a reason the
+query itself does not show.
+
+### The check, and what it deliberately is not
+
+`test_owner_scoping.py`: every function in `app/routers/` with a route
+decorator, whose body queries a user-owned table, must mention `user_id` in
+that body. **17 such handlers, 0 without it.**
+
+Coarse, and the docstring says so rather than leaving it to be discovered. It
+is *awareness*, not correctness — a handler that mentions `user_id` and filters
+on the wrong column passes. And **16 of the 41 chains live in module-level
+helpers**, which are handed a row somebody else scoped; a helper cannot tell
+whose row it was given, so nothing static can check it. Those two are named in
+the file as the places to look first when reviewing an endpoint by hand.
+
+I chose the per-handler rule over a per-chain one after measuring both. Per
+chain flagged `create_analysis` and `create_corrections` — both correct, both
+building their payload in a variable above the chain. A check whose first two
+findings are false is a check people switch off.
+
+### Verified
+
+| Mutation | Result |
+|---|---|
+| a new handler reading `scores` by id alone | fails, naming it |
+| the same handler with `.eq("user_id", …)` added | **passes** — the false alarm that would get this deleted |
+| a typo in one `USER_TABLES` name | fails on the count |
+| `ROUTERS` pointed at a missing directory | fails on the count |
+
+**Backend: 1938 passed, 2 xfailed.**
+
+---
+
 ## 2026-09-03 — A phone with a microphone, told it has none
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`, restarted from `main`
