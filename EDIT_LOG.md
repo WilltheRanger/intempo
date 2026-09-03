@@ -6,6 +6,77 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-03 — A fix that worked, and was the wrong thing to ship
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. **No code changed.** A
+measured finding and a rejected fix, recorded so the next session does not
+repeat the experiment. CI still cannot allocate a runner.
+
+### The finding
+
+Every sweep so far has run against fixture titles. Giving one fixture a real
+unabbreviated title — *"Sonata No. 1 in G minor for unaccompanied violin, BWV
+1001 — Adagio, Fuga, Siciliana, Presto"* — the a11y audit reported **Piece
+detail: 119pt off the right edge at 2x text**.
+
+`PageHeader.title` is `flex: 1`, and on the web build a flex item cannot shrink
+below `min-width: auto` — its **min-content** width, which `overflow-wrap:
+break-word` does not reduce. Title right edge against a 375pt screen:
+
+| | as shipped | with `minWidth: 0` |
+|---|---|---|
+| 1x | 295 | 295 |
+| 1.5x | 373 | 295 |
+| 2x | 494 | 295 |
+| 3x | 734 | 295 |
+
+The fix also kept the trailing action in place: unshrunk, `flexWrap` was
+dropping the options button below the title and over to the left (right edge
+355 → 64) from 1.5x on — so the wrap had been papering over this rather than
+firing for the case it was written for.
+
+### Why it was reverted anyway
+
+Screenshotted at 2x rather than trusted: Library's header rendered **"Lib /
+rar / y"**. `minWidth: 0` does not just fix long titles, it authorises mid-word
+breaking on *every* title whose box is narrower than its longest word.
+`screenTitle` is 36px, so at 2x "Library" has a min-content width of 229pt
+against a ~175pt box — and a one-word title broken across three lines is worse,
+on a far more common screen, than a ninety-character title running off the
+edge.
+
+Measuring min-content settled what the constraint actually is: at 2x the single
+word **"unaccompanied" is 481pt**, wider than the entire 335pt content column.
+So no flex rule fits it. The only answers are breaking the word, shrinking the
+type, or truncating — and all three are look and feel, which §2 reserves.
+Reverted; recorded in CLAUDE.md; the decision is the owner's.
+
+**The `SearchField` fix from earlier is not the same case** and stands: an
+`<input>` scrolls its text rather than wrapping it, so `minWidth: 0` there has
+no such side effect.
+
+### On the screenshot
+
+The overlapping rows and tab labels in it are **my simulation, not the app**:
+the check multiplies `font-size` and leaves `line-height` alone, while real
+Dynamic Type scales both. The tool already says it is a floor rather than a
+simulation; this is what that sentence looks like in practice.
+
+### Also
+
+The worker restarted mid-experiment earlier, and both times the tree was
+restored and verified before anything else — `git checkout` on `fixtures.ts`,
+`diff -q` on `.env`. Two runs were lost to path slips (`tools/` resolved from
+`mobile/`, and a killed static server reported as an audit failure); absolute
+paths from here.
+
+### Verified
+
+Tree clean, nothing committed but these notes. a11y sweep PASS at 375pt, walk
+PASS, `.env` restored `diff -q` identical.
+
+---
+
 ## 2026-09-03 — The sweep ran at a width no phone is smallest at
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. One line, measured across
