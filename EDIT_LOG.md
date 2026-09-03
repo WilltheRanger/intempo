@@ -6,6 +6,130 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-03 — "Why can't I upload the 2nd page as an image?"
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Owner-reported, owner-approved.
+CI still cannot allocate a runner.
+
+Because **"Add page" meant the viewfinder and nothing else**, and the one route
+to the photo library threw the scan away.
+
+Two separate limits that combined into a wall:
+
+- `CapturedPagesScreen.addPage()` navigated to `Scanner`, full stop. Its own
+  comment said so — *"'Add page' means the viewfinder either way."* There was
+  no route from the review list to the library.
+- `ImportPages` calls `captureSession.importAll`, which **resets**: *"Importing
+  is starting a new piece, not adding to whatever was photographed earlier."*
+  So even reaching it would have discarded page one.
+
+Net effect: a photograph already on the phone could join a scan **in the single
+action that began it, or not at all**. Multi-select worked; coming back did not.
+
+### The reset is right, and stays
+
+It is what stops an abandoned scan silently absorbing the first page of the
+next piece — the failure `Scanner`'s `adding` flag exists for, and which
+`CLAUDE.md` records as real. From inside `captureSession` an abandoned scan and
+one being added to are the same array, so **the caller decides**, exactly as
+the scanner already does.
+
+`captureSession.appendAll(sources)` is the counterpart. Three decisions in it:
+
+1. **It returns how many were taken.** The picker's `selectionLimit` cannot
+   know how many pages the scan already holds, so a selection can be partly
+   refused — and the screen can only say so if it is told. Dropping the tail in
+   silence is how a musician loses page 12 without being told.
+2. **A pending retake is left armed.** Appending is not an answer to *"which
+   page am I replacing"*, and clearing it would silently cancel a retake the
+   musician asked for — the shape of the bug `capture` exists to prevent.
+3. `everHeldPages` is set, so the empty state still says *"you removed every
+   page"* rather than *"no pages yet"* after adding some and deleting them.
+
+### The screens
+
+`AddPiece` takes `adding?: boolean`; `ImportPagesScreen` appends instead of
+replacing when it is set, and its `selectionLimit` becomes the **room left**,
+so the picker refuses the thirteenth image rather than accepting it and
+dropping it afterwards. "Add page" now opens a two-option sheet — camera or
+library — built from `BottomSheet` and `SheetOptionRow`, with the copy named
+the way `AddPieceSheet` names its four: by what the musician has in their hand.
+
+### Their own test caught my shortcut
+
+I wrote `navigation.goBack()` for the return trip and
+`goBack.test.ts` refused it: *"is never a bare goBack in a screen"*. Right —
+`/add/import` is a real URL in the web build, and on a screen opened directly
+`goBack` is a no-op, so the pages would have landed in the scan and left the
+musician on the picker with nothing to press. It uses
+`useGoBack({ route: 'CapturedPages' })` now.
+
+### Verified
+
+Seven new tests on `appendAll` — appends after what is there, still resets for
+a plain import, takes what fits and reports the count, refuses a full scan,
+gives distinct ids so reorder and delete keep working, leaves a retake armed,
+and feeds the empty state. **1444 mobile tests across 128 files.**
+
+Driven in Chromium: the sheet opens from the review list and offers both
+options, with no page errors. `tsc` and lint clean, walk **PASS (29 checks)**,
+a11y **PASS**, `.env` restored `diff -q` identical.
+
+---
+
+## 2026-09-03 — A survey of eight screens, and the one change it justified
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. UI, under a direct
+instruction to improve the design. CI still cannot allocate a runner.
+
+Screenshotted eight screens at 393x852 rather than reasoning from source, and
+ran the three-foot test on each. Most of the app is in good shape; the survey
+mattered because it stopped me building two changes I had already proposed.
+
+### Three-foot test
+
+| Screen | First, second, third | Verdict |
+|---|---|---|
+| **Verdict** | "You rushed in the middle" → the trend line → the per-measure list | **The strongest screen in the app.** One focal point, no cards, hierarchy from type, hairlines for structure, ochre as an accent. Change nothing. |
+| **Library** | "Library" → the rows → the search field | Good. No cards; sheet crops carry the identity. |
+| **Today** | "Good evening" → the piece card → everything else | The largest element on the screen carries **no information**, and three white rounded cards stack down it against design law 3. **Frozen** (`mobile/README.md`), so recorded, not touched. |
+| **Record** | 92 → the record button → 00:00 | Three places for the eye to land where law 4 asks for one. |
+
+### The change
+
+The idle timer is dimmed to `textTertiary` before a take and ink once it is
+counting. Three large elements become one path: title, button, tempo.
+
+**Not removed, and that is the finding.** I proposed removing it, built it, and
+screenshotted the result: a visible void between the settings and the button.
+`styles.body` distributes with `space-evenly` and that node **reserves the
+height the running timer needs** — the same reason `BeatIndicator` replaces the
+metronome row rather than appearing beside it, whose comment says *"the same
+height, so nothing above shifts when the take begins."* Removing it moves
+everything above **at the instant the count-in starts**, when a musician has an
+instrument up and is watching for the downbeat. A worse trade than the numeral
+it removes.
+
+### Two proposals the survey killed
+
+- **"Recording tips looks like plain text, not a control."** It shares
+  `styles.metronome` with two other controls on the same screen — a 44pt row of
+  `metadataSmall`. It is consistent with its siblings; it is *Listen* that is
+  different, and deliberately, being a playback action rather than a toggle.
+- **"A library row with no photograph should draw its own music."** Convention
+  7 says use `sheet/SheetCrop` and never a placeholder — but **there is no
+  `SheetCrop` in `mobile/`**; that convention was written for `frontend/`, as
+  `CLAUDE.md` warns. The row is 52x38, where engraved notes would be a smudge.
+  Ruled staff lines are the right answer at that size.
+
+### Verified
+
+a11y **PASS** (the dimmed timer is 36px, so the 3:1 large-text threshold
+applies and it clears), walk **PASS (29 checks)**, 1437 mobile tests, `tsc` and
+lint clean, `.env` restored `diff -q` identical.
+
+---
+
 ## 2026-09-03 — The policies guarding sheet music and recordings are called "hi" and "um"
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Security. Migration 016

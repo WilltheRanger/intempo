@@ -332,3 +332,86 @@ describe('an empty session', () => {
     expect(captureSession.hasHeldPages()).toBe(false);
   });
 });
+
+describe('adding library pages to a scan already in progress', () => {
+  /**
+   * **The bug this is for, in a sentence a musician would use:** "why can't I
+   * upload the 2nd page as an image?"
+   *
+   * `importAll` resets, because importing normally *starts* a piece — and
+   * that reset is load-bearing, since an abandoned scan and one being added to
+   * are the same array from inside this module. The consequence was that a
+   * photograph already on the phone could only join a scan in the single
+   * action that began it. Go back to add page two from the library and page
+   * one was gone.
+   */
+  it('keeps the pages already captured, and puts the new ones after them', () => {
+    captureSession.capture(PAGE(1));
+
+    expect(captureSession.appendAll([PAGE(2), PAGE(3)])).toBe(2);
+
+    expect(sources()).toEqual([PAGE(1), PAGE(2), PAGE(3)]);
+  });
+
+  it('still resets when the caller asked to import rather than to add', () => {
+    // The two live side by side on purpose. Losing this distinction is how an
+    // abandoned scan absorbs the first page of the next piece.
+    captureSession.capture(PAGE(1));
+
+    captureSession.importAll([PAGE(9)]);
+
+    expect(sources()).toEqual([PAGE(9)]);
+  });
+
+  it('takes what fits and reports the number, rather than dropping the tail', () => {
+    // The picker's own `selectionLimit` cannot know how many pages the scan
+    // already holds, so a selection can be partly refused — and the screen can
+    // only say so if it is told how many were taken.
+    scanOf(MAX_SCAN_PAGES - 2);
+
+    expect(captureSession.appendAll([PAGE(90), PAGE(91), PAGE(92)])).toBe(2);
+
+    expect(captureSession.current()).toHaveLength(MAX_SCAN_PAGES);
+    expect(sources().slice(-2)).toEqual([PAGE(90), PAGE(91)]);
+  });
+
+  it('refuses everything, and says so, when the scan is already full', () => {
+    scanOf(MAX_SCAN_PAGES);
+
+    expect(captureSession.appendAll([PAGE(99)])).toBe(0);
+
+    expect(captureSession.current()).toHaveLength(MAX_SCAN_PAGES);
+  });
+
+  it('gives every added page an id of its own, so reorder and delete still work', () => {
+    captureSession.capture(PAGE(1));
+    captureSession.appendAll([PAGE(2), PAGE(3)]);
+
+    const ids = captureSession.current().map((page) => page.id);
+
+    expect(new Set(ids).size).toBe(3);
+  });
+
+  it('leaves a pending retake armed, because appending does not answer it', () => {
+    // Clearing it here would silently cancel a retake the musician asked for,
+    // which is the shape of the bug `capture` exists to prevent.
+    captureSession.capture(PAGE(1));
+    captureSession.capture(PAGE(2));
+    captureSession.beginRetake(captureSession.current()[0].id);
+
+    captureSession.appendAll([PAGE(3)]);
+    expect(captureSession.capture(PAGE(8))).toBe('replaced');
+
+    expect(sources()).toEqual([PAGE(8), PAGE(2), PAGE(3)]);
+  });
+
+  it('tells the empty-state which of its two sentences to use', () => {
+    // `hasHeldPages` is what separates "you removed every page" from "no pages
+    // yet". Pages that arrived by import are pages that were held.
+    captureSession.reset();
+    captureSession.appendAll([PAGE(1)]);
+    captureSession.remove(captureSession.current()[0].id);
+
+    expect(captureSession.hasHeldPages()).toBe(true);
+  });
+});
