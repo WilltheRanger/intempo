@@ -650,6 +650,90 @@ console.log('\n## Downloading your own data');
   }
 }
 
+console.log('\n## Setting up a take');
+
+/*
+ * **The screen where the clock is chosen, and no sweep had ever seen it.**
+ * `pieces/:pieceId/record` renders `PracticeSetup` — the first-take tips —
+ * until `practiceSetupSeen` is stored, so the a11y audit's "Record" entry has
+ * been auditing the tips since the first sweep. Behind it are eight controls
+ * including the tempo steppers and the start-at picker.
+ *
+ * The tempo matters more than any other setting here: `submitTake` sends it as
+ * `target_bpm`, `build_timeline` scales the whole expected timeline by it, and
+ * every band in the verdict is a percentage of one beat at it. A stepper that
+ * showed one number and sent another would have a musician judged at a tempo
+ * they did not choose, with nothing on screen disagreeing.
+ */
+await open('pieces/fixture-bach-bwv1001/record');
+if (!(await leaves()).some((l) => /Before your first take/i.test(l)))
+  fail('the record route did not open on the first-take tips');
+else pass('a first take opens on the tips, not on the controls');
+
+await page.getByRole('button', { name: /Set tempo & record/i }).first().click();
+await waitForText('the recording controls', (l) => /Target tempo/i.test(l));
+
+/** The number beside the BPM label, which is what the take is judged against. */
+const targetBpm = async () => {
+  const lines = await leaves();
+  const at = lines.indexOf('BPM');
+  return at > 0 ? lines[at - 1] : null;
+};
+
+const opened = await targetBpm();
+if (!opened) fail('the recording screen shows no target tempo');
+else pass(`the tips lead to the controls, at ${opened} BPM`);
+
+await page.getByRole('button', { name: 'Faster' }).first().click();
+await waitFor('the tempo to rise', async () => (await targetBpm()) !== opened);
+const faster = await targetBpm();
+await page.getByRole('button', { name: 'Slower' }).first().click();
+await waitFor('the tempo to fall back', async () => (await targetBpm()) !== faster);
+const back = await targetBpm();
+
+if (Number(faster) <= Number(opened)) fail(`Faster took ${opened} to ${faster}`);
+else if (back !== opened)
+  // The same step in both directions. A stepper that rose by two and fell by
+  // one would drift the target every time a musician changed their mind, and
+  // the number on screen would still look deliberate.
+  fail(`Slower did not undo Faster: ${opened} → ${faster} → ${back}`);
+else pass(`the tempo steps evenly both ways: ${opened} → ${faster} → ${back}`);
+
+/*
+ * The start-at picker. `from_measure` reached `main` once and refused every
+ * take, because migration 015 had not been applied — so this control has a
+ * history of being present and not working.
+ *
+ * **Its sheet renders outside `#root`**, in a portal on the body, which is why
+ * `leaves()` here reads the whole document rather than the app container. A
+ * probe scoped to `#root` reported this control doing nothing at all.
+ */
+const beforePicker = (await leaves()).length;
+await page.getByRole('button', { name: /Start at bar/i }).first().click();
+await waitFor('the start-at sheet to open', async () =>
+  (await leaves()).some((l) => /Start the take at/i.test(l)),
+);
+if ((await leaves()).length <= beforePicker)
+  fail('the start-at control opened nothing');
+else pass('the start-at picker opens and says what the bar governs');
+await page.keyboard.press('Escape');
+await page.waitForTimeout(400);
+
+/*
+ * Reopening the tips must come back to the controls. `RecordScreen` branches
+ * on `practiceSetupSeen` here: dismissing the tips a *second* time closes them,
+ * while dismissing them the first time leaves the screen entirely. Getting
+ * that backwards drops a musician out of the flow for reading the tips.
+ */
+await open('pieces/fixture-bach-bwv1001/record');
+await page.getByRole('button', { name: /Open recording tips/i }).first().click();
+await waitForText('the tips to reopen', (l) => /Before your first take/i.test(l));
+await page.getByRole('button', { name: /Back to the piece/i }).first().click();
+await waitForText('the controls to come back', (l) => /Target tempo/i.test(l));
+if ((await path()).endsWith('/record'))
+  pass('reopening the tips comes back to the controls, not out of the flow');
+else fail(`closing the reopened tips left for ${await path()}`);
+
 console.log('\n## A refused microphone');
 
 /*
