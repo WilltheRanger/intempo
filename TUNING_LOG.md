@@ -6,6 +6,46 @@ value, regression results across all six fixture clips, and rationale.
 
 ---
 
+## 2026-09-04 — Two of the twenty-two knobs turn nothing, and the file gave no sign
+
+**No value changed.** This is about the instrument the tuning session will use.
+
+The whole argument for `config.toml` is CLAUDE.md §1 rule 7 and
+`audio_config.py`'s own first line: *"change a number, re-run the fixtures, log
+it here; no code edit."* Batch 3's thresholds are still the spec's starting
+values because tuning needs real ears on real recordings, so that session has
+yet to happen — and when it does, it happens by editing this file.
+
+**A knob that turns nothing is the worst way that loop can fail.** The tuner
+changes a number, the corpus reads identically, and the honest conclusion from
+that evidence is *"this parameter does not matter."* It would be logged here as
+a measurement, and it would be a measurement of nothing.
+
+Measured: of the 22 fields `AudioConfig` declares, **20 are read by the
+pipeline and 2 are not**.
+
+| knob | why it is inert |
+|---|---|
+| `onset.post_max` | The peak-pick window is no longer *chosen*. `peak_window_frames` derives it per take from the smallest note gap the score and `target_bpm` imply, and passes the one number to librosa as **both** `pre_max` and `post_max`. `pre_max` survives as the cap on that; `post_max` is read by nothing. |
+| `alignment.slur_tolerance_pct` | The threshold for the whole-slur duration check in spec §4, which was never built. `alignment.py` says so itself on `is_slur_boundary`. What exists is `is_slur_interior`, which *excludes* those notes from the trend and the verdict rather than measuring a phrase against a tolerance. |
+
+`post_max` is the one that would have cost time. It sits directly beneath
+`pre_max`, reads as its pair, and `peak_window_frames`'s docstring is a long
+argument about exactly this window — the measured table of *"window 3:
+sixteenths 32/32 found; window 20: 4/32"* is the most consequential detector
+finding in this repository. Anyone re-opening it would reach for both numbers.
+
+**Neither is deleted and neither is wired up.** Removing a key is a decision
+about the remote-config row a deployment may already be sending; wiring
+`post_max` means deciding whether an asymmetric window is right, which is a
+question for this session with the corpus and an ear, not for a commit that
+cannot hear anything. What was wrong was that the file gave no sign: both sat
+beside live values with a spec citation each. They now say so where the tuner
+is looking, and `backend/app/tests/test_tuning_knobs.py` holds it — a *new*
+dead knob fails, and so does a stale entry for one that has since been wired.
+
+---
+
 ## 2026-09-04 — Baseline: what the pipeline says about all six corpus clips today
 
 **Nothing in `config.toml` changed.** This is the corpus read out, so the
