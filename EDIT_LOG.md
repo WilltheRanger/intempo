@@ -6,6 +6,110 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-04 — A take recorded with no signal now survives the app being killed
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Batch 10's core, which
+CLAUDE.md §2 names as not needing the UI gate. CI still cannot dispatch a
+runner.
+
+`RecordScreen` holds an unsent take in a `useRef`. That survives a retry and
+**does not survive the app being killed** — so a musician who records in a
+practice room with no signal, backgrounds the app and comes back has lost the
+performance, which is the one part of this that cannot be repeated. Batch 10's
+Definition of Done says *"record works offline; appears in queue"* and *"queue
+persists across app kills"*. This is those two.
+
+### Three files, and the split is the point
+
+`lib/sync/takeQueue.ts` decides everything and touches no device.
+`takeQueue.store.ts` is the adapter. `queuedTakes.ts` is the glue the screen
+calls — three named functions, no decisions in it. The reason is the one this
+project keeps arriving at: there is no React Native testing library
+(`DECISIONS.md`, 2026-08-24), so a rule that only runs against a real device
+store is a rule nothing checks, and the capture-path audit found eight of its
+nine defects in that layer.
+
+**Not `pending_uploads`.** Migration 014 has a table of that name and it is a
+different thing — storage objects with no row yet, swept by the backend. Named
+differently on purpose; the same name would be one grep away from a very
+confusing hour.
+
+### Four decisions worth stating
+
+**The bytes are written before the entry, and removed after it.** An entry
+pointing at bytes that were never written is a take the musician can see and
+can never send; bytes with no entry are one orphaned file. The same ordering
+rule the server's `pending_uploads` uses, one layer down.
+
+**`resume` travels with the queued take.** `submitTake` already reuses a
+server-issued `audioKey` rather than uploading again, and returns an existing
+`analysisId` rather than creating a second. Without carrying that across a
+restart, draining is how one performance costs two of three free monthly
+analyses — the spec's own idempotency pitfall, with the mechanism already built
+and only needing to persist.
+
+**A name, never a path.** iOS rotates the app container's directory on update,
+so an absolute path stored today does not exist after the next release. The
+spec names this pitfall and it is the one that loses every queued take at once,
+silently, on the day everybody updates.
+
+**`Paths.document`, not `Paths.cache`.** Every other file this app writes is
+disposable and belongs in the cache. A queued take is a performance; putting it
+somewhere the system may clear under memory pressure would make the queue a
+promise the device does not keep.
+
+### What it does when it cannot work
+
+Every glue function swallows its failure, because a queue that throws on the
+way past would take down the submission it exists to protect. And since the
+bytes are written first, a platform with no file system — the web build among
+them — enqueues nothing and leaves the screen with exactly the in-memory take
+it has always had. Degraded, never wrong.
+
+Restoring reads the **bytes** to decide: an entry whose file is gone is a row
+about a take rather than a take, and it is dropped rather than shown, so
+"Send it again" is never offered for something that is not there.
+
+### Mutated four ways, each against the whole suite
+
+| mutation | result |
+|---|---|
+| entry written before the bytes | **2 failed of 1548** |
+| a failed attempt replaces `resume` instead of merging it | **1 failed** |
+| the backoff loses its five-minute cap | **1 failed** |
+| storage from an older build trusted as-is | **1 failed** |
+
+All new cases. The cap matters more than the curve: a musician who has just
+walked back into signal should not wait an hour because the app failed four
+times in a tunnel.
+
+### What is **not** done, of Batch 10
+
+Two of the five DoD lines, and the other three need things this cannot reach:
+
+  * **Reconnect triggers automatic sync** — needs NetInfo, a native dependency
+    this app does not have. The queue drains when the screen asks; nothing
+    watches the network.
+  * **Background sync while the app is closed** — needs a background-task
+    module and an iOS capability.
+  * **Captive portal detection** — not built.
+  * `SyncStatusBar`, the spec's UI for this, is **§2 and not built.** Nothing
+    on screen counts queued takes; the only one a musician sees is the one for
+    the piece they are looking at.
+
+### Verification
+
+Mobile **1548 passed** across 138 files (was 1529). `tsc` 0, lint 0,
+`check-dead-exports` 532 exports and none dead — the adapter failed that check
+before the screen was wired, which is the check working. Walk **PASS, 51
+checks**; a11y **PASS**. `.env` restored `diff -q` identical.
+
+The adapter itself is **untested and says so in its own docstring**: whether
+`expo-file-system` writes where it claims needs a device, and there is none
+here.
+
+---
+
 ## 2026-09-04 — Nothing had ever checked that the migrations run
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Infrastructure. CI still
