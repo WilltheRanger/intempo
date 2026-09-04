@@ -6,6 +6,77 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-04 — Two tuning knobs turn nothing, in the file whose whole purpose is that they do
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Audio. CI still cannot
+allocate a runner. Substance in `TUNING_LOG.md`, same date.
+
+CLAUDE.md §1 rule 7 and `audio_config.py`'s first line make the same promise:
+every threshold lives in `config.toml`, so tuning is *"change a number, re-run
+the fixtures, log it in TUNING_LOG.md; no code edit."* Batch 3's thresholds are
+still the spec's starting values because tuning needs real ears, so that
+session has yet to happen — and it will happen by editing that file.
+
+Measured: of the 22 fields `AudioConfig` declares, **20 are read by the
+pipeline and 2 are not** — `onset.post_max` and `alignment.slur_tolerance_pct`.
+A tuner changing either sees the corpus read identically, and the honest
+conclusion from that evidence is *"this parameter does not matter."*
+
+`post_max` is the expensive one: it sits directly under `pre_max`, reads as its
+pair, and `peak_window_frames`'s docstring is a long argument about exactly
+that window — including the measured *"window 3: sixteenths 32/32; window 20:
+4/32"* table, the most consequential detector finding here. The window is
+**derived** per take now and the same number is passed as both; `pre_max`
+survives as the cap.
+
+`slur_tolerance_pct` is the threshold for the whole-slur check in §4 that was
+never built. `alignment.py` says so on `is_slur_boundary`. `config.toml` did
+not.
+
+### Neither deleted nor wired up
+
+Removing a key is a decision about the remote-config row a deployment may be
+sending; wiring `post_max` means deciding whether an asymmetric window is
+right, which needs the corpus and an ear. What was wrong was that the file gave
+no sign — both sat beside live values with a spec citation each. They now say
+so where the tuner is looking.
+
+### `test_tuning_knobs.py`, three directions
+
+Every `AudioConfig` field is read somewhere in the pipeline or named in
+`TURNS_NOTHING` with its reason; every key in `config.toml` reaches a field, so
+a value added to the file is not silently ignored by `_parse`; and every field
+is filled *from* the file, so a knob cannot quietly become a Python default the
+file appears to set. The field list is discovered through `get_type_hints` —
+the module uses `from __future__ import annotations`, so `Field.type` is the
+string `"OnsetConfig"` rather than the class.
+
+Writing it surfaced a real inconsistency in the loader, recorded rather than
+changed: `[onset.double_bass] delta` fills `onset.double_bass_delta` (prefixed)
+while `[tolerance.pulse] disturbance_deviations` fills
+`tolerance.disturbance_deviations` (not). The flattener tries both forms and
+says which.
+
+### Mutated two ways
+
+| mutation | result |
+|---|---|
+| a new `trend.smoothing` knob, wired through `_parse` and read by nothing | **1 failed of 2075** — the new case, nothing else |
+| `post_max` wired up and its `TURNS_NOTHING` entry left behind | `test_no_dead_knob_has_quietly_come_alive` |
+
+The first is the failure this exists for and no other test in the repository
+comes near it — a knob is *supposed* to be inert to the suite; that is what
+makes it a knob.
+
+### Verification
+
+Backend **2074 passed / 2 skipped / 2 xfailed** (was 2041; the two skips are
+the named dead knobs). `app/services/audio.py` restored via `git checkout` and
+confirmed by `git status`. No mobile change. Config comments only — no UI,
+copy, component or token, so no §2 gate and no three-foot test.
+
+---
+
 ## 2026-09-04 — A signed URL goes straight to storage, so the bucket's limit is the last word
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Picture and audio. CI still
