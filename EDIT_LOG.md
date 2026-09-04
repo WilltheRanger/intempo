@@ -6,6 +6,79 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-04 — What a tuning session actually touches, and two places that quietly claim to mirror it
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Audio. CI still cannot
+allocate a runner. Companion to the dead-knob entry below: that one asked which
+config values turn nothing, this one asks what else moves when one is turned.
+
+### The app carries two of the bands, and calls them a mirror
+
+`bandFor` and `fullScaleFor` apply `result_json.tolerance` — the six numbers
+the server judged that take by — which is the only reason CLAUDE.md can say
+**no threshold is invented in the app**. For rows finished before the pipeline
+recorded them there is nothing to travel, and the app falls back to
+`FALLBACK_INNER_PCT = 5` and `FALLBACK_OUTER_PCT = 20`.
+
+Both docstrings said they *"match the shipped `backend/config.toml`"*. Nothing
+checked it, and the claim is true only because the bands have never been tuned.
+
+**The reflex it invites is the wrong one.** When the tuning session widens the
+dragging side — which the tuning appendix says it will, because musicians
+tolerate dragging better — updating these to follow re-bands takes already in a
+musician's history by a number the pipeline never applied to them. That is
+re-judging a performance nobody re-recorded. The right default is to leave
+them: they are a **historical** value, not a mirror.
+
+The docstrings say that now, and `test_fallback_bands.py` is the tripwire, with
+a failure message stating both answers and which is the default. Two more cases
+beside it, because a single fallback number stands in for a pair: it is honest
+only while the rushing and dragging sides are equal, and `bandFor` infers the
+mid band as *half the outer*, which holds only while the config puts it there.
+
+**Mutated** by widening the dragging bands to 7/26 — the tuning appendix's own
+example. Three of the four new cases fire. **All 1504 mobile tests pass**, and
+on the backend exactly one existing test fails: `test_classify_band_dragging_
+side`, about the *pipeline's* banding. A tuner would see that one and update its
+expectation, and the app's fallback would stay silently wrong — which is the
+information the new cases add.
+
+### `audio_config.py` said every threshold was in the file
+
+> *"Every threshold the pipeline uses … lives in `config.toml`, never
+> hard-coded in the services."*
+
+Measured: **eleven decision constants live in Python** — `ORNAMENT_SHARE`,
+`MIN_TEMPO_RATIO` / `MAX_TEMPO_RATIO`, `MIN_ONSETS_TO_ESTIMATE_TEMPO`,
+`MAX_EDGE_TRIM`, `MIN_TRIM_GAIN`, `POSITION_WEIGHT`, `POSITION_CAP_GAPS`,
+`_GAP_CORE_LOW` / `_GAP_CORE_HIGH` and `TAKE_TOO_LONG_RATIO`.
+
+**Most of them should stay there and the survey says so.** Each carries a
+measured rationale in its own comment, and several explicitly sit in a flat
+region — `POSITION_WEIGHT`'s says anything from 0.25 to 2.0 behaves the same,
+`MIN_TRIM_GAIN`'s that the failures it repairs run 0.029 → 0.988. These are
+structure, not knobs, and moving them into a tuning file would invite turning
+numbers that have no meaningful range.
+
+`ORNAMENT_SHARE` is the exception a tuner needs to know about: its own comment
+says it was *"chosen against two synthetic takes and no real recording, which
+is the honest limit on it"*. That is precisely a value waiting for the session
+that has not happened, and it is not in the file that session will open.
+
+The docstring says all of this now rather than a sentence that was false. **No
+constant was moved** — deciding which of eleven belong in a tuning file is a
+judgement for someone with the corpus and an ear, and doing it from here would
+be eleven guesses dressed as a refactor.
+
+### Verification
+
+Backend **2078 passed / 2 skipped / 2 xfailed** (was 2074). Mobile **1504
+passed**, `tsc` 0, lint 0. `config.toml` mutated and restored (`git diff`
+clean before the docstring edits). Docstrings and one new test file — no UI,
+copy, component or token, so no §2 gate and no three-foot test.
+
+---
+
 ## 2026-09-04 — Two tuning knobs turn nothing, in the file whose whole purpose is that they do
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Audio. CI still cannot

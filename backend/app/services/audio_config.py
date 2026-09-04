@@ -1,9 +1,25 @@
 """Loader for the audio-analysis tuning config (`backend/config.toml`).
 
-Every threshold the pipeline uses — onset `delta`, tolerance bands,
-alignment quality cutoffs — lives in `config.toml`, never hard-coded in
-the services. That is what makes the Batch 3 tuning loop cheap: change a
-number, re-run the fixtures, log it in TUNING_LOG.md; no code edit.
+The thresholds a tuning session turns — onset `delta`, the tolerance bands,
+the alignment quality cutoffs — live in `config.toml` rather than in the
+services, which is what makes the Batch 3 loop cheap: change a number, re-run
+the fixtures, log it in TUNING_LOG.md; no code edit.
+
+**That is not the same as "every number in the pipeline is here", and this
+docstring used to say it was.** Measured 2026-09-04: eleven decision constants
+live in Python, each with a measured rationale in its own comment —
+`ORNAMENT_SHARE`, `MIN_TEMPO_RATIO` / `MAX_TEMPO_RATIO`,
+`MIN_ONSETS_TO_ESTIMATE_TEMPO`, `MAX_EDGE_TRIM`, `MIN_TRIM_GAIN`,
+`POSITION_WEIGHT`, `POSITION_CAP_GAPS`, `_GAP_CORE_LOW` / `_GAP_CORE_HIGH`
+(`alignment.py`) and `TAKE_TOO_LONG_RATIO` (`analysis.py`). Most sit in a
+measured flat region and are structure rather than knobs — `POSITION_WEIGHT`'s
+comment says anything from 0.25 to 2.0 behaves the same. `ORNAMENT_SHARE` is
+the exception worth knowing about: its comment says it was *"chosen against two
+synthetic takes and no real recording, which is the honest limit on it"*, so it
+is a value the tuning session should look at and it is not in this file.
+
+Two fields here turn nothing at all; `test_tuning_knobs.py` names them and
+`config.toml` says so beside each.
 
 In production these values come from remote config (a Supabase row).
 This module is the checked-in default and the shape everything else
