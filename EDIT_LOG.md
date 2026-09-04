@@ -6,6 +6,65 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-04 — The two objects the app reads most had no field contract at all
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. CI still cannot allocate a
+runner.
+
+`test_client_body_fields.py` held the fields of request and response *bodies*.
+The objects **inside** them — the score and the verdict, which between them are
+almost everything the app draws — were not held by anything. Nine more pairs:
+
+    ScoreNote / ScoreMeasure / ScoreRepeat / ScoreJson  →  score_schema
+    MeasureConcern                                      →  routers/scores
+    PerNoteResult / PerMeasureResult / Tolerance /
+    AnalysisResultJson                                  →  services/analysis
+
+Measured: **not one ghost field across all nine.** Five fields the server
+writes and the app ignores, each for a reason — `Measure.system` and
+`PerNote.timed` are layout and bookkeeping, `Repeat.start_inferred` and
+`ScoreJson.unclosed_repeat_starts` are the two facts that carry across a page
+join and reach no screen.
+
+### Why these two are worse to get wrong than a response body
+
+**`score_json` travels in both directions, and its schema forgives extras.** It
+goes out on every `ScoreResponse` and comes back on `UpdateScoreRequest` when
+the bar editor saves a correction. `ScoreJson` sets `extra="ignore"`
+deliberately — its own docstring records that forbidding *"cost whole pages"*,
+one unexpected key from a model that noticed something the schema cannot hold
+failing the entire score. The price of that kindness is the other direction: a
+field the app writes and the server does not declare is **dropped in silence**,
+so a correction a musician made never persists while the screen says it saved.
+
+**The verdict half is looser still.** `AnalysisResponse.result_json` is typed
+`dict[str, Any]` on purpose — `data/types.ts` argues that a second copy of that
+schema would go stale silently — but the *producer* is four Pydantic models, so
+the comparison is available even though the transport does not make it. The app
+reads nine keys out of `per_measure` alone; rename one and every bar on the
+verdict screen reads as undefined.
+
+### Mutation-tested
+
+| mutation | caught by |
+|---|---|
+| the pipeline renames `avg_delta_pct` | `[PerMeasureResult]` |
+| the app reads a `ScoreNote.fingering` nobody declares | `[ScoreNote]` |
+| `Measure.measure_number` renamed on the server | `[ScoreMeasure]` |
+
+### Where the field surface stands now
+
+Across requests, responses, nested score objects and the verdict result: **zero
+mismatches, and all of it held.** That is four groups in one file — 34 cases —
+and the reason they are together is that they are one question asked at four
+depths: does a name mean the same thing on both sides of the wire.
+
+### Verification
+
+Backend suite green. Mobile untouched.
+
+---
+
 ## 2026-09-04 — The same contract in the other form: six Postgres enum types
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. CI still cannot allocate a
