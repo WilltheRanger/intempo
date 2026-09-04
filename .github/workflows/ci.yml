@@ -202,6 +202,35 @@ jobs:
       - name: Accessibility audit
         run: node ../tools/audit-a11y.mjs 4320
 
+      # **The state every musician meets first, and the only one no other
+      # build has.** Today, Library and Insights are otherwise always seen
+      # with a library, a take and thirty days of trend behind them. That gap
+      # cost a real bug on 2026-09-02 — Today saying "Nothing to practice yet"
+      # above a fully built daily warmup it was hiding — and it was found by
+      # hand, because reaching the state took five source edits and a revert.
+      #
+      # A second export is a minute of CI. Leaving it out means the flag that
+      # makes this reachable is a thing someone has to remember, which is the
+      # ritual it was added to replace.
+      - name: Web build, empty account
+        run: npm run build:web:empty
+
+      - name: Serve it
+        run: |
+          npx serve dist-empty -l 4323 -s &
+          for i in $(seq 30); do
+            if curl -sf -o /dev/null http://localhost:4323/; then exit 0; fi
+            sleep 1
+          done
+          echo "the empty-account build never came up on :4323" >&2
+          exit 1
+
+      # Named routes, because the rest of the list points at `fixture-…` ids
+      # an empty account does not have — sweeping them would measure a page of
+      # not-found states. `unvisitedRoutes` still runs against the whole list.
+      - name: Accessibility audit, empty account
+        run: node ../tools/audit-a11y.mjs 4323 Today Library Insights Profile
+
   frontend-build:
     name: Frontend build (vite)
     runs-on: ubuntu-latest
