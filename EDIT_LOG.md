@@ -6,6 +6,74 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-04 — The legibility contract rested on a function nothing had measured
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Picture path. CI still
+cannot allocate a runner. **No shipping code changed.**
+
+The legibility contract has three links and I had built two of them:
+
+    fixtures/legibility/*.samples.json   ← recomputed from the JPEGs by
+                                           test_legibility_contract.py
+    the app's staffSpacing over them     ← legibility.contract.test.ts
+    pageSamples.web.ts                   ← nothing
+
+`tools/legibility_fixture.py`'s `app_samples` **reproduces** `pageSamples` —
+centre crop at 1:1 bounded to 1400×2000, Rec. 601 luma truncated to a byte —
+and every stored sample was produced that way. If the crop moved or the luma
+changed in the app, the fixtures would go on describing what it *used* to see,
+and the direction rule they protect would be asserted about the wrong pixels.
+
+Two things make it the link least likely to be noticed. It is reachable only
+from `ScannerScreen` after a camera capture, and there is no camera here or in
+CI, so the walk cannot get to it. And **every failure inside it returns
+`null`**, which `legibilityOf` treats as silence — a broken `pageSamples` does
+not break anything visible, it stops the check running.
+
+### Eight cases against a stub canvas
+
+The `bootWatchdog.test.ts` technique: a hand-built DOM that records what it was
+asked to draw and answers with known pixels. It does no resampling of its own,
+deliberately — a stub that resampled would be a second implementation to get
+wrong.
+
+The load-bearing one is **1:1**. `drawImage`'s destination rectangle must equal
+its source; shrinking the page shrinks the staff spacing being measured, which
+is the module's own account of how the check would come to report a page as
+unreadable *because this function made it so*.
+
+The parity one compares against Python's exact expression, on values chosen so
+flooring and rounding differ — `rgb(7, 11, 13)` computes 9.99, and `rgb(17, 33,
+49)` 30.04.
+
+### Mutation-tested
+
+| mutation | caught by |
+|---|---|
+| Rec. 601 weights → Rec. 709 | the parity case |
+| truncation → `Math.round` | the parity case, on 9.99 |
+| the crop drawn at half size | "is the centre of the photograph, at 1:1" |
+| cropped from the left edge instead of the centre | the same |
+
+### Also audited, and left alone
+
+While in the neighbourhood I checked the two remaining substituting fallbacks
+in the adapter after yesterday's sweep. `missedNotes ?? 0` is honest —
+`VerdictScreen` renders it as `missedNotes > 0 ? … : null`, so an absent field
+produces silence rather than a claim. The app's `transcription_status ??
+'done'` is now dead in the same way the spread fallback was: the column is NOT
+NULL with a `'done'` default and the response model declares a default too. Its
+value is at least *correct*, so it is a redundancy rather than a falsehood, and
+removing it would be churn on a live path for nothing.
+
+### Verification
+
+Mobile 1486 tests across 131 files (was 1478/130); `tsc`, `eslint` and
+`check-dead-exports` (516) clean. `pageSamples.web.ts` restored byte-identical
+after the mutations. Backend untouched.
+
+---
+
 ## 2026-09-04 — A fallback that could not fire, saying the one thing the number exists not to say
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. CI still cannot allocate a
