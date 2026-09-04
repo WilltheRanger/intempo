@@ -6,6 +6,89 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-04 — A signed URL goes straight to storage, so the bucket's limit is the last word
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Picture and audio. CI still
+cannot allocate a runner.
+
+The API is not in the upload path. It signs a URL and the bytes go to Supabase
+storage, so the bucket's `file_size_limit` is the only thing that can refuse
+them — and it refuses **after** the transfer. Migration 016 put those limits
+under version control on 2026-09-03:
+
+    score-images    10485760   (10 MiB)
+    audio-uploads   52428800   (50 MiB)
+
+The app carries its own copy of each, under different names, and both
+docstrings *state* the correspondence:
+
+    lib/scan/uploadPage.ts   MAX_PAGE_BYTES     "This is the bucket's, because
+                                                the bucket is what answers 413."
+    lib/audio/types.ts       MAX_UPLOAD_BYTES   "which is the `audio-uploads`
+                                                bucket's `file_size_limit`"
+
+Neither was compared with it. `uploadPage.test.ts` does assert
+`MAX_PAGE_BYTES === 10 * 1024 * 1024` — against a **re-typed literal**, with a
+comment calling it "the bucket's". Same hand-copy as the extension list one
+entry up, and before 016 there was nothing it could have been compared against:
+the two oldest buckets existed in no migration and their limits lived in a
+dashboard.
+
+**The costs are not symmetric.** A page cap too high wastes an upload and shows
+a storage error about a photograph. A take cap too high loses the take, after
+the musician has stopped playing — and the playing is the one part that cannot
+be repeated. `MAX_UPLOAD_BYTES`'s own comment says exactly that, one line above
+the constant.
+
+`test_upload_limits.py` reads both from the app's source and both from 016.
+Lower is allowed — a client refusing early is the right direction — but never
+higher, and never under half, which is a copy that has drifted rather than a
+decision. The discovery case fails if 016 ever limits a **third** bucket:
+`avatars` has a null limit today (measured, and an open item for the owner), so
+it is absent rather than excused.
+
+### Mutated three ways
+
+| mutation | result |
+|---|---|
+| `MAX_PAGE_BYTES` raised to the server's 12 MB figure — which its own docstring names | caught, by three existing mobile tests **and** the new one |
+| **016 tightens `score-images` to 8 MiB** | **1516 mobile tests pass; only the new check fails** |
+| `MAX_UPLOAD_BYTES` raised to 100 MB | caught by `limits.test.ts` and the new one |
+
+The middle row is the whole point. Two of the three directions were already
+held on the app side against re-typed numbers; the one that was not is the
+server moving.
+
+### A test written and cut in half
+
+I wrote `types.test.ts` covering `maxTakeSamples` — the bucket fit at each
+rate, which limit binds, the nine-minutes-at-48-kHz figure. **`limits.test.ts`
+already covers all of it**, and every mutation mine caught it caught first. My
+untested-module sweep missed it because it matches `<basename>.test.ts` and
+that file is named for the concept, not the module — the same miss as the
+`.parity.test.ts` files earlier today.
+
+Cut down to the part that is genuinely unheld: **`takeFilename`**. Both
+recorders name every take with it and `submitTake.test.ts` passes a
+hand-written `'take-2026-05-17.wav'` rather than calling it, so the function
+that names every recording this app has ever uploaded had nothing asserting
+what it returns. Dropping its colon-stripping — colons are illegal in object
+keys, so every upload would be refused — passes **1502 of 1504** and fails only
+the two new cases.
+
+Fourth test dropped or trimmed this session on the same reasoning: a test that
+adds no discrimination makes the next person believe something is guarded when
+the guarding lives somewhere else.
+
+### Verification
+
+Backend **2041 passed / 2 xfailed** (was 2036). Mobile **1504 passed** across
+135 files (was 1501 / 134). `tsc` 0, lint 0, read from their own exit codes.
+All four mutated sources restored; `git status` showed only the two new test
+files. No UI, copy, component or token — no §2 gate, no three-foot test.
+
+---
+
 ## 2026-09-04 — Four places in the app choose a file extension, and none was compared with the list it must satisfy
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Picture and audio, the two
