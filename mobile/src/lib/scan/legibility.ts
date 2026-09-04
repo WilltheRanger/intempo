@@ -193,7 +193,7 @@ function densestBand(ink: Float64Array): { from: number; to: number } | null {
  * The shortest repeating period in a band, by autocorrelation.
  *
  * **Shortest, not strongest, and judged on its own height rather than against
- * the tallest peak.** Autocorrelation peaks at every *multiple* of the true
+ * the tallest peak — and it has to actually be a peak.** Autocorrelation peaks at every *multiple* of the true
  * period, and on a page of music the tallest peak is usually not the staff at
  * all — it is the pitch from one system to the next, seven times wider.
  * Answering with that reports a staff seven times better resolved than it is,
@@ -212,6 +212,23 @@ function densestBand(ink: Float64Array): { from: number; to: number } | null {
  * this rule biases towards *smaller* answers, which is the direction that
  * produces warnings, so a loose bar here is how the app would start talking
  * musicians out of good photographs.
+ *
+ * **The word "peak" was in that paragraph and not in the code, and it is the
+ * whole difference.** Until 2026-09-04 this returned the shortest lag merely
+ * *above* `STRONG_PEAK`, which on a drawing is the same thing and on a
+ * photograph is not. A real page's ink profile is smooth — neighbouring rows
+ * share stems, beams, ledger lines and sensor noise — so the correlation
+ * leaves lag 0 on a broad shoulder that is still above 0.5 several rows out.
+ * This answered with the first lag on that shoulder: 3, on pages the server
+ * measures at 9.25 and 11, and the musician was shown "Too far away to read
+ * the notes" about music the pipeline reads correctly. The synthetic pages in
+ * `legibility.test.ts` have no shoulder to fall down — five rows of ink on
+ * clean paper decorrelate at once — so every case there passed.
+ *
+ * Requiring a local maximum is what `_staff_peak` in
+ * `backend/app/services/page_image.py` has always done, and this is now the
+ * same shape of test as the one it must not contradict.
+ * `legibility.contract.test.ts` measures both sides on the same pages.
  */
 function strongestPeriod(ink: Float64Array, from: number, to: number): number | null {
   const rows = ink.subarray(from, to);
@@ -227,14 +244,26 @@ function strongestPeriod(ink: Float64Array, from: number, to: number): number | 
   }
 
   const limit = Math.min(MAX_PERIOD, Math.floor(n / 3));
-  for (let lag = MIN_PERIOD; lag <= limit; lag += 1) {
+  const at = (lag: number): number => {
     let sum = 0;
     for (let i = 0; i + lag < n; i += 1) {
       sum += (rows[i] - mean) * (rows[i + lag] - mean);
     }
-    if (sum / energy >= STRONG_PEAK) {
+    return sum / energy;
+  };
+
+  // One lag of history and one of lookahead, so a lag can be tested for being
+  // a maximum rather than merely a large number. Walking outward from
+  // `MIN_PERIOD - 1` keeps the answer the shortest qualifying period.
+  let before = at(MIN_PERIOD - 1);
+  let here = at(MIN_PERIOD);
+  for (let lag = MIN_PERIOD; lag <= limit; lag += 1) {
+    const after = at(lag + 1);
+    if (here >= STRONG_PEAK && here > before && here >= after) {
       return lag;
     }
+    before = here;
+    here = after;
   }
   return null;
 }

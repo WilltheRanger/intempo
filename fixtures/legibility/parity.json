@@ -1,0 +1,62 @@
+{
+  "generated_by": "tools/legibility_fixture.py",
+  "what": "The greyscale samples mobile/src/lib/scan/pageSamples.web.ts would hand the app's legibility check, with the server's answer to the same page beside them.",
+  "rule": "The app may never say tooSmall about a page the server accepts. Held by mobile/src/lib/scan/legibility.contract.test.ts; the samples and the server's answers are held by backend/app/tests/test_legibility_contract.py.",
+  "pages": [
+    {
+      "name": "01_simple_printed",
+      "why": "Engraved, sharp, comfortably above the floor. The page a fix must not break.",
+      "source": "fixtures/scores/01_simple_printed.jpg",
+      "samples": "01_simple_printed.samples.json",
+      "width": 1200,
+      "height": 124,
+      "sha256": "43d8422f63afccfb33fe24c0e6a52275b66fb364220f7e134a40901001375be8",
+      "server_staff_space_px": 11.0,
+      "server_refuses": false
+    },
+    {
+      "name": "03_complex_printed",
+      "why": "Engraved and dense with sixteenths. The server reads it; the app called it too small to read. This is the case the contract exists for.",
+      "source": "fixtures/scores/03_complex_printed.jpg",
+      "samples": "03_complex_printed.samples.json",
+      "width": 1200,
+      "height": 168,
+      "sha256": "714283c6558ee2deffaa796783dae2f3483660a874c6c4afe154bd47e67f203c",
+      "server_staff_space_px": 11.0,
+      "server_refuses": false
+    },
+    {
+      "name": "04_handwritten_clean",
+      "why": "Manuscript on an aged ground \u2014 the quietest true staff signal here. Read by the server, and the second page the app wrongly warned about.",
+      "source": "fixtures/scores/04_handwritten_clean.jpg",
+      "samples": "04_handwritten_clean.samples.json",
+      "width": 1200,
+      "height": 145,
+      "sha256": "06b7e09a31150d2bc9f6be32f318e944f763916f79a2ff8934d87a92437d9d3e",
+      "server_staff_space_px": 9.25,
+      "server_refuses": false
+    },
+    {
+      "name": "05_handwritten_messy",
+      "why": "Genuinely under the floor. The server refuses it, so the app is free to.",
+      "source": "fixtures/scores/05_handwritten_messy.jpg",
+      "samples": "05_handwritten_messy.samples.json",
+      "width": 1200,
+      "height": 72,
+      "sha256": "88a486461aa31291d8451f4de9718dc2ffe7832639de0f42c0bcf53d52acc21f",
+      "server_staff_space_px": 6.0,
+      "server_refuses": true
+    },
+    {
+      "name": "page-01",
+      "why": "Page-shaped (900x1273), so it is the only sample whose densest band is a choice rather than the whole image. Real engraving, synthetic page layout (see mobile/assets/captures/SOURCES.md); scaled down far enough that the server refuses it.",
+      "source": "mobile/assets/captures/page-01.jpg",
+      "samples": "page-01.samples.json",
+      "width": 900,
+      "height": 1273,
+      "sha256": "58f1da25e697e1b198de1333f2a96ae2461c916c4d43e17852bc5a46164e9f3b",
+      "server_staff_space_px": 7.0,
+      "server_refuses": true
+    }
+  ]
+}
