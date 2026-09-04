@@ -68,3 +68,45 @@ export function metronomeRuns(
   }
   return countingIn || mode !== 'off';
 }
+
+/**
+ * Whether the count is up and the take has begun.
+ *
+ * **The trigger for `discardCapturedSoFar()`**, and the one part of the
+ * count-in that was still a rule inside `RecordScreen.tsx` — in a module whose
+ * own docstring, twenty lines up, says a rule inside a component is a rule
+ * nothing checks. It decides where a musician's file starts, and every way of
+ * getting it wrong is silent:
+ *
+ *  - **one beat early** and the last count click is still in the capture. It
+ *    is the loudest thing in the file and the first onset in it, so
+ *    `alignment.py` anchors the whole take to the metronome instead of to the
+ *    music, and every note is reported against a beat that was never played.
+ *  - **one beat late** and the first note the musician played is thrown away,
+ *    which reads as rushing for the rest of the piece.
+ *  - **without the `countingIn` guard** it fires again on every beat of the
+ *    take, discarding the music continuously, and the take comes back empty.
+ *
+ * `>=` rather than `===` on purpose. The beat this reads is a rendered value,
+ * and two beats arriving inside one render — a slow frame, a coalesced state
+ * update, a fast tempo — would step the index past the downbeat. With `===`
+ * the count-in would then never end: the recorder keeps the pre-roll, the
+ * screen stays counting, and the musician is playing into a take that has not
+ * started. Firing late is recoverable; not firing is not.
+ */
+export function countInIsOver({
+  countingIn,
+  beatIndex,
+  countInBeats,
+}: {
+  countingIn: boolean;
+  /** The metronome's current beat, or null before the clock has emitted one. */
+  beatIndex: number | null;
+  /** Pulses before the first played downbeat — `MetronomePlan.countInPulses`. */
+  countInBeats: number;
+}): boolean {
+  if (!countingIn || beatIndex === null) {
+    return false;
+  }
+  return beatIndex >= countInBeats;
+}

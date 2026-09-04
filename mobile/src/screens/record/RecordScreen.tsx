@@ -51,6 +51,7 @@ import {
   tempoUnitLabel,
 } from '../../lib/tempo';
 import { metronomePulse, monotonicNow, useMetronome } from '../../lib/metronome';
+import { countInIsOver } from '../../lib/metronome/countIn';
 import { buildMetronomePlan } from '../../lib/metronome/plan';
 import {
   longRestCues,
@@ -608,7 +609,7 @@ export function RecordScreen() {
   const beatIndex = metronome.beat?.index ?? null;
 
   useEffect(() => {
-    if (!countingIn || beatIndex === null || beatIndex < countInBeats) {
+    if (!countInIsOver({ countingIn, beatIndex, countInBeats })) {
       return;
     }
     // Beat N is the downbeat after N count-in beats. Keeping the metronome
