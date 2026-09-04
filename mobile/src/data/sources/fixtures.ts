@@ -740,12 +740,46 @@ function toPiece({
  */
 const CREATED_PIECES: FixturePiece[] = [];
 
+/**
+ * Whether the sample data describes an account with **nothing in it**.
+ *
+ * **The state every single musician meets first, and the one no build has.**
+ * Today, Library and Insights have only ever been seen populated — a library,
+ * a take, thirty days of trend — because that is what these fixtures hold.
+ * CLAUDE.md names it as the sixth time a state with nothing to render it cost
+ * this project a real bug: on 2026-09-02 Today was found telling a new
+ * musician *"Nothing to practice yet"* directly above a fully built daily
+ * warmup it was hiding from them.
+ *
+ * Its own answer was *"five one-line edits to `fixtures.ts` … then `git
+ * checkout --` the file"*, which is a ritual with a revert in it, and a revert
+ * somebody has to remember is how `.env` gets committed. This is the same five
+ * edits with the remembering taken out.
+ *
+ * **Build-time and text-substituted.** `process.env.EXPO_PUBLIC_…` is written
+ * out in full because Expo replaces the literal expression; a destructured or
+ * computed lookup reads an empty object in the bundle, which is the trap
+ * `environment.ts` documents. Unset, this constant folds to `false` and every
+ * branch below it is dead code.
+ *
+ * It can do nothing to a live build: `sources/index.ts` reaches this module
+ * only when no backend was configured. The worst it can do is make a *sample*
+ * build look empty, which is what it is for.
+ */
+const EMPTY_ACCOUNT: boolean = process.env.EXPO_PUBLIC_FIXTURES === 'empty';
+
 export const fixturePieceSource: PieceSource = {
   async listPieces() {
+    if (EMPTY_ACCOUNT) {
+      return [];
+    }
     return [...CREATED_PIECES, ...FIXTURE_PIECES].map(toPiece);
   },
 
   async getCurrentPiece() {
+    if (EMPTY_ACCOUNT) {
+      return null;
+    }
     // The seeded piece, even when something was just added. This mirrors
     // `apiPieceSource`, where the piece to continue comes from the newest
     // *analysis* and only falls back to the newest score when there are no
@@ -952,6 +986,9 @@ function toPieceInsight(entry: (typeof FIXTURE_SESSIONS)[number]): PieceInsight 
 
 export const fixtureInsightsSource: InsightsSource = {
   async getInsights() {
+    if (EMPTY_ACCOUNT) {
+      return null;
+    }
     // Furthest from the beat first, the same ordering the API adapter uses —
     // and not by bias, which buried the piece that wanders at the bottom of a
     // list whose first row is what Today reads.
@@ -1118,10 +1155,13 @@ export const fixtureTakeSource: TakeSource = {
 
   // One take in the fixture set, so the latest is that one.
   async getLatestTake() {
-    return buildFixtureTake();
+    return EMPTY_ACCOUNT ? null : buildFixtureTake();
   },
 
   async getRecentTakes(limit = 3) {
+    if (EMPTY_ACCOUNT) {
+      return [];
+    }
     const take = buildFixtureTake();
     return limit > 0 && take ? [take] : [];
   },

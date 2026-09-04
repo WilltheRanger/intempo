@@ -6,6 +6,89 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-04 — An account with nothing in it is one command now, and lint was broken for anyone who built twice
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. CI still cannot allocate a
+runner. **No screen changed.**
+
+### The state every musician meets first
+
+CLAUDE.md names it as the sixth time a state with nothing to render it cost
+this project a real bug — on 2026-09-02 Today was telling a new musician
+*"Nothing to practice yet"* directly above a fully built daily warmup it was
+hiding from them. Its own instructions for reaching it were *"five one-line
+edits to `fixtures.ts` … then `git checkout --` the file"*.
+
+**A ritual with a revert in it is how `.env` gets committed.** So the five
+edits are now one flag: `EXPO_PUBLIC_FIXTURES=empty`, read in `fixtures.ts`
+alone, spelled out in full because Expo substitutes the literal expression and
+a computed lookup reads an empty object in the bundle — the trap
+`environment.ts` documents. Unset it folds to `false` and the branches are dead
+code. It cannot touch a live build: `sources/index.ts` only reaches that module
+when no backend was configured.
+
+`npm run build:web:empty` → `dist-empty/`. Documented in `mobile/README.md`;
+CLAUDE.md's five-edit paragraph now points there.
+
+### Looked at, and all three are right
+
+    Today      "Good morning" · "Nothing in your library yet" · "Add a piece"
+               — **with the warmup below it**, D major one octave, stave and
+               Start. The 2026-09-02 bug is fixed and now has a build that
+               shows it.
+    Library    "No pieces yet" · "Add a piece and it will appear here, ready
+               to practice."
+    Insights   "No practice recorded yet" · "…record yourself playing it.
+               InTempo will show you where the tempo held and where it
+               drifted." · "Add your first piece"
+
+a11y audit clean on all four tabs of that build. `audit-a11y.mjs` takes route
+names after the port now, because most of its list points at `fixture-…` ids an
+empty account does not have and sweeping them would measure a page of
+not-found states. The unvisited-route check still runs against the **whole**
+list, so a filtered run cannot claim full coverage.
+
+**Three-foot test, empty Today**, 390×844: first the serif "Good morning";
+second the ochre avatar ring, which is the only saturated colour on the screen;
+third the empty-library block with its one action. Hierarchy holds and the
+warmup sits below as secondary content. Two thirds of the screen is space,
+which on an account with nothing in it is the honest answer.
+
+### And a lint that has been broken for anyone who built twice
+
+Building `dist-empty/` made `npm run lint` report **11,110 errors** — `__d is
+not defined`, `DOMException is not defined`, an unexpected console statement at
+column 42794 — all of it in minified bundle output.
+
+`eslint.config.mjs` ignored `dist`. `tsconfig.json` ignores `dist-*`, **with a
+comment explaining exactly why**: the harness builds a second bundle into
+`dist-live/`, and tsc "happily walked into 3.4 MB of minified output and blew
+its stack on it". The argument was written down and applied to one of the two
+tools.
+
+Verified it predates this change: at `HEAD`, with a `dist-live/` present and
+nothing else touched, `npm run lint` exits **1**. Every "lint clean" in this
+session's entries was true as measured — only `dist/` existed — but the hole
+was there, and the harness's own documented second bundle is enough to trip it.
+
+A lint that fails for everyone who has run the harness is a lint people stop
+running, which is how this tree ended up with six `eslint-disable` directives
+for a linter that was not installed.
+
+**And the near-miss is worth recording.** I first read `lint=0` from
+`npm run -s lint | tail -3; echo $?` — which reports `tail`'s exit code, not
+eslint's. That is the identical mistake this session made once before, on
+2026-09-03, and published before catching. The "6 errors potentially fixable"
+line printed above the false `0` is the only reason I looked again.
+
+### Verification
+
+Mobile 1478 tests; `tsc`, `eslint` and `check-dead-exports` (516) clean, each
+read from its own exit code rather than through a pipe. Walk PASS. a11y PASS on
+the populated build (32 entries) and on the empty one (4 of 32).
+
+---
+
 ## 2026-09-04 — The payoff screen has four states and one of them had a fixture
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Audio, the answer end. CI
