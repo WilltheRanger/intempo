@@ -6,6 +6,89 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-04 — Why CI has not run since 2026-09-03, measured rather than assumed
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`, restarted from `main` after
+#69 merged.
+
+Twenty-odd entries below this one end with *"CI still cannot allocate a runner,
+almost certainly billing."* **That was an inference from a symptom and it had
+never been checked.** Checked now.
+
+### What the API actually says
+
+Run 704 (`16a3ae2`, the #69 merge), and every run back to 2026-09-03:
+
+    job                              runner_id  runner_name  steps  logs   duration
+    Backend tests (pytest)                   0           ""   none   404        2 s
+    Mobile (vitest, tsc, lint …)             0           ""   none   404        3 s
+    App walk + accessibility                 0           ""   none   404        2 s
+    Change is recorded (EDIT_LOG)            0           ""   none   404        4 s
+    Frontend build (vite)                    0           ""   none   404        2 s
+
+`created_at == started_at`, `conclusion: failure`, **no runner was ever
+assigned**, no step ran, and the log download 404s because there is nothing to
+download. The check runs carry no output text either, so the reason GitHub
+shows as a banner on the run page is not exposed through the API.
+
+And the repository is **private** (`"private": true`, `"visibility":
+"private"`), so Actions minutes are billed rather than free.
+
+Ruled out while I was there: `disabled: false` and `archived: false`, so Actions
+is not switched off at the repository level; every `runs-on` in both workflows
+is the plain hosted `ubuntu-latest`, so it is not a label naming a runner that
+does not exist; and this is a personal account, so there is no organisation
+policy in the way.
+
+A job that is created, immediately marked started, given no runner, and failed
+with zero steps is GitHub declining to dispatch it. On a private repository the
+overwhelmingly common reason is the account's Actions billing — included
+minutes spent against a spending limit of $0, or a payment that failed.
+
+**It did not recover at the month boundary.** The breakage began on 2026-09-03,
+after 1 September had already passed, so a fresh monthly allowance was in place
+and the jobs still would not start. That points at a payment or spending-limit
+block rather than at exhausted minutes.
+
+### What this commit does, and what it does not
+
+**It does not unblock CI.** Nothing in a repository can. The fix is one of
+three things at `github.com/settings/billing`, all of which need the account
+owner: raise the spending limit above $0, repair the payment method, or make
+the repository public (Actions is free and unlimited for public repositories,
+at the cost of publishing the code — the owner's call, not mine).
+
+What it does is make sure the allowance is not spent the same way again, and
+that is worth doing whether or not the block is what I think it is.
+
+**`concurrency` with `cancel-in-progress`.** Without it, every push to a branch
+left its predecessor's five jobs running to completion. During the session that
+produced #69 that was **33 pushes** on one branch — up to 32 full runs of work
+nobody was ever going to read, all billed. `main` is deliberately excluded from
+the cancelling: a push there can be a deploy, and cancelling the run that would
+have caught a bad one saves minutes by not looking.
+
+**`timeout-minutes` on all five jobs**, where there were none. GitHub's default
+is **360 minutes a job**. `app-walk` starts a server and drives a browser,
+which is exactly the shape of thing that hangs; one hung run of it bills six
+hours against the allowance with nobody watching. The values are the locally
+measured durations roughly tripled — 10 / 20 / 25 / 30 / 15 — generous enough
+that a slow runner is not a red cross, small enough that a hang is caught in
+the hour it happened.
+
+I cannot prove a hang is what spent the minutes, because the runs from before
+the breakage were not examined — that is a real gap in this diagnosis and it is
+cheap for whoever has the billing page open to close, since it lists usage by
+workflow.
+
+### Verification
+
+`ci.yml` parses (`yaml.safe_load`), five jobs, each with a timeout, and the
+concurrency group as intended. **The change itself cannot be verified by CI**,
+for the reason it exists — which is the whole point of this entry.
+
+---
+
 ## 2026-09-04 — The metronome a musician actually plays to had no test
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Audio. CI still cannot

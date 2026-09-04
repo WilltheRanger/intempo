@@ -5,6 +5,19 @@ on:
   push:
     branches: [main]
 
+# **Only the newest commit on a ref is worth checking, and this repository
+# learned that the expensive way.** Actions minutes are billed on a private
+# repo, and without this every push to a branch left its predecessor's five
+# jobs running to completion — during one session on 2026-09-04 that was 33
+# pushes, so up to 32 full runs of work nobody was going to read.
+#
+# `main` is deliberately excluded from the cancelling: a push to main can be a
+# deploy, and cancelling the run that would have caught a bad one saves minutes
+# by not looking. Branches and pull requests cancel; main queues.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
 jobs:
   # **The four logs are part of the Definition of Done, and nothing checked
   # them.** On 2026-08-26 a commit landed with its tooling changes and without
@@ -20,6 +33,14 @@ jobs:
   log-entry:
     name: Change is recorded (EDIT_LOG)
     runs-on: ubuntu-latest
+    # **Every job here carries one, and GitHub's default is 360 minutes.** A
+    # single hung job — `app-walk` starts a server and drives a browser, which
+    # is exactly the shape of thing that hangs — would otherwise bill six hours
+    # against a private repository's allowance without anybody watching. These
+    # are the locally measured durations, roughly tripled: generous enough that
+    # a slow runner is not a red cross, small enough that a hang is caught in
+    # the same hour it happened.
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
         with:
@@ -60,6 +81,7 @@ jobs:
   backend-test:
     name: Backend tests (pytest)
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: backend
@@ -93,6 +115,7 @@ jobs:
   mobile-check:
     name: Mobile (vitest, tsc, lint, web build)
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     defaults:
       run:
         working-directory: mobile
@@ -159,6 +182,7 @@ jobs:
   app-walk:
     name: App walk + accessibility
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     defaults:
       run:
         working-directory: mobile
@@ -234,6 +258,7 @@ jobs:
   frontend-build:
     name: Frontend build (vite)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: frontend
