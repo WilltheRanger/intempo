@@ -1,7 +1,8 @@
 """The value lists a column allows, against the ones the code believes in.
 
-Three columns are constrained to a fixed set of strings in SQL, and every one
-of them has a Python vocabulary beside it. **`instrument` has two**, and that
+Two forms of the same contract. Three columns are constrained by a `CHECK (…
+IN …)`, and seven more vocabularies are Postgres `ENUM` **types**; every one of
+them but `sync_event_type` has a Python vocabulary beside it. **`instrument` has two**, and that
 is the one worth stating in full:
 
     mobile/src/data/types.ts     Instrument = 'violin' | 'viola' | ...
@@ -42,9 +43,12 @@ from typing import Literal, get_args, get_origin
 
 import pytest
 
+from app.models.analysis import AnalysisStatus, BpmSource, MetronomeMode
 from app.models.analysis import Instrument as AnalysisInstrument
+from app.models.assignment import AssignmentStatus
 from app.models.score import TranscriptionStatus
 from app.models.user import Instrument as UserInstrument
+from app.models.user import UserRole, UserTier
 from app.routers.corrections import UserVerdict
 
 MIGRATIONS = Path(__file__).resolve().parents[1] / "migrations"
@@ -61,8 +65,37 @@ VOCABULARIES: dict[str, tuple[object, ...]] = {
     "user_verdict": (UserVerdict,),
 }
 
+#: Postgres enum type → the Python enum that must name the same values.
+#:
+#: **A second form of the same contract.** These are real types rather than
+#: CHECKs, and the failure is identical: a value the code can produce and the
+#: type cannot hold is an insert that raises, on whichever write reaches it
+#: first. `AnalysisStatus` gaining a member the type has not would 500 the
+#: worker's own `_finish_failed`, which is the call that exists so a failed
+#: analysis does not sit `processing` for ever.
+TYPE_VOCABULARIES: dict[str, object] = {
+    "user_tier": UserTier,
+    "user_role": UserRole,
+    "bpm_source": BpmSource,
+    "metronome_mode": MetronomeMode,
+    "analysis_status": AnalysisStatus,
+    "assignment_status": AssignmentStatus,
+}
+
+#: Types with no Python vocabulary, and why. Checked both ways, as above.
+TYPES_WITHOUT_CODE: dict[str, str] = {
+    "sync_event_type": (
+        "Batch 10 (offline sync) is not built. `sync_events` is read by the "
+        "account export, which dumps whatever rows a user owns, and written by "
+        "nothing — so there is no code that could disagree with the type yet."
+    ),
+}
+
 #: `CHECK (column IN ('a', 'b'))`, in the form these migrations write it.
 _CHECK = re.compile(r"CHECK \((\w+) IN \(([^)]*)\)\)")
+
+#: `CREATE TYPE name AS ENUM ('a', 'b')`.
+_CREATE_TYPE = re.compile(r"CREATE TYPE (\w+) AS ENUM \(([^)]*)\)")
 
 
 def _name(vocabulary: object) -> str:
@@ -109,7 +142,24 @@ def _constraints() -> dict[str, list[tuple[str, tuple[str, ...]]]]:
     return found
 
 
+def _enum_types() -> dict[str, tuple[str, ...]]:
+    """Every `CREATE TYPE … AS ENUM` in the migrations.
+
+    Same source and same reason as `_constraints`: the files are what a
+    deployment is applied from, and this has to fail where there is no
+    database.
+    """
+    found: dict[str, tuple[str, ...]] = {}
+    for path in sorted(MIGRATIONS.glob("*.sql")):
+        for match in _CREATE_TYPE.finditer(path.read_text()):
+            found[match.group(1)] = tuple(
+                value.strip().strip("'") for value in match.group(2).split(",")
+            )
+    return found
+
+
 CONSTRAINED = _constraints()
+ENUM_TYPES = _enum_types()
 
 
 @pytest.mark.parametrize("column", sorted(VOCABULARIES), ids=sorted(VOCABULARIES))
@@ -174,3 +224,47 @@ def test_no_vocabulary_names_a_column_that_is_no_longer_constrained() -> None:
     gone = sorted(column for column in VOCABULARIES if column not in CONSTRAINED)
 
     assert not gone, f"no migration constrains these any more: {gone}"
+
+
+@pytest.mark.parametrize(
+    "type_name", sorted(TYPE_VOCABULARIES), ids=sorted(TYPE_VOCABULARIES)
+)
+def test_the_type_holds_exactly_what_the_code_can_produce(type_name: str) -> None:
+    declared = ENUM_TYPES.get(type_name)
+    assert declared is not None, f"no migration creates the type {type_name}"
+
+    vocabulary = TYPE_VOCABULARIES[type_name]
+
+    assert set(declared) == _values(vocabulary), (
+        f"the {type_name} type holds {sorted(declared)}; "
+        f"{_name(vocabulary)} says {sorted(_values(vocabulary))}"
+    )
+
+
+def test_every_enum_type_is_paired_or_excused() -> None:
+    """Discovered, so the mapping cannot be the stale part."""
+    unmapped = sorted(
+        name
+        for name in ENUM_TYPES
+        if name not in TYPE_VOCABULARIES and name not in TYPES_WITHOUT_CODE
+    )
+
+    assert not unmapped, (
+        "these types constrain a column and nothing compares them with the "
+        f"code: {unmapped}"
+    )
+
+
+def test_no_type_mapping_or_excuse_outlives_its_type() -> None:
+    """Both directions again. An excuse for a type that has since gained a
+    Python enum reads as a reason nobody re-read, which is what
+    `fixtures/timeline/parity.json`'s exclusion list was."""
+    gone = sorted(
+        name
+        for name in [*TYPE_VOCABULARIES, *TYPES_WITHOUT_CODE]
+        if name not in ENUM_TYPES
+    )
+    both = sorted(name for name in TYPES_WITHOUT_CODE if name in TYPE_VOCABULARIES)
+
+    assert not gone, f"no migration creates these types any more: {gone}"
+    assert not both, f"these are excused and also paired: {both}"
