@@ -6,6 +6,86 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-04 — There are three walks over a score, and the click was the unheld one
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Audio verification. CI
+still cannot allocate a runner.
+
+`fixtures/timeline/parity.json` holds two walks: `alignment.build_timeline`
+(what the analysis expects to hear) and `lib/score/schedule.ts` (what the app
+plays back). **There is a third.** `buildMetronomePlan` accumulates its own
+quarters over `measuresInPlayOrder`, and it is the one a musician actually
+synchronises to — playback is a reference you listen to *before* a take, the
+click is what is in your ears *while* you play.
+
+So its failure is the worse one. A click that drifts from the timeline means a
+musician plays exactly with it and is told they rushed: every part behaving,
+nothing to notice, and the recording is evidence against them.
+
+### What the mutations said, including about my own first attempt
+
+I wrote a window check first — every server onset must fall between the
+metronome downbeat of its bar and the next. It passed. Then I measured what it
+was holding, against `plan.test.ts` alone:
+
+| mutation to `plan.ts` | `plan.test.ts` | window check |
+|---|---|---|
+| the click runs 2% fast | 4 failures | **0** |
+| repeats not expanded | 1 failure | 2 |
+| a bar's length hardcoded to 4 | 3 failures | **0** |
+
+Two of three caught by the existing suite and not by mine. A window a whole bar
+wide tolerates a 2% drift, and the last bar's window runs to infinity. On its
+own that check was close to worthless, and I nearly shipped it.
+
+What it was missing is a case, not an assertion. **No fixture in this
+repository has a bar whose notes do not fill its metre** — every bar in
+`parity.json` and every bar in `plan.test.ts` sums exactly, so all three walks
+advance by four quarters whether they read the notes or the time signature, and
+the difference cannot show. That state is not an edge case in this app: a short
+bar is what `validate.py` flags, what `MeasureEditScreen` repairs, and what
+`MeasureConcern` reports on the score screen.
+
+With a three-quarter bar in 4/4 added, and its downbeats tied to
+`scheduleScore`'s note times:
+
+| mutation | `plan.test.ts` | new file |
+|---|---|---|
+| `atQuarter += duration` → `+= (pulsesPerBar ?? 4) * quarterSize` | **0 — all pass** | 2 failures |
+| repeats not expanded | 1 | 2 |
+| the click runs 2% fast | 4 | 2 |
+
+The first row is the point. Advancing a bar by its **metre** instead of by the
+notes in it is a one-token change that passes every other test in this tree,
+and it puts the click a quarter ahead of the reference from the misread bar
+onward — which is the commonest kind of bar the app holds.
+
+### The tie, and why it is a parity check
+
+The short-bar case asserts the metronome's downbeats against `scheduleScore`'s
+own note times, not against numbers I typed. `scheduleScore` is held to
+`build_timeline` by `schedule.parity.test.ts`, so a click that agrees with
+playback agrees with the timeline the verdict is measured against. The chain
+closes: server ←→ playback ←→ click.
+
+The fixture-based half is kept too — it caught the repeat-expansion mutation
+more loudly than the existing suite, and it is what pins one downbeat per
+*performed* measure through a first/second ending. Its derivation of "which
+performed measure is this onset in" reads `expected_measures`, so it is the
+server's answer rather than a second guess; a separate case guards the one
+assumption that reading makes (no two adjacent performed measures sharing a
+number).
+
+### Verification
+
+Mobile 1478 tests across 130 files (was 1472/129); `tsc`, `eslint` and
+`check-dead-exports` (516) clean. Backend untouched.
+
+**Not held:** no sound was made. This is arithmetic agreeing with arithmetic —
+that the click a device emits lands where the plan says still needs a device.
+
+---
+
 ## 2026-09-04 — The shrink floor's reason was prose, and one test I wrote did not earn its place
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Picture path. CI still
