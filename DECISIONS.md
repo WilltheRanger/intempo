@@ -6,6 +6,42 @@ Operating Principle #5.
 
 ---
 
+## 2026-09-04 — The failed-scan row keeps its own sentence, over printing the server's reason
+
+**Context.** `PieceDetailScreen`'s row for a scan that failed hardcodes
+*"Photograph it again to try once more."* and does not read
+`piece.transcriptionError`. Its sibling row three lines up, for a scan still
+running, prints `piece.transcriptionStage ?? …` — the server's own words.
+
+So a fault on our side reaches the musician as something to fix with their
+camera: "homr is not installed in this container", "CUDA out of memory", a bad
+API key. That is the exact failure `_FAILURE_REASONS` was written to stop, and
+which `EDIT_LOG.md` records this project shipping **three** times before the
+needles were added and a fourth time in the four templates found on 2026-09-04.
+The reason now exists, is written for a musician, is stored on the row, and is
+already on the `Piece` object this screen reads — and one screen throws it away.
+
+**Decision.** Leave it. Owner's call, 2026-09-04, asked directly with the
+one-expression fix and a before/after in front of them.
+
+**Alternative: `piece.transcriptionError ?? 'Photograph it again to try once
+more.'`** — one expression, no data work, the old sentence surviving as the
+fallback for a row with no reason stored. Recommended and declined.
+
+**What this costs, stated so it is not rediscovered as a bug.** The server-side
+work on `_FAILURE_REASONS` reaches a musician on `PieceScoreScreen` and **not**
+on this row. `test_failure_sentences.py` still holds every raise site to a
+sentence or a stated reason, so the pipeline's half is intact; what is
+deliberately not wired is this one row's description. §3 law 10 says every
+element must justify its presence — this one now justifies itself as a
+deliberate constant rather than as an oversight.
+
+**Do not re-raise it.** It was reported in five consecutive session summaries
+before being asked as a question, which is the cost of a §2 item with no
+recorded answer. The answer is recorded here and beside the code.
+
+---
+
 ## 2026-09-03 — A narrow ESLint over the recommended preset, and `error` over `warn`
 
 **Context.** The shipping app had no linter. Not a lax one — no dependency, no
