@@ -200,6 +200,13 @@ describe('the file the analysis pipeline actually receives', () => {
    * which is the cue to regenerate the fixture and re-run that test — not to
    * edit the hash.
    *
+   * **There are two, and 48000 is the one a phone actually produces.**
+   * `audioRecorder.ts` asks for 48000 and writes back whatever the device
+   * gives; `audioRecorder.web.ts` writes `context.sampleRate`, 48000 on most
+   * desktop browsers. Nothing records at 22050 — that is the rate the *server*
+   * works at, so a take is resampled on arrival, and a fixture written at
+   * 22050 is the one file that skips the step every real take takes.
+   *
    * The failure it guards against does not crash. A wrong rate in the header, a
    * byte-order slip, a block-align disagreeing with the channel count: librosa
    * reads it, gets a duration the musician never played, and every onset is
@@ -212,37 +219,70 @@ describe('the file the analysis pipeline actually receives', () => {
   const NOTES = 8;
 
   /** The exact signal in the fixture. Deterministic — no randomness anywhere. */
-  function clickTrack(): Float32Array {
-    const pcm = new Float32Array(Math.round((LEAD_S + SPACING_S * NOTES) * SR));
-    const burst = Math.round(0.08 * SR);
+  function clickTrack(sampleRate: number): Float32Array {
+    const pcm = new Float32Array(
+      Math.round((LEAD_S + SPACING_S * NOTES) * sampleRate),
+    );
+    const burst = Math.round(0.08 * sampleRate);
     for (let n = 0; n < NOTES; n += 1) {
-      const at = Math.round((LEAD_S + n * SPACING_S) * SR);
+      const at = Math.round((LEAD_S + n * SPACING_S) * sampleRate);
       for (let i = 0; i < burst; i += 1) {
-        const t = i / SR;
+        const t = i / sampleRate;
         pcm[at + i] = 0.7 * Math.exp(-t * 45) * Math.sin(2 * Math.PI * 660 * t);
       }
     }
     return pcm;
   }
 
-  it('still encodes byte-for-byte what the backend test decodes', async () => {
-    const bytes = encodeWavBytes({
-      chunks: [floatToPcm16(clickTrack())],
-      sampleRate: SR,
-      channels: 1,
-    });
-
+  async function sha256(bytes: Uint8Array): Promise<string> {
     // `bytes.buffer` is `ArrayBufferLike`, which `digest` will not take —
     // a fresh copy is exact and sidesteps the SharedArrayBuffer branch.
     const digest = await crypto.subtle.digest('SHA-256', Uint8Array.from(bytes));
-    const hex = [...new Uint8Array(digest)]
+    return [...new Uint8Array(digest)]
       .map((b) => b.toString(16).padStart(2, '0'))
       .join('');
+  }
 
-    expect(bytes.length).toBe(189674);
-    expect(hex).toBe(
-      'bd3fa1c99626242f8767cb36a53310123ed33e9ce4ec7f7f86402dedf8c79cf1',
-    );
+  it.each([
+    {
+      name: 'app_encoder_click_track.wav',
+      sampleRate: SR,
+      length: 189674,
+      hash: 'bd3fa1c99626242f8767cb36a53310123ed33e9ce4ec7f7f86402dedf8c79cf1',
+    },
+    {
+      name: 'app_encoder_click_track_48k.wav',
+      sampleRate: 48000,
+      length: 412844,
+      hash: '8f013d9298fcbf0effa7c2aae16120cc3a4cf687792dd9b94e910c6c3c4cd583',
+    },
+  ])('still encodes $name byte-for-byte', async ({ sampleRate, length, hash }) => {
+    const bytes = encodeWavBytes({
+      chunks: [floatToPcm16(clickTrack(sampleRate))],
+      sampleRate,
+      channels: 1,
+    });
+
+    expect(bytes.length).toBe(length);
+    expect(await sha256(bytes)).toBe(hash);
+  });
+
+  it('writes a different file for a different rate', () => {
+    // The guard on the pair above. Two fixtures whose bytes were identical
+    // would pin one claim twice, and the whole point of the 48 kHz copy is
+    // that it takes a path — the resample on arrival — the other one does not.
+    const at22050 = encodeWavBytes({
+      chunks: [floatToPcm16(clickTrack(SR))],
+      sampleRate: SR,
+      channels: 1,
+    });
+    const at48000 = encodeWavBytes({
+      chunks: [floatToPcm16(clickTrack(48000))],
+      sampleRate: 48000,
+      channels: 1,
+    });
+
+    expect(at48000.length).toBeGreaterThan(at22050.length);
   });
 
   it('leads with silence, which is why the first note is findable at all', () => {
@@ -251,7 +291,7 @@ describe('the file the analysis pipeline actually receives', () => {
     // nothing to rise from. Real takes never hit that — the recorder opens
     // before the count-in and that leading silence is deliberate — so a fixture
     // without it would test a case the app cannot produce.
-    const pcm = clickTrack();
+    const pcm = clickTrack(SR);
     const leadSamples = Math.round(LEAD_S * SR);
 
     expect(pcm.slice(0, leadSamples).every((sample) => sample === 0)).toBe(true);

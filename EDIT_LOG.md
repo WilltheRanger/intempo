@@ -6,6 +6,79 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-04 — The WAV contract was written at a rate the app never records at
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Audio verification,
+continued. CI still cannot allocate a runner.
+
+The encoder contract added earlier today holds one file:
+`app_encoder_click_track.wav`, 22050 Hz. **Nothing in this app records at
+22050.** `audioRecorder.ts` asks for `REQUESTED_SAMPLE_RATE = 48000` and writes
+whatever the device answers into the header; `audioRecorder.web.ts` writes
+`context.sampleRate`, which is 48000 on most desktop browsers. 22050 is the
+rate the *pipeline* works at — `load_audio` passes `sr=cfg.onset.sr` and
+librosa resamples on arrival.
+
+So the one file in the contract was the one file where source rate and target
+rate are the same number, and the resample **every real take goes through** was
+the step the contract skipped.
+
+### The sibling, and what it measured
+
+`app_encoder_click_track_48k.wav` — same signal, same generator
+(`encodeWavBytes`), at 48000. Measured:
+
+    22050 Hz file, resampled: 0.3251 0.8127 1.3235 1.8112 2.3220 2.8096 3.3205 3.8313
+    48000 Hz file, resampled: 0.3251 0.8127 1.3235 1.8112 2.3220 2.8096 3.3205 3.8313
+
+Identical to four decimal places, and the same 94815 samples. The resampler
+moves nothing — which could not be assumed, since librosa's default `soxr_hq`
+is a filter and a filter with rate-dependent group delay would shift every
+onset by a constant and be invisible to every other test here.
+
+`test_the_rate_the_phone_recorded_at_does_not_move_a_single_onset` asserts it,
+at a fifth of a hop — a tenth of the tolerance the per-file tests allow,
+because "agrees within two frames" is satisfied by two answers two frames
+apart, which is the thing being ruled out.
+
+**And it is the resample that makes them agree, not luck.** The same 48 kHz
+file analysed at its native rate (`sr=None`, one of the mutations) comes back
+at 0.3093 0.8107 1.3120 1.8133 2.3147 2.8053 3.3067 3.8080 — up to **16 ms**
+away, which at 120 BPM is 3.2% of a beat and lands inside the tolerance bands
+the verdict is built from. Two musicians playing identically on two phones
+would be judged differently. The normalisation in `load_audio` is what stops
+that, and until now nothing said so.
+
+### Mutation-tested
+
+| mutation | caught by |
+|---|---|
+| the 48 kHz header says 44100 | 3 failures, including the cross-rate test |
+| `load_audio` stops resampling (`sr=None`) | 2 failures, including the cross-rate test |
+
+The app side pins both files by SHA-256, plus a guard that the two encodings
+actually differ — two fixtures with identical bytes would pin one claim twice
+and the 48 kHz copy exists precisely because it takes a path the other does
+not.
+
+### Also corrected
+
+The measured latenesses in `LATE_BY_AT_MOST`'s comment listed the first note at
+**+10 ms**; re-measured it is **+25 ms** (the other seven were right). The bound
+is unchanged — the worst is still +31 ms against a 46.4 ms allowance — but a
+number written down as measured has to be the number.
+
+### Verification
+
+Mobile 1471 tests across 129 files, `tsc` and `eslint` clean. Backend suite
+green; `test_app_encoder_wav.py` is 7 cases now, up from 3.
+
+**Not held:** still nothing in this container has made or heard a sound. This
+holds the file format and the rate normalisation end to end. The recorder
+itself still needs a device.
+
+---
+
 ## 2026-09-04 — The shrink ladder bounded whichever edge happened to be the width
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Picture → transcription,
