@@ -6,6 +6,94 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-04 — The shrink floor's reason was prose, and one test I wrote did not earn its place
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Picture path. CI still
+cannot allocate a runner.
+
+### The pixel floor was argued, never held
+
+`test_client_enums.py` ties the app's upload cap to the worker's refusal size —
+in **bytes**. Nothing did the same for **pixels**. `MIN_LONG_EDGE`'s docstring
+makes the case in prose ("25 px of staff spacing at 5712 is about 10.5 at 2400,
+still clear of the server's floor of 8") and prose is not a check: lower that
+rung and every large page would upload, save, and then be refused at the
+reading step for a size the app itself chose.
+
+The chain that now holds it was already three-quarters built, which is why the
+new assertion is one line of arithmetic:
+
+    _MIN_STAFF_SPACE_PX (server)
+      ← test_client_enums.py
+    SERVER_FLOOR (legibility.ts)
+      ← MIN_PAGE_ROWS = ceil(SERVER_FLOOR / SPACING_PER_PAGE_ROW) = 1828
+      ← **new**: every SHRINK_LADDER rung ≥ MIN_PAGE_ROWS
+
+At today's numbers 2400 against 1828 — 31% headroom. Asserted on **every**
+rung, not only the smallest, so a rung inserted below the floor fails on its
+own terms rather than depending on the ladder-ordering test.
+
+Mutation-tested three ways:
+
+| mutation | caught |
+|---|---|
+| `MIN_LONG_EDGE` 2400 → 1500 | 5 failures |
+| a 1600 rung appended to the ladder | 6 failures |
+| `SERVER_FLOOR` 8 → 12 (`MIN_PAGE_ROWS` → 2742) | **1 failure, and only this new test** |
+
+The third is the one worth having: a server floor that *rises* is a plausible
+outcome of threshold tuning, and until now it would have left the app quietly
+shrinking pages below what the server accepts, with nothing red.
+
+The arithmetic is a portrait page's — `SPACING_PER_PAGE_ROW` was measured from
+captures of a page filling the frame the tall way — and the test says so rather
+than implying it holds for any image.
+
+### A test I wrote, measured, and reverted
+
+I also added `test_a_photographed_page_splits_into_the_staves_it_holds`, over
+the four page-shaped composites in `mobile/assets/captures/`. The stated reason
+was that every page in `test_page_systems.py` is built by `_page`, which lays
+strips down **flat**, while `_ink_profile` exists precisely because a real
+photograph's systems slope — and the composites carry varied per-strip rotation
+and JPEG artefacts.
+
+It passed. Then I mutated the module to find out what it was actually holding:
+
+| mutation | flat-strip suite alone | composites alone |
+|---|---|---|
+| `_INK_RATIO` 0.90 → 0.20 | 9 failures | 1 |
+| `_BAND_SMOOTH_FRACTION` 0.036 → 0.20 | 22 failures | 4 |
+| `_INK_BLUR_FRACTION` 0.025 → 0.5 (toward a global threshold) | 4 failures | **0 — all pass** |
+| the same at 2.0 | 5 failures | **0 — all pass** |
+
+The third and fourth are the point. That mutation is the *sloping-stave* case —
+the failure the whole rewrite was for — and the composites do not notice it,
+while the flat-strip suite does, because that suite already bows
+`01_simple_printed` by 20 to 60 px on purpose. The rotation in these composites
+is too slight to express what I claimed it expressed.
+
+So the test was redundant on every mutation tried and its comment made a
+coverage claim that measurement contradicted. **Reverted.** A test whose stated
+reason is false is worse than no test: it makes the next person believe a case
+is covered when the coverage lives somewhere else entirely. Same call as the
+six recording-endpoint tests reverted earlier in this session, for the same
+reason.
+
+Recorded here rather than dropped silently, because the *measurement* is worth
+keeping: on the four composites the finder returns 8, 7, 8, 7 systems against
+`SOURCES.md`'s "7–8 staves per page", one crop per system, in reading order,
+non-overlapping. The crop path is healthy on page-shaped input. It just did not
+need a new test to say so.
+
+### Verification
+
+Mobile 1472 tests across 129 files (was 1471); `tsc` and `eslint` clean.
+Backend `test_page_systems.py` 52 passed — the count it had before, which is
+the point.
+
+---
+
 ## 2026-09-04 — The two screens every scan lands on had never been rendered by any sweep
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Picture → transcription,

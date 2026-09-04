@@ -5,6 +5,7 @@ vi.mock('expo-image-manipulator', () => ({
   SaveFormat: { JPEG: 'jpeg' },
 }));
 
+import { MIN_PAGE_ROWS, SERVER_FLOOR } from './legibility';
 import { MIN_LONG_EDGE, SHRINK_LADDER, shrinkToFit, widthFor } from './shrink';
 
 const MB = 1024 * 1024;
@@ -217,6 +218,44 @@ describe('the ladder itself', () => {
     // hand back something larger than the attempt before it.
     const edges = SHRINK_LADDER.map((a) => a.maxEdge ?? Infinity);
     expect([...edges]).toEqual([...edges].sort((a, b) => b - a));
+  });
+
+  it('never shrinks a page past what the server will read', () => {
+    /*
+     * **The floor's reason, held rather than argued.** `MIN_LONG_EDGE`'s
+     * docstring makes the case in prose — 25 px of staff spacing at 5712 is
+     * about 10.5 at 2400, clear of the server's floor of 8 — and prose is not
+     * a check. Lower this rung and every large page would upload, save, and
+     * then be refused at the reading step for a size the app itself chose,
+     * which is the same failure `test_the_app_shrinks_a_page_to_something_
+     * the_worker_will_read` guards for **bytes** and nothing guarded for
+     * **pixels**.
+     *
+     * `MIN_PAGE_ROWS` is the shortest whole-page photograph that could clear
+     * that floor, derived in `legibility.ts` from `SERVER_FLOOR` — which
+     * `test_client_enums.py` in turn ties to the server's real
+     * `_MIN_STAFF_SPACE_PX`. So the chain reaches the number the server
+     * actually refuses at, and a change at either end goes red somewhere.
+     *
+     * Every rung, not just the last: the ladder's ordering is a separate
+     * assertion, and a rung inserted below the floor should fail on its own
+     * terms rather than depend on that one.
+     *
+     * **The arithmetic is a portrait page's**, as both constants are:
+     * `SPACING_PER_PAGE_ROW` was measured from captures of a page filling the
+     * frame the tall way. A landscape frame with the same long edge holds
+     * fewer rows, so this bound is the right one for how sheet music is
+     * actually photographed and is not a general claim about every image.
+     */
+    expect(MIN_PAGE_ROWS).toBeLessThanOrEqual(MIN_LONG_EDGE);
+    for (const rung of SHRINK_LADDER) {
+      if (rung.maxEdge === null) continue;
+      expect(
+        rung.maxEdge,
+        `a page shrunk to ${rung.maxEdge} px could fall under the server's ` +
+          `floor of ${SERVER_FLOOR} px between staff lines`,
+      ).toBeGreaterThanOrEqual(MIN_PAGE_ROWS);
+    }
   });
 
   it('starts by trying quality at full resolution', () => {
