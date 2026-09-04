@@ -6,6 +6,83 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-04 — The app writes the WAV, the pipeline reads it, and nobody had put the two together
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Audio verification. CI
+still cannot allocate a runner.
+
+`mobile/src/lib/audio/wav.ts` builds a RIFF header a byte at a time;
+`backend/app/services/audio.py` hands whatever arrives to librosa. **Neither
+side had ever seen the other's work.**
+
+- `wav.test.ts` checks the header by **reading back the fields it just wrote**.
+  Self-consistent, and silent about whether a decoder accepts any of it.
+- Every audio fixture here — all six — was generated **by Python**, with
+  `soundfile`. So the tests that exercise the analysis have never once
+  exercised the encoder.
+
+The failure hiding in that gap does not crash. A wrong rate in the header, a
+byte-order slip, a block-align disagreeing with the channel count: librosa
+reads it, gets a duration the musician never played, and every onset is
+measured against a clock wrong by a constant. **The verdict comes back
+confident and incorrect**, and nothing raises.
+
+### The fixture is the contract
+
+`fixtures/audio/app_encoder_click_track.wav` was produced by calling
+`encodeWavBytes` — the app's own — on a signal whose onsets are known by
+construction: 22050 Hz mono 16-bit, 0.3 s of silence, then 8 bursts 0.5 s apart
+(120 BPM), each 0.08 s of 660 Hz decaying at `exp(-45t)` at amplitude 0.7.
+
+Both ends are held, the way `fixtures/timeline/parity.json` holds two walks:
+
+| | |
+|---|---|
+| `wav.test.ts` | pins the **SHA-256** of those exact bytes — change the encoder and this fails, which is the cue to regenerate |
+| `test_app_encoder_wav.py` | loads it with the real `load_audio` and finds its eight onsets with the real `detect_onsets` |
+
+### The lead-in is a finding, not padding
+
+Generated without it, `detect_onsets` finds **seven of eight**. Onset strength
+is a *rise*, and a burst starting at sample zero has nothing to rise from. Real
+takes never hit that — the recorder opens before the count-in and its leading
+silence is deliberate — so a fixture without it would have been testing a case
+the app cannot produce. Measured before the fixture was settled, not assumed.
+
+### A tolerance I got wrong first
+
+I wrote "within one frame", reasoning that a detection lands on a frame
+boundary. **It fails.** The eight come back at +10, +13, +24, +11, +22, +10,
++20 and **+31 ms**, and one hop at 22050 Hz is 23.2 ms — so 31 ms is 1.34
+frames. `onset_strength` runs over a *windowed* mel spectrogram and peak-picking
+then takes a local maximum, which can sit a frame past the boundary the attack
+fell on. The constant is two hops now, and says it was measured.
+
+The one-sidedness is the part worth asserting: every one is **late**, none
+early. An onset detected *before* the attack that caused it would mean the file
+decoded at the wrong rate, which is the whole reason this module exists.
+
+### Verified by mutation
+
+| Mutation | Caught by |
+|---|---|
+| header claims 44100 over 22050 data | **backend**, 2 of 3 — and nothing else in either tree could see this |
+| samples written big-endian | mobile, 4 tests |
+| `blockAlign` doubled | mobile, 2 tests |
+
+**Backend 1946 passed, 2 xfailed. Mobile 1446 across 128 files.** `tsc` and lint
+clean — `crypto.subtle.digest` refuses a `Uint8Array<ArrayBufferLike>`, so the
+digest takes a fresh copy.
+
+### Still not verified, and it cannot be here
+
+Nothing in this container has made or heard a sound. This proves the **file
+format** the app produces is the one the pipeline expects, end to end. It does
+not prove the *recorder* captures what the microphone hears, on either
+platform. That needs a device.
+
+---
+
 ## 2026-09-03 — "Why can't I upload the 2nd page as an image?"
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Owner-reported, owner-approved.
