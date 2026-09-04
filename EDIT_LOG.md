@@ -6,6 +6,79 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-04 — Where a musician's file starts was a rule inside a `.tsx`
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Audio. CI still cannot
+allocate a runner.
+
+The microphone opens **before** the count-in, deliberately: starting it
+afterwards would put an unpredictable hardware delay between "four" and the
+downbeat, in an app whose whole subject is where notes land. So the count's
+clicks are in the capture, and `Recorder.discardCapturedSoFar()` on the
+downbeat throws the pre-roll away — *"the file starts where the music does"*.
+
+`lib/metronome/countIn.ts` documents all of that, including its own reason for
+existing: *"there is no React Native testing library in this project — a rule
+inside a component is a rule nothing checks."* **The rule deciding when to
+call it was still in `RecordScreen.tsx`**, twenty lines from that sentence.
+
+    if (!countingIn || beatIndex === null || beatIndex < countInBeats) return;
+    recorder.current?.discardCapturedSoFar();
+
+It is now `countInIsOver({ countingIn, beatIndex, countInBeats })`, beside the
+functions that explain it. The component's behaviour is unchanged — the
+predicate is the same expression, negated.
+
+### Every way of getting it wrong is silent
+
+No error, no log, nothing different on screen. The take simply comes back
+describing playing that did not happen.
+
+  * **One beat early** and the last count click is still in the capture. It is
+    the loudest thing in the file and the *first onset in it*, so
+    `alignment.py` anchors the whole take to the metronome rather than to the
+    music, and every note is judged against a beat nobody played.
+  * **One beat late** and the musician's first note is thrown away, which reads
+    as rushing for the rest of the piece.
+  * **Without the `countingIn` guard** it fires on every beat of the take,
+    discarding the music continuously, and the file comes back empty.
+
+`>=` rather than `===` is the load-bearing choice and now says so. The index is
+a *rendered* value, so two beats can arrive inside one render — a slow frame, a
+coalesced update, a fast tempo. With `===` the count-in would then never end:
+the recorder keeps the pre-roll, the screen stays counting, and the musician is
+playing into a take that has not started. Firing late is recoverable; not
+firing is not.
+
+The metre case is covered too. `countInPulses` is the first bar's felt pulses —
+three in a waltz, two in a march, six in 6/8 read in six — so a hard four would
+count a bar and a third of a waltz before the downbeat.
+
+### Mutated three ways, each run against the whole suite
+
+| mutation | result |
+|---|---|
+| `>= countInBeats - 1` (one beat early) | **2 failed of 1510** — both new |
+| `=== countInBeats` (exact match) | **1 failed of 1510** — new |
+| drop the `countingIn` guard | **1 failed of 1510** — new |
+
+Nothing else in the repository came near any of them, which is the point: this
+is the layer with no renderer, and the capture-path audit found **eight of its
+nine defects** in rules that lived here.
+
+### Verification
+
+Mobile **1510 passed** across 135 files (was 1504). `tsc` 0, lint 0. Walk
+**PASS, 51 checks** — the take-setup section drives this screen, and it behaves
+identically. a11y **PASS**. `countIn.ts` restored between mutations and the
+final tree diff is the extraction alone; `.env` moved aside for the build and
+restored `diff -q` identical.
+
+A logic extraction with byte-identical rendering — no screen composition,
+style, or copy changed, so no §2 gate and the three-foot test is unchanged.
+
+---
+
 ## 2026-09-04 — The fourth scan state had no fixture, and four claims measured that held
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Picture → transcription.
