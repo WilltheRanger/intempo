@@ -6,6 +6,75 @@ value, regression results across all six fixture clips, and rationale.
 
 ---
 
+## 2026-09-04 — Baseline: what the pipeline says about all six corpus clips today
+
+**Nothing in `config.toml` changed.** This is the corpus read out, so the
+tuning session that is still waiting on real recordings has a stated starting
+point rather than a memory of one.
+
+Each clip analysed through `analyze()` with its own `manifest.json` entry — the
+score it was played from, its `target_bpm`, its `double_bass` flag — on the
+shipped config:
+
+    clip                  direction  quality  verdict
+    01_detache_clean      on         0.988    Steady tempo — you held it within
+                                              tolerance across the piece.
+    02_detache_rushing    rush       0.988    You rushed across measures 2–8 by
+                                              an average of 9 BPM.
+    03_detache_dragging   drag       0.988    You dragged across measures 3–8 by
+                                              an average of 9 BPM.
+    04_slurred            on         0.990    Steady …
+    05_open_e_long        on         1.000    Steady …
+    06_pizzicato          on         0.990    Steady …
+
+**Every one matches what the manifest's `expect` field says in words**, which
+had never been checked either way. `04_slurred` at 0.990 is the one worth
+noting: `build_timeline`'s comment records it scoring **0.196** and reporting
+`alignment_failed` while an onset was expected under every bow stroke, so
+slurred playing could not be analysed at all.
+
+### A test over this, written and reverted
+
+I wrote `test_tuning_corpus.py` to hold the table above, on the argument that
+the corpus is the artefact the whole tuning story rests on and nothing ran it —
+`test_cli.py` prints one line from one clip, `test_audio.py` borrows another as
+a block of audio to filter, and `test_analysis.py` synthesises its own clicks
+in-test.
+
+Then I mutated the pipeline to find out what it was holding. Five mutations,
+each run against the new file alone and against the suite without it:
+
+| mutation | existing suite | corpus file |
+|---|---|---|
+| inner bands 5% → 40% (nothing is ever rushing) | 10 failures | 2 |
+| an onset expected under a bow stroke again — the slur bug | **7 failures** | 2 |
+| `wait_ms` 60 → 5 | 0 | 0 |
+| `delta` 0.07 → 0.005 | 1 | **0 — passes** |
+| `pre_emphasis_coef` 0.97 → 0.0 | 1 | **0 — passes** |
+
+Not one unique catch, and the last three are the reverse of what I predicted: I
+expected real timbre — a decaying bow stroke, pizzicato ring, a two-second open
+E — to be *more* sensitive to detector settings than a synthesised click track,
+and it is less.
+
+Its docstring also claimed the slur fix was held by nothing. Seven tests hold
+it, including `test_alignment.py::test_a_slurred_passage_played_as_written_
+aligns_perfectly`. That claim was written from CLAUDE.md's account of the bug
+rather than from measurement, and measurement contradicted it.
+
+So the file was reverted, and the `direction` field it added to
+`manifest.json` with it — an unread field is the same debt one level over.
+Same call as two other tests dropped today, for the same reason: a test that
+adds no discrimination makes the next person believe the corpus is guarded when
+the guarding lives somewhere else.
+
+**What would change that.** When real recordings replace the synthetic clips,
+nothing else in the suite will touch those files, and a test saying "the corpus
+still reads as its manifest describes" earns its place then. Writing it now, to
+be useful later, is how unread code gets made.
+
+---
+
 ## 2026-09-04 — Measured: how far the steady band can be narrowed before a perfect take is accused
 
 **Nothing in `config.toml` changed.** This records a measurement that the
