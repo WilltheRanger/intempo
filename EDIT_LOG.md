@@ -6,6 +6,87 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-04 — The shrink ladder bounded whichever edge happened to be the width
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Picture → transcription,
+the step between the shutter and the upload. CI still cannot allocate a runner.
+
+`shrinkToFit` re-encodes a page too large for the 10 MB bucket limit, spending
+quality before pixels because resolution is what `staff_space_px` needs. Its
+rungs are called `maxEdge`, its floor is `MIN_LONG_EDGE`, and the number went
+straight into `resize: { width }`.
+
+`expo-image-manipulator` documents that field as *"values correspond to the
+result image dimensions … if you specify only one value, the other will be
+calculated automatically to preserve image ratio"*, and its web implementation
+does exactly that — `requestedWidth = width; requestedHeight = width /
+imageRatio` — in either direction. So:
+
+- **On a portrait page the bound was never the long edge.** Sheet music is
+  photographed portrait. The 4284×5712 page the module was written against,
+  asked for 2400, came back **2400×3200**. Every word in the file described a
+  cap that was not being applied, and the docstring's own worked example (25 px
+  of staff spacing at 5712 → "about 10.5" at 2400) computes from the long edge.
+  The arithmetic was right; the code was not.
+- **On a landscape page the width *is* the long edge**, so the same line
+  behaved as written. Orientation decided how hard a page was shrunk, and
+  nothing said so.
+- **A page narrower than a rung was enlarged.** `resize` sets the dimension it
+  is given rather than capping it, so an A4 flatbed scan at 2480×3508 handed
+  the 4000 rung came back **4000×5657** — 2.6× the pixels, from a step whose
+  entire purpose is a smaller file — then 3000 and 2400 enlarged it again. The
+  page that reaches the pixel rungs is by definition one that would not fit,
+  and all three rungs moved it further from fitting.
+
+### Why nothing saw it
+
+`shrink.test.ts`'s manipulator stub returned `width: 0, height: 0`. It modelled
+the *call* and never the image, so every case in the file was about the
+ladder's constants — that they descend, that quality comes first, that the
+floor is 2400 — and not one was about what happened to a page. The stub was the
+thing that was wrong.
+
+### The change
+
+- `widthFor(page, maxEdge)` derives the width that puts the **long** edge on
+  the rung, and returns null — do not resize — for a page whose dimensions are
+  unknown or already inside the rung.
+- Dimensions are learned once, from the first attempt that reports them. The
+  ladder opening with a quality-only rung is what makes that available, so the
+  existing "starts by trying quality at full resolution" case is now
+  load-bearing beyond its own comment.
+- The stub models a page: `resize: { width: w }` returns `w × round(w·H/W)`,
+  and a `reportsSize: false` variant covers the no-dimensions path.
+
+**This changes real behaviour, and in the direction of smaller pages.** A
+portrait page that reaches the last rung now ends at a 2400 long edge rather
+than 3200 — staff spacing on the provoking page goes from about 14 px to the
+10.5 the docstring always claimed, still clear of the server's floor of 8. That
+is the trade the module already argues for in writing: shrinking further and
+letting the server say something specific about *this* page beats refusing to
+send anything. The accidental extra resolution came from a bug and only ever
+applied to pages held one way up.
+
+### Mutation-tested
+
+| mutation | caught by |
+|---|---|
+| rung goes straight into `width` (the old code) | 5 failures, including both orientation cases |
+| drop the already-inside-the-rung guard | "never enlarges a page to reach a rung", "refuses a page that is already inside the rung" |
+| guess the long edge is the width when dimensions are unknown | "resizes nothing when the manipulator reports no dimensions" |
+
+### Verification
+
+Mobile 1469 tests across 129 files (was 1462); `tsc`, `eslint` and
+`check-dead-exports` (516 exports) clean. Backend untouched.
+
+**Not held:** no image was actually resized here — `expo-image-manipulator`
+needs a native module or a browser canvas, and this is a stub that follows the
+documented contract. What is now true is that the stub follows it; before, it
+modelled nothing.
+
+---
+
 ## 2026-09-04 — The app told musicians to move closer to pages the pipeline reads fine
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Picture → transcription.
