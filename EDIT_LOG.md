@@ -6,6 +6,123 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-04 — The app told musicians to move closer to pages the pipeline reads fine
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Picture → transcription.
+CI still cannot allocate a runner.
+
+Same shape as the WAV entry below it, on the other half of the pipeline. Two
+trees measure how far apart a page's staff lines are —
+`backend/app/services/page_image.staff_space_px`, which decides whether a scan
+is refused, and `mobile/src/lib/scan/legibility.ts`, a coarser copy that runs
+at the shutter so the advice arrives while the musician is still holding the
+music. **Neither had ever seen the other's answer on a page.**
+
+The app's own module note states the rule the copy lives under:
+
+> it may never refuse a page the server would accept.
+
+What was actually asserted was `CLIENT_FLOOR < SERVER_FLOOR` — an ordering of
+two constants — plus synthetic ruled pages that only the app ever measured. An
+ordering of thresholds says nothing about what two different algorithms do to a
+photograph.
+
+### Measured, before any change
+
+| page | server `staff_space_px` | server | app `staffSpacing` | app |
+|---|---|---|---|---|
+| `01_simple_printed` | 11.0 | reads | 10 | ok |
+| `03_complex_printed` | 11.0 | reads | **3** | **tooSmall** |
+| `04_handwritten_clean` | 9.25 | reads | **3** | **tooSmall** |
+| `05_handwritten_messy` | 6.0 | refuses | 3 | tooSmall |
+| `page-01` (page-shaped) | 7.0 | refuses | 5 | tooSmall |
+
+Two of the five real pages in this repository. The pipeline reads them
+correctly; the app was offering a retake with *"Too far away to read the notes.
+Move in until one page fills the frame."* Nothing was red, and nothing could
+have been.
+
+### The cause was a word in the docstring that was not in the code
+
+`strongestPeriod`'s comment says it wants **"the shortest lag that is a strong
+peak in its own right"**. The code returned the shortest lag merely *above*
+`STRONG_PEAK`. On a drawing those are the same thing; on a photograph they are
+not. A real page's ink profile is smooth — neighbouring rows share stems,
+beams, ledger lines and sensor noise — so the correlation leaves lag 0 on a
+broad shoulder still above 0.5 several rows out, and the answer came off the
+shoulder, not off a staff. Measured `c[3..8]` on `03_complex_printed`:
+`0.63, 0.56, 0.52, 0.51, 0.50, 0.51`, with the true peak at lag 11 (0.655).
+
+`legibility.test.ts` could not see it. Five rows of ink on clean paper
+decorrelate at once, so its pages have no shoulder to fall down — every case
+passed, and would have gone on passing.
+
+The fix is one condition: the lag has to be a local maximum, which is what
+`_staff_peak` in `page_image.py` has always required. `STRONG_PEAK` did not
+move; no constant was refitted.
+
+### After
+
+| page | server | app | app verdict |
+|---|---|---|---|
+| `01_simple_printed` | 11.0 reads | 11 | ok |
+| `03_complex_printed` | 11.0 reads | 11 | ok |
+| `04_handwritten_clean` | 9.25 reads | 15 | ok |
+| `05_handwritten_messy` | 6.0 refuses | 5 | tooSmall |
+| `page-01` | 7.0 refuses | 7 | ok |
+
+Every page now agrees with the server or errs in the permitted direction.
+`04_handwritten_clean` reads high (15 against 9.25) and `page-01` goes quiet
+about a page the server will refuse — both are the harmless side, and
+harmless for a reason rather than by luck: autocorrelation peaks at every
+*multiple* of a period and never at a divisor, so over-reading is the failure
+this measurement can have, and an over-read spacing only ever makes the app
+quieter.
+
+### The contract
+
+`fixtures/legibility/` — the greyscale samples `pageSamples.web.ts` would hand
+the check for five pages already in the repository, gzipped and base64'd into
+one JSON each (the app has no JPEG decoder and no `@types/node`), with the
+server's verdict on the same page in `parity.json` beside them. 732 KB.
+
+- `tools/legibility_fixture.py` builds them, reproducing the app's crop rule
+  exactly: centre crop at 1:1 bounded to 1400×2000, Rec. 601 luma truncated to
+  a byte.
+- `backend/app/tests/test_legibility_contract.py` **recomputes** the samples
+  from the JPEGs and re-runs `staff_space_px`, so the fixture cannot rot into a
+  record of a page that has since changed or of a crop rule the app no longer
+  uses.
+- `mobile/src/lib/scan/legibility.contract.test.ts` runs the app's real check
+  over them and holds the rule itself.
+
+Five pages, chosen so the set is not one answer: three the server reads, two it
+refuses, and one page-shaped (900×1273) because it is the only sample whose
+densest band is a *choice* rather than the whole image.
+
+### Mutation-tested
+
+| mutation | caught by |
+|---|---|
+| revert the local-maximum requirement | contract test, 4 failures (2 direction, 2 under-read) |
+| `staffSpacing` always returns null | "measures something at all", 5 failures — the guard against a vacuous pass |
+| generator's luma weights → BT.709 | backend samples test, 2 pages (the other three are neutral greyscale, so both weightings give the same byte) |
+| `_MIN_STAFF_SPACE_PX` 8 → 12 | backend server-answer test, 3 pages |
+
+### Verification
+
+Backend suite green. Mobile 1462 tests across 129 files (was 1446/128); `tsc`
+and `eslint` clean.
+
+**What this does not hold.** The samples are a faithful reproduction of what
+`pageSamples.web.ts` computes, not a recording of it — no browser decoded these
+JPEGs, and native still returns `null` from `pageSamples` because React Native
+has no way to read a photograph's pixels here. And `page-01` is a synthetic
+page layout around real engravings (`mobile/assets/captures/SOURCES.md`); there
+is still no photograph taken by a phone in this repository.
+
+---
+
 ## 2026-09-04 — The app writes the WAV, the pipeline reads it, and nobody had put the two together
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Audio verification. CI
