@@ -97,6 +97,29 @@ artwork is the repo's own public-domain set from `fixtures/scores/` — each
 thumbnail is genuinely the piece it claims to be. See
 `fixtures/scores/SOURCES.md` for provenance.
 
+### An account with nothing in it
+
+    npm run build:web:empty        # builds into dist-empty/
+    npx serve dist-empty -l 4323 -s
+    node ../tools/audit-a11y.mjs 4323 Today Library Insights Profile
+
+`EXPO_PUBLIC_FIXTURES=empty` makes `data/sources/fixtures.ts` describe an
+account with no pieces, no takes and no insights. It is the state **every
+musician meets first** and the one every other build lacks: Today, Library and
+Insights are otherwise only ever seen with a library, a take and thirty days of
+trend behind them.
+
+That gap has cost a real bug. On 2026-09-02 Today was found telling a new
+musician *"Nothing to practice yet"* directly above a fully built daily warmup
+it was hiding from them, and it was found by hand-editing five functions and
+remembering to revert them. The flag is those five edits with the remembering
+taken out.
+
+The audit takes route names after the port because most of the list points at
+`fixture-…` ids that an empty account does not have; sweeping all of them would
+measure a page of not-found states. The unvisited-route check still runs
+against the whole list, so a filtered run cannot claim full coverage.
+
 ## Building for a device or the App Store
 
 `app.json` carries `ios.bundleIdentifier` and `android.package`

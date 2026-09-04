@@ -413,6 +413,169 @@ console.log('\n## Photographing a piece');
   await scan.close();
 }
 
+console.log('\n## After a scan, before there is any notation');
+
+/*
+ * **The two screens every scan passes through, and the two states no sweep had
+ * ever opened.** `POST /v1/scores` returns before a single note is read, so a
+ * musician who finishes a scan lands on a piece that is `reading` and may end
+ * on one that `failed` — and both live at routes the audit already visits, on
+ * pieces it does not. A route list cannot see a state, which is why these are
+ * here rather than in `audit-a11y.mjs` alone.
+ *
+ * What each leg is actually protecting:
+ *
+ *  - **Progress is measured, never animated toward a guess** (CLAUDE.md). The
+ *    worker reports a stage; the app prints it. A build that fell back to a
+ *    word of its own — "Transcribing the notation." is right there as the
+ *    fallback — would look identical to a musician and would have stopped
+ *    telling them anything.
+ *  - **The reason a page failed is written for a musician, by the server.**
+ *    `_FAILURE_REASONS` exists because the same sentence was got wrong three
+ *    times, twice by blaming a photograph for a fault on our side. All of that
+ *    work reaches nobody if the screen substitutes wording of its own.
+ */
+await open('pieces/fixture-reading-in-progress');
+const readingPiece = await leaves();
+const stageOnPiece = readingPiece.find((l) => /Reading stave \d+ of \d+/.test(l));
+if (!stageOnPiece)
+  fail(
+    `a piece being read shows no measured stage: ${JSON.stringify(readingPiece.slice(0, 8))}`,
+  );
+else pass(`a piece being read names the stage the worker reached: "${stageOnPiece}"`);
+
+await tapTo(
+  'the reading row',
+  /Reading this page/i,
+  /^\/pieces\/fixture-reading-in-progress\/score$/,
+);
+
+// **Agreement**, the kind of check worth having: the same fact on two screens.
+// These read the same field from the same query, and a screen that computed
+// its own would drift one fix at a time.
+const stageOnScore = (await leaves()).find((l) => /Reading stave \d+ of \d+/.test(l));
+if (stageOnScore !== stageOnPiece)
+  fail(`stage reads "${stageOnPiece}" on the piece and "${stageOnScore}" on the score`);
+else pass(`both screens name the same stage: "${stageOnScore}"`);
+
+// **The queued page**, which is every page after the first of a multi-page
+// scan: the server reads a bounded number at once, so a three-page part spends
+// most of its wait here. It is not a variant of the one above — the panel
+// prints a sentence chosen for it, because "Getting ready" described the app
+// rather than what is happening, and `QUEUED_PROGRESS` puts the bar at 5%
+// instead of in the reading band. Until now no fixture had ever put either on
+// screen.
+await open('pieces/fixture-reading-queued/score');
+const queuedScore = await leaves();
+const waiting = queuedScore.find((l) => /Waiting for another page to finish/i.test(l));
+if (!waiting)
+  fail(
+    `a queued page does not say what it is waiting for: ${JSON.stringify(queuedScore.slice(0, 8))}`,
+  );
+else pass('a queued page says it is waiting for another page, not "getting ready"');
+
+// And it must not claim a stage. `transcriptionStage` is null for a queued
+// page — that is what queued *means* — so any "Reading …" line here would be
+// the panel inventing progress, which is the one thing this whole module
+// exists to prevent.
+const inventedStage = queuedScore.find((l) => /Reading (stave|page|the notation)/i.test(l));
+if (inventedStage) fail(`a queued page claims a stage: "${inventedStage}"`);
+else pass('a queued page claims no reading stage');
+
+await open('pieces/fixture-reading-failed/score');
+const failedScore = await leaves();
+// Verbatim, and that is the assertion. The fixture's reason is one the server
+// really writes, so a screen that paraphrased it would be paraphrasing every
+// sentence in `_FAILURE_REASONS`.
+const reason = failedScore.find((l) =>
+  l.includes('A flatter, better-lit shot of the page usually fixes it.'),
+);
+if (!reason)
+  fail(
+    `the server's own reason did not reach the screen: ${JSON.stringify(failedScore.slice(0, 8))}`,
+  );
+else pass('a failed page shows the reason the server wrote, word for word');
+
+// Three ways on, and none of them a dead end: read it again with the pages
+// already stored, photograph it again, or pick different files. A failure
+// screen with no route out is where a piece goes to be abandoned.
+const waysOn = [/Try reading it again/i, /Take new photographs/i, /Choose different images/i];
+const missing = waysOn.filter((w) => !failedScore.some((l) => w.test(l)));
+if (missing.length > 0) fail(`a failed page offers no ${missing.join(', ')}`);
+else pass('and offers three ways on: read it again · new photographs · different images');
+
+// The piece survives the failure. Losing the title and tempo because the
+// notation could not be read would throw away everything the musician typed.
+if (!failedScore.some((l) => /still in your library/i.test(l)))
+  fail('a failed page does not say the piece is still in the library');
+else pass('and says the piece itself is still there');
+
+console.log('\n## Repairing a bar the reader got wrong');
+
+/*
+ * **The answer to every misread bar, and the walk only ever opened it.**
+ * `MeasureEditScreen` is where a musician fixes what the reader got wrong, and
+ * the number they steer by is the beat count: they change durations until the
+ * bar adds up, then save. `describeBeats` and `timeSignaturesByMeasure` are
+ * both unit-tested — what is not is the wiring between them and the controls,
+ * which lives in a `.tsx` and is therefore the kind of rule this project
+ * repeatedly finds nothing checking.
+ *
+ * The failure worth catching is a count that stops moving. A musician would go
+ * on pressing durations until the bar looked right, save a bar that does not
+ * add up believing it does, and every onset after it shifts — which
+ * `MeasureEditScreen`'s own comment calls the one kind of correction that
+ * cannot be seen by looking at the bar afterwards.
+ */
+await open('pieces/fixture-clef-change-study/bars/3');
+const barOpened = await leaves();
+if (!barOpened.some((l) => /^4 of 4 beats$/.test(l)))
+  fail(`the bar editor opened without a beat count: ${JSON.stringify(barOpened.slice(0, 10))}`);
+else if (!barOpened.some((l) => /adds up/i.test(l)))
+  fail('a bar that adds up does not say so');
+else pass('a bar that adds up opens saying "4 of 4 beats" and so');
+
+// Lengthening the selected note. **Both halves asserted**: a count that moves
+// while the sentence beside it still says the bar adds up is the same
+// screen-contradicts-itself fault the agreement checks above exist for.
+await page.getByRole('button', { name: 'Half', exact: true }).first().click();
+await waitFor('the beat count to follow the edit', async () =>
+  (await leaves()).some((l) => /^5 of 4 beats$/.test(l)),
+);
+const lengthened = await leaves();
+if (!lengthened.some((l) => /^5 of 4 beats$/.test(l)))
+  fail('lengthening a note did not change the beat count');
+else if (lengthened.some((l) => /adds up/i.test(l)))
+  fail('the bar says it adds up at 5 of 4 beats');
+else pass('lengthening a note reads 5 of 4 beats, and it stops saying it adds up');
+
+await page.getByRole('button', { name: 'Delete this note' }).first().click();
+await waitFor('the beat count to follow the delete', async () =>
+  (await leaves()).some((l) => /^3 of 4 beats$/.test(l)),
+);
+if ((await leaves()).some((l) => /^3 of 4 beats$/.test(l)))
+  pass('deleting a note takes it the other way, to 3 of 4 beats');
+else fail('deleting a note did not change the beat count');
+
+/*
+ * **And the edit survives a refused save**, which is the half that costs a
+ * musician real work. A screen that navigated away on a failed save would
+ * throw out every correction they had just made, and there is nowhere to get
+ * them back from.
+ */
+await page.getByRole('button', { name: 'Save this bar' }).first().click();
+await waitForText('the save to be answered', (l) =>
+  /needs the backend|sample data/i.test(l),
+);
+const afterBarSave = await leaves();
+const refusal = afterBarSave.find((l) => /needs the backend|sample data/i.test(l));
+if (!refusal) fail('saving a correction without a backend said nothing');
+else if (!/\/bars\/3$/.test(await path()))
+  fail(`a refused save left the editor for ${await path()}, losing the edit`);
+else if (!afterBarSave.some((l) => /^3 of 4 beats$/.test(l)))
+  fail('a refused save discarded the edit that was on screen');
+else pass(`a refused save keeps the edit and says why: "${refusal.slice(0, 52)}…"`);
+
 console.log('\n## Telling the app it got a bar wrong');
 
 /*
@@ -477,6 +640,81 @@ console.log('\n## Telling the app it got a bar wrong');
   else fail('a correction with no backend was neither sent nor refused in words');
 }
 
+console.log('\n## A take that did not come back with a verdict');
+
+/*
+ * **Three of the four states of the payoff screen, none of them ever
+ * rendered.** `VerdictScreen` branches on `failure` — twice, because
+ * recoverable and unrecoverable get different sentences and different buttons
+ * — then on a `status` that is not `ok`, and only then draws a verdict. Until
+ * now the fixtures held one take and it succeeded.
+ *
+ * What the walk adds over the a11y sweep, which now also visits these: the
+ * sweep measures each screen alone, and the fault worth catching here is the
+ * pair. Recoverable and unrecoverable are one `? :` in the source. Swap it and
+ * every screen still looks right on its own; a musician whose take failed for
+ * good is told to try again, and tries again, and it fails again.
+ */
+const VERDICT_STATES = [
+  {
+    id: 'fixture-take-failed',
+    what: 'a failure worth retrying',
+    says: /on our side, not with your playing/i,
+    offers: /^Try again$/i,
+  },
+  {
+    id: 'fixture-take-unrecoverable',
+    what: 'a failure that will not come back',
+    says: /couldn.t process this recording/i,
+    offers: /^Record again$/i,
+  },
+  {
+    id: 'fixture-take-silent',
+    what: 'a silent recording',
+    // The pipeline's own sentence, verbatim — `diagnostics.py` distinguishes a
+    // silent take from a page with no notes read off it, and the screen must
+    // not paraphrase either into the other.
+    says: /completely silent/i,
+    offers: /^Record again$/i,
+  },
+  {
+    id: 'fixture-take-unmatched',
+    what: 'a take that could not be matched to its score',
+    says: /matching your recording to the score/i,
+    offers: /^Record again$/i,
+  },
+];
+
+const said = new Map();
+for (const state of VERDICT_STATES) {
+  await open(`analyses/${state.id}`);
+  const lines = await leaves();
+  const sentence = lines.find((l) => state.says.test(l));
+  const buttons = await page.evaluate(() =>
+    [...document.querySelectorAll('[role=button],button')].map((el) =>
+      (el.textContent ?? '').trim(),
+    ),
+  );
+
+  if (!sentence)
+    fail(`${state.what} says nothing that names it: ${JSON.stringify(lines.slice(0, 6))}`);
+  else if (!buttons.some((b) => state.offers.test(b)))
+    fail(`${state.what} offers ${JSON.stringify(buttons)}, not ${state.offers}`);
+  else {
+    said.set(state.id, sentence);
+    pass(`${state.what}: "${sentence.slice(0, 46)}…" → ${buttons.find((b) => state.offers.test(b))}`);
+  }
+}
+
+// **The pair, which is the whole reason these are worth driving.** Two states
+// reading the same sentence would mean the branch between them had collapsed,
+// and each screen would still look perfectly reasonable alone.
+const distinct = new Set(said.values());
+if (said.size > 0 && distinct.size !== said.size)
+  fail(`two of the failure states say the same thing: ${JSON.stringify([...said.values()])}`);
+else if (said.size === VERDICT_STATES.length)
+  pass('each of the four states says something only it says');
+
 console.log('\n## Downloading your own data');
 
 /*
@@ -510,6 +748,90 @@ console.log('\n## Downloading your own data');
     fail('the screen claimed the export was ready when nothing was downloaded');
   }
 }
+
+console.log('\n## Setting up a take');
+
+/*
+ * **The screen where the clock is chosen, and no sweep had ever seen it.**
+ * `pieces/:pieceId/record` renders `PracticeSetup` — the first-take tips —
+ * until `practiceSetupSeen` is stored, so the a11y audit's "Record" entry has
+ * been auditing the tips since the first sweep. Behind it are eight controls
+ * including the tempo steppers and the start-at picker.
+ *
+ * The tempo matters more than any other setting here: `submitTake` sends it as
+ * `target_bpm`, `build_timeline` scales the whole expected timeline by it, and
+ * every band in the verdict is a percentage of one beat at it. A stepper that
+ * showed one number and sent another would have a musician judged at a tempo
+ * they did not choose, with nothing on screen disagreeing.
+ */
+await open('pieces/fixture-bach-bwv1001/record');
+if (!(await leaves()).some((l) => /Before your first take/i.test(l)))
+  fail('the record route did not open on the first-take tips');
+else pass('a first take opens on the tips, not on the controls');
+
+await page.getByRole('button', { name: /Set tempo & record/i }).first().click();
+await waitForText('the recording controls', (l) => /Target tempo/i.test(l));
+
+/** The number beside the BPM label, which is what the take is judged against. */
+const targetBpm = async () => {
+  const lines = await leaves();
+  const at = lines.indexOf('BPM');
+  return at > 0 ? lines[at - 1] : null;
+};
+
+const opened = await targetBpm();
+if (!opened) fail('the recording screen shows no target tempo');
+else pass(`the tips lead to the controls, at ${opened} BPM`);
+
+await page.getByRole('button', { name: 'Faster' }).first().click();
+await waitFor('the tempo to rise', async () => (await targetBpm()) !== opened);
+const faster = await targetBpm();
+await page.getByRole('button', { name: 'Slower' }).first().click();
+await waitFor('the tempo to fall back', async () => (await targetBpm()) !== faster);
+const back = await targetBpm();
+
+if (Number(faster) <= Number(opened)) fail(`Faster took ${opened} to ${faster}`);
+else if (back !== opened)
+  // The same step in both directions. A stepper that rose by two and fell by
+  // one would drift the target every time a musician changed their mind, and
+  // the number on screen would still look deliberate.
+  fail(`Slower did not undo Faster: ${opened} → ${faster} → ${back}`);
+else pass(`the tempo steps evenly both ways: ${opened} → ${faster} → ${back}`);
+
+/*
+ * The start-at picker. `from_measure` reached `main` once and refused every
+ * take, because migration 015 had not been applied — so this control has a
+ * history of being present and not working.
+ *
+ * **Its sheet renders outside `#root`**, in a portal on the body, which is why
+ * `leaves()` here reads the whole document rather than the app container. A
+ * probe scoped to `#root` reported this control doing nothing at all.
+ */
+const beforePicker = (await leaves()).length;
+await page.getByRole('button', { name: /Start at bar/i }).first().click();
+await waitFor('the start-at sheet to open', async () =>
+  (await leaves()).some((l) => /Start the take at/i.test(l)),
+);
+if ((await leaves()).length <= beforePicker)
+  fail('the start-at control opened nothing');
+else pass('the start-at picker opens and says what the bar governs');
+await page.keyboard.press('Escape');
+await page.waitForTimeout(400);
+
+/*
+ * Reopening the tips must come back to the controls. `RecordScreen` branches
+ * on `practiceSetupSeen` here: dismissing the tips a *second* time closes them,
+ * while dismissing them the first time leaves the screen entirely. Getting
+ * that backwards drops a musician out of the flow for reading the tips.
+ */
+await open('pieces/fixture-bach-bwv1001/record');
+await page.getByRole('button', { name: /Open recording tips/i }).first().click();
+await waitForText('the tips to reopen', (l) => /Before your first take/i.test(l));
+await page.getByRole('button', { name: /Back to the piece/i }).first().click();
+await waitForText('the controls to come back', (l) => /Target tempo/i.test(l));
+if ((await path()).endsWith('/record'))
+  pass('reopening the tips comes back to the controls, not out of the flow');
+else fail(`closing the reopened tips left for ${await path()}`);
 
 console.log('\n## A refused microphone');
 

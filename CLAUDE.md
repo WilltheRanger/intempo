@@ -993,16 +993,16 @@ deleted because a documented technique that does not exist costs the next
 session the time to discover that, which is what it cost this one.
 
 **The sixth such state is the one every single user meets first: an account
-with nothing in it.** Every fixture build has a library, a take and thirty
-days of insights, so Today, Library and Insights are only ever seen populated.
-Looking at the empty one is five one-line edits to `fixtures.ts` — early
-returns at the top of `listPieces` (`[]`), `getCurrentPiece` (`null`),
-`getInsights` (`null`), `getLatestTake` (`null`) and `getRecentTakes` (`[]`) —
-then `.env` aside, `npm run build:web`, serve, look, `git checkout --` the
-file. `tsc` reports unreachable-code errors on that build; they are the patch,
-not the app. Doing it on 2026-09-02 found Today telling a new musician
-*"Nothing to practice yet"* above a fully built daily warmup it was hiding from
-them.
+with nothing in it.** Every fixture build had a library, a take and thirty days
+of insights, so Today, Library and Insights were only ever seen populated —
+which on 2026-09-02 found Today telling a new musician *"Nothing to practice
+yet"* above a fully built daily warmup it was hiding from them.
+
+That used to take five one-line edits to `fixtures.ts` and remembering to
+revert them. It is now **one command**: `npm run build:web:empty`, which sets
+`EXPO_PUBLIC_FIXTURES=empty` and builds into `dist-empty/`. See
+`mobile/README.md`, "An account with nothing in it", for the serve-and-sweep
+lines. A ritual with a revert in it is how `.env` gets committed.
 
 A state with no fixture is a state nobody has looked at, and that has
 now cost this project **six** times: a guessed clef captioned as read, an

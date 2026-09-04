@@ -83,8 +83,27 @@ REQUIRED_COLUMNS: tuple[tuple[str, str, str], ...] = (
     # which at least names the column it is about. Recorded so the next reader
     # knows it is absent by argument rather than by oversight.
     ("scores", "movement", "005"),
+    # 006. Three columns, three different failures, which is why the rule two
+    # blocks down — one row per column, not one per migration — applies here
+    # too. It did not, until `test_readiness_columns.py` went looking.
     ("scores", "transcription_status", "006"),
+    # Written on every step the worker reports. A deployment without it errors
+    # partway through every read, leaving the row `reading` for the sweeper to
+    # find, and the measured progress bar with nothing to move on.
+    ("scores", "transcription_stage", "006"),
+    # Written when a read fails, and it is the only place the sentence goes.
+    # Without it `_FAILURE_REASONS` — the whole table of wordings written for a
+    # musician rather than a log, rewritten three times to stop blaming a
+    # photograph for a fault on our side — reaches nobody: the scan shows as
+    # failed with no reason at all.
+    ("scores", "transcription_error", "006"),
     ("scores", "transcription_accepted_at", "007"),
+    # Also 007, and the half that actually writes. `accept` is the only thing
+    # that discards a photograph; missing this column, the accept fails, so the
+    # object is never removed and the row never records that it was. The
+    # storage side then has no row saying the photograph is gone and no request
+    # that can remove it.
+    ("scores", "page_image_discarded_at", "007"),
     ("analyses", "instrument", "008"),
     # 009. One row per column the code reads, not one per migration: a
     # deployment can be half-applied, and each of these fails differently.

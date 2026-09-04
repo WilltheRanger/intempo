@@ -14,6 +14,7 @@ import type {
   AnalysisStatus,
   Band,
   MeasureVerdict,
+  PerMeasureResult,
   Piece,
   PieceInsight,
   PracticeInsights,
@@ -250,21 +251,33 @@ function toRushPositive(dragPositivePct: number): number {
   return -dragPositivePct;
 }
 
-/** The mean deviation of a finished take, rush-positive, or null. */
-function meanDeviationOf(result: AnalysisResultJson): number | null {
-  // **Only the bars that were timed.** A four-bar `rit.` played exactly as
-  // marked reports a real, large deviation on each of its bars, and averaging
-  // those into "how steadily was this played" answers the question with a
-  // number the pipeline explicitly refused to judge.
-  const measures = (result.per_measure ?? []).filter((m) =>
+/**
+ * The bars a take was actually judged on.
+ *
+ * **Only the bars that were timed.** A four-bar `rit.` played exactly as
+ * marked reports a real, large deviation on each of its bars, and averaging
+ * those into "how steadily was this played" answers the question with a number
+ * the pipeline explicitly refused to judge.
+ *
+ * **One function because both readings below must select the same bars.** They
+ * used to filter separately with identical code, which is what let the call
+ * site fall back from the spread to `Math.abs(mean)` — unreachable while the
+ * two agreed, and the most flattering possible answer the moment they did not.
+ * Sharing the selection makes them agree by construction rather than by
+ * coincidence, and lets the emptiness check happen once, where the decision to
+ * skip the take belongs.
+ */
+function timedMeasures(result: AnalysisResultJson): PerMeasureResult[] {
+  return (result.per_measure ?? []).filter((m) =>
     wasTimed({
       underTempoChange: m.under_tempo_change === true,
       timedNoteCount: m.timed_note_count ?? null,
     }),
   );
-  if (measures.length === 0) {
-    return null;
-  }
+}
+
+/** The mean deviation of a finished take, rush-positive. Bars must be timed. */
+function meanDeviationOf(measures: PerMeasureResult[]): number {
   const mean =
     measures.reduce((total, m) => total + m.avg_delta_pct, 0) / measures.length;
   return toRushPositive(mean);
@@ -282,20 +295,11 @@ function meanDeviationOf(result: AnalysisResultJson): number | null {
  * because that is where the cancelling happens — a take whose bars alternate
  * has a mean of zero and every one of its bars is a long way off.
  *
- * Same filter as its sibling, for the same reason: a `rit.` played exactly as
- * marked reports a real, large deviation per bar, and it is not distance from
- * a beat the page asked for.
+ * Takes the same bars as its sibling — `timedMeasures` selects them once, for
+ * the same reason: a `rit.` played exactly as marked reports a real, large
+ * deviation per bar, and it is not distance from a beat the page asked for.
  */
-function spreadOf(result: AnalysisResultJson): number | null {
-  const measures = (result.per_measure ?? []).filter((m) =>
-    wasTimed({
-      underTempoChange: m.under_tempo_change === true,
-      timedNoteCount: m.timed_note_count ?? null,
-    }),
-  );
-  if (measures.length === 0) {
-    return null;
-  }
+function spreadOf(measures: PerMeasureResult[]): number {
   return (
     measures.reduce((total, m) => total + Math.abs(m.avg_delta_pct), 0) /
     measures.length
@@ -401,16 +405,21 @@ export const apiInsightsSource: InsightsSource = {
         if (!result || result.status !== 'ok') {
           return [];
         }
-        const deviationPct = meanDeviationOf(result);
-        if (deviationPct === null) {
+        // **One selection, one emptiness check.** A take with nothing timed
+        // has neither a mean nor a spread, and skipping it here is what makes
+        // both readings below unconditional — no fallback, and therefore no
+        // chance of answering the spread with `|mean|`, which is the one
+        // number it exists not to be.
+        const timed = timedMeasures(result);
+        if (timed.length === 0) {
           return [];
         }
         return [
           {
             scoreId: analysis.score_id,
             at: Date.parse(analysis.created_at),
-            deviationPct,
-            spreadPct: spreadOf(result) ?? Math.abs(deviationPct),
+            deviationPct: meanDeviationOf(timed),
+            spreadPct: spreadOf(timed),
             tolerance: result.tolerance ?? null,
           },
         ];

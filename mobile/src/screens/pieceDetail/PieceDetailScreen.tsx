@@ -440,7 +440,13 @@ export function PieceDetailScreen() {
                 description={
                   stillReading
                     ? piece.transcriptionStage ?? 'Transcribing the notation.'
-                    : 'Photograph it again to try once more.'
+                    : // **Deliberately not `piece.transcriptionError`**, unlike
+                      // the branch above and unlike `PieceScoreScreen`, which
+                      // does print the server's reason. Owner's call,
+                      // 2026-09-04 — `DECISIONS.md`. The cost is stated there:
+                      // a fault on our side reads here as something to fix
+                      // with the camera. Do not "fix" this in passing.
+                      'Photograph it again to try once more.'
                 }
                 divided={false}
                 onPress={() =>
