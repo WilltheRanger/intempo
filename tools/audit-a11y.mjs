@@ -64,6 +64,17 @@ const ROUTES = [
   ['Insights', 'insights'],
   ['Profile', 'profile'],
   ['Piece detail', 'pieces/fixture-bach-bwv1001'],
+  // **The same two routes, in the two states every scan passes through.** A
+  // route list cannot see a state: `pieces/:pieceId` was already visited and
+  // `unvisitedRoutes` was satisfied, while the screen a musician lands on the
+  // moment a scan finishes had never been rendered by any sweep. Both of these
+  // draw controls the `done` piece has none of — a progress bar with a stage
+  // under it, and three recovery actions — so they are new touch targets and
+  // new contrast, not a second look at the same pixels.
+  ['Piece being read', 'pieces/fixture-reading-in-progress'],
+  ['Score, still being read', 'pieces/fixture-reading-in-progress/score'],
+  ['Piece that could not be read', 'pieces/fixture-reading-failed'],
+  ['Score that could not be read', 'pieces/fixture-reading-failed/score'],
   ['Score', 'pieces/fixture-clef-change-study/score'],
   ['Bar editor', 'pieces/fixture-clef-change-study/bars/3'],
   // The photographs, paged. `fixture-wohlfahrt-01` is the one multi-page part

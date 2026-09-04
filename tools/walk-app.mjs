@@ -413,6 +413,79 @@ console.log('\n## Photographing a piece');
   await scan.close();
 }
 
+console.log('\n## After a scan, before there is any notation');
+
+/*
+ * **The two screens every scan passes through, and the two states no sweep had
+ * ever opened.** `POST /v1/scores` returns before a single note is read, so a
+ * musician who finishes a scan lands on a piece that is `reading` and may end
+ * on one that `failed` — and both live at routes the audit already visits, on
+ * pieces it does not. A route list cannot see a state, which is why these are
+ * here rather than in `audit-a11y.mjs` alone.
+ *
+ * What each leg is actually protecting:
+ *
+ *  - **Progress is measured, never animated toward a guess** (CLAUDE.md). The
+ *    worker reports a stage; the app prints it. A build that fell back to a
+ *    word of its own — "Transcribing the notation." is right there as the
+ *    fallback — would look identical to a musician and would have stopped
+ *    telling them anything.
+ *  - **The reason a page failed is written for a musician, by the server.**
+ *    `_FAILURE_REASONS` exists because the same sentence was got wrong three
+ *    times, twice by blaming a photograph for a fault on our side. All of that
+ *    work reaches nobody if the screen substitutes wording of its own.
+ */
+await open('pieces/fixture-reading-in-progress');
+const readingPiece = await leaves();
+const stageOnPiece = readingPiece.find((l) => /Reading stave \d+ of \d+/.test(l));
+if (!stageOnPiece)
+  fail(
+    `a piece being read shows no measured stage: ${JSON.stringify(readingPiece.slice(0, 8))}`,
+  );
+else pass(`a piece being read names the stage the worker reached: "${stageOnPiece}"`);
+
+await tapTo(
+  'the reading row',
+  /Reading this page/i,
+  /^\/pieces\/fixture-reading-in-progress\/score$/,
+);
+
+// **Agreement**, the kind of check worth having: the same fact on two screens.
+// These read the same field from the same query, and a screen that computed
+// its own would drift one fix at a time.
+const stageOnScore = (await leaves()).find((l) => /Reading stave \d+ of \d+/.test(l));
+if (stageOnScore !== stageOnPiece)
+  fail(`stage reads "${stageOnPiece}" on the piece and "${stageOnScore}" on the score`);
+else pass(`both screens name the same stage: "${stageOnScore}"`);
+
+await open('pieces/fixture-reading-failed/score');
+const failedScore = await leaves();
+// Verbatim, and that is the assertion. The fixture's reason is one the server
+// really writes, so a screen that paraphrased it would be paraphrasing every
+// sentence in `_FAILURE_REASONS`.
+const reason = failedScore.find((l) =>
+  l.includes('A flatter, better-lit shot of the page usually fixes it.'),
+);
+if (!reason)
+  fail(
+    `the server's own reason did not reach the screen: ${JSON.stringify(failedScore.slice(0, 8))}`,
+  );
+else pass('a failed page shows the reason the server wrote, word for word');
+
+// Three ways on, and none of them a dead end: read it again with the pages
+// already stored, photograph it again, or pick different files. A failure
+// screen with no route out is where a piece goes to be abandoned.
+const waysOn = [/Try reading it again/i, /Take new photographs/i, /Choose different images/i];
+const missing = waysOn.filter((w) => !failedScore.some((l) => w.test(l)));
+if (missing.length > 0) fail(`a failed page offers no ${missing.join(', ')}`);
+else pass('and offers three ways on: read it again · new photographs · different images');
+
+// The piece survives the failure. Losing the title and tempo because the
+// notation could not be read would throw away everything the musician typed.
+if (!failedScore.some((l) => /still in your library/i.test(l)))
+  fail('a failed page does not say the piece is still in the library');
+else pass('and says the piece itself is still there');
+
 console.log('\n## Telling the app it got a bar wrong');
 
 /*

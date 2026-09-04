@@ -6,6 +6,97 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-04 — The two screens every scan lands on had never been rendered by any sweep
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Picture → transcription,
+the far end. CI still cannot allocate a runner. **No screen was changed** —
+this is coverage of screens that already exist.
+
+`POST /v1/scores` returns before a note is read, so a musician who finishes a
+scan lands on a piece that is `reading` and may end on one that `failed`. Both
+states have had fixtures since they were added, and **neither had ever been put
+on screen by the a11y audit or the walk.**
+
+The reason they slipped through is worth writing down, because the guard that
+should have caught it is a good guard: `audit-a11y.mjs` fails on any route with
+a URL and no audit, and `pieces/:pieceId` was visited — by
+`fixture-bach-bwv1001`, which is `done`. **A route list cannot see a state.**
+CLAUDE.md's own line — *"a state with no fixture is a state nobody has looked
+at"* — has a sibling it did not name: a state *with* a fixture that nothing
+opens is in exactly the same position.
+
+### What now covers them
+
+- `audit-a11y.mjs`: four new entries — the piece and the score screen, in both
+  states. All four clean. They are not a second look at the same pixels: they
+  draw a progress bar with a stage under it and three recovery actions, none of
+  which exists on a `done` piece.
+- `walk-app.mjs`: a new section, six checks. Two are the ones worth having:
+  - **The stage is the worker's, not the app's.** `'Reading stave 3 of 7'`
+    comes from `transcriptionStage`, and `'Transcribing the notation.'` sits
+    right beside it as a fallback. A build that took the fallback would look
+    identical to a musician and would have stopped telling them anything,
+    which is the measured-progress promise weakening quietly — the same failure
+    mode as the unrecognised-stage hold recorded on 2026-09-03.
+  - **The failure reason is the server's, word for word.**
+    `_FAILURE_REASONS` exists because that sentence was got wrong three times,
+    twice by blaming a photograph for a fault on our side. All of that reaches
+    nobody if the screen substitutes wording of its own, and nothing was
+    checking.
+
+Plus: both screens name the same stage (the walk's agreement check), the failed
+screen offers three ways on, and it says the piece is still in the library.
+
+### Mutation-tested, against rebuilt bundles
+
+| mutation | caught by |
+|---|---|
+| `piece.transcriptionStage ?? …` → the fallback alone | "names the stage the worker reached" **and** the cross-screen agreement check |
+| `piece.transcriptionError ?? …` → the fallback alone | "shows the reason the server wrote, word for word" |
+
+### Three-foot test — looked at, not changed
+
+Screenshots at 390×844.
+
+*Score, still being read.* First the serif title; second `Reading stave 3 of 7`
+above the only ochre on the screen; third the page crop. Hierarchy holds and
+ochre is doing accent duty exactly as law 5 asks.
+
+*Score that could not be read.* First the serif title; second the centred
+`This page couldn't be read` with the server's sentence under it; third the
+actions. **One observation, not acted on:** the primary action ("Try reading it
+again") is a narrow pill, and the two secondary actions below it are full-width
+rows — so the secondaries read as *larger* than the primary. That is a
+composition question under §2 and is left for the owner.
+
+### Also found, and not fixed — §2
+
+`PieceDetailScreen`'s post-scan row is asymmetric. The `reading` branch prints
+`piece.transcriptionStage ?? 'Transcribing the notation.'` — the server's own
+words. Its `failed` sibling, three lines later, hardcodes **"Photograph it
+again to try once more."** and never reads `piece.transcriptionError`, which is
+sitting on the same object.
+
+So a musician whose page failed *on our side* — homr not installed in the
+container, a credential problem, a fault `_FAILURE_REASONS` answers with *"That
+is a fault on our side, not with your photograph"* — reads, on the piece
+screen, an instruction to photograph it again. That is this project's own named
+law: **advice must be followable in this app**. The right sentence is one tap
+away on `PieceScore`, which is why this is a wrong first line rather than a
+missing one.
+
+The fix is one expression — `piece.transcriptionError ?? 'Photograph it again
+to try once more.'` — but it is copy on a shipped screen, so it is §2 and is
+**not applied**. Flagged for the owner.
+
+### Verification
+
+Walk PASS, 35 checks (was 29). a11y audit PASS across 23 routes (was 19). No
+page errors across the whole walk. `.env` moved aside for every fixtures build
+and restored with `diff -q` each time.
+
+---
+
 ## 2026-09-04 — The WAV contract was written at a rate the app never records at
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Audio verification,
