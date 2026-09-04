@@ -458,6 +458,30 @@ if (stageOnScore !== stageOnPiece)
   fail(`stage reads "${stageOnPiece}" on the piece and "${stageOnScore}" on the score`);
 else pass(`both screens name the same stage: "${stageOnScore}"`);
 
+// **The queued page**, which is every page after the first of a multi-page
+// scan: the server reads a bounded number at once, so a three-page part spends
+// most of its wait here. It is not a variant of the one above — the panel
+// prints a sentence chosen for it, because "Getting ready" described the app
+// rather than what is happening, and `QUEUED_PROGRESS` puts the bar at 5%
+// instead of in the reading band. Until now no fixture had ever put either on
+// screen.
+await open('pieces/fixture-reading-queued/score');
+const queuedScore = await leaves();
+const waiting = queuedScore.find((l) => /Waiting for another page to finish/i.test(l));
+if (!waiting)
+  fail(
+    `a queued page does not say what it is waiting for: ${JSON.stringify(queuedScore.slice(0, 8))}`,
+  );
+else pass('a queued page says it is waiting for another page, not "getting ready"');
+
+// And it must not claim a stage. `transcriptionStage` is null for a queued
+// page — that is what queued *means* — so any "Reading …" line here would be
+// the panel inventing progress, which is the one thing this whole module
+// exists to prevent.
+const inventedStage = queuedScore.find((l) => /Reading (stave|page|the notation)/i.test(l));
+if (inventedStage) fail(`a queued page claims a stage: "${inventedStage}"`);
+else pass('a queued page claims no reading stage');
+
 await open('pieces/fixture-reading-failed/score');
 const failedScore = await leaves();
 // Verbatim, and that is the assertion. The fixture's reason is one the server

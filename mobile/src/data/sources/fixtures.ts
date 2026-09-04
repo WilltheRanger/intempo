@@ -680,6 +680,36 @@ const FIXTURE_PIECES: FixturePiece[] = [
   },
   {
     /**
+     * **A page accepted and not yet started**, which is every second page of
+     * every multi-page scan: the server reads a bounded number at once, so a
+     * three-page part spends most of its wait here.
+     *
+     * The fourth `transcription_status` and the only one no fixture had. It is
+     * not a cosmetic variant of `reading`: the panel prints a different
+     * sentence for it — *"Waiting for another page to finish"*, chosen because
+     * "Getting ready" described the app rather than what is happening — and
+     * `QUEUED_PROGRESS` puts the bar at 5% rather than in the reading band.
+     * A sentence and a bar position nobody had seen together.
+     *
+     * `transcriptionStage` is **null**, which is what makes it queued: the
+     * worker has said nothing yet. Giving it a stage would render as `reading`
+     * with a different status word and check nothing.
+     */
+    id: 'fixture-reading-queued',
+    title: 'Six Suites for Solo Cello, BWV 1010',
+    composer: 'J. S. Bach',
+    movement: 'Sarabande',
+    practicedDaysAgo: null,
+    thumbnail: require('../../../assets/fixtures/01_simple_printed.jpg'),
+    markedBpm: null,
+    score: null,
+    reading: {
+      transcriptionStatus: 'queued',
+      transcriptionStage: null,
+    },
+  },
+  {
+    /**
      * **A page the reader could not make sense of.**
      *
      * The reason is one `_FAILURE_REASONS` actually produces, and it is the
