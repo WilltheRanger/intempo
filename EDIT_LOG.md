@@ -6,6 +6,103 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-04 — A phone on silent plays nothing, and four of five sound paths were unheld
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Audio verification. CI
+still cannot allocate a runner.
+
+`lib/audio/session.ts` exists because **nothing ever configured the device
+audio session**: iOS then used whatever category the session happened to be in,
+which respects the ring/silent switch, so a musician with their phone on silent
+— most musicians, in most rehearsal rooms — pressed Listen and heard nothing.
+`session.web.ts` is the same bug in Safari, which applies the switch to Web
+Audio.
+
+Its own docstring names what a test here can do:
+
+> *"What can be checked here is that it is called on every path that makes a
+> sound, and that it cannot throw."*
+
+**Neither half was checked.** Both modules had no test file at all, and of the
+five paths in the app that make a sound only `scorePlayer.ts` asserted the
+call — with a good assertion, on ordering rather than on merely being called.
+The other four had nothing.
+
+### Why nothing else can catch this
+
+There is no audio device in this container and none in CI. When the session
+call goes missing nothing throws, nothing logs, and the screen behaves
+correctly in every observable way: the button flips to Stop, the schedule plays
+through, the label flips back. No test, no screenshot and no walk can hear the
+difference. A source check is the only instrument there is.
+
+### Three files
+
+`session.test.ts` — what the app asks iOS for, one field per case with the
+failure it prevents. `playsInSilentMode` is not a preference, it is the entire
+fix; `doNotMix` is what stops another app ducking the click; `allowsRecording:
+false` keeps output off receiver-level volume; `shouldPlayInBackground: false`
+is a promise the build cannot keep without `UIBackgroundModes`. Plus the
+throw-safety: a runtime with no session must leave playback quiet, not broken.
+
+`session.web.test.ts` — `navigator.audioSession.type = 'playback'`, the no-ops
+where there is nothing to ask (no `audioSession`, no `navigator`), and the
+throw-safety, which matters more here: every caller is inside a button press,
+and a throw there takes the press down — a worse version of the bug.
+
+`session.reach.test.ts` — the half that rots. A claim about *every* call site is
+true the day it is written and silently false the next time somebody adds a
+player. It scans `src/` and requires every file constructing an audio source to
+name `prepareForPlayback`, **both ways**: an `EXCUSED` entry for a file that has
+since grown a player fails, and so does one that has stopped mentioning the
+session. Three entries — `App.tsx`'s boot call and the two modules themselves.
+
+Constructors (`AudioModule.AudioPlayer`, `useAudioPlayer`, `createOscillator`,
+`createBufferSource`, `new Audio`) rather than `.play()`: `.play()` matches a
+video, an animation or a stub, and all five real paths construct something on
+the list, so the looser marker buys nothing and costs a growing exclusion list.
+`createBufferSource` and `new Audio` are on it for a path that does not exist
+yet — the point of the file is the call site nobody has written.
+
+The five paths are **named, not counted**, so a player deleted in a refactor
+and rebuilt elsewhere is as loud as one appearing. And `found the app` asserts
+the corpus is non-empty, because a glob that matches nothing passes every other
+assertion — which `navigationReachability.test.ts` learned the expensive way.
+
+### Mutation-tested: six mutations, six unique catches
+
+Each was run against the **whole** mobile suite, and each failed exactly one
+test of 1501 — always one of the three new files. Nothing in the repository
+was holding any of it.
+
+| mutation | what it models | caught by |
+|---|---|---|
+| strip the session call from `click.web.ts` | web metronome the silent switch mutes | `asks for the audio session` |
+| add a `createBufferSource` module with no call | the next playback path somebody writes | `found the sound paths` + `asks for the session` |
+| `playsInSilentMode: false` | the original bug, restored | `asks to be audible on silent` |
+| `type = 'play-and-record'` on web | playback dropped to receiver volume | `declares this page's audio to be the point` |
+| remove the web `try/catch` | a refusing browser takes the button press down | `never throws` (web) |
+| remove the native `try/catch` | a runtime with no session breaks the player | `never throws` (native) |
+
+### What this still does not prove
+
+The thing these modules exist for is whether a phone with the switch flipped
+makes a sound, and there is no phone here. What is now held is that the app
+**asks**, on every path, and that asking cannot break a press. Both modules
+already said "Unverified on hardware" and they still do.
+
+### Verification
+
+134 test files, **1501 passed** (was 1486 / 131 files). `tsc --noEmit` exit 0;
+`npm run lint` exit 0 — read from the command's own exit code, not through a
+pipe into `tail`, which reports `tail`'s. All four mutated sources restored
+byte-identical: `git status` showed only the three new test files.
+
+No UI, no copy, no component, no design token touched — three test files and
+nothing else, so no §2 gate and no three-foot test.
+
+---
+
 ## 2026-09-04 — The two objects the app reads most had no field contract at all
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. CI still cannot allocate a
