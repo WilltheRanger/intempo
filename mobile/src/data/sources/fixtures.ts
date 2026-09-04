@@ -1060,8 +1060,56 @@ const FIXTURE_MEASURES: {
 
 const FIXTURE_TAKE_ID = 'fixture-take-1';
 
+/**
+ * The three ways a take can end without a verdict, reachable by id alone.
+ *
+ * **`VerdictScreen` has four states and one of them had a fixture.** It
+ * branches on `failure` — twice, because recoverable and unrecoverable are
+ * different sentences and different buttons — then on a `status` that is not
+ * `ok`, and only then draws the verdict. Three of those four had never been on
+ * a screen, on what CLAUDE.md calls the payoff of the whole app.
+ *
+ * **Reachable by id and by nothing else**, which is the point rather than an
+ * oversight. `buildFixtureTake`'s own comment gives the reason and it still
+ * holds: a failed run is a live outcome, and putting one in front of somebody
+ * browsing the sample build would describe a recording they never made. So
+ * `getLatestTake` and `getRecentTakes` — what Today and Insights read — go on
+ * returning the successful take alone, and these exist for a sweep to open.
+ *
+ * The sentences are the pipeline's own, read off `analyze()` rather than
+ * written here: silence really answers with the first, and a take that cannot
+ * be matched to its score with the second. A fixture that invented its wording
+ * would check the screen against a sentence the product never sends.
+ */
+const FIXTURE_TAKE_STATES: Record<string, Partial<TakeResult>> = {
+  'fixture-take-failed': {
+    failure: { recoverable: true, reason: 'internal_error' },
+  },
+  'fixture-take-unrecoverable': {
+    failure: { recoverable: false, reason: 'audio_unavailable' },
+  },
+  'fixture-take-silent': {
+    status: 'no_onsets',
+    headline:
+      'Your recording is completely silent — no sound reached the microphone ' +
+      'at all. Check which input your device is recording from, and that ' +
+      'nothing is muting it, then record again.',
+  },
+  'fixture-take-unmatched': {
+    status: 'alignment_failed',
+    headline:
+      "We had trouble matching your recording to the score — check you're on " +
+      'the right piece and re-record.',
+  },
+};
+
 export const fixtureTakeSource: TakeSource = {
   async getTake(analysisId) {
+    const state = FIXTURE_TAKE_STATES[analysisId];
+    if (state) {
+      const take = buildFixtureTake();
+      return take ? { ...take, id: analysisId, ...state } : null;
+    }
     if (analysisId !== FIXTURE_TAKE_ID) {
       return null;
     }
