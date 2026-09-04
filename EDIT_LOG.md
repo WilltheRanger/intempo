@@ -6,6 +6,103 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-04 — `/v1/ready` checks a hand-written list of columns, and nothing checked the list
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Picture → transcription.
+CI still cannot allocate a runner.
+
+Migrations here are applied **by hand** through the Supabase SQL editor, so
+shipping code and applying its migration are two separate acts and the gap
+between them is invisible. `readiness.REQUIRED_COLUMNS` exists because that gap
+went live once already — its own docstring records `analyses.instrument`
+reaching production before the column did, with every take submission failing
+on a column-not-found error that reads like a server bug.
+
+It is a hand-maintained list whose comment says *"add a row here whenever a
+migration adds a column the code depends on"*, and **nothing outside
+`readiness.py` referenced it.** Measured against the migration files, it was
+three rows short:
+
+    scores.transcription_stage      (006)
+    scores.transcription_error      (006)
+    scores.page_image_discarded_at  (007)
+
+Each fails differently, which is the argument the list already makes for itself
+two blocks lower — *"one row per column the code reads, not one per migration:
+a deployment can be half-applied"*. The 009 block follows that rule with four
+separate rows. The 006 block, immediately above it, did not.
+
+What each one costs a deployment that has the table and not the column, while
+`/v1/ready` says ready:
+
+- **`transcription_stage`** is written on every step the worker reports, so
+  every read errors partway through and the row sits `reading` for the sweeper.
+  The measured progress bar has nothing to move on.
+- **`transcription_error`** is the only place a failure's sentence goes.
+  `_FAILURE_REASONS` — the table of wordings written for a musician rather than
+  a log, rewritten three times to stop blaming a photograph for a fault on our
+  side — reaches nobody; the scan shows as failed with no reason at all.
+- **`page_image_discarded_at`** is written by `accept`, the one action that
+  authorises discarding a photograph. Missing it, accept fails, so the object
+  is never removed and no row records that it should have been.
+
+### The check that closes it
+
+`test_readiness_columns.py`, four cases, both directions — the same doctrine
+`NOT_WIRED` and `_HUMAN_STAGES` were given after each rotted:
+
+1. a column added by a migration and mentioned in the backend, absent from the
+   list → fail;
+2. a column on the list that no migration adds → fail (a probe that can never
+   pass is a permanently red row, and a readiness page with one of those is a
+   page people stop reading);
+3. the migration number a row names must be the one that adds the column — that
+   number goes into the failure detail as *"apply
+   `backend/app/migrations/NNN_*.sql`"*, and pointing at the wrong file sends
+   somebody to run a migration that will not fix what they are looking at;
+4. the same rule for `REQUIRED_TABLES`.
+
+**"Used" is deliberately coarse**: the column name appearing anywhere in
+`backend/app` outside tests. A stricter reading that tied names to
+`.table(...)` calls found only two of the three — `page_image_discarded_at` is
+written into a `patch` dict several lines from the query that sends it. The
+cost of coarseness is a false *negative*, which is the direction a check has to
+fail in if people are going to keep running it; same argument
+`tools/check-dead-exports.py` makes for having no allowlist.
+
+### Mutation-tested
+
+| mutation | caught by |
+|---|---|
+| drop one of the three new rows | case 1 |
+| list a column no migration adds | case 2 |
+| point `analyses.from_measure` at 012 instead of 015 | case 3 |
+| a new migration adding a column the code names | case 1 — the list is self-maintaining now |
+
+### Verified live while I was in there
+
+Against `intempo-dev` (`<project-ref>`), read rather than assumed:
+
+- **Every migration 004–016 is applied.** CLAUDE.md records 013, 014 and 015
+  sitting unapplied for weeks, and 015 being why the start-bar picker refused
+  every take after merging to `main`. They are applied now; 016 was applied
+  earlier in this session.
+- **136 column references in the backend — 106 read, 30 written — all exist.**
+  Extracted from `.select`/`.eq`/`.order`/`.insert`/`.update` and compared
+  against `information_schema`. Zero mismatches, so no repeat of the
+  `instrument` story is sitting there today.
+
+Both are null results and neither became a test: they need live credentials,
+which CI does not have, and `/v1/ready` is already the mechanism that reports
+them from inside a deployment. What was missing was not a new probe but the
+guarantee that the probe list is complete, which is what this change is.
+
+### Verification
+
+Backend suite green. Mobile untouched.
+
+---
+
 ## 2026-09-04 — The app's own WAV, through the whole pipeline, to a verdict
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Audio verification. CI
