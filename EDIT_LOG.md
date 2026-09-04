@@ -6,6 +6,69 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-04 — The screen that repairs a misread bar was only ever opened, never used
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Transcription, the repair
+end. CI still cannot allocate a runner. **No screen changed** — this is the
+walk driving one that already works.
+
+`MeasureEditScreen` is the answer to every bar the reader got wrong, and the
+number a musician steers by is the beat count: press durations until the bar
+adds up, then save. `describeBeats` and `timeSignaturesByMeasure` are both unit
+tested. The **wiring** between them and the controls is not, and it lives in a
+`.tsx` — the shape of rule this project keeps finding nothing checking, and the
+reason `walk-app.mjs` exists at all.
+
+The walk's only line about this screen was *"deep-linked bar editor → back to
+the score"*. It opened it and left.
+
+### Driven, in a browser, on the fixtures build
+
+    opened                4 of 4 beats · "This bar adds up. Save it, or keep adjusting."
+    quarter → half        5 of 4 beats · the "adds up" line withdrawn
+    delete a note         3 of 4 beats
+    save                  "Correcting a score needs the backend. This build
+                           runs on sample data." — and stays on /bars/3 with
+                           the edit still on screen
+
+Four new checks, and two of them are the ones worth having:
+
+- **The count moves *and* the sentence beside it withdraws.** Asserted
+  together, because a count reading 5 of 4 next to a line still saying the bar
+  adds up is the same screen-contradicts-itself fault the agreement checks were
+  added for.
+- **A refused save keeps the edit.** A screen that navigated away on failure
+  would throw out every correction just made, and there is nowhere to get them
+  back from.
+
+The failure this protects against is not cosmetic. A musician whose count
+stopped moving would go on pressing durations until the bar *looked* right and
+save one that does not add up — and a wrong bar length moves every onset after
+it, which `MeasureEditScreen`'s own comment calls the one kind of correction
+that cannot be seen by looking at the bar afterwards.
+
+### Mutation-tested against rebuilt bundles
+
+| mutation | result |
+|---|---|
+| `describeBeats(original?.notes ?? working, …)` — the count ignores the edit | 4 failures, including the refused-save case noticing the edit was gone |
+| `goBack()` added to the save's `catch` | "a refused save left the editor for /pieces/…/score, losing the edit" |
+
+A third attempt — `describeBeats(original, …)` — is worth recording as a
+**bad** mutation: it crashed the screen outright, so the walk died at an
+earlier check and never reached this section. A mutation that breaks the thing
+under test more thoroughly than the bug being modelled proves nothing about the
+check; it has to fail the way the real regression would.
+
+### Verification
+
+Walk PASS, 39 checks (was 35). a11y audit PASS across 23 routes. No page errors
+across the whole walk. `MeasureEditScreen.tsx` restored byte-identical after
+the mutations — `git status` shows only `tools/walk-app.mjs` changed. `.env`
+moved aside for every fixtures build and restored with `diff -q`.
+
+---
+
 ## 2026-09-04 — Nothing shipped: a corpus baseline measured, and a test reverted
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. No code changed. Recorded

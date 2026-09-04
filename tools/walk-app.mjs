@@ -486,6 +486,72 @@ if (!failedScore.some((l) => /still in your library/i.test(l)))
   fail('a failed page does not say the piece is still in the library');
 else pass('and says the piece itself is still there');
 
+console.log('\n## Repairing a bar the reader got wrong');
+
+/*
+ * **The answer to every misread bar, and the walk only ever opened it.**
+ * `MeasureEditScreen` is where a musician fixes what the reader got wrong, and
+ * the number they steer by is the beat count: they change durations until the
+ * bar adds up, then save. `describeBeats` and `timeSignaturesByMeasure` are
+ * both unit-tested — what is not is the wiring between them and the controls,
+ * which lives in a `.tsx` and is therefore the kind of rule this project
+ * repeatedly finds nothing checking.
+ *
+ * The failure worth catching is a count that stops moving. A musician would go
+ * on pressing durations until the bar looked right, save a bar that does not
+ * add up believing it does, and every onset after it shifts — which
+ * `MeasureEditScreen`'s own comment calls the one kind of correction that
+ * cannot be seen by looking at the bar afterwards.
+ */
+await open('pieces/fixture-clef-change-study/bars/3');
+const barOpened = await leaves();
+if (!barOpened.some((l) => /^4 of 4 beats$/.test(l)))
+  fail(`the bar editor opened without a beat count: ${JSON.stringify(barOpened.slice(0, 10))}`);
+else if (!barOpened.some((l) => /adds up/i.test(l)))
+  fail('a bar that adds up does not say so');
+else pass('a bar that adds up opens saying "4 of 4 beats" and so');
+
+// Lengthening the selected note. **Both halves asserted**: a count that moves
+// while the sentence beside it still says the bar adds up is the same
+// screen-contradicts-itself fault the agreement checks above exist for.
+await page.getByRole('button', { name: 'Half', exact: true }).first().click();
+await waitFor('the beat count to follow the edit', async () =>
+  (await leaves()).some((l) => /^5 of 4 beats$/.test(l)),
+);
+const lengthened = await leaves();
+if (!lengthened.some((l) => /^5 of 4 beats$/.test(l)))
+  fail('lengthening a note did not change the beat count');
+else if (lengthened.some((l) => /adds up/i.test(l)))
+  fail('the bar says it adds up at 5 of 4 beats');
+else pass('lengthening a note reads 5 of 4 beats, and it stops saying it adds up');
+
+await page.getByRole('button', { name: 'Delete this note' }).first().click();
+await waitFor('the beat count to follow the delete', async () =>
+  (await leaves()).some((l) => /^3 of 4 beats$/.test(l)),
+);
+if ((await leaves()).some((l) => /^3 of 4 beats$/.test(l)))
+  pass('deleting a note takes it the other way, to 3 of 4 beats');
+else fail('deleting a note did not change the beat count');
+
+/*
+ * **And the edit survives a refused save**, which is the half that costs a
+ * musician real work. A screen that navigated away on a failed save would
+ * throw out every correction they had just made, and there is nowhere to get
+ * them back from.
+ */
+await page.getByRole('button', { name: 'Save this bar' }).first().click();
+await waitForText('the save to be answered', (l) =>
+  /needs the backend|sample data/i.test(l),
+);
+const afterBarSave = await leaves();
+const refusal = afterBarSave.find((l) => /needs the backend|sample data/i.test(l));
+if (!refusal) fail('saving a correction without a backend said nothing');
+else if (!/\/bars\/3$/.test(await path()))
+  fail(`a refused save left the editor for ${await path()}, losing the edit`);
+else if (!afterBarSave.some((l) => /^3 of 4 beats$/.test(l)))
+  fail('a refused save discarded the edit that was on screen');
+else pass(`a refused save keeps the edit and says why: "${refusal.slice(0, 52)}…"`);
+
 console.log('\n## Telling the app it got a bar wrong');
 
 /*
