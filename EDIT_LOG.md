@@ -6,6 +6,72 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-04 — A fallback that could not fire, saying the one thing the number exists not to say
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. CI still cannot allocate a
+runner.
+
+The response-field entry below turned on a fallback: `transcription_status ??
+'done'` is what made an absent field into a confident wrong answer. So I read
+every `??` in `data/sources/api.ts` and asked the same question of each — **if
+this fires, does the musician get an honest absence or a plausible lie?**
+
+Thirty-one of them. Twenty-nine answer `null`, `[]` or `'Unknown piece'`, which
+is absence stated as absence. Two substitute a value:
+
+- **`missedNotes: result.n_missed_notes ?? 0`** — and it is fine, which is
+  worth writing down rather than leaving to the next reader to re-derive.
+  `VerdictScreen` renders it as `take.missedNotes > 0 ? … : null`, so a missing
+  field produces **silence**, not a claim that no notes were missed.
+  `extraNotes` reaches no screen at all.
+- **`spreadPct: spreadOf(result) ?? Math.abs(deviationPct)`** — the subject of
+  this entry.
+
+### Why that one is wrong even though it never runs
+
+`spreadPct` exists because a **signed mean answers "which way", never "how
+much"**: a bar 18% ahead and a bar 18% behind average to zero, and the same two
+bars are 18 apart. The fallback answers the spread with `|mean|` — which is the
+*minimum* a spread can be, and is exactly the reading the whole measurement was
+added to replace. A musician whose bars cancel would read as perfectly even.
+
+It cannot fire. `meanDeviationOf` and `spreadOf` filtered `per_measure`
+with **identical** code and both returned null on an empty result, and the call
+site already skips the take when the mean is null. So the two were null
+together, and the fallback was dead.
+
+Dead and **false**: it states in code that `|mean|` is an acceptable stand-in
+for the spread. The day either filter changed — a new `wasTimed` condition on
+one side, a different guard — it would have started firing and reported the
+most flattering possible answer, silently, on the screen whose whole point is
+telling a musician how unsteady they were.
+
+### The fix is structural, not a deletion
+
+`timedMeasures(result)` selects the bars once; `meanDeviationOf` and `spreadOf`
+take that list and return a plain `number`. The emptiness check moves to the
+call site, where the decision to skip a take belongs. The two now agree **by
+construction** rather than by two copies of a filter happening to match, and
+there is no fallback to be wrong.
+
+Behaviour is provably unchanged: the branch removed was unreachable.
+
+### Mutation-tested
+
+Making `spreadOf` sum the signed deviations — turning it back into the mean it
+exists not to be — fails three existing cases in `api.test.ts`: *"does not
+claim a direction over a take that had none"*, *"says the same thing whichever
+order two opposite takes arrive in"*, and *"orders pieces by distance from the
+beat, not by bias"*. That coverage is why no new test was added here: it
+already discriminates, and one more would only restate it.
+
+### Verification
+
+Mobile 1478 tests, `tsc`, `eslint` and `check-dead-exports` (516) clean.
+Backend untouched.
+
+---
+
 ## 2026-09-04 — Renaming one response field made every scan look finished, and 3,470 tests passed
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. CI still cannot allocate a
