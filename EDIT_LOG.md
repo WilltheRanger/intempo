@@ -6,6 +6,79 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-04 — The metronome a musician actually plays to had no test
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Audio. CI still cannot
+allocate a runner.
+
+`lib/metronome/click.web.ts` has a test, and its opening argument is *"the ear
+resolves timing an order of magnitude finer than the eye, and a click that
+wobbles is worse than none — a musician would play the wobble."* **The native
+one, which is what ships on a phone, had none** — the same asymmetry the two
+recorders had before 2026-09-02.
+
+Found by re-running the untested-module sweep properly. The earlier one matched
+`<basename>.test.ts` and so missed every file tested under a name of its own —
+`limits.test.ts` covering `audio/types.ts` was the miss that cost a whole test
+file two entries down. Matching on **imports**, including dynamic ones, gives a
+list whose remaining entries are React hooks (untestable without a renderer,
+documented) and this.
+
+### What is knowable without a device
+
+The module's own docstring states what is not: *"Unverified. There is no
+simulator or device in the environment this was written in … What needs judging
+on hardware is whether the jitter is audible."* That stands. Everything the
+file **decides** is knowable, and nine cases now hold it.
+
+| behaviour | what it costs when wrong |
+|---|---|
+| the session is asked for **before** a player is built | the ring switch silences the metronome — off in exactly the quiet room a musician practises in |
+| the downbeat strikes the accent player | every downbeat is the plain click and every offbeat the accent: a metronome accenting the wrong beat, which a musician would play |
+| `seekTo(0)` before every strike | a player left at the end of its file plays nothing, so the metronome sounds **once** and goes silent — worse than not starting |
+| the stop is re-checked **after** the seek resolves | `seekTo` is a promise; a stop between issuing it and its `.then` otherwise still plays — a click after the take has begun, in the recording |
+| stop releases both players and both files, once | open handles and cache files leaked per take |
+| a write failure returns an inert track | the metronome is an aid, the recording is the point |
+
+Driven against stubs, the way `click.web.test.ts` drives a stub AudioContext:
+`expo-audio`, `expo-file-system` and the beat clock are mocked, so beats are
+delivered by hand and a seek can be held open to stage the stop-mid-seek race.
+
+### Mutated four ways, each against the whole suite
+
+| mutation | result |
+|---|---|
+| accent and plain swapped | **2 failed of 1529** |
+| no rewind before the strike | **2 failed** |
+| the in-flight seek not re-checked against stop | **1 failed** |
+| the session asked for after the players are built | **1 failed** |
+
+All new cases; nothing else in the repository came near any of them.
+
+### The failed-scan row: asked, and the answer is recorded
+
+`PieceDetailScreen`'s failed-scan row hardcodes *"Photograph it again to try
+once more."* and never reads `piece.transcriptionError`, while its sibling row
+three lines up prints the server's own words. It had been reported in five
+consecutive session summaries. It is §2 copy, so it was **asked** — with the
+one-expression fix and a before/after — and the owner's answer is **leave it as
+it is**.
+
+Recorded in `DECISIONS.md` with what it costs (the `_FAILURE_REASONS` work
+reaches a musician on `PieceScoreScreen` and not on this row) and with a
+comment at the code site saying not to "fix" it in passing. **Dropped from the
+report.** Five summaries is what a §2 item with no written answer costs.
+
+### Verification
+
+Mobile **1529 passed** across 137 files (was 1520). `tsc` 0, lint 0 — the first
+draft used `Buffer`, which this project has no types for on purpose; it goes
+through a plain array. `click.ts` restored between mutations, `git status`
+clean. No walk change: this module is native-only and the walk runs the web
+build, which is precisely why it needed a test of its own.
+
+---
+
 ## 2026-09-04 — The sentence a failed take shows, and the retry it offers, were two rules that could disagree
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Audio. CI still cannot
