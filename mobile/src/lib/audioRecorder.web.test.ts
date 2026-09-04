@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { resetAudioContextForTests } from './audio/context.web';
 import { EmptyRecordingError } from './audio/types';
 import { startRecording } from './audioRecorder.web';
 
@@ -47,7 +48,14 @@ class StubWorkletNode {
   }
 }
 
+/** Every context the page has built, and how often each was closed. */
+let contexts: StubContext[];
+
 class StubContext {
+  closes = 0;
+  constructor() {
+    contexts.push(this);
+  }
   sampleRate = SAMPLE_RATE;
   state: 'running' | 'suspended' = 'running';
   destination = {};
@@ -58,12 +66,18 @@ class StubContext {
   async resume() {
     this.state = 'running';
   }
-  async close() {}
+  async close() {
+    this.closes += 1;
+  }
 }
 
 beforeEach(() => {
   posted = [];
   tracksStopped = 0;
+  contexts = [];
+  // The context is shared and module-level, so it survives between tests
+  // unless it is forgotten — the same seam `click.web.test.ts` uses.
+  resetAudioContextForTests();
   vi.stubGlobal('navigator', {
     mediaDevices: {
       getUserMedia: async () => ({
@@ -239,5 +253,75 @@ describe('when the microphone will not start', () => {
 
     await expect(startRecording()).rejects.toThrow(/busy/);
     expect(asked).toHaveLength(1);
+  });
+});
+
+describe('the audio context it records through', () => {
+  /*
+   * **The bug this is the regression test for.** `lib/audio/context.web.ts`
+   * exists because a context per use is the commonest "audio works once on
+   * iPhone" bug there is: Safari on iOS caps how many a page may hold and
+   * `close()` does not reliably give the slot back. Both *players* were moved
+   * onto the shared one. The recorder was missed, and went on building its own
+   * per take and closing it — so every take spent a slot the players are also
+   * drawing from, and the page runs out for all of them together.
+   *
+   * Nothing here can prove that is what an iPhone reported as
+   * `InvalidStateError`; there is no device in this environment. What it can
+   * prove is that the recorder no longer does the thing the file next to it
+   * says not to.
+   */
+  it('is the page\'s one context, not a new one per take', async () => {
+    (await startRecording()).cancel();
+    (await startRecording()).cancel();
+
+    expect(contexts).toHaveLength(1);
+  });
+
+  it('is not closed when a take ends', async () => {
+    // Closing the mixer would end the next Listen too, and on iOS would not
+    // give the slot back anyway.
+    const recorder = await startRecording();
+    node.deliver(new Int16Array([1, 2, 3, 4]));
+
+    await recorder.stop();
+
+    expect(contexts[0].closes).toBe(0);
+  });
+
+  it('is not closed when a take is cancelled either', async () => {
+    const recorder = await startRecording();
+
+    recorder.cancel();
+
+    expect(contexts[0].closes).toBe(0);
+  });
+
+  it('is resumed on the way in', async () => {
+    // A context can be suspended by the autoplay policy and *interrupted* by
+    // anything the system decides matters more — a call, another app, the
+    // microphone opening, which is exactly what is about to happen.
+    resetAudioContextForTests();
+    contexts = [];
+    const suspended = new StubContext();
+    suspended.state = 'suspended';
+    vi.stubGlobal('window', { AudioContext: function () { return suspended; } });
+
+    (await startRecording()).cancel();
+
+    expect(suspended.state).toBe('running');
+  });
+
+  it('releases the microphone when there is no Web Audio at all', async () => {
+    // The stream is already open by then: `getUserMedia` comes first, so
+    // bailing out without stopping its tracks leaves the microphone live and
+    // the recording indicator on with nothing recording.
+    resetAudioContextForTests();
+    vi.stubGlobal('window', {});
+    const before = tracksStopped;
+
+    await expect(startRecording()).rejects.toThrow(/no Web Audio/i);
+
+    expect(tracksStopped).toBe(before + 1);
   });
 });

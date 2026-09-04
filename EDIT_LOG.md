@@ -6,6 +6,94 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-04 — The first report from a real iPhone, and the recorder was building its own AudioContext
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Audio, on a device. CI
+still cannot dispatch a runner.
+
+The owner sent a screenshot: Safari on an iPhone, the deployed Pages build, the
+record screen for *Let's Go* at 80 BPM, and under the tips —
+
+> **The microphone could not be started (InvalidStateError).**
+
+That sentence is `microphoneFailure`'s unrecognised branch working exactly as
+its comment says it is meant to: *"the unrecognised case names the error: ugly,
+and the only way the next report is worth more than the first."* This is the
+next report, and it is the first time this project has had one from real
+hardware.
+
+### What the report found, which is not the same as the cause
+
+`lib/audio/context.web.ts` exists for one reason and says so at the top:
+
+> *"a context per playback … is the shape of the commonest 'audio works once on
+> iPhone' bug there is: Safari on iOS caps how many audio contexts a page may
+> hold, and `close()` does not reliably give the slot back."*
+
+Both **players** were moved onto the shared context when that was written.
+**The recorder never was.** `audioRecorder.web.ts` still did
+`new AudioContextCtor()` on every take and `context.close()` on every stop —
+three closes, one per exit path. So every take spent a slot from the same
+per-page cap the players draw from, and the page runs out for all of them
+together.
+
+It is now `audioContext()` + `resumeAudio()`, and teardown disconnects its two
+nodes and leaves the mixer alone — the same shape `click.web.ts` already uses,
+whose comment says the cancellation has to be a node rather than the whole
+mixer.
+
+**I cannot prove this is what the iPhone reported.** The error arrived from
+`getUserMedia`, which runs *before* the context is built, and there is no
+device here to test on. What is provable from a checkout is that the recorder
+was doing the thing the file beside it exists to forbid, on the platform the
+report came from. That is worth fixing on its own evidence, and this entry
+should not be read as a diagnosis of the screenshot.
+
+Fixing it also closed a smaller hole on the way: the "no Web Audio" bail-out
+happens *after* `getUserMedia` has already opened the stream, so it now stops
+the tracks. Leaving them running keeps the microphone live and the recording
+indicator on with nothing recording.
+
+### `InvalidStateError` has a sentence now
+
+WebKit rejects `getUserMedia` this way when the **document** is in a state that
+cannot capture — not when anything is wrong with the microphone or the
+permission. Tapping again changes nothing about the document, so the default
+sentence invited the one move that cannot work, which is the defect
+`_FAILURE_REASONS` exists to stop on the transcription side, arriving here.
+
+It says to reload, because reloading is what resets a document, it is one tap
+in Safari's own chrome, and a take that has not started costs nothing to lose.
+It stays a `MicrophoneUnavailableError` rather than a permission error, so the
+screen does not send somebody to a setting they have already granted.
+
+### Mutated three ways
+
+| mutation | result |
+|---|---|
+| the recorder builds its own context again | **2 failed of 1557** |
+| the shared context is closed when a take ends | **1 failed** |
+| `InvalidStateError` loses its entry | **2 failed** |
+
+### Also visible in the screenshot, and not touched
+
+**"Recording tips" is clipped** — the heading renders with the tops of the
+glyphs below it cut off. It is a layout fault on a real device at a real text
+size, and it is §2, so it is reported rather than changed.
+
+### Verification
+
+Mobile **1557 passed** across 138 files (was 1548). `tsc` 0, lint 0. Walk
+**PASS, 51 checks**; a11y **PASS**. Both mutated sources restored; `.env`
+restored `diff -q` identical.
+
+**Still unverified on hardware**, and the report is the reason to say so
+plainly: nothing here has recorded a note. What changed is that the recorder no
+longer leaks a context per take and that one more error has a sentence a
+musician can act on.
+
+---
+
 ## 2026-09-04 — A take recorded with no signal now survives the app being killed
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Batch 10's core, which

@@ -123,3 +123,56 @@ describe('asking again without our preferences', () => {
     expect(shouldRetryUnconstrained(new Error('boom'))).toBe(false);
   });
 });
+
+describe('a document that cannot capture', () => {
+  /*
+   * **Reported from a real iPhone on 2026-09-04** — Safari, the deployed
+   * build, "The microphone could not be started (InvalidStateError)." That
+   * sentence is the table's unrecognised branch working as designed: its
+   * comment says naming the error is "the only way the next report is worth
+   * more than the first", and this is the next report.
+   */
+  it('is named, rather than left as a DOM error code', () => {
+    const failure = microphoneFailure(
+      new DOMException('bad state', 'InvalidStateError'),
+      false,
+    );
+
+    expect(failure.message).not.toContain('InvalidStateError');
+  });
+
+  it('asks for the one thing that can clear it', () => {
+    // WebKit rejects `getUserMedia` this way when the *document* cannot
+    // capture, not when anything is wrong with the microphone. Tapping again
+    // changes nothing about the document, so advice to try again is advice
+    // that measurably cannot work — the same defect `_FAILURE_REASONS` exists
+    // to stop on the transcription side.
+    const failure = microphoneFailure(
+      new DOMException('bad state', 'InvalidStateError'),
+      false,
+    );
+
+    expect(failure.message).toMatch(/reload|refresh/i);
+  });
+
+  it('does not blame the microphone', () => {
+    const failure = microphoneFailure(
+      new DOMException('bad state', 'InvalidStateError'),
+      false,
+    );
+
+    expect(failure.message).not.toMatch(/no microphone|is busy/i);
+  });
+
+  it('is not a permission problem, so the screen must not offer settings', () => {
+    // `MicrophonePermissionError` is what turns the screen into "open your
+    // settings". Sending somebody to a permission they have already granted
+    // is a dead end.
+    const failure = microphoneFailure(
+      new DOMException('bad state', 'InvalidStateError'),
+      false,
+    );
+
+    expect(failure).toBeInstanceOf(MicrophoneUnavailableError);
+  });
+});

@@ -36,6 +36,25 @@ const CAUSES: ReadonlyArray<readonly [readonly string[], string]> = [
       + 'voice memo, another tab — and try again.',
   ],
   [
+    // **Reported from a real iPhone on 2026-09-04**, in Safari, on the
+    // deployed build — the first time this table's "name the error" branch
+    // has been paid back, which is exactly what its comment said it was for.
+    //
+    // WebKit rejects `getUserMedia` with this when the *document* is in a
+    // state that cannot capture, rather than when anything is wrong with the
+    // microphone or the permission. Tapping again does not clear it, because
+    // nothing about the document changes between taps — which makes the
+    // default sentence ("could not be started") actively unhelpful: it invites
+    // the one move that cannot work.
+    //
+    // Reloading is what resets a document. It is one tap in Safari's own
+    // chrome and it costs a musician nothing here, because a take that has not
+    // started is not a take yet.
+    ['InvalidStateError'],
+    'The page needs reloading before it can record — this is the page\'s '
+      + 'state, not your microphone. Pull down to refresh, then try again.',
+  ],
+  [
     ['SecurityError'],
     'This page is not allowed to use the microphone. Opening it directly, '
       + 'rather than inside another app, usually fixes it.',

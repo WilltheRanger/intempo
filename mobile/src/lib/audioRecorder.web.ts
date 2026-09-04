@@ -11,6 +11,7 @@ import {
   microphoneFailure,
   shouldRetryUnconstrained,
 } from './audio/microphoneFailure';
+import { audioContext, resumeAudio } from './audio/context.web';
 import { durationOf, encodeWav } from './audio/wav';
 
 /**
@@ -104,6 +105,11 @@ class PcmRecorder extends AudioWorkletProcessor {
 registerProcessor('pcm-recorder', PcmRecorder);
 `;
 
+/** Release a stream. Needed before `stopTracks` is in scope. */
+function stopTracksOf(media: MediaStream): void {
+  media.getTracks().forEach((track) => track.stop());
+}
+
 export async function startRecording(): Promise<Recorder> {
   if (!navigator.mediaDevices?.getUserMedia) {
     throw new MicrophoneUnavailableError(
@@ -111,13 +117,6 @@ export async function startRecording(): Promise<Recorder> {
     );
   }
 
-  const AudioContextCtor =
-    window.AudioContext ??
-    (window as unknown as { webkitAudioContext?: typeof AudioContext })
-      .webkitAudioContext;
-  if (!AudioContextCtor) {
-    throw new MicrophoneUnavailableError('This browser has no Web Audio.');
-  }
 
   // Raw and unprocessed, because the analysis measures attacks as played and
   // every one of these processors moves them. A **preference**, not a
@@ -151,7 +150,26 @@ export async function startRecording(): Promise<Recorder> {
     }
   }
 
-  const context = new AudioContextCtor();
+  // **The page's one context, not a new one per take.**
+  //
+  // `lib/audio/context.web.ts` exists because a context per use is the
+  // commonest "audio works once on iPhone" bug there is: Safari on iOS caps
+  // how many a page may hold and `close()` does not reliably give the slot
+  // back. Both *players* were moved onto the shared one; the recorder was
+  // missed, so every take spent a slot that the players are also drawing from
+  // — and the page runs out for all of them together.
+  //
+  // Resumed here because a context can be suspended by the autoplay policy and
+  // *interrupted* by anything the operating system decides matters more — a
+  // call, another app, the microphone opening, which is precisely what is
+  // about to happen.
+  const context = audioContext();
+  if (!context) {
+    stopTracksOf(media);
+    throw new MicrophoneUnavailableError('This browser has no Web Audio.');
+  }
+  resumeAudio(context);
+
   const chunks: Int16Array[] = [];
   const level = createPeakMeter();
   let truncated = false;
@@ -162,7 +180,6 @@ export async function startRecording(): Promise<Recorder> {
 
   if (!context.audioWorklet) {
     stopTracks();
-    void context.close();
     throw new MicrophoneUnavailableError(
       'This browser has no AudioWorklet, which is needed to record losslessly.',
     );
@@ -175,7 +192,6 @@ export async function startRecording(): Promise<Recorder> {
     await context.audioWorklet.addModule(moduleUrl);
   } catch {
     stopTracks();
-    void context.close();
     throw new MicrophoneUnavailableError(
       'The recording worklet could not be loaded.',
     );
@@ -236,7 +252,11 @@ export async function startRecording(): Promise<Recorder> {
     node.port.onmessage = null;
     node.disconnect();
     stopTracks();
-    await context.close();
+    // **The context is not closed.** It is the page's, shared with both
+    // players, and outlives every take — see `lib/audio/context.web.ts`.
+    // Disconnecting the two nodes above is what ends this recording; closing
+    // the mixer would end the next Listen too, and on iOS would not give the
+    // slot back anyway.
   }
 
   function flush(): Promise<void> {
