@@ -6,6 +6,38 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-04 — Nothing shipped: a corpus baseline measured, and a test reverted
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. No code changed. Recorded
+here so the gap between the entries either side is not a mystery; the substance
+is in `TUNING_LOG.md`, 2026-09-04, "Baseline: what the pipeline says about all
+six corpus clips today".
+
+The six clips in `fixtures/audio/` are what the whole Batch 3 tuning story
+rests on, and **nothing ran them through `analyze()`**. `test_cli.py` prints
+one line from one clip; `test_audio.py` borrows another as a block of real
+audio to filter; `test_analysis.py` asks the interesting questions but
+synthesises its own click tracks in-test.
+
+Measured, all six analyse cleanly and each matches its manifest's `expect`
+field in words — including `04_slurred` at quality 0.990, against the 0.196 and
+`alignment_failed` that `build_timeline`'s comment records from when an onset
+was expected under every bow stroke.
+
+I wrote `test_tuning_corpus.py` to hold that, then mutated the pipeline five
+ways to see what it was holding. **Zero unique catches** — every mutation was
+caught more loudly by the existing suite, and the three aimed at detector
+settings (`wait_ms`, `delta`, `pre_emphasis_coef`) failed the synthetic tests
+and passed the corpus, which is the reverse of what I predicted. Its docstring
+also claimed the slur fix was held by nothing; seven tests hold it. Reverted,
+along with the `direction` field it had added to `manifest.json`.
+
+Third test dropped today on the same reasoning, and the reasoning is worth
+keeping consistent: a test that adds no discrimination makes the next person
+believe something is guarded when the guarding lives somewhere else.
+
+---
+
 ## 2026-09-04 — Four more server faults were being blamed on the musician's photograph
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Picture → transcription.
