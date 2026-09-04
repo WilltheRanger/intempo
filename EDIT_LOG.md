@@ -6,6 +6,76 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-04 — One list of instruments, declared four times, one pair held
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. CI still cannot allocate a
+runner.
+
+Three columns are constrained to a fixed set of strings in SQL. **`instrument`
+is declared four times:**
+
+    mobile/src/data/types.ts     Instrument = 'violin' | 'viola' | …
+    app/models/analysis.py       class Instrument(str, Enum)   ← CreateAnalysisRequest,
+                                                                 analysis_runner
+    app/models/user.py           class Instrument(str, Enum)   ← UpdateMeRequest,
+                                                                 MeResponse
+    migrations 008 and 009       CHECK (instrument IN (…))     ← twice
+
+`test_client_enums.py` held exactly one pair — the app against
+`models/analysis`. **Two enums with the same name in two modules, and nothing
+compared them.** The rest agreed by luck.
+
+### What the drift does, which is the reason this is worth a file
+
+Add a value to `models/user.Instrument` alone: `PATCH /v1/me` accepts it,
+onboarding stores it, and **every take that musician then submits is refused**
+by `CreateAnalysisRequest` — a 422 on a value the app itself wrote to their
+profile. Add it to both enums but not the CHECK and the API accepts what the
+database rejects: a 500 on saving a profile.
+
+`transcription_status` and `user_verdict` are the same shape with one
+vocabulary each. A status the worker writes and the column refuses leaves a
+scan stuck `reading` for ever; a verdict the app offers and the column refuses
+loses the correction the corrections router calls the only route out of Batch
+3's untuned thresholds.
+
+All four agree today. This is a fence.
+
+### Discovered, not listed
+
+The constrained columns are found by scanning the migration files, so the
+mapping cannot be the thing that goes stale: a new `CHECK (… IN …)` fails until
+somebody says which Python vocabulary it answers to, and a row naming a column
+whose CHECK was dropped fails too — the direction `NOT_WIRED` is checked in.
+
+Read from the files rather than a live database on purpose: this has to fail in
+CI, where there is no database, and the files are what a deployment is applied
+from.
+
+`_values` reads an `Enum` or a `Literal`, because both forms are in use and
+neither is wrong — an Enum where the value is passed around as an object
+(`Instrument.double_bass.value` decides the onset settings), a Literal where it
+is only ever a string on the wire.
+
+### Mutation-tested
+
+| mutation | caught by |
+|---|---|
+| `guitar` added to `models/user.Instrument` alone | the `instrument` case **and** "the two instrument enums are the same list" |
+| `guitar` added to the 009 CHECK alone | the `instrument` case **and** "constrained twice … the same way" |
+| `reading` dropped from the 006 CHECK | the `transcription_status` case |
+| a new constrained column with no vocabulary | "every constrained column has a vocabulary" |
+
+The failure message names the vocabulary by **module and qualified name**,
+because `instrument` has an `Instrument` in two modules and a message saying
+only "Instrument" names neither of them.
+
+### Verification
+
+Backend suite green; the new file is 7 cases. Mobile untouched.
+
+---
+
 ## 2026-09-04 — The legibility contract rested on a function nothing had measured
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Picture path. CI still
