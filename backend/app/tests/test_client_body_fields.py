@@ -1,4 +1,4 @@
-"""The field names the app sends, against the ones each endpoint declares.
+"""The field names in a body, both directions, between the two trees.
 
 `test_client_reachability.py` holds the **paths**; `test_client_enums.py` holds
 the **vocabularies**. This is the third of the same family and the one that was
@@ -12,13 +12,23 @@ feature, it stops every take being submitted. The reverse fails just as hard: a
 new **required** field on the server rejects every request an installed build
 makes. Neither is visible in either tree alone.
 
-The seam is the app's own typed request interfaces in `data/api/` — the same
-shape of contract the enum tests read, and one that stays greppable when a
-variable is renamed.
+The seam is the app's own typed interfaces — the same shape of contract the
+enum tests read, and one that stays greppable when a variable is renamed.
 
-Measured when this went in: all eight pairs agree, every required server field
-is declared non-optionally in the app, and no app field is unknown to its
-model. This file is here so that stays true rather than because it was not.
+**The response direction fails the other way, and worse: silently.** A server
+field the app reads under a name the server no longer sends comes back
+`undefined`, and the adapters have fallbacks. `api.ts` maps
+`score.transcription_status ?? 'done'`, so renaming that one field makes every
+piece in the library read as finished the moment it is created — no progress
+bar, a failed scan shown as done with no notes, and nothing raising.
+
+Measured: renaming `ScoreResponse.transcription_status` to
+`transcription_state` passes **1992 backend tests and 1478 mobile tests**.
+Nothing in either tree could see it. That is the case this half exists for.
+
+Measured on the request side, all eight pairs agree, every required server
+field is declared non-optionally in the app, and no app field is unknown to
+its model. That half is a fence rather than a repair.
 """
 
 from __future__ import annotations
@@ -28,15 +38,17 @@ from pathlib import Path
 
 import pytest
 
-from app.models.user import UpdateMeRequest
-from app.routers.analyses import CreateAnalysisRequest
+from app.models.user import MeResponse, UpdateMeRequest, UsageResponse
+from app.routers.analyses import AnalysisResponse, CreateAnalysisRequest
 from app.routers.corrections import Correction
 from app.routers.scores import (
     AttachScorePagesRequest,
     CreateScoreRequest,
     ImportScoreRequest,
+    ScoreResponse,
     UpdateScoreRequest,
 )
+from app.routers.upload import UploadResponse
 
 REPO = Path(__file__).resolve().parents[3]
 MOBILE_SRC = REPO / "mobile" / "src"
@@ -227,3 +239,68 @@ def test_no_excuse_outlives_its_reason() -> None:
 
     assert not gone, f"nothing forbids extras under these names any more: {gone}"
     assert not both, f"these are excused and also paired: {both}"
+
+#: (TypeScript interface in `data/types.ts`, the model that fills it).
+#:
+#: Every one of these is a *response*, so the direction that matters is the
+#: reverse of the request pairs above: a field the **app** declares and the
+#: server does not send arrives as `undefined`. The other way round — a server
+#: field the app ignores — is ordinary and there are four of them today
+#: (`page_count`, `page_image_retained_at`, `from_measure`, `skip_long_rests`).
+RESPONSE_PAIRS: tuple[tuple[str, type], ...] = (
+    ("MeResponse", MeResponse),
+    ("UsageResponse", UsageResponse),
+    ("ScoreResponse", ScoreResponse),
+    ("AnalysisResponse", AnalysisResponse),
+    ("UploadResponse", UploadResponse),
+)
+
+
+@pytest.mark.parametrize(
+    "interface,model", RESPONSE_PAIRS, ids=[name for name, _ in RESPONSE_PAIRS]
+)
+def test_the_app_reads_no_field_the_endpoint_never_sends(
+    interface: str, model: type
+) -> None:
+    """The silent half.
+
+    A request the server refuses answers 422 and something breaks visibly. A
+    response field that stopped being sent answers `undefined`, and the
+    adapters have fallbacks — `transcription_status ?? 'done'` is one — so the
+    app carries on and is confidently wrong about every piece in the library.
+
+    Measured before this existed: renaming that one field passed the entire
+    backend suite and the entire mobile suite.
+    """
+    declared = _interface_fields("data/types.ts", interface)
+
+    ghosts = sorted(field for field in declared if field not in model.model_fields)
+
+    assert not ghosts, (
+        f"{interface} reads {ghosts}, which {model.__name__} does not send. "
+        "The app sees undefined and its fallback answers for it."
+    )
+
+
+def test_the_create_analysis_reply_is_read_under_the_names_it_is_sent_under() -> None:
+    """The one reply the app types inline rather than in `data/types.ts`.
+
+    `createAnalysis` declares its own `{ analysis_id, status }`, so the pairs
+    above cannot see it — and it is the reply that carries the id every poll
+    of a take is made against. Read as text for the same reason
+    `describeError.test.ts` reads sentences out of `client.ts`.
+    """
+    from app.routers.analyses import CreateAnalysisResponse
+
+    source = (MOBILE_SRC / "data" / "api" / "analyses.ts").read_text()
+    inline = re.search(
+        r"createAnalysis\([^)]*\):\s*Promise<\{(?P<body>[^}]*)\}>", source, re.S
+    )
+    assert inline, "createAnalysis no longer declares its reply inline"
+
+    read = {m.group(1) for m in re.finditer(r"(\w+)\s*:", inline.group("body"))}
+
+    assert read <= set(CreateAnalysisResponse.model_fields), (
+        f"the app reads {sorted(read)}; the endpoint sends "
+        f"{sorted(CreateAnalysisResponse.model_fields)}"
+    )

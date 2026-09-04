@@ -6,6 +6,66 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-04 — Renaming one response field made every scan look finished, and 3,470 tests passed
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. CI still cannot allocate a
+runner.
+
+The entry below holds the field names the app **sends**. That direction fails
+loudly: `extra="forbid"` answers 422 and something visibly breaks. This is the
+other direction, and it fails **silently**.
+
+### Measured, before writing anything
+
+Renamed `ScoreResponse.transcription_status` to `transcription_state` — one
+field on one response model — and ran everything:
+
+    backend   1992 passed, 2 xfailed
+    mobile    1478 passed
+    ----------------------------------
+    nothing.
+
+What that rename does to a musician: `api.ts` maps
+`score.transcription_status ?? 'done'`, so **every piece in the library reads
+as finished the moment it is created**. No progress bar on a scan that is still
+being read. A scan that failed shown as done, with no notes and no reason. The
+fallback that exists to be kind to an older backend answers for a field that is
+simply gone.
+
+Two mutations of mine did not run before this one did. The first replaced a
+string that no longer existed; the second indexed for a `class` after the last
+class in the file. **Both reported "nothing failed", which is exactly what a
+successful mutation of an unguarded field reports** — and the third attempt,
+applied by line number and verified by printing the changed lines, is the one
+above.
+
+### The half that closes it
+
+`test_client_body_fields.py` (renamed from `…request_fields`, since it now
+holds both). Five response pairs — `MeResponse`, `UsageResponse`,
+`ScoreResponse`, `AnalysisResponse`, `UploadResponse` — asserted in the
+direction that matters: **a field the app declares and the server does not send
+is a failure**. The reverse is ordinary and there are four of them today
+(`page_count`, `page_image_retained_at`, `from_measure`, `skip_long_rests`).
+
+Plus the one reply the app types inline rather than in `data/types.ts`:
+`createAnalysis` declares its own `{ analysis_id, status }`, and that is the
+reply carrying the id every poll of a take is made against.
+
+### Mutation-tested
+
+| mutation | caught by |
+|---|---|
+| `ScoreResponse.transcription_status` → `transcription_state` | `[ScoreResponse]` — the case measured above as invisible |
+| the app reads an `AnalysisResponse.room_tone_db` nobody sends | `[AnalysisResponse]` |
+| the inline reply reads `state` for `status` | its own case |
+
+### Verification
+
+Backend suite green; the file is 25 cases now, up from 19. Mobile untouched.
+
+---
+
 ## 2026-09-04 — The third contract of that family: the field names in a request body
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Audio, the submission end.
