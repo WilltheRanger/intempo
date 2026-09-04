@@ -1046,7 +1046,13 @@ def attach_score_pages(
     # Keep the manual setup visible while the worker reads. The transcription
     # replaces these fields when it finishes, but dropping the entered tempo in
     # the queued response makes Today jump to a generic default in the meantime.
-    for field in ("clef", "time_signature", "bpm_hint"):
+    #
+    # `_MANUAL_FIELDS` rather than the same three names typed again: it is the
+    # one place that says which fields a person supplies and OCR overwrites,
+    # and a fourth added there and not here would vanish from the musician's
+    # screen for exactly as long as the reading takes — the failure this loop
+    # exists to prevent, reintroduced one field at a time.
+    for field in _MANUAL_FIELDS:
         pending_score[field] = previous_score.get(field)
 
     update = {

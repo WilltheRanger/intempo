@@ -680,6 +680,36 @@ const FIXTURE_PIECES: FixturePiece[] = [
   },
   {
     /**
+     * **A page accepted and not yet started**, which is every second page of
+     * every multi-page scan: the server reads a bounded number at once, so a
+     * three-page part spends most of its wait here.
+     *
+     * The fourth `transcription_status` and the only one no fixture had. It is
+     * not a cosmetic variant of `reading`: the panel prints a different
+     * sentence for it — *"Waiting for another page to finish"*, chosen because
+     * "Getting ready" described the app rather than what is happening — and
+     * `QUEUED_PROGRESS` puts the bar at 5% rather than in the reading band.
+     * A sentence and a bar position nobody had seen together.
+     *
+     * `transcriptionStage` is **null**, which is what makes it queued: the
+     * worker has said nothing yet. Giving it a stage would render as `reading`
+     * with a different status word and check nothing.
+     */
+    id: 'fixture-reading-queued',
+    title: 'Six Suites for Solo Cello, BWV 1010',
+    composer: 'J. S. Bach',
+    movement: 'Sarabande',
+    practicedDaysAgo: null,
+    thumbnail: require('../../../assets/fixtures/01_simple_printed.jpg'),
+    markedBpm: null,
+    score: null,
+    reading: {
+      transcriptionStatus: 'queued',
+      transcriptionStage: null,
+    },
+  },
+  {
+    /**
      * **A page the reader could not make sense of.**
      *
      * The reason is one `_FAILURE_REASONS` actually produces, and it is the
@@ -740,12 +770,46 @@ function toPiece({
  */
 const CREATED_PIECES: FixturePiece[] = [];
 
+/**
+ * Whether the sample data describes an account with **nothing in it**.
+ *
+ * **The state every single musician meets first, and the one no build has.**
+ * Today, Library and Insights have only ever been seen populated — a library,
+ * a take, thirty days of trend — because that is what these fixtures hold.
+ * CLAUDE.md names it as the sixth time a state with nothing to render it cost
+ * this project a real bug: on 2026-09-02 Today was found telling a new
+ * musician *"Nothing to practice yet"* directly above a fully built daily
+ * warmup it was hiding from them.
+ *
+ * Its own answer was *"five one-line edits to `fixtures.ts` … then `git
+ * checkout --` the file"*, which is a ritual with a revert in it, and a revert
+ * somebody has to remember is how `.env` gets committed. This is the same five
+ * edits with the remembering taken out.
+ *
+ * **Build-time and text-substituted.** `process.env.EXPO_PUBLIC_…` is written
+ * out in full because Expo replaces the literal expression; a destructured or
+ * computed lookup reads an empty object in the bundle, which is the trap
+ * `environment.ts` documents. Unset, this constant folds to `false` and every
+ * branch below it is dead code.
+ *
+ * It can do nothing to a live build: `sources/index.ts` reaches this module
+ * only when no backend was configured. The worst it can do is make a *sample*
+ * build look empty, which is what it is for.
+ */
+const EMPTY_ACCOUNT: boolean = process.env.EXPO_PUBLIC_FIXTURES === 'empty';
+
 export const fixturePieceSource: PieceSource = {
   async listPieces() {
+    if (EMPTY_ACCOUNT) {
+      return [];
+    }
     return [...CREATED_PIECES, ...FIXTURE_PIECES].map(toPiece);
   },
 
   async getCurrentPiece() {
+    if (EMPTY_ACCOUNT) {
+      return null;
+    }
     // The seeded piece, even when something was just added. This mirrors
     // `apiPieceSource`, where the piece to continue comes from the newest
     // *analysis* and only falls back to the newest score when there are no
@@ -952,6 +1016,9 @@ function toPieceInsight(entry: (typeof FIXTURE_SESSIONS)[number]): PieceInsight 
 
 export const fixtureInsightsSource: InsightsSource = {
   async getInsights() {
+    if (EMPTY_ACCOUNT) {
+      return null;
+    }
     // Furthest from the beat first, the same ordering the API adapter uses —
     // and not by bias, which buried the piece that wanders at the bottom of a
     // list whose first row is what Today reads.
@@ -1060,8 +1127,56 @@ const FIXTURE_MEASURES: {
 
 const FIXTURE_TAKE_ID = 'fixture-take-1';
 
+/**
+ * The three ways a take can end without a verdict, reachable by id alone.
+ *
+ * **`VerdictScreen` has four states and one of them had a fixture.** It
+ * branches on `failure` — twice, because recoverable and unrecoverable are
+ * different sentences and different buttons — then on a `status` that is not
+ * `ok`, and only then draws the verdict. Three of those four had never been on
+ * a screen, on what CLAUDE.md calls the payoff of the whole app.
+ *
+ * **Reachable by id and by nothing else**, which is the point rather than an
+ * oversight. `buildFixtureTake`'s own comment gives the reason and it still
+ * holds: a failed run is a live outcome, and putting one in front of somebody
+ * browsing the sample build would describe a recording they never made. So
+ * `getLatestTake` and `getRecentTakes` — what Today and Insights read — go on
+ * returning the successful take alone, and these exist for a sweep to open.
+ *
+ * The sentences are the pipeline's own, read off `analyze()` rather than
+ * written here: silence really answers with the first, and a take that cannot
+ * be matched to its score with the second. A fixture that invented its wording
+ * would check the screen against a sentence the product never sends.
+ */
+const FIXTURE_TAKE_STATES: Record<string, Partial<TakeResult>> = {
+  'fixture-take-failed': {
+    failure: { recoverable: true, reason: 'internal_error' },
+  },
+  'fixture-take-unrecoverable': {
+    failure: { recoverable: false, reason: 'audio_unavailable' },
+  },
+  'fixture-take-silent': {
+    status: 'no_onsets',
+    headline:
+      'Your recording is completely silent — no sound reached the microphone ' +
+      'at all. Check which input your device is recording from, and that ' +
+      'nothing is muting it, then record again.',
+  },
+  'fixture-take-unmatched': {
+    status: 'alignment_failed',
+    headline:
+      "We had trouble matching your recording to the score — check you're on " +
+      'the right piece and re-record.',
+  },
+};
+
 export const fixtureTakeSource: TakeSource = {
   async getTake(analysisId) {
+    const state = FIXTURE_TAKE_STATES[analysisId];
+    if (state) {
+      const take = buildFixtureTake();
+      return take ? { ...take, id: analysisId, ...state } : null;
+    }
     if (analysisId !== FIXTURE_TAKE_ID) {
       return null;
     }
@@ -1070,10 +1185,13 @@ export const fixtureTakeSource: TakeSource = {
 
   // One take in the fixture set, so the latest is that one.
   async getLatestTake() {
-    return buildFixtureTake();
+    return EMPTY_ACCOUNT ? null : buildFixtureTake();
   },
 
   async getRecentTakes(limit = 3) {
+    if (EMPTY_ACCOUNT) {
+      return [];
+    }
     const take = buildFixtureTake();
     return limit > 0 && take ? [take] : [];
   },

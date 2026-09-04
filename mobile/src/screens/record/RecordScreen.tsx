@@ -26,13 +26,8 @@ import {
 } from '../../data/practice/submitTake';
 import { forgetPendingAnalysis } from '../../data/practice/pendingAnalysis';
 import type { MetronomeMode } from '../../data/types';
-import {
-  EmptyRecordingError,
-  MicrophonePermissionError,
-  MicrophoneUnavailableError,
-  type Recorder,
-} from '../../lib/audio/types';
-import { microphonePermissionRecovery } from '../../lib/audio/permission';
+import { MicrophonePermissionError, type Recorder } from '../../lib/audio/types';
+import { readTakeFailure } from '../../lib/audio/takeFailure';
 import { startRecording } from '../../lib/audioRecorder';
 import {
   colors,
@@ -51,6 +46,7 @@ import {
   tempoUnitLabel,
 } from '../../lib/tempo';
 import { metronomePulse, monotonicNow, useMetronome } from '../../lib/metronome';
+import { countInIsOver } from '../../lib/metronome/countIn';
 import { buildMetronomePlan } from '../../lib/metronome/plan';
 import {
   longRestCues,
@@ -63,7 +59,6 @@ import {
   describeLastFreeAnalysis,
   describeReachedAnalysisLimit,
 } from '../../lib/analysisAllowance';
-import { describeTierLimit } from '../../lib/tierLimit';
 import type { RootNavigation, RootStackParamList } from '../../navigation/types';
 import { BeatIndicator } from './BeatIndicator';
 import { PracticeSetup } from './PracticeSetup';
@@ -347,7 +342,7 @@ export function RecordScreen() {
       recorder.current = await startRecording();
     } catch (error) {
       setMicrophoneBlocked(error instanceof MicrophonePermissionError);
-      setProblem(messageFor(error));
+      setProblem(readTakeFailure(error, Platform.OS).message);
       return;
     } finally {
       starting.current = false;
@@ -400,7 +395,7 @@ export function RecordScreen() {
     try {
       recording = await active.stop();
     } catch (error) {
-      setProblem(messageFor(error));
+      setProblem(readTakeFailure(error, Platform.OS).message);
       setElapsedMs(0);
       goPhase('ready');
       return;
@@ -461,7 +456,9 @@ export function RecordScreen() {
       // The quota is the one failure a retry cannot clear — the count does not
       // move until next month, so offering "Send again" would be offering the
       // same refusal. Everything else is worth one tap.
-      const retriable = describeTierLimit(error) === null;
+      // One read, so the sentence and the offer of another go cannot
+      // disagree — see `lib/audio/takeFailure.ts`.
+      const failure = readTakeFailure(error, Platform.OS);
       // A failed step reports the last server-issued key/id it reached. Hold
       // that beside the WAV so retry resumes there rather than paying for the
       // completed upload or creating a second analysis.
@@ -469,11 +466,11 @@ export function RecordScreen() {
         error instanceof TakeSubmissionError
           ? { ...recording, resume: error.resume }
           : recording;
-      unsent.current = retriable ? resumable : null;
-      setPendingTake(retriable);
+      unsent.current = failure.retriable ? resumable : null;
+      setPendingTake(failure.retriable);
       // Back to the top of the screen with the tempo still set, so the reply
       // to a failed take is one tap rather than a re-setup.
-      setProblem(messageFor(error));
+      setProblem(failure.message);
       setElapsedMs(0);
       goPhase('ready');
     }
@@ -608,7 +605,7 @@ export function RecordScreen() {
   const beatIndex = metronome.beat?.index ?? null;
 
   useEffect(() => {
-    if (!countingIn || beatIndex === null || beatIndex < countInBeats) {
+    if (!countInIsOver({ countingIn, beatIndex, countInBeats })) {
       return;
     }
     // Beat N is the downbeat after N count-in beats. Keeping the metronome
@@ -1087,32 +1084,6 @@ function RestCountdown({ state }: { state: RestCueState }) {
       </Text>
     </Card>
   );
-}
-
-/**
- * What went wrong, in a sentence a musician can act on.
- *
- * Never the underlying error: "NotAllowedError" and "Failed to fetch" tell
- * someone holding a violin nothing they can do anything about. Each of these
- * names the next move instead.
- */
-function messageFor(error: unknown): string {
-  if (error instanceof MicrophonePermissionError) {
-    return microphonePermissionRecovery(Platform.OS).message;
-  }
-  if (error instanceof MicrophoneUnavailableError) {
-    return error.message;
-  }
-  if (error instanceof EmptyRecordingError) {
-    return 'That take came back silent. Check the microphone isn\u2019t muted or covered, then try again.';
-  }
-  // Before the generic message, because this one is neither a connection
-  // problem nor something trying again will fix.
-  const quota = describeTierLimit(error);
-  if (quota) {
-    return quota;
-  }
-  return 'That take couldn\u2019t be sent. It is still here \u2014 check your connection and send it again.';
 }
 
 /** `03:07`. Minutes and seconds only — a take is not an hour long. */

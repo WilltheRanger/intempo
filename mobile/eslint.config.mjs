@@ -18,7 +18,22 @@ import { defineConfig, globalIgnores } from 'eslint/config';
  * reformats it would be a large risky change dressed as hygiene.
  */
 export default defineConfig([
-  globalIgnores(['dist', '.expo', 'node_modules', 'patches']),
+  /**
+   * **`dist-*` as well as `dist`, and the argument for it was already written
+   * down next door.** `tsconfig.json` excludes `dist-*` with a comment saying
+   * why: the test harness builds a second bundle into `dist-live/`, and tsc
+   * "happily walked into 3.4 MB of minified output and blew its stack on it".
+   * That reasoning is about anything the bundler emits, and it was applied to
+   * one of the two tools.
+   *
+   * Measured: with a second bundle present, `npm run lint` reports **11,110
+   * errors** — `__d is not defined`, `DOMException is not defined`, an
+   * unexpected console statement at column 42794 — all of it in minified
+   * output. A lint that fails for everyone who has run the harness is a lint
+   * people stop running, which is how this tree had six `eslint-disable`
+   * directives for a linter that was not installed.
+   */
+  globalIgnores(['dist', 'dist-*', '.expo', 'node_modules', 'patches']),
   {
     files: ['**/*.{ts,tsx,mjs,js}'],
     extends: [js.configs.recommended, tseslint.configs.recommended],

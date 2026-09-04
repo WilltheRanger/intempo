@@ -1,0 +1,261 @@
+"""The file the app writes, read by the pipeline that consumes it.
+
+**Two trees, one contract, and nothing had ever put them together.**
+`mobile/src/lib/audio/wav.ts` builds the RIFF header a byte at a time;
+`app/services/audio.py` hands whatever arrives to librosa. `wav.test.ts` checks
+that header — by reading back the fields it just wrote, which is
+self-consistent and proves nothing about whether a decoder accepts it. And
+every audio fixture in this repository was generated **by Python**, with
+`soundfile`, so the six that exercise the analysis have never exercised the
+encoder.
+
+The failure that hides in that gap is the worst kind: not a crash. A wrong
+`sampleRate` in the header, a byte order slip, a block-align that disagrees
+with the channel count — librosa reads it, gets a different duration than the
+musician played, and every onset is compared against a clock that is wrong by a
+constant. The verdict comes back confident and incorrect, and nothing anywhere
+raises.
+
+`fixtures/audio/app_encoder_click_track.wav` closes it. It was produced by
+calling `encodeWavBytes` — the real one, the app's own — on a signal whose
+onsets are known by construction:
+
+    22050 Hz, mono, 16-bit
+    0.3 s of silence, then 8 bursts 0.5 s apart (120 BPM)
+    each burst 0.08 s of 660 Hz decaying at exp(-45t), peak amplitude 0.7
+
+**And there is a second copy at 48 kHz, because 22050 is not a rate this app
+ever records at.** `audioRecorder.ts` asks for 48000 and writes back whatever
+the device gives; `audioRecorder.web.ts` writes `context.sampleRate`, which is
+48000 on most desktop browsers. The pipeline works at 22050 — `load_audio`
+passes `sr=cfg.onset.sr` and librosa resamples — so **every real take goes
+through a resample that the original fixture skipped entirely**, source rate
+and target rate being the same number. A contract whose only file avoids the
+one step every take takes is a contract with a hole in the middle of it.
+
+`app_encoder_click_track_48k.wav` is the same signal, same generator, at 48000.
+Measured: it decodes to the same 94815 samples and the same eight onset times
+as the 22050 file, **to four decimal places** — the resampler moves nothing.
+That is the result worth having written down, and it could not be assumed:
+librosa's default `soxr_hq` is a filter, and a filter with a different group
+delay at each rate would shift every onset by a constant and be invisible to
+every other test here.
+
+The leading silence is deliberate and is itself a finding: generated without
+it, **the note at t=0 is not detected at all** — onset strength is a rise, and
+a burst starting at sample zero has nothing to rise from. Real takes never hit
+that, because the recorder opens before the count-in and its leading silence is
+intentional (`RecordScreen`). A fixture without it would have been testing a
+case the app cannot produce.
+
+`wav.test.ts` holds the other end: it pins the SHA-256 of these exact bytes, so
+a change to the encoder fails there and says to regenerate. One artefact, both
+sides — the shape `fixtures/timeline/parity.json` uses.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+
+from app.services.analysis import analyze
+from app.services.audio import detect_onsets, load_audio
+from app.services.score_schema import ScoreJson
+
+_AUDIO = Path(__file__).resolve().parents[3] / "fixtures" / "audio"
+
+#: The rate the pipeline works at, and the rate an app actually records at.
+#: Both files hold the same signal, written by the same encoder.
+FIXTURES = {
+    22050: _AUDIO / "app_encoder_click_track.wav",
+    48000: _AUDIO / "app_encoder_click_track_48k.wav",
+}
+
+#: What the generator encoded, in seconds.
+LEAD_IN = 0.3
+SPACING = 0.5
+NOTES = 8
+EXPECTED_ONSETS = [LEAD_IN + n * SPACING for n in range(NOTES)]
+
+#: One analysis frame: `hop_length` 512 at 22050 Hz, 23.2 ms.
+HOP_SECONDS = 512 / 22050
+
+#: How late a detected onset may be. **Two frames, and the second one is
+#: measured rather than assumed.**
+#:
+#: I wrote one frame first, reasoning that a detection lands on a frame
+#: boundary. It fails: the eight notes here come back at +25, +13, +24, +11,
+#: +22, +10, +21 and **+31 ms**, and 31 ms is 1.34 frames. `onset_strength`
+#: runs over a windowed mel spectrogram and peak-picking then takes a local
+#: maximum, so the peak can sit a frame past the boundary the attack fell on.
+#:
+#: The direction is the part worth asserting and it is one-sided: every one of
+#: the eight is **late**, none early. An onset detected *before* the attack
+#: that caused it would mean the file decoded at the wrong rate, which is the
+#: failure this whole module is here for.
+LATE_BY_AT_MOST = 2 * HOP_SECONDS
+
+
+@pytest.mark.parametrize("written_at", sorted(FIXTURES), ids=lambda r: f"{r}Hz")
+def test_the_fixture_is_there(written_at: int) -> None:
+    """A missing fixture must fail loudly rather than skip the contract."""
+    path = FIXTURES[written_at]
+    assert path.exists(), (
+        f"{path} is missing. It is generated by the app's own "
+        "`encodeWavBytes` — see this module's docstring for the signal, and "
+        "`wav.test.ts` for the hash that pins it."
+    )
+
+
+@pytest.mark.parametrize("written_at", sorted(FIXTURES), ids=lambda r: f"{r}Hz")
+def test_librosa_reads_what_the_app_writes(written_at: int) -> None:
+    y, sr = load_audio(FIXTURES[written_at])
+
+    # The rate the header states, honoured — and for the 48 kHz file, honoured
+    # by resampling down to the one the pipeline works at. A file that decoded
+    # at 44100 while claiming 22050 would be analysed at twice the speed.
+    assert sr == 22050
+    # Duration to the sample, *after* any resample. The encoder computes
+    # `dataBytes` from the chunk lengths and the header repeats it in three
+    # places; any of them wrong and this is off.
+    assert len(y) == pytest.approx((LEAD_IN + SPACING * NOTES) * sr, abs=1)
+    # Amplitude survived the float -> int16 -> float round trip. A byte-order
+    # slip would land here as noise rather than a clean 0.7.
+    assert abs(y).max() == pytest.approx(0.7, abs=0.02)
+
+
+@pytest.mark.parametrize("written_at", sorted(FIXTURES), ids=lambda r: f"{r}Hz")
+def test_the_pipeline_hears_every_note_the_app_encoded(written_at: int) -> None:
+    """The end-to-end claim: encoded here, decoded and counted there.
+
+    Not a header check. This is `detect_onsets` — the function a real take goes
+    through — finding the attacks that were written into the file by the app's
+    encoder, at the times they were written.
+    """
+    y, sr = load_audio(FIXTURES[written_at])
+
+    onsets = [float(t) for t in detect_onsets(y, sr)]
+
+    assert len(onsets) == NOTES, (
+        f"expected {NOTES} onsets, got {len(onsets)}: {[round(t, 3) for t in onsets]}"
+    )
+    for got, want in zip(onsets, EXPECTED_ONSETS, strict=True):
+        assert want <= got <= want + LATE_BY_AT_MOST, (
+            f"onset at {got:.3f}s for a note encoded at {want:.3f}s"
+        )
+
+
+def test_the_rate_the_phone_recorded_at_does_not_move_a_single_onset() -> None:
+    """The claim a musician would feel if it were false.
+
+    Both recorders write the device's real rate into the header, so two
+    musicians playing identically on two phones send files at different rates,
+    and the verdict must not know which. Everything downstream measures against
+    a clock in seconds — `alignment.build_timeline`, the tolerance bands,
+    `classify_band` — so a resampler with a rate-dependent group delay would
+    shift one of them against the beat and call it rushing.
+
+    Measured on these two: identical to four decimal places. The bound here is
+    a **tenth** of the tolerance the tests above allow, because "the same
+    within two frames" is satisfied by two answers that differ by two frames,
+    which is the thing being ruled out.
+    """
+    onsets = {
+        rate: [float(t) for t in detect_onsets(*load_audio(path))]
+        for rate, path in FIXTURES.items()
+    }
+
+    at_22050, at_48000 = onsets[22050], onsets[48000]
+    assert len(at_48000) == len(at_22050)
+    for a, b in zip(at_22050, at_48000, strict=True):
+        assert a == pytest.approx(b, abs=HOP_SECONDS / 5), (
+            f"{a:.4f}s at 22050 Hz against {b:.4f}s at 48000 Hz"
+        )
+
+
+#: Eight quarter notes at 120 BPM: two bars of 4/4, which is exactly the signal
+#: in both fixtures. Written here rather than loaded, because the point is that
+#: the page and the recording were built from the *same* description of the
+#: music — the click track is 8 bursts 0.5 s apart and this is 8 quarters at
+#: 120, and neither was derived from the other.
+PERFECT_TAKE_SCORE = {
+    "clef": "treble",
+    "time_signature": "4/4",
+    "key_signature": None,
+    "tempo_bpm": 120,
+    "ocr_confidence": 1.0,
+    "repeats": [],
+    "measures": [
+        {
+            "measure_number": number,
+            "time_signature": "4/4",
+            "notes": [
+                {"pitch": "A4", "duration": "quarter", "beat": beat}
+                for beat in (1, 2, 3, 4)
+            ],
+        }
+        for number in (1, 2)
+    ],
+}
+
+TARGET_BPM = 120.0
+
+#: How much of the top a flawless take is allowed to fall short of.
+#:
+#: **Measured: 0.978 at 22050 Hz and 0.975 at 48000.** The input is exactly on
+#: the beat by construction, so the missing 2% is not the performance — it is
+#: the detector's own late bias, the +10 to +31 ms tabulated above. This floor
+#: sits below both with room, and is not a threshold anyone should tune; it is
+#: a statement that a perfect take scores near the top.
+PERFECT_TAKE_QUALITY = 0.95
+
+
+@pytest.mark.parametrize("written_at", sorted(FIXTURES), ids=lambda r: f"{r}Hz")
+def test_a_take_played_exactly_on_the_beat_is_not_accused_of_anything(
+    written_at: int,
+) -> None:
+    """The whole pipeline, on a file the app itself wrote.
+
+    Everything above stops at `detect_onsets`. This runs `analyze` — load,
+    onsets, `build_timeline`, alignment, verdict — which is every step a real
+    take takes, on bytes produced by `encodeWavBytes` rather than by
+    `soundfile`.
+
+    The claim is the one a musician would care about most: a take that is
+    **perfectly** in time must come back as such. A pipeline that told someone
+    playing exactly with the click that they rushed would be worse than one
+    that failed, because the failure would be believed.
+    """
+    result = analyze(
+        FIXTURES[written_at],
+        ScoreJson.model_validate(PERFECT_TAKE_SCORE),
+        TARGET_BPM,
+    )
+
+    assert result.status == "ok", result.verdict
+    assert result.n_detected_onsets == NOTES
+    assert result.quality >= PERFECT_TAKE_QUALITY, (
+        f"a flawless take scored {result.quality:.3f}"
+    )
+    # The wording is the pipeline's own, and it is what the screen shows.
+    assert "steady" in result.verdict.lower(), result.verdict
+    for word in ("rush", "drag", "uneven"):
+        assert word not in result.verdict.lower(), result.verdict
+
+
+def test_the_verdict_does_not_depend_on_the_rate_the_phone_recorded_at() -> None:
+    """The onset check above, carried through to the answer a musician reads.
+
+    Identical onset times are necessary and not sufficient: alignment, the
+    tolerance bands and the quality weighting all sit between them and the
+    sentence on the screen.
+    """
+    verdicts = {
+        rate: analyze(path, ScoreJson.model_validate(PERFECT_TAKE_SCORE), TARGET_BPM)
+        for rate, path in FIXTURES.items()
+    }
+
+    assert verdicts[22050].verdict == verdicts[48000].verdict
+    assert verdicts[22050].status == verdicts[48000].status
+    assert verdicts[22050].quality == pytest.approx(verdicts[48000].quality, abs=0.02)

@@ -6,6 +6,2480 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-04 — The metronome a musician actually plays to had no test
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Audio. CI still cannot
+allocate a runner.
+
+`lib/metronome/click.web.ts` has a test, and its opening argument is *"the ear
+resolves timing an order of magnitude finer than the eye, and a click that
+wobbles is worse than none — a musician would play the wobble."* **The native
+one, which is what ships on a phone, had none** — the same asymmetry the two
+recorders had before 2026-09-02.
+
+Found by re-running the untested-module sweep properly. The earlier one matched
+`<basename>.test.ts` and so missed every file tested under a name of its own —
+`limits.test.ts` covering `audio/types.ts` was the miss that cost a whole test
+file two entries down. Matching on **imports**, including dynamic ones, gives a
+list whose remaining entries are React hooks (untestable without a renderer,
+documented) and this.
+
+### What is knowable without a device
+
+The module's own docstring states what is not: *"Unverified. There is no
+simulator or device in the environment this was written in … What needs judging
+on hardware is whether the jitter is audible."* That stands. Everything the
+file **decides** is knowable, and nine cases now hold it.
+
+| behaviour | what it costs when wrong |
+|---|---|
+| the session is asked for **before** a player is built | the ring switch silences the metronome — off in exactly the quiet room a musician practises in |
+| the downbeat strikes the accent player | every downbeat is the plain click and every offbeat the accent: a metronome accenting the wrong beat, which a musician would play |
+| `seekTo(0)` before every strike | a player left at the end of its file plays nothing, so the metronome sounds **once** and goes silent — worse than not starting |
+| the stop is re-checked **after** the seek resolves | `seekTo` is a promise; a stop between issuing it and its `.then` otherwise still plays — a click after the take has begun, in the recording |
+| stop releases both players and both files, once | open handles and cache files leaked per take |
+| a write failure returns an inert track | the metronome is an aid, the recording is the point |
+
+Driven against stubs, the way `click.web.test.ts` drives a stub AudioContext:
+`expo-audio`, `expo-file-system` and the beat clock are mocked, so beats are
+delivered by hand and a seek can be held open to stage the stop-mid-seek race.
+
+### Mutated four ways, each against the whole suite
+
+| mutation | result |
+|---|---|
+| accent and plain swapped | **2 failed of 1529** |
+| no rewind before the strike | **2 failed** |
+| the in-flight seek not re-checked against stop | **1 failed** |
+| the session asked for after the players are built | **1 failed** |
+
+All new cases; nothing else in the repository came near any of them.
+
+### The failed-scan row: asked, and the answer is recorded
+
+`PieceDetailScreen`'s failed-scan row hardcodes *"Photograph it again to try
+once more."* and never reads `piece.transcriptionError`, while its sibling row
+three lines up prints the server's own words. It had been reported in five
+consecutive session summaries. It is §2 copy, so it was **asked** — with the
+one-expression fix and a before/after — and the owner's answer is **leave it as
+it is**.
+
+Recorded in `DECISIONS.md` with what it costs (the `_FAILURE_REASONS` work
+reaches a musician on `PieceScoreScreen` and not on this row) and with a
+comment at the code site saying not to "fix" it in passing. **Dropped from the
+report.** Five summaries is what a §2 item with no written answer costs.
+
+### Verification
+
+Mobile **1529 passed** across 137 files (was 1520). `tsc` 0, lint 0 — the first
+draft used `Buffer`, which this project has no types for on purpose; it goes
+through a plain array. `click.ts` restored between mutations, `git status`
+clean. No walk change: this module is native-only and the walk runs the web
+build, which is precisely why it needed a test of its own.
+
+---
+
+## 2026-09-04 — The sentence a failed take shows, and the retry it offers, were two rules that could disagree
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Audio. CI still cannot
+allocate a runner. Second half of the `RecordScreen.tsx` sweep begun one entry
+down.
+
+Two rules, thirty lines apart in the same `catch`, both keyed off
+`describeTierLimit(error)` and each editable without the other:
+
+    const retriable = describeTierLimit(error) === null;
+    ...
+    setProblem(messageFor(error));
+
+**Diverging is not cosmetic.** The quota sentence tells a musician the count
+does not move until next month; `retriable` decides whether "Send again" is on
+the screen at all. One drifting from the other gives them either a retry that
+is guaranteed to be refused, or the news that they are out of analyses with no
+way on.
+
+`readTakeFailure(error, os)` in `lib/audio/takeFailure.ts` returns both from one
+read, so they agree by construction — the same reason `timedMeasures` exists on
+the insights side, where two identical filters drifting is exactly what let a
+call site fall back to the most flattering possible answer.
+
+### Three of the five branches had never been evaluated by anything
+
+`walk-app.mjs` drives two through the built app: a refused microphone and a
+silent take. The other three are not reachable there at all — a fixtures build
+has no quota to exhaust and no way to make the server fail. So the quota
+sentence, the diagnosed-device sentence and the generic fallback were four
+decisions nothing had ever run.
+
+The ordering is the one that matters. The quota check sits **before** the
+generic message because it is neither a connection problem nor something
+trying again will fix; reversed, a musician out of analyses is told to check
+their connection and send it again — advice that measurably cannot work, which
+is the defect `_FAILURE_REASONS` exists to stop on the server side and which
+this repository has now paid for three times there.
+
+### A standing gap this made visible rather than introduced
+
+`describeTierLimit` **cannot be imported under vitest**: `lib/tierLimit.ts`
+imports `ApiError` from `data/api/client`, which imports `data/auth/session`,
+which imports `react-native`, whose Flow syntax the test runner cannot parse.
+That is why `tierLimit.test.ts` covers `analysisAllowance` and not
+`describeTierLimit` — the function that recognises a quota refusal off the wire
+is untestable here. The test stubs it with `vi.mock` and says so; what is
+covered is the part this module owns.
+
+### Mutated six ways, each against the whole suite
+
+| mutation | result |
+|---|---|
+| if/return rewritten as a ternary (**control** — behaviour identical) | 1520 passed, nothing failed ✓ |
+| quota returns `retriable: true` | **2 failed of 1520** |
+| quota sentence replaced by the generic one | **2 failed** |
+| silent take blamed on the connection | **1 failed** |
+| `os` ignored, everyone sent to iOS Settings | **2 failed** |
+| a type guard added above the quota check | 1520 passed — **a bad mutation**, recorded as one: the guard admits `Error`, which the quota fixture is, so it never changed the path under test |
+
+The control passing is the part worth keeping: these assert behaviour, not
+shape. The bad mutation is worth keeping for the same reason the
+`describeBeats` one was — a mutation that does not reach the code under test
+proves nothing, and it reports identically to a successful mutation of
+unguarded code.
+
+### Verification
+
+Mobile **1520 passed** across 136 files (was 1510). `tsc` 0, lint 0 — three
+imports in `RecordScreen.tsx` became unused and were removed. Walk **PASS, 51
+checks**, driving the two branches it can reach. a11y **PASS**.
+`takeFailure.ts` restored between mutations; `.env` moved aside for the build
+and restored `diff -q` identical.
+
+A logic extraction with byte-identical rendering — every sentence is the one
+that was already there, moved. No §2 gate.
+
+---
+
+## 2026-09-04 — Where a musician's file starts was a rule inside a `.tsx`
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Audio. CI still cannot
+allocate a runner.
+
+The microphone opens **before** the count-in, deliberately: starting it
+afterwards would put an unpredictable hardware delay between "four" and the
+downbeat, in an app whose whole subject is where notes land. So the count's
+clicks are in the capture, and `Recorder.discardCapturedSoFar()` on the
+downbeat throws the pre-roll away — *"the file starts where the music does"*.
+
+`lib/metronome/countIn.ts` documents all of that, including its own reason for
+existing: *"there is no React Native testing library in this project — a rule
+inside a component is a rule nothing checks."* **The rule deciding when to
+call it was still in `RecordScreen.tsx`**, twenty lines from that sentence.
+
+    if (!countingIn || beatIndex === null || beatIndex < countInBeats) return;
+    recorder.current?.discardCapturedSoFar();
+
+It is now `countInIsOver({ countingIn, beatIndex, countInBeats })`, beside the
+functions that explain it. The component's behaviour is unchanged — the
+predicate is the same expression, negated.
+
+### Every way of getting it wrong is silent
+
+No error, no log, nothing different on screen. The take simply comes back
+describing playing that did not happen.
+
+  * **One beat early** and the last count click is still in the capture. It is
+    the loudest thing in the file and the *first onset in it*, so
+    `alignment.py` anchors the whole take to the metronome rather than to the
+    music, and every note is judged against a beat nobody played.
+  * **One beat late** and the musician's first note is thrown away, which reads
+    as rushing for the rest of the piece.
+  * **Without the `countingIn` guard** it fires on every beat of the take,
+    discarding the music continuously, and the file comes back empty.
+
+`>=` rather than `===` is the load-bearing choice and now says so. The index is
+a *rendered* value, so two beats can arrive inside one render — a slow frame, a
+coalesced update, a fast tempo. With `===` the count-in would then never end:
+the recorder keeps the pre-roll, the screen stays counting, and the musician is
+playing into a take that has not started. Firing late is recoverable; not
+firing is not.
+
+The metre case is covered too. `countInPulses` is the first bar's felt pulses —
+three in a waltz, two in a march, six in 6/8 read in six — so a hard four would
+count a bar and a third of a waltz before the downbeat.
+
+### Mutated three ways, each run against the whole suite
+
+| mutation | result |
+|---|---|
+| `>= countInBeats - 1` (one beat early) | **2 failed of 1510** — both new |
+| `=== countInBeats` (exact match) | **1 failed of 1510** — new |
+| drop the `countingIn` guard | **1 failed of 1510** — new |
+
+Nothing else in the repository came near any of them, which is the point: this
+is the layer with no renderer, and the capture-path audit found **eight of its
+nine defects** in rules that lived here.
+
+### Verification
+
+Mobile **1510 passed** across 135 files (was 1504). `tsc` 0, lint 0. Walk
+**PASS, 51 checks** — the take-setup section drives this screen, and it behaves
+identically. a11y **PASS**. `countIn.ts` restored between mutations and the
+final tree diff is the extraction alone; `.env` moved aside for the build and
+restored `diff -q` identical.
+
+A logic extraction with byte-identical rendering — no screen composition,
+style, or copy changed, so no §2 gate and the three-foot test is unchanged.
+
+---
+
+## 2026-09-04 — The fourth scan state had no fixture, and four claims measured that held
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Picture → transcription.
+CI still cannot allocate a runner.
+
+### `queued` was the one `transcription_status` nobody had seen
+
+`reading`, `failed` and `done` all have fixture pieces. `queued` did not — and
+it is every page after the first of a multi-page scan, because the server reads
+a bounded number at once, so a three-page part spends most of its wait there.
+
+It is **not** a cosmetic variant of `reading`. `TranscribingPanel` prints a
+sentence chosen for it — *"Waiting for another page to finish"*, whose comment
+says "Getting ready" described the app rather than what is actually happening —
+and `QUEUED_PROGRESS` puts the bar at 5% instead of in the reading band. A
+sentence and a bar position that had never been on screen together.
+
+CLAUDE.md's own rule: *a state with no fixture is a state nobody has looked at*,
+which has cost this project six times. Rendered, it is correct: the sentence is
+there and no stage is claimed. **No defect found — the state now has a fixture,
+a walk check and an a11y entry.**
+
+`transcriptionStage` is null on the fixture, which is what makes it queued: the
+worker has said nothing yet. A fixture with a stage would render as `reading`
+under a different status word and check nothing.
+
+**Mutated** by deleting the queued branch — the code as it was before somebody
+fixed it — rebuilding and re-walking. The walk fails and prints what a musician
+would actually read: `["J. S. Bach", "Six Suites for Solo Cello, BWV 1010",
+"Getting ready to read this page", …]`. The second check (that a queued page
+claims no reading stage) catches a narrower case — a stage-shaped fallback —
+and is a cheap guard rather than an independent catch.
+
+### Four claims measured, all of which held
+
+Reported because a probe that finds nothing is still a measurement, and the
+alternative is re-probing them next month.
+
+  * **`import → validate` on all six MusicXML fixtures.** The three authored
+    files — `bass_excerpt`, `orchestral_part`, `orchestral_part_page2` — report
+    **zero** problems, which is what *"the one route whose timeline cannot be
+    wrong"* has to mean. `violin_duo` correctly refuses to guess between two
+    parts. The two named `*_phone_photo` are OMR output saved as MusicXML and
+    are flagged as expected: 7 of 15 bars on the Audiveris one (no `<time>` at
+    all, so the metre is inferred), 2 `out_of_line` on the oemer one.
+  * **`join_pages` on the real two-page part.** 19 + 4 → 23 bars renumbered
+    1–23, all three repeats carried with their numbers intact and
+    `start_inferred=False`, `unclosed_repeat_starts` empty, confidence 1.0.
+  * **Nothing defaults a null clef.** No `?? 'treble'` survives anywhere in
+    either tree; the only match is `PieceScoreScreen`'s comment recording that
+    it used to.
+  * **Nothing infers an instrument from a clef.** The only direction present is
+    `clefFor(instrument)`, used where a hand-entered piece needs a clef nobody
+    read — the forward direction, which is the documented one. A cello reads
+    bass clef too, and no code here forgets that.
+
+### Verification
+
+Walk **PASS, 51 checks** (was 49). a11y **PASS, 33 entries** (was 32), the new
+one clean. Mobile **1504 passed**, `tsc` 0, lint 0. `TranscribingPanel.tsx`
+restored byte-identical after the mutation and `git status` confirms it; `.env`
+moved aside for both fixtures builds and restored `diff -q` identical.
+
+A fixture, a walk check and an audit entry — no screen, component, style or
+copy changed, so no §2 gate. The three-foot test is unchanged because the
+screen is: this renders a composition that was already approved, in a state
+nobody had pointed it at.
+
+---
+
+## 2026-09-04 — What a tuning session actually touches, and two places that quietly claim to mirror it
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Audio. CI still cannot
+allocate a runner. Companion to the dead-knob entry below: that one asked which
+config values turn nothing, this one asks what else moves when one is turned.
+
+### The app carries two of the bands, and calls them a mirror
+
+`bandFor` and `fullScaleFor` apply `result_json.tolerance` — the six numbers
+the server judged that take by — which is the only reason CLAUDE.md can say
+**no threshold is invented in the app**. For rows finished before the pipeline
+recorded them there is nothing to travel, and the app falls back to
+`FALLBACK_INNER_PCT = 5` and `FALLBACK_OUTER_PCT = 20`.
+
+Both docstrings said they *"match the shipped `backend/config.toml`"*. Nothing
+checked it, and the claim is true only because the bands have never been tuned.
+
+**The reflex it invites is the wrong one.** When the tuning session widens the
+dragging side — which the tuning appendix says it will, because musicians
+tolerate dragging better — updating these to follow re-bands takes already in a
+musician's history by a number the pipeline never applied to them. That is
+re-judging a performance nobody re-recorded. The right default is to leave
+them: they are a **historical** value, not a mirror.
+
+The docstrings say that now, and `test_fallback_bands.py` is the tripwire, with
+a failure message stating both answers and which is the default. Two more cases
+beside it, because a single fallback number stands in for a pair: it is honest
+only while the rushing and dragging sides are equal, and `bandFor` infers the
+mid band as *half the outer*, which holds only while the config puts it there.
+
+**Mutated** by widening the dragging bands to 7/26 — the tuning appendix's own
+example. Three of the four new cases fire. **All 1504 mobile tests pass**, and
+on the backend exactly one existing test fails: `test_classify_band_dragging_
+side`, about the *pipeline's* banding. A tuner would see that one and update its
+expectation, and the app's fallback would stay silently wrong — which is the
+information the new cases add.
+
+### `audio_config.py` said every threshold was in the file
+
+> *"Every threshold the pipeline uses … lives in `config.toml`, never
+> hard-coded in the services."*
+
+Measured: **eleven decision constants live in Python** — `ORNAMENT_SHARE`,
+`MIN_TEMPO_RATIO` / `MAX_TEMPO_RATIO`, `MIN_ONSETS_TO_ESTIMATE_TEMPO`,
+`MAX_EDGE_TRIM`, `MIN_TRIM_GAIN`, `POSITION_WEIGHT`, `POSITION_CAP_GAPS`,
+`_GAP_CORE_LOW` / `_GAP_CORE_HIGH` and `TAKE_TOO_LONG_RATIO`.
+
+**Most of them should stay there and the survey says so.** Each carries a
+measured rationale in its own comment, and several explicitly sit in a flat
+region — `POSITION_WEIGHT`'s says anything from 0.25 to 2.0 behaves the same,
+`MIN_TRIM_GAIN`'s that the failures it repairs run 0.029 → 0.988. These are
+structure, not knobs, and moving them into a tuning file would invite turning
+numbers that have no meaningful range.
+
+`ORNAMENT_SHARE` is the exception a tuner needs to know about: its own comment
+says it was *"chosen against two synthetic takes and no real recording, which
+is the honest limit on it"*. That is precisely a value waiting for the session
+that has not happened, and it is not in the file that session will open.
+
+The docstring says all of this now rather than a sentence that was false. **No
+constant was moved** — deciding which of eleven belong in a tuning file is a
+judgement for someone with the corpus and an ear, and doing it from here would
+be eleven guesses dressed as a refactor.
+
+### Verification
+
+Backend **2078 passed / 2 skipped / 2 xfailed** (was 2074). Mobile **1504
+passed**, `tsc` 0, lint 0. `config.toml` mutated and restored (`git diff`
+clean before the docstring edits). Docstrings and one new test file — no UI,
+copy, component or token, so no §2 gate and no three-foot test.
+
+---
+
+## 2026-09-04 — Two tuning knobs turn nothing, in the file whose whole purpose is that they do
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Audio. CI still cannot
+allocate a runner. Substance in `TUNING_LOG.md`, same date.
+
+CLAUDE.md §1 rule 7 and `audio_config.py`'s first line make the same promise:
+every threshold lives in `config.toml`, so tuning is *"change a number, re-run
+the fixtures, log it in TUNING_LOG.md; no code edit."* Batch 3's thresholds are
+still the spec's starting values because tuning needs real ears, so that
+session has yet to happen — and it will happen by editing that file.
+
+Measured: of the 22 fields `AudioConfig` declares, **20 are read by the
+pipeline and 2 are not** — `onset.post_max` and `alignment.slur_tolerance_pct`.
+A tuner changing either sees the corpus read identically, and the honest
+conclusion from that evidence is *"this parameter does not matter."*
+
+`post_max` is the expensive one: it sits directly under `pre_max`, reads as its
+pair, and `peak_window_frames`'s docstring is a long argument about exactly
+that window — including the measured *"window 3: sixteenths 32/32; window 20:
+4/32"* table, the most consequential detector finding here. The window is
+**derived** per take now and the same number is passed as both; `pre_max`
+survives as the cap.
+
+`slur_tolerance_pct` is the threshold for the whole-slur check in §4 that was
+never built. `alignment.py` says so on `is_slur_boundary`. `config.toml` did
+not.
+
+### Neither deleted nor wired up
+
+Removing a key is a decision about the remote-config row a deployment may be
+sending; wiring `post_max` means deciding whether an asymmetric window is
+right, which needs the corpus and an ear. What was wrong was that the file gave
+no sign — both sat beside live values with a spec citation each. They now say
+so where the tuner is looking.
+
+### `test_tuning_knobs.py`, three directions
+
+Every `AudioConfig` field is read somewhere in the pipeline or named in
+`TURNS_NOTHING` with its reason; every key in `config.toml` reaches a field, so
+a value added to the file is not silently ignored by `_parse`; and every field
+is filled *from* the file, so a knob cannot quietly become a Python default the
+file appears to set. The field list is discovered through `get_type_hints` —
+the module uses `from __future__ import annotations`, so `Field.type` is the
+string `"OnsetConfig"` rather than the class.
+
+Writing it surfaced a real inconsistency in the loader, recorded rather than
+changed: `[onset.double_bass] delta` fills `onset.double_bass_delta` (prefixed)
+while `[tolerance.pulse] disturbance_deviations` fills
+`tolerance.disturbance_deviations` (not). The flattener tries both forms and
+says which.
+
+### Mutated two ways
+
+| mutation | result |
+|---|---|
+| a new `trend.smoothing` knob, wired through `_parse` and read by nothing | **1 failed of 2075** — the new case, nothing else |
+| `post_max` wired up and its `TURNS_NOTHING` entry left behind | `test_no_dead_knob_has_quietly_come_alive` |
+
+The first is the failure this exists for and no other test in the repository
+comes near it — a knob is *supposed* to be inert to the suite; that is what
+makes it a knob.
+
+### Verification
+
+Backend **2074 passed / 2 skipped / 2 xfailed** (was 2041; the two skips are
+the named dead knobs). `app/services/audio.py` restored via `git checkout` and
+confirmed by `git status`. No mobile change. Config comments only — no UI,
+copy, component or token, so no §2 gate and no three-foot test.
+
+---
+
+## 2026-09-04 — A signed URL goes straight to storage, so the bucket's limit is the last word
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Picture and audio. CI still
+cannot allocate a runner.
+
+The API is not in the upload path. It signs a URL and the bytes go to Supabase
+storage, so the bucket's `file_size_limit` is the only thing that can refuse
+them — and it refuses **after** the transfer. Migration 016 put those limits
+under version control on 2026-09-03:
+
+    score-images    10485760   (10 MiB)
+    audio-uploads   52428800   (50 MiB)
+
+The app carries its own copy of each, under different names, and both
+docstrings *state* the correspondence:
+
+    lib/scan/uploadPage.ts   MAX_PAGE_BYTES     "This is the bucket's, because
+                                                the bucket is what answers 413."
+    lib/audio/types.ts       MAX_UPLOAD_BYTES   "which is the `audio-uploads`
+                                                bucket's `file_size_limit`"
+
+Neither was compared with it. `uploadPage.test.ts` does assert
+`MAX_PAGE_BYTES === 10 * 1024 * 1024` — against a **re-typed literal**, with a
+comment calling it "the bucket's". Same hand-copy as the extension list one
+entry up, and before 016 there was nothing it could have been compared against:
+the two oldest buckets existed in no migration and their limits lived in a
+dashboard.
+
+**The costs are not symmetric.** A page cap too high wastes an upload and shows
+a storage error about a photograph. A take cap too high loses the take, after
+the musician has stopped playing — and the playing is the one part that cannot
+be repeated. `MAX_UPLOAD_BYTES`'s own comment says exactly that, one line above
+the constant.
+
+`test_upload_limits.py` reads both from the app's source and both from 016.
+Lower is allowed — a client refusing early is the right direction — but never
+higher, and never under half, which is a copy that has drifted rather than a
+decision. The discovery case fails if 016 ever limits a **third** bucket:
+`avatars` has a null limit today (measured, and an open item for the owner), so
+it is absent rather than excused.
+
+### Mutated three ways
+
+| mutation | result |
+|---|---|
+| `MAX_PAGE_BYTES` raised to the server's 12 MB figure — which its own docstring names | caught, by three existing mobile tests **and** the new one |
+| **016 tightens `score-images` to 8 MiB** | **1516 mobile tests pass; only the new check fails** |
+| `MAX_UPLOAD_BYTES` raised to 100 MB | caught by `limits.test.ts` and the new one |
+
+The middle row is the whole point. Two of the three directions were already
+held on the app side against re-typed numbers; the one that was not is the
+server moving.
+
+### A test written and cut in half
+
+I wrote `types.test.ts` covering `maxTakeSamples` — the bucket fit at each
+rate, which limit binds, the nine-minutes-at-48-kHz figure. **`limits.test.ts`
+already covers all of it**, and every mutation mine caught it caught first. My
+untested-module sweep missed it because it matches `<basename>.test.ts` and
+that file is named for the concept, not the module — the same miss as the
+`.parity.test.ts` files earlier today.
+
+Cut down to the part that is genuinely unheld: **`takeFilename`**. Both
+recorders name every take with it and `submitTake.test.ts` passes a
+hand-written `'take-2026-05-17.wav'` rather than calling it, so the function
+that names every recording this app has ever uploaded had nothing asserting
+what it returns. Dropping its colon-stripping — colons are illegal in object
+keys, so every upload would be refused — passes **1502 of 1504** and fails only
+the two new cases.
+
+Fourth test dropped or trimmed this session on the same reasoning: a test that
+adds no discrimination makes the next person believe something is guarded when
+the guarding lives somewhere else.
+
+### Verification
+
+Backend **2041 passed / 2 xfailed** (was 2036). Mobile **1504 passed** across
+135 files (was 1501 / 134). `tsc` 0, lint 0, read from their own exit codes.
+All four mutated sources restored; `git status` showed only the two new test
+files. No UI, copy, component or token — no §2 gate, no three-foot test.
+
+---
+
+## 2026-09-04 — Four places in the app choose a file extension, and none was compared with the list it must satisfy
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Picture and audio, the two
+ends of the loop. CI still cannot allocate a runner.
+
+`POST /v1/upload/{score-image,avatar,audio}` each refuse a filename whose
+extension is not on their list, **before the bytes move** — a 400 with a server
+rule string in it, shown to a musician about a photograph or a recording that
+never left their phone. CLAUDE.md records the score upload shipping exactly
+that once, when an unrecognised name declared `image/jpeg` and filed the object
+as `page.heif`.
+
+Four places in the app decide an extension:
+
+    lib/scan/uploadPage.ts       EXT_BY_MIME + FALLBACK.ext  → score-image
+    data/hooks/useProfile.ts     extensionFor's map + `??`    → avatar
+    lib/audio/types.ts           takeFilename                 → audio
+    lib/scan/uploadPage.test.ts  ALLOWED                      → score-image
+
+All four are correct today. **Not one was compared with anything.**
+
+The fourth is what made the gap invisible: `uploadPage.test.ts` asserts against
+a **hand-copied transcript** of `_ALLOWED_IMAGE_EXTS`, with a comment pointing
+at `routers/upload.py`. It reads like coverage of the server's rule and would
+go on passing if the server changed it. Same shape as `_MANUAL_FIELDS` one
+entry up, and `REQUIRED_COLUMNS`, and `_FAILURE_REASONS`.
+
+**The dangerous direction is the server tightening its list.** Both suites stay
+green and a page is refused in a musician's hands. For the avatar it is worse
+than an inconvenience: onboarding requires a photograph and has no Skip
+(owner's call, 2026-08-25), so a drift there **locks a new musician out of the
+app entirely**.
+
+The three server lists are deliberately different — an avatar takes no HEIC,
+because it is handed to an `<img>` and browsers cannot display one — so each
+producer is compared against **its own** endpoint's list, never the three with
+each other.
+
+### Mutated three ways
+
+| mutation | what a musician sees | result |
+|---|---|---|
+| server drops `webp` from `_ALLOWED_IMAGE_EXTS` | a page they chose is refused before upload | **2 failed of 2036** — both new. `test_upload.py` exercises `.jpg` and `.heic` only |
+| server drops `webp` from `_ALLOWED_AVATAR_EXTS` | a new account cannot finish onboarding | not exercised anywhere: `test_upload.py` uses `.jpg` and `.png` |
+| `takeFilename` returns `.pcm` | the take they have just played is lost | **all 1501 mobile tests pass**; caught only by the new contract |
+
+The third is the one worth stating plainly. `submitTake.test.ts` passes a
+hand-written `'take-2026-05-17.wav'` and never calls `takeFilename`, so the
+function that names **every recording this app has ever uploaded** had nothing
+asserting what it returns.
+
+Dropping `wav` from `_ALLOWED_AUDIO_EXTS` **is** caught, by `test_upload.py`.
+The audio case here guards the other direction — the client's — which is the
+one nothing covered.
+
+### Verification
+
+Backend **2036 passed / 2 xfailed** (was 2029). Mobile 1501 unchanged; the app
+source was mutated and restored (`git status` clean before commit). No UI,
+copy, component or token, so no §2 gate and no three-foot test.
+
+---
+
+## 2026-09-04 — Which fields a person supplies and OCR overwrites, said in three places
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Picture → transcription. CI
+still cannot allocate a runner.
+
+`_MANUAL_FIELDS = ("clef", "time_signature", "bpm_hint")` is the one sentence in
+`routers/scores.py` that says which fields a *person* supplies and the reading
+overwrites. Two behaviours depend on it:
+
+- **Rejection.** `CreateScoreRequest._one_provenance` refuses any of them
+  beside an image. Its own comment says why: *"overwriting what OCR read with
+  what they guessed is the worse outcome."*
+- **Preservation.** `attach_score_pages` copies them into the placeholder score
+  while the worker reads, so a hand-entered piece that is then photographed
+  does not lose its tempo from Today for the length of the scan.
+
+The second read **the same three names typed again**, four hundred lines away
+from the constant. That is the shape this repository has now paid for four
+times — `REQUIRED_COLUMNS`, `_FAILURE_REASONS`, the column vocabularies,
+`_HUMAN_STAGES` — and the failure here is the one the loop's own comment
+describes: a fourth field added to the constant and not to the loop vanishes
+from the musician's screen for exactly as long as the reading takes. It reads
+`_MANUAL_FIELDS` now, so the two cannot drift.
+
+### What is still hand-written, and is now discovered
+
+The constant against **the model**. `test_manual_fields.py` reads
+`CreateScoreRequest.model_fields` and requires every field to be either
+manual-only or excused as meaning the same thing whichever way the piece
+arrived — five of those, each with a reason, checked in **both** directions so
+an excuse cannot outlive its field or quietly become manual.
+
+A third direction too: a name in `_MANUAL_FIELDS` the model has dropped makes
+`_one_provenance`'s `getattr` raise on every create, and writes a key into the
+placeholder score that `ScoreJson` does not have.
+
+### Mutated: a fourth manual field, added to the model and not to the constant
+
+    key_signature: str | None = Field(default=None, max_length=20)
+
+**1 failed of 2028 passed / 2 xfailed** — the new discovery case, and nothing
+else in the backend suite. Without it the model accepts a musician's stated key
+beside a photograph, returns 201, and the reading overwrites it with no
+complaint anywhere. `test_client_body_fields.py` does not catch it and should
+not: a server field the app never sends is not by itself a fault.
+
+### Two things looked at and left alone
+
+**The clef PATCH.** `"clef" in sent and body.score_json is None` is the right
+condition — an explicit `null` clears, an omitted key leaves it alone — and I
+mutated it to `body.score_json is None` to model the "simplification" that
+would make every title rename wipe a musician's clef correction. It **is**
+caught, by three tests in `test_scores_router.py`, though incidentally: they
+fail on mock setup rather than on an assertion naming the symptom. Clef has
+"set" and "clear" cases and no "leave alone" one, where composer and movement
+have both. Recorded rather than fixed: a fourth test with no unique catch is
+the thing this session has reverted three times.
+
+**The sign convention** (`avg_delta_pct` drag-positive, `trend` rush-positive —
+`toRushPositive` calls it *"the one mistake this app cannot make"*). Measured
+on the corpus: `02_detache_rushing` runs −1.97 → −24.28 per bar with `trend`
+positive; `03_detache_dragging` runs +0.35 → +22.73. Its first two `trend`
+values are positive and that is the expanding window over three near-zero
+notes, not a sign error. But the convention is **held at every hop** —
+`test_compute_deltas_sign_convention`, `test_rolling_trend_is_rush_positive`
+and `test_a_bars_average_leaves_out_the_notes_that_were_not_timed` each catch a
+flip at their own layer. No test written: it would be a fourth statement of a
+belief rather than a measurement.
+
+### Verification
+
+Backend **2029 passed / 2 xfailed** (was 2022). No mobile change. No UI, copy,
+component or token touched, so no §2 gate and no three-foot test.
+
+---
+
+## 2026-09-04 — A phone on silent plays nothing, and four of five sound paths were unheld
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Audio verification. CI
+still cannot allocate a runner.
+
+`lib/audio/session.ts` exists because **nothing ever configured the device
+audio session**: iOS then used whatever category the session happened to be in,
+which respects the ring/silent switch, so a musician with their phone on silent
+— most musicians, in most rehearsal rooms — pressed Listen and heard nothing.
+`session.web.ts` is the same bug in Safari, which applies the switch to Web
+Audio.
+
+Its own docstring names what a test here can do:
+
+> *"What can be checked here is that it is called on every path that makes a
+> sound, and that it cannot throw."*
+
+**Neither half was checked.** Both modules had no test file at all, and of the
+five paths in the app that make a sound only `scorePlayer.ts` asserted the
+call — with a good assertion, on ordering rather than on merely being called.
+The other four had nothing.
+
+### Why nothing else can catch this
+
+There is no audio device in this container and none in CI. When the session
+call goes missing nothing throws, nothing logs, and the screen behaves
+correctly in every observable way: the button flips to Stop, the schedule plays
+through, the label flips back. No test, no screenshot and no walk can hear the
+difference. A source check is the only instrument there is.
+
+### Three files
+
+`session.test.ts` — what the app asks iOS for, one field per case with the
+failure it prevents. `playsInSilentMode` is not a preference, it is the entire
+fix; `doNotMix` is what stops another app ducking the click; `allowsRecording:
+false` keeps output off receiver-level volume; `shouldPlayInBackground: false`
+is a promise the build cannot keep without `UIBackgroundModes`. Plus the
+throw-safety: a runtime with no session must leave playback quiet, not broken.
+
+`session.web.test.ts` — `navigator.audioSession.type = 'playback'`, the no-ops
+where there is nothing to ask (no `audioSession`, no `navigator`), and the
+throw-safety, which matters more here: every caller is inside a button press,
+and a throw there takes the press down — a worse version of the bug.
+
+`session.reach.test.ts` — the half that rots. A claim about *every* call site is
+true the day it is written and silently false the next time somebody adds a
+player. It scans `src/` and requires every file constructing an audio source to
+name `prepareForPlayback`, **both ways**: an `EXCUSED` entry for a file that has
+since grown a player fails, and so does one that has stopped mentioning the
+session. Three entries — `App.tsx`'s boot call and the two modules themselves.
+
+Constructors (`AudioModule.AudioPlayer`, `useAudioPlayer`, `createOscillator`,
+`createBufferSource`, `new Audio`) rather than `.play()`: `.play()` matches a
+video, an animation or a stub, and all five real paths construct something on
+the list, so the looser marker buys nothing and costs a growing exclusion list.
+`createBufferSource` and `new Audio` are on it for a path that does not exist
+yet — the point of the file is the call site nobody has written.
+
+The five paths are **named, not counted**, so a player deleted in a refactor
+and rebuilt elsewhere is as loud as one appearing. And `found the app` asserts
+the corpus is non-empty, because a glob that matches nothing passes every other
+assertion — which `navigationReachability.test.ts` learned the expensive way.
+
+### Mutation-tested: six mutations, six unique catches
+
+Each was run against the **whole** mobile suite, and each failed exactly one
+test of 1501 — always one of the three new files. Nothing in the repository
+was holding any of it.
+
+| mutation | what it models | caught by |
+|---|---|---|
+| strip the session call from `click.web.ts` | web metronome the silent switch mutes | `asks for the audio session` |
+| add a `createBufferSource` module with no call | the next playback path somebody writes | `found the sound paths` + `asks for the session` |
+| `playsInSilentMode: false` | the original bug, restored | `asks to be audible on silent` |
+| `type = 'play-and-record'` on web | playback dropped to receiver volume | `declares this page's audio to be the point` |
+| remove the web `try/catch` | a refusing browser takes the button press down | `never throws` (web) |
+| remove the native `try/catch` | a runtime with no session breaks the player | `never throws` (native) |
+
+### What this still does not prove
+
+The thing these modules exist for is whether a phone with the switch flipped
+makes a sound, and there is no phone here. What is now held is that the app
+**asks**, on every path, and that asking cannot break a press. Both modules
+already said "Unverified on hardware" and they still do.
+
+### Verification
+
+134 test files, **1501 passed** (was 1486 / 131 files). `tsc --noEmit` exit 0;
+`npm run lint` exit 0 — read from the command's own exit code, not through a
+pipe into `tail`, which reports `tail`'s. All four mutated sources restored
+byte-identical: `git status` showed only the three new test files.
+
+No UI, no copy, no component, no design token touched — three test files and
+nothing else, so no §2 gate and no three-foot test.
+
+---
+
+## 2026-09-04 — The two objects the app reads most had no field contract at all
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. CI still cannot allocate a
+runner.
+
+`test_client_body_fields.py` held the fields of request and response *bodies*.
+The objects **inside** them — the score and the verdict, which between them are
+almost everything the app draws — were not held by anything. Nine more pairs:
+
+    ScoreNote / ScoreMeasure / ScoreRepeat / ScoreJson  →  score_schema
+    MeasureConcern                                      →  routers/scores
+    PerNoteResult / PerMeasureResult / Tolerance /
+    AnalysisResultJson                                  →  services/analysis
+
+Measured: **not one ghost field across all nine.** Five fields the server
+writes and the app ignores, each for a reason — `Measure.system` and
+`PerNote.timed` are layout and bookkeeping, `Repeat.start_inferred` and
+`ScoreJson.unclosed_repeat_starts` are the two facts that carry across a page
+join and reach no screen.
+
+### Why these two are worse to get wrong than a response body
+
+**`score_json` travels in both directions, and its schema forgives extras.** It
+goes out on every `ScoreResponse` and comes back on `UpdateScoreRequest` when
+the bar editor saves a correction. `ScoreJson` sets `extra="ignore"`
+deliberately — its own docstring records that forbidding *"cost whole pages"*,
+one unexpected key from a model that noticed something the schema cannot hold
+failing the entire score. The price of that kindness is the other direction: a
+field the app writes and the server does not declare is **dropped in silence**,
+so a correction a musician made never persists while the screen says it saved.
+
+**The verdict half is looser still.** `AnalysisResponse.result_json` is typed
+`dict[str, Any]` on purpose — `data/types.ts` argues that a second copy of that
+schema would go stale silently — but the *producer* is four Pydantic models, so
+the comparison is available even though the transport does not make it. The app
+reads nine keys out of `per_measure` alone; rename one and every bar on the
+verdict screen reads as undefined.
+
+### Mutation-tested
+
+| mutation | caught by |
+|---|---|
+| the pipeline renames `avg_delta_pct` | `[PerMeasureResult]` |
+| the app reads a `ScoreNote.fingering` nobody declares | `[ScoreNote]` |
+| `Measure.measure_number` renamed on the server | `[ScoreMeasure]` |
+
+### Where the field surface stands now
+
+Across requests, responses, nested score objects and the verdict result: **zero
+mismatches, and all of it held.** That is four groups in one file — 34 cases —
+and the reason they are together is that they are one question asked at four
+depths: does a name mean the same thing on both sides of the wire.
+
+### Verification
+
+Backend suite green. Mobile untouched.
+
+---
+
+## 2026-09-04 — The same contract in the other form: six Postgres enum types
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. CI still cannot allocate a
+runner.
+
+The entry below holds the three columns constrained by `CHECK (… IN …)`. The
+database constrains **seven more vocabularies as real `ENUM` types**, created
+in `001_initial.sql`, and six of them have a Python enum:
+
+    user_tier          UserTier
+    user_role          UserRole
+    bpm_source         BpmSource
+    metronome_mode     MetronomeMode
+    analysis_status    AnalysisStatus
+    assignment_status  AssignmentStatus
+    sync_event_type    — nothing
+
+Identical failure to the CHECK form: a value the code can produce and the type
+cannot hold is an insert that raises, on whichever write reaches it first.
+`AnalysisStatus` gaining a member the type has not would 500 the worker's own
+`_finish_failed` — the call that exists so a failed analysis does not sit
+`processing` for ever.
+
+All six agree today.
+
+**`sync_event_type` is excused with a reason rather than mapped.** Batch 10
+(offline sync) is not built: `sync_events` is *read* by the account export,
+which dumps whatever rows a user owns, and written by nothing — so there is no
+code that could disagree with the type yet. Checked in both directions, so the
+excuse fails the day it gains a Python enum.
+
+### Mutation-tested
+
+| mutation | caught by |
+|---|---|
+| `AnalysisStatus` gains `cancelled` | `[analysis_status]`, naming both lists |
+| the `metronome_mode` type gains `flash` | `[metronome_mode]` |
+| a new `CREATE TYPE` with no Python enum | "every enum type is paired or excused" |
+| `sync_event_type` mapped while still excused | its own case **and** the pairing case |
+
+### A slip worth recording
+
+Cleaning up after the fourth mutation I ran `git checkout --` on the test file,
+which **had** been committed in the entry below — so it reverted to the
+committed version and silently discarded the extension I had just written and
+measured. The give-away was the suite going from 15 cases back to 7 in the
+"restored" line, which is the only reason I noticed.
+
+Re-applied and re-measured; the mutation results above are from the restored
+file, not from memory of the first run. Later cleanups copy from a `/tmp`
+backup taken before the first mutation, which is what the rest of this
+session's mutation runs already did.
+
+### Verification
+
+Backend suite green; the file is 15 cases now, up from 7. Mobile untouched.
+
+---
+
+## 2026-09-04 — One list of instruments, declared four times, one pair held
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. CI still cannot allocate a
+runner.
+
+Three columns are constrained to a fixed set of strings in SQL. **`instrument`
+is declared four times:**
+
+    mobile/src/data/types.ts     Instrument = 'violin' | 'viola' | …
+    app/models/analysis.py       class Instrument(str, Enum)   ← CreateAnalysisRequest,
+                                                                 analysis_runner
+    app/models/user.py           class Instrument(str, Enum)   ← UpdateMeRequest,
+                                                                 MeResponse
+    migrations 008 and 009       CHECK (instrument IN (…))     ← twice
+
+`test_client_enums.py` held exactly one pair — the app against
+`models/analysis`. **Two enums with the same name in two modules, and nothing
+compared them.** The rest agreed by luck.
+
+### What the drift does, which is the reason this is worth a file
+
+Add a value to `models/user.Instrument` alone: `PATCH /v1/me` accepts it,
+onboarding stores it, and **every take that musician then submits is refused**
+by `CreateAnalysisRequest` — a 422 on a value the app itself wrote to their
+profile. Add it to both enums but not the CHECK and the API accepts what the
+database rejects: a 500 on saving a profile.
+
+`transcription_status` and `user_verdict` are the same shape with one
+vocabulary each. A status the worker writes and the column refuses leaves a
+scan stuck `reading` for ever; a verdict the app offers and the column refuses
+loses the correction the corrections router calls the only route out of Batch
+3's untuned thresholds.
+
+All four agree today. This is a fence.
+
+### Discovered, not listed
+
+The constrained columns are found by scanning the migration files, so the
+mapping cannot be the thing that goes stale: a new `CHECK (… IN …)` fails until
+somebody says which Python vocabulary it answers to, and a row naming a column
+whose CHECK was dropped fails too — the direction `NOT_WIRED` is checked in.
+
+Read from the files rather than a live database on purpose: this has to fail in
+CI, where there is no database, and the files are what a deployment is applied
+from.
+
+`_values` reads an `Enum` or a `Literal`, because both forms are in use and
+neither is wrong — an Enum where the value is passed around as an object
+(`Instrument.double_bass.value` decides the onset settings), a Literal where it
+is only ever a string on the wire.
+
+### Mutation-tested
+
+| mutation | caught by |
+|---|---|
+| `guitar` added to `models/user.Instrument` alone | the `instrument` case **and** "the two instrument enums are the same list" |
+| `guitar` added to the 009 CHECK alone | the `instrument` case **and** "constrained twice … the same way" |
+| `reading` dropped from the 006 CHECK | the `transcription_status` case |
+| a new constrained column with no vocabulary | "every constrained column has a vocabulary" |
+
+The failure message names the vocabulary by **module and qualified name**,
+because `instrument` has an `Instrument` in two modules and a message saying
+only "Instrument" names neither of them.
+
+### Verification
+
+Backend suite green; the new file is 7 cases. Mobile untouched.
+
+---
+
+## 2026-09-04 — The legibility contract rested on a function nothing had measured
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Picture path. CI still
+cannot allocate a runner. **No shipping code changed.**
+
+The legibility contract has three links and I had built two of them:
+
+    fixtures/legibility/*.samples.json   ← recomputed from the JPEGs by
+                                           test_legibility_contract.py
+    the app's staffSpacing over them     ← legibility.contract.test.ts
+    pageSamples.web.ts                   ← nothing
+
+`tools/legibility_fixture.py`'s `app_samples` **reproduces** `pageSamples` —
+centre crop at 1:1 bounded to 1400×2000, Rec. 601 luma truncated to a byte —
+and every stored sample was produced that way. If the crop moved or the luma
+changed in the app, the fixtures would go on describing what it *used* to see,
+and the direction rule they protect would be asserted about the wrong pixels.
+
+Two things make it the link least likely to be noticed. It is reachable only
+from `ScannerScreen` after a camera capture, and there is no camera here or in
+CI, so the walk cannot get to it. And **every failure inside it returns
+`null`**, which `legibilityOf` treats as silence — a broken `pageSamples` does
+not break anything visible, it stops the check running.
+
+### Eight cases against a stub canvas
+
+The `bootWatchdog.test.ts` technique: a hand-built DOM that records what it was
+asked to draw and answers with known pixels. It does no resampling of its own,
+deliberately — a stub that resampled would be a second implementation to get
+wrong.
+
+The load-bearing one is **1:1**. `drawImage`'s destination rectangle must equal
+its source; shrinking the page shrinks the staff spacing being measured, which
+is the module's own account of how the check would come to report a page as
+unreadable *because this function made it so*.
+
+The parity one compares against Python's exact expression, on values chosen so
+flooring and rounding differ — `rgb(7, 11, 13)` computes 9.99, and `rgb(17, 33,
+49)` 30.04.
+
+### Mutation-tested
+
+| mutation | caught by |
+|---|---|
+| Rec. 601 weights → Rec. 709 | the parity case |
+| truncation → `Math.round` | the parity case, on 9.99 |
+| the crop drawn at half size | "is the centre of the photograph, at 1:1" |
+| cropped from the left edge instead of the centre | the same |
+
+### Also audited, and left alone
+
+While in the neighbourhood I checked the two remaining substituting fallbacks
+in the adapter after yesterday's sweep. `missedNotes ?? 0` is honest —
+`VerdictScreen` renders it as `missedNotes > 0 ? … : null`, so an absent field
+produces silence rather than a claim. The app's `transcription_status ??
+'done'` is now dead in the same way the spread fallback was: the column is NOT
+NULL with a `'done'` default and the response model declares a default too. Its
+value is at least *correct*, so it is a redundancy rather than a falsehood, and
+removing it would be churn on a live path for nothing.
+
+### Verification
+
+Mobile 1486 tests across 131 files (was 1478/130); `tsc`, `eslint` and
+`check-dead-exports` (516) clean. `pageSamples.web.ts` restored byte-identical
+after the mutations. Backend untouched.
+
+---
+
+## 2026-09-04 — A fallback that could not fire, saying the one thing the number exists not to say
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. CI still cannot allocate a
+runner.
+
+The response-field entry below turned on a fallback: `transcription_status ??
+'done'` is what made an absent field into a confident wrong answer. So I read
+every `??` in `data/sources/api.ts` and asked the same question of each — **if
+this fires, does the musician get an honest absence or a plausible lie?**
+
+Thirty-one of them. Twenty-nine answer `null`, `[]` or `'Unknown piece'`, which
+is absence stated as absence. Two substitute a value:
+
+- **`missedNotes: result.n_missed_notes ?? 0`** — and it is fine, which is
+  worth writing down rather than leaving to the next reader to re-derive.
+  `VerdictScreen` renders it as `take.missedNotes > 0 ? … : null`, so a missing
+  field produces **silence**, not a claim that no notes were missed.
+  `extraNotes` reaches no screen at all.
+- **`spreadPct: spreadOf(result) ?? Math.abs(deviationPct)`** — the subject of
+  this entry.
+
+### Why that one is wrong even though it never runs
+
+`spreadPct` exists because a **signed mean answers "which way", never "how
+much"**: a bar 18% ahead and a bar 18% behind average to zero, and the same two
+bars are 18 apart. The fallback answers the spread with `|mean|` — which is the
+*minimum* a spread can be, and is exactly the reading the whole measurement was
+added to replace. A musician whose bars cancel would read as perfectly even.
+
+It cannot fire. `meanDeviationOf` and `spreadOf` filtered `per_measure`
+with **identical** code and both returned null on an empty result, and the call
+site already skips the take when the mean is null. So the two were null
+together, and the fallback was dead.
+
+Dead and **false**: it states in code that `|mean|` is an acceptable stand-in
+for the spread. The day either filter changed — a new `wasTimed` condition on
+one side, a different guard — it would have started firing and reported the
+most flattering possible answer, silently, on the screen whose whole point is
+telling a musician how unsteady they were.
+
+### The fix is structural, not a deletion
+
+`timedMeasures(result)` selects the bars once; `meanDeviationOf` and `spreadOf`
+take that list and return a plain `number`. The emptiness check moves to the
+call site, where the decision to skip a take belongs. The two now agree **by
+construction** rather than by two copies of a filter happening to match, and
+there is no fallback to be wrong.
+
+Behaviour is provably unchanged: the branch removed was unreachable.
+
+### Mutation-tested
+
+Making `spreadOf` sum the signed deviations — turning it back into the mean it
+exists not to be — fails three existing cases in `api.test.ts`: *"does not
+claim a direction over a take that had none"*, *"says the same thing whichever
+order two opposite takes arrive in"*, and *"orders pieces by distance from the
+beat, not by bias"*. That coverage is why no new test was added here: it
+already discriminates, and one more would only restate it.
+
+### Verification
+
+Mobile 1478 tests, `tsc`, `eslint` and `check-dead-exports` (516) clean.
+Backend untouched.
+
+---
+
+## 2026-09-04 — Renaming one response field made every scan look finished, and 3,470 tests passed
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. CI still cannot allocate a
+runner.
+
+The entry below holds the field names the app **sends**. That direction fails
+loudly: `extra="forbid"` answers 422 and something visibly breaks. This is the
+other direction, and it fails **silently**.
+
+### Measured, before writing anything
+
+Renamed `ScoreResponse.transcription_status` to `transcription_state` — one
+field on one response model — and ran everything:
+
+    backend   1992 passed, 2 xfailed
+    mobile    1478 passed
+    ----------------------------------
+    nothing.
+
+What that rename does to a musician: `api.ts` maps
+`score.transcription_status ?? 'done'`, so **every piece in the library reads
+as finished the moment it is created**. No progress bar on a scan that is still
+being read. A scan that failed shown as done, with no notes and no reason. The
+fallback that exists to be kind to an older backend answers for a field that is
+simply gone.
+
+Two mutations of mine did not run before this one did. The first replaced a
+string that no longer existed; the second indexed for a `class` after the last
+class in the file. **Both reported "nothing failed", which is exactly what a
+successful mutation of an unguarded field reports** — and the third attempt,
+applied by line number and verified by printing the changed lines, is the one
+above.
+
+### The half that closes it
+
+`test_client_body_fields.py` (renamed from `…request_fields`, since it now
+holds both). Five response pairs — `MeResponse`, `UsageResponse`,
+`ScoreResponse`, `AnalysisResponse`, `UploadResponse` — asserted in the
+direction that matters: **a field the app declares and the server does not send
+is a failure**. The reverse is ordinary and there are four of them today
+(`page_count`, `page_image_retained_at`, `from_measure`, `skip_long_rests`).
+
+Plus the one reply the app types inline rather than in `data/types.ts`:
+`createAnalysis` declares its own `{ analysis_id, status }`, and that is the
+reply carrying the id every poll of a take is made against.
+
+### Mutation-tested
+
+| mutation | caught by |
+|---|---|
+| `ScoreResponse.transcription_status` → `transcription_state` | `[ScoreResponse]` — the case measured above as invisible |
+| the app reads an `AnalysisResponse.room_tone_db` nobody sends | `[AnalysisResponse]` |
+| the inline reply reads `state` for `status` | its own case |
+
+### Verification
+
+Backend suite green; the file is 25 cases now, up from 19. Mobile untouched.
+
+---
+
+## 2026-09-04 — The third contract of that family: the field names in a request body
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Audio, the submission end.
+CI still cannot allocate a runner.
+
+`test_client_reachability.py` holds the **paths** between the two trees.
+`test_client_enums.py` holds the **vocabularies**. Nothing held the **field
+names**, and here that is the sharpest of the three:
+
+**Nine request models set `ConfigDict(extra="forbid")`.** One unknown key is a
+422 on *every* request through that endpoint. A field added to
+`CreateAnalysisInput` and not to `CreateAnalysisRequest` does not degrade a
+feature — it stops every take being submitted. The reverse fails as hard: a new
+**required** field on the server rejects every request an installed build makes.
+Neither is visible from inside either tree.
+
+### Measured first: nothing is wrong today
+
+All eight pairs agree. No app field is unknown to its model, every required
+server field is declared in the app, and none of them is marked optional there.
+So this is a fence rather than a repair — written because the drift is silent
+and total, not because it had happened.
+
+The seam is the app's own typed request interfaces:
+
+    CreateAnalysisInput    → CreateAnalysisRequest
+    UpdateMeInput          → UpdateMeRequest
+    TranscribedScoreInput  → CreateScoreRequest
+    HandEnteredScoreInput  → CreateScoreRequest
+    AttachScorePagesInput  → AttachScorePagesRequest
+    UpdateScoreInput       → UpdateScoreRequest
+    ImportScoreInput       → ImportScoreRequest
+    CorrectionInput        → Correction
+
+Plus one body the app writes as a literal rather than from a type:
+`postCorrections` sends `{ corrections }` by hand, so nothing above can see it.
+One key, and renaming either side is a 422 on every correction a musician
+sends — on the endpoint whose own docstring calls itself the only route out of
+Batch 3's untuned thresholds. It has its own case.
+
+Discovery of what needs pairing is a **source scan**, not a hand-written list,
+so the list cannot be the thing that rots; the two excused models
+(`CalibrationRequest`, which has no client at all, and the corrections wrapper)
+are checked in both directions the way `NOT_WIRED` is.
+
+### The scan read prose as code, and reported the opposite of the truth
+
+The first version searched each class body for `extra="forbid"` and flagged
+`score_schema._Strict` as unpaired. `_Strict` sets **`extra="ignore"`** — and
+its docstring argues at length for why, because forbidding *"cost whole
+pages"*: one unexpected key from a model that noticed a mid-page metre change
+failed validation for the entire score, and the page came back unreadable.
+
+So the check named the one model in the repository that deliberately does the
+opposite of what the check is about, and I had already carried that misreading
+into an allowlist entry excusing it. It matches the **assignment** now, not
+text anywhere in the body. Second time today a scan of mine believed something
+it read in the wrong context — the other was a probe counting `#root` while a
+sheet rendered in a portal on the body.
+
+### Mutation-tested
+
+| mutation | caught by |
+|---|---|
+| the app declares `room_tone_db` | "sends no field the endpoint would refuse" |
+| `target_bpm` marked optional in the app | "declares every field the endpoint requires" |
+| the server gains a required `room_tone_db` | the same |
+| a new model with `extra="forbid"` | "paired or excused" |
+| the corrections wrapper key renamed client-side | its own case |
+
+Each by exactly the case named for it, and nothing else.
+
+### Verification
+
+Backend suite green; `test_client_request_fields.py` is 19 cases. Mobile
+untouched.
+
+---
+
+## 2026-09-04 — The empty account is gated now, not remembered
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. CI still cannot allocate a
+runner, so this is a change to what CI *would* run.
+
+The entry below made an account with nothing in it reachable with one command.
+That is half the job: a flag somebody has to remember is the same ritual it
+replaced, one step shorter.
+
+`ci.yml`'s `app-walk` job now builds a second bundle
+(`npm run build:web:empty`), serves it on :4323, and runs the accessibility
+audit over Today, Library, Insights and Profile. Named routes, because the rest
+of the list points at `fixture-…` ids an empty account does not have and
+sweeping them would measure a page of not-found states; `unvisitedRoutes` still
+runs against the whole list, so the filtered run cannot report full coverage.
+
+**Why it is worth a minute of CI.** Today, Library and Insights are otherwise
+only ever rendered with a library, a take and thirty days of trend behind them.
+The one time anybody looked at the empty ones — 2026-09-02, by hand — Today was
+telling a new musician *"Nothing to practice yet"* above a fully built daily
+warmup it was hiding from them. That is a composition fault: no unit test has a
+shape that could catch it, and the instrument that can is a rendered sweep.
+
+### What CI already covered, checked rather than assumed
+
+`ci.yml` runs the EDIT_LOG check, brand assets, dead exports, pytest, the
+mobile suite with `tsc` and `eslint`, the web build, the **iOS** bundle, the
+walk and the a11y audit, and the legacy `frontend` build. The standing checks
+added this session are all inside jobs that already run — so the only gap was
+this one, and it is closed.
+
+`tools/check-store-readiness.py` is deliberately not there: it lists what a
+person must do before an App Store submission, and a non-gating step that
+prints the same six items on every build is noise rather than a check.
+
+### Verification
+
+The YAML parses and the three steps land in `app-walk` in the right order.
+Locally the same sequence runs green: the populated build on :4322 (walk PASS,
+a11y PASS across 32 entries) and the empty one on :4323 (a11y PASS, 4 of 32).
+Both servers coexist — `--output-dir` writes elsewhere and `--clear` clears the
+bundler cache, not `dist/`.
+
+**Not verified:** that it passes on a GitHub runner, because none has been
+allocated to this repository since `5c04e1e`. Every job still fails in three to
+four seconds with no steps.
+
+---
+
+## 2026-09-04 — An account with nothing in it is one command now, and lint was broken for anyone who built twice
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. CI still cannot allocate a
+runner. **No screen changed.**
+
+### The state every musician meets first
+
+CLAUDE.md names it as the sixth time a state with nothing to render it cost
+this project a real bug — on 2026-09-02 Today was telling a new musician
+*"Nothing to practice yet"* directly above a fully built daily warmup it was
+hiding from them. Its own instructions for reaching it were *"five one-line
+edits to `fixtures.ts` … then `git checkout --` the file"*.
+
+**A ritual with a revert in it is how `.env` gets committed.** So the five
+edits are now one flag: `EXPO_PUBLIC_FIXTURES=empty`, read in `fixtures.ts`
+alone, spelled out in full because Expo substitutes the literal expression and
+a computed lookup reads an empty object in the bundle — the trap
+`environment.ts` documents. Unset it folds to `false` and the branches are dead
+code. It cannot touch a live build: `sources/index.ts` only reaches that module
+when no backend was configured.
+
+`npm run build:web:empty` → `dist-empty/`. Documented in `mobile/README.md`;
+CLAUDE.md's five-edit paragraph now points there.
+
+### Looked at, and all three are right
+
+    Today      "Good morning" · "Nothing in your library yet" · "Add a piece"
+               — **with the warmup below it**, D major one octave, stave and
+               Start. The 2026-09-02 bug is fixed and now has a build that
+               shows it.
+    Library    "No pieces yet" · "Add a piece and it will appear here, ready
+               to practice."
+    Insights   "No practice recorded yet" · "…record yourself playing it.
+               InTempo will show you where the tempo held and where it
+               drifted." · "Add your first piece"
+
+a11y audit clean on all four tabs of that build. `audit-a11y.mjs` takes route
+names after the port now, because most of its list points at `fixture-…` ids an
+empty account does not have and sweeping them would measure a page of
+not-found states. The unvisited-route check still runs against the **whole**
+list, so a filtered run cannot claim full coverage.
+
+**Three-foot test, empty Today**, 390×844: first the serif "Good morning";
+second the ochre avatar ring, which is the only saturated colour on the screen;
+third the empty-library block with its one action. Hierarchy holds and the
+warmup sits below as secondary content. Two thirds of the screen is space,
+which on an account with nothing in it is the honest answer.
+
+### And a lint that has been broken for anyone who built twice
+
+Building `dist-empty/` made `npm run lint` report **11,110 errors** — `__d is
+not defined`, `DOMException is not defined`, an unexpected console statement at
+column 42794 — all of it in minified bundle output.
+
+`eslint.config.mjs` ignored `dist`. `tsconfig.json` ignores `dist-*`, **with a
+comment explaining exactly why**: the harness builds a second bundle into
+`dist-live/`, and tsc "happily walked into 3.4 MB of minified output and blew
+its stack on it". The argument was written down and applied to one of the two
+tools.
+
+Verified it predates this change: at `HEAD`, with a `dist-live/` present and
+nothing else touched, `npm run lint` exits **1**. Every "lint clean" in this
+session's entries was true as measured — only `dist/` existed — but the hole
+was there, and the harness's own documented second bundle is enough to trip it.
+
+A lint that fails for everyone who has run the harness is a lint people stop
+running, which is how this tree ended up with six `eslint-disable` directives
+for a linter that was not installed.
+
+**And the near-miss is worth recording.** I first read `lint=0` from
+`npm run -s lint | tail -3; echo $?` — which reports `tail`'s exit code, not
+eslint's. That is the identical mistake this session made once before, on
+2026-09-03, and published before catching. The "6 errors potentially fixable"
+line printed above the false `0` is the only reason I looked again.
+
+### Verification
+
+Mobile 1478 tests; `tsc`, `eslint` and `check-dead-exports` (516) clean, each
+read from its own exit code rather than through a pipe. Walk PASS. a11y PASS on
+the populated build (32 entries) and on the empty one (4 of 32).
+
+---
+
+## 2026-09-04 — The payoff screen has four states and one of them had a fixture
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Audio, the answer end. CI
+still cannot allocate a runner. **No screen changed** — fixtures added so
+existing screens can be looked at.
+
+`VerdictScreen` branches on `failure` **twice** — recoverable and
+unrecoverable are different sentences and different buttons — then on a
+`status` that is not `ok`, and only then draws a verdict. The fixtures held one
+take and it succeeded. Three of the four states of what CLAUDE.md calls the
+payoff of the whole app had **never been on a screen**.
+
+Third instance today of the same shape: a route is visited, in one state, and
+`unvisitedRoutes` compares paths.
+
+### The fixtures, and the decision they had to respect
+
+`buildFixtureTake` carries a deliberate comment: *"The sample take always
+succeeds. A failed run is a live-only outcome — fabricating one here would put
+a 'we couldn't read that' screen in front of someone browsing the demo,
+describing a recording they never made."* That still holds, and it is about
+`getLatestTake` / `getRecentTakes`, which Today and Insights read.
+
+So the four new states are reachable **by id and by nothing else**. The
+browsable sample build is unchanged; a sweep can open them.
+
+Their sentences are the pipeline's own, read off `analyze()` rather than
+written: silence really answers *"Your recording is completely silent — no
+sound reached the microphone at all…"* and a take that cannot be matched
+answers *"We had trouble matching your recording to the score…"*. A fixture
+that invented its wording would check the screen against a sentence the
+product never sends — the same rule the post-scan `transcriptionError` fixture
+follows.
+
+### Rendered, all four
+
+    fixture-take-failed         "This take didn't get analysed"
+                                "…on our side, not with your playing…"   Try again
+    fixture-take-unrecoverable  "This take didn't get analysed"
+                                "We couldn't process this recording…"    Record again
+    fixture-take-silent         "Nothing to measure" + the silence
+                                sentence                                  Record again
+    fixture-take-unmatched      "Nothing to measure" + the mismatch
+                                sentence                                  Record again
+
+Five walk checks and four a11y entries. **The walk's extra over the sweep is
+the pair**: recoverable and unrecoverable are one `? :` in the source, and
+swapping it leaves every screen looking right on its own while a musician whose
+take failed for good is told to try again — and tries again, and it fails
+again. A final check asserts the four say four different things, because two
+states reading the same sentence means the branch between them has collapsed
+and neither screen looks wrong alone.
+
+### Mutation-tested
+
+| mutation | caught by |
+|---|---|
+| the recoverable `? :` inverted | both failure checks, naming the buttons they got |
+| both failure branches share one sentence | "a failure that will not come back says nothing that names it" |
+
+### Three-foot test — looked at, not changed
+
+*Verdict — nothing heard*, 390×844. First the centred serif "Nothing to
+measure"; second the pipeline's sentence under it; third "Record again"
+anchored at the bottom. One focal point, the piece title receding to an
+eyebrow, no cards, primary action in the thumb zone. It matches the owner's
+2026-09-02 call that these read as empty states. The vertical band above the
+block is larger than a strict centre would give — `EmptyState fill` sits it
+slightly high — which is a composition detail rather than a fault, and §2
+either way.
+
+### Verification
+
+Walk PASS, 49 checks (was 44). a11y PASS, 32 entries (was 28). Mobile 1478
+tests, `tsc`, `eslint` and `check-dead-exports` (516) clean.
+`VerdictScreen.tsx` restored byte-identical after the mutations.
+
+---
+
+## 2026-09-04 — The a11y audit's "Record" entry has never audited the record screen
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Audio, the setup end. CI
+still cannot allocate a runner. **No screen changed.**
+
+`pieces/:pieceId/record` renders `PracticeSetup` — the first-take tips — until
+`practiceSetupSeen` is stored. Every piece in the fixtures is in that state, so
+the entry that has said `['Record', …]` since the first sweep has been auditing
+a page of advice. Behind it sit eight controls: the tempo steppers, the
+metronome, Listen, the start-at picker, the timer and Start recording. **None
+of them had ever been measured.**
+
+This is the same finding as the post-scan states earlier today, one screen
+over, and the guard that should have caught it still cannot: `unvisitedRoutes`
+compares paths, and both states share one. **A route is not a screen.**
+
+### What now covers it
+
+- The audit takes an options object per route. `seed` writes into
+  `intempo.preferences.v1` before load — the key `data/preferences.ts` uses
+  through `AsyncStorage`, which on react-native-web is `localStorage` — so a
+  route can be audited in the state it is listed for. `expect` names a phrase
+  only that state renders.
+- Two entries now share `pieces/fixture-bach-bwv1001/record`: "first-take tips"
+  and "tempo and controls". Both clean. 28 audited entries, up from 27.
+- **`expect` is the guard on `seed`**, and it is not decoration: two entries on
+  one path would otherwise both audit the tips if seeding ever stopped working,
+  and the output would go on claiming the controls were looked at. Mutation-
+  tested — disabling the seed, and changing the phrase — each fails with
+  *"WRONG STATE: nothing on the page says …"*.
+
+### And the walk drives it
+
+Five checks. The tempo is the one that matters most: `submitTake` sends it as
+`target_bpm`, `build_timeline` scales the whole expected timeline by it, and
+every band in the verdict is a percentage of one beat at it.
+
+    a first take opens on the tips, not on the controls
+    the tips lead to the controls, at 92 BPM
+    the tempo steps evenly both ways: 92 → 94 → 92
+    the start-at picker opens and says what the bar governs
+    reopening the tips comes back to the controls, not out of the flow
+
+The tempo check asserts the step is **symmetric**, not merely that the number
+moves: a stepper that rose by two and fell by one would drift the target every
+time a musician changed their mind, and the number on screen would still look
+deliberate. The last check covers `RecordScreen`'s `practiceSetupSeen` branch,
+where dismissing the tips a second time must close them rather than leave the
+screen.
+
+### A measurement I got wrong, and caught
+
+I first reported the start-at control as **doing nothing** — an enabled 44pt
+button labelled "Change where the take begins", clicked on three different
+pieces, no change in content and no change in node count. It was going to be
+this entry's headline, and it is wrong.
+
+`BottomSheet` renders through a portal on `document.body`, and my probe counted
+`#root *`. Re-measured against the whole document the sheet is plainly there:
+13 leaves to 33, with *"Start the take at"* among the new ones. The walk's own
+`leaves()` has always read the whole document, which is why the check written
+from it passes.
+
+Recorded because the near-miss is the useful part: the control has a history —
+`from_measure` reached `main` once and refused every take, because migration
+015 had not been applied — and a plausible story about a known-fragile feature
+is exactly the kind that gets believed without a second measurement.
+
+### Mutation-tested
+
+| mutation | caught by |
+|---|---|
+| `Slower` steps by 1 while `Faster` steps by `BPM_STEP` | "the tempo steps evenly both ways": 92 → 94 → **93** |
+| the reopened tips always `goBack()` | "closing the reopened tips left for /pieces/fixture-bach-bwv1001" |
+| the audit's `seed` disabled | WRONG STATE on "Record — tempo and controls" |
+| the `expect` phrase changed | the same |
+
+### Verification
+
+Walk PASS, 44 checks (was 39). a11y PASS, 28 entries (was 27). No page errors.
+`RecordScreen.tsx`, `TempoStepper.tsx` and `PlaybackSettings.tsx` all restored
+byte-identical — `git status` shows only the two tools changed. `.env` moved
+aside for every build and restored with `diff -q`.
+
+**A correction to earlier entries today:** two of them said the audit covered
+"19 routes" and then "23 routes". Counted properly from `ROUTES`, it was 27
+before this change. The screens named in those entries were really added; the
+totals beside them were not measured.
+
+---
+
+## 2026-09-04 — The screen that repairs a misread bar was only ever opened, never used
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Transcription, the repair
+end. CI still cannot allocate a runner. **No screen changed** — this is the
+walk driving one that already works.
+
+`MeasureEditScreen` is the answer to every bar the reader got wrong, and the
+number a musician steers by is the beat count: press durations until the bar
+adds up, then save. `describeBeats` and `timeSignaturesByMeasure` are both unit
+tested. The **wiring** between them and the controls is not, and it lives in a
+`.tsx` — the shape of rule this project keeps finding nothing checking, and the
+reason `walk-app.mjs` exists at all.
+
+The walk's only line about this screen was *"deep-linked bar editor → back to
+the score"*. It opened it and left.
+
+### Driven, in a browser, on the fixtures build
+
+    opened                4 of 4 beats · "This bar adds up. Save it, or keep adjusting."
+    quarter → half        5 of 4 beats · the "adds up" line withdrawn
+    delete a note         3 of 4 beats
+    save                  "Correcting a score needs the backend. This build
+                           runs on sample data." — and stays on /bars/3 with
+                           the edit still on screen
+
+Four new checks, and two of them are the ones worth having:
+
+- **The count moves *and* the sentence beside it withdraws.** Asserted
+  together, because a count reading 5 of 4 next to a line still saying the bar
+  adds up is the same screen-contradicts-itself fault the agreement checks were
+  added for.
+- **A refused save keeps the edit.** A screen that navigated away on failure
+  would throw out every correction just made, and there is nowhere to get them
+  back from.
+
+The failure this protects against is not cosmetic. A musician whose count
+stopped moving would go on pressing durations until the bar *looked* right and
+save one that does not add up — and a wrong bar length moves every onset after
+it, which `MeasureEditScreen`'s own comment calls the one kind of correction
+that cannot be seen by looking at the bar afterwards.
+
+### Mutation-tested against rebuilt bundles
+
+| mutation | result |
+|---|---|
+| `describeBeats(original?.notes ?? working, …)` — the count ignores the edit | 4 failures, including the refused-save case noticing the edit was gone |
+| `goBack()` added to the save's `catch` | "a refused save left the editor for /pieces/…/score, losing the edit" |
+
+A third attempt — `describeBeats(original, …)` — is worth recording as a
+**bad** mutation: it crashed the screen outright, so the walk died at an
+earlier check and never reached this section. A mutation that breaks the thing
+under test more thoroughly than the bug being modelled proves nothing about the
+check; it has to fail the way the real regression would.
+
+### Verification
+
+Walk PASS, 39 checks (was 35). a11y audit PASS across 23 routes. No page errors
+across the whole walk. `MeasureEditScreen.tsx` restored byte-identical after
+the mutations — `git status` shows only `tools/walk-app.mjs` changed. `.env`
+moved aside for every fixtures build and restored with `diff -q`.
+
+---
+
+## 2026-09-04 — Nothing shipped: a corpus baseline measured, and a test reverted
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. No code changed. Recorded
+here so the gap between the entries either side is not a mystery; the substance
+is in `TUNING_LOG.md`, 2026-09-04, "Baseline: what the pipeline says about all
+six corpus clips today".
+
+The six clips in `fixtures/audio/` are what the whole Batch 3 tuning story
+rests on, and **nothing ran them through `analyze()`**. `test_cli.py` prints
+one line from one clip; `test_audio.py` borrows another as a block of real
+audio to filter; `test_analysis.py` asks the interesting questions but
+synthesises its own click tracks in-test.
+
+Measured, all six analyse cleanly and each matches its manifest's `expect`
+field in words — including `04_slurred` at quality 0.990, against the 0.196 and
+`alignment_failed` that `build_timeline`'s comment records from when an onset
+was expected under every bow stroke.
+
+I wrote `test_tuning_corpus.py` to hold that, then mutated the pipeline five
+ways to see what it was holding. **Zero unique catches** — every mutation was
+caught more loudly by the existing suite, and the three aimed at detector
+settings (`wait_ms`, `delta`, `pre_emphasis_coef`) failed the synthetic tests
+and passed the corpus, which is the reverse of what I predicted. Its docstring
+also claimed the slur fix was held by nothing; seven tests hold it. Reverted,
+along with the `direction` field it had added to `manifest.json`.
+
+Third test dropped today on the same reasoning, and the reasoning is worth
+keeping consistent: a test that adds no discrimination makes the next person
+believe something is guarded when the guarding lives somewhere else.
+
+---
+
+## 2026-09-04 — Four more server faults were being blamed on the musician's photograph
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Picture → transcription.
+CI still cannot allocate a runner.
+
+Same shape as the readiness list one entry down, on the other hand-maintained
+list in the read path. `_FAILURE_REASONS` turns whatever went wrong into a
+sentence on the score screen, and its default is *"a flatter, better-lit shot
+of the page usually fixes it"* — advice, which only helps when the photograph
+is the problem. For a fault on our side the musician follows it, and it fails
+again, and again.
+
+**The table's own comments record this being got wrong three times**: `homr is
+not installed in this container` matched nothing; `AuthenticationError: invalid
+x-api-key` matched nothing because hyphens were not flattened; and three of the
+four server-side needles reached the default when first measured against the
+running service. Each fix added needles. Nothing checked that the *next* raise
+site would get one.
+
+### Measured: every message the read path raises, run through the table
+
+Of 27 raise sites in `app/services/ocr/`, **four were landing on the default
+and should not have been**:
+
+| message | why the default is wrong |
+|---|---|
+| `unknown provider 'gpt4v'; known: [...]` | a typo in `OCR_PROVIDER_CHAIN`, and its two siblings — "no usable provider", "chain is empty" — already had needles |
+| `RuntimeError: CUDA out of memory` | homr peaks at **1350 MB**, measured, which is why it runs on Modal at all; a container out of room is the predictable failure |
+| `not parseable as XML: …` | reached only via homr, on the reader's **own** output — the import route raises the same words at a musician's file but answers 422 and never gets here |
+| `nothing to join` | an internal invariant, and nobody can photograph their way out of one |
+
+Each now has a needle, and each says *"a fault on our side, not with your
+photograph"* in the table's existing voice.
+
+### The check that closes it
+
+`test_failure_sentences.py`. Every message the read path raises must either
+match a needle or appear in `DEFAULT_IS_RIGHT` with a reason why the photograph
+really is the thing to change — twelve entries, each argued (a template with no
+words of its own; a vision model answering with nothing; homr finding no staves
+after the sideways retry; the import route's 422 text, which never reaches this
+table).
+
+Both directions, the doctrine `NOT_WIRED` and `_HUMAN_STAGES` were each given
+after they rotted: an excluded message that has since gained a needle fails,
+and so does one nothing raises any more. Plus a fourth case asserting the
+default still *is* advice about the photograph — the whole argument in the file
+rests on that sentence, and if it changes the argument needs rereading rather
+than quietly continuing to pass.
+
+### Mutation-tested, and one mutation did not run the first time
+
+| mutation | caught by |
+|---|---|
+| a new `raise OCRError("the reader gave up on this one")` | "has a sentence or a reason", naming the file and both remedies |
+| the `unknown provider` needle removed | the same case |
+| an excluded message gains a needle, reason left behind | "quietly gained a needle" **and** the first case |
+| an excluded message renamed out of existence | "stopped existing" **and** the first case |
+
+The first attempt at mutation 1 reported **caught nothing**, and the honest
+reason is that it never applied: the raise it targeted is split across lines,
+so the replacement matched no text and the file was unchanged. A mutation that
+does not mutate reads exactly like a test that does not test. Re-run against
+the real source it fails loudly, with the message quoted above.
+
+### Verification
+
+Backend suite green. Mobile untouched.
+
+**What this does not do:** it cannot see a message a *library* raises. The
+`{type(exc).__name__}: {exc}` channel carries anything, and only its known
+contents are needled. That entry is on the exclusion list saying so, rather
+than pretending otherwise.
+
+---
+
+## 2026-09-04 — `/v1/ready` checks a hand-written list of columns, and nothing checked the list
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Picture → transcription.
+CI still cannot allocate a runner.
+
+Migrations here are applied **by hand** through the Supabase SQL editor, so
+shipping code and applying its migration are two separate acts and the gap
+between them is invisible. `readiness.REQUIRED_COLUMNS` exists because that gap
+went live once already — its own docstring records `analyses.instrument`
+reaching production before the column did, with every take submission failing
+on a column-not-found error that reads like a server bug.
+
+It is a hand-maintained list whose comment says *"add a row here whenever a
+migration adds a column the code depends on"*, and **nothing outside
+`readiness.py` referenced it.** Measured against the migration files, it was
+three rows short:
+
+    scores.transcription_stage      (006)
+    scores.transcription_error      (006)
+    scores.page_image_discarded_at  (007)
+
+Each fails differently, which is the argument the list already makes for itself
+two blocks lower — *"one row per column the code reads, not one per migration:
+a deployment can be half-applied"*. The 009 block follows that rule with four
+separate rows. The 006 block, immediately above it, did not.
+
+What each one costs a deployment that has the table and not the column, while
+`/v1/ready` says ready:
+
+- **`transcription_stage`** is written on every step the worker reports, so
+  every read errors partway through and the row sits `reading` for the sweeper.
+  The measured progress bar has nothing to move on.
+- **`transcription_error`** is the only place a failure's sentence goes.
+  `_FAILURE_REASONS` — the table of wordings written for a musician rather than
+  a log, rewritten three times to stop blaming a photograph for a fault on our
+  side — reaches nobody; the scan shows as failed with no reason at all.
+- **`page_image_discarded_at`** is written by `accept`, the one action that
+  authorises discarding a photograph. Missing it, accept fails, so the object
+  is never removed and no row records that it should have been.
+
+### The check that closes it
+
+`test_readiness_columns.py`, four cases, both directions — the same doctrine
+`NOT_WIRED` and `_HUMAN_STAGES` were given after each rotted:
+
+1. a column added by a migration and mentioned in the backend, absent from the
+   list → fail;
+2. a column on the list that no migration adds → fail (a probe that can never
+   pass is a permanently red row, and a readiness page with one of those is a
+   page people stop reading);
+3. the migration number a row names must be the one that adds the column — that
+   number goes into the failure detail as *"apply
+   `backend/app/migrations/NNN_*.sql`"*, and pointing at the wrong file sends
+   somebody to run a migration that will not fix what they are looking at;
+4. the same rule for `REQUIRED_TABLES`.
+
+**"Used" is deliberately coarse**: the column name appearing anywhere in
+`backend/app` outside tests. A stricter reading that tied names to
+`.table(...)` calls found only two of the three — `page_image_discarded_at` is
+written into a `patch` dict several lines from the query that sends it. The
+cost of coarseness is a false *negative*, which is the direction a check has to
+fail in if people are going to keep running it; same argument
+`tools/check-dead-exports.py` makes for having no allowlist.
+
+### Mutation-tested
+
+| mutation | caught by |
+|---|---|
+| drop one of the three new rows | case 1 |
+| list a column no migration adds | case 2 |
+| point `analyses.from_measure` at 012 instead of 015 | case 3 |
+| a new migration adding a column the code names | case 1 — the list is self-maintaining now |
+
+### Verified live while I was in there
+
+Against `intempo-dev` (`ycpxhqgdvhgwifckgvew`), read rather than assumed:
+
+- **Every migration 004–016 is applied.** CLAUDE.md records 013, 014 and 015
+  sitting unapplied for weeks, and 015 being why the start-bar picker refused
+  every take after merging to `main`. They are applied now; 016 was applied
+  earlier in this session.
+- **136 column references in the backend — 106 read, 30 written — all exist.**
+  Extracted from `.select`/`.eq`/`.order`/`.insert`/`.update` and compared
+  against `information_schema`. Zero mismatches, so no repeat of the
+  `instrument` story is sitting there today.
+
+Both are null results and neither became a test: they need live credentials,
+which CI does not have, and `/v1/ready` is already the mechanism that reports
+them from inside a deployment. What was missing was not a new probe but the
+guarantee that the probe list is complete, which is what this change is.
+
+### Verification
+
+Backend suite green. Mobile untouched.
+
+---
+
+## 2026-09-04 — The app's own WAV, through the whole pipeline, to a verdict
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Audio verification. CI
+still cannot allocate a runner.
+
+`test_app_encoder_wav.py` stopped at `detect_onsets`. Everything after that —
+`build_timeline`, alignment, the tolerance bands, the sentence a musician reads
+— had never seen a file the **app** wrote; every other audio fixture in this
+repository came out of `soundfile`.
+
+So `analyze()` now runs on both app-encoded click tracks against a two-bar 4/4
+score at 120 BPM. The click track is 8 bursts 0.5 s apart, which is 8 quarter
+notes at exactly 120, and the score is written out in the test rather than
+derived from the clip — neither came from the other.
+
+Measured:
+
+    22050 Hz  status ok  quality 0.978  "Steady tempo — you held it within
+                                         tolerance across the piece."
+    48000 Hz  status ok  quality 0.975  the same sentence
+
+The claim being asserted is the one a musician would care about most: **a take
+that is perfectly in time must not be accused of anything.** A pipeline that
+told someone playing exactly with the click that they rushed would be worse
+than one that failed, because the failure would be believed.
+
+The second new case carries the rate check through to the answer. Identical
+onset times are necessary and not sufficient — alignment, the bands and the
+quality weighting all sit between the onsets and the sentence — so the two
+rates are asserted to produce the same verdict, the same status, and quality
+within 0.02.
+
+### A third test, written and dropped
+
+I also wrote `test_the_thresholds_are_not_tuned_tighter_than_the_detector_can_
+measure`, then checked what it was holding. Narrowing
+`tolerance.rushing_inner_pct` / `dragging_inner_pct` to 0.5 fails **19 existing
+tests**. The suite already screams; my version added a twentieth voice.
+
+Its value was never the assertion — it was the measurement in its docstring,
+and that belongs in `TUNING_LOG.md`, which exists for exactly this. Moved
+there. Same call as the composite-page test dropped earlier today, and the six
+recording-endpoint tests before that.
+
+### What that measurement says (full entry in `TUNING_LOG.md`)
+
+The steady band can be narrowed from the shipped **5.0%** to **1.0%** and the
+perfect take still reads steady; at 0.5% it is told *"You rushed across
+measures 1–2 by an average of 2 BPM."* Roughly five times the headroom under
+the shipped value, and `quality` is 0.975 at every step — the inner band moves
+the sentence, not the score.
+
+**And it corrected reasoning I had wrong.** I expected the floor near 6%: the
+detector reports these attacks +10 to +31 ms late, and 31 ms is 6.2% of a beat
+at 120 BPM. That is not how it works — `to_timeline_base` re-zeros on the first
+onset and `pulse_anchors` re-anchors after a disturbed run, so a *constant*
+lateness never reaches the bands at all. Only the spread survives, about 10 ms
+here. The detector's absolute bias is not a constraint on tuning; its jitter
+is, and the jitter is far smaller.
+
+### Mutation-tested
+
+| mutation | caught |
+|---|---|
+| the steady band narrowed to 0.5% | both new cases (and 19 others) |
+| `load_audio` stops resampling | the onset cases; **not** the verdict ones — the anchoring absorbs it, which is worth knowing: onsets are the sharper instrument for a rate fault |
+| the 48 kHz header says 44100 | 5 cases across the file, including both new ones |
+
+### Verification
+
+Backend 1965 passed / 2 xfailed (was 1962). Mobile untouched.
+
+**Not held:** still no sound. A synthetic click track is the cleanest input
+there is, and the real recordings Batch 3's tuning waits on would say something
+this cannot.
+
+---
+
+## 2026-09-04 — There are three walks over a score, and the click was the unheld one
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Audio verification. CI
+still cannot allocate a runner.
+
+`fixtures/timeline/parity.json` holds two walks: `alignment.build_timeline`
+(what the analysis expects to hear) and `lib/score/schedule.ts` (what the app
+plays back). **There is a third.** `buildMetronomePlan` accumulates its own
+quarters over `measuresInPlayOrder`, and it is the one a musician actually
+synchronises to — playback is a reference you listen to *before* a take, the
+click is what is in your ears *while* you play.
+
+So its failure is the worse one. A click that drifts from the timeline means a
+musician plays exactly with it and is told they rushed: every part behaving,
+nothing to notice, and the recording is evidence against them.
+
+### What the mutations said, including about my own first attempt
+
+I wrote a window check first — every server onset must fall between the
+metronome downbeat of its bar and the next. It passed. Then I measured what it
+was holding, against `plan.test.ts` alone:
+
+| mutation to `plan.ts` | `plan.test.ts` | window check |
+|---|---|---|
+| the click runs 2% fast | 4 failures | **0** |
+| repeats not expanded | 1 failure | 2 |
+| a bar's length hardcoded to 4 | 3 failures | **0** |
+
+Two of three caught by the existing suite and not by mine. A window a whole bar
+wide tolerates a 2% drift, and the last bar's window runs to infinity. On its
+own that check was close to worthless, and I nearly shipped it.
+
+What it was missing is a case, not an assertion. **No fixture in this
+repository has a bar whose notes do not fill its metre** — every bar in
+`parity.json` and every bar in `plan.test.ts` sums exactly, so all three walks
+advance by four quarters whether they read the notes or the time signature, and
+the difference cannot show. That state is not an edge case in this app: a short
+bar is what `validate.py` flags, what `MeasureEditScreen` repairs, and what
+`MeasureConcern` reports on the score screen.
+
+With a three-quarter bar in 4/4 added, and its downbeats tied to
+`scheduleScore`'s note times:
+
+| mutation | `plan.test.ts` | new file |
+|---|---|---|
+| `atQuarter += duration` → `+= (pulsesPerBar ?? 4) * quarterSize` | **0 — all pass** | 2 failures |
+| repeats not expanded | 1 | 2 |
+| the click runs 2% fast | 4 | 2 |
+
+The first row is the point. Advancing a bar by its **metre** instead of by the
+notes in it is a one-token change that passes every other test in this tree,
+and it puts the click a quarter ahead of the reference from the misread bar
+onward — which is the commonest kind of bar the app holds.
+
+### The tie, and why it is a parity check
+
+The short-bar case asserts the metronome's downbeats against `scheduleScore`'s
+own note times, not against numbers I typed. `scheduleScore` is held to
+`build_timeline` by `schedule.parity.test.ts`, so a click that agrees with
+playback agrees with the timeline the verdict is measured against. The chain
+closes: server ←→ playback ←→ click.
+
+The fixture-based half is kept too — it caught the repeat-expansion mutation
+more loudly than the existing suite, and it is what pins one downbeat per
+*performed* measure through a first/second ending. Its derivation of "which
+performed measure is this onset in" reads `expected_measures`, so it is the
+server's answer rather than a second guess; a separate case guards the one
+assumption that reading makes (no two adjacent performed measures sharing a
+number).
+
+### Verification
+
+Mobile 1478 tests across 130 files (was 1472/129); `tsc`, `eslint` and
+`check-dead-exports` (516) clean. Backend untouched.
+
+**Not held:** no sound was made. This is arithmetic agreeing with arithmetic —
+that the click a device emits lands where the plan says still needs a device.
+
+---
+
+## 2026-09-04 — The shrink floor's reason was prose, and one test I wrote did not earn its place
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Picture path. CI still
+cannot allocate a runner.
+
+### The pixel floor was argued, never held
+
+`test_client_enums.py` ties the app's upload cap to the worker's refusal size —
+in **bytes**. Nothing did the same for **pixels**. `MIN_LONG_EDGE`'s docstring
+makes the case in prose ("25 px of staff spacing at 5712 is about 10.5 at 2400,
+still clear of the server's floor of 8") and prose is not a check: lower that
+rung and every large page would upload, save, and then be refused at the
+reading step for a size the app itself chose.
+
+The chain that now holds it was already three-quarters built, which is why the
+new assertion is one line of arithmetic:
+
+    _MIN_STAFF_SPACE_PX (server)
+      ← test_client_enums.py
+    SERVER_FLOOR (legibility.ts)
+      ← MIN_PAGE_ROWS = ceil(SERVER_FLOOR / SPACING_PER_PAGE_ROW) = 1828
+      ← **new**: every SHRINK_LADDER rung ≥ MIN_PAGE_ROWS
+
+At today's numbers 2400 against 1828 — 31% headroom. Asserted on **every**
+rung, not only the smallest, so a rung inserted below the floor fails on its
+own terms rather than depending on the ladder-ordering test.
+
+Mutation-tested three ways:
+
+| mutation | caught |
+|---|---|
+| `MIN_LONG_EDGE` 2400 → 1500 | 5 failures |
+| a 1600 rung appended to the ladder | 6 failures |
+| `SERVER_FLOOR` 8 → 12 (`MIN_PAGE_ROWS` → 2742) | **1 failure, and only this new test** |
+
+The third is the one worth having: a server floor that *rises* is a plausible
+outcome of threshold tuning, and until now it would have left the app quietly
+shrinking pages below what the server accepts, with nothing red.
+
+The arithmetic is a portrait page's — `SPACING_PER_PAGE_ROW` was measured from
+captures of a page filling the frame the tall way — and the test says so rather
+than implying it holds for any image.
+
+### A test I wrote, measured, and reverted
+
+I also added `test_a_photographed_page_splits_into_the_staves_it_holds`, over
+the four page-shaped composites in `mobile/assets/captures/`. The stated reason
+was that every page in `test_page_systems.py` is built by `_page`, which lays
+strips down **flat**, while `_ink_profile` exists precisely because a real
+photograph's systems slope — and the composites carry varied per-strip rotation
+and JPEG artefacts.
+
+It passed. Then I mutated the module to find out what it was actually holding:
+
+| mutation | flat-strip suite alone | composites alone |
+|---|---|---|
+| `_INK_RATIO` 0.90 → 0.20 | 9 failures | 1 |
+| `_BAND_SMOOTH_FRACTION` 0.036 → 0.20 | 22 failures | 4 |
+| `_INK_BLUR_FRACTION` 0.025 → 0.5 (toward a global threshold) | 4 failures | **0 — all pass** |
+| the same at 2.0 | 5 failures | **0 — all pass** |
+
+The third and fourth are the point. That mutation is the *sloping-stave* case —
+the failure the whole rewrite was for — and the composites do not notice it,
+while the flat-strip suite does, because that suite already bows
+`01_simple_printed` by 20 to 60 px on purpose. The rotation in these composites
+is too slight to express what I claimed it expressed.
+
+So the test was redundant on every mutation tried and its comment made a
+coverage claim that measurement contradicted. **Reverted.** A test whose stated
+reason is false is worse than no test: it makes the next person believe a case
+is covered when the coverage lives somewhere else entirely. Same call as the
+six recording-endpoint tests reverted earlier in this session, for the same
+reason.
+
+Recorded here rather than dropped silently, because the *measurement* is worth
+keeping: on the four composites the finder returns 8, 7, 8, 7 systems against
+`SOURCES.md`'s "7–8 staves per page", one crop per system, in reading order,
+non-overlapping. The crop path is healthy on page-shaped input. It just did not
+need a new test to say so.
+
+### Verification
+
+Mobile 1472 tests across 129 files (was 1471); `tsc` and `eslint` clean.
+Backend `test_page_systems.py` 52 passed — the count it had before, which is
+the point.
+
+---
+
+## 2026-09-04 — The two screens every scan lands on had never been rendered by any sweep
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Picture → transcription,
+the far end. CI still cannot allocate a runner. **No screen was changed** —
+this is coverage of screens that already exist.
+
+`POST /v1/scores` returns before a note is read, so a musician who finishes a
+scan lands on a piece that is `reading` and may end on one that `failed`. Both
+states have had fixtures since they were added, and **neither had ever been put
+on screen by the a11y audit or the walk.**
+
+The reason they slipped through is worth writing down, because the guard that
+should have caught it is a good guard: `audit-a11y.mjs` fails on any route with
+a URL and no audit, and `pieces/:pieceId` was visited — by
+`fixture-bach-bwv1001`, which is `done`. **A route list cannot see a state.**
+CLAUDE.md's own line — *"a state with no fixture is a state nobody has looked
+at"* — has a sibling it did not name: a state *with* a fixture that nothing
+opens is in exactly the same position.
+
+### What now covers them
+
+- `audit-a11y.mjs`: four new entries — the piece and the score screen, in both
+  states. All four clean. They are not a second look at the same pixels: they
+  draw a progress bar with a stage under it and three recovery actions, none of
+  which exists on a `done` piece.
+- `walk-app.mjs`: a new section, six checks. Two are the ones worth having:
+  - **The stage is the worker's, not the app's.** `'Reading stave 3 of 7'`
+    comes from `transcriptionStage`, and `'Transcribing the notation.'` sits
+    right beside it as a fallback. A build that took the fallback would look
+    identical to a musician and would have stopped telling them anything,
+    which is the measured-progress promise weakening quietly — the same failure
+    mode as the unrecognised-stage hold recorded on 2026-09-03.
+  - **The failure reason is the server's, word for word.**
+    `_FAILURE_REASONS` exists because that sentence was got wrong three times,
+    twice by blaming a photograph for a fault on our side. All of that reaches
+    nobody if the screen substitutes wording of its own, and nothing was
+    checking.
+
+Plus: both screens name the same stage (the walk's agreement check), the failed
+screen offers three ways on, and it says the piece is still in the library.
+
+### Mutation-tested, against rebuilt bundles
+
+| mutation | caught by |
+|---|---|
+| `piece.transcriptionStage ?? …` → the fallback alone | "names the stage the worker reached" **and** the cross-screen agreement check |
+| `piece.transcriptionError ?? …` → the fallback alone | "shows the reason the server wrote, word for word" |
+
+### Three-foot test — looked at, not changed
+
+Screenshots at 390×844.
+
+*Score, still being read.* First the serif title; second `Reading stave 3 of 7`
+above the only ochre on the screen; third the page crop. Hierarchy holds and
+ochre is doing accent duty exactly as law 5 asks.
+
+*Score that could not be read.* First the serif title; second the centred
+`This page couldn't be read` with the server's sentence under it; third the
+actions. **One observation, not acted on:** the primary action ("Try reading it
+again") is a narrow pill, and the two secondary actions below it are full-width
+rows — so the secondaries read as *larger* than the primary. That is a
+composition question under §2 and is left for the owner.
+
+### Also found, and not fixed — §2
+
+`PieceDetailScreen`'s post-scan row is asymmetric. The `reading` branch prints
+`piece.transcriptionStage ?? 'Transcribing the notation.'` — the server's own
+words. Its `failed` sibling, three lines later, hardcodes **"Photograph it
+again to try once more."** and never reads `piece.transcriptionError`, which is
+sitting on the same object.
+
+So a musician whose page failed *on our side* — homr not installed in the
+container, a credential problem, a fault `_FAILURE_REASONS` answers with *"That
+is a fault on our side, not with your photograph"* — reads, on the piece
+screen, an instruction to photograph it again. That is this project's own named
+law: **advice must be followable in this app**. The right sentence is one tap
+away on `PieceScore`, which is why this is a wrong first line rather than a
+missing one.
+
+The fix is one expression — `piece.transcriptionError ?? 'Photograph it again
+to try once more.'` — but it is copy on a shipped screen, so it is §2 and is
+**not applied**. Flagged for the owner.
+
+### Verification
+
+Walk PASS, 35 checks (was 29). a11y audit PASS across 23 routes (was 19). No
+page errors across the whole walk. `.env` moved aside for every fixtures build
+and restored with `diff -q` each time.
+
+---
+
+## 2026-09-04 — The WAV contract was written at a rate the app never records at
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Audio verification,
+continued. CI still cannot allocate a runner.
+
+The encoder contract added earlier today holds one file:
+`app_encoder_click_track.wav`, 22050 Hz. **Nothing in this app records at
+22050.** `audioRecorder.ts` asks for `REQUESTED_SAMPLE_RATE = 48000` and writes
+whatever the device answers into the header; `audioRecorder.web.ts` writes
+`context.sampleRate`, which is 48000 on most desktop browsers. 22050 is the
+rate the *pipeline* works at — `load_audio` passes `sr=cfg.onset.sr` and
+librosa resamples on arrival.
+
+So the one file in the contract was the one file where source rate and target
+rate are the same number, and the resample **every real take goes through** was
+the step the contract skipped.
+
+### The sibling, and what it measured
+
+`app_encoder_click_track_48k.wav` — same signal, same generator
+(`encodeWavBytes`), at 48000. Measured:
+
+    22050 Hz file, resampled: 0.3251 0.8127 1.3235 1.8112 2.3220 2.8096 3.3205 3.8313
+    48000 Hz file, resampled: 0.3251 0.8127 1.3235 1.8112 2.3220 2.8096 3.3205 3.8313
+
+Identical to four decimal places, and the same 94815 samples. The resampler
+moves nothing — which could not be assumed, since librosa's default `soxr_hq`
+is a filter and a filter with rate-dependent group delay would shift every
+onset by a constant and be invisible to every other test here.
+
+`test_the_rate_the_phone_recorded_at_does_not_move_a_single_onset` asserts it,
+at a fifth of a hop — a tenth of the tolerance the per-file tests allow,
+because "agrees within two frames" is satisfied by two answers two frames
+apart, which is the thing being ruled out.
+
+**And it is the resample that makes them agree, not luck.** The same 48 kHz
+file analysed at its native rate (`sr=None`, one of the mutations) comes back
+at 0.3093 0.8107 1.3120 1.8133 2.3147 2.8053 3.3067 3.8080 — up to **16 ms**
+away, which at 120 BPM is 3.2% of a beat and lands inside the tolerance bands
+the verdict is built from. Two musicians playing identically on two phones
+would be judged differently. The normalisation in `load_audio` is what stops
+that, and until now nothing said so.
+
+### Mutation-tested
+
+| mutation | caught by |
+|---|---|
+| the 48 kHz header says 44100 | 3 failures, including the cross-rate test |
+| `load_audio` stops resampling (`sr=None`) | 2 failures, including the cross-rate test |
+
+The app side pins both files by SHA-256, plus a guard that the two encodings
+actually differ — two fixtures with identical bytes would pin one claim twice
+and the 48 kHz copy exists precisely because it takes a path the other does
+not.
+
+### Also corrected
+
+The measured latenesses in `LATE_BY_AT_MOST`'s comment listed the first note at
+**+10 ms**; re-measured it is **+25 ms** (the other seven were right). The bound
+is unchanged — the worst is still +31 ms against a 46.4 ms allowance — but a
+number written down as measured has to be the number.
+
+### Verification
+
+Mobile 1471 tests across 129 files, `tsc` and `eslint` clean. Backend suite
+green; `test_app_encoder_wav.py` is 7 cases now, up from 3.
+
+**Not held:** still nothing in this container has made or heard a sound. This
+holds the file format and the rate normalisation end to end. The recorder
+itself still needs a device.
+
+---
+
+## 2026-09-04 — The shrink ladder bounded whichever edge happened to be the width
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Picture → transcription,
+the step between the shutter and the upload. CI still cannot allocate a runner.
+
+`shrinkToFit` re-encodes a page too large for the 10 MB bucket limit, spending
+quality before pixels because resolution is what `staff_space_px` needs. Its
+rungs are called `maxEdge`, its floor is `MIN_LONG_EDGE`, and the number went
+straight into `resize: { width }`.
+
+`expo-image-manipulator` documents that field as *"values correspond to the
+result image dimensions … if you specify only one value, the other will be
+calculated automatically to preserve image ratio"*, and its web implementation
+does exactly that — `requestedWidth = width; requestedHeight = width /
+imageRatio` — in either direction. So:
+
+- **On a portrait page the bound was never the long edge.** Sheet music is
+  photographed portrait. The 4284×5712 page the module was written against,
+  asked for 2400, came back **2400×3200**. Every word in the file described a
+  cap that was not being applied, and the docstring's own worked example (25 px
+  of staff spacing at 5712 → "about 10.5" at 2400) computes from the long edge.
+  The arithmetic was right; the code was not.
+- **On a landscape page the width *is* the long edge**, so the same line
+  behaved as written. Orientation decided how hard a page was shrunk, and
+  nothing said so.
+- **A page narrower than a rung was enlarged.** `resize` sets the dimension it
+  is given rather than capping it, so an A4 flatbed scan at 2480×3508 handed
+  the 4000 rung came back **4000×5657** — 2.6× the pixels, from a step whose
+  entire purpose is a smaller file — then 3000 and 2400 enlarged it again. The
+  page that reaches the pixel rungs is by definition one that would not fit,
+  and all three rungs moved it further from fitting.
+
+### Why nothing saw it
+
+`shrink.test.ts`'s manipulator stub returned `width: 0, height: 0`. It modelled
+the *call* and never the image, so every case in the file was about the
+ladder's constants — that they descend, that quality comes first, that the
+floor is 2400 — and not one was about what happened to a page. The stub was the
+thing that was wrong.
+
+### The change
+
+- `widthFor(page, maxEdge)` derives the width that puts the **long** edge on
+  the rung, and returns null — do not resize — for a page whose dimensions are
+  unknown or already inside the rung.
+- Dimensions are learned once, from the first attempt that reports them. The
+  ladder opening with a quality-only rung is what makes that available, so the
+  existing "starts by trying quality at full resolution" case is now
+  load-bearing beyond its own comment.
+- The stub models a page: `resize: { width: w }` returns `w × round(w·H/W)`,
+  and a `reportsSize: false` variant covers the no-dimensions path.
+
+**This changes real behaviour, and in the direction of smaller pages.** A
+portrait page that reaches the last rung now ends at a 2400 long edge rather
+than 3200 — staff spacing on the provoking page goes from about 14 px to the
+10.5 the docstring always claimed, still clear of the server's floor of 8. That
+is the trade the module already argues for in writing: shrinking further and
+letting the server say something specific about *this* page beats refusing to
+send anything. The accidental extra resolution came from a bug and only ever
+applied to pages held one way up.
+
+### Mutation-tested
+
+| mutation | caught by |
+|---|---|
+| rung goes straight into `width` (the old code) | 5 failures, including both orientation cases |
+| drop the already-inside-the-rung guard | "never enlarges a page to reach a rung", "refuses a page that is already inside the rung" |
+| guess the long edge is the width when dimensions are unknown | "resizes nothing when the manipulator reports no dimensions" |
+
+### Verification
+
+Mobile 1469 tests across 129 files (was 1462); `tsc`, `eslint` and
+`check-dead-exports` (516 exports) clean. Backend untouched.
+
+**Not held:** no image was actually resized here — `expo-image-manipulator`
+needs a native module or a browser canvas, and this is a stub that follows the
+documented contract. What is now true is that the stub follows it; before, it
+modelled nothing.
+
+---
+
+## 2026-09-04 — The app told musicians to move closer to pages the pipeline reads fine
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Picture → transcription.
+CI still cannot allocate a runner.
+
+Same shape as the WAV entry below it, on the other half of the pipeline. Two
+trees measure how far apart a page's staff lines are —
+`backend/app/services/page_image.staff_space_px`, which decides whether a scan
+is refused, and `mobile/src/lib/scan/legibility.ts`, a coarser copy that runs
+at the shutter so the advice arrives while the musician is still holding the
+music. **Neither had ever seen the other's answer on a page.**
+
+The app's own module note states the rule the copy lives under:
+
+> it may never refuse a page the server would accept.
+
+What was actually asserted was `CLIENT_FLOOR < SERVER_FLOOR` — an ordering of
+two constants — plus synthetic ruled pages that only the app ever measured. An
+ordering of thresholds says nothing about what two different algorithms do to a
+photograph.
+
+### Measured, before any change
+
+| page | server `staff_space_px` | server | app `staffSpacing` | app |
+|---|---|---|---|---|
+| `01_simple_printed` | 11.0 | reads | 10 | ok |
+| `03_complex_printed` | 11.0 | reads | **3** | **tooSmall** |
+| `04_handwritten_clean` | 9.25 | reads | **3** | **tooSmall** |
+| `05_handwritten_messy` | 6.0 | refuses | 3 | tooSmall |
+| `page-01` (page-shaped) | 7.0 | refuses | 5 | tooSmall |
+
+Two of the five real pages in this repository. The pipeline reads them
+correctly; the app was offering a retake with *"Too far away to read the notes.
+Move in until one page fills the frame."* Nothing was red, and nothing could
+have been.
+
+### The cause was a word in the docstring that was not in the code
+
+`strongestPeriod`'s comment says it wants **"the shortest lag that is a strong
+peak in its own right"**. The code returned the shortest lag merely *above*
+`STRONG_PEAK`. On a drawing those are the same thing; on a photograph they are
+not. A real page's ink profile is smooth — neighbouring rows share stems,
+beams, ledger lines and sensor noise — so the correlation leaves lag 0 on a
+broad shoulder still above 0.5 several rows out, and the answer came off the
+shoulder, not off a staff. Measured `c[3..8]` on `03_complex_printed`:
+`0.63, 0.56, 0.52, 0.51, 0.50, 0.51`, with the true peak at lag 11 (0.655).
+
+`legibility.test.ts` could not see it. Five rows of ink on clean paper
+decorrelate at once, so its pages have no shoulder to fall down — every case
+passed, and would have gone on passing.
+
+The fix is one condition: the lag has to be a local maximum, which is what
+`_staff_peak` in `page_image.py` has always required. `STRONG_PEAK` did not
+move; no constant was refitted.
+
+### After
+
+| page | server | app | app verdict |
+|---|---|---|---|
+| `01_simple_printed` | 11.0 reads | 11 | ok |
+| `03_complex_printed` | 11.0 reads | 11 | ok |
+| `04_handwritten_clean` | 9.25 reads | 15 | ok |
+| `05_handwritten_messy` | 6.0 refuses | 5 | tooSmall |
+| `page-01` | 7.0 refuses | 7 | ok |
+
+Every page now agrees with the server or errs in the permitted direction.
+`04_handwritten_clean` reads high (15 against 9.25) and `page-01` goes quiet
+about a page the server will refuse — both are the harmless side, and
+harmless for a reason rather than by luck: autocorrelation peaks at every
+*multiple* of a period and never at a divisor, so over-reading is the failure
+this measurement can have, and an over-read spacing only ever makes the app
+quieter.
+
+### The contract
+
+`fixtures/legibility/` — the greyscale samples `pageSamples.web.ts` would hand
+the check for five pages already in the repository, gzipped and base64'd into
+one JSON each (the app has no JPEG decoder and no `@types/node`), with the
+server's verdict on the same page in `parity.json` beside them. 732 KB.
+
+- `tools/legibility_fixture.py` builds them, reproducing the app's crop rule
+  exactly: centre crop at 1:1 bounded to 1400×2000, Rec. 601 luma truncated to
+  a byte.
+- `backend/app/tests/test_legibility_contract.py` **recomputes** the samples
+  from the JPEGs and re-runs `staff_space_px`, so the fixture cannot rot into a
+  record of a page that has since changed or of a crop rule the app no longer
+  uses.
+- `mobile/src/lib/scan/legibility.contract.test.ts` runs the app's real check
+  over them and holds the rule itself.
+
+Five pages, chosen so the set is not one answer: three the server reads, two it
+refuses, and one page-shaped (900×1273) because it is the only sample whose
+densest band is a *choice* rather than the whole image.
+
+### Mutation-tested
+
+| mutation | caught by |
+|---|---|
+| revert the local-maximum requirement | contract test, 4 failures (2 direction, 2 under-read) |
+| `staffSpacing` always returns null | "measures something at all", 5 failures — the guard against a vacuous pass |
+| generator's luma weights → BT.709 | backend samples test, 2 pages (the other three are neutral greyscale, so both weightings give the same byte) |
+| `_MIN_STAFF_SPACE_PX` 8 → 12 | backend server-answer test, 3 pages |
+
+### Verification
+
+Backend suite green. Mobile 1462 tests across 129 files (was 1446/128); `tsc`
+and `eslint` clean.
+
+**What this does not hold.** The samples are a faithful reproduction of what
+`pageSamples.web.ts` computes, not a recording of it — no browser decoded these
+JPEGs, and native still returns `null` from `pageSamples` because React Native
+has no way to read a photograph's pixels here. And `page-01` is a synthetic
+page layout around real engravings (`mobile/assets/captures/SOURCES.md`); there
+is still no photograph taken by a phone in this repository.
+
+---
+
+## 2026-09-04 — The app writes the WAV, the pipeline reads it, and nobody had put the two together
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Audio verification. CI
+still cannot allocate a runner.
+
+`mobile/src/lib/audio/wav.ts` builds a RIFF header a byte at a time;
+`backend/app/services/audio.py` hands whatever arrives to librosa. **Neither
+side had ever seen the other's work.**
+
+- `wav.test.ts` checks the header by **reading back the fields it just wrote**.
+  Self-consistent, and silent about whether a decoder accepts any of it.
+- Every audio fixture here — all six — was generated **by Python**, with
+  `soundfile`. So the tests that exercise the analysis have never once
+  exercised the encoder.
+
+The failure hiding in that gap does not crash. A wrong rate in the header, a
+byte-order slip, a block-align disagreeing with the channel count: librosa
+reads it, gets a duration the musician never played, and every onset is
+measured against a clock wrong by a constant. **The verdict comes back
+confident and incorrect**, and nothing raises.
+
+### The fixture is the contract
+
+`fixtures/audio/app_encoder_click_track.wav` was produced by calling
+`encodeWavBytes` — the app's own — on a signal whose onsets are known by
+construction: 22050 Hz mono 16-bit, 0.3 s of silence, then 8 bursts 0.5 s apart
+(120 BPM), each 0.08 s of 660 Hz decaying at `exp(-45t)` at amplitude 0.7.
+
+Both ends are held, the way `fixtures/timeline/parity.json` holds two walks:
+
+| | |
+|---|---|
+| `wav.test.ts` | pins the **SHA-256** of those exact bytes — change the encoder and this fails, which is the cue to regenerate |
+| `test_app_encoder_wav.py` | loads it with the real `load_audio` and finds its eight onsets with the real `detect_onsets` |
+
+### The lead-in is a finding, not padding
+
+Generated without it, `detect_onsets` finds **seven of eight**. Onset strength
+is a *rise*, and a burst starting at sample zero has nothing to rise from. Real
+takes never hit that — the recorder opens before the count-in and its leading
+silence is deliberate — so a fixture without it would have been testing a case
+the app cannot produce. Measured before the fixture was settled, not assumed.
+
+### A tolerance I got wrong first
+
+I wrote "within one frame", reasoning that a detection lands on a frame
+boundary. **It fails.** The eight come back at +10, +13, +24, +11, +22, +10,
++20 and **+31 ms**, and one hop at 22050 Hz is 23.2 ms — so 31 ms is 1.34
+frames. `onset_strength` runs over a *windowed* mel spectrogram and peak-picking
+then takes a local maximum, which can sit a frame past the boundary the attack
+fell on. The constant is two hops now, and says it was measured.
+
+The one-sidedness is the part worth asserting: every one is **late**, none
+early. An onset detected *before* the attack that caused it would mean the file
+decoded at the wrong rate, which is the whole reason this module exists.
+
+### Verified by mutation
+
+| Mutation | Caught by |
+|---|---|
+| header claims 44100 over 22050 data | **backend**, 2 of 3 — and nothing else in either tree could see this |
+| samples written big-endian | mobile, 4 tests |
+| `blockAlign` doubled | mobile, 2 tests |
+
+**Backend 1946 passed, 2 xfailed. Mobile 1446 across 128 files.** `tsc` and lint
+clean — `crypto.subtle.digest` refuses a `Uint8Array<ArrayBufferLike>`, so the
+digest takes a fresh copy.
+
+### Still not verified, and it cannot be here
+
+Nothing in this container has made or heard a sound. This proves the **file
+format** the app produces is the one the pipeline expects, end to end. It does
+not prove the *recorder* captures what the microphone hears, on either
+platform. That needs a device.
+
+---
+
 ## 2026-09-03 — "Why can't I upload the 2nd page as an image?"
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Owner-reported, owner-approved.
