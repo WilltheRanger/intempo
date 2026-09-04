@@ -6,6 +6,69 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-04 — Four places in the app choose a file extension, and none was compared with the list it must satisfy
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Picture and audio, the two
+ends of the loop. CI still cannot allocate a runner.
+
+`POST /v1/upload/{score-image,avatar,audio}` each refuse a filename whose
+extension is not on their list, **before the bytes move** — a 400 with a server
+rule string in it, shown to a musician about a photograph or a recording that
+never left their phone. CLAUDE.md records the score upload shipping exactly
+that once, when an unrecognised name declared `image/jpeg` and filed the object
+as `page.heif`.
+
+Four places in the app decide an extension:
+
+    lib/scan/uploadPage.ts       EXT_BY_MIME + FALLBACK.ext  → score-image
+    data/hooks/useProfile.ts     extensionFor's map + `??`    → avatar
+    lib/audio/types.ts           takeFilename                 → audio
+    lib/scan/uploadPage.test.ts  ALLOWED                      → score-image
+
+All four are correct today. **Not one was compared with anything.**
+
+The fourth is what made the gap invisible: `uploadPage.test.ts` asserts against
+a **hand-copied transcript** of `_ALLOWED_IMAGE_EXTS`, with a comment pointing
+at `routers/upload.py`. It reads like coverage of the server's rule and would
+go on passing if the server changed it. Same shape as `_MANUAL_FIELDS` one
+entry up, and `REQUIRED_COLUMNS`, and `_FAILURE_REASONS`.
+
+**The dangerous direction is the server tightening its list.** Both suites stay
+green and a page is refused in a musician's hands. For the avatar it is worse
+than an inconvenience: onboarding requires a photograph and has no Skip
+(owner's call, 2026-08-25), so a drift there **locks a new musician out of the
+app entirely**.
+
+The three server lists are deliberately different — an avatar takes no HEIC,
+because it is handed to an `<img>` and browsers cannot display one — so each
+producer is compared against **its own** endpoint's list, never the three with
+each other.
+
+### Mutated three ways
+
+| mutation | what a musician sees | result |
+|---|---|---|
+| server drops `webp` from `_ALLOWED_IMAGE_EXTS` | a page they chose is refused before upload | **2 failed of 2036** — both new. `test_upload.py` exercises `.jpg` and `.heic` only |
+| server drops `webp` from `_ALLOWED_AVATAR_EXTS` | a new account cannot finish onboarding | not exercised anywhere: `test_upload.py` uses `.jpg` and `.png` |
+| `takeFilename` returns `.pcm` | the take they have just played is lost | **all 1501 mobile tests pass**; caught only by the new contract |
+
+The third is the one worth stating plainly. `submitTake.test.ts` passes a
+hand-written `'take-2026-05-17.wav'` and never calls `takeFilename`, so the
+function that names **every recording this app has ever uploaded** had nothing
+asserting what it returns.
+
+Dropping `wav` from `_ALLOWED_AUDIO_EXTS` **is** caught, by `test_upload.py`.
+The audio case here guards the other direction — the client's — which is the
+one nothing covered.
+
+### Verification
+
+Backend **2036 passed / 2 xfailed** (was 2029). Mobile 1501 unchanged; the app
+source was mutated and restored (`git status` clean before commit). No UI,
+copy, component or token, so no §2 gate and no three-foot test.
+
+---
+
 ## 2026-09-04 — Which fields a person supplies and OCR overwrites, said in three places
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Picture → transcription. CI
