@@ -6,6 +6,82 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-04 — Which fields a person supplies and OCR overwrites, said in three places
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Picture → transcription. CI
+still cannot allocate a runner.
+
+`_MANUAL_FIELDS = ("clef", "time_signature", "bpm_hint")` is the one sentence in
+`routers/scores.py` that says which fields a *person* supplies and the reading
+overwrites. Two behaviours depend on it:
+
+- **Rejection.** `CreateScoreRequest._one_provenance` refuses any of them
+  beside an image. Its own comment says why: *"overwriting what OCR read with
+  what they guessed is the worse outcome."*
+- **Preservation.** `attach_score_pages` copies them into the placeholder score
+  while the worker reads, so a hand-entered piece that is then photographed
+  does not lose its tempo from Today for the length of the scan.
+
+The second read **the same three names typed again**, four hundred lines away
+from the constant. That is the shape this repository has now paid for four
+times — `REQUIRED_COLUMNS`, `_FAILURE_REASONS`, the column vocabularies,
+`_HUMAN_STAGES` — and the failure here is the one the loop's own comment
+describes: a fourth field added to the constant and not to the loop vanishes
+from the musician's screen for exactly as long as the reading takes. It reads
+`_MANUAL_FIELDS` now, so the two cannot drift.
+
+### What is still hand-written, and is now discovered
+
+The constant against **the model**. `test_manual_fields.py` reads
+`CreateScoreRequest.model_fields` and requires every field to be either
+manual-only or excused as meaning the same thing whichever way the piece
+arrived — five of those, each with a reason, checked in **both** directions so
+an excuse cannot outlive its field or quietly become manual.
+
+A third direction too: a name in `_MANUAL_FIELDS` the model has dropped makes
+`_one_provenance`'s `getattr` raise on every create, and writes a key into the
+placeholder score that `ScoreJson` does not have.
+
+### Mutated: a fourth manual field, added to the model and not to the constant
+
+    key_signature: str | None = Field(default=None, max_length=20)
+
+**1 failed of 2028 passed / 2 xfailed** — the new discovery case, and nothing
+else in the backend suite. Without it the model accepts a musician's stated key
+beside a photograph, returns 201, and the reading overwrites it with no
+complaint anywhere. `test_client_body_fields.py` does not catch it and should
+not: a server field the app never sends is not by itself a fault.
+
+### Two things looked at and left alone
+
+**The clef PATCH.** `"clef" in sent and body.score_json is None` is the right
+condition — an explicit `null` clears, an omitted key leaves it alone — and I
+mutated it to `body.score_json is None` to model the "simplification" that
+would make every title rename wipe a musician's clef correction. It **is**
+caught, by three tests in `test_scores_router.py`, though incidentally: they
+fail on mock setup rather than on an assertion naming the symptom. Clef has
+"set" and "clear" cases and no "leave alone" one, where composer and movement
+have both. Recorded rather than fixed: a fourth test with no unique catch is
+the thing this session has reverted three times.
+
+**The sign convention** (`avg_delta_pct` drag-positive, `trend` rush-positive —
+`toRushPositive` calls it *"the one mistake this app cannot make"*). Measured
+on the corpus: `02_detache_rushing` runs −1.97 → −24.28 per bar with `trend`
+positive; `03_detache_dragging` runs +0.35 → +22.73. Its first two `trend`
+values are positive and that is the expanding window over three near-zero
+notes, not a sign error. But the convention is **held at every hop** —
+`test_compute_deltas_sign_convention`, `test_rolling_trend_is_rush_positive`
+and `test_a_bars_average_leaves_out_the_notes_that_were_not_timed` each catch a
+flip at their own layer. No test written: it would be a fourth statement of a
+belief rather than a measurement.
+
+### Verification
+
+Backend **2029 passed / 2 xfailed** (was 2022). No mobile change. No UI, copy,
+component or token touched, so no §2 gate and no three-foot test.
+
+---
+
 ## 2026-09-04 — A phone on silent plays nothing, and four of five sound paths were unheld
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Audio verification. CI
