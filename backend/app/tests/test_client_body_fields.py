@@ -45,10 +45,13 @@ from app.routers.scores import (
     AttachScorePagesRequest,
     CreateScoreRequest,
     ImportScoreRequest,
+    MeasureConcern,
     ScoreResponse,
     UpdateScoreRequest,
 )
 from app.routers.upload import UploadResponse
+from app.services.analysis import AnalysisResult, PerMeasure, PerNote, Tolerance
+from app.services.score_schema import Measure, Note, Repeat, ScoreJson
 
 REPO = Path(__file__).resolve().parents[3]
 MOBILE_SRC = REPO / "mobile" / "src"
@@ -303,4 +306,59 @@ def test_the_create_analysis_reply_is_read_under_the_names_it_is_sent_under() ->
     assert read <= set(CreateAnalysisResponse.model_fields), (
         f"the app reads {sorted(read)}; the endpoint sends "
         f"{sorted(CreateAnalysisResponse.model_fields)}"
+    )
+
+#: The objects *inside* a body, which no route declares and both trees read.
+#:
+#: **Two of these travel in both directions and the schema forgives extras.**
+#: `score_json` goes out on every `ScoreResponse` and comes back on
+#: `UpdateScoreRequest` when the bar editor saves a correction, and `ScoreJson`
+#: sets `extra="ignore"` — deliberately, and for a good reason recorded in its
+#: own docstring: forbidding cost whole pages, because one unexpected key from
+#: a model that noticed something the schema cannot hold failed the entire
+#: score. The cost of that kindness is this: a field the app writes and the
+#: server does not declare is **dropped in silence**, so a correction a
+#: musician made never persists and the screen shows it saved.
+#:
+#: The verdict half is looser still. `AnalysisResponse.result_json` is typed
+#: `dict[str, Any]` on purpose — `data/types.ts` says a second copy of that
+#: schema would go stale silently — but the *producer* is four Pydantic models,
+#: so the comparison is available even though the transport does not make it.
+#: The app reads nine keys out of `per_measure` alone; rename one and every bar
+#: on the verdict screen reads as undefined.
+NESTED_PAIRS: tuple[tuple[str, type], ...] = (
+    ("ScoreNote", Note),
+    ("ScoreMeasure", Measure),
+    ("ScoreRepeat", Repeat),
+    ("ScoreJson", ScoreJson),
+    ("MeasureConcern", MeasureConcern),
+    ("PerNoteResult", PerNote),
+    ("PerMeasureResult", PerMeasure),
+    ("Tolerance", Tolerance),
+    ("AnalysisResultJson", AnalysisResult),
+)
+
+
+@pytest.mark.parametrize(
+    "interface,model", NESTED_PAIRS, ids=[name for name, _ in NESTED_PAIRS]
+)
+def test_the_app_reads_no_nested_field_that_is_never_written(
+    interface: str, model: type
+) -> None:
+    """The same direction as the response pairs, one level in.
+
+    Measured when this went in: not one ghost field across nine objects. What
+    the server writes and the app ignores is ordinary and there are five —
+    `Measure.system` and `PerNote.timed` are layout and bookkeeping, and
+    `Repeat.start_inferred` with `ScoreJson.unclosed_repeat_starts` are the two
+    facts that carry across a page join and are read by nothing on a screen.
+    """
+    declared = _interface_fields("data/types.ts", interface)
+
+    ghosts = sorted(field for field in declared if field not in model.model_fields)
+
+    assert not ghosts, (
+        f"{interface} reads {ghosts}; {model.__name__} has no such field. "
+        "Going out that is `undefined`; coming back on a corrected score it is "
+        "dropped, and the correction never persists."
     )
