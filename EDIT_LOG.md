@@ -6,6 +6,85 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-04 — The third contract of that family: the field names in a request body
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Audio, the submission end.
+CI still cannot allocate a runner.
+
+`test_client_reachability.py` holds the **paths** between the two trees.
+`test_client_enums.py` holds the **vocabularies**. Nothing held the **field
+names**, and here that is the sharpest of the three:
+
+**Nine request models set `ConfigDict(extra="forbid")`.** One unknown key is a
+422 on *every* request through that endpoint. A field added to
+`CreateAnalysisInput` and not to `CreateAnalysisRequest` does not degrade a
+feature — it stops every take being submitted. The reverse fails as hard: a new
+**required** field on the server rejects every request an installed build makes.
+Neither is visible from inside either tree.
+
+### Measured first: nothing is wrong today
+
+All eight pairs agree. No app field is unknown to its model, every required
+server field is declared in the app, and none of them is marked optional there.
+So this is a fence rather than a repair — written because the drift is silent
+and total, not because it had happened.
+
+The seam is the app's own typed request interfaces:
+
+    CreateAnalysisInput    → CreateAnalysisRequest
+    UpdateMeInput          → UpdateMeRequest
+    TranscribedScoreInput  → CreateScoreRequest
+    HandEnteredScoreInput  → CreateScoreRequest
+    AttachScorePagesInput  → AttachScorePagesRequest
+    UpdateScoreInput       → UpdateScoreRequest
+    ImportScoreInput       → ImportScoreRequest
+    CorrectionInput        → Correction
+
+Plus one body the app writes as a literal rather than from a type:
+`postCorrections` sends `{ corrections }` by hand, so nothing above can see it.
+One key, and renaming either side is a 422 on every correction a musician
+sends — on the endpoint whose own docstring calls itself the only route out of
+Batch 3's untuned thresholds. It has its own case.
+
+Discovery of what needs pairing is a **source scan**, not a hand-written list,
+so the list cannot be the thing that rots; the two excused models
+(`CalibrationRequest`, which has no client at all, and the corrections wrapper)
+are checked in both directions the way `NOT_WIRED` is.
+
+### The scan read prose as code, and reported the opposite of the truth
+
+The first version searched each class body for `extra="forbid"` and flagged
+`score_schema._Strict` as unpaired. `_Strict` sets **`extra="ignore"`** — and
+its docstring argues at length for why, because forbidding *"cost whole
+pages"*: one unexpected key from a model that noticed a mid-page metre change
+failed validation for the entire score, and the page came back unreadable.
+
+So the check named the one model in the repository that deliberately does the
+opposite of what the check is about, and I had already carried that misreading
+into an allowlist entry excusing it. It matches the **assignment** now, not
+text anywhere in the body. Second time today a scan of mine believed something
+it read in the wrong context — the other was a probe counting `#root` while a
+sheet rendered in a portal on the body.
+
+### Mutation-tested
+
+| mutation | caught by |
+|---|---|
+| the app declares `room_tone_db` | "sends no field the endpoint would refuse" |
+| `target_bpm` marked optional in the app | "declares every field the endpoint requires" |
+| the server gains a required `room_tone_db` | the same |
+| a new model with `extra="forbid"` | "paired or excused" |
+| the corrections wrapper key renamed client-side | its own case |
+
+Each by exactly the case named for it, and nothing else.
+
+### Verification
+
+Backend suite green; `test_client_request_fields.py` is 19 cases. Mobile
+untouched.
+
+---
+
 ## 2026-09-04 — The empty account is gated now, not remembered
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. CI still cannot allocate a
