@@ -188,6 +188,44 @@ _FAILURE_REASONS: tuple[tuple[str, str], ...] = (
         "fault on our side — your page is fine, and re-photographing it will "
         "not help.",
     ),
+    (
+        # The third member of that family, and it was missing while its two
+        # siblings above were here. `OCR_PROVIDER_CHAIN=gpt4v` on a deployment
+        # is a typo in an environment variable, and every scan on it told the
+        # musician their photograph was the problem.
+        "unknown provider",
+        "The transcription service is not configured correctly. This is a "
+        "fault on our side — your page is fine, and re-photographing it will "
+        "not help.",
+    ),
+    (
+        # **The predictable runtime failure of this reader.** homr peaks at
+        # 1350 MB, measured, which is why it runs on Modal and not on the API
+        # host. A container that runs out of memory arrives here as an
+        # exception name and text, through the `{type(exc).__name__}: {exc}`
+        # channel that can carry anything — so the specific one worth naming is
+        # the one the sizing note predicts.
+        "out of memory",
+        "The machine that reads pages ran out of room on this one. That is a "
+        "fault on our side, not with your photograph — the photograph is "
+        "still here, so try reading it again.",
+    ),
+    (
+        # Reached only through homr: `score_json_from_musicxml` is run on the
+        # reader's *own* output, so unparseable XML here is the reader
+        # misbehaving. The import route raises the same words at a musician's
+        # file, but that path answers with a 422 and never reaches this table.
+        "not parseable as xml",
+        "The reader produced notation this app could not read back. That is a "
+        "fault on our side, not with your photograph — try reading it again.",
+    ),
+    (
+        # `join_pages` with nothing to join. An internal invariant, and a
+        # musician cannot photograph their way out of one.
+        "nothing to join",
+        "Something went wrong assembling this scan. That is a fault on our "
+        "side, not with your photographs — try reading it again.",
+    ),
     #: The two ways a page can be *found* and still not be readable. Both say
     #: so, because the default sends the musician back to re-photograph a page
     #: that will fail the same way — and both name a route that exists, which
