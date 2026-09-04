@@ -255,6 +255,44 @@ jobs:
       - name: Accessibility audit, empty account
         run: node ../tools/audit-a11y.mjs 4323 Today Library Insights Profile
 
+  # **Nothing had ever checked that the migrations run.** They are applied by
+  # hand to a Supabase project, one at a time, and the only evidence any of
+  # them works is that somebody watched it. CLAUDE.md records what that costs:
+  # 013, 014 and 015 sat unapplied for weeks while a defect they fix looked
+  # parked, and the project named `intempo` is *still* four behind
+  # `intempo-dev` — so the day it is unpaused, four migrations run in a row
+  # against production with nobody having seen them run in sequence anywhere.
+  #
+  # This is the cheapest possible version of that day: apply all of them, in
+  # order, to an empty database. `auth` and `storage` are stubbed, so it proves
+  # the set is internally consistent rather than anything about Supabase's own
+  # semantics — which was never the half that broke.
+  migrations:
+    name: Migrations apply in order
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        # Without this the job races the container and fails on a connection
+        # refused that has nothing to do with the migrations.
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+        ports:
+          - 5432:5432
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Apply every migration to an empty database
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
+        run: python3 tools/check-migrations.py
+
   frontend-build:
     name: Frontend build (vite)
     runs-on: ubuntu-latest

@@ -6,6 +6,80 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-04 — Nothing had ever checked that the migrations run
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Infrastructure. CI still
+cannot dispatch a runner.
+
+The sixteen files in `backend/app/migrations/` are applied by hand to a
+Supabase project, one at a time, and **the only evidence any of them works is
+that somebody watched it happen.** CLAUDE.md records what that has cost: 013,
+014 and 015 sat unapplied for weeks while a defect they fix looked parked, and
+migration 016's own header records the two oldest buckets existing in no
+migration at all.
+
+Measured today, and it is the reason this is worth a job of its own:
+
+    intempo-dev  (ycpxhqgdvhgwifckgvew)  ACTIVE_HEALTHY  applied through 016
+    intempo      (rfvekhrozvxovjmjujpy)  INACTIVE        stopped at 012
+
+So the day the paused project is unpaused as production, **four migrations run
+in a row against it with nobody having seen them run in sequence anywhere.**
+
+### `tools/check-migrations.py`
+
+Applies all sixteen, in filename order, to an empty database, with
+`ON_ERROR_STOP=1` so a failure mid-file is a failure. It is the cheapest
+possible version of that day.
+
+Run here against a throwaway Postgres 16 cluster: **all sixteen apply cleanly,
+001 through 016**, and 016 applies twice without complaint — which it promises
+in its own header (*"Additive and idempotent. It changes nothing on a database
+that already looks like the table above"*) and which is the reason it was safe
+to write against live buckets. That promise is now checked rather than stated.
+
+### The stubs, and what they cost
+
+The migrations are written for Supabase, where `auth` and `storage` already
+exist. On a bare Postgres they do not, so **nothing outside a live project
+could apply the set at all** — which is why nothing ever had.
+
+`tools/supabase_stubs.sql` is the smallest shape that lets the real files run
+unmodified: the four roles the policies name, `auth.users`, `auth.uid()`,
+`storage.buckets`, `storage.objects` with RLS on, and `storage.foldername`.
+
+**They are not a model of Supabase, and the file says so.** What this proves is
+that the set is internally consistent — it applies in order, no file references
+a column an earlier one has not created, the SQL parses. What it cannot prove
+is whether a policy grants what it means to. That needs a project, and it was
+never the half that broke.
+
+### Mutated two ways
+
+| mutation | result |
+|---|---|
+| 015 gains a constraint on a column no earlier migration creates | `FAIL 015_analysis_from_measure.sql … column "a_column_nobody_made" does not exist` |
+| 016 loses its `ON CONFLICT` clause | `FAIL 016_storage_buckets.sql (second time) … duplicate key value violates unique constraint "buckets_pkey"`, followed by the sentence saying why that claim mattered |
+
+Control run afterwards: PASS, 16 migrations, 001–016, and `git status` clean on
+`backend/app/migrations/`.
+
+### In CI
+
+A sixth job, `Migrations apply in order`, on a `postgres:16` service container
+with a `pg_isready` health check — without which the job races the container
+and fails on a connection refused that has nothing to do with the migrations.
+It carries a `timeout-minutes` like the other five.
+
+### What this does not do
+
+It does not apply anything to `intempo`. Unpausing a paused project is a
+decision with a cost attached and it is the owner's; what has changed is that
+the four migrations waiting for that day have now been run in sequence
+somewhere, which they never had been.
+
+---
+
 ## 2026-09-04 — Why CI has not run since 2026-09-03, measured rather than assumed
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`, restarted from `main` after
