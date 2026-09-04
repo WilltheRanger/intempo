@@ -81,7 +81,25 @@ const ROUTES = [
   // in the library, so this is where the page caption and the pager exist at
   // all — the other pieces render a single image and no control.
   ['Original pages', 'pieces/fixture-wohlfahrt-01/score?view=original'],
-  ['Record', 'pieces/fixture-bach-bwv1001/record'],
+  // **The tips, which is what this route renders on a fresh page.** Every
+  // piece in the fixtures shows `PracticeSetup` first, so this entry — which
+  // has said "Record" since the first sweep — has never once audited the
+  // screen with the recording controls on it.
+  ['Record — first-take tips', 'pieces/fixture-bach-bwv1001/record', {
+    expect: 'Before your first take',
+  }],
+  // The screen behind it: target tempo with its steppers, the metronome
+  // control, Listen, the start-at picker, the timer and Start recording. Eight
+  // controls, none of them ever measured, on the screen where a take is made.
+  //
+  // Reached by seeding the preference the tips screen writes when it is
+  // dismissed, rather than by a query parameter the app does not have — see
+  // `seedPreferences`.
+  [
+    'Record — tempo and controls',
+    'pieces/fixture-bach-bwv1001/record',
+    { seed: { practiceSetupSeen: true }, expect: 'Target tempo' },
+  ],
   // The payoff of the whole app, and the route the first sweep missed.
   ['Verdict', 'analyses/fixture-take-1'],
   ['Warmup', 'warmup'],
@@ -398,6 +416,66 @@ function unvisitedRoutes() {
   });
 }
 
+/**
+ * Where the app keeps its device preferences on web.
+ *
+ * `data/preferences.ts` writes this key through `AsyncStorage`, which on
+ * react-native-web is `localStorage` under the same name. Read off a running
+ * build rather than assumed: after dismissing the tips screen it holds
+ * `{"instrument":"violin","metronomeMode":"off","haptics":true,
+ * "reduceMotion":false,"practiceSetupSeen":true}`.
+ */
+const PREFERENCES_KEY = 'intempo.preferences.v1';
+
+/**
+ * Put a route's screen into the state that route is *for*.
+ *
+ * **A route is not a screen.** `pieces/:pieceId/record` renders the first-take
+ * tips until `practiceSetupSeen` is stored, so auditing the URL audited the
+ * tips and never the recording controls — the same gap the post-scan states
+ * had, where `pieces/:pieceId` was visited by a piece that had finished
+ * reading. `unvisitedRoutes` cannot see this: it compares paths, and both
+ * states share one.
+ *
+ * Seeded rather than clicked through, so each route stays a single `goto` and
+ * a failure names a state rather than a sequence. This writes only what the
+ * app itself writes when a musician dismisses the screen.
+ */
+/**
+ * That a route in a state really reached that state.
+ *
+ * **The guard on `seed`.** Two entries above share one path and differ only by
+ * a stored preference; if seeding stopped working, the second would quietly
+ * audit the same screen as the first and pass, and the recording controls
+ * would be back to never having been looked at while a line of output said
+ * otherwise. Both record entries name a phrase only their own state renders,
+ * so the pair proves it is two screens.
+ *
+ * Optional, because most routes have one state and a fragment there would be a
+ * second copy of the screen's own copy, which rots.
+ */
+async function renders(page, fragment) {
+  return page.evaluate(
+    (text) => (document.getElementById('root')?.innerText ?? '').includes(text),
+    fragment,
+  );
+}
+
+async function seedPreferences(page, seed) {
+  await page.addInitScript(
+    ([key, value]) => {
+      try {
+        const held = JSON.parse(window.localStorage.getItem(key) ?? '{}');
+        window.localStorage.setItem(key, JSON.stringify({ ...held, ...value }));
+      } catch {
+        // A browser refusing site data leaves the route on its default state,
+        // which is a worse audit rather than a broken one.
+      }
+    },
+    [PREFERENCES_KEY, seed],
+  );
+}
+
 const browser = await chromium.launch(browserPath());
 let failures = 0;
 
@@ -415,7 +493,7 @@ if (unvisited.length > 0) {
   failures += unvisited.length;
 }
 
-for (const [name, path] of ROUTES) {
+for (const [name, path, options = {}] of ROUTES) {
   /*
    * **375pt, the narrowest iPhone this app can be installed on** — not the 390
    * of an iPhone 14/15. Every check here that depends on width gets stricter
@@ -432,11 +510,23 @@ for (const [name, path] of ROUTES) {
   const page = await browser.newPage({ viewport: { width: 375, height: 812 } });
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
+  if (options.seed) await seedPreferences(page, options.seed);
   try {
     await page.goto(`${BASE}/${path}`, { waitUntil: 'networkidle', timeout: 30000 });
     await page.waitForTimeout(1800);
   } catch (e) {
     console.log(`\n## ${name} (/${path})\n  COULD NOT LOAD: ${String(e).slice(0, 120)}`);
+    failures += 1;
+    await page.close();
+    continue;
+  }
+
+  if (options.expect && !(await renders(page, options.expect))) {
+    console.log(
+      `\n## ${name} (/${path})\n  WRONG STATE: nothing on the page says ` +
+        `${JSON.stringify(options.expect)} — this route did not reach the ` +
+        'state it is listed for, so whatever was audited is not it.',
+    );
     failures += 1;
     await page.close();
     continue;

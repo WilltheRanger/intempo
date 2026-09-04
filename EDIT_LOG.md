@@ -6,6 +6,97 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-04 — The a11y audit's "Record" entry has never audited the record screen
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Audio, the setup end. CI
+still cannot allocate a runner. **No screen changed.**
+
+`pieces/:pieceId/record` renders `PracticeSetup` — the first-take tips — until
+`practiceSetupSeen` is stored. Every piece in the fixtures is in that state, so
+the entry that has said `['Record', …]` since the first sweep has been auditing
+a page of advice. Behind it sit eight controls: the tempo steppers, the
+metronome, Listen, the start-at picker, the timer and Start recording. **None
+of them had ever been measured.**
+
+This is the same finding as the post-scan states earlier today, one screen
+over, and the guard that should have caught it still cannot: `unvisitedRoutes`
+compares paths, and both states share one. **A route is not a screen.**
+
+### What now covers it
+
+- The audit takes an options object per route. `seed` writes into
+  `intempo.preferences.v1` before load — the key `data/preferences.ts` uses
+  through `AsyncStorage`, which on react-native-web is `localStorage` — so a
+  route can be audited in the state it is listed for. `expect` names a phrase
+  only that state renders.
+- Two entries now share `pieces/fixture-bach-bwv1001/record`: "first-take tips"
+  and "tempo and controls". Both clean. 28 audited entries, up from 27.
+- **`expect` is the guard on `seed`**, and it is not decoration: two entries on
+  one path would otherwise both audit the tips if seeding ever stopped working,
+  and the output would go on claiming the controls were looked at. Mutation-
+  tested — disabling the seed, and changing the phrase — each fails with
+  *"WRONG STATE: nothing on the page says …"*.
+
+### And the walk drives it
+
+Five checks. The tempo is the one that matters most: `submitTake` sends it as
+`target_bpm`, `build_timeline` scales the whole expected timeline by it, and
+every band in the verdict is a percentage of one beat at it.
+
+    a first take opens on the tips, not on the controls
+    the tips lead to the controls, at 92 BPM
+    the tempo steps evenly both ways: 92 → 94 → 92
+    the start-at picker opens and says what the bar governs
+    reopening the tips comes back to the controls, not out of the flow
+
+The tempo check asserts the step is **symmetric**, not merely that the number
+moves: a stepper that rose by two and fell by one would drift the target every
+time a musician changed their mind, and the number on screen would still look
+deliberate. The last check covers `RecordScreen`'s `practiceSetupSeen` branch,
+where dismissing the tips a second time must close them rather than leave the
+screen.
+
+### A measurement I got wrong, and caught
+
+I first reported the start-at control as **doing nothing** — an enabled 44pt
+button labelled "Change where the take begins", clicked on three different
+pieces, no change in content and no change in node count. It was going to be
+this entry's headline, and it is wrong.
+
+`BottomSheet` renders through a portal on `document.body`, and my probe counted
+`#root *`. Re-measured against the whole document the sheet is plainly there:
+13 leaves to 33, with *"Start the take at"* among the new ones. The walk's own
+`leaves()` has always read the whole document, which is why the check written
+from it passes.
+
+Recorded because the near-miss is the useful part: the control has a history —
+`from_measure` reached `main` once and refused every take, because migration
+015 had not been applied — and a plausible story about a known-fragile feature
+is exactly the kind that gets believed without a second measurement.
+
+### Mutation-tested
+
+| mutation | caught by |
+|---|---|
+| `Slower` steps by 1 while `Faster` steps by `BPM_STEP` | "the tempo steps evenly both ways": 92 → 94 → **93** |
+| the reopened tips always `goBack()` | "closing the reopened tips left for /pieces/fixture-bach-bwv1001" |
+| the audit's `seed` disabled | WRONG STATE on "Record — tempo and controls" |
+| the `expect` phrase changed | the same |
+
+### Verification
+
+Walk PASS, 44 checks (was 39). a11y PASS, 28 entries (was 27). No page errors.
+`RecordScreen.tsx`, `TempoStepper.tsx` and `PlaybackSettings.tsx` all restored
+byte-identical — `git status` shows only the two tools changed. `.env` moved
+aside for every build and restored with `diff -q`.
+
+**A correction to earlier entries today:** two of them said the audit covered
+"19 routes" and then "23 routes". Counted properly from `ROUTES`, it was 27
+before this change. The screens named in those entries were really added; the
+totals beside them were not measured.
+
+---
+
 ## 2026-09-04 — The screen that repairs a misread bar was only ever opened, never used
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Transcription, the repair
