@@ -6,6 +6,63 @@ value, regression results across all six fixture clips, and rationale.
 
 ---
 
+## 2026-09-04 — The blast radius of changing a band, before anyone changes one
+
+**No value changed.** Read this before the first real tuning pass.
+
+### `config.toml` is not the whole surface
+
+`audio_config.py` claimed every threshold the pipeline uses lives in the file.
+It does not. Eleven decision constants live in Python: `ORNAMENT_SHARE`,
+`MIN_TEMPO_RATIO` / `MAX_TEMPO_RATIO`, `MIN_ONSETS_TO_ESTIMATE_TEMPO`,
+`MAX_EDGE_TRIM`, `MIN_TRIM_GAIN`, `POSITION_WEIGHT`, `POSITION_CAP_GAPS`,
+`_GAP_CORE_LOW` / `_GAP_CORE_HIGH`, `TAKE_TOO_LONG_RATIO`.
+
+Most are structure rather than knobs and their own comments say so with
+measurements — `POSITION_WEIGHT` behaves identically anywhere from 0.25 to 2.0;
+`MIN_TRIM_GAIN` repairs failures running 0.029 → 0.988. Leave them.
+
+**`ORNAMENT_SHARE` is the one for this session.** Its comment: *"Chosen against
+two synthetic takes and no real recording, which is the honest limit on it."*
+It decides where a grace note and the note it decorates are placed, and those
+notes are reported to a musician as "not timed" precisely because the number
+was invented. It is not in `config.toml`, so nothing in the file will remind
+anyone it exists.
+
+### Changing a band changes the app, in a way that is easy to get backwards
+
+`FALLBACK_INNER_PCT = 5` and `FALLBACK_OUTER_PCT = 20` in
+`mobile/src/lib/tempo.ts` are the bands the app assumes for a take that carries
+no tolerance of its own — rows finished before the pipeline started storing the
+numbers it judged by.
+
+They currently equal the shipped config, and their docstrings said they
+*matched* it. **They must not follow it.** A take analysed on today's bands was
+judged by 5 and 20; re-banding it by whatever the bands become re-judges a
+performance nobody re-recorded, and a musician's history changes under them for
+no reason they can see. Leave the constants alone unless the old bands were
+*wrong* rather than merely untuned.
+
+`backend/app/tests/test_fallback_bands.py` fires the moment the two diverge and
+states both answers. Two neighbours in it are worth knowing before you widen
+one side:
+
+  * the fallback is **one** number standing in for a rushing/dragging pair, so
+    it is honest only while the two sides are equal — and the tuning appendix
+    says to widen dragging;
+  * `bandFor` infers the mid band as **half the outer**, which is where the
+    spec's starting values put it and is not a law.
+
+Both are app-side consequences of a one-line config edit, and neither is
+visible from `config.toml`.
+
+Measured: widening the dragging bands to 7/26 fires three of those cases,
+passes all 1504 mobile tests, and fails exactly one existing backend test —
+`test_classify_band_dragging_side`, about the pipeline. Update that one and the
+app is still wrong.
+
+---
+
 ## 2026-09-04 — Two of the twenty-two knobs turn nothing, and the file gave no sign
 
 **No value changed.** This is about the instrument the tuning session will use.

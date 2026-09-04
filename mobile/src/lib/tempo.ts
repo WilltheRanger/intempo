@@ -36,10 +36,17 @@ export function verdictFor(band: Band, direction: Direction): Verdict {
  * The outer threshold to assume when a take doesn't carry its own.
  *
  * Only reachable for analyses finished before the pipeline started recording
- * them — every new result carries the real numbers. It matches the shipped
- * `backend/config.toml` default, which is what those takes were judged by, so
- * it is a correct answer for exactly the rows that need it and a stale one for
- * nothing.
+ * them — every new result carries the real numbers. It is the band those takes
+ * were **judged by**, which today is also what `backend/config.toml` ships.
+ *
+ * **A historical value, not a mirror of the config.** The two agree only
+ * because the bands have never been tuned, and the tuning appendix says they
+ * will be. When that happens the reflex — update this to follow the config —
+ * re-bands takes already in a musician's history by a number the pipeline
+ * never applied to them, which is re-judging a performance nobody
+ * re-recorded. Leave it, unless the old bands were *wrong* rather than merely
+ * being tuned. `backend/app/tests/test_fallback_bands.py` fires on the day
+ * they diverge and states both answers.
  */
 const FALLBACK_OUTER_PCT = 20;
 
@@ -71,8 +78,9 @@ export function fullScaleFor(
  *
  * The sibling of `FALLBACK_OUTER_PCT` and reachable for the same rows: takes
  * analysed before the pipeline started recording the numbers it judged them
- * by. It matches the shipped `backend/config.toml`, which is what those takes
- * were judged by.
+ * by — so the same rule applies. It is what those takes were judged by, which
+ * today is also what `backend/config.toml` ships, and it does not follow the
+ * config when the bands are tuned.
  */
 const FALLBACK_INNER_PCT = 5;
 
