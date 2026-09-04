@@ -6,6 +6,76 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-04 — The fourth scan state had no fixture, and four claims measured that held
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Picture → transcription.
+CI still cannot allocate a runner.
+
+### `queued` was the one `transcription_status` nobody had seen
+
+`reading`, `failed` and `done` all have fixture pieces. `queued` did not — and
+it is every page after the first of a multi-page scan, because the server reads
+a bounded number at once, so a three-page part spends most of its wait there.
+
+It is **not** a cosmetic variant of `reading`. `TranscribingPanel` prints a
+sentence chosen for it — *"Waiting for another page to finish"*, whose comment
+says "Getting ready" described the app rather than what is actually happening —
+and `QUEUED_PROGRESS` puts the bar at 5% instead of in the reading band. A
+sentence and a bar position that had never been on screen together.
+
+CLAUDE.md's own rule: *a state with no fixture is a state nobody has looked at*,
+which has cost this project six times. Rendered, it is correct: the sentence is
+there and no stage is claimed. **No defect found — the state now has a fixture,
+a walk check and an a11y entry.**
+
+`transcriptionStage` is null on the fixture, which is what makes it queued: the
+worker has said nothing yet. A fixture with a stage would render as `reading`
+under a different status word and check nothing.
+
+**Mutated** by deleting the queued branch — the code as it was before somebody
+fixed it — rebuilding and re-walking. The walk fails and prints what a musician
+would actually read: `["J. S. Bach", "Six Suites for Solo Cello, BWV 1010",
+"Getting ready to read this page", …]`. The second check (that a queued page
+claims no reading stage) catches a narrower case — a stage-shaped fallback —
+and is a cheap guard rather than an independent catch.
+
+### Four claims measured, all of which held
+
+Reported because a probe that finds nothing is still a measurement, and the
+alternative is re-probing them next month.
+
+  * **`import → validate` on all six MusicXML fixtures.** The three authored
+    files — `bass_excerpt`, `orchestral_part`, `orchestral_part_page2` — report
+    **zero** problems, which is what *"the one route whose timeline cannot be
+    wrong"* has to mean. `violin_duo` correctly refuses to guess between two
+    parts. The two named `*_phone_photo` are OMR output saved as MusicXML and
+    are flagged as expected: 7 of 15 bars on the Audiveris one (no `<time>` at
+    all, so the metre is inferred), 2 `out_of_line` on the oemer one.
+  * **`join_pages` on the real two-page part.** 19 + 4 → 23 bars renumbered
+    1–23, all three repeats carried with their numbers intact and
+    `start_inferred=False`, `unclosed_repeat_starts` empty, confidence 1.0.
+  * **Nothing defaults a null clef.** No `?? 'treble'` survives anywhere in
+    either tree; the only match is `PieceScoreScreen`'s comment recording that
+    it used to.
+  * **Nothing infers an instrument from a clef.** The only direction present is
+    `clefFor(instrument)`, used where a hand-entered piece needs a clef nobody
+    read — the forward direction, which is the documented one. A cello reads
+    bass clef too, and no code here forgets that.
+
+### Verification
+
+Walk **PASS, 51 checks** (was 49). a11y **PASS, 33 entries** (was 32), the new
+one clean. Mobile **1504 passed**, `tsc` 0, lint 0. `TranscribingPanel.tsx`
+restored byte-identical after the mutation and `git status` confirms it; `.env`
+moved aside for both fixtures builds and restored `diff -q` identical.
+
+A fixture, a walk check and an audit entry — no screen, component, style or
+copy changed, so no §2 gate. The three-foot test is unchanged because the
+screen is: this renders a composition that was already approved, in a state
+nobody had pointed it at.
+
+---
+
 ## 2026-09-04 — What a tuning session actually touches, and two places that quietly claim to mirror it
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Audio. CI still cannot

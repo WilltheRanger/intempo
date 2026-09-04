@@ -73,6 +73,7 @@ const ROUTES = [
   // new contrast, not a second look at the same pixels.
   ['Piece being read', 'pieces/fixture-reading-in-progress'],
   ['Score, still being read', 'pieces/fixture-reading-in-progress/score'],
+  ['Page queued behind another', 'pieces/fixture-reading-queued/score'],
   ['Piece that could not be read', 'pieces/fixture-reading-failed'],
   ['Score that could not be read', 'pieces/fixture-reading-failed/score'],
   ['Score', 'pieces/fixture-clef-change-study/score'],
