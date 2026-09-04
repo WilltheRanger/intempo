@@ -6,6 +6,85 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-04 — The sentence a failed take shows, and the retry it offers, were two rules that could disagree
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Audio. CI still cannot
+allocate a runner. Second half of the `RecordScreen.tsx` sweep begun one entry
+down.
+
+Two rules, thirty lines apart in the same `catch`, both keyed off
+`describeTierLimit(error)` and each editable without the other:
+
+    const retriable = describeTierLimit(error) === null;
+    ...
+    setProblem(messageFor(error));
+
+**Diverging is not cosmetic.** The quota sentence tells a musician the count
+does not move until next month; `retriable` decides whether "Send again" is on
+the screen at all. One drifting from the other gives them either a retry that
+is guaranteed to be refused, or the news that they are out of analyses with no
+way on.
+
+`readTakeFailure(error, os)` in `lib/audio/takeFailure.ts` returns both from one
+read, so they agree by construction — the same reason `timedMeasures` exists on
+the insights side, where two identical filters drifting is exactly what let a
+call site fall back to the most flattering possible answer.
+
+### Three of the five branches had never been evaluated by anything
+
+`walk-app.mjs` drives two through the built app: a refused microphone and a
+silent take. The other three are not reachable there at all — a fixtures build
+has no quota to exhaust and no way to make the server fail. So the quota
+sentence, the diagnosed-device sentence and the generic fallback were four
+decisions nothing had ever run.
+
+The ordering is the one that matters. The quota check sits **before** the
+generic message because it is neither a connection problem nor something
+trying again will fix; reversed, a musician out of analyses is told to check
+their connection and send it again — advice that measurably cannot work, which
+is the defect `_FAILURE_REASONS` exists to stop on the server side and which
+this repository has now paid for three times there.
+
+### A standing gap this made visible rather than introduced
+
+`describeTierLimit` **cannot be imported under vitest**: `lib/tierLimit.ts`
+imports `ApiError` from `data/api/client`, which imports `data/auth/session`,
+which imports `react-native`, whose Flow syntax the test runner cannot parse.
+That is why `tierLimit.test.ts` covers `analysisAllowance` and not
+`describeTierLimit` — the function that recognises a quota refusal off the wire
+is untestable here. The test stubs it with `vi.mock` and says so; what is
+covered is the part this module owns.
+
+### Mutated six ways, each against the whole suite
+
+| mutation | result |
+|---|---|
+| if/return rewritten as a ternary (**control** — behaviour identical) | 1520 passed, nothing failed ✓ |
+| quota returns `retriable: true` | **2 failed of 1520** |
+| quota sentence replaced by the generic one | **2 failed** |
+| silent take blamed on the connection | **1 failed** |
+| `os` ignored, everyone sent to iOS Settings | **2 failed** |
+| a type guard added above the quota check | 1520 passed — **a bad mutation**, recorded as one: the guard admits `Error`, which the quota fixture is, so it never changed the path under test |
+
+The control passing is the part worth keeping: these assert behaviour, not
+shape. The bad mutation is worth keeping for the same reason the
+`describeBeats` one was — a mutation that does not reach the code under test
+proves nothing, and it reports identically to a successful mutation of
+unguarded code.
+
+### Verification
+
+Mobile **1520 passed** across 136 files (was 1510). `tsc` 0, lint 0 — three
+imports in `RecordScreen.tsx` became unused and were removed. Walk **PASS, 51
+checks**, driving the two branches it can reach. a11y **PASS**.
+`takeFailure.ts` restored between mutations; `.env` moved aside for the build
+and restored `diff -q` identical.
+
+A logic extraction with byte-identical rendering — every sentence is the one
+that was already there, moved. No §2 gate.
+
+---
+
 ## 2026-09-04 — Where a musician's file starts was a rule inside a `.tsx`
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Audio. CI still cannot
