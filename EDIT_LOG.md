@@ -6,6 +6,82 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-04 — Four more server faults were being blamed on the musician's photograph
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Picture → transcription.
+CI still cannot allocate a runner.
+
+Same shape as the readiness list one entry down, on the other hand-maintained
+list in the read path. `_FAILURE_REASONS` turns whatever went wrong into a
+sentence on the score screen, and its default is *"a flatter, better-lit shot
+of the page usually fixes it"* — advice, which only helps when the photograph
+is the problem. For a fault on our side the musician follows it, and it fails
+again, and again.
+
+**The table's own comments record this being got wrong three times**: `homr is
+not installed in this container` matched nothing; `AuthenticationError: invalid
+x-api-key` matched nothing because hyphens were not flattened; and three of the
+four server-side needles reached the default when first measured against the
+running service. Each fix added needles. Nothing checked that the *next* raise
+site would get one.
+
+### Measured: every message the read path raises, run through the table
+
+Of 27 raise sites in `app/services/ocr/`, **four were landing on the default
+and should not have been**:
+
+| message | why the default is wrong |
+|---|---|
+| `unknown provider 'gpt4v'; known: [...]` | a typo in `OCR_PROVIDER_CHAIN`, and its two siblings — "no usable provider", "chain is empty" — already had needles |
+| `RuntimeError: CUDA out of memory` | homr peaks at **1350 MB**, measured, which is why it runs on Modal at all; a container out of room is the predictable failure |
+| `not parseable as XML: …` | reached only via homr, on the reader's **own** output — the import route raises the same words at a musician's file but answers 422 and never gets here |
+| `nothing to join` | an internal invariant, and nobody can photograph their way out of one |
+
+Each now has a needle, and each says *"a fault on our side, not with your
+photograph"* in the table's existing voice.
+
+### The check that closes it
+
+`test_failure_sentences.py`. Every message the read path raises must either
+match a needle or appear in `DEFAULT_IS_RIGHT` with a reason why the photograph
+really is the thing to change — twelve entries, each argued (a template with no
+words of its own; a vision model answering with nothing; homr finding no staves
+after the sideways retry; the import route's 422 text, which never reaches this
+table).
+
+Both directions, the doctrine `NOT_WIRED` and `_HUMAN_STAGES` were each given
+after they rotted: an excluded message that has since gained a needle fails,
+and so does one nothing raises any more. Plus a fourth case asserting the
+default still *is* advice about the photograph — the whole argument in the file
+rests on that sentence, and if it changes the argument needs rereading rather
+than quietly continuing to pass.
+
+### Mutation-tested, and one mutation did not run the first time
+
+| mutation | caught by |
+|---|---|
+| a new `raise OCRError("the reader gave up on this one")` | "has a sentence or a reason", naming the file and both remedies |
+| the `unknown provider` needle removed | the same case |
+| an excluded message gains a needle, reason left behind | "quietly gained a needle" **and** the first case |
+| an excluded message renamed out of existence | "stopped existing" **and** the first case |
+
+The first attempt at mutation 1 reported **caught nothing**, and the honest
+reason is that it never applied: the raise it targeted is split across lines,
+so the replacement matched no text and the file was unchanged. A mutation that
+does not mutate reads exactly like a test that does not test. Re-run against
+the real source it fails loudly, with the message quoted above.
+
+### Verification
+
+Backend suite green. Mobile untouched.
+
+**What this does not do:** it cannot see a message a *library* raises. The
+`{type(exc).__name__}: {exc}` channel carries anything, and only its known
+contents are needled. That entry is on the exclusion list saying so, rather
+than pretending otherwise.
+
+---
+
 ## 2026-09-04 — `/v1/ready` checks a hand-written list of columns, and nothing checked the list
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Picture → transcription.
