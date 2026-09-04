@@ -6,6 +6,55 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-04 — The empty account is gated now, not remembered
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. CI still cannot allocate a
+runner, so this is a change to what CI *would* run.
+
+The entry below made an account with nothing in it reachable with one command.
+That is half the job: a flag somebody has to remember is the same ritual it
+replaced, one step shorter.
+
+`ci.yml`'s `app-walk` job now builds a second bundle
+(`npm run build:web:empty`), serves it on :4323, and runs the accessibility
+audit over Today, Library, Insights and Profile. Named routes, because the rest
+of the list points at `fixture-…` ids an empty account does not have and
+sweeping them would measure a page of not-found states; `unvisitedRoutes` still
+runs against the whole list, so the filtered run cannot report full coverage.
+
+**Why it is worth a minute of CI.** Today, Library and Insights are otherwise
+only ever rendered with a library, a take and thirty days of trend behind them.
+The one time anybody looked at the empty ones — 2026-09-02, by hand — Today was
+telling a new musician *"Nothing to practice yet"* above a fully built daily
+warmup it was hiding from them. That is a composition fault: no unit test has a
+shape that could catch it, and the instrument that can is a rendered sweep.
+
+### What CI already covered, checked rather than assumed
+
+`ci.yml` runs the EDIT_LOG check, brand assets, dead exports, pytest, the
+mobile suite with `tsc` and `eslint`, the web build, the **iOS** bundle, the
+walk and the a11y audit, and the legacy `frontend` build. The standing checks
+added this session are all inside jobs that already run — so the only gap was
+this one, and it is closed.
+
+`tools/check-store-readiness.py` is deliberately not there: it lists what a
+person must do before an App Store submission, and a non-gating step that
+prints the same six items on every build is noise rather than a check.
+
+### Verification
+
+The YAML parses and the three steps land in `app-walk` in the right order.
+Locally the same sequence runs green: the populated build on :4322 (walk PASS,
+a11y PASS across 32 entries) and the empty one on :4323 (a11y PASS, 4 of 32).
+Both servers coexist — `--output-dir` writes elsewhere and `--clear` clears the
+bundler cache, not `dist/`.
+
+**Not verified:** that it passes on a GitHub runner, because none has been
+allocated to this repository since `5c04e1e`. Every job still fails in three to
+four seconds with no steps.
+
+---
+
 ## 2026-09-04 — An account with nothing in it is one command now, and lint was broken for anyone who built twice
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. CI still cannot allocate a
