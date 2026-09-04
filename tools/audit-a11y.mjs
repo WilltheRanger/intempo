@@ -101,7 +101,32 @@ const ROUTES = [
     { seed: { practiceSetupSeen: true }, expect: 'Target tempo' },
   ],
   // The payoff of the whole app, and the route the first sweep missed.
-  ['Verdict', 'analyses/fixture-take-1'],
+  ['Verdict', 'analyses/fixture-take-1', { expect: 'rushed' }],
+  // **Its other three states, none of which had ever been on a screen.**
+  // `VerdictScreen` branches twice on `failure` — recoverable and not are
+  // different sentences and different buttons — and again on a status that is
+  // not `ok`, before it draws a verdict at all. One route, four screens; the
+  // path comparison in `unvisitedRoutes` sees one of them.
+  [
+    'Verdict — failed, recoverable',
+    'analyses/fixture-take-failed',
+    { expect: 'Try again' },
+  ],
+  [
+    'Verdict — failed for good',
+    'analyses/fixture-take-unrecoverable',
+    { expect: "We couldn't process this recording" },
+  ],
+  [
+    'Verdict — nothing heard',
+    'analyses/fixture-take-silent',
+    { expect: 'Nothing to measure' },
+  ],
+  [
+    'Verdict — could not be matched to the score',
+    'analyses/fixture-take-unmatched',
+    { expect: 'matching your recording to the score' },
+  ],
   ['Warmup', 'warmup'],
   ['Help', 'help'],
   ['Legal', 'legal/privacy'],

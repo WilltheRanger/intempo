@@ -6,6 +6,85 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-04 — The payoff screen has four states and one of them had a fixture
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Audio, the answer end. CI
+still cannot allocate a runner. **No screen changed** — fixtures added so
+existing screens can be looked at.
+
+`VerdictScreen` branches on `failure` **twice** — recoverable and
+unrecoverable are different sentences and different buttons — then on a
+`status` that is not `ok`, and only then draws a verdict. The fixtures held one
+take and it succeeded. Three of the four states of what CLAUDE.md calls the
+payoff of the whole app had **never been on a screen**.
+
+Third instance today of the same shape: a route is visited, in one state, and
+`unvisitedRoutes` compares paths.
+
+### The fixtures, and the decision they had to respect
+
+`buildFixtureTake` carries a deliberate comment: *"The sample take always
+succeeds. A failed run is a live-only outcome — fabricating one here would put
+a 'we couldn't read that' screen in front of someone browsing the demo,
+describing a recording they never made."* That still holds, and it is about
+`getLatestTake` / `getRecentTakes`, which Today and Insights read.
+
+So the four new states are reachable **by id and by nothing else**. The
+browsable sample build is unchanged; a sweep can open them.
+
+Their sentences are the pipeline's own, read off `analyze()` rather than
+written: silence really answers *"Your recording is completely silent — no
+sound reached the microphone at all…"* and a take that cannot be matched
+answers *"We had trouble matching your recording to the score…"*. A fixture
+that invented its wording would check the screen against a sentence the
+product never sends — the same rule the post-scan `transcriptionError` fixture
+follows.
+
+### Rendered, all four
+
+    fixture-take-failed         "This take didn't get analysed"
+                                "…on our side, not with your playing…"   Try again
+    fixture-take-unrecoverable  "This take didn't get analysed"
+                                "We couldn't process this recording…"    Record again
+    fixture-take-silent         "Nothing to measure" + the silence
+                                sentence                                  Record again
+    fixture-take-unmatched      "Nothing to measure" + the mismatch
+                                sentence                                  Record again
+
+Five walk checks and four a11y entries. **The walk's extra over the sweep is
+the pair**: recoverable and unrecoverable are one `? :` in the source, and
+swapping it leaves every screen looking right on its own while a musician whose
+take failed for good is told to try again — and tries again, and it fails
+again. A final check asserts the four say four different things, because two
+states reading the same sentence means the branch between them has collapsed
+and neither screen looks wrong alone.
+
+### Mutation-tested
+
+| mutation | caught by |
+|---|---|
+| the recoverable `? :` inverted | both failure checks, naming the buttons they got |
+| both failure branches share one sentence | "a failure that will not come back says nothing that names it" |
+
+### Three-foot test — looked at, not changed
+
+*Verdict — nothing heard*, 390×844. First the centred serif "Nothing to
+measure"; second the pipeline's sentence under it; third "Record again"
+anchored at the bottom. One focal point, the piece title receding to an
+eyebrow, no cards, primary action in the thumb zone. It matches the owner's
+2026-09-02 call that these read as empty states. The vertical band above the
+block is larger than a strict centre would give — `EmptyState fill` sits it
+slightly high — which is a composition detail rather than a fault, and §2
+either way.
+
+### Verification
+
+Walk PASS, 49 checks (was 44). a11y PASS, 32 entries (was 28). Mobile 1478
+tests, `tsc`, `eslint` and `check-dead-exports` (516) clean.
+`VerdictScreen.tsx` restored byte-identical after the mutations.
+
+---
+
 ## 2026-09-04 — The a11y audit's "Record" entry has never audited the record screen
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Audio, the setup end. CI

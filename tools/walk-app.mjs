@@ -616,6 +616,81 @@ console.log('\n## Telling the app it got a bar wrong');
   else fail('a correction with no backend was neither sent nor refused in words');
 }
 
+console.log('\n## A take that did not come back with a verdict');
+
+/*
+ * **Three of the four states of the payoff screen, none of them ever
+ * rendered.** `VerdictScreen` branches on `failure` — twice, because
+ * recoverable and unrecoverable get different sentences and different buttons
+ * — then on a `status` that is not `ok`, and only then draws a verdict. Until
+ * now the fixtures held one take and it succeeded.
+ *
+ * What the walk adds over the a11y sweep, which now also visits these: the
+ * sweep measures each screen alone, and the fault worth catching here is the
+ * pair. Recoverable and unrecoverable are one `? :` in the source. Swap it and
+ * every screen still looks right on its own; a musician whose take failed for
+ * good is told to try again, and tries again, and it fails again.
+ */
+const VERDICT_STATES = [
+  {
+    id: 'fixture-take-failed',
+    what: 'a failure worth retrying',
+    says: /on our side, not with your playing/i,
+    offers: /^Try again$/i,
+  },
+  {
+    id: 'fixture-take-unrecoverable',
+    what: 'a failure that will not come back',
+    says: /couldn.t process this recording/i,
+    offers: /^Record again$/i,
+  },
+  {
+    id: 'fixture-take-silent',
+    what: 'a silent recording',
+    // The pipeline's own sentence, verbatim — `diagnostics.py` distinguishes a
+    // silent take from a page with no notes read off it, and the screen must
+    // not paraphrase either into the other.
+    says: /completely silent/i,
+    offers: /^Record again$/i,
+  },
+  {
+    id: 'fixture-take-unmatched',
+    what: 'a take that could not be matched to its score',
+    says: /matching your recording to the score/i,
+    offers: /^Record again$/i,
+  },
+];
+
+const said = new Map();
+for (const state of VERDICT_STATES) {
+  await open(`analyses/${state.id}`);
+  const lines = await leaves();
+  const sentence = lines.find((l) => state.says.test(l));
+  const buttons = await page.evaluate(() =>
+    [...document.querySelectorAll('[role=button],button')].map((el) =>
+      (el.textContent ?? '').trim(),
+    ),
+  );
+
+  if (!sentence)
+    fail(`${state.what} says nothing that names it: ${JSON.stringify(lines.slice(0, 6))}`);
+  else if (!buttons.some((b) => state.offers.test(b)))
+    fail(`${state.what} offers ${JSON.stringify(buttons)}, not ${state.offers}`);
+  else {
+    said.set(state.id, sentence);
+    pass(`${state.what}: "${sentence.slice(0, 46)}…" → ${buttons.find((b) => state.offers.test(b))}`);
+  }
+}
+
+// **The pair, which is the whole reason these are worth driving.** Two states
+// reading the same sentence would mean the branch between them had collapsed,
+// and each screen would still look perfectly reasonable alone.
+const distinct = new Set(said.values());
+if (said.size > 0 && distinct.size !== said.size)
+  fail(`two of the failure states say the same thing: ${JSON.stringify([...said.values()])}`);
+else if (said.size === VERDICT_STATES.length)
+  pass('each of the four states says something only it says');
+
 console.log('\n## Downloading your own data');
 
 /*
