@@ -6,6 +6,84 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-04 — The app's own WAV, through the whole pipeline, to a verdict
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Audio verification. CI
+still cannot allocate a runner.
+
+`test_app_encoder_wav.py` stopped at `detect_onsets`. Everything after that —
+`build_timeline`, alignment, the tolerance bands, the sentence a musician reads
+— had never seen a file the **app** wrote; every other audio fixture in this
+repository came out of `soundfile`.
+
+So `analyze()` now runs on both app-encoded click tracks against a two-bar 4/4
+score at 120 BPM. The click track is 8 bursts 0.5 s apart, which is 8 quarter
+notes at exactly 120, and the score is written out in the test rather than
+derived from the clip — neither came from the other.
+
+Measured:
+
+    22050 Hz  status ok  quality 0.978  "Steady tempo — you held it within
+                                         tolerance across the piece."
+    48000 Hz  status ok  quality 0.975  the same sentence
+
+The claim being asserted is the one a musician would care about most: **a take
+that is perfectly in time must not be accused of anything.** A pipeline that
+told someone playing exactly with the click that they rushed would be worse
+than one that failed, because the failure would be believed.
+
+The second new case carries the rate check through to the answer. Identical
+onset times are necessary and not sufficient — alignment, the bands and the
+quality weighting all sit between the onsets and the sentence — so the two
+rates are asserted to produce the same verdict, the same status, and quality
+within 0.02.
+
+### A third test, written and dropped
+
+I also wrote `test_the_thresholds_are_not_tuned_tighter_than_the_detector_can_
+measure`, then checked what it was holding. Narrowing
+`tolerance.rushing_inner_pct` / `dragging_inner_pct` to 0.5 fails **19 existing
+tests**. The suite already screams; my version added a twentieth voice.
+
+Its value was never the assertion — it was the measurement in its docstring,
+and that belongs in `TUNING_LOG.md`, which exists for exactly this. Moved
+there. Same call as the composite-page test dropped earlier today, and the six
+recording-endpoint tests before that.
+
+### What that measurement says (full entry in `TUNING_LOG.md`)
+
+The steady band can be narrowed from the shipped **5.0%** to **1.0%** and the
+perfect take still reads steady; at 0.5% it is told *"You rushed across
+measures 1–2 by an average of 2 BPM."* Roughly five times the headroom under
+the shipped value, and `quality` is 0.975 at every step — the inner band moves
+the sentence, not the score.
+
+**And it corrected reasoning I had wrong.** I expected the floor near 6%: the
+detector reports these attacks +10 to +31 ms late, and 31 ms is 6.2% of a beat
+at 120 BPM. That is not how it works — `to_timeline_base` re-zeros on the first
+onset and `pulse_anchors` re-anchors after a disturbed run, so a *constant*
+lateness never reaches the bands at all. Only the spread survives, about 10 ms
+here. The detector's absolute bias is not a constraint on tuning; its jitter
+is, and the jitter is far smaller.
+
+### Mutation-tested
+
+| mutation | caught |
+|---|---|
+| the steady band narrowed to 0.5% | both new cases (and 19 others) |
+| `load_audio` stops resampling | the onset cases; **not** the verdict ones — the anchoring absorbs it, which is worth knowing: onsets are the sharper instrument for a rate fault |
+| the 48 kHz header says 44100 | 5 cases across the file, including both new ones |
+
+### Verification
+
+Backend 1965 passed / 2 xfailed (was 1962). Mobile untouched.
+
+**Not held:** still no sound. A synthetic click track is the cleanest input
+there is, and the real recordings Batch 3's tuning waits on would say something
+this cannot.
+
+---
+
 ## 2026-09-04 — There are three walks over a score, and the click was the unheld one
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Audio verification. CI
