@@ -6,6 +6,65 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-04 — The same contract in the other form: six Postgres enum types
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. CI still cannot allocate a
+runner.
+
+The entry below holds the three columns constrained by `CHECK (… IN …)`. The
+database constrains **seven more vocabularies as real `ENUM` types**, created
+in `001_initial.sql`, and six of them have a Python enum:
+
+    user_tier          UserTier
+    user_role          UserRole
+    bpm_source         BpmSource
+    metronome_mode     MetronomeMode
+    analysis_status    AnalysisStatus
+    assignment_status  AssignmentStatus
+    sync_event_type    — nothing
+
+Identical failure to the CHECK form: a value the code can produce and the type
+cannot hold is an insert that raises, on whichever write reaches it first.
+`AnalysisStatus` gaining a member the type has not would 500 the worker's own
+`_finish_failed` — the call that exists so a failed analysis does not sit
+`processing` for ever.
+
+All six agree today.
+
+**`sync_event_type` is excused with a reason rather than mapped.** Batch 10
+(offline sync) is not built: `sync_events` is *read* by the account export,
+which dumps whatever rows a user owns, and written by nothing — so there is no
+code that could disagree with the type yet. Checked in both directions, so the
+excuse fails the day it gains a Python enum.
+
+### Mutation-tested
+
+| mutation | caught by |
+|---|---|
+| `AnalysisStatus` gains `cancelled` | `[analysis_status]`, naming both lists |
+| the `metronome_mode` type gains `flash` | `[metronome_mode]` |
+| a new `CREATE TYPE` with no Python enum | "every enum type is paired or excused" |
+| `sync_event_type` mapped while still excused | its own case **and** the pairing case |
+
+### A slip worth recording
+
+Cleaning up after the fourth mutation I ran `git checkout --` on the test file,
+which **had** been committed in the entry below — so it reverted to the
+committed version and silently discarded the extension I had just written and
+measured. The give-away was the suite going from 15 cases back to 7 in the
+"restored" line, which is the only reason I noticed.
+
+Re-applied and re-measured; the mutation results above are from the restored
+file, not from memory of the first run. Later cleanups copy from a `/tmp`
+backup taken before the first mutation, which is what the rest of this
+session's mutation runs already did.
+
+### Verification
+
+Backend suite green; the file is 15 cases now, up from 7. Mobile untouched.
+
+---
+
 ## 2026-09-04 — One list of instruments, declared four times, one pair held
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. CI still cannot allocate a
