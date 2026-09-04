@@ -504,6 +504,35 @@ async function seedPreferences(page, seed) {
 const browser = await chromium.launch(browserPath());
 let failures = 0;
 
+/**
+ * Which routes to run, when only some of them make sense.
+ *
+ * `node tools/audit-a11y.mjs 4323 Today Library Insights Profile` audits four
+ * names and skips the rest. There is exactly one caller with a reason: the
+ * **empty-account** build (`EXPO_PUBLIC_FIXTURES=empty`), where every route
+ * naming a `fixture-…` id points at a piece that does not exist, so sweeping
+ * the whole list would measure a page of not-found states and call it
+ * coverage.
+ *
+ * Skipping is announced, and `unvisitedRoutes` still runs on the **full**
+ * list — a filtered run must not be able to report that every screen has an
+ * audit when it looked at four.
+ */
+const ONLY = process.argv.slice(3);
+const selected = ONLY.length
+  ? ROUTES.filter(([name]) => ONLY.some((want) => name.includes(want)))
+  : ROUTES;
+if (ONLY.length) {
+  console.log(
+    `\n## Auditing ${selected.length} of ${ROUTES.length} routes ` +
+      `(filtered by ${JSON.stringify(ONLY)})`,
+  );
+  if (selected.length === 0) {
+    console.log('  Nothing matched — check the names against ROUTES.');
+    failures += 1;
+  }
+}
+
 const unvisited = unvisitedRoutes();
 if (unvisited.length > 0) {
   console.log('\n## Routes with a URL and no audit');
@@ -518,7 +547,7 @@ if (unvisited.length > 0) {
   failures += unvisited.length;
 }
 
-for (const [name, path, options = {}] of ROUTES) {
+for (const [name, path, options = {}] of selected) {
   /*
    * **375pt, the narrowest iPhone this app can be installed on** — not the 390
    * of an iPhone 14/15. Every check here that depends on width gets stricter
