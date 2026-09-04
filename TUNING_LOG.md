@@ -6,6 +6,57 @@ value, regression results across all six fixture clips, and rationale.
 
 ---
 
+## 2026-09-04 — Measured: how far the steady band can be narrowed before a perfect take is accused
+
+**Nothing in `config.toml` changed.** This records a measurement that the
+pending Batch 3 tuning needs, and corrects a piece of reasoning I had wrong.
+
+### The clip
+
+`fixtures/audio/app_encoder_click_track_48k.wav` — 8 bursts 0.5 s apart, which
+is 8 quarter notes at exactly 120 BPM, written by the app's own
+`encodeWavBytes`. Judged against a two-bar 4/4 score at a target of 120. The
+take is **perfectly in time by construction**, so anything but "steady" is the
+pipeline accusing a musician who did nothing wrong.
+
+### `tolerance.rushing_inner_pct` and `dragging_inner_pct`, walked down together
+
+    5.0 (shipped)  Steady tempo — you held it within tolerance across the piece.
+    4.0            Steady
+    3.0            Steady
+    2.0            Steady
+    1.5            Steady
+    1.0            Steady
+    0.5            "You rushed across measures 1-2 by an average of 2 BPM."
+
+**Roughly five times the headroom under the shipped value.** `quality` is
+0.975 at every one of them — the inner band moves the sentence, not the score.
+
+### The reasoning I had wrong
+
+I expected the floor near **6%**. The detector reports these attacks +10 to
++31 ms late (`test_app_encoder_wav.py` tabulates all eight), and 31 ms is 6.2%
+of a beat at 120 BPM, so it looked as though narrowing past that would accuse
+everyone.
+
+It does not, because a *constant* lateness never reaches the bands:
+`to_timeline_base` re-zeros the detected onsets on the first of them, and
+`pulse_anchors` re-anchors after a disturbed run. Only the **spread** survives
+— about 10 ms here — and that is what sets the floor between 0.5% and 1.0%.
+
+Worth writing down because it points the other way from the obvious reading of
+the detection times: the detector's absolute bias is not a constraint on
+tuning, and its jitter is much smaller than that bias.
+
+### Two things this does not say
+
+It is one synthetic clip of eight identical bursts — the cleanest possible
+input, and no substitute for the real recordings the tuning is actually
+waiting on. And the outer bands were not walked; only the inner one, which is
+the boundary between "steady" and being told something.
+
+---
+
 ## 2026-09-02 — Measured: the onset detector is amplitude-invariant. One new threshold, and it is zero.
 
 **Nothing in `config.toml` changed.** No clip moved, because nothing the

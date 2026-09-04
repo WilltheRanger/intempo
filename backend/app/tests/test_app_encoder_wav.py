@@ -59,7 +59,9 @@ from pathlib import Path
 
 import pytest
 
+from app.services.analysis import analyze
 from app.services.audio import detect_onsets, load_audio
+from app.services.score_schema import ScoreJson
 
 _AUDIO = Path(__file__).resolve().parents[3] / "fixtures" / "audio"
 
@@ -170,3 +172,90 @@ def test_the_rate_the_phone_recorded_at_does_not_move_a_single_onset() -> None:
         assert a == pytest.approx(b, abs=HOP_SECONDS / 5), (
             f"{a:.4f}s at 22050 Hz against {b:.4f}s at 48000 Hz"
         )
+
+
+#: Eight quarter notes at 120 BPM: two bars of 4/4, which is exactly the signal
+#: in both fixtures. Written here rather than loaded, because the point is that
+#: the page and the recording were built from the *same* description of the
+#: music — the click track is 8 bursts 0.5 s apart and this is 8 quarters at
+#: 120, and neither was derived from the other.
+PERFECT_TAKE_SCORE = {
+    "clef": "treble",
+    "time_signature": "4/4",
+    "key_signature": None,
+    "tempo_bpm": 120,
+    "ocr_confidence": 1.0,
+    "repeats": [],
+    "measures": [
+        {
+            "measure_number": number,
+            "time_signature": "4/4",
+            "notes": [
+                {"pitch": "A4", "duration": "quarter", "beat": beat}
+                for beat in (1, 2, 3, 4)
+            ],
+        }
+        for number in (1, 2)
+    ],
+}
+
+TARGET_BPM = 120.0
+
+#: How much of the top a flawless take is allowed to fall short of.
+#:
+#: **Measured: 0.978 at 22050 Hz and 0.975 at 48000.** The input is exactly on
+#: the beat by construction, so the missing 2% is not the performance — it is
+#: the detector's own late bias, the +10 to +31 ms tabulated above. This floor
+#: sits below both with room, and is not a threshold anyone should tune; it is
+#: a statement that a perfect take scores near the top.
+PERFECT_TAKE_QUALITY = 0.95
+
+
+@pytest.mark.parametrize("written_at", sorted(FIXTURES), ids=lambda r: f"{r}Hz")
+def test_a_take_played_exactly_on_the_beat_is_not_accused_of_anything(
+    written_at: int,
+) -> None:
+    """The whole pipeline, on a file the app itself wrote.
+
+    Everything above stops at `detect_onsets`. This runs `analyze` — load,
+    onsets, `build_timeline`, alignment, verdict — which is every step a real
+    take takes, on bytes produced by `encodeWavBytes` rather than by
+    `soundfile`.
+
+    The claim is the one a musician would care about most: a take that is
+    **perfectly** in time must come back as such. A pipeline that told someone
+    playing exactly with the click that they rushed would be worse than one
+    that failed, because the failure would be believed.
+    """
+    result = analyze(
+        FIXTURES[written_at],
+        ScoreJson.model_validate(PERFECT_TAKE_SCORE),
+        TARGET_BPM,
+    )
+
+    assert result.status == "ok", result.verdict
+    assert result.n_detected_onsets == NOTES
+    assert result.quality >= PERFECT_TAKE_QUALITY, (
+        f"a flawless take scored {result.quality:.3f}"
+    )
+    # The wording is the pipeline's own, and it is what the screen shows.
+    assert "steady" in result.verdict.lower(), result.verdict
+    for word in ("rush", "drag", "uneven"):
+        assert word not in result.verdict.lower(), result.verdict
+
+
+def test_the_verdict_does_not_depend_on_the_rate_the_phone_recorded_at() -> None:
+    """The onset check above, carried through to the answer a musician reads.
+
+    Identical onset times are necessary and not sufficient: alignment, the
+    tolerance bands and the quality weighting all sit between them and the
+    sentence on the screen.
+    """
+    verdicts = {
+        rate: analyze(path, ScoreJson.model_validate(PERFECT_TAKE_SCORE), TARGET_BPM)
+        for rate, path in FIXTURES.items()
+    }
+
+    assert verdicts[22050].verdict == verdicts[48000].verdict
+    assert verdicts[22050].status == verdicts[48000].status
+    assert verdicts[22050].quality == pytest.approx(verdicts[48000].quality, abs=0.02)
