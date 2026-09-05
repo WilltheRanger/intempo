@@ -1,5 +1,6 @@
 import { Pause, Play } from 'lucide-react-native';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 
 import { Text } from '../primitives/Text';
@@ -21,6 +22,7 @@ import {
 } from '../../lib/score';
 import { usePreferences } from '../../data/preferences';
 import { playSchedule } from '../../lib/scorePlayer';
+import { INSTRUMENT_LABELS } from '../../lib/warmup';
 
 export interface ListenButtonProps {
   score: ScoreJson | null;
@@ -84,24 +86,26 @@ export function ListenButton({
   const report = useRef(onProgress);
   report.current = onProgress;
 
-  function stop() {
+  const stop = useCallback(() => {
     handle.current?.stop();
     handle.current = null;
     setPlaying(false);
     setLoading(false);
     setProgress(0);
     report.current?.(0, 0);
-  }
+  }, []);
 
   // Leaving the screen, or starting a take, must silence it. A note still
   // sounding into a recording is the exact failure this guards against.
-  useEffect(() => stop, []);
-  useEffect(() => stop, [instrument]);
+  // Stack/tab navigation may keep this component mounted after leaving it.
+  // Focus cleanup stops both sounding audio and a pending load/render.
+  useFocusEffect(useCallback(() => stop, [stop]));
+  useEffect(() => stop, [instrument, score, bpm, fromMeasure, stop]);
   useEffect(() => {
     if (disabled) {
       stop();
     }
-  }, [disabled]);
+  }, [disabled, stop]);
 
   if (!score || score.measures.length === 0) {
     return null;
@@ -172,7 +176,7 @@ export function ListenButton({
             ? 'Loading instrument, tap to cancel'
             : playing
               ? 'Stop listening'
-              : 'Listen at this tempo'
+              : `Listen with ${INSTRUMENT_LABELS[instrument]} at this tempo`
         }
         style={({ pressed }) => [
           styles.button,
@@ -198,7 +202,11 @@ export function ListenButton({
           />
         )}
         <Text variant="metadataSmall">
-          {loading ? 'Loading · Cancel' : playing ? 'Stop' : 'Listen'}
+          {loading
+            ? 'Loading · Cancel'
+            : playing
+              ? 'Stop'
+              : `Listen · ${INSTRUMENT_LABELS[instrument]}`}
         </Text>
 
         {/* Sits inside the control's border rather than under it, so the button

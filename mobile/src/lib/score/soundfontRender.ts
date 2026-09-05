@@ -25,7 +25,10 @@ interface NoteEvent {
   on: boolean;
 }
 
-export function soundfontEvents(schedule: Schedule): NoteEvent[] {
+export function soundfontEvents(
+  schedule: Schedule,
+  instrument: Instrument = 'violin',
+): NoteEvent[] {
   const events: NoteEvent[] = [];
   for (const note of schedule.notes) {
     if (
@@ -38,7 +41,12 @@ export function soundfontEvents(schedule: Schedule): NoteEvent[] {
       note.startS >= schedule.durationS
     )
       continue;
-    const key = Math.round(69 + 12 * Math.log2(note.frequency / 440));
+    // ScoreJson stores written pitches. Double bass sounds one octave below
+    // its notation; this does not alter the score or its rhythm. The timbre
+    // still comes from the real double-bass preset, not another shifted voice.
+    const key =
+      Math.round(69 + 12 * Math.log2(note.frequency / 440)) +
+      (instrument === 'double_bass' ? -12 : 0);
     if (key < 0 || key > 127) continue;
     const start = Math.round(note.startS * RATE);
     const end = Math.round(
@@ -72,7 +80,7 @@ export async function renderSoundfont(
   ) {
     throw new Error('Choose a passage shorter than ten minutes to listen.');
   }
-  const events = soundfontEvents(schedule);
+  const events = soundfontEvents(schedule, instrument);
   if (!events.length)
     throw new Error('There are no playable notes in this passage.');
   if (cancelled()) throw new Error('Playback cancelled');

@@ -1,5 +1,28 @@
 # InTempo Edit Log
 
+## 2026-09-05 — Stop Listen on navigation blur; correct double-bass register
+
+User reported Double Bass did not sound like the selected instrument and that
+Listen continued after leaving a piece. Listen previously cleaned up only on
+unmount; stack/tab screens can remain mounted. It now uses focus cleanup to
+stop sounding audio and pending loading/rendering on blur, with cleanup also
+on score, tempo, starting measure or instrument changes. The actual instrument
+name is shown on Listen and the Settings copy explains its playback role.
+Native UI guidance informed the label/accessibility update without a redesign.
+
+The selected SoundFont preset was already Double Bass (program 43). Its note
+events incorrectly used written pitch directly. Bass events now sound an
+octave below notation while preserving score data and all event times; the
+other instruments are unchanged. This supersedes the prior no-transposition
+decision but retains full sampled-instrument playback, not the old synth.
+
+Validation: new button lifecycle tests exercise blur without unmount and
+idempotent cleanup; pitch tests check written E2 -> sounding E1 only for bass.
+Typecheck, lint and web export pass. Suite: 1,550 pass with one known unrelated
+archive stress-test timeout under concurrent build load; its isolated rerun
+passes all 21 tests. Real-device/perceptual sound quality remains unverified.
+
+
 ## 2026-09-05 — Full SoundFont playback for Settings instruments
 
 Replaced the rejected hand-written VSCO sample renderer with pinned
