@@ -2,7 +2,6 @@ import { FileMusic, Play } from 'lucide-react-native';
 import { StyleSheet, View } from 'react-native';
 
 import { ScoreThumbnail } from '../../components/pieces/ScoreThumbnail';
-import { Card } from '../../components/primitives/Card';
 import { PrimaryButton } from '../../components/primitives/PrimaryButton';
 import { Text } from '../../components/primitives/Text';
 import type { Piece } from '../../data/types';
@@ -37,11 +36,9 @@ const BANNER_HEIGHT = 56;
 /**
  * The piece to pick back up. The dominant element on the Today screen.
  *
- * A card, deliberately — this is the one thing on the screen that genuinely
- * needs grouping (§3 law 3): a piece, its tempo and the action that starts it
- * are one object, and the rows below are separate suggestions rather than more
- * of the same. The action lives inside it so it reads as "continue *this*"
- * rather than as a floating global button.
+ * The approved Today layout groups this on the page itself: title, composer,
+ * score strip, practice state and action. No enclosing card or inset gutters,
+ * so the feature aligns with the greeting and sections below it.
  *
  * **"Practiced today" is gone too.** It was the third grey line in a stack of
  * three, above the one sentence on the card anybody opens the app to read. The
@@ -67,9 +64,7 @@ export function PracticeCard({
     piece.transcriptionStatus === 'reading';
 
   return (
-    <Card emphasis padded={false}>
-      <ScoreThumbnail source={piece.thumbnail} radius={0} style={styles.banner} />
-
+    <View>
       <View style={styles.body}>
         <Text variant="heroTitle" numberOfLines={2}>
           {piece.title}
@@ -96,6 +91,8 @@ export function PracticeCard({
             {piece.movement}
           </Text>
         ) : null}
+
+        <ScoreThumbnail source={piece.thumbnail} radius={0} style={styles.banner} />
 
         {/*
           Smaller than the movement above it but darker, which is the point.
@@ -144,7 +141,7 @@ export function PracticeCard({
           style={styles.action}
         />
       </View>
-    </Card>
+    </View>
   );
 }
 
@@ -152,12 +149,10 @@ const styles = StyleSheet.create({
   banner: {
     width: '100%',
     height: BANNER_HEIGHT,
+    marginTop: spacing.xl,
   },
   body: {
-    // Vertical is tighter than horizontal: the card needed height back, but
-    // narrowing the side gutters would crowd the title against the border.
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
+    paddingVertical: spacing.sm,
   },
   composer: {
     marginTop: spacing.xs,
@@ -175,6 +170,6 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm,
   },
   action: {
-    marginTop: spacing.md,
+    marginTop: spacing.xl,
   },
 });

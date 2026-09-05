@@ -6,6 +6,26 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-04 — Today layout aligned with the approved mockup
+
+**Branch:** `codex/today-layout`, based on pending reliability PR #71.
+
+User approved the charcoal/ivory mockup and requested layout-only changes.
+Today now has a top-right add-piece action, a bounded single reading column,
+an unboxed practice feature with notation below its identity, recent practice
+directly beneath the primary action, and an unboxed contextual lesson.
+Existing warmup, focus, suggestions, practice data, recovery states, navigation
+and add-piece guidance remain. No mockup sample copy or practice data replaces
+live content. Shared design tokens and navigation are unchanged.
+
+Verification: typecheck, lint, web export and all 1,534 tests pass. The local
+production-style sample preview was visually checked at the available browser
+width, including scrolling to the lesson and opening the header add-piece
+sheet. Native-device and large-text checks remain pending. The Expo development
+preview had a rendering issue; verification used the exported web build.
+Revert this layout commit to restore the previous
+composition; no migration or data changes are required.
+
 ## 2026-09-04 — Preserve interrupted server-error diagnostics
 
 **Branch:** `codex/rest-cue-empty-bars` (PR #71).
