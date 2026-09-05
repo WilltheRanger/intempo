@@ -10,6 +10,7 @@ import {
   PageHeader,
   ScreenContainer,
   SectionHeader,
+  SecondaryButton,
   Text,
 } from '../../components/primitives';
 import { InsightsSkeleton } from '../../components/skeletons';
@@ -24,6 +25,7 @@ import {
 } from '../../lib/format';
 import { readTendency } from '../../lib/insights/tendency';
 import { formatVerdict } from '../../lib/tempo';
+import { practiceLessonFor } from '../../lib/practiceLesson';
 import type { AddPieceOption, TabScreenNavigation } from '../../navigation/types';
 import { TodayRow } from '../today/TodayRow';
 import { DeviationBar } from './DeviationBar';
@@ -144,6 +146,13 @@ export function InsightsScreen() {
 
   const focus = insights.pieces[0] ?? null;
   const takes = recentTakes.data ?? [];
+  const latest = takes[0];
+  const lesson = latest ? practiceLessonFor({
+    verdict: latest.verdict,
+    pieceTitle: latest.pieceTitle,
+    workingBpm: latest.targetBpm,
+    beatUnit: latest.tempoBeatUnit,
+  }) : null;
   // Which of the two findings this window is — the direction, or the wandering
   // that a direction cannot describe. The rule and the words are in
   // `lib/insights/tendency.ts`, where they can be tested.
@@ -192,6 +201,37 @@ export function InsightsScreen() {
             />
           </View>
         </FadeIn>
+      ) : null}
+
+      {latest && lesson ? (
+        <View style={styles.section}>
+          <SectionHeader label="Try in your next practice" />
+          <Text variant="metadataSmall" color="textSecondary">{lesson.context}</Text>
+          <Text variant="pieceTitle" style={styles.lessonSpacing}>{lesson.title}</Text>
+          <Text variant="body" color="textSecondary" style={styles.lessonSpacing}>
+            {lesson.exercise}
+          </Text>
+          <SecondaryButton
+            label="Open piece to practise"
+            style={styles.lessonSpacing}
+            onPress={() => navigation.navigate('PieceDetail', { pieceId: latest.pieceId })}
+          />
+        </View>
+      ) : null}
+
+      {recentTakes.isError ? (
+        <View style={styles.section}>
+          <SectionHeader label="Recent sessions" />
+          <Text variant="body" color="textSecondary">
+            Your recent sessions couldn't refresh. Your practice summary is still available.
+          </Text>
+          <SecondaryButton
+            label={recentTakes.isFetching ? 'Trying…' : 'Retry recent sessions'}
+            disabled={recentTakes.isFetching}
+            style={styles.lessonSpacing}
+            onPress={() => { void recentTakes.refetch(); }}
+          />
+        </View>
       ) : null}
 
       {takes.length > 0 ? (
@@ -249,6 +289,9 @@ export function InsightsScreen() {
 }
 
 const styles = StyleSheet.create({
+  lessonSpacing: {
+    marginTop: spacing.md,
+  },
   bar: {
     marginTop: spacing.xl,
   },
