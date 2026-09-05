@@ -87,7 +87,7 @@ describe('parameters that are not strings', () => {
     // Read from `types.ts` rather than listed here, so a route added with a
     // numeric parameter fails this instead of shipping unparsed.
     const numeric: Array<[string, string]> = [];
-    for (const line of typesSource.split('\n')) {
+    for (const line of typesSource.split(/\r?\n/)) {
       const route = /^ {2}([A-Z][A-Za-z]*)\??: \{(.*)\};$/.exec(line);
       if (!route) continue;
       for (const param of route[2].matchAll(/([a-zA-Z]+)\??: number/g)) {

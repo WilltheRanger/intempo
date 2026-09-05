@@ -6,6 +6,27 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-04 — Reliable rest entrances and connection checks
+
+**Branch:** `codex/rest-cue-empty-bars`.
+
+Long-rest cues now require an identified note in the following bar. An empty
+OCR bar no longer becomes a false entrance, nor is it bridged to a later note.
+Later complete rest runs still use the existing playback clock. Two regression
+tests reproduced the false cue before the fix and pass after it.
+
+Connection diagnostics now distinguish a dropped readiness request from an
+explicitly unready service, and honor `ready: false` in successful responses.
+No account writes, schema changes, or new UI layouts are involved.
+
+Windows line endings and local-date assumptions were corrected in three tests.
+Verification: all 1,531 tests passed with two workers before the diagnostics
+addition; all 20 rest-cue/diagnostic tests passed afterward. The initial fully
+parallel run also hit a compression-fixture timeout; its allocation and timing
+assertions are unchanged. Type checking, lint, and the web export also pass.
+Browser/real-instrument verification remains pending.
+Rollback: revert this branch's commit; no data migration is needed.
+
 ## 2026-09-04 — The metronome a musician actually plays to had no test
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Audio. CI still cannot
