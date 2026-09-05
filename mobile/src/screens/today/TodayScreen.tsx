@@ -1,7 +1,7 @@
 import { useNavigation } from '@react-navigation/native';
 import { ChevronRight, Plus } from 'lucide-react-native';
 import { useCallback, useEffect, useState } from 'react';
-import { Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
 import { FadeIn } from '../../components/motion';
 import { AddPieceSheet } from '../../components/pieces/AddPieceSheet';
@@ -59,7 +59,6 @@ import { PracticeCard } from './PracticeCard';
 import { TodayRow } from './TodayRow';
 
 const AVATAR_SIZE = 52;
-const WIDE_HOME_BREAKPOINT = 900;
 
 /**
  * Tappable box around the mark.
@@ -76,17 +75,12 @@ const AVATAR_INSET = (AVATAR_TARGET - AVATAR_SIZE) / 2;
 /**
  * Today is a practice dashboard, not a miniature library.
  *
- * The first column gets someone playing: resume the current piece, then warm
- * up. The supporting column answers the next three useful questions: what
- * should this take accomplish, what else needs attention, and what pattern is
- * showing up across recent sessions. Every block is either an action or an
- * explanation of real practice data; decorative trivia does not compete with
- * the session a musician came here to start.
+ * A single reading column gets someone playing, then shows recent practice
+ * and a contextual lesson. Existing warmup, focus and suggestions follow;
+ * the approved layout changes hierarchy without removing their content.
  */
 export function TodayScreen() {
   const navigation = useNavigation<TabScreenNavigation<'Today'>>();
-  const { width: viewportWidth } = useWindowDimensions();
-  const isWide = viewportWidth >= WIDE_HOME_BREAKPOINT;
   const currentPiece = useCurrentPiece();
   const library = useLibrary();
   const insights = useInsights();
@@ -349,8 +343,35 @@ export function TodayScreen() {
     ? `Across ${summary.sessions === 1 ? '1 session' : `${summary.sessions} sessions`} in the last ${summary.windowDays} days`
     : '';
 
+  const recentPractice = takes.length > 0 ? (
+    <View style={styles.section}>
+      <SectionHeader label="Recent practice" />
+      {takes.map((recentTake, index) => (
+        <TodayRow
+          key={recentTake.id}
+          title={recentTake.pieceTitle}
+          detail={joinMetadata([
+            formatLastPracticedShort(recentTake.recordedAt),
+            formatTempo(recentTake.targetBpm, recentTake.tempoBeatUnit),
+            formatVerdict(recentTake.verdict),
+          ])}
+          onPress={() => navigation.navigate('Verdict', { analysisId: recentTake.id })}
+          last={index === takes.length - 1}
+        />
+      ))}
+    </View>
+  ) : null;
+
   return (
     <ScreenContainer onRefresh={refresh} contentStyle={styles.page}>
+      <View style={styles.topBar}>
+        <Text variant="heroTitle">InTempo</Text>
+        <SecondaryButton
+          label="Add a new piece"
+          icon={Plus}
+          onPress={() => setAddSheetVisible(true)}
+        />
+      </View>
       {header}
 
       {pendingAnalysis && pendingCheck ? (
@@ -393,7 +414,7 @@ export function TodayScreen() {
         </View>
       ) : null}
 
-      <View style={[styles.dashboard, isWide && styles.dashboardWide]}>
+      <View style={styles.dashboard}>
         <View style={styles.primaryColumn}>
           <SectionHeader label="Continue practicing" />
           <PracticeCard
@@ -406,7 +427,7 @@ export function TodayScreen() {
             onContinue={() => openPractice(piece)}
           />
 
-          <AddPieceAction onPress={() => setAddSheetVisible(true)} />
+          {recentPractice}
 
           <FadeIn index={0}>
             <View style={styles.section}>
@@ -439,43 +460,10 @@ export function TodayScreen() {
             </View>
           </FadeIn>
 
-          {takes.length > 0 ? (
-            <FadeIn index={2}>
-              <View style={styles.section}>
-                <SectionHeader label="Recent practice" />
-                <Card>
-                  {takes.map((recentTake, index) => (
-                    <TodayRow
-                      key={recentTake.id}
-                      title={recentTake.pieceTitle}
-                      detail={joinMetadata([
-                        formatLastPracticedShort(recentTake.recordedAt),
-                        formatTempo(recentTake.targetBpm, recentTake.tempoBeatUnit),
-                        // One recording, so `formatVerdict` — the tendency
-                        // wording is a claim about a habit and its own comment
-                        // says a single take cannot see one. This rendered as
-                        // "Today · 96 BPM · You tend to rush".
-                        formatVerdict(recentTake.verdict),
-                      ])}
-                      onPress={() =>
-                        navigation.navigate('Verdict', {
-                          analysisId: recentTake.id,
-                        })
-                      }
-                      last={index === takes.length - 1}
-                    />
-                  ))}
-                </Card>
-              </View>
-            </FadeIn>
-          ) : null}
         </View>
 
         <View
-          style={[
-            styles.secondaryColumn,
-            isWide ? styles.secondaryColumnWide : styles.secondaryColumnNarrow,
-          ]}
+          style={styles.secondaryColumn}
         >
           <FadeIn index={3}>
             <View>
@@ -569,6 +557,7 @@ export function TodayScreen() {
         </View>
       </View>
 
+      <AddPieceAction onPress={() => setAddSheetVisible(true)} />
       <AddPieceSheet
         visible={addSheetVisible}
         onClose={() => setAddSheetVisible(false)}
@@ -624,7 +613,7 @@ function LessonCard({
   onTry: () => void;
 }) {
   return (
-    <Card>
+    <View>
       <Text variant="sectionLabel" color="textSecondary">
         {lesson.context}
       </Text>
@@ -647,15 +636,24 @@ function LessonCard({
         onPress={onTry}
         style={styles.lessonAction}
       />
-    </Card>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   page: {
     width: '100%',
-    maxWidth: 1180,
+    maxWidth: 640,
     alignSelf: 'center',
+  },
+  topBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    gap: spacing.md,
+    paddingTop: spacing.lg,
+    marginBottom: spacing.lg,
   },
   pendingTake: {
     marginBottom: spacing['2xl'],
@@ -672,22 +670,12 @@ const styles = StyleSheet.create({
   dashboard: {
     width: '100%',
   },
-  dashboardWide: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: spacing['3xl'],
-  },
   primaryColumn: {
     flex: 1,
     minWidth: 0,
   },
   secondaryColumn: {
     minWidth: 0,
-  },
-  secondaryColumnWide: {
-    width: 340,
-  },
-  secondaryColumnNarrow: {
     marginTop: spacing['2xl'],
   },
   avatar: {
@@ -764,6 +752,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   emptyWarmup: {
+    paddingTop: 0,
+    borderTopWidth: 0,
     // **Zero, and it is not a missing value.** `EmptyState` already ends in
     // 32pt of its own padding, so the ordinary 24pt section gap stacked on top
     // of it put 56pt between the button and this label — more than double any
@@ -778,5 +768,8 @@ const styles = StyleSheet.create({
     // of a document rather than as parts of one screen — which is most of what
     // made this feel like a web page.
     marginTop: spacing['2xl'],
+    paddingTop: spacing['2xl'],
+    borderTopWidth: BORDER_WIDTH,
+    borderTopColor: colors.border,
   },
 });
