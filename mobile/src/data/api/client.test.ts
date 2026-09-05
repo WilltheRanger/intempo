@@ -188,7 +188,7 @@ describe('a request that never settles', () => {
    * it the stub hangs whether the fix is present or not, which would make the
    * test pass by timing out rather than by aborting.
    */
-  function headersThenNothing() {
+  function headersThenNothing(status = 200) {
     return vi.fn((_url: string, init: RequestInit) => {
       const body = new ReadableStream({
         start(controller) {
@@ -197,7 +197,7 @@ describe('a request that never settles', () => {
           });
         },
       });
-      return Promise.resolve(new Response(body, { status: 200 }));
+      return Promise.resolve(new Response(body, { status }));
     });
   }
 
@@ -223,6 +223,20 @@ describe('a request that never settles', () => {
     );
     await vi.advanceTimersByTimeAsync(46_000);
     await settled;
+  });
+
+  it('reports a stalled error response as an interrupted answer too', async () => {
+    const fetching = headersThenNothing(503);
+    vi.stubGlobal('fetch', fetching);
+    const pending = apiFetch('/v1/ready', { authenticated: false });
+    const settled = pending.catch((cause: unknown) => cause);
+    await vi.advanceTimersByTimeAsync(46_000);
+    expect(await settled).toMatchObject({
+      status: 0,
+      message: expect.stringMatching(/started answering and then stopped/i),
+    });
+    expect(fetching).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   it('does not retry a stalled body, even on a GET', async () => {

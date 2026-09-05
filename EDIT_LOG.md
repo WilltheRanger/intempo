@@ -6,6 +6,24 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-04 — Preserve interrupted server-error diagnostics
+
+**Branch:** `codex/rest-cue-empty-bars` (PR #71).
+
+An error response whose headers arrived but body stalled was caught by the
+non-JSON fallback and reported as a generic HTTP failure. The API client now
+preserves its existing interrupted-response explanation after that deadline.
+No retries are added, and the deadline is released as before. A streaming 503
+regression failed before the fix and passes afterward, including assertions
+that only one request was sent and no timer remains.
+
+Verification: the prior final branch passed all 1,533 mobile tests; all 30 API
+client and connection-diagnostic tests pass with this follow-up. Cloudflare's
+idk preview deployed PR #71 successfully. GitHub CI jobs failed without steps
+or retrievable logs; browser verification is blocked by the in-app browser
+failing to attach (inventory returned no tabs). Neither is claimed as passed.
+Rollback: revert this follow-up commit; no data or configuration changes.
+
 ## 2026-09-04 — Reliable rest entrances and connection checks
 
 **Branch:** `codex/rest-cue-empty-bars`.
