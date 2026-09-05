@@ -116,6 +116,11 @@ export async function apiFetch<T>(
         throw new ApiError(401, path, SESSION_ENDED);
       }
       const { message, detail } = await readError(response, path);
+      // readError tolerates non-JSON server errors, but that fallback must not
+      // hide a deadline that interrupted the response body.
+      if (signal.aborted) {
+        throw new ApiError(0, path, RESPONSE_STALLED);
+      }
       throw new ApiError(response.status, path, message, detail);
     }
 

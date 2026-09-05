@@ -53,9 +53,9 @@ describe('the daily fact', () => {
   });
 
   it('gives the same fact all day, and a different one tomorrow', () => {
-    const morning = factFor(new Date('2026-03-04T07:00:00Z'));
-    const evening = factFor(new Date('2026-03-04T21:00:00Z'));
-    const tomorrow = factFor(new Date('2026-03-05T09:00:00Z'));
+    const morning = factFor(new Date(2026, 2, 4, 7));
+    const evening = factFor(new Date(2026, 2, 4, 21));
+    const tomorrow = factFor(new Date(2026, 2, 5, 9));
 
     expect(evening).toEqual(morning);
     expect(tomorrow).not.toEqual(morning);

@@ -40,6 +40,30 @@ describe('checkAppConnection', () => {
     ]);
   });
 
+  it('honors an explicitly unready response even when HTTP succeeds', async () => {
+    const request = vi.fn()
+      .mockResolvedValueOnce({ status: 'ok' })
+      .mockResolvedValueOnce({ ready: false, blocking: ['storage'] });
+
+    await expect(checkAppConnection(request)).resolves.toEqual({
+      kind: 'service_unready',
+      message: 'One required part of the practice service is not ready.',
+    });
+    expect(request).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not blame setup when the network drops after health succeeds', async () => {
+    const request = vi.fn()
+      .mockResolvedValueOnce({ status: 'ok' })
+      .mockRejectedValueOnce(new Error('No connection'));
+
+    await expect(checkAppConnection(request)).resolves.toEqual({
+      kind: 'service_unreachable',
+      message: 'No connection',
+    });
+    expect(request).toHaveBeenCalledTimes(2);
+  });
+
   it('keeps deployment internals out of an unready message', async () => {
     const request = vi
       .fn()

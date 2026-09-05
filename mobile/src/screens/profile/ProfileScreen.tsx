@@ -285,7 +285,7 @@ export function ProfileScreen() {
           color="textTertiary"
           style={styles.settingNote}
         >
-          Sets the clef and range of the daily excerpt on Today.
+          Sets the instrument sound for Listen and the daily excerpt on Today.
         </Text>
 
         <SegmentedControl

@@ -1,10 +1,168 @@
 # InTempo Edit Log
 
+## 2026-09-05 — Stop Listen on navigation blur; correct double-bass register
+
+User reported Double Bass did not sound like the selected instrument and that
+Listen continued after leaving a piece. Listen previously cleaned up only on
+unmount; stack/tab screens can remain mounted. It now uses focus cleanup to
+stop sounding audio and pending loading/rendering on blur, with cleanup also
+on score, tempo, starting measure or instrument changes. The actual instrument
+name is shown on Listen and the Settings copy explains its playback role.
+Native UI guidance informed the label/accessibility update without a redesign.
+
+The selected SoundFont preset was already Double Bass (program 43). Its note
+events incorrectly used written pitch directly. Bass events now sound an
+octave below notation while preserving score data and all event times; the
+other instruments are unchanged. This supersedes the prior no-transposition
+decision but retains full sampled-instrument playback, not the old synth.
+
+Validation: new button lifecycle tests exercise blur without unmount and
+idempotent cleanup; pitch tests check written E2 -> sounding E1 only for bass.
+Typecheck, lint and web export pass. Suite: 1,550 pass with one known unrelated
+archive stress-test timeout under concurrent build load; its isolated rerun
+passes all 21 tests. Real-device/perceptual sound quality remains unverified.
+
+
+## 2026-09-05 — Full SoundFont playback for Settings instruments
+
+Replaced the rejected hand-written VSCO sample renderer with pinned
+spessasynth_core 4.3.22 and four complete GeneralUser GS 2.0.3 presets. The
+3.3 MB subset preserves author-programmed sample zones, loops, filters,
+modulators, and release envelopes. The reproducible importer records source
+revision and hashes. Licence and provenance are bundled and the app licence
+list is regenerated. GeneralUser permits software use but discloses uncertain
+origins for some inherited samples; this caveat is retained, not represented
+as a guarantee. No MS Basic or proprietary Muse Sounds assets were used.
+
+Stereo 44.1 kHz rendering, Hermite interpolation, moderate velocity, restrained
+reverb, and two-second natural release tail replace mono 22.05 kHz playback.
+Audio blocks split at note events to preserve exact schedule timing. No octave
+shift or timing humanization was added. One completed short passage is cached;
+rendering yields cooperatively and cancellation prevents late audio startup.
+Web and native players read the output's channel count/sample rate and allow
+release tails before ending. Recording startup fixes and layout remain intact.
+
+Metro registers SF2 assets and substitutes an explicit PCM-only adapter for
+Spessa's optional eager WASM Vorbis decoder, which is unnecessary for these
+banks and incompatible with Hermes/CSP. Compressed banks are rejected. Old
+VSCO assets and importer were removed; they remain recoverable in Git.
+Expo networking guidance informed cached, retryable sound-bank loading.
+
+Verification: all 1,548 tests / 140 files pass; typecheck, lint, web export and
+iOS Hermes export pass. Tests exercise the real four presets without WASM,
+stereo output, release tails, silence/timing, no clipping in representative
+notes, failed-bank retry, cancellation and output cleanup. Direct piece route
+and all exported bank URLs return 200. Local piece screen opens successfully.
+No real iPhone microphone test or perceptual sound-quality claim is made.
+Production is unchanged until the pending change set is merged/deployed.
+
+
+## 2026-09-05 — Local preview deep-link recovery
+
+The local Python static server returned a filesystem 404 when Library was
+opened or refreshed directly. Added mobile/scripts/preview.py with an app-shell
+fallback for missing extensionless routes, real 404s for missing assets, no
+directory listings, and no-cache preview responses. Replaced the plain local
+server on 127.0.0.1:8082. This changes only local preview hosting, not production
+routing or the app layout.
+
+
+## 2026-09-05 — Sampled Settings instruments for Listen
+
+User requested MuseScore-style recorded instrument playback, not synthesized
+voices or an octave change. Added a compact, CC0 VSCO 2 CE bank (20 roots,
+8.8 MB), reproducible importer, pinned provenance, and user-visible licence entry.
+Violin and bass use solo samples; viola and cello use section samples. These
+are not proprietary Muse Sounds and do not promise equivalent sound quality.
+
+Settings instruments now use the same cooperative PCM sample renderer on web
+and native: nearest-root resampling, author MIDI mappings/tuning, crossfaded
+sustain, note envelopes, preserved score timing, bounded ten-minute render.
+Only needed roots load; failures evict the cache and show a retry message.
+Loading is cancellable and late completions cannot start stopped playback.
+The internal explicit reference voice remains, never as a download fallback.
+Removed the rejected bass-octave helper. Recording startup fixes remain intact;
+the Today layout is unchanged. Native UI guidance informed accessible loading
+and cancel feedback; no navigation or design-system migration.
+
+Validation: 1,546 tests passed with two workers (initial unrestricted run had
+one unrelated archive-test timeout); typecheck and web export passed. New tests
+decode all 20 real WAV files and cover note timing, sustain continuity, corrupt
+assets, root selection, cancellation and failed loading. Local preview opened.
+Perceptual listening and iPhone hardware verification remain pending; automated
+audio tests cannot establish speaker quality or microphone behaviour on a phone.
+
+
 Newest entries at the top. Format spec: see "Build-time activity logging"
 in intempo-combined.md. Every meaningful change goes here — see that
 section for what counts as "meaningful."
 
 ---
+
+## 2026-09-04 — Recording startup recovery and instrument playback
+
+**Branch:** `codex/instrument-recording`, based on pending PR #71. The rejected
+Today-layout PR #72 is closed unmerged; its changes are not on this branch.
+
+Browser recording creates/resumes audio during the Record gesture, before
+awaiting permission. Every setup failure now stops acquired tracks and closes
+the context, including graph InvalidStateError; resumption has a deadline.
+Regression tests verify unlock order and successful capture after a failed
+graph setup. This fixes confirmed code weaknesses, not a confirmed reproduction
+on the owner's iPhone. Shared playback resume rejection is handled too.
+
+Listen already selects instrument-specific synthesized voices from Settings.
+Bass playback now lowers written pitches one octave, without mutating notation
+or analysis timing. Changing instrument stops the previous voice. No sampled
+instrument library is added. The Record control immediately shows microphone
+startup/busy state, blocks duplicate taps, and disables Listen during startup.
+Existing Today design, palette, tabs, and app content are unchanged.
+
+Verification: all 1,537 tests pass; typecheck, lint and web export pass.
+The exported desktop sample preview shows the restored Today design and opens
+the recording setup screen. Microphone capture has not been browser-tested.
+Real iPhone microphone/Listen-to-Record and perceptual audio checks remain
+pending; there is no attached phone. Revert this commit to roll back, with no
+database migration required.
+
+## 2026-09-04 — Preserve interrupted server-error diagnostics
+
+**Branch:** `codex/rest-cue-empty-bars` (PR #71).
+
+An error response whose headers arrived but body stalled was caught by the
+non-JSON fallback and reported as a generic HTTP failure. The API client now
+preserves its existing interrupted-response explanation after that deadline.
+No retries are added, and the deadline is released as before. A streaming 503
+regression failed before the fix and passes afterward, including assertions
+that only one request was sent and no timer remains.
+
+Verification: the prior final branch passed all 1,533 mobile tests; all 30 API
+client and connection-diagnostic tests pass with this follow-up. Cloudflare's
+idk preview deployed PR #71 successfully. GitHub CI jobs failed without steps
+or retrievable logs; browser verification is blocked by the in-app browser
+failing to attach (inventory returned no tabs). Neither is claimed as passed.
+Rollback: revert this follow-up commit; no data or configuration changes.
+
+## 2026-09-04 — Reliable rest entrances and connection checks
+
+**Branch:** `codex/rest-cue-empty-bars`.
+
+Long-rest cues now require an identified note in the following bar. An empty
+OCR bar no longer becomes a false entrance, nor is it bridged to a later note.
+Later complete rest runs still use the existing playback clock. Two regression
+tests reproduced the false cue before the fix and pass after it.
+
+Connection diagnostics now distinguish a dropped readiness request from an
+explicitly unready service, and honor `ready: false` in successful responses.
+No account writes, schema changes, or new UI layouts are involved.
+
+Windows line endings and local-date assumptions were corrected in three tests.
+Verification: all 1,531 tests passed with two workers before the diagnostics
+addition; all 20 rest-cue/diagnostic tests passed afterward. The initial fully
+parallel run also hit a compression-fixture timeout; its allocation and timing
+assertions are unchanged. Type checking, lint, and the web export also pass.
+Browser/real-instrument verification remains pending.
+Rollback: revert this branch's commit; no data migration is needed.
 
 ## 2026-09-04 — The metronome a musician actually plays to had no test
 
