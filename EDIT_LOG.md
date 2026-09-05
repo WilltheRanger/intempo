@@ -1,5 +1,39 @@
 # InTempo Edit Log
 
+## 2026-09-05 — Full SoundFont playback for Settings instruments
+
+Replaced the rejected hand-written VSCO sample renderer with pinned
+spessasynth_core 4.3.22 and four complete GeneralUser GS 2.0.3 presets. The
+3.3 MB subset preserves author-programmed sample zones, loops, filters,
+modulators, and release envelopes. The reproducible importer records source
+revision and hashes. Licence and provenance are bundled and the app licence
+list is regenerated. GeneralUser permits software use but discloses uncertain
+origins for some inherited samples; this caveat is retained, not represented
+as a guarantee. No MS Basic or proprietary Muse Sounds assets were used.
+
+Stereo 44.1 kHz rendering, Hermite interpolation, moderate velocity, restrained
+reverb, and two-second natural release tail replace mono 22.05 kHz playback.
+Audio blocks split at note events to preserve exact schedule timing. No octave
+shift or timing humanization was added. One completed short passage is cached;
+rendering yields cooperatively and cancellation prevents late audio startup.
+Web and native players read the output's channel count/sample rate and allow
+release tails before ending. Recording startup fixes and layout remain intact.
+
+Metro registers SF2 assets and substitutes an explicit PCM-only adapter for
+Spessa's optional eager WASM Vorbis decoder, which is unnecessary for these
+banks and incompatible with Hermes/CSP. Compressed banks are rejected. Old
+VSCO assets and importer were removed; they remain recoverable in Git.
+Expo networking guidance informed cached, retryable sound-bank loading.
+
+Verification: all 1,548 tests / 140 files pass; typecheck, lint, web export and
+iOS Hermes export pass. Tests exercise the real four presets without WASM,
+stereo output, release tails, silence/timing, no clipping in representative
+notes, failed-bank retry, cancellation and output cleanup. Direct piece route
+and all exported bank URLs return 200. Local piece screen opens successfully.
+No real iPhone microphone test or perceptual sound-quality claim is made.
+Production is unchanged until the pending change set is merged/deployed.
+
+
 ## 2026-09-05 — Local preview deep-link recovery
 
 The local Python static server returned a filesystem 404 when Library was

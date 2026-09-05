@@ -110,7 +110,7 @@ export function playSchedule(
       schedule,
       voice,
       { onProgress, onEnd, onLoading, onError },
-      async (pcm, cancelled, finish) => {
+      async (audio, cancelled, finish) => {
         await prepareForPlayback();
         if (cancelled()) return () => {};
         const target = new File(
@@ -136,9 +136,9 @@ export function playSchedule(
           target.create({ overwrite: true });
           target.write(
             encodeWavBytes({
-              chunks: [pcm],
-              sampleRate: SAMPLE_RATE,
-              channels: CHANNELS,
+              chunks: [audio.pcm],
+              sampleRate: audio.sampleRate,
+              channels: audio.channels,
             }),
           );
           created = new AudioModule.AudioPlayer(
@@ -152,7 +152,7 @@ export function playSchedule(
           timer = setInterval(() => {
             const elapsed = created?.currentTime ?? 0;
             if (
-              elapsed >= schedule.durationS ||
+              elapsed >= audio.durationS ||
               created?.currentStatus.didJustFinish
             ) {
               finish();
@@ -163,7 +163,10 @@ export function playSchedule(
               finish();
               return;
             }
-            onProgress?.(elapsed, schedule.durationS);
+            onProgress?.(
+              Math.min(elapsed, schedule.durationS),
+              schedule.durationS,
+            );
           }, 100);
         } catch (error) {
           cleanup();

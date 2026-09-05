@@ -42,6 +42,7 @@ export const LICENCES: Licence[] = [
   { name: 'expo-status-bar', version: '57.0.1', licence: 'MIT' },
   { name: 'expo-system-ui', version: '57.0.3', licence: 'MIT' },
   { name: 'fflate', version: '0.8.3', licence: 'MIT' },
+  { name: 'GeneralUser GS (string SoundFonts)', version: '2.0.3 subset', licence: 'GeneralUser GS License v2.0' },
   { name: 'lucide-react-native', version: '1.31.0', licence: 'ISC' },
   { name: 'patch-package', version: '8.0.1', licence: 'MIT' },
   { name: 'react', version: '19.2.3', licence: 'MIT' },
@@ -52,8 +53,8 @@ export const LICENCES: Licence[] = [
   { name: 'react-native-svg', version: '15.15.5', licence: 'MIT' },
   { name: 'react-native-url-polyfill', version: '4.0.0', licence: 'MIT' },
   { name: 'react-native-web', version: '0.21.2', licence: 'MIT' },
+  { name: 'spessasynth_core', version: '4.3.22', licence: 'Apache-2.0' },
   { name: 'typescript', version: '6.0.3', licence: 'Apache-2.0' },
   { name: 'typescript-eslint', version: '8.69.0', licence: 'MIT' },
   { name: 'vitest', version: '4.1.11', licence: 'MIT' },
-  { name: 'VSCO 2 Community Edition (instrument recordings)', version: '4403009 subset', licence: 'CC0-1.0' },
 ];
