@@ -45,11 +45,6 @@ import {
   joinMetadata,
 } from '../../lib/format';
 import { getGreeting } from '../../lib/greeting';
-import {
-  notationSetupLesson,
-  practiceLessonFor,
-  type PracticeLesson,
-} from '../../lib/practiceLesson';
 import { formatTempo, formatVerdict } from '../../lib/tempo';
 import { readTendency } from '../../lib/insights/tendency';
 import { suggestionsFor } from '../../lib/today';
@@ -408,25 +403,6 @@ export function TodayScreen() {
 
           <AddPieceAction onPress={() => setAddSheetVisible(true)} />
 
-          <FadeIn index={0}>
-            <View style={styles.section}>
-              <SectionHeader label="Practice lesson" />
-              <LessonCard
-                lesson={
-                  !hasNotation
-                    ? notationSetupLesson(piece.title, readingNotation)
-                    : practiceLessonFor({
-                        verdict: hasCurrentTake && take ? take.verdict : null,
-                        pieceTitle: piece.title,
-                        workingBpm,
-                        beatUnit: piece.score?.tempo_beat_unit,
-                      })
-                }
-                onTry={() => openPractice(piece)}
-              />
-            </View>
-          </FadeIn>
-
           <FadeIn index={1}>
             <View style={styles.section}>
               <SectionHeader label="Warmup" />
@@ -616,41 +592,6 @@ function AddPieceAction({ onPress }: { onPress: () => void }) {
   );
 }
 
-function LessonCard({
-  lesson,
-  onTry,
-}: {
-  lesson: PracticeLesson;
-  onTry: () => void;
-}) {
-  return (
-    <Card>
-      <Text variant="sectionLabel" color="textSecondary">
-        {lesson.context}
-      </Text>
-      <Text variant="pieceTitle" style={styles.lessonTitle}>
-        {lesson.title}
-      </Text>
-      <Text variant="body" color="textSecondary" style={styles.lessonBody}>
-        {lesson.body}
-      </Text>
-      <View style={styles.lessonExercise}>
-        <Text variant="sectionLabel" color="textSecondary">
-          Try this
-        </Text>
-        <Text variant="body" style={styles.lessonExerciseText}>
-          {lesson.exercise}
-        </Text>
-      </View>
-      <SecondaryButton
-        label="Try it in practice"
-        onPress={onTry}
-        style={styles.lessonAction}
-      />
-    </Card>
-  );
-}
-
 const styles = StyleSheet.create({
   page: {
     width: '100%',
@@ -734,21 +675,6 @@ const styles = StyleSheet.create({
   },
   addPieceDetail: {
     marginTop: spacing.xs,
-  },
-  lessonTitle: {
-    marginTop: spacing.xs,
-  },
-  lessonBody: {
-    marginTop: spacing.sm,
-  },
-  lessonExercise: {
-    marginTop: spacing.xl,
-  },
-  lessonExerciseText: {
-    marginTop: spacing.xs,
-  },
-  lessonAction: {
-    marginTop: spacing.lg,
   },
   focusText: {
     marginTop: spacing.sm,

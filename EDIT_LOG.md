@@ -1,5 +1,48 @@
 # InTempo Edit Log
 
+## 2026-09-05 — Comparable takes and TestFlight preparation
+
+New analysis results include a versioned fingerprint of processed score,
+practice settings and tuning configuration in existing result_json (no schema
+migration). Insights compares only compatible, confident takes with matching
+timed bars and no missed/extra notes, showing absolute bar-average deviation.
+Old results without a fingerprint are deliberately excluded. Both backend and
+client must deploy to enable this for new takes.
+
+Added a TestFlight build profile and an EAS release-environment check to prevent
+sample-data store builds and obvious private Supabase keys in public variables.
+Prepared listing/reviewer draft and owner handoff using Expo deployment guidance
+and official Apple/Expo docs. No cloud build, payment, signing or submission.
+Publisher details, artwork, real device/bass validation remain outstanding.
+
+Validation: 1,567 mobile tests passed, 24 comparison/analysis-runner backend tests
+passed, TypeScript and ESLint passed, web and iOS Hermes exports passed. The iOS
+export is not an IPA/signing or hardware test. No changes have been published.
+
+## 2026-09-05 — Practice-flow reliability and release validation pass
+
+Kept the requested lesson removal. Added microphone signal presence (not quality)
+on native/web capture and cancellation when permission completes after unmount.
+Recorded-take playback now pauses on blur and cannot start after delayed audio
+preparation completes off-screen; lifecycle regressions cover both paths.
+Score saving has a synchronous duplicate-submit guard and clearer scan guidance.
+Insights offers up to 20 sessions without asserting unsupported improvement.
+Shared screens adjust keyboard insets and protect the bottom safe area.
+
+Backend checks: 11 bass-onset/private-audio-storage tests passed; 116
+auth/account/health/readiness tests passed after fixing a Windows path expectation
+in an existing test. No production tuning or security policy changed.
+Mobile validation and preview build are recorded in the task response.
+`docs/launch-validation.md` records remaining real-device, real-audio, comparison
+metadata and owner-dependent launch work. Nothing in this pass is deployed.
+
+## 2026-09-05 — Remove practice lessons
+
+Removed the Practice lesson block from Today and the contextual exercise from
+Insights at the user's request. Removed the unused Today lesson component and
+styles. Warmup, recent practice, Insights history retry and recording are unchanged.
+This change is local pending publication.
+
 ## 2026-09-05 — Recording interruption recovery and actionable Insights
 
 Recording now resumes a context that becomes suspended during microphone setup,
