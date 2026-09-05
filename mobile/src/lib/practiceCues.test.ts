@@ -73,6 +73,29 @@ describe('longRestCues', () => {
     expect(longRestCues(score)).toEqual([]);
   });
 
+  it('does not cue an unreadable bar or jump across it to a later note', () => {
+    const score = scoreOf([['rest'], ['rest'], [], ['note']]);
+
+    expect(longRestCues(score)).toEqual([]);
+  });
+
+  it('still cues a later complete rest run after an unreadable bar', () => {
+    const score = scoreOf([
+      ['rest'], ['rest'], [], ['rest'], ['rest'], ['note'],
+    ]);
+
+    expect(longRestCues(score)).toEqual([
+      {
+        startBeat: 8,
+        endBeat: 16,
+        barEndBeats: [12, 16],
+        barQuarterBeatsPerPulse: [1, 1],
+        bars: 2,
+        resumeMeasure: 6,
+      },
+    ]);
+  });
+
   it('follows repeats so every performed re-entry is cued', () => {
     const score = scoreOf([['note'], ['rest'], ['rest'], ['note']]);
     score.repeats = [
