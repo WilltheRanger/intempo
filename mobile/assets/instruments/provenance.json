@@ -1,0 +1,182 @@
+[
+  {
+    "file": "violin-57.wav",
+    "source": "Strings/Solo Violin/Arco Vib/LLVln_ArcoVib_A3_p.wav",
+    "sourceCommit": "440300901dfe9275fd84e0b7763af1f8443ae62e",
+    "sfz": "SViolinVib.sfz",
+    "sfzCommit": "6dd651d55dde97fd4028699be9d4481f26917891",
+    "midi": 57,
+    "tune": 0
+  },
+  {
+    "file": "violin-64.wav",
+    "source": "Strings/Solo Violin/Arco Vib/LLVln_ArcoVib_E4_p.wav",
+    "sourceCommit": "440300901dfe9275fd84e0b7763af1f8443ae62e",
+    "sfz": "SViolinVib.sfz",
+    "sfzCommit": "6dd651d55dde97fd4028699be9d4481f26917891",
+    "midi": 64,
+    "tune": 0
+  },
+  {
+    "file": "violin-69.wav",
+    "source": "Strings/Solo Violin/Arco Vib/LLVln_ArcoVib_A4_p.wav",
+    "sourceCommit": "440300901dfe9275fd84e0b7763af1f8443ae62e",
+    "sfz": "SViolinVib.sfz",
+    "sfzCommit": "6dd651d55dde97fd4028699be9d4481f26917891",
+    "midi": 69,
+    "tune": 0
+  },
+  {
+    "file": "violin-76.wav",
+    "source": "Strings/Solo Violin/Arco Vib/LLVln_ArcoVib_E5_p.wav",
+    "sourceCommit": "440300901dfe9275fd84e0b7763af1f8443ae62e",
+    "sfz": "SViolinVib.sfz",
+    "sfzCommit": "6dd651d55dde97fd4028699be9d4481f26917891",
+    "midi": 76,
+    "tune": 0
+  },
+  {
+    "file": "violin-81.wav",
+    "source": "Strings/Solo Violin/Arco Vib/LLVln_ArcoVib_A5_p.wav",
+    "sourceCommit": "440300901dfe9275fd84e0b7763af1f8443ae62e",
+    "sfz": "SViolinVib.sfz",
+    "sfzCommit": "6dd651d55dde97fd4028699be9d4481f26917891",
+    "midi": 81,
+    "tune": 0
+  },
+  {
+    "file": "violin-88.wav",
+    "source": "Strings/Solo Violin/Arco Vib/LLVln_ArcoVib_E6_p.wav",
+    "sourceCommit": "440300901dfe9275fd84e0b7763af1f8443ae62e",
+    "sfz": "SViolinVib.sfz",
+    "sfzCommit": "6dd651d55dde97fd4028699be9d4481f26917891",
+    "midi": 88,
+    "tune": 0
+  },
+  {
+    "file": "viola-48.wav",
+    "source": "Strings/Viola Section/susvib/ViolaEns_susvib_C2_v1_1.wav",
+    "sourceCommit": "440300901dfe9275fd84e0b7763af1f8443ae62e",
+    "sfz": "ViolaEnsSusVib.sfz",
+    "sfzCommit": "6dd651d55dde97fd4028699be9d4481f26917891",
+    "midi": 48,
+    "tune": 0
+  },
+  {
+    "file": "viola-55.wav",
+    "source": "Strings/Viola Section/susvib/ViolaEns_susvib_G2_v1_1.wav",
+    "sourceCommit": "440300901dfe9275fd84e0b7763af1f8443ae62e",
+    "sfz": "ViolaEnsSusVib.sfz",
+    "sfzCommit": "6dd651d55dde97fd4028699be9d4481f26917891",
+    "midi": 55,
+    "tune": 0
+  },
+  {
+    "file": "viola-62.wav",
+    "source": "Strings/Viola Section/susvib/ViolaEns_susvib_D3_v1_1.wav",
+    "sourceCommit": "440300901dfe9275fd84e0b7763af1f8443ae62e",
+    "sfz": "ViolaEnsSusVib.sfz",
+    "sfzCommit": "6dd651d55dde97fd4028699be9d4481f26917891",
+    "midi": 62,
+    "tune": 0
+  },
+  {
+    "file": "viola-69.wav",
+    "source": "Strings/Viola Section/susvib/ViolaEns_susvib_A3_v1_1.wav",
+    "sourceCommit": "440300901dfe9275fd84e0b7763af1f8443ae62e",
+    "sfz": "ViolaEnsSusVib.sfz",
+    "sfzCommit": "6dd651d55dde97fd4028699be9d4481f26917891",
+    "midi": 69,
+    "tune": 0
+  },
+  {
+    "file": "viola-76.wav",
+    "source": "Strings/Viola Section/susvib/ViolaEns_susvib_E4_v1_1.wav",
+    "sourceCommit": "440300901dfe9275fd84e0b7763af1f8443ae62e",
+    "sfz": "ViolaEnsSusVib.sfz",
+    "sfzCommit": "6dd651d55dde97fd4028699be9d4481f26917891",
+    "midi": 76,
+    "tune": 0
+  },
+  {
+    "file": "cello-36.wav",
+    "source": "Strings/Cello Section/susvib/susvib_C1_v1_1.wav",
+    "sourceCommit": "440300901dfe9275fd84e0b7763af1f8443ae62e",
+    "sfz": "CelloEnsSusVib.sfz",
+    "sfzCommit": "6dd651d55dde97fd4028699be9d4481f26917891",
+    "midi": 36,
+    "tune": 0
+  },
+  {
+    "file": "cello-43.wav",
+    "source": "Strings/Cello Section/susvib/susvib_G1_v1_1.wav",
+    "sourceCommit": "440300901dfe9275fd84e0b7763af1f8443ae62e",
+    "sfz": "CelloEnsSusVib.sfz",
+    "sfzCommit": "6dd651d55dde97fd4028699be9d4481f26917891",
+    "midi": 43,
+    "tune": 0
+  },
+  {
+    "file": "cello-50.wav",
+    "source": "Strings/Cello Section/susvib/susvib_D2_v1_1.wav",
+    "sourceCommit": "440300901dfe9275fd84e0b7763af1f8443ae62e",
+    "sfz": "CelloEnsSusVib.sfz",
+    "sfzCommit": "6dd651d55dde97fd4028699be9d4481f26917891",
+    "midi": 50,
+    "tune": 0
+  },
+  {
+    "file": "cello-57.wav",
+    "source": "Strings/Cello Section/susvib/susvib_A2_v1_1.wav",
+    "sourceCommit": "440300901dfe9275fd84e0b7763af1f8443ae62e",
+    "sfz": "CelloEnsSusVib.sfz",
+    "sfzCommit": "6dd651d55dde97fd4028699be9d4481f26917891",
+    "midi": 57,
+    "tune": 0
+  },
+  {
+    "file": "cello-64.wav",
+    "source": "Strings/Cello Section/susvib/susvib_E3_v1_1.wav",
+    "sourceCommit": "440300901dfe9275fd84e0b7763af1f8443ae62e",
+    "sfz": "CelloEnsSusVib.sfz",
+    "sfzCommit": "6dd651d55dde97fd4028699be9d4481f26917891",
+    "midi": 64,
+    "tune": 0
+  },
+  {
+    "file": "double_bass-28.wav",
+    "source": "Strings/Solo Contrabass/SusNV/BKCtbss_SusNV_E0_v1_rr1.wav",
+    "sourceCommit": "440300901dfe9275fd84e0b7763af1f8443ae62e",
+    "sfz": "ContrabassSusNV.sfz",
+    "sfzCommit": "6dd651d55dde97fd4028699be9d4481f26917891",
+    "midi": 28,
+    "tune": 0
+  },
+  {
+    "file": "double_bass-36.wav",
+    "source": "Strings/Solo Contrabass/SusNV/BKCtbss_SusNV_C1_v1_rr1.wav",
+    "sourceCommit": "440300901dfe9275fd84e0b7763af1f8443ae62e",
+    "sfz": "ContrabassSusNV.sfz",
+    "sfzCommit": "6dd651d55dde97fd4028699be9d4481f26917891",
+    "midi": 36,
+    "tune": 0
+  },
+  {
+    "file": "double_bass-44.wav",
+    "source": "Strings/Solo Contrabass/SusNV/BKCtbss_SusNV_G#1_v1_rr1.wav",
+    "sourceCommit": "440300901dfe9275fd84e0b7763af1f8443ae62e",
+    "sfz": "ContrabassSusNV.sfz",
+    "sfzCommit": "6dd651d55dde97fd4028699be9d4481f26917891",
+    "midi": 44,
+    "tune": 0
+  },
+  {
+    "file": "double_bass-52.wav",
+    "source": "Strings/Solo Contrabass/SusNV/BKCtbss_SusNV_E2_v1_rr1.wav",
+    "sourceCommit": "440300901dfe9275fd84e0b7763af1f8443ae62e",
+    "sfz": "ContrabassSusNV.sfz",
+    "sfzCommit": "6dd651d55dde97fd4028699be9d4481f26917891",
+    "midi": 52,
+    "tune": 0
+  }
+]

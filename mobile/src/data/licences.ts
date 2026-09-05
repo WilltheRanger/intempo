@@ -55,4 +55,5 @@ export const LICENCES: Licence[] = [
   { name: 'typescript', version: '6.0.3', licence: 'Apache-2.0' },
   { name: 'typescript-eslint', version: '8.69.0', licence: 'MIT' },
   { name: 'vitest', version: '4.1.11', licence: 'MIT' },
+  { name: 'VSCO 2 Community Edition (instrument recordings)', version: '4403009 subset', licence: 'CC0-1.0' },
 ];

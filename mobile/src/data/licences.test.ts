@@ -57,7 +57,10 @@ const declared = [
  * while dropping the one file with an attribution requirement would be
  * backwards.
  */
-const VENDORED_NAMES = ['Bravura (music font)'];
+const VENDORED_NAMES = [
+  'Bravura (music font)',
+  'VSCO 2 Community Edition (instrument recordings)',
+];
 
 const listed = LICENCES.map((entry) => entry.name);
 
@@ -80,7 +83,9 @@ describe('the licence page', () => {
     // attribution behind, and the page then tells users the app is built on
     // something it no longer contains.
     const stale = listed
-      .filter((name) => !declared.includes(name) && !VENDORED_NAMES.includes(name))
+      .filter(
+        (name) => !declared.includes(name) && !VENDORED_NAMES.includes(name),
+      )
       .sort();
 
     expect(stale, 'run `node scripts/generate-licences.mjs`').toEqual([]);
