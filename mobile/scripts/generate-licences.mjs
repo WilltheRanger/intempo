@@ -30,9 +30,9 @@ const names = Object.keys({
 const VENDORED = [
   { name: 'Bravura (music font)', version: 'subset', licence: 'OFL-1.1' },
   {
-    name: 'VSCO 2 Community Edition (instrument recordings)',
-    version: '4403009 subset',
-    licence: 'CC0-1.0',
+    name: 'GeneralUser GS (string SoundFonts)',
+    version: '2.0.3 subset',
+    licence: 'GeneralUser GS License v2.0',
   },
 ];
 

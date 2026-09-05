@@ -59,7 +59,7 @@ const declared = [
  */
 const VENDORED_NAMES = [
   'Bravura (music font)',
-  'VSCO 2 Community Edition (instrument recordings)',
+  'GeneralUser GS (string SoundFonts)',
 ];
 
 const listed = LICENCES.map((entry) => entry.name);

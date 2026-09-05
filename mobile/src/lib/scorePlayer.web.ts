@@ -106,11 +106,18 @@ export function playSchedule(
       schedule,
       voice,
       { onProgress, onEnd, onLoading, onError },
-      async (pcm, cancelled, finish) => {
+      async (audio, cancelled, finish) => {
         if (cancelled()) return () => {};
-        const buffer = context.createBuffer(1, pcm.length, 22050);
-        const channel = buffer.getChannelData(0);
-        for (let i = 0; i < pcm.length; i++) channel[i] = pcm[i] / 32768;
+        const buffer = context.createBuffer(
+          audio.channels,
+          audio.pcm.length / audio.channels,
+          audio.sampleRate,
+        );
+        for (let c = 0; c < audio.channels; c++) {
+          const channel = buffer.getChannelData(c);
+          for (let i = 0; i < channel.length; i++)
+            channel[i] = audio.pcm[i * audio.channels + c] / 32768;
+        }
         const source = context.createBufferSource();
         source.buffer = buffer;
         source.connect(context.destination);
@@ -132,7 +139,7 @@ export function playSchedule(
           source.start(startedAt);
           timer = setInterval(() => {
             const elapsed = context.currentTime - startedAt;
-            if (elapsed >= schedule.durationS) {
+            if (elapsed >= audio.durationS) {
               finish();
               return;
             }
@@ -146,7 +153,10 @@ export function playSchedule(
               }
               resumeAudio(context);
             }
-            onProgress?.(Math.max(0, elapsed), schedule.durationS);
+            onProgress?.(
+              Math.min(schedule.durationS, Math.max(0, elapsed)),
+              schedule.durationS,
+            );
           }, 50);
         } catch (error) {
           cleanup();

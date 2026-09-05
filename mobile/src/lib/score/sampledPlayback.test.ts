@@ -1,14 +1,19 @@
 import { beforeEach, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({ load: vi.fn(), render: vi.fn() }));
-vi.mock('./sampleBank', () => ({ loadSamples: mocks.load }));
-vi.mock('./sampleRender', () => ({ renderSamples: mocks.render }));
+vi.mock('./soundfontBank', () => ({ loadSoundfont: mocks.load }));
+vi.mock('./soundfontRender', () => ({ renderSoundfont: mocks.render }));
 import { beginSampledPlayback } from './sampledPlayback';
 import type { Schedule } from './schedule';
 const score = { notes: [], durationS: 1, bpm: 60 } as Schedule;
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.load.mockResolvedValue([]);
-  mocks.render.mockResolvedValue(new Int16Array(20));
+  mocks.render.mockResolvedValue({
+    pcm: new Int16Array(20),
+    sampleRate: 44100,
+    channels: 2,
+    durationS: 1,
+  });
 });
 
 it('reports loading then cleans up exactly once', async () => {
@@ -24,7 +29,7 @@ it('reports loading then cleans up exactly once', async () => {
   );
   expect(loading).toHaveBeenCalledWith(true);
   await vi.waitFor(() => expect(loading).toHaveBeenLastCalledWith(false));
-  expect(mocks.load).toHaveBeenCalledWith('double_bass', score);
+  expect(mocks.load).toHaveBeenCalledWith('double_bass');
   handle.stop();
   handle.stop();
   expect(cleanup).toHaveBeenCalledTimes(1);
