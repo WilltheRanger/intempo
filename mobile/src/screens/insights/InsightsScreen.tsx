@@ -24,8 +24,8 @@ import {
   joinMetadata,
 } from '../../lib/format';
 import { readTendency } from '../../lib/insights/tendency';
+import { compareLatest } from '../../lib/insights/comparison';
 import { formatVerdict } from '../../lib/tempo';
-import { practiceLessonFor } from '../../lib/practiceLesson';
 import type { AddPieceOption, TabScreenNavigation } from '../../navigation/types';
 import { TodayRow } from '../today/TodayRow';
 import { DeviationBar } from './DeviationBar';
@@ -58,7 +58,8 @@ import { firstStep, focusReason, windowLabel } from './copy';
 export function InsightsScreen() {
   const navigation = useNavigation<TabScreenNavigation<'Insights'>>();
   const insightsQuery = useInsights();
-  const recentTakes = useRecentTakes(5);
+  const [showMoreHistory, setShowMoreHistory] = useState(false);
+  const recentTakes = useRecentTakes(20);
   // Shares React Query's cache with the Library tab, so on a phone that has
   // opened the app this costs nothing. It is read for one reason: what to
   // offer a musician with no practice history depends on whether they have
@@ -145,14 +146,9 @@ export function InsightsScreen() {
   }
 
   const focus = insights.pieces[0] ?? null;
-  const takes = recentTakes.data ?? [];
-  const latest = takes[0];
-  const lesson = latest ? practiceLessonFor({
-    verdict: latest.verdict,
-    pieceTitle: latest.pieceTitle,
-    workingBpm: latest.targetBpm,
-    beatUnit: latest.tempoBeatUnit,
-  }) : null;
+  const history = recentTakes.data ?? [];
+  const comparison = compareLatest(history);
+  const takes = showMoreHistory ? history : history.slice(0, 5);
   // Which of the two findings this window is — the direction, or the wandering
   // that a direction cannot describe. The rule and the words are in
   // `lib/insights/tendency.ts`, where they can be tested.
@@ -203,19 +199,22 @@ export function InsightsScreen() {
         </FadeIn>
       ) : null}
 
-      {latest && lesson ? (
+      {comparison ? (
         <View style={styles.section}>
-          <SectionHeader label="Try in your next practice" />
-          <Text variant="metadataSmall" color="textSecondary">{lesson.context}</Text>
-          <Text variant="pieceTitle" style={styles.lessonSpacing}>{lesson.title}</Text>
-          <Text variant="body" color="textSecondary" style={styles.lessonSpacing}>
-            {lesson.exercise}
+          <SectionHeader label="Comparable takes" />
+          <Text variant="pieceTitle">{comparison.latest.pieceTitle}</Text>
+          <Text variant="body" color="textSecondary" style={styles.retrySpacing}>
+            Average bar deviation: {comparison.previousDeviation.toFixed(1)}% previously
+            {' → '}{comparison.latestDeviation.toFixed(1)}% in your latest take.
           </Text>
-          <SecondaryButton
-            label="Open piece to practise"
-            style={styles.lessonSpacing}
-            onPress={() => navigation.navigate('PieceDetail', { pieceId: latest.pieceId })}
-          />
+          <Text variant="metadataSmall" color="textSecondary" style={styles.retrySpacing}>
+            Same score, tempo, instrument and practice settings. Lower means bar
+            averages were closer to the beat—not an overall playing score.
+          </Text>
+          <SecondaryButton label="Open previous take" style={styles.retrySpacing}
+            onPress={() => navigation.navigate('Verdict', { analysisId: comparison.previous.id })} />
+          <SecondaryButton label="Open latest take" style={styles.retrySpacing}
+            onPress={() => navigation.navigate('Verdict', { analysisId: comparison.latest.id })} />
         </View>
       ) : null}
 
@@ -228,7 +227,7 @@ export function InsightsScreen() {
           <SecondaryButton
             label={recentTakes.isFetching ? 'Trying…' : 'Retry recent sessions'}
             disabled={recentTakes.isFetching}
-            style={styles.lessonSpacing}
+            style={styles.retrySpacing}
             onPress={() => { void recentTakes.refetch(); }}
           />
         </View>
@@ -238,6 +237,11 @@ export function InsightsScreen() {
         <FadeIn index={1}>
           <View style={styles.section}>
             <SectionHeader label="Recent sessions" />
+            <Text variant="metadataSmall" color="textSecondary">
+              Open a session to revisit its recording and bar-by-bar feedback.
+              Compare the same passage at the same tempo; different takes aren't
+              automatically a measure of improvement.
+            </Text>
             {takes.map((take, index) => (
               <TodayRow
                 key={take.id}
@@ -259,6 +263,13 @@ export function InsightsScreen() {
                 last={index === takes.length - 1}
               />
             ))}
+            {history.length > 5 ? (
+              <SecondaryButton
+                label={showMoreHistory ? 'Show fewer sessions' : 'Show up to 20 recent sessions'}
+                onPress={() => setShowMoreHistory((value) => !value)}
+                style={styles.retrySpacing}
+              />
+            ) : null}
           </View>
         </FadeIn>
       ) : null}
@@ -289,7 +300,7 @@ export function InsightsScreen() {
 }
 
 const styles = StyleSheet.create({
-  lessonSpacing: {
+  retrySpacing: {
     marginTop: spacing.md,
   },
   bar: {

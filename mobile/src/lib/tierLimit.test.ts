@@ -84,7 +84,7 @@ describe('the recording screen enforces the pre-flight answer', () => {
   it('checks the allowance before opening the microphone', () => {
     expect(source.indexOf('if (limitMessage)')).toBeGreaterThan(-1);
     expect(source.indexOf('if (limitMessage)')).toBeLessThan(
-      source.indexOf('recorder.current = await startRecording()'),
+      source.indexOf('const started = await startRecording()'),
     );
   });
 

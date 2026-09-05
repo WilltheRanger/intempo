@@ -2,7 +2,7 @@ import { useNavigation } from '@react-navigation/native';
 import { ChevronLeft, ChevronRight } from 'lucide-react-native';
 import { useGoBack } from '../../navigation/useGoBack';
 import { ComposerField } from '../../components/pieces/ComposerField';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { ScoreThumbnail } from '../../components/pieces/ScoreThumbnail';
@@ -59,6 +59,7 @@ export function TranscriptionReviewScreen() {
   const [movement, setMovement] = useState('');
   const [pageIndex, setPageIndex] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const saving = useRef(false);
 
   const imageKeys = captureSession.uploadedImageKeys();
 
@@ -85,7 +86,8 @@ export function TranscriptionReviewScreen() {
   }
 
   async function save() {
-    if (imageKeys.length !== pages.length) {
+    if (saving.current) return;
+    if (pages.length === 0 || imageKeys.length !== pages.length) {
       setError(
         'The uploaded pages are incomplete. Go back and send them again.',
       );
@@ -98,6 +100,7 @@ export function TranscriptionReviewScreen() {
       return;
     }
 
+    saving.current = true;
     setError(null);
     try {
       const piece = attachmentPieceId
@@ -117,6 +120,8 @@ export function TranscriptionReviewScreen() {
             ? 'The sheet music could not be attached. Try again.'
             : 'The score could not be saved. Try again.',
       );
+    } finally {
+      saving.current = false;
     }
   }
 
@@ -208,6 +213,12 @@ export function TranscriptionReviewScreen() {
         source={pages[pageIndex]?.source ?? null}
         style={styles.page}
       />
+
+      <Text variant="metadataSmall" color="textSecondary" style={styles.field}>
+        Before saving: check that every staff is visible, the pages are in order,
+        and the image isn't blurred or covered by shadows. You'll check the
+        recognized notes next, before recording.
+      </Text>
 
       {error ? (
         <Text variant="metadataSmall" color="textSecondary" style={styles.error}>

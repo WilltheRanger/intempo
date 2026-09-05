@@ -497,6 +497,7 @@ function toTake(
   return {
     id: analysis.id,
     recordingAvailable: true,
+    comparisonKey: typeof result.comparison_key === 'string' ? result.comparison_key : null,
     pieceId: analysis.score_id,
     pieceTitle: score?.title ?? 'Unknown piece',
     composer: score?.composer ?? null,

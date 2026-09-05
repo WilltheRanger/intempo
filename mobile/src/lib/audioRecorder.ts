@@ -112,6 +112,7 @@ export async function startRecording(): Promise<Recorder> {
   }
 
   return {
+    inputPeak: () => level.peak(),
     async stop(): Promise<Recording> {
       teardown();
 
