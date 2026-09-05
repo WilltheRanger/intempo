@@ -569,6 +569,7 @@ export interface Tolerance {
 }
 
 export interface AnalysisResultJson {
+  comparison_key?: string | null;
   status: ResultStatus;
   quality: number;
   /** Alignment quality below the warn threshold — the screen says so. */
@@ -875,6 +876,7 @@ export interface TakeFailure {
 }
 
 export interface TakeResult {
+  comparisonKey?: string | null;
   id: string;
   /** True when this take came from private storage and can be heard again. */
   recordingAvailable?: boolean;

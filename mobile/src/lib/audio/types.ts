@@ -16,6 +16,8 @@ export interface Recording {
 }
 
 export interface Recorder {
+  /** Peak captured since the count-in/reset. Signal presence, not quality. */
+  inputPeak?(): number;
   stop(): Promise<Recording>;
   /** Abandons the take without producing a file. Safe to call twice. */
   cancel(): void;

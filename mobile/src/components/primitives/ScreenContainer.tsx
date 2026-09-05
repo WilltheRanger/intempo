@@ -118,7 +118,7 @@ export function ScreenContainer({
   // whatever the footer holds. Without one the content still has to clear the
   // tab bar itself, since that bar overlays the screen.
   const bottomInset = {
-    paddingBottom: spacing['2xl'] + (footer ? 0 : barHeight),
+    paddingBottom: spacing['2xl'] + (footer ? 0 : Math.max(barHeight, insets.bottom)),
   };
 
   // The footer takes over the bottom edge: the home indicator on a phone that
@@ -135,6 +135,7 @@ export function ScreenContainer({
       directionalLockEnabled
       decelerationRate="normal"
       keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+      automaticallyAdjustKeyboardInsets
       contentContainerStyle={[styles.content, bottomInset, contentStyle]}
       showsVerticalScrollIndicator={false}
       keyboardShouldPersistTaps="handled"

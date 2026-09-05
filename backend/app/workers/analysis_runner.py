@@ -25,6 +25,7 @@ from app.models.analysis import Instrument
 from app.services import audio as audio_svc
 from app.services.audio_storage import AudioStorageError, readable_audio_url
 from app.services.analysis import analyze
+from app.services.take_comparison import comparison_key
 from app.services.long_rests import shorten_long_rests
 from app.services.start_at import start_from_measure
 from app.services.score_schema import ScoreJson
@@ -168,6 +169,8 @@ def run_analysis(analysis_id: str) -> None:
             float(row["target_bpm"]),
             double_bass=row.get("instrument") == Instrument.double_bass.value,
         )
+        result_payload = result.model_dump(mode="json")
+        result_payload["comparison_key"] = comparison_key(score.model_dump(mode="json"), row)
     except (AudioFetchError, AudioStorageError) as exc:
         log.warning("analysis %s: %s", analysis_id, exc)
         _finish_failed(client, analysis_id, "audio_unavailable")
@@ -182,7 +185,7 @@ def run_analysis(analysis_id: str) -> None:
         analysis_id,
         {
             "status": "done",
-            "result_json": result.model_dump(mode="json"),
+            "result_json": result_payload,
             "alignment_quality": result.quality,
             "failure_reason": None,
             "finished_at": _now_iso(),
