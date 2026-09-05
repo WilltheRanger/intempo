@@ -89,6 +89,23 @@ it('rejects corrupt or wrong-instrument downloads', () => {
   expect(() => parseSoundfont(bytes('cello'), 'violin')).toThrow('Incorrect');
 });
 
+it('plays written bass E2 at sounding E1 without changing notation or timing', () => {
+  const score = passage(82.406889);
+  const original = JSON.stringify(score);
+  expect(
+    soundfontEvents(score, 'double_bass').map((event) => event.key),
+  ).toEqual([28, 28]);
+  for (const instrument of ['violin', 'viola', 'cello'] as Instrument[]) {
+    expect(
+      soundfontEvents(score, instrument).map((event) => event.key),
+    ).toEqual([40, 40]);
+  }
+  expect(
+    soundfontEvents(score, 'double_bass').map((event) => event.frame),
+  ).toEqual(soundfontEvents(score).map((event) => event.frame));
+  expect(JSON.stringify(score)).toBe(original);
+});
+
 it('retries failed loading and deduplicates successful loading', async () => {
   read.mockRejectedValueOnce(new Error('offline'));
   await expect(loadSoundfont('viola')).rejects.toThrow('offline');
