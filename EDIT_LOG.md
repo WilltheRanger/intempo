@@ -1,5 +1,26 @@
 # InTempo Edit Log
 
+## 2026-09-05 — Recording interruption recovery and actionable Insights
+
+Recording now resumes a context that becomes suspended during microphone setup,
+not just the state before permission. Cleanup tolerates an already-closed graph
+and a failed worklet flush so captured audio survives and microphone tracks stop.
+Regression coverage exercises both cases. This is not yet verified on the user's
+phone; the current error message and tested URL have been requested.
+
+Insights now offers a contextual exercise from the latest finished take, including
+its piece and tempo, and a route to the piece. Recent-history failures have an
+explicit retry instead of silently disappearing. The accepted Today layout is
+unchanged. OCR and broader motion polish remain follow-up work.
+
+Validation: 31 focused tests passed; TypeScript, ESLint and web export passed.
+The first full test run alongside export hit the existing hostile-archive stress
+test timeout; rerunning the full suite with two workers passed all 1,553 tests.
+The local Insights route rendered its new exercise and piece button in-browser.
+Also simplified an existing off-beat drill to clapping and counting through rests,
+removing literal Markdown emphasis from plain UI text. Changes are local, not a
+new production deployment.
+
 ## 2026-09-05 — Stop Listen on navigation blur; correct double-bass register
 
 User reported Double Bass did not sound like the selected instrument and that

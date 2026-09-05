@@ -64,7 +64,7 @@ export function practiceLessonFor({
       exercise: drillOfTheDay(
         [
           `Keep ${pieceTitle} at ${tempo}. Count “one-and-two-and” through one phrase, then play it again without counting aloud.`,
-          `Set the metronome to ${tempo} and listen for it on the off-beats instead of the downbeats. Play one phrase of ${pieceTitle} placing each note *after* the click you hear.`,
+          `Set the metronome to ${tempo}. Clap the rhythm of one phrase of ${pieceTitle}, then play the same phrase. Keep counting through the rests instead of arriving early at the next note.`,
           `Play the hardest bar of ${pieceTitle} at ${tempo}, holding the last note of the bar its full length before moving on. Rushing usually starts by leaving a note early, not by playing the next one fast.`,
         ],
         now,
