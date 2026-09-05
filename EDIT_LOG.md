@@ -1,5 +1,31 @@
 # InTempo Edit Log
 
+## 2026-09-05 — Sampled Settings instruments for Listen
+
+User requested MuseScore-style recorded instrument playback, not synthesized
+voices or an octave change. Added a compact, CC0 VSCO 2 CE bank (20 roots,
+8.8 MB), reproducible importer, pinned provenance, and user-visible licence entry.
+Violin and bass use solo samples; viola and cello use section samples. These
+are not proprietary Muse Sounds and do not promise equivalent sound quality.
+
+Settings instruments now use the same cooperative PCM sample renderer on web
+and native: nearest-root resampling, author MIDI mappings/tuning, crossfaded
+sustain, note envelopes, preserved score timing, bounded ten-minute render.
+Only needed roots load; failures evict the cache and show a retry message.
+Loading is cancellable and late completions cannot start stopped playback.
+The internal explicit reference voice remains, never as a download fallback.
+Removed the rejected bass-octave helper. Recording startup fixes remain intact;
+the Today layout is unchanged. Native UI guidance informed accessible loading
+and cancel feedback; no navigation or design-system migration.
+
+Validation: 1,546 tests passed with two workers (initial unrestricted run had
+one unrelated archive-test timeout); typecheck and web export passed. New tests
+decode all 20 real WAV files and cover note timing, sustain continuity, corrupt
+assets, root selection, cancellation and failed loading. Local preview opened.
+Perceptual listening and iPhone hardware verification remain pending; automated
+audio tests cannot establish speaker quality or microphone behaviour on a phone.
+
+
 Newest entries at the top. Format spec: see "Build-time activity logging"
 in intempo-combined.md. Every meaningful change goes here — see that
 section for what counts as "meaningful."

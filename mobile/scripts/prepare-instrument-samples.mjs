@@ -1,0 +1,152 @@
+/* global fetch, AbortSignal */
+// Reproducible, build-time asset import. Never run by the app.
+// VSCO 2 CE is CC0; source filenames use different octave conventions, so
+// pitch centers come from the author's SFZ mapping, never filename guesses.
+import { mkdir, writeFile } from 'node:fs/promises';
+const commit = '440300901dfe9275fd84e0b7763af1f8443ae62e';
+const groups = [
+  [
+    'violin',
+    'SViolinVib.sfz',
+    'Strings/Solo Violin/Arco Vib/',
+    ['A3_p', 'E4_p', 'A4_p', 'E5_p', 'A5_p', 'E6_p'],
+  ],
+  [
+    'viola',
+    'ViolaEnsSusVib.sfz',
+    'Strings/Viola Section/susvib/',
+    ['C2_v1', 'G2_v1', 'D3_v1', 'A3_v1', 'E4_v1'],
+  ],
+  [
+    'cello',
+    'CelloEnsSusVib.sfz',
+    'Strings/Cello Section/susvib/',
+    ['C1_v1', 'G1_v1', 'D2_v1', 'A2_v1', 'E3_v1'],
+  ],
+  [
+    'double_bass',
+    'ContrabassSusNV.sfz',
+    'Strings/Solo Contrabass/SusNV/',
+    ['E0_v1', 'C1_v1', 'G#1_v1', 'E2_v1'],
+  ],
+];
+const root = new URL('../assets/instruments/', import.meta.url);
+await mkdir(root, { recursive: true });
+async function download(url) {
+  const response = await fetch(url, { signal: AbortSignal.timeout(60000) });
+  if (!response.ok) throw new Error(`${response.status}: ${url}`);
+  return response;
+}
+const sfzCommit = '6dd651d55dde97fd4028699be9d4481f26917891';
+const manifest = {};
+const provenance = [];
+for (const [instrument, mapping, directory, choices] of groups) {
+  const sfz = await (
+    await download(
+      `https://raw.githubusercontent.com/sgossner/VSCO-2-CE/${sfzCommit}/${mapping}`,
+    )
+  ).text();
+  manifest[instrument] = [];
+  for (const choice of choices) {
+    const region = sfz
+      .split('<region>')
+      .find(
+        (r) =>
+          r.match(/sample=(.*)/)?.[1].includes(`${choice}_`) ||
+          r.match(/sample=(.*)/)?.[1].includes(`${choice}.`),
+      );
+    if (!region) throw new Error(`Missing ${choice}`);
+    const filename = region.match(/sample=([^\r\n]+)/)[1].trim();
+    const midi = Number(region.match(/pitch_keycenter=(\d+)/)[1]);
+    const tune = Number(region.match(/(?:^|\s)tune=(-?\d+)/)?.[1] ?? 0);
+    const source = directory + filename;
+    const bytes = await (
+      await download(
+        `https://raw.githubusercontent.com/sgossner/VSCO-2-CE/${commit}/${source.split('/').map(encodeURIComponent).join('/')}`,
+      )
+    ).arrayBuffer();
+    const view = new DataView(bytes);
+    let channels, rate, bits, offset, length;
+    for (let p = 12; p + 8 <= bytes.byteLength;) {
+      const tag = String.fromCharCode(...new Uint8Array(bytes, p, 4));
+      const size = view.getUint32(p + 4, true);
+      if (tag === 'fmt ') {
+        if (view.getUint16(p + 8, true) !== 1) throw new Error('Expected PCM');
+        channels = view.getUint16(p + 10, true);
+        rate = view.getUint32(p + 12, true);
+        bits = view.getUint16(p + 22, true);
+      }
+      if (tag === 'data') {
+        offset = p + 8;
+        length = size;
+      }
+      p += 8 + size + (size % 2);
+    }
+    if (![16, 24].includes(bits) || !offset)
+      throw new Error('Unsupported source WAV');
+    const frames = Math.floor(length / ((channels * bits) / 8));
+    const pcm = new Float32Array(frames);
+    let peak = 0;
+    for (let i = 0; i < frames; i++) {
+      for (let c = 0; c < channels; c++) {
+        const p = offset + ((i * channels + c) * bits) / 8;
+        const value =
+          bits === 16
+            ? view.getInt16(p, true) / 32768
+            : (view.getUint8(p) |
+                (view.getUint8(p + 1) << 8) |
+                (view.getInt8(p + 2) << 16)) /
+              8388608;
+        pcm[i] += value / channels;
+      }
+      peak = Math.max(peak, Math.abs(pcm[i]));
+    }
+    if (peak < 0.00001) throw new Error('Silent source');
+    let first = pcm.findIndex((x) => Math.abs(x) > peak * 0.01);
+    first = Math.max(0, first - Math.floor(rate * 0.01));
+    const count = Math.min(frames - first, rate * 5);
+    const out = Buffer.alloc(44 + count * 2);
+    out.write('RIFF');
+    out.writeUInt32LE(out.length - 8, 4);
+    out.write('WAVEfmt ', 8);
+    out.writeUInt32LE(16, 16);
+    out.writeUInt16LE(1, 20);
+    out.writeUInt16LE(1, 22);
+    out.writeUInt32LE(rate, 24);
+    out.writeUInt32LE(rate * 2, 28);
+    out.writeUInt16LE(2, 32);
+    out.writeUInt16LE(16, 34);
+    out.write('data', 36);
+    out.writeUInt32LE(count * 2, 40);
+    for (let i = 0; i < count; i++)
+      out.writeInt16LE(Math.round((pcm[first + i] / peak) * 24575), 44 + i * 2);
+    const name = `${instrument}-${midi}.wav`;
+    await writeFile(new URL(name, root), out);
+    manifest[instrument].push({ midi, tune, file: name });
+    provenance.push({
+      file: name,
+      source,
+      sourceCommit: commit,
+      sfz: mapping,
+      sfzCommit,
+      midi,
+      tune,
+    });
+    console.log(name, out.length);
+  }
+}
+await writeFile(
+  new URL('provenance.json', root),
+  JSON.stringify(provenance, null, 2) + '\n',
+);
+await writeFile(
+  new URL('../../src/lib/score/sampleAssets.ts', root),
+  `// Generated by scripts/prepare-instrument-samples.mjs. See assets/instruments/NOTICE.md.\nimport type { Instrument } from '../../data/types';\nexport const SAMPLE_ASSETS: Record<Instrument, { midi: number; tune: number; asset: number }[]> = {\n${Object.entries(
+    manifest,
+  )
+    .map(
+      ([k, v]) =>
+        `  ${k}: [\n${v.map((s) => `    { midi: ${s.midi}, tune: ${s.tune}, asset: require('../../../assets/instruments/${s.file}') },`).join('\n')}\n  ],`,
+    )
+    .join('\n')}\n};\n`,
+);
