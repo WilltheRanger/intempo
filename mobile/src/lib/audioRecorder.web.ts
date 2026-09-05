@@ -236,6 +236,14 @@ export async function startRecording(): Promise<Recorder> {
 
     source.connect(node);
 
+    // Opening the microphone can suspend/interupt the context after its first
+    // unlock. That earlier promise may already be resolved; resume the current
+    // state as well, under the same bounded startup deadline.
+    if (context.state !== 'running') {
+      resume = Promise.all([resume, context.resume()]).then(() => {});
+      void resume.catch(() => {});
+    }
+
     // Autoplay policy can hand back a suspended context even from a tap; without
     // this the graph never pulls and the take is silence.
     let resumeDeadline: ReturnType<typeof setTimeout> | undefined;
@@ -272,12 +280,18 @@ export async function startRecording(): Promise<Recorder> {
       finished = true;
       // Ask for the tail before disconnecting. The worklet holds up to 85 ms it
       // hasn't posted, which is the end of the last note played.
-      await flush();
-      source.disconnect();
-      node.port.onmessage = null;
-      node.disconnect();
-      stopTracks();
-      await context.close();
+      try {
+        await flush();
+      } finally {
+        node.port.onmessage = null;
+        stopTracks();
+        // A browser may have already shut down the graph on interruption.
+        // Cleanup must not discard captured audio or leave an unhandled
+        // rejection when cancel() is called during navigation.
+        try { source.disconnect(); } catch { /* Already disconnected. */ }
+        try { node.disconnect(); } catch { /* Already disconnected. */ }
+        try { await context.close(); } catch { /* Already closed. */ }
+      }
     }
 
     function flush(): Promise<void> {
@@ -291,7 +305,11 @@ export async function startRecording(): Promise<Recorder> {
           resolve();
         }
         onFlushed = finish;
-        node.port.postMessage('flush');
+        try {
+          node.port.postMessage('flush');
+        } catch {
+          finish();
+        }
       });
     }
 

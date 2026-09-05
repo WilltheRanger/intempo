@@ -117,6 +117,37 @@ async function headerOf(audio: Blob) {
 }
 
 describe('startRecording (web)', () => {
+  it('resumes again when microphone setup suspends an already unlocked context', async () => {
+    let resumes = 0;
+    class InterruptedContext extends StubContext {
+      createMediaStreamSource() {
+        this.state = 'suspended';
+        return super.createMediaStreamSource();
+      }
+      async resume() {
+        resumes += 1;
+        this.state = 'running';
+      }
+    }
+    vi.stubGlobal('window', { AudioContext: InterruptedContext });
+    const recorder = await startRecording();
+    expect(resumes).toBe(1);
+    node.deliver(silenceWith(64, 5000));
+    expect((await recorder.stop()).seconds).toBeGreaterThan(0);
+  });
+
+  it('preserves captured audio and releases the mic if cleanup finds a closed graph', async () => {
+    class ClosedContext extends StubContext {
+      async close() { throw new DOMException('closed', 'InvalidStateError'); }
+    }
+    vi.stubGlobal('window', { AudioContext: ClosedContext });
+    const recorder = await startRecording();
+    node.deliver(silenceWith(64, 5000));
+    node.port.postMessage = () => { throw new DOMException('closed', 'InvalidStateError'); };
+    expect((await recorder.stop()).seconds).toBeGreaterThan(0);
+    expect(tracksStopped).toBe(1);
+  });
+
   it('unlocks suspended audio before asking for microphone permission', async () => {
     const order: string[] = [];
     class SuspendedContext extends StubContext {
