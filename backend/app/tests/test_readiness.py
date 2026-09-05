@@ -800,7 +800,7 @@ def test_a_build_without_its_thresholds_is_reported_as_unready(monkeypatch) -> N
 
     assert not check.ok
     assert check.blocking, "an app that cannot analyse a take is not ready"
-    assert "/nowhere/config.toml" in check.detail, "say which file is missing"
+    assert str(audio_config.CONFIG_PATH) in check.detail, "say which file is missing"
 
     audio_config.load_audio_config.cache_clear()
 

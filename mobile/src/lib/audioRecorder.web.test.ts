@@ -117,6 +117,15 @@ async function headerOf(audio: Blob) {
 }
 
 describe('startRecording (web)', () => {
+  it('reports actual signal and clears it when count-in audio is discarded', async () => {
+    const recorder = await startRecording();
+    expect(recorder.inputPeak?.()).toBe(0);
+    node.deliver(silenceWith(64, 5000));
+    expect(recorder.inputPeak?.()).toBeGreaterThan(0);
+    recorder.discardCapturedSoFar();
+    expect(recorder.inputPeak?.()).toBe(0);
+    await recorder.stop().catch(() => {});
+  });
   it('resumes again when microphone setup suspends an already unlocked context', async () => {
     let resumes = 0;
     class InterruptedContext extends StubContext {
