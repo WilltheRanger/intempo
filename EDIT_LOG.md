@@ -6,6 +6,32 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-04 — Recording startup recovery and instrument playback
+
+**Branch:** `codex/instrument-recording`, based on pending PR #71. The rejected
+Today-layout PR #72 is closed unmerged; its changes are not on this branch.
+
+Browser recording creates/resumes audio during the Record gesture, before
+awaiting permission. Every setup failure now stops acquired tracks and closes
+the context, including graph InvalidStateError; resumption has a deadline.
+Regression tests verify unlock order and successful capture after a failed
+graph setup. This fixes confirmed code weaknesses, not a confirmed reproduction
+on the owner's iPhone. Shared playback resume rejection is handled too.
+
+Listen already selects instrument-specific synthesized voices from Settings.
+Bass playback now lowers written pitches one octave, without mutating notation
+or analysis timing. Changing instrument stops the previous voice. No sampled
+instrument library is added. The Record control immediately shows microphone
+startup/busy state, blocks duplicate taps, and disables Listen during startup.
+Existing Today design, palette, tabs, and app content are unchanged.
+
+Verification: all 1,537 tests pass; typecheck, lint and web export pass.
+The exported desktop sample preview shows the restored Today design and opens
+the recording setup screen. Microphone capture has not been browser-tested.
+Real iPhone microphone/Listen-to-Record and perceptual audio checks remain
+pending; there is no attached phone. Revert this commit to roll back, with no
+database migration required.
+
 ## 2026-09-04 — Preserve interrupted server-error diagnostics
 
 **Branch:** `codex/rest-cue-empty-bars` (PR #71).
