@@ -6,6 +6,88 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-04 — The recording error, fixed: the spec says wait, and WebKit does not
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Audio. CI still cannot
+dispatch a runner. Follows the device report one entry down, which named the
+error and did not fix it.
+
+The Media Capture and Streams spec, on `getUserMedia`:
+
+> If the relevant settings object's responsible document is not fully active,
+> return a promise rejected with `InvalidStateError`, **and the user agent must
+> wait until the document is fully active and has focus** before continuing.
+
+**WebKit does the first half and not the second.** It rejects and it does not
+wait. So on an iPhone a tap that lands while the document does not have focus
+fails — and every tap after it fails identically, because nothing about the
+document changes in between. That is exactly the shape of the report: an
+ordinary-looking Safari page, a tap, `InvalidStateError`, and reloading being
+the only thing that helps. It read as a page-state problem and it is a
+**timing** one.
+
+`lib/audio/documentFocus.ts` is the waiting WebKit skips. On an
+`InvalidStateError` the recorder waits for the document to become focused and
+visible — listening for `focus` and `visibilitychange` rather than polling,
+because those are the only two transitions that can make it true — and asks
+once more.
+
+This is not a workaround for a bug in the app. The spec says an implementation
+should do this; doing it ourselves turns a dead end into a take.
+
+### Four decisions in it
+
+**Two seconds.** Long enough for a dismissing sheet, a keyboard going down, or
+browser chrome settling after a tap; short enough that a musician is not left
+holding an instrument in front of a button that appears to be thinking. A tap
+that produces nothing for two seconds has already lost them.
+
+**`InvalidStateError` only.** A refusal is an answer, not a timing problem —
+waiting for focus would turn an immediate "no" into a pause and then the same
+"no", and would ask a musician who has just declined a second time.
+
+**One retry, not a loop.** A document still unfocused after the wait is held by
+something this cannot argue with, and the sentence added yesterday is the
+honest next step.
+
+**It resolves `true`/`false` rather than throwing**, so the caller decides what
+running out means: "still not focused" is a different sentence from "the
+microphone is busy".
+
+### Mutated four ways, and one of them found nothing
+
+| mutation | result |
+|---|---|
+| no retry at all — the reported bug, restored | **2 failed of 1570** |
+| every rejection retried, refusals included | **4 failed** |
+| listeners left attached after the wait | **1 failed** |
+| the timeout not cleared when focus returns | **nothing failed** |
+
+The last is recorded rather than papered over. Clearing that timer is
+tidiness: the `settled` flag already stops a second resolution, so nothing an
+assertion can reach behaves differently. It stays because a stray two-second
+timer per take is worth not having, and it is **not** guarded — which is a
+truer thing to write down than a test contrived to cover it.
+
+### What is still unproven
+
+**Nothing here has recorded a note.** There is no iPhone in this environment,
+so what is verified is that the recorder now asks again after an
+`InvalidStateError` and only after that one — not that the second ask succeeds
+on the device that reported. The next thing worth having is the owner trying it
+on the same phone: if it now records, this was it; if it still fails, the cause
+is upstream of the audio graph and the sentence will say to reload, which at
+least is followable.
+
+### Verification
+
+Mobile **1570 passed** across 139 files (was 1557). `tsc` 0, lint 0. Walk
+**PASS, 51 checks** — including the refused-microphone leg, which is what
+confirms refusals are still answered immediately rather than waited out. a11y
+**PASS**. Both mutated sources restored; `.env` restored `diff -q` identical.
+
+---
+
 ## 2026-09-04 — The first report from a real iPhone, and the recorder was building its own AudioContext
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Audio, on a device. CI

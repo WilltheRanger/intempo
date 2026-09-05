@@ -12,6 +12,7 @@ import {
   shouldRetryUnconstrained,
 } from './audio/microphoneFailure';
 import { audioContext, resumeAudio } from './audio/context.web';
+import { isNotCapturableYet, waitForCapture } from './audio/documentFocus';
 import { durationOf, encodeWav } from './audio/wav';
 
 /**
@@ -130,15 +131,42 @@ export async function startRecording(): Promise<Recorder> {
     },
   };
 
+  /**
+   * Ask for the microphone, waiting out a document that is not ready to give
+   * it.
+   *
+   * **The spec says the user agent should do this waiting and WebKit does
+   * not.** `getUserMedia` must reject with `InvalidStateError` when the
+   * document is not fully active, *and the user agent must wait until the
+   * document is fully active and has focus* — WebKit does the first half only.
+   * So on an iPhone a tap that lands while focus is elsewhere fails, and every
+   * later tap fails identically, because nothing about the document changes
+   * between them. That is what a real device reported on 2026-09-04.
+   *
+   * One retry, not a loop: if the document is still not capturable after the
+   * wait, something is holding it that this cannot argue with, and the
+   * sentence in `microphoneFailure` is the honest next step.
+   */
+  const askFor = async (constraints: MediaStreamConstraints) => {
+    try {
+      return await navigator.mediaDevices.getUserMedia(constraints);
+    } catch (error) {
+      if (!isNotCapturableYet(error) || !(await waitForCapture())) {
+        throw error;
+      }
+      return navigator.mediaDevices.getUserMedia(constraints);
+    }
+  };
+
   let media: MediaStream;
   try {
-    media = await navigator.mediaDevices.getUserMedia(PREFERRED);
+    media = await askFor(PREFERRED);
   } catch (error) {
     if (shouldRetryUnconstrained(error)) {
       // A device that cannot give us raw audio should still get to record: a
       // take with echo cancellation on beats no take at all.
       try {
-        media = await navigator.mediaDevices.getUserMedia({ audio: true });
+        media = await askFor({ audio: true });
       } catch (retryError) {
         throw microphoneFailure(retryError);
       }

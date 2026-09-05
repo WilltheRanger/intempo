@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { resetAudioContextForTests } from './audio/context.web';
-import { EmptyRecordingError } from './audio/types';
+import { EmptyRecordingError, MicrophonePermissionError } from './audio/types';
 import { startRecording } from './audioRecorder.web';
 
 /**
@@ -323,5 +323,66 @@ describe('the audio context it records through', () => {
     await expect(startRecording()).rejects.toThrow(/no Web Audio/i);
 
     expect(tracksStopped).toBe(before + 1);
+  });
+});
+
+describe('a document that was not ready to capture', () => {
+  /*
+   * **The device report of 2026-09-04.** WebKit rejects `getUserMedia` with
+   * `InvalidStateError` when the document is not fully active and focused, and
+   * — against the spec, which says the user agent *must wait* — does not wait.
+   * So the tap fails, and so does every tap after it, because nothing about
+   * the document changes in between. This is that waiting.
+   */
+  function microphoneThatFailsFirst(name: string, times = 1) {
+    let left = times;
+    const calls = { count: 0 };
+    vi.stubGlobal('navigator', {
+      mediaDevices: {
+        async getUserMedia() {
+          calls.count += 1;
+          if (left > 0) {
+            left -= 1;
+            throw new DOMException('not now', name);
+          }
+          return { getTracks: () => [{ stop: () => { tracksStopped += 1; } }] };
+        },
+      },
+    });
+    return calls;
+  }
+
+  it('is asked a second time, and the take starts', async () => {
+    // The document is focused by the time the retry lands — which is the
+    // ordinary case, because the thing that took focus was transient.
+    vi.stubGlobal('document', { hasFocus: () => true, visibilityState: 'visible' });
+    const calls = microphoneThatFailsFirst('InvalidStateError');
+
+    const recorder = await startRecording();
+
+    expect(calls.count).toBe(2);
+    recorder.cancel();
+  });
+
+  it('is not asked twice for a refusal, which is an answer rather than a wait', async () => {
+    // Retrying a decision would turn an immediate "no" into a pause and then
+    // the same "no", and would ask a musician who has just declined twice.
+    vi.stubGlobal('document', { hasFocus: () => true, visibilityState: 'visible' });
+    const calls = microphoneThatFailsFirst('NotAllowedError');
+
+    await expect(startRecording()).rejects.toBeInstanceOf(MicrophonePermissionError);
+
+    expect(calls.count).toBe(1);
+  });
+
+  it('gives up after one retry rather than looping', async () => {
+    // A document that stays unfocused is being held by something this cannot
+    // argue with. The sentence in `microphoneFailure` is the honest next step.
+    vi.stubGlobal('document', { hasFocus: () => true, visibilityState: 'visible' });
+    const calls = microphoneThatFailsFirst('InvalidStateError', 2);
+
+    await expect(startRecording()).rejects.toThrow(/reload|refresh/i);
+
+    expect(calls.count).toBe(2);
   });
 });
