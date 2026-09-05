@@ -75,7 +75,7 @@ export function resumeAudio(context: AudioContext): void {
     return;
   }
   try {
-    void context.resume();
+    void context.resume().catch(() => {});
   } catch {
     // Some browsers reject a resume outside a gesture. The caller is inside
     // one; if this fails there is nothing better to try.

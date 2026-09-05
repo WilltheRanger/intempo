@@ -21,6 +21,7 @@ import {
 } from '../../lib/score';
 import { usePreferences } from '../../data/preferences';
 import { playSchedule } from '../../lib/scorePlayer';
+import { instrumentPlayback } from '../../lib/score/instrumentPlayback';
 
 export interface ListenButtonProps {
   score: ScoreJson | null;
@@ -93,6 +94,7 @@ export function ListenButton({
   // Leaving the screen, or starting a take, must silence it. A note still
   // sounding into a recording is the exact failure this guards against.
   useEffect(() => stop, []);
+  useEffect(() => stop, [instrument]);
   useEffect(() => {
     if (disabled) {
       stop();
@@ -111,7 +113,7 @@ export function ListenButton({
     }
 
     impact(ImpactFeedbackStyle.Light);
-    const whole = scheduleScore(score as ScoreJson, bpm);
+    const whole = instrumentPlayback(scheduleScore(score as ScoreJson, bpm), instrument);
     const schedule =
       fromMeasure === undefined ? whole : startAtMeasure(whole, fromMeasure);
     if (schedule.notes.length === 0) {

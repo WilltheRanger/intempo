@@ -173,6 +173,7 @@ export function RecordScreen() {
   // microphone that is currently open.
   const recorder = useRef<Recorder | null>(null);
   const starting = useRef(false);
+  const [isStarting, setIsStarting] = useState(false);
 
   // The finished take, kept when sending it fails.
   //
@@ -326,6 +327,7 @@ export function RecordScreen() {
       return;
     }
     starting.current = true;
+    setIsStarting(true);
     impact(ImpactFeedbackStyle.Medium);
     setProblem(null);
     setMicrophoneBlocked(false);
@@ -346,6 +348,7 @@ export function RecordScreen() {
       return;
     } finally {
       starting.current = false;
+      setIsStarting(false);
     }
 
     // The recorder starts before the count-in. Its leading silence is intentional:
@@ -811,6 +814,7 @@ export function RecordScreen() {
           <RecordButton
             active={recording}
             countingIn={false}
+            busy={isStarting}
             disabled={!recording && Boolean(limitMessage)}
             onPress={() => void (recording ? stop() : start())}
           />
@@ -973,7 +977,7 @@ export function RecordScreen() {
             fromMeasure={startFrom}
             // Silenced the moment a take starts: anything through the speaker
             // lands in the microphone as phantom onsets (§4).
-            disabled={recording}
+            disabled={recording || isStarting}
           />
 
           {/* **One bar for both**, which is what makes it safe to say so. The
@@ -1107,15 +1111,17 @@ function formatElapsed(ms: number): string {
 function RecordButton({
   active,
   countingIn,
+  busy = false,
   disabled = false,
   onPress,
 }: {
   active: boolean;
   countingIn: boolean;
+  busy?: boolean;
   disabled?: boolean;
   onPress: () => void;
 }) {
-  const label = disabled
+  const label = busy ? 'Starting microphone…' : disabled
     ? 'Monthly analysis limit reached'
     : countingIn
       ? 'Cancel count-in'
@@ -1125,10 +1131,10 @@ function RecordButton({
   return (
     <PressableScale
       onPress={onPress}
-      disabled={disabled}
+      disabled={disabled || busy}
       accessibilityRole="button"
       accessibilityLabel={label}
-      accessibilityState={{ disabled }}
+      accessibilityState={{ disabled: disabled || busy, busy }}
       style={[styles.control, disabled && styles.controlDisabled]}
       // More give than the default: this is the one control a musician reaches
       // for without looking, and it has to answer the finger.
