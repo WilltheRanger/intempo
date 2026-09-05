@@ -1,5 +1,15 @@
 # InTempo Edit Log
 
+## 2026-09-05 — Local preview deep-link recovery
+
+The local Python static server returned a filesystem 404 when Library was
+opened or refreshed directly. Added mobile/scripts/preview.py with an app-shell
+fallback for missing extensionless routes, real 404s for missing assets, no
+directory listings, and no-cache preview responses. Replaced the plain local
+server on 127.0.0.1:8082. This changes only local preview hosting, not production
+routing or the app layout.
+
+
 ## 2026-09-05 — Sampled Settings instruments for Listen
 
 User requested MuseScore-style recorded instrument playback, not synthesized
