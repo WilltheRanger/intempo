@@ -67,7 +67,13 @@ beforeEach(() => {
   vi.stubGlobal('navigator', {
     mediaDevices: {
       getUserMedia: async () => ({
-        getTracks: () => [{ stop: () => { tracksStopped += 1; } }],
+        getTracks: () => [
+          {
+            stop: () => {
+              tracksStopped += 1;
+            },
+          },
+        ],
       }),
     },
   });
@@ -111,6 +117,52 @@ async function headerOf(audio: Blob) {
 }
 
 describe('startRecording (web)', () => {
+  it('unlocks suspended audio before asking for microphone permission', async () => {
+    const order: string[] = [];
+    class SuspendedContext extends StubContext {
+      state: 'running' | 'suspended' = 'suspended';
+      async resume() {
+        order.push('resume');
+        this.state = 'running';
+      }
+    }
+    vi.stubGlobal('window', { AudioContext: SuspendedContext });
+    vi.stubGlobal('navigator', {
+      mediaDevices: {
+        getUserMedia: async () => {
+          order.push('permission');
+          return { getTracks: () => [{ stop() {} }] };
+        },
+      },
+    });
+    const recorder = await startRecording();
+    expect(order).toEqual(['resume', 'permission']);
+    await recorder.stop().catch(() => {});
+  });
+
+  it('releases the microphone after graph failure so a retry can record', async () => {
+    let closed = 0;
+    let attempts = 0;
+    class FailingContext extends StubContext {
+      createMediaStreamSource() {
+        if (attempts++ === 0)
+          throw new DOMException('interrupted', 'InvalidStateError');
+        return super.createMediaStreamSource();
+      }
+      async close() {
+        closed += 1;
+      }
+    }
+    vi.stubGlobal('window', { AudioContext: FailingContext });
+    await expect(startRecording()).rejects.toThrow(/try Record again/);
+    expect(tracksStopped).toBe(1);
+    expect(closed).toBe(1);
+    const recorder = await startRecording();
+    node.deliver(silenceWith(4096, 20000));
+    expect((await recorder.stop()).seconds).toBeGreaterThan(0);
+    expect(tracksStopped).toBe(2);
+  });
+
   it('writes what the worklet delivered, at the rate the hardware reported', async () => {
     const recorder = await startRecording();
     node.deliver(silenceWith(4096, 12000));
@@ -205,7 +257,15 @@ describe('when the microphone will not start', () => {
           if (error) {
             throw error;
           }
-          return { getTracks: () => [{ stop: () => { tracksStopped += 1; } }] };
+          return {
+            getTracks: () => [
+              {
+                stop: () => {
+                  tracksStopped += 1;
+                },
+              },
+            ],
+          };
         },
       },
     });

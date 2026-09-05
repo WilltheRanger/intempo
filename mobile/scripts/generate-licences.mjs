@@ -13,7 +13,10 @@ import { dirname, join } from 'node:path';
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
 
-const names = Object.keys({ ...pkg.dependencies, ...pkg.devDependencies }).sort();
+const names = Object.keys({
+  ...pkg.dependencies,
+  ...pkg.devDependencies,
+}).sort();
 
 /**
  * Things the app ships that npm does not know about.
@@ -26,6 +29,11 @@ const names = Object.keys({ ...pkg.dependencies, ...pkg.devDependencies }).sort(
  */
 const VENDORED = [
   { name: 'Bravura (music font)', version: 'subset', licence: 'OFL-1.1' },
+  {
+    name: 'GeneralUser GS (string SoundFonts)',
+    version: '2.0.3 subset',
+    licence: 'GeneralUser GS License v2.0',
+  },
 ];
 
 const entries = names.flatMap((name) => {
@@ -48,7 +56,7 @@ const entries = names.flatMap((name) => {
   const licence =
     typeof manifest.license === 'string'
       ? manifest.license
-      : manifest.license?.type ?? 'See package';
+      : (manifest.license?.type ?? 'See package');
   return [{ name, version: manifest.version, licence }];
 });
 

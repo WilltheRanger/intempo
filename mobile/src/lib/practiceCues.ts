@@ -109,7 +109,12 @@ export function longRestCues(
     }
 
     const next = measures[end];
-    if (barEndBeats.length >= minimum && next && !isSilentMeasure(next)) {
+    // An empty OCR bar is neither a rest nor evidence of an entrance.
+    // Do not bridge that unknown bar to find a later note.
+    if (
+      barEndBeats.length >= minimum &&
+      next?.notes.some((note) => note.pitch !== 'rest')
+    ) {
       cues.push({
         startBeat,
         endBeat: clock,
