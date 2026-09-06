@@ -96,13 +96,20 @@ the user's rules, not suggestions to weigh against convenience.
    Spacing is a system, not a per-component guess.
 6. **Rounded containers, pills, gradients, shadows, borders and floating
    elements are exceptions, not the default styling language.** Reach for
-   typography and spacing first.
+   typography and spacing first. **The control layer is the one exception**
+   (amended 2026-09-06): navigation and toolbars are floating glass capsules —
+   `components/primitives/GlassSurface`, which nothing outside chrome may use.
+   Content keeps this rule in full.
 7. **Design around the thumb zone.** Primary actions sit comfortably reachable
    near the bottom; secondary actions can sit higher.
 8. **Use typography to create hierarchy instead of relying on containers.**
    If a box is doing the work a type scale should do, remove the box.
-9. **Bottom navigation is persistent app furniture, not a floating card.**
-   Opaque, anchored, unrounded, part of the frame.
+9. **Bottom navigation is persistent app furniture — and it floats.**
+   Amended 2026-09-06, reversing "not a floating card. Opaque, anchored,
+   unrounded, part of the frame." It is a translucent capsule inset from the
+   edges with content scrolling beneath it. *Furniture* still governs the rest:
+   it does **not** resize on scroll, and it carries **no** selection pill — both
+   were prototyped and rejected. See `DECISIONS.md`, 2026-09-06.
 10. **Every element must justify its presence.** If removing it makes the
     interface clearer, remove it.
 

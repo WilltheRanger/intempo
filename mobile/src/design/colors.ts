@@ -95,6 +95,32 @@ export const colors = {
   actionBgPressed: '#332E28',
   surfacePressed: '#F5F2EC',
 
+  // -------------------------------------------------------------------------
+  // Glass — the floating control layer, and nothing else.
+  //
+  // A translucent surface has no fixed ground, so these are the one group of
+  // tokens `audit-a11y.mjs` cannot check: what sits behind them is whatever
+  // happens to be scrolling past. `glassTint` is therefore deliberately far
+  // more opaque than "barely tinted" — over the black of engraved notation a
+  // lighter value blurs to grey and takes the label with it, and the label
+  // staying readable is the whole constraint. Apple's own light-mode regular
+  // material sits in this range for the same reason.
+  //
+  // Derived from `bg`, not from white: over ivory a neutral-white glass reads
+  // cold, and this layer sits on ivory nearly everywhere.
+  // -------------------------------------------------------------------------
+  /** The ground a glass surface adds on top of the blur behind it. */
+  glassTint: 'rgba(251, 249, 244, 0.62)',
+  /** The bright catch along a glass edge. Half a pixel, never a stroke. */
+  glassEdge: 'rgba(255, 255, 255, 0.72)',
+  /**
+   * The darker separation around a glass surface.
+   *
+   * Paired with `glassEdge` always: a bright edge alone disappears over pale
+   * content, and this is what keeps the shape readable over anything.
+   */
+  glassSeparator: 'rgba(20, 17, 14, 0.14)',
+
   /**
    * Dimming behind a sheet or modal. Derived from `textPrimary` rather than
    * neutral black so it stays in the warm family. Not a new accent — a sheet

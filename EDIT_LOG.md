@@ -1,5 +1,67 @@
 # InTempo Edit Log
 
+## 2026-09-06 — Liquid Glass, first pass: floating tab bar and one label register
+
+**Reverses design laws 6 and 9** at the owner's request, after four prototype
+rounds (`DECISIONS.md`, 2026-09-06). Those laws are rewritten in `CLAUDE.md` in
+the same commit rather than quietly contradicted — a rule left standing while
+the code disagrees is how the next session "fixes" this back.
+
+What changed:
+
+- **`GlassSurface`** (`components/primitives/`) — the floating control layer:
+  `expo-blur` behind a tint, over a dark separation ring, under a bright top
+  edge. Chrome only, never content. It degrades to an opaque surface by design
+  on Android and anywhere the blur does not land, so no caller asks whether
+  glass is available.
+- **The tab bar left the frame.** A floating capsule inset 12pt with content
+  scrolling beneath it. `TAB_BAR_FLOAT_INSET` / `_BOTTOM` are named constants;
+  the safe-area inset is now the gap *under* the capsule rather than padding
+  inside it, and `useTabBarHeight()` grew by the float so lists still clear it.
+  Radius is derived from the row height, not typed, so it cannot stop being a
+  capsule when the icon size moves.
+- **It deliberately does not resize on scroll and has no selection pill.** Both
+  were built in the prototype and rejected: a bar that changes size while you
+  read is chrome asking to be looked at, and a filled selection chip is a
+  Material convention, not an iOS one.
+- **One label register.** `SectionHeader` is small, uppercase and letterspaced
+  (`typography.eyebrow`, 11px) — a different register from content, not a
+  smaller heading. Before it, "Warmup" and "Long tones, then a G major scale"
+  were two headings a reader had to rank by size alone. Uppercased in render,
+  not by `textTransform`, so a screen reader gets the label as written.
+- **Adding a piece is in the header again.** Today's only route to it was a row
+  below the fold that read as one more list item; it is an icon control in the
+  trailing position now, matching Library's labelled one. The duplicate
+  `AddPieceAction` row is deleted — a primary action offered twice on one screen
+  is worse than offered once.
+- **Three glass tokens** in `colors.ts`. `glassTint` is far more opaque than
+  "barely tinted" on purpose: measured against engraved notation, a lighter
+  value blurs to grey and takes the label with it.
+
+**Honest status.** Nothing here has been seen on a device — no macOS, no EAS —
+so the blur is verified on the web build only, which is what Cloudflare Pages
+deploys. On iOS `expo-blur` is `UIVisualEffectView`, not iOS 26's
+`UIGlassEffect`: no lensing, no light response. `expo-glass-effect@57.0.1`
+exists and would give the real material; it is iOS 26+ only and is deliberately
+not adopted in this pass.
+
+**Not done, and named rather than implied:** the Today recomposition from the
+prototype (cards removed, one 22pt margin, a full-bleed score band) is a
+separate pass over a 700-line screen with five states. The large-title collapse
+is not built. Insights was left alone — it already puts the finding in the title
+slot with "Insights" as the eyebrow, and the prototype's two-competing-serifs
+problem was the prototype's, not the app's.
+
+Validation: 1,603 mobile tests passed (147 files), TypeScript 0, ESLint 0,
+a11y audit PASS, `.env` restored `diff -q` identical, fixtures web build clean
+with `script-src` still pinned. `check-dead-exports.py` reports one export,
+`StbVorbis`, which is **pre-existing on `main`** and untouched here. The walk is
+50 of 51 with the same silent-take finding recorded in PR #70; this diff does
+not touch the recording path.
+
+Rollback: `git revert` this commit, or reset to tag `pre-liquid-glass`
+(`2b11ead`). `expo-blur` would come out with it.
+
 ## 2026-09-05 — Comparable takes and TestFlight preparation
 
 New analysis results include a versioned fingerprint of processed score,

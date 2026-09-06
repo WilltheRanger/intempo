@@ -10,9 +10,9 @@ import { useEffect, useRef, type ReactNode } from 'react';
 import { Animated, Platform, Pressable, StyleSheet, View, type ViewStyle } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { GlassSurface } from '../components/primitives/GlassSurface';
 import { Text } from '../components/primitives/Text';
 import {
-  BORDER_WIDTH,
   colors,
   ICON_SIZE,
   ICON_STROKE_WIDTH,
@@ -21,6 +21,8 @@ import {
   spacing,
 } from '../design';
 import {
+  TAB_BAR_FLOAT_BOTTOM,
+  TAB_BAR_FLOAT_INSET,
   TAB_BAR_MIN_PADDING_BOTTOM,
   TAB_BAR_PADDING_TOP,
   TAB_BAR_ROW_HEIGHT,
@@ -113,11 +115,25 @@ function TabSelectionMotion({
 }
 
 /**
- * The tab bar. Quiet by design — it sits on the page background behind a
- * hairline rule rather than on a raised surface, so it doesn't compete with
- * screen content.
+ * The tab bar: a floating glass capsule with content passing beneath it.
  *
- * The accent colour marks the active tab and nothing else here.
+ * **This reverses design law 9**, which called bottom navigation "opaque,
+ * anchored, unrounded, part of the frame". The law is rewritten rather than
+ * quietly overridden — see `DECISIONS.md`, 2026-09-06 — because a rule left
+ * standing in `CLAUDE.md` while the code contradicts it is how the next
+ * session "fixes" this back.
+ *
+ * Two things it deliberately does **not** do, both of which were prototyped and
+ * rejected:
+ *
+ * - **It does not resize on scroll.** Furniture that changes size while you
+ *   read is chrome asking to be looked at, which is the opposite of what
+ *   furniture is for. iOS 26 shrinks its tab bar; this one does not.
+ * - **It has no pill behind the active tab.** A filled selection chip is a
+ *   Material convention. iOS marks the selection on the symbol and the label,
+ *   which is what the accent and the ink weight already do here.
+ *
+ * The accent colour marks the active tab and nothing else.
  */
 export function BottomTabBar({
   state,
@@ -127,16 +143,23 @@ export function BottomTabBar({
   const insets = useSafeAreaInsets();
   const reduceMotion = useReducedMotion();
 
+  // The safe-area inset is the *gap under the capsule* now, not padding inside
+  // it: a floating bar must clear the home indicator without swallowing it, and
+  // a capsule with 34pt of dead space in its bottom half is not a capsule. The
+  // floor still only applies when the device reports no inset.
+  const bottomGap =
+    Math.max(insets.bottom, TAB_BAR_MIN_PADDING_BOTTOM) + TAB_BAR_FLOAT_BOTTOM;
+
   return (
-    <View
-      // Bottom padding is the device's own inset, so the home indicator is
-      // cleared on modern iPhones and the bar stays at its approved height on
-      // phones without one. The floor only applies when the inset is 0 — it is
-      // never added on top of it. `styles.bar` carries the background, so the
-      // ivory extends through the safe-area region rather than stopping short.
+    <GlassSurface
+      radius={CAPSULE_RADIUS}
       style={[
         styles.bar,
-        { paddingBottom: Math.max(insets.bottom, TAB_BAR_MIN_PADDING_BOTTOM) },
+        {
+          left: TAB_BAR_FLOAT_INSET,
+          right: TAB_BAR_FLOAT_INSET,
+          bottom: bottomGap,
+        },
       ]}
     >
       {state.routes.map((route, index) => {
@@ -196,17 +219,28 @@ export function BottomTabBar({
           </Pressable>
         );
       })}
-    </View>
+    </GlassSurface>
   );
 }
 
+/**
+ * A capsule, so the radius is half the bar's height and is never guessed.
+ *
+ * Derived rather than typed, because the row height is itself derived from the
+ * icon size and the label's line height — a literal here goes stale the moment
+ * either of those moves, and a not-quite-capsule reads as a mistake.
+ */
+const CAPSULE_RADIUS = (TAB_BAR_PADDING_TOP + TAB_BAR_ROW_HEIGHT) / 2;
+
 const styles = StyleSheet.create({
   bar: {
+    // Absolutely positioned so content scrolls *under* it. `ScreenContainer`
+    // pays for that by adding `useTabBarHeight()` to its bottom padding, so the
+    // last row of any list is still reachable above the capsule.
+    position: 'absolute',
     flexDirection: 'row',
-    backgroundColor: colors.bg,
-    borderTopWidth: BORDER_WIDTH,
-    borderTopColor: colors.border,
     paddingTop: TAB_BAR_PADDING_TOP,
+    paddingBottom: TAB_BAR_PADDING_TOP,
   },
   tab: {
     flex: 1,

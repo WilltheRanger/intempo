@@ -1,5 +1,56 @@
 # InTempo Decisions
 
+## 2026-09-06 — Liquid Glass for the control layer, over the app's own laws 6 and 9
+
+**Context.** The owner asked for iOS 26 Liquid Glass and reviewed four
+prototype rounds. Design law 9 said bottom navigation is "opaque, anchored,
+unrounded, part of the frame"; law 6 said floating, rounded and gradient
+elements are exceptions rather than the default. A floating translucent capsule
+is both, deliberately.
+
+**Decision.** Adopt glass for the **control layer only** — navigation, toolbars,
+the tab bar — and rewrite laws 6 and 9 to say what is now true. Content stays on
+an opaque layer: paper, engraving and type are untouched.
+
+**Alternatives considered.**
+
+- *Leave the laws and override in the component.* Rejected: the laws are read at
+  the start of every session, and a session that follows them would revert this.
+- *Glass everywhere, including cards.* Rejected — it is Apple's own rule not to,
+  and it is what would make this app look like every other frosted app.
+- *`expo-glass-effect` now.* It is the real `UIGlassEffect` and matches this
+  Expo version, but it is iOS 26+ only and nothing here can build or see it.
+  `expo-blur` works on the web build, which is what actually deploys.
+
+**Trade-offs accepted.**
+
+1. **Two looks to maintain.** The blur does not land on Android, on iOS below
+   26 in its full form, or wherever a platform declines it. `glassTint` is
+   therefore opaque enough that the fallback is a legitimate solid bar — paid
+   once in `GlassSurface` rather than badly in each screen.
+2. **`audit-a11y.mjs` cannot check this.** It computes ratios between known
+   tokens, and a translucent surface has no fixed ground. The mitigation is the
+   tint's opacity, chosen against the worst case the app can actually produce
+   (a bar over engraved notation), not a lighter value that looks better on
+   ivory and fails over ink.
+3. **The honest finding stands.** Liquid Glass reads as a material because
+   content passes beneath it — maps, photographs, album art. This app is warm
+   paper and black type, so the material has less to do here than it does in the
+   apps it was designed for. Adopted because the owner asked to try it, with a
+   named rollback anchor rather than on a claim that it is clearly better.
+
+## 2026-09-06 — Section labels are uppercase, reversing "no decorative uppercase"
+
+`SectionHeader` documented "sentence case — the brief rules out decorative
+uppercase labels". At 13px sentence case, a label and a title differ only by
+size, so a screen carrying several groups reads as a flat stack of headings.
+
+Uppercase at 11px with letterspacing is not decoration here: it is the only
+thing that makes a label a different *register* from the content under it, and
+it is what iOS uses for this exact element. The label is uppercased in render
+rather than by `textTransform` so assistive technology receives the written
+string.
+
 Architectural "X over Y because Z" choices only. Format: date, decision,
 alternatives considered, why we picked this. See intempo-combined.md
 Operating Principle #5.
