@@ -436,9 +436,10 @@ sentence disowns.
 **Decision:** coverage is reported against the schema as well as the corpus.
 `tools/engraver-coverage.py` prints both tables, and
 `mobile/src/lib/notation/durations.test.ts` asserts the app side of it — every
-duration draws except a named list of four. `CLAUDE.md` §7b now says to read the
-schema table, because a rule that says "read the worst page" was satisfied by a
-corpus where the worst page was perfect.
+duration draws except a named list of four. `docs/subsystems.md`, "Frontend UI rebuild"
+convention 7b, now says to read the schema table, because a rule that says
+"read the worst page" was satisfied by a corpus where the worst page was
+perfect.
 
 **Trade-offs accepted:**
 

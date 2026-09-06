@@ -181,11 +181,11 @@ Everything in it is still true and still worth reading; none of it was deleted
 in the move. It is a reference, not a preamble.
 
 **A comment citing `CLAUDE.md` for a subsystem rule means
-`docs/subsystems.md`.** Roughly fifteen comments and test docstrings across
-`tools/`, `backend/app/tests/` and `mobile/src/` cite this file for rules that
-moved on 2026-09-06; they were deliberately not rewritten, because touching
-fifteen files to fix a pointer is how a documentation change becomes a
-diff nobody reviews.
+`docs/subsystems.md`.** Roughly fifteen comments and test docstrings across the
+repository — `tools/`, `backend/`, `mobile/src/`, `.github/workflows/` — cite
+this file for rules that moved on 2026-09-06. They were deliberately not
+rewritten: touching fifteen files to fix a pointer is how a documentation change
+becomes a diff nobody reviews.
 
 **When you learn something the hard way, it goes in `docs/subsystems.md`** —
 under the subsystem it belongs to. A rule belongs *here* only if it changes what

@@ -1,5 +1,32 @@
 # InTempo Edit Log
 
+## 2026-09-06 — Two references the split broke, and one it did not
+
+The third of three audits on the `CLAUDE.md` split finished after the merge and
+found two citations that genuinely stopped resolving. Both fixed:
+
+- `frontend/DESIGN_SYSTEM.md`'s "superseded" banner forwarded to *"the
+  conventions in **its** 'Frontend UI rebuild' section"* — the only forwarding
+  address that document has, and the section had moved.
+- `DECISIONS.md` cited **`CLAUDE.md` §7b**, which was never a section: it is
+  convention item 7b inside the moved list. It was the one §-numbered citation
+  in the repository that no longer resolved.
+
+§5's disclaimer about stale citations named three trees; the audit found them in
+five, including `.github/workflows/`. Widened to "across the repository" — the
+one-file change, and the same reasoning that left the citations alone.
+
+**Two things deliberately not fixed.** Two places quote a CLAUDE.md passage that
+no longer exists in *either* file (*"Known hole, unfixed: orphaned uploads…"*) —
+it was rewritten before the split, so this is not the move's doing. And
+`docs/deploy-omr.md` is referenced from `render.yaml:12` and
+`docs/deploy-backend.md:196` and **does not exist**; the audit found it while
+sweeping `docs/`, it predates today, and guessing at deployment documentation is
+worse than leaving a dangling link that says what it wanted.
+
+Scope: documentation only. 40 files mention `CLAUDE.md`, ~53 citations; the
+audit checked every one.
+
 ## 2026-09-06 — `CLAUDE.md` split: 12,096 words → 1,687, with nothing deleted
 
 Owner's read, and the measurement agreed: the file had stopped carrying its
