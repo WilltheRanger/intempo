@@ -1,5 +1,56 @@
 # InTempo Decisions
 
+## 2026-09-06 — The web build gets its own push transition; `native-stack` keeps the phone
+
+**Context.** Measured on the built bundle: pushing a screen in a browser
+produced 3 distinct frames out of 35 sampled, and going back produced 1. A hard
+cut, on every navigation in the app. On iOS the same code is already correct —
+`@react-navigation/native-stack` hands the push to `UINavigationController`, so
+the slide, the parallax and the swipe-back are Apple's own.
+
+**Decision.** A `ScreenTransition` wrapper that animates on **web only** and is
+a pass-through everywhere else, applied once at the navigator to every pushed
+route. Thresholds in `lib/motion/screenTransition.ts` with 18 tests.
+
+**Alternatives considered.**
+
+- *`@react-navigation/stack` (the JS stack) on web.* The complete answer: real
+  push/pop, the outgoing screen parallaxing, and an interactive gesture, all
+  built and maintained by people who do this properly. Rejected **for now**. It
+  requires `react-native-gesture-handler` and `@react-native-masked-view`, and
+  using it only on web means maintaining two navigators with different
+  behaviour, while using it everywhere means giving up the real
+  `UINavigationController` transition on the platform that ships. A large,
+  permanent structural change to fix a browser.
+- *`screenOptions={{ animation: … }}`.* What the API suggests, and it does
+  nothing here — that is what the measurement above is of.
+- *Parallaxing the outgoing screen, as iOS does.* Not possible without fighting
+  the navigator. Measured: both screens stay mounted as absolutely-positioned
+  siblings and `react-native-screens` sets `display: none` on the lower one the
+  moment the push commits. Overriding a library's internal styling from outside
+  breaks on any upgrade. Depth is carried by a scrim instead.
+
+**Trade-offs accepted.**
+
+- The transition runs on the JS thread, like the sheet's. Same reasoning, same
+  cost.
+- The screen underneath is not visible during a swipe-back; what shows in the
+  gap is dimmed page ground. Less informative than iOS, and it does not look
+  broken — checked on a screenshot mid-gesture.
+- Every pushed screen is wrapped, so a bug here is a bug on eighteen screens.
+  That is the price of fixing it in one place instead of eighteen.
+
+**The scrim is rendered only while a transition is in flight**, and that is not
+an optimisation. Left in the tree at rest it is a full-screen ink fill behind an
+opaque screen — invisible, and indistinguishable *to a static reader of the DOM*
+from a glass layer painted over content. `audit-a11y.mjs` read it exactly that
+way and reported 414 contrast failures on text that measures at full contrast in
+pixels (#14110E on #F7F2E9, sampled). The first fix attempted was to teach the
+audit the difference; it silenced the glass check the audit was written for,
+which mutation-testing caught. Removing the element when it has no job is
+smaller, costs nothing at rest, and needs no change to the check at all. **The
+audit is byte-identical to what it was.**
+
 ## 2026-09-06 — The app icon inverts the app: ink ground, ivory note, gold barline
 
 **Context.** All six brand assets were the Expo starter's blue chevron —

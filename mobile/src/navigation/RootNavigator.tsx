@@ -1,7 +1,7 @@
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useIsFocused } from '@react-navigation/native';
-import { useEffect, useRef, type ReactNode } from 'react';
+import { useEffect, useRef, type ComponentType, type ReactNode } from 'react';
 import { Animated, Platform, StyleSheet, View, type ViewStyle } from 'react-native';
 
 import { useAuthStatus } from '../data/auth/useAuthStatus';
@@ -9,6 +9,7 @@ import { useMe } from '../data/hooks/useMe';
 import { preferences } from '../data/preferences';
 import { EASE_OUT, colors, motion } from '../design';
 import { shouldOnboard } from '../lib/onboarding';
+import { ScreenTransition } from '../components/motion/ScreenTransition';
 import { useReducedMotion } from '../lib/useReducedMotion';
 import { AcknowledgementsScreen } from '../screens/account/AcknowledgementsScreen';
 import { AccountStartupScreen } from '../screens/account/AccountStartupScreen';
@@ -41,6 +42,57 @@ import type { RootStackParamList, TabParamList } from './types';
 
 const Tab = createBottomTabNavigator<TabParamList>();
 const Stack = createNativeStackNavigator<RootStackParamList>();
+
+/**
+ * Wraps a pushed screen in the web build's push/pop transition.
+ *
+ * **Called at module scope, never inside `RootNavigator`.** A component
+ * created during render is a new component type on every render, and React
+ * unmounts and remounts the whole screen for it — a pushed screen would lose
+ * its scroll position, its form state and any in-flight request every time the
+ * navigator re-rendered.
+ *
+ * `Tabs` is deliberately absent from the list below: nothing pushes it, it is
+ * the thing everything else is pushed over, and it has its own arrival
+ * animation in `TabScene`.
+ */
+function pushed<P extends object>(
+  Screen: ComponentType<P>,
+  from: 'right' | 'bottom' = 'right',
+): ComponentType<P> {
+  function Pushed(props: P) {
+    return (
+      <ScreenTransition from={from}>
+        <Screen {...props} />
+      </ScreenTransition>
+    );
+  }
+  // Keeps the navigator's own warnings and React DevTools readable.
+  Pushed.displayName = `Pushed(${Screen.displayName ?? Screen.name ?? 'Screen'})`;
+  return Pushed;
+}
+
+const PushedAddPiece = pushed(AddPieceScreen);
+// The camera is presented over everything rather than pushed, so it arrives
+// from the bottom and carries no back gesture — a presented screen's way out
+// is its own control.
+const PushedScanner = pushed(ScannerScreen, 'bottom');
+const PushedCapturedPages = pushed(CapturedPagesScreen);
+const PushedTranscribe = pushed(TranscribeScreen);
+const PushedTranscriptionReview = pushed(TranscriptionReviewScreen);
+const PushedPieceDetail = pushed(PieceDetailScreen);
+const PushedPieceScore = pushed(PieceScoreScreen);
+const PushedMeasureEdit = pushed(MeasureEditScreen);
+const PushedChangeEmail = pushed(ChangeEmailScreen);
+const PushedChangePassword = pushed(ChangePasswordScreen);
+const PushedDeleteAccount = pushed(DeleteAccountScreen);
+const PushedExportData = pushed(ExportDataScreen);
+const PushedLegal = pushed(LegalScreen);
+const PushedHelp = pushed(HelpScreen);
+const PushedAcknowledgements = pushed(AcknowledgementsScreen);
+const PushedRecord = pushed(RecordScreen);
+const PushedWarmup = pushed(WarmupScreen);
+const PushedVerdict = pushed(VerdictScreen);
 
 function webTabSceneStyle(focused: boolean): ViewStyle {
   return {
@@ -280,35 +332,35 @@ function SignedInApp() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="Tabs" component={TabNavigator} />
-      <Stack.Screen name="AddPiece" component={AddPieceScreen} />
+      <Stack.Screen name="AddPiece" component={PushedAddPiece} />
       {/* Full-bleed dark camera surface — presented over everything. */}
       <Stack.Screen
         name="Scanner"
-        component={ScannerScreen}
+        component={PushedScanner}
         options={{ animation: 'slide_from_bottom' }}
       />
-      <Stack.Screen name="CapturedPages" component={CapturedPagesScreen} />
-      <Stack.Screen name="Transcribe" component={TranscribeScreen} />
+      <Stack.Screen name="CapturedPages" component={PushedCapturedPages} />
+      <Stack.Screen name="Transcribe" component={PushedTranscribe} />
       <Stack.Screen
         name="TranscriptionReview"
-        component={TranscriptionReviewScreen}
+        component={PushedTranscriptionReview}
       />
-      <Stack.Screen name="PieceDetail" component={PieceDetailScreen} />
-      <Stack.Screen name="PieceScore" component={PieceScoreScreen} />
-      <Stack.Screen name="MeasureEdit" component={MeasureEditScreen} />
-      <Stack.Screen name="ChangeEmail" component={ChangeEmailScreen} />
-      <Stack.Screen name="ChangePassword" component={ChangePasswordScreen} />
-      <Stack.Screen name="DeleteAccount" component={DeleteAccountScreen} />
-      <Stack.Screen name="ExportData" component={ExportDataScreen} />
-      <Stack.Screen name="Legal" component={LegalScreen} />
-      <Stack.Screen name="Help" component={HelpScreen} />
+      <Stack.Screen name="PieceDetail" component={PushedPieceDetail} />
+      <Stack.Screen name="PieceScore" component={PushedPieceScore} />
+      <Stack.Screen name="MeasureEdit" component={PushedMeasureEdit} />
+      <Stack.Screen name="ChangeEmail" component={PushedChangeEmail} />
+      <Stack.Screen name="ChangePassword" component={PushedChangePassword} />
+      <Stack.Screen name="DeleteAccount" component={PushedDeleteAccount} />
+      <Stack.Screen name="ExportData" component={PushedExportData} />
+      <Stack.Screen name="Legal" component={PushedLegal} />
+      <Stack.Screen name="Help" component={PushedHelp} />
       <Stack.Screen
         name="Acknowledgements"
-        component={AcknowledgementsScreen}
+        component={PushedAcknowledgements}
       />
-      <Stack.Screen name="Record" component={RecordScreen} />
-      <Stack.Screen name="Warmup" component={WarmupScreen} />
-      <Stack.Screen name="Verdict" component={VerdictScreen} />
+      <Stack.Screen name="Record" component={PushedRecord} />
+      <Stack.Screen name="Warmup" component={PushedWarmup} />
+      <Stack.Screen name="Verdict" component={PushedVerdict} />
     </Stack.Navigator>
   );
 }
