@@ -1,5 +1,96 @@
 # InTempo Edit Log
 
+## 2026-09-06 — InTempo has its own icon, the publisher has a name, and two checks that were reporting the opposite of the truth
+
+Three of the four store-readiness items needed an account or a decision only
+the owner has. The fourth was mine, and finishing it broke two checks in a way
+worth more than the icon.
+
+**The six brand assets are drawn.** A Bravura half note followed by a gold
+barline — ivory `#F7F2E9` and gold `#9A7B4F` on warm ink `#14110E`. Direction
+chosen by the owner from four proposals; the reasoning, and the three rejected
+ones, are in `DECISIONS.md`.
+
+**Generated, not exported.** `tools/draw-brand-assets.py` draws all six from
+one mark: App Store icon (1024, RGB — Connect refuses alpha), the web app's
+home-screen icon, a 48px favicon with less margin because at that size margin
+is the whole image, the Android adaptive foreground sized to the launcher's
+middle-two-thirds safe zone, its ink background plate, and the themed
+monochrome silhouette. An icon that exists only as a binary cannot be adjusted
+without whatever drew it.
+
+**The gold was a small square first, and it was a defect.** A dot level with a
+notehead is an augmentation dot: the icon read *dotted half note* to anyone who
+reads music, which is the entire audience. It also disappeared at 29 points.
+Caught by rendering the three candidates side by side at 360px and at a true
+29px rather than by arguing about them. A barline does the same compositional
+job, cannot be misread, and survives every size.
+
+**Three-foot test:** the ivory note first, the gold barline second, the warm
+ink field third. One focal point, and the barline is what stops the mark
+sitting in the left half of a square with the right half reading as a mistake.
+Checked at 180, 120, 87, 60, 40 and 29 points, circle-masked as an Android
+launcher composites it, and tinted as a themed launcher recolours it.
+
+**`OWNER` is half-filled, honestly.** `entity: 'Arya Shah'` and
+`jurisdiction: 'the State of California'`, supplied by the owner. `contact`
+stays **null** — the owner said "I'll add one later", and a plausible
+placeholder there is exactly the failure the field's comment warns about. The
+policy now names its publisher and the law it is read under, and silently omits
+the address; App Store Connect will require it before submission. Verified in a
+browser: both lines render on `/legal/terms`, publisher only on
+`/legal/privacy` (jurisdiction is terms-only by design), no contact line.
+
+**Two checks were reporting the opposite of the truth, and only one was mine.**
+
+- **`check-store-readiness.py` said "6 assets are still the Expo starter's" on
+  the day all six were drawn.** It counted lines beginning `  mobile/` in
+  `check-brand-assets.py`'s output — which meant "still the starter's" while
+  they sat under that heading, and came to mean "drawn for InTempo" the moment
+  I rewrote the heading. A report whose entire job is to be believed about what
+  is left, inverted by a wording change. Fixed with a real interface:
+  `--count-outstanding` prints a number, and prose can now say anything.
+- **The same report claimed the policy was "published by nobody and names no
+  address"** while naming its publisher. That sentence was written when all
+  three `OWNER` fields were null and never revisited. It is now derived per
+  field.
+
+**`check-brand-assets.py` had to change, because its premise stopped being
+true.** It was built around "every asset here is the starter's": a list of
+placeholder hashes, failing if a listed one had been *replaced*. Correct while
+they were the current state, and vacuous the moment the art was drawn. The
+hashes are now a denylist — art that may never come back — and the check
+delegates a second question to `draw-brand-assets.py --check`: is the committed
+art what the script draws. Both failure modes mutation-tested: a hand-edited
+PNG is caught, a restored starter file is caught by both rules, and the
+restored state is clean.
+
+**A test caught my config change, correctly.** `appConfig.test.ts` asserted
+`android.adaptiveIcon.backgroundColor === colors.bg` — right while there was no
+art for the plate to agree with, wrong once the icon deliberately inverted the
+app. The assertion now points at `colors.textPrimary`, which is the icon's own
+ground. The rule did not change; what it was aimed at did.
+
+Scope: 6 regenerated PNGs, 1 new tool, `check-brand-assets.py`,
+`check-store-readiness.py`, `legal.ts`, `app.json`, `appConfig.test.ts`.
+
+Validation: 1,644 mobile tests (150 files), `tsc` 0, ESLint 0, brand check OK
+and mutation-tested both ways, readiness now 3 of 4 (was reporting 4 of 4) and
+mutation-tested, fixtures web build clean with `favicon.ico` 48x48 and
+`app-icon.png` 1024x1024 RGB in `dist/`, `audit-a11y.mjs` PASS on all 30
+routes, `walk-app.mjs` 50 of 51 — the one finding is the pre-existing
+silent-take acceptance on `main`.
+
+**Not done, and not mine:** an EAS project id (`eas init`, needs the owner's
+Expo account), a contact address, and a public URL for the policy. None of the
+native code has run on a device yet — that is unchanged by this and remains the
+largest untested surface in the repository.
+
+**Side effects:** the Android launcher plate is ink, so a launcher that ignores
+`backgroundImage` now draws the icon on the colour it was designed for rather
+than on ivory. **Rollback:** revert the commit; `tools/draw-brand-assets.py`
+regenerates the art byte-for-byte from source at any time.
+
 ## 2026-09-06 — The grab handle drags now, 25 dead Pressables answer the finger, and the dialog arrives instead of being revealed
 
 Reported: "when I click add a new piece I expect to easily be able to swipe down

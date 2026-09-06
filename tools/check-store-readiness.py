@@ -87,16 +87,48 @@ def _starter_assets_outstanding() -> int:
 
     Delegated rather than reimplemented: `check-brand-assets.py` holds the
     hashes and the reasoning, and two copies of a hash list is how one of them
-    goes wrong. It prints its own detail; this only needs the count.
+    goes wrong.
+
+    **Asked for as a number, not scraped from prose.** This counted lines
+    beginning "  mobile/" in that tool's report — which meant "still the
+    starter's" while they sat under that heading, and came to mean the opposite
+    the day the art was drawn and the heading became "Drawn for InTempo". It
+    reported 6 of 6 outstanding with all six done, on a report whose entire job
+    is to be believed about what is left.
     """
     result = subprocess.run(
-        [sys.executable, str(ROOT / "tools" / "check-brand-assets.py")],
+        [sys.executable, str(ROOT / "tools" / "check-brand-assets.py"), "--count-outstanding"],
         capture_output=True,
         text=True,
     )
-    if result.returncode not in (0, 1):
+    if result.returncode != 0:
         raise Unreadable(f"check-brand-assets.py exited {result.returncode}")
-    return sum(1 for line in result.stdout.splitlines() if line.startswith("  mobile/"))
+    try:
+        return int(result.stdout.strip())
+    except ValueError as error:
+        raise Unreadable(f"check-brand-assets.py --count-outstanding: {error}") from error
+
+
+#: What a musician actually loses for each unset `OWNER` field.
+#:
+#: Per field rather than one sentence, because the sentence was written when
+#: all three were null and went on claiming the policy was "published by
+#: nobody" after the publisher was named. A report that overstates what is left
+#: is as useless as one that understates it.
+_OWNER_CONSEQUENCE = {
+    "entity": "who publishes it",
+    "contact": "where to write about your data",
+    "jurisdiction": "which law the terms are read under",
+}
+
+
+def _owner_consequence(missing: set[str] | list[str]) -> str:
+    parts = [_OWNER_CONSEQUENCE[name] for name in sorted(missing) if name in _OWNER_CONSEQUENCE]
+    if not parts:
+        return "some of the publisher's details"
+    if len(parts) == 1:
+        return parts[0]
+    return ", ".join(parts[:-1]) + " and " + parts[-1]
 
 
 def main() -> int:
@@ -127,12 +159,12 @@ def main() -> int:
         (
             not missing_owner,
             "the publisher's own details in the privacy policy and terms",
-            "`OWNER` in `mobile/src/lib/legal.ts` is "
+            "`OWNER` in `mobile/src/lib/legal.ts` is missing "
             + ", ".join(f"`{name}`" for name in sorted(missing_owner))
             + " — null on purpose, because a plausible-looking placeholder "
             "reads like a finished policy and would ship. `LegalScreen` "
-            "prints each line only when its field is set, so today the "
-            "policy is published by nobody and names no address."
+            "prints each line only when its field is set, so the policy "
+            "silently omits " + _owner_consequence(missing_owner) + "."
             if missing_owner
             else "Set.",
         )
