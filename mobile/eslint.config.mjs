@@ -35,6 +35,21 @@ export default defineConfig([
    */
   globalIgnores(['dist', 'dist-*', '.expo', 'node_modules', 'patches']),
   {
+    // **The recording worklet is real code that runs, so it is linted** —
+    // but it runs in an AudioWorklet thread, which has its own globals and
+    // none of the DOM. Ignoring `public/` instead would leave the one file in
+    // this repository that executes outside the bundle unchecked.
+    files: ['public/*.js'],
+    languageOptions: {
+      globals: {
+        AudioWorkletProcessor: 'readonly',
+        registerProcessor: 'readonly',
+        sampleRate: 'readonly',
+        currentTime: 'readonly',
+        currentFrame: 'readonly',
+      },
+    },
+  },  {
     files: ['**/*.{ts,tsx,mjs,js}'],
     extends: [js.configs.recommended, tseslint.configs.recommended],
     rules: {

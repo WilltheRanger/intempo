@@ -163,6 +163,167 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-06 — Optimistic writes on the reversible mutations, and three claims that did not apply
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. CI still cannot dispatch a
+runner.
+
+Prompted by a list of "five tells your app was vibe coded". Measured against
+this app before implementing anything, because three of the five were already
+false here:
+
+| claim | measured |
+|---|---|
+| Buttons wait for the server | **true** — 17 mutations, **zero** with an `onMutate` |
+| No loading skeletons | false — `Skeleton`, `LoadingState`, `InsightsSkeleton`, across 8 screens |
+| Screens open empty | false — `EmptyState` in 12 screens, plus `build:web:empty` which CI sweeps |
+| Missing tap animations | false — `PressableScale` in 12 files |
+| No offline support | partly — the take queue survives an app kill; cached *reads* do not |
+
+Only the first was implemented. The offline read cache was offered and not
+taken; it stays open.
+
+### Which mutations, and why not all of them
+
+**The exclusions are the point.** `acceptTranscription` discards the
+musician's photograph and `submitTake` spends one of three free monthly
+analyses — showing either as done before the server agrees is a lie about
+something that cannot be taken back, and a spinner is the honest thing there.
+`createPiece` cannot be optimistic at all: the id it navigates to only exists
+once the server answers.
+
+So: rename and favourite, the clef, and delete-with-restore. Reversible, every
+one, which is the whole test. Owner's call, 2026-09-06, asked with the list in
+front of them.
+
+### Three rules, each of which is a bug when missing
+
+**`cancelQueries` before the snapshot.** A refetch already in flight when the
+tap lands resolves *after* the optimistic write and overwrites it with data
+fetched before the change — the value flips to the new one and silently back,
+which reads as the tap not working.
+
+**A snapshot, not an inverse.** Undoing a rename by renaming back needs the old
+name *and* the knowledge that nothing else changed it in between; two edits
+racing would restore the second one's value over the first. Keeping the bytes
+sidesteps the question.
+
+**Every copy, or none.** A piece is in the library list, on Today, and in its
+own detail query. Patching one and leaving the others is worse than patching
+none: the same fact then reads two ways on two screens, which is what
+`timedMeasures` and `readTakeFailure` were both written to stop one layer up.
+
+Two smaller ones worth recording: the invalidate moved from `onSuccess` to
+`onSettled`, because after a rollback the cache holds what this client
+*believed* was there and only a refetch knows; and `practiceTempo.clear` moved
+out of the optimistic path, because it is a device value the server knows
+nothing about and clearing it for a delete that then fails loses a musician's
+tempo.
+
+### Mutated three ways, and the first attempt guarded nothing
+
+| mutation | result |
+|---|---|
+| a deleted detail removed rather than nulled | **1 failed** |
+| only the detail patched, not the lists | **2 failed** |
+| `cancelQueries` removed | **passed — the test guarded nothing** |
+
+That last one is the finding. The race test awaited `Promise.resolve()`, and
+React Query settles a query through its own scheduling, so the assertion ran
+before the stale answer had landed and passed either way. A macrotask makes it
+bite: re-mutated afterwards, removing the cancel fails the case. **The most
+important assertion in the file did not hold its own subject until it was
+mutated at.**
+
+### Verification
+
+Mobile **1603 passed** across 147 files (was 1595). `tsc` 0, lint 0. Walk **50
+of 51** and a11y **PASS** — the one walk failure is the silent-take check
+already recorded one entry down, unchanged by this work and still not isolated.
+
+---
+
+## 2026-09-06 — Recording on the deployed site: the CSP refuses a `blob:` worklet
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`, merged with `main` (#73,
+#74, #75). CI still cannot dispatch a runner.
+
+Reported from the deployed site: **"The recording worklet could not be
+loaded."** Diagnosed, reproduced and fixed — and the diagnosis is measured
+rather than argued.
+
+### What it is
+
+`public/_headers` pins `script-src` to `'self'` plus the boot script's hash.
+That is deliberate: without it an injected `<script src>` runs. **`'self'` does
+not cover `blob:`** — and `audioRecorder.web.ts` built its AudioWorklet from
+`URL.createObjectURL(new Blob([PROCESSOR_SOURCE]))`, so the browser refused the
+module and `addModule` rejected with `AbortError: Unable to load a worklet's
+module.`
+
+Measured in this repository's own Chromium, against the built bundle:
+
+    worklet as a blob, production CSP applied  →  REFUSED: AbortError
+    worklet as a blob, no CSP                  →  LOADED
+    worklet as a file, production CSP applied  →  LOADED
+    worklet as a blob, after the fix           →  still REFUSED  (policy intact)
+
+**Nothing local had ever applied that CSP.** `_headers` is a Cloudflare Pages
+file and `npx serve` ignores it, so the walk, the a11y audit and every
+screenshot ran the app without its production policy. The one surface with
+checks was not the surface that ships — the same shape as the `.web.ts` /
+native split this file already worries about.
+
+### The fix, and the fix it is not
+
+`public/pcm-recorder.worklet.js` is a real file on the origin, copied verbatim
+into the build, loaded by a relative URL that `addModule` resolves against the
+document — so a build served from a sub-path finds it too.
+
+**Not `blob:` in `script-src`.** That would re-open exactly the hole the
+hash-pinned policy closes, to fix a problem a file already solves.
+
+The one constant the source used to interpolate now arrives through
+`processorOptions`, which is what that option is for. The worklet defaults to
+the same number when it is absent, so the first draft of this change shipped
+without the wire and behaved identically — a silent fallback over a missing
+one, caught only because lint saw the constant go unused. The test asserts the
+**wire**, not the behaviour, for that reason.
+
+`tools/serve-with-headers.mjs` is what applied the policy. It is kept, because
+it is the only thing here that can see this class of bug.
+
+### Open, and it must not be read as finished
+
+**The walk's silent-take check fails on this merged tree and passes on `main`.**
+Measured both ways, with and without the CSP, on a clean field. The app itself
+is *not* broken: driven by hand through the same flow, the screen says *"That
+take came back silent. Check the microphone isn't muted or covered, then try
+again."* — the refusal the check is looking for, about two seconds later than
+the check allows.
+
+Two attempts to make the check deterministic — waiting for the Stop control,
+then for the elapsed clock to leave `00:00` — did not fix it, and both were
+reverted rather than left as churn. The likeliest cause is that fetching the
+worklet over HTTP costs a round trip the blob did not, pushing the start of
+the take past what the check assumes; that is a consequence of the fix rather
+than a defect in it, but **it is not proven and the check is red.**
+
+`tools/serve-with-headers.mjs` is therefore **not wired into CI** either. It
+found the bug; it has not earned a gate until the walk is green under it.
+
+### Verification
+
+Mobile **1595 passed** across 146 files. `tsc` 0, lint 0 — the worklet is
+linted, with the AudioWorklet globals declared for `public/*.js` rather than
+the directory being ignored, since it is the one file here that runs outside
+the bundle. Walk **50 of 51**, with the one failure above. The merge took
+`main`'s `audioRecorder.web.ts` wholesale, so this session's earlier
+shared-context and document-focus work is **dropped**, not merged — recoverable
+from the branch history if `main`'s interruption handling proves insufficient.
+
+---
+
 ## 2026-09-04 — Recording startup recovery and instrument playback
 
 **Branch:** `codex/instrument-recording`, based on pending PR #71. The rejected
@@ -227,6 +388,436 @@ parallel run also hit a compression-fixture timeout; its allocation and timing
 assertions are unchanged. Type checking, lint, and the web export also pass.
 Browser/real-instrument verification remains pending.
 Rollback: revert this branch's commit; no data migration is needed.
+## 2026-09-04 — The recording error, fixed: the spec says wait, and WebKit does not
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Audio. CI still cannot
+dispatch a runner. Follows the device report one entry down, which named the
+error and did not fix it.
+
+The Media Capture and Streams spec, on `getUserMedia`:
+
+> If the relevant settings object's responsible document is not fully active,
+> return a promise rejected with `InvalidStateError`, **and the user agent must
+> wait until the document is fully active and has focus** before continuing.
+
+**WebKit does the first half and not the second.** It rejects and it does not
+wait. So on an iPhone a tap that lands while the document does not have focus
+fails — and every tap after it fails identically, because nothing about the
+document changes in between. That is exactly the shape of the report: an
+ordinary-looking Safari page, a tap, `InvalidStateError`, and reloading being
+the only thing that helps. It read as a page-state problem and it is a
+**timing** one.
+
+`lib/audio/documentFocus.ts` is the waiting WebKit skips. On an
+`InvalidStateError` the recorder waits for the document to become focused and
+visible — listening for `focus` and `visibilitychange` rather than polling,
+because those are the only two transitions that can make it true — and asks
+once more.
+
+This is not a workaround for a bug in the app. The spec says an implementation
+should do this; doing it ourselves turns a dead end into a take.
+
+### Four decisions in it
+
+**Two seconds.** Long enough for a dismissing sheet, a keyboard going down, or
+browser chrome settling after a tap; short enough that a musician is not left
+holding an instrument in front of a button that appears to be thinking. A tap
+that produces nothing for two seconds has already lost them.
+
+**`InvalidStateError` only.** A refusal is an answer, not a timing problem —
+waiting for focus would turn an immediate "no" into a pause and then the same
+"no", and would ask a musician who has just declined a second time.
+
+**One retry, not a loop.** A document still unfocused after the wait is held by
+something this cannot argue with, and the sentence added yesterday is the
+honest next step.
+
+**It resolves `true`/`false` rather than throwing**, so the caller decides what
+running out means: "still not focused" is a different sentence from "the
+microphone is busy".
+
+### Mutated four ways, and one of them found nothing
+
+| mutation | result |
+|---|---|
+| no retry at all — the reported bug, restored | **2 failed of 1570** |
+| every rejection retried, refusals included | **4 failed** |
+| listeners left attached after the wait | **1 failed** |
+| the timeout not cleared when focus returns | **nothing failed** |
+
+The last is recorded rather than papered over. Clearing that timer is
+tidiness: the `settled` flag already stops a second resolution, so nothing an
+assertion can reach behaves differently. It stays because a stray two-second
+timer per take is worth not having, and it is **not** guarded — which is a
+truer thing to write down than a test contrived to cover it.
+
+### What is still unproven
+
+**Nothing here has recorded a note.** There is no iPhone in this environment,
+so what is verified is that the recorder now asks again after an
+`InvalidStateError` and only after that one — not that the second ask succeeds
+on the device that reported. The next thing worth having is the owner trying it
+on the same phone: if it now records, this was it; if it still fails, the cause
+is upstream of the audio graph and the sentence will say to reload, which at
+least is followable.
+
+### Verification
+
+Mobile **1570 passed** across 139 files (was 1557). `tsc` 0, lint 0. Walk
+**PASS, 51 checks** — including the refused-microphone leg, which is what
+confirms refusals are still answered immediately rather than waited out. a11y
+**PASS**. Both mutated sources restored; `.env` restored `diff -q` identical.
+
+---
+
+## 2026-09-04 — The first report from a real iPhone, and the recorder was building its own AudioContext
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Audio, on a device. CI
+still cannot dispatch a runner.
+
+The owner sent a screenshot: Safari on an iPhone, the deployed Pages build, the
+record screen for *Let's Go* at 80 BPM, and under the tips —
+
+> **The microphone could not be started (InvalidStateError).**
+
+That sentence is `microphoneFailure`'s unrecognised branch working exactly as
+its comment says it is meant to: *"the unrecognised case names the error: ugly,
+and the only way the next report is worth more than the first."* This is the
+next report, and it is the first time this project has had one from real
+hardware.
+
+### What the report found, which is not the same as the cause
+
+`lib/audio/context.web.ts` exists for one reason and says so at the top:
+
+> *"a context per playback … is the shape of the commonest 'audio works once on
+> iPhone' bug there is: Safari on iOS caps how many audio contexts a page may
+> hold, and `close()` does not reliably give the slot back."*
+
+Both **players** were moved onto the shared context when that was written.
+**The recorder never was.** `audioRecorder.web.ts` still did
+`new AudioContextCtor()` on every take and `context.close()` on every stop —
+three closes, one per exit path. So every take spent a slot from the same
+per-page cap the players draw from, and the page runs out for all of them
+together.
+
+It is now `audioContext()` + `resumeAudio()`, and teardown disconnects its two
+nodes and leaves the mixer alone — the same shape `click.web.ts` already uses,
+whose comment says the cancellation has to be a node rather than the whole
+mixer.
+
+**I cannot prove this is what the iPhone reported.** The error arrived from
+`getUserMedia`, which runs *before* the context is built, and there is no
+device here to test on. What is provable from a checkout is that the recorder
+was doing the thing the file beside it exists to forbid, on the platform the
+report came from. That is worth fixing on its own evidence, and this entry
+should not be read as a diagnosis of the screenshot.
+
+Fixing it also closed a smaller hole on the way: the "no Web Audio" bail-out
+happens *after* `getUserMedia` has already opened the stream, so it now stops
+the tracks. Leaving them running keeps the microphone live and the recording
+indicator on with nothing recording.
+
+### `InvalidStateError` has a sentence now
+
+WebKit rejects `getUserMedia` this way when the **document** is in a state that
+cannot capture — not when anything is wrong with the microphone or the
+permission. Tapping again changes nothing about the document, so the default
+sentence invited the one move that cannot work, which is the defect
+`_FAILURE_REASONS` exists to stop on the transcription side, arriving here.
+
+It says to reload, because reloading is what resets a document, it is one tap
+in Safari's own chrome, and a take that has not started costs nothing to lose.
+It stays a `MicrophoneUnavailableError` rather than a permission error, so the
+screen does not send somebody to a setting they have already granted.
+
+### Mutated three ways
+
+| mutation | result |
+|---|---|
+| the recorder builds its own context again | **2 failed of 1557** |
+| the shared context is closed when a take ends | **1 failed** |
+| `InvalidStateError` loses its entry | **2 failed** |
+
+### Also visible in the screenshot, and not touched
+
+**"Recording tips" is clipped** — the heading renders with the tops of the
+glyphs below it cut off. It is a layout fault on a real device at a real text
+size, and it is §2, so it is reported rather than changed.
+
+### Verification
+
+Mobile **1557 passed** across 138 files (was 1548). `tsc` 0, lint 0. Walk
+**PASS, 51 checks**; a11y **PASS**. Both mutated sources restored; `.env`
+restored `diff -q` identical.
+
+**Still unverified on hardware**, and the report is the reason to say so
+plainly: nothing here has recorded a note. What changed is that the recorder no
+longer leaks a context per take and that one more error has a sentence a
+musician can act on.
+
+---
+
+## 2026-09-04 — A take recorded with no signal now survives the app being killed
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Batch 10's core, which
+CLAUDE.md §2 names as not needing the UI gate. CI still cannot dispatch a
+runner.
+
+`RecordScreen` holds an unsent take in a `useRef`. That survives a retry and
+**does not survive the app being killed** — so a musician who records in a
+practice room with no signal, backgrounds the app and comes back has lost the
+performance, which is the one part of this that cannot be repeated. Batch 10's
+Definition of Done says *"record works offline; appears in queue"* and *"queue
+persists across app kills"*. This is those two.
+
+### Three files, and the split is the point
+
+`lib/sync/takeQueue.ts` decides everything and touches no device.
+`takeQueue.store.ts` is the adapter. `queuedTakes.ts` is the glue the screen
+calls — three named functions, no decisions in it. The reason is the one this
+project keeps arriving at: there is no React Native testing library
+(`DECISIONS.md`, 2026-08-24), so a rule that only runs against a real device
+store is a rule nothing checks, and the capture-path audit found eight of its
+nine defects in that layer.
+
+**Not `pending_uploads`.** Migration 014 has a table of that name and it is a
+different thing — storage objects with no row yet, swept by the backend. Named
+differently on purpose; the same name would be one grep away from a very
+confusing hour.
+
+### Four decisions worth stating
+
+**The bytes are written before the entry, and removed after it.** An entry
+pointing at bytes that were never written is a take the musician can see and
+can never send; bytes with no entry are one orphaned file. The same ordering
+rule the server's `pending_uploads` uses, one layer down.
+
+**`resume` travels with the queued take.** `submitTake` already reuses a
+server-issued `audioKey` rather than uploading again, and returns an existing
+`analysisId` rather than creating a second. Without carrying that across a
+restart, draining is how one performance costs two of three free monthly
+analyses — the spec's own idempotency pitfall, with the mechanism already built
+and only needing to persist.
+
+**A name, never a path.** iOS rotates the app container's directory on update,
+so an absolute path stored today does not exist after the next release. The
+spec names this pitfall and it is the one that loses every queued take at once,
+silently, on the day everybody updates.
+
+**`Paths.document`, not `Paths.cache`.** Every other file this app writes is
+disposable and belongs in the cache. A queued take is a performance; putting it
+somewhere the system may clear under memory pressure would make the queue a
+promise the device does not keep.
+
+### What it does when it cannot work
+
+Every glue function swallows its failure, because a queue that throws on the
+way past would take down the submission it exists to protect. And since the
+bytes are written first, a platform with no file system — the web build among
+them — enqueues nothing and leaves the screen with exactly the in-memory take
+it has always had. Degraded, never wrong.
+
+Restoring reads the **bytes** to decide: an entry whose file is gone is a row
+about a take rather than a take, and it is dropped rather than shown, so
+"Send it again" is never offered for something that is not there.
+
+### Mutated four ways, each against the whole suite
+
+| mutation | result |
+|---|---|
+| entry written before the bytes | **2 failed of 1548** |
+| a failed attempt replaces `resume` instead of merging it | **1 failed** |
+| the backoff loses its five-minute cap | **1 failed** |
+| storage from an older build trusted as-is | **1 failed** |
+
+All new cases. The cap matters more than the curve: a musician who has just
+walked back into signal should not wait an hour because the app failed four
+times in a tunnel.
+
+### What is **not** done, of Batch 10
+
+Two of the five DoD lines, and the other three need things this cannot reach:
+
+  * **Reconnect triggers automatic sync** — needs NetInfo, a native dependency
+    this app does not have. The queue drains when the screen asks; nothing
+    watches the network.
+  * **Background sync while the app is closed** — needs a background-task
+    module and an iOS capability.
+  * **Captive portal detection** — not built.
+  * `SyncStatusBar`, the spec's UI for this, is **§2 and not built.** Nothing
+    on screen counts queued takes; the only one a musician sees is the one for
+    the piece they are looking at.
+
+### Verification
+
+Mobile **1548 passed** across 138 files (was 1529). `tsc` 0, lint 0,
+`check-dead-exports` 532 exports and none dead — the adapter failed that check
+before the screen was wired, which is the check working. Walk **PASS, 51
+checks**; a11y **PASS**. `.env` restored `diff -q` identical.
+
+The adapter itself is **untested and says so in its own docstring**: whether
+`expo-file-system` writes where it claims needs a device, and there is none
+here.
+
+---
+
+## 2026-09-04 — Nothing had ever checked that the migrations run
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Infrastructure. CI still
+cannot dispatch a runner.
+
+The sixteen files in `backend/app/migrations/` are applied by hand to a
+Supabase project, one at a time, and **the only evidence any of them works is
+that somebody watched it happen.** CLAUDE.md records what that has cost: 013,
+014 and 015 sat unapplied for weeks while a defect they fix looked parked, and
+migration 016's own header records the two oldest buckets existing in no
+migration at all.
+
+Measured today, and it is the reason this is worth a job of its own:
+
+    intempo-dev  (ycpxhqgdvhgwifckgvew)  ACTIVE_HEALTHY  applied through 016
+    intempo      (rfvekhrozvxovjmjujpy)  INACTIVE        stopped at 012
+
+So the day the paused project is unpaused as production, **four migrations run
+in a row against it with nobody having seen them run in sequence anywhere.**
+
+### `tools/check-migrations.py`
+
+Applies all sixteen, in filename order, to an empty database, with
+`ON_ERROR_STOP=1` so a failure mid-file is a failure. It is the cheapest
+possible version of that day.
+
+Run here against a throwaway Postgres 16 cluster: **all sixteen apply cleanly,
+001 through 016**, and 016 applies twice without complaint — which it promises
+in its own header (*"Additive and idempotent. It changes nothing on a database
+that already looks like the table above"*) and which is the reason it was safe
+to write against live buckets. That promise is now checked rather than stated.
+
+### The stubs, and what they cost
+
+The migrations are written for Supabase, where `auth` and `storage` already
+exist. On a bare Postgres they do not, so **nothing outside a live project
+could apply the set at all** — which is why nothing ever had.
+
+`tools/supabase_stubs.sql` is the smallest shape that lets the real files run
+unmodified: the four roles the policies name, `auth.users`, `auth.uid()`,
+`storage.buckets`, `storage.objects` with RLS on, and `storage.foldername`.
+
+**They are not a model of Supabase, and the file says so.** What this proves is
+that the set is internally consistent — it applies in order, no file references
+a column an earlier one has not created, the SQL parses. What it cannot prove
+is whether a policy grants what it means to. That needs a project, and it was
+never the half that broke.
+
+### Mutated two ways
+
+| mutation | result |
+|---|---|
+| 015 gains a constraint on a column no earlier migration creates | `FAIL 015_analysis_from_measure.sql … column "a_column_nobody_made" does not exist` |
+| 016 loses its `ON CONFLICT` clause | `FAIL 016_storage_buckets.sql (second time) … duplicate key value violates unique constraint "buckets_pkey"`, followed by the sentence saying why that claim mattered |
+
+Control run afterwards: PASS, 16 migrations, 001–016, and `git status` clean on
+`backend/app/migrations/`.
+
+### In CI
+
+A sixth job, `Migrations apply in order`, on a `postgres:16` service container
+with a `pg_isready` health check — without which the job races the container
+and fails on a connection refused that has nothing to do with the migrations.
+It carries a `timeout-minutes` like the other five.
+
+### What this does not do
+
+It does not apply anything to `intempo`. Unpausing a paused project is a
+decision with a cost attached and it is the owner's; what has changed is that
+the four migrations waiting for that day have now been run in sequence
+somewhere, which they never had been.
+
+---
+
+## 2026-09-04 — Why CI has not run since 2026-09-03, measured rather than assumed
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`, restarted from `main` after
+#69 merged.
+
+Twenty-odd entries below this one end with *"CI still cannot allocate a runner,
+almost certainly billing."* **That was an inference from a symptom and it had
+never been checked.** Checked now.
+
+### What the API actually says
+
+Run 704 (`16a3ae2`, the #69 merge), and every run back to 2026-09-03:
+
+    job                              runner_id  runner_name  steps  logs   duration
+    Backend tests (pytest)                   0           ""   none   404        2 s
+    Mobile (vitest, tsc, lint …)             0           ""   none   404        3 s
+    App walk + accessibility                 0           ""   none   404        2 s
+    Change is recorded (EDIT_LOG)            0           ""   none   404        4 s
+    Frontend build (vite)                    0           ""   none   404        2 s
+
+`created_at == started_at`, `conclusion: failure`, **no runner was ever
+assigned**, no step ran, and the log download 404s because there is nothing to
+download. The check runs carry no output text either, so the reason GitHub
+shows as a banner on the run page is not exposed through the API.
+
+And the repository is **private** (`"private": true`, `"visibility":
+"private"`), so Actions minutes are billed rather than free.
+
+Ruled out while I was there: `disabled: false` and `archived: false`, so Actions
+is not switched off at the repository level; every `runs-on` in both workflows
+is the plain hosted `ubuntu-latest`, so it is not a label naming a runner that
+does not exist; and this is a personal account, so there is no organisation
+policy in the way.
+
+A job that is created, immediately marked started, given no runner, and failed
+with zero steps is GitHub declining to dispatch it. On a private repository the
+overwhelmingly common reason is the account's Actions billing — included
+minutes spent against a spending limit of $0, or a payment that failed.
+
+**It did not recover at the month boundary.** The breakage began on 2026-09-03,
+after 1 September had already passed, so a fresh monthly allowance was in place
+and the jobs still would not start. That points at a payment or spending-limit
+block rather than at exhausted minutes.
+
+### What this commit does, and what it does not
+
+**It does not unblock CI.** Nothing in a repository can. The fix is one of
+three things at `github.com/settings/billing`, all of which need the account
+owner: raise the spending limit above $0, repair the payment method, or make
+the repository public (Actions is free and unlimited for public repositories,
+at the cost of publishing the code — the owner's call, not mine).
+
+What it does is make sure the allowance is not spent the same way again, and
+that is worth doing whether or not the block is what I think it is.
+
+**`concurrency` with `cancel-in-progress`.** Without it, every push to a branch
+left its predecessor's five jobs running to completion. During the session that
+produced #69 that was **33 pushes** on one branch — up to 32 full runs of work
+nobody was ever going to read, all billed. `main` is deliberately excluded from
+the cancelling: a push there can be a deploy, and cancelling the run that would
+have caught a bad one saves minutes by not looking.
+
+**`timeout-minutes` on all five jobs**, where there were none. GitHub's default
+is **360 minutes a job**. `app-walk` starts a server and drives a browser,
+which is exactly the shape of thing that hangs; one hung run of it bills six
+hours against the allowance with nobody watching. The values are the locally
+measured durations roughly tripled — 10 / 20 / 25 / 30 / 15 — generous enough
+that a slow runner is not a red cross, small enough that a hang is caught in
+the hour it happened.
+
+I cannot prove a hang is what spent the minutes, because the runs from before
+the breakage were not examined — that is a real gap in this diagnosis and it is
+cheap for whoever has the billing page open to close, since it lists usage by
+workflow.
+
+### Verification
+
+`ci.yml` parses (`yaml.safe_load`), five jobs, each with a timeout, and the
+concurrency group as intended. **The change itself cannot be verified by CI**,
+for the reason it exists — which is the whole point of this entry.
+
+---
 
 ## 2026-09-04 — The metronome a musician actually plays to had no test
 

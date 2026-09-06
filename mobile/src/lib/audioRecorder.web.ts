@@ -34,6 +34,14 @@ import { durationOf, encodeWav } from './audio/wav';
 const CHANNELS = 1;
 
 /**
+ * The worklet, copied verbatim into the build from `public/`.
+ *
+ * Named here and asserted by `audioRecorder.web.test.ts`, so renaming the file
+ * without renaming this fails a test rather than a musician's recording.
+ */
+export const WORKLET_FILE = 'pcm-recorder.worklet.js';
+
+/**
  * Quanta buffered in the worklet before it posts.
  *
  * `process` runs every 128 frames — 2.7 ms at 48 kHz, which is 375 messages a
@@ -49,60 +57,7 @@ const QUANTA_PER_MESSAGE = 32;
  * path breaks the moment the app is served from a sub-path, and this keeps the
  * processor beside the code that registers it.
  */
-const PROCESSOR_SOURCE = `
-class PcmRecorder extends AudioWorkletProcessor {
-  constructor() {
-    super();
-    this.buffer = [];
-    this.port.onmessage = (event) => {
-      if (event.data === 'flush') {
-        this.flush();
-        this.port.postMessage('flushed');
-      }
-    };
-  }
 
-  flush() {
-    if (this.buffer.length === 0) {
-      return;
-    }
-    let length = 0;
-    for (const part of this.buffer) {
-      length += part.length;
-    }
-    const out = new Int16Array(length);
-    let offset = 0;
-    for (const part of this.buffer) {
-      out.set(part, offset);
-      offset += part.length;
-    }
-    this.buffer = [];
-    // Transferred, not copied — the main thread owns it after this.
-    this.port.postMessage(out.buffer, [out.buffer]);
-  }
-
-  process(inputs) {
-    const channel = inputs[0] && inputs[0][0];
-    if (!channel) {
-      // No input connected yet. Staying alive rather than returning false,
-      // which would retire the processor for the rest of the take.
-      return true;
-    }
-    const pcm = new Int16Array(channel.length);
-    for (let i = 0; i < channel.length; i += 1) {
-      const sample = Math.max(-1, Math.min(1, channel[i]));
-      pcm[i] = sample < 0 ? sample * 0x8000 : sample * 0x7fff;
-    }
-    this.buffer.push(pcm);
-    if (this.buffer.length >= ${QUANTA_PER_MESSAGE}) {
-      this.flush();
-    }
-    return true;
-  }
-}
-
-registerProcessor('pcm-recorder', PcmRecorder);
-`;
 
 export async function startRecording(): Promise<Recorder> {
   if (!navigator.mediaDevices?.getUserMedia) {
@@ -190,17 +145,30 @@ export async function startRecording(): Promise<Recorder> {
       );
     }
 
-    const moduleUrl = URL.createObjectURL(
-      new Blob([PROCESSOR_SOURCE], { type: 'application/javascript' }),
-    );
+    // **A real file on this origin, not a `blob:` URL.**
+    //
+    // It was a blob, and that is why recording failed on the deployed site
+    // while working everywhere it was tested. `public/_headers` pins
+    // `script-src` to `'self'` plus the boot script's hash — deliberately, so
+    // an injected `<script src>` cannot run — and `'self'` does not cover
+    // `blob:`. `addModule` was refused with `AbortError: Unable to load a
+    // worklet's module.`, which is what the sentence below reported.
+    //
+    // Measured in this repository's own Chromium against the built bundle:
+    // refused under the production CSP, loaded without it. Nothing local ever
+    // saw it because `npx serve` ignores `_headers` — see
+    // `tools/serve-with-headers.mjs`, which is now what the walk runs against.
+    //
+    // Relative, and left for `addModule` to resolve. It resolves against the
+    // document's base URL, which is what a build served from a sub-path needs
+    // — and doing it here would mean reaching for `document`, which the
+    // recorder otherwise never touches.
     try {
-      await context.audioWorklet.addModule(moduleUrl);
+      await context.audioWorklet.addModule(WORKLET_FILE);
     } catch {
       throw new MicrophoneUnavailableError(
         'The recording worklet could not be loaded.',
       );
-    } finally {
-      URL.revokeObjectURL(moduleUrl);
     }
 
     const sampleRate = context.sampleRate;
@@ -215,6 +183,14 @@ export async function startRecording(): Promise<Recorder> {
       numberOfOutputs: 0,
       channelCount: CHANNELS,
       channelCountMode: 'explicit',
+      // The worklet is a separate file now and cannot interpolate a constant,
+      // so it is handed one. `processorOptions` is what that option is for.
+      //
+      // The worklet defaults to the same number if this is missing, which is
+      // how the first draft of this change shipped without it and behaved
+      // identically — a silent fallback over a missing wire. The test asserts
+      // the wire, not the behaviour, for exactly that reason.
+      processorOptions: { quantaPerMessage: QUANTA_PER_MESSAGE },
     });
 
     let onFlushed: (() => void) | null = null;

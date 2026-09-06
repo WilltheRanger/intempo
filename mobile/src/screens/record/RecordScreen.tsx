@@ -28,6 +28,11 @@ import { forgetPendingAnalysis } from '../../data/practice/pendingAnalysis';
 import type { MetronomeMode } from '../../data/types';
 import { MicrophonePermissionError, type Recorder } from '../../lib/audio/types';
 import { readTakeFailure } from '../../lib/audio/takeFailure';
+import {
+  keepTakeForLater,
+  restoreQueuedTake,
+  takeWasAccepted,
+} from '../../lib/sync/queuedTakes';
 import { startRecording } from '../../lib/audioRecorder';
 import {
   colors,
@@ -468,6 +473,9 @@ export function RecordScreen() {
       });
       unsent.current = null;
       setPendingTake(false);
+      // The server has it; the device copy is now the only one that could go
+      // stale. Not awaited — the verdict is what the musician is waiting for.
+      void takeWasAccepted(recording.filename);
       // `/v1/me` carries the remaining monthly allowance. Mark it stale as
       // soon as this analysis finishes so Record again cannot reuse the count
       // from before the take and invite a fourth performance the server will
@@ -493,6 +501,22 @@ export function RecordScreen() {
           : recording;
       unsent.current = failure.retriable ? resumable : null;
       setPendingTake(failure.retriable);
+      if (failure.retriable) {
+        // **The ref survives a retry and not a restart.** A musician who
+        // records with no signal and backgrounds the app used to lose the
+        // performance, which is the one part of this that cannot be repeated.
+        void keepTakeForLater(
+          resumable,
+          {
+            scoreId: params.pieceId,
+            targetBpm,
+            metronomeMode,
+            skipLongRests: skipRests,
+            fromMeasure: startFrom,
+          },
+          failure.message,
+        );
+      }
       // Back to the top of the screen with the tempo still set, so the reply
       // to a failed take is one tap rather than a re-setup.
       setProblem(failure.message);
@@ -628,6 +652,37 @@ export function RecordScreen() {
   // every beat object the clock emits, including the ones before the count is
   // up — same outcome today, and one refactor away from not being.
   const beatIndex = metronome.beat?.index ?? null;
+
+  // **Bring back a take an earlier session could not send.**
+  //
+  // Once, on mount, and only into an idle screen with nothing in hand: a live
+  // recording or a take already waiting is newer than anything on disk, and
+  // overwriting either with a restored one would discard the performance the
+  // musician is actually looking at.
+  //
+  // `restoreQueuedTake` drops an entry whose bytes are gone rather than
+  // returning it, so this cannot offer "Send it again" for a take that is not
+  // there any more.
+  useEffect(() => {
+    let cancelled = false;
+    void restoreQueuedTake(params.pieceId).then((restored) => {
+      if (cancelled || !restored || unsent.current !== null) {
+        return;
+      }
+      unsent.current = {
+        audio: restored.audio,
+        filename: restored.filename,
+        resume: restored.resume,
+      };
+      setPendingTake(true);
+      if (restored.lastError) {
+        setProblem(restored.lastError);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [params.pieceId]);
 
   useEffect(() => {
     if (!countInIsOver({ countingIn, beatIndex, countInBeats })) {
