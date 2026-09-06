@@ -163,6 +163,86 @@ section for what counts as "meaningful."
 
 ---
 
+## 2026-09-06 — Optimistic writes on the reversible mutations, and three claims that did not apply
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`. CI still cannot dispatch a
+runner.
+
+Prompted by a list of "five tells your app was vibe coded". Measured against
+this app before implementing anything, because three of the five were already
+false here:
+
+| claim | measured |
+|---|---|
+| Buttons wait for the server | **true** — 17 mutations, **zero** with an `onMutate` |
+| No loading skeletons | false — `Skeleton`, `LoadingState`, `InsightsSkeleton`, across 8 screens |
+| Screens open empty | false — `EmptyState` in 12 screens, plus `build:web:empty` which CI sweeps |
+| Missing tap animations | false — `PressableScale` in 12 files |
+| No offline support | partly — the take queue survives an app kill; cached *reads* do not |
+
+Only the first was implemented. The offline read cache was offered and not
+taken; it stays open.
+
+### Which mutations, and why not all of them
+
+**The exclusions are the point.** `acceptTranscription` discards the
+musician's photograph and `submitTake` spends one of three free monthly
+analyses — showing either as done before the server agrees is a lie about
+something that cannot be taken back, and a spinner is the honest thing there.
+`createPiece` cannot be optimistic at all: the id it navigates to only exists
+once the server answers.
+
+So: rename and favourite, the clef, and delete-with-restore. Reversible, every
+one, which is the whole test. Owner's call, 2026-09-06, asked with the list in
+front of them.
+
+### Three rules, each of which is a bug when missing
+
+**`cancelQueries` before the snapshot.** A refetch already in flight when the
+tap lands resolves *after* the optimistic write and overwrites it with data
+fetched before the change — the value flips to the new one and silently back,
+which reads as the tap not working.
+
+**A snapshot, not an inverse.** Undoing a rename by renaming back needs the old
+name *and* the knowledge that nothing else changed it in between; two edits
+racing would restore the second one's value over the first. Keeping the bytes
+sidesteps the question.
+
+**Every copy, or none.** A piece is in the library list, on Today, and in its
+own detail query. Patching one and leaving the others is worse than patching
+none: the same fact then reads two ways on two screens, which is what
+`timedMeasures` and `readTakeFailure` were both written to stop one layer up.
+
+Two smaller ones worth recording: the invalidate moved from `onSuccess` to
+`onSettled`, because after a rollback the cache holds what this client
+*believed* was there and only a refetch knows; and `practiceTempo.clear` moved
+out of the optimistic path, because it is a device value the server knows
+nothing about and clearing it for a delete that then fails loses a musician's
+tempo.
+
+### Mutated three ways, and the first attempt guarded nothing
+
+| mutation | result |
+|---|---|
+| a deleted detail removed rather than nulled | **1 failed** |
+| only the detail patched, not the lists | **2 failed** |
+| `cancelQueries` removed | **passed — the test guarded nothing** |
+
+That last one is the finding. The race test awaited `Promise.resolve()`, and
+React Query settles a query through its own scheduling, so the assertion ran
+before the stale answer had landed and passed either way. A macrotask makes it
+bite: re-mutated afterwards, removing the cancel fails the case. **The most
+important assertion in the file did not hold its own subject until it was
+mutated at.**
+
+### Verification
+
+Mobile **1603 passed** across 147 files (was 1595). `tsc` 0, lint 0. Walk **50
+of 51** and a11y **PASS** — the one walk failure is the silent-take check
+already recorded one entry down, unchanged by this work and still not isolated.
+
+---
+
 ## 2026-09-06 — Recording on the deployed site: the CSP refuses a `blob:` worklet
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`, merged with `main` (#73,

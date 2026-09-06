@@ -1,4 +1,10 @@
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
+import {
+  beginOptimistic,
+  patchEverywhere,
+  removeEverywhere,
+  type Rollback,
+} from '../optimistic/apply';
 
 import {
   acceptTranscription,
@@ -88,9 +94,22 @@ export function useCreatePiece() {
 /** Corrects a piece's title or composer. */
 export function useUpdatePiece(id: string) {
   const queryClient = useQueryClient();
-  return useMutation<Piece, Error, PieceEdit>({
+  return useMutation<Piece, Error, PieceEdit, Rollback>({
     mutationFn: (input) => pieceSource.updatePiece(id, input),
-    onSuccess: () => {
+    // **Shown before the server agrees, and taken back if it disagrees.** A
+    // rename or a favourite is reversible, which is the whole test for whether
+    // optimism is honest here: `acceptTranscription` and `submitTake`
+    // deliberately still wait, because neither can be undone.
+    onMutate: async (input) => {
+      const undo = await beginOptimistic(queryClient, pieceKeys.all);
+      patchEverywhere<Piece>(queryClient, pieceKeys.all, id, (piece) => ({
+        ...piece,
+        ...input,
+      }));
+      return undo;
+    },
+    onError: (_error, _input, undo) => undo?.(),
+    onSettled: () => {
       // The title appears on Today, in the library, in insights and on the
       // verdict screen, so this invalidates everything rather than patching
       // the detail entry and leaving four stale copies of the old name.
@@ -109,9 +128,19 @@ export function useUpdatePiece(id: string) {
  */
 export function useDeletePiece() {
   const queryClient = useQueryClient();
-  return useMutation<void, Error, string>({
+  return useMutation<void, Error, string, Rollback>({
     mutationFn: (id) => pieceSource.deletePiece(id),
-    onSuccess: async (_, id) => {
+    // The row goes from every list immediately; a failure puts it back exactly
+    // where it was. `practiceTempo` is *not* cleared here — that is a device
+    // value the server knows nothing about, and clearing it optimistically
+    // would lose a musician's tempo for a delete that then failed.
+    onMutate: async (id) => {
+      const undo = await beginOptimistic(queryClient, pieceKeys.all);
+      removeEverywhere<Piece>(queryClient, pieceKeys.all, id);
+      return undo;
+    },
+    onError: (_error, _id, undo) => undo?.(),
+    onSettled: async (_data, _error, id) => {
       practiceTempo.clear(id);
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: pieceKeys.all }),
@@ -203,7 +232,19 @@ export function useCorrectScore(id: string) {
  */
 export function useSetClef(id: string) {
   const queryClient = useQueryClient();
-  return useMutation<void, Error, Clef | null>({
+  return useMutation<void, Error, Clef | null, Rollback>({
+    // A clef is one word and entirely reversible — "Not stated" is a real
+    // choice here, so the control has to feel like a control rather than a
+    // request. It is also the one field a musician corrects while looking
+    // straight at the stave it redraws.
+    onMutate: async (clef) => {
+      const undo = await beginOptimistic(queryClient, pieceKeys.all);
+      patchEverywhere<Piece>(queryClient, pieceKeys.all, id, (piece) =>
+        piece.score ? { ...piece, score: { ...piece.score, clef } } : piece,
+      );
+      return undo;
+    },
+    onError: (_error, _clef, undo) => undo?.(),
     mutationFn: async (clef) => {
       if (!IS_LIVE_BACKEND) {
         throw new Error(
@@ -212,7 +253,11 @@ export function useSetClef(id: string) {
       }
       await updateScore(id, { clef });
     },
-    onSuccess: () => {
+    // **`onSettled`, not `onSuccess`.** After a failure the rollback restores
+    // what this client believed was there, which is not necessarily what the
+    // server holds — only a refetch knows. Re-syncing on both outcomes is what
+    // stops an optimistic write leaving the cache subtly wrong.
+    onSettled: () => {
       void queryClient.invalidateQueries({ queryKey: pieceKeys.all });
     },
   });
