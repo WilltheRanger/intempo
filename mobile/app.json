@@ -46,7 +46,7 @@
     "android": {
       "package": "com.intempo.app",
       "adaptiveIcon": {
-        "backgroundColor": "#F7F2E9",
+        "backgroundColor": "#14110E",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"

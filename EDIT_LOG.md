@@ -1,5 +1,195 @@
 # InTempo Edit Log
 
+## 2026-09-06 — Screens push and pop in the browser now, and a false alarm nearly cost the check that raised it
+
+Asked for smooth iOS animations before merging. Measured first, because
+"smooth" is not a diff: pushing a screen in the built bundle produced **3
+distinct frames out of 35** sampled and going back produced **1**. Tab
+switching already animated (31), and content already fades in on load. So the
+gap was navigation, and only navigation.
+
+**And only in a browser.** On iOS `native-stack` hands the push to
+`UINavigationController` — the slide, the parallax and the swipe-back are
+Apple's already. `ScreenTransition` animates on web and is a literal
+pass-through on native, so nothing on a phone changes.
+
+**What it does.** The incoming screen springs in from the right over a scrim
+that fades with it; the outgoing one leaves the same way. An edge drag from the
+left 20 points pops interactively, following the finger, with distance-or-
+velocity deciding on release. Applied once at the navigator to all eighteen
+pushed routes, via wrappers built at **module scope** — a component created
+during render is a new type every render, and every pushed screen would lose its
+scroll position and form state whenever the navigator re-rendered.
+
+**Three exits, one animation.** The back control, the swipe and the browser's
+own back button all leave through `beforeRemove`, intercepted once: the removal
+is held, the screen animated off, the original action dispatched after.
+Animating only the gesture would have left the back *button* — how most people
+leave a screen — cutting exactly as before.
+
+**iOS's parallax could not be matched, and the reason is measured.** Both
+screens stay mounted as absolutely-positioned siblings and `react-native-screens`
+sets `display: none` on the lower one the moment the push commits. There is
+nothing there to slide. A scrim carries the depth instead.
+
+**Two defects found by measuring rather than by looking.**
+
+- **97 points of horizontal page overflow.** A screen waiting at
+  `translateX: width` extended the document: 490px of scroll width against a
+  393px viewport, so the page itself could be scrolled sideways into nothing
+  for the length of every transition. `overflow: hidden` on the container. All
+  nine routes now measure exactly 393.
+- **414 contrast failures across every pushed screen** — from `audit-a11y.mjs`,
+  which had passed 30 routes cleanly for weeks.
+
+**The second one is the entry.** The four tab routes were clean and every pushed
+route failed, so it was mine. `1.00:1` on text meant the audit believed the
+background *was* the ink scrim.
+
+I sampled the actual painted pixels first: **(247, 242, 233) with (20, 17, 14)
+text** — `colors.bg` and `textPrimary`, full contrast. The rendering was right
+and the audit was raising a false alarm.
+
+Then I got it wrong twice.
+
+1. I added `zIndex: 1` to the screen, reasoning it paints above the scrim.
+   True, and irrelevant — `fillsUnder` does not read `zIndex`.
+2. I taught `fillsUnder` about paint phase: skip a positioned sibling when the
+   text's own branch is also positioned and later in DOM order. The app went
+   clean. **And the glass mutation test stopped failing.** Dropping `glassTint`
+   to 0.06 alpha — which the original audit catches with 6 extra findings — now
+   passed. I had not fixed the check; I had blinded it. My model was simply
+   wrong: `fillsUnder` is not "what paints over the text", it is "what fills the
+   area behind it", which is why the glass tint belongs there even though the
+   label paints above it.
+
+The fix that shipped is in **my** code, not the check. The scrim is now rendered
+only while a transition is in flight. At rest it was a full-screen ink fill
+behind an opaque screen — invisible, pure cost on every screen, and to a static
+reader of the DOM indistinguishable from a glass layer over content, which is
+exactly what that check exists to find. Removing the element when it has no job
+is smaller, faster, and asks nothing of the audit.
+
+**`tools/audit-a11y.mjs` is byte-identical to `HEAD`.** Verified with
+`git diff`. The temptation to edit the check that was inconveniencing me is the
+thing worth recording here: it took a mutation test to notice that I had
+disabled a real guard to make my own change look clean, and the mutation test
+only existed because a previous entry in this log had been burned the same way.
+
+**Three-foot test:** the arriving screen first, the dimmed strip behind it
+second, nothing third. One focal point, and the dim is what makes it read as
+coming forward rather than sliding sideways.
+
+Scope: 1 new rules module + 18 tests, 1 new component, `RootNavigator`.
+
+Validation: 1,662 mobile tests (151 files, 18 new), `tsc` 0, ESLint 0, no new
+dead exports. Browser-verified on the built bundle: push 3 → 24 distinct frames,
+pop 1 → 13, both landing on the right route; a full edge drag pops, a short one
+holds, a vertical drag from the very edge scrolls (0 → 693) and does **not**
+pop, a tap inside still routes, the back control still lands; no route overflows
+horizontally; no page errors. `audit-a11y.mjs` PASS on all 30 routes with the
+**unmodified** audit. `walk-app.mjs` 50 of 51 — the pre-existing silent-take
+finding on `main`.
+
+**Not verified:** the pop *velocity* path, for the same harness reason as the
+sheet's — synthetic touches cannot reach 0.5 pt/ms. And none of this runs on a
+phone, where it is deliberately inert.
+
+**Side effects:** every pushed screen is wrapped, so a bug here is a bug on
+eighteen screens. **Rollback:** revert; `ScreenTransition` is additive and
+removing the wrappers restores the hard cut.
+
+## 2026-09-06 — InTempo has its own icon, the publisher has a name, and two checks that were reporting the opposite of the truth
+
+Three of the four store-readiness items needed an account or a decision only
+the owner has. The fourth was mine, and finishing it broke two checks in a way
+worth more than the icon.
+
+**The six brand assets are drawn.** A Bravura half note followed by a gold
+barline — ivory `#F7F2E9` and gold `#9A7B4F` on warm ink `#14110E`. Direction
+chosen by the owner from four proposals; the reasoning, and the three rejected
+ones, are in `DECISIONS.md`.
+
+**Generated, not exported.** `tools/draw-brand-assets.py` draws all six from
+one mark: App Store icon (1024, RGB — Connect refuses alpha), the web app's
+home-screen icon, a 48px favicon with less margin because at that size margin
+is the whole image, the Android adaptive foreground sized to the launcher's
+middle-two-thirds safe zone, its ink background plate, and the themed
+monochrome silhouette. An icon that exists only as a binary cannot be adjusted
+without whatever drew it.
+
+**The gold was a small square first, and it was a defect.** A dot level with a
+notehead is an augmentation dot: the icon read *dotted half note* to anyone who
+reads music, which is the entire audience. It also disappeared at 29 points.
+Caught by rendering the three candidates side by side at 360px and at a true
+29px rather than by arguing about them. A barline does the same compositional
+job, cannot be misread, and survives every size.
+
+**Three-foot test:** the ivory note first, the gold barline second, the warm
+ink field third. One focal point, and the barline is what stops the mark
+sitting in the left half of a square with the right half reading as a mistake.
+Checked at 180, 120, 87, 60, 40 and 29 points, circle-masked as an Android
+launcher composites it, and tinted as a themed launcher recolours it.
+
+**`OWNER` is half-filled, honestly.** `entity: 'Arya Shah'` and
+`jurisdiction: 'the State of California'`, supplied by the owner. `contact`
+stays **null** — the owner said "I'll add one later", and a plausible
+placeholder there is exactly the failure the field's comment warns about. The
+policy now names its publisher and the law it is read under, and silently omits
+the address; App Store Connect will require it before submission. Verified in a
+browser: both lines render on `/legal/terms`, publisher only on
+`/legal/privacy` (jurisdiction is terms-only by design), no contact line.
+
+**Two checks were reporting the opposite of the truth, and only one was mine.**
+
+- **`check-store-readiness.py` said "6 assets are still the Expo starter's" on
+  the day all six were drawn.** It counted lines beginning `  mobile/` in
+  `check-brand-assets.py`'s output — which meant "still the starter's" while
+  they sat under that heading, and came to mean "drawn for InTempo" the moment
+  I rewrote the heading. A report whose entire job is to be believed about what
+  is left, inverted by a wording change. Fixed with a real interface:
+  `--count-outstanding` prints a number, and prose can now say anything.
+- **The same report claimed the policy was "published by nobody and names no
+  address"** while naming its publisher. That sentence was written when all
+  three `OWNER` fields were null and never revisited. It is now derived per
+  field.
+
+**`check-brand-assets.py` had to change, because its premise stopped being
+true.** It was built around "every asset here is the starter's": a list of
+placeholder hashes, failing if a listed one had been *replaced*. Correct while
+they were the current state, and vacuous the moment the art was drawn. The
+hashes are now a denylist — art that may never come back — and the check
+delegates a second question to `draw-brand-assets.py --check`: is the committed
+art what the script draws. Both failure modes mutation-tested: a hand-edited
+PNG is caught, a restored starter file is caught by both rules, and the
+restored state is clean.
+
+**A test caught my config change, correctly.** `appConfig.test.ts` asserted
+`android.adaptiveIcon.backgroundColor === colors.bg` — right while there was no
+art for the plate to agree with, wrong once the icon deliberately inverted the
+app. The assertion now points at `colors.textPrimary`, which is the icon's own
+ground. The rule did not change; what it was aimed at did.
+
+Scope: 6 regenerated PNGs, 1 new tool, `check-brand-assets.py`,
+`check-store-readiness.py`, `legal.ts`, `app.json`, `appConfig.test.ts`.
+
+Validation: 1,644 mobile tests (150 files), `tsc` 0, ESLint 0, brand check OK
+and mutation-tested both ways, readiness now 3 of 4 (was reporting 4 of 4) and
+mutation-tested, fixtures web build clean with `favicon.ico` 48x48 and
+`app-icon.png` 1024x1024 RGB in `dist/`, `audit-a11y.mjs` PASS on all 30
+routes, `walk-app.mjs` 50 of 51 — the one finding is the pre-existing
+silent-take acceptance on `main`.
+
+**Not done, and not mine:** an EAS project id (`eas init`, needs the owner's
+Expo account), a contact address, and a public URL for the policy. None of the
+native code has run on a device yet — that is unchanged by this and remains the
+largest untested surface in the repository.
+
+**Side effects:** the Android launcher plate is ink, so a launcher that ignores
+`backgroundImage` now draws the icon on the colour it was designed for rather
+than on ivory. **Rollback:** revert the commit; `tools/draw-brand-assets.py`
+regenerates the art byte-for-byte from source at any time.
+
 ## 2026-09-06 — The grab handle drags now, 25 dead Pressables answer the finger, and the dialog arrives instead of being revealed
 
 Reported: "when I click add a new piece I expect to easily be able to swipe down

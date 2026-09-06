@@ -1,35 +1,38 @@
 #!/usr/bin/env python3
-"""Keep the Expo starter's placeholder art from becoming InTempo's identity.
+"""Keep InTempo's identity drawn, and the Expo starter's art out.
 
     tools/check-brand-assets.py
 
-**Every brand asset in this repository is the Expo starter's**, measured on
-2026-09-03: a blue chevron on pale blue with construction guides — dashed
-sight lines, two circles and a centre crosshair. It is the App Store icon, the
-Android launcher icon, the browser favicon and the icon a phone puts on its
-home screen when someone installs the web app. On a product whose whole visual
-identity is warm paper and engraved notation.
+**Every brand asset here was the Expo starter's** — a blue chevron on pale
+blue with construction guides — until 2026-09-06, when all six were drawn: a
+Bravura half note followed by a gold barline, ivory on ink. `tools/draw-brand-
+assets.py` is the thing that draws them, and this is the guard on the result.
 
-Nothing said so. `icon.png` is 1024x1024, RGB, no alpha — exactly what App
-Store Connect requires — so it would upload, pass review's automated checks and
-ship. A wrong icon is not a build failure; it is a build that succeeds and is
-wrong, which is the only kind this project keeps finding.
+Nothing said so before. `icon.png` was 1024x1024, RGB, no alpha — exactly what
+App Store Connect requires — so it would have uploaded, passed review's
+automated checks and shipped. A wrong icon is not a build failure; it is a
+build that succeeds and is wrong, which is the only kind this project keeps
+finding.
 
-**This is not a hard gate, deliberately.** Drawing an icon is the owner's
-(CLAUDE.md §2 — the human owns look and feel), it cannot be done in a session,
-and failing every commit until it exists would train someone to skip the check.
-So it works the way `KNOWN_ECHOES` in `facts.test.ts` works: the placeholders
-are listed by hash as outstanding, and the check fails on the two things that
-*are* mistakes — a new asset shipped as a placeholder, and a listed one that
-has been replaced (delete its line, and the identity is one asset closer to
-done).
+Two things fail it now, and both are real:
 
-Run it, and it prints what is still the starter's.
+- **A shipped asset is the starter's art again.** The five template hashes are
+  kept for exactly this: a regenerated Expo project, a bad merge, a file
+  restored from the wrong place. They are no longer a to-do list, they are a
+  list of what may never come back.
+- **A shipped asset is not what `draw-brand-assets.py` draws.** The icons are
+  generated, so a PNG edited by hand — or a generator edited without re-running
+  it — is a silent divergence between the art and the source of the art. This
+  delegates that comparison rather than duplicating it.
+
+What it still cannot check is whether the icon is any *good*. That was the
+owner's call (CLAUDE.md §2) and it was made.
 """
 
 from __future__ import annotations
 
 import hashlib
+import subprocess
 import sys
 from pathlib import Path
 
@@ -49,12 +52,16 @@ SHIPPED: dict[str, str] = {
     "mobile/public/app-icon.png": "the home-screen icon for the installed web app",
 }
 
-#: SHA-256 of the Expo starter template's art, as it stands in this repository.
+#: SHA-256 of the Expo starter template's art, which must never ship again.
 #:
 #: Recorded rather than described because "is this a placeholder" is not a
 #: question a program can answer about pixels — but "is this byte-for-byte the
-#: file the template shipped" is exact, has no false positives, and stops
-#: being true the moment somebody draws something.
+#: file the template shipped" is exact and has no false positives.
+#:
+#: These were a to-do list until 2026-09-06, and the check failed on a hash no
+#: shipped asset had any more — the right rule while they were the current
+#: state, and the wrong one the moment the art was drawn. Now they are a
+#: denylist, so restoring one is caught rather than celebrated.
 STARTER_PLACEHOLDERS: dict[str, str] = {
     "119462bb78eb240a65c869fc067ee599639b3cb5a41953f25c07b17d2a8c7e0f": (
         "blue chevron on pale blue, with the template's construction guides"
@@ -78,42 +85,59 @@ def digest(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def outstanding() -> list[str]:
+    """The shipped assets that are still the Expo starter's art.
+
+    A function rather than a line of output for somebody to grep, because
+    `check-store-readiness.py` did grep it: it counted lines beginning
+    "  mobile/", which meant "still the starter's" until the heading above them
+    changed to "Drawn for InTempo" and the same count came to mean the exact
+    opposite. It reported six assets outstanding on the day all six were drawn.
+    """
+    return [
+        relative
+        for relative in SHIPPED
+        if (ROOT / relative).exists() and digest(ROOT / relative) in STARTER_PLACEHOLDERS
+    ]
+
+
 def main() -> int:
+    if "--count-outstanding" in sys.argv:
+        print(len(outstanding()))
+        return 0
+
     problems: list[str] = []
-    outstanding: list[str] = []
-    replaced: list[str] = []
-    seen: set[str] = set()
+    drawn: list[str] = []
 
     for relative, purpose in SHIPPED.items():
         path = ROOT / relative
         if not path.exists():
             problems.append(f"{relative} is {purpose} and is not in the repository")
             continue
-        found = digest(path)
-        seen.add(found)
-        if found in STARTER_PLACEHOLDERS:
-            outstanding.append(f"  {relative}\n      {purpose} — {STARTER_PLACEHOLDERS[found]}")
+        if digest(path) in STARTER_PLACEHOLDERS:
+            problems.append(
+                f"{relative} is {purpose} and is the Expo starter's art again "
+                f"({STARTER_PLACEHOLDERS[digest(path)]}) — re-run tools/draw-brand-assets.py"
+            )
         else:
-            replaced.append(f"  {relative} — {purpose}")
+            drawn.append(f"  {relative} — {purpose}")
 
-    # A hash on the list that no shipped asset has any more. The asset was
-    # drawn; the line is now a claim about the repository that is not true.
-    for stale in sorted(set(STARTER_PLACEHOLDERS) - seen):
+    # The art is generated, so "is it drawn" and "is it what the generator
+    # draws" are two questions. Delegated rather than duplicated: a second copy
+    # of the drawing code here would be a second thing to keep in step.
+    generator = ROOT / "tools" / "draw-brand-assets.py"
+    result = subprocess.run(
+        [sys.executable, str(generator), "--check"], capture_output=True, text=True
+    )
+    if result.returncode != 0:
         problems.append(
-            f"no shipped asset is {stale[:16]}… any more "
-            f"({STARTER_PLACEHOLDERS[stale]}) — delete it from STARTER_PLACEHOLDERS"
+            "the shipped art is not what tools/draw-brand-assets.py draws:\n      "
+            + "\n      ".join(result.stdout.strip().splitlines())
         )
 
-    if outstanding:
-        print("Still the Expo starter's art:")
-        print("\n".join(outstanding))
-        print(
-            "\nThese ship as InTempo's identity. Drawing them is the owner's "
-            "(CLAUDE.md §2); this check exists so it cannot happen by accident."
-        )
-    if replaced:
-        print("\nDrawn for InTempo:")
-        print("\n".join(replaced))
+    if drawn:
+        print("Drawn for InTempo:")
+        print("\n".join(drawn))
 
     if problems:
         print("\nFAIL")
