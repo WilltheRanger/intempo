@@ -139,7 +139,14 @@ export const colors = {
    * falling across a curved surface, the hairline reads as its lit rim.
    */
   glassSpecular: 'rgba(255, 255, 255, 0.46)',
-  /** The same catch on a prominent surface, where the ground is ink. */
+  /**
+   * The top edge hairline on a prominent surface, where the ground is ink.
+   *
+   * **Not a gradient.** It was one, and on a dark button a light top-left
+   * falling to nothing reads as a black gradient rather than as light on a
+   * curve. The prominent tone keeps a flat tint and takes its dimension from
+   * this hairline alone.
+   */
   glassSpecularProminent: 'rgba(255, 255, 255, 0.20)',
   /** The bright catch along a glass edge. Half a pixel, never a stroke. */
   glassEdge: 'rgba(255, 255, 255, 0.72)',

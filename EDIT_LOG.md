@@ -1,5 +1,25 @@
 # InTempo Edit Log
 
+## 2026-09-06 — The primary action loses its gradient
+
+The specular layer was drawn on both glass tones. On a pale surface it is light
+falling across a curve, which is what makes neutral glass read as glass. On the
+ink tone it was a **black gradient** — lighter at the top-left, darker toward the
+bottom-right — which is a different thing entirely and not what a primary action
+should look like.
+
+`tone="prominent"` now skips the gradient and keeps its flat tint, taking its
+dimension from the edge hairline alone. `glassSpecularProminent` survives as
+that hairline and its docstring says so, because a token named "specular" that
+no longer draws a specular is the kind of thing the next session reinstates.
+
+Measured: one `<svg>` inside "Continue practice" where there were two — the play
+glyph, and no gradient layer.
+
+Validation: 1,603 mobile tests (147 files), `tsc` 0, ESLint 0, a11y audit PASS,
+`.env` restored `diff -q` identical, fixtures web build clean. Walk unchanged at
+50 of 51 (the pre-existing silent-take finding).
+
 ## 2026-09-06 — Four glass defects the owner named, fixed with the numbers behind them
 
 Owner feedback, verbatim: the bar "is not close to the bottom", "not smooth
