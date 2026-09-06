@@ -1,5 +1,122 @@
 # InTempo Edit Log
 
+## 2026-09-06 — The grab handle drags now, 25 dead Pressables answer the finger, and the dialog arrives instead of being revealed
+
+Reported: "when I click add a new piece I expect to easily be able to swipe down
+to close it but I have to click x. There's a lot of instances identify and fix
+them."
+
+The handle was drawn on the sheet from the first commit and nothing ever
+dragged it. That is worse than having no handle: a drawn affordance is a
+promise, and the cost of a broken one is a try, a pause, and a hunt for the
+close button — paid by every person, every time, on all six sheets.
+
+**Swipe to dismiss, on `PanResponder`.** No gesture library is installed here,
+and `react-native-gesture-handler` + `reanimated` is a large dependency and a
+native rebuild for one interaction the platform already answers.
+
+**The rule is a module, not a component.** `mobile/src/lib/motion/sheetDrag.ts`
+— distance-or-velocity dismissal, the rubber-band on an upward pull, the
+gesture-activation test, and a windowed velocity — with 21 tests. There is no
+React Native testing library here (`DECISIONS.md`, 2026-08-24), so a threshold
+inside a `.tsx` is a threshold nothing checks, and these are exactly the numbers
+that get nudged by eye and never measured again.
+
+Four decisions inside it worth naming, each of which was a bug first:
+
+- **A fraction of the sheet's height, not a fixed distance.** 90pt is a
+  decisive flick on the 320pt add-piece sheet and a twitch on an expanded one.
+- **Velocity as well as distance**, or a quick flick — the natural way to
+  dismiss something you have already decided about — is refused for not having
+  travelled far enough, which reads as the sheet ignoring you.
+- **`vy` is signed**, so a fast *upward* flick clears the speed threshold in
+  magnitude. Dismissing on it would close the sheet on the gesture that most
+  clearly means keep it. Guarded and tested.
+- **`velocityFrom` returned 0 for real gestures** on first writing: with no
+  sample inside the window it compared the latest sample against itself, dt=0.
+  A flick read as a dead stop. Caught by its own unit test, fixed with an
+  identity guard.
+
+**And two in the component.** `onStartShouldSetPanResponder` is `false`, so the
+responder is never claimed on touch-down — these sheets are full of buttons and
+a responder that takes the touch before it moves eats their taps. And an
+`expand` sheet's body is *not* draggable: a `PanResponder` competing with a
+`ScrollView` for the same touch is how a list stops scrolling. The drag stays on
+the handle-and-header strip there.
+
+**25 Pressables had no pressed state at all** — `SearchField` (1),
+`MeasureEditScreen` (15), `PieceScoreScreen` (8), `OnboardingScreen` (1). Each
+now dims on touch-down through the existing `pressedOpacity` token. A tap with
+no acknowledgement until its consequence arrives is indistinguishable from a
+tap that missed.
+
+**`ConfirmDialog` shipped on `Modal`'s `animationType="fade"`** — a card
+cross-fading at a fixed size, which reads as having been behind the scrim all
+along. It now springs up from `DIALOG_ENTER_SCALE` while the scrim fades, so it
+arrives. Hand-animated for the same reason `BottomSheet`'s entrance is:
+`Modal`'s built-in types cannot move the card and the scrim on different curves.
+Restructuring it moved the scrim from being the card's *parent* to its sibling,
+which on the web build paints a positioned element over an unpositioned one
+whatever the DOM order — `zIndex: 1` on the card, and the scrim-vs-card tap
+behaviour verified in a browser rather than assumed.
+
+**Three-foot test, `ConfirmDialog`:** the title "Sign out?" first, the
+consequence second, the two buttons third. Unchanged by this work — the
+entrance is motion, not composition, and it was checked on the screenshot to be
+sure the scale had not made the card read as a card *about* something.
+
+**The contract test asserted a count and had to be rewritten.** It checked
+`easing: EASE_OUT` occurrences against the literal 2 — a stand-in for "the enter
+and the exit" that held only while those were the only two animations. A third
+animation failed it on a change it had no opinion about. It now compares
+`Animated.timing(` count to `easing: EASE_OUT` count, and `Animated.spring(` to
+`...SPRING`, which says the thing that was meant: no timed animation here gets a
+different curve, however many there come to be. Both new assertions, and the
+two new `ConfirmDialog` ones, were mutation-tested — broken deliberately,
+confirmed failing, restored.
+
+**Verified in a browser, against the built bundle** (Chromium over CDP
+`Input.dispatchTouchEvent`; Playwright's `p.mouse` does not trigger RNW
+responders when `hasTouch: true`, which cost an hour):
+
+- the sheet tracks the finger — 545 → 555 during a 30pt drag
+- a 30pt drag springs back to exactly 545
+- a 220pt drag dismisses
+- a tap on a row inside the sheet still routes (→ `/scan`), so the responder
+  does not eat taps
+- the dialog opens, a tap on the card does not dismiss it, a tap on the scrim
+  does
+- no page errors across any of it
+
+**Honest about what was not verified end-to-end.** The **velocity** path could
+not be exercised by a real flick: six CDP touch dispatches take ~270ms in-page,
+so the fastest synthetic gesture available is ~0.27 pt/ms — below the 0.5
+threshold *by construction*. That is a limit of the harness, not a fact about
+the code, and an earlier draft of this work stated it the wrong way round in a
+docstring. It was proved wired instead by moving the threshold: at 0.15, a 72pt
+gesture at 0.29 pt/ms dismissed — 60pt short of the distance rule, so only
+velocity could have closed it; restored to 0.5, the same gesture holds. Needs a
+real finger to confirm the number *feels* right; 0.5 is a starting value.
+
+`CLAUDE.md` §3 gained the standing rule this came from, so the next session
+inherits it rather than rediscovering it: **every control answers the finger,
+and every affordance is real.**
+
+Scope: 1 new module + 1 new test file; `BottomSheet`, `ConfirmDialog`,
+`motion.ts`, `design/index.ts`, the motion contract test, and 4 screens.
+
+Validation: 1,644 mobile tests (150 files, 22 new), `tsc` 0, ESLint 0,
+`check-dead-exports.py` clean of anything new (the pre-existing `StbVorbis`
+remains), `audit-a11y.mjs` PASS on all 30 routes, `walk-app.mjs` 50 of 51 — the
+one finding is the silent-take acceptance that is already on `main` and is
+untouched here.
+
+**Side effects:** `ConfirmDialog`'s DOM shape changed (scrim is now a sibling of
+the card, not its parent); anything selecting on that structure would need
+updating — nothing does. **Rollback:** revert the commit; the sheet returns to
+close-button-only and the dialog to a fade. `pre-liquid-glass` at `2b11ead` is
+still the wider anchor.
+
 ## 2026-09-06 — The Reduce Transparency store gets the tests it shipped without
 
 `glassMaterial` is a pure function and was tested from the start. The store that
