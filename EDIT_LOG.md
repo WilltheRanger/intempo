@@ -1,5 +1,68 @@
 # InTempo Edit Log
 
+## 2026-09-06 — The push transition stops depending on JavaScript, and a confident diagnosis turns out to have been measurement noise
+
+Reported: "the page transitions are slightly glitchy and flickery."
+
+**What I got wrong first, because it shaped everything after.** I recorded the
+push frame by frame and found the screen sliding 393 → 329, then **no frames
+for 326ms**, then reappearing at 157. I called it a stall: `Animated` with
+`useNativeDriver: false` runs on the JavaScript thread, React was mounting the
+incoming screen on that same thread, so the animation was being starved.
+Coherent, and it matched the symptom.
+
+Then I checked it with the Long Task API and there were **no long tasks at
+all** — not on the piece screen, not on any pushed screen. The main thread was
+never blocked. The frame gaps are this environment: headless Chromium on a
+software rasterizer (`--use-angle=swiftshader`), which drops frames on its own
+and makes `requestAnimationFrame` sampling useless for judging smoothness. I
+had built a diagnosis on an instrument I had not checked.
+
+**What is actually true, measured with animation events rather than frames.**
+The arrival now fires `animationstart` at **t=101ms** — immediately on the tap
+— and `animationend` at **422ms**, a 321ms run against `motion.spring` of 320.
+It is a CSS keyframe animation set in the ref callback, so it is running from
+the element's first painted frame with no JavaScript step in between. The old
+version needed two `requestAnimationFrame` hops before it could even start.
+
+**So the change is still right, for a better reason than the one I gave.**
+Nothing about the arrival now depends on JavaScript running at a particular
+moment: not a scheduler, not a spring's settle callback, not a render per
+frame. A transition needs its start state painted and *then* a second JS step
+to set the destination; a keyframe animation needs neither. `Animated` is gone
+from this component entirely — the drag writes the transform directly, and the
+animation hands the property over on `animationend` so a swipe begun mid-push
+is not fighting a held final frame.
+
+**And a fix for the platform actually being complained about.**
+`backface-visibility: hidden` on the animated screen. `translate3d` promotes it
+to its own compositor layer and WebKit is known to flash the back face of such
+a layer at the edges of an animation — a one-frame blank, which is what
+"flickery" describes. **Unverified here, and it has to be said plainly:** there
+is no Safari in this environment, the report came from an iPhone, and headless
+Chromium neither reproduces the bug nor can confirm the fix.
+
+**What I could not do:** reproduce the flicker. A software-rendered headless
+browser drops frames constantly, so it shows something that looks like the
+complaint whatever the code does. The honest position is that the arrival is
+now deterministic and measurable — starts at the tap, runs 321ms, entirely in
+the compositor — and whether that is what the owner was seeing needs a look on
+the real device.
+
+Scope: `ScreenTransition.tsx` only. `tools/` byte-identical — checked, after
+the previous entry's near miss.
+
+Validation: 1,662 mobile tests (151 files), `tsc` 0, ESLint 0. Browser-verified
+on the built bundle: `animationstart` at 101ms and `animationend` at 422ms for
+both the screen and its scrim, then a clean handover to a resting transform; a
+full edge drag pops, a short one holds, a vertical drag from the very edge
+scrolls (0 → 702) and does not pop, a tap inside still routes, the back control
+lands; no route overflows horizontally; no page errors. `audit-a11y.mjs` PASS on
+all 30 routes, `walk-app.mjs` 50 of 51 — the pre-existing silent-take finding.
+
+**Side effects:** none beyond the transition itself. **Rollback:** revert; the
+previous commit's transition returns.
+
 ## 2026-09-06 — Screens push and pop in the browser now, and a false alarm nearly cost the check that raised it
 
 Asked for smooth iOS animations before merging. Measured first, because

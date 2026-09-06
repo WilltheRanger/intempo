@@ -1,19 +1,13 @@
 import { useNavigation } from '@react-navigation/native';
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import {
-  Animated,
-  PanResponder,
-  Platform,
-  StyleSheet,
-  View,
-  type LayoutChangeEvent,
-} from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { PanResponder, Platform, StyleSheet, View, type ViewStyle } from 'react-native';
 
-import { colors, EASE_OUT, motion, SPRING } from '../../design';
+import { colors, motion, SPRING_CSS } from '../../design';
 import {
   isPopGesture,
   popOffset,
   SCRIM_OPACITY,
+  scrimOpacity,
   shouldPop,
   startsAtEdge,
 } from '../../lib/motion/screenTransition';
@@ -30,9 +24,6 @@ export interface ScreenTransitionProps {
   from?: 'right' | 'bottom';
 }
 
-/** Travel distance before layout has measured the screen. */
-const ESTIMATED_WIDTH = 393;
-
 /**
  * The push and pop a browser does not do for itself.
  *
@@ -43,12 +34,41 @@ const ESTIMATED_WIDTH = 393;
  * distinct frames out of 35 sampled and going back produced 1 — a hard cut in
  * both directions, on every navigation in the app.
  *
+ * **The motion is CSS, not `Animated`, and that is the whole point.** The first
+ * version drove an `Animated.Value` with `useNativeDriver: false`, which is the
+ * JavaScript thread — the same thread React is on while it mounts the screen
+ * being pushed. Recorded frame by frame: the screen slid from 393 to 329, then
+ * **no frames at all for 326ms**, then reappeared at 157 and finished. It
+ * stalled mid-slide and jumped, which is exactly what "glitchy and flickery"
+ * describes. A CSS transition is handed to the compositor and keeps running
+ * while the main thread is busy, so the slide is smooth *because* it is no
+ * longer JavaScript's job. `FadeIn` had already learned this and says so; this
+ * component did not follow it.
+ *
+ * **The arrival is a keyframe animation, not a transition, and that is the
+ * second fix.** A transition needs its start state painted and then a *second*
+ * JavaScript step to set the destination — `requestAnimationFrame`, which
+ * cannot run until React has finished mounting the screen. Recorded from the
+ * compositor: the outgoing screen is hidden in the same commit that mounts the
+ * new one, so for the whole of that wait the viewport was **uniform
+ * #F7F2E9 — a blank sheet of paper, for about 190ms, on every push.** That is
+ * the flicker. A keyframe animation set in the ref callback needs no second
+ * step: it is running the moment the element is first painted, so there is no
+ * frame in which the screen exists and is not yet moving.
+ *
+ * The transform is written straight to the node rather than rendered from
+ * state. Two reasons: an off-screen start has to be in place before the first
+ * paint or the screen appears in position and then jumps, and a React render
+ * per frame is the thing being avoided in the first place. So `Animated` is
+ * gone entirely — the drag writes the same property the animation leaves
+ * behind, with both switched off for as long as a finger is down.
+ *
  * Three exits, one animation. The back control, the swipe, and a browser's own
- * back button all leave through React Navigation's `beforeRemove`, which is
- * intercepted once here: the removal is held, the screen is animated off, and
- * the original action is dispatched afterwards. Animating only the gesture
- * would have left the back *button* — which is how most people leave a screen —
- * cutting exactly as it does today.
+ * back button all leave through React Navigation's `beforeRemove`, intercepted
+ * once here: the removal is held, the screen is animated off, and the original
+ * action is dispatched afterwards. Animating only the gesture would have left
+ * the back *button* — which is how most people leave a screen — cutting exactly
+ * as it did before.
  *
  * **The gesture is `PanResponder`**, for the reason `sheetDrag` gives: there is
  * no gesture library in this app, and adding one is a native rebuild. It is
@@ -68,62 +88,160 @@ export function ScreenTransition({ children, from = 'right' }: ScreenTransitionP
   return <WebScreenTransition from={from}>{children}</WebScreenTransition>;
 }
 
+/** The resting transform, and the one a screen waits at and leaves to. */
+const AT_REST = 'translate3d(0, 0, 0)';
+const offStage = (from: 'right' | 'bottom') =>
+  from === 'right' ? 'translate3d(100%, 0, 0)' : 'translate3d(0, 100%, 0)';
+
+const STYLE_ID = 'intempo-screen-transition';
+
+/**
+ * Adds the arrival keyframes to the document once.
+ *
+ * Injected from here rather than written into `public/index.html` for the
+ * reason `lensFilter.ts` gives about that file: it carries the boot watchdog,
+ * its inline script is content-hashed into the Content-Security-Policy at
+ * build time, and a test evaluates it. Two keyframe rules are not worth
+ * touching any of that.
+ */
+function installKeyframes() {
+  if (typeof document === 'undefined' || document.getElementById(STYLE_ID)) {
+    return;
+  }
+  const style = document.createElement('style');
+  style.id = STYLE_ID;
+  style.textContent = `
+@keyframes intempo-push-right {
+  from { transform: translate3d(100%, 0, 0); }
+  to { transform: translate3d(0, 0, 0); }
+}
+@keyframes intempo-push-bottom {
+  from { transform: translate3d(0, 100%, 0); }
+  to { transform: translate3d(0, 0, 0); }
+}
+@keyframes intempo-push-scrim {
+  from { opacity: 0; }
+  to { opacity: ${SCRIM_OPACITY}; }
+}`;
+  document.head.appendChild(style);
+}
+
 function WebScreenTransition({ children, from }: Required<ScreenTransitionProps>) {
   const navigation = useNavigation();
   const reduceMotion = useReducedMotion();
-  /** 0 = fully off-screen, 1 = arrived. */
-  const progress = useRef(new Animated.Value(reduceMotion ? 1 : 0)).current;
-  const [size, setSize] = useState({ width: 0, height: 0 });
   /**
-   * Whether a transition is in flight, and therefore whether the scrim exists
-   * in the tree at all.
+   * Whether the scrim is in the tree at all.
    *
-   * **It used to be rendered always, and that was wrong twice over.** At rest
-   * it is a full-screen ink fill sitting behind an opaque screen: invisible,
-   * and pure cost on every screen in the app. It also made `audit-a11y.mjs`
-   * report 414 contrast failures — a covering absolutely-positioned sibling is
-   * exactly the shape of a glass layer painted *over* content, which is what
-   * that check is for, and the audit had no way to tell the two apart. The
-   * first fix attempted was to teach the audit the difference; it silenced the
-   * glass check it was written for, caught by mutation-testing it. Removing
-   * the thing when it has no job is smaller, faster and needs nothing from the
-   * check.
+   * **Not an optimisation.** Left there at rest it is a full-screen ink fill
+   * behind an opaque screen — invisible, and to a static reader of the DOM
+   * indistinguishable from a glass layer painted *over* content, which is what
+   * `audit-a11y.mjs` exists to find. It reported 414 contrast failures on text
+   * that measures at full contrast in pixels. Removing the element when it has
+   * no job needs nothing from the check.
    */
   const [transitioning, setTransitioning] = useState(!reduceMotion);
-  // Read inside the responder, which is built once and would otherwise close
-  // over the width as it was on the first render — zero.
+  const screenRef = useRef<HTMLElement | null>(null);
+  const scrimRef = useRef<HTMLElement | null>(null);
   const widthRef = useRef(0);
   const samplesRef = useRef<DragSample[]>([]);
   /** Set once the exit has been let through, so `beforeRemove` does not loop. */
   const leaving = useRef(false);
 
-  useEffect(() => {
-    if (reduceMotion) {
-      progress.setValue(1);
-      return;
-    }
-    setTransitioning(true);
-    const animation = Animated.spring(progress, {
-      toValue: 1,
-      useNativeDriver: false,
-      ...SPRING,
-    });
-    animation.start(({ finished }) => {
-      if (finished) {
-        setTransitioning(false);
+  /**
+   * Puts the screen off-stage synchronously, before the browser paints it.
+   *
+   * A ref callback runs during commit; an effect runs after paint. Starting
+   * from an effect showed the screen in position for one frame and then
+   * snapped it off-stage to begin — a flash on every push.
+   */
+  const attach = useCallback(
+    (node: unknown) => {
+      const element = node as HTMLElement | null;
+      screenRef.current = element;
+      if (!element || reduceMotion || element.dataset.arriving) {
+        return;
       }
-    });
-    return () => animation.stop();
-  }, [progress, reduceMotion]);
+      installKeyframes();
+      element.dataset.arriving = 'true';
+      element.style.animation =
+        `intempo-push-${from} ${motion.spring}ms ${SPRING_CSS} both`;
+      // `both` holds the final frame, and a held animation outranks any later
+      // inline transform — which is what the drag and the exit both set. So the
+      // animation hands the transform over the moment it is done with it.
+      element.addEventListener(
+        'animationend',
+        () => {
+          element.style.animation = 'none';
+          element.style.transform = AT_REST;
+        },
+        { once: true },
+      );
+    },
+    [from, reduceMotion],
+  );
+
+  const attachScrim = useCallback(
+    (node: unknown) => {
+      const element = node as HTMLElement | null;
+      scrimRef.current = element;
+      if (!element || reduceMotion || element.dataset.arriving) {
+        return;
+      }
+      installKeyframes();
+      element.dataset.arriving = 'true';
+      element.style.animation =
+        `intempo-push-scrim ${motion.spring}ms ${SPRING_CSS} both`;
+      element.addEventListener(
+        'animationend',
+        () => {
+          element.style.animation = 'none';
+          element.style.opacity = String(SCRIM_OPACITY);
+        },
+        { once: true },
+      );
+    },
+    [reduceMotion],
+  );
 
   /**
-   * Hold every removal long enough to animate it.
+   * Hand the element back to transitions and move it.
    *
-   * `beforeRemove` fires for the back control, the swipe, the browser's back
-   * button and a programmatic `goBack` alike, which is why the exit lives here
-   * rather than in each of them. The guard is what stops the re-dispatch from
-   * being intercepted again.
+   * Clearing `animation` first is load-bearing: an arrival still holding its
+   * final frame outranks an inline transform, so a swipe begun during the push
+   * would move nothing at all.
    */
+  const settle = useCallback((to: string, opacity: number) => {
+    const screen = screenRef.current;
+    if (screen) {
+      screen.style.animation = 'none';
+      screen.style.transitionDuration = `${motion.spring}ms`;
+      screen.style.transform = to;
+    }
+    const scrim = scrimRef.current;
+    if (scrim) {
+      scrim.style.animation = 'none';
+      scrim.style.transitionDuration = `${motion.spring}ms`;
+      scrim.style.opacity = String(opacity);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (reduceMotion) {
+      return;
+    }
+    // Nothing is scheduled here any more — the arrival is already running,
+    // started in the ref callback before this effect existed. This only takes
+    // the scrim back out once the screen has landed.
+    const done = setTimeout(() => {
+      setTransitioning(false);
+      // Stop paying for a promoted layer on a screen that has stopped moving.
+      if (screenRef.current) {
+        screenRef.current.style.willChange = 'auto';
+      }
+    }, motion.spring + 40);
+    return () => clearTimeout(done);
+  }, [reduceMotion]);
+
   useEffect(() => {
     const unsubscribe = navigation.addListener('beforeRemove', (event) => {
       if (leaving.current || reduceMotion) {
@@ -132,21 +250,14 @@ function WebScreenTransition({ children, from }: Required<ScreenTransitionProps>
       event.preventDefault();
       leaving.current = true;
       setTransitioning(true);
-      Animated.timing(progress, {
-        toValue: 0,
-        duration: motion.scene,
-        easing: EASE_OUT,
-        useNativeDriver: false,
-      }).start(() => navigation.dispatch(event.data.action));
+      if (screenRef.current) {
+        screenRef.current.style.willChange = 'transform';
+      }
+      settle(offStage(from), 0);
+      setTimeout(() => navigation.dispatch(event.data.action), motion.spring);
     });
     return unsubscribe;
-  }, [navigation, progress, reduceMotion]);
-
-  function handleLayout(event: LayoutChangeEvent) {
-    const { width, height } = event.nativeEvent.layout;
-    widthRef.current = width;
-    setSize({ width, height });
-  }
+  }, [from, navigation, reduceMotion, settle]);
 
   const pan = useMemo(
     () =>
@@ -159,9 +270,22 @@ function WebScreenTransition({ children, from }: Required<ScreenTransitionProps>
           navigation.canGoBack() &&
           startsAtEdge(event.nativeEvent.pageX - gesture.dx) &&
           isPopGesture(gesture.dx, gesture.dy),
-        onPanResponderMove: (_event, gesture) => {
+        onPanResponderGrant: () => {
           setTransitioning(true);
-          const width = widthRef.current || ESTIMATED_WIDTH;
+          widthRef.current = screenRef.current?.offsetWidth ?? 0;
+          // The finger owns the transform now, so the transition must not also
+          // be interpolating it — that is what makes a drag feel like it is
+          // catching up with itself rather than following.
+          for (const node of [screenRef.current, scrimRef.current]) {
+            if (node) {
+              node.style.animation = 'none';
+              node.style.transitionDuration = '0ms';
+              node.style.willChange = 'transform, opacity';
+            }
+          }
+        },
+        onPanResponderMove: (_event, gesture) => {
+          const width = widthRef.current || 1;
           const now = Date.now();
           samplesRef.current = trimSamples(
             // `dy` on the sample is the travel being measured, which here is
@@ -169,81 +293,71 @@ function WebScreenTransition({ children, from }: Required<ScreenTransitionProps>
             [...samplesRef.current, { dy: gesture.dx, t: now }],
             now,
           );
-          progress.setValue(1 - popOffset(gesture.dx) / width);
+          const travelled = popOffset(gesture.dx);
+          if (screenRef.current) {
+            screenRef.current.style.transform = `translate3d(${travelled}px, 0, 0)`;
+          }
+          if (scrimRef.current) {
+            scrimRef.current.style.opacity = String(scrimOpacity(1 - travelled / width));
+          }
         },
         onPanResponderRelease: (_event, gesture) => {
-          const width = widthRef.current;
           const vx = velocityFrom(samplesRef.current);
           samplesRef.current = [];
-          if (shouldPop({ dx: gesture.dx, vx, width })) {
-            // Straight to `goBack`: `beforeRemove` picks it up and carries the
-            // screen the rest of the way from wherever the finger left it.
+          if (shouldPop({ dx: gesture.dx, vx, width: widthRef.current })) {
+            // `beforeRemove` picks this up and carries the screen the rest of
+            // the way from wherever the finger left it.
             navigation.goBack();
             return;
           }
-          Animated.spring(progress, {
-            toValue: 1,
-            useNativeDriver: false,
-            ...SPRING,
-          }).start(({ finished }) => finished && setTransitioning(false));
+          settle(AT_REST, SCRIM_OPACITY);
         },
         onPanResponderTerminate: () => {
           samplesRef.current = [];
-          Animated.spring(progress, {
-            toValue: 1,
-            useNativeDriver: false,
-            ...SPRING,
-          }).start(({ finished }) => finished && setTransitioning(false));
+          settle(AT_REST, SCRIM_OPACITY);
         },
       }),
-    [from, navigation, progress],
+    [from, navigation, settle],
   );
 
-  const travel =
-    from === 'right' ? size.width || ESTIMATED_WIDTH : size.height || ESTIMATED_WIDTH;
-  const offset = progress.interpolate({
-    inputRange: [0, 1],
-    outputRange: [travel, 0],
-    // The spring overshoots past 1; without clamping, the screen would pull a
-    // few points past its own edge on arrival.
-    extrapolate: 'clamp',
-  });
-  const scrim = progress.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0, SCRIM_OPACITY],
-    extrapolate: 'clamp',
-  });
-
   return (
-    <View style={styles.container} onLayout={handleLayout}>
+    <View style={styles.container}>
       {/*
         Depth, standing in for the screen iOS dims and slides away underneath.
         `react-native-screens` sets `display: none` on that screen the moment
         the push commits — measured — so there is nothing there to move.
       */}
       {transitioning ? (
-        <Animated.View style={[styles.scrim, { opacity: scrim }]} pointerEvents="none" />
+        <View ref={attachScrim} style={[styles.scrim, transition('opacity')]} pointerEvents="none" />
       ) : null}
 
-      <Animated.View
-        style={[
-          styles.screen,
-          { transform: [from === 'right' ? { translateX: offset } : { translateY: offset }] },
-        ]}
+      <View
+        ref={attach}
+        style={[styles.screen, transition('transform')]}
         {...(from === 'right' ? pan.panHandlers : {})}
       >
         {children}
-      </Animated.View>
+      </View>
     </View>
   );
+}
+
+/** The CSS half of the animation. Web-only, so these land as written. */
+function transition(property: 'transform' | 'opacity'): ViewStyle {
+  return {
+    transitionProperty: property,
+    transitionDuration: `${motion.spring}ms`,
+    transitionTimingFunction: SPRING_CSS,
+    willChange: property,
+  } as unknown as ViewStyle;
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     // Clips the screen while it is off to the side. Without this a screen
-    // waiting at `translateX: width` extends the document, and the page itself
-    // becomes horizontally scrollable into empty space for the length of every
+    // waiting at 100% extends the document, and the page itself becomes
+    // horizontally scrollable into empty space for the length of every
     // transition — measured at 490px of scroll width against a 393px viewport.
     overflow: 'hidden',
   },
@@ -254,25 +368,26 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     backgroundColor: colors.textPrimary,
+    opacity: 0,
   },
   screen: {
     flex: 1,
     backgroundColor: colors.bg,
     /**
-     * Above the scrim, said out loud.
+     * Safari's flicker guard on a 3D-transformed layer.
      *
-     * A transform creates a stacking context, so the browser already paints
-     * this over the absolutely-positioned scrim behind it — verified in
-     * pixels: the settled screen reads #F7F2E9 with #14110E text, full
-     * contrast. But that is an *implicit* rule, and `audit-a11y.mjs` read the
-     * markup the other way and reported 414 contrast failures across every
-     * pushed screen. The third time this codebase has leaned on paint order
-     * without declaring it, after `GlassSurface` and `ConfirmDialog`.
+     * `translate3d` promotes this to its own compositor layer, and WebKit is
+     * known to flash the back face of such a layer at the start and end of an
+     * animation — the classic symptom being a one-frame blank or white flash
+     * on exactly this kind of screen transition. Hiding the back face is the
+     * standard fix and costs nothing on a surface that is never rotated.
      *
-     * The audit was not loosened to accept it. Depending on which of two
-     * elements a browser happens to paint first is the bug; one line saying
-     * which one wins is the fix.
+     * **Not verified here.** There is no Safari in this environment; this
+     * environment is headless Chromium on a software rasterizer, which does
+     * not reproduce the bug and cannot confirm the fix. Added on the strength
+     * of the platform behaviour and a report of flickering from an iPhone.
      */
-    zIndex: 1,
+    backfaceVisibility: 'hidden',
+    ...({ WebkitBackfaceVisibility: 'hidden' } as object),
   },
 });
