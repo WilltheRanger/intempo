@@ -7,5 +7,5 @@
   // `dist-live/` (the same app with EXPO_PUBLIC_* set), and tsc happily walked
   // into 3.4 MB of minified output and blew its stack on it. Anything the
   // bundler emits is output, not source.
-  "exclude": ["node_modules", "dist", "dist-*", ".expo"]
+  "exclude": ["node_modules", "dist", "dist-*", ".expo", "public"]
 }
