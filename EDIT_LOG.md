@@ -1,5 +1,57 @@
 # InTempo Edit Log
 
+## 2026-09-06 — The Reduce Transparency store gets the tests it shipped without
+
+`glassMaterial` is a pure function and was tested from the start. The store that
+feeds it — two platforms, a listener, and module-level state — went out with
+none, which is the wrong way round: the pure rule is the part least likely to
+break silently.
+
+Ten tests, driven **through** `useSyncExternalStore` rather than around it. The
+`react` mock hands back the `subscribe` and `getSnapshot` the hook actually
+passes, so the wiring under test is the wiring the app uses, not a private copy.
+`vi.resetModules()` before each case is load-bearing — `listening` and the
+cached value are module-level singletons, and a case inheriting them would pass
+without running the code it names.
+
+What they pin: the initial value is false, so a surface renders as glass before
+the platform read lands; the read publishes; `reduceTransparencyChanged`
+publishes; the web build reads `prefers-reduced-transparency` and never touches
+the native API; an unchanged value notifies nobody; an unsubscribed listener
+stops hearing; **one** platform read and **one** listener however many surfaces
+subscribe; and neither a rejected native promise nor a browser without
+`matchMedia` throws.
+
+**Mutation-tested, because of what the last commit found.** Four defects
+injected into the source, each killed by exactly one test: dropping the
+no-change guard, dropping the `listening` guard, pointing the media query at
+`prefers-reduced-motion`, and making unsubscribe a no-op. Re-checked after the
+helper was restructured (below), and the source verified byte-identical to
+pre-mutation with `diff -q`.
+
+**`react-hooks/rules-of-hooks` was satisfied, not switched off.** It rejected
+the hook being called from a plain helper; renaming that helper `use…` made it
+reject the call for being inside an `async` function. Both objections are
+correct. The module import stays in the async helper and the hook is called from
+`Probe`, a real if minimal function component — which is where a hook call
+belongs. `CLAUDE.md` §1 names this rule as the reason a linter was installed
+here, so a test-scoped disable was not on the table.
+
+**A process note worth more than the tests.** An earlier check in this session
+read `npm run lint 2>&1 | tail -4 && echo "LINT CLEAN"`, which reports the exit
+status of `tail` — so it printed "LINT CLEAN" over a real ESLint error. Every
+validation in this entry was re-run reading `${PIPESTATUS[0]}`. A green light
+wired to nothing is the same failure as the audit in the previous commit, in a
+different costume.
+
+Scope: one new test file. No source change — `reducedTransparency.ts` is
+byte-identical to what the previous commit pushed.
+
+Validation: 1,620 mobile tests (149 files, 10 new), `tsc` 0, ESLint 0, all
+exit codes read directly.
+
+**Side effects:** none. **Rollback:** delete the test file.
+
 ## 2026-09-06 — Two of Apple's glass rules are checked now, and the check was inert until a mutation caught it
 
 Apple names three pitfalls for this material. Two of them have an objective
