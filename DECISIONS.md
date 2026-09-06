@@ -1,5 +1,44 @@
 # InTempo Decisions
 
+## 2026-09-06 — `CLAUDE.md` holds rules; `docs/subsystems.md` holds what was learned
+
+**Context.** `CLAUDE.md` is read in full at the start of every session and had
+grown to 12,096 words. Measured: §1–§4, the actually binding rules, were 1,456
+of them. The remaining 10,640 were five subsystem post-mortems — accurate,
+valuable, and irrelevant to most turns.
+
+Two costs, one of them already paid. The obvious one is context: ~10,600 words
+delivered before any work starts, on every turn, whatever the task. The other is
+that a rule is harder to find in a long document than a short one — and this
+project has already lost a session to exactly that, a reader taking the
+`frontend/` conventions as binding for the shipping `mobile/` tree. The file
+warns about that in its own text, which is the tell: a document that has to warn
+you about how to read it is too long.
+
+**Decision.** Split by *when the reader needs it*, not by topic. `CLAUDE.md`
+keeps what changes behaviour before a session knows which subsystem it is
+touching. `docs/subsystems.md` keeps what only matters once it does. Nothing is
+deleted, and the split is verified line-by-line rather than by eye.
+
+**Alternatives considered.**
+
+- *Delete the archaeology.* Rejected outright. Every entry exists because
+  something was actually got wrong; several are the only record of why a
+  constant has the value it has. The problem was never the content.
+- *Summarise it.* Rejected: a summary of a post-mortem keeps the rule and drops
+  the reason, and a rule whose reason has expired is worse than no rule — this
+  document contains at least two of those and says so where it knows.
+- *Leave it.* Rejected on the measurement, but honestly: the failures that
+  prompted this were not caused by the file. They were guesses that should have
+  been measurements. The split does not fix that, and should not be sold as
+  though it does.
+
+**Trade-off accepted.** A session that does not read the subsystem file will
+miss things `CLAUDE.md` used to force on it. That is the point — but it means §5
+has to be obeyed, and there is no check that it is. The mitigation is that the
+five sections are named in §5 and in a contents list, so finding the right one
+costs a single read rather than a judgement.
+
 ## 2026-09-06 — The contrast audit composites glass rather than exempting it
 
 **Context.** Glass controls put their ground in absolutely-positioned children.
