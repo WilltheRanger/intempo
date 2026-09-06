@@ -1,5 +1,91 @@
 # InTempo Edit Log
 
+## 2026-09-06 — Recording was broken on every route, by a relative URL that resolved to the app's own HTML
+
+Reported: "can you fix the listen feature and record both not working."
+
+**Record: found, fixed, and it was the walk's long-standing failure too.**
+
+Pressing Start recording put one sentence on screen — *"The recording worklet
+could not be loaded."* — and I spent an embarrassing while treating it as "the
+button does nothing", because the message renders in the footer and my probes
+were reading the first few lines of the screen. The app was telling me exactly
+what was wrong the entire time.
+
+`startRecording` asked `addModule` for the bare filename
+`pcm-recorder.worklet.js` and left the browser to resolve it. The comment beside
+it reasoned that a relative path is what a build served from a sub-path needs.
+That is true of a *document*, and this is a single page app: a relative URL
+resolves against the document's base, which on `/pieces/<id>/record` is
+`/pieces/<id>/`. Measured against the built bundle:
+
+    /pcm-recorder.worklet.js                             200 application/javascript
+    /pieces/fixture-bach-bwv1001/pcm-recorder.worklet.js 200 text/html
+
+The server answered the second with `index.html`, as a single page app must.
+`addModule` was handed a page of HTML to parse as a module and refused. **It
+failed with a 200** — no failed request, no console error, nothing in the
+network panel that looks wrong — which is why this survived: every check that
+watches for errors saw none.
+
+The record screen is *always* nested under a piece. So this was every take, on
+every device, for as long as the worklet has been a real file.
+
+**`walk-app.mjs` goes from 50 of 51 to 51 of 51, and the finding it had been
+reporting was this.** "A silent take was accepted — it would have cost an upload
+and a free analysis" has been the one standing failure in this log all session,
+described in three separate entries as pre-existing on `main` and untouched. It
+was not a separate defect: no worklet meant no samples ever arrived, and the
+take the walk was judging was empty because the recorder never ran. One fix,
+both green.
+
+**The rule is a module with tests**, per `CLAUDE.md` §3 — `lib/audio/workletUrl.ts`.
+`workletUrl(baseHref, origin)` is pure and resolves from the application root,
+honouring a `<base href>` for the sub-path case the original reasoning was
+reaching for; `resolveWorkletUrl()` is the impure half that reads the document,
+with every read guarded. That guard is not defensive padding: the recorder's own
+suite runs in Node with a hand-built `window` that has no `location`, and an
+unguarded read threw *inside* the recorder's `try`, reporting "the worklet could
+not be loaded" for a missing global — the same misreported failure, in the test
+suite, caused by the fix for it. Eight tests, including that one.
+
+The error message now names the file it could not load, so the next person
+reading it on a screen has somewhere to start.
+
+**Listen: could not reproduce, and I am not going to guess.** Driven against the
+built bundle it works — the soundfont is fetched root-absolute
+(`/assets/assets/soundfonts/violin.…sf2`, 200), the button flips to Stop, and
+the playhead advances to "Measure 3 of 3". The resume happens synchronously
+inside the tap, which is what iOS requires, and the shared-context module
+already documents the iPhone failure modes it was written for. Nothing here
+reproduces a failure, and the last three entries in this log are what happens
+when I keep fixing something I cannot observe. What it does on the owner's phone
+— silence, a button that does nothing, or a message — decides which of three
+different bugs it is.
+
+I also swept for the same class of defect: `addModule`, `new Worker` and every
+runtime `fetch` in the app. The worklet was the only route-relative load; the
+API client prefixes an absolute base and the soundfonts are Metro assets with
+root-absolute URLs.
+
+**And a stale comment removed.** `audioRecorder.web.ts` still carried a
+docstring for a constant that no longer exists, explaining that the worklet is
+"loaded from a blob URL rather than a file in `public/`" — directly contradicted
+by the comment forty lines below it describing why the blob was removed. A
+docstring for deleted code is worse than none: it is the file arguing with
+itself.
+
+Scope: new `lib/audio/workletUrl.ts` + 8 tests, `audioRecorder.web.ts`.
+
+Validation: 1,654 mobile tests (152 files, 8 new), `tsc` 0, ESLint 0, no new
+dead exports. `audit-a11y.mjs` PASS on all 30 routes. **`walk-app.mjs` PASS —
+51 of 51, for the first time in this log.** Verified in a browser on the built
+bundle from a nested route: pressing Start recording now yields "Microphone:
+audio received", a running timer and a Stop control; before the fix the same
+press produced only the error sentence.
+
+**Side effects:** none. **Rollback:** revert; recording returns to broken.
+
 ## 2026-09-06 — The web screen transition is reverted: it could strand a screen off-stage and leave the app blank
 
 A screenshot from the owner's iPhone: the whole viewport a flat warm grey,
