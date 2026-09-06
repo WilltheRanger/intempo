@@ -1,5 +1,53 @@
 # InTempo Decisions
 
+## 2026-09-06 — Glass rules are checked in the a11y audit, in pixels, and only where an objective answer exists
+
+**Context.** Apple names three pitfalls for Liquid Glass: don't over-layer,
+don't mix Regular with Clear, don't over-use. Nothing in this repository checked
+any of them, and two of the three are the kind of mistake a single line
+introduces — `IconButton` and `SecondaryButton` both carry the material.
+
+**Decision.** The two rules with an objective answer go into `audit-a11y.mjs`,
+detected geometrically on the rendered page. Over-use is left to the owner.
+
+**Alternatives considered.**
+
+- *A new `tools/audit-glass.mjs`.* Rejected. The a11y audit already visits 27
+  routes with preference seeding and state assertions; a second tool would
+  either duplicate that route list or drift from it. And the framing is honest
+  rather than convenient — Liquid Glass done wrong is a legibility failure,
+  which is precisely what that audit measures.
+- *A static check over the source, or a React context counting nesting depth.*
+  Rejected: the material is a `backdrop-filter` on an absolutely-positioned
+  child, and the question is what composites over what. Source cannot answer it,
+  and a runtime counter would be a rule inside a `.tsx` that nothing here can
+  render under test.
+- *Checking DOM containment.* Tried, shipped in a first draft, and **wrong** —
+  see below.
+- *Also flagging over-use above N surfaces per screen.* Rejected. "Sparingly"
+  has no threshold that is a measurement rather than a guess, and a number
+  invented inside a tool hardens into a rule nobody chose. The two checks that
+  remain have a right answer; this one has a judgement, and it is the owner's.
+
+**Why the predicate is `painted()` and not the audit's own `visible()`.**
+`visible()` calls `hidden()`, which returns true at the first
+`pointer-events: none` on the way up. That is correct for its purpose — an
+element a finger cannot reach is not a touch target. But every layer
+`GlassSurface` draws is `pointerEvents="none"` so taps land on the control
+beneath, so reusing `visible()` filtered out the whole control layer and the
+check reported clean on 27 screens without ever examining a glass surface. Two
+predicates, because there are two questions: *can this be touched* and *does
+this paint*.
+
+**Trade-off accepted, and it is the important line here.** Both defects —
+`contains` never being true for sibling filter elements, and `visible()`
+emptying the input — were invisible to review and caught only by building a
+mutant with a `GlassSurface` deliberately nested and watching the audit still
+pass. A green check is evidence of nothing until it has been seen to go red, and
+neither of these would have been noticed for as long as the app happened to
+contain no over-layering. The mutation is not automated; it was run by hand and
+`EDIT_LOG.md` records both directions.
+
 ## 2026-09-06 — The Reduce Transparency fallback is opaque, and drops the bright edge
 
 **Context.** `GlassSurface` is a custom element, so Reduce Transparency is ours

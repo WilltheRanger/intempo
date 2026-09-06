@@ -1,5 +1,70 @@
 # InTempo Edit Log
 
+## 2026-09-06 — Two of Apple's glass rules are checked now, and the check was inert until a mutation caught it
+
+Apple names three pitfalls for this material. Two of them have an objective
+answer, so `audit-a11y.mjs` now answers them on every screen it already visits:
+
+- **Over-layering** — "avoid applying the material to both layers". Easy to do
+  by accident here: `IconButton` and `SecondaryButton` both carry glass, so
+  dropping either into a glass toolbar is one line.
+- **Mixed variants** — Regular and Clear "should never be mixed". The app has
+  one; a second `backdrop-filter` value appearing anywhere is either a new
+  variant or a surface that drifted.
+
+The third — use it sparingly — is deliberately **not** checked. "Sparingly" has
+no threshold that is a measurement rather than a guess, and a number invented in
+a tool becomes a rule nobody chose.
+
+Filed in the a11y audit rather than a new tool: it already visits 27 routes with
+seeding and state handling, and Liquid Glass done wrong is a legibility failure,
+which is what that audit is for.
+
+**The check passed on all 27 screens and meant nothing.** Two bugs, both found
+by deliberately nesting a `GlassSurface` inside the Today screen's add-piece row
+and rebuilding — not by reading the code, which looked right.
+
+**1 · `contains` cannot see this.** The first version asked whether one
+filter-carrying element contains another. But `GlassSurface` paints its
+`backdrop-filter` on an absolutely-positioned *child* that fills the control, so
+the outer material's filter element is a **sibling** of the inner control, never
+its ancestor. `contains` is false for exactly the case the rule exists to catch.
+Over-layering is a question about what composites over what, so it is answered
+in pixels: a glass surface is over-layered when another's box encloses it,
+1px tolerance for subpixel layout.
+
+**2 · `visible()` discarded the entire control layer.** It calls `hidden()`,
+which walks up and returns true at the first `pointer-events: none` — correct
+for what it was written for, since an element a finger cannot reach is not a
+touch target. But *every* layer `GlassSurface` draws is `pointerEvents="none"`,
+deliberately, so a tap lands on the control beneath. So `glassed` was **always
+empty**: 27 screens reported clean without the check having looked at a single
+glass surface. A local `painted()` predicate now asks what the question actually
+needs — geometry, visibility, display, opacity, and nothing about who can touch
+it.
+
+Findings name the owning control rather than the layer, which has no text of its
+own: with the mutation in place the audit says *"Add a new piece… (40x40) inside
+Add a new piece… (325x86)"* instead of "(no name) inside (no name)".
+
+**Verified both directions, which is the only reason the pass means anything.**
+Mutant build ⇒ `FAIL — 1 finding(s)`. Mutation reverted and rebuilt ⇒ **PASS on
+all 27 screens**, with `glassed` non-empty (the mutant run proves the array is
+populated, and both glass checks read that same array). So: the shipping app has
+no glass-on-glass and one variant everywhere, and that is now a measurement.
+
+The lesson is the one this repository keeps relearning and it is not about
+glass: a check that has never been seen to fail is not a check. Both bugs were
+invisible to review and obvious to a mutation.
+
+Scope: `tools/audit-a11y.mjs` only. No app code, no screens, no tokens.
+
+Validation: full audit PASS on all 27 screens against a clean rebuild; mutant
+build FAIL on the injected defect; `.env` moved aside and restored.
+
+**Side effects:** the audit gains two checks and can now fail on a defect it
+previously could not see. **Rollback:** revert this commit.
+
 ## 2026-09-06 — Reduce Transparency reaches the glass; it had been inert
 
 Apple's Liquid Glass guidance splits cleanly on one line: a standard component
