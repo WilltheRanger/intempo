@@ -17,6 +17,18 @@ export const TAB_BAR_ROW_HEIGHT = Math.max(
 export const TAB_BAR_PADDING_TOP = spacing.md;
 
 /**
+ * How far the floating bar sits in from the screen edges and up from the
+ * bottom.
+ *
+ * The bar left the frame on 2026-09-06: it is a floating capsule with content
+ * passing beneath it rather than an opaque strip welded to the bottom. See
+ * `DECISIONS.md` — this reverses design law 9, which is why it is a named
+ * constant and not a margin typed into the component.
+ */
+export const TAB_BAR_FLOAT_INSET = spacing.md;
+export const TAB_BAR_FLOAT_BOTTOM = spacing.md;
+
+/**
  * Minimum padding below the labels, when there's no home indicator to clear.
  *
  * Only ever a floor — on a device that reports an inset, the inset wins. It is
@@ -39,6 +51,7 @@ export function useTabBarHeight(): number {
   return (
     TAB_BAR_PADDING_TOP +
     TAB_BAR_ROW_HEIGHT +
+    TAB_BAR_FLOAT_BOTTOM +
     Math.max(insets.bottom, TAB_BAR_MIN_PADDING_BOTTOM)
   );
 }

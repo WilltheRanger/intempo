@@ -20,7 +20,16 @@ export interface SectionHeaderProps {
 /**
  * A quiet label above a group of content, optionally with one action.
  *
- * Sentence case — the brief rules out decorative uppercase labels.
+ * **Small, uppercase and letterspaced** — a different *register* from the
+ * content beneath it, not a smaller heading. That separation is what lets one
+ * screen carry several groups without their labels competing with the titles
+ * inside them; before it, "Warmup" and "Long tones, then a G major scale" were
+ * two headings a reader had to rank by size alone.
+ *
+ * This reverses the earlier "sentence case — the brief rules out decorative
+ * uppercase labels" note. Uppercase here is not decoration: it is the only
+ * thing distinguishing a label from a title at these sizes, and it is what iOS
+ * itself uses for exactly this element. See `DECISIONS.md`, 2026-09-06.
  */
 export function SectionHeader({
   label,
@@ -30,8 +39,8 @@ export function SectionHeader({
 }: SectionHeaderProps) {
   return (
     <View style={[styles.container, style]}>
-      <Text variant="sectionLabel" color="textSecondary">
-        {label}
+      <Text variant="eyebrow" color="textTertiary" style={styles.label}>
+        {label.toUpperCase()}
       </Text>
 
       {actionLabel && onActionPress ? (
@@ -76,5 +85,14 @@ const styles = StyleSheet.create({
   },
   pressed: {
     opacity: 0.6,
+  },
+  /*
+    Uppercased in render rather than by `textTransform`, so a screen reader is
+    handed the label as written. VoiceOver spells out some short all-caps
+    strings character by character when the transform is visual only, and every
+    label here is short.
+  */
+  label: {
+    flexShrink: 1,
   },
 });

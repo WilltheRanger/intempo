@@ -1,5 +1,5 @@
 import { useNavigation } from '@react-navigation/native';
-import { ChevronRight, Plus } from 'lucide-react-native';
+import { Plus } from 'lucide-react-native';
 import { useCallback, useEffect, useState } from 'react';
 import { Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
 
@@ -8,6 +8,7 @@ import { AddPieceSheet } from '../../components/pieces/AddPieceSheet';
 import {
   Avatar,
   Card,
+  IconButton,
   EmptyState,
   PageHeader,
   ScreenContainer,
@@ -34,8 +35,6 @@ import {
   BORDER_WIDTH,
   colors,
   CONTROL_HEIGHT,
-  ICON_SIZE,
-  ICON_STROKE_WIDTH,
   motion,
   radii,
   spacing,
@@ -220,7 +219,29 @@ export function TodayScreen() {
     </Pressable>
   ) : null;
 
-  const header = <PageHeader title={getGreeting()} action={avatar} />;
+  /*
+    **Adding a piece is a primary action, so it lives in the header.**
+    It was reachable from Today only through the "Add a new piece" row further
+    down, which put the app's central action below the fold on a populated
+    screen and read as one more list item. The Library's header has carried a
+    labelled version of the same control all along; this is the icon form of it
+    in the same trailing position, so the two screens agree.
+  */
+  const header = (
+    <PageHeader
+      title={getGreeting()}
+      action={
+        <View style={styles.headerActions}>
+          <IconButton
+            icon={Plus}
+            label="Add a piece"
+            onPress={() => setAddSheetVisible(true)}
+          />
+          {avatar}
+        </View>
+      }
+    />
+  );
 
   if (currentPiece.isPending) {
     return (
@@ -401,8 +422,6 @@ export function TodayScreen() {
             onContinue={() => openPractice(piece)}
           />
 
-          <AddPieceAction onPress={() => setAddSheetVisible(true)} />
-
           <FadeIn index={1}>
             <View style={styles.section}>
               <SectionHeader label="Warmup" />
@@ -554,45 +573,12 @@ export function TodayScreen() {
   );
 }
 
-function AddPieceAction({ onPress }: { onPress: () => void }) {
-  return (
-    <Pressable
-      onPress={onPress}
-      accessibilityRole="button"
-      accessibilityLabel="Add a new piece"
-      accessibilityHint="Scan sheet music, import a score, or enter a piece manually"
-      style={({ pressed }) => [
-        styles.addPieceAction,
-        pressed && styles.addPieceActionPressed,
-      ]}
-    >
-      <View style={styles.addPieceIcon}>
-        <Plus
-          size={ICON_SIZE.md}
-          strokeWidth={ICON_STROKE_WIDTH}
-          color={colors.actionText}
-        />
-      </View>
-      <View style={styles.addPieceCopy}>
-        <Text variant="button">Add a new piece</Text>
-        <Text
-          variant="metadataSmall"
-          color="textSecondary"
-          style={styles.addPieceDetail}
-        >
-          Scan sheet music, import a score, or enter it manually.
-        </Text>
-      </View>
-      <ChevronRight
-        size={ICON_SIZE.md}
-        strokeWidth={ICON_STROKE_WIDTH}
-        color={colors.textTertiary}
-      />
-    </Pressable>
-  );
-}
-
 const styles = StyleSheet.create({
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
   page: {
     width: '100%',
     maxWidth: 1180,

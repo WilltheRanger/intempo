@@ -117,6 +117,22 @@ export const typography = {
     lineHeight: 18,
   },
   /** Section labels. Sentence case — the brief rules out decorative uppercase. */
+  /**
+   * The label above a group of content.
+   *
+   * Small, uppercase and letterspaced, so it reads as a different *register*
+   * from the content under it rather than as a smaller heading. That
+   * separation is what lets a screen carry several groups without their labels
+   * competing with the titles inside them.
+   *
+   * `letterSpacing` is absolute in React Native, not em: 1.1 is 0.10em at 11px.
+   */
+  eyebrow: {
+    fontFamily: fontFamily.sansMedium,
+    fontSize: 11,
+    lineHeight: 15,
+    letterSpacing: 1.1,
+  },
   sectionLabel: {
     fontFamily: fontFamily.sansMedium,
     fontSize: 13,
