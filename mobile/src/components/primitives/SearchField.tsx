@@ -17,6 +17,7 @@ import {
   ICON_SIZE,
   ICON_STROKE_WIDTH,
   MIN_TOUCH_TARGET,
+  pressedOpacity,
   radii,
   spacing,
   typography,
@@ -86,7 +87,7 @@ export function SearchField({
           onPress={() => onChangeText('')}
           accessibilityRole="button"
           accessibilityLabel="Clear search"
-          style={styles.target}
+          style={({ pressed }) => [styles.target, pressed && styles.pressed]}
         >
           <X
             size={ICON_SIZE.md}
@@ -100,6 +101,16 @@ export function SearchField({
 }
 
 const styles = StyleSheet.create({
+  /*
+    Every tappable thing on this screen acknowledges the touch. These were bare
+    `Pressable`s with a static style, so a tap produced no response at all until
+    whatever it triggered appeared — which on a slow action reads as the control
+    being dead. `PressableScale` is for the large targets; the app's answer for
+    small ones is a colour or opacity change, and these had neither.
+  */
+  pressed: {
+    opacity: pressedOpacity,
+  },
   /**
    * Padded to a real touch target, not `hitSlop`-ed to one.
    *

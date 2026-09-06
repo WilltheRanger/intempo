@@ -35,7 +35,13 @@ import {
   useRetranscribe,
   useSetClef,
 } from '../../data/hooks/usePieces';
-import { BORDER_WIDTH, colors, MIN_TOUCH_TARGET, spacing } from '../../design';
+import {
+  BORDER_WIDTH,
+  colors,
+  MIN_TOUCH_TARGET,
+  pressedOpacity,
+  spacing,
+} from '../../design';
 import {
   describeOmissions,
   describeUndrawnScore,
@@ -610,7 +616,7 @@ export function PieceScoreScreen() {
                 aria-checked={skipRests}
                 accessibilityLabel="Skip long rests"
                 onPress={() => setSkipRests((on) => !on)}
-                style={styles.skipToggle}
+                style={({ pressed }) => [styles.skipToggle, pressed && styles.pressed]}
               >
                 {/*
                   Not gold when on. At 13px the accent is 3.54:1, under the
@@ -669,7 +675,7 @@ export function PieceScoreScreen() {
               }
               accessibilityRole="button"
               accessibilityLabel={`Fix bar ${reading.problemMeasures[0]}`}
-              style={styles.fixRow}
+              style={({ pressed }) => [styles.fixRow, pressed && styles.pressed]}
             >
               <Text variant="metadataSmall" color="textSecondary">
                 {describeProblemMeasures(reading.problemMeasures, {
@@ -718,7 +724,7 @@ export function PieceScoreScreen() {
               onPress={() => setPickingClef(true)}
               accessibilityRole="button"
               accessibilityLabel="Set the clef"
-              style={styles.fixRow}
+              style={({ pressed }) => [styles.fixRow, pressed && styles.pressed]}
             >
               <Text variant="metadataSmall" color="textSecondary">
                 The clef wasn&apos;t read from this page, so the notes above are
@@ -746,7 +752,7 @@ export function PieceScoreScreen() {
             <Pressable
               onPress={() => setPickingMeasure(true)}
               accessibilityRole="button"
-              style={styles.secondaryRow}
+              style={({ pressed }) => [styles.secondaryRow, pressed && styles.pressed]}
             >
               <Text variant="metadataSmall" color="accentText">
                 Correct another bar
@@ -768,7 +774,7 @@ export function PieceScoreScreen() {
             <Pressable
               onPress={() => setPickingClef(true)}
               accessibilityRole="button"
-              style={styles.secondaryRow}
+              style={({ pressed }) => [styles.secondaryRow, pressed && styles.pressed]}
             >
               <Text variant="metadataSmall" color="accentText">
                 Change the clef
@@ -937,7 +943,7 @@ export function PieceScoreScreen() {
                   });
                 }}
                 accessibilityRole="button"
-                style={styles.measureRow}
+                style={({ pressed }) => [styles.measureRow, pressed && styles.pressed]}
               >
                 <Text variant="body">Bar {measure.measure_number}</Text>
                 <Text variant="metadataSmall" color={flagged ? 'textSecondary' : 'textTertiary'}>
@@ -978,7 +984,7 @@ export function PieceScoreScreen() {
               accessibilityRole="button"
               accessibilityState={{ selected: piece.score?.clef === clef }}
               aria-pressed={piece.score?.clef === clef}
-              style={styles.clefRow}
+              style={({ pressed }) => [styles.clefRow, pressed && styles.pressed]}
             >
               <Text
                 variant="body"
@@ -997,7 +1003,7 @@ export function PieceScoreScreen() {
             accessibilityRole="button"
             accessibilityState={{ selected: !piece.score?.clef }}
             aria-pressed={!piece.score?.clef}
-            style={styles.clefRow}
+            style={({ pressed }) => [styles.clefRow, pressed && styles.pressed]}
           >
             <Text
               variant="body"
@@ -1036,6 +1042,16 @@ export function PieceScoreScreen() {
 }
 
 const styles = StyleSheet.create({
+  /*
+    Every tappable thing on this screen acknowledges the touch. These were bare
+    `Pressable`s with a static style, so a tap produced no response at all until
+    whatever it triggered appeared — which on a slow action reads as the control
+    being dead. `PressableScale` is for the large targets; the app's answer for
+    small ones is a colour or opacity change, and these had neither.
+  */
+  pressed: {
+    opacity: pressedOpacity,
+  },
   scoreMeta: {
     marginTop: spacing.sm,
   },

@@ -1,5 +1,49 @@
 # InTempo Decisions
 
+## 2026-09-06 — `PanResponder` for the sheet gesture, over adding a gesture library
+
+**Context.** `BottomSheet` drew a grab handle and nothing dragged it; the only
+ways out were the close button and a backdrop tap. Six sheets, including the
+add-a-piece one, and the owner hit it immediately. Adding the gesture needs
+something to read a drag with.
+
+**Decision.** React Native's built-in `PanResponder` with `Animated`, and the
+thresholds in `mobile/src/lib/motion/sheetDrag.ts` with unit tests.
+
+**Alternatives considered.**
+
+- *`react-native-gesture-handler` + `react-native-reanimated`.* The standard
+  answer, and genuinely better: gestures and animation on the UI thread, so a
+  drag cannot be interrupted by JS work. Rejected **for now**. Both are native
+  modules, so adopting them is a native rebuild and an Expo config change; the
+  app currently has neither installed and ships `react-native-screens` alone.
+  That is a large, permanent widening of the dependency surface bought for one
+  interaction that `PanResponder` answers adequately — and this is a web build
+  today, where neither library gets its UI-thread advantage anyway. Revisit when
+  a second gesture wants it (a swipe-to-delete row, a pull-to-refresh with
+  custom motion) or when the native build becomes the one that ships.
+- *`Modal`'s built-in `animationType="slide"` plus a close button.* That is what
+  was already there. It is not a gesture; it is the absence of one.
+- *A drag on the handle only.* Rejected as too small a target — 36×4pt. The grab
+  area is the handle and the title row together, which is a comfortable strip.
+  The exception is an `expand` sheet, where the body scrolls and the responder
+  must stay off it.
+
+**Trade-offs accepted.**
+
+- The drag runs on the JS thread. A frame dropped under load shows as a stutter
+  in the sheet following the finger. Not observed in the browser at 393×852,
+  but it is the honest cost.
+- `PanResponder`'s `gestureState.vy` is not used; velocity is computed from a
+  sample window in the module instead. That is more code, and it is what makes
+  the threshold a tested number rather than a platform-dependent one.
+
+**What this does not settle.** Whether 0.5 pt/ms and 0.28 of the sheet height
+*feel* right. Both are reasoned starting values, verified to fire, and neither
+has met a real finger — the browser harness cannot produce a gesture faster than
+~0.27 pt/ms. They are the kind of number `TUNING_LOG.md` exists for, if the
+owner wants them moved.
+
 ## 2026-09-06 — Glass rules are checked in the a11y audit, in pixels, and only where an objective answer exists
 
 **Context.** Apple names three pitfalls for Liquid Glass: don't over-layer,
