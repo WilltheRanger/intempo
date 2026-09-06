@@ -17,6 +17,7 @@ import { IS_LIVE_BACKEND } from '../environment';
 import { pieceSource } from '../sources';
 import { practiceTempo } from '../practiceTempo';
 import { insightsKeys } from './useInsights';
+import { pieceFromCaches } from './knownPiece';
 import { takeKeys } from './useLatestTake';
 import { toPiece } from '../sources/api';
 import type { NewPiece, PieceEdit } from '../sources/types';
@@ -57,10 +58,32 @@ export function useCurrentPiece() {
 const TRANSCRIPTION_POLL_MS = 3000;
 
 export function usePiece(id: string) {
+  const queryClient = useQueryClient();
   return useQuery<Piece | null>({
     queryKey: pieceKeys.detail(id),
     queryFn: () => pieceSource.getPiece(id),
     enabled: Boolean(id),
+    /**
+     * Open on what the library already told us, not on a blank screen.
+     *
+     * Tapping a piece used to push a screen that rendered `LoadingState` and
+     * then replaced it — reported as "it's like waiting to load and then
+     * loads". The row that was tapped already held this piece's title,
+     * composer, movement and cover, fetched and rendered a moment earlier, and
+     * the detail screen threw all of it away to ask again.
+     *
+     * `placeholderData` rather than `initialData`, deliberately: `initialData`
+     * is written into the cache as if it were a real answer and inherits the
+     * query's staleness, so a thin listing row would be *stored* as the piece.
+     * A placeholder is never cached, is flagged by `isPlaceholderData`, and the
+     * real fetch still runs underneath and replaces it.
+     */
+    placeholderData: () =>
+      pieceFromCaches(
+        id,
+        queryClient.getQueryData<Piece[]>(pieceKeys.list()),
+        queryClient.getQueryData<Piece | null>(pieceKeys.current()),
+      ),
     // Keep asking only while there is an answer coming. `queued` and `reading`
     // are the two states a worker is going to move off; `done` and `failed`
     // are terminal, and polling either would be asking a settled question
