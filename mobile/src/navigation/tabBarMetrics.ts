@@ -1,4 +1,4 @@
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useSafeAreaInsets, type EdgeInsets } from 'react-native-safe-area-context';
 
 import { ICON_SIZE, MIN_TOUCH_TARGET, spacing, typography } from '../design';
 
@@ -16,42 +16,52 @@ export const TAB_BAR_ROW_HEIGHT = Math.max(
 /** Padding above the icons. */
 export const TAB_BAR_PADDING_TOP = spacing.md;
 
-/**
- * How far the floating bar sits in from the screen edges and up from the
- * bottom.
- *
- * The bar left the frame on 2026-09-06: it is a floating capsule with content
- * passing beneath it rather than an opaque strip welded to the bottom. See
- * `DECISIONS.md` — this reverses design law 9, which is why it is a named
- * constant and not a margin typed into the component.
- */
+/** How far the floating capsule sits in from the left and right edges. */
 export const TAB_BAR_FLOAT_INSET = spacing.md;
-export const TAB_BAR_FLOAT_BOTTOM = spacing.md;
 
 /**
- * Minimum padding below the labels, when there's no home indicator to clear.
+ * The largest gap the capsule will ever leave beneath itself.
  *
- * Only ever a floor — on a device that reports an inset, the inset wins. It is
- * one step above the padding on top of the icons because the labels sit at the
- * very edge of the frame, and matching the two made the row read as bottom-
- * heavy on hardware with no inset at all.
+ * A ceiling, not an addition. Devices report very different bottom insets — 34
+ * on a Pro, 16–24 for Android gesture navigation, 0 in a browser — and the
+ * capsule only has to clear the home indicator, which is a 5pt pill sitting
+ * about 8pt up. Anything past this is empty page.
  */
-export const TAB_BAR_MIN_PADDING_BOTTOM = spacing.lg;
+export const TAB_BAR_FLOAT_BOTTOM_MAX = spacing.xl;
 
 /**
- * Total height of the tab bar, including the home-indicator inset.
+ * The gap between the capsule's bottom edge and the bottom of the screen.
  *
- * `BottomTabBarHeightContext` is not usable for this: with a custom `tabBar`
- * React Navigation publishes its own default (49pt) rather than measuring what
- * we actually render, which is 71pt before the safe-area inset. Trusting it
- * left content sitting behind the bar.
+ * **Clamped against the safe-area inset, never added to it.** Summing them
+ * paid for the same clearance twice: `max(34, 16) + 12` put the capsule's
+ * bottom edge **46pt** off the bottom of a Pro, roughly 33pt above anything it
+ * needed to avoid. That is what "the bottom bar is not close to the bottom"
+ * was.
+ *
+ *   home indicator (34pt inset) → min(max(34, 12), 20) = 20pt
+ *   Android gesture nav (16–24) → 16–20pt
+ *   no inset (the web build)    → 12pt
+ *
+ * The floor stops a device reporting nothing from putting the capsule on the
+ * screen edge; the ceiling stops a generous inset pushing it back up.
+ */
+export function tabBarFloatBottom(insets: EdgeInsets): number {
+  return Math.min(
+    Math.max(insets.bottom, TAB_BAR_FLOAT_INSET),
+    TAB_BAR_FLOAT_BOTTOM_MAX,
+  );
+}
+
+/** The capsule's own height: the row, plus its padding on both sides. */
+export const TAB_BAR_CAPSULE_HEIGHT = TAB_BAR_ROW_HEIGHT + TAB_BAR_PADDING_TOP * 2;
+
+/**
+ * What a scrolling screen has to leave clear at the bottom.
+ *
+ * The capsule, the gap under it, and one more step so the last row of a list
+ * stops above the bar rather than tucking under its edge.
  */
 export function useTabBarHeight(): number {
   const insets = useSafeAreaInsets();
-  return (
-    TAB_BAR_PADDING_TOP +
-    TAB_BAR_ROW_HEIGHT +
-    TAB_BAR_FLOAT_BOTTOM +
-    Math.max(insets.bottom, TAB_BAR_MIN_PADDING_BOTTOM)
-  );
+  return TAB_BAR_CAPSULE_HEIGHT + tabBarFloatBottom(insets) + spacing.md;
 }

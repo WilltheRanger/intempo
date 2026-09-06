@@ -13,6 +13,8 @@ export {
   pressedOpacity,
   disabledOpacity,
   EASE_OUT,
+  SPRING,
+  SPRING_CSS,
   STAGGER_MS,
   STAGGER_CAP,
   RISE_DISTANCE,

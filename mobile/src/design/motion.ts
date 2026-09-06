@@ -11,6 +11,8 @@ export const motion = {
   fast: 120,
   /** A whole screen settling after navigation. */
   scene: 180,
+  /** How long the CSS approximation of `SPRING` runs for. */
+  spring: 320,
   /** Progress fills, content settling in. */
   base: 240,
 } as const;
@@ -24,6 +26,24 @@ export const motion = {
  * the ones being waited on.
  */
 export const EASE_OUT = Easing.bezier(0.22, 1, 0.36, 1);
+
+/**
+ * The spring the control layer settles on.
+ *
+ * Stiff and well damped — it arrives quickly and overshoots barely enough to
+ * notice, which is what separates an iOS transition from a CSS ease-out that
+ * reaches its target and stops dead. Physical parameters rather than a
+ * duration, so an interrupted animation continues from where it was.
+ */
+export const SPRING = { stiffness: 260, damping: 24, mass: 1 } as const;
+
+/**
+ * The same motion for the web build, which has no `Animated.spring`.
+ *
+ * The control point past 1 is the overshoot; without it this is just another
+ * ease-out with a longer duration.
+ */
+export const SPRING_CSS = 'cubic-bezier(0.33, 1.28, 0.5, 1)';
 
 /**
  * Delay between one list item's entrance and the next.
