@@ -109,8 +109,20 @@ export const colors = {
   // Derived from `bg`, not from white: over ivory a neutral-white glass reads
   // cold, and this layer sits on ivory nearly everywhere.
   // -------------------------------------------------------------------------
-  /** The ground a glass surface adds on top of the blur behind it. */
-  glassTint: 'rgba(251, 249, 244, 0.62)',
+  /**
+   * The ground a glass surface adds on top of the blur behind it.
+   *
+   * **0.80, not 0.62.** At 0.62 the material read as "too clear" — a tinted
+   * pane you could still make out words and staff lines through, which is
+   * clutter behind a label rather than depth beneath one. Apple's light-mode
+   * regular material is far closer to this end; the underlying content should
+   * survive as shape and colour, not as text.
+   *
+   * Composited worst case is over black: rgb(201, 199, 195), where
+   * `textPrimary` measures **11.3:1** — so the extra opacity costs nothing in
+   * contrast and `audit-a11y.mjs` checks it on every build.
+   */
+  glassTint: 'rgba(251, 249, 244, 0.80)',
   /**
    * The tint for a **prominent** glass control — a primary action.
    *
@@ -120,7 +132,7 @@ export const colors = {
    * `actionText`, and translucency is not allowed to cost a control its
    * contrast.
    */
-  glassTintProminent: 'rgba(26, 23, 20, 0.88)',
+  glassTintProminent: 'rgba(26, 23, 20, 0.92)',
   /**
    * The specular catch, brightest at the top-left corner and gone by a third
    * of the way down. Paired with `glassEdge` — the gradient reads as light

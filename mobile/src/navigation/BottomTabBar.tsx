@@ -16,16 +16,17 @@ import {
   colors,
   ICON_SIZE,
   ICON_STROKE_WIDTH,
-  EASE_OUT,
   motion,
+  SPRING,
+  SPRING_CSS,
   spacing,
 } from '../design';
 import {
-  TAB_BAR_FLOAT_BOTTOM,
+  TAB_BAR_CAPSULE_HEIGHT,
   TAB_BAR_FLOAT_INSET,
-  TAB_BAR_MIN_PADDING_BOTTOM,
   TAB_BAR_PADDING_TOP,
   TAB_BAR_ROW_HEIGHT,
+  tabBarFloatBottom,
 } from './tabBarMetrics';
 import { impact, ImpactFeedbackStyle } from '../lib/haptics';
 import { useReducedMotion } from '../lib/useReducedMotion';
@@ -46,8 +47,11 @@ function webTabSelectionStyle(focused: boolean): ViewStyle {
       { scale: focused ? 1 : 0.96 },
     ],
     transitionProperty: 'opacity, transform',
-    transitionDuration: `${motion.fast}ms`,
-    transitionTimingFunction: 'cubic-bezier(0.22, 1, 0.36, 1)',
+    // The web build cannot run `Animated.spring`, so this is the closest curve
+    // to it: long enough to read as settling, with the small overshoot past 1
+    // that makes a spring feel like one.
+    transitionDuration: `${motion.spring}ms`,
+    transitionTimingFunction: SPRING_CSS,
     willChange: 'opacity, transform',
   } as unknown as ViewStyle;
 }
@@ -67,11 +71,14 @@ function TabSelectionMotion({
       selected.setValue(focused ? 1 : 0);
       return;
     }
-    const animation = Animated.timing(selected, {
+    // **A spring, not a 120ms ease-out.** The old curve reached its target and
+    // stopped dead; iOS settles. Physical parameters rather than a duration,
+    // so an interrupted change continues from wherever it had got to instead of
+    // restarting.
+    const animation = Animated.spring(selected, {
       toValue: focused ? 1 : 0,
-      duration: motion.fast,
-      easing: EASE_OUT,
       useNativeDriver: true,
+      ...SPRING,
     });
     animation.start();
     return () => animation.stop();
@@ -143,16 +150,11 @@ export function BottomTabBar({
   const insets = useSafeAreaInsets();
   const reduceMotion = useReducedMotion();
 
-  // The safe-area inset is the *gap under the capsule* now, not padding inside
-  // it: a floating bar must clear the home indicator without swallowing it, and
-  // a capsule with 34pt of dead space in its bottom half is not a capsule. The
-  // floor still only applies when the device reports no inset.
-  const bottomGap =
-    Math.max(insets.bottom, TAB_BAR_MIN_PADDING_BOTTOM) + TAB_BAR_FLOAT_BOTTOM;
+  const bottomGap = tabBarFloatBottom(insets);
 
   return (
     <GlassSurface
-      radius={CAPSULE_RADIUS}
+      radius={TAB_BAR_CAPSULE_HEIGHT / 2}
       style={[
         styles.bar,
         {
@@ -223,14 +225,6 @@ export function BottomTabBar({
   );
 }
 
-/**
- * A capsule, so the radius is half the bar's height and is never guessed.
- *
- * Derived rather than typed, because the row height is itself derived from the
- * icon size and the label's line height — a literal here goes stale the moment
- * either of those moves, and a not-quite-capsule reads as a mistake.
- */
-const CAPSULE_RADIUS = (TAB_BAR_PADDING_TOP + TAB_BAR_ROW_HEIGHT) / 2;
 
 const styles = StyleSheet.create({
   bar: {

@@ -1,5 +1,61 @@
 # InTempo Edit Log
 
+## 2026-09-06 — Four glass defects the owner named, fixed with the numbers behind them
+
+Owner feedback, verbatim: the bar "is not close to the bottom", "not smooth
+like iOS animations", "too clear", and the add-piece button "placed terribly —
+I want it like the original design but in the style of liquid glass".
+
+**1 · The bar sits at the bottom now.** `bottomGap` was
+`max(insets.bottom, 16) + 12`, which pays for the same clearance twice: on a Pro
+that is **46pt** of empty page under the capsule, about 33pt more than the home
+indicator needs. It is clamped rather than summed —
+`min(max(insets.bottom, 12), 20)` — giving 20pt on a home-indicator phone,
+16–20 on Android gesture nav, 12 in a browser. Measured on the web build after:
+gap 12pt, insets 12pt each side. The ceiling matters as much as the floor: an
+addition grows without bound on whatever inset a device reports, a clamp cannot.
+`useTabBarHeight()` was also wrong — it counted `TAB_BAR_PADDING_TOP` once where
+the capsule pads both sides — and is now `TAB_BAR_CAPSULE_HEIGHT + gap + md`.
+
+**2 · Selection is a spring.** It was `Animated.timing` over `motion.fast`
+(120ms) with an ease-out on native, and the same curve as a CSS transition on
+web: it reached its target and stopped dead. `SPRING`
+(`stiffness 260, damping 24, mass 1`) drives it on native, so an interrupted
+change continues from where it got to instead of restarting; the web build gets
+`SPRING_CSS`, a 320ms curve whose control point past 1 is the overshoot —
+without that it is just a slower ease-out. Both still respect
+`useReducedMotion`.
+
+**3 · Not "too clear" any more.** `glassTint` 0.62 → **0.80**, native blur
+46 → 68, web `blur(24px)` → `blur(30px)`, and `glassTintProminent` 0.88 → 0.92.
+At 0.62 staff lines and section labels stayed readable through the bar, which is
+clutter behind a label rather than depth beneath one. The composite worst case
+is over black — rgb(201, 199, 195), where `textPrimary` measures **11.3:1** — so
+the opacity costs nothing in contrast, and `audit-a11y.mjs` now checks that on
+every build rather than taking it on trust.
+
+**4 · Add a piece is the labelled row again.** The bare `+` in the header was a
+one-commit mistake: two unrelated circles crowding the trailing corner, the
+smaller of which said nothing about what it added. The original composition is
+back — mark, title, the line naming the three ways in, chevron — restored
+verbatim from `2b11ead`, in the control layer's material: neutral glass instead
+of a bordered white card, a capsule mark instead of a rounded square, and it
+compresses under the finger. The header is the greeting and the avatar again.
+The five dead `addPiece*` style rules the earlier commit left behind are gone
+too; nothing flagged them, because `check-dead-exports.py` reads exports and not
+module-private StyleSheet keys.
+
+Scouted in parallel before any of it was written — the clamp in (1) is the
+scout's recommendation over the subtraction I had reached for, because a clamp
+is bounded whatever inset arrives and a subtraction is not.
+
+Validation: 1,603 mobile tests (147 files), `tsc` 0, ESLint 0, a11y audit PASS,
+`.env` restored `diff -q` identical, fixtures web build clean with `script-src`
+still pinned. Walk 50 of 51 — the same silent-take finding from PR #70; this
+diff does not touch the recording path.
+
+Rollback: branch `pre-liquid-glass` (`2b11ead`), or revert the glass commits.
+
 ## 2026-09-06 — Liquid Glass, second pass: the whole control layer, and the check that could not see it
 
 The first pass glassed the tab bar and left the two most-used controls — "Add a
