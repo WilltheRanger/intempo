@@ -21,8 +21,6 @@ const WEB_DIFFUSION = 'blur(30px) saturate(150%)';
 /** This RN version's `StyleSheet` types omit `absoluteFillObject`. */
 const FILL = { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0 } as const;
 
-export type GlassTone = 'neutral' | 'prominent';
-
 export interface GlassSurfaceProps {
   children?: ReactNode;
   /**
@@ -31,19 +29,18 @@ export interface GlassSurfaceProps {
    * `borderRadius: 'inherit'` does not exist in React Native.
    */
   radius: number;
-  /**
-   * `neutral` is colourless glass — the background bleeds through and decides
-   * how it looks. `prominent` is ink-tinted, and is **reserved for primary
-   * actions and selected states**: tint is what makes one control read as the
-   * one to press, so spending it anywhere else spends the signal.
-   */
-  tone?: GlassTone;
   style?: StyleProp<ViewStyle>;
 }
 
 /**
  * The floating control layer: refracted, diffused, tinted, with a specular
  * catch over a darker separation.
+ *
+ * **Colourless, and only chrome may use it.** There was a tinted `prominent`
+ * tone for primary actions; it is gone. A translucent ground picks up whatever
+ * scrolls beneath it, so the one control on a screen that should not be
+ * negotiable was never quite the same colour twice. Primary actions are solid
+ * ink, and this material is what they sit on top of.
  *
  * **Only chrome may use this.** Navigation, toolbars, buttons, floating panels
  * — never content. That is Apple's own rule and it is what keeps this app
@@ -61,8 +58,7 @@ export interface GlassSurfaceProps {
  * 2. **Tint**, above the blur rather than as its background, because the
  *    label's legibility depends on this layer alone and it must not be
  *    something a platform's blur implementation can decide to skip.
- * 3. **Specular** — a gradient catch, brightest at the top-left. Neutral tone
- *    only: on ink it reads as a black gradient rather than as light.
+ * 3. **Specular** — a gradient catch, brightest at the top-left.
  * 4. **Separation** — a darker hairline ring, so the shape survives over pale
  *    content.
  * 5. **Edge** — the bright hairline, so it survives over dark content.
@@ -77,16 +73,10 @@ export interface GlassSurfaceProps {
  * material — every glass surface needs a non-glass design that stands on its
  * own — and paying it once here is what stops it being paid badly per screen.
  */
-export function GlassSurface({
-  children,
-  radius,
-  tone = 'neutral',
-  style,
-}: GlassSurfaceProps) {
+export function GlassSurface({ children, radius, style }: GlassSurfaceProps) {
   // Gradient ids are document-global, so two surfaces on one screen would
   // otherwise share — and fight over — the same definition.
   const gradientId = `glass-spec-${useId()}`;
-  const prominent = tone === 'prominent';
 
   return (
     <View style={[styles.container, { borderRadius: radius }, style]}>
@@ -113,33 +103,23 @@ export function GlassSurface({
           FILL,
           {
             borderRadius: radius,
-            backgroundColor: prominent ? colors.glassTintProminent : colors.glassTint,
+            backgroundColor: colors.glassTint,
           },
         ]}
         pointerEvents="none"
       />
 
-      {/*
-        **Neutral only.** On a pale surface the catch reads as light falling
-        across a curve, which is the whole point of it. On the ink tone it read
-        as a black gradient — a button lighter at the top-left and darker
-        toward the bottom-right — which is a different thing entirely and not
-        what a primary action should look like. The prominent tone keeps its
-        flat tint and gets its dimension from the edge hairline alone.
-      */}
-      {prominent ? null : (
-        <Svg style={FILL} pointerEvents="none">
-          <Defs>
-            {/* Diagonal, so the catch falls across the surface rather than
-                banding evenly down it. */}
-            <LinearGradient id={gradientId} x1="0" y1="0" x2="0.5" y2="1">
-              <Stop offset="0" stopColor={colors.glassSpecular} stopOpacity="1" />
-              <Stop offset="0.38" stopColor={colors.glassSpecular} stopOpacity="0" />
-            </LinearGradient>
-          </Defs>
-          <Rect x="0" y="0" width="100%" height="100%" rx={radius} fill={`url(#${gradientId})`} />
-        </Svg>
-      )}
+      <Svg style={FILL} pointerEvents="none">
+        <Defs>
+          {/* Diagonal, so the catch falls across the surface rather than
+              banding evenly down it. */}
+          <LinearGradient id={gradientId} x1="0" y1="0" x2="0.5" y2="1">
+            <Stop offset="0" stopColor={colors.glassSpecular} stopOpacity="1" />
+            <Stop offset="0.38" stopColor={colors.glassSpecular} stopOpacity="0" />
+          </LinearGradient>
+        </Defs>
+        <Rect x="0" y="0" width="100%" height="100%" rx={radius} fill={`url(#${gradientId})`} />
+      </Svg>
 
       <View
         style={[FILL, styles.separator, { borderRadius: radius }]}
@@ -151,7 +131,7 @@ export function GlassSurface({
           styles.edge,
           {
             borderRadius: radius,
-            borderTopColor: prominent ? colors.glassSpecularProminent : colors.glassEdge,
+            borderTopColor: colors.glassEdge,
           },
         ]}
         pointerEvents="none"

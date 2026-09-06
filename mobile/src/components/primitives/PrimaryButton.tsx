@@ -20,7 +20,6 @@ import {
 } from '../../design';
 import { impact, ImpactFeedbackStyle } from '../../lib/haptics';
 import { PressableScale } from '../motion/PressableScale';
-import { GlassSurface } from './GlassSurface';
 import { Text } from './Text';
 
 export interface PrimaryButtonProps {
@@ -87,32 +86,13 @@ export function PrimaryButton({
       activeScale={CONTROL_PRESSED_SCALE}
       style={({ pressed }) => [
         styles.button,
+        light && styles.buttonLight,
         size === 'compact' && styles.compact,
-        pressed && !inactive && styles.pressed,
+        pressed && !inactive && (light ? styles.pressedLight : styles.pressed),
         disabled && styles.disabled,
         style,
       ]}
     >
-      {/*
-        **The primary action is tinted glass, not a flat fill.** It belongs to
-        the same material as the navigation floating above the content, which is
-        what makes the control layer read as one layer rather than as a bar plus
-        some buttons. Tint is spent here and on selected states and nowhere
-        else — it is the thing that says "this is the one to press".
-
-        `light` keeps a plain surface: it is used where the button already sits
-        on a dark full-bleed ground (the scanner), and glass over glass is the
-        mistake this material makes easiest.
-      */}
-      {light ? (
-        <View style={[styles.fill, styles.lightFill]} pointerEvents="none" />
-      ) : (
-        <GlassSurface
-          radius={size === 'compact' ? MIN_TOUCH_TARGET / 2 : CONTROL_HEIGHT / 2}
-          tone="prominent"
-          style={styles.fill}
-        />
-      )}
       {loading ? (
         <View style={styles.above}>
           <ActivityIndicator color={light ? colors.actionBg : colors.actionText} />
@@ -138,24 +118,22 @@ export function PrimaryButton({
 const styles = StyleSheet.create({
   button: {
     height: CONTROL_HEIGHT,
-    // A capsule. Large continuous radii are the shape language of this
-    // material; `radii.md` was a rounded rectangle from the previous one.
+    // A capsule. Large continuous radii are the shape language of the control
+    // layer around it; `radii.md` was a rounded rectangle from the previous one.
     borderRadius: radii.pill,
+    // **Solid ink, not tinted glass.** Glass was tried here and reverted: a
+    // translucent ground picks up whatever scrolls beneath it, so the app's
+    // single most important control was never quite the same colour twice.
+    // The primary action is the one thing on a screen that should not be
+    // negotiable, and the surrounding chrome being glass is what makes a solid
+    // button read as the thing sitting on top of it.
+    backgroundColor: colors.actionBg,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: spacing.lg,
-    overflow: 'hidden',
   },
-  fill: {
-    position: 'absolute',
-    top: 0,
-    right: 0,
-    bottom: 0,
-    left: 0,
-  },
-  lightFill: {
+  buttonLight: {
     backgroundColor: colors.actionText,
-    borderRadius: radii.pill,
   },
   compact: {
     // Exactly the minimum comfortable target — no smaller.
@@ -166,14 +144,11 @@ const styles = StyleSheet.create({
     // sits under the page title in the hierarchy instead of rivalling it.
     paddingHorizontal: spacing.md,
   },
-  /*
-    Press is carried by `PressableScale`'s compression and by this small
-    lift-off in opacity. A background swap is not available any more — the
-    ground is a translucent layer under the label, not a colour on this view —
-    and compression is the more physical of the two signals regardless.
-  */
   pressed: {
-    opacity: 0.86,
+    backgroundColor: colors.actionBgPressed,
+  },
+  pressedLight: {
+    backgroundColor: colors.surfacePressed,
   },
   disabled: {
     opacity: disabledOpacity,
