@@ -1,5 +1,209 @@
 # InTempo Edit Log
 
+## 2026-09-06 — The Reduce Transparency store gets the tests it shipped without
+
+`glassMaterial` is a pure function and was tested from the start. The store that
+feeds it — two platforms, a listener, and module-level state — went out with
+none, which is the wrong way round: the pure rule is the part least likely to
+break silently.
+
+Ten tests, driven **through** `useSyncExternalStore` rather than around it. The
+`react` mock hands back the `subscribe` and `getSnapshot` the hook actually
+passes, so the wiring under test is the wiring the app uses, not a private copy.
+`vi.resetModules()` before each case is load-bearing — `listening` and the
+cached value are module-level singletons, and a case inheriting them would pass
+without running the code it names.
+
+What they pin: the initial value is false, so a surface renders as glass before
+the platform read lands; the read publishes; `reduceTransparencyChanged`
+publishes; the web build reads `prefers-reduced-transparency` and never touches
+the native API; an unchanged value notifies nobody; an unsubscribed listener
+stops hearing; **one** platform read and **one** listener however many surfaces
+subscribe; and neither a rejected native promise nor a browser without
+`matchMedia` throws.
+
+**Mutation-tested, because of what the last commit found.** Four defects
+injected into the source, each killed by exactly one test: dropping the
+no-change guard, dropping the `listening` guard, pointing the media query at
+`prefers-reduced-motion`, and making unsubscribe a no-op. Re-checked after the
+helper was restructured (below), and the source verified byte-identical to
+pre-mutation with `diff -q`.
+
+**`react-hooks/rules-of-hooks` was satisfied, not switched off.** It rejected
+the hook being called from a plain helper; renaming that helper `use…` made it
+reject the call for being inside an `async` function. Both objections are
+correct. The module import stays in the async helper and the hook is called from
+`Probe`, a real if minimal function component — which is where a hook call
+belongs. `CLAUDE.md` §1 names this rule as the reason a linter was installed
+here, so a test-scoped disable was not on the table.
+
+**A process note worth more than the tests.** An earlier check in this session
+read `npm run lint 2>&1 | tail -4 && echo "LINT CLEAN"`, which reports the exit
+status of `tail` — so it printed "LINT CLEAN" over a real ESLint error. Every
+validation in this entry was re-run reading `${PIPESTATUS[0]}`. A green light
+wired to nothing is the same failure as the audit in the previous commit, in a
+different costume.
+
+Scope: one new test file. No source change — `reducedTransparency.ts` is
+byte-identical to what the previous commit pushed.
+
+Validation: 1,620 mobile tests (149 files, 10 new), `tsc` 0, ESLint 0, all
+exit codes read directly.
+
+**Side effects:** none. **Rollback:** delete the test file.
+
+## 2026-09-06 — Two of Apple's glass rules are checked now, and the check was inert until a mutation caught it
+
+Apple names three pitfalls for this material. Two of them have an objective
+answer, so `audit-a11y.mjs` now answers them on every screen it already visits:
+
+- **Over-layering** — "avoid applying the material to both layers". Easy to do
+  by accident here: `IconButton` and `SecondaryButton` both carry glass, so
+  dropping either into a glass toolbar is one line.
+- **Mixed variants** — Regular and Clear "should never be mixed". The app has
+  one; a second `backdrop-filter` value appearing anywhere is either a new
+  variant or a surface that drifted.
+
+The third — use it sparingly — is deliberately **not** checked. "Sparingly" has
+no threshold that is a measurement rather than a guess, and a number invented in
+a tool becomes a rule nobody chose.
+
+Filed in the a11y audit rather than a new tool: it already visits 27 routes with
+seeding and state handling, and Liquid Glass done wrong is a legibility failure,
+which is what that audit is for.
+
+**The check passed on all 27 screens and meant nothing.** Two bugs, both found
+by deliberately nesting a `GlassSurface` inside the Today screen's add-piece row
+and rebuilding — not by reading the code, which looked right.
+
+**1 · `contains` cannot see this.** The first version asked whether one
+filter-carrying element contains another. But `GlassSurface` paints its
+`backdrop-filter` on an absolutely-positioned *child* that fills the control, so
+the outer material's filter element is a **sibling** of the inner control, never
+its ancestor. `contains` is false for exactly the case the rule exists to catch.
+Over-layering is a question about what composites over what, so it is answered
+in pixels: a glass surface is over-layered when another's box encloses it,
+1px tolerance for subpixel layout.
+
+**2 · `visible()` discarded the entire control layer.** It calls `hidden()`,
+which walks up and returns true at the first `pointer-events: none` — correct
+for what it was written for, since an element a finger cannot reach is not a
+touch target. But *every* layer `GlassSurface` draws is `pointerEvents="none"`,
+deliberately, so a tap lands on the control beneath. So `glassed` was **always
+empty**: 27 screens reported clean without the check having looked at a single
+glass surface. A local `painted()` predicate now asks what the question actually
+needs — geometry, visibility, display, opacity, and nothing about who can touch
+it.
+
+Findings name the owning control rather than the layer, which has no text of its
+own: with the mutation in place the audit says *"Add a new piece… (40x40) inside
+Add a new piece… (325x86)"* instead of "(no name) inside (no name)".
+
+**Verified both directions, which is the only reason the pass means anything.**
+Mutant build ⇒ `FAIL — 1 finding(s)`. Mutation reverted and rebuilt ⇒ **PASS on
+all 27 screens**, with `glassed` non-empty (the mutant run proves the array is
+populated, and both glass checks read that same array). So: the shipping app has
+no glass-on-glass and one variant everywhere, and that is now a measurement.
+
+The lesson is the one this repository keeps relearning and it is not about
+glass: a check that has never been seen to fail is not a check. Both bugs were
+invisible to review and obvious to a mutation.
+
+Scope: `tools/audit-a11y.mjs` only. No app code, no screens, no tokens.
+
+Validation: full audit PASS on all 27 screens against a clean rebuild; mutant
+build FAIL on the injected defect; `.env` moved aside and restored.
+
+**Side effects:** the audit gains two checks and can now fail on a defect it
+previously could not see. **Rollback:** revert this commit.
+
+## 2026-09-06 — Reduce Transparency reaches the glass; it had been inert
+
+Apple's Liquid Glass guidance splits cleanly on one line: a standard component
+adapts to the accessibility settings by itself, and **anything custom has to
+provide the fallback**. `GlassSurface` is custom — an `expo-blur` view on
+native, a `backdrop-filter` stack on the web — and Reduce Transparency did
+nothing to it. Measured before the change: three surfaces on the Today screen
+carrying `url(#intempo-glass-lens) blur(30px) saturate(1.5)` with
+`prefers-reduced-transparency: reduce` on, exactly as with it off.
+
+Reduce *Motion* was already honoured in nine places. Transparency in none. The
+gap is worth naming because it is the shape of the mistake: the setting people
+associate with animation got wired up, and the one this material actually
+implicates did not.
+
+**The rule is a module, not a ternary.** `lib/glass/material.ts` answers which
+of the five layers a surface draws and on what ground; `GlassSurface` calls it.
+There is no React Native testing library here, so a rule inside a `.tsx` is a
+rule nothing checks (`CLAUDE.md` §3) — seven tests now do.
+
+Layer by layer, and none of it is "hide the blur":
+
+- **Diffusion and refraction** go. They *are* the translucency.
+- **Specular** goes. It is light-play across a curved transparent surface; over
+  an opaque fill the same gradient is a smudge.
+- **The separation ring stays, in both materials.** It is the only layer that is
+  shape rather than effect, and a control whose edge cannot be found is a worse
+  outcome than one that is not glass.
+- **The bright edge goes.** It is paired with the separator *while the ground is
+  unknown* — that was always the reason, written in the component. Opaque, the
+  ground is known, one dark ring is enough, and a white line along the top of a
+  solid ivory capsule is a stray mark. The component's absolute now carries the
+  clause it always implied.
+
+`glassOpaque` (**#FAF8F2**) is `glassTint` composited over `bg`, computed rather
+than picked, and a test recomputes it so the two cannot drift. The point is that
+a bar which stops being translucent *stops moving* — it does not change hue.
+This is the same fallback Android and any blur-declining browser have always
+landed on; it is now reachable on purpose rather than only by accident.
+
+`useReducedTransparency` mirrors `useReducedMotion` exactly — one platform read
+and one listener for the whole app through `useSyncExternalStore`, because a tab
+bar plus four buttons would otherwise register five accessibility listeners
+between them. Native reads `reduceTransparencyChanged`; the web build reads
+`prefers-reduced-transparency`, which is the same iOS switch surfaced to the
+browser and is what actually deploys.
+
+**Verified in a browser, not asserted.** `scripts/glass-transparency-shot.mjs`
+drives the setting over CDP — Playwright's `emulateMedia` does not carry this
+query — and shoots both materials against the served fixtures build. After:
+**3 backdrop filters → 0**, and the screenshots show the tab bar's bleed-through
+(the warmup card's "Violin · 60 BPM", the ghosted "Start") replaced by a clean
+opaque capsule.
+
+Three-foot test, on the reduced screenshot: *Good morning* and the Sonata card
+first, the black "Continue practice" pill second, the tab bar third — identical
+to the regular material. That is the result an accessibility fallback wants: it
+removes an effect, it does not restructure a screen.
+
+Scope: the control layer only. No screen composition, spacing or copy changed,
+and nobody without the setting on sees any difference.
+
+Validation: 1,610 mobile tests (148 files), `tsc` 0, ESLint 0, a11y audit PASS
+on all 27 screens, fixtures web build clean with `script-src` still pinned,
+`.env` moved aside and restored. `check-dead-exports.py` reports one finding —
+`StbVorbis` in `lib/score/sf2OnlyDecoder.ts` — which is **pre-existing**,
+confirmed by re-running it against a stashed tree, and untouched by this diff.
+
+**Caught on the PR, not before it:** the screenshot script was written after
+that lint run and pushed unlinted — four `no-undef` errors for `document`,
+`getComputedStyle` and `matchMedia`. They are inside a `page.evaluate`
+callback, which is serialised and run *in the page*, so the identifiers really
+do exist where they are used. `eslint.config.mjs` now declares them for
+`scripts/*-shot.mjs`, following the AudioWorklet block's precedent rather than
+adding a disable directive: a disable would also silence real typos in the Node
+half of the same file. The lesson is duller than the fix — re-run the checks
+after the last edit, not before it.
+
+Merged `main` in to clear a conflict: this branch carried the unsquashed
+`CLAUDE.md`-repair commit that landed on main squashed as #81, so both sides
+added an `EDIT_LOG.md` entry at the top. Resolved by keeping both, newest first;
+verified the repair entry appears exactly once.
+
+**Side effects:** none for anyone without Reduce Transparency enabled.
+**Rollback:** revert this commit; `glassOpaque` is additive and no caller of
+`GlassSurface` changed.
+
 ## 2026-09-06 — Two references the split broke, and one it did not
 
 The third of three audits on the `CLAUDE.md` split finished after the merge and

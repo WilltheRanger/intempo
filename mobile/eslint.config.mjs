@@ -119,6 +119,24 @@ export default defineConfig([
   },
   {
     /**
+     * **A browser-driving script is Node that also writes browser code.** The
+     * body of a `page.evaluate` callback is serialised and run inside the page,
+     * where `document` and friends genuinely exist — so this declares them
+     * rather than disabling `no-undef`, the same way the AudioWorklet block
+     * above declares its thread's globals. A disable would silence real typos
+     * in the Node half of the same file.
+     */
+    files: ['scripts/*-shot.mjs'],
+    languageOptions: {
+      globals: {
+        document: 'readonly',
+        getComputedStyle: 'readonly',
+        matchMedia: 'readonly',
+      },
+    },
+  },
+  {
+    /**
      * Tests build deliberately wrong objects — a stub graph missing half its
      * methods, a `this` captured out of a fake constructor — to drive the code
      * down paths a well-typed caller cannot reach. Typing those stubs properly
