@@ -61,7 +61,8 @@ export interface GlassSurfaceProps {
  * 2. **Tint**, above the blur rather than as its background, because the
  *    label's legibility depends on this layer alone and it must not be
  *    something a platform's blur implementation can decide to skip.
- * 3. **Specular** — a gradient catch, brightest at the top-left.
+ * 3. **Specular** — a gradient catch, brightest at the top-left. Neutral tone
+ *    only: on ink it reads as a black gradient rather than as light.
  * 4. **Separation** — a darker hairline ring, so the shape survives over pale
  *    content.
  * 5. **Edge** — the bright hairline, so it survives over dark content.
@@ -118,25 +119,27 @@ export function GlassSurface({
         pointerEvents="none"
       />
 
-      <Svg style={FILL} pointerEvents="none">
-        <Defs>
-          {/* Diagonal, so the catch falls across the surface rather than
-              banding evenly down it. */}
-          <LinearGradient id={gradientId} x1="0" y1="0" x2="0.5" y2="1">
-            <Stop
-              offset="0"
-              stopColor={prominent ? colors.glassSpecularProminent : colors.glassSpecular}
-              stopOpacity="1"
-            />
-            <Stop
-              offset="0.38"
-              stopColor={prominent ? colors.glassSpecularProminent : colors.glassSpecular}
-              stopOpacity="0"
-            />
-          </LinearGradient>
-        </Defs>
-        <Rect x="0" y="0" width="100%" height="100%" rx={radius} fill={`url(#${gradientId})`} />
-      </Svg>
+      {/*
+        **Neutral only.** On a pale surface the catch reads as light falling
+        across a curve, which is the whole point of it. On the ink tone it read
+        as a black gradient — a button lighter at the top-left and darker
+        toward the bottom-right — which is a different thing entirely and not
+        what a primary action should look like. The prominent tone keeps its
+        flat tint and gets its dimension from the edge hairline alone.
+      */}
+      {prominent ? null : (
+        <Svg style={FILL} pointerEvents="none">
+          <Defs>
+            {/* Diagonal, so the catch falls across the surface rather than
+                banding evenly down it. */}
+            <LinearGradient id={gradientId} x1="0" y1="0" x2="0.5" y2="1">
+              <Stop offset="0" stopColor={colors.glassSpecular} stopOpacity="1" />
+              <Stop offset="0.38" stopColor={colors.glassSpecular} stopOpacity="0" />
+            </LinearGradient>
+          </Defs>
+          <Rect x="0" y="0" width="100%" height="100%" rx={radius} fill={`url(#${gradientId})`} />
+        </Svg>
+      )}
 
       <View
         style={[FILL, styles.separator, { borderRadius: radius }]}
