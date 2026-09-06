@@ -334,7 +334,135 @@ const audit = () => {
     }
   }
 
-  return { unnamed, small, lowContrast };
+  /**
+   * The glass control layer, against Apple's two rules for it.
+   *
+   * **Over-layering.** "When placing elements on top of Liquid Glass, avoid
+   * applying the material to both layers" — a glass control inside a glass
+   * panel doubles the blur and the tint, and legibility is what pays. It is
+   * easy to do by accident here: `IconButton` and `SecondaryButton` both carry
+   * the material, so dropping either into a glass toolbar is one line.
+   *
+   * **Mixing variants.** Regular and Clear "should never be mixed". This app
+   * has one variant, and this is what keeps that true — a second
+   * `backdrop-filter` value appearing anywhere is either a new variant or a
+   * surface that drifted, and both want a human to look.
+   *
+   * Detected on the rendered page rather than in the source, because the
+   * material is a `backdrop-filter` on an absolutely-positioned child and the
+   * question is what actually composites over what. On a browser that declines
+   * `backdrop-filter` this finds nothing and reports nothing, which is correct:
+   * with no material there is no over-layering.
+   */
+  /**
+   * **`visible()` is the wrong predicate here, and using it made this check
+   * inert on every screen.**
+   *
+   * `visible()` calls `hidden()`, which walks up from the element and returns
+   * true at the first `pointer-events: none`. That is right for what it was
+   * written for — an element a finger cannot reach is not a touch target and
+   * has no accessible name to check. But *every* layer `GlassSurface` draws is
+   * `pointerEvents="none"`, deliberately, so that a tap lands on the control
+   * underneath. Filtering by `visible()` therefore discarded the entire control
+   * layer, and the glass checks below reported "clean" on all 27 screens
+   * without ever having looked at a single glass surface.
+   *
+   * Caught by mutation — nesting a `GlassSurface` inside the Today screen's
+   * add-piece row and finding the audit still passed. What matters for a
+   * question about *material* is whether the layer paints, which is geometry,
+   * visibility, display and opacity, and nothing about who can touch it.
+   */
+  const painted = (el) => {
+    const r = el.getBoundingClientRect();
+    const s = getComputedStyle(el);
+    return (
+      r.width > 0 &&
+      r.height > 0 &&
+      s.visibility !== 'hidden' &&
+      s.display !== 'none' &&
+      Number(s.opacity) > 0.05
+    );
+  };
+
+  const glassed = [...document.querySelectorAll('*')].filter((el) => {
+    const style = getComputedStyle(el);
+    const value = style.backdropFilter || style.webkitBackdropFilter;
+    return value && value !== 'none' && painted(el);
+  });
+
+  /**
+   * **Geometry, not DOM ancestry — and this is the whole difficulty.**
+   *
+   * The first version of this asked whether one filter-carrying element
+   * `contains` another, and a mutation test (a `GlassSurface` deliberately
+   * nested inside the Today screen's add-piece row) sailed straight through it.
+   * The reason is the material's own construction: `GlassSurface` paints the
+   * `backdrop-filter` on an absolutely-positioned *child* that fills the
+   * control. So the outer material's filter element is a **sibling** of the
+   * inner control, never its ancestor, and `contains` is false for the exact
+   * case the rule exists to catch.
+   *
+   * Over-layering is a question about what composites over what, so it is
+   * answered in pixels: a glass surface is over-layered when another glass
+   * surface's box encloses it. The 1px tolerance is for subpixel layout, not
+   * for slack — two capsules that merely touch do not enclose one another.
+   */
+  const rects = new Map(glassed.map((el) => [el, el.getBoundingClientRect()]));
+  const encloses = (outer, inner) =>
+    outer.left <= inner.left + 1 &&
+    outer.top <= inner.top + 1 &&
+    outer.right >= inner.right - 1 &&
+    outer.bottom >= inner.bottom - 1 &&
+    // Strictly bigger in area, so two surfaces sharing a box (which would each
+    // "enclose" the other) are reported once rather than twice.
+    outer.width * outer.height > inner.width * inner.height;
+
+  /**
+   * A glass layer carries no text of its own, so `describe` returns "(no name)"
+   * for every one of them — a finding that names nothing is a finding nobody
+   * can act on. The control it belongs to is the nearest ancestor that has a
+   * name, so that is what gets reported.
+   */
+  const owner = (el) => {
+    let node = el;
+    while (node && node !== document.body) {
+      const name = describe(node);
+      if (name !== '(no name)') return name;
+      node = node.parentElement;
+    }
+    return '(no name)';
+  };
+
+  const overLayered = [];
+  for (const el of glassed) {
+    const above = glassed.find(
+      (other) => other !== el && encloses(rects.get(other), rects.get(el)),
+    );
+    if (above) {
+      const r = rects.get(el);
+      const o = rects.get(above);
+      overLayered.push(
+        `${owner(el)} (${Math.round(r.width)}x${Math.round(r.height)}) ` +
+          `inside ${owner(above)} (${Math.round(o.width)}x${Math.round(o.height)})`,
+      );
+    }
+  }
+
+  const variants = [
+    ...new Set(
+      glassed.map((el) => {
+        const style = getComputedStyle(el);
+        return style.backdropFilter || style.webkitBackdropFilter;
+      }),
+    ),
+  ];
+
+  // **Deliberately not counted.** Apple's third rule for this material is to
+  // use it sparingly, and a count per screen would be easy to emit here. It is
+  // not, because "sparingly" has no threshold that is a measurement rather than
+  // a guess, and a number invented in a tool becomes a rule nobody chose. The
+  // two rules above have an objective answer; over-use is the owner's call.
+  return { unnamed, small, lowContrast, overLayered, variants };
 };
 
 /**
@@ -647,10 +775,16 @@ for (const [name, path, options = {}] of selected) {
   // Last, and on the same page: it rewrites every font size in the document,
   // so nothing measured after it would be measuring the shipped app.
   const spilled = await page.evaluate(spill, TEXT_SCALE);
+  // One variant is the design; two means Regular and Clear are mixed, or a
+  // surface has drifted off the shared material. Either way it is one finding
+  // for the screen, not one per surface.
+  const mixedVariants = found.variants.length > 1 ? 1 : 0;
   const total =
     found.unnamed.length +
     found.small.length +
     found.lowContrast.length +
+    found.overLayered.length +
+    mixedVariants +
     spilled.length +
     errors.length;
   failures += total;
@@ -660,6 +794,13 @@ for (const [name, path, options = {}] of selected) {
   for (const u of found.unnamed) console.log(`  UNNAMED CONTROL: ${u}`);
   for (const s of new Set(found.small)) console.log(`  TARGET < ${MIN_TARGET}pt: ${s}`);
   for (const c of new Set(found.lowContrast)) console.log(`  CONTRAST: ${c}`);
+  for (const g of new Set(found.overLayered)) console.log(`  GLASS ON GLASS: ${g}`);
+  if (mixedVariants) {
+    console.log(
+      `  GLASS VARIANTS MIXED: ${found.variants.length} distinct materials — ` +
+        found.variants.map((v) => JSON.stringify(v)).join(', '),
+    );
+  }
   for (const o of new Set(spilled)) console.log(`  AT ${TEXT_SCALE}x TEXT: ${o}`);
   await page.close();
 }

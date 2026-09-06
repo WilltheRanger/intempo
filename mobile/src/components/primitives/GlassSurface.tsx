@@ -5,6 +5,8 @@ import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 
 import { colors } from '../../design';
 import { cssLens } from '../../lib/glass/lensFilter';
+import { glassMaterial } from '../../lib/glass/material';
+import { useReducedTransparency } from '../../lib/glass/reducedTransparency';
 
 /**
  * How hard the blur behind a glass surface is.
@@ -64,7 +66,8 @@ export interface GlassSurfaceProps {
  * 5. **Edge** — the bright hairline, so it survives over dark content.
  *
  * Either edge alone leaves the surface invisible against half of what can
- * scroll under it, which is why they are never used apart.
+ * scroll under it, which is why they are never used apart — while the ground is
+ * unknown. Opaque, it is known, and `glassMaterial` drops the bright one.
  *
  * **It degrades to an opaque surface, deliberately and everywhere.** Android
  * gets a semi-transparent view, Safari and Firefox get diffusion without
@@ -72,70 +75,85 @@ export interface GlassSurfaceProps {
  * solid control wherever none of it lands. That is the standing cost of this
  * material — every glass surface needs a non-glass design that stands on its
  * own — and paying it once here is what stops it being paid badly per screen.
+ *
+ * **Reduce Transparency reaches the same fallback on purpose.** A system bar
+ * adapts to that setting by itself; this is a custom element, so the adaptation
+ * is ours to write, and until now the setting was inert on every surface the
+ * app draws. Which layers survive is `glassMaterial` — a rule in a module with
+ * tests, because there is no React Native testing library here and a rule
+ * inside a `.tsx` is a rule nothing checks.
  */
 export function GlassSurface({ children, radius, style }: GlassSurfaceProps) {
   // Gradient ids are document-global, so two surfaces on one screen would
   // otherwise share — and fight over — the same definition.
   const gradientId = `glass-spec-${useId()}`;
+  const material = glassMaterial(useReducedTransparency());
 
   return (
     <View style={[styles.container, { borderRadius: radius }, style]}>
-      {Platform.OS === 'web' ? (
+      {material.diffusion &&
+        (Platform.OS === 'web' ? (
+          <View
+            style={[
+              FILL,
+              { borderRadius: radius },
+              webBackdrop(material.refraction),
+            ]}
+            pointerEvents="none"
+          />
+        ) : (
+          <BlurView
+            intensity={BLUR_INTENSITY}
+            tint="light"
+            style={StyleSheet.absoluteFill}
+            pointerEvents="none"
+          />
+        ))}
+
+      <View
+        style={[
+          FILL,
+          {
+            borderRadius: radius,
+            backgroundColor: material.fill,
+          },
+        ]}
+        pointerEvents="none"
+      />
+
+      {material.specular && (
+        <Svg style={FILL} pointerEvents="none">
+          <Defs>
+            {/* Diagonal, so the catch falls across the surface rather than
+                banding evenly down it. */}
+            <LinearGradient id={gradientId} x1="0" y1="0" x2="0.5" y2="1">
+              <Stop offset="0" stopColor={colors.glassSpecular} stopOpacity="1" />
+              <Stop offset="0.38" stopColor={colors.glassSpecular} stopOpacity="0" />
+            </LinearGradient>
+          </Defs>
+          <Rect x="0" y="0" width="100%" height="100%" rx={radius} fill={`url(#${gradientId})`} />
+        </Svg>
+      )}
+
+      {material.separator && (
         <View
-          style={[
-            FILL,
-            { borderRadius: radius },
-            webBackdrop(),
-          ]}
-          pointerEvents="none"
-        />
-      ) : (
-        <BlurView
-          intensity={BLUR_INTENSITY}
-          tint="light"
-          style={StyleSheet.absoluteFill}
+          style={[FILL, styles.separator, { borderRadius: radius }]}
           pointerEvents="none"
         />
       )}
-
-      <View
-        style={[
-          FILL,
-          {
-            borderRadius: radius,
-            backgroundColor: colors.glassTint,
-          },
-        ]}
-        pointerEvents="none"
-      />
-
-      <Svg style={FILL} pointerEvents="none">
-        <Defs>
-          {/* Diagonal, so the catch falls across the surface rather than
-              banding evenly down it. */}
-          <LinearGradient id={gradientId} x1="0" y1="0" x2="0.5" y2="1">
-            <Stop offset="0" stopColor={colors.glassSpecular} stopOpacity="1" />
-            <Stop offset="0.38" stopColor={colors.glassSpecular} stopOpacity="0" />
-          </LinearGradient>
-        </Defs>
-        <Rect x="0" y="0" width="100%" height="100%" rx={radius} fill={`url(#${gradientId})`} />
-      </Svg>
-
-      <View
-        style={[FILL, styles.separator, { borderRadius: radius }]}
-        pointerEvents="none"
-      />
-      <View
-        style={[
-          FILL,
-          styles.edge,
-          {
-            borderRadius: radius,
-            borderTopColor: colors.glassEdge,
-          },
-        ]}
-        pointerEvents="none"
-      />
+      {material.edge && (
+        <View
+          style={[
+            FILL,
+            styles.edge,
+            {
+              borderRadius: radius,
+              borderTopColor: colors.glassEdge,
+            },
+          ]}
+          pointerEvents="none"
+        />
+      )}
 
       {children}
     </View>
@@ -146,8 +164,8 @@ export function GlassSurface({ children, radius, style }: GlassSurfaceProps) {
  * The web build's backdrop, with refraction in the same declaration as the
  * blur — see `lensFilter.ts` for why that is not optional.
  */
-function webBackdrop(): ViewStyle {
-  const lens = cssLens();
+function webBackdrop(refraction: boolean): ViewStyle {
+  const lens = refraction ? cssLens() : null;
   const value = lens ? `${lens} ${WEB_DIFFUSION}` : WEB_DIFFUSION;
   return {
     backdropFilter: value,

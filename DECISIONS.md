@@ -1,5 +1,104 @@
 # InTempo Decisions
 
+## 2026-09-06 — Glass rules are checked in the a11y audit, in pixels, and only where an objective answer exists
+
+**Context.** Apple names three pitfalls for Liquid Glass: don't over-layer,
+don't mix Regular with Clear, don't over-use. Nothing in this repository checked
+any of them, and two of the three are the kind of mistake a single line
+introduces — `IconButton` and `SecondaryButton` both carry the material.
+
+**Decision.** The two rules with an objective answer go into `audit-a11y.mjs`,
+detected geometrically on the rendered page. Over-use is left to the owner.
+
+**Alternatives considered.**
+
+- *A new `tools/audit-glass.mjs`.* Rejected. The a11y audit already visits 27
+  routes with preference seeding and state assertions; a second tool would
+  either duplicate that route list or drift from it. And the framing is honest
+  rather than convenient — Liquid Glass done wrong is a legibility failure,
+  which is precisely what that audit measures.
+- *A static check over the source, or a React context counting nesting depth.*
+  Rejected: the material is a `backdrop-filter` on an absolutely-positioned
+  child, and the question is what composites over what. Source cannot answer it,
+  and a runtime counter would be a rule inside a `.tsx` that nothing here can
+  render under test.
+- *Checking DOM containment.* Tried, shipped in a first draft, and **wrong** —
+  see below.
+- *Also flagging over-use above N surfaces per screen.* Rejected. "Sparingly"
+  has no threshold that is a measurement rather than a guess, and a number
+  invented inside a tool hardens into a rule nobody chose. The two checks that
+  remain have a right answer; this one has a judgement, and it is the owner's.
+
+**Why the predicate is `painted()` and not the audit's own `visible()`.**
+`visible()` calls `hidden()`, which returns true at the first
+`pointer-events: none` on the way up. That is correct for its purpose — an
+element a finger cannot reach is not a touch target. But every layer
+`GlassSurface` draws is `pointerEvents="none"` so taps land on the control
+beneath, so reusing `visible()` filtered out the whole control layer and the
+check reported clean on 27 screens without ever examining a glass surface. Two
+predicates, because there are two questions: *can this be touched* and *does
+this paint*.
+
+**Trade-off accepted, and it is the important line here.** Both defects —
+`contains` never being true for sibling filter elements, and `visible()`
+emptying the input — were invisible to review and caught only by building a
+mutant with a `GlassSurface` deliberately nested and watching the audit still
+pass. A green check is evidence of nothing until it has been seen to go red, and
+neither of these would have been noticed for as long as the app happened to
+contain no over-layering. The mutation is not automated; it was run by hand and
+`EDIT_LOG.md` records both directions.
+
+## 2026-09-06 — The Reduce Transparency fallback is opaque, and drops the bright edge
+
+**Context.** `GlassSurface` is a custom element, so Reduce Transparency is ours
+to honour — a system bar adapts on its own, this does not. Measured: the setting
+was completely inert, three surfaces still refracting with it on. The question
+was not *whether* to honour it but what the surface becomes when it stops being
+glass.
+
+**Decision.** A rule module, `lib/glass/material.ts`, decides layer by layer, and
+the fallback is a genuinely opaque control on `glassOpaque` — `glassTint`
+composited over `bg`, derived rather than picked. Diffusion, refraction and the
+specular go; the separation ring stays; the bright edge goes.
+
+**Alternatives considered.**
+
+- *Drop the blur and keep everything else.* The obvious minimal change, and
+  wrong twice. The tint at 0.80 alpha over unpredictable scrolling content is
+  precisely the legibility risk the setting exists to remove — someone asking
+  for less transparency would still get content showing through a label. And a
+  specular gradient over an opaque fill is not light; it is a smudge in the
+  corner of a solid button.
+- *Keep both hairlines, as the component says never to separate them.* Rejected
+  on the component's own stated reason rather than against it: the pairing is
+  there because either edge alone disappears against half of *an unknown
+  ground*. Opaque, the ground is known. Following the rule past its reason would
+  have put a white line along the top of a solid ivory capsule.
+- *A ternary in `GlassSurface.tsx`.* Rejected under `CLAUDE.md` §3 — there is no
+  React Native testing library here, so a rule in a `.tsx` is a rule nothing
+  checks. It is seven tests as a module, including one that recomputes
+  `glassOpaque` from `glassTint` and `bg` so the fallback cannot drift off the
+  colour the material settles to.
+- *An in-app toggle alongside the OS one, as `useReducedMotion` has.* Deferred,
+  not rejected. It needs a settings row, which is UI/UX and gated on the owner
+  (`CLAUDE.md` §2). The hook is shaped to OR a preference in when there is one.
+
+**Trade-offs accepted.**
+
+1. **Two materials to keep true, now by choice.** The opaque look already
+   existed on Android and in any browser declining the blur; this makes it a
+   designed state rather than a degradation, which means every future glass
+   change has to be looked at twice.
+2. **`audit-a11y.mjs` still cannot check either.** A translucent surface has no
+   fixed ground and the audit does not drive the media query. What it does check
+   is `glassOpaque` as an ordinary opaque background, which is more than the
+   translucent material can offer — and the screenshot script is what covers
+   the rest, by measurement (3 backdrop filters → 0) rather than by eye.
+3. **Untested on a real device.** Verified in Chromium against
+   `prefers-reduced-transparency`. The native path — `expo-blur` under iOS's own
+   Reduce Transparency — is written to the same rule but has not been seen, and
+   `EDIT_LOG.md` says so rather than claiming otherwise.
+
 ## 2026-09-06 — `CLAUDE.md` holds rules; `docs/subsystems.md` holds what was learned
 
 **Context.** `CLAUDE.md` is read in full at the start of every session and had

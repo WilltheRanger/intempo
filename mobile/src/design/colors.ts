@@ -124,6 +124,18 @@ export const colors = {
    */
   glassTint: 'rgba(251, 249, 244, 0.80)',
   /**
+   * `glassTint` already composited over `bg`, fully opaque.
+   *
+   * What a glass surface becomes when the person has Reduce Transparency on —
+   * and, incidentally, what it has always looked like on Android and in any
+   * browser that declines the blur. Derived rather than picked so the fallback
+   * is the *same colour* the material settles to over the page: a bar that
+   * stops being translucent should stop moving, not change hue.
+   *
+   * rgb(251, 249, 244) at 0.80 over rgb(247, 242, 233).
+   */
+  glassOpaque: '#FAF8F2',
+  /**
    * The specular catch, brightest at the top-left and gone by a third of the
    * way down. Paired with `glassEdge` — the gradient reads as light falling
    * across a curved surface, the hairline as its lit rim.
