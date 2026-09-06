@@ -181,18 +181,75 @@ const audit = () => {
     const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p);
     return (x + 0.05) / (y + 0.05);
   };
-  /** The first painted background behind an element. */
+  /**
+   * Any translucent fill an ancestor paints *under* this text but does not own
+   * as its own `background-color`.
+   *
+   * `GlassSurface` is why this exists. A glass control's ground is a stack of
+   * absolutely-positioned children filling the control, not a colour on the
+   * control itself — so walking `backgroundColor` up the tree steps straight
+   * past it and lands on the page. Measured when the material shipped: every
+   * glass button reported its label at **1.07:1**, thirteen findings, all of
+   * them false; composited, the same labels sit near 11:1.
+   *
+   * A check that cannot see a layer does not report "unknown", it reports the
+   * wrong number — so this composites the layers rather than the alternative,
+   * which was to exempt glass controls and stop checking the app's most-used
+   * buttons entirely.
+   *
+   * Fills are gathered outermost-first so they can be composited in paint
+   * order. Only same-size absolutely-positioned children count: a fill is a
+   * layer covering the whole control, and anything smaller is a decoration
+   * that the text may or may not sit on.
+   */
+  const fillsUnder = (el) => {
+    const fills = [];
+    let node = el;
+    while (node && node !== document.documentElement) {
+      const box = node.getBoundingClientRect();
+      for (const child of node.children) {
+        if (child.contains(el)) continue;
+        if (getComputedStyle(child).position !== 'absolute') continue;
+        // The colour is rarely on the positioned child itself: `GlassSurface`
+        // is a transparent clipping box whose tint is a grandchild, so the
+        // whole subtree is searched, in paint order.
+        for (const layer of [child, ...child.querySelectorAll('*')]) {
+          const bg = parse(getComputedStyle(layer).backgroundColor);
+          if (!bg || bg.a === 0) continue;
+          const lb = layer.getBoundingClientRect();
+          const covers =
+            Math.abs(lb.width - box.width) < 1.5 && Math.abs(lb.height - box.height) < 1.5;
+          if (covers) fills.push(bg);
+        }
+      }
+      node = node.parentElement;
+    }
+    return fills.reverse();
+  };
+
+  /** The first painted background behind an element, glass layers included. */
   const backdrop = (el) => {
+    let base = null;
     let node = el;
     while (node && node !== document.documentElement) {
       const bg = parse(getComputedStyle(node).backgroundColor);
       if (bg && bg.a > 0) {
-        return bg.a === 1 ? bg : null;
+        if (bg.a !== 1) return null;
+        base = bg;
+        break;
       }
       node = node.parentElement;
     }
-    const body = parse(getComputedStyle(document.body).backgroundColor);
-    return body && body.a === 1 ? body : { r: 255, g: 255, b: 255, a: 1 };
+    if (!base) {
+      const body = parse(getComputedStyle(document.body).backgroundColor);
+      base = body && body.a === 1 ? body : { r: 255, g: 255, b: 255, a: 1 };
+    }
+    // Paint order: the outermost fill first, each one over what is already
+    // there, exactly as the browser composites them.
+    for (const fill of fillsUnder(el)) {
+      base = over(fill, base);
+    }
+    return base;
   };
   /**
    * Hidden from assistive technology, or from touch, by any ancestor.

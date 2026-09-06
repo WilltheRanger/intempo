@@ -1,5 +1,79 @@
 # InTempo Decisions
 
+## 2026-09-06 — The contrast audit composites glass rather than exempting it
+
+**Context.** Glass controls put their ground in absolutely-positioned children.
+`audit-a11y.mjs` resolved a text colour's background by walking
+`backgroundColor` up the ancestors, which steps straight past that and lands on
+the page — thirteen false findings at 1.07:1 the moment the material shipped.
+
+**Decision.** Teach the audit to composite. `fillsUnder` collects covering fills
+from each ancestor's positioned subtrees, outermost first, and alpha-composites
+them onto the first opaque background.
+
+**Alternative rejected: exempt glass controls.** It is one line and it would
+have stopped the app's most-used buttons being checked at all — the primary
+action on nearly every screen. An exemption also rots: the next translucent
+surface inherits a hole nobody remembers opening.
+
+**Trade-off accepted.** The audit still measures the *worst case it can see* —
+glass over the page background — not glass over arbitrary scrolling content,
+which has no fixed answer. That is why `glassTint` and `glassTintProminent` are
+deliberately opaque: the tint, not the backdrop, is what guarantees the label.
+The mutation test (0.88 → 0.06 alpha ⇒ 1.20:1 on every glass button) is what
+keeps that claim honest.
+
+## 2026-09-06 — Liquid Glass for the control layer, over the app's own laws 6 and 9
+
+**Context.** The owner asked for iOS 26 Liquid Glass and reviewed four
+prototype rounds. Design law 9 said bottom navigation is "opaque, anchored,
+unrounded, part of the frame"; law 6 said floating, rounded and gradient
+elements are exceptions rather than the default. A floating translucent capsule
+is both, deliberately.
+
+**Decision.** Adopt glass for the **control layer only** — navigation, toolbars,
+the tab bar — and rewrite laws 6 and 9 to say what is now true. Content stays on
+an opaque layer: paper, engraving and type are untouched.
+
+**Alternatives considered.**
+
+- *Leave the laws and override in the component.* Rejected: the laws are read at
+  the start of every session, and a session that follows them would revert this.
+- *Glass everywhere, including cards.* Rejected — it is Apple's own rule not to,
+  and it is what would make this app look like every other frosted app.
+- *`expo-glass-effect` now.* It is the real `UIGlassEffect` and matches this
+  Expo version, but it is iOS 26+ only and nothing here can build or see it.
+  `expo-blur` works on the web build, which is what actually deploys.
+
+**Trade-offs accepted.**
+
+1. **Two looks to maintain.** The blur does not land on Android, on iOS below
+   26 in its full form, or wherever a platform declines it. `glassTint` is
+   therefore opaque enough that the fallback is a legitimate solid bar — paid
+   once in `GlassSurface` rather than badly in each screen.
+2. **`audit-a11y.mjs` cannot check this.** It computes ratios between known
+   tokens, and a translucent surface has no fixed ground. The mitigation is the
+   tint's opacity, chosen against the worst case the app can actually produce
+   (a bar over engraved notation), not a lighter value that looks better on
+   ivory and fails over ink.
+3. **The honest finding stands.** Liquid Glass reads as a material because
+   content passes beneath it — maps, photographs, album art. This app is warm
+   paper and black type, so the material has less to do here than it does in the
+   apps it was designed for. Adopted because the owner asked to try it, with a
+   named rollback anchor rather than on a claim that it is clearly better.
+
+## 2026-09-06 — Section labels are uppercase, reversing "no decorative uppercase"
+
+`SectionHeader` documented "sentence case — the brief rules out decorative
+uppercase labels". At 13px sentence case, a label and a title differ only by
+size, so a screen carrying several groups reads as a flat stack of headings.
+
+Uppercase at 11px with letterspacing is not decoration here: it is the only
+thing that makes a label a different *register* from the content under it, and
+it is what iOS uses for this exact element. The label is uppercased in render
+rather than by `textTransform` so assistive technology receives the written
+string.
+
 Architectural "X over Y because Z" choices only. Format: date, decision,
 alternatives considered, why we picked this. See intempo-combined.md
 Operating Principle #5.

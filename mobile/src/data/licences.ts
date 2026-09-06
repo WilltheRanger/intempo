@@ -30,6 +30,7 @@ export const LICENCES: Licence[] = [
   { name: 'expo', version: '57.0.13', licence: 'MIT' },
   { name: 'expo-asset', version: '57.0.12', licence: 'MIT' },
   { name: 'expo-audio', version: '57.0.3', licence: 'MIT' },
+  { name: 'expo-blur', version: '57.0.2', licence: 'MIT' },
   { name: 'expo-camera', version: '57.0.3', licence: 'MIT' },
   { name: 'expo-document-picker', version: '57.0.1', licence: 'MIT' },
   { name: 'expo-file-system', version: '57.0.4', licence: 'MIT' },
