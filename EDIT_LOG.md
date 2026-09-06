@@ -1,5 +1,69 @@
 # InTempo Edit Log
 
+## 2026-09-06 — The piece screen opens with the piece on it, instead of loading one it already had
+
+Reported: "it's like waiting to load and then loads why can't you make it
+optimistic loading". Which named the defect precisely, and it was not the
+transition at all — the previous two entries were both aimed at motion, and the
+thing being watched was a screen arriving empty.
+
+**What was happening.** Tapping a row in the library pushed a screen that
+rendered `LoadingState`, fetched the piece, and then replaced itself. The row
+that was tapped *already held that piece* — title, composer, movement, cover,
+fetched and drawn a moment earlier — and `usePiece` threw all of it away to ask
+the same question again. `useLibrary()` returns `Piece[]` and `usePiece()`
+returns `Piece`; the same type, from the same `toPiece` mapper. The data was
+already in the cache under a different key.
+
+**`placeholderData`, seeded from the list.** `pieceFromCaches` looks for the id
+in the loaded library, then in the piece Today leads with, and hands it over as
+a stand-in while the real request runs underneath.
+
+**`placeholderData` and not `initialData`, deliberately.** `initialData` is
+written into the cache as though it were a real answer and inherits the query's
+staleness — a thin listing row would be *stored* as the piece, and a later
+reader would have no way to tell. A placeholder is never cached, is flagged by
+`isPlaceholderData`, and is replaced by the fetch.
+
+**It makes the screen say less, never something untrue.** The listing is
+*thinner* than the detail, not different: `pages` carries page one alone and
+`score` may be absent. Both are already guarded on that screen — `measureCount
+=== 0 ? null` and `hasNotation ? … : null` — so a placeholder omits the measure
+count and the tempo until the real answer lands, rather than claiming "0
+measures". That was checked before relying on it, not after.
+
+**The rule is a module because the hook cannot be tested.** `pieceFromCaches`
+started inside `usePieces.ts`; importing that file into Vitest fails on
+`react-native/index.js`, which is Flow and which rolldown will not parse. That
+is why this repository has no hook tests. Moved to `data/hooks/knownPiece.ts`
+with a type-only import, and five tests — including the one that matters most:
+it must never return a *different* piece, because another piece's title and
+cover on the screen for a moment is worse than the blank it replaces.
+
+**Verified on the built bundle, on the frame after the tap.** Library → piece
+shows "Sonata No. 1 in G minor, BWV 1001" and "J. S. Bach" immediately, with no
+loading state; Today → piece the same. A sweep of six pushed hops — piece,
+digital score, original pages, help, acknowledgements, export — now all have
+first-frame body length **equal** to their settled length. Nothing opens empty.
+
+**Worth being clear about what this does not fix.** With the fixtures source
+there is no network, so what was being waited on was one render with
+`isPending: true`, not a slow request. Against a live backend the placeholder
+matters more, not less — but the *rest* of a screen (the score band, the
+photographed pages) still arrives when it arrives, and this does not change
+that. It fixes the identity of the screen appearing instantly. If the owner is
+still watching something fill in, that is the next thing to name.
+
+Scope: `usePieces.ts` (placeholder wiring), new `knownPiece.ts` + tests.
+
+Validation: 1,665 mobile tests (152 files, 5 new), `tsc` 0, ESLint 0, no new
+dead exports. `audit-a11y.mjs` PASS on all 30 routes, `walk-app.mjs` 50 of 51 —
+the pre-existing silent-take finding. `tools/` byte-identical.
+
+**Side effects:** a deep link still opens cold, which is correct — there is no
+cache to draw on and the request is the only source. **Rollback:** remove the
+`placeholderData` option; the screen returns to its loading state.
+
 ## 2026-09-06 — The push transition stops depending on JavaScript, and a confident diagnosis turns out to have been measurement noise
 
 Reported: "the page transitions are slightly glitchy and flickery."
