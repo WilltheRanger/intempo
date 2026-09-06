@@ -37,9 +37,23 @@ describe('app.json colours', () => {
     expect(config.backgroundColor.toUpperCase()).toBe(colors.bg.toUpperCase());
   });
 
-  it('sits the launcher icon on that paper too', () => {
+  /**
+   * **The launcher plate is the icon's ground, not the app's paper.**
+   *
+   * This asserted `colors.bg` — right while the icon was the Expo starter's
+   * and there was nothing for the plate to agree with. The drawn icon inverts
+   * the app on purpose: ink ground, ivory note, because an ivory icon
+   * disappears against a light wallpaper, which is the one place an icon has
+   * to work (`DECISIONS.md`, 2026-09-06).
+   *
+   * So the rule is the same rule, pointed at the right thing. This colour is
+   * the fallback Android paints when it uses `backgroundColor` instead of
+   * `backgroundImage`, and the two disagreeing means a launcher somewhere
+   * draws an ivory plate under an icon drawn for ink.
+   */
+  it('sits the launcher icon on the icon\'s own ground', () => {
     expect(config.android.adaptiveIcon.backgroundColor.toUpperCase()).toBe(
-      colors.bg.toUpperCase(),
+      colors.textPrimary.toUpperCase(),
     );
   });
 });

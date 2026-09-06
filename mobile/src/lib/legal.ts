@@ -52,9 +52,12 @@ export const OWNER: {
   /** The law the terms are read under, e.g. "England and Wales". */
   jurisdiction: string | null;
 } = {
-  entity: null,
+  entity: 'Arya Shah',
+  // Still null, and the policy prints no contact line because of it. Supplied
+  // by the owner as "I'll add one later" — App Store Connect requires a real
+  // address before submission, so this is the one field still outstanding.
   contact: null,
-  jurisdiction: null,
+  jurisdiction: 'the State of California',
 };
 
 /** Which of `OWNER`'s fields are still unset, in the order they are needed. */
