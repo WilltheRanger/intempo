@@ -1,5 +1,31 @@
 # InTempo Edit Log
 
+## 2026-09-06 — The primary action goes back to solid ink
+
+Owner's call, after seeing it: the button should be black.
+
+`PrimaryButton` is `colors.actionBg` again, a flat fill, with the pressed state
+back to a colour swap (`actionBgPressed`) rather than an opacity lift — a colour
+swap is only available once there is a colour on the view to swap.
+
+**The tinted tone goes with it, rather than sitting unused.** `GlassSurface` had
+`tone: 'neutral' | 'prominent'`; `prominent` had exactly one caller and now has
+none, so the prop, the `GlassTone` type and both `*Prominent` tokens are
+deleted. Glass is colourless here now, which is also the simpler rule: the
+control layer is a material, and the primary action is a solid object sitting on
+top of it.
+
+Worth recording *why* it did not work, because tinted glass for primary actions
+is what Apple's own guidance suggests and someone will propose it again: a
+translucent ground picks up whatever scrolls beneath it, so the one control on a
+screen that should not be negotiable was never quite the same colour twice. The
+gradient removed one commit earlier was a symptom of the same thing.
+
+Validation: 1,603 mobile tests (147 files), `tsc` 0, ESLint 0, a11y audit PASS,
+`check-dead-exports.py` unchanged at the one pre-existing `StbVorbis`, `.env`
+restored `diff -q` identical, fixtures web build clean with `script-src` still
+pinned. Walk 50 of 51 — the pre-existing silent-take finding.
+
 ## 2026-09-06 — The primary action loses its gradient
 
 The specular layer was drawn on both glass tones. On a pale surface it is light
