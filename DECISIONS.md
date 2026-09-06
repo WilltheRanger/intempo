@@ -1,5 +1,28 @@
 # InTempo Decisions
 
+## 2026-09-06 — The contrast audit composites glass rather than exempting it
+
+**Context.** Glass controls put their ground in absolutely-positioned children.
+`audit-a11y.mjs` resolved a text colour's background by walking
+`backgroundColor` up the ancestors, which steps straight past that and lands on
+the page — thirteen false findings at 1.07:1 the moment the material shipped.
+
+**Decision.** Teach the audit to composite. `fillsUnder` collects covering fills
+from each ancestor's positioned subtrees, outermost first, and alpha-composites
+them onto the first opaque background.
+
+**Alternative rejected: exempt glass controls.** It is one line and it would
+have stopped the app's most-used buttons being checked at all — the primary
+action on nearly every screen. An exemption also rots: the next translucent
+surface inherits a hole nobody remembers opening.
+
+**Trade-off accepted.** The audit still measures the *worst case it can see* —
+glass over the page background — not glass over arbitrary scrolling content,
+which has no fixed answer. That is why `glassTint` and `glassTintProminent` are
+deliberately opaque: the tint, not the backdrop, is what guarantees the label.
+The mutation test (0.88 → 0.06 alpha ⇒ 1.20:1 on every glass button) is what
+keeps that claim honest.
+
 ## 2026-09-06 — Liquid Glass for the control layer, over the app's own laws 6 and 9
 
 **Context.** The owner asked for iOS 26 Liquid Glass and reviewed four

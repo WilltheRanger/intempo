@@ -1,113 +1,193 @@
 import { BlurView } from 'expo-blur';
-import type { ReactNode } from 'react';
+import { useId, type ReactNode } from 'react';
 import { Platform, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
+import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 
 import { colors } from '../../design';
+import { cssLens } from '../../lib/glass/lensFilter';
 
 /**
  * How hard the blur behind a glass surface is.
  *
- * `expo-blur`'s scale is 0–100 and is not linear with a CSS blur radius, so
- * this is tuned by eye against the one thing that matters: engraved notation
- * passing underneath has to become a wash rather than words you can still
- * read. Anything much lower and the surface reads as a tinted pane with legible
- * text showing through, which is clutter rather than depth.
+ * Tuned against the one thing that decides it: engraved notation passing
+ * underneath has to become a wash rather than words you can still read. Below
+ * about 40 the surface reads as a tinted pane with legible text showing
+ * through, which is clutter rather than depth.
  */
 const BLUR_INTENSITY = 46;
 
+/** The web build's equivalent, plus the saturation lift a real blur gives. */
+const WEB_DIFFUSION = 'blur(24px) saturate(150%)';
+
 /** This RN version's `StyleSheet` types omit `absoluteFillObject`. */
 const FILL = { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0 } as const;
+
+export type GlassTone = 'neutral' | 'prominent';
 
 export interface GlassSurfaceProps {
   children?: ReactNode;
   /**
    * Corner radius. Passed explicitly rather than inherited, because the blur
-   * and the two edge layers all have to be clipped to the same curve and
+   * and every overlay have to be clipped to the same curve and
    * `borderRadius: 'inherit'` does not exist in React Native.
    */
   radius: number;
+  /**
+   * `neutral` is colourless glass — the background bleeds through and decides
+   * how it looks. `prominent` is ink-tinted, and is **reserved for primary
+   * actions and selected states**: tint is what makes one control read as the
+   * one to press, so spending it anywhere else spends the signal.
+   */
+  tone?: GlassTone;
   style?: StyleProp<ViewStyle>;
 }
 
 /**
- * The floating control layer: a blurred, tinted surface with a bright edge over
- * a darker separation.
+ * The floating control layer: refracted, diffused, tinted, with a specular
+ * catch over a darker separation.
  *
- * **Only chrome may use this.** Navigation, toolbars and the tab bar — never
- * content. That restriction is Apple's and it is also what keeps this app
+ * **Only chrome may use this.** Navigation, toolbars, buttons, floating panels
+ * — never content. That is Apple's own rule and it is what keeps this app
  * recognisable: the paper, the engraving and the type stay on an opaque content
  * layer, and glass is the thing floating above them.
  *
- * **It degrades to an opaque surface, deliberately and everywhere.** `BlurView`
- * is a real blur on iOS and on the web build (`backdrop-filter`), and on
- * Android it is a semi-transparent view. `glassTint` is opaque enough that the
- * result is a legitimate solid bar wherever the blur does not land, so no
- * caller has to ask whether glass is available. That is the standing cost of
- * adopting this material — every glass surface needs a non-glass design that
- * stands on its own — and paying it here once is what stops it being paid badly
- * in each screen.
+ * Five layers, and each one is doing a job the others cannot:
+ *
+ * 1. **Diffusion + refraction.** On the web these are a single `backdrop-filter`
+ *    value, because sibling backdrop filters do not stack — a second one layered
+ *    on top samples the original backdrop and paints a sharp copy over the
+ *    blurred one. On native it is `BlurView`, which is `UIVisualEffectView`:
+ *    diffusion without refraction until `expo-glass-effect` (iOS 26+) is
+ *    adopted.
+ * 2. **Tint**, above the blur rather than as its background, because the
+ *    label's legibility depends on this layer alone and it must not be
+ *    something a platform's blur implementation can decide to skip.
+ * 3. **Specular** — a gradient catch, brightest at the top-left.
+ * 4. **Separation** — a darker hairline ring, so the shape survives over pale
+ *    content.
+ * 5. **Edge** — the bright hairline, so it survives over dark content.
+ *
+ * Either edge alone leaves the surface invisible against half of what can
+ * scroll under it, which is why they are never used apart.
+ *
+ * **It degrades to an opaque surface, deliberately and everywhere.** Android
+ * gets a semi-transparent view, Safari and Firefox get diffusion without
+ * refraction, and the tints are opaque enough that the result is a legitimate
+ * solid control wherever none of it lands. That is the standing cost of this
+ * material — every glass surface needs a non-glass design that stands on its
+ * own — and paying it once here is what stops it being paid badly per screen.
  */
-export function GlassSurface({ children, radius, style }: GlassSurfaceProps) {
+export function GlassSurface({
+  children,
+  radius,
+  tone = 'neutral',
+  style,
+}: GlassSurfaceProps) {
+  // Gradient ids are document-global, so two surfaces on one screen would
+  // otherwise share — and fight over — the same definition.
+  const gradientId = `glass-spec-${useId()}`;
+  const prominent = tone === 'prominent';
+
   return (
     <View style={[styles.container, { borderRadius: radius }, style]}>
-      <BlurView
-        intensity={BLUR_INTENSITY}
-        tint="light"
-        style={StyleSheet.absoluteFill}
-        pointerEvents="none"
-      />
-      {/*
-        The tint sits *above* the blur, not as the blur's own background: the
-        label's legibility depends on this layer and nothing else, so it must
-        not be something a platform's blur implementation can decide to skip.
-      */}
+      {Platform.OS === 'web' ? (
+        <View
+          style={[
+            FILL,
+            { borderRadius: radius },
+            webBackdrop(),
+          ]}
+          pointerEvents="none"
+        />
+      ) : (
+        <BlurView
+          intensity={BLUR_INTENSITY}
+          tint="light"
+          style={StyleSheet.absoluteFill}
+          pointerEvents="none"
+        />
+      )}
+
       <View
-        style={[styles.tint, { borderRadius: radius }]}
+        style={[
+          FILL,
+          {
+            borderRadius: radius,
+            backgroundColor: prominent ? colors.glassTintProminent : colors.glassTint,
+          },
+        ]}
         pointerEvents="none"
       />
-      {/*
-        Two edges, always together. The bright one catches light and disappears
-        over pale content; the dark one separates the shape and disappears over
-        dark content. Either alone leaves the surface invisible against half of
-        what can scroll under it.
-      */}
+
+      <Svg style={FILL} pointerEvents="none">
+        <Defs>
+          {/* Diagonal, so the catch falls across the surface rather than
+              banding evenly down it. */}
+          <LinearGradient id={gradientId} x1="0" y1="0" x2="0.5" y2="1">
+            <Stop
+              offset="0"
+              stopColor={prominent ? colors.glassSpecularProminent : colors.glassSpecular}
+              stopOpacity="1"
+            />
+            <Stop
+              offset="0.38"
+              stopColor={prominent ? colors.glassSpecularProminent : colors.glassSpecular}
+              stopOpacity="0"
+            />
+          </LinearGradient>
+        </Defs>
+        <Rect x="0" y="0" width="100%" height="100%" rx={radius} fill={`url(#${gradientId})`} />
+      </Svg>
+
       <View
-        style={[styles.separator, { borderRadius: radius }]}
+        style={[FILL, styles.separator, { borderRadius: radius }]}
         pointerEvents="none"
       />
       <View
-        style={[styles.edge, { borderRadius: radius }]}
+        style={[
+          FILL,
+          styles.edge,
+          {
+            borderRadius: radius,
+            borderTopColor: prominent ? colors.glassSpecularProminent : colors.glassEdge,
+          },
+        ]}
         pointerEvents="none"
       />
+
       {children}
     </View>
   );
 }
 
+/**
+ * The web build's backdrop, with refraction in the same declaration as the
+ * blur — see `lensFilter.ts` for why that is not optional.
+ */
+function webBackdrop(): ViewStyle {
+  const lens = cssLens();
+  const value = lens ? `${lens} ${WEB_DIFFUSION}` : WEB_DIFFUSION;
+  return {
+    backdropFilter: value,
+    WebkitBackdropFilter: value,
+  } as unknown as ViewStyle;
+}
+
 const styles = StyleSheet.create({
   container: {
     // Clipping is what makes the blur follow the capsule instead of filling its
-    // bounding box. On Android `overflow: 'hidden'` is also what lets the
-    // radius apply to a child at all.
+    // bounding box. On Android it is also what lets the radius apply to a child.
     overflow: 'hidden',
   },
-  tint: {
-    ...FILL,
-    backgroundColor: colors.glassTint,
-  },
   separator: {
-    ...FILL,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.glassSeparator,
   },
   edge: {
-    ...FILL,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.glassEdge,
-    // Only the top edge on native: React Native cannot draw a gradient border,
+    // Sides only on the web build: React Native cannot draw a gradient border,
     // so a full ring of the bright colour reads as an outline rather than as
-    // light catching one side. The web build adds the sides back below, where a
-    // gradient is available.
+    // light catching one side of a curve.
     ...Platform.select({
       web: {
         borderLeftWidth: StyleSheet.hairlineWidth,

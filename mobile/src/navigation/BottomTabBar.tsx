@@ -242,7 +242,14 @@ const styles = StyleSheet.create({
     paddingTop: TAB_BAR_PADDING_TOP,
     paddingBottom: TAB_BAR_PADDING_TOP,
   },
+  /*
+    **Above the glass.** `GlassSurface` fills the control absolutely, and a
+    positioned element paints over its non-positioned siblings whatever the DOM
+    order — so without this the material covers each tab instead of sitting
+    behind it. Measured: the header's "+" rendered pale grey rather than ink.
+  */
   tab: {
+    zIndex: 1,
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',

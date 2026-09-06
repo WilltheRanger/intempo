@@ -1,5 +1,65 @@
 # InTempo Edit Log
 
+## 2026-09-06 — Liquid Glass, second pass: the whole control layer, and the check that could not see it
+
+The first pass glassed the tab bar and left the two most-used controls — "Add a
+piece" and "Continue practice" — exactly as they were. This finishes the layer.
+
+- **`GlassSurface` is a material now, not a blur.** Five layers, each doing a
+  job the others cannot: refraction + diffusion, tint, specular, dark
+  separation, bright edge. `tone="prominent"` is ink-tinted glass, reserved for
+  primary actions and selected states — tint is what says *this is the one to
+  press*, so spending it elsewhere spends the signal.
+- **Real perimeter lensing on the web build.** `lib/glass/lensFilter.ts` draws a
+  displacement map on a canvas — every pixel inside a rim band pushed along the
+  outward surface normal, smoothstepped to nothing through the middle — and
+  feeds it to `backdrop-filter` through an `feDisplacementMap`. Normalised with
+  `objectBoundingBox` + `preserveAspectRatio="none"`, so **one filter fits every
+  control**. It must sit in the *same* declaration as the blur: Chromium
+  resolves one backdrop image per backdrop root, so a second layered element
+  with its own `backdrop-filter` samples the original and paints a sharp copy
+  over the blurred one. Injected from TypeScript rather than written into
+  `public/index.html`, which carries the boot watchdog whose inline script is
+  content-hashed into the CSP.
+- **Buttons are capsules of that material.** `PrimaryButton` prominent,
+  `SecondaryButton` and `IconButton` neutral. Radii `md` → `pill`. Press is
+  carried by `PressableScale`'s compression plus a small opacity lift, because
+  a background swap is no longer available — the ground is a layer under the
+  label, not a colour on the view.
+
+**A bug worth keeping the reason for.** `GlassSurface` fills its control
+absolutely, and a positioned element paints over its non-positioned siblings
+*whatever the DOM order* — so the material covered every label and glyph it was
+supposed to sit behind. Measured: the header's "+" rendered pale grey instead
+of ink. Fixed with an explicit `zIndex: 1` on the content of each control; the
+comment is repeated at each site because the next control added will have the
+same shape and the same trap.
+
+**`audit-a11y.mjs` now composites glass instead of stepping past it.** A glass
+control's ground is a stack of absolutely-positioned children, not a colour on
+the control, so walking `backgroundColor` up the tree landed on the page and
+reported **thirteen findings at 1.07:1** — every one false; composited, the same
+labels sit near 11:1. A check that cannot see a layer does not report "unknown",
+it reports the wrong number. `fillsUnder` gathers covering fills from each
+ancestor's positioned subtrees in paint order and alpha-composites them.
+
+**Verified by breaking it**, which is the only thing that makes the above worth
+having: with `glassTintProminent` dropped from 0.88 to 0.06 alpha and the app
+rebuilt, the audit reports 1.20:1 on *every* glass button. Restored, PASS. So
+the tint's opacity is now a load-bearing value with a check behind it, rather
+than a number chosen by eye.
+
+**Honest status, unchanged from the first pass and worth repeating:** none of
+this has been seen on a device. On iOS `expo-blur` is `UIVisualEffectView` —
+diffusion without refraction, so the lensing above is **web-only** until
+`expo-glass-effect` (iOS 26+) is adopted. Safari and Firefox drop `url()` in
+`backdrop-filter` and fall back to blur alone.
+
+Validation: 1,603 mobile tests (147 files), `tsc` 0, ESLint 0, a11y audit PASS
+(and FAIL under mutation), `.env` restored `diff -q` identical, fixtures web
+build clean with `script-src` still pinned. Walk 50 of 51 — the same silent-take
+finding from PR #70; this diff does not touch the recording path.
+
 ## 2026-09-06 — Liquid Glass, first pass: floating tab bar and one label register
 
 **Reverses design laws 6 and 9** at the owner's request, after four prototype

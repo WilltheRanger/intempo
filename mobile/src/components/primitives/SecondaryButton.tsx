@@ -7,7 +7,6 @@ import {
 } from 'react-native';
 
 import {
-  BORDER_WIDTH,
   CONTROL_HEIGHT,
   CONTROL_PRESSED_SCALE,
   colors,
@@ -18,6 +17,7 @@ import {
   spacing,
 } from '../../design';
 import { PressableScale } from '../motion/PressableScale';
+import { GlassSurface } from './GlassSurface';
 import { Text } from './Text';
 
 export interface SecondaryButtonProps {
@@ -51,6 +51,9 @@ export function SecondaryButton({
         style,
       ]}
     >
+      {/* Neutral glass: colourless, so whatever it floats over decides how it
+          looks. Tint is reserved for the primary action beside it. */}
+      <GlassSurface radius={CONTROL_HEIGHT / 2} style={styles.fill} />
       <View style={styles.content}>
         {Icon ? (
           <Icon
@@ -66,11 +69,11 @@ export function SecondaryButton({
 }
 
 const styles = StyleSheet.create({
+  fill: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0 },
   button: {
+    overflow: 'hidden',
     height: CONTROL_HEIGHT,
-    borderRadius: radii.md,
-    borderWidth: BORDER_WIDTH,
-    borderColor: colors.border,
+    borderRadius: radii.pill,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: spacing.lg,
@@ -82,7 +85,14 @@ const styles = StyleSheet.create({
   disabled: {
     opacity: disabledOpacity,
   },
+  /*
+    **Above the glass.** `GlassSurface` fills the control absolutely, and a
+    positioned element paints over its non-positioned siblings whatever the DOM
+    order — so without this the material covers the label instead of sitting
+    behind it. Measured: the header's "+" rendered pale grey rather than ink.
+  */
   content: {
+    zIndex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
