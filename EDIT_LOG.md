@@ -68,6 +68,21 @@ on all 27 screens, fixtures web build clean with `script-src` still pinned,
 `StbVorbis` in `lib/score/sf2OnlyDecoder.ts` — which is **pre-existing**,
 confirmed by re-running it against a stashed tree, and untouched by this diff.
 
+**Caught on the PR, not before it:** the screenshot script was written after
+that lint run and pushed unlinted — four `no-undef` errors for `document`,
+`getComputedStyle` and `matchMedia`. They are inside a `page.evaluate`
+callback, which is serialised and run *in the page*, so the identifiers really
+do exist where they are used. `eslint.config.mjs` now declares them for
+`scripts/*-shot.mjs`, following the AudioWorklet block's precedent rather than
+adding a disable directive: a disable would also silence real typos in the Node
+half of the same file. The lesson is duller than the fix — re-run the checks
+after the last edit, not before it.
+
+Merged `main` in to clear a conflict: this branch carried the unsquashed
+`CLAUDE.md`-repair commit that landed on main squashed as #81, so both sides
+added an `EDIT_LOG.md` entry at the top. Resolved by keeping both, newest first;
+verified the repair entry appears exactly once.
+
 **Side effects:** none for anyone without Reduce Transparency enabled.
 **Rollback:** revert this commit; `glassOpaque` is additive and no caller of
 `GlassSurface` changed.
