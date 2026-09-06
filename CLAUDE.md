@@ -122,6 +122,22 @@ the user's rules, not suggestions to weigh against convenience.
 10. **Every element must justify its presence.** If removing it makes the
     interface clearer, remove it.
 
+**Every control answers the finger, and every affordance is real.** Two rules,
+added 2026-09-06 after a sheet shipped with a grab handle nothing dragged:
+
+- **A drawn affordance must do the thing it depicts.** A grab handle means
+  swipe-to-dismiss, a chevron means it opens, a switch means it toggles. Drawing
+  one and not wiring it is worse than drawing nothing, because it costs a try
+  before it teaches you it is a lie.
+- **A tap gets an immediate response**, before whatever it triggered arrives.
+  `PressableScale` for large targets; a pressed colour or opacity for small
+  ones. A control that looks identical during the press reads as dead on any
+  action that takes more than a moment.
+
+Before shipping a screen, ask what a thumb would try on it — swipe down on a
+sheet, swipe back from a pushed screen, pull to refresh a list, press and hold a
+row — and either support it or do not draw the thing that suggests it.
+
 **Screen rules live in modules, not components.** There is no React Native
 testing library here (`DECISIONS.md`, 2026-08-24), so a rule inside a `.tsx` is
 a rule nothing checks. Put the rule in a module with tests and let the component

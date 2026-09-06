@@ -67,6 +67,16 @@ export const PRESSED_SCALE = 0.97;
  */
 export const CONTROL_PRESSED_SCALE = 0.985;
 
+/**
+ * The scale a dialog enters from.
+ *
+ * It grows into place rather than only fading, which is what tells you it
+ * arrived *now* rather than having been behind the scrim all along. Small on
+ * purpose: anything lower reads as a zoom, and this is a question, not an
+ * event.
+ */
+export const DIALOG_ENTER_SCALE = 0.94;
+
 /** Opacity applied while a control is held down, where a colour swap won't do. */
 export const pressedOpacity = 0.9;
 

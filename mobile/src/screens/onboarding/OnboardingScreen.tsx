@@ -20,6 +20,7 @@ import {
   colors,
   ICON_SIZE,
   ICON_STROKE_WIDTH,
+  pressedOpacity,
   spacing,
 } from '../../design';
 import {
@@ -268,6 +269,7 @@ export function OnboardingScreen() {
             onPress={() => void pickPhoto()}
             accessibilityRole="button"
             accessibilityLabel={shownPhoto ? 'Change photo' : 'Add a photo'}
+            style={({ pressed }) => (pressed ? styles.pressed : null)}
           >
             {/*
               An empty slot, not the brand mark. `Avatar`'s placeholder is the
@@ -327,6 +329,16 @@ export function OnboardingScreen() {
 const PHOTO_SIZE = 64;
 
 const styles = StyleSheet.create({
+  /*
+    Every tappable thing on this screen acknowledges the touch. These were bare
+    `Pressable`s with a static style, so a tap produced no response at all until
+    whatever it triggered appeared — which on a slow action reads as the control
+    being dead. `PressableScale` is for the large targets; the app's answer for
+    small ones is a colour or opacity change, and these had neither.
+  */
+  pressed: {
+    opacity: pressedOpacity,
+  },
   heading: {
     marginTop: spacing['2xl'],
   },

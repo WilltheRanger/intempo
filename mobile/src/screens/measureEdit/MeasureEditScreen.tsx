@@ -14,7 +14,13 @@ import {
 import { BottomSheet } from '../../components/overlays/BottomSheet';
 import { useCorrectScore, usePiece } from '../../data/hooks/usePieces';
 import type { Clef, ScoreJson, ScoreNote } from '../../data/types';
-import { BORDER_WIDTH, colors, radii, spacing } from '../../design';
+import {
+  BORDER_WIDTH,
+  colors,
+  pressedOpacity,
+  radii,
+  spacing,
+} from '../../design';
 import { impact, ImpactFeedbackStyle } from '../../lib/haptics';
 import {
   DURATION_LABELS,
@@ -339,7 +345,7 @@ export function MeasureEditScreen() {
         onPress={() => setPickingKey(true)}
         accessibilityRole="button"
         accessibilityLabel={`Change key signature. ${keyDescription}`}
-        style={styles.keySetting}
+        style={({ pressed }) => [styles.keySetting, pressed && styles.pressed]}
       >
         <View style={styles.keyCopy}>
           <Text variant="metadata">{keyDescription}</Text>
@@ -369,7 +375,7 @@ export function MeasureEditScreen() {
         onPress={() => setPickingClef(true)}
         accessibilityRole="button"
         accessibilityLabel={`Change clef. ${clefDescription}`}
-        style={styles.keySetting}
+        style={({ pressed }) => [styles.keySetting, pressed && styles.pressed]}
       >
         <View style={styles.keyCopy}>
           <Text variant="metadata">{clefDescription}</Text>
@@ -408,7 +414,7 @@ export function MeasureEditScreen() {
             accessibilityLabel={`Note ${i + 1}, ${DURATION_LABELS[note.duration] ?? note.duration}${
               note.pitch === 'rest' ? ', rest' : `, ${note.pitch}`
             }`}
-            style={[styles.note, i === selected && styles.noteSelected]}
+            style={({ pressed }) => [styles.note, i === selected && styles.noteSelected, pressed && styles.pressed]}
           >
             <Text variant="metadata">{DURATION_LABELS[note.duration] ?? note.duration}</Text>
             <Text variant="metadataSmall" color="textTertiary">
@@ -435,7 +441,7 @@ export function MeasureEditScreen() {
             accessibilityRole="button"
             accessibilityState={{ selected: current?.duration === duration }}
             aria-pressed={current?.duration === duration}
-            style={[styles.chip, current?.duration === duration && styles.chipOn]}
+            style={({ pressed }) => [styles.chip, current?.duration === duration && styles.chipOn, pressed && styles.pressed]}
           >
             <Text
               variant="metadataSmall"
@@ -473,7 +479,12 @@ export function MeasureEditScreen() {
         // already knew this and said so in their own comments; this one did not.
         accessibilityState={{ checked: current?.pitch === 'rest' }}
         aria-checked={current?.pitch === 'rest'}
-        style={[styles.chip, styles.restToggle, current?.pitch === 'rest' && styles.chipOn]}
+        style={({ pressed }) => [
+          styles.chip,
+          styles.restToggle,
+          current?.pitch === 'rest' && styles.chipOn,
+          pressed && styles.pressed,
+        ]}
       >
         <Text
           variant="metadataSmall"
@@ -509,10 +520,11 @@ export function MeasureEditScreen() {
           accessibilityLabel="Tie to the next note"
           accessibilityState={{ checked: current.tied_to_next === true }}
           aria-checked={current.tied_to_next === true}
-          style={[
+          style={({ pressed }) => [
             styles.chip,
             styles.restToggle,
             current.tied_to_next && styles.chipOn,
+            pressed && styles.pressed,
           ]}
         >
           <Text
@@ -537,7 +549,7 @@ export function MeasureEditScreen() {
             onPress={() => change({ pitch: stepPitch(current.pitch, -1) })}
             accessibilityRole="button"
             accessibilityLabel="Lower this note"
-            style={styles.chip}
+            style={({ pressed }) => [styles.chip, pressed && styles.pressed]}
           >
             <Text variant="metadataSmall">Down</Text>
           </Pressable>
@@ -545,7 +557,7 @@ export function MeasureEditScreen() {
             onPress={() => change({ pitch: cycleAccidental(current.pitch) })}
             accessibilityRole="button"
             accessibilityLabel="Change the accidental"
-            style={styles.chip}
+            style={({ pressed }) => [styles.chip, pressed && styles.pressed]}
           >
             <Text variant="metadataSmall">{current.pitch}</Text>
           </Pressable>
@@ -553,7 +565,7 @@ export function MeasureEditScreen() {
             onPress={() => change({ pitch: stepPitch(current.pitch, 1) })}
             accessibilityRole="button"
             accessibilityLabel="Raise this note"
-            style={styles.chip}
+            style={({ pressed }) => [styles.chip, pressed && styles.pressed]}
           >
             <Text variant="metadataSmall">Up</Text>
           </Pressable>
@@ -573,7 +585,7 @@ export function MeasureEditScreen() {
           onPress={addNote}
           accessibilityRole="button"
           accessibilityLabel="Add a note after this one"
-          style={styles.chip}
+          style={({ pressed }) => [styles.chip, pressed && styles.pressed]}
         >
           <Text variant="metadataSmall">Add note</Text>
         </Pressable>
@@ -582,7 +594,7 @@ export function MeasureEditScreen() {
           disabled={working.length <= 1}
           accessibilityRole="button"
           accessibilityLabel="Delete this note"
-          style={[styles.chip, working.length <= 1 && styles.chipOff]}
+          style={({ pressed }) => [styles.chip, working.length <= 1 && styles.chipOff, pressed && styles.pressed]}
         >
           <Text
             variant="metadataSmall"
@@ -616,7 +628,7 @@ export function MeasureEditScreen() {
             accessibilityRole="button"
             accessibilityState={{ selected: workingKey === null }}
             aria-pressed={workingKey === null}
-            style={[styles.keyChoice, workingKey === null && styles.keyChoiceOn]}
+            style={({ pressed }) => [styles.keyChoice, workingKey === null && styles.keyChoiceOn, pressed && styles.pressed]}
           >
             <Text variant="metadata">
               {isFirstBar ? 'Key signature unknown' : 'No new signature at this bar'}
@@ -640,7 +652,7 @@ export function MeasureEditScreen() {
                 accessibilityRole="button"
                 accessibilityState={{ selected: selectedChoice }}
                 aria-pressed={selectedChoice}
-                style={[styles.keyChoice, selectedChoice && styles.keyChoiceOn]}
+                style={({ pressed }) => [styles.keyChoice, selectedChoice && styles.keyChoiceOn, pressed && styles.pressed]}
               >
                 <Text variant="metadata">{choice.label}</Text>
               </Pressable>
@@ -672,7 +684,7 @@ export function MeasureEditScreen() {
             accessibilityRole="button"
             accessibilityState={{ selected: workingClef === null }}
             aria-pressed={workingClef === null}
-            style={[styles.keyChoice, workingClef === null && styles.keyChoiceOn]}
+            style={({ pressed }) => [styles.keyChoice, workingClef === null && styles.keyChoiceOn, pressed && styles.pressed]}
           >
             <Text variant="metadata">
               {isFirstBar ? 'Clef not read' : 'No new clef at this bar'}
@@ -696,7 +708,7 @@ export function MeasureEditScreen() {
                 accessibilityRole="button"
                 accessibilityState={{ selected: selectedChoice }}
                 aria-pressed={selectedChoice}
-                style={[styles.keyChoice, selectedChoice && styles.keyChoiceOn]}
+                style={({ pressed }) => [styles.keyChoice, selectedChoice && styles.keyChoiceOn, pressed && styles.pressed]}
               >
                 <Text variant="metadata">{choice.label}</Text>
               </Pressable>
@@ -710,6 +722,16 @@ export function MeasureEditScreen() {
 }
 
 const styles = StyleSheet.create({
+  /*
+    Every tappable thing on this screen acknowledges the touch. These were bare
+    `Pressable`s with a static style, so a tap produced no response at all until
+    whatever it triggered appeared — which on a slow action reads as the control
+    being dead. `PressableScale` is for the large targets; the app's answer for
+    small ones is a colour or opacity change, and these had neither.
+  */
+  pressed: {
+    opacity: pressedOpacity,
+  },
   beats: {
     marginTop: spacing.xl,
   },
