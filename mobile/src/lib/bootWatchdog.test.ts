@@ -59,7 +59,7 @@ function element(tagName: string): FakeElement {
 
 /** Runs the watchdog IIFE against a stub DOM and hands back the levers. */
 function bootWatchdog() {
-  const html = indexHtml;
+  const html = indexHtml.replace(/\r\n/g, '\n');
   const start = html.indexOf('(function () {\n        var reported = false;');
   const end = html.indexOf('})();', start);
   expect(start, 'the watchdog IIFE moved; this test can no longer find it').toBeGreaterThan(-1);

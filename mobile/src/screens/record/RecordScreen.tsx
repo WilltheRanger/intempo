@@ -160,6 +160,14 @@ export function RecordScreen() {
   // system permission prompt. It can always be reopened from the ready screen.
   const [showSetup, setShowSetup] = useState(!practiceSetupSeen);
   const [elapsedMs, setElapsedMs] = useState(0);
+  const [hasInputSignal, setHasInputSignal] = useState(false);
+  useEffect(() => {
+    if (phase !== 'recording' && phase !== 'counting_in') return;
+    const timer = setInterval(() => {
+      setHasInputSignal((recorder.current?.inputPeak?.() ?? 0) > 0);
+    }, 200);
+    return () => clearInterval(timer);
+  }, [phase]);
   const [problem, setProblem] = useState<string | null>(null);
   const lastFreeMessage = describeLastFreeAnalysis(musician?.usage);
   const visibleProblem = limitMessage ?? problem;
@@ -177,7 +185,9 @@ export function RecordScreen() {
   // re-render between starting and stopping must not lose the handle to a
   // microphone that is currently open.
   const recorder = useRef<Recorder | null>(null);
+  const mounted = useRef(true);
   const starting = useRef(false);
+  const [isStarting, setIsStarting] = useState(false);
 
   // The finished take, kept when sending it fails.
   //
@@ -203,9 +213,13 @@ export function RecordScreen() {
   // Leaving mid-take — back gesture, a deep link, anything — has to release
   // the microphone. Nothing else will.
   useEffect(
-    () => () => {
-      recorder.current?.cancel();
-      recorder.current = null;
+    () => {
+      mounted.current = true;
+      return () => {
+        mounted.current = false;
+        recorder.current?.cancel();
+        recorder.current = null;
+      };
     },
     [],
   );
@@ -331,8 +345,10 @@ export function RecordScreen() {
       return;
     }
     starting.current = true;
+    setIsStarting(true);
     impact(ImpactFeedbackStyle.Medium);
     setProblem(null);
+    setHasInputSignal(false);
     setMicrophoneBlocked(false);
     setTruncated(false);
     setKeptSeconds(0);
@@ -344,13 +360,22 @@ export function RecordScreen() {
     setPendingTake(false);
 
     try {
-      recorder.current = await startRecording();
+      const started = await startRecording();
+      // Permission may resolve after the musician has already left. Never
+      // retain a microphone opened for a screen that no longer exists.
+      if (!mounted.current) {
+        started.cancel();
+        return;
+      }
+      recorder.current = started;
     } catch (error) {
+      if (!mounted.current) return;
       setMicrophoneBlocked(error instanceof MicrophonePermissionError);
       setProblem(readTakeFailure(error, Platform.OS).message);
       return;
     } finally {
       starting.current = false;
+      if (mounted.current) setIsStarting(false);
     }
 
     // The recorder starts before the count-in. Its leading silence is intentional:
@@ -866,6 +891,7 @@ export function RecordScreen() {
           <RecordButton
             active={recording}
             countingIn={false}
+            busy={isStarting}
             disabled={!recording && Boolean(limitMessage)}
             onPress={() => void (recording ? stop() : start())}
           />
@@ -1028,7 +1054,7 @@ export function RecordScreen() {
             fromMeasure={startFrom}
             // Silenced the moment a take starts: anything through the speaker
             // lands in the microphone as phantom onsets (§4).
-            disabled={recording}
+            disabled={recording || isStarting}
           />
 
           {/* **One bar for both**, which is what makes it safe to say so. The
@@ -1091,6 +1117,13 @@ export function RecordScreen() {
             {formatElapsed(elapsedMs)}
           </Text>
         )}
+        {capturing ? (
+          <Text variant="metadataSmall" color="textSecondary">
+            {hasInputSignal
+              ? 'Microphone: audio received'
+              : 'Microphone: waiting for sound'}
+          </Text>
+        ) : null}
       </View>
 
       {/*
@@ -1162,15 +1195,17 @@ function formatElapsed(ms: number): string {
 function RecordButton({
   active,
   countingIn,
+  busy = false,
   disabled = false,
   onPress,
 }: {
   active: boolean;
   countingIn: boolean;
+  busy?: boolean;
   disabled?: boolean;
   onPress: () => void;
 }) {
-  const label = disabled
+  const label = busy ? 'Starting microphone…' : disabled
     ? 'Monthly analysis limit reached'
     : countingIn
       ? 'Cancel count-in'
@@ -1180,10 +1215,10 @@ function RecordButton({
   return (
     <PressableScale
       onPress={onPress}
-      disabled={disabled}
+      disabled={disabled || busy}
       accessibilityRole="button"
       accessibilityLabel={label}
-      accessibilityState={{ disabled }}
+      accessibilityState={{ disabled: disabled || busy, busy }}
       style={[styles.control, disabled && styles.controlDisabled]}
       // More give than the default: this is the one control a musician reaches
       // for without looking, and it has to answer the finger.

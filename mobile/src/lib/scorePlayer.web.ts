@@ -1,8 +1,14 @@
 import { audioContext, resumeAudio } from './audio/context.web';
 import { prepareForPlayback } from './audio/session.web';
 import type { Schedule } from './score/schedule';
-import { DEFAULT_VOICE, harmonicsFor, VOICES, type VoiceName } from './score/voice';
+import {
+  DEFAULT_VOICE,
+  harmonicsFor,
+  VOICES,
+  type VoiceName,
+} from './score/voice';
 import type { PlaybackHandle, PlayOptions } from './score/player.types';
+import { beginSampledPlayback } from './score/sampledPlayback';
 
 /**
  * Playing a score in a browser, with Web Audio.
@@ -51,7 +57,13 @@ const START_POLL_MS = 120;
 /** Schedule and play a score, returning a handle that can stop it. */
 export function playSchedule(
   schedule: Schedule,
-  { voice = DEFAULT_VOICE, onProgress, onEnd }: PlayOptions = {},
+  {
+    voice = DEFAULT_VOICE,
+    onProgress,
+    onEnd,
+    onLoading,
+    onError,
+  }: PlayOptions = {},
 ): PlaybackHandle {
   // Asked in this order on purpose: a score with nothing in it must not be the
   // thing that spends the page's one audio context. Building it is otherwise
@@ -74,6 +86,9 @@ export function playSchedule(
 
   const maybeContext = audioContext();
   if (!maybeContext) {
+    onError?.(
+      'Audio is unavailable in this browser. Please try Safari or Chrome.',
+    );
     onEnd?.();
     return { stop: () => {}, isPlaying: () => false };
   }
@@ -85,6 +100,72 @@ export function playSchedule(
   const context = maybeContext;
   void prepareForPlayback();
   resumeAudio(context);
+
+  if (voice !== 'reference') {
+    return beginSampledPlayback(
+      schedule,
+      voice,
+      { onProgress, onEnd, onLoading, onError },
+      async (audio, cancelled, finish) => {
+        if (cancelled()) return () => {};
+        const buffer = context.createBuffer(
+          audio.channels,
+          audio.pcm.length / audio.channels,
+          audio.sampleRate,
+        );
+        for (let c = 0; c < audio.channels; c++) {
+          const channel = buffer.getChannelData(c);
+          for (let i = 0; i < channel.length; i++)
+            channel[i] = audio.pcm[i * audio.channels + c] / 32768;
+        }
+        const source = context.createBufferSource();
+        source.buffer = buffer;
+        source.connect(context.destination);
+        const startedAt = context.currentTime + 0.08;
+        let visibleSince = Date.now();
+        let timer: ReturnType<typeof setInterval> | undefined;
+        const cleanup = () => {
+          clearInterval(timer);
+          source.onended = null;
+          try {
+            source.stop();
+          } catch {
+            /* Already ended. */
+          }
+          source.disconnect();
+        };
+        try {
+          source.onended = finish;
+          source.start(startedAt);
+          timer = setInterval(() => {
+            const elapsed = context.currentTime - startedAt;
+            if (elapsed >= audio.durationS) {
+              finish();
+              return;
+            }
+            if (elapsed <= 0) {
+              if (typeof document !== 'undefined' && document.hidden)
+                visibleSince = Date.now();
+              if (Date.now() - visibleSince > START_TIMEOUT_MS) {
+                onError?.('Audio couldn’t start. Tap Listen to try again.');
+                finish();
+                return;
+              }
+              resumeAudio(context);
+            }
+            onProgress?.(
+              Math.min(schedule.durationS, Math.max(0, elapsed)),
+              schedule.durationS,
+            );
+          }, 50);
+        } catch (error) {
+          cleanup();
+          throw error;
+        }
+        return cleanup;
+      },
+    );
+  }
 
   const spec = VOICES[voice as VoiceName] ?? VOICES[DEFAULT_VOICE];
 
@@ -131,7 +212,9 @@ export function playSchedule(
     harmonics.forEach((amplitude, index) => {
       imag[index + 1] = amplitude;
     });
-    const wave = context.createPeriodicWave(real, imag, { disableNormalization: true });
+    const wave = context.createPeriodicWave(real, imag, {
+      disableNormalization: true,
+    });
     waves.set(frequency, wave);
     return wave;
   }
@@ -162,7 +245,10 @@ export function playSchedule(
     // someone to hear as part of the music.
     envelope.gain.setValueAtTime(0, at);
     envelope.gain.linearRampToValueAtTime(1, at + spec.attackS);
-    envelope.gain.setValueAtTime(1, Math.max(until - spec.releaseS, at + spec.attackS));
+    envelope.gain.setValueAtTime(
+      1,
+      Math.max(until - spec.releaseS, at + spec.attackS),
+    );
     envelope.gain.linearRampToValueAtTime(0, until);
 
     oscillator.connect(envelope);

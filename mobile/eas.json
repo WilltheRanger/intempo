@@ -14,9 +14,15 @@
       "android": { "buildType": "apk" }
     },
     "production": {
+      "environment": "production",
       "distribution": "store",
       "channel": "production",
       "autoIncrement": true
+    },
+    "testflight": {
+      "extends": "production",
+      "environment": "production",
+      "distribution": "store"
     }
   },
   "submit": {

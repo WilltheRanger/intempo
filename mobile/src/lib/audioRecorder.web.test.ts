@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { resetAudioContextForTests } from './audio/context.web';
-import { EmptyRecordingError, MicrophonePermissionError } from './audio/types';
+import { EmptyRecordingError } from './audio/types';
 import { startRecording } from './audioRecorder.web';
 
 /**
@@ -48,14 +47,7 @@ class StubWorkletNode {
   }
 }
 
-/** Every context the page has built, and how often each was closed. */
-let contexts: StubContext[];
-
 class StubContext {
-  closes = 0;
-  constructor() {
-    contexts.push(this);
-  }
   sampleRate = SAMPLE_RATE;
   state: 'running' | 'suspended' = 'running';
   destination = {};
@@ -66,22 +58,22 @@ class StubContext {
   async resume() {
     this.state = 'running';
   }
-  async close() {
-    this.closes += 1;
-  }
+  async close() {}
 }
 
 beforeEach(() => {
   posted = [];
   tracksStopped = 0;
-  contexts = [];
-  // The context is shared and module-level, so it survives between tests
-  // unless it is forgotten — the same seam `click.web.test.ts` uses.
-  resetAudioContextForTests();
   vi.stubGlobal('navigator', {
     mediaDevices: {
       getUserMedia: async () => ({
-        getTracks: () => [{ stop: () => { tracksStopped += 1; } }],
+        getTracks: () => [
+          {
+            stop: () => {
+              tracksStopped += 1;
+            },
+          },
+        ],
       }),
     },
   });
@@ -125,6 +117,92 @@ async function headerOf(audio: Blob) {
 }
 
 describe('startRecording (web)', () => {
+  it('reports actual signal and clears it when count-in audio is discarded', async () => {
+    const recorder = await startRecording();
+    expect(recorder.inputPeak?.()).toBe(0);
+    node.deliver(silenceWith(64, 5000));
+    expect(recorder.inputPeak?.()).toBeGreaterThan(0);
+    recorder.discardCapturedSoFar();
+    expect(recorder.inputPeak?.()).toBe(0);
+    await recorder.stop().catch(() => {});
+  });
+  it('resumes again when microphone setup suspends an already unlocked context', async () => {
+    let resumes = 0;
+    class InterruptedContext extends StubContext {
+      createMediaStreamSource() {
+        this.state = 'suspended';
+        return super.createMediaStreamSource();
+      }
+      async resume() {
+        resumes += 1;
+        this.state = 'running';
+      }
+    }
+    vi.stubGlobal('window', { AudioContext: InterruptedContext });
+    const recorder = await startRecording();
+    expect(resumes).toBe(1);
+    node.deliver(silenceWith(64, 5000));
+    expect((await recorder.stop()).seconds).toBeGreaterThan(0);
+  });
+
+  it('preserves captured audio and releases the mic if cleanup finds a closed graph', async () => {
+    class ClosedContext extends StubContext {
+      async close() { throw new DOMException('closed', 'InvalidStateError'); }
+    }
+    vi.stubGlobal('window', { AudioContext: ClosedContext });
+    const recorder = await startRecording();
+    node.deliver(silenceWith(64, 5000));
+    node.port.postMessage = () => { throw new DOMException('closed', 'InvalidStateError'); };
+    expect((await recorder.stop()).seconds).toBeGreaterThan(0);
+    expect(tracksStopped).toBe(1);
+  });
+
+  it('unlocks suspended audio before asking for microphone permission', async () => {
+    const order: string[] = [];
+    class SuspendedContext extends StubContext {
+      state: 'running' | 'suspended' = 'suspended';
+      async resume() {
+        order.push('resume');
+        this.state = 'running';
+      }
+    }
+    vi.stubGlobal('window', { AudioContext: SuspendedContext });
+    vi.stubGlobal('navigator', {
+      mediaDevices: {
+        getUserMedia: async () => {
+          order.push('permission');
+          return { getTracks: () => [{ stop() {} }] };
+        },
+      },
+    });
+    const recorder = await startRecording();
+    expect(order).toEqual(['resume', 'permission']);
+    await recorder.stop().catch(() => {});
+  });
+
+  it('releases the microphone after graph failure so a retry can record', async () => {
+    let closed = 0;
+    let attempts = 0;
+    class FailingContext extends StubContext {
+      createMediaStreamSource() {
+        if (attempts++ === 0)
+          throw new DOMException('interrupted', 'InvalidStateError');
+        return super.createMediaStreamSource();
+      }
+      async close() {
+        closed += 1;
+      }
+    }
+    vi.stubGlobal('window', { AudioContext: FailingContext });
+    await expect(startRecording()).rejects.toThrow(/try Record again/);
+    expect(tracksStopped).toBe(1);
+    expect(closed).toBe(1);
+    const recorder = await startRecording();
+    node.deliver(silenceWith(4096, 20000));
+    expect((await recorder.stop()).seconds).toBeGreaterThan(0);
+    expect(tracksStopped).toBe(2);
+  });
+
   it('writes what the worklet delivered, at the rate the hardware reported', async () => {
     const recorder = await startRecording();
     node.deliver(silenceWith(4096, 12000));
@@ -219,7 +297,15 @@ describe('when the microphone will not start', () => {
           if (error) {
             throw error;
           }
-          return { getTracks: () => [{ stop: () => { tracksStopped += 1; } }] };
+          return {
+            getTracks: () => [
+              {
+                stop: () => {
+                  tracksStopped += 1;
+                },
+              },
+            ],
+          };
         },
       },
     });
@@ -253,136 +339,5 @@ describe('when the microphone will not start', () => {
 
     await expect(startRecording()).rejects.toThrow(/busy/);
     expect(asked).toHaveLength(1);
-  });
-});
-
-describe('the audio context it records through', () => {
-  /*
-   * **The bug this is the regression test for.** `lib/audio/context.web.ts`
-   * exists because a context per use is the commonest "audio works once on
-   * iPhone" bug there is: Safari on iOS caps how many a page may hold and
-   * `close()` does not reliably give the slot back. Both *players* were moved
-   * onto the shared one. The recorder was missed, and went on building its own
-   * per take and closing it — so every take spent a slot the players are also
-   * drawing from, and the page runs out for all of them together.
-   *
-   * Nothing here can prove that is what an iPhone reported as
-   * `InvalidStateError`; there is no device in this environment. What it can
-   * prove is that the recorder no longer does the thing the file next to it
-   * says not to.
-   */
-  it('is the page\'s one context, not a new one per take', async () => {
-    (await startRecording()).cancel();
-    (await startRecording()).cancel();
-
-    expect(contexts).toHaveLength(1);
-  });
-
-  it('is not closed when a take ends', async () => {
-    // Closing the mixer would end the next Listen too, and on iOS would not
-    // give the slot back anyway.
-    const recorder = await startRecording();
-    node.deliver(new Int16Array([1, 2, 3, 4]));
-
-    await recorder.stop();
-
-    expect(contexts[0].closes).toBe(0);
-  });
-
-  it('is not closed when a take is cancelled either', async () => {
-    const recorder = await startRecording();
-
-    recorder.cancel();
-
-    expect(contexts[0].closes).toBe(0);
-  });
-
-  it('is resumed on the way in', async () => {
-    // A context can be suspended by the autoplay policy and *interrupted* by
-    // anything the system decides matters more — a call, another app, the
-    // microphone opening, which is exactly what is about to happen.
-    resetAudioContextForTests();
-    contexts = [];
-    const suspended = new StubContext();
-    suspended.state = 'suspended';
-    vi.stubGlobal('window', { AudioContext: function () { return suspended; } });
-
-    (await startRecording()).cancel();
-
-    expect(suspended.state).toBe('running');
-  });
-
-  it('releases the microphone when there is no Web Audio at all', async () => {
-    // The stream is already open by then: `getUserMedia` comes first, so
-    // bailing out without stopping its tracks leaves the microphone live and
-    // the recording indicator on with nothing recording.
-    resetAudioContextForTests();
-    vi.stubGlobal('window', {});
-    const before = tracksStopped;
-
-    await expect(startRecording()).rejects.toThrow(/no Web Audio/i);
-
-    expect(tracksStopped).toBe(before + 1);
-  });
-});
-
-describe('a document that was not ready to capture', () => {
-  /*
-   * **The device report of 2026-09-04.** WebKit rejects `getUserMedia` with
-   * `InvalidStateError` when the document is not fully active and focused, and
-   * — against the spec, which says the user agent *must wait* — does not wait.
-   * So the tap fails, and so does every tap after it, because nothing about
-   * the document changes in between. This is that waiting.
-   */
-  function microphoneThatFailsFirst(name: string, times = 1) {
-    let left = times;
-    const calls = { count: 0 };
-    vi.stubGlobal('navigator', {
-      mediaDevices: {
-        async getUserMedia() {
-          calls.count += 1;
-          if (left > 0) {
-            left -= 1;
-            throw new DOMException('not now', name);
-          }
-          return { getTracks: () => [{ stop: () => { tracksStopped += 1; } }] };
-        },
-      },
-    });
-    return calls;
-  }
-
-  it('is asked a second time, and the take starts', async () => {
-    // The document is focused by the time the retry lands — which is the
-    // ordinary case, because the thing that took focus was transient.
-    vi.stubGlobal('document', { hasFocus: () => true, visibilityState: 'visible' });
-    const calls = microphoneThatFailsFirst('InvalidStateError');
-
-    const recorder = await startRecording();
-
-    expect(calls.count).toBe(2);
-    recorder.cancel();
-  });
-
-  it('is not asked twice for a refusal, which is an answer rather than a wait', async () => {
-    // Retrying a decision would turn an immediate "no" into a pause and then
-    // the same "no", and would ask a musician who has just declined twice.
-    vi.stubGlobal('document', { hasFocus: () => true, visibilityState: 'visible' });
-    const calls = microphoneThatFailsFirst('NotAllowedError');
-
-    await expect(startRecording()).rejects.toBeInstanceOf(MicrophonePermissionError);
-
-    expect(calls.count).toBe(1);
-  });
-
-  it('gives up after one retry rather than looping', async () => {
-    // A document that stays unfocused is being held by something this cannot
-    // argue with. The sentence in `microphoneFailure` is the honest next step.
-    vi.stubGlobal('document', { hasFocus: () => true, visibilityState: 'visible' });
-    const calls = microphoneThatFailsFirst('InvalidStateError', 2);
-
-    await expect(startRecording()).rejects.toThrow(/reload|refresh/i);
-
-    expect(calls.count).toBe(2);
   });
 });

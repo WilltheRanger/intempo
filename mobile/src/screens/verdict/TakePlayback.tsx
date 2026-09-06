@@ -1,7 +1,8 @@
 import { useQuery } from '@tanstack/react-query';
 import { Pause, Play } from 'lucide-react-native';
 import { useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
-import { useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 import { StyleSheet, View } from 'react-native';
 
 import {
@@ -44,6 +45,12 @@ export function TakePlayback({ analysisId }: TakePlaybackProps) {
     { updateInterval: 250 },
   );
   const status = useAudioPlayerStatus(player);
+  const generation = useRef(0);
+  const starting = useRef(false);
+  useFocusEffect(useCallback(() => () => {
+    generation.current += 1;
+    try { player.pause(); } catch { /* Player already released. */ }
+  }, [player]));
 
   const duration = Math.max(0, status.duration || 0);
   const current = Math.min(duration || Infinity, Math.max(0, status.currentTime || 0));
@@ -53,6 +60,9 @@ export function TakePlayback({ analysisId }: TakePlaybackProps) {
   const unavailable = recording.isError || Boolean(status.error) || playError;
 
   async function toggle() {
+    if (starting.current) return;
+    const requestedGeneration = generation.current;
+    starting.current = true;
     setPlayError(null);
     try {
       if (status.playing) {
@@ -60,12 +70,17 @@ export function TakePlayback({ analysisId }: TakePlaybackProps) {
         return;
       }
       await prepareForPlayback();
+      if (generation.current !== requestedGeneration) return;
       if (finished) {
         await player.seekTo(0);
       }
+      if (generation.current !== requestedGeneration) return;
       player.play();
     } catch {
-      setPlayError('This recording could not be played.');
+      if (generation.current === requestedGeneration)
+        setPlayError('This recording could not be played.');
+    } finally {
+      starting.current = false;
     }
   }
 

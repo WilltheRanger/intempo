@@ -1,6 +1,7 @@
 import { Pause, Play } from 'lucide-react-native';
-import { useEffect, useRef, useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
+import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 
 import { Text } from '../primitives/Text';
 import type { ScoreJson } from '../../data/types';
@@ -21,6 +22,7 @@ import {
 } from '../../lib/score';
 import { usePreferences } from '../../data/preferences';
 import { playSchedule } from '../../lib/scorePlayer';
+import { INSTRUMENT_LABELS } from '../../lib/warmup';
 
 export interface ListenButtonProps {
   score: ScoreJson | null;
@@ -73,6 +75,8 @@ export function ListenButton({
 }: ListenButtonProps) {
   const { instrument } = usePreferences();
   const [playing, setPlaying] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState(0);
   const handle = useRef<PlaybackHandle | null>(null);
 
@@ -82,22 +86,26 @@ export function ListenButton({
   const report = useRef(onProgress);
   report.current = onProgress;
 
-  function stop() {
+  const stop = useCallback(() => {
     handle.current?.stop();
     handle.current = null;
     setPlaying(false);
+    setLoading(false);
     setProgress(0);
     report.current?.(0, 0);
-  }
+  }, []);
 
   // Leaving the screen, or starting a take, must silence it. A note still
   // sounding into a recording is the exact failure this guards against.
-  useEffect(() => stop, []);
+  // Stack/tab navigation may keep this component mounted after leaving it.
+  // Focus cleanup stops both sounding audio and a pending load/render.
+  useFocusEffect(useCallback(() => stop, [stop]));
+  useEffect(() => stop, [instrument, score, bpm, fromMeasure, stop]);
   useEffect(() => {
     if (disabled) {
       stop();
     }
-  }, [disabled]);
+  }, [disabled, stop]);
 
   if (!score || score.measures.length === 0) {
     return null;
@@ -119,6 +127,7 @@ export function ListenButton({
     }
 
     setProgress(0);
+    setError(null);
     // **The button follows the player, it does not lead it.** `setPlaying(true)`
     // used to run before the schedule was handed over, so a playback that could
     // not start left the label on Stop with nothing sounding — press again and
@@ -134,6 +143,8 @@ export function ListenButton({
       // account because it always has a value (`usePreferences`), so there is
       // no screen here that needs a "no instrument yet" branch.
       voice: voiceForInstrument(instrument),
+      onLoading: setLoading,
+      onError: setError,
       onProgress: (elapsed, total) => {
         setProgress(total > 0 ? elapsed / total : 0);
         report.current?.(elapsed, total);
@@ -154,41 +165,64 @@ export function ListenButton({
   }
 
   return (
-    <Pressable
-      onPress={toggle}
-      disabled={disabled}
-      accessibilityRole="button"
-      accessibilityState={{ disabled }}
-      accessibilityLabel={playing ? 'Stop listening' : 'Listen at this tempo'}
-      style={({ pressed }) => [
-        styles.button,
-        pressed && styles.pressed,
-        disabled && styles.disabled,
-      ]}
-    >
-      {playing ? (
-        <Pause
-          size={ICON_SIZE.sm}
-          strokeWidth={ICON_STROKE_WIDTH}
-          color={colors.textPrimary}
-          fill={colors.textPrimary}
-        />
-      ) : (
-        <Play
-          size={ICON_SIZE.sm}
-          strokeWidth={ICON_STROKE_WIDTH}
-          color={colors.textPrimary}
-          fill={colors.textPrimary}
-        />
-      )}
-      <Text variant="metadataSmall">{playing ? 'Stop' : 'Listen'}</Text>
+    <View>
+      <Pressable
+        onPress={toggle}
+        disabled={disabled}
+        accessibilityRole="button"
+        accessibilityState={{ disabled, busy: loading }}
+        accessibilityLabel={
+          loading
+            ? 'Loading instrument, tap to cancel'
+            : playing
+              ? 'Stop listening'
+              : `Listen with ${INSTRUMENT_LABELS[instrument]} at this tempo`
+        }
+        style={({ pressed }) => [
+          styles.button,
+          pressed && styles.pressed,
+          disabled && styles.disabled,
+        ]}
+      >
+        {loading ? (
+          <ActivityIndicator size="small" color={colors.textPrimary} />
+        ) : playing ? (
+          <Pause
+            size={ICON_SIZE.sm}
+            strokeWidth={ICON_STROKE_WIDTH}
+            color={colors.textPrimary}
+            fill={colors.textPrimary}
+          />
+        ) : (
+          <Play
+            size={ICON_SIZE.sm}
+            strokeWidth={ICON_STROKE_WIDTH}
+            color={colors.textPrimary}
+            fill={colors.textPrimary}
+          />
+        )}
+        <Text variant="metadataSmall">
+          {loading
+            ? 'Loading · Cancel'
+            : playing
+              ? 'Stop'
+              : `Listen · ${INSTRUMENT_LABELS[instrument]}`}
+        </Text>
 
-      {/* Sits inside the control's border rather than under it, so the button
+        {/* Sits inside the control's border rather than under it, so the button
           keeps one outline instead of growing a second element beneath it. */}
-      <View style={styles.track} pointerEvents="none">
-        <View style={[styles.fill, { width: `${Math.min(1, progress) * 100}%` }]} />
-      </View>
-    </Pressable>
+        <View style={styles.track} pointerEvents="none">
+          <View
+            style={[styles.fill, { width: `${Math.min(1, progress) * 100}%` }]}
+          />
+        </View>
+      </Pressable>
+      {error ? (
+        <Text variant="metadataSmall" selectable accessibilityRole="alert">
+          {error}
+        </Text>
+      ) : null}
+    </View>
   );
 }
 

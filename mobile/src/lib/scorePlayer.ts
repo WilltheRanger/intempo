@@ -4,8 +4,14 @@ import { File, Paths } from 'expo-file-system';
 import { prepareForPlayback } from './audio/session';
 import { encodeWavBytes } from './audio/wav';
 import type { Schedule } from './score/schedule';
-import { DEFAULT_VOICE, harmonicsFor, VOICES, type VoiceName } from './score/voice';
+import {
+  DEFAULT_VOICE,
+  harmonicsFor,
+  VOICES,
+  type VoiceName,
+} from './score/voice';
 import type { PlaybackHandle, PlayOptions } from './score/player.types';
+import { beginSampledPlayback } from './score/sampledPlayback';
 
 /**
  * Playing a score on a device.
@@ -34,7 +40,9 @@ const CHANNELS = 1;
 /** Mix the schedule down to 16-bit PCM. */
 function render(schedule: Schedule, voice: VoiceName): Int16Array {
   const spec = VOICES[voice] ?? VOICES[DEFAULT_VOICE];
-  const total = Math.ceil((schedule.durationS + spec.releaseS + 0.2) * SAMPLE_RATE);
+  const total = Math.ceil(
+    (schedule.durationS + spec.releaseS + 0.2) * SAMPLE_RATE,
+  );
   const mix = new Float32Array(Math.max(total, 1));
 
   for (const note of schedule.notes) {
@@ -67,7 +75,8 @@ function render(schedule: Schedule, voice: VoiceName): Int16Array {
       const t = i / SAMPLE_RATE;
       let sample = 0;
       for (let h = 0; h < harmonics.length; h += 1) {
-        sample += harmonics[h] * Math.sin(2 * Math.PI * note.frequency * (h + 1) * t);
+        sample +=
+          harmonics[h] * Math.sin(2 * Math.PI * note.frequency * (h + 1) * t);
       }
       mix[at] += sample * envelope * spec.gain;
     }
@@ -83,15 +92,97 @@ function render(schedule: Schedule, voice: VoiceName): Int16Array {
 
 export function playSchedule(
   schedule: Schedule,
-  { voice = DEFAULT_VOICE, onProgress, onEnd }: PlayOptions = {},
+  {
+    voice = DEFAULT_VOICE,
+    onProgress,
+    onEnd,
+    onLoading,
+    onError,
+  }: PlayOptions = {},
 ): PlaybackHandle {
   if (schedule.notes.length === 0) {
     onEnd?.();
     return { stop: () => {}, isPlaying: () => false };
   }
 
+  if (voice !== 'reference') {
+    return beginSampledPlayback(
+      schedule,
+      voice,
+      { onProgress, onEnd, onLoading, onError },
+      async (audio, cancelled, finish) => {
+        await prepareForPlayback();
+        if (cancelled()) return () => {};
+        const target = new File(
+          Paths.cache,
+          `intempo-sampled-${Date.now()}-${Math.random().toString(36).slice(2)}.wav`,
+        );
+        let created: InstanceType<typeof AudioModule.AudioPlayer> | undefined;
+        let timer: ReturnType<typeof setInterval> | undefined;
+        const cleanup = () => {
+          clearInterval(timer);
+          try {
+            created?.remove();
+          } catch {
+            /* Already released. */
+          }
+          try {
+            target.delete();
+          } catch {
+            /* File was not created. */
+          }
+        };
+        try {
+          target.create({ overwrite: true });
+          target.write(
+            encodeWavBytes({
+              chunks: [audio.pcm],
+              sampleRate: audio.sampleRate,
+              channels: audio.channels,
+            }),
+          );
+          created = new AudioModule.AudioPlayer(
+            { uri: target.uri },
+            100,
+            false,
+            0,
+          );
+          created.play();
+          const started = Date.now();
+          timer = setInterval(() => {
+            const elapsed = created?.currentTime ?? 0;
+            if (
+              elapsed >= audio.durationS ||
+              created?.currentStatus.didJustFinish
+            ) {
+              finish();
+              return;
+            }
+            if (elapsed === 0 && Date.now() - started > 10000) {
+              onError?.('Audio couldn’t start. Tap Listen to try again.');
+              finish();
+              return;
+            }
+            onProgress?.(
+              Math.min(elapsed, schedule.durationS),
+              schedule.durationS,
+            );
+          }, 100);
+        } catch (error) {
+          cleanup();
+          throw error;
+        }
+        return cleanup;
+      },
+    );
+  }
+
   let stopped = false;
-  let player: { play: () => void; remove: () => void; currentTime: number } | null = null;
+  let player: {
+    play: () => void;
+    remove: () => void;
+    currentTime: number;
+  } | null = null;
   let file: File | null = null;
   let timer: ReturnType<typeof setInterval> | null = null;
 
@@ -151,7 +242,12 @@ export function playSchedule(
       target.write(bytes);
       file = target;
 
-      const created = new AudioModule.AudioPlayer({ uri: target.uri }, 100, false, 0);
+      const created = new AudioModule.AudioPlayer(
+        { uri: target.uri },
+        100,
+        false,
+        0,
+      );
       player = created as unknown as typeof player;
       created.play();
 

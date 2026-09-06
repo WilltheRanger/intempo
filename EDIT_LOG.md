@@ -1,11 +1,313 @@
 # InTempo Edit Log
 
+## 2026-09-05 — Comparable takes and TestFlight preparation
+
+New analysis results include a versioned fingerprint of processed score,
+practice settings and tuning configuration in existing result_json (no schema
+migration). Insights compares only compatible, confident takes with matching
+timed bars and no missed/extra notes, showing absolute bar-average deviation.
+Old results without a fingerprint are deliberately excluded. Both backend and
+client must deploy to enable this for new takes.
+
+Added a TestFlight build profile and an EAS release-environment check to prevent
+sample-data store builds and obvious private Supabase keys in public variables.
+Prepared listing/reviewer draft and owner handoff using Expo deployment guidance
+and official Apple/Expo docs. No cloud build, payment, signing or submission.
+Publisher details, artwork, real device/bass validation remain outstanding.
+
+Validation: 1,567 mobile tests passed, 24 comparison/analysis-runner backend tests
+passed, TypeScript and ESLint passed, web and iOS Hermes exports passed. The iOS
+export is not an IPA/signing or hardware test. No changes have been published.
+
+## 2026-09-05 — Practice-flow reliability and release validation pass
+
+Kept the requested lesson removal. Added microphone signal presence (not quality)
+on native/web capture and cancellation when permission completes after unmount.
+Recorded-take playback now pauses on blur and cannot start after delayed audio
+preparation completes off-screen; lifecycle regressions cover both paths.
+Score saving has a synchronous duplicate-submit guard and clearer scan guidance.
+Insights offers up to 20 sessions without asserting unsupported improvement.
+Shared screens adjust keyboard insets and protect the bottom safe area.
+
+Backend checks: 11 bass-onset/private-audio-storage tests passed; 116
+auth/account/health/readiness tests passed after fixing a Windows path expectation
+in an existing test. No production tuning or security policy changed.
+Mobile validation and preview build are recorded in the task response.
+`docs/launch-validation.md` records remaining real-device, real-audio, comparison
+metadata and owner-dependent launch work. Nothing in this pass is deployed.
+
+## 2026-09-05 — Remove practice lessons
+
+Removed the Practice lesson block from Today and the contextual exercise from
+Insights at the user's request. Removed the unused Today lesson component and
+styles. Warmup, recent practice, Insights history retry and recording are unchanged.
+This change is local pending publication.
+
+## 2026-09-05 — Recording interruption recovery and actionable Insights
+
+Recording now resumes a context that becomes suspended during microphone setup,
+not just the state before permission. Cleanup tolerates an already-closed graph
+and a failed worklet flush so captured audio survives and microphone tracks stop.
+Regression coverage exercises both cases. This is not yet verified on the user's
+phone; the current error message and tested URL have been requested.
+
+Insights now offers a contextual exercise from the latest finished take, including
+its piece and tempo, and a route to the piece. Recent-history failures have an
+explicit retry instead of silently disappearing. The accepted Today layout is
+unchanged. OCR and broader motion polish remain follow-up work.
+
+Validation: 31 focused tests passed; TypeScript, ESLint and web export passed.
+The first full test run alongside export hit the existing hostile-archive stress
+test timeout; rerunning the full suite with two workers passed all 1,553 tests.
+The local Insights route rendered its new exercise and piece button in-browser.
+Also simplified an existing off-beat drill to clapping and counting through rests,
+removing literal Markdown emphasis from plain UI text. Changes are local, not a
+new production deployment.
+
+## 2026-09-05 — Stop Listen on navigation blur; correct double-bass register
+
+User reported Double Bass did not sound like the selected instrument and that
+Listen continued after leaving a piece. Listen previously cleaned up only on
+unmount; stack/tab screens can remain mounted. It now uses focus cleanup to
+stop sounding audio and pending loading/rendering on blur, with cleanup also
+on score, tempo, starting measure or instrument changes. The actual instrument
+name is shown on Listen and the Settings copy explains its playback role.
+Native UI guidance informed the label/accessibility update without a redesign.
+
+The selected SoundFont preset was already Double Bass (program 43). Its note
+events incorrectly used written pitch directly. Bass events now sound an
+octave below notation while preserving score data and all event times; the
+other instruments are unchanged. This supersedes the prior no-transposition
+decision but retains full sampled-instrument playback, not the old synth.
+
+Validation: new button lifecycle tests exercise blur without unmount and
+idempotent cleanup; pitch tests check written E2 -> sounding E1 only for bass.
+Typecheck, lint and web export pass. Suite: 1,550 pass with one known unrelated
+archive stress-test timeout under concurrent build load; its isolated rerun
+passes all 21 tests. Real-device/perceptual sound quality remains unverified.
+
+
+## 2026-09-05 — Full SoundFont playback for Settings instruments
+
+Replaced the rejected hand-written VSCO sample renderer with pinned
+spessasynth_core 4.3.22 and four complete GeneralUser GS 2.0.3 presets. The
+3.3 MB subset preserves author-programmed sample zones, loops, filters,
+modulators, and release envelopes. The reproducible importer records source
+revision and hashes. Licence and provenance are bundled and the app licence
+list is regenerated. GeneralUser permits software use but discloses uncertain
+origins for some inherited samples; this caveat is retained, not represented
+as a guarantee. No MS Basic or proprietary Muse Sounds assets were used.
+
+Stereo 44.1 kHz rendering, Hermite interpolation, moderate velocity, restrained
+reverb, and two-second natural release tail replace mono 22.05 kHz playback.
+Audio blocks split at note events to preserve exact schedule timing. No octave
+shift or timing humanization was added. One completed short passage is cached;
+rendering yields cooperatively and cancellation prevents late audio startup.
+Web and native players read the output's channel count/sample rate and allow
+release tails before ending. Recording startup fixes and layout remain intact.
+
+Metro registers SF2 assets and substitutes an explicit PCM-only adapter for
+Spessa's optional eager WASM Vorbis decoder, which is unnecessary for these
+banks and incompatible with Hermes/CSP. Compressed banks are rejected. Old
+VSCO assets and importer were removed; they remain recoverable in Git.
+Expo networking guidance informed cached, retryable sound-bank loading.
+
+Verification: all 1,548 tests / 140 files pass; typecheck, lint, web export and
+iOS Hermes export pass. Tests exercise the real four presets without WASM,
+stereo output, release tails, silence/timing, no clipping in representative
+notes, failed-bank retry, cancellation and output cleanup. Direct piece route
+and all exported bank URLs return 200. Local piece screen opens successfully.
+No real iPhone microphone test or perceptual sound-quality claim is made.
+Production is unchanged until the pending change set is merged/deployed.
+
+
+## 2026-09-05 — Local preview deep-link recovery
+
+The local Python static server returned a filesystem 404 when Library was
+opened or refreshed directly. Added mobile/scripts/preview.py with an app-shell
+fallback for missing extensionless routes, real 404s for missing assets, no
+directory listings, and no-cache preview responses. Replaced the plain local
+server on 127.0.0.1:8082. This changes only local preview hosting, not production
+routing or the app layout.
+
+
+## 2026-09-05 — Sampled Settings instruments for Listen
+
+User requested MuseScore-style recorded instrument playback, not synthesized
+voices or an octave change. Added a compact, CC0 VSCO 2 CE bank (20 roots,
+8.8 MB), reproducible importer, pinned provenance, and user-visible licence entry.
+Violin and bass use solo samples; viola and cello use section samples. These
+are not proprietary Muse Sounds and do not promise equivalent sound quality.
+
+Settings instruments now use the same cooperative PCM sample renderer on web
+and native: nearest-root resampling, author MIDI mappings/tuning, crossfaded
+sustain, note envelopes, preserved score timing, bounded ten-minute render.
+Only needed roots load; failures evict the cache and show a retry message.
+Loading is cancellable and late completions cannot start stopped playback.
+The internal explicit reference voice remains, never as a download fallback.
+Removed the rejected bass-octave helper. Recording startup fixes remain intact;
+the Today layout is unchanged. Native UI guidance informed accessible loading
+and cancel feedback; no navigation or design-system migration.
+
+Validation: 1,546 tests passed with two workers (initial unrestricted run had
+one unrelated archive-test timeout); typecheck and web export passed. New tests
+decode all 20 real WAV files and cover note timing, sustain continuity, corrupt
+assets, root selection, cancellation and failed loading. Local preview opened.
+Perceptual listening and iPhone hardware verification remain pending; automated
+audio tests cannot establish speaker quality or microphone behaviour on a phone.
+
+
 Newest entries at the top. Format spec: see "Build-time activity logging"
 in intempo-combined.md. Every meaningful change goes here — see that
 section for what counts as "meaningful."
 
 ---
 
+## 2026-09-06 — Recording on the deployed site: the CSP refuses a `blob:` worklet
+
+**Branch:** `claude/mobile-frontend-rebuild-vay1tg`, merged with `main` (#73,
+#74, #75). CI still cannot dispatch a runner.
+
+Reported from the deployed site: **"The recording worklet could not be
+loaded."** Diagnosed, reproduced and fixed — and the diagnosis is measured
+rather than argued.
+
+### What it is
+
+`public/_headers` pins `script-src` to `'self'` plus the boot script's hash.
+That is deliberate: without it an injected `<script src>` runs. **`'self'` does
+not cover `blob:`** — and `audioRecorder.web.ts` built its AudioWorklet from
+`URL.createObjectURL(new Blob([PROCESSOR_SOURCE]))`, so the browser refused the
+module and `addModule` rejected with `AbortError: Unable to load a worklet's
+module.`
+
+Measured in this repository's own Chromium, against the built bundle:
+
+    worklet as a blob, production CSP applied  →  REFUSED: AbortError
+    worklet as a blob, no CSP                  →  LOADED
+    worklet as a file, production CSP applied  →  LOADED
+    worklet as a blob, after the fix           →  still REFUSED  (policy intact)
+
+**Nothing local had ever applied that CSP.** `_headers` is a Cloudflare Pages
+file and `npx serve` ignores it, so the walk, the a11y audit and every
+screenshot ran the app without its production policy. The one surface with
+checks was not the surface that ships — the same shape as the `.web.ts` /
+native split this file already worries about.
+
+### The fix, and the fix it is not
+
+`public/pcm-recorder.worklet.js` is a real file on the origin, copied verbatim
+into the build, loaded by a relative URL that `addModule` resolves against the
+document — so a build served from a sub-path finds it too.
+
+**Not `blob:` in `script-src`.** That would re-open exactly the hole the
+hash-pinned policy closes, to fix a problem a file already solves.
+
+The one constant the source used to interpolate now arrives through
+`processorOptions`, which is what that option is for. The worklet defaults to
+the same number when it is absent, so the first draft of this change shipped
+without the wire and behaved identically — a silent fallback over a missing
+one, caught only because lint saw the constant go unused. The test asserts the
+**wire**, not the behaviour, for that reason.
+
+`tools/serve-with-headers.mjs` is what applied the policy. It is kept, because
+it is the only thing here that can see this class of bug.
+
+### Open, and it must not be read as finished
+
+**The walk's silent-take check fails on this merged tree and passes on `main`.**
+Measured both ways, with and without the CSP, on a clean field. The app itself
+is *not* broken: driven by hand through the same flow, the screen says *"That
+take came back silent. Check the microphone isn't muted or covered, then try
+again."* — the refusal the check is looking for, about two seconds later than
+the check allows.
+
+Two attempts to make the check deterministic — waiting for the Stop control,
+then for the elapsed clock to leave `00:00` — did not fix it, and both were
+reverted rather than left as churn. The likeliest cause is that fetching the
+worklet over HTTP costs a round trip the blob did not, pushing the start of
+the take past what the check assumes; that is a consequence of the fix rather
+than a defect in it, but **it is not proven and the check is red.**
+
+`tools/serve-with-headers.mjs` is therefore **not wired into CI** either. It
+found the bug; it has not earned a gate until the walk is green under it.
+
+### Verification
+
+Mobile **1595 passed** across 146 files. `tsc` 0, lint 0 — the worklet is
+linted, with the AudioWorklet globals declared for `public/*.js` rather than
+the directory being ignored, since it is the one file here that runs outside
+the bundle. Walk **50 of 51**, with the one failure above. The merge took
+`main`'s `audioRecorder.web.ts` wholesale, so this session's earlier
+shared-context and document-focus work is **dropped**, not merged — recoverable
+from the branch history if `main`'s interruption handling proves insufficient.
+
+---
+
+## 2026-09-04 — Recording startup recovery and instrument playback
+
+**Branch:** `codex/instrument-recording`, based on pending PR #71. The rejected
+Today-layout PR #72 is closed unmerged; its changes are not on this branch.
+
+Browser recording creates/resumes audio during the Record gesture, before
+awaiting permission. Every setup failure now stops acquired tracks and closes
+the context, including graph InvalidStateError; resumption has a deadline.
+Regression tests verify unlock order and successful capture after a failed
+graph setup. This fixes confirmed code weaknesses, not a confirmed reproduction
+on the owner's iPhone. Shared playback resume rejection is handled too.
+
+Listen already selects instrument-specific synthesized voices from Settings.
+Bass playback now lowers written pitches one octave, without mutating notation
+or analysis timing. Changing instrument stops the previous voice. No sampled
+instrument library is added. The Record control immediately shows microphone
+startup/busy state, blocks duplicate taps, and disables Listen during startup.
+Existing Today design, palette, tabs, and app content are unchanged.
+
+Verification: all 1,537 tests pass; typecheck, lint and web export pass.
+The exported desktop sample preview shows the restored Today design and opens
+the recording setup screen. Microphone capture has not been browser-tested.
+Real iPhone microphone/Listen-to-Record and perceptual audio checks remain
+pending; there is no attached phone. Revert this commit to roll back, with no
+database migration required.
+
+## 2026-09-04 — Preserve interrupted server-error diagnostics
+
+**Branch:** `codex/rest-cue-empty-bars` (PR #71).
+
+An error response whose headers arrived but body stalled was caught by the
+non-JSON fallback and reported as a generic HTTP failure. The API client now
+preserves its existing interrupted-response explanation after that deadline.
+No retries are added, and the deadline is released as before. A streaming 503
+regression failed before the fix and passes afterward, including assertions
+that only one request was sent and no timer remains.
+
+Verification: the prior final branch passed all 1,533 mobile tests; all 30 API
+client and connection-diagnostic tests pass with this follow-up. Cloudflare's
+idk preview deployed PR #71 successfully. GitHub CI jobs failed without steps
+or retrievable logs; browser verification is blocked by the in-app browser
+failing to attach (inventory returned no tabs). Neither is claimed as passed.
+Rollback: revert this follow-up commit; no data or configuration changes.
+
+## 2026-09-04 — Reliable rest entrances and connection checks
+
+**Branch:** `codex/rest-cue-empty-bars`.
+
+Long-rest cues now require an identified note in the following bar. An empty
+OCR bar no longer becomes a false entrance, nor is it bridged to a later note.
+Later complete rest runs still use the existing playback clock. Two regression
+tests reproduced the false cue before the fix and pass after it.
+
+Connection diagnostics now distinguish a dropped readiness request from an
+explicitly unready service, and honor `ready: false` in successful responses.
+No account writes, schema changes, or new UI layouts are involved.
+
+Windows line endings and local-date assumptions were corrected in three tests.
+Verification: all 1,531 tests passed with two workers before the diagnostics
+addition; all 20 rest-cue/diagnostic tests passed afterward. The initial fully
+parallel run also hit a compression-fixture timeout; its allocation and timing
+assertions are unchanged. Type checking, lint, and the web export also pass.
+Browser/real-instrument verification remains pending.
+Rollback: revert this branch's commit; no data migration is needed.
 ## 2026-09-04 — The recording error, fixed: the spec says wait, and WebKit does not
 
 **Branch:** `claude/mobile-frontend-rebuild-vay1tg`. Audio. CI still cannot

@@ -35,8 +35,35 @@ export async function checkAppConnection(
   }
 
   try {
-    await request('/v1/ready', { authenticated: false });
+    const readiness = await request('/v1/ready', { authenticated: false });
+    if (
+      readiness !== null &&
+      typeof readiness === 'object' &&
+      'ready' in readiness &&
+      readiness.ready === false
+    ) {
+      return {
+        kind: 'service_unready',
+        message: describeReadinessFailure({ detail: readiness }),
+      };
+    }
   } catch (cause) {
+    // Only an explicit readiness response establishes a setup problem. A
+    // dropped connection after health succeeded says nothing about readiness.
+    const detail = cause !== null && typeof cause === 'object' && 'detail' in cause
+      ? cause.detail
+      : null;
+    if (
+      detail === null || typeof detail !== 'object' ||
+      !('ready' in detail) || detail.ready !== false
+    ) {
+      return {
+        kind: 'service_unreachable',
+        message: cause instanceof Error
+          ? cause.message
+          : 'The practice service could not be reached.',
+      };
+    }
     return {
       kind: 'service_unready',
       message: describeReadinessFailure(cause),
