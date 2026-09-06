@@ -1,14 +1,15 @@
 import { useNavigation } from '@react-navigation/native';
-import { Plus } from 'lucide-react-native';
+import { ChevronRight, Plus } from 'lucide-react-native';
 import { useCallback, useEffect, useState } from 'react';
 import { Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
 
 import { FadeIn } from '../../components/motion';
+import { PressableScale } from '../../components/motion/PressableScale';
 import { AddPieceSheet } from '../../components/pieces/AddPieceSheet';
 import {
   Avatar,
   Card,
-  IconButton,
+  GlassSurface,
   EmptyState,
   PageHeader,
   ScreenContainer,
@@ -32,9 +33,11 @@ import {
   usePendingAnalysis,
 } from '../../data/practice/pendingAnalysis';
 import {
-  BORDER_WIDTH,
   colors,
   CONTROL_HEIGHT,
+  CONTROL_PRESSED_SCALE,
+  ICON_SIZE,
+  ICON_STROKE_WIDTH,
   motion,
   radii,
   spacing,
@@ -220,28 +223,14 @@ export function TodayScreen() {
   ) : null;
 
   /*
-    **Adding a piece is a primary action, so it lives in the header.**
-    It was reachable from Today only through the "Add a new piece" row further
-    down, which put the app's central action below the fold on a populated
-    screen and read as one more list item. The Library's header has carried a
-    labelled version of the same control all along; this is the icon form of it
-    in the same trailing position, so the two screens agree.
+    **The greeting and the avatar, and nothing else.**
+    A bare "+" was put here for one commit, on the reasoning that a primary
+    action belongs in the header. It looked wrong: two unrelated circles
+    crowding the trailing corner, the smaller of which gave no clue what it
+    added. Adding a piece is a labelled row further down — it always was — and
+    it now carries the same material as the rest of the control layer.
   */
-  const header = (
-    <PageHeader
-      title={getGreeting()}
-      action={
-        <View style={styles.headerActions}>
-          <IconButton
-            icon={Plus}
-            label="Add a piece"
-            onPress={() => setAddSheetVisible(true)}
-          />
-          {avatar}
-        </View>
-      }
-    />
-  );
+  const header = <PageHeader title={getGreeting()} action={avatar} />;
 
   if (currentPiece.isPending) {
     return (
@@ -422,6 +411,8 @@ export function TodayScreen() {
             onContinue={() => openPractice(piece)}
           />
 
+          <AddPieceAction onPress={() => setAddSheetVisible(true)} />
+
           <FadeIn index={1}>
             <View style={styles.section}>
               <SectionHeader label="Warmup" />
@@ -573,11 +564,94 @@ export function TodayScreen() {
   );
 }
 
+/**
+ * Add a piece: the labelled row, restored, in the control layer's material.
+ *
+ * This is the composition it had before the glass work — a mark, a title, a
+ * line naming the three ways in, and a chevron — because that is what tells
+ * somebody what the button *does*. It was briefly replaced by an unlabelled
+ * "+" in the screen header, which said nothing and sat badly next to the
+ * avatar.
+ *
+ * What changed is the material, not the shape: neutral glass instead of a
+ * bordered white card, a capsule mark instead of a rounded square, and it
+ * compresses under the finger like every other control here.
+ */
+function AddPieceAction({ onPress }: { onPress: () => void }) {
+  return (
+    <PressableScale
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel="Add a new piece"
+      accessibilityHint="Scan sheet music, import a score, or enter a piece manually"
+      activeScale={CONTROL_PRESSED_SCALE}
+      style={({ pressed }) => [
+        styles.addPieceAction,
+        pressed && styles.addPieceActionPressed,
+      ]}
+    >
+      <GlassSurface radius={radii.lg + spacing.sm} style={styles.addPieceFill} />
+      {/* Above the material — see GlassSurface: it fills absolutely, so a
+          non-positioned sibling paints underneath it. */}
+      <View style={styles.addPieceIcon}>
+        <Plus
+          size={ICON_SIZE.md}
+          strokeWidth={ICON_STROKE_WIDTH}
+          color={colors.actionText}
+        />
+      </View>
+      <View style={styles.addPieceCopy}>
+        <Text variant="button">Add a new piece</Text>
+        <Text
+          variant="metadataSmall"
+          color="textSecondary"
+          style={styles.addPieceDetail}
+        >
+          Scan sheet music, import a score, or enter it manually.
+        </Text>
+      </View>
+      <ChevronRight
+        size={ICON_SIZE.md}
+        strokeWidth={ICON_STROKE_WIDTH}
+        color={colors.textTertiary}
+        style={styles.addPieceChevron}
+      />
+    </PressableScale>
+  );
+}
+
 const styles = StyleSheet.create({
-  headerActions: {
+  addPieceAction: {
+    minHeight: CONTROL_HEIGHT + spacing['2xl'],
+    marginTop: spacing.md,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.sm,
+    gap: spacing.md,
+    borderRadius: radii.lg + spacing.sm,
+    overflow: 'hidden',
+  },
+  addPieceFill: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0 },
+  addPieceActionPressed: { opacity: 0.9 },
+  addPieceIcon: {
+    zIndex: 1,
+    width: spacing['4xl'],
+    height: spacing['4xl'],
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.actionBg,
+    // A circle, like every other mark in this material.
+    borderRadius: radii.pill,
+  },
+  addPieceCopy: {
+    zIndex: 1,
+    flex: 1,
+    minWidth: 0,
+  },
+  addPieceChevron: { zIndex: 1 },
+  addPieceDetail: {
+    marginTop: spacing.xs,
   },
   page: {
     width: '100%',
@@ -630,37 +704,6 @@ const styles = StyleSheet.create({
   },
   pressed: {
     opacity: 0.6,
-  },
-  addPieceAction: {
-    minHeight: CONTROL_HEIGHT + spacing['2xl'],
-    marginTop: spacing.md,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-    backgroundColor: colors.surface,
-    borderWidth: BORDER_WIDTH,
-    borderColor: colors.borderStrong,
-    borderRadius: radii.md,
-  },
-  addPieceActionPressed: {
-    backgroundColor: colors.surfacePressed,
-  },
-  addPieceIcon: {
-    width: spacing['4xl'],
-    height: spacing['4xl'],
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.actionBg,
-    borderRadius: radii.sm,
-  },
-  addPieceCopy: {
-    flex: 1,
-    minWidth: 0,
-  },
-  addPieceDetail: {
-    marginTop: spacing.xs,
   },
   focusText: {
     marginTop: spacing.sm,

@@ -10,14 +10,13 @@ import { cssLens } from '../../lib/glass/lensFilter';
  * How hard the blur behind a glass surface is.
  *
  * Tuned against the one thing that decides it: engraved notation passing
- * underneath has to become a wash rather than words you can still read. Below
- * about 40 the surface reads as a tinted pane with legible text showing
- * through, which is clutter rather than depth.
+ * underneath has to become a wash rather than words you can still read. It was
+ * 46, which left staff lines and titles legible through the bar — "too clear".
  */
-const BLUR_INTENSITY = 46;
+const BLUR_INTENSITY = 68;
 
 /** The web build's equivalent, plus the saturation lift a real blur gives. */
-const WEB_DIFFUSION = 'blur(24px) saturate(150%)';
+const WEB_DIFFUSION = 'blur(30px) saturate(150%)';
 
 /** This RN version's `StyleSheet` types omit `absoluteFillObject`. */
 const FILL = { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0 } as const;
