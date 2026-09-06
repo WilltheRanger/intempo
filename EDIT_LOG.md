@@ -1,5 +1,43 @@
 # InTempo Edit Log
 
+## 2026-09-06 — `CLAUDE.md` split: 12,096 words → 1,687, with nothing deleted
+
+Owner's read, and the measurement agreed: the file had stopped carrying its
+weight. Of 12,096 words, the binding rules (§1–§4) were **1,456 — 12%**. The
+other 88% was five subsystem post-mortems, the largest of them 6,423 words on
+the `mobile/` tree, all of it loaded at the start of every session before any
+work began.
+
+`docs/subsystems.md` now holds those five sections, moved **unchanged**, with a
+contents list and a note on how to read it. `CLAUDE.md` gains a §5 pointing at
+it and one rule: a lesson goes in the subsystem file; it belongs in `CLAUDE.md`
+only if it changes what a session does *before* it knows which subsystem it is
+touching.
+
+**Verified lossless mechanically, not by eye.** 1,023 of the original's 1,031
+non-empty lines are byte-identical in one of the two files. The 8 that are not
+are the "Honest DoD status" paragraph, deliberately rewritten to drop its
+self-referential archaeology (*"this line said…"*, *"one screen up"*) while
+keeping every claim: 0/1/2 tagged, 3/4 ✅ and untagged, 5+ ⏳, remaining gates
+blocked on Supabase keys and a device.
+
+Two bugs in my own move, both caught before commit and worth naming because they
+are the failure mode of a mechanical edit that *looks* right:
+
+- The heading promotion was a **no-op**. `'#' + line[1:]` reconstructs the
+  original string; the five sections stayed `###` under a document with no `##`
+  above them. Found by grepping the result rather than trusting the script.
+- The anchor check reported four of five contents links broken. The *checker*
+  was wrong — GitHub does not collapse repeated hyphens, and an em-dash between
+  spaces produces `--`. Re-checked against GitHub's actual slug rule: all five
+  resolve.
+
+**This is a documentation change and nothing in the app moved.** No code, no
+tests, no build. Three independent audits ran against the result — fidelity,
+standalone coherence, and repository-wide cross-references.
+
+Rollback: `git revert` this commit; the original file is one commit back.
+
 ## 2026-09-06 — The primary action goes back to solid ink
 
 Owner's call, after seeing it: the button should be black.
