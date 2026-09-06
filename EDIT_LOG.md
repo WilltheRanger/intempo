@@ -1,5 +1,77 @@
 # InTempo Edit Log
 
+## 2026-09-06 — Reduce Transparency reaches the glass; it had been inert
+
+Apple's Liquid Glass guidance splits cleanly on one line: a standard component
+adapts to the accessibility settings by itself, and **anything custom has to
+provide the fallback**. `GlassSurface` is custom — an `expo-blur` view on
+native, a `backdrop-filter` stack on the web — and Reduce Transparency did
+nothing to it. Measured before the change: three surfaces on the Today screen
+carrying `url(#intempo-glass-lens) blur(30px) saturate(1.5)` with
+`prefers-reduced-transparency: reduce` on, exactly as with it off.
+
+Reduce *Motion* was already honoured in nine places. Transparency in none. The
+gap is worth naming because it is the shape of the mistake: the setting people
+associate with animation got wired up, and the one this material actually
+implicates did not.
+
+**The rule is a module, not a ternary.** `lib/glass/material.ts` answers which
+of the five layers a surface draws and on what ground; `GlassSurface` calls it.
+There is no React Native testing library here, so a rule inside a `.tsx` is a
+rule nothing checks (`CLAUDE.md` §3) — seven tests now do.
+
+Layer by layer, and none of it is "hide the blur":
+
+- **Diffusion and refraction** go. They *are* the translucency.
+- **Specular** goes. It is light-play across a curved transparent surface; over
+  an opaque fill the same gradient is a smudge.
+- **The separation ring stays, in both materials.** It is the only layer that is
+  shape rather than effect, and a control whose edge cannot be found is a worse
+  outcome than one that is not glass.
+- **The bright edge goes.** It is paired with the separator *while the ground is
+  unknown* — that was always the reason, written in the component. Opaque, the
+  ground is known, one dark ring is enough, and a white line along the top of a
+  solid ivory capsule is a stray mark. The component's absolute now carries the
+  clause it always implied.
+
+`glassOpaque` (**#FAF8F2**) is `glassTint` composited over `bg`, computed rather
+than picked, and a test recomputes it so the two cannot drift. The point is that
+a bar which stops being translucent *stops moving* — it does not change hue.
+This is the same fallback Android and any blur-declining browser have always
+landed on; it is now reachable on purpose rather than only by accident.
+
+`useReducedTransparency` mirrors `useReducedMotion` exactly — one platform read
+and one listener for the whole app through `useSyncExternalStore`, because a tab
+bar plus four buttons would otherwise register five accessibility listeners
+between them. Native reads `reduceTransparencyChanged`; the web build reads
+`prefers-reduced-transparency`, which is the same iOS switch surfaced to the
+browser and is what actually deploys.
+
+**Verified in a browser, not asserted.** `scripts/glass-transparency-shot.mjs`
+drives the setting over CDP — Playwright's `emulateMedia` does not carry this
+query — and shoots both materials against the served fixtures build. After:
+**3 backdrop filters → 0**, and the screenshots show the tab bar's bleed-through
+(the warmup card's "Violin · 60 BPM", the ghosted "Start") replaced by a clean
+opaque capsule.
+
+Three-foot test, on the reduced screenshot: *Good morning* and the Sonata card
+first, the black "Continue practice" pill second, the tab bar third — identical
+to the regular material. That is the result an accessibility fallback wants: it
+removes an effect, it does not restructure a screen.
+
+Scope: the control layer only. No screen composition, spacing or copy changed,
+and nobody without the setting on sees any difference.
+
+Validation: 1,610 mobile tests (148 files), `tsc` 0, ESLint 0, a11y audit PASS
+on all 27 screens, fixtures web build clean with `script-src` still pinned,
+`.env` moved aside and restored. `check-dead-exports.py` reports one finding —
+`StbVorbis` in `lib/score/sf2OnlyDecoder.ts` — which is **pre-existing**,
+confirmed by re-running it against a stashed tree, and untouched by this diff.
+
+**Side effects:** none for anyone without Reduce Transparency enabled.
+**Rollback:** revert this commit; `glassOpaque` is additive and no caller of
+`GlassSurface` changed.
+
 ## 2026-09-06 — Two references the split broke, and one it did not
 
 The third of three audits on the `CLAUDE.md` split finished after the merge and

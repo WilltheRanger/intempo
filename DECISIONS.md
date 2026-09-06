@@ -1,5 +1,56 @@
 # InTempo Decisions
 
+## 2026-09-06 — The Reduce Transparency fallback is opaque, and drops the bright edge
+
+**Context.** `GlassSurface` is a custom element, so Reduce Transparency is ours
+to honour — a system bar adapts on its own, this does not. Measured: the setting
+was completely inert, three surfaces still refracting with it on. The question
+was not *whether* to honour it but what the surface becomes when it stops being
+glass.
+
+**Decision.** A rule module, `lib/glass/material.ts`, decides layer by layer, and
+the fallback is a genuinely opaque control on `glassOpaque` — `glassTint`
+composited over `bg`, derived rather than picked. Diffusion, refraction and the
+specular go; the separation ring stays; the bright edge goes.
+
+**Alternatives considered.**
+
+- *Drop the blur and keep everything else.* The obvious minimal change, and
+  wrong twice. The tint at 0.80 alpha over unpredictable scrolling content is
+  precisely the legibility risk the setting exists to remove — someone asking
+  for less transparency would still get content showing through a label. And a
+  specular gradient over an opaque fill is not light; it is a smudge in the
+  corner of a solid button.
+- *Keep both hairlines, as the component says never to separate them.* Rejected
+  on the component's own stated reason rather than against it: the pairing is
+  there because either edge alone disappears against half of *an unknown
+  ground*. Opaque, the ground is known. Following the rule past its reason would
+  have put a white line along the top of a solid ivory capsule.
+- *A ternary in `GlassSurface.tsx`.* Rejected under `CLAUDE.md` §3 — there is no
+  React Native testing library here, so a rule in a `.tsx` is a rule nothing
+  checks. It is seven tests as a module, including one that recomputes
+  `glassOpaque` from `glassTint` and `bg` so the fallback cannot drift off the
+  colour the material settles to.
+- *An in-app toggle alongside the OS one, as `useReducedMotion` has.* Deferred,
+  not rejected. It needs a settings row, which is UI/UX and gated on the owner
+  (`CLAUDE.md` §2). The hook is shaped to OR a preference in when there is one.
+
+**Trade-offs accepted.**
+
+1. **Two materials to keep true, now by choice.** The opaque look already
+   existed on Android and in any browser declining the blur; this makes it a
+   designed state rather than a degradation, which means every future glass
+   change has to be looked at twice.
+2. **`audit-a11y.mjs` still cannot check either.** A translucent surface has no
+   fixed ground and the audit does not drive the media query. What it does check
+   is `glassOpaque` as an ordinary opaque background, which is more than the
+   translucent material can offer — and the screenshot script is what covers
+   the rest, by measurement (3 backdrop filters → 0) rather than by eye.
+3. **Untested on a real device.** Verified in Chromium against
+   `prefers-reduced-transparency`. The native path — `expo-blur` under iOS's own
+   Reduce Transparency — is written to the same rule but has not been seen, and
+   `EDIT_LOG.md` says so rather than claiming otherwise.
+
 ## 2026-09-06 — `CLAUDE.md` holds rules; `docs/subsystems.md` holds what was learned
 
 **Context.** `CLAUDE.md` is read in full at the start of every session and had
