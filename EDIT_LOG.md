@@ -1,5 +1,65 @@
 # InTempo Edit Log
 
+## 2026-09-06 — The web screen transition is reverted: it could strand a screen off-stage and leave the app blank
+
+A screenshot from the owner's iPhone: the whole viewport a flat warm grey,
+nothing on it. Measured against the tokens — **(206, 201, 193) on screen, and
+`colors.textPrimary` at `SCRIM_OPACITY` over `colors.bg` predicts
+(206, 202, 194)**. One unit per channel. That is not a blank page, it is *my
+scrim*, alone, with the pushed screen still parked at `translate3d(100%, 0, 0)`
+and never brought back.
+
+**So `ScreenTransition` can leave the app showing nothing, and it is gone.**
+The navigator points at its screens directly again; `ScreenTransition.tsx`,
+`lib/motion/screenTransition.ts` and its 18 tests are deleted. Pushing a screen
+is a hard cut again, which is what it was for the whole life of the project
+before today.
+
+**Why revert rather than fix it.** Three attempts, and the honest accounting of
+them is the point:
+
+1. `Animated` on the JS thread — diagnosed from a 326ms frame gap that turned
+   out to be this environment's software rasterizer, not the app. The Long Task
+   API showed no blocking at all.
+2. CSS transition — real improvement, and it still needed a scheduled second
+   step that could not run early enough.
+3. CSS keyframe animation + `backface-visibility` — starts at the tap, runs
+   321ms, and is the version that stranded the screen.
+
+Every one of those was verified in headless Chromium on a software rasterizer.
+**The failure is on iOS Safari, which does not exist in this environment.** I
+have no way to reproduce it, no way to confirm a fix, and the current cost of
+being wrong is a blank application on the owner's phone. A hard cut is not
+worse than that; it is enormously better. Shipping a fourth unverifiable guess
+at the same code would be the mistake.
+
+**The likely mechanism, recorded so the next attempt starts ahead.** iOS Safari
+runs its own interactive edge-swipe for history back. The pop gesture claimed
+the same 20pt strip, and a screen driven off-stage by a drag whose navigation
+Safari then handled itself — or did not — has nothing left to bring it home:
+the only thing that restores the transform is `beforeRemove` firing or the
+release handler settling it. That is a hypothesis, not a finding. Whoever picks
+this up should start by disabling the edge gesture on Safari, where the
+platform already provides it and mine is redundant as well as dangerous.
+
+**What is kept.** The sheet's swipe-to-dismiss (`sheetDrag`), which is a
+different component, was never implicated, and is untouched. So is the
+optimistic loading in the commit before this one — the piece screen still opens
+on the piece the library already had, which was the owner's actual complaint
+about waiting.
+
+Scope: `RootNavigator.tsx` unwired; three files deleted.
+
+Validation: 1,649 mobile tests (151 files), `tsc` 0, ESLint 0, no new dead
+exports. `audit-a11y.mjs` PASS on all 30 routes, `walk-app.mjs` 50 of 51 — the
+pre-existing silent-take finding. Every one of six pushed routes paints its own
+content on the first frame, so nothing can be left off-stage. `grep` for the
+keyframe names in the shipped bundle returns 0.
+
+**Side effects:** pushing a screen no longer animates in a browser. On iOS
+`native-stack` still gives Apple's own push, parallax and swipe-back — none of
+this ever ran there. **Rollback:** none needed; this *is* the rollback.
+
 ## 2026-09-06 — The piece screen opens with the piece on it, instead of loading one it already had
 
 Reported: "it's like waiting to load and then loads why can't you make it
