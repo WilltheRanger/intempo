@@ -124,30 +124,11 @@ export const colors = {
    */
   glassTint: 'rgba(251, 249, 244, 0.80)',
   /**
-   * The tint for a **prominent** glass control — a primary action.
-   *
-   * Ink rather than paper, and the one place glass carries colour: tinted
-   * glass is reserved for primary actions and selected states, so that when it
-   * appears it means something. Held at 0.88 because the label on it is
-   * `actionText`, and translucency is not allowed to cost a control its
-   * contrast.
-   */
-  glassTintProminent: 'rgba(26, 23, 20, 0.92)',
-  /**
-   * The specular catch, brightest at the top-left corner and gone by a third
-   * of the way down. Paired with `glassEdge` — the gradient reads as light
-   * falling across a curved surface, the hairline reads as its lit rim.
+   * The specular catch, brightest at the top-left and gone by a third of the
+   * way down. Paired with `glassEdge` — the gradient reads as light falling
+   * across a curved surface, the hairline as its lit rim.
    */
   glassSpecular: 'rgba(255, 255, 255, 0.46)',
-  /**
-   * The top edge hairline on a prominent surface, where the ground is ink.
-   *
-   * **Not a gradient.** It was one, and on a dark button a light top-left
-   * falling to nothing reads as a black gradient rather than as light on a
-   * curve. The prominent tone keeps a flat tint and takes its dimension from
-   * this hairline alone.
-   */
-  glassSpecularProminent: 'rgba(255, 255, 255, 0.20)',
   /** The bright catch along a glass edge. Half a pixel, never a stroke. */
   glassEdge: 'rgba(255, 255, 255, 0.72)',
   /**
