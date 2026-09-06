@@ -8,8 +8,8 @@
 > phone-width column on desktop — was **deliberately removed**.
 >
 > **Authoritative now:** the design laws in `CLAUDE.md` §3 and the conventions
-> in its "Frontend UI rebuild" section. Tokens live in
-> `frontend/src/styles/tokens.ts`.
+> in `docs/subsystems.md` under "Frontend UI rebuild" — they moved out of
+> `CLAUDE.md` on 2026-09-06. Tokens live in `frontend/src/styles/tokens.ts`.
 >
 > What still holds from this file: build one screen at a time, run the
 > screenshot critique loop, and pre-fill decisions so a build session invents
